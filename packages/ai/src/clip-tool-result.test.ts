@@ -66,6 +66,19 @@ describe("clipStaffAssistantToolResult", () => {
       message: "Customer not found.",
     };
     expect(clipStaffAssistantToolResult(error)).toBe(error);
+    const archived = {
+      status: "error",
+      code: "CONFLICT",
+      message: '"Old Widget" is archived.',
+      reason: "archived",
+      subject: { kind: "product_name", name: "Old Widget" },
+    };
+    expect(clipStaffAssistantToolResult(archived)).toBe(archived);
+    expect(archived.reason).toBe("archived");
+    expect(archived.subject).toEqual({
+      kind: "product_name",
+      name: "Old Widget",
+    });
   });
 
   it("does not clip a small create-style write result", () => {

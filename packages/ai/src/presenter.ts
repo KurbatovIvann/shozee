@@ -9,9 +9,11 @@ import { z } from "zod";
 
 import { toProviderToolName } from "./action-tool.js";
 import {
+  catalogDomainErrorExtrasFromToolOutput,
   isStaffAssistantNeedsChoiceOutput,
   needsChoiceOutputFromRecord,
   staffAssistantNeedsChoiceInteractionSchema,
+  type CatalogDomainErrorExtras,
   type ChoiceRecord,
   type StaffAssistantNeedsChoiceInteraction,
   type StaffAssistantNeedsChoiceOutput,
@@ -43,6 +45,53 @@ export const CHOICE_TRUNCATED_MATCH_COPY: Record<StaffAssistantLocale, string> =
     en: "More matches exist. Reply with the exact name.",
     uk: "Є ще збіги. Напишіть точну назву.",
   };
+
+function quoteProductName(name: string, locale: StaffAssistantLocale): string {
+  return locale === "uk" ? `«${name}»` : `"${name}"`;
+}
+
+export function presentCatalogDomainError(options: {
+  readonly locale: StaffAssistantLocale;
+  readonly extras: CatalogDomainErrorExtras;
+}): string {
+  const { locale, extras } = options;
+  if (extras.reason === "no_active_variants") {
+    const quoted = quoteProductName(extras.subject.name, locale);
+    return locale === "uk"
+      ? `${quoted} не має активних варіантів, в замовлення його додати не можна. Напишіть інший товар або повторіть замовлення без нього.`
+      : `${quoted} has no active variants and cannot be added to an order. Name a different product, or repeat the order without it.`;
+  }
+  if (extras.subject.kind === "product_name") {
+    const quoted = quoteProductName(extras.subject.name, locale);
+    return locale === "uk"
+      ? `${quoted} в архіві, в замовлення його додати не можна. Напишіть інший товар або повторіть замовлення без нього.`
+      : `${quoted} is archived and cannot be added to an order. Name a different product, or repeat the order without it.`;
+  }
+  const quoted = quoteProductName(extras.subject.query, locale);
+  return locale === "uk"
+    ? `За запитом ${quoted} знайдено лише товари в архіві, в замовлення їх додати не можна. Напишіть інший товар або повторіть замовлення без них.`
+    : `No sellable product matched ${quoted}; matching products are archived and cannot be added to an order. Name a different product, or repeat the order without them.`;
+}
+
+export function presentDomainErrorStaffAssistantTurn(options: {
+  readonly locale: StaffAssistantLocale;
+  readonly toolResults: readonly StaffAssistantPresentedToolResult[];
+}): string | undefined {
+  for (let index = options.toolResults.length - 1; index >= 0; index -= 1) {
+    const result = options.toolResults[index];
+    if (result === undefined) {
+      continue;
+    }
+    const extras = catalogDomainErrorExtrasFromToolOutput(result.output);
+    if (extras !== undefined) {
+      return presentCatalogDomainError({
+        locale: options.locale,
+        extras,
+      });
+    }
+  }
+  return undefined;
+}
 
 export const staffAssistantLocaleSchema = z.enum(STAFF_ASSISTANT_LOCALES);
 
@@ -562,6 +611,14 @@ export function staffAssistantTurnUsesCompletedPresenter(options: {
   ) {
     return true;
   }
+  if (
+    presentDomainErrorStaffAssistantTurn({
+      locale: options.locale,
+      toolResults: options.toolResults,
+    }) !== undefined
+  ) {
+    return true;
+  }
   if (options.runs.some((run) => run.outcome === "choice_required")) {
     return false;
   }
@@ -591,6 +648,13 @@ export function staffAssistantPersistedTurnText(options: {
     });
     if (choice !== undefined) {
       return choice;
+    }
+    const domainError = presentDomainErrorStaffAssistantTurn({
+      locale: options.locale,
+      toolResults: options.toolResults,
+    });
+    if (domainError !== undefined) {
+      return domainError;
     }
     const presented = presentCompletedStaffAssistantTurn({
       locale: options.locale,

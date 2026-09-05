@@ -46,6 +46,7 @@ import {
 import {
   CHOICE_TRUNCATED_COPY,
   CHOICE_TRUNCATED_MATCH_COPY,
+  presentCatalogDomainError,
   presentCompletedStaffAssistantTurn,
   STAFF_ASSISTANT_DEFAULT_LOCALE,
 } from "./presenter.js";
@@ -1698,6 +1699,45 @@ describe("streamStaffAssistantChat", () => {
     }
   }
 
+  class DuckTypedArchivedConflict extends ConflictError {
+    readonly reason = "archived" as const;
+    readonly target: {
+      readonly kind: "order_line_product";
+      readonly lineIndex: number;
+      readonly query: string;
+      readonly productName?: string;
+    };
+    readonly options: readonly {
+      readonly id: string;
+      readonly label: string;
+    }[] = [];
+    readonly optionsTruncated = false;
+
+    constructor(args: {
+      readonly query?: string;
+      readonly productName?: string;
+    }) {
+      super(
+        args.productName !== undefined
+          ? `"${args.productName}" is archived.`
+          : `No active product matched "${args.query ?? "cupcake"}"; matching products are archived.`,
+      );
+      this.target =
+        args.productName === undefined
+          ? {
+              kind: "order_line_product",
+              lineIndex: 0,
+              query: args.query ?? "cupcake",
+            }
+          : {
+              kind: "order_line_product",
+              lineIndex: 0,
+              query: args.query ?? args.productName,
+              productName: args.productName,
+            };
+    }
+  }
+
   const lemonVariant = "55555555-5555-4555-8555-555555555555";
   const vanillaVariant = "66666666-6666-4666-8666-666666666666";
   const pickerOptions = [
@@ -2052,6 +2092,117 @@ describe("streamStaffAssistantChat", () => {
     expect(turn.toolRuns[0]?.outcome).toBe("error");
     expect(JSON.stringify(payloads)).not.toContain("data-choice");
     expect(JSON.stringify(payloads)).not.toContain("needs_choice");
+  });
+
+  it("maps archived CONFLICT to an error envelope, not a ChoiceCard", async () => {
+    const execute = vi.fn(() =>
+      Promise.reject(
+        new DuckTypedArchivedConflict({ productName: "Old Widget" }),
+      ),
+    );
+    const model = new MockLanguageModelV3({
+      doStream: [
+        mockToolCallStream(
+          "call-create",
+          ORDERS_CREATE_TOOL_NAME,
+          JSON.stringify({
+            customerQuery: "Леха",
+            items: [{ productQuery: "Old Widget", quantityDecimal: "1" }],
+          }),
+        ),
+        mockSpokenStream("That product is archived."),
+      ],
+    });
+    const { response, completion } = streamStaffAssistantChat({
+      model,
+      messages: [{ role: "user", content: "create archived widget" }],
+      contracts: [createOrder],
+      execute,
+      forcedToolName: ORDERS_CREATE_TOOL_NAME,
+    });
+    const payloads = await readUiMessageSsePayloads(response);
+    const turn = await completion;
+    expect(turn.toolRuns[0]?.outcome).toBe("error");
+    expect(JSON.stringify(payloads)).not.toContain("data-choice");
+    expect(JSON.stringify(payloads)).not.toContain("needs_choice");
+  });
+
+  it("streams presenter copy for archived and no_active_variants, not model spoken", async () => {
+    const spoken = "MODEL_SPOKEN_SHOULD_NOT_FLASH";
+    const cases = [
+      {
+        error: new DuckTypedArchivedConflict({ productName: "Old Widget" }),
+        extras: {
+          reason: "archived" as const,
+          subject: { kind: "product_name" as const, name: "Old Widget" },
+        },
+        productQuery: "Old Widget",
+      },
+      {
+        error: new DuckTypedArchivedConflict({ query: "ZzzArchiveTwin" }),
+        extras: {
+          reason: "archived" as const,
+          subject: { kind: "query" as const, query: "ZzzArchiveTwin" },
+        },
+        productQuery: "ZzzArchiveTwin",
+      },
+      {
+        error: new DuckTypedPickerConflict({
+          reason: "no_active_variants",
+          options: [],
+        }),
+        extras: {
+          reason: "no_active_variants" as const,
+          subject: { kind: "product_name" as const, name: "Macarons" },
+        },
+        productQuery: "Macarons",
+      },
+    ];
+    for (const locale of ["uk", "en"] as const) {
+      for (const fixture of cases) {
+        const execute = vi.fn(() => Promise.reject(fixture.error));
+        const model = new MockLanguageModelV3({
+          doStream: [
+            mockToolCallStream(
+              "call-create",
+              ORDERS_CREATE_TOOL_NAME,
+              JSON.stringify({
+                customerQuery: "Леха",
+                items: [
+                  {
+                    productQuery: fixture.productQuery,
+                    quantityDecimal: "1",
+                  },
+                ],
+              }),
+            ),
+            mockSpokenStream(spoken),
+          ],
+        });
+        const { response, completion } = streamStaffAssistantChat({
+          model,
+          messages: [{ role: "user", content: "create" }],
+          contracts: [createOrder],
+          execute,
+          forcedToolName: ORDERS_CREATE_TOOL_NAME,
+          locale,
+        });
+        const payloads = await readUiMessageSsePayloads(response);
+        const turn = await completion;
+        const expected = presentCatalogDomainError({
+          locale,
+          extras: fixture.extras,
+        });
+        expect(turn.toolRuns[0]?.outcome).toBe("error");
+        expect(turn.text).toBe(expected);
+        expect(turn.text).not.toBe(spoken);
+        expect(turn.text).not.toBe(fixture.error.clientMessage);
+        expect(sseVisibleTextFromPayloads(payloads)).toBe(expected);
+        expect(JSON.stringify(payloads)).not.toContain(spoken);
+        expect(JSON.stringify(payloads)).not.toContain("data-choice");
+        expect(JSON.stringify(payloads)).not.toContain("needs_choice");
+      }
+    }
   });
 
   it("attaches only orders_list_counts when that job is forced", async () => {

@@ -9,10 +9,12 @@ import {
   applyChoiceOptionToCanonicalInput,
   assistantChoiceBodySchema,
   attemptKey,
+  catalogDomainErrorExtrasFromError,
   catalogPickerConflictExtrasFromError,
   choiceRecordFromPickerConflict,
   extractUuidResultIds,
   peekEnvelopeFromRecord,
+  presentCatalogDomainError,
   presentChoiceStaffAssistantNeedsChoice,
   presentCompletedStaffAssistantTurn,
   resolveMappedVariantId,
@@ -502,6 +504,37 @@ export async function executeStaffAssistantChoiceResume(
           });
           return interactionResponse(needsChoice, options.requestId);
         }
+      }
+      const domainError = catalogDomainErrorExtrasFromError(error);
+      if (domainError !== undefined) {
+        const text = presentCatalogDomainError({
+          locale,
+          extras: domainError,
+        });
+        await persistChoiceTurn({
+          pipeline: options.pipeline,
+          conversationId: conversation.id,
+          choiceId: record.choiceId,
+          requestId: options.requestId,
+          clientIp: options.clientIp,
+          principal: staffPrincipal,
+          body: text,
+          toolCallId,
+          resultIds: [],
+          outcome: "error",
+        });
+        await options.choiceStore.complete({
+          choiceId: record.choiceId,
+          bind,
+          optionId: body.optionId,
+        });
+        return interactionResponse(
+          errorResult(
+            error instanceof CoreError ? error.code : "CONFLICT",
+            text,
+          ),
+          options.requestId,
+        );
       }
       if (error instanceof ReferenceResolutionConflictError) {
         await persistChoiceTurn({

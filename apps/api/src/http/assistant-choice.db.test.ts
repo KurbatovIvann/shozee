@@ -15,6 +15,7 @@ import {
   attemptKey,
   CHOICE_OPTIONS_MAX,
   CHOICE_TRUNCATED_COPY,
+  presentCatalogDomainError,
   presentChoiceStaffAssistantNeedsChoice,
   presentChoiceStaffAssistantTurn,
   staffAssistantChoiceCardEnvelopeSchema,
@@ -23,7 +24,7 @@ import {
   type ChoiceRecord,
 } from "@showzy/ai";
 import { createConversation, recordAssistantTurn } from "@showzy/assistant";
-import { archiveVariant, createProduct } from "@showzy/catalog";
+import { archiveProduct, archiveVariant, createProduct } from "@showzy/catalog";
 import { COMPANY_SELECTOR_HEADER, contractModules } from "@showzy/contract";
 import * as ShowzyCore from "@showzy/core";
 import {
@@ -267,12 +268,17 @@ async function seedSimpleProduct(name: string) {
 
 function canonicalFor(
   customerId: string,
-  products: readonly { productId: string }[],
+  products: readonly (
+    { readonly productId: string } | { readonly query: string }
+  )[],
 ): ChoiceCanonicalCreateInput {
   return {
     customer: { by: "id", id: customerId },
     items: products.map((product) => ({
-      product: { by: "id" as const, id: product.productId },
+      product:
+        "query" in product
+          ? { by: "query" as const, value: product.query }
+          : { by: "id" as const, id: product.productId },
       variantSelection: { kind: "unspecified" as const },
       quantity: { milli: "1000" },
     })),
@@ -291,7 +297,10 @@ async function openChoice(options: {
       readonly name: string;
     }[];
   };
-  readonly extraProducts?: readonly { productId: string }[];
+  readonly extraProducts?: readonly (
+    { readonly productId: string } | { readonly query: string }
+  )[];
+  readonly extraLineItems?: ChoiceCanonicalCreateInput["items"];
   readonly lineIndex?: number;
   readonly actorId?: string;
   readonly companyId?: string;
@@ -311,18 +320,34 @@ async function openChoice(options: {
     return { id: optionId, label: variant.name };
   });
   const extras = options.extraProducts ?? [];
-  const products = [
+  const products: Array<{ productId: string } | { query: string }> = [
     ...extras.slice(0, lineIndex),
     { productId: options.product.productId },
     ...extras.slice(lineIndex),
   ];
+  const pickerItem: ChoiceCanonicalCreateInput["items"][number] = {
+    product: { by: "id", id: options.product.productId },
+    variantSelection: { kind: "unspecified" },
+    quantity: { milli: "1000" },
+  };
+  const canonicalInput =
+    options.extraLineItems !== undefined
+      ? {
+          customer: { by: "id" as const, id: options.customerId },
+          items: [
+            ...options.extraLineItems.slice(0, lineIndex),
+            pickerItem,
+            ...options.extraLineItems.slice(lineIndex),
+          ],
+        }
+      : canonicalFor(options.customerId, products);
   const record: ChoiceRecord = {
     status: "open",
     choiceId,
     actorId: options.actorId ?? kitIdentities.users.anna,
     companyId: options.companyId ?? kitIdentities.companies.a,
     conversationId: options.conversationId,
-    canonicalInput: canonicalFor(options.customerId, products),
+    canonicalInput,
     target: {
       lineIndex,
       productId: options.product.productId,
@@ -1584,8 +1609,17 @@ describe("POST /assistant/choice (seeded store)", () => {
       return;
     }
     expect(body.code).toBe("CONFLICT");
-    expect(body.message).toContain(archived.name);
-    expect(body.message.toLowerCase()).toContain("no active");
+    const expected = presentCatalogDomainError({
+      locale: "uk",
+      extras: {
+        reason: "no_active_variants",
+        subject: { kind: "product_name", name: archived.name },
+      },
+    });
+    expect(body.message).toBe(expected);
+    expect(body.message).not.toContain(
+      '"T9 Archived Only Cake" has no active variants.',
+    );
     const successor = await store.peek({
       choiceId: successorChoiceId(record.choiceId),
       bind,
@@ -1617,8 +1651,7 @@ describe("POST /assistant/choice (seeded store)", () => {
     );
     expect(persisted).toHaveLength(1);
     expect(persisted[0]?.body).toBe(body.message);
-    expect(persisted[0]?.body).toContain(archived.name);
-    expect(persisted[0]?.body.toLowerCase()).toContain("no active");
+    expect(persisted[0]?.body).toBe(expected);
     expect(persisted[0]?.body).not.toContain("Оберіть варіант");
     expect(persisted[0]?.body).not.toContain(CHOICE_TRUNCATED_COPY.uk);
     expect(persisted[0]?.body).not.toContain(CHOICE_TRUNCATED_COPY.en);
@@ -1686,8 +1719,14 @@ describe("POST /assistant/choice (seeded store)", () => {
       return;
     }
     expect(firstBody.code).toBe("CONFLICT");
-    expect(firstBody.message).toContain(archived.name);
-    expect(firstBody.message.toLowerCase()).toContain("no active");
+    const expected = presentCatalogDomainError({
+      locale: "uk",
+      extras: {
+        reason: "no_active_variants",
+        subject: { kind: "product_name", name: archived.name },
+      },
+    });
+    expect(firstBody.message).toBe(expected);
     expect(firstBody.message).not.toContain(second.name);
     const successor = await store.peek({
       choiceId: successorChoiceId(record.choiceId),
@@ -1721,7 +1760,7 @@ describe("POST /assistant/choice (seeded store)", () => {
     );
     expect(persisted).toHaveLength(1);
     expect(persisted[0]?.body).toBe(firstBody.message);
-    expect(persisted[0]?.body).toContain(archived.name);
+    expect(persisted[0]?.body).toBe(expected);
     expect(persisted[0]?.body).not.toContain("Оберіть варіант");
     const companyOrders = (
       await kit.db.runtime.db.select().from(orders)
@@ -2097,6 +2136,360 @@ describe("POST /assistant/choice (seeded store)", () => {
     expect(stream).not.toHaveBeenCalled();
     classify.mockRestore();
     stream.mockRestore();
+  });
+
+  it("returns presenter copy when another query-based cart product is archived before resume", async () => {
+    const classify = vi.spyOn(ShowzyAi, "classifyStaffAssistantTurn");
+    const stream = vi.spyOn(ShowzyAi, "streamStaffAssistantChat");
+    const { app, store } = choiceApp();
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await staffInvoke(createConversation, {
+      title: "Choice query archived after open",
+    });
+    const customer = await staffInvoke(createCustomer, {
+      name: "T442 Query Archive Buyer",
+      phone: nextPhone(),
+    });
+    const first = await seedVariableProduct("T442 Query Macarons", [
+      "Lemon",
+      "Vanilla",
+    ]);
+    const extra = await seedSimpleProduct("T442 Query Cupcake");
+    const { record, optionByLabel } = await openChoice({
+      store,
+      conversationId: conversation.id,
+      customerId: customer.id,
+      product: first,
+      extraProducts: [{ query: extra.name }],
+      locale: "uk",
+    });
+    await staffInvoke(archiveProduct, { productId: extra.productId });
+    const bind = {
+      actorId: kitIdentities.users.anna,
+      companyId: kitIdentities.companies.a,
+      conversationId: conversation.id,
+    };
+    const response = await postChoice(app, {
+      token,
+      companyId: kitIdentities.companies.a,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.choiceId,
+        optionId: optionByLabel.get("Lemon"),
+      },
+    });
+    expect(response.status).toBe(200);
+    const body = assistantChoiceInteractionResultSchema.parse(
+      await response.json(),
+    );
+    expect(body.status).toBe("error");
+    if (body.status !== "error") {
+      classify.mockRestore();
+      stream.mockRestore();
+      return;
+    }
+    const expected = presentCatalogDomainError({
+      locale: "uk",
+      extras: {
+        reason: "archived",
+        subject: { kind: "product_name", name: extra.name },
+      },
+    });
+    expect(body.code).toBe("CONFLICT");
+    expect(body.message).toBe(expected);
+    expect(body.message).not.toBe(`"${extra.name}" is archived.`);
+    const successor = await store.peek({
+      choiceId: successorChoiceId(record.choiceId),
+      bind,
+    });
+    expect(successor.kind).toBe("expired");
+    const parent = await store.peek({
+      choiceId: record.choiceId,
+      bind,
+    });
+    expect(parent.kind).toBe("found");
+    if (parent.kind === "found") {
+      expect(parent.record.status).toBe("completed");
+    }
+    const persisted = (
+      await kit.db.runtime.db.select().from(assistantMessages)
+    ).filter(
+      (row) =>
+        row.conversationId === conversation.id && row.role === "assistant",
+    );
+    expect(persisted).toHaveLength(1);
+    expect(persisted[0]?.body).toBe(expected);
+    const companyOrders = (
+      await kit.db.runtime.db.select().from(orders)
+    ).filter((row) => row.customerId === customer.id);
+    expect(companyOrders).toHaveLength(0);
+    expect(classify).not.toHaveBeenCalled();
+    expect(stream).not.toHaveBeenCalled();
+    classify.mockRestore();
+    stream.mockRestore();
+  });
+
+  it("returns English presenter copy on resume when locale is en", async () => {
+    const { app, store } = choiceApp();
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await staffInvoke(createConversation, {
+      title: "Choice query archived en",
+    });
+    const customer = await staffInvoke(createCustomer, {
+      name: "T442 Query Archive En Buyer",
+      phone: nextPhone(),
+    });
+    const first = await seedVariableProduct("T442 En Macarons", [
+      "Lemon",
+      "Vanilla",
+    ]);
+    const extra = await seedSimpleProduct("T442 En Cupcake");
+    const { record, optionByLabel } = await openChoice({
+      store,
+      conversationId: conversation.id,
+      customerId: customer.id,
+      product: first,
+      extraProducts: [{ query: extra.name }],
+      locale: "en",
+    });
+    await staffInvoke(archiveProduct, { productId: extra.productId });
+    const response = await postChoice(app, {
+      token,
+      companyId: kitIdentities.companies.a,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.choiceId,
+        optionId: optionByLabel.get("Lemon"),
+      },
+    });
+    expect(response.status).toBe(200);
+    const body = assistantChoiceInteractionResultSchema.parse(
+      await response.json(),
+    );
+    expect(body.status).toBe("error");
+    if (body.status !== "error") {
+      return;
+    }
+    expect(body.message).toBe(
+      presentCatalogDomainError({
+        locale: "en",
+        extras: {
+          reason: "archived",
+          subject: { kind: "product_name", name: extra.name },
+        },
+      }),
+    );
+  });
+
+  it("returns presenter copy when a later variable line loses all active variants before resume", async () => {
+    const classify = vi.spyOn(ShowzyAi, "classifyStaffAssistantTurn");
+    const stream = vi.spyOn(ShowzyAi, "streamStaffAssistantChat");
+    const { app, store } = choiceApp();
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await staffInvoke(createConversation, {
+      title: "Choice later variants archived after open",
+    });
+    const customer = await staffInvoke(createCustomer, {
+      name: "T442 Later Variants Buyer",
+      phone: nextPhone(),
+    });
+    const first = await seedVariableProduct("T442 Later First", [
+      "Lemon",
+      "Vanilla",
+    ]);
+    const later = await seedVariableProduct("T442 Later Eclairs", [
+      "Coffee",
+      "Chocolate",
+    ]);
+    const { record, optionByLabel } = await openChoice({
+      store,
+      conversationId: conversation.id,
+      customerId: customer.id,
+      product: first,
+      extraProducts: [{ productId: later.productId }],
+      locale: "uk",
+    });
+    for (const variant of later.variants) {
+      await staffInvoke(archiveVariant, { variantId: variant.variantId });
+    }
+    const bind = {
+      actorId: kitIdentities.users.anna,
+      companyId: kitIdentities.companies.a,
+      conversationId: conversation.id,
+    };
+    const response = await postChoice(app, {
+      token,
+      companyId: kitIdentities.companies.a,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.choiceId,
+        optionId: optionByLabel.get("Lemon"),
+      },
+    });
+    expect(response.status).toBe(200);
+    const body = assistantChoiceInteractionResultSchema.parse(
+      await response.json(),
+    );
+    expect(body.status).toBe("error");
+    if (body.status !== "error") {
+      classify.mockRestore();
+      stream.mockRestore();
+      return;
+    }
+    const expected = presentCatalogDomainError({
+      locale: "uk",
+      extras: {
+        reason: "no_active_variants",
+        subject: { kind: "product_name", name: later.name },
+      },
+    });
+    expect(body.message).toBe(expected);
+    const successor = await store.peek({
+      choiceId: successorChoiceId(record.choiceId),
+      bind,
+    });
+    expect(successor.kind).toBe("expired");
+    const persisted = (
+      await kit.db.runtime.db.select().from(assistantMessages)
+    ).filter(
+      (row) =>
+        row.conversationId === conversation.id && row.role === "assistant",
+    );
+    expect(persisted[0]?.body).toBe(expected);
+    const companyOrders = (
+      await kit.db.runtime.db.select().from(orders)
+    ).filter((row) => row.customerId === customer.id);
+    expect(companyOrders).toHaveLength(0);
+    expect(classify).not.toHaveBeenCalled();
+    expect(stream).not.toHaveBeenCalled();
+    classify.mockRestore();
+    stream.mockRestore();
+  });
+
+  it("keeps archived product ids on the generic NOT_FOUND path", async () => {
+    const { app, store } = choiceApp();
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await staffInvoke(createConversation, {
+      title: "Choice archived product id",
+    });
+    const customer = await staffInvoke(createCustomer, {
+      name: "T442 Id Archive Buyer",
+      phone: nextPhone(),
+    });
+    const first = await seedVariableProduct("T442 Id Macarons", [
+      "Lemon",
+      "Vanilla",
+    ]);
+    const extra = await seedSimpleProduct("T442 Id Cupcake");
+    const { record, optionByLabel } = await openChoice({
+      store,
+      conversationId: conversation.id,
+      customerId: customer.id,
+      product: first,
+      extraProducts: [{ productId: extra.productId }],
+    });
+    await staffInvoke(archiveProduct, { productId: extra.productId });
+    const bind = {
+      actorId: kitIdentities.users.anna,
+      companyId: kitIdentities.companies.a,
+      conversationId: conversation.id,
+    };
+    const response = await postChoice(app, {
+      token,
+      companyId: kitIdentities.companies.a,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.choiceId,
+        optionId: optionByLabel.get("Lemon"),
+      },
+    });
+    expect(response.status).toBe(404);
+    const body = (await response.json()) as {
+      readonly code?: string;
+      readonly message?: string;
+    };
+    expect(body.code).toBe("NOT_FOUND");
+    expect(body.message).not.toContain("в архіві");
+    expect(body.message).not.toContain("is archived and cannot be added");
+    const persisted = (
+      await kit.db.runtime.db.select().from(assistantMessages)
+    ).filter(
+      (row) =>
+        row.conversationId === conversation.id && row.role === "assistant",
+    );
+    expect(persisted).toHaveLength(0);
+    const parent = await store.peek({
+      choiceId: record.choiceId,
+      bind,
+    });
+    expect(parent.kind).toBe("found");
+    if (parent.kind === "found") {
+      expect(parent.record.status).toBe("claimed");
+    }
+    const companyOrders = (
+      await kit.db.runtime.db.select().from(orders)
+    ).filter((row) => row.customerId === customer.id);
+    expect(companyOrders).toHaveLength(0);
+  });
+
+  it("keeps archived variant ids on the generic NOT_FOUND path", async () => {
+    const { app, store } = choiceApp();
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await staffInvoke(createConversation, {
+      title: "Choice archived variant id",
+    });
+    const customer = await staffInvoke(createCustomer, {
+      name: "T442 Variant Id Buyer",
+      phone: nextPhone(),
+    });
+    const first = await seedVariableProduct("T442 Variant First", [
+      "Lemon",
+      "Vanilla",
+    ]);
+    const extra = await seedVariableProduct("T442 Variant Extra", ["One"]);
+    const extraVariantId = extra.variants[0]?.variantId;
+    expect(extraVariantId).toBeDefined();
+    if (extraVariantId === undefined) {
+      return;
+    }
+    const { record, optionByLabel } = await openChoice({
+      store,
+      conversationId: conversation.id,
+      customerId: customer.id,
+      product: first,
+      extraLineItems: [
+        {
+          product: { by: "id", id: extra.productId },
+          variantSelection: {
+            kind: "reference",
+            ref: { by: "id", id: extraVariantId },
+          },
+          quantity: { milli: "1000" },
+        },
+      ],
+    });
+    await staffInvoke(archiveVariant, { variantId: extraVariantId });
+    const response = await postChoice(app, {
+      token,
+      companyId: kitIdentities.companies.a,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.choiceId,
+        optionId: optionByLabel.get("Lemon"),
+      },
+    });
+    expect(response.status).toBe(404);
+    const body = (await response.json()) as {
+      readonly code?: string;
+      readonly message?: string;
+    };
+    expect(body.code).toBe("NOT_FOUND");
+    expect(body.message).not.toContain("не має активних варіантів");
+    expect(body.message).not.toContain("has no active variants");
+    const companyOrders = (
+      await kit.db.runtime.db.select().from(orders)
+    ).filter((row) => row.customerId === customer.id);
+    expect(companyOrders).toHaveLength(0);
   });
 
   it("keeps the confirmation resume path in assistant-chat.ts", () => {

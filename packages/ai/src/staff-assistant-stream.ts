@@ -31,6 +31,7 @@ import {
   choiceCardEnvelope,
   isStaffAssistantNeedsChoiceOutput,
   needsChoiceFromOrdersCreateConflict,
+  staffAssistantTypedDomainErrorOutput,
   toolOutputRequestsChoice,
   type ChoiceBind,
   type ChoiceRecord,
@@ -312,6 +313,10 @@ function wrapExecute(
           resultIds: [],
           outcome: "error",
         });
+        const domainError = staffAssistantTypedDomainErrorOutput(error);
+        if (domainError !== undefined) {
+          return domainError;
+        }
         return {
           status: "error",
           code: error.code,
