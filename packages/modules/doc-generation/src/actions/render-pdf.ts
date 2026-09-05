@@ -31,6 +31,7 @@ export const renderPdf = implementAction(renderPdfContract, {
     }
     return renderTenantDocumentPdf({
       ctx,
+      eventId: input.eventId,
       documentId: input.payload.documentId,
     });
   },

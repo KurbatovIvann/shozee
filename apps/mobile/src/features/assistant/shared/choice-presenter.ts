@@ -3,6 +3,8 @@
  * choiceId, optionId }` only — no canonical input, target, or mapping.
  * Resume does not call the LLM.
  */
+import { z } from "zod";
+
 import { assistantCopy } from "../../../i18n/assistant";
 import {
   isCurrentAssistantChoiceSelect,
@@ -51,6 +53,11 @@ export type ChoiceCardState =
 
 export type ChoiceSelectRecoverability = "retryable" | "terminal" | "ambiguous";
 
+export type ChoiceAttemptedOption = {
+  readonly challengeId: string;
+  readonly optionId: string;
+};
+
 export type ChoiceSelectResult = {
   readonly status: string;
   readonly text?: string | undefined;
@@ -69,6 +76,8 @@ export type ChoiceSelectResult = {
   readonly retryAfterSec?: number | undefined;
   readonly recoverability?: ChoiceSelectRecoverability | undefined;
 };
+
+const orderIdSchema = z.uuid();
 
 const TERMINAL_INTERACTION_CODES = new Set([
   "CHOICE_OPTION_CONFLICT",
@@ -118,31 +127,63 @@ function httpStatusRecoverability(
   return undefined;
 }
 
+function completedSelectIsValid(result: ChoiceSelectResult): boolean {
+  if (typeof result.text !== "string" || result.text.length === 0) {
+    return false;
+  }
+  const entity = result.entity;
+  if (entity === undefined) {
+    return false;
+  }
+  return (
+    orderIdSchema.safeParse(entity.orderId).success &&
+    typeof entity.orderNumber === "string" &&
+    entity.orderNumber.length > 0
+  );
+}
+
+function interactionErrorIsValid(result: ChoiceSelectResult): boolean {
+  return (
+    result.status === "error" &&
+    result.httpStatus === 200 &&
+    typeof result.code === "string" &&
+    result.code.length > 0 &&
+    typeof result.message === "string" &&
+    result.message.length > 0
+  );
+}
+
 /**
  * Classify a choice POST outcome from real server codes and HTTP status.
- * 409 is retryable only for `RETRY_IN_PROGRESS`, not every conflict.
+ * HTTP 200 interaction errors with a validated code/message are
+ * terminal domain completions. 409 is retryable only for
+ * `RETRY_IN_PROGRESS`, not every conflict.
  */
 export function deriveChoiceSelectRecoverability(
   result: ChoiceSelectResult,
 ): ChoiceSelectRecoverability {
-  if (result.status === "completed" || result.status === "expired") {
+  if (result.status === "completed") {
+    return completedSelectIsValid(result) ? "terminal" : "ambiguous";
+  }
+  if (result.status === "expired") {
     return "terminal";
   }
   if (result.status === "needs_choice") {
-    return needsChoiceEnvelopeFromSelectResult(result) !== undefined
-      ? "terminal"
-      : "ambiguous";
+    return needsChoiceInteractionIsValid(result) ? "terminal" : "ambiguous";
   }
   if (typeof result.code === "string") {
+    if (RETRYABLE_WIRE_CODES.has(result.code)) {
+      return "retryable";
+    }
     if (
       TERMINAL_INTERACTION_CODES.has(result.code) ||
       TERMINAL_WIRE_CODES.has(result.code)
     ) {
       return "terminal";
     }
-    if (RETRYABLE_WIRE_CODES.has(result.code)) {
-      return "retryable";
-    }
+  }
+  if (interactionErrorIsValid(result)) {
+    return "terminal";
   }
   if (typeof result.httpStatus === "number") {
     const fromHttp = httpStatusRecoverability(result.httpStatus);
@@ -247,14 +288,40 @@ export function choiceCardState(args: {
 function choiceSelectOptionAllowed(
   pending: PendingChoice,
   optionId: string,
+  attempted?: ChoiceAttemptedOption | null,
 ): boolean {
-  if (pending.status === "needs_choice") {
-    return pending.options.some((option) => option.id === optionId);
-  }
   if (pending.status === "claimed") {
     return claimedRetryOptionId(pending) === optionId;
   }
-  return false;
+  if (pending.status !== "needs_choice") {
+    return false;
+  }
+  if (!pending.options.some((option) => option.id === optionId)) {
+    return false;
+  }
+  if (
+    attempted !== null &&
+    attempted !== undefined &&
+    attempted.challengeId === pending.challengeId
+  ) {
+    return optionId === attempted.optionId;
+  }
+  return true;
+}
+
+export function canSelectChoiceOption(args: {
+  readonly pending: PendingChoice | null;
+  readonly optionId: string;
+  readonly attempted?: ChoiceAttemptedOption | null;
+}): boolean {
+  if (args.pending === null) {
+    return false;
+  }
+  return choiceSelectOptionAllowed(
+    args.pending,
+    args.optionId,
+    args.attempted,
+  );
 }
 
 /**
@@ -266,11 +333,18 @@ export function claimChoiceSelect(args: {
   readonly pending: PendingChoice | null;
   readonly optionId: string;
   readonly resolvingRef: { current: string | null };
+  readonly attempted?: ChoiceAttemptedOption | null;
 }): PendingChoice | null {
   if (args.pending === null) {
     return null;
   }
-  if (!choiceSelectOptionAllowed(args.pending, args.optionId)) {
+  if (
+    !choiceSelectOptionAllowed(
+      args.pending,
+      args.optionId,
+      args.attempted,
+    )
+  ) {
     return null;
   }
   if (args.resolvingRef.current !== null) {
@@ -284,6 +358,7 @@ export async function executeChoiceSelect(args: {
   readonly pending: PendingChoice | null;
   readonly optionId: string;
   readonly resolvingRef: { current: string | null };
+  readonly attempted?: ChoiceAttemptedOption | null;
   readonly postChoice: (input: {
     readonly choiceId: string;
     readonly optionId: string;
@@ -293,6 +368,7 @@ export async function executeChoiceSelect(args: {
     pending: args.pending,
     optionId: args.optionId,
     resolvingRef: args.resolvingRef,
+    ...(args.attempted === undefined ? {} : { attempted: args.attempted }),
   });
   if (claimed === null) {
     return "skipped";
@@ -331,6 +407,34 @@ function needsChoiceEnvelopeFromSelectResult(
     optionsTruncated: result.optionsTruncated,
   });
   return parsed.success ? parsed.data : undefined;
+}
+
+function needsChoiceInteractionIsValid(result: ChoiceSelectResult): boolean {
+  if (typeof result.text !== "string" || result.text.length === 0) {
+    return false;
+  }
+  const envelope = needsChoiceEnvelopeFromSelectResult(result);
+  if (envelope === undefined) {
+    return false;
+  }
+  return envelope.options.length > 0;
+}
+
+export function choiceSelectRememberedAttempt(args: {
+  readonly result: ChoiceSelectResult | "skipped";
+  readonly challengeId: string;
+  readonly optionId: string;
+}): ChoiceAttemptedOption | null {
+  if (args.result === "skipped") {
+    return null;
+  }
+  if (!choiceSelectAllowsSameOptionRetry(args.result)) {
+    return null;
+  }
+  return {
+    challengeId: args.challengeId,
+    optionId: args.optionId,
+  };
 }
 
 export function choiceSelectShouldIgnoreChallenge(
@@ -377,35 +481,40 @@ export function choiceSelectAppendParts(args: {
   readonly locale: "uk" | "en";
 }): readonly ChoiceAppendPart[] {
   if (args.result.status === "completed") {
-    const parts: ChoiceAppendPart[] = [];
-    if (typeof args.result.text === "string" && args.result.text.length > 0) {
-      parts.push({ type: "text", text: args.result.text });
+    if (!completedSelectIsValid(args.result)) {
+      return [];
     }
-    if (args.result.entity !== undefined) {
-      parts.push({
+    const text = args.result.text;
+    const entity = args.result.entity;
+    if (typeof text !== "string" || entity === undefined) {
+      return [];
+    }
+    return [
+      { type: "text", text },
+      {
         type: "dynamic-tool",
         toolName: "orders.create",
         toolCallId: `choice:${args.previousChoiceId}`,
         state: "output-available",
         input: {},
         output: {
-          orderId: args.result.entity.orderId,
-          orderNumber: args.result.entity.orderNumber,
+          orderId: entity.orderId,
+          orderNumber: entity.orderNumber,
         },
-      });
-    }
-    return parts;
+      },
+    ];
   }
   if (args.result.status === "needs_choice") {
-    const envelope = needsChoiceEnvelopeFromSelectResult(args.result);
-    if (envelope === undefined) {
+    if (!needsChoiceInteractionIsValid(args.result)) {
       return [];
     }
-    if (typeof args.result.text !== "string" || args.result.text.length === 0) {
+    const envelope = needsChoiceEnvelopeFromSelectResult(args.result);
+    const text = args.result.text;
+    if (envelope === undefined || typeof text !== "string") {
       return [];
     }
     return [
-      { type: "text", text: args.result.text },
+      { type: "text", text },
       { type: "data-choice", data: envelope },
     ];
   }

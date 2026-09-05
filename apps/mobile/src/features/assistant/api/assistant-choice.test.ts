@@ -185,6 +185,102 @@ describe("postAssistantChoice", () => {
     expect(choiceSelectAllowsSameOptionRetry(result)).toBe(true);
   });
 
+  it("decodes a valid sequential needs_choice resume", async () => {
+    const successorId = "44444444-4444-4444-8444-444444444444";
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, {
+        status: "needs_choice",
+        text: "Select a variant for Eclairs: Coffee.",
+        challengeId: successorId,
+        reason: "variant_required",
+        productName: "Eclairs",
+        options: [{ id: optionId, label: "Coffee" }],
+        optionsTruncated: false,
+      }),
+    );
+    const result = await postAssistantChoice(postArgs());
+    expect(result).toMatchObject({
+      status: "needs_choice",
+      text: "Select a variant for Eclairs: Coffee.",
+      challengeId: successorId,
+      httpStatus: 200,
+      recoverability: "terminal",
+    });
+    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(true);
+  });
+
+  it("decodes a valid expired resume", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { status: "expired" }));
+    const result = await postAssistantChoice(postArgs());
+    expect(result).toMatchObject({
+      status: "expired",
+      httpStatus: 200,
+      recoverability: "terminal",
+    });
+    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(true);
+  });
+
+  it("treats HTTP 200 {status:completed} without text or entity as ambiguous", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { status: "completed" }));
+    const result = await postAssistantChoice(postArgs());
+    expect(result.status).toBe("error");
+    expect(result.recoverability).toBe("ambiguous");
+    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(false);
+    expect(choiceSelectAllowsSameOptionRetry(result)).toBe(true);
+  });
+
+  it("treats incomplete needs_choice as ambiguous", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, {
+        status: "needs_choice",
+        challengeId: choiceId,
+      }),
+    );
+    const result = await postAssistantChoice(postArgs());
+    expect(result.status).toBe("error");
+    expect(result.recoverability).toBe("ambiguous");
+    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(false);
+  });
+
+  it("treats a valid HTTP 200 domain CONFLICT as terminal, not ambiguous", async () => {
+    const message =
+      '"Macarons" is archived and cannot be added to an order. Name a different product, or repeat the order without it.';
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, {
+        status: "error",
+        code: "CONFLICT",
+        message,
+      }),
+    );
+    const result = await postAssistantChoice(postArgs());
+    expect(result).toMatchObject({
+      status: "error",
+      code: "CONFLICT",
+      message,
+      httpStatus: 200,
+      recoverability: "terminal",
+    });
+    expect(classifyChoiceSelect(result)).toBe("terminal");
+    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(true);
+    expect(choiceSelectAllowsSameOptionRetry(result)).toBe(false);
+  });
+
+  it("keeps HTTP 409 CONFLICT uncertain rather than terminal", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(409, {
+        code: "CONFLICT",
+        status: 409,
+        message: "PDF generation failed.",
+      }),
+    );
+    const result = await postAssistantChoice(postArgs());
+    expect(result.code).toBe("CONFLICT");
+    expect(result.httpStatus).toBe(409);
+    expect(result.recoverability).toBe("ambiguous");
+    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(false);
+    expect(choiceSelectAllowsSameOptionRetry(result)).toBe(true);
+  });
+
   it("preserves UNAUTHENTICATED 401 as terminal without retry", async () => {
     fetchMock.mockResolvedValue(
       jsonResponse(401, {

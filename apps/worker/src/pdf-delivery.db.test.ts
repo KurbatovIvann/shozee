@@ -2,7 +2,8 @@
  * SHO-436: exhaustion finalizer glue. Production never `invoke(markFailed)`
  * after a dead delivery — `createOutboxWorker` runs `executeDelivery` then
  * `maybeFinalizeDeadPdfGeneration` → `executeAction(markFailed)` with
- * tenant scope from `PdfGenerationRetryableError`.
+ * tenant scope from `PdfGenerationRetryableError` or from validated
+ * invocation scope after a pipeline `TimeoutError`.
  */
 import { randomUUID } from "node:crypto";
 
@@ -15,7 +16,7 @@ import {
   implementAction,
 } from "@showzy/core";
 import { defineActionContract } from "@showzy/core/contract";
-import { CoreInvariantError, NotFoundError } from "@showzy/core/errors";
+import { CoreInvariantError, NotFoundError, TimeoutError } from "@showzy/core/errors";
 import {
   createTestKit,
   kitIdentities,
@@ -29,6 +30,7 @@ import { orderItems, orders } from "@showzy/db/schema/orders";
 import { getArtifact } from "@showzy/doc-generation";
 import {
   PdfGenerationRetryableError,
+  rememberPdfInvocationScope,
   toPdfGenerationRetryableError,
 } from "@showzy/doc-generation/pdf-retry";
 import {
@@ -43,9 +45,10 @@ import {
 } from "@showzy/files/storage";
 import { and, eq } from "drizzle-orm";
 import { pino, type Logger } from "pino";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
+import * as renderDocument from "../../../packages/modules/doc-generation/src/templates/render-document.js";
 import { maybeFinalizeDeadPdfGeneration } from "./pdf-delivery.js";
 
 const silent = pino({ enabled: false });
@@ -60,6 +63,12 @@ const fixtures = {
   itemExhaust: randomUUID(),
   orderReady: randomUUID(),
   itemReady: randomUUID(),
+  orderTimeout: randomUUID(),
+  itemTimeout: randomUUID(),
+  orderTimeoutEarly: randomUUID(),
+  itemTimeoutEarly: randomUUID(),
+  orderTimeoutRace: randomUUID(),
+  itemTimeoutRace: randomUUID(),
 };
 
 const emitOrphanCreated = implementAction(
@@ -277,10 +286,35 @@ beforeAll(async () => {
     customerId: fixtures.customerA,
     productId: fixtures.productA,
   });
+  await insertSeedOrder({
+    id: fixtures.orderTimeout,
+    itemId: fixtures.itemTimeout,
+    companyId: companyA,
+    customerId: fixtures.customerA,
+    productId: fixtures.productA,
+  });
+  await insertSeedOrder({
+    id: fixtures.orderTimeoutEarly,
+    itemId: fixtures.itemTimeoutEarly,
+    companyId: companyA,
+    customerId: fixtures.customerA,
+    productId: fixtures.productA,
+  });
+  await insertSeedOrder({
+    id: fixtures.orderTimeoutRace,
+    itemId: fixtures.itemTimeoutRace,
+    companyId: companyA,
+    customerId: fixtures.customerA,
+    productId: fixtures.productA,
+  });
 });
 
 beforeEach(() => {
   installMemoryObjectStore({ count: 0 });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 afterAll(async () => {
@@ -356,6 +390,33 @@ async function exhaustPdfDelivery(env: {
     throw new Error("expected a final failed delivery outcome");
   }
   return last;
+}
+
+function capLongJsTimeouts(maxMs: number): () => void {
+  const nativeSetTimeout = globalThis.setTimeout.bind(globalThis);
+  const spy = vi.spyOn(globalThis, "setTimeout").mockImplementation(
+    ((
+      handler: TimerHandler,
+      delay?: number,
+      ...args: unknown[]
+    ) => {
+      const next =
+        typeof delay === "number" && delay >= 5_000 ? maxMs : delay;
+      return nativeSetTimeout(handler, next, ...args);
+    }) as typeof setTimeout,
+  );
+  return () => {
+    spy.mockRestore();
+  };
+}
+
+function hangPdfRender(): () => void {
+  const spy = vi
+    .spyOn(renderDocument, "renderDocumentPdfBytes")
+    .mockImplementation(() => new Promise(() => undefined));
+  return () => {
+    spy.mockRestore();
+  };
 }
 
 describe("maybeFinalizeDeadPdfGeneration (SHO-436 worker path)", () => {
@@ -617,5 +678,162 @@ describe("maybeFinalizeDeadPdfGeneration (SHO-436 worker path)", () => {
         ),
       );
     expect(markRows).toHaveLength(0);
+  });
+
+  it("finalizes an actual pipeline TimeoutError after the existing retry budget", async () => {
+    const restoreRender = hangPdfRender();
+    const restoreTimeouts = capLongJsTimeouts(1_500);
+    try {
+      const requestId = randomUUID();
+      const created = await kit.invoke(
+        createFromOrder,
+        {
+          orderId: fixtures.orderTimeout,
+          type: "payment_invoice",
+        },
+        {},
+        { request: { requestId, idempotencyKey: randomUUID() } },
+      );
+      const delivery = await dispatchPdfDelivery(
+        requestId,
+        "sho-452-timeout-dispatch",
+      );
+      const nowMs = { value: Date.now() };
+      const pipeline = { ...kit.pipeline, now: () => nowMs.value };
+      let last: Awaited<ReturnType<typeof executeDelivery>> | undefined;
+      for (let attempt = 1; attempt <= DELIVERY_MAX_ATTEMPTS; attempt += 1) {
+        const outcome = await executeDelivery(pipeline, {
+          subscription: pdfRendererCreated,
+          eventId: delivery.eventId,
+          claimedBy: "sho-452-timeout",
+        });
+        expect(outcome.status).toBe("failed");
+        if (outcome.status !== "failed") {
+          throw new Error("expected a failed delivery outcome");
+        }
+        last = outcome;
+        expect(last.error).toBeInstanceOf(TimeoutError);
+        expect(last.error).not.toBeInstanceOf(PdfGenerationRetryableError);
+        if (attempt < DELIVERY_MAX_ATTEMPTS) {
+          expect(last.retryAt).not.toBeNull();
+          nowMs.value += DELIVERY_RETRY_BASE_MS * 2 ** (attempt - 1);
+        } else {
+          expect(last.retryAt).toBeNull();
+        }
+      }
+      if (last === undefined || last.status !== "failed") {
+        throw new Error("expected a final failed delivery outcome");
+      }
+      await expect(
+        kit.invoke(getArtifact, { documentId: created.documentId }),
+      ).rejects.toBeInstanceOf(NotFoundError);
+
+      await maybeFinalizeDeadPdfGeneration({
+        pipeline: kit.pipeline,
+        delivery,
+        outcome: last,
+        logger: silent,
+        workerId: "sho-452-timeout",
+      });
+      const artifact = await kit.invoke(getArtifact, {
+        documentId: created.documentId,
+      });
+      expect(artifact).toEqual({ status: "failed", fileId: null });
+    } finally {
+      restoreTimeouts();
+      restoreRender();
+    }
+  });
+
+  it("does not markFailed on a non-final TimeoutError", async () => {
+    const restoreRender = hangPdfRender();
+    const restoreTimeouts = capLongJsTimeouts(1_500);
+    try {
+      const requestId = randomUUID();
+      const created = await kit.invoke(
+        createFromOrder,
+        {
+          orderId: fixtures.orderTimeoutEarly,
+          type: "payment_invoice",
+        },
+        {},
+        { request: { requestId, idempotencyKey: randomUUID() } },
+      );
+      const delivery = await dispatchPdfDelivery(
+        requestId,
+        "sho-452-timeout-early-dispatch",
+      );
+      const outcome = await executeDelivery(kit.pipeline, {
+        subscription: pdfRendererCreated,
+        eventId: delivery.eventId,
+        claimedBy: "sho-452-timeout-early",
+      });
+      expect(outcome.status).toBe("failed");
+      if (outcome.status !== "failed") {
+        throw new Error("expected a failed delivery outcome");
+      }
+      expect(outcome.error).toBeInstanceOf(TimeoutError);
+      expect(outcome.retryAt).not.toBeNull();
+      await maybeFinalizeDeadPdfGeneration({
+        pipeline: kit.pipeline,
+        delivery,
+        outcome,
+        logger: silent,
+        workerId: "sho-452-timeout-early",
+      });
+      await expect(
+        kit.invoke(getArtifact, { documentId: created.documentId }),
+      ).rejects.toBeInstanceOf(NotFoundError);
+    } finally {
+      restoreTimeouts();
+      restoreRender();
+    }
+  });
+
+  it("does not overwrite a ready artifact from a stale TimeoutError finalizer", async () => {
+    const requestId = randomUUID();
+    const created = await kit.invoke(
+      createFromOrder,
+      {
+        orderId: fixtures.orderTimeoutRace,
+        type: "payment_invoice",
+      },
+      {},
+      { request: { requestId, idempotencyKey: randomUUID() } },
+    );
+    const delivery = await dispatchPdfDelivery(
+      requestId,
+      "sho-452-timeout-ready-dispatch",
+    );
+    const processed = await executeDelivery(kit.pipeline, {
+      subscription: pdfRendererCreated,
+      eventId: delivery.eventId,
+      claimedBy: "sho-452-timeout-ready",
+    });
+    expect(processed).toEqual({ status: "processed" });
+    const ready = await kit.invoke(getArtifact, {
+      documentId: created.documentId,
+    });
+    expect(ready.status).toBe("ready");
+    rememberPdfInvocationScope({
+      eventId: delivery.eventId,
+      documentId: created.documentId,
+      companyId: kitIdentities.companies.a,
+    });
+    await maybeFinalizeDeadPdfGeneration({
+      pipeline: kit.pipeline,
+      delivery,
+      outcome: {
+        status: "failed",
+        retryAt: null,
+        error: new TimeoutError(),
+      },
+      logger: silent,
+      workerId: "sho-452-timeout-ready",
+    });
+    const again = await kit.invoke(getArtifact, {
+      documentId: created.documentId,
+    });
+    expect(again).toEqual(ready);
   });
 });

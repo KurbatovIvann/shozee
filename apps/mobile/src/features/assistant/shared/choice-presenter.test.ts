@@ -8,10 +8,12 @@ import {
   type StaffAssistantChoiceCardEnvelope,
 } from "./choice";
 import {
+  canSelectChoiceOption,
   claimChoiceSelect,
   choiceCardState,
   choiceSelectAllowsSameOptionRetry,
   choiceSelectAppendParts,
+  choiceSelectRememberedAttempt,
   choiceSelectShouldIgnoreChallenge,
   classifyChoiceSelect,
   commitChoiceSelectResult,
@@ -389,9 +391,13 @@ describe("choiceSelectAppendParts", () => {
     expect(JSON.stringify(parts)).not.toContain("canonical");
     expect(JSON.stringify(parts)).not.toContain("target");
     expect(JSON.stringify(parts)).not.toContain("optionMap");
-    expect(choiceSelectShouldIgnoreChallenge({ status: "completed" })).toBe(
-      true,
-    );
+    expect(
+      choiceSelectShouldIgnoreChallenge({
+        status: "completed",
+        text: "Order #1049.",
+        entity: { orderId, orderNumber: "1049" },
+      }),
+    ).toBe(true);
   });
 
   it("appends server-provided sequential text and a successor data-choice", () => {
@@ -508,7 +514,7 @@ describe("choiceSelectAppendParts", () => {
         locale: "en",
       }),
     ).toEqual([]);
-    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(true);
+    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(false);
   });
 
   it("does not append or ignore when sequential needs_choice omits optionsTruncated", () => {
@@ -674,6 +680,8 @@ describe("choiceSelectAppendParts", () => {
     expect(presenter).not.toContain("sendMessage(");
     expect(hook).toContain("commitChoiceSelectResult");
     expect(hook).toContain("companyEpochRef");
+    expect(hook).toContain("attemptedRef");
+    expect(hook).toContain("choiceSelectRememberedAttempt");
     expect(hook).not.toContain("sendMessage");
   });
 });
@@ -1130,5 +1138,271 @@ describe("choice select recoverability", () => {
         }),
       ).toBeNull();
     }
+  });
+});
+
+describe("incomplete success-shaped bodies (SHO-452)", () => {
+  const orderId = "0f0e2d5c-4a1b-4c3d-9e8f-102938475601";
+
+  it("keeps a completed body without text or entity recoverable", () => {
+    const result = { status: "completed" as const };
+    expect(classifyChoiceSelect(result)).toBe("ambiguous");
+    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(false);
+    expect(
+      choiceSelectAppendParts({
+        result,
+        previousChoiceId: choiceId,
+        locale: "en",
+      }),
+    ).toEqual([]);
+    const pending = pendingChoiceFromMessages(messages, new Set());
+    expect(pending?.status).toBe("needs_choice");
+    expect(
+      claimChoiceSelect({
+        pending,
+        optionId: lemonId,
+        resolvingRef: { current: null },
+      }),
+    ).toMatchObject({ challengeId: choiceId });
+  });
+
+  it("keeps completed with invalid entity recoverable", () => {
+    const result = {
+      status: "completed" as const,
+      text: "Order #1049.",
+      entity: { orderId: "not-a-uuid", orderNumber: "1049" },
+    };
+    expect(classifyChoiceSelect(result)).toBe("ambiguous");
+    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(false);
+    expect(
+      choiceSelectAppendParts({
+        result,
+        previousChoiceId: choiceId,
+        locale: "en",
+      }),
+    ).toEqual([]);
+  });
+
+  it("keeps completed with empty text recoverable even when entity is present", () => {
+    const result = {
+      status: "completed" as const,
+      text: "",
+      entity: { orderId, orderNumber: "1049" },
+    };
+    expect(classifyChoiceSelect(result)).toBe("ambiguous");
+    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(false);
+  });
+});
+
+describe("HTTP 200 domain error vs HTTP 409 uncertain (SHO-452)", () => {
+  it("treats a valid HTTP 200 interaction CONFLICT as terminal presenter text", () => {
+    const uk =
+      "«Macarons» в архіві, в замовлення його додати не можна. Напишіть інший товар або повторіть замовлення без нього.";
+    const result = {
+      status: "error" as const,
+      code: "CONFLICT",
+      message: uk,
+      httpStatus: 200,
+    };
+    expect(classifyChoiceSelect(result)).toBe("terminal");
+    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(true);
+    expect(choiceSelectAllowsSameOptionRetry(result)).toBe(false);
+    expect(
+      choiceSelectAppendParts({
+        result,
+        previousChoiceId: choiceId,
+        locale: "uk",
+      }),
+    ).toEqual([{ type: "text", text: uk }]);
+    expect(presentChoiceSelectErrorText(result, "en")).toBe(uk);
+    expect(pendingChoiceFromMessages(messages, new Set([choiceId]))).toBeNull();
+  });
+
+  it("does not treat HTTP 409 CONFLICT as a terminal domain completion", () => {
+    const result = {
+      status: "error" as const,
+      code: "CONFLICT",
+      message: "PDF generation failed.",
+      httpStatus: 409,
+    };
+    expect(classifyChoiceSelect(result)).toBe("ambiguous");
+    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(false);
+    expect(choiceSelectAllowsSameOptionRetry(result)).toBe(true);
+    expect(
+      choiceSelectAppendParts({
+        result,
+        previousChoiceId: choiceId,
+        locale: "en",
+      }),
+    ).toEqual([]);
+    const pending = pendingChoiceFromMessages(messages, new Set());
+    expect(pending?.status).toBe("needs_choice");
+  });
+
+  it("keeps an HTTP 200 error without code or message ambiguous", () => {
+    const result = {
+      status: "error" as const,
+      httpStatus: 200,
+    };
+    expect(classifyChoiceSelect(result)).toBe("ambiguous");
+    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(false);
+  });
+});
+
+describe("same-option recovery after an uncertain POST (SHO-452)", () => {
+  const uncertain = {
+    status: "error" as const,
+    httpStatus: 503,
+    recoverability: "retryable" as const,
+  };
+
+  it("does not POST a different option after an uncertain result", async () => {
+    const pending = pendingChoiceFromMessages(messages, new Set());
+    const postChoice = vi.fn(() => Promise.resolve(uncertain));
+    const resolvingRef = { current: null as string | null };
+    const first = await executeChoiceSelect({
+      pending,
+      optionId: lemonId,
+      resolvingRef,
+      postChoice,
+    });
+    expect(first).toMatchObject({ status: "error", httpStatus: 503 });
+    const attempted = choiceSelectRememberedAttempt({
+      result: first,
+      challengeId: choiceId,
+      optionId: lemonId,
+    });
+    expect(attempted).toEqual({ challengeId: choiceId, optionId: lemonId });
+    resolvingRef.current = null;
+    const other = await executeChoiceSelect({
+      pending,
+      optionId: vanillaId,
+      resolvingRef,
+      attempted,
+      postChoice,
+    });
+    expect(other).toBe("skipped");
+    expect(postChoice).toHaveBeenCalledOnce();
+    expect(postChoice).toHaveBeenCalledWith({
+      choiceId,
+      optionId: lemonId,
+    });
+    expect(
+      canSelectChoiceOption({
+        pending,
+        optionId: vanillaId,
+        attempted,
+      }),
+    ).toBe(false);
+    expect(
+      canSelectChoiceOption({
+        pending,
+        optionId: lemonId,
+        attempted,
+      }),
+    ).toBe(true);
+  });
+
+  it("retries the same option and can complete the committed order once", async () => {
+    const pending = pendingChoiceFromMessages(messages, new Set());
+    const postChoice = vi
+      .fn()
+      .mockResolvedValueOnce(uncertain)
+      .mockResolvedValueOnce({
+        status: "completed",
+        text: "Order #1049.",
+        entity: {
+          orderId: "0f0e2d5c-4a1b-4c3d-9e8f-102938475601",
+          orderNumber: "1049",
+        },
+      });
+    const resolvingRef = { current: null as string | null };
+    const first = await executeChoiceSelect({
+      pending,
+      optionId: lemonId,
+      resolvingRef,
+      postChoice,
+    });
+    const attempted = choiceSelectRememberedAttempt({
+      result: first,
+      challengeId: choiceId,
+      optionId: lemonId,
+    });
+    resolvingRef.current = null;
+    const second = await executeChoiceSelect({
+      pending,
+      optionId: lemonId,
+      resolvingRef,
+      attempted,
+      postChoice,
+    });
+    expect(second).toMatchObject({ status: "completed" });
+    expect(postChoice).toHaveBeenCalledTimes(2);
+    expect(
+      choiceSelectRememberedAttempt({
+        result: second,
+        challengeId: choiceId,
+        optionId: lemonId,
+      }),
+    ).toBeNull();
+  });
+
+  it("allows a different option after reload when peek still shows needs_choice", () => {
+    const pending = pendingChoiceFromMessages(messages, new Set());
+    expect(pending?.status).toBe("needs_choice");
+    expect(
+      canSelectChoiceOption({
+        pending,
+        optionId: vanillaId,
+        attempted: null,
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps claimed peek restoration limited to the claimed option", () => {
+    const claimed: StaffAssistantChoiceCardEnvelope = {
+      ...envelope,
+      status: "claimed",
+      claimedOptionId: lemonId,
+    };
+    const pending = pendingChoiceFromMessages(
+      [assistantChoiceMessage("a1", claimed)],
+      new Set(),
+    );
+    expect(
+      canSelectChoiceOption({
+        pending,
+        optionId: vanillaId,
+        attempted: { challengeId: choiceId, optionId: lemonId },
+      }),
+    ).toBe(false);
+    expect(
+      canSelectChoiceOption({
+        pending,
+        optionId: lemonId,
+        attempted: { challengeId: choiceId, optionId: lemonId },
+      }),
+    ).toBe(true);
+  });
+
+  it("clears the attempted option on reset so a later picker is not locked", () => {
+    const attempted = {
+      challengeId: choiceId,
+      optionId: lemonId,
+    };
+    expect(
+      canSelectChoiceOption({
+        pending: pendingChoiceFromMessages(messages, new Set()),
+        optionId: vanillaId,
+        attempted,
+      }),
+    ).toBe(false);
+    expect(
+      canSelectChoiceOption({
+        pending: pendingChoiceFromMessages(messages, new Set()),
+        optionId: vanillaId,
+        attempted: null,
+      }),
+    ).toBe(true);
   });
 });
