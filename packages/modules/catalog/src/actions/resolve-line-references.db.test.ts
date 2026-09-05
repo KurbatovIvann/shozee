@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import {
   ConflictError,
+  CoreInvariantError,
   NotFoundError,
   PermissionDeniedError,
   ValidationError,
@@ -25,11 +26,16 @@ import {
   archivedProductMessage,
   archivedProductQueryMessage,
 } from "../services/reference-resolution-conflict.js";
+import {
+  resolveCatalogLineReferences,
+  type LineReferenceInput,
+} from "../services/resolve-line-references.js";
 import { resolveLineReferences } from "./resolve-line-references.js";
 import {
   RESOLVE_LINE_REFERENCES_MAX_LINES,
   VARIANT_AND_SELECTION_EXCLUSIVE_MESSAGE,
   VARIANT_SELECTION_OPTIONS_MAX,
+  type VariantSelection,
 } from "./resolve-line-references.contract.js";
 
 const fixtures = {
@@ -98,6 +104,110 @@ function expectResolutionConflict(
   }
   expect(error.code).toBe("CONFLICT");
   return error;
+}
+
+type PoolQueryClient = {
+  query: (...args: never[]) => unknown;
+};
+
+type StatementPool = {
+  on(
+    event: "acquire",
+    listener: (client: PoolQueryClient) => void,
+  ): StatementPool;
+};
+
+const tappedPools = new WeakSet<object>();
+const tappedClients = new WeakSet<object>();
+let activeStatements: string[] | undefined;
+
+function sqlTextFromQueryConfig(config: unknown): string | undefined {
+  if (typeof config === "string") {
+    return config;
+  }
+  if (typeof config !== "object" || config === null || !("text" in config)) {
+    return undefined;
+  }
+  const text = config.text;
+  return typeof text === "string" ? text : undefined;
+}
+
+function ensureStatementTap(pool: StatementPool): void {
+  if (tappedPools.has(pool)) {
+    return;
+  }
+  tappedPools.add(pool);
+  pool.on("acquire", (client) => {
+    if (tappedClients.has(client)) {
+      return;
+    }
+    tappedClients.add(client);
+    const originalQuery = client.query.bind(client);
+    client.query = (...args: never[]) => {
+      if (activeStatements !== undefined) {
+        const text = sqlTextFromQueryConfig(args[0]);
+        if (text !== undefined) {
+          activeStatements.push(text);
+        }
+      }
+      return originalQuery(...args);
+    };
+  });
+}
+
+function isCatalogReadSql(sql: string): boolean {
+  const normalized = sql.toLowerCase();
+  return (
+    normalized.includes('from "products"') ||
+    normalized.includes('from "product_variants"')
+  );
+}
+
+async function collectStatements<T>(run: () => Promise<T>): Promise<{
+  readonly outcome: PromiseSettledResult<T>;
+  readonly statements: readonly string[];
+}> {
+  ensureStatementTap(kit.db.runtime.pool);
+  const statements: string[] = [];
+  activeStatements = statements;
+  try {
+    const value = await run();
+    return { outcome: { status: "fulfilled", value }, statements };
+  } catch (reason) {
+    return { outcome: { status: "rejected", reason }, statements };
+  } finally {
+    activeStatements = undefined;
+  }
+}
+
+function catalogReadStatementCount(statements: readonly string[]): number {
+  return statements.filter((sql) => isCatalogReadSql(sql)).length;
+}
+
+function staffReadDb(): {
+  select: (typeof kit.db.runtime.db)["select"];
+  selectDistinct: (typeof kit.db.runtime.db)["selectDistinct"];
+  selectDistinctOn: (typeof kit.db.runtime.db)["selectDistinctOn"];
+  $count: (typeof kit.db.runtime.db)["$count"];
+} {
+  const db = kit.db.runtime.db;
+  return {
+    select: db.select.bind(db),
+    selectDistinct: db.selectDistinct.bind(db),
+    selectDistinctOn: db.selectDistinctOn.bind(db),
+    $count: db.$count.bind(db),
+  };
+}
+
+async function invokeResolveFailure(
+  lines: readonly LineReferenceInput[],
+): Promise<unknown> {
+  return kit.invoke(resolveLineReferences, { lines }).then(
+    () => {
+      throw new Error("expected resolveLineReferences to fail");
+    },
+    (caught: unknown) => caught,
+  );
 }
 
 beforeAll(async () => {
@@ -1153,8 +1263,11 @@ describe("catalog.resolveLineReferences", () => {
     expect(source).not.toMatch(/ctx\.call\(/);
     // id + exact-name helper + per-query capped contains helper + variants.
     // Exact and contains helpers run once per status so archived rows cannot
-    // consume the active candidate budget.
-    expect(source.match(/\.from\(/g)?.length).toBe(4);
+    // consume the active candidate budget. Count Drizzle table .from(...)
+    // only — not Array.from.
+    expect(source.match(/\.from\((products|productVariants)\)/g)?.length).toBe(
+      4,
+    );
     // Declaration plus one call per status (active, archived).
     expect(source.match(/loadProductsByExactQuery\(/g)).toHaveLength(3);
     expect(source.match(/loadProductsByContainsQuery\(/g)).toHaveLength(3);
@@ -1530,5 +1643,230 @@ describe("catalog.resolveLineReferences", () => {
       ambiguousProductQueryMessage("MatchCap"),
     );
     expect(conflict.clientMessage).not.toContain("Multiple matches");
+  });
+
+  it("returns archived for a later line instead of a first-line variant picker", async () => {
+    const error = await invokeResolveFailure([
+      { product: { by: "query", value: "Macarons" } },
+      { product: { by: "query", value: "Old Widget" } },
+    ]);
+    const conflict = expectResolutionConflict(error);
+    expect(conflict.reason).toBe("archived");
+    expect(conflict.target).toEqual({
+      kind: "order_line_product",
+      lineIndex: 1,
+      query: "Old Widget",
+      productName: "Old Widget",
+    });
+    expect(conflict.options).toEqual([]);
+    expect(conflict.optionsTruncated).toBe(false);
+  });
+
+  it("returns NOT_FOUND for a later unknown name instead of a first-line variant picker", async () => {
+    const error = await invokeResolveFailure([
+      { product: { by: "query", value: "Macarons" } },
+      { product: { by: "query", value: "No Such Cake" } },
+    ]);
+    expect(error).toBeInstanceOf(NotFoundError);
+    expect(error).not.toBeInstanceOf(ReferenceResolutionConflictError);
+  });
+
+  it("returns no_active_variants for a later line instead of a first-line variant picker", async () => {
+    const error = await invokeResolveFailure([
+      { product: { by: "query", value: "Macarons" } },
+      { product: { by: "id", id: fixtures.retiredBox } },
+    ]);
+    const conflict = expectResolutionConflict(error);
+    expect(conflict.reason).toBe("no_active_variants");
+    expect(conflict.target).toEqual({
+      kind: "order_line_variant",
+      lineIndex: 1,
+      productId: fixtures.retiredBox,
+      productName: "Retired Box",
+    });
+    expect(conflict.options).toEqual([]);
+    expect(conflict.optionsTruncated).toBe(false);
+  });
+
+  it("still returns a line-0 terminal when a later line would open a picker", async () => {
+    const error = await invokeResolveFailure([
+      { product: { by: "query", value: "Old Widget" } },
+      { product: { by: "query", value: "Macarons" } },
+    ]);
+    const conflict = expectResolutionConflict(error);
+    expect(conflict.reason).toBe("archived");
+    expect(conflict.target).toEqual({
+      kind: "order_line_product",
+      lineIndex: 0,
+      query: "Old Widget",
+      productName: "Old Widget",
+    });
+  });
+
+  it("still returns the first picker when no terminal exists", async () => {
+    const error = await invokeResolveFailure([
+      { product: { by: "query", value: "Macarons" } },
+      { product: { by: "id", id: fixtures.coat } },
+    ]);
+    const conflict = expectResolutionConflict(error);
+    expect(conflict.reason).toBe("variant_required");
+    expect(conflict.target).toEqual({
+      kind: "order_line_variant",
+      lineIndex: 0,
+      productId: fixtures.macarons,
+      productName: "Macarons",
+    });
+  });
+
+  it("returns the earliest terminal by input index regardless of reason type", async () => {
+    const archivedThenMissing = expectResolutionConflict(
+      await invokeResolveFailure([
+        { product: { by: "query", value: "Macarons" } },
+        { product: { by: "query", value: "Old Widget" } },
+        { product: { by: "query", value: "No Such Cake" } },
+      ]),
+    );
+    expect(archivedThenMissing.reason).toBe("archived");
+    expect(archivedThenMissing.target.lineIndex).toBe(1);
+
+    const missingThenArchived = await invokeResolveFailure([
+      { product: { by: "query", value: "Macarons" } },
+      { product: { by: "query", value: "No Such Cake" } },
+      { product: { by: "query", value: "Old Widget" } },
+    ]);
+    expect(missingThenArchived).toBeInstanceOf(NotFoundError);
+    expect(missingThenArchived).not.toBeInstanceOf(
+      ReferenceResolutionConflictError,
+    );
+
+    const noVariantsThenArchived = expectResolutionConflict(
+      await invokeResolveFailure([
+        { product: { by: "query", value: "Macarons" } },
+        { product: { by: "id", id: fixtures.retiredBox } },
+        { product: { by: "query", value: "Old Widget" } },
+      ]),
+    );
+    expect(noVariantsThenArchived.reason).toBe("no_active_variants");
+    expect(noVariantsThenArchived.target.lineIndex).toBe(1);
+
+    const archivedThenNoVariants = expectResolutionConflict(
+      await invokeResolveFailure([
+        { product: { by: "query", value: "Macarons" } },
+        { product: { by: "query", value: "Old Widget" } },
+        { product: { by: "id", id: fixtures.retiredBox } },
+      ]),
+    );
+    expect(archivedThenNoVariants.reason).toBe("archived");
+    expect(archivedThenNoVariants.target.lineIndex).toBe(1);
+  });
+
+  it("preserves original line indices and archived metadata on mixed-cart terminals", async () => {
+    const error = await invokeResolveFailure([
+      { product: { by: "query", value: "Macarons" } },
+      { product: { by: "id", id: fixtures.alpha } },
+      { product: { by: "query", value: "old widget" } },
+    ]);
+    const conflict = expectResolutionConflict(error);
+    expect(conflict.reason).toBe("archived");
+    expect(conflict.target).toEqual({
+      kind: "order_line_product",
+      lineIndex: 2,
+      query: "old widget",
+      productName: "Old Widget",
+    });
+    expect(conflict.options).toEqual([]);
+    expect(conflict.optionsTruncated).toBe(false);
+    expect(conflict.clientMessage).toBe(archivedProductMessage("Old Widget"));
+  });
+
+  it("propagates unexpected invariant errors instead of an earlier picker or NOT_FOUND", async () => {
+    const invariantLine: LineReferenceInput = {
+      product: { by: "id", id: fixtures.alpha },
+      get variantSelection(): VariantSelection {
+        throw new CoreInvariantError("catalog resolve test invariant");
+      },
+    };
+    const caught = await resolveCatalogLineReferences({
+      db: staffReadDb(),
+      companyId: kitIdentities.companies.a,
+      lines: [{ product: { by: "query", value: "Macarons" } }, invariantLine],
+    }).then(
+      () => {
+        throw new Error("expected CoreInvariantError");
+      },
+      (error: unknown) => error,
+    );
+    expect(caught).toBeInstanceOf(CoreInvariantError);
+    expect(caught).not.toBeInstanceOf(NotFoundError);
+    expect(caught).not.toBeInstanceOf(ReferenceResolutionConflictError);
+    if (!(caught instanceof CoreInvariantError)) {
+      return;
+    }
+    expect(caught.clientMessage).toBe("Internal error.");
+  });
+
+  it("keeps catalog reads bounded as line count grows and preserves input order", async () => {
+    const unit: LineReferenceInput[] = [
+      { product: { by: "id", id: fixtures.alpha } },
+      { product: { by: "query", value: "Zero" } },
+      {
+        product: { by: "id", id: fixtures.coat },
+        variantSelection: {
+          kind: "reference",
+          ref: { by: "id", id: fixtures.variantRed },
+        },
+      },
+    ];
+    const short = unit;
+    const long = Array.from({ length: 8 }, () => unit).flat();
+
+    const shortRun = await collectStatements(() =>
+      kit.invoke(resolveLineReferences, { lines: short }),
+    );
+    expect(shortRun.outcome.status).toBe("fulfilled");
+    const longRun = await collectStatements(() =>
+      kit.invoke(resolveLineReferences, { lines: long }),
+    );
+    expect(longRun.outcome.status).toBe("fulfilled");
+    if (
+      shortRun.outcome.status !== "fulfilled" ||
+      longRun.outcome.status !== "fulfilled"
+    ) {
+      return;
+    }
+
+    const shortCatalogReads = catalogReadStatementCount(shortRun.statements);
+    const longCatalogReads = catalogReadStatementCount(longRun.statements);
+    expect(shortCatalogReads).toBeGreaterThan(0);
+    expect(shortCatalogReads).toBeLessThanOrEqual(6);
+    expect(longCatalogReads).toBe(shortCatalogReads);
+    expect(longCatalogReads).toBeLessThan(long.length);
+
+    const shortLines = shortRun.outcome.value.lines;
+    const longLines = longRun.outcome.value.lines;
+    expect(shortLines).toEqual([
+      {
+        productId: fixtures.alpha,
+        productName: "Alpha",
+        variantId: null,
+        variantName: null,
+      },
+      {
+        productId: fixtures.zero,
+        productName: "Zero",
+        variantId: null,
+        variantName: null,
+      },
+      {
+        productId: fixtures.coat,
+        productName: "Coat",
+        variantId: fixtures.variantRed,
+        variantName: "Red",
+      },
+    ]);
+    expect(longLines).toHaveLength(long.length);
+    expect(longLines).toEqual(
+      Array.from({ length: 8 }, () => shortLines).flat(),
+    );
   });
 });

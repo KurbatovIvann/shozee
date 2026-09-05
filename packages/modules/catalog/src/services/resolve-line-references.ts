@@ -1,5 +1,5 @@
 import type { ActionCtx } from "@showzy/core";
-import { NotFoundError } from "@showzy/core/errors";
+import { CoreInvariantError, NotFoundError } from "@showzy/core/errors";
 import { products, productVariants } from "@showzy/db/schema/catalog";
 import { uniqueIds } from "@showzy/module-kit/unique-ids";
 import {
@@ -492,6 +492,41 @@ function resolveReferencedVariant(
   return picked.row;
 }
 
+export type ExpectedLineResolutionFailure =
+  | {
+      readonly kind: "terminal";
+      readonly error: NotFoundError | ReferenceResolutionConflictError;
+    }
+  | {
+      readonly kind: "picker";
+      readonly error: ReferenceResolutionConflictError;
+    };
+
+/**
+ * Mixed-cart classifier (SHO-441). Only expected reference-resolution
+ * failures are collected. Infrastructure, invariant, and authorization
+ * errors return null so the caller rethrows them unchanged.
+ */
+export function classifyExpectedLineResolutionFailure(
+  error: unknown,
+): ExpectedLineResolutionFailure | null {
+  if (error instanceof NotFoundError) {
+    return { kind: "terminal", error };
+  }
+  if (!(error instanceof ReferenceResolutionConflictError)) {
+    return null;
+  }
+  switch (error.reason) {
+    case "archived":
+    case "no_active_variants":
+      return { kind: "terminal", error };
+    case "variant_required":
+    case "ambiguous":
+    case "unmatched_query":
+      return { kind: "picker", error };
+  }
+}
+
 function resolveLineVariant(
   line: LineReferenceInput,
   lineIndex: number,
@@ -552,7 +587,9 @@ function resolveLineVariant(
  * for sellable (id + active query) product ids. Archived candidates do not
  * load variants. Never one SELECT per input line and never a nested
  * action call. Product-level conflict on a line is thrown before that
- * line's variant conflict.
+ * line's variant conflict. Mixed carts classify every line, then throw the
+ * earliest terminal (`archived`, `no_active_variants`, not-found) by input
+ * `lineIndex`; pickers run only when no terminal exists.
  */
 export async function resolveCatalogLineReferences(args: {
   readonly db: StaffDb;
@@ -613,14 +650,49 @@ export async function resolveCatalogLineReferences(args: {
     uniqueIds(sellableProducts.map((row) => row.id)),
   );
 
-  return args.lines.map((line, index) => {
-    const product = resolveProductRef(
-      line.product,
-      index,
-      byId,
-      activeQueryRows,
-      archivedQueryRows,
-    );
-    return resolveLineVariant(line, index, product, variants);
+  const resolved: Array<ResolvedLineReference | undefined> = args.lines.map(
+    () => undefined,
+  );
+  let firstTerminal:
+    NotFoundError | ReferenceResolutionConflictError | undefined;
+  let firstPicker: ReferenceResolutionConflictError | undefined;
+
+  for (const [index, line] of args.lines.entries()) {
+    try {
+      const product = resolveProductRef(
+        line.product,
+        index,
+        byId,
+        activeQueryRows,
+        archivedQueryRows,
+      );
+      resolved[index] = resolveLineVariant(line, index, product, variants);
+    } catch (error) {
+      const classified = classifyExpectedLineResolutionFailure(error);
+      if (classified === null) {
+        throw error;
+      }
+      if (classified.kind === "terminal") {
+        firstTerminal ??= classified.error;
+        continue;
+      }
+      firstPicker ??= classified.error;
+    }
+  }
+
+  if (firstTerminal !== undefined) {
+    throw firstTerminal;
+  }
+  if (firstPicker !== undefined) {
+    throw firstPicker;
+  }
+
+  return resolved.map((line, index) => {
+    if (line === undefined) {
+      throw new CoreInvariantError(
+        `catalog.resolveLineReferences missed input line ${String(index)}`,
+      );
+    }
+    return line;
   });
 }
