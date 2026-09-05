@@ -1628,11 +1628,11 @@ describe("POST /assistant/choice (seeded store)", () => {
     expect(companyOrders).toHaveLength(0);
   });
 
-  it("chains two pickers then errors on an archived-only third line", async () => {
+  it("errors on an archived-only third line before chaining any successor picker", async () => {
     const { app, store } = choiceApp();
     const token = await insertBearer(kit, kitIdentities.users.anna);
     const conversation = await staffInvoke(createConversation, {
-      title: "Choice T9 three-line",
+      title: "Choice T9 three-line terminal",
     });
     const customer = await staffInvoke(createCustomer, {
       name: "T9 Three Line Buyer",
@@ -1681,13 +1681,108 @@ describe("POST /assistant/choice (seeded store)", () => {
     const firstBody = assistantChoiceInteractionResultSchema.parse(
       await firstTap.json(),
     );
+    expect(firstBody.status).toBe("error");
+    if (firstBody.status !== "error") {
+      return;
+    }
+    expect(firstBody.code).toBe("CONFLICT");
+    expect(firstBody.message).toContain(archived.name);
+    expect(firstBody.message.toLowerCase()).toContain("no active");
+    expect(firstBody.message).not.toContain(second.name);
+    const successor = await store.peek({
+      choiceId: successorChoiceId(record.choiceId),
+      bind,
+    });
+    expect(successor.kind).toBe("expired");
+    const parent = await store.peek({
+      choiceId: record.choiceId,
+      bind,
+    });
+    expect(parent.kind).toBe("found");
+    if (parent.kind === "found") {
+      expect(parent.record.status).toBe("completed");
+    }
+    const runs = (
+      await kit.db.runtime.db.select().from(assistantToolRuns)
+    ).filter((row) => row.conversationId === conversation.id);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({
+      actionName: "orders.create",
+      outcome: "error",
+    });
+    expect(runs[0]?.challengeId).toBeNull();
+    expect(runs.some((row) => row.outcome === "choice_required")).toBe(false);
+    expect(runs.some((row) => row.outcome === "success")).toBe(false);
+    const persisted = (
+      await kit.db.runtime.db.select().from(assistantMessages)
+    ).filter(
+      (row) =>
+        row.conversationId === conversation.id && row.role === "assistant",
+    );
+    expect(persisted).toHaveLength(1);
+    expect(persisted[0]?.body).toBe(firstBody.message);
+    expect(persisted[0]?.body).toContain(archived.name);
+    expect(persisted[0]?.body).not.toContain("Оберіть варіант");
+    const companyOrders = (
+      await kit.db.runtime.db.select().from(orders)
+    ).filter((row) => row.customerId === customer.id);
+    expect(companyOrders).toHaveLength(0);
+  });
+
+  it("chains two pickers when a third line is sellable and no terminal exists", async () => {
+    const { app, store } = choiceApp();
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await staffInvoke(createConversation, {
+      title: "Choice T9 three-line pickers",
+    });
+    const customer = await staffInvoke(createCustomer, {
+      name: "T9 Three Picker Buyer",
+      phone: nextPhone(),
+    });
+    const first = await seedVariableProduct("T9 Chain Macarons", [
+      "Lemon",
+      "Vanilla",
+    ]);
+    const second = await seedVariableProduct("T9 Chain Eclairs", [
+      "Coffee",
+      "Chocolate",
+    ]);
+    const third = await seedSimpleProduct("T9 Chain Cookie");
+    const { record, optionByLabel } = await openChoice({
+      store,
+      conversationId: conversation.id,
+      customerId: customer.id,
+      product: first,
+      extraProducts: [
+        { productId: second.productId },
+        { productId: third.productId },
+      ],
+      lineIndex: 0,
+    });
+    const bind = {
+      actorId: kitIdentities.users.anna,
+      companyId: kitIdentities.companies.a,
+      conversationId: conversation.id,
+    };
+    const firstTap = await postChoice(app, {
+      token,
+      companyId: kitIdentities.companies.a,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.choiceId,
+        optionId: optionByLabel.get("Lemon"),
+      },
+    });
+    expect(firstTap.status).toBe(200);
+    const firstBody = assistantChoiceInteractionResultSchema.parse(
+      await firstTap.json(),
+    );
     expect(firstBody.status).toBe("needs_choice");
     if (firstBody.status !== "needs_choice") {
       return;
     }
     expect(firstBody.challengeId).toBe(successorChoiceId(record.choiceId));
     expect(firstBody.productName).toBe(second.name);
-    expect(firstBody.options.length).toBeGreaterThan(0);
     const coffee = firstBody.options.find(
       (option) => option.label === "Coffee",
     );
@@ -1705,17 +1800,15 @@ describe("POST /assistant/choice (seeded store)", () => {
     const secondBody = assistantChoiceInteractionResultSchema.parse(
       await secondTap.json(),
     );
-    expect(secondBody.status).toBe("error");
-    if (secondBody.status !== "error") {
+    expect(secondBody.status).toBe("completed");
+    if (secondBody.status !== "completed") {
       return;
     }
-    expect(secondBody.code).toBe("CONFLICT");
-    expect(secondBody.message).toContain(archived.name);
-    const third = await store.peek({
+    const thirdChoice = await store.peek({
       choiceId: successorChoiceId(firstBody.challengeId),
       bind,
     });
-    expect(third.kind).toBe("expired");
+    expect(thirdChoice.kind).toBe("expired");
     const secondRecord = await store.peek({
       choiceId: firstBody.challengeId,
       bind,
@@ -1728,14 +1821,12 @@ describe("POST /assistant/choice (seeded store)", () => {
       await kit.db.runtime.db.select().from(assistantToolRuns)
     ).filter((row) => row.conversationId === conversation.id);
     expect(runs.some((row) => row.outcome === "choice_required")).toBe(true);
-    expect(runs.some((row) => row.outcome === "error")).toBe(true);
-    expect(runs.some((row) => row.outcome === "success")).toBe(false);
-    const errorRun = runs.find((row) => row.outcome === "error");
-    expect(errorRun?.challengeId).toBeNull();
+    expect(runs.some((row) => row.outcome === "success")).toBe(true);
+    expect(runs.some((row) => row.outcome === "error")).toBe(false);
     const companyOrders = (
       await kit.db.runtime.db.select().from(orders)
     ).filter((row) => row.customerId === customer.id);
-    expect(companyOrders).toHaveLength(0);
+    expect(companyOrders).toHaveLength(1);
   });
 
   it("safe peek returns the envelope only and does not consume the record", async () => {
