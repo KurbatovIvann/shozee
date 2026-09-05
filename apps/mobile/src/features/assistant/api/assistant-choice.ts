@@ -11,6 +11,7 @@ import { isWireError } from "@showzy/contract";
 import { z } from "zod";
 
 import {
+  CHOICE_OPTIONS_MAX,
   envelopeFromChoicePeek,
   type StaffAssistantChoiceCardEnvelope,
 } from "../shared/choice";
@@ -23,23 +24,46 @@ import { staffAssistantChatHeaders } from "./assistant-chat-headers";
 
 export const ASSISTANT_CHOICE_PATH = "/assistant/choice";
 
-const choiceInteractionResultSchema = z.object({
-  status: z.enum(["completed", "needs_choice", "expired", "error"]),
-  text: z.string().optional(),
-  challengeId: z.uuid().optional(),
-  reason: z.string().optional(),
-  choiceKind: z.enum(["variant", "product", "customer"]).optional(),
-  productName: z.string().optional(),
-  options: z
-    .array(z.object({ id: z.uuid(), label: z.string().min(1) }))
-    .optional(),
-  optionsTruncated: z.boolean().optional(),
-  entity: z
-    .object({ orderId: z.uuid(), orderNumber: z.string().min(1) })
-    .optional(),
-  code: z.string().optional(),
-  message: z.string().optional(),
+const choiceCompletedEntitySchema = z.object({
+  orderId: z.uuid(),
+  orderNumber: z.string().min(1),
 });
+
+const choiceCardOptionSchema = z.object({
+  id: z.uuid(),
+  label: z.string().min(1),
+});
+
+/**
+ * Per-status wire shape for a successful HTTP 200 interaction. Duplicates
+ * the server `@showzy/ai` union — mobile must not import that package.
+ * A partial/malformed body must not parse as success.
+ */
+const choiceInteractionResultSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("completed"),
+    text: z.string().min(1),
+    entity: choiceCompletedEntitySchema,
+  }),
+  z.object({
+    status: z.literal("needs_choice"),
+    text: z.string().min(1),
+    challengeId: z.uuid(),
+    reason: z.enum(["variant_required", "ambiguous", "unmatched_query"]),
+    choiceKind: z.enum(["variant", "product", "customer"]).optional(),
+    productName: z.string().min(1),
+    options: z.array(choiceCardOptionSchema).min(1).max(CHOICE_OPTIONS_MAX),
+    optionsTruncated: z.boolean(),
+  }),
+  z.object({
+    status: z.literal("expired"),
+  }),
+  z.object({
+    status: z.literal("error"),
+    code: z.string().min(1),
+    message: z.string().min(1),
+  }),
+]);
 
 const coreWireErrorBodySchema = z.object({
   code: z.string().min(1),
@@ -190,6 +214,46 @@ function malformedSelectResult(
   };
 }
 
+type ParsedChoiceInteraction = z.infer<typeof choiceInteractionResultSchema>;
+
+function selectResultFromInteraction(
+  interaction: ParsedChoiceInteraction,
+  httpStatus: number,
+): Omit<ChoiceSelectResult, "recoverability"> {
+  switch (interaction.status) {
+    case "completed":
+      return {
+        status: "completed",
+        text: interaction.text,
+        entity: interaction.entity,
+        httpStatus,
+      };
+    case "needs_choice":
+      return {
+        status: "needs_choice",
+        text: interaction.text,
+        challengeId: interaction.challengeId,
+        reason: interaction.reason,
+        ...(interaction.choiceKind === undefined
+          ? {}
+          : { choiceKind: interaction.choiceKind }),
+        productName: interaction.productName,
+        options: interaction.options,
+        optionsTruncated: interaction.optionsTruncated,
+        httpStatus,
+      };
+    case "expired":
+      return { status: "expired", httpStatus };
+    case "error":
+      return {
+        status: "error",
+        code: interaction.code,
+        message: interaction.message,
+        httpStatus,
+      };
+  }
+}
+
 export async function postAssistantChoice(args: {
   readonly apiUrl: string;
   readonly getCookie: () => string | null;
@@ -237,33 +301,9 @@ export async function postAssistantChoice(args: {
   if (!parsed.success) {
     return malformedSelectResult(response.status, "ambiguous");
   }
-  const interaction = parsed.data;
-  return withRecoverability({
-    status: interaction.status,
-    ...(interaction.text === undefined ? {} : { text: interaction.text }),
-    ...(interaction.challengeId === undefined
-      ? {}
-      : { challengeId: interaction.challengeId }),
-    ...(interaction.reason === undefined ? {} : { reason: interaction.reason }),
-    ...(interaction.choiceKind === undefined
-      ? {}
-      : { choiceKind: interaction.choiceKind }),
-    ...(interaction.productName === undefined
-      ? {}
-      : { productName: interaction.productName }),
-    ...(interaction.options === undefined
-      ? {}
-      : { options: interaction.options }),
-    ...(interaction.optionsTruncated === undefined
-      ? {}
-      : { optionsTruncated: interaction.optionsTruncated }),
-    ...(interaction.entity === undefined ? {} : { entity: interaction.entity }),
-    ...(interaction.code === undefined ? {} : { code: interaction.code }),
-    ...(interaction.message === undefined
-      ? {}
-      : { message: interaction.message }),
-    httpStatus: response.status,
-  });
+  return withRecoverability(
+    selectResultFromInteraction(parsed.data, response.status),
+  );
 }
 
 export async function peekAssistantChoice(args: {

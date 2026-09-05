@@ -7,7 +7,10 @@ import {
   PDF_TRANSIENT_RETRY_BASE_MS,
   PdfGenerationRetryableError,
   PdfGenerationTerminalError,
+  forgetPdfInvocationScope,
+  readPdfInvocationScope,
   readPdfRetryScope,
+  rememberPdfInvocationScope,
   sanitizePdfFailureReason,
   toPdfGenerationRetryableError,
 } from "./pdf-retry.js";
@@ -63,5 +66,14 @@ describe("pdf failure classification (SHO-436)", () => {
     );
     expect(terminal).toBeInstanceOf(CoreInvariantError);
     expect(readPdfRetryScope(terminal)).toBeUndefined();
+  });
+
+  it("records and reads event-bound invocation scope independently of the error subclass", () => {
+    const eventId = "33333333-3333-4333-8333-333333333333";
+    expect(readPdfInvocationScope(eventId)).toBeUndefined();
+    rememberPdfInvocationScope({ eventId, documentId, companyId });
+    expect(readPdfInvocationScope(eventId)).toEqual({ documentId, companyId });
+    forgetPdfInvocationScope(eventId);
+    expect(readPdfInvocationScope(eventId)).toBeUndefined();
   });
 });

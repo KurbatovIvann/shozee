@@ -2,12 +2,15 @@ import { useCallback, useMemo, useRef, useState } from "react";
 
 import type { AssistantCompanyEpochRef } from "../shared/assistant-session";
 import {
+  canSelectChoiceOption,
   choiceCardState,
+  choiceSelectRememberedAttempt,
   commitChoiceSelectResult,
   executeChoiceSelect,
   pendingChoiceFromMessages,
   type AssistantChoiceMessage,
   type ChoiceAppendPart,
+  type ChoiceAttemptedOption,
   type ChoiceCardState,
   type ChoiceSelectResult,
   type PendingChoice,
@@ -26,6 +29,7 @@ export function useAssistantChoice(args: {
   readonly pending: PendingChoice | null;
   readonly ignoredChallengeIds: ReadonlySet<string>;
   readonly card: ChoiceCardState;
+  readonly attempted: ChoiceAttemptedOption | null;
   readonly select: (optionId: string) => void;
   readonly reset: () => void;
 } {
@@ -33,8 +37,12 @@ export function useAssistantChoice(args: {
   const [resolvingChallengeId, setResolvingChallengeId] = useState<
     string | null
   >(null);
+  const [attempted, setAttempted] = useState<ChoiceAttemptedOption | null>(
+    null,
+  );
   const ignoredRef = useRef<ReadonlySet<string>>(new Set());
   const resolvingRef = useRef<string | null>(null);
+  const attemptedRef = useRef<ChoiceAttemptedOption | null>(null);
 
   const clearResolving = useCallback(() => {
     resolvingRef.current = null;
@@ -56,12 +64,22 @@ export function useAssistantChoice(args: {
       if (current === null || resolvingRef.current !== null) {
         return;
       }
+      if (
+        !canSelectChoiceOption({
+          pending: current,
+          optionId,
+          attempted: attemptedRef.current,
+        })
+      ) {
+        return;
+      }
       const epoch = args.companyEpochRef.current;
       setResolvingChallengeId(current.challengeId);
       void executeChoiceSelect({
         pending: current,
         optionId,
         resolvingRef,
+        attempted: attemptedRef.current,
         postChoice: args.postChoice,
       })
         .then((result) => {
@@ -80,20 +98,31 @@ export function useAssistantChoice(args: {
               setIgnored(next);
             },
           });
-          if (outcome === "skipped") {
-            clearResolving();
-            return;
-          }
           if (outcome === "stale") {
             return;
           }
+          const remembered = choiceSelectRememberedAttempt({
+            result,
+            challengeId: current.challengeId,
+            optionId,
+            previous: attemptedRef.current,
+          });
+          attemptedRef.current = remembered;
+          setAttempted(remembered);
           clearResolving();
         })
         .catch(() => {
-          // Transport throw: leave the picker retryable. Retryable and
-          // ambiguous `{ status: "error" }` bodies are handled in `then`
-          // (keep challenge). Terminal errors ignore + text.
+          // Transport throw: leave the picker retryable, but keep the
+          // attempted option so a different tap cannot POST while A may
+          // already be claimed. Terminal `{ status: "error" }` bodies
+          // are handled in `then`.
           if (resolvingRef.current === current.challengeId) {
+            const next = {
+              challengeId: current.challengeId,
+              optionId,
+            };
+            attemptedRef.current = next;
+            setAttempted(next);
             clearResolving();
           }
         });
@@ -112,8 +141,10 @@ export function useAssistantChoice(args: {
     ignoredRef.current = empty;
     pendingRef.current = null;
     resolvingRef.current = null;
+    attemptedRef.current = null;
     setIgnored(empty);
     setResolvingChallengeId(null);
+    setAttempted(null);
   }, []);
 
   const ignoredChallengeIds = useMemo(() => ignored, [ignored]);
@@ -122,6 +153,7 @@ export function useAssistantChoice(args: {
     pending,
     ignoredChallengeIds,
     card,
+    attempted,
     select,
     reset,
   };

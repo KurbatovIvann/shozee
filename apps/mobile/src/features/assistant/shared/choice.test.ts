@@ -147,8 +147,11 @@ describe("choice truncated copy", () => {
     expect(card).not.toContain("@showzy/ai");
     expect(card).toContain("Button");
     expect(card).toContain("Card");
-    expect(card).toContain("claimedRetryOptionId");
+    expect(card).toContain("choiceCardRetryOptionId");
+    expect(card).toContain("choiceCardOfferedOptions");
+    expect(card).toContain("attempted");
     expect(card).toContain("retryLabel");
+    expect(card).not.toContain("props.choice.options.map");
     expect(card).not.toContain("completed");
   });
 });

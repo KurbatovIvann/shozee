@@ -6,7 +6,10 @@ import {
   assistantTurnColumnLayout,
   assistantTurnResultStretch,
 } from "../shared/assistant-turn-layout";
-import type { PendingChoice } from "../shared/choice-presenter";
+import type {
+  ChoiceAttemptedOption,
+  PendingChoice,
+} from "../shared/choice-presenter";
 import { assistantSurfaceKey, type AssistantSurface } from "../surfaces";
 import { AssistantSurfaceCard } from "./assistant-surface-card";
 import { AssistantWaitLine } from "./assistant-wait-line";
@@ -38,6 +41,7 @@ export const AssistantMessageRow = memo(function AssistantMessageRow(props: {
   readonly choiceRetryLabel: string;
   readonly choiceSelectingLabel: string;
   readonly choiceApplying: boolean;
+  readonly choiceAttempted: ChoiceAttemptedOption | null;
   readonly onSelectChoice: (optionId: string) => void;
 }) {
   const isUser = props.role === "user";
@@ -93,6 +97,7 @@ export const AssistantMessageRow = memo(function AssistantMessageRow(props: {
             selectingLabel={props.choiceSelectingLabel}
             applying={props.choiceApplying}
             choice={choice}
+            attempted={props.choiceAttempted}
             onSelect={props.onSelectChoice}
           />
         </AssistantTurnResult>

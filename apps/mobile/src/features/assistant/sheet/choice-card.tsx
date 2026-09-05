@@ -4,9 +4,13 @@ import { StyleSheet } from "react-native-unistyles";
 import { Button, Card } from "../../../components/ui";
 import {
   claimedOptionLabel,
-  claimedRetryOptionId,
   type StaffAssistantChoiceCardEnvelope,
 } from "../shared/choice";
+import {
+  choiceCardOfferedOptions,
+  choiceCardRetryOptionId,
+  type ChoiceAttemptedOption,
+} from "../shared/choice-presenter";
 
 export function ChoiceCard(props: {
   readonly title: string;
@@ -17,14 +21,29 @@ export function ChoiceCard(props: {
   readonly selectingLabel: string;
   readonly applying: boolean;
   readonly choice: StaffAssistantChoiceCardEnvelope;
+  readonly attempted: ChoiceAttemptedOption | null;
   readonly onSelect: (optionId: string) => void;
 }) {
-  const pickerTappable =
-    props.choice.status === "needs_choice" && !props.applying;
-  const retryOptionId = claimedRetryOptionId(props.choice);
-  const selectedLabel = claimedOptionLabel(props.choice);
+  const retryOptionId = choiceCardRetryOptionId({
+    choice: props.choice,
+    attempted: props.attempted,
+  });
+  const offeredOptions = choiceCardOfferedOptions({
+    choice: props.choice,
+    attempted: props.attempted,
+  });
   const claimed = props.choice.status === "claimed";
   const expired = props.choice.status === "expired";
+  const pickerTappable =
+    props.choice.status === "needs_choice" &&
+    !props.applying &&
+    retryOptionId === undefined;
+  const selectedLabel =
+    claimedOptionLabel(props.choice) ??
+    (retryOptionId === undefined
+      ? undefined
+      : props.choice.options.find((option) => option.id === retryOptionId)
+          ?.label);
 
   return (
     <Card>
@@ -35,14 +54,14 @@ export function ChoiceCard(props: {
         ) : null}
         {expired ? <Text style={styles.note}>{props.expiredLabel}</Text> : null}
         {claimed ? <Text style={styles.note}>{props.claimedLabel}</Text> : null}
-        {claimed && selectedLabel !== undefined ? (
+        {selectedLabel !== undefined && retryOptionId !== undefined ? (
           <Text style={styles.selected}>{selectedLabel}</Text>
         ) : null}
         {props.applying ? (
           <Text style={styles.applying}>{props.selectingLabel}</Text>
         ) : pickerTappable ? (
           <View style={styles.options}>
-            {props.choice.options.map((option) => (
+            {offeredOptions.map((option) => (
               <Button
                 key={option.id}
                 variant="secondary"
@@ -54,7 +73,7 @@ export function ChoiceCard(props: {
               />
             ))}
           </View>
-        ) : retryOptionId !== undefined && claimed ? (
+        ) : retryOptionId !== undefined ? (
           <Button
             fullWidth
             label={props.retryLabel}

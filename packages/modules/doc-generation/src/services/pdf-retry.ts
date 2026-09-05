@@ -15,12 +15,15 @@
  * `documents.getForGeneration` uses the same not-found for missing and
  * foreign-company documents so existence is not leaked. Wrapping those
  * as `PdfGenerationRetryableError` (`CONFLICT`) would weaken isolation.
- * Delivery still retries the CoreError. After five attempts the worker
- * has no `readPdfRetryScope`, so `maybeFinalizeDeadPdfGeneration` logs
- * `replay-dead-deliveries` and does **not** persist failed. Deleted
- * documents CASCADE their jobs; foreign deliveries never write a job in
- * this tenant. `getArtifact` stays not-found (the panel maps that to
- * pending). That is this class, not a same-tenant `CONFLICT` mark.
+ * Delivery still retries the CoreError. After five attempts those
+ * denials still have no `readPdfRetryScope`. Pipeline `TimeoutError` is
+ * also not that subclass: the renderer records validated event-bound
+ * invocation scope after `getForGeneration` so the worker can
+ * `markFailed` on exhausted execution timeouts. Claim/discovery failures
+ * never record that scope. Deleted documents CASCADE their jobs; foreign
+ * deliveries never write a job in this tenant. `getArtifact` stays
+ * not-found (the panel maps that to pending). That is this class, not a
+ * same-tenant `CONFLICT` mark.
  */
 import { DELIVERY_MAX_ATTEMPTS, DELIVERY_RETRY_BASE_MS } from "@showzy/core";
 import {
@@ -107,4 +110,40 @@ export function readPdfRetryScope(
     documentId: error.pdfDocumentId,
     companyId: error.pdfCompanyId,
   };
+}
+
+export type PdfInvocationScope = {
+  readonly documentId: string;
+  readonly companyId: string;
+};
+
+/**
+ * Event-bound tenant document scope captured from a validated render
+ * invocation (envelope + verified system tenant context). Keyed by
+ * outbox event id so the worker finalizer can markFailed after a
+ * pipeline TimeoutError, which does not carry PdfGenerationRetryableError.
+ * Success and successful markFailed forget the entry; a hanging
+ * handler must not clear it from catch, or the worker can lose scope.
+ */
+const pdfInvocationScopes = new Map<string, PdfInvocationScope>();
+
+export function rememberPdfInvocationScope(env: {
+  readonly eventId: string;
+  readonly documentId: string;
+  readonly companyId: string;
+}): void {
+  pdfInvocationScopes.set(env.eventId, {
+    documentId: env.documentId,
+    companyId: env.companyId,
+  });
+}
+
+export function readPdfInvocationScope(
+  eventId: string,
+): PdfInvocationScope | undefined {
+  return pdfInvocationScopes.get(eventId);
+}
+
+export function forgetPdfInvocationScope(eventId: string): void {
+  pdfInvocationScopes.delete(eventId);
 }

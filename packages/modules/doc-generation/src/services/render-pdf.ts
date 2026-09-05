@@ -9,7 +9,9 @@ import { and, eq, ne } from "drizzle-orm";
 
 import { artifactFileId } from "./artifact-file-id.js";
 import {
+  forgetPdfInvocationScope,
   PdfGenerationTerminalError,
+  rememberPdfInvocationScope,
   sanitizePdfFailureReason,
   toPdfGenerationRetryableError,
 } from "./pdf-retry.js";
@@ -244,6 +246,7 @@ function logRenderFailure(
 
 export async function renderTenantDocumentPdf(env: {
   readonly ctx: SystemTenantCtx;
+  readonly eventId: string;
   readonly documentId: string;
 }): Promise<RenderPdfResult> {
   const { ctx, documentId } = env;
@@ -253,6 +256,7 @@ export async function renderTenantDocumentPdf(env: {
     existing.status === "ready" &&
     existing.fileId !== null
   ) {
+    forgetPdfInvocationScope(env.eventId);
     return {
       status: "ready",
       fileId: existing.fileId,
@@ -262,6 +266,11 @@ export async function renderTenantDocumentPdf(env: {
 
   try {
     const view = await ctx.call(getForGeneration, { documentId });
+    rememberPdfInvocationScope({
+      eventId: env.eventId,
+      documentId,
+      companyId: ctx.companyId,
+    });
     if (existing === undefined) {
       await insertPendingJob(ctx, documentId);
     }
@@ -281,6 +290,7 @@ export async function renderTenantDocumentPdf(env: {
       checksumSha256: sha256Hex(bytes),
     });
     await markJobReady(ctx, documentId, fileId);
+    forgetPdfInvocationScope(env.eventId);
     return { status: "ready", fileId, documentId };
   } catch (error) {
     if (error instanceof PdfGenerationTerminalError) {

@@ -97,6 +97,7 @@ export function useAssistantSheet(): AssistantSheetViewModel & {
     hasInFlightTools,
     confirmationApplying: confirmation.card.kind === "applying",
     choiceApplying: choice.card.kind === "applying",
+    choiceAttempted: choice.attempted,
     canSend: chat.canSend,
     banner,
   };
