@@ -3096,6 +3096,10 @@ describe("SHO-442 presenter-owned archived / no_active_variants chat turns", () 
       expect(await waitForAssistantBody(conversation.id)).toBe(expected);
       expect(JSON.stringify(payloads)).not.toContain(spoken);
       expect(JSON.stringify(payloads)).not.toContain("data-choice");
+      const companyOrders = (
+        await kit.db.runtime.db.select().from(orders)
+      ).filter((row) => row.customerId === customer.id);
+      expect(companyOrders).toHaveLength(0);
     }
   });
 
