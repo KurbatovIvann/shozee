@@ -121,6 +121,36 @@ for the DSTU scheme.
 499 specifies ГОСТ 28147-89. We must set the algorithm and the KDF
 explicitly and never rely on the defaults.
 
+## The signature-format legal chain, and why our code is already right
+
+The joint Мін'юст / Держспецзв'язку order of 2012-08-20 № 1236/5/453 —
+the one the ДПС `CERTYPE` notice cites — set the ЕЦП-era requirements for
+certificate format, signed-data format, timestamping and OCSP. **It is
+repealed**, and so is each successor: `z1398-12` → `z1172-19` (2020) →
+`z1039-20` (2020) → `z0375-24` (2024), and that last one only repeals.
+Requirements now live in **ПКМУ 28.06.2024 № 764**.
+
+> **S:** repeal chain read directly from `zakon.rada.gov.ua`, 2026-09-05
+> **V:** desk-only
+> **C:** high
+
+One thing from the repealed order is still worth knowing, because it
+describes a real transition: ДСТУ 4145-2002 with the **ГОСТ 34.311-95**
+hash applied to signature *creation* until 2022-01-01, and with **ДСТУ
+7564-2014 (Купина)** from that date onward.
+
+**Our code handles this correctly and needs no change.**
+`signingAlgosFromCertAlgorithm` in `pki/algorithms.ts` derives the pair
+**from the signer's own certificate**: an algorithm OID under
+`1.2.804.2.1.1.1.1.3.6` selects the Kupyna pair, anything else the GOST
+pair. There is no hardcoded default and no date logic — it follows the key,
+which is the only correct behaviour when both eras coexist.
+
+And they do coexist: ДПС's own 2025 technological certificates are signed
+with the **GOST-hash variant** (`1.2.804.2.1.1.1.1.3.1.1`). So the GOST
+path is not legacy-only in 2026, and removing it would break verification
+against the authority's own certificates.
+
 ## The taxpayer has two keys, and we already skip one
 
 A ФОП key container holds **two keys**: one labelled «підпис» and one
@@ -152,6 +182,32 @@ So the encryption key needs no new discovery mechanism — it needs a
 sibling selector and a second `SELECT_KEY`. That is a smaller change than
 anything else on this card.
 
+### But whether we need it at all depends on the channel
+
+Refined 2026-09-05. The two uses of the encryption key are not equally
+unavoidable:
+
+- **Encrypting our submission to ДПС** — unavoidable. The наказ 499
+  container is a block encrypted to the authority, and the recipient there
+  is a *published* ДПС certificate. This needs `ENCRYPT`, but it does
+  **not** need the client's private key: encrypting to someone uses their
+  public certificate. Only the key agreement's originator side involves
+  our signer, and that happens where the owner already is.
+- **Decrypting receipts** — avoidable. Receipts arrive encrypted to the
+  payer only on the Єдине вікно channel, and decrypting them requires the
+  client's *private* key, repeatedly, long after signing. The cabinet REST
+  API sidesteps it entirely by serving receipts already decrypted
+  (`reporting-api.md`).
+
+A third-party product on the Єдине вікно channel prompts for the
+encryption key when a user opens a receipt — observed 2026-09-05. That is
+the cost of that channel, and it is a cost our architecture should decline.
+
+**Consequence:** if filing goes through the cabinet API, the client's
+private key is needed exactly once per declaration — to sign — and never
+again. That is the property `target-flow.md` step 4 assumed, and it
+survives only on that channel.
+
 ## How our existing container work relates — and one concrete correction
 
 Worth comparing directly, because the answer is "not at all" at one layer
@@ -180,9 +236,34 @@ The order is from 2010 and describes both abstractly, but the libraries
 Ukrainian CAs actually ship produce precisely these two CMS structures. So
 the components are already in hand; only the framing is missing.
 
-This also raises the confidence on `reporting-api.md` open question 8 —
-whether `XXX_CRYPT` is EnvelopedData or something rawer. It is not proof,
-but the ecosystem converged on CMS regardless of what the order says.
+**Settled 2026-09-05, after one wrong turn.** An intermediate reading of
+наказ 485 (2008) suggested `UA1_CRYPT` held raw ГОСТ 28147-89 ciphertext,
+because that text puts the session key and IV in the header requisites.
+That was correct about the **pre-2012** container and wrong about today:
+the 2012 joint order on new formats replaced it, and the same change turned
+`CERTYPE` from a per-CA letter into the constant `UA1`.
+
+A working implementation confirms the current shape — the crypt block
+carries the output of an `EnvelopData()` call, i.e. a **CMS envelope**.
+Detail in `reporting-api.md`.
+
+So the mapping is symmetric, and both halves are what we already produce:
+
+| Block | Content | Our source |
+| --- | --- | --- |
+| `UA1_SIGN` | CMS SignedData, **attached** | `SIGN` with `detachedData: false` |
+| `UA1_CRYPT` | CMS EnvelopedData | `ENCRYPT`, recipient = ДПС encryption certificate |
+
+**`ENCRYPT` is the right entry point.** No lower-level primitives, no
+hand-built key agreement — the two UAPKI methods already compiled into our
+binaries produce exactly the two payloads the container wants.
+
+The reference implementation independently confirms the attached-signature
+point: it calls the library's `SignDataInternal(true, …)`, where "internal"
+means the signed data travels inside the signature — the same conclusion
+the `detachedData` correction above reached from the наказ's wording.
+
+Also observed there: the 4-byte block length is **little-endian**.
 
 ### The correction
 
@@ -252,12 +333,43 @@ through.
 The trap: the previous generation was named by function — `EK_S_NEW.cer`
 for signing, `EK_C_NEW.cer` for crypt. The 2025 generation dropped that and
 uses `_1` / `_2` on an `EK_S_NEW_` stem, so **both current API certificates
-begin with `EK_S`** and only the trailing digit distinguishes signing from
-encryption. Picking by the "S" would silently choose the wrong one.
+begin with `EK_S`** and the filename no longer says which is which.
 
-> **S:** ДПС, «Єдина адреса» — sources.md#dps-edina-adresa, read 2026-09-05
-> **V:** desk-only (the authority's own distribution page)
-> **C:** high — direct download links, superseding the press-release paths
+### Verified by downloading and parsing them
+
+Both `EK_*` certificates were fetched and parsed on 2026-09-05. The
+`KeyUsage` extension settles it, and it is the only thing that does:
+
+| File | `KeyUsage` (critical) | Actual purpose |
+| --- | --- | --- |
+| `EK_S_NEW_2025_1.cer` | `DigitalSignature, NonRepudiation` | **signing** |
+| `EK_S_NEW_2025_2.cer` | `KeyAgreement` | **encryption** |
+
+Both share subject CN «Державна податкова служба України. "ОТРИМАНО ЕК"»,
+issued by КНЕДП ДПС, valid **2025-07-30 → 2027-07-29 23:59:59Z**.
+
+> **S:** the certificates themselves, downloaded from sources.md#dps-edina-adresa and parsed
+> **V:** **verified** — X.509 parsed, extensions read
+> **C:** high
+
+Three things follow.
+
+1. **Select the recipient certificate by `KeyUsage`, never by filename.**
+   The names have already changed once and stopped being descriptive; the
+   extension is authoritative and stable.
+2. **`KeyAgreement` is exactly what UAPKI requires.** `encrypt.cpp` checks
+   `cerRecipient.keyUsageByBit(KeyUsage_keyAgreement)` before building a
+   `KeyAgreeRecipientInfo`. This certificate passes that check, so the
+   recipient side of `ENCRYPT` works with it as-is.
+3. **The rotation deadline is a known date.** These expire 2027-07-29, so
+   the next generation must be in place before then — consistent with the
+   ~2-year cadence visible in the page's history.
+
+The certificates also carry the CA's service endpoints, which we need
+anyway: OCSP at `ca.tax.gov.ua/services/ocsp/`, **TSP at
+`ca.tax.gov.ua/services/tsp/`** (relevant to the container's `XXX_STAMP`
+block), CRL and delta-CRL under `ca.tax.gov.ua/download/crls/`, and the CA
+bundle `allacskidd-2022.p7b`.
 
 ### Rotation cadence is roughly two years
 
@@ -326,15 +438,27 @@ scope.** What is in scope is what happens to the signed bytes afterwards.
    `reporting-api.md` open question 9.
 6. **May we store the signed and encrypted payload**, and for how long? It
    is the evidence a return was filed.
+9. **How long does a signed `Authorization` value stay valid?** It is a
+   constant for a given key and certificate — the signed payload is just
+   the taxpayer's identifier, with no timestamp or nonce — so it is
+   replayable by construction and only a server-side expiry can limit it.
+   The answer sets how often the owner must re-authorise, and it is the
+   remaining unknown in the unattended-filing story. See `reporting-api.md`.
+10. **Where does that value live in our system?** A replayable
+    `Authorization` is a long-lived bearer credential for the taxpayer's
+    entire cabinet — registration card, bank accounts, settlement state,
+    filed documents. It needs credential-grade handling, not cache-grade.
+    The owner's key never reaches us; this derived value would. That is a
+    smaller exposure than a key and still a serious one.
 7. Is a TSA timestamp required on a filing signature, or only when
    `GET_STAMP=1` requests one in the reply?
-8. **Is the `XXX_CRYPT` payload a CMS EnvelopedData, or a bare
-   ГОСТ-encrypted blob?** Наказ 499 says only "зашифрований документ". The
-   unpublished appendix 3 — the CA crypto-library function specifications —
-   would define it. UAPKI's `ENCRYPT` emits EnvelopedData; if the container
-   wants something rawer, we need a different call shape. **One real
-   container from the cabinet settles this**, and it is now the highest-value
-   experiment on this card.
+8. ~~Is the `UA1_CRYPT` payload a CMS EnvelopedData or a raw blob?~~
+   **Answered: a CMS envelope.** A working implementation builds the block
+   from an `EnvelopData()` call, so UAPKI's `ENCRYPT` is the right entry
+   point. Confidence medium-high — it is a third-party implementation
+   rather than an official spec, and it diverges from наказ 499 in a few
+   header tags. Worth confirming against a real accepted container, but no
+   longer a blocker.
 
 ## Note on ADR-0012
 

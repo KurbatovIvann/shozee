@@ -24,8 +24,13 @@ which topic. The executable contract remains the Linear feature card plus
    [SHO-447](https://linear.app/showzy-v2/issue/SHO-447)
 4. **The human signs.** The owner signs with their own key. We never sign on
    their behalf. → [SHO-445](https://linear.app/showzy-v2/issue/SHO-445)
-5. **We submit** what the human signed, and track its acknowledgement. →
-   [SHO-447](https://linear.app/showzy-v2/issue/SHO-447)
+5. **We submit** what the human signed, and process the authority's
+   receipts inside our own system. → [SHO-447](https://linear.app/showzy-v2/issue/SHO-447)
+
+**Confirmed 2026-09-05:** step 5 is ours. No filing provider — we build the
+container, submit to ДПС, and handle the квитанції ourselves, over the
+**cabinet REST API** rather than Єдине вікно. Reasoning and cost in
+`vendors.md`.
 
 Explicitly **out of scope for phase 1: full accounting**. This is a minimal
 filing flow for a sole proprietor on the simplified system, nothing more.

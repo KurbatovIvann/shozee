@@ -571,9 +571,92 @@ of decrypting `kvt_by_id` payloads. Both still need the signed
 `Authorization` header, so open question 1 is untouched; but the
 **decryption** problem for receipts is avoidable.
 
-Whether the signature for that header can be produced once and reused for
-a period, or must be minted per call, is what now decides how unattended
-the flow can be. That is the single most valuable thing left to establish.
+### The `Authorization` value is reusable by construction
+
+What gets signed is **the taxpayer's own identifier** — «ЄДРПОУ/РНОКПП
+підписаний внутрішнім підписом з додаванням сертифікату в BASE64». The
+documentation names no timestamp, no nonce, and no request binding in the
+signed payload.
+
+So for a given key and certificate the header is **the same bytes every
+time**. It is replayable by construction, and the only thing that can
+limit it is a server-side expiry we cannot see.
+
+> **S:** the documented header definition — sources.md#dps-cabinet-private-api; corroborated by owner observation that a signing key is used once per session in a third-party product, after which documents can be browsed and a declaration submitted — 2026-09-05
+> **V:** desk-only for the construction; owner for the behaviour
+> **C:** high that the value is reusable; **unknown** for how long
+
+One caveat on the corroboration: what the owner observed is that the
+*person* touches the key once. A browser product could equally hold the
+key in memory and re-sign transparently, which would look identical. That
+alternative matters because our server signs nowhere — the owner signs on
+their device and the server acts later. It is unlikely given the signed
+payload is a constant, but it is not excluded by the observation alone.
+
+**The question therefore narrows from "is it reusable" to "for how
+long".** Two things bound it regardless of any server policy: the
+certificate's own validity, and its revocation.
+
+### Consequence: that header is a credential, not a cache entry
+
+If the value is a replayable constant, then holding it is equivalent to
+holding a **long-lived bearer credential for that taxpayer's tax
+cabinet** — it reads their registration card, their bank accounts, their
+settlement state and their filed documents.
+
+So it must be handled as a secret of that weight: encrypted at rest,
+never logged, scoped to the tenant, revocable by re-issuing the
+certificate, and with a deliberate retention window rather than "until it
+stops working". This is a design constraint for
+[SHO-450](https://linear.app/showzy-v2/issue/SHO-450), and it is more
+consequential than it looks — the convenience that makes unattended
+filing possible is exactly what makes the stored value dangerous.
+
+### The channel choice decides whether we need the client's encryption key
+
+This is the sharpest architectural consequence found so far, and it came
+from looking at how a third-party product actually serves a receipt.
+
+Observed 2026-09-05: a vendor endpoint returns a квитанція as **plaintext
+base64 XML** plus a separate **XSLT** for rendering it. So by the time it
+reaches their own UI it is already decrypted. Per the owner, viewing it in
+that product **requires the encryption key** — the second key in the
+container, labelled «шифрування».
+
+> **S:** owner-supplied vendor API response and the owner's account of the flow — sources.md#taxer-receipt-endpoint, 2026-09-05
+> **V:** observed
+> **C:** high for the response shape; owner for the key requirement
+
+That fits: the vendor files through **Єдине вікно**, where receipts arrive
+as containers **encrypted to the payer**. CMS `KeyAgreeRecipientInfo`
+decryption needs the recipient's *private* key to perform the key
+agreement, so it can only happen where that key is. Hence the prompt.
+
+The cabinet REST API has no such step. It serves the same receipts already
+decrypted, as XML or PDF.
+
+| | Єдине вікно | Cabinet REST API |
+| --- | --- | --- |
+| Receipt arrives as | container encrypted to the payer | plain XML or PDF |
+| Needs the client's **encryption** key | yes, to decrypt | no |
+| Rendering | your own template per form | `/pdf` endpoint provided |
+
+**So the channel choice is not a detail.** Going through Єдине вікно
+imports a requirement our architecture explicitly avoids — the client's
+private key participating on our side, repeatedly, long after signing.
+Going through the cabinet API removes it: the owner signs the declaration,
+and everything afterwards is reads authorised by a signed header.
+
+This is now a strong argument for the cabinet API beyond convenience, and
+it belongs in the [SHO-449](https://linear.app/showzy-v2/issue/SHO-449)
+fork alongside the others.
+
+**One more thing that channel gives free.** Наказ 729 says display
+templates ship as PDF per form; the vendor evidently maintains XSLT
+templates instead, one per form code — the observed stylesheet is class
+`X1499102`, matching the receipt's form code with `X` standing in for the
+series letter. Rendering receipts ourselves would mean owning that
+template set. The cabinet's `/pdf` endpoint means not owning it at all.
 
 ### Taxpayer registration data in one call
 
@@ -638,9 +721,9 @@ as a decision — the call is the owner's.
 ## Open questions
 
 1. **What authenticates a submission?** Is the signed container the
-   credential, or is a signed `Authorization` header also required? Decides
-   whether we can submit without the owner present. — verifiable in the
-   cabinet with the owner's key
+   credential, or is a signed `Authorization` header also required? Still
+   unstated for `/cabinet/public/api/exchange`. But the *reuse* half of
+   this question is now largely settled — see below.
 2. ~~Which certificate do we encrypt to?~~ **Answered.** The Електронний
    кабінет API certificates are published at
    `cabinet.tax.gov.ua/cabinet/resources/js/sign/data/EK_S_NEW.cer`
@@ -660,10 +743,9 @@ as a decision — the call is the owner's.
    **new file with a new name**, not an edit — so the ledger must be able
    to reproduce a past period's figures alongside the corrected ones.
 6. **Rate limits** — undocumented.
-7. **What is our `CERTYPE` letter?** Every container block is tagged with a
-   letter identifying the CA whose crypto library produced it, and the
-   header repeats it in a mandatory field. What a UAPKI-based stack puts
-   there is not obvious.
+7. ~~What is our `CERTYPE` letter?~~ **Answered: `UA1`.** A single constant
+   for the post-2012 certificate formats, not a per-CA letter. ДПС notice
+   of 2013-01-11. See above.
 8. ~~How does a sole proprietor's single signature map onto the mandated
    order?~~ **Answered.** Квитанція №1 on a real filing lists it as
    «перший - директор» — the ФОП signature occupies the **director** slot.
@@ -714,6 +796,151 @@ So questions 7 (`CERTYPE`) and 9 (encrypted receipts) still need a route:
   names the problem.
 
 The first is cheapest and worth doing before any code is written.
+
+### Both container unknowns are answered — and the 2012 format change explains them together
+
+**`CERTYPE` = `UA1`.** Not a per-CA letter. ДПС published a notice on
+2013-01-11, implementing the joint Мін'юст / Держспецзв'язку order of
+2012-08-20 on new formats, structures and protocols: to have reporting
+accepted with certificates in the **new formats**, the transport header's
+`CERTYPE` field must carry the designation **`UA1`**.
+
+> **S:** ДПС notice via Урядовий кур'єр — sources.md#dps-certype-ua1, published 2013-01-11, read 2026-09-05
+> **V:** desk-only (official notice)
+> **C:** **medium** — see the caveat below; downgraded from high on 2026-09-05
+
+#### Caveat: the notice's legal basis has been repealed
+
+The 2013 notice defines "new formats" by reference to the joint
+Мін'юст / Держспецзв'язку order of 2012-08-20 № 1236/5/453. That order is
+dead, and so is everything that replaced it:
+
+| Instrument | Fate |
+| --- | --- |
+| `z1398-12` — наказ 1236/5/453 (2012) | repealed **2020-01-01** by z1172-19 |
+| `z1172-19` (2019) | repealed **2020-11-10** by z1039-20 |
+| `z1039-20` (2020) | repealed **2026-03-26** by z0375-24 |
+| `z0375-24` (2024) | **current — and it only repeals; it establishes nothing** |
+
+The framework moved up a level, to **ПКМУ від 28.06.2024 № 764 «Деякі
+питання електронної ідентифікації та електронних довірчих послуг»**
+(current edition 2026-07-16). The ministerial orders were repealed as
+redundant, not because the requirements vanished.
+
+> **S:** the repeal chain on `zakon.rada.gov.ua`, read 2026-09-05
+> **V:** desk-only (document cards read directly)
+> **C:** high — each card states its own repeal and successor
+
+**What this does and does not mean.** It does **not** invalidate наказ 499:
+that is ДПС's own instrument, never amended, and `CERTYPE` is its field.
+What it removes is the legal anchor the 2013 notice used to say *which*
+certificates count as "new format".
+
+So `UA1` remains the best available answer, but its support is now a 2013
+notice resting on a repealed order, plus one third-party implementation of
+unknown vintage. That is medium confidence, not high, and it should be
+verified against something current before the first filing — or simply
+proven by that filing, since a wrong `CERTYPE` produces an explicit
+rejection rather than silent corruption.
+
+**`UA1_CRYPT` carries a CMS envelope, not raw ciphertext.** A working
+third-party implementation builds the block as
+`"UA1_CRYPT"` · `0x00` · 4-byte **little-endian** length · the output of
+the signing library's `EnvelopData()` — an envelope/CMS structure taking
+a recipient issuer and serial, not a bare cipher.
+
+The same code builds `UA1_SIGN` from `SignDataInternal(true, …)` — an
+**internal, i.e. attached** signature, confirming that the signed data
+travels inside the block.
+
+> **S:** `GorulkoAV/EUSignDFS`, `DFSPackHelper.cs` — sources.md#eusigndfs
+> **V:** observed (a third-party implementation, not an official spec)
+> **C:** medium-high
+
+### Why the earlier reading from наказ 485 was wrong
+
+This document previously concluded the opposite — raw ГОСТ 28147-89
+ciphertext — reasoning that наказ 485 puts the session key and IV in the
+header requisites, where CMS would carry them internally. That inference
+was sound about наказ 485 and wrong about today.
+
+The resolution is the **2012 format change**. Наказ 485 is from 2008 and
+describes the pre-2012 container: per-CA letters, key material carried in
+the header. The 2012 joint order replaced those formats, and the same
+change is what turned `CERTYPE` from a per-CA letter into the single
+constant `UA1`. Both facts come from one event.
+
+So the 2008 and 2010 texts describe a container that the 2012 order
+superseded in exactly the two places we were unsure about. Read them for
+the framing, not for the crypto.
+
+**Consequence:** UAPKI's `ENCRYPT`, which emits CMS `EnvelopedData`, is
+the right entry point after all — see `kep-signing.md`.
+
+### Where the implementation diverges from наказ 499
+
+Worth knowing before treating either as authoritative, because it diverges
+in both directions:
+
+- **Extra tags** not in наказ 499's table: `EDRPOU`, `STTYPE=1`, and a
+  `CERTCRYPT` tag carrying certificate bytes before the crypt block.
+- **Missing tags** that наказ 499 marks mandatory: `CRC32_SIGN`,
+  `CRC32_FILE` — and, in the part examined, `CERTYPE` itself.
+
+That one repository may also target a different document flow than ours.
+So: the наказ for the frame, the implementation for what a real system
+actually emits, and neither alone as truth. The divergences are worth
+resolving against a real accepted container before shipping.
+
+### The older reading, kept for context
+
+Наказ 499 publishes no appendices, but its **predecessor** does. Наказ ДПА
+№ 485 від 22.07.2008 covers the same unified format and prints the
+container-structure appendix that 499 omits.
+
+Its decisive detail: **«Реквізити шифрування даних» sit in the transport
+header**, and they hold —
+
+- certificate fingerprints and owner names for sender and recipient,
+- the **encrypted session key**,
+- the **initialisation vector**,
+- the encrypted data length.
+
+> **S:** наказ ДПА 22.07.2008 № 485, appendix 2 — sources.md#order-485, read 2026-09-05
+> **V:** desk-only (predecessor standard, read as a summary rather than verbatim)
+> **C:** medium-high — the structural argument is strong; the text is one revision behind наказ 499
+
+**A CMS `EnvelopedData` carries all of that internally** — recipient info,
+the wrapped session key, and the content-encryption parameters are part of
+the ASN.1 structure. Here they are external, in the header.
+
+So `XXX_CRYPT` almost certainly holds a **raw ГОСТ 28147-89 ciphertext**,
+not a CMS envelope.
+
+**This corrects an earlier note in `kep-signing.md`.** The reasoning there —
+that the ecosystem converged on CMS, so `ENCRYPT` would emit the right
+bytes — pointed the wrong way. UAPKI's `ENCRYPT` produces `EnvelopedData`;
+this container appears to want the cipher output plus separately-carried
+key-agreement material. That is a different call shape, and possibly
+lower-level primitives than the high-level `ENCRYPT` method.
+
+Not certain, and two things could still change it: наказ 499 restructured
+section 5 in 2010, and ДПС's current implementation may well accept a CMS
+envelope regardless of what the order describes. But planning should assume
+raw ciphertext until a real container says otherwise.
+
+### Two more details the predecessor supplies
+
+**The container file is named `.cri`** — same name as the document it
+carries, different extension.
+
+**The section layout is richer than наказ 499 states.** Appendix 2 gives
+each section as: a null-terminated variable-length signature, a 4-byte
+header size excluding that signature, a 4-byte encrypted block size, a
+4-byte signature offset, a 4-byte signed data block size, then the data.
+Наказ 499's text describes only signature · `0x00` · one 4-byte length ·
+payload. Either the 2010 revision simplified it, or 499 describes it
+loosely. Worth resolving before writing a serialiser.
 
 ### The missing appendices
 

@@ -62,7 +62,7 @@ bank-derived income ledger feeding a declaration.
 | `target-flow.md` | [SHO-443](https://linear.app/showzy-v2/issue/SHO-443) | the phase 1 flow this research serves — read first |
 | `bank-ingestion.md` | [SHO-451](https://linear.app/showzy-v2/issue/SHO-451) | first pass; 7 open questions |
 | `reporting-api.md` | [SHO-447](https://linear.app/showzy-v2/issue/SHO-447) | first pass; submission API confirmed, 6 open questions |
-| `impact-now.md` | [SHO-450](https://linear.app/showzy-v2/issue/SHO-450) | not started — one constraint confirmed |
+| `impact-now.md` | [SHO-450](https://linear.app/showzy-v2/issue/SHO-450) | **assembled — read before touching money, orders or customers** |
 | `kep-signing.md` | [SHO-445](https://linear.app/showzy-v2/issue/SHO-445) | crypto requirements established; encryption gap found |
 | `legal-frame.md` | [SHO-444](https://linear.app/showzy-v2/issue/SHO-444) | first pass; 5 open questions |
 | `vendors.md` | [SHO-449](https://linear.app/showzy-v2/issue/SHO-449) | fiscalisation decided; reporting fork open |
