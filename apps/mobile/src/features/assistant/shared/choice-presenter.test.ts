@@ -10,6 +10,8 @@ import {
 import {
   canSelectChoiceOption,
   claimChoiceSelect,
+  choiceCardOfferedOptions,
+  choiceCardRetryOptionId,
   choiceCardState,
   choiceSelectAllowsSameOptionRetry,
   choiceSelectAppendParts,
@@ -682,6 +684,7 @@ describe("choiceSelectAppendParts", () => {
     expect(hook).toContain("companyEpochRef");
     expect(hook).toContain("attemptedRef");
     expect(hook).toContain("choiceSelectRememberedAttempt");
+    expect(hook).toContain("previous: attemptedRef.current");
     expect(hook).not.toContain("sendMessage");
   });
 });
@@ -1271,6 +1274,7 @@ describe("same-option recovery after an uncertain POST (SHO-452)", () => {
       result: first,
       challengeId: choiceId,
       optionId: lemonId,
+      previous: null,
     });
     expect(attempted).toEqual({ challengeId: choiceId, optionId: lemonId });
     resolvingRef.current = null;
@@ -1327,6 +1331,7 @@ describe("same-option recovery after an uncertain POST (SHO-452)", () => {
       result: first,
       challengeId: choiceId,
       optionId: lemonId,
+      previous: null,
     });
     resolvingRef.current = null;
     const second = await executeChoiceSelect({
@@ -1343,6 +1348,7 @@ describe("same-option recovery after an uncertain POST (SHO-452)", () => {
         result: second,
         challengeId: choiceId,
         optionId: lemonId,
+        previous: attempted,
       }),
     ).toBeNull();
   });
@@ -1404,5 +1410,59 @@ describe("same-option recovery after an uncertain POST (SHO-452)", () => {
         attempted: null,
       }),
     ).toBe(true);
+  });
+
+  it("does not offer the other options after an uncertain POST of A", () => {
+    const attempted = {
+      challengeId: choiceId,
+      optionId: lemonId,
+    };
+    expect(
+      choiceCardOfferedOptions({
+        choice: envelope,
+        attempted,
+      }).map((option) => option.id),
+    ).toEqual([lemonId]);
+    expect(
+      choiceCardRetryOptionId({
+        choice: envelope,
+        attempted,
+      }),
+    ).toBe(lemonId);
+    expect(
+      choiceCardOfferedOptions({
+        choice: envelope,
+        attempted: null,
+      }).map((option) => option.id),
+    ).toEqual([lemonId, vanillaId]);
+    expect(
+      choiceCardOfferedOptions({
+        choice: envelope,
+        attempted,
+      }).some((option) => option.id === vanillaId),
+    ).toBe(false);
+  });
+
+  it("does not clear the remembered A attempt when skipped B is assigned", () => {
+    const rememberedA = {
+      challengeId: choiceId,
+      optionId: lemonId,
+    };
+    expect(
+      choiceSelectRememberedAttempt({
+        result: "skipped",
+        challengeId: choiceId,
+        optionId: vanillaId,
+        previous: rememberedA,
+      }),
+    ).toBe(rememberedA);
+    expect(
+      choiceSelectRememberedAttempt({
+        result: "skipped",
+        challengeId: choiceId,
+        optionId: vanillaId,
+        previous: null,
+      }),
+    ).toBeNull();
   });
 });

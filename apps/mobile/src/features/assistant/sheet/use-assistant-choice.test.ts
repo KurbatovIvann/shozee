@@ -3,10 +3,11 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import "../../../auth/react-test-dom";
-import type {
-  AssistantChoiceMessage,
-  ChoiceAppendPart,
-  ChoiceSelectResult,
+import {
+  choiceCardOfferedOptions,
+  type AssistantChoiceMessage,
+  type ChoiceAppendPart,
+  type ChoiceSelectResult,
 } from "../shared/choice-presenter";
 import { useAssistantChoice } from "./use-assistant-choice";
 
@@ -130,11 +131,35 @@ describe("useAssistantChoice attempted-option recovery (SHO-452)", () => {
       choiceId,
       optionId: lemonId,
     });
+    expect(mounted.latest().attempted).toEqual({
+      challengeId: choiceId,
+      optionId: lemonId,
+    });
+    const pending = mounted.latest().pending;
+    if (pending === null) {
+      throw new Error("expected pending needs_choice after uncertain POST");
+    }
+    expect(
+      choiceCardOfferedOptions({
+        choice: pending,
+        attempted: mounted.latest().attempted,
+      }).map((option) => option.id),
+    ).toEqual([lemonId]);
+    expect(
+      choiceCardOfferedOptions({
+        choice: pending,
+        attempted: mounted.latest().attempted,
+      }).some((option) => option.id === vanillaId),
+    ).toBe(false);
     act(() => {
       mounted.latest().select(vanillaId);
     });
     await flush();
     expect(postChoice).toHaveBeenCalledOnce();
+    expect(mounted.latest().attempted).toEqual({
+      challengeId: choiceId,
+      optionId: lemonId,
+    });
     mounted.unmount();
   });
 
@@ -224,6 +249,39 @@ describe("useAssistantChoice attempted-option recovery (SHO-452)", () => {
     expect(postChoice).toHaveBeenNthCalledWith(2, {
       choiceId,
       optionId: vanillaId,
+    });
+    mounted.unmount();
+  });
+
+  it("does not clear the remembered A attempt when a skipped B tap is assigned", async () => {
+    const postChoice = vi.fn(() =>
+      Promise.resolve({
+        status: "error",
+        httpStatus: 503,
+        recoverability: "retryable" as const,
+      }),
+    );
+    const mounted = mount({ postChoice });
+    act(() => {
+      mounted.latest().select(lemonId);
+    });
+    await flush();
+    act(() => {
+      mounted.latest().select(vanillaId);
+    });
+    await flush();
+    expect(mounted.latest().attempted).toEqual({
+      challengeId: choiceId,
+      optionId: lemonId,
+    });
+    act(() => {
+      mounted.latest().select(lemonId);
+    });
+    await flush();
+    expect(postChoice).toHaveBeenCalledTimes(2);
+    expect(postChoice).toHaveBeenNthCalledWith(2, {
+      choiceId,
+      optionId: lemonId,
     });
     mounted.unmount();
   });

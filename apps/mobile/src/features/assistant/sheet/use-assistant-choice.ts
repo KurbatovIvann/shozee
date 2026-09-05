@@ -29,6 +29,7 @@ export function useAssistantChoice(args: {
   readonly pending: PendingChoice | null;
   readonly ignoredChallengeIds: ReadonlySet<string>;
   readonly card: ChoiceCardState;
+  readonly attempted: ChoiceAttemptedOption | null;
   readonly select: (optionId: string) => void;
   readonly reset: () => void;
 } {
@@ -36,6 +37,9 @@ export function useAssistantChoice(args: {
   const [resolvingChallengeId, setResolvingChallengeId] = useState<
     string | null
   >(null);
+  const [attempted, setAttempted] = useState<ChoiceAttemptedOption | null>(
+    null,
+  );
   const ignoredRef = useRef<ReadonlySet<string>>(new Set());
   const resolvingRef = useRef<string | null>(null);
   const attemptedRef = useRef<ChoiceAttemptedOption | null>(null);
@@ -94,10 +98,6 @@ export function useAssistantChoice(args: {
               setIgnored(next);
             },
           });
-          if (outcome === "skipped") {
-            clearResolving();
-            return;
-          }
           if (outcome === "stale") {
             return;
           }
@@ -105,8 +105,10 @@ export function useAssistantChoice(args: {
             result,
             challengeId: current.challengeId,
             optionId,
+            previous: attemptedRef.current,
           });
           attemptedRef.current = remembered;
+          setAttempted(remembered);
           clearResolving();
         })
         .catch(() => {
@@ -115,10 +117,12 @@ export function useAssistantChoice(args: {
           // already be claimed. Terminal `{ status: "error" }` bodies
           // are handled in `then`.
           if (resolvingRef.current === current.challengeId) {
-            attemptedRef.current = {
+            const next = {
               challengeId: current.challengeId,
               optionId,
             };
+            attemptedRef.current = next;
+            setAttempted(next);
             clearResolving();
           }
         });
@@ -140,6 +144,7 @@ export function useAssistantChoice(args: {
     attemptedRef.current = null;
     setIgnored(empty);
     setResolvingChallengeId(null);
+    setAttempted(null);
   }, []);
 
   const ignoredChallengeIds = useMemo(() => ignored, [ignored]);
@@ -148,6 +153,7 @@ export function useAssistantChoice(args: {
     pending,
     ignoredChallengeIds,
     card,
+    attempted,
     select,
     reset,
   };

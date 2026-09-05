@@ -13,6 +13,7 @@ import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { AppHeader, Banner, EmptyState } from "../../../components/ui";
 import type { AssistantCopy } from "../../../i18n/assistant";
 import type { AssistantVisibleRow } from "../shared/chat-rows";
+import type { ChoiceAttemptedOption } from "../shared/choice-presenter";
 import {
   assistantShozikPose,
   SHOZIK_EMPTY_POSE_SIZE,
@@ -37,6 +38,7 @@ export type AssistantSheetViewModel = {
   readonly hasInFlightTools: boolean;
   readonly confirmationApplying: boolean;
   readonly choiceApplying: boolean;
+  readonly choiceAttempted: ChoiceAttemptedOption | null;
   readonly canSend: boolean;
   readonly banner: string | null;
 };
@@ -109,6 +111,7 @@ export function AssistantSheetView(model: AssistantSheetViewModel) {
         choiceRetryLabel={copy.choiceRetry}
         choiceSelectingLabel={copy.choiceSelecting}
         choiceApplying={model.choiceApplying}
+        choiceAttempted={model.choiceAttempted}
         onSelectChoice={model.selectChoice}
       />
     ),
@@ -128,6 +131,7 @@ export function AssistantSheetView(model: AssistantSheetViewModel) {
       copy.waitLabel,
       copy.waitLines,
       model.choiceApplying,
+      model.choiceAttempted,
       model.confirm,
       model.confirmationApplying,
       model.dismiss,

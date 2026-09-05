@@ -285,6 +285,60 @@ export function choiceCardState(args: {
   return { kind: "proposed", choice: args.pending };
 }
 
+function attemptedOptionIdForChoice(
+  choice: StaffAssistantChoiceCardEnvelope,
+  attempted: ChoiceAttemptedOption | null | undefined,
+): string | undefined {
+  if (
+    attempted === null ||
+    attempted === undefined ||
+    attempted.challengeId !== choice.challengeId
+  ) {
+    return undefined;
+  }
+  if (!choice.options.some((option) => option.id === attempted.optionId)) {
+    return undefined;
+  }
+  return attempted.optionId;
+}
+
+/**
+ * Same-option recovery id for claimed peeks and for an uncertain POST
+ * that still shows `needs_choice`. Until authoritative state proves
+ * otherwise, only this option may be retried.
+ */
+export function choiceCardRetryOptionId(args: {
+  readonly choice: StaffAssistantChoiceCardEnvelope;
+  readonly attempted?: ChoiceAttemptedOption | null;
+}): string | undefined {
+  const claimedId = claimedRetryOptionId(args.choice);
+  if (claimedId !== undefined) {
+    return claimedId;
+  }
+  if (args.choice.status !== "needs_choice") {
+    return undefined;
+  }
+  return attemptedOptionIdForChoice(args.choice, args.attempted);
+}
+
+/**
+ * Tappable picker options. After an uncertain POST of A, B is not
+ * offered while the remembered attempt still matches this challenge.
+ */
+export function choiceCardOfferedOptions(args: {
+  readonly choice: StaffAssistantChoiceCardEnvelope;
+  readonly attempted?: ChoiceAttemptedOption | null;
+}): readonly { readonly id: string; readonly label: string }[] {
+  if (args.choice.status !== "needs_choice") {
+    return [];
+  }
+  const locked = attemptedOptionIdForChoice(args.choice, args.attempted);
+  if (locked === undefined) {
+    return args.choice.options;
+  }
+  return args.choice.options.filter((option) => option.id === locked);
+}
+
 function choiceSelectOptionAllowed(
   pending: PendingChoice,
   optionId: string,
@@ -414,9 +468,11 @@ export function choiceSelectRememberedAttempt(args: {
   readonly result: ChoiceSelectResult | "skipped";
   readonly challengeId: string;
   readonly optionId: string;
+  readonly previous: ChoiceAttemptedOption | null;
 }): ChoiceAttemptedOption | null {
+  // A skipped B tap must not wipe the remembered A attempt.
   if (args.result === "skipped") {
-    return null;
+    return args.previous;
   }
   if (!choiceSelectAllowsSameOptionRetry(args.result)) {
     return null;
