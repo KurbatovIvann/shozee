@@ -8,10 +8,6 @@ import { archiveVariantContract } from "./archive-variant.contract.js";
 
 export const archiveVariant = implementAction(archiveVariantContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("catalog.archiveVariant expects staff");
-    }
-
     const saved = await setVariantStatus(requireWritable(ctx.db), {
       companyId: ctx.companyId,
       variantId: input.variantId,

@@ -27,7 +27,7 @@ function abandonAuditTarget(env: AuditTargetEnv): { type: string; id: string } {
 
 export const abandonRequest = implementAction(abandonRequestContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "system" || ctx.scope !== "tenant") {
+    if (ctx.scope !== "tenant") {
       throw new CoreInvariantError(
         "docSigning.abandonRequest expects tenant system",
       );

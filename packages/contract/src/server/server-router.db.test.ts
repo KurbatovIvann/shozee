@@ -288,7 +288,7 @@ function createSampleActions() {
       {
         resolveTarget: resolvePublishedProduct,
         handler: (_input, ctx) => {
-          if (ctx.principal !== "public" || ctx.scope !== "target") {
+          if (ctx.scope !== "target") {
             throw new NotFoundError();
           }
           const resource = ctx.target.resource;

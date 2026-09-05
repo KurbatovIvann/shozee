@@ -8,10 +8,6 @@ import { restoreCustomerContract } from "./restore-customer.contract.js";
 
 export const restoreCustomer = implementAction(restoreCustomerContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("customers.restoreCustomer expects staff");
-    }
-
     const saved = await setCustomerStatus(requireWritable(ctx.db), {
       companyId: ctx.companyId,
       customerId: input.id,

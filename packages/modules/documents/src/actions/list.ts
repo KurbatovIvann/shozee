@@ -16,10 +16,6 @@ import {
 
 export const listDocuments = implementAction(listDocumentsContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("documents.list expects staff");
-    }
-
     const cursor =
       input.cursor === undefined
         ? undefined

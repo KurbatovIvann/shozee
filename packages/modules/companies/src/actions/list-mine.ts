@@ -1,5 +1,4 @@
 import { implementAction, resolveEffectivePermissions } from "@showzy/core";
-import { CoreInvariantError } from "@showzy/core/errors";
 import {
   companies,
   companyMembers,
@@ -34,10 +33,6 @@ function sortedEffectivePermissions(
 
 export const listMine = implementAction(listMineContract, {
   handler: async (_input, ctx) => {
-    if (ctx.principal !== "account") {
-      throw new CoreInvariantError("companies.listMine expects account");
-    }
-
     const rows = await ctx.db
       .select({
         membershipId: companyMembers.id,

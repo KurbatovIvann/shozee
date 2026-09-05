@@ -145,10 +145,6 @@ async function loadRequest(env: {
 
 export const completeSigning = implementAction(completeSigningContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("docSigning.complete expects staff");
-    }
-
     const db = requireStaffWritable(ctx.db);
     const request = await loadRequest({
       db,

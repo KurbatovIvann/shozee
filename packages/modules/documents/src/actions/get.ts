@@ -1,5 +1,5 @@
 import { implementAction } from "@showzy/core";
-import { CoreInvariantError, NotFoundError } from "@showzy/core/errors";
+import { NotFoundError } from "@showzy/core/errors";
 import { getArtifact } from "@showzy/doc-generation/get-artifact";
 import { getSigning } from "@showzy/doc-signing/get";
 import { issueDocumentDownloadUrl } from "@showzy/files";
@@ -13,9 +13,6 @@ import { loadStaffDocumentWithGrant } from "../services/load-document.js";
 
 export const getDocument = implementAction(getDocumentContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("documents.get expects staff");
-    }
     const { view, signRequestedAt } = await loadStaffDocumentWithGrant({
       db: ctx.db,
       companyId: ctx.companyId,

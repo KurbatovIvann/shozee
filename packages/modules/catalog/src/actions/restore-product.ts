@@ -8,10 +8,6 @@ import { restoreProductContract } from "./restore-product.contract.js";
 
 export const restoreProduct = implementAction(restoreProductContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("catalog.restoreProduct expects staff");
-    }
-
     const saved = await setProductStatus(requireWritable(ctx.db), {
       companyId: ctx.companyId,
       productId: input.productId,

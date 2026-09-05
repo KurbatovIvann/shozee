@@ -18,7 +18,7 @@ export const backfillCatalogRenditions = implementAction(
   backfillCatalogRenditionsContract,
   {
     handler: async (input, ctx) => {
-      if (ctx.principal !== "system" || ctx.scope !== "global") {
+      if (ctx.scope !== "global") {
         throw new CoreInvariantError(
           "files.backfillCatalogRenditions expects global system",
         );

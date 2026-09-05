@@ -73,7 +73,7 @@ async function resolveSharedDocument(
 export const getShared = implementAction(getSharedContract, {
   resolveTarget: resolveSharedDocument,
   handler: async (_input, ctx) => {
-    if (ctx.principal !== "public" || ctx.scope !== "target") {
+    if (ctx.scope !== "target") {
       throw new CoreInvariantError("documents.getShared expects public-target");
     }
     const resource = parseDbEnum(

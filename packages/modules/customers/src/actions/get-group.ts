@@ -1,5 +1,5 @@
 import { implementAction } from "@showzy/core";
-import { CoreInvariantError, NotFoundError } from "@showzy/core/errors";
+import { NotFoundError } from "@showzy/core/errors";
 import { customerGroups } from "@showzy/db/schema/customers";
 import { and, eq } from "drizzle-orm";
 
@@ -9,10 +9,6 @@ import { getGroupContract } from "./get-group.contract.js";
 
 export const getGroup = implementAction(getGroupContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("customers.getGroup expects staff");
-    }
-
     const row = (
       await ctx.db
         .select({

@@ -8,7 +8,6 @@ import {
 } from "@showzy/core";
 import {
   ConflictError,
-  CoreInvariantError,
   NotFoundError,
   PermissionDeniedError,
   ValidationError,
@@ -136,9 +135,6 @@ const emitCreatedThenFail = implementAction(
   }),
   {
     handler: (input, ctx) => {
-      if (ctx.principal !== "staff") {
-        throw new CoreInvariantError("emitCreatedThenFail expects staff");
-      }
       ctx.emit(documentsCreated, {
         aggregate: { type: "document", id: input.documentId },
         payload: {
@@ -185,10 +181,7 @@ const projectCreatedTest = implementAction(
     timeout: 5_000,
   }),
   {
-    handler: (_input, ctx) => {
-      if (ctx.principal !== "system") {
-        throw new CoreInvariantError("projectCreatedTest expects system");
-      }
+    handler: () => {
       return Promise.resolve({ ok: true as const });
     },
     auditTarget: () => ({ type: "document", id: "test-created-noop" }),

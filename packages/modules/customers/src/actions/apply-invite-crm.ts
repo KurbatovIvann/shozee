@@ -1,5 +1,5 @@
 import { implementAction } from "@showzy/core";
-import { CoreInvariantError, NotFoundError } from "@showzy/core/errors";
+import { NotFoundError } from "@showzy/core/errors";
 import { z } from "zod";
 
 import { applyInviteCrmContract } from "./apply-invite-crm.contract.js";
@@ -18,9 +18,6 @@ export const applyInviteCrm = implementAction(applyInviteCrmContract, {
     return resolveApplyInviteCrmCompany(input, env);
   },
   handler: (input, ctx) => {
-    if (ctx.principal !== "customer") {
-      throw new CoreInvariantError("customers.applyInviteCrm expects customer");
-    }
     return applyInviteCrmRecord({ ctx, input });
   },
   auditTarget: (env) => {

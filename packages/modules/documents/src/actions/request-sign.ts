@@ -55,10 +55,6 @@ function requestSignAuditTarget(env: AuditTargetEnv): {
 
 export const requestSign = implementAction(requestSignContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("documents.requestSign expects staff");
-    }
-
     const db = requireWritable(ctx.db);
     const rows = await db
       .select({

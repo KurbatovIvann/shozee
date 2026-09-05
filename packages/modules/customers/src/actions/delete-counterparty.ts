@@ -1,6 +1,4 @@
 import { implementAction } from "@showzy/core";
-import { CoreInvariantError } from "@showzy/core/errors";
-
 import { counterpartyAuditTarget } from "../services/counterparty-audit-target.js";
 import { deleteStaffCounterparty } from "../services/delete-counterparty.js";
 import { deleteCounterpartyContract } from "./delete-counterparty.contract.js";
@@ -17,11 +15,6 @@ export const deleteCounterpartyConfirmationSummary =
 
 export const deleteCounterparty = implementAction(deleteCounterpartyContract, {
   handler: (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError(
-        "customers.deleteCounterparty expects staff",
-      );
-    }
     return deleteStaffCounterparty({ ctx, input });
   },
   confirmationSummary: () => deleteCounterpartyConfirmationSummary,

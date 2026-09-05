@@ -136,12 +136,6 @@ export const resolveCustomerReference = implementAction(
   resolveCustomerReferenceContract,
   {
     handler: async (input, ctx) => {
-      if (ctx.principal !== "staff") {
-        throw new CoreInvariantError(
-          "customers.resolveCustomerReference expects staff",
-        );
-      }
-
       if (input.by === "id") {
         const row = (
           await ctx.db

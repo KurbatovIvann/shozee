@@ -1,5 +1,5 @@
 import { implementAction } from "@showzy/core";
-import { CoreInvariantError, NotFoundError } from "@showzy/core/errors";
+import { NotFoundError } from "@showzy/core/errors";
 import { companyCustomerInvites } from "@showzy/db/schema/invites";
 import { and, eq } from "drizzle-orm";
 
@@ -8,10 +8,6 @@ import { getInviteContract } from "./get.contract.js";
 
 export const getInvite = implementAction(getInviteContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("invites.get expects staff");
-    }
-
     const row = (
       await ctx.db
         .select(inviteRowColumns)

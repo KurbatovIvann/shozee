@@ -8,7 +8,6 @@ import {
 } from "@showzy/core";
 import {
   ConflictError,
-  CoreInvariantError,
   NotFoundError,
   PermissionDeniedError,
   ValidationError,
@@ -175,9 +174,6 @@ const emitCreatedThenFail = implementAction(
   }),
   {
     handler: (input, ctx) => {
-      if (ctx.principal !== "staff") {
-        throw new CoreInvariantError("emitCreatedThenFail expects staff");
-      }
       ctx.emit(invitesCreated, {
         aggregate: { type: "invite", id: input.inviteId },
         payload: {
@@ -214,9 +210,6 @@ const emitRevokedThenFail = implementAction(
   }),
   {
     handler: (input, ctx) => {
-      if (ctx.principal !== "staff") {
-        throw new CoreInvariantError("emitRevokedThenFail expects staff");
-      }
       ctx.emit(invitesRevoked, {
         aggregate: { type: "invite", id: input.inviteId },
         payload: { inviteId: input.inviteId },
@@ -248,10 +241,7 @@ const projectCreatedTest = implementAction(
     timeout: 5_000,
   }),
   {
-    handler: (_input, ctx) => {
-      if (ctx.principal !== "system") {
-        throw new CoreInvariantError("projectCreatedTest expects system");
-      }
+    handler: () => {
       return Promise.resolve({ ok: true as const });
     },
     auditTarget: () => ({ type: "invite", id: "test-created-noop" }),
@@ -279,10 +269,7 @@ const projectRevokedTest = implementAction(
     timeout: 5_000,
   }),
   {
-    handler: (_input, ctx) => {
-      if (ctx.principal !== "system") {
-        throw new CoreInvariantError("projectRevokedTest expects system");
-      }
+    handler: () => {
       return Promise.resolve({ ok: true as const });
     },
     auditTarget: () => ({ type: "invite", id: "test-revoked-noop" }),

@@ -1,5 +1,4 @@
 import { implementAction } from "@showzy/core";
-import { CoreInvariantError } from "@showzy/core/errors";
 import { signingSignatures } from "@showzy/db/schema/doc-signing";
 import { uniqueIds } from "@showzy/module-kit/unique-ids";
 import { and, eq, inArray } from "drizzle-orm";
@@ -10,12 +9,6 @@ export const getSupplierSignedFlags = implementAction(
   getSupplierSignedFlagsContract,
   {
     handler: async (input, ctx) => {
-      if (ctx.principal !== "staff") {
-        throw new CoreInvariantError(
-          "docSigning.getSupplierSignedFlags expects staff",
-        );
-      }
-
       const documentIds = uniqueIds(input.documentIds);
       if (documentIds.length === 0) {
         return { flags: [] };

@@ -1,6 +1,4 @@
 import { implementAction } from "@showzy/core";
-import { CoreInvariantError } from "@showzy/core/errors";
-
 import { customerAuditTarget } from "../services/customer-audit-target.js";
 import {
   ACTIVE_CUSTOMER_DELETE_MESSAGE,
@@ -23,9 +21,6 @@ export const deleteCustomerConfirmationSummary =
 
 export const deleteCustomer = implementAction(deleteCustomerContract, {
   handler: (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("customers.deleteCustomer expects staff");
-    }
     return deleteStaffCustomer({ ctx, input });
   },
   confirmationSummary: () => deleteCustomerConfirmationSummary,

@@ -185,9 +185,6 @@ const emitCreatedThenFail = implementAction(
   }),
   {
     handler: (input, ctx) => {
-      if (ctx.principal !== "staff") {
-        throw new CoreInvariantError("emitCreatedThenFail expects staff");
-      }
       ctx.emit(documentsCreated, {
         aggregate: { type: "document", id: input.documentId },
         payload: {
@@ -244,7 +241,7 @@ const recordThenMaybeFail = implementAction(
   }),
   {
     handler: async (input, ctx) => {
-      if (ctx.principal !== "system" || ctx.scope !== "tenant") {
+      if (ctx.scope !== "tenant") {
         throw new CoreInvariantError(
           "docGeneration.renderPdf twin expects tenant system",
         );

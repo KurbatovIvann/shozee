@@ -13,10 +13,6 @@ import {
 
 export const listInvites = implementAction(listInvitesContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("invites.list expects staff");
-    }
-
     const cursor =
       input.cursor === undefined
         ? undefined

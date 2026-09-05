@@ -16,10 +16,6 @@ import {
 
 export const listConversations = implementAction(listConversationsContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("assistant.listConversations expects staff");
-    }
-
     const cursor =
       input.cursor === undefined
         ? undefined

@@ -27,7 +27,7 @@ function attachAuditTarget(env: AuditTargetEnv): { type: string; id: string } {
 
 export const attachSignedShare = implementAction(attachSignedShareContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "system" || ctx.scope !== "tenant") {
+    if (ctx.scope !== "tenant") {
       throw new CoreInvariantError(
         "documents.attachSignedShare expects tenant system",
       );

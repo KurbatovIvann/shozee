@@ -1,5 +1,5 @@
 import { implementAction } from "@showzy/core";
-import { CoreInvariantError, NotFoundError } from "@showzy/core/errors";
+import { NotFoundError } from "@showzy/core/errors";
 import {
   productMedia,
   products,
@@ -22,10 +22,6 @@ function parseProductStatus(value: string): "active" | "archived" {
 
 export const getProduct = implementAction(getProductContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("catalog.getProduct expects staff");
-    }
-
     const productRows = await ctx.db
       .select({
         id: products.id,

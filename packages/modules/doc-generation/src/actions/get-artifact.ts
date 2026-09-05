@@ -10,9 +10,6 @@ import {
 
 export const getArtifact = implementAction(getArtifactContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("docGeneration.getArtifact expects staff");
-    }
     const rows = await ctx.db
       .select({
         status: documentGenerationJobs.status,

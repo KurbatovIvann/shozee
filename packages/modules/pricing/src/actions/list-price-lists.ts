@@ -13,10 +13,6 @@ import {
 
 export const listPriceLists = implementAction(listPriceListsContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("pricing.listPriceLists expects staff");
-    }
-
     const searchPattern =
       input.query === undefined ? undefined : likeContainsPattern(input.query);
     if (input.query !== undefined && searchPattern === undefined) {

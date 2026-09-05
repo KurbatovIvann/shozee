@@ -4,7 +4,6 @@ import { defineActionContract } from "@showzy/core/contract";
 import { implementAction } from "@showzy/core";
 import {
   ConflictError,
-  CoreInvariantError,
   NotFoundError,
   ValidationError,
 } from "@showzy/core/errors";
@@ -120,9 +119,6 @@ const emitRecordedThenFail = implementAction(
   }),
   {
     handler: (input, ctx) => {
-      if (ctx.principal !== "staff") {
-        throw new CoreInvariantError("emitRecordedThenFail expects staff");
-      }
       ctx.emit(docSigningRecorded, {
         aggregate: { type: "document", id: input.documentId },
         payload: {
@@ -165,9 +161,6 @@ const emitRecorded = implementAction(
   }),
   {
     handler: (input, ctx) => {
-      if (ctx.principal !== "staff") {
-        throw new CoreInvariantError("emitRecorded expects staff");
-      }
       ctx.emit(docSigningRecorded, {
         aggregate: { type: "document", id: input.documentId },
         payload: {

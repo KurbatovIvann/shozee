@@ -25,7 +25,7 @@ function markFailedAuditTarget(env: AuditTargetEnv): {
 
 export const markFailed = implementAction(markFailedContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "system" || ctx.scope !== "tenant") {
+    if (ctx.scope !== "tenant") {
       throw new CoreInvariantError(
         "docGeneration.markFailed expects tenant system",
       );

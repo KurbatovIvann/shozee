@@ -4,7 +4,6 @@ import { implementAction } from "@showzy/core";
 import { defineActionContract } from "@showzy/core/contract";
 import {
   ConflictError,
-  CoreInvariantError,
   NotFoundError,
   PermissionDeniedError,
   ValidationError,
@@ -143,11 +142,6 @@ const callLockIssuedForSigning = implementAction(
   }),
   {
     handler: async (input, ctx) => {
-      if (ctx.principal !== "staff") {
-        throw new CoreInvariantError(
-          "lockTest.callIssuedForSigning expects staff",
-        );
-      }
       return ctx.call(lockIssuedForSigning, input);
     },
     auditTarget: (env) => {

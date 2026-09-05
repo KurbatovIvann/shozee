@@ -1,5 +1,4 @@
 import { implementAction } from "@showzy/core";
-import { CoreInvariantError } from "@showzy/core/errors";
 import { createAuditTarget, pickString } from "@showzy/module-kit/audit-target";
 import { z } from "zod";
 
@@ -32,9 +31,6 @@ const upsertAuditTarget = createAuditTarget({
 
 export const upsertOrderCard = implementAction(upsertOrderCardContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "system") {
-      throw new CoreInvariantError("chat.upsertOrderCard expects system");
-    }
     return upsertTenantOrderCard({
       ctx,
       orderId: input.payload.orderId,

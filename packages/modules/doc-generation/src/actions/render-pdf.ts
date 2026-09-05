@@ -24,7 +24,7 @@ function renderAuditTarget(env: AuditTargetEnv): { type: string; id: string } {
 
 export const renderPdf = implementAction(renderPdfContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "system" || ctx.scope !== "tenant") {
+    if (ctx.scope !== "tenant") {
       throw new CoreInvariantError(
         "docGeneration.renderPdf expects tenant system",
       );
