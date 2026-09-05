@@ -16,7 +16,11 @@ import {
   implementAction,
 } from "@showzy/core";
 import { defineActionContract } from "@showzy/core/contract";
-import { CoreInvariantError, NotFoundError, TimeoutError } from "@showzy/core/errors";
+import {
+  CoreInvariantError,
+  NotFoundError,
+  TimeoutError,
+} from "@showzy/core/errors";
 import {
   createTestKit,
   kitIdentities,
@@ -45,7 +49,16 @@ import {
 } from "@showzy/files/storage";
 import { and, eq } from "drizzle-orm";
 import { pino, type Logger } from "pino";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { z } from "zod";
 
 import * as renderDocument from "../../../packages/modules/doc-generation/src/templates/render-document.js";
@@ -394,17 +407,14 @@ async function exhaustPdfDelivery(env: {
 
 function capLongJsTimeouts(maxMs: number): () => void {
   const nativeSetTimeout = globalThis.setTimeout.bind(globalThis);
-  const spy = vi.spyOn(globalThis, "setTimeout").mockImplementation(
-    ((
-      handler: TimerHandler,
-      delay?: number,
-      ...args: unknown[]
-    ) => {
-      const next =
-        typeof delay === "number" && delay >= 5_000 ? maxMs : delay;
-      return nativeSetTimeout(handler, next, ...args);
-    }) as typeof setTimeout,
-  );
+  const spy = vi.spyOn(globalThis, "setTimeout").mockImplementation(((
+    handler: TimerHandler,
+    delay?: number,
+    ...args: unknown[]
+  ) => {
+    const next = typeof delay === "number" && delay >= 5_000 ? maxMs : delay;
+    return nativeSetTimeout(handler, next, ...args);
+  }) as typeof setTimeout);
   return () => {
     spy.mockRestore();
   };

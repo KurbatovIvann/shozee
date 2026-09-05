@@ -317,11 +317,7 @@ export function canSelectChoiceOption(args: {
   if (args.pending === null) {
     return false;
   }
-  return choiceSelectOptionAllowed(
-    args.pending,
-    args.optionId,
-    args.attempted,
-  );
+  return choiceSelectOptionAllowed(args.pending, args.optionId, args.attempted);
 }
 
 /**
@@ -338,13 +334,7 @@ export function claimChoiceSelect(args: {
   if (args.pending === null) {
     return null;
   }
-  if (
-    !choiceSelectOptionAllowed(
-      args.pending,
-      args.optionId,
-      args.attempted,
-    )
-  ) {
+  if (!choiceSelectOptionAllowed(args.pending, args.optionId, args.attempted)) {
     return null;
   }
   if (args.resolvingRef.current !== null) {
