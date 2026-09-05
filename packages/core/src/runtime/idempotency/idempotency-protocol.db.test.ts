@@ -285,7 +285,7 @@ function fencingAction(options: {
         await options.hold;
       }
       runs += 1;
-      if (ctx.principal !== "staff" || !("insert" in ctx.db)) {
+      if (!("insert" in ctx.db)) {
         throw new CoreInvariantError("fixture expects a writable staff tx");
       }
       const resultId = randomUUID();
@@ -615,7 +615,7 @@ describe("idempotency protocol — takeover fencing (SHO-434)", () => {
     let failFirst = true;
     const action = implementAction(contract, {
       handler: async (_input, ctx) => {
-        if (ctx.principal !== "staff" || !("insert" in ctx.db)) {
+        if (!("insert" in ctx.db)) {
           throw new CoreInvariantError("fixture expects a writable staff tx");
         }
         if (failFirst) {
@@ -705,7 +705,7 @@ describe("idempotency protocol — takeover fencing (SHO-434)", () => {
           reclaimerStarted.resolve();
           await reclaimerHold.promise;
         }
-        if (ctx.principal !== "staff" || !("insert" in ctx.db)) {
+        if (!("insert" in ctx.db)) {
           throw new CoreInvariantError("fixture expects a writable staff tx");
         }
         const resultId = randomUUID();
@@ -748,7 +748,7 @@ describe("idempotency protocol — atomicity", () => {
     const productId = randomUUID();
     const action = implementAction(contract, {
       handler: async (_input, ctx) => {
-        if (ctx.principal !== "staff" || !("insert" in ctx.db)) {
+        if (!("insert" in ctx.db)) {
           throw new CoreInvariantError("fixture expects a writable staff tx");
         }
         await ctx.db.insert(fixtureProducts).values({

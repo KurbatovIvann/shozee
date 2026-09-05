@@ -119,10 +119,17 @@ declare const actionContractBrand: unique symbol;
  * A definition that passed define-time validation. The phantom brand keeps
  * hand-rolled objects out of APIs that require a validated contract
  * (`implementAction`, the registry — fnd-T9).
+ *
+ * `TPrincipal` is the contract's `principal` literal so `implementAction`
+ * can give the handler that arm of `ActionCtx`. The two-argument form
+ * (`ActionContract<TInput, TOutput>`) still means the full principal union —
+ * that is the registry/erasure shape, not the handler-authoring shape.
  */
 export type ActionContract<
   TInput extends z.ZodType = z.ZodType,
   TOutput extends z.ZodType = z.ZodType,
+  TPrincipal extends ActionPrincipal = ActionPrincipal,
 > = Readonly<ActionContractDefinition<TInput, TOutput>> & {
+  readonly principal: TPrincipal;
   readonly [actionContractBrand]: true;
 };

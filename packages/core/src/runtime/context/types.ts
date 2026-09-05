@@ -242,7 +242,11 @@ export interface ShareCtx<TTarget = unknown, TDb = Tx> extends BaseCtx<TDb> {
   readonly membership?: never;
 }
 
-/** The discriminated union every handler receives (core.md §3). */
+/**
+ * The seven-mode principal vocabulary (core.md §3). Factories construct one
+ * arm; a handler bound by `implementAction` receives {@link ActionCtxFor}
+ * of the contract's declared `principal`, not this whole union.
+ */
 export type ActionCtx =
   | StaffCtx<ReadTx | Tx>
   | CustomerCtx<unknown, ReadTx | Tx>
@@ -251,3 +255,13 @@ export type ActionCtx =
   | ConsumerCtx
   | AccountCtx<ReadTx | Tx>
   | ShareCtx<unknown, ReadTx | Tx>;
+
+/**
+ * Handler-facing slice of {@link ActionCtx} for one contract principal
+ * (core.md §2/§3). Inner discriminants the contract does not pin stay as
+ * unions: `public` is target | globalProjection, `system` is tenant | global.
+ */
+export type ActionCtxFor<TPrincipal extends ActionCtx["principal"]> = Extract<
+  ActionCtx,
+  { readonly principal: TPrincipal }
+>;

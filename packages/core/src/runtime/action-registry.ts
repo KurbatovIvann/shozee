@@ -11,7 +11,6 @@ import type { z } from "zod";
 import type { ActionContract } from "../contract/types.js";
 import type { ImplementedAction } from "./implement-action.js";
 import type {
-  ActionExecutionCtx,
   AuditTargetEnv,
   AuditTargetRef,
   ConfirmationSummaryEnv,
@@ -42,13 +41,14 @@ export type AnyActionContract = ActionContract;
 
 /**
  * The registry-facing erasure of an implemented action: contract metadata
- * stays fully readable while callback inputs erase to `never`, so a stored
- * implementation cannot be invoked without the pipeline (fnd-T12) first
- * validating input against `contract.input`.
+ * stays fully readable while callback inputs and `ctx` erase to `never`,
+ * so a stored implementation cannot be invoked without the pipeline
+ * (fnd-T12) first validating input against `contract.input` and
+ * constructing the matching principal context.
  */
 export interface RegisteredImplementation {
   readonly contract: AnyActionContract;
-  readonly handler: (input: never, ctx: ActionExecutionCtx) => Promise<unknown>;
+  readonly handler: (input: never, ctx: never) => Promise<unknown>;
   readonly resolveTarget?: (
     input: never,
     env: TargetResolutionEnv,

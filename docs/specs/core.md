@@ -55,7 +55,7 @@ bound by `implementAction`. All fields are required unless noted:
 | `auditSnapshot` | optional server fn | Returns explicitly redacted safe JSON; hash-only is the default. **Required** on `share` writes (redacted certificate identity; never the raw token) |
 | `timeout` | ms | Whole-pipeline deadline, shared with nested `ctx.call`s; DB statement timeout and abort signal enforce it |
 | `rateLimit` | optional `{ limit, windowSec, scope }` | Defaults per principal (§10) |
-| `handler` | `(input, ctx) => Promise<TOutput>` | Runs inside the transaction; output is Zod-validated before commit and must be JSON-safe |
+| `handler` | `(input, ctx) => Promise<TOutput>` | Runs inside the transaction; `ctx` is the `ActionCtx` arm matching the contract's declared `principal` literal (`implementAction` threads it — a staff handler sees `companyId` without a principal guard). Output is Zod-validated before commit and must be JSON-safe |
 
 The **contract check** (CI, phase-0 task) walks the registry and fails on:
 missing/empty metadata, duplicate names, invalid transport/principal/AI
@@ -121,7 +121,15 @@ or events. Expired, revoked, or mismatched tokens are `NotFoundError`.
 
 ## 3. Principal contexts (ADR-0013, ADR-0018, ADR-0020, ADR-0022)
 
-Discriminated union `ActionCtx`, common fields first:
+Discriminated union `ActionCtx`, common fields first. `implementAction`
+threads the contract's `principal` literal into the handler
+(`ActionCtxFor`), so a staff action receives `StaffCtx` and a customer
+action receives `CustomerCtx`. The seven-arm union is the vocabulary the
+factories construct, not what every handler must accept. Inner
+discriminants the contract does not pin remain unions: `public` is
+`target | globalProjection`, `system` is `tenant | global`. Runtime
+construction is unchanged: exactly one factory per mode, and
+`executeAction` still selects the factory from the invocation principal.
 
 ```ts
 type BaseCtx<TDb extends ReadTx = Tx> = {

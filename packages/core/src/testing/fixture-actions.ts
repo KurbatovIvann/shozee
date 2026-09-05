@@ -181,9 +181,6 @@ export function createCorrectFixtureActions() {
       }),
       {
         handler: async (input, ctx) => {
-          if (ctx.principal !== "staff") {
-            throw new CoreInvariantError("fixture expects staff");
-          }
           const rows = await ctx.db
             .select({ id: fixtureProducts.id, name: fixtureProducts.name })
             .from(fixtureProducts)
@@ -218,9 +215,6 @@ export function createCorrectFixtureActions() {
       {
         resolveTarget: resolveOwnCrm,
         handler: (input, ctx) => {
-          if (ctx.principal !== "customer") {
-            throw new CoreInvariantError("fixture expects customer");
-          }
           return Promise.resolve({
             id: input.customerId,
             companyId: ctx.target.companyId,
@@ -245,7 +239,7 @@ export function createCorrectFixtureActions() {
       {
         resolveTarget: resolvePublishedProduct,
         handler: (input, ctx) => {
-          if (ctx.principal !== "public" || ctx.scope !== "target") {
+          if (ctx.scope !== "target") {
             throw new CoreInvariantError("fixture expects public-target");
           }
           const resource = ctx.target.resource;
@@ -278,7 +272,7 @@ export function createCorrectFixtureActions() {
       }),
       {
         handler: async (_input, ctx) => {
-          if (ctx.principal !== "public" || ctx.scope !== "globalProjection") {
+          if (ctx.scope !== "globalProjection") {
             throw new CoreInvariantError("fixture expects public-global");
           }
           const rows = await ctx.db.from("discoveryProducts");
@@ -309,7 +303,7 @@ export function createCorrectFixtureActions() {
       }),
       {
         handler: async (input, ctx) => {
-          if (ctx.principal !== "system" || ctx.scope !== "tenant") {
+          if (ctx.scope !== "tenant") {
             throw new CoreInvariantError("fixture expects tenant system");
           }
           const rows = await ctx.db
@@ -348,7 +342,7 @@ export function createCorrectFixtureActions() {
       }),
       {
         handler: (_input, ctx) => {
-          if (ctx.principal !== "system" || ctx.scope !== "global") {
+          if (ctx.scope !== "global") {
             throw new CoreInvariantError("fixture expects global system");
           }
           return Promise.resolve({ ok: true });
@@ -371,9 +365,6 @@ export function createCorrectFixtureActions() {
       }),
       {
         handler: async (_input, ctx) => {
-          if (ctx.principal !== "consumer") {
-            throw new CoreInvariantError("fixture expects consumer");
-          }
           const rows = await ctx.db
             .select({
               productId: fixtureDiscoveryProducts.productId,
@@ -406,9 +397,6 @@ export function createCorrectFixtureActions() {
       }),
       {
         handler: async (_input, ctx) => {
-          if (ctx.principal !== "account") {
-            throw new CoreInvariantError("fixture expects account");
-          }
           const owned = await ctx.db
             .select({ companyId: companyMembers.companyId })
             .from(companyMembers)
@@ -440,9 +428,6 @@ export function createCorrectFixtureActions() {
       {
         resolveTarget: resolveKitShareTarget,
         handler: (input, ctx) => {
-          if (ctx.principal !== "share") {
-            throw new CoreInvariantError("fixture expects share");
-          }
           return Promise.resolve({
             documentId: input.documentId,
             companyId: ctx.target.companyId,
@@ -478,9 +463,6 @@ export function createCorrectFixtureActions() {
           role: "buyer",
         }),
         handler: (input, ctx) => {
-          if (ctx.principal !== "share") {
-            throw new CoreInvariantError("fixture expects share");
-          }
           ctx.emit(shareSubmitted, {
             aggregate: { type: "document", id: input.documentId },
             payload: { documentId: input.documentId },
@@ -505,9 +487,6 @@ export function createLeakyFixtureActions(db: Database) {
   return {
     staffGetProduct: implementAction(correct.staffGetProduct.contract, {
       handler: async (input, ctx) => {
-        if (ctx.principal !== "staff") {
-          throw new CoreInvariantError("fixture expects staff");
-        }
         const rows = await ctx.db
           .select({ id: fixtureProducts.id, name: fixtureProducts.name })
           .from(fixtureProducts)
@@ -548,7 +527,7 @@ export function createLeakyFixtureActions(db: Database) {
     ),
     systemGetProduct: implementAction(correct.systemGetProduct.contract, {
       handler: async (input, ctx) => {
-        if (ctx.principal !== "system" || ctx.scope !== "tenant") {
+        if (ctx.scope !== "tenant") {
           throw new CoreInvariantError("fixture expects tenant system");
         }
         const rows = await ctx.db
@@ -580,9 +559,6 @@ export function createLeakyFixtureActions(db: Database) {
     ),
     accountListMine: implementAction(correct.accountListMine.contract, {
       handler: async (_input, ctx) => {
-        if (ctx.principal !== "account") {
-          throw new CoreInvariantError("fixture expects account");
-        }
         const owned = await ctx.db
           .select({ companyId: companyMembers.companyId })
           .from(companyMembers);
@@ -599,9 +575,6 @@ export function createLeakyFixtureActions(db: Database) {
       correct.accountListMine.contract,
       {
         handler: async (_input, ctx) => {
-          if (ctx.principal !== "account") {
-            throw new CoreInvariantError("fixture expects account");
-          }
           const owned = await ctx.db
             .select({ companyId: companyMembers.companyId })
             .from(companyMembers)
@@ -665,9 +638,6 @@ export function createLeakyFixtureActions(db: Database) {
         role: "buyer",
       }),
       handler: async (input, ctx) => {
-        if (ctx.principal !== "share") {
-          throw new CoreInvariantError("fixture expects share");
-        }
         await db.insert(fixtureCrmCustomers).values({
           id: "00000000-0000-4000-8000-00000000f098",
           companyId: kitIdentities.companies.a,
@@ -688,9 +658,6 @@ export function createCrmWritingConsumerBrowse(db: Database) {
   const correct = createCorrectFixtureActions();
   return implementAction(correct.consumerBrowseDiscovery.contract, {
     handler: async (_input, ctx) => {
-      if (ctx.principal !== "consumer") {
-        throw new CoreInvariantError("fixture expects consumer");
-      }
       await db.insert(fixtureCrmCustomers).values({
         id: "00000000-0000-4000-8000-00000000f099",
         companyId: kitIdentities.companies.a,

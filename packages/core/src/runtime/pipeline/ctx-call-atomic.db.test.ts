@@ -348,9 +348,6 @@ const decrementStock = implementAction(
   }),
   {
     handler: async (input, ctx) => {
-      if (ctx.principal !== "staff") {
-        throw new CoreInvariantError("callee expects a staff context");
-      }
       observed.calleeDb = ctx.db;
       observed.calleeRuns += 1;
       // Non-negative conditional decrement: zero updated rows means the
@@ -406,9 +403,6 @@ const confirmOrder = implementAction(
   }),
   {
     handler: async (input, ctx) => {
-      if (ctx.principal !== "staff") {
-        throw new CoreInvariantError("root expects a staff context");
-      }
       observed.rootDb = ctx.db;
       observed.rootRuns += 1;
       await requireWritable(ctx.db).insert(fixtureProducts).values({
@@ -973,9 +967,6 @@ describe("one atomic edge below the root", () => {
       }),
       {
         handler: async (input, ctx) => {
-          if (ctx.principal !== "staff") {
-            throw new CoreInvariantError("callee expects a staff context");
-          }
           observed.calleeRuns += 1;
           await requireWritable(ctx.db)
             .update(fixtureDiscoveryProducts)
@@ -1288,9 +1279,6 @@ describe("callee validation and the escaped-context guard", () => {
       }),
       {
         handler: async (input, ctx) => {
-          if (ctx.principal !== "staff") {
-            throw new CoreInvariantError("root expects a staff context");
-          }
           await requireWritable(ctx.db).insert(fixtureProducts).values({
             id: input.orderId,
             companyId: ctx.companyId,
