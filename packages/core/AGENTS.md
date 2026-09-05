@@ -62,7 +62,10 @@ Four export subpaths exist:
   freezes and brands the pair. The handler's `ctx` is
   `ActionCtxFor<contract.principal>` (SHO-416). The handler is a method so
   a narrowed implementation stays assignable to the pipeline/registry's
-  three-argument `ImplementedAction` (full union).
+  three-argument `ImplementedAction` (full union), and its `ctx` is wrapped
+  in `NoInfer` so an explicit annotation cannot widen `TPrincipal` back to a
+  union — neither is decoration, see the comment there. SHO-453 replaces
+  both with a property plus an explicit erased shape.
 - `action-registry.ts` — `ActionRegistry` with duplicate detection on both
   contracts and implementations; `assertPaired()` is the boot gate: orphan
   descriptors, orphan implementations, and same-name-different-object

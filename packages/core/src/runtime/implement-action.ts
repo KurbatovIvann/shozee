@@ -53,10 +53,21 @@ export interface ActionServerCallbacks<
    * handler is assignable to the pipeline/registry's erased `ActionCtx`
    * slot. Sound because `executeAction` constructs the matching factory
    * result before invoking.
+   *
+   * `NoInfer` is load-bearing — do not drop it. Without it an explicitly
+   * annotated `ctx` is a second inference candidate for `TPrincipal`, and
+   * TS widens to the union of both candidates rather than rejecting the
+   * mismatch: a `staff` contract with a `ctx: CustomerCtx` handler
+   * resolves to `TPrincipal = "staff" | "customer"`, silently un-pinning
+   * the principal the contract declared. The bivariance this method form
+   * buys still admits an annotation narrower than what the pipeline
+   * supplies (a `risk: "read"` handler annotating `StaffCtx<Tx>`);
+   * SHO-453 closes that by moving back to a property plus an explicit
+   * erased shape.
    */
   handler(
     input: z.output<TInput>,
-    ctx: ActionCtxFor<TPrincipal>,
+    ctx: ActionCtxFor<NoInfer<TPrincipal>>,
   ): Promise<z.input<TOutput>>;
   /** Required for customer, public-target, and share actions, forbidden otherwise. */
   readonly resolveTarget?: TargetResolver<TInput, TTarget>;
