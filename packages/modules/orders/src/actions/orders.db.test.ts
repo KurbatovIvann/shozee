@@ -316,6 +316,90 @@ function createById(
   };
 }
 
+type PoolQueryClient = {
+  query: (...args: never[]) => unknown;
+};
+
+type StatementPool = {
+  on(
+    event: "acquire",
+    listener: (client: PoolQueryClient) => void,
+  ): StatementPool;
+};
+
+const tappedPools = new WeakSet<object>();
+const tappedClients = new WeakSet<object>();
+let activeStatements: string[] | undefined;
+
+function sqlTextFromQueryConfig(config: unknown): string | undefined {
+  if (typeof config === "string") {
+    return config;
+  }
+  if (typeof config !== "object" || config === null || !("text" in config)) {
+    return undefined;
+  }
+  const text = config.text;
+  return typeof text === "string" ? text : undefined;
+}
+
+function ensureStatementTap(pool: StatementPool): void {
+  if (tappedPools.has(pool)) {
+    return;
+  }
+  tappedPools.add(pool);
+  pool.on("acquire", (client) => {
+    if (tappedClients.has(client)) {
+      return;
+    }
+    tappedClients.add(client);
+    const originalQuery = client.query.bind(client);
+    client.query = (...args: never[]) => {
+      if (activeStatements !== undefined) {
+        const text = sqlTextFromQueryConfig(args[0]);
+        if (text !== undefined) {
+          activeStatements.push(text);
+        }
+      }
+      return originalQuery(...args);
+    };
+  });
+}
+
+async function collectStatements<T>(run: () => Promise<T>): Promise<{
+  readonly outcome: PromiseSettledResult<T>;
+  readonly statements: readonly string[];
+}> {
+  ensureStatementTap(kit.db.runtime.pool);
+  const statements: string[] = [];
+  activeStatements = statements;
+  try {
+    const value = await run();
+    return { outcome: { status: "fulfilled", value }, statements };
+  } catch (reason) {
+    return { outcome: { status: "rejected", reason }, statements };
+  } finally {
+    activeStatements = undefined;
+  }
+}
+
+function isPricingSql(sql: string): boolean {
+  const normalized = sql.toLowerCase();
+  return (
+    normalized.includes("price_lists") ||
+    normalized.includes("price_list_entries") ||
+    normalized.includes("personal_prices")
+  );
+}
+
+function isOrderWriteSql(sql: string): boolean {
+  const normalized = sql.toLowerCase();
+  return (
+    /insert\s+into\s+"?orders"?/.test(normalized) ||
+    /insert\s+into\s+"?order_items"?/.test(normalized) ||
+    /insert\s+into\s+"?domain_events"?/.test(normalized)
+  );
+}
+
 function nextSeedOrderNumber(companyId: string): string {
   const next = (seedOrderNumbers.get(companyId) ?? 0) + 1;
   seedOrderNumbers.set(companyId, next);
@@ -370,6 +454,14 @@ async function countCompanyOrders(companyId: string): Promise<number> {
     .select({ id: orders.id })
     .from(orders)
     .where(eq(orders.companyId, companyId));
+  return rows.length;
+}
+
+async function countCompanyOrderItems(companyId: string): Promise<number> {
+  const rows = await kit.db.runtime.db
+    .select({ id: orderItems.id })
+    .from(orderItems)
+    .where(eq(orderItems.companyId, companyId));
   return rows.length;
 }
 
@@ -1948,6 +2040,48 @@ describe("orders.create reference resolve (SHO-352)", () => {
     expect(await countCreatedEvents(kitIdentities.companies.a)).toBe(
       eventsBefore,
     );
+  });
+
+  it("hard-stops a mixed cart on an archived query before a variant picker or write", async () => {
+    const companyId = kitIdentities.companies.a;
+    const ordersBefore = await countCompanyOrders(companyId);
+    const itemsBefore = await countCompanyOrderItems(companyId);
+    const eventsBefore = await countCreatedEvents(companyId);
+    const { outcome, statements } = await collectStatements(() =>
+      kit.invoke(createOrder, {
+        customer: { by: "id", id: fixtures.customerBare },
+        items: [
+          {
+            product: { by: "query", value: "Coat" },
+            quantity: { milli: "3000" },
+          },
+          {
+            product: { by: "query", value: "Archived Widget" },
+            quantity: { milli: "1000" },
+          },
+        ],
+      }),
+    );
+    expect(outcome.status).toBe("rejected");
+    if (outcome.status !== "rejected") {
+      return;
+    }
+    const conflict = expectResolutionConflict(outcome.reason);
+    expect(conflict.reason).toBe("archived");
+    expect(conflict.target).toEqual({
+      kind: "order_line_product",
+      lineIndex: 1,
+      query: "Archived Widget",
+      productName: "Archived Widget",
+    });
+    expect(conflict.options).toEqual([]);
+    expect(conflict.optionsTruncated).toBe(false);
+    expect(conflict.reason).not.toBe("variant_required");
+    expect(await countCompanyOrders(companyId)).toBe(ordersBefore);
+    expect(await countCompanyOrderItems(companyId)).toBe(itemsBefore);
+    expect(await countCreatedEvents(companyId)).toBe(eventsBefore);
+    expect(statements.some((sql) => isPricingSql(sql))).toBe(false);
+    expect(statements.some((sql) => isOrderWriteSql(sql))).toBe(false);
   });
 
   it("audits and emits orders.created on the resolved canonical customer id", async () => {
