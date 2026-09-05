@@ -21,10 +21,6 @@ const confirmAuditTarget = holderAuditTarget({
 
 export const confirmOrder = implementAction(confirmOrderContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("orders.confirm expects staff");
-    }
-
     const db = requireWritable(ctx.db);
     const rows = await db
       .select({ id: orders.id, status: orders.status })

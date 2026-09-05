@@ -21,10 +21,6 @@ const cancelAuditTarget = holderAuditTarget({
 
 export const cancelOrder = implementAction(cancelOrderContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("orders.cancel expects staff");
-    }
-
     const db = requireWritable(ctx.db);
     const rows = await db
       .select({ id: orders.id, status: orders.status })
