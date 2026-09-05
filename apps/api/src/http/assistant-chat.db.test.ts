@@ -7,11 +7,13 @@ import { randomBytes, randomUUID } from "node:crypto";
 import {
   attemptKey,
   assistantChoiceInteractionResultSchema,
+  catalogDomainErrorExtrasFromError,
   isStaffAssistantConfirmationOutput,
   isStaffAssistantNeedsChoiceOutput,
   ORDERS_CREATE_TOOL_NAME,
   ORDERS_LIST_COUNTS_TOOL_NAME,
   ORDERS_LIST_PAGE_TOOL_NAME,
+  presentCatalogDomainError,
   presentChoiceStaffAssistantTurn,
   PRICING_LIST_PRICE_LISTS_TOOL_NAME,
   STAFF_ASSISTANT_MODEL_HISTORY_MAX,
@@ -32,7 +34,12 @@ import {
   sseVisibleTextFromPayloads,
 } from "@showzy/ai/test";
 import { createConversation, recordAssistantTurn } from "@showzy/assistant";
-import { archiveVariant, createProduct } from "@showzy/catalog";
+import {
+  archiveProduct,
+  archiveVariant,
+  createProduct,
+  ReferenceResolutionConflictError,
+} from "@showzy/catalog";
 import { createOrder } from "@showzy/orders";
 import { createPriceList } from "@showzy/pricing";
 import {
@@ -2715,6 +2722,17 @@ describe("SHO-418 orders_create choice activation", () => {
     const payloads = await readUiMessageSsePayloads(response);
     expect(choiceFromSsePayloads(payloads)).toBeUndefined();
     expect(JSON.stringify(payloads)).not.toContain("needs_choice");
+    expect(JSON.stringify(payloads)).not.toContain("data-choice");
+    const expected = presentCatalogDomainError({
+      locale: "uk",
+      extras: {
+        reason: "no_active_variants",
+        subject: { kind: "product_name", name: product.name },
+      },
+    });
+    expect(sseVisibleTextFromPayloads(payloads)).toBe(expected);
+    expect(JSON.stringify(payloads)).not.toContain("should not present a card");
+    expect(await waitForAssistantBody(conversation.id)).toBe(expected);
     const companyOrders = (
       await kit.db.runtime.db.select().from(orders)
     ).filter((row) => row.customerId === customer.id);
@@ -2905,5 +2923,292 @@ describe("SHO-418 orders_create choice activation", () => {
     );
     expect(created).toHaveLength(1);
     streamSpy.mockRestore();
+  });
+});
+
+describe("SHO-442 presenter-owned archived / no_active_variants chat turns", () => {
+  async function seedSimpleProduct(name: string) {
+    return staffInvoke(createProduct, {
+      name,
+      basePriceMinor: "1500",
+    });
+  }
+
+  it("preserves catalog archived extras through orders.create into the presenter", async () => {
+    const customer = await staffInvoke(createCustomer, {
+      name: "T442 Adapter Buyer",
+      phone: "+380671442001",
+    });
+    const product = await seedSimpleProduct("T442 Adapter Cupcake");
+    await staffInvoke(archiveProduct, { productId: product.productId });
+    const caught = await staffInvoke(createOrder, {
+      customer: { by: "id", id: customer.id },
+      items: [
+        {
+          product: { by: "query", value: "T442 Adapter Cupcake" },
+          variantSelection: { kind: "unspecified" },
+          quantity: { milli: "1000" },
+        },
+      ],
+    }).then(
+      () => {
+        throw new Error("expected ReferenceResolutionConflictError");
+      },
+      (error: unknown) => error,
+    );
+    expect(caught).toBeInstanceOf(ReferenceResolutionConflictError);
+    const extras = catalogDomainErrorExtrasFromError(caught);
+    expect(extras).toEqual({
+      reason: "archived",
+      subject: { kind: "product_name", name: "T442 Adapter Cupcake" },
+    });
+    if (extras === undefined) {
+      return;
+    }
+    expect(
+      presentCatalogDomainError({
+        locale: "en",
+        extras,
+      }),
+    ).not.toBe(
+      caught instanceof ReferenceResolutionConflictError
+        ? caught.clientMessage
+        : "",
+    );
+  });
+
+  it("persists and streams presenter copy for a unique archived product in uk and en", async () => {
+    const spoken = "MODEL_SPOKEN_SHOULD_NOT_FLASH";
+    for (const locale of ["uk", "en"] as const) {
+      const customer = await staffInvoke(createCustomer, {
+        name: `T442 Unique Buyer ${locale}`,
+        phone: locale === "uk" ? "+380671442002" : "+380671442003",
+      });
+      const product = await seedSimpleProduct(`T442 Unique Cake ${locale}`);
+      await staffInvoke(archiveProduct, { productId: product.productId });
+      const streamModel = new MockLanguageModelV3({
+        doStream: [
+          mockToolCallStream(
+            `call-create-archived-${locale}`,
+            ORDERS_CREATE_TOOL_NAME,
+            JSON.stringify({
+              customerQuery: customer.name,
+              items: [
+                {
+                  productQuery: product.name,
+                  quantityDecimal: "1",
+                },
+              ],
+            }),
+          ),
+          mockSpokenStream(spoken),
+        ],
+      });
+      const app = chatApp(streamModel, undefined, createMemoryChoiceStore());
+      const token = await insertBearer(kit, kitIdentities.users.anna);
+      const conversation = await staffInvoke(createConversation, {
+        title: `T442 unique ${locale}`,
+      });
+      const response = await postChat(app, {
+        token,
+        companyId: kitIdentities.companies.a,
+        body: userChatBody(
+          conversation.id,
+          `Create ${product.name}`,
+          randomUUID(),
+          locale,
+        ),
+      });
+      expect(response.status).toBe(200);
+      const payloads = await readUiMessageSsePayloads(response);
+      const expected = presentCatalogDomainError({
+        locale,
+        extras: {
+          reason: "archived",
+          subject: { kind: "product_name", name: product.name },
+        },
+      });
+      expect(choiceFromSsePayloads(payloads)).toBeUndefined();
+      expect(JSON.stringify(payloads)).not.toContain("data-choice");
+      expect(JSON.stringify(payloads)).not.toContain("needs_choice");
+      expect(JSON.stringify(payloads)).not.toContain(spoken);
+      expect(sseVisibleTextFromPayloads(payloads)).toBe(expected);
+      expect(await waitForAssistantBody(conversation.id)).toBe(expected);
+      const companyOrders = (
+        await kit.db.runtime.db.select().from(orders)
+      ).filter((row) => row.customerId === customer.id);
+      expect(companyOrders).toHaveLength(0);
+    }
+  });
+
+  it("uses query wording when several archived products match", async () => {
+    const spoken = "MODEL_SPOKEN_SHOULD_NOT_FLASH";
+    const query = "T442 TwinArchive";
+    const customer = await staffInvoke(createCustomer, {
+      name: "T442 Twin Buyer",
+      phone: "+380671442004",
+    });
+    const first = await seedSimpleProduct(`${query} One`);
+    const second = await seedSimpleProduct(`${query} Two`);
+    await staffInvoke(archiveProduct, { productId: first.productId });
+    await staffInvoke(archiveProduct, { productId: second.productId });
+    for (const locale of ["uk", "en"] as const) {
+      const streamModel = new MockLanguageModelV3({
+        doStream: [
+          mockToolCallStream(
+            `call-create-twins-${locale}`,
+            ORDERS_CREATE_TOOL_NAME,
+            JSON.stringify({
+              customerQuery: "T442 Twin Buyer",
+              items: [{ productQuery: query, quantityDecimal: "1" }],
+            }),
+          ),
+          mockSpokenStream(spoken),
+        ],
+      });
+      const app = chatApp(streamModel, undefined, createMemoryChoiceStore());
+      const token = await insertBearer(kit, kitIdentities.users.anna);
+      const conversation = await staffInvoke(createConversation, {
+        title: `T442 twins ${locale}`,
+      });
+      const response = await postChat(app, {
+        token,
+        companyId: kitIdentities.companies.a,
+        body: userChatBody(
+          conversation.id,
+          `Create ${query}`,
+          randomUUID(),
+          locale,
+        ),
+      });
+      expect(response.status).toBe(200);
+      const payloads = await readUiMessageSsePayloads(response);
+      const expected = presentCatalogDomainError({
+        locale,
+        extras: {
+          reason: "archived",
+          subject: { kind: "query", query },
+        },
+      });
+      expect(sseVisibleTextFromPayloads(payloads)).toBe(expected);
+      expect(expected).toContain(query);
+      expect(expected).not.toContain(`${query} One`);
+      expect(await waitForAssistantBody(conversation.id)).toBe(expected);
+      expect(JSON.stringify(payloads)).not.toContain(spoken);
+      expect(JSON.stringify(payloads)).not.toContain("data-choice");
+    }
+  });
+
+  it("persists and streams presenter copy for no_active_variants in uk and en", async () => {
+    const spoken = "MODEL_SPOKEN_SHOULD_NOT_FLASH";
+    for (const locale of ["uk", "en"] as const) {
+      const customer = await staffInvoke(createCustomer, {
+        name: `T442 Variants Buyer ${locale}`,
+        phone: locale === "uk" ? "+380671442006" : "+380671442007",
+      });
+      const product = await staffInvoke(createProduct, {
+        name: `T442 Variants Cake ${locale}`,
+        basePriceMinor: "1500",
+        variants: [{ name: "One" }],
+      });
+      const variantId = product.variants[0]?.variantId;
+      expect(variantId).toBeDefined();
+      if (variantId !== undefined) {
+        await staffInvoke(archiveVariant, { variantId });
+      }
+      const streamModel = new MockLanguageModelV3({
+        doStream: [
+          mockToolCallStream(
+            `call-create-variants-${locale}`,
+            ORDERS_CREATE_TOOL_NAME,
+            JSON.stringify({
+              customerQuery: customer.name,
+              items: [
+                {
+                  productQuery: product.name,
+                  quantityDecimal: "1",
+                },
+              ],
+            }),
+          ),
+          mockSpokenStream(spoken),
+        ],
+      });
+      const app = chatApp(streamModel, undefined, createMemoryChoiceStore());
+      const token = await insertBearer(kit, kitIdentities.users.anna);
+      const conversation = await staffInvoke(createConversation, {
+        title: `T442 variants ${locale}`,
+      });
+      const response = await postChat(app, {
+        token,
+        companyId: kitIdentities.companies.a,
+        body: userChatBody(
+          conversation.id,
+          `Create ${product.name}`,
+          randomUUID(),
+          locale,
+        ),
+      });
+      expect(response.status).toBe(200);
+      const payloads = await readUiMessageSsePayloads(response);
+      const expected = presentCatalogDomainError({
+        locale,
+        extras: {
+          reason: "no_active_variants",
+          subject: { kind: "product_name", name: product.name },
+        },
+      });
+      expect(choiceFromSsePayloads(payloads)).toBeUndefined();
+      expect(JSON.stringify(payloads)).not.toContain("data-choice");
+      expect(JSON.stringify(payloads)).not.toContain("needs_choice");
+      expect(JSON.stringify(payloads)).not.toContain(spoken);
+      expect(sseVisibleTextFromPayloads(payloads)).toBe(expected);
+      expect(await waitForAssistantBody(conversation.id)).toBe(expected);
+      const companyOrders = (
+        await kit.db.runtime.db.select().from(orders)
+      ).filter((row) => row.customerId === customer.id);
+      expect(companyOrders).toHaveLength(0);
+    }
+  });
+
+  it("keeps SHO-429 model spoken for unrelated CONFLICT and NOT_FOUND", async () => {
+    const spoken = "That name is not a product in this company.";
+    const customer = await staffInvoke(createCustomer, {
+      name: "T442 Generic Buyer",
+      phone: "+380671442005",
+    });
+    const streamModel = new MockLanguageModelV3({
+      doStream: [
+        mockToolCallStream(
+          "call-create-missing",
+          ORDERS_CREATE_TOOL_NAME,
+          JSON.stringify({
+            customerQuery: "T442 Generic Buyer",
+            items: [
+              { productQuery: "xyzzy-t442-missing", quantityDecimal: "1" },
+            ],
+          }),
+        ),
+        mockSpokenStream(spoken),
+      ],
+    });
+    const app = chatApp(streamModel);
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await staffInvoke(createConversation, {
+      title: "T442 generic not found",
+    });
+    const response = await postChat(app, {
+      token,
+      companyId: kitIdentities.companies.a,
+      body: userChatBody(conversation.id, "Create xyzzy", randomUUID(), "en"),
+    });
+    expect(response.status).toBe(200);
+    const payloads = await readUiMessageSsePayloads(response);
+    expect(sseVisibleTextFromPayloads(payloads)).toBe(spoken);
+    expect(await waitForAssistantBody(conversation.id)).toBe(spoken);
+    const companyOrders = (
+      await kit.db.runtime.db.select().from(orders)
+    ).filter((row) => row.customerId === customer.id);
+    expect(companyOrders).toHaveLength(0);
   });
 });

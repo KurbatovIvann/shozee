@@ -14,7 +14,10 @@ import {
   assistantChoiceBodySchema,
   assistantChoiceInteractionResultSchema,
   bindChoiceOptions,
+  catalogDomainErrorExtrasFromError,
+  catalogDomainErrorExtrasFromToolOutput,
   catalogPickerConflictExtrasFromError,
+  CHOICE_DOMAIN_ERROR_REASONS,
   CHOICE_OPTIONS_MAX,
   CHOICE_PICKER_REASONS,
   CHOICE_RESOLUTION_REASONS,
@@ -491,6 +494,47 @@ class DuckTypedPickerConflict extends ConflictError {
   }
 }
 
+class DuckTypedArchivedConflict extends ConflictError {
+  readonly reason = "archived" as const;
+  readonly target: {
+    readonly kind: "order_line_product";
+    readonly lineIndex: number;
+    readonly query: string;
+    readonly productName?: string;
+  };
+  readonly options: readonly { readonly id: string; readonly label: string }[];
+  readonly optionsTruncated = false;
+
+  constructor(args: {
+    readonly query?: string;
+    readonly productName?: string;
+    readonly options?: readonly {
+      readonly id: string;
+      readonly label: string;
+    }[];
+  }) {
+    super(
+      args.productName !== undefined
+        ? `"${args.productName}" is archived.`
+        : `No active product matched "${args.query ?? "cupcake"}"; matching products are archived.`,
+    );
+    this.target =
+      args.productName === undefined
+        ? {
+            kind: "order_line_product",
+            lineIndex: 0,
+            query: args.query ?? "cupcake",
+          }
+        : {
+            kind: "order_line_product",
+            lineIndex: 0,
+            query: args.query ?? args.productName,
+            productName: args.productName,
+          };
+    this.options = args.options ?? [];
+  }
+}
+
 describe("duck-typed catalog CONFLICT extras (SHO-418)", () => {
   it("does not import catalog, customers, a module barrel, or @showzy/db", () => {
     const source = readFileSync(
@@ -524,6 +568,22 @@ describe("duck-typed catalog CONFLICT extras (SHO-418)", () => {
       ),
     ).toBeUndefined();
     expect(
+      catalogPickerConflictExtrasFromError(
+        new DuckTypedArchivedConflict({
+          productName: "Old Widget",
+          options: [{ id: variantLemon, label: "Old Widget" }],
+        }),
+      ),
+    ).toBeUndefined();
+    expect(
+      catalogPickerConflictExtrasFromError(
+        new DuckTypedArchivedConflict({
+          productName: "Old Widget",
+          options: [],
+        }),
+      ),
+    ).toBeUndefined();
+    expect(
       catalogPickerConflictExtrasFromError(new ConflictError("plain conflict")),
     ).toBeUndefined();
   });
@@ -550,6 +610,13 @@ describe("duck-typed catalog CONFLICT extras (SHO-418)", () => {
       "variant_required",
       "ambiguous",
       "unmatched_query",
+      "no_active_variants",
+      "archived",
+    ]);
+    expect(CHOICE_PICKER_REASONS).not.toContain("archived");
+    expect(CHOICE_PICKER_REASONS).not.toContain("no_active_variants");
+    expect(CHOICE_DOMAIN_ERROR_REASONS).toEqual([
+      "archived",
       "no_active_variants",
     ]);
   });
@@ -638,6 +705,125 @@ describe("duck-typed catalog CONFLICT extras (SHO-418)", () => {
     });
     expect(opened).toHaveLength(1);
     expect(output).toBeUndefined();
+  });
+
+  it("ignores archived extras for needs_choice even when options are present", async () => {
+    const output = await needsChoiceFromOrdersCreateConflict({
+      actionName: "orders.create",
+      input: canonical,
+      error: new DuckTypedArchivedConflict({
+        productName: "Old Widget",
+        options: [{ id: variantLemon, label: "Old Widget" }],
+      }),
+      bind: {
+        actorId: "anna",
+        companyId,
+        conversationId,
+      },
+      openChoice: () => Promise.resolve(true),
+    });
+    expect(output).toBeUndefined();
+  });
+});
+
+describe("duck-typed catalog domain-error extras (SHO-442)", () => {
+  it("parses a unique archived product name and a multi-match query", () => {
+    expect(
+      catalogDomainErrorExtrasFromError(
+        new DuckTypedArchivedConflict({ productName: "Old Widget" }),
+      ),
+    ).toEqual({
+      reason: "archived",
+      subject: { kind: "product_name", name: "Old Widget" },
+    });
+    expect(
+      catalogDomainErrorExtrasFromError(
+        new DuckTypedArchivedConflict({ query: "ZzzArchiveTwin" }),
+      ),
+    ).toEqual({
+      reason: "archived",
+      subject: { kind: "query", query: "ZzzArchiveTwin" },
+    });
+  });
+
+  it("parses no_active_variants from a variant target productName", () => {
+    expect(
+      catalogDomainErrorExtrasFromError(
+        new DuckTypedPickerConflict({
+          reason: "no_active_variants",
+          options: [],
+        }),
+      ),
+    ).toEqual({
+      reason: "no_active_variants",
+      subject: { kind: "product_name", name: "Macarons" },
+    });
+  });
+
+  it("does not classify archived from English clientMessage or a variant target", () => {
+    expect(
+      catalogDomainErrorExtrasFromError(
+        new ConflictError('"Cupcake" is archived.'),
+      ),
+    ).toBeUndefined();
+    expect(
+      catalogDomainErrorExtrasFromError(
+        new DuckTypedPickerConflict({
+          reason: "archived",
+          options: [],
+        }),
+      ),
+    ).toBeUndefined();
+    expect(
+      catalogDomainErrorExtrasFromError(
+        new DuckTypedPickerConflict({
+          reason: "variant_required",
+          options: [{ id: variantLemon, label: "Lemon" }],
+        }),
+      ),
+    ).toBeUndefined();
+  });
+
+  it("rejects malformed domain-error metadata instead of fabricating a subject", () => {
+    class MissingQueryArchived extends ConflictError {
+      readonly reason = "archived" as const;
+      readonly target = {
+        kind: "order_line_product" as const,
+        lineIndex: 0,
+      };
+    }
+    class QueryNoActiveVariants extends ConflictError {
+      readonly reason = "no_active_variants" as const;
+      readonly target = {
+        kind: "order_line_product" as const,
+        lineIndex: 0,
+        query: "Macarons",
+      };
+    }
+    expect(
+      catalogDomainErrorExtrasFromError(new MissingQueryArchived("archived")),
+    ).toBeUndefined();
+    expect(
+      catalogDomainErrorExtrasFromError(
+        new QueryNoActiveVariants("no variants"),
+      ),
+    ).toBeUndefined();
+    expect(
+      catalogDomainErrorExtrasFromToolOutput({
+        status: "error",
+        code: "CONFLICT",
+        message: '"Cupcake" is archived.',
+      }),
+    ).toBeUndefined();
+    expect(
+      catalogDomainErrorExtrasFromToolOutput({
+        status: "error",
+        code: "CONFLICT",
+        message: "nope",
+        reason: "archived",
+        subject: { kind: "query" },
+      }),
+    ).toBeUndefined();
   });
 });
 

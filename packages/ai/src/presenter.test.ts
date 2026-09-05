@@ -5,9 +5,11 @@ import { STAFF_ASSISTANT_CONFIRMATION_FALLBACK_TEXT } from "./confirmation.js";
 import {
   CHOICE_TRUNCATED_COPY,
   CHOICE_TRUNCATED_MATCH_COPY,
+  presentCatalogDomainError,
   presentChoiceStaffAssistantNeedsChoice,
   presentChoiceStaffAssistantTurn,
   presentCompletedStaffAssistantTurn,
+  presentDomainErrorStaffAssistantTurn,
   staffAssistantPersistedTurnText,
   staffAssistantTurnUsesCompletedPresenter,
   STAFF_ASSISTANT_DEFAULT_LOCALE,
@@ -423,6 +425,31 @@ describe("staffAssistantTurnUsesCompletedPresenter", () => {
       }),
     ).toBe(false);
   });
+
+  it("is true for archived / no_active_variants tool errors so presenter wins", () => {
+    const archived = {
+      status: "error" as const,
+      code: "CONFLICT",
+      message: '"Old Widget" is archived.',
+      reason: "archived" as const,
+      subject: { kind: "product_name" as const, name: "Old Widget" },
+    };
+    expect(
+      staffAssistantTurnUsesCompletedPresenter({
+        locale: "uk",
+        toolResults: [{ toolName: ORDERS_CREATE_TOOL_NAME, output: archived }],
+        runs: [{ outcome: "error" }],
+      }),
+    ).toBe(true);
+    expect(
+      presentDomainErrorStaffAssistantTurn({
+        locale: "uk",
+        toolResults: [{ toolName: ORDERS_CREATE_TOOL_NAME, output: archived }],
+      }),
+    ).toBe(
+      "«Old Widget» в архіві, в замовлення його додати не можна. Напишіть інший товар або повторіть замовлення без нього.",
+    );
+  });
 });
 
 describe("presentChoiceStaffAssistantNeedsChoice", () => {
@@ -750,5 +777,120 @@ describe("staffAssistantPersistedTurnText", () => {
         runs: [{ outcome: "error" }],
       }),
     ).toBe("Не знайшла той товар. Уточніть назву.");
+  });
+
+  it("uses presenter copy for archived and no_active_variants, not spoken or clientMessage", () => {
+    const spoken = "MODEL_SPOKEN_SHOULD_NOT_PERSIST";
+    const archivedMessage = '"Old Widget" is archived.';
+    const archivedOutput = {
+      status: "error" as const,
+      code: "CONFLICT",
+      message: archivedMessage,
+      reason: "archived" as const,
+      subject: { kind: "product_name" as const, name: "Old Widget" },
+    };
+    const queryOutput = {
+      status: "error" as const,
+      code: "CONFLICT",
+      message:
+        'No active product matched "ZzzArchiveTwin"; matching products are archived.',
+      reason: "archived" as const,
+      subject: { kind: "query" as const, query: "ZzzArchiveTwin" },
+    };
+    const variantsOutput = {
+      status: "error" as const,
+      code: "CONFLICT",
+      message: '"Macarons" has no active variants.',
+      reason: "no_active_variants" as const,
+      subject: { kind: "product_name" as const, name: "Macarons" },
+    };
+    for (const locale of ["uk", "en"] as const) {
+      expect(
+        staffAssistantPersistedTurnText({
+          locale,
+          toolResults: [
+            { toolName: ORDERS_CREATE_TOOL_NAME, output: archivedOutput },
+          ],
+          parsedSpoken: spoken,
+          rawText: `{"spoken":"${spoken}"}`,
+          runs: [{ outcome: "error" }],
+        }),
+      ).toBe(
+        presentCatalogDomainError({
+          locale,
+          extras: {
+            reason: "archived",
+            subject: { kind: "product_name", name: "Old Widget" },
+          },
+        }),
+      );
+      expect(
+        staffAssistantPersistedTurnText({
+          locale,
+          toolResults: [
+            { toolName: ORDERS_CREATE_TOOL_NAME, output: queryOutput },
+          ],
+          parsedSpoken: spoken,
+          rawText: `{"spoken":"${spoken}"}`,
+          runs: [{ outcome: "error" }],
+        }),
+      ).toBe(
+        presentCatalogDomainError({
+          locale,
+          extras: {
+            reason: "archived",
+            subject: { kind: "query", query: "ZzzArchiveTwin" },
+          },
+        }),
+      );
+      expect(
+        staffAssistantPersistedTurnText({
+          locale,
+          toolResults: [
+            { toolName: ORDERS_CREATE_TOOL_NAME, output: variantsOutput },
+          ],
+          parsedSpoken: spoken,
+          rawText: `{"spoken":"${spoken}"}`,
+          runs: [{ outcome: "error" }],
+        }),
+      ).toBe(
+        presentCatalogDomainError({
+          locale,
+          extras: {
+            reason: "no_active_variants",
+            subject: { kind: "product_name", name: "Macarons" },
+          },
+        }),
+      );
+    }
+    expect(
+      presentCatalogDomainError({
+        locale: "en",
+        extras: {
+          reason: "archived",
+          subject: { kind: "product_name", name: "Old Widget" },
+        },
+      }),
+    ).toBe(
+      '"Old Widget" is archived and cannot be added to an order. Name a different product, or repeat the order without it.',
+    );
+    expect(
+      staffAssistantPersistedTurnText({
+        locale: "en",
+        toolResults: [
+          {
+            toolName: ORDERS_CREATE_TOOL_NAME,
+            output: {
+              status: "error",
+              code: "CONFLICT",
+              message: archivedMessage,
+            },
+          },
+        ],
+        parsedSpoken: spoken,
+        rawText: `{"spoken":"${spoken}"}`,
+        runs: [{ outcome: "error" }],
+      }),
+    ).toBe(spoken);
   });
 });

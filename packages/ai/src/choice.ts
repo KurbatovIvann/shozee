@@ -44,18 +44,30 @@ export const CHOICE_RESOLUTION_REASONS = [
   "ambiguous",
   "unmatched_query",
   "no_active_variants",
+  "archived",
 ] as const;
 
-/** Reasons that open a picker. `no_active_variants` is never a ChoiceCard. */
+/** Reasons that open a picker. `archived` / `no_active_variants` never do. */
 export const CHOICE_PICKER_REASONS = [
   "variant_required",
   "ambiguous",
   "unmatched_query",
 ] as const;
 
+/**
+ * Non-picker catalog terminals. Presenter owns the turn; never a ChoiceCard.
+ */
+export const CHOICE_DOMAIN_ERROR_REASONS = [
+  "archived",
+  "no_active_variants",
+] as const;
+
 export type ChoicePickerReason = (typeof CHOICE_PICKER_REASONS)[number];
 
 export type ChoiceResolutionReason = (typeof CHOICE_RESOLUTION_REASONS)[number];
+
+export type ChoiceDomainErrorReason =
+  (typeof CHOICE_DOMAIN_ERROR_REASONS)[number];
 
 export const CHOICE_KINDS = ["variant", "product", "customer"] as const;
 
@@ -555,6 +567,175 @@ export function catalogPickerConflictExtrasFromError(
   };
   const parsed = catalogPickerConflictExtrasSchema.safeParse(extras);
   return parsed.success ? parsed.data : undefined;
+}
+
+const archivedDomainErrorTargetSchema = z.strictObject({
+  kind: z.literal("order_line_product"),
+  lineIndex: z.number().int().nonnegative(),
+  query: z.string().min(1),
+  productName: z.string().min(1).optional(),
+});
+
+const noActiveVariantsDomainErrorTargetSchema = z.strictObject({
+  kind: z.literal("order_line_variant").optional(),
+  lineIndex: z.number().int().nonnegative(),
+  productId: z.uuid(),
+  productName: z.string().min(1),
+});
+
+/**
+ * Narrow non-picker subject for presenter copy. Canonical productName when
+ * one archived (or unsellable) product is identified; original query when
+ * several archived matches share a search string.
+ */
+export const catalogDomainErrorSubjectSchema = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("product_name"),
+    name: z.string().min(1),
+  }),
+  z.strictObject({
+    kind: z.literal("query"),
+    query: z.string().min(1),
+  }),
+]);
+
+export type CatalogDomainErrorSubject = z.output<
+  typeof catalogDomainErrorSubjectSchema
+>;
+
+export const catalogDomainErrorExtrasSchema = z.discriminatedUnion("reason", [
+  z.strictObject({
+    reason: z.literal("archived"),
+    subject: catalogDomainErrorSubjectSchema,
+  }),
+  z.strictObject({
+    reason: z.literal("no_active_variants"),
+    subject: z.strictObject({
+      kind: z.literal("product_name"),
+      name: z.string().min(1),
+    }),
+  }),
+]);
+
+export type CatalogDomainErrorExtras = z.output<
+  typeof catalogDomainErrorExtrasSchema
+>;
+
+export const staffAssistantDomainErrorOutputSchema = z.discriminatedUnion(
+  "reason",
+  [
+    z.strictObject({
+      status: z.literal("error"),
+      code: z.string().min(1),
+      message: z.string(),
+      reason: z.literal("archived"),
+      subject: catalogDomainErrorSubjectSchema,
+    }),
+    z.strictObject({
+      status: z.literal("error"),
+      code: z.string().min(1),
+      message: z.string(),
+      reason: z.literal("no_active_variants"),
+      subject: z.strictObject({
+        kind: z.literal("product_name"),
+        name: z.string().min(1),
+      }),
+    }),
+  ],
+);
+
+export type StaffAssistantDomainErrorOutput = z.output<
+  typeof staffAssistantDomainErrorOutputSchema
+>;
+
+function catalogDomainErrorExtrasFromDuckTyped(
+  reason: unknown,
+  target: unknown,
+): CatalogDomainErrorExtras | undefined {
+  if (reason === "archived") {
+    const parsedTarget = archivedDomainErrorTargetSchema.safeParse(target);
+    if (!parsedTarget.success) {
+      return undefined;
+    }
+    const subject =
+      parsedTarget.data.productName !== undefined
+        ? {
+            kind: "product_name" as const,
+            name: parsedTarget.data.productName,
+          }
+        : { kind: "query" as const, query: parsedTarget.data.query };
+    return catalogDomainErrorExtrasSchema.parse({
+      reason: "archived",
+      subject,
+    });
+  }
+  if (reason === "no_active_variants") {
+    const parsedTarget =
+      noActiveVariantsDomainErrorTargetSchema.safeParse(target);
+    if (!parsedTarget.success) {
+      return undefined;
+    }
+    return catalogDomainErrorExtrasSchema.parse({
+      reason: "no_active_variants",
+      subject: {
+        kind: "product_name",
+        name: parsedTarget.data.productName,
+      },
+    });
+  }
+  return undefined;
+}
+
+/**
+ * Duck-typed catalog extras for presenter-owned terminals. Picker reasons
+ * and malformed targets return undefined — never invent an archived
+ * explanation from English `clientMessage`.
+ */
+export function catalogDomainErrorExtrasFromError(
+  error: unknown,
+): CatalogDomainErrorExtras | undefined {
+  if (!(error instanceof CoreError) || error.code !== "CONFLICT") {
+    return undefined;
+  }
+  return catalogDomainErrorExtrasFromDuckTyped(
+    Reflect.get(error, "reason") as unknown,
+    Reflect.get(error, "target") as unknown,
+  );
+}
+
+export function catalogDomainErrorExtrasFromToolOutput(
+  output: unknown,
+): CatalogDomainErrorExtras | undefined {
+  const parsed = staffAssistantDomainErrorOutputSchema.safeParse(output);
+  if (!parsed.success) {
+    return undefined;
+  }
+  if (parsed.data.reason === "archived") {
+    return {
+      reason: "archived",
+      subject: parsed.data.subject,
+    };
+  }
+  return {
+    reason: "no_active_variants",
+    subject: parsed.data.subject,
+  };
+}
+
+export function staffAssistantTypedDomainErrorOutput(
+  error: CoreError,
+): StaffAssistantDomainErrorOutput | undefined {
+  const extras = catalogDomainErrorExtrasFromError(error);
+  if (extras === undefined) {
+    return undefined;
+  }
+  return staffAssistantDomainErrorOutputSchema.parse({
+    status: "error",
+    code: error.code,
+    message: error.clientMessage,
+    reason: extras.reason,
+    subject: extras.subject,
+  });
 }
 
 export function choiceRecordFromPickerConflict(args: {
