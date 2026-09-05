@@ -407,14 +407,12 @@ async function exhaustPdfDelivery(env: {
 
 function capLongJsTimeouts(maxMs: number): () => void {
   const nativeSetTimeout = globalThis.setTimeout.bind(globalThis);
-  const spy = vi.spyOn(globalThis, "setTimeout").mockImplementation(((
-    handler: TimerHandler,
-    delay?: number,
-    ...args: unknown[]
-  ) => {
-    const next = typeof delay === "number" && delay >= 5_000 ? maxMs : delay;
-    return nativeSetTimeout(handler, next, ...args);
-  }) as typeof setTimeout);
+  const spy = vi
+    .spyOn(globalThis, "setTimeout")
+    .mockImplementation((handler, delay, ...args) => {
+      const next = typeof delay === "number" && delay >= 5_000 ? maxMs : delay;
+      return nativeSetTimeout(handler, next, ...args);
+    });
   return () => {
     spy.mockRestore();
   };
