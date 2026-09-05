@@ -284,9 +284,6 @@ const createProductContract = defineActionContract({
 
 const createProduct = implementAction(createProductContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("fixture expects a staff context");
-    }
     await requireWritable(ctx.db).insert(fixtureProducts).values({
       id: input.id,
       companyId: ctx.companyId,
@@ -349,9 +346,6 @@ describe("pipeline step order (§4)", () => {
     const confirmAction = implementAction(confirmContract, {
       handler: (_input, ctx) => {
         steps.push("handler");
-        if (ctx.principal !== "customer") {
-          throw new CoreInvariantError("fixture expects a customer context");
-        }
         return Promise.resolve({ companyId: ctx.target.companyId });
       },
       resolveTarget: async (
@@ -639,7 +633,7 @@ describe("authorization", () => {
     });
     const systemTouch = implementAction(systemContract, {
       handler: async (input, ctx) => {
-        if (ctx.principal !== "system" || ctx.scope !== "tenant") {
+        if (ctx.scope !== "tenant") {
           throw new CoreInvariantError(
             "fixture expects a tenant system context",
           );
@@ -747,9 +741,6 @@ describe("transactionality (§4 steps 7–10)", () => {
     });
     const returnGarbage = implementAction(badOutputContract, {
       handler: async (input, ctx) => {
-        if (ctx.principal !== "staff") {
-          throw new CoreInvariantError("fixture expects a staff context");
-        }
         await requireWritable(ctx.db).insert(fixtureProducts).values({
           id: input.id,
           companyId: ctx.companyId,
@@ -835,9 +826,6 @@ describe("risk: read — read-only enforcement", () => {
     let capabilityKeys: string[] = [];
     const readProducts = implementAction(auditedReadContract, {
       handler: async (_input, ctx) => {
-        if (ctx.principal !== "staff") {
-          throw new CoreInvariantError("fixture expects a staff context");
-        }
         capabilityKeys = Object.keys(ctx.db).sort();
         const rows = await ctx.db.select().from(fixtureProducts);
         return { count: rows.length };
@@ -879,9 +867,6 @@ describe("risk: read — read-only enforcement", () => {
     let escapedCapability: Record<string, unknown> = {};
     const readProducts = implementAction(auditedReadContract, {
       handler: (_, ctx) => {
-        if (ctx.principal !== "staff") {
-          throw new CoreInvariantError("fixture expects a staff context");
-        }
         escapedCapability = ctx.db as Record<string, unknown>;
         return Promise.resolve({ count: 0 });
       },
@@ -909,9 +894,6 @@ describe("risk: read — read-only enforcement", () => {
     const req = requestMeta();
     const readProducts = implementAction(auditedReadContract, {
       handler: async (_, ctx) => {
-        if (ctx.principal !== "staff") {
-          throw new CoreInvariantError("fixture expects a staff context");
-        }
         const rows = await ctx.db.select().from(fixtureProducts);
         return { count: rows.length };
       },
@@ -1004,9 +986,6 @@ describe("deadline enforcement", () => {
     });
     const readTimeoutSetting = implementAction(readTimeoutContract, {
       handler: async (_input, ctx) => {
-        if (ctx.principal !== "staff") {
-          throw new CoreInvariantError("fixture expects a staff context");
-        }
         const result = await requireWritable(ctx.db).execute(
           sql`select current_setting('statement_timeout') as value`,
         );
@@ -1133,7 +1112,7 @@ describe("public-global, consumer, and account paths", () => {
   });
   const discoverProducts = implementAction(discoverContract, {
     handler: async (_input, ctx) => {
-      if (ctx.principal !== "public" || ctx.scope !== "globalProjection") {
+      if (ctx.scope !== "globalProjection") {
         throw new CoreInvariantError("fixture expects a public-global context");
       }
       const rows = await ctx.db.from("discoveryProducts");
@@ -1198,9 +1177,6 @@ describe("public-global, consumer, and account paths", () => {
       }),
       {
         handler: async (_input, ctx) => {
-          if (ctx.principal !== "consumer") {
-            throw new CoreInvariantError("fixture expects a consumer context");
-          }
           const rows = await ctx.db.select().from(fixtureDiscoveryProducts);
           return { count: rows.length };
         },
@@ -1232,9 +1208,6 @@ describe("public-global, consumer, and account paths", () => {
       }),
       {
         handler: (_input, ctx) => {
-          if (ctx.principal !== "account") {
-            throw new CoreInvariantError("fixture expects an account context");
-          }
           accountCompanyId = ctx.companyId;
           // The account mode carries the writable capability for its risk.
           requireWritable(ctx.db);
@@ -1348,11 +1321,8 @@ describe("protocol hooks fail closed when missing (core.md §5/§7/§8/§10)", (
   it("does not execute a non-system action without a rate-limit hook", async () => {
     let ran = 0;
     const action = implementAction(createProductContract, {
-      handler: (input, ctx) => {
+      handler: (input) => {
         ran += 1;
-        if (ctx.principal !== "staff") {
-          throw new CoreInvariantError("fixture expects a staff context");
-        }
         return Promise.resolve({ id: input.id });
       },
       auditTarget: () => ({
@@ -1379,11 +1349,8 @@ describe("protocol hooks fail closed when missing (core.md §5/§7/§8/§10)", (
   it("does not execute an idempotent mutation without an idempotency hook", async () => {
     let ran = 0;
     const action = implementAction(createProductContract, {
-      handler: (input, ctx) => {
+      handler: (input) => {
         ran += 1;
-        if (ctx.principal !== "staff") {
-          throw new CoreInvariantError("fixture expects a staff context");
-        }
         return Promise.resolve({ id: input.id });
       },
       auditTarget: () => ({
@@ -1410,11 +1377,8 @@ describe("protocol hooks fail closed when missing (core.md §5/§7/§8/§10)", (
   it("does not execute an audited action without an audit hook", async () => {
     let ran = 0;
     const action = implementAction(createProductContract, {
-      handler: (input, ctx) => {
+      handler: (input) => {
         ran += 1;
-        if (ctx.principal !== "staff") {
-          throw new CoreInvariantError("fixture expects a staff context");
-        }
         return Promise.resolve({ id: input.id });
       },
       auditTarget: () => ({ type: "fixture-product", id: "missing-audit" }),

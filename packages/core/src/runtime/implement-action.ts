@@ -7,9 +7,9 @@
  */
 import type { z } from "zod";
 
-import type { ActionContract } from "../contract/types.js";
+import type { ActionContract, ActionPrincipal } from "../contract/types.js";
+import type { ActionCtxFor } from "./context/types.js";
 import type {
-  ActionHandler,
   AuditSnapshotFn,
   AuditTargetFn,
   ConfirmationSummaryFn,
@@ -36,16 +36,39 @@ export class ActionImplementationError extends Error {
 }
 
 /**
- * The server callbacks of one action. `handler` is always required; the
- * rest are conditional on contract metadata and validated at implement
- * time (which callback pairs with which metadata is listed in core.md §2).
+ * The server callbacks of one action. `handler` is always required; its
+ * `ctx` is the `ActionCtx` arm matching `TPrincipal` (the contract's
+ * `principal` literal). The rest are conditional on contract metadata and
+ * validated at implement time (which callback pairs with which metadata is
+ * listed in core.md §2).
  */
 export interface ActionServerCallbacks<
   TInput extends z.ZodType,
   TOutput extends z.ZodType,
   TTarget = never,
+  TPrincipal extends ActionPrincipal = ActionPrincipal,
 > {
-  readonly handler: ActionHandler<TInput, TOutput>;
+  /**
+   * Declared as a method so parameter checking is bivariant: a staff
+   * handler is assignable to the pipeline/registry's erased `ActionCtx`
+   * slot. Sound because `executeAction` constructs the matching factory
+   * result before invoking.
+   *
+   * `NoInfer` is load-bearing — do not drop it. Without it an explicitly
+   * annotated `ctx` is a second inference candidate for `TPrincipal`, and
+   * TS widens to the union of both candidates rather than rejecting the
+   * mismatch: a `staff` contract with a `ctx: CustomerCtx` handler
+   * resolves to `TPrincipal = "staff" | "customer"`, silently un-pinning
+   * the principal the contract declared. The bivariance this method form
+   * buys still admits an annotation narrower than what the pipeline
+   * supplies (a `risk: "read"` handler annotating `StaffCtx<Tx>`);
+   * SHO-453 closes that by moving back to a property plus an explicit
+   * erased shape.
+   */
+  handler(
+    input: z.output<TInput>,
+    ctx: ActionCtxFor<NoInfer<TPrincipal>>,
+  ): Promise<z.input<TOutput>>;
   /** Required for customer, public-target, and share actions, forbidden otherwise. */
   readonly resolveTarget?: TargetResolver<TInput, TTarget>;
   /** Required when `requiresConfirmation: true`, forbidden otherwise. */
@@ -60,14 +83,17 @@ declare const implementedActionBrand: unique symbol;
 
 /**
  * A validated contract/callback pair. The phantom brand keeps hand-rolled
- * objects out of the registry, mirroring `ActionContract`.
+ * objects out of the registry, mirroring `ActionContract`. `TPrincipal`
+ * is the contract's `principal` literal; the three-argument form still
+ * means the full union (pipeline/registry erasure).
  */
 export type ImplementedAction<
   TInput extends z.ZodType = z.ZodType,
   TOutput extends z.ZodType = z.ZodType,
   TTarget = never,
-> = Readonly<ActionServerCallbacks<TInput, TOutput, TTarget>> & {
-  readonly contract: ActionContract<TInput, TOutput>;
+  TPrincipal extends ActionPrincipal = ActionPrincipal,
+> = Readonly<ActionServerCallbacks<TInput, TOutput, TTarget, TPrincipal>> & {
+  readonly contract: ActionContract<TInput, TOutput, TPrincipal>;
   readonly [implementedActionBrand]: true;
 };
 
@@ -79,11 +105,12 @@ export type ImplementedAction<
 export function implementAction<
   TInput extends z.ZodType,
   TOutput extends z.ZodType,
+  TPrincipal extends ActionPrincipal,
   TTarget = never,
 >(
-  contract: ActionContract<TInput, TOutput>,
-  callbacks: ActionServerCallbacks<TInput, TOutput, TTarget>,
-): ImplementedAction<TInput, TOutput, TTarget> {
+  contract: ActionContract<TInput, TOutput, TPrincipal>,
+  callbacks: ActionServerCallbacks<TInput, TOutput, TTarget, TPrincipal>,
+): ImplementedAction<TInput, TOutput, TTarget, TPrincipal> {
   const problems = collectBindingProblems(contract, callbacks);
   if (problems.length > 0) {
     throw new ActionImplementationError(contract.name, problems);
@@ -93,13 +120,17 @@ export function implementAction<
   return Object.freeze({ contract, ...callbacks }) as ImplementedAction<
     TInput,
     TOutput,
-    TTarget
+    TTarget,
+    TPrincipal
   >;
 }
 
 function collectBindingProblems(
   contract: ActionContract,
-  callbacks: ActionServerCallbacks<z.ZodType, z.ZodType, unknown>,
+  callbacks: Pick<
+    ActionServerCallbacks<z.ZodType, z.ZodType, unknown>,
+    "resolveTarget" | "confirmationSummary" | "auditTarget" | "auditSnapshot"
+  >,
 ): string[] {
   const problems: string[] = [];
 

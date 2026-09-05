@@ -61,7 +61,7 @@ const READ_ONLY_PRINCIPALS: ReadonlySet<ActionPrincipal> = new Set([
  */
 export function defineActionContract<const T extends ActionContractDefinition>(
   definition: T,
-): ActionContract<T["input"], T["output"]> & Readonly<T> {
+): ActionContract<T["input"], T["output"], T["principal"]> & Readonly<T> {
   const problems = collectDefinitionProblems(definition);
   if (problems.length > 0) {
     throw new ActionContractDefinitionError(definition.name, problems);
@@ -70,7 +70,8 @@ export function defineActionContract<const T extends ActionContractDefinition>(
   // validation, so the single assertion is backed by the checks above.
   return Object.freeze({ ...definition }) as ActionContract<
     T["input"],
-    T["output"]
+    T["output"],
+    T["principal"]
   > &
     Readonly<T>;
 }

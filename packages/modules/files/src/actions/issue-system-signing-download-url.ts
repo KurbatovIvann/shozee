@@ -8,7 +8,7 @@ export const issueSystemSigningDownloadUrl = implementAction(
   issueSystemSigningDownloadUrlContract,
   {
     handler: async (input, ctx) => {
-      if (ctx.principal !== "system" || ctx.scope !== "tenant") {
+      if (ctx.scope !== "tenant") {
         throw new CoreInvariantError(
           "files.issueSystemSigningDownloadUrl expects tenant system",
         );

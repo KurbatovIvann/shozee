@@ -1,7 +1,8 @@
 /**
  * Server-callback shapes bound by `implementAction` (core.md §2, ADR-0016).
  *
- * Return types are spec commitments and fully typed. `ActionExecutionCtx`
+ * Return types are spec commitments and fully typed. `ActionHandler` is
+ * keyed on the contract `principal` literal (SHO-416). `ActionExecutionCtx`
  * and `TargetResolutionEnv` were narrowed by the principal context
  * factories (fnd-T11); `AuditTargetEnv` by fnd-T13; `ConfirmationSummaryEnv`
  * by fnd-T20. Narrowing an alias is type-only and cannot break the binding
@@ -10,7 +11,7 @@
 import type { ReadTx } from "@showzy/db";
 import type { z } from "zod";
 
-import type { ActionCtx } from "./context/types.js";
+import type { ActionCtx, ActionCtxFor } from "./context/types.js";
 
 export type MaybePromise<T> = T | Promise<T>;
 
@@ -24,9 +25,9 @@ export type JsonValue =
   | { readonly [key: string]: JsonValue };
 
 /**
- * The execution context passed to handlers: the seven-mode `ActionCtx`
- * discriminated union (core.md §3), constructed only by the principal
- * context factories.
+ * The full seven-mode union the pipeline and registry use after principal
+ * erasure. Handlers bound by `implementAction` see
+ * `ActionCtxFor<contract.principal>` instead (core.md §2/§3).
  */
 export type ActionExecutionCtx = ActionCtx;
 
@@ -99,15 +100,17 @@ export interface AuditTargetRef {
 
 /**
  * Runs inside the pipeline transaction. Receives Zod-validated input and
- * returns a value that the pipeline validates against the output schema
- * before commit (a mismatch is `CoreInvariantError`, core.md §4).
+ * the `ActionCtx` arm matching the contract's `principal` literal (core.md
+ * §2/§3). Returns a value that the pipeline validates against the output
+ * schema before commit (a mismatch is `CoreInvariantError`, core.md §4).
  */
 export type ActionHandler<
   TInput extends z.ZodType,
   TOutput extends z.ZodType,
+  TPrincipal extends ActionCtx["principal"] = ActionCtx["principal"],
 > = (
   input: z.output<TInput>,
-  ctx: ActionExecutionCtx,
+  ctx: ActionCtxFor<TPrincipal>,
 ) => Promise<z.input<TOutput>>;
 
 /**

@@ -4,7 +4,6 @@ import { defineActionContract } from "@showzy/core/contract";
 import { implementAction } from "@showzy/core";
 import {
   ConflictError,
-  CoreInvariantError,
   NotFoundError,
   PermissionDeniedError,
   ValidationError,
@@ -175,9 +174,6 @@ const emitCancelledThenFail = implementAction(
   }),
   {
     handler: (input, ctx) => {
-      if (ctx.principal !== "staff") {
-        throw new CoreInvariantError("emitCancelledThenFail expects staff");
-      }
       ctx.emit(documentsCancelled, {
         aggregate: { type: "document", id: input.documentId },
         payload: {

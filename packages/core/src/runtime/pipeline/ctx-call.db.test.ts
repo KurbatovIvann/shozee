@@ -264,9 +264,6 @@ const getProductFacts = implementAction(
   }),
   {
     handler: async (input, ctx) => {
-      if (ctx.principal !== "staff") {
-        throw new CoreInvariantError("callee expects a staff context");
-      }
       observed.calleeDbKeys = Object.keys(ctx.db).sort();
       observed.calleeCompanyId = ctx.companyId;
       const rows = await ctx.db
@@ -299,9 +296,6 @@ const createAndCheck = implementAction(
   }),
   {
     handler: async (input, ctx) => {
-      if (ctx.principal !== "staff") {
-        throw new CoreInvariantError("caller expects a staff context");
-      }
       await requireWritable(ctx.db).insert(fixtureProducts).values({
         id: input.productId,
         companyId: ctx.companyId,
@@ -461,9 +455,6 @@ describe("runtime target rules (core.md §9)", () => {
       }),
       {
         handler: async (_input, ctx) => {
-          if (ctx.principal !== "consumer") {
-            throw new CoreInvariantError("callee expects a consumer context");
-          }
           const rows = await ctx.db.select().from(fixtureDiscoveryProducts);
           return { count: rows.length };
         },
@@ -551,9 +542,6 @@ describe("callee re-authorization", () => {
       }),
       {
         handler: (_input, ctx) => {
-          if (ctx.principal !== "customer") {
-            throw new CoreInvariantError("callee expects a customer context");
-          }
           return Promise.resolve({ companyId: ctx.target.companyId });
         },
         resolveTarget: async (input, env) => {
@@ -711,9 +699,6 @@ describe("principal compatibility", () => {
     }),
     {
       handler: async (_input, ctx) => {
-        if (ctx.principal !== "consumer") {
-          throw new CoreInvariantError("callee expects a consumer context");
-        }
         // The consumer type forbids a company scope; `null` is what the
         // wire shape reports for "no tenant".
         const rows = await ctx.db.select().from(fixtureDiscoveryProducts);
@@ -820,9 +805,6 @@ describe("principal compatibility", () => {
     {
       resolveTarget: resolveShareToken,
       handler: (_input, ctx) => {
-        if (ctx.principal !== "share") {
-          throw new CoreInvariantError("callee expects a share context");
-        }
         return Promise.resolve({ companyId: ctx.target.companyId });
       },
     },
@@ -983,7 +965,7 @@ describe("principal compatibility", () => {
       }),
       {
         handler: (_input, ctx) => {
-          if (ctx.principal !== "system" || ctx.scope !== "tenant") {
+          if (ctx.scope !== "tenant") {
             throw new CoreInvariantError("callee expects a tenant system ctx");
           }
           return Promise.resolve({ companyId: ctx.companyId });
@@ -1006,7 +988,7 @@ describe("principal compatibility", () => {
       }),
       {
         handler: (_input, ctx) => {
-          if (ctx.principal !== "system" || ctx.scope !== "global") {
+          if (ctx.scope !== "global") {
             throw new CoreInvariantError("callee expects a global system ctx");
           }
           return Promise.resolve({ global: true });

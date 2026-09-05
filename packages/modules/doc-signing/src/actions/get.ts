@@ -1,5 +1,4 @@
 import { implementAction } from "@showzy/core";
-import { CoreInvariantError } from "@showzy/core/errors";
 import {
   signingRequests,
   signingSignatures,
@@ -10,10 +9,6 @@ import { getSigningContract } from "./get.contract.js";
 
 export const getSigning = implementAction(getSigningContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("docSigning.get expects staff");
-    }
-
     const signatureRows = await ctx.db
       .select({ fileId: signingSignatures.fileId })
       .from(signingSignatures)

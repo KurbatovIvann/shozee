@@ -254,9 +254,6 @@ const upsertCardContract = defineActionContract({
 
 const upsertCardAction = implementAction(upsertCardContract, {
   handler: (input, ctx) => {
-    if (ctx.principal !== "system") {
-      throw new CoreInvariantError("consumer fixture expected a system ctx");
-    }
     cardRuns.push({ envelope: input, ctx });
     // The observable effect: an event emitted from inside the delivery.
     ctx.emit(cardUpserted, {
@@ -328,9 +325,6 @@ const recordSweepContract = defineActionContract({
 
 const recordSweepAction = implementAction(recordSweepContract, {
   handler: (_input, ctx) => {
-    if (ctx.principal !== "system") {
-      throw new CoreInvariantError("sweep fixture expected a system ctx");
-    }
     sweepCtx = ctx;
     return Promise.resolve({ ok: true });
   },

@@ -15,12 +15,6 @@ export const listPriceListEntries = implementAction(
   listPriceListEntriesContract,
   {
     handler: async (input, ctx) => {
-      if (ctx.principal !== "staff") {
-        throw new CoreInvariantError(
-          "pricing.listPriceListEntries expects staff",
-        );
-      }
-
       const list = (
         await ctx.db
           .select({ id: priceLists.id })

@@ -1,6 +1,5 @@
 import { getSellerFacts } from "@showzy/companies";
 import { implementAction, type AuditTargetEnv } from "@showzy/core";
-import { CoreInvariantError } from "@showzy/core/errors";
 import { getCounterparty, getCustomer } from "@showzy/customers";
 import { resolveLayout } from "@showzy/doc-generation/resolve-layout";
 import { getOrder } from "@showzy/orders";
@@ -52,10 +51,6 @@ function createAuditTarget(env: AuditTargetEnv): { type: string; id: string } {
 
 export const createFromOrder = implementAction(createFromOrderContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("documents.createFromOrder expects staff");
-    }
-
     const layout = await ctx.call(resolveLayout, {
       layoutKey: input.layoutKey ?? DEFAULT_LAYOUT_KEY_BY_TYPE[input.type],
       type: input.type,

@@ -8,10 +8,6 @@ import { archiveCustomerContract } from "./archive-customer.contract.js";
 
 export const archiveCustomer = implementAction(archiveCustomerContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("customers.archiveCustomer expects staff");
-    }
-
     const saved = await setCustomerStatus(requireWritable(ctx.db), {
       companyId: ctx.companyId,
       customerId: input.id,

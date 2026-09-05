@@ -8,12 +8,6 @@ export const resolveLineReferences = implementAction(
   resolveLineReferencesContract,
   {
     handler: async (input, ctx) => {
-      if (ctx.principal !== "staff") {
-        throw new CoreInvariantError(
-          "catalog.resolveLineReferences expects staff",
-        );
-      }
-
       const lines = await resolveCatalogLineReferences({
         db: ctx.db,
         companyId: ctx.companyId,

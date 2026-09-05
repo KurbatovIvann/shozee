@@ -1,5 +1,4 @@
 import { implementAction } from "@showzy/core";
-import { CoreInvariantError } from "@showzy/core/errors";
 import { companyCustomers } from "@showzy/db/schema/customers";
 import { and, desc, eq } from "drizzle-orm";
 
@@ -11,10 +10,6 @@ import {
 
 export const listMatchingIds = implementAction(listMatchingIdsContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("customers.listMatchingIds expects staff");
-    }
-
     const searchPredicate = customerListSearchPredicate(input.query);
     if (searchPredicate === undefined) {
       return { ids: [], truncated: false };

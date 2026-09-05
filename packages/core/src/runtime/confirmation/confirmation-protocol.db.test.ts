@@ -635,9 +635,6 @@ describe("confirmation protocol — summary environment", () => {
     let seen: ConfirmationSummaryEnv | undefined;
     const action = implementAction(customerContract, {
       handler: (_input, ctx) => {
-        if (ctx.principal !== "customer") {
-          throw new CoreInvariantError("fixture expects a customer context");
-        }
         return Promise.resolve({ companyId: ctx.target.companyId });
       },
       resolveTarget: async (input, resolveEnv) => {

@@ -86,9 +86,6 @@ export function createProtocolFixtureActions() {
     }),
     {
       handler: async (input, ctx) => {
-        if (ctx.principal !== "staff") {
-          throw new CoreInvariantError("createNote expects staff");
-        }
         await requireWritable(ctx.db).insert(fixtureProductComments).values({
           id: input.noteId,
           productId: kitIdentities.products.published,
@@ -134,9 +131,6 @@ export function createProtocolFixtureActions() {
     }),
     {
       handler: async (input, ctx) => {
-        if (ctx.principal !== "staff") {
-          throw new CoreInvariantError("leakyCreateNote expects staff");
-        }
         await requireWritable(ctx.db)
           .update(fixtureDiscoveryProducts)
           .set({
@@ -173,7 +167,7 @@ export function createProtocolFixtureActions() {
     }),
     {
       handler: async (_input, ctx) => {
-        if (ctx.principal !== "system" || ctx.scope !== "tenant") {
+        if (ctx.scope !== "tenant") {
           throw new CoreInvariantError("projectNote expects tenant system");
         }
         await requireWritable(ctx.db)
@@ -221,9 +215,6 @@ export function createProtocolFixtureActions() {
     }),
     {
       handler: async (input, ctx) => {
-        if (ctx.principal !== "staff") {
-          throw new CoreInvariantError("decrementStock expects staff");
-        }
         const rows = await requireWritable(ctx.db)
           .update(fixtureDiscoveryProducts)
           .set({
@@ -275,9 +266,6 @@ export function createProtocolFixtureActions() {
     }),
     {
       handler: async (input, ctx) => {
-        if (ctx.principal !== "staff") {
-          throw new CoreInvariantError("confirmOrder expects staff");
-        }
         await requireWritable(ctx.db).insert(fixtureProductComments).values({
           id: input.orderId,
           productId: kitIdentities.products.published,
@@ -481,9 +469,6 @@ export function createProtocolFixtureActions() {
       }),
       {
         handler: async (input, ctx) => {
-          if (ctx.principal !== "staff") {
-            throw new CoreInvariantError("leakyConfirm expects staff");
-          }
           await requireWritable(ctx.db).insert(fixtureProductComments).values({
             id: input.orderId,
             productId: kitIdentities.products.published,
@@ -550,9 +535,6 @@ export function createProtocolFixtureActions() {
     }),
     {
       handler: async (input, ctx) => {
-        if (ctx.principal !== "account") {
-          throw new CoreInvariantError("setFollow expects account");
-        }
         const tx = requireWritable(ctx.db);
         const existing = await tx
           .select({ companyId: fixtureCompanyFollows.companyId })
@@ -622,9 +604,6 @@ export function createProtocolFixtureActions() {
     }),
     {
       handler: async (input, ctx) => {
-        if (ctx.principal !== "account") {
-          throw new CoreInvariantError("leakySetFollow expects account");
-        }
         await requireWritable(ctx.db)
           .update(fixtureDiscoveryCompanies)
           .set({

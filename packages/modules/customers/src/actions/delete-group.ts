@@ -1,6 +1,4 @@
 import { implementAction } from "@showzy/core";
-import { CoreInvariantError } from "@showzy/core/errors";
-
 import { deleteStaffGroup } from "../services/delete-group.js";
 import { groupAuditTarget } from "../services/group-audit-target.js";
 import { deleteGroupContract } from "./delete-group.contract.js";
@@ -17,9 +15,6 @@ export const deleteGroupConfirmationSummary =
 
 export const deleteGroup = implementAction(deleteGroupContract, {
   handler: (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("customers.deleteGroup expects staff");
-    }
     return deleteStaffGroup({ ctx, input });
   },
   confirmationSummary: () => deleteGroupConfirmationSummary,

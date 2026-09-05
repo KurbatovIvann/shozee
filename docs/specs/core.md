@@ -55,7 +55,7 @@ bound by `implementAction`. All fields are required unless noted:
 | `auditSnapshot` | optional server fn | Returns explicitly redacted safe JSON; hash-only is the default. **Required** on `share` writes (redacted certificate identity; never the raw token) |
 | `timeout` | ms | Whole-pipeline deadline, shared with nested `ctx.call`s; DB statement timeout and abort signal enforce it |
 | `rateLimit` | optional `{ limit, windowSec, scope }` | Defaults per principal (§10) |
-| `handler` | `(input, ctx) => Promise<TOutput>` | Runs inside the transaction; output is Zod-validated before commit and must be JSON-safe |
+| `handler` | `(input, ctx) => Promise<TOutput>` | Runs inside the transaction; `ctx` is the `ActionCtx` arm matching the contract's declared `principal` literal (`implementAction` threads it — a staff handler sees `companyId` without a principal guard). Output is Zod-validated before commit and must be JSON-safe |
 
 The **contract check** (CI, phase-0 task) walks the registry and fails on:
 missing/empty metadata, duplicate names, invalid transport/principal/AI
@@ -121,7 +121,15 @@ or events. Expired, revoked, or mismatched tokens are `NotFoundError`.
 
 ## 3. Principal contexts (ADR-0013, ADR-0018, ADR-0020, ADR-0022)
 
-Discriminated union `ActionCtx`, common fields first:
+Discriminated union `ActionCtx`, common fields first. `implementAction`
+threads the contract's `principal` literal into the handler
+(`ActionCtxFor`), so a staff action receives `StaffCtx` and a customer
+action receives `CustomerCtx`. The seven-arm union is the vocabulary the
+factories construct, not what every handler must accept. Inner
+discriminants the contract does not pin remain unions: `public` is
+`target | globalProjection`, `system` is `tenant | global`. Runtime
+construction is unchanged: exactly one factory per mode, and
+`executeAction` still selects the factory from the invocation principal.
 
 ```ts
 type BaseCtx<TDb extends ReadTx = Tx> = {
@@ -734,6 +742,7 @@ does not apply — fails the check.
 
 | Date | Change | Why | Reported by |
 | --- | --- | --- | --- |
+| 2026-09-05 | §2/§3: a handler's `ctx` is the `ActionCtx` arm matching the contract's declared `principal` (`ActionCtxFor`), not the seven-mode union; runtime construction unchanged | SHO-416: 109 handlers opened with a principal guard the pipeline made unreachable — it existed only to narrow a type | SHO-416 |
 | 2026-09-05 | §6: `findClaimableDeliveries` selects due aggregate heads before LIMIT | SHO-435: blocked successors filled the bounded batch and starved independent deliveries | SHO-435 |
 | 2026-09-05 | §5: takeover CAS re-checks status/lease/retention; a lost race reloads for replay/conflict/retry | SHO-434: stale expired `in_progress` read could reopen a concurrently completed attempt | SHO-434 |
 | 2026-08-22 | §12: `crossTenantSuite` treats `system` + `systemScope: global` like public-global — invoke succeeds; foreign deny is not the isolation property | SHO-115 scheduled GC cannot discover leftovers if the suite requires a per-id 404 | SHO-115 |

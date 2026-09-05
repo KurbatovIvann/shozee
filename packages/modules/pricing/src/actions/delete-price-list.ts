@@ -1,6 +1,4 @@
 import { implementAction } from "@showzy/core";
-import { CoreInvariantError } from "@showzy/core/errors";
-
 import { deleteStaffPriceList } from "../services/delete-price-list.js";
 import { priceListAuditTarget } from "../services/price-list-audit-target.js";
 import { deletePriceListContract } from "./delete-price-list.contract.js";
@@ -17,9 +15,6 @@ export const deletePriceListConfirmationSummary =
 
 export const deletePriceList = implementAction(deletePriceListContract, {
   handler: (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("pricing.deletePriceList expects staff");
-    }
     return deleteStaffPriceList({ ctx, input });
   },
   confirmationSummary: () => deletePriceListConfirmationSummary,

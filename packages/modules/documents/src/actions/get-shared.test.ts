@@ -76,7 +76,7 @@ describe("documents.getShared contract", () => {
     expect(getSharedSource).not.toContain("issueShareDownloadUrl");
     expect(getSharedSource).not.toContain("issueShareSigningDownloadUrl");
     expect(getSharedSource).not.toContain("issueSystemSigningDownloadUrl");
-    expect(getSharedSource).toContain('ctx.principal !== "public"');
+    expect(getSharedSource).toContain('ctx.scope !== "target"');
     expect(getSharedSource).toContain("sharedTokenResourceSchema");
     expect(getSharedSource).not.toContain("isSharedTokenResource");
   });

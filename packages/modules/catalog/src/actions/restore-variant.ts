@@ -8,10 +8,6 @@ import { restoreVariantContract } from "./restore-variant.contract.js";
 
 export const restoreVariant = implementAction(restoreVariantContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("catalog.restoreVariant expects staff");
-    }
-
     const saved = await setVariantStatus(requireWritable(ctx.db), {
       companyId: ctx.companyId,
       variantId: input.variantId,

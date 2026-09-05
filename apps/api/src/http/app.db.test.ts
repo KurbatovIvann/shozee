@@ -159,7 +159,7 @@ function createSampleActions() {
         handler: (_input, ctx) =>
           Promise.resolve({
             companyId: effectiveCompanyId(ctx),
-            clientIp: ctx.clientIp ?? "",
+            clientIp: ctx.clientIp,
           }),
       },
     ),
@@ -177,7 +177,7 @@ function createSampleActions() {
         handler: (_input, ctx) =>
           Promise.resolve({
             companyId: effectiveCompanyId(ctx),
-            clientIp: ctx.clientIp ?? "",
+            clientIp: ctx.clientIp,
           }),
       },
     ),
@@ -195,7 +195,7 @@ function createSampleActions() {
         handler: (_input, ctx) =>
           Promise.resolve({
             companyId: effectiveCompanyId(ctx),
-            clientIp: ctx.clientIp ?? "",
+            clientIp: ctx.clientIp,
           }),
       },
     ),
@@ -212,9 +212,6 @@ function createSampleActions() {
       {
         resolveTarget: resolveShareTarget,
         handler: (_input, ctx) => {
-          if (ctx.principal !== "share") {
-            throw new NotFoundError();
-          }
           return Promise.resolve({
             companyId: ctx.target.companyId,
             actorType: ctx.actor.type,
@@ -249,9 +246,6 @@ function createSampleActions() {
           role: "buyer",
         }),
         handler: (_input, ctx) => {
-          if (ctx.principal !== "share") {
-            throw new NotFoundError();
-          }
           return Promise.resolve({
             companyId: ctx.target.companyId,
             actorType: ctx.actor.type,

@@ -9,10 +9,6 @@ import { getAttachmentFactsContract } from "./get-attachment-facts.contract.js";
 
 export const getAttachmentFacts = implementAction(getAttachmentFactsContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("files.getAttachmentFacts expects staff");
-    }
-
     const fileIds = uniqueIds(input.fileIds);
     const rows = await ctx.db
       .select({

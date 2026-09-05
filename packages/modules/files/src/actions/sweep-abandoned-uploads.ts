@@ -15,7 +15,7 @@ export const sweepAbandonedUploads = implementAction(
   sweepAbandonedUploadsContract,
   {
     handler: async (input, ctx) => {
-      if (ctx.principal !== "system" || ctx.scope !== "global") {
+      if (ctx.scope !== "global") {
         throw new CoreInvariantError(
           "files.sweepAbandonedUploads expects global system",
         );

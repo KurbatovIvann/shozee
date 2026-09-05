@@ -1,9 +1,5 @@
 import { implementAction } from "@showzy/core";
-import {
-  ConflictError,
-  CoreInvariantError,
-  NotFoundError,
-} from "@showzy/core/errors";
+import { ConflictError, NotFoundError } from "@showzy/core/errors";
 import { documents } from "@showzy/db/schema/documents";
 import { getArtifact } from "@showzy/doc-generation/get-artifact";
 import { CANCELLED_REQUEST_SIGN_MESSAGE } from "@showzy/validation/signing";
@@ -28,12 +24,6 @@ export const lockIssuedForSigning = implementAction(
   lockIssuedForSigningContract,
   {
     handler: async (input, ctx) => {
-      if (ctx.principal !== "staff") {
-        throw new CoreInvariantError(
-          "documents.lockIssuedForSigning expects staff",
-        );
-      }
-
       // Header lock copies `documents.requestSign` / `documents.cancel`.
       const rows = await ctx.db
         .select({

@@ -6,7 +6,7 @@ import { loadStaffDocument } from "../services/load-document.js";
 
 export const getForGeneration = implementAction(getForGenerationContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "system" || ctx.scope !== "tenant") {
+    if (ctx.scope !== "tenant") {
       throw new CoreInvariantError(
         "documents.getForGeneration expects tenant system",
       );

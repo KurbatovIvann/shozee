@@ -189,6 +189,7 @@ export type {
   ActionActor,
   ActionChannel,
   ActionCtx,
+  ActionCtxFor,
   BaseCtx,
   CompanyRole,
   ConsumerCtx,

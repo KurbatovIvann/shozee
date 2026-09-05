@@ -31,10 +31,6 @@ function provenAttachmentFileIds(
 
 export const setProductImages = implementAction(setProductImagesContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("catalog.setProductImages expects staff");
-    }
-
     // Empty list clears media; facts require min 1 id.
     if (input.fileIds.length === 0) {
       return replaceProductImages({

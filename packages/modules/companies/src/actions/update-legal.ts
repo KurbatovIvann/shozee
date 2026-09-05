@@ -1,5 +1,4 @@
 import { implementAction, type AuditTargetEnv } from "@showzy/core";
-import { CoreInvariantError } from "@showzy/core/errors";
 import { z } from "zod";
 
 import { updateStaffLegal } from "../services/update-legal.js";
@@ -20,9 +19,6 @@ function updateLegalAuditTarget(env: AuditTargetEnv): {
 
 export const updateLegal = implementAction(updateLegalContract, {
   handler: (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("companies.updateLegal expects staff");
-    }
     return updateStaffLegal({ ctx, input });
   },
   auditTarget: updateLegalAuditTarget,

@@ -44,10 +44,6 @@ function compareMediaPosition(
 
 export const listProducts = implementAction(listProductsContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("catalog.listProducts expects staff");
-    }
-
     const searchPredicate =
       input.query === undefined
         ? undefined

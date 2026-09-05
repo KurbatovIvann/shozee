@@ -7,7 +7,6 @@ import { implementAction } from "@showzy/core";
 import { defineActionContract } from "@showzy/core/contract";
 import {
   ConflictError,
-  CoreInvariantError,
   NotFoundError,
   PermissionDeniedError,
   ValidationError,
@@ -204,9 +203,6 @@ const completeThenMaybeFail = implementAction(
   }),
   {
     handler: async (input, ctx) => {
-      if (ctx.principal !== "staff") {
-        throw new CoreInvariantError("docSigning.complete twin expects staff");
-      }
       const db = requireStaffWritable(ctx.db);
       await db.insert(signingSignatures).values({
         companyId: ctx.companyId,

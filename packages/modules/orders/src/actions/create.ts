@@ -79,10 +79,6 @@ function assertUniqueCanonicalLines(
 
 export const createOrder = implementAction(createOrderContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("orders.create expects staff");
-    }
-
     const customer = await ctx.call(resolveCustomerReference, input.customer);
     const catalog = await ctx.call(resolveLineReferences, {
       lines: input.items.map((item) => toCatalogLineInput(item)),

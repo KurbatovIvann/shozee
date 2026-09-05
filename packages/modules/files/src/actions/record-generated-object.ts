@@ -9,7 +9,7 @@ export const recordGeneratedObject = implementAction(
   recordGeneratedObjectContract,
   {
     handler: async (input, ctx) => {
-      if (ctx.principal !== "system" || ctx.scope !== "tenant") {
+      if (ctx.scope !== "tenant") {
         throw new CoreInvariantError(
           "files.recordGeneratedObject expects tenant system",
         );

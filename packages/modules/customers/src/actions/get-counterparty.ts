@@ -1,5 +1,5 @@
 import { implementAction } from "@showzy/core";
-import { CoreInvariantError, NotFoundError } from "@showzy/core/errors";
+import { NotFoundError } from "@showzy/core/errors";
 import { counterparties } from "@showzy/db/schema/customers";
 import { and, eq } from "drizzle-orm";
 
@@ -12,10 +12,6 @@ import { getCounterpartyContract } from "./get-counterparty.contract.js";
 
 export const getCounterparty = implementAction(getCounterpartyContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("customers.getCounterparty expects staff");
-    }
-
     const row = (
       await ctx.db
         .select(counterpartyReturning)

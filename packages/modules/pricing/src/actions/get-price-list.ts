@@ -1,5 +1,5 @@
 import { implementAction } from "@showzy/core";
-import { CoreInvariantError, NotFoundError } from "@showzy/core/errors";
+import { NotFoundError } from "@showzy/core/errors";
 import { priceLists } from "@showzy/db/schema/pricing";
 import { and, eq } from "drizzle-orm";
 
@@ -8,10 +8,6 @@ import { getPriceListContract } from "./get-price-list.contract.js";
 
 export const getPriceList = implementAction(getPriceListContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("pricing.getPriceList expects staff");
-    }
-
     const row = (
       await ctx.db
         .select({

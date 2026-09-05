@@ -1,5 +1,4 @@
 import { implementAction, type AuditTargetEnv } from "@showzy/core";
-import { CoreInvariantError } from "@showzy/core/errors";
 import { z } from "zod";
 
 import { createOwnedCompany } from "../services/create-company.js";
@@ -17,9 +16,6 @@ function createAuditTarget(env: AuditTargetEnv): { type: string; id: string } {
 
 export const createCompany = implementAction(createCompanyContract, {
   handler: (input, ctx) => {
-    if (ctx.principal !== "account") {
-      throw new CoreInvariantError("companies.create expects account");
-    }
     return createOwnedCompany({ ctx, input });
   },
   auditTarget: createAuditTarget,

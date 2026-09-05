@@ -8,10 +8,6 @@ import { archiveProductContract } from "./archive-product.contract.js";
 
 export const archiveProduct = implementAction(archiveProductContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("catalog.archiveProduct expects staff");
-    }
-
     const saved = await setProductStatus(requireWritable(ctx.db), {
       companyId: ctx.companyId,
       productId: input.productId,

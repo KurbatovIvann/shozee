@@ -14,7 +14,6 @@ import { defineActionContract } from "@showzy/core/contract";
 import {
   ConfirmationRequiredError,
   ConflictError,
-  CoreInvariantError,
   NotFoundError,
   PermissionDeniedError,
   ValidationError,
@@ -227,9 +226,6 @@ const emitSignRequestedThenFail = implementAction(
   }),
   {
     handler: (input, ctx) => {
-      if (ctx.principal !== "staff") {
-        throw new CoreInvariantError("emitSignRequestedThenFail expects staff");
-      }
       ctx.emit(documentsSignRequested, {
         aggregate: { type: "document", id: input.documentId },
         payload: { documentId: input.documentId },
@@ -267,10 +263,7 @@ const projectSignRequestedTest = implementAction(
     timeout: 5_000,
   }),
   {
-    handler: (_input, ctx) => {
-      if (ctx.principal !== "system") {
-        throw new CoreInvariantError("projectSignRequestedTest expects system");
-      }
+    handler: () => {
       return Promise.resolve({ ok: true as const });
     },
     auditTarget: () => ({ type: "document", id: "test-sign-requested-noop" }),

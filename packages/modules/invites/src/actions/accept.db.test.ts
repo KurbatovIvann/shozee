@@ -8,7 +8,6 @@ import {
 } from "@showzy/core";
 import {
   ConflictError,
-  CoreInvariantError,
   NotFoundError,
   ValidationError,
 } from "@showzy/core/errors";
@@ -198,9 +197,6 @@ const emitAcceptedThenFail = implementAction(
         resource: { companyId: kitIdentities.companies.a },
       }),
     handler: (input, ctx) => {
-      if (ctx.principal !== "customer") {
-        throw new CoreInvariantError("emitAcceptedThenFail expects customer");
-      }
       ctx.emit(invitesAccepted, {
         aggregate: { type: "invite", id: input.inviteId },
         payload: {
@@ -236,10 +232,7 @@ const projectAcceptedTest = implementAction(
     timeout: 5_000,
   }),
   {
-    handler: (_input, ctx) => {
-      if (ctx.principal !== "system") {
-        throw new CoreInvariantError("projectAcceptedTest expects system");
-      }
+    handler: () => {
       return Promise.resolve({ ok: true as const });
     },
     auditTarget: () => ({ type: "invite", id: "test-accepted-noop" }),

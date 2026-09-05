@@ -30,10 +30,6 @@ function cancelAuditTarget(env: AuditTargetEnv): { type: string; id: string } {
 
 export const cancelDocument = implementAction(cancelDocumentContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("documents.cancel expects staff");
-    }
-
     const db = requireWritable(ctx.db);
     // Header lock copies `orders.cancel`. `loadStaffDocument` is the T3
     // get assembler (full view + line snapshots, no FOR UPDATE) — not a

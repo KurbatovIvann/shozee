@@ -1,5 +1,5 @@
 import { implementAction, type AuditTargetEnv } from "@showzy/core";
-import { CoreInvariantError, NotFoundError } from "@showzy/core/errors";
+import { NotFoundError } from "@showzy/core/errors";
 import { documents, documentShareTokens } from "@showzy/db/schema/documents";
 import { getArtifact } from "@showzy/doc-generation/get-artifact";
 import { getSigning } from "@showzy/doc-signing/get";
@@ -44,10 +44,6 @@ function shareAuditTarget(env: AuditTargetEnv): { type: string; id: string } {
 
 export const shareDocument = implementAction(shareDocumentContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("documents.share expects staff");
-    }
-
     const db = requireWritable(ctx.db);
     const locked = await db
       .select({ id: documents.id })

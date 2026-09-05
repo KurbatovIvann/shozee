@@ -17,12 +17,6 @@ import {
 
 export const listCounterparties = implementAction(listCounterpartiesContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError(
-        "customers.listCounterparties expects staff",
-      );
-    }
-
     const searchPattern =
       input.search === undefined
         ? undefined

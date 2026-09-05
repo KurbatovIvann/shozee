@@ -135,10 +135,6 @@ function startOutput(env: {
 
 export const startSigning = implementAction(startSigningContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("docSigning.start expects staff");
-    }
-
     await ctx.call(lockIssuedForSigning, {
       documentId: input.documentId,
     });

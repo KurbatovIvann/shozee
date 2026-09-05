@@ -1,5 +1,4 @@
 import { implementAction } from "@showzy/core";
-import { CoreInvariantError } from "@showzy/core/errors";
 import { moneyToCanonical } from "@showzy/module-kit/canonical";
 
 import { loadProductFacts } from "../services/load-product-facts.js";
@@ -9,12 +8,6 @@ export const getProductPricingFacts = implementAction(
   getProductPricingFactsContract,
   {
     handler: async (input, ctx) => {
-      if (ctx.principal !== "staff") {
-        throw new CoreInvariantError(
-          "catalog.getProductPricingFacts expects staff",
-        );
-      }
-
       const facts = await loadProductFacts({
         db: ctx.db,
         companyId: ctx.companyId,

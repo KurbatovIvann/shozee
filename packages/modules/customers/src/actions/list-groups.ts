@@ -14,10 +14,6 @@ import {
 
 export const listGroups = implementAction(listGroupsContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("customers.listGroups expects staff");
-    }
-
     const searchPattern =
       input.search === undefined
         ? undefined

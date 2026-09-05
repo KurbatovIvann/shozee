@@ -15,10 +15,6 @@ import {
 
 export const listCustomers = implementAction(listCustomersContract, {
   handler: async (input, ctx) => {
-    if (ctx.principal !== "staff") {
-      throw new CoreInvariantError("customers.listCustomers expects staff");
-    }
-
     const searchPredicate =
       input.search === undefined
         ? undefined

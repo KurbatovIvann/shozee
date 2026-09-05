@@ -84,9 +84,6 @@ const emitCreatedThenFail = implementAction(
   }),
   {
     handler: (input, ctx) => {
-      if (ctx.principal !== "staff") {
-        throw new CoreInvariantError("emitCreatedThenFail expects staff");
-      }
       ctx.emit(ordersCreated, {
         aggregate: { type: "order", id: input.orderId },
         payload: {

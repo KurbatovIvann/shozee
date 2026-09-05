@@ -59,12 +59,19 @@ Four export subpaths exist:
   bound (`resolveTarget` iff customer/public-target/share, `confirmationSummary`
   iff `requiresConfirmation`, `auditTarget` iff `audit: true`, required
   `auditSnapshot` on share writes), throws `ActionImplementationError` listing all problems,
-  freezes and brands the pair.
+  freezes and brands the pair. The handler's `ctx` is
+  `ActionCtxFor<contract.principal>` (SHO-416). The handler is a method so
+  a narrowed implementation stays assignable to the pipeline/registry's
+  three-argument `ImplementedAction` (full union), and its `ctx` is wrapped
+  in `NoInfer` so an explicit annotation cannot widen `TPrincipal` back to a
+  union — neither is decoration, see the comment there. SHO-453 replaces
+  both with a property plus an explicit erased shape.
 - `action-registry.ts` — `ActionRegistry` with duplicate detection on both
   contracts and implementations; `assertPaired()` is the boot gate: orphan
   descriptors, orphan implementations, and same-name-different-object
   drift (a redefined descriptor) all fail before anything serves traffic.
 - `types.ts` — callback shapes. Return types are spec commitments;
+  `ActionHandler` is keyed on the contract `principal` literal (SHO-416);
   `ActionExecutionCtx` (= `ActionCtx`) and `TargetResolutionEnv`
   (`{ tx: ReadTx, principal, inheritedCompanyId? }`) were narrowed by
   fnd-T11; `AuditTargetEnv` was narrowed by fnd-T13 to
@@ -73,7 +80,8 @@ Four export subpaths exist:
 
 ## Principal contexts (`src/runtime/context/`, core.md §3)
 
-- `types.ts` — the seven-mode `ActionCtx` discriminated union. The DB slot
+- `types.ts` — the seven-mode `ActionCtx` discriminated union, plus
+  `ActionCtxFor<principal>` for the handler-facing arm. The DB slot
   is the capability the action's `risk` allows (`Tx`, `ReadTx`, or a
   grant-bound `ProjectionReadTx`); `emit` is the typed buffered emitter
   (fnd-T16, below); `call` is the typed cross-module read invoker
