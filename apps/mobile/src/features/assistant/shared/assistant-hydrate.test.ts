@@ -15,10 +15,12 @@ import {
   findOwnConversationId,
   firstOwnConversationId,
   hydratedUiMessagesFromConversation,
+  HYDRATABLE_ORDER_ENTITY_ACTIONS,
   isHydratableOrderEntityRun,
   isUnrestorableListRun,
   loadChoiceEnvelopes,
   loadOrdersById,
+  UNRESTORABLE_LIST_ACTION,
   type AssistantConversationListItem,
   type AssistantHistoryMessage,
   type AssistantHistoryToolRun,
@@ -1014,5 +1016,35 @@ describe("assistant hydrate source", () => {
     expect(hook).not.toContain("ensureAssistantConversation");
     expect(hook).not.toContain("userId:");
     expect(hook).not.toContain("companyId:");
+  });
+});
+
+describe("hydration registry derivation (SHO-456)", () => {
+  it("derives hydratable actions from the shared registry and does not restore lists", () => {
+    expect([...HYDRATABLE_ORDER_ENTITY_ACTIONS].sort()).toEqual([
+      "orders.create",
+      "orders.get",
+    ]);
+    expect(UNRESTORABLE_LIST_ACTION).toBe("orders.list");
+    expect(
+      isHydratableOrderEntityRun({
+        id: RUN_GET,
+        actionName: "orders.get",
+        toolCallId: "call-get",
+        resultIds: [ORDER_A],
+        outcome: "success",
+        createdAt: "2026-09-03T10:00:01.000Z",
+      }),
+    ).toBe(true);
+    expect(
+      isUnrestorableListRun({
+        id: RUN_LIST,
+        actionName: "orders.list",
+        toolCallId: "call-list",
+        resultIds: [],
+        outcome: "success",
+        createdAt: "2026-09-03T10:00:01.000Z",
+      }),
+    ).toBe(true);
   });
 });

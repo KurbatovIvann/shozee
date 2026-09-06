@@ -14,18 +14,20 @@
  */
 
 import {
+  hydratableAssistantActionNames,
+  unrestorableAssistantListAction,
+} from "@showzy/validation/assistant-surfaces";
+
+import {
   isRestorableChoiceStatus,
   type StaffAssistantChoiceCardEnvelope,
 } from "./choice";
 
 export const ASSISTANT_LIST_CONVERSATIONS_PAGE_MAX = 50;
 
-export const HYDRATABLE_ORDER_ENTITY_ACTIONS = new Set([
-  "orders.get",
-  "orders.create",
-]);
+export const HYDRATABLE_ORDER_ENTITY_ACTIONS = hydratableAssistantActionNames();
 
-export const UNRESTORABLE_LIST_ACTION = "orders.list";
+export const UNRESTORABLE_LIST_ACTION = unrestorableAssistantListAction();
 
 export type AssistantConversationListItem = {
   readonly id: string;

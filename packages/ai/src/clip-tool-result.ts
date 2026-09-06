@@ -4,6 +4,11 @@
  * execute output. Oversized previews keep identity fields, never
  * `{ truncated: true }` alone.
  */
+import {
+  ASSISTANT_TOOL_CLIPPED_STATUS,
+  type AssistantClippedToolEnvelope,
+} from "@showzy/validation/assistant-surfaces";
+
 import { isStaffAssistantNeedsChoiceOutput } from "./choice.js";
 import { isStaffAssistantConfirmationOutput } from "./confirmation.js";
 
@@ -21,7 +26,7 @@ export const STAFF_ASSISTANT_CLIP_ARRAY_MAX = 50;
  * as the page.
  */
 export const STAFF_ASSISTANT_CLIP_JSON_MAX = 22_000;
-export const STAFF_ASSISTANT_CLIPPED_STATUS = "clipped" as const;
+export const STAFF_ASSISTANT_CLIPPED_STATUS = ASSISTANT_TOOL_CLIPPED_STATUS;
 export const STAFF_ASSISTANT_CLIP_SHRINK_ARRAY_MAX = 3;
 
 /**
@@ -57,11 +62,7 @@ export const STAFF_ASSISTANT_CLIP_IDENTITY_KEYS = [
 
 const IDENTITY_KEY_SET = new Set<string>(STAFF_ASSISTANT_CLIP_IDENTITY_KEYS);
 
-export interface StaffAssistantClippedResult {
-  readonly status: typeof STAFF_ASSISTANT_CLIPPED_STATUS;
-  readonly preview: unknown;
-  readonly omitted: number;
-}
+export type StaffAssistantClippedResult = AssistantClippedToolEnvelope;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
