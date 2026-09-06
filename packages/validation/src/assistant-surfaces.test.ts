@@ -18,11 +18,11 @@ import {
   staffAssistantPresentationEnvelopeSchema,
   staffAssistantPresentationEnvelopesFromToolResults,
   unrestorableAssistantActionNames,
-  unrestorableAssistantListAction,
   unwrapToolOutput,
   type AssistantOrdersAggregateData,
   type AssistantOrdersListData,
   type AssistantSurfaceData,
+  type AssistantSurfaceDescriptor,
   type AssistantSurfaceToolResult,
 } from "./assistant-surfaces/index.js";
 
@@ -395,6 +395,22 @@ describe("assistantSurfacesFromToolResults compose", () => {
   });
 });
 
+function fixtureDescriptor(args: {
+  readonly kind: AssistantSurfaceDescriptor["kind"];
+  readonly actionNames: readonly string[];
+  readonly hydratable: boolean;
+}): AssistantSurfaceDescriptor {
+  return {
+    kind: args.kind,
+    version: 1,
+    toolNames: [],
+    actionNames: args.actionNames,
+    hydratable: args.hydratable,
+    promptLine: "fixture",
+    parse: () => null,
+  };
+}
+
 describe("hydration flags", () => {
   it("derives hydratable actions from the registry and does not restore lists", () => {
     expect([...hydratableAssistantActionNames()].sort()).toEqual([
@@ -402,7 +418,6 @@ describe("hydration flags", () => {
       "orders.get",
     ]);
     expect([...unrestorableAssistantActionNames()]).toEqual(["orders.list"]);
-    expect(unrestorableAssistantListAction()).toBe("orders.list");
     const list = ASSISTANT_SURFACE_REGISTRY.find(
       (entry) => entry.kind === "orders-list",
     );
@@ -415,6 +430,32 @@ describe("hydration flags", () => {
     expect(list?.hydratable).toBe(false);
     expect(aggregate?.hydratable).toBe(false);
     expect(entity?.hydratable).toBe(true);
+  });
+
+  it("recognises every unrestorable action name in a fixture registry (SHO-461)", () => {
+    const fixtureRegistry: readonly AssistantSurfaceDescriptor[] = [
+      fixtureDescriptor({
+        kind: "orders-list",
+        actionNames: ["orders.list"],
+        hydratable: false,
+      }),
+      fixtureDescriptor({
+        kind: "orders-aggregate",
+        actionNames: ["customers.list"],
+        hydratable: false,
+      }),
+      fixtureDescriptor({
+        kind: "order-entity",
+        actionNames: ["orders.get", "orders.create"],
+        hydratable: true,
+      }),
+    ];
+    expect(
+      [...unrestorableAssistantActionNames(fixtureRegistry)].sort(),
+    ).toEqual(["customers.list", "orders.list"]);
+    expect([...hydratableAssistantActionNames(fixtureRegistry)].sort()).toEqual(
+      ["orders.create", "orders.get"],
+    );
   });
 });
 

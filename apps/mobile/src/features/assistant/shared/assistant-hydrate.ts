@@ -15,7 +15,7 @@
 
 import {
   hydratableAssistantActionNames,
-  unrestorableAssistantListAction,
+  unrestorableAssistantActionNames,
 } from "@showzy/validation/assistant-surfaces";
 
 import {
@@ -27,7 +27,7 @@ export const ASSISTANT_LIST_CONVERSATIONS_PAGE_MAX = 50;
 
 export const HYDRATABLE_ORDER_ENTITY_ACTIONS = hydratableAssistantActionNames();
 
-export const UNRESTORABLE_LIST_ACTION = unrestorableAssistantListAction();
+export const UNRESTORABLE_LIST_ACTIONS = unrestorableAssistantActionNames();
 
 export type AssistantConversationListItem = {
   readonly id: string;
@@ -151,8 +151,11 @@ export function isHydratableOrderEntityRun(
   );
 }
 
-export function isUnrestorableListRun(run: AssistantHistoryToolRun): boolean {
-  return run.actionName === UNRESTORABLE_LIST_ACTION;
+export function isUnrestorableListRun(
+  run: AssistantHistoryToolRun,
+  unrestorableActions: ReadonlySet<string> = UNRESTORABLE_LIST_ACTIONS,
+): boolean {
+  return unrestorableActions.has(run.actionName);
 }
 
 export function isChoiceRequiredRun(run: AssistantHistoryToolRun): boolean {
