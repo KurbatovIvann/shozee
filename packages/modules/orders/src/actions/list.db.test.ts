@@ -1461,6 +1461,7 @@ describe("orders.list", () => {
     const prefix = randomUUID().replaceAll("-", "").slice(0, 8).toUpperCase();
     const uiId = randomUUID();
     const aiUnvouchedId = randomUUID();
+    const systemId = randomUUID();
     const unknownId = randomUUID();
     const aiVouchedId = randomUUID();
     await kit.db.runtime.db.insert(companies).values({
@@ -1509,6 +1510,19 @@ describe("orders.list", () => {
       createdVia: "ai",
     });
     await insertOrder({
+      id: systemId,
+      itemIds: [randomUUID()],
+      companyId,
+      customerId: null,
+      customerNameSnapshot: UNLINKED_CUSTOMER_NAME_SNAPSHOT,
+      productId,
+      status: "new",
+      totalGrossMinor: 500n,
+      createdAt: new Date("2026-07-02T12:00:00.000Z"),
+      orderNumber: `${prefix}-SYS`,
+      createdVia: "system",
+    });
+    await insertOrder({
       id: unknownId,
       itemIds: [randomUUID()],
       companyId,
@@ -1546,9 +1560,9 @@ describe("orders.list", () => {
       ),
     );
     expect(RECORD_VERIFICATION.mode).toBe("narrow");
-    expect(narrow.orderCount).toBe(4);
+    expect(narrow.orderCount).toBe(5);
     expect(narrow.grossByCurrency).toEqual([
-      { currency: "UAH", grossAmountMinor: "1000" },
+      { currency: "UAH", grossAmountMinor: "1500" },
     ]);
 
     RECORD_VERIFICATION.mode = "strict";
@@ -1559,15 +1573,15 @@ describe("orders.list", () => {
         actor,
       ),
     );
-    expect(strict.orderCount).toBe(3);
+    expect(strict.orderCount).toBe(4);
     expect(strict.grossByCurrency).toEqual([
-      { currency: "UAH", grossAmountMinor: "800" },
+      { currency: "UAH", grossAmountMinor: "1300" },
     ]);
 
     const page = asSummary(await kit.invoke(listOrders, pageSummary, actor));
-    expect(page.items).toHaveLength(4);
+    expect(page.items).toHaveLength(5);
     expect(page.items.map((row) => row.orderId).toSorted()).toEqual(
-      [uiId, aiUnvouchedId, unknownId, aiVouchedId].toSorted(),
+      [uiId, aiUnvouchedId, systemId, unknownId, aiVouchedId].toSorted(),
     );
   });
 });
