@@ -347,9 +347,8 @@ function validateEmits(
 }
 
 /**
- * Per-descriptor half of the ADR-0021 rules. Whether the referenced edges
- * are mutually declared (and exist at all) is a registry question for the
- * contract check (fnd-T10).
+ * Rejects INTERNAL, pipeline-only codes, duplicates, and unknown strings.
+ * Empty is a real answer. Registry-wide caller-superset is contract-check.
  */
 function validateErrors(
   definition: ActionContractDefinition,
@@ -373,6 +372,11 @@ function validateErrors(
   }
 }
 
+/**
+ * Per-descriptor half of the ADR-0021 rules. Whether the referenced edges
+ * are mutually declared (and exist at all) is a registry question for the
+ * contract check (fnd-T10).
+ */
 function validateAtomicEdges(
   definition: ActionContractDefinition,
   problems: string[],
