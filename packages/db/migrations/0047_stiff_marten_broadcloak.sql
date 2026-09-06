@@ -1,7 +1,10 @@
 -- SHO-465 record provenance. Generated ADD COLUMN / CHECK, then a one-time
--- backfill of `created_via` from the earliest `audit_log` row per
--- (target_type, target_id). Unmatched rows stay NULL — do not guess 'ui'.
--- Do not backfill vouched_by. No index on audit_log (target_type, target_id).
+-- backfill of `created_via` from the earliest successful attesting create
+-- `audit_log` row per (target_type, target_id). SHO-487: each CTE filters
+-- target_type, action IN (attesting creates), and outcome = 'ok' so
+-- DISTINCT ON never sorts discarded rows. Unmatched rows stay NULL — do
+-- not guess 'ui'. Do not backfill vouched_by. No index on audit_log
+-- (target_type, target_id).
 --
 -- Reverse (db.md §6 is forward-only; this is the documented inverse for
 -- a restore + roll-forward world). Per table:
@@ -60,6 +63,9 @@ WITH earliest AS (
 		"target_id",
 		"channel"
 	FROM "audit_log"
+	WHERE "target_type" = 'order'
+		AND "action" IN ('orders.create')
+		AND "outcome" = 'ok'
 	ORDER BY "target_type", "target_id", "created_at" ASC, "id" ASC
 )
 UPDATE "orders" AS t
@@ -73,6 +79,9 @@ WITH earliest AS (
 		"target_id",
 		"channel"
 	FROM "audit_log"
+	WHERE "target_type" = 'customer'
+		AND "action" IN ('customers.createCustomer', 'customers.applyInviteCrm')
+		AND "outcome" = 'ok'
 	ORDER BY "target_type", "target_id", "created_at" ASC, "id" ASC
 )
 UPDATE "company_customers" AS t
@@ -86,6 +95,9 @@ WITH earliest AS (
 		"target_id",
 		"channel"
 	FROM "audit_log"
+	WHERE "target_type" = 'counterparty'
+		AND "action" IN ('customers.createCounterparty')
+		AND "outcome" = 'ok'
 	ORDER BY "target_type", "target_id", "created_at" ASC, "id" ASC
 )
 UPDATE "counterparties" AS t
@@ -99,6 +111,9 @@ WITH earliest AS (
 		"target_id",
 		"channel"
 	FROM "audit_log"
+	WHERE "target_type" = 'customer_group'
+		AND "action" IN ('customers.createGroup')
+		AND "outcome" = 'ok'
 	ORDER BY "target_type", "target_id", "created_at" ASC, "id" ASC
 )
 UPDATE "customer_groups" AS t
@@ -112,6 +127,9 @@ WITH earliest AS (
 		"target_id",
 		"channel"
 	FROM "audit_log"
+	WHERE "target_type" = 'product'
+		AND "action" IN ('catalog.createProduct')
+		AND "outcome" = 'ok'
 	ORDER BY "target_type", "target_id", "created_at" ASC, "id" ASC
 )
 UPDATE "products" AS t
@@ -125,6 +143,9 @@ WITH earliest AS (
 		"target_id",
 		"channel"
 	FROM "audit_log"
+	WHERE "target_type" = 'variant'
+		AND "action" IN ('catalog.createVariant')
+		AND "outcome" = 'ok'
 	ORDER BY "target_type", "target_id", "created_at" ASC, "id" ASC
 )
 UPDATE "product_variants" AS t
@@ -138,6 +159,9 @@ WITH earliest AS (
 		"target_id",
 		"channel"
 	FROM "audit_log"
+	WHERE "target_type" = 'price_list'
+		AND "action" IN ('pricing.createPriceList')
+		AND "outcome" = 'ok'
 	ORDER BY "target_type", "target_id", "created_at" ASC, "id" ASC
 )
 UPDATE "price_lists" AS t
@@ -151,6 +175,9 @@ WITH earliest AS (
 		"target_id",
 		"channel"
 	FROM "audit_log"
+	WHERE "target_type" = 'document'
+		AND "action" IN ('documents.createFromOrder')
+		AND "outcome" = 'ok'
 	ORDER BY "target_type", "target_id", "created_at" ASC, "id" ASC
 )
 UPDATE "documents" AS t
@@ -164,6 +191,9 @@ WITH earliest AS (
 		"target_id",
 		"channel"
 	FROM "audit_log"
+	WHERE "target_type" = 'invite'
+		AND "action" IN ('invites.create')
+		AND "outcome" = 'ok'
 	ORDER BY "target_type", "target_id", "created_at" ASC, "id" ASC
 )
 UPDATE "company_customer_invites" AS t
