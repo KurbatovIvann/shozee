@@ -88,7 +88,11 @@ read-model grant declared in the owning spec (ADR-0015). AI-exposed create
 writes (`risk: write|high`, after `deriveAiToolSources`) require nullable
 `created_via` / `vouched_by` / `vouched_at` plus a `created_via` CHECK on
 the derived entity table; `companies` and `files` are a named source
-allowlist (SHO-467).
+allowlist (SHO-467). Every `ASSISTANT_SURFACE_REGISTRY` `actionNames` /
+`toolNames` binding must resolve to an AI-exposed contract
+(`deriveAiToolSources`) or a provider / façade tool name; failure names
+the surface kind, the unresolved string, and the nearest real name
+(SHO-471).
 
 Public actions are a strict subset: `risk: read`, `permissions: []`,
 `audit: false`, `idempotent: false`, `requiresConfirmation: false`,

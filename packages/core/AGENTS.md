@@ -385,9 +385,11 @@ stage (`pnpm --filter @showzy/api contract:check`):
    manifest (foreign schema imports need an owner-declared read-model grant
    to `search`/`analytics`), inherited-suite coverage (core.md §12:
    every registered action and declared atomic edge must appear in
-   `suiteCoverage`), and AI-exposed create provenance (SHO-467: derived
+   `suiteCoverage`), AI-exposed create provenance (SHO-467: derived
    tables must carry `created_via` / `vouched_by` / `vouched_at`; named
-   exclusions `companies` and `files`).
+   exclusions `companies` and `files`), and assistant surface bindings
+   (SHO-471: every `actionNames` / `toolNames` entry resolves via
+   `deriveAiToolSources` plus registered façade tool names).
 
 The composition root is `apps/api/src/composition.ts`
 (`createActionRegistry` and `buildContractCheckInput`). Module tasks

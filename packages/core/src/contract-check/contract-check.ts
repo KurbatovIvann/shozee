@@ -14,9 +14,9 @@
  *    `auditTarget`); `ActionRegistry` rejects duplicate names and
  *    `assertPaired()` rejects orphan descriptors/implementations.
  * 3. **Registry-wide** — this module: rules that need the whole registry
- *    plus the event/subscription/call-graph/grant manifests. These cannot
- *    be checked from a single definition and are collected here into one
- *    report.
+ *    plus the event/subscription/call-graph/grant/surface manifests.
+ *    These cannot be checked from a single definition and are collected
+ *    here into one report.
  *
  * Layers 1–2 throw on the first broken definition; this layer aggregates,
  * so a red CI run lists every registry-wide problem at once.
@@ -29,6 +29,10 @@ import {
 } from "../runtime/action-registry.js";
 import { atomicCallTargetProblems, callTargetProblems } from "./call-rules.js";
 import {
+  collectAssistantSurfaceBindingProblems,
+  type AssistantSurfaceBindingRef,
+} from "./assistant-surfaces.js";
+import {
   collectRecordProvenanceProblems,
   type SchemaTableRef,
 } from "./record-provenance.js";
@@ -37,7 +41,7 @@ import {
   type SuiteCoverageManifest,
 } from "./suite-coverage.js";
 
-export type { SchemaTableRef };
+export type { AssistantSurfaceBindingRef, SchemaTableRef };
 
 /**
  * Thrown by `assertContractCheck` with every collected violation. Like the
@@ -152,6 +156,19 @@ export interface ContractCheckInput {
    * then fails as a missing table rather than being skipped.
    */
   readonly schemaTables: readonly SchemaTableRef[];
+  /**
+   * Assistant result-surface bindings (SHO-471). Empty is an explicit
+   * statement that no surfaces are in scope — composition must pass the
+   * live `ASSISTANT_SURFACE_REGISTRY` or a rename will not be caught.
+   */
+  readonly assistantSurfaces: readonly AssistantSurfaceBindingRef[];
+  /**
+   * Named façade ToolSet keys from `packages/ai` (SHO-471). Provider
+   * names of AI-exposed actions are derived here via `deriveAiToolSources`;
+   * façades cannot be. Empty means only 1:1 provider / registry names
+   * are valid tool bindings.
+   */
+  readonly assistantFacadeToolNames: readonly string[];
 }
 
 export interface ContractCheckResult {
@@ -202,6 +219,12 @@ export function runContractCheck(
     problems,
   );
   collectRecordProvenanceProblems(contracts, input.schemaTables, problems);
+  collectAssistantSurfaceBindingProblems(
+    contracts,
+    input.assistantSurfaces,
+    input.assistantFacadeToolNames,
+    problems,
+  );
 
   return { ok: problems.length === 0, problems };
 }

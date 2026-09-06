@@ -42,6 +42,7 @@
     "@showzy/db": "workspace:*",
     "@showzy/orders": "workspace:*",
     "@showzy/pricing": "workspace:*",
+    "@showzy/validation": "workspace:*",
     "better-auth": "^1.6.30",
     "hono": "^4.13.3",
     "ioredis": "^6.0.0",
