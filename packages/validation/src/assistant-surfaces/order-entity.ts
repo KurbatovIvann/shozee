@@ -12,6 +12,13 @@ import {
   type AssistantSurfaceToolResult,
 } from "./helpers.js";
 
+/**
+ * Registry names plus Anthropic provider keys. Literals, not
+ * toProviderToolName or ORDERS_CREATE_TOOL_NAME: this zod-only leaf
+ * must not depend on packages/ai or a module contract. packages/ai
+ * owns the equality guard (SHO-462). Do not derive these strings by
+ * adding a forbidden dependency.
+ */
 export const ORDERS_GET_TOOLS = new Set(["orders_get", "orders.get"]);
 export const ORDERS_CREATE_TOOLS = new Set(["orders_create", "orders.create"]);
 
