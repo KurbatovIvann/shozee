@@ -1011,6 +1011,7 @@ describe("streamStaffAssistantChat", () => {
     expect(turn.text).not.toBe("Done.");
     expect(turn.text).not.toMatch(/action is done|action done/i);
     expect(JSON.stringify(payloads)).not.toContain("NoObjectGeneratedError");
+    expect(JSON.stringify(payloads)).not.toContain("data-presentation");
     expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
   });
@@ -1434,6 +1435,7 @@ describe("streamStaffAssistantChat", () => {
     expect(turn.text).toBe(spoken);
     expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
     expect(turn.toolRuns).toEqual([]);
+    expect(JSON.stringify(payloads)).not.toContain("data-presentation");
   });
 
   it("persists presenter text for an entity tool, not mock model spoken", async () => {
@@ -1808,6 +1810,7 @@ describe("streamStaffAssistantChat", () => {
     expect(JSON.stringify(choiceChunks)).not.toContain("optionMap");
     expect(turn.text).toContain("Macarons");
     expect(turn.text).toContain("Lemon");
+    expect(JSON.stringify(payloads)).not.toContain("data-presentation");
   });
 
   it("forwards optionsTruncated on a two-option picker so the prefix is not the full set", async () => {
@@ -2440,5 +2443,242 @@ describe("streamStaffAssistantChat", () => {
     expect(turn.text).toBe(unknownProductMessage);
     expect(turn.text).not.toBe("Done.");
     expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
+  });
+});
+
+function presentationChunks(payloads: readonly unknown[]): unknown[] {
+  return payloads.filter((payload) => {
+    return (
+      typeof payload === "object" &&
+      payload !== null &&
+      "type" in payload &&
+      payload.type === "data-presentation"
+    );
+  });
+}
+
+describe("data-presentation envelope (SHO-458)", () => {
+  it("names orders-list after a page tool with the same kind presenter used", async () => {
+    const execute = vi.fn(() =>
+      Promise.resolve({
+        kind: "page.summary",
+        items: [
+          {
+            orderId: customerId,
+            orderNumber: "1049",
+            status: "new",
+          },
+        ],
+        nextCursor: null,
+      }),
+    );
+    const model = new MockLanguageModelV3({
+      doStream: [
+        mockToolCallStream("call-list", ORDERS_LIST_PAGE_TOOL_NAME, "{}"),
+        mockSpokenStream("MODEL_SPOKEN"),
+      ],
+    });
+    const { response, completion } = streamStaffAssistantChat({
+      model,
+      messages: [{ role: "user", content: "Show orders" }],
+      contracts: [listOrders],
+      execute,
+    });
+    const payloads = await readUiMessageSsePayloads(response);
+    await completion;
+    const chunks = presentationChunks(payloads);
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0]).toMatchObject({
+      type: "data-presentation",
+      data: {
+        surface: "orders-list",
+        version: 1,
+        toolCallIds: ["call-list"],
+      },
+    });
+  });
+
+  it("names orders-aggregate after counts-only", async () => {
+    const execute = vi.fn(() =>
+      Promise.resolve({
+        kind: "aggregate",
+        orderCount: 6,
+        grossByCurrency: [{ currency: "UAH", grossAmountMinor: "150000" }],
+        buckets: [
+          {
+            identity: { kind: "status", status: "confirmed" },
+            orderCount: 4,
+            grossByCurrency: [],
+          },
+        ],
+      }),
+    );
+    const model = new MockLanguageModelV3({
+      doStream: [
+        mockToolCallStream(
+          "call-counts",
+          ORDERS_LIST_COUNTS_TOOL_NAME,
+          JSON.stringify({ period: "this_week" }),
+        ),
+        mockSpokenStream("MODEL_SPOKEN"),
+      ],
+    });
+    const { response, completion } = streamStaffAssistantChat({
+      model,
+      messages: [{ role: "user", content: "How many this week?" }],
+      contracts: [listOrders],
+      execute,
+    });
+    const payloads = await readUiMessageSsePayloads(response);
+    await completion;
+    const chunks = presentationChunks(payloads);
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0]).toMatchObject({
+      type: "data-presentation",
+      data: {
+        surface: "orders-aggregate",
+        version: 1,
+        toolCallIds: ["call-counts"],
+      },
+    });
+  });
+
+  it("names order-entity after orders.get", async () => {
+    const execute = vi.fn(() =>
+      Promise.resolve({
+        orderId: customerId,
+        orderNumber: "1049",
+        status: "new",
+      }),
+    );
+    const model = new MockLanguageModelV3({
+      doStream: [
+        mockToolCallStream(
+          "call-get",
+          toProviderToolName("orders.get"),
+          JSON.stringify({ orderId: customerId }),
+        ),
+        mockSpokenStream("MODEL_SPOKEN"),
+      ],
+    });
+    const { response, completion } = streamStaffAssistantChat({
+      model,
+      messages: [{ role: "user", content: "Open the order" }],
+      contracts: [getOrder],
+      execute,
+      locale: "en",
+    });
+    const payloads = await readUiMessageSsePayloads(response);
+    await completion;
+    const chunks = presentationChunks(payloads);
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0]).toMatchObject({
+      type: "data-presentation",
+      data: {
+        surface: "order-entity",
+        version: 1,
+        toolCallIds: ["call-get"],
+      },
+    });
+  });
+
+  it("emits one envelope per composed kind when list and entity share a turn", async () => {
+    const execute = vi.fn((actionName: string) => {
+      if (actionName === "orders.get") {
+        return Promise.resolve({
+          orderId: customerId,
+          orderNumber: "1049",
+          status: "new",
+        });
+      }
+      return Promise.resolve({
+        kind: "page.summary",
+        items: [
+          {
+            orderId: customerId,
+            orderNumber: "1050",
+            status: "confirmed",
+          },
+        ],
+        nextCursor: null,
+      });
+    });
+    const model = new MockLanguageModelV3({
+      doStream: [
+        mockToolCallStream(
+          "call-get",
+          toProviderToolName("orders.get"),
+          JSON.stringify({ orderId: customerId }),
+        ),
+        mockToolCallStream("call-list", ORDERS_LIST_PAGE_TOOL_NAME, "{}"),
+        mockSpokenStream("MODEL_SPOKEN"),
+      ],
+    });
+    const { response, completion } = streamStaffAssistantChat({
+      model,
+      messages: [{ role: "user", content: "Show that order and the list" }],
+      contracts: [listOrders, getOrder],
+      execute,
+      locale: "en",
+    });
+    const payloads = await readUiMessageSsePayloads(response);
+    await completion;
+    const chunks = presentationChunks(payloads);
+    expect(chunks).toHaveLength(2);
+    expect(chunks[0]).toMatchObject({
+      type: "data-presentation",
+      data: {
+        surface: "orders-list",
+        version: 1,
+        toolCallIds: ["call-list"],
+      },
+    });
+    expect(chunks[1]).toMatchObject({
+      type: "data-presentation",
+      data: {
+        surface: "order-entity",
+        version: 1,
+        toolCallIds: ["call-get"],
+      },
+    });
+  });
+
+  it("does not persist presentation on the turn result (live-turn only)", async () => {
+    const onTurn = vi.fn(() => Promise.resolve());
+    const execute = vi.fn(() =>
+      Promise.resolve({
+        kind: "page.summary",
+        items: [],
+        nextCursor: null,
+      }),
+    );
+    const model = new MockLanguageModelV3({
+      doStream: [
+        mockToolCallStream("call-list", ORDERS_LIST_PAGE_TOOL_NAME, "{}"),
+        mockSpokenStream("MODEL_SPOKEN"),
+      ],
+    });
+    const { response, completion } = streamStaffAssistantChat({
+      model,
+      messages: [{ role: "user", content: "List orders" }],
+      contracts: [listOrders],
+      execute,
+      onTurn,
+    });
+    await readUiMessageSsePayloads(response);
+    const turn = await completion;
+    expect(turn).not.toHaveProperty("presentation");
+    expect(turn.toolRuns).toEqual([
+      {
+        actionName: "orders.list",
+        toolCallId: "call-list",
+        resultIds: [],
+        outcome: "success",
+      },
+    ]);
+    expect(JSON.stringify(onTurn.mock.calls[0])).not.toContain(
+      "data-presentation",
+    );
+    expect(JSON.stringify(onTurn.mock.calls[0])).not.toContain("orders-list");
   });
 });

@@ -1,6 +1,11 @@
 import type { ActionContract } from "@showzy/core/contract";
 import { ConfirmationRequiredError, CoreError } from "@showzy/core/errors";
 import {
+  staffAssistantPresentationEnvelopesFromToolResults,
+  type AssistantSurfaceToolResult,
+  type StaffAssistantPresentationEnvelope,
+} from "@showzy/validation/assistant-surfaces";
+import {
   createUIMessageStream,
   createUIMessageStreamResponse,
   Output,
@@ -112,6 +117,7 @@ export type StaffAssistantUIMessage = UIMessage<
   {
     confirmation: StaffAssistantConfirmationOutput;
     choice: StaffAssistantChoiceCardEnvelope;
+    presentation: StaffAssistantPresentationEnvelope;
   }
 >;
 
@@ -366,7 +372,20 @@ function clipToolExecutes(
           output,
           clipStaffAssistantToolResult(output),
         );
-        presented.push({ toolName: name, output: returned });
+        const toolCallId =
+          typeof options.toolCallId === "string" &&
+          options.toolCallId.length > 0
+            ? clipToolCallId(options.toolCallId)
+            : undefined;
+        if (toolCallId === undefined) {
+          presented.push({ toolName: name, output: returned });
+        } else {
+          presented.push({
+            toolName: name,
+            output: returned,
+            toolCallId,
+          });
+        }
         return returned;
       },
     };
@@ -389,6 +408,55 @@ const STAFF_ASSISTANT_TOOL_ERROR_STREAM_TEXT_ID = "tool-error";
 
 function isStaffAssistantTextStreamPartType(type: string): boolean {
   return type === "text-start" || type === "text-delta" || type === "text-end";
+}
+
+function presentedAsSurfaceToolResults(
+  presented: readonly StaffAssistantPresentedToolResult[],
+): AssistantSurfaceToolResult[] {
+  return presented.map((item) => {
+    if (typeof item.toolCallId === "string" && item.toolCallId.length > 0) {
+      return {
+        toolName: item.toolName,
+        output: item.output,
+        toolCallId: item.toolCallId,
+      };
+    }
+    return { toolName: item.toolName, output: item.output };
+  });
+}
+
+function turnHasHitlPause(runs: readonly StaffAssistantToolRun[]): boolean {
+  return runs.some(
+    (run) =>
+      run.outcome === "confirmation_required" ||
+      run.outcome === "choice_required",
+  );
+}
+
+/**
+ * Live-turn only: names the surface presenter already chose. Never
+ * persisted on `assistant_tool_runs` (ADR-0011). HITL confirmation and
+ * choice turns emit their own envelopes and no presentation part.
+ */
+function writePresentationEnvelopes(
+  writer: {
+    write: (part: {
+      type: "data-presentation";
+      data: StaffAssistantPresentationEnvelope;
+    }) => void;
+  },
+  presented: readonly StaffAssistantPresentedToolResult[],
+  runs: readonly StaffAssistantToolRun[],
+): void {
+  if (turnHasHitlPause(runs)) {
+    return;
+  }
+  const envelopes = staffAssistantPresentationEnvelopesFromToolResults(
+    presentedAsSurfaceToolResults(presented),
+  );
+  for (const data of envelopes) {
+    writer.write({ type: "data-presentation", data });
+  }
 }
 
 /**
@@ -667,6 +735,7 @@ export function streamStaffAssistantChat(options: {
         historyMessageCount: history.messageCount,
         historyChars: history.chars,
       };
+      writePresentationEnvelopes(writer, presentedToolResults, runs);
       if (
         staffAssistantTurnUsesCompletedPresenter({
           locale,

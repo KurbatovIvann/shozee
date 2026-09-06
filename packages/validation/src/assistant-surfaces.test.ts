@@ -15,6 +15,8 @@ import {
   parseOrderEntitySurfaces,
   parseOrdersAggregateSurface,
   parseOrdersListSurface,
+  staffAssistantPresentationEnvelopeSchema,
+  staffAssistantPresentationEnvelopesFromToolResults,
   unrestorableAssistantActionNames,
   unrestorableAssistantListAction,
   unwrapToolOutput,
@@ -413,6 +415,129 @@ describe("hydration flags", () => {
     expect(list?.hydratable).toBe(false);
     expect(aggregate?.hydratable).toBe(false);
     expect(entity?.hydratable).toBe(true);
+  });
+});
+
+describe("staffAssistantPresentationEnvelope (SHO-458)", () => {
+  it("names the same kinds compose would choose across list, aggregate, and entity", () => {
+    const fixtures: readonly {
+      readonly results: readonly AssistantSurfaceToolResult[];
+      readonly kinds: readonly string[];
+      readonly toolCallIds: readonly string[][];
+    }[] = [
+      {
+        results: [
+          result(
+            "orders_list_page",
+            pageOutput([pageRow(ORDER_A)]),
+            "call-page",
+          ),
+          result(
+            "orders_list_counts",
+            countsOutput([
+              {
+                identity: { kind: "status", status: "new" },
+                orderCount: 1,
+              },
+            ]),
+            "call-counts",
+          ),
+        ],
+        kinds: ["orders-list"],
+        toolCallIds: [["call-page", "call-counts"]],
+      },
+      {
+        results: [
+          result(
+            "orders_list_counts",
+            countsOutput([
+              {
+                identity: { kind: "status", status: "confirmed" },
+                orderCount: 4,
+              },
+            ]),
+            "call-counts",
+          ),
+        ],
+        kinds: ["orders-aggregate"],
+        toolCallIds: [["call-counts"]],
+      },
+      {
+        results: [
+          result(
+            "orders.get",
+            { orderId: ORDER_A, orderNumber: "1049", status: "new" },
+            "call-get",
+          ),
+        ],
+        kinds: ["order-entity"],
+        toolCallIds: [["call-get"]],
+      },
+    ];
+    for (const fixture of fixtures) {
+      const surfaces = assistantSurfacesFromToolResults(fixture.results);
+      const envelopes = staffAssistantPresentationEnvelopesFromToolResults(
+        fixture.results,
+      );
+      expect(surfaces.map((surface) => surface.kind)).toEqual(fixture.kinds);
+      expect(envelopes.map((envelope) => envelope.surface)).toEqual(
+        fixture.kinds,
+      );
+      expect(envelopes.map((envelope) => envelope.version)).toEqual(
+        fixture.kinds.map(() => 1),
+      );
+      expect(envelopes.map((envelope) => envelope.toolCallIds)).toEqual(
+        fixture.toolCallIds,
+      );
+    }
+  });
+
+  it("emits no envelope when the turn produced no surface", () => {
+    expect(
+      staffAssistantPresentationEnvelopesFromToolResults([
+        result("orders_list_page", { status: "error", code: "INTERNAL" }),
+      ]),
+    ).toEqual([]);
+    expect(staffAssistantPresentationEnvelopesFromToolResults([])).toEqual([]);
+  });
+
+  it("rejects malformed envelopes (missing surface, wrong types)", () => {
+    expect(
+      staffAssistantPresentationEnvelopeSchema.safeParse({
+        version: 1,
+        toolCallIds: ["call-page"],
+      }).success,
+    ).toBe(false);
+    expect(
+      staffAssistantPresentationEnvelopeSchema.safeParse({
+        surface: "orders-list",
+        version: "1",
+        toolCallIds: ["call-page"],
+      }).success,
+    ).toBe(false);
+    expect(
+      staffAssistantPresentationEnvelopeSchema.safeParse({
+        surface: "orders-list",
+        version: 1,
+        toolCallIds: "call-page",
+      }).success,
+    ).toBe(false);
+    expect(
+      staffAssistantPresentationEnvelopeSchema.safeParse({
+        surface: "orders-list",
+        version: 1,
+        toolCallIds: [1],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("parses an unknown kind so the client can fall back without crashing", () => {
+    const parsed = staffAssistantPresentationEnvelopeSchema.safeParse({
+      surface: "orders-table",
+      version: 1,
+      toolCallIds: ["call-page"],
+    });
+    expect(parsed.success).toBe(true);
   });
 });
 

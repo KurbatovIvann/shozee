@@ -1,12 +1,20 @@
 /**
- * SHO-367 / SHO-385 / SHO-456 compose: page (+ optional counts) → one
- * list surface; counts-only → one aggregate; never both; N entity
- * surfaces from get/create. Do not walk `items[].orderId` into entities.
+ * SHO-367 / SHO-385 / SHO-456 / SHO-458 compose: page (+ optional
+ * counts) → one list surface; counts-only → one aggregate; never both;
+ * N entity surfaces from get/create. Live turns prefer the server
+ * `data-presentation` envelope; absent / unknown / malformed fall back
+ * to the shared parse. Do not walk `items[].orderId` into entities.
  */
 import {
+  ASSISTANT_SURFACE_REGISTRY,
   assistantSurfacesFromToolResults,
   isAssistantSurfaceResultOutput,
+  staffAssistantPresentationDescriptor,
+  staffAssistantPresentationEnvelopeSchema,
   type AssistantSurfaceData,
+  type AssistantSurfaceDescriptor,
+  type AssistantSurfaceToolResult,
+  type StaffAssistantPresentationEnvelope,
 } from "@showzy/validation/assistant-surfaces";
 
 import type { Locale } from "../../../i18n/locale";
@@ -27,6 +35,8 @@ import {
   ORDERS_LIST_COUNTS_TOOL,
   type AssistantOrdersListCardView,
 } from "./orders-list";
+
+const PRESENTATION_PART_TYPE = "data-presentation";
 
 export type AssistantSurface =
   | AssistantOrdersListCardView
@@ -77,6 +87,111 @@ function localizeSurface(
   }
 }
 
+function composeSurfacesFromParts(
+  parts: readonly AssistantChatPart[],
+  locale: Locale,
+): readonly AssistantSurface[] {
+  const results = assistantSurfaceToolResultsFromParts(parts);
+  return assistantSurfacesFromToolResults(results).map((data) =>
+    localizeSurface(data, locale, parts),
+  );
+}
+
+function scopeResults(
+  results: readonly AssistantSurfaceToolResult[],
+  toolCallIds: readonly string[],
+): readonly AssistantSurfaceToolResult[] {
+  if (toolCallIds.length === 0) {
+    return results;
+  }
+  const wanted = new Set(toolCallIds);
+  return results.filter(
+    (result) =>
+      result.toolCallId !== undefined && wanted.has(result.toolCallId),
+  );
+}
+
+function parsedFromDescriptor(
+  descriptor: AssistantSurfaceDescriptor,
+  results: readonly AssistantSurfaceToolResult[],
+): readonly AssistantSurfaceData[] {
+  const parsed = descriptor.parse(results);
+  if (parsed === null) {
+    return [];
+  }
+  if ("kind" in parsed) {
+    return [parsed];
+  }
+  const surfaces: AssistantSurfaceData[] = [];
+  for (const surface of parsed) {
+    surfaces.push(surface);
+  }
+  return surfaces;
+}
+
+function surfacesFromNamedEnvelopes(
+  envelopes: readonly StaffAssistantPresentationEnvelope[],
+  parts: readonly AssistantChatPart[],
+  locale: Locale,
+): readonly AssistantSurface[] {
+  const results = assistantSurfaceToolResultsFromParts(parts);
+  const byKind = new Map<string, StaffAssistantPresentationEnvelope>();
+  for (const envelope of envelopes) {
+    byKind.set(envelope.surface, envelope);
+  }
+  const surfaces: AssistantSurface[] = [];
+  for (const descriptor of ASSISTANT_SURFACE_REGISTRY) {
+    const envelope = byKind.get(descriptor.kind);
+    if (envelope === undefined) {
+      continue;
+    }
+    const scoped = scopeResults(results, envelope.toolCallIds);
+    for (const data of parsedFromDescriptor(descriptor, scoped)) {
+      surfaces.push(localizeSurface(data, locale, parts));
+    }
+  }
+  return surfaces;
+}
+
+/**
+ * Named envelopes from the live turn. Unknown kind/version or a
+ * malformed part fall back to compose so an old app never crashes or
+ * paints a partial card. Envelope absent → the SHO-456 compose path.
+ */
+function namedPresentationEnvelopes(
+  parts: readonly AssistantChatPart[],
+): readonly StaffAssistantPresentationEnvelope[] | null {
+  const envelopes: StaffAssistantPresentationEnvelope[] = [];
+  let sawPresentation = false;
+  for (const part of parts) {
+    if (part.type !== PRESENTATION_PART_TYPE) {
+      continue;
+    }
+    sawPresentation = true;
+    const parsed = staffAssistantPresentationEnvelopeSchema.safeParse(
+      part.data,
+    );
+    if (!parsed.success) {
+      continue;
+    }
+    envelopes.push(parsed.data);
+  }
+  if (!sawPresentation || envelopes.length === 0) {
+    return null;
+  }
+  for (const envelope of envelopes) {
+    if (
+      staffAssistantPresentationDescriptor(
+        envelope.surface,
+        envelope.version,
+      ) === undefined
+    ) {
+      return null;
+    }
+  }
+  return envelopes;
+}
+
 /**
  * Discriminated result-card surfaces for one assistant turn. Timeline and
  * HITL confirmation stay outside this list.
@@ -85,8 +200,9 @@ export function assistantSurfacesFromParts(
   parts: readonly AssistantChatPart[],
   locale: Locale,
 ): readonly AssistantSurface[] {
-  const results = assistantSurfaceToolResultsFromParts(parts);
-  return assistantSurfacesFromToolResults(results).map((data) =>
-    localizeSurface(data, locale, parts),
-  );
+  const named = namedPresentationEnvelopes(parts);
+  if (named !== null) {
+    return surfacesFromNamedEnvelopes(named, parts, locale);
+  }
+  return composeSurfacesFromParts(parts, locale);
 }

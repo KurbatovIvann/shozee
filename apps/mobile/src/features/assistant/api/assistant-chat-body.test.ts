@@ -142,6 +142,34 @@ describe("staffChatWireMessages", () => {
       `m${String(STAFF_ASSISTANT_CHAT_MESSAGES_MAX)}`,
     );
   });
+
+  it("drops data-presentation so the envelope is not echoed to the model", () => {
+    expect(
+      staffChatWireMessages([
+        {
+          id: "a1",
+          role: "assistant",
+          parts: [
+            { type: "text", text: "Немає замовлень." },
+            {
+              type: "data-presentation",
+              data: {
+                surface: "orders-list",
+                version: 1,
+                toolCallIds: ["call-list"],
+              },
+            },
+          ],
+        },
+      ]),
+    ).toEqual([
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [{ type: "text", text: "Немає замовлень." }],
+      },
+    ]);
+  });
 });
 
 describe("prepareStaffAssistantChatRequest", () => {

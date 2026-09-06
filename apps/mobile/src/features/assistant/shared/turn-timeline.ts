@@ -134,7 +134,9 @@ function omitDismissedToolPart(
 
 /**
  * Ordered live-turn tool steps. Skips text, `data-confirmation`,
- * `data-choice`, Anthropic synthetic `json` structured-output tools, and
+ * `data-choice`, `data-presentation`, Anthropic synthetic `json`
+ * structured-output tools, and dismissed/ignored HITL tools. Does not
+ * stringify `output`.
  * dismissed/ignored HITL tools. Does not stringify `output`.
  */
 export function toolStepsFromParts(

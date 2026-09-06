@@ -178,6 +178,7 @@ const COPY: Record<
 export type StaffAssistantPresentedToolResult = {
   readonly toolName: string;
   readonly output: unknown;
+  readonly toolCallId?: string;
 };
 
 type SpokenTurnRun = {
