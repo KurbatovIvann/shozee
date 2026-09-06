@@ -44,8 +44,7 @@ export type AssistantAggregateBreakdownView = {
 };
 
 export type AssistantAggregateView =
-  | AssistantAggregateSummaryView
-  | AssistantAggregateBreakdownView;
+  AssistantAggregateSummaryView | AssistantAggregateBreakdownView;
 
 export function localizeAggregateColumns(
   columns: readonly AssistantCollectionColumn[],

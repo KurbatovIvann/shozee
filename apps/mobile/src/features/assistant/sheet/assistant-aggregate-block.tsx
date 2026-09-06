@@ -98,45 +98,37 @@ const SummaryAggregateLayout = memo(function SummaryAggregateLayout(props: {
   );
 });
 
-const BreakdownAggregateLayout = memo(
-  function BreakdownAggregateLayout(props: {
-    readonly aggregate: Extract<
-      AssistantAggregateView,
-      { layout: "breakdown" }
-    >;
-    readonly onOpenHref: (href: string) => void;
-  }) {
-    const { aggregate, onOpenHref } = props;
-    const total = aggregate.total;
+const BreakdownAggregateLayout = memo(function BreakdownAggregateLayout(props: {
+  readonly aggregate: Extract<AssistantAggregateView, { layout: "breakdown" }>;
+  readonly onOpenHref: (href: string) => void;
+}) {
+  const { aggregate, onOpenHref } = props;
+  const total = aggregate.total;
 
-    return (
-      <View style={styles.rows}>
-        <AssistantCollectionColumnHeaders columns={aggregate.columns} />
-        {aggregate.groups.map((group) => (
-          <View key={group.id} style={styles.group}>
+  return (
+    <View style={styles.rows}>
+      <AssistantCollectionColumnHeaders columns={aggregate.columns} />
+      {aggregate.groups.map((group) => (
+        <View key={group.id} style={styles.group}>
+          <AggregateCollectionRow row={group.head} onOpenHref={onOpenHref} />
+          {group.children.map((child) => (
             <AggregateCollectionRow
-              row={group.head}
+              key={child.id}
+              row={child}
+              indent
               onOpenHref={onOpenHref}
             />
-            {group.children.map((child) => (
-              <AggregateCollectionRow
-                key={child.id}
-                row={child}
-                indent
-                onOpenHref={onOpenHref}
-              />
-            ))}
-          </View>
-        ))}
-        {total !== null ? (
-          <View style={styles.totalRow}>
-            <AggregateCollectionRow row={total} onOpenHref={onOpenHref} />
-          </View>
-        ) : null}
-      </View>
-    );
-  },
-);
+          ))}
+        </View>
+      ))}
+      {total !== null ? (
+        <View style={styles.totalRow}>
+          <AggregateCollectionRow row={total} onOpenHref={onOpenHref} />
+        </View>
+      ) : null}
+    </View>
+  );
+});
 
 const AggregateCollectionRow = memo(function AggregateCollectionRow(props: {
   readonly row: AssistantCollectionRowView;

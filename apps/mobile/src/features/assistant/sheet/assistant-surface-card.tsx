@@ -66,10 +66,7 @@ const AssistantSurfaceBlock = memo(function AssistantSurfaceBlock(props: {
       );
     case "orders-aggregate":
       return (
-        <OrdersAggregateResultCard
-          card={surface}
-          onOpenHref={onOpenHref}
-        />
+        <OrdersAggregateResultCard card={surface} onOpenHref={onOpenHref} />
       );
     case "order-entity":
       return <OrderEntityCard card={surface} onOpenHref={onOpenHref} />;

@@ -75,10 +75,7 @@ export const AssistantCollectionResultRow = memo(
       </>
     );
 
-    const rowStyle = [
-      styles.row,
-      props.indent === true ? styles.indent : null,
-    ];
+    const rowStyle = [styles.row, props.indent === true ? styles.indent : null];
 
     if (props.href === null) {
       return <View style={rowStyle}>{body}</View>;

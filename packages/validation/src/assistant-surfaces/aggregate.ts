@@ -50,8 +50,7 @@ export type AssistantAggregateBreakdownDescriptor = {
 };
 
 export type AssistantAggregateDescriptor =
-  | AssistantAggregateSummaryDescriptor
-  | AssistantAggregateBreakdownDescriptor;
+  AssistantAggregateSummaryDescriptor | AssistantAggregateBreakdownDescriptor;
 
 export function assistantAggregateSummary(args: {
   readonly groupingKey: string;

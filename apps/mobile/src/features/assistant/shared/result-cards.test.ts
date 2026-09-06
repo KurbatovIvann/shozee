@@ -1967,7 +1967,9 @@ describe("aggregate block layouts (SHO-473)", () => {
     expect(aggregateBlock).toContain("AssistantCollectionResultRow");
     expect(aggregateBlock).toContain("AssistantCollectionColumnHeaders");
     expect(aggregateBlock).not.toContain("AggregateBucketRow");
-    expect(collectionBlock).toContain("export const AssistantCollectionResultRow");
+    expect(collectionBlock).toContain(
+      "export const AssistantCollectionResultRow",
+    );
     expect(aggregateCard).toContain("AssistantAggregateBlock");
     expect(surfaceCard).toContain("OrdersAggregateResultCard");
     expect(surfaceCard).toContain("onOpenHref={onOpenHref}");
@@ -1988,9 +1990,9 @@ describe("aggregate block layouts (SHO-473)", () => {
       "status",
       "customer",
     ]);
-    expect(new Set(fixtures.map((fixture) => fixture.columns[0]?.label)).size).toBe(
-      3,
-    );
+    expect(
+      new Set(fixtures.map((fixture) => fixture.columns[0]?.label)).size,
+    ).toBe(3);
     for (const fixture of fixtures) {
       expect(fixture.total).not.toBeNull();
       expect(fixture.total?.title).toBe(assistantChromeUk.aggregate.totals);
