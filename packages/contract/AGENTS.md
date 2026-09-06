@@ -49,6 +49,8 @@ the OpenAPI artifact.
 - Record keys must mirror `<module>.<verb>` exactly: the RPC path is the
   nested object shape, so a mismatch would serve one action under
   another's name.
+- `toContractProcedure` attaches `.errors(pipeline-universal ∪ contract.errors)`.
+  OpenAPI is that map; do not overwrite 400/404/409 after generation.
 - Apps call `createContractClient({ baseUrl, getCookie })` (Expo) or
   `getAccessToken` (bearer). Then `setActiveCompany` for the staff
   selector. `/rpc` fetch uses `credentials: "omit"` so a manual `Cookie`

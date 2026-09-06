@@ -9,6 +9,7 @@
  * The table test enforces the exact §4 rows; `satisfies Record<CoreErrorCode, …>`
  * keeps the core subset complete when core gains an error class.
  */
+import type { DeclaredErrorCode } from "@showzy/core/contract";
 import type { CoreErrorCode } from "@showzy/core/errors";
 import { z } from "zod";
 
@@ -68,12 +69,12 @@ export const wireConfirmationChallengeSchema = z.object({
 });
 
 /**
- * The oRPC type-safe error map attached to every contract procedure.
- * Clients get a discriminated union typed by wire code — no string
- * matching (contract.md §4). Codes without a `data` schema carry no
- * payload beyond `code`/`message`/`status`; `INTERNAL` sends no details
- * on the wire by construction (the server maps it from a fixed generic
- * client message).
+ * The full §4 oRPC error map. Procedures attach a subset: pipeline-universal
+ * codes plus the action's declared domain codes (`procedureErrorDefinitions`).
+ * Clients get a discriminated union typed by wire code — no string matching
+ * (contract.md §4). Codes without a `data` schema carry no payload beyond
+ * `code`/`message`/`status`; `INTERNAL` sends no details on the wire by
+ * construction (the server maps it from a fixed generic client message).
  */
 export const wireErrorDefinitions = {
   VALIDATION: {
@@ -100,6 +101,51 @@ export const wireErrorDefinitions = {
   TIMEOUT: { status: wireErrorStatus.TIMEOUT },
   INTERNAL: { status: wireErrorStatus.INTERNAL },
 } as const;
+
+/**
+ * §4 codes that are never declared per action: transport `UNAUTHENTICATED`,
+ * pipeline gates, and `INTERNAL`. Domain `VALIDATION` / `NOT_FOUND` /
+ * `CONFLICT` join a procedure only when the action lists them.
+ */
+export const pipelineUniversalErrorDefinitions = {
+  UNAUTHENTICATED: wireErrorDefinitions.UNAUTHENTICATED,
+  PERMISSION_DENIED: wireErrorDefinitions.PERMISSION_DENIED,
+  IDEMPOTENCY_CONFLICT: wireErrorDefinitions.IDEMPOTENCY_CONFLICT,
+  RETRY_IN_PROGRESS: wireErrorDefinitions.RETRY_IN_PROGRESS,
+  CONFIRMATION_REQUIRED: wireErrorDefinitions.CONFIRMATION_REQUIRED,
+  RATE_LIMITED: wireErrorDefinitions.RATE_LIMITED,
+  TIMEOUT: wireErrorDefinitions.TIMEOUT,
+  INTERNAL: wireErrorDefinitions.INTERNAL,
+} as const;
+
+export type PipelineUniversalWireErrorCode =
+  keyof typeof pipelineUniversalErrorDefinitions;
+
+export type ProcedureErrorDefinitions =
+  typeof pipelineUniversalErrorDefinitions &
+    Partial<Pick<typeof wireErrorDefinitions, DeclaredErrorCode>>;
+
+/**
+ * Error map for one contract procedure: pipeline-universal ∪ `contract.errors`.
+ * Shared HTTP statuses stay a oneOf — declaring `CONFLICT` does not drop
+ * `CONFIRMATION_REQUIRED` / `IDEMPOTENCY_CONFLICT`.
+ */
+export function procedureErrorDefinitions(
+  declared: readonly DeclaredErrorCode[],
+): ProcedureErrorDefinitions {
+  return {
+    ...pipelineUniversalErrorDefinitions,
+    ...(declared.includes("VALIDATION")
+      ? { VALIDATION: wireErrorDefinitions.VALIDATION }
+      : {}),
+    ...(declared.includes("NOT_FOUND")
+      ? { NOT_FOUND: wireErrorDefinitions.NOT_FOUND }
+      : {}),
+    ...(declared.includes("CONFLICT")
+      ? { CONFLICT: wireErrorDefinitions.CONFLICT }
+      : {}),
+  };
+}
 
 type WireErrorDefinition = (typeof wireErrorDefinitions)[WireErrorCode];
 

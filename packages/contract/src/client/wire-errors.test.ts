@@ -1,8 +1,11 @@
 import { ORPCError } from "@orpc/client";
+import { isDeclaredErrorCode } from "@showzy/core/contract";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 import {
   isWireError,
+  pipelineUniversalErrorDefinitions,
+  procedureErrorDefinitions,
   wireConfirmationChallengeSchema,
   wireErrorDefinitions,
   wireErrorStatus,
@@ -48,6 +51,33 @@ describe("contract.md §4 wire table", () => {
       "RETRY_IN_PROGRESS",
       "VALIDATION",
     ]);
+  });
+
+  it("pipeline-universal map is the §4 table minus declarable domain codes", () => {
+    const expected = Object.keys(wireErrorStatus)
+      .filter((code) => !isDeclaredErrorCode(code))
+      .sort();
+    expect(Object.keys(pipelineUniversalErrorDefinitions).sort()).toEqual(
+      expected,
+    );
+  });
+
+  it("empty declared set does not attach domain CONFLICT", () => {
+    const map = procedureErrorDefinitions([]);
+    expect("CONFLICT" in map).toBe(false);
+    expect("NOT_FOUND" in map).toBe(false);
+    expect("VALIDATION" in map).toBe(false);
+    expect("CONFIRMATION_REQUIRED" in map).toBe(true);
+    expect("IDEMPOTENCY_CONFLICT" in map).toBe(true);
+  });
+
+  it("declared CONFLICT keeps pipeline 409 codes", () => {
+    const map = procedureErrorDefinitions(["CONFLICT"]);
+    expect("CONFLICT" in map).toBe(true);
+    expect("CONFIRMATION_REQUIRED" in map).toBe(true);
+    expect("IDEMPOTENCY_CONFLICT" in map).toBe(true);
+    expect("RETRY_IN_PROGRESS" in map).toBe(true);
+    expect("NOT_FOUND" in map).toBe(false);
   });
 
   it("accepts a real Zod issue shape and passes extra fields through", () => {

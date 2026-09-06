@@ -24,6 +24,96 @@ const readDefaults = {
   timeout: 5_000,
 };
 
+const pipeline409Codes = [
+  "CONFIRMATION_REQUIRED",
+  "IDEMPOTENCY_CONFLICT",
+  "RETRY_IN_PROGRESS",
+] as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function findOperation(
+  document: unknown,
+  operationId: string,
+): Record<string, unknown> {
+  if (!isRecord(document) || !isRecord(document.paths)) {
+    throw new Error("OpenAPI document has no paths");
+  }
+  for (const pathItem of Object.values(document.paths)) {
+    if (!isRecord(pathItem)) {
+      continue;
+    }
+    for (const method of Object.values(pathItem)) {
+      if (isRecord(method) && method.operationId === operationId) {
+        return method;
+      }
+    }
+  }
+  throw new Error(`OpenAPI document has no operation "${operationId}"`);
+}
+
+function schemaVariants(schema: unknown): unknown[] {
+  if (!isRecord(schema)) {
+    return [];
+  }
+  if (Array.isArray(schema.oneOf)) {
+    return schema.oneOf;
+  }
+  if (Array.isArray(schema.anyOf)) {
+    return schema.anyOf;
+  }
+  return [schema];
+}
+
+function definedErrorCodesForStatus(
+  operation: Record<string, unknown>,
+  status: string,
+): string[] {
+  if (!isRecord(operation.responses)) {
+    return [];
+  }
+  const response = operation.responses[status];
+  if (!isRecord(response) || !isRecord(response.content)) {
+    return [];
+  }
+  const json = response.content["application/json"];
+  if (!isRecord(json)) {
+    return [];
+  }
+  const codes: string[] = [];
+  for (const variant of schemaVariants(json.schema)) {
+    if (!isRecord(variant) || !isRecord(variant.properties)) {
+      continue;
+    }
+    const defined = variant.properties.defined;
+    const code = variant.properties.code;
+    if (!isRecord(defined) || defined.const !== true) {
+      continue;
+    }
+    if (isRecord(code) && typeof code.const === "string") {
+      codes.push(code.const);
+    }
+  }
+  return codes;
+}
+
+function responseJsonSchema(
+  operation: Record<string, unknown>,
+  status: string,
+): unknown {
+  if (!isRecord(operation.responses)) {
+    return undefined;
+  }
+  const response = operation.responses[status];
+  if (!isRecord(response) || !isRecord(response.content)) {
+    return undefined;
+  }
+  const json = response.content["application/json"];
+  return isRecord(json) ? json.schema : undefined;
+}
+
 describe("OpenAPI generation", () => {
   it("committed artifact matches generation", async () => {
     const generated = renderOpenApiJson(await generateOpenApiDocument());
@@ -110,7 +200,27 @@ describe("OpenAPI generation", () => {
     expect(json).not.toContain("x-share-token");
   });
 
-  it("emits per-operation responses from the action's declared errors", async () => {
+  it("empty declared errors do not document domain CONFLICT as the sole 409", async () => {
+    const listThings = defineActionContract({
+      ...readDefaults,
+      name: "sample.listThings",
+      description: "List sample things for the active company.",
+      principal: "staff",
+      transport: "client",
+      input: z.object({ limit: z.number().int().min(1) }),
+      output: z.object({ items: z.array(z.string()) }),
+      permissions: ["sample:view"],
+    });
+    const populated = await generateOpenApiDocument(
+      buildContractRouter({ sample: { listThings } }),
+    );
+    const operation = findOperation(populated, "sample.listThings");
+    const codes409 = definedErrorCodesForStatus(operation, "409");
+    expect(codes409).toEqual(expect.arrayContaining([...pipeline409Codes]));
+    expect(codes409).not.toContain("CONFLICT");
+  });
+
+  it("declared NOT_FOUND does not collapse 409 to CONFLICT", async () => {
     const getThing = defineActionContract({
       ...readDefaults,
       name: "sample.getThing",
@@ -120,17 +230,84 @@ describe("OpenAPI generation", () => {
       input: z.object({ id: z.uuid() }),
       output: z.object({ id: z.uuid() }),
       permissions: ["sample:view"],
-      errors: ["NOT_FOUND", "CONFLICT"],
+      errors: ["NOT_FOUND"],
     });
-    const modules = { sample: { getThing } };
     const populated = await generateOpenApiDocument(
-      buildContractRouter(modules),
-      modules,
+      buildContractRouter({ sample: { getThing } }),
     );
-    const json = JSON.stringify(populated);
-    expect(json).toContain('"404"');
-    expect(json).toContain('"NOT_FOUND"');
-    expect(json).toContain('"409"');
-    expect(json).toContain('"CONFLICT"');
+    const operation = findOperation(populated, "sample.getThing");
+    expect(definedErrorCodesForStatus(operation, "404")).toContain("NOT_FOUND");
+    const codes409 = definedErrorCodesForStatus(operation, "409");
+    expect(codes409).toEqual(expect.arrayContaining([...pipeline409Codes]));
+    expect(codes409).not.toContain("CONFLICT");
+  });
+
+  it("declared CONFLICT on an idempotent writer keeps pipeline 409 codes", async () => {
+    const createThing = defineActionContract({
+      ...readDefaults,
+      name: "sample.createThing",
+      description: "Create one sample thing.",
+      principal: "staff",
+      transport: "client",
+      risk: "write",
+      idempotent: true,
+      audit: true,
+      input: z.object({ name: z.string().min(1) }),
+      output: z.object({ id: z.uuid() }),
+      permissions: ["sample:manage"],
+      errors: ["CONFLICT"],
+    });
+    const populated = await generateOpenApiDocument(
+      buildContractRouter({ sample: { createThing } }),
+    );
+    const operation = findOperation(populated, "sample.createThing");
+    const codes409 = definedErrorCodesForStatus(operation, "409");
+    expect(codes409).toEqual(
+      expect.arrayContaining(["CONFLICT", ...pipeline409Codes]),
+    );
+  });
+
+  it("declared VALIDATION keeps Zod issue path/message on 400", async () => {
+    const listThings = defineActionContract({
+      ...readDefaults,
+      name: "sample.listThings",
+      description: "List sample things for the active company.",
+      principal: "staff",
+      transport: "client",
+      input: z.object({ limit: z.number().int().min(1) }),
+      output: z.object({ items: z.array(z.string()) }),
+      permissions: ["sample:view"],
+      errors: ["VALIDATION"],
+    });
+    const populated = await generateOpenApiDocument(
+      buildContractRouter({ sample: { listThings } }),
+    );
+    const operation = findOperation(populated, "sample.listThings");
+    expect(definedErrorCodesForStatus(operation, "400")).toContain(
+      "VALIDATION",
+    );
+    const schemaJson = JSON.stringify(responseJsonSchema(operation, "400"));
+    expect(schemaJson).toContain('"path"');
+    expect(schemaJson).toContain('"message"');
+    expect(schemaJson).not.toContain('"items":{"type":"object"}');
+  });
+
+  it("production confirmation and get operations keep pipeline 409 codes", async () => {
+    const document = await generateOpenApiDocument();
+    const requestSign = findOperation(document, "documents.requestSign");
+    const requestSign409 = definedErrorCodesForStatus(requestSign, "409");
+    expect(requestSign409).toEqual(
+      expect.arrayContaining([
+        "CONFLICT",
+        "CONFIRMATION_REQUIRED",
+        "IDEMPOTENCY_CONFLICT",
+      ]),
+    );
+
+    const getOrder = findOperation(document, "orders.get");
+    expect(definedErrorCodesForStatus(getOrder, "404")).toContain("NOT_FOUND");
+    const getOrder409 = definedErrorCodesForStatus(getOrder, "409");
+    expect(getOrder409).toEqual(expect.arrayContaining([...pipeline409Codes]));
+    expect(getOrder409).not.toContain("CONFLICT");
   });
 });
