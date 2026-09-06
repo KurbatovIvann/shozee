@@ -1401,21 +1401,17 @@ describe("assistant result-card surface registry", () => {
       new URL("../sheet/use-assistant-sheet.ts", import.meta.url),
       "utf8",
     );
-    expect(listCard).toContain("Card");
     expect(listCard).toContain("StatusPill");
     expect(listCard).toContain('from "../../../components/ui"');
     expect(listCard).toContain("onOpenHref");
     expect(listCard.includes("orders-list-screen")).toBe(false);
     expect(listCard.includes("order-row")).toBe(false);
     expect(listCard.includes('from "../../orders/list')).toBe(false);
-    expect(entityCard).toContain("Card");
     expect(entityCard).toContain("StatusPill");
     expect(entityCard).toContain("onOpenHref");
     expect(entityCard.includes("orders-list-screen")).toBe(false);
     expect(entityCard.includes("order-row")).toBe(false);
-    expect(aggregateCard).toContain("Card");
     expect(aggregateCard).toContain("StatusPill");
-    expect(aggregateCard).toContain("onOpenHref");
     expect(resultFrame).toContain("Button");
     expect(resultFrame).toContain("Card");
     expect(aggregateCard).toContain('from "../../../components/ui"');

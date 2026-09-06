@@ -99,11 +99,12 @@ describe("assistant result provenance marks (SHO-469)", () => {
       originLabel: null,
     });
     expect(FRAME).toContain("provisional={provisional}");
-    expect(FRAME).toContain("showOrigin");
-    expect(FRAME).toContain("origin && !provisional");
+    expect(FRAME).toContain("const showOrigin = origin;");
+    expect(FRAME).not.toContain("origin && !provisional");
+    expect(FRAME).toContain("{showOrigin ? <OriginMark");
   });
 
-  it("renders marks when the fields are present", () => {
+  it("renders both marks when both flags are present", () => {
     expect(
       assistantResultMarks({
         provisional: true,
@@ -115,6 +116,10 @@ describe("assistant result provenance marks (SHO-469)", () => {
       origin: true,
       originLabel: "Шозік",
     });
+    expect(FRAME).toContain("<Card provisional={provisional}>");
+    expect(FRAME).toContain("const showOrigin = origin;");
+    expect(FRAME).toContain("{showOrigin ? <OriginMark");
+    expect(FRAME).not.toContain("origin && !provisional");
     expect(assistantResultMarks({ origin: true })).toEqual({
       provisional: false,
       origin: true,

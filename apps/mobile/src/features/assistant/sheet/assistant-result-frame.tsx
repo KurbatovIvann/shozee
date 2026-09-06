@@ -54,7 +54,7 @@ export function AssistantResultFrame(props: {
     title !== undefined ||
     trailing !== undefined ||
     trailingBadge !== undefined;
-  const showOrigin = origin && !provisional;
+  const showOrigin = origin;
 
   return (
     <Card provisional={provisional}>

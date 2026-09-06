@@ -14,7 +14,6 @@ import type { AssistantOrdersAggregateCardView } from "../surfaces";
 export const OrdersAggregateResultCard = memo(
   function OrdersAggregateResultCard(props: {
     readonly card: AssistantOrdersAggregateCardView;
-    readonly onOpenHref: (href: string) => void;
   }) {
     const { card } = props;
     const periodLabel = card.periodLabel;
