@@ -85,7 +85,7 @@ grant (ADR-0013 unchanged).
   the web share route ships; the cutover is a follow-up inside the web
   feature work.
 - ESLint `clientApp` boundaries apply to `apps/web` unchanged (imports
-  limited to `@showzy/contract`, `@showzy/validation`, `@showzy/ui`,
-  `@showzy/document-signing`).
+  limited to `@showzy/contract`, `@showzy/validation`, `@showzy/copy`,
+  `@showzy/ui`, `@showzy/document-signing`).
 - When the storefront phase starts, shared design tokens may be extracted
   into a package; premature extraction is explicitly avoided.

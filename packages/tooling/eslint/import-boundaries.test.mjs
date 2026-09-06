@@ -136,6 +136,7 @@ test("showzy/import-boundaries", () => {
           import { moneySchema } from "@showzy/validation";
           import { catalogNameSchema } from "@showzy/validation/catalog";
           import { Button } from "@showzy/ui";
+          import { sharedOrdersCopy } from "@showzy/copy/orders";
           import { DocumentSigner } from "@showzy/document-signing";
           import { createNativeAdapter } from "@showzy/document-signing/native";
           import { useState } from "react";
@@ -157,6 +158,13 @@ test("showzy/import-boundaries", () => {
           import { aiToolSourcesForPrincipal } from "@showzy/contract";
           import { LIST_ORDERS_QUERY_MAX } from "@showzy/orders/contract";
           import { CUSTOMER_NAME_MAX } from "@showzy/validation/customers";
+        `,
+      },
+      {
+        filename: file("packages/copy/src/orders.ts"),
+        code: `
+          import { selectCopy, type Locale } from "./locale.js";
+          import type { CountForms } from "./plural.js";
         `,
       },
     ],
@@ -240,6 +248,41 @@ test("showzy/import-boundaries", () => {
         filename: file("packages/contract/src/server/index.ts"),
         code: `import { createOrder } from "@showzy/orders";`,
         errors: [{ messageId: "contractModules" }],
+      },
+      {
+        filename: file("packages/copy/src/orders.ts"),
+        code: `import { useState } from "react";`,
+        errors: [{ messageId: "copyLeaf" }],
+      },
+      {
+        filename: file("packages/copy/src/orders.ts"),
+        code: `import { View } from "react-native";`,
+        errors: [{ messageId: "copyLeaf" }],
+      },
+      {
+        filename: file("packages/copy/src/orders.ts"),
+        code: `import { StyleSheet } from "react-native-unistyles";`,
+        errors: [{ messageId: "copyLeaf" }],
+      },
+      {
+        filename: file("packages/copy/src/orders.ts"),
+        code: `import tailwind from "tailwindcss";`,
+        errors: [{ messageId: "copyLeaf" }],
+      },
+      {
+        filename: file("packages/copy/src/orders.ts"),
+        code: `import { getLocales } from "expo-localization";`,
+        errors: [{ messageId: "copyLeaf" }],
+      },
+      {
+        filename: file("packages/copy/src/orders.ts"),
+        code: `import { ordersCopy } from "../../../apps/web/src/i18n/orders";`,
+        errors: [{ messageId: "copyLeaf" }],
+      },
+      {
+        filename: file("packages/modules/orders/actions/create.ts"),
+        code: `import { sharedOrdersCopy } from "@showzy/copy/orders";`,
+        errors: [{ messageId: "copyClientOnly" }],
       },
       {
         filename: file("apps/mobile/src/app/index.ts"),
@@ -338,4 +381,11 @@ test("@showzy/validation runtime dependency is only zod (SHO-423)", () => {
     ),
   );
   assert.deepEqual(Object.keys(pkg.dependencies), ["zod"]);
+});
+
+test("@showzy/copy has no runtime dependencies (SHO-414)", () => {
+  const pkg = JSON.parse(
+    readFileSync(path.join(repoRoot, "packages/copy/package.json"), "utf8"),
+  );
+  assert.equal(pkg.dependencies, undefined);
 });

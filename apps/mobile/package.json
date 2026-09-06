@@ -26,6 +26,7 @@
     "@react-native-community/slider": "5.2.0",
     "@shopify/flash-list": "2.0.2",
     "@showzy/contract": "workspace:*",
+    "@showzy/copy": "workspace:*",
     "@showzy/document-signing": "workspace:*",
     "@showzy/validation": "workspace:*",
     "@tanstack/react-query": "5.101.4",

@@ -26,8 +26,10 @@ used by `.github/workflows/ci.yml` (SHO-334 aggregator, SHO-387
   `*.contract.ts` allowlist (zod, `@showzy/core/contract`, `@showzy/validation`
   only — never `@showzy/module-kit`), own-schema (ADR-0014), module index-only
   cross-imports, `packages/contract` → `index.contract.ts` only, client apps
-  → `@showzy/contract` + validation/ui/document-signing (never module-kit,
-  never `@showzy/ai`). `@showzy/ai` is a server-only platform package
+  → `@showzy/contract` + validation/copy/ui/document-signing (never module-kit,
+  never `@showzy/ai`). `@showzy/copy` is a client-safe leaf (SHO-414): apps
+  may import it; it must not import React, React Native, Unistyles, Tailwind,
+  Expo, or an app. `@showzy/ai` is a server-only platform package
   (ADR-0032): `apps/api` may import it; mobile, web, and domain modules
   must not. `packages/ai` itself may import `@showzy/core/*`,
   `@showzy/contract`, `@showzy/validation/*`, and `@showzy/<module>/contract`;

@@ -1,0 +1,7 @@
+{
+  "extends": "@showzy/tooling/tsconfig/base.json",
+  "compilerOptions": {
+    "types": []
+  },
+  "include": ["src"]
+}

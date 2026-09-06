@@ -46,6 +46,7 @@ const boundaryElements = [
   { type: "config", pattern: "packages/config" },
   { type: "ai", pattern: "packages/ai" },
   { type: "validation", pattern: "packages/validation" },
+  { type: "copy", pattern: "packages/copy" },
   { type: "module-kit", pattern: "packages/module-kit" },
   { type: "tooling", pattern: "packages/tooling" },
 ];
@@ -126,24 +127,29 @@ export const showzyBoundaryDependencyOptions = {
       from: { file: { categories: "client-app" } },
       disallow: { to: { module: { source: "@showzy/core" } } },
       message:
-        "Client apps may import only @showzy/contract, @showzy/validation, and @showzy/ui (contract.md §2).",
+        "Client apps may import only @showzy/contract, @showzy/validation, @showzy/copy, and @showzy/ui (contract.md §2, SHO-414).",
     },
     {
       from: { file: { categories: "client-app" } },
       disallow: { to: { module: { source: "@showzy/db" } } },
       message:
-        "Client apps may import only @showzy/contract, @showzy/validation, and @showzy/ui (contract.md §2).",
+        "Client apps may import only @showzy/contract, @showzy/validation, @showzy/copy, and @showzy/ui (contract.md §2, SHO-414).",
     },
     {
       from: { file: { categories: "client-app" } },
       disallow: { to: { module: { source: "@showzy/config" } } },
       message:
-        "Client apps may import only @showzy/contract, @showzy/validation, and @showzy/ui (contract.md §2).",
+        "Client apps may import only @showzy/contract, @showzy/validation, @showzy/copy, and @showzy/ui (contract.md §2, SHO-414).",
     },
     {
       from: { file: { categories: "client-app" } },
       disallow: { to: { module: { source: "@showzy/ai" } } },
       message: "Client apps may not import @showzy/ai (server-only, ADR-0032).",
+    },
+    {
+      from: { element: { type: "copy" } },
+      disallow: { to: { element: { type: "app" } } },
+      message: "packages/copy must not import an app (SHO-414).",
     },
     {
       from: { element: { type: "module" } },
