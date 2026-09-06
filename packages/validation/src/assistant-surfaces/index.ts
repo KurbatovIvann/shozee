@@ -4,6 +4,13 @@ export {
   type AssistantSurfaceKind,
 } from "./compose.js";
 export {
+  isStaffAssistantPresentationEnvelope,
+  staffAssistantPresentationDescriptor,
+  staffAssistantPresentationEnvelopeSchema,
+  staffAssistantPresentationEnvelopesFromToolResults,
+  type StaffAssistantPresentationEnvelope,
+} from "./envelope.js";
+export {
   ASSISTANT_TOOL_CLIPPED_STATUS,
   ASSISTANT_TOOL_NON_RESULT_STATUSES,
   UNLINKED_CUSTOMER_NAME_SNAPSHOT,

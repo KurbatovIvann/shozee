@@ -307,6 +307,7 @@ describe("hydratedUiMessagesFromConversation", () => {
     expect(rows[1]?.surfaces).toEqual([]);
     expect(JSON.stringify(rows[1])).not.toContain("orders_list_page");
     expect(JSON.stringify(rows[1])).not.toContain("orders_list_counts");
+    expect(JSON.stringify(messages)).not.toContain("data-presentation");
     expect(rows[1]?.text.includes("{")).toBe(false);
     const visible = assistantDisplayRows(
       rows,
@@ -1002,6 +1003,7 @@ describe("assistant hydrate source", () => {
     );
     expect(source).not.toContain("orders_list_page");
     expect(source).not.toContain("orders_list_counts");
+    expect(source).not.toContain("data-presentation");
     expect(source).not.toContain("extractUuidResultIds");
     expect(source).not.toContain('"active"');
     expect(source).not.toContain("Підтвердити");
