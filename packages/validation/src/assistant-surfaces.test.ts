@@ -891,7 +891,11 @@ describe("customers-list collection (SHO-472)", () => {
         customersOutput([customerRow(CUSTOMER_A)]),
         "call-customers",
       ),
-      result(ORDERS_LIST_PAGE_TOOL, pageOutput([pageRow(ORDER_A)]), "call-page"),
+      result(
+        ORDERS_LIST_PAGE_TOOL,
+        pageOutput([pageRow(ORDER_A)]),
+        "call-page",
+      ),
     ]);
     expect(listOf(surfaces)?.kind).toBe("orders-list");
     expect(customersOf(surfaces)?.kind).toBe("customers-list");

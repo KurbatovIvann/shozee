@@ -352,9 +352,9 @@ describe("hydratedUiMessagesFromConversation", () => {
     expect(messages[1]?.parts).toEqual([
       { type: "text", text: "Ось клієнти." },
     ]);
-    expect(
-      assistantSurfacesFromParts(messages[1]?.parts ?? [], "uk"),
-    ).toEqual([]);
+    expect(assistantSurfacesFromParts(messages[1]?.parts ?? [], "uk")).toEqual(
+      [],
+    );
     expect(JSON.stringify(messages)).not.toContain("customers_list_customers");
   });
 

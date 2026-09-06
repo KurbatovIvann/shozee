@@ -1739,9 +1739,7 @@ describe("customers-list collection surface (SHO-472)", () => {
     expect(customers?.collection.rows[0]?.href).toBe(
       customerEditorHref(CLIENT_A),
     );
-    expect(customers?.collection.rows[0]?.title).toBe(
-      customers?.rows[0]?.name,
-    );
+    expect(customers?.collection.rows[0]?.title).toBe(customers?.rows[0]?.name);
     expect(customers?.collection.rows[1]?.badge).toBe(
       customersUk.archivedBadge,
     );

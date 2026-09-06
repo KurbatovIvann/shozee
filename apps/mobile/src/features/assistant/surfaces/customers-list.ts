@@ -28,7 +28,8 @@ import {
 } from "./collection";
 import { assistantSurfaceToolResultsFromParts } from "./helpers";
 
-export const ASSISTANT_CUSTOMERS_LIST_HREF = ASSISTANT_CUSTOMERS_LIST_SCREEN_HREF;
+export const ASSISTANT_CUSTOMERS_LIST_HREF =
+  ASSISTANT_CUSTOMERS_LIST_SCREEN_HREF;
 
 export {
   ASSISTANT_CUSTOMERS_LIST_ROW_MAX,
