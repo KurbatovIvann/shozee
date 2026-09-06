@@ -8,15 +8,45 @@
  *
  * Run in CI as `pnpm --filter @showzy/api contract:check`.
  */
-import { runContractCheck } from "@showzy/core";
+import {
+  deriveRecordProvenanceRequirements,
+  runContractCheck,
+} from "@showzy/core";
 import { describe, expect, it } from "vitest";
 
 import { buildContractCheckInput } from "./composition.js";
+
+const T1_PROVENANCE_TABLES = [
+  "company_customer_invites",
+  "company_customers",
+  "counterparties",
+  "customer_groups",
+  "documents",
+  "orders",
+  "price_lists",
+  "product_variants",
+  "products",
+] as const;
 
 describe("CI contract-check stage", () => {
   it("the registered surface satisfies every core.md §2 registry rule", () => {
     const result = runContractCheck(buildContractCheckInput());
     expect(result.problems).toEqual([]);
     expect(result.ok).toBe(true);
+  });
+
+  it("SHO-467: AI-exposed creates derive the nine T1 tables and none violate", () => {
+    const input = buildContractCheckInput();
+    const required = deriveRecordProvenanceRequirements(
+      input.registry.contracts(),
+      input.schemaTables,
+    );
+    const tables = [...new Set(required.map((entry) => entry.table))].sort();
+    expect(tables).toEqual([...T1_PROVENANCE_TABLES]);
+    expect(
+      runContractCheck(input).problems.filter((problem) =>
+        problem.includes("provenance"),
+      ),
+    ).toEqual([]);
   });
 });

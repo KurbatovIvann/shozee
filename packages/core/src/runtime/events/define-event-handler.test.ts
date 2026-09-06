@@ -136,6 +136,7 @@ describe("defineEventHandler — valid bindings", () => {
       projectionGrants: new Set<string>(),
       readModelGrants: [],
       schemaImports: [],
+      schemaTables: [],
       suiteCoverage: {
         ...emptySuiteCoverage,
         isolation: ["handlerFixtureChat.upsertCard"],

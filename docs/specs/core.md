@@ -82,7 +82,11 @@ event scope inconsistent with action/system scope, `risk: write|high` with
 bound to a compatible internal idempotent system action. The same CI phase
 validates the schema-ownership
 manifest: every foreign schema import by `search`/`analytics` must match a
-read-model grant declared in the owning spec (ADR-0015).
+read-model grant declared in the owning spec (ADR-0015). AI-exposed create
+writes (`risk: write|high`, after `deriveAiToolSources`) require nullable
+`created_via` / `vouched_by` / `vouched_at` plus a `created_via` CHECK on
+the derived entity table; `companies` and `files` are a named source
+allowlist (SHO-467).
 
 Public actions are a strict subset: `risk: read`, `permissions: []`,
 `audit: false`, `idempotent: false`, `requiresConfirmation: false`,

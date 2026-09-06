@@ -33,6 +33,18 @@ export type {
   ReadModelGrantRef,
   SchemaImportRef,
 } from "./contract-check/contract-check.js";
+export {
+  deriveRecordProvenanceRequirements,
+  RECORD_PROVENANCE_CREATE_EXCLUSIONS,
+  RECORD_PROVENANCE_PHYSICAL_TABLE_ALIASES,
+} from "./contract-check/record-provenance.js";
+export type {
+  RecordProvenanceRequirement,
+  SchemaCheckRef,
+  SchemaColumnRef,
+  SchemaTableRef,
+} from "./contract-check/record-provenance.js";
+export { schemaTablesFromModules } from "./contract-check/schema-tables.js";
 export { emptySuiteCoverage } from "./contract-check/suite-coverage.js";
 export type { SuiteCoverageManifest } from "./contract-check/suite-coverage.js";
 export type {

@@ -28,9 +28,15 @@ import {
 } from "../runtime/action-registry.js";
 import { atomicCallTargetProblems, callTargetProblems } from "./call-rules.js";
 import {
+  collectRecordProvenanceProblems,
+  type SchemaTableRef,
+} from "./record-provenance.js";
+import {
   collectSuiteCoverageProblems,
   type SuiteCoverageManifest,
 } from "./suite-coverage.js";
+
+export type { SchemaTableRef };
 
 /**
  * Thrown by `assertContractCheck` with every collected violation. Like the
@@ -139,6 +145,12 @@ export interface ContractCheckInput {
    * action without a matching entry is a contract-check failure.
    */
   readonly suiteCoverage: SuiteCoverageManifest;
+  /**
+   * Drizzle tables grouped by owning module (SHO-467). Empty is an
+   * explicit statement that no schema is in scope — an AI-exposed create
+   * then fails as a missing table rather than being skipped.
+   */
+  readonly schemaTables: readonly SchemaTableRef[];
 }
 
 export interface ContractCheckResult {
@@ -182,6 +194,7 @@ export function runContractCheck(
     input.subscriptions,
     problems,
   );
+  collectRecordProvenanceProblems(contracts, input.schemaTables, problems);
 
   return { ok: problems.length === 0, problems };
 }

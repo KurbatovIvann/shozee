@@ -1,20 +1,9 @@
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import pg from "pg";
 
-import * as assistant from "./schema/assistant.js";
 import * as auth from "./schema/auth.js";
-import * as catalog from "./schema/catalog.js";
-import * as chat from "./schema/chat.js";
-import * as companies from "./schema/companies.js";
-import * as customers from "./schema/customers.js";
-import * as docGeneration from "./schema/doc-generation.js";
-import * as docSigning from "./schema/doc-signing.js";
-import * as documents from "./schema/documents.js";
-import * as files from "./schema/files.js";
 import * as foundation from "./schema/foundation.js";
-import * as invites from "./schema/invites.js";
-import * as orders from "./schema/orders.js";
-import * as pricing from "./schema/pricing.js";
+import { ownedSchemaModules } from "./schema-modules.js";
 
 /**
  * Aggregated Drizzle schema. Module schema files are spread in here as their
@@ -25,18 +14,18 @@ import * as pricing from "./schema/pricing.js";
 export const schema = {
   ...foundation,
   ...auth,
-  ...assistant,
-  ...companies,
-  ...catalog,
-  ...chat,
-  ...customers,
-  ...docGeneration,
-  ...docSigning,
-  ...documents,
-  ...files,
-  ...invites,
-  ...orders,
-  ...pricing,
+  ...ownedSchemaModules.assistant,
+  ...ownedSchemaModules.catalog,
+  ...ownedSchemaModules.chat,
+  ...ownedSchemaModules.companies,
+  ...ownedSchemaModules.customers,
+  ...ownedSchemaModules.docGeneration,
+  ...ownedSchemaModules.docSigning,
+  ...ownedSchemaModules.documents,
+  ...ownedSchemaModules.files,
+  ...ownedSchemaModules.invites,
+  ...ownedSchemaModules.orders,
+  ...ownedSchemaModules.pricing,
 };
 
 export type DbSchema = typeof schema;
