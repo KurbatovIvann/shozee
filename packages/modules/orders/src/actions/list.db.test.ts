@@ -14,7 +14,8 @@ import { products } from "@showzy/db/schema/catalog";
 import { companies, companyMembers } from "@showzy/db/schema/companies";
 import { companyCustomers } from "@showzy/db/schema/customers";
 import { orderItems, orders } from "@showzy/db/schema/orders";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { RECORD_VERIFICATION } from "@showzy/validation/record-verification";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { listOrders } from "./list.js";
 import {
@@ -132,6 +133,9 @@ async function insertOrder(values: {
   currency?: "UAH" | "EUR";
   titleSnapshot?: string;
   quantityMilli?: bigint;
+  createdVia?: "ui" | "ai" | "system" | "webhook" | null;
+  vouchedBy?: string | null;
+  vouchedAt?: Date | null;
 }): Promise<void> {
   const currency = values.currency ?? "UAH";
   const requiresConfirmedAt =
@@ -152,6 +156,9 @@ async function insertOrder(values: {
     confirmedAt: requiresConfirmedAt ? values.createdAt : undefined,
     createdAt: values.createdAt,
     updatedAt: values.createdAt,
+    createdVia: values.createdVia,
+    vouchedBy: values.vouchedBy,
+    vouchedAt: values.vouchedAt,
   });
   const perLine = values.totalGrossMinor / BigInt(values.itemIds.length);
   await kit.db.runtime.db.insert(orderItems).values(
@@ -445,6 +452,10 @@ crossTenantSuite(
 );
 
 describe("orders.list", () => {
+  afterEach(() => {
+    RECORD_VERIFICATION.mode = "narrow";
+  });
+
   it("happy path page.summary: newest-first snapshot customer, itemCount, totals", async () => {
     const result = asSummary(await kit.invoke(listOrders, pageSummary));
 
@@ -1379,5 +1390,204 @@ describe("orders.list", () => {
     });
     expect(listed.buckets[0]?.orderCount).toBe(2);
     expect(listed.orderCount).toBe(2);
+  });
+
+  it("aggregate groupBy none is byte-identical under the narrow default", async () => {
+    const none = asAggregate(
+      await kit.invoke(listOrders, { kind: "aggregate", groupBy: "none" }),
+    );
+    const expected = {
+      kind: "aggregate",
+      orderCount: 8,
+      grossByCurrency: [
+        { currency: "EUR", grossAmountMinor: "800" },
+        { currency: "UAH", grossAmountMinor: "3400" },
+      ],
+      buckets: [
+        {
+          identity: { kind: "none" },
+          label: "",
+          orderCount: 8,
+          grossByCurrency: [
+            { currency: "EUR", grossAmountMinor: "800" },
+            { currency: "UAH", grossAmountMinor: "3400" },
+          ],
+        },
+      ],
+      bucketsTruncated: false,
+      customerMatchTruncated: false,
+      statusBuckets: [
+        {
+          identity: { kind: "status", status: "new" },
+          label: "new",
+          orderCount: 4,
+          grossByCurrency: [
+            { currency: "EUR", grossAmountMinor: "800" },
+            { currency: "UAH", grossAmountMinor: "2000" },
+          ],
+        },
+        {
+          identity: { kind: "status", status: "canceled" },
+          label: "canceled",
+          orderCount: 1,
+          grossByCurrency: [{ currency: "UAH", grossAmountMinor: "200" }],
+        },
+        {
+          identity: { kind: "status", status: "confirmed" },
+          label: "confirmed",
+          orderCount: 1,
+          grossByCurrency: [{ currency: "UAH", grossAmountMinor: "400" }],
+        },
+        {
+          identity: { kind: "status", status: "done" },
+          label: "done",
+          orderCount: 1,
+          grossByCurrency: [{ currency: "UAH", grossAmountMinor: "500" }],
+        },
+        {
+          identity: { kind: "status", status: "in_progress" },
+          label: "in_progress",
+          orderCount: 1,
+          grossByCurrency: [{ currency: "UAH", grossAmountMinor: "300" }],
+        },
+      ],
+    };
+    expect(JSON.stringify(none)).toBe(JSON.stringify(expected));
+  });
+
+  it("flipping RECORD_VERIFICATION.mode changes aggregate totals with no other source edited", async () => {
+    const companyId = randomUUID();
+    const productId = randomUUID();
+    const prefix = randomUUID().replaceAll("-", "").slice(0, 8).toUpperCase();
+    const uiId = randomUUID();
+    const aiUnvouchedId = randomUUID();
+    const unknownId = randomUUID();
+    const aiVouchedId = randomUUID();
+    await kit.db.runtime.db.insert(companies).values({
+      id: companyId,
+      name: "Provenance totals",
+      slug: `prov-${prefix.toLowerCase()}`,
+      prefix,
+    });
+    await kit.db.runtime.db.insert(companyMembers).values({
+      companyId,
+      userId: kitIdentities.users.anna,
+      role: "owner",
+      permissions: { granted: [], denied: [] },
+    });
+    await kit.db.runtime.db.insert(products).values({
+      id: productId,
+      companyId,
+      name: "Provenance product",
+      basePriceMinor: 1n,
+    });
+    const at = new Date("2026-07-01T00:00:00.000Z");
+    await insertOrder({
+      id: uiId,
+      itemIds: [randomUUID()],
+      companyId,
+      customerId: null,
+      customerNameSnapshot: UNLINKED_CUSTOMER_NAME_SNAPSHOT,
+      productId,
+      status: "new",
+      totalGrossMinor: 100n,
+      createdAt: at,
+      orderNumber: `${prefix}-UI1`,
+      createdVia: "ui",
+    });
+    await insertOrder({
+      id: aiUnvouchedId,
+      itemIds: [randomUUID()],
+      companyId,
+      customerId: null,
+      customerNameSnapshot: UNLINKED_CUSTOMER_NAME_SNAPSHOT,
+      productId,
+      status: "new",
+      totalGrossMinor: 200n,
+      createdAt: new Date("2026-07-02T00:00:00.000Z"),
+      orderNumber: `${prefix}-AI1`,
+      createdVia: "ai",
+    });
+    await insertOrder({
+      id: unknownId,
+      itemIds: [randomUUID()],
+      companyId,
+      customerId: null,
+      customerNameSnapshot: UNLINKED_CUSTOMER_NAME_SNAPSHOT,
+      productId,
+      status: "new",
+      totalGrossMinor: 300n,
+      createdAt: new Date("2026-07-03T00:00:00.000Z"),
+      orderNumber: `${prefix}-UNK`,
+      createdVia: null,
+    });
+    await insertOrder({
+      id: aiVouchedId,
+      itemIds: [randomUUID()],
+      companyId,
+      customerId: null,
+      customerNameSnapshot: UNLINKED_CUSTOMER_NAME_SNAPSHOT,
+      productId,
+      status: "new",
+      totalGrossMinor: 400n,
+      createdAt: new Date("2026-07-04T00:00:00.000Z"),
+      orderNumber: `${prefix}-AIV`,
+      createdVia: "ai",
+      vouchedBy: kitIdentities.users.anna,
+      vouchedAt: new Date("2026-07-05T00:00:00.000Z"),
+    });
+
+    const actor = { companyId };
+    const narrow = asAggregate(
+      await kit.invoke(
+        listOrders,
+        { kind: "aggregate", groupBy: "none" },
+        actor,
+      ),
+    );
+    expect(RECORD_VERIFICATION.mode).toBe("narrow");
+    expect(narrow.orderCount).toBe(4);
+    expect(narrow.grossByCurrency).toEqual([
+      { currency: "UAH", grossAmountMinor: "1000" },
+    ]);
+
+    RECORD_VERIFICATION.mode = "strict";
+    const strict = asAggregate(
+      await kit.invoke(
+        listOrders,
+        { kind: "aggregate", groupBy: "none" },
+        actor,
+      ),
+    );
+    expect(strict.orderCount).toBe(3);
+    expect(strict.grossByCurrency).toEqual([
+      { currency: "UAH", grossAmountMinor: "800" },
+    ]);
+
+    const page = asSummary(await kit.invoke(listOrders, pageSummary, actor));
+    expect(page.items).toHaveLength(4);
+    expect(page.items.map((row) => row.orderId).toSorted()).toEqual(
+      [uiId, aiUnvouchedId, unknownId, aiVouchedId].toSorted(),
+    );
+  });
+
+  it("aggregate consults the shared record-verification predicate", () => {
+    const filter = readFileSync(
+      new URL("../services/order-list/filter.ts", import.meta.url),
+      "utf8",
+    );
+    const aggregate = readFileSync(
+      new URL("../services/order-list/aggregate.ts", import.meta.url),
+      "utf8",
+    );
+    const page = readFileSync(
+      new URL("../services/order-list/page.ts", import.meta.url),
+      "utf8",
+    );
+    expect(filter).toContain("@showzy/validation/record-verification");
+    expect(filter).toContain("recordCountsSql");
+    expect(aggregate).toContain("recordCountsPredicate");
+    expect(page).not.toContain("recordCountsPredicate");
+    expect(aggregate).not.toMatch(/vouchedBy|createdVia/);
   });
 });

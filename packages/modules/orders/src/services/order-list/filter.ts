@@ -3,7 +3,19 @@ import { listMatchingIds } from "@showzy/customers";
 import { orders } from "@showzy/db/schema/orders";
 import { moneyToCanonical } from "@showzy/module-kit/canonical";
 import { sanitizeLikeLiteral } from "@showzy/validation/pagination";
-import { eq, gte, ilike, inArray, lte, or, type SQL } from "drizzle-orm";
+import { recordCountsSql } from "@showzy/validation/record-verification";
+import {
+  eq,
+  gte,
+  ilike,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 
 import type {
   ListOrdersFilter,
@@ -119,6 +131,27 @@ export function headerPredicates(
     parts.push(queryPredicate);
   }
   return parts;
+}
+
+/**
+ * Totals consult the shared verification predicate (SHO-466). Under the
+ * narrow default this is `TRUE`. Do not re-express vouched/created_via
+ * filters here — flip `RECORD_VERIFICATION.mode` instead.
+ */
+export function recordCountsPredicate(): SQL {
+  return recordCountsSql(
+    {
+      createdVia: orders.createdVia,
+      vouchedBy: orders.vouchedBy,
+    },
+    {
+      alwaysTrue: sql`true`,
+      isNull: (column) => isNull(column),
+      isNotNull: (column) => isNotNull(column),
+      eq: (column, value) => eq(column, value),
+      or: (clauses) => or(...clauses) ?? sql`true`,
+    },
+  );
 }
 
 export function mergeGross(
