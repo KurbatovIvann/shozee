@@ -1365,6 +1365,10 @@ describe("assistant result-card surface registry", () => {
       new URL("../sheet/assistant-surface-card.tsx", import.meta.url),
       "utf8",
     );
+    const resultFrame = readFileSync(
+      new URL("../sheet/assistant-result-frame.tsx", import.meta.url),
+      "utf8",
+    );
     const listParse = readFileSync(
       new URL("../surfaces/orders-list.ts", import.meta.url),
       "utf8",
@@ -1411,8 +1415,9 @@ describe("assistant result-card surface registry", () => {
     expect(entityCard.includes("order-row")).toBe(false);
     expect(aggregateCard).toContain("Card");
     expect(aggregateCard).toContain("StatusPill");
-    expect(aggregateCard).toContain("Button");
     expect(aggregateCard).toContain("onOpenHref");
+    expect(resultFrame).toContain("Button");
+    expect(resultFrame).toContain("Card");
     expect(aggregateCard).toContain('from "../../../components/ui"');
     expect(aggregateCard.includes("orders-list-screen")).toBe(false);
     expect(aggregateCard.includes("order-row")).toBe(false);

@@ -24,6 +24,10 @@ const CONFIRMATION = readFileSync(
   new URL("../sheet/confirmation-card.tsx", import.meta.url),
   "utf8",
 );
+const FRAME = readFileSync(
+  new URL("../sheet/assistant-result-frame.tsx", import.meta.url),
+  "utf8",
+);
 
 describe("assistantTurnColumnLayout", () => {
   it("gives the assistant column a definite width, not maxWidth-only shrink-wrap", () => {
@@ -68,6 +72,7 @@ describe("assistant turn layout composition", () => {
   it("leaves flex:1 on list/aggregate rows and HITL actions", () => {
     expect(LIST).toContain("flex: 1");
     expect(AGGREGATE).toContain("flex: 1");
-    expect(CONFIRMATION).toContain("flex: 1");
+    expect(FRAME).toContain("flex: 1");
+    expect(CONFIRMATION).toContain("AssistantResultFrame");
   });
 });
