@@ -24,6 +24,7 @@ export {
   runContractCheck,
 } from "./contract-check/contract-check.js";
 export type {
+  AssistantSurfaceBindingRef,
   ContractCheckInput,
   ContractCheckResult,
   DeclaredCallEdge,

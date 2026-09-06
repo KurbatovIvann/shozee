@@ -15,6 +15,7 @@
  * and must list the same `defineEventHandler` objects this file passes
  * through `eventSubscriptionRefs`.
  */
+import { STAFF_ASSISTANT_FACADE_TOOL_NAMES } from "@showzy/ai";
 import { assistantActions } from "@showzy/assistant";
 import { assistantSuiteCoverage } from "@showzy/assistant/suite-coverage";
 import { catalogActions } from "@showzy/catalog";
@@ -70,6 +71,7 @@ import {
   type SuiteCoverageManifest,
 } from "@showzy/core";
 import { ownedSchemaModules, projectionGrants } from "@showzy/db";
+import { ASSISTANT_SURFACE_REGISTRY } from "@showzy/validation/assistant-surfaces";
 import type { z } from "zod";
 import { registeredEventSubscriptions } from "./subscriptions.js";
 
@@ -373,5 +375,11 @@ export function buildContractCheckInput(): ContractCheckInput {
     schemaImports,
     suiteCoverage: mergeSuiteCoverage(moduleSuiteCoverage),
     schemaTables: schemaTablesFromModules(ownedSchemaModules),
+    assistantSurfaces: ASSISTANT_SURFACE_REGISTRY.map((surface) => ({
+      kind: surface.kind,
+      actionNames: surface.actionNames,
+      toolNames: surface.toolNames,
+    })),
+    assistantFacadeToolNames: STAFF_ASSISTANT_FACADE_TOOL_NAMES,
   };
 }

@@ -168,6 +168,8 @@ function checkInput(
     readModelGrants: [],
     schemaImports: [],
     schemaTables: [],
+    assistantSurfaces: [],
+    assistantFacadeToolNames: [],
     ...overrides,
   };
   return {

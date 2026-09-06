@@ -136,6 +136,17 @@ const FACADE_ACTION_NAME_SET = new Set<string>([
 ]);
 
 /**
+ * Named façade ToolSet keys (hot + deferred). Contract-check (SHO-471)
+ * treats these as valid surface `toolNames` alongside provider names of
+ * AI-exposed actions. Derived from the factory maps — not a second set.
+ */
+export const STAFF_ASSISTANT_FACADE_TOOL_NAMES: readonly string[] =
+  Object.freeze([
+    ...Object.values(HOT_FACADE_TOOL_NAMES).flat(),
+    CUSTOMERS_LIST_GROUPS_TOOL_NAME,
+  ]);
+
+/**
  * Map `orders.list` → `orders_list`. `defineActionContract` requires
  * exactly one dot and alphanumeric camelCase segments, so replacing `.`
  * with `_` is lossless. Façade ToolSet keys (`orders_list_page`) are

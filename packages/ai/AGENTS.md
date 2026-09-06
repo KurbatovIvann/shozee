@@ -46,6 +46,8 @@ not the advertised ToolSet key. Hot names are the façade keys. The 1:1
 `catalog_listProducts`, `pricing_listPriceLists`,
 `customers_listCustomers`, and `customers_listGroups` keys must not
 remain advertised once those façades exist.
+`STAFF_ASSISTANT_FACADE_TOOL_NAMES` is those keys for the SHO-471
+contract-check (not a second façade set).
 `toProviderToolName("orders.create")` is already
 `orders_create` — that key stays advertised, with the named object
 schema, not the EntityRef union.

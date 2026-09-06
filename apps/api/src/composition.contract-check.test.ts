@@ -12,6 +12,7 @@ import {
   deriveRecordProvenanceRequirements,
   runContractCheck,
 } from "@showzy/core";
+import { ASSISTANT_SURFACE_REGISTRY } from "@showzy/validation/assistant-surfaces";
 import { describe, expect, it } from "vitest";
 
 import { buildContractCheckInput } from "./composition.js";
@@ -46,6 +47,23 @@ describe("CI contract-check stage", () => {
     expect(
       runContractCheck(input).problems.filter((problem) =>
         problem.includes("provenance"),
+      ),
+    ).toEqual([]);
+  });
+
+  it("SHO-471: every registered assistant surface binding resolves (no hardcoded kinds)", () => {
+    const input = buildContractCheckInput();
+    expect(input.assistantSurfaces).toEqual(
+      ASSISTANT_SURFACE_REGISTRY.map((surface) => ({
+        kind: surface.kind,
+        actionNames: surface.actionNames,
+        toolNames: surface.toolNames,
+      })),
+    );
+    expect(input.assistantSurfaces.length).toBeGreaterThan(0);
+    expect(
+      runContractCheck(input).problems.filter((problem) =>
+        problem.startsWith("assistant surface "),
       ),
     ).toEqual([]);
   });

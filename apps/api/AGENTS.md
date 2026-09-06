@@ -12,8 +12,9 @@ Auth policy parameters still live in `src/auth/` (fnd-T6).
   `createActionRegistry` is what `boot.ts` mounts; `buildContractCheckInput`
   is what CI walks (`pnpm --filter @showzy/api contract:check`). Module
   tasks register both barrels, events, subscriptions, call edges, schema-
-  ownership rows, and `suiteCoverage` (`@showzy/<module>/suite-coverage`)
-  here — never in `packages/core`.
+  ownership rows, `suiteCoverage` (`@showzy/<module>/suite-coverage`),
+  and assistant-surface binding refs (SHO-471) here — never in
+  `packages/core`.
 - `src/boot.ts` — opens Postgres + Redis, builds better-auth through
   `buildAuthOptions`, composes the action pipeline, returns `createApp`.
 - `src/http/app.ts` — `createApp(composition)`: request-id, trusted-proxy

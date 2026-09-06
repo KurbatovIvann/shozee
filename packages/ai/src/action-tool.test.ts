@@ -19,6 +19,7 @@ import {
   PROVIDER_TOOL_NAME_PATTERN,
   staffAssistantHotToolNames,
   staffAssistantTools,
+  STAFF_ASSISTANT_FACADE_TOOL_NAMES,
   STAFF_ASSISTANT_TOOL_SEARCH_NAME,
   toProviderToolName,
 } from "./action-tool.js";
@@ -91,6 +92,24 @@ describe("toProviderToolName", () => {
     expect(
       fromProviderToolName(toProviderToolName("customers.deleteCustomer")),
     ).toBe("customers.deleteCustomer");
+  });
+});
+
+describe("STAFF_ASSISTANT_FACADE_TOOL_NAMES", () => {
+  it("lists registered façade keys for contract-check, not the BM25 search tool", () => {
+    expect(STAFF_ASSISTANT_FACADE_TOOL_NAMES).toContain(
+      ORDERS_LIST_PAGE_TOOL_NAME,
+    );
+    expect(STAFF_ASSISTANT_FACADE_TOOL_NAMES).toContain(
+      ORDERS_LIST_COUNTS_TOOL_NAME,
+    );
+    expect(STAFF_ASSISTANT_FACADE_TOOL_NAMES).toContain(
+      CUSTOMERS_LIST_GROUPS_TOOL_NAME,
+    );
+    expect(STAFF_ASSISTANT_FACADE_TOOL_NAMES).not.toContain(
+      STAFF_ASSISTANT_TOOL_SEARCH_NAME,
+    );
+    expect(Object.isFrozen(STAFF_ASSISTANT_FACADE_TOOL_NAMES)).toBe(true);
   });
 });
 

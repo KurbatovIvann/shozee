@@ -139,6 +139,8 @@ describe("defineEventHandler — valid bindings", () => {
       readModelGrants: [],
       schemaImports: [],
       schemaTables: [],
+      assistantSurfaces: [],
+      assistantFacadeToolNames: [],
       suiteCoverage: {
         ...emptySuiteCoverage,
         isolation: ["handlerFixtureChat.upsertCard"],
