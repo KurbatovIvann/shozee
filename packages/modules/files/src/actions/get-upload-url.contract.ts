@@ -34,6 +34,7 @@ export const getUploadUrlContract = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: ["NOT_FOUND"],
   audit: false,
   timeout: 5_000,
 });

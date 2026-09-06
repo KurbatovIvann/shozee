@@ -240,6 +240,7 @@ const contractDefaults = {
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: [],
 } as const;
 
 /** Observations the callee fixtures record about their own context. */

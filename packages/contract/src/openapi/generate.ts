@@ -2,6 +2,11 @@
  * OpenAPI document derived from the client contract router (contract.md §5).
  * Generation is the single source; `openapi.json` is the committed artifact
  * the CI drift check diffs against, like migrations.
+ *
+ * Per-operation error responses are the oRPC document of each procedure's
+ * `.errors()` map: pipeline-universal §4 codes union the action's declared
+ * `errors` (`VALIDATION`, `NOT_FOUND`, `CONFLICT`). Do not replace
+ * status-keyed responses after generation — shared 409 must stay a oneOf.
  */
 import { OpenAPIGenerator } from "@orpc/openapi";
 import { ZodToJsonSchemaConverter } from "@orpc/zod/zod4";

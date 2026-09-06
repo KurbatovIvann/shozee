@@ -137,6 +137,7 @@ const callLockIssuedForSigning = implementAction(
     emits: [],
     atomicCalls: [],
     atomicCallers: [],
+    errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
     audit: true,
     timeout: 10_000,
   }),

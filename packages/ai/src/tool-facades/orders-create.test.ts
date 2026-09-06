@@ -36,6 +36,7 @@ const createOrder = defineActionContract({
   emits: ["orders.created"],
   atomicCalls: [],
   atomicCallers: [],
+  errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
   audit: true,
   timeout: 20_000,
   input: z.strictObject({

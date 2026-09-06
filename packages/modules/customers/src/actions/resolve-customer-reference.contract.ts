@@ -48,6 +48,7 @@ export const resolveCustomerReferenceContract = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
   audit: false,
   timeout: 5_000,
 });

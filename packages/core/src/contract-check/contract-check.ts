@@ -21,6 +21,7 @@
  * Layers 1–2 throw on the first broken definition; this layer aggregates,
  * so a red CI run lists every registry-wide problem at once.
  */
+import type { DeclaredErrorCode } from "../contract/declared-error-codes.js";
 import type { ActionContract } from "../contract/types.js";
 import {
   ActionRegistry,
@@ -182,6 +183,12 @@ export function runContractCheck(
   );
   collectCallEdgeProblems(input.callEdges, contractsByName, problems);
   collectAtomicEdgeProblems(contracts, contractsByName, problems);
+  collectDeclaredErrorSupersetProblems(
+    contracts,
+    input.callEdges,
+    contractsByName,
+    problems,
+  );
   collectCallGraphCycleProblems(contracts, input.callEdges, problems);
   collectSchemaOwnershipProblems(
     input.readModelGrants,
@@ -452,6 +459,57 @@ function collectAtomicEdgeProblems(
         );
       }
       // The full per-edge rule list is reported once, from the caller side.
+    }
+  }
+}
+
+/**
+ * A caller's declared error set must include every code declared by its
+ * `ctx.call` / `ctx.callAtomic` callees. The call graph is already
+ * declared; a silent gap here would let a callee's CONFLICT escape a
+ * caller that promised `errors: []`.
+ */
+function collectDeclaredErrorSupersetProblems(
+  contracts: readonly ActionContract[],
+  callEdges: readonly DeclaredCallEdge[],
+  contractsByName: ReadonlyMap<string, ActionContract>,
+  problems: string[],
+): void {
+  const reportMissing = (
+    caller: ActionContract,
+    callee: ActionContract,
+    edgeKind: "ctx.call" | "ctx.callAtomic",
+    code: DeclaredErrorCode,
+  ): void => {
+    problems.push(
+      `action "${caller.name}" declares errors [${caller.errors.join(", ")}] which does not include ${code} declared by ${edgeKind} callee "${callee.name}"`,
+    );
+  };
+
+  for (const edge of callEdges) {
+    const caller = contractsByName.get(edge.caller);
+    const callee = contractsByName.get(edge.callee);
+    if (caller === undefined || callee === undefined) {
+      continue;
+    }
+    for (const code of callee.errors) {
+      if (!caller.errors.includes(code)) {
+        reportMissing(caller, callee, "ctx.call", code);
+      }
+    }
+  }
+
+  for (const caller of contracts) {
+    for (const calleeName of caller.atomicCalls) {
+      const callee = contractsByName.get(calleeName);
+      if (callee === undefined) {
+        continue;
+      }
+      for (const code of callee.errors) {
+        if (!caller.errors.includes(code)) {
+          reportMissing(caller, callee, "ctx.callAtomic", code);
+        }
+      }
     }
   }
 }

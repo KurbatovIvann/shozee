@@ -39,6 +39,7 @@ export const finalizeUploadContract = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: ["VALIDATION", "NOT_FOUND"],
   audit: true,
   timeout: 15_000,
 });

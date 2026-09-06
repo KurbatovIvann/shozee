@@ -300,97 +300,12 @@
               }
             }
           },
-          "404": {
-            "description": "404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "NOT_FOUND"
-                        },
-                        "status": {
-                          "const": 404
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Not Found"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": false
-                        },
-                        "code": {
-                          "type": "string"
-                        },
-                        "status": {
-                          "type": "number"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
           "409": {
             "description": "409",
             "content": {
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -1045,97 +960,12 @@
               }
             }
           },
-          "404": {
-            "description": "404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "NOT_FOUND"
-                        },
-                        "status": {
-                          "const": 404
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Not Found"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": false
-                        },
-                        "code": {
-                          "type": "string"
-                        },
-                        "status": {
-                          "type": "number"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
           "409": {
             "description": "409",
             "content": {
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -1938,31 +1768,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -2658,31 +2463,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -3369,97 +3149,12 @@
               }
             }
           },
-          "404": {
-            "description": "404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "NOT_FOUND"
-                        },
-                        "status": {
-                          "const": 404
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Not Found"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": false
-                        },
-                        "code": {
-                          "type": "string"
-                        },
-                        "status": {
-                          "type": "number"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
           "409": {
             "description": "409",
             "content": {
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -4172,31 +3867,6 @@
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -4964,31 +4634,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -5674,97 +5319,12 @@
               }
             }
           },
-          "404": {
-            "description": "404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "NOT_FOUND"
-                        },
-                        "status": {
-                          "const": 404
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Not Found"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": false
-                        },
-                        "code": {
-                          "type": "string"
-                        },
-                        "status": {
-                          "type": "number"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
           "409": {
             "description": "409",
             "content": {
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -6510,31 +6070,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -7252,31 +6787,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -7940,31 +7450,6 @@
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -8642,31 +8127,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -9337,31 +8797,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -10025,31 +9460,6 @@
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -10736,31 +10146,6 @@
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -11456,31 +10841,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -12125,97 +11485,12 @@
               }
             }
           },
-          "404": {
-            "description": "404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "NOT_FOUND"
-                        },
-                        "status": {
-                          "const": 404
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Not Found"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": false
-                        },
-                        "code": {
-                          "type": "string"
-                        },
-                        "status": {
-                          "type": "number"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
           "409": {
             "description": "409",
             "content": {
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -12327,6 +11602,31 @@
                         "status",
                         "message",
                         "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "defined": {
+                          "const": true
+                        },
+                        "code": {
+                          "const": "CONFLICT"
+                        },
+                        "status": {
+                          "const": 409
+                        },
+                        "message": {
+                          "type": "string",
+                          "default": "Conflict"
+                        },
+                        "data": {}
+                      },
+                      "required": [
+                        "defined",
+                        "code",
+                        "status",
+                        "message"
                       ]
                     },
                     {
@@ -12957,97 +12257,12 @@
               }
             }
           },
-          "404": {
-            "description": "404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "NOT_FOUND"
-                        },
-                        "status": {
-                          "const": 404
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Not Found"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": false
-                        },
-                        "code": {
-                          "type": "string"
-                        },
-                        "status": {
-                          "type": "number"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
           "409": {
             "description": "409",
             "content": {
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -13693,97 +12908,12 @@
               }
             }
           },
-          "404": {
-            "description": "404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "NOT_FOUND"
-                        },
-                        "status": {
-                          "const": 404
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Not Found"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": false
-                        },
-                        "code": {
-                          "type": "string"
-                        },
-                        "status": {
-                          "type": "number"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
           "409": {
             "description": "409",
             "content": {
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -14631,97 +13761,12 @@
               }
             }
           },
-          "404": {
-            "description": "404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "NOT_FOUND"
-                        },
-                        "status": {
-                          "const": 404
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Not Found"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": false
-                        },
-                        "code": {
-                          "type": "string"
-                        },
-                        "status": {
-                          "type": "number"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
           "409": {
             "description": "409",
             "content": {
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -15485,31 +14530,6 @@
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -16409,31 +15429,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -16538,6 +15533,31 @@
                         "status",
                         "message",
                         "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "defined": {
+                          "const": true
+                        },
+                        "code": {
+                          "const": "CONFLICT"
+                        },
+                        "status": {
+                          "const": 409
+                        },
+                        "message": {
+                          "type": "string",
+                          "default": "Conflict"
+                        },
+                        "data": {}
+                      },
+                      "required": [
+                        "defined",
+                        "code",
+                        "status",
+                        "message"
                       ]
                     },
                     {
@@ -17264,31 +16284,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -17393,6 +16388,31 @@
                         "status",
                         "message",
                         "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "defined": {
+                          "const": true
+                        },
+                        "code": {
+                          "const": "CONFLICT"
+                        },
+                        "status": {
+                          "const": 409
+                        },
+                        "message": {
+                          "type": "string",
+                          "default": "Conflict"
+                        },
+                        "data": {}
+                      },
+                      "required": [
+                        "defined",
+                        "code",
+                        "status",
+                        "message"
                       ]
                     },
                     {
@@ -18014,31 +17034,6 @@
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -18714,31 +17709,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -19407,31 +18377,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -20093,31 +19038,6 @@
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -20917,31 +19837,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -21705,31 +20600,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -22439,31 +21309,6 @@
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -23225,97 +22070,12 @@
               }
             }
           },
-          "404": {
-            "description": "404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "NOT_FOUND"
-                        },
-                        "status": {
-                          "const": 404
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Not Found"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": false
-                        },
-                        "code": {
-                          "type": "string"
-                        },
-                        "status": {
-                          "type": "number"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
           "409": {
             "description": "409",
             "content": {
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -24057,97 +22817,12 @@
               }
             }
           },
-          "404": {
-            "description": "404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "NOT_FOUND"
-                        },
-                        "status": {
-                          "const": 404
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Not Found"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": false
-                        },
-                        "code": {
-                          "type": "string"
-                        },
-                        "status": {
-                          "type": "number"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
           "409": {
             "description": "409",
             "content": {
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -24829,97 +23504,12 @@
               }
             }
           },
-          "404": {
-            "description": "404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "NOT_FOUND"
-                        },
-                        "status": {
-                          "const": 404
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Not Found"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": false
-                        },
-                        "code": {
-                          "type": "string"
-                        },
-                        "status": {
-                          "type": "number"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
           "409": {
             "description": "409",
             "content": {
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -25683,31 +24273,6 @@
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -26612,31 +25177,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -26741,6 +25281,31 @@
                         "status",
                         "message",
                         "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "defined": {
+                          "const": true
+                        },
+                        "code": {
+                          "const": "CONFLICT"
+                        },
+                        "status": {
+                          "const": 409
+                        },
+                        "message": {
+                          "type": "string",
+                          "default": "Conflict"
+                        },
+                        "data": {}
+                      },
+                      "required": [
+                        "defined",
+                        "code",
+                        "status",
+                        "message"
                       ]
                     },
                     {
@@ -27472,31 +26037,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -27601,6 +26141,31 @@
                         "status",
                         "message",
                         "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "defined": {
+                          "const": true
+                        },
+                        "code": {
+                          "const": "CONFLICT"
+                        },
+                        "status": {
+                          "const": 409
+                        },
+                        "message": {
+                          "type": "string",
+                          "default": "Conflict"
+                        },
+                        "data": {}
+                      },
+                      "required": [
+                        "defined",
+                        "code",
+                        "status",
+                        "message"
                       ]
                     },
                     {
@@ -28227,31 +26792,6 @@
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -28935,31 +27475,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -29064,6 +27579,31 @@
                         "status",
                         "message",
                         "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "defined": {
+                          "const": true
+                        },
+                        "code": {
+                          "const": "CONFLICT"
+                        },
+                        "status": {
+                          "const": 409
+                        },
+                        "message": {
+                          "type": "string",
+                          "default": "Conflict"
+                        },
+                        "data": {}
+                      },
+                      "required": [
+                        "defined",
+                        "code",
+                        "status",
+                        "message"
                       ]
                     },
                     {
@@ -30091,31 +28631,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -30220,6 +28735,31 @@
                         "status",
                         "message",
                         "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "defined": {
+                          "const": true
+                        },
+                        "code": {
+                          "const": "CONFLICT"
+                        },
+                        "status": {
+                          "const": 409
+                        },
+                        "message": {
+                          "type": "string",
+                          "default": "Conflict"
+                        },
+                        "data": {}
+                      },
+                      "required": [
+                        "defined",
+                        "code",
+                        "status",
+                        "message"
                       ]
                     },
                     {
@@ -31298,31 +29838,6 @@
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -32465,31 +30980,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -33192,97 +31682,12 @@
               }
             }
           },
-          "404": {
-            "description": "404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "NOT_FOUND"
-                        },
-                        "status": {
-                          "const": 404
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Not Found"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": false
-                        },
-                        "code": {
-                          "type": "string"
-                        },
-                        "status": {
-                          "type": "number"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
           "409": {
             "description": "409",
             "content": {
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -33958,31 +32363,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -34087,6 +32467,31 @@
                         "status",
                         "message",
                         "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "defined": {
+                          "const": true
+                        },
+                        "code": {
+                          "const": "CONFLICT"
+                        },
+                        "status": {
+                          "const": 409
+                        },
+                        "message": {
+                          "type": "string",
+                          "default": "Conflict"
+                        },
+                        "data": {}
+                      },
+                      "required": [
+                        "defined",
+                        "code",
+                        "status",
+                        "message"
                       ]
                     },
                     {
@@ -35104,31 +33509,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -35761,97 +34141,12 @@
               }
             }
           },
-          "404": {
-            "description": "404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "NOT_FOUND"
-                        },
-                        "status": {
-                          "const": 404
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Not Found"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": false
-                        },
-                        "code": {
-                          "type": "string"
-                        },
-                        "status": {
-                          "type": "number"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
           "409": {
             "description": "409",
             "content": {
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -36569,31 +34864,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -36698,6 +34968,31 @@
                         "status",
                         "message",
                         "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "defined": {
+                          "const": true
+                        },
+                        "code": {
+                          "const": "CONFLICT"
+                        },
+                        "status": {
+                          "const": 409
+                        },
+                        "message": {
+                          "type": "string",
+                          "default": "Conflict"
+                        },
+                        "data": {}
+                      },
+                      "required": [
+                        "defined",
+                        "code",
+                        "status",
+                        "message"
                       ]
                     },
                     {
@@ -37200,97 +35495,12 @@
               }
             }
           },
-          "404": {
-            "description": "404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "NOT_FOUND"
-                        },
-                        "status": {
-                          "const": 404
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Not Found"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": false
-                        },
-                        "code": {
-                          "type": "string"
-                        },
-                        "status": {
-                          "type": "number"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
           "409": {
             "description": "409",
             "content": {
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -37995,31 +36205,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -38124,6 +36309,31 @@
                         "status",
                         "message",
                         "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "defined": {
+                          "const": true
+                        },
+                        "code": {
+                          "const": "CONFLICT"
+                        },
+                        "status": {
+                          "const": 409
+                        },
+                        "message": {
+                          "type": "string",
+                          "default": "Conflict"
+                        },
+                        "data": {}
+                      },
+                      "required": [
+                        "defined",
+                        "code",
+                        "status",
+                        "message"
                       ]
                     },
                     {
@@ -38632,97 +36842,12 @@
               }
             }
           },
-          "404": {
-            "description": "404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "NOT_FOUND"
-                        },
-                        "status": {
-                          "const": 404
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Not Found"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": false
-                        },
-                        "code": {
-                          "type": "string"
-                        },
-                        "status": {
-                          "type": "number"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
           "409": {
             "description": "409",
             "content": {
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -39112,107 +37237,6 @@
               }
             }
           },
-          "400": {
-            "description": "400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "VALIDATION"
-                        },
-                        "status": {
-                          "const": 400
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "VALIDATION"
-                        },
-                        "data": {
-                          "type": "object",
-                          "properties": {
-                            "issues": {
-                              "type": "array",
-                              "items": {
-                                "type": "object",
-                                "properties": {
-                                  "code": {
-                                    "type": "string"
-                                  },
-                                  "path": {
-                                    "type": "array",
-                                    "items": {
-                                      "anyOf": [
-                                        {
-                                          "type": "string"
-                                        },
-                                        {
-                                          "type": "number"
-                                        }
-                                      ]
-                                    }
-                                  },
-                                  "message": {
-                                    "type": "string"
-                                  }
-                                },
-                                "required": [
-                                  "code",
-                                  "path",
-                                  "message"
-                                ],
-                                "additionalProperties": {}
-                              }
-                            }
-                          },
-                          "required": [
-                            "issues"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message",
-                        "data"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": false
-                        },
-                        "code": {
-                          "type": "string"
-                        },
-                        "status": {
-                          "type": "number"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
           "401": {
             "description": "401",
             "content": {
@@ -39399,31 +37423,6 @@
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -40125,31 +38124,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -40541,107 +38515,6 @@
               }
             }
           },
-          "400": {
-            "description": "400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "VALIDATION"
-                        },
-                        "status": {
-                          "const": 400
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "VALIDATION"
-                        },
-                        "data": {
-                          "type": "object",
-                          "properties": {
-                            "issues": {
-                              "type": "array",
-                              "items": {
-                                "type": "object",
-                                "properties": {
-                                  "code": {
-                                    "type": "string"
-                                  },
-                                  "path": {
-                                    "type": "array",
-                                    "items": {
-                                      "anyOf": [
-                                        {
-                                          "type": "string"
-                                        },
-                                        {
-                                          "type": "number"
-                                        }
-                                      ]
-                                    }
-                                  },
-                                  "message": {
-                                    "type": "string"
-                                  }
-                                },
-                                "required": [
-                                  "code",
-                                  "path",
-                                  "message"
-                                ],
-                                "additionalProperties": {}
-                              }
-                            }
-                          },
-                          "required": [
-                            "issues"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message",
-                        "data"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": false
-                        },
-                        "code": {
-                          "type": "string"
-                        },
-                        "status": {
-                          "type": "number"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
           "401": {
             "description": "401",
             "content": {
@@ -40828,31 +38701,6 @@
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -41561,31 +39409,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -42193,97 +40016,12 @@
               }
             }
           },
-          "404": {
-            "description": "404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "NOT_FOUND"
-                        },
-                        "status": {
-                          "const": 404
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Not Found"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": false
-                        },
-                        "code": {
-                          "type": "string"
-                        },
-                        "status": {
-                          "type": "number"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
           "409": {
             "description": "409",
             "content": {
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -42673,107 +40411,6 @@
               }
             }
           },
-          "400": {
-            "description": "400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "VALIDATION"
-                        },
-                        "status": {
-                          "const": 400
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "VALIDATION"
-                        },
-                        "data": {
-                          "type": "object",
-                          "properties": {
-                            "issues": {
-                              "type": "array",
-                              "items": {
-                                "type": "object",
-                                "properties": {
-                                  "code": {
-                                    "type": "string"
-                                  },
-                                  "path": {
-                                    "type": "array",
-                                    "items": {
-                                      "anyOf": [
-                                        {
-                                          "type": "string"
-                                        },
-                                        {
-                                          "type": "number"
-                                        }
-                                      ]
-                                    }
-                                  },
-                                  "message": {
-                                    "type": "string"
-                                  }
-                                },
-                                "required": [
-                                  "code",
-                                  "path",
-                                  "message"
-                                ],
-                                "additionalProperties": {}
-                              }
-                            }
-                          },
-                          "required": [
-                            "issues"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message",
-                        "data"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": false
-                        },
-                        "code": {
-                          "type": "string"
-                        },
-                        "status": {
-                          "type": "number"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
           "401": {
             "description": "401",
             "content": {
@@ -42960,31 +40597,6 @@
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -43669,31 +41281,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -43798,6 +41385,31 @@
                         "status",
                         "message",
                         "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "defined": {
+                          "const": true
+                        },
+                        "code": {
+                          "const": "CONFLICT"
+                        },
+                        "status": {
+                          "const": 409
+                        },
+                        "message": {
+                          "type": "string",
+                          "default": "Conflict"
+                        },
+                        "data": {}
+                      },
+                      "required": [
+                        "defined",
+                        "code",
+                        "status",
+                        "message"
                       ]
                     },
                     {
@@ -44552,31 +42164,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -45060,107 +42647,6 @@
               }
             }
           },
-          "400": {
-            "description": "400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "VALIDATION"
-                        },
-                        "status": {
-                          "const": 400
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "VALIDATION"
-                        },
-                        "data": {
-                          "type": "object",
-                          "properties": {
-                            "issues": {
-                              "type": "array",
-                              "items": {
-                                "type": "object",
-                                "properties": {
-                                  "code": {
-                                    "type": "string"
-                                  },
-                                  "path": {
-                                    "type": "array",
-                                    "items": {
-                                      "anyOf": [
-                                        {
-                                          "type": "string"
-                                        },
-                                        {
-                                          "type": "number"
-                                        }
-                                      ]
-                                    }
-                                  },
-                                  "message": {
-                                    "type": "string"
-                                  }
-                                },
-                                "required": [
-                                  "code",
-                                  "path",
-                                  "message"
-                                ],
-                                "additionalProperties": {}
-                              }
-                            }
-                          },
-                          "required": [
-                            "issues"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message",
-                        "data"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": false
-                        },
-                        "code": {
-                          "type": "string"
-                        },
-                        "status": {
-                          "type": "number"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
           "401": {
             "description": "401",
             "content": {
@@ -45347,31 +42833,6 @@
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -45888,107 +43349,6 @@
               }
             }
           },
-          "400": {
-            "description": "400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "VALIDATION"
-                        },
-                        "status": {
-                          "const": 400
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "VALIDATION"
-                        },
-                        "data": {
-                          "type": "object",
-                          "properties": {
-                            "issues": {
-                              "type": "array",
-                              "items": {
-                                "type": "object",
-                                "properties": {
-                                  "code": {
-                                    "type": "string"
-                                  },
-                                  "path": {
-                                    "type": "array",
-                                    "items": {
-                                      "anyOf": [
-                                        {
-                                          "type": "string"
-                                        },
-                                        {
-                                          "type": "number"
-                                        }
-                                      ]
-                                    }
-                                  },
-                                  "message": {
-                                    "type": "string"
-                                  }
-                                },
-                                "required": [
-                                  "code",
-                                  "path",
-                                  "message"
-                                ],
-                                "additionalProperties": {}
-                              }
-                            }
-                          },
-                          "required": [
-                            "issues"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message",
-                        "data"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": false
-                        },
-                        "code": {
-                          "type": "string"
-                        },
-                        "status": {
-                          "type": "number"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
           "401": {
             "description": "401",
             "content": {
@@ -46109,97 +43469,12 @@
               }
             }
           },
-          "404": {
-            "description": "404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "NOT_FOUND"
-                        },
-                        "status": {
-                          "const": 404
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Not Found"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": false
-                        },
-                        "code": {
-                          "type": "string"
-                        },
-                        "status": {
-                          "type": "number"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
           "409": {
             "description": "409",
             "content": {
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -46690,107 +43965,6 @@
               }
             }
           },
-          "400": {
-            "description": "400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "VALIDATION"
-                        },
-                        "status": {
-                          "const": 400
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "VALIDATION"
-                        },
-                        "data": {
-                          "type": "object",
-                          "properties": {
-                            "issues": {
-                              "type": "array",
-                              "items": {
-                                "type": "object",
-                                "properties": {
-                                  "code": {
-                                    "type": "string"
-                                  },
-                                  "path": {
-                                    "type": "array",
-                                    "items": {
-                                      "anyOf": [
-                                        {
-                                          "type": "string"
-                                        },
-                                        {
-                                          "type": "number"
-                                        }
-                                      ]
-                                    }
-                                  },
-                                  "message": {
-                                    "type": "string"
-                                  }
-                                },
-                                "required": [
-                                  "code",
-                                  "path",
-                                  "message"
-                                ],
-                                "additionalProperties": {}
-                              }
-                            }
-                          },
-                          "required": [
-                            "issues"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message",
-                        "data"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": false
-                        },
-                        "code": {
-                          "type": "string"
-                        },
-                        "status": {
-                          "type": "number"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
           "401": {
             "description": "401",
             "content": {
@@ -46977,31 +44151,6 @@
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -47993,31 +45142,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -48122,6 +45246,31 @@
                         "status",
                         "message",
                         "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "defined": {
+                          "const": true
+                        },
+                        "code": {
+                          "const": "CONFLICT"
+                        },
+                        "status": {
+                          "const": 409
+                        },
+                        "message": {
+                          "type": "string",
+                          "default": "Conflict"
+                        },
+                        "data": {}
+                      },
+                      "required": [
+                        "defined",
+                        "code",
+                        "status",
+                        "message"
                       ]
                     },
                     {
@@ -48705,31 +45854,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -48834,6 +45958,31 @@
                         "status",
                         "message",
                         "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "defined": {
+                          "const": true
+                        },
+                        "code": {
+                          "const": "CONFLICT"
+                        },
+                        "status": {
+                          "const": 409
+                        },
+                        "message": {
+                          "type": "string",
+                          "default": "Conflict"
+                        },
+                        "data": {}
+                      },
+                      "required": [
+                        "defined",
+                        "code",
+                        "status",
+                        "message"
                       ]
                     },
                     {
@@ -49412,31 +46561,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -49541,6 +46665,31 @@
                         "status",
                         "message",
                         "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "defined": {
+                          "const": true
+                        },
+                        "code": {
+                          "const": "CONFLICT"
+                        },
+                        "status": {
+                          "const": 409
+                        },
+                        "message": {
+                          "type": "string",
+                          "default": "Conflict"
+                        },
+                        "data": {}
+                      },
+                      "required": [
+                        "defined",
+                        "code",
+                        "status",
+                        "message"
                       ]
                     },
                     {
@@ -50119,31 +47268,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -50248,6 +47372,31 @@
                         "status",
                         "message",
                         "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "defined": {
+                          "const": true
+                        },
+                        "code": {
+                          "const": "CONFLICT"
+                        },
+                        "status": {
+                          "const": 409
+                        },
+                        "message": {
+                          "type": "string",
+                          "default": "Conflict"
+                        },
+                        "data": {}
+                      },
+                      "required": [
+                        "defined",
+                        "code",
+                        "status",
+                        "message"
                       ]
                     },
                     {
@@ -50826,31 +47975,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -50955,6 +48079,31 @@
                         "status",
                         "message",
                         "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "defined": {
+                          "const": true
+                        },
+                        "code": {
+                          "const": "CONFLICT"
+                        },
+                        "status": {
+                          "const": 409
+                        },
+                        "message": {
+                          "type": "string",
+                          "default": "Conflict"
+                        },
+                        "data": {}
+                      },
+                      "required": [
+                        "defined",
+                        "code",
+                        "status",
+                        "message"
                       ]
                     },
                     {
@@ -51454,107 +48603,6 @@
               }
             }
           },
-          "400": {
-            "description": "400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "VALIDATION"
-                        },
-                        "status": {
-                          "const": 400
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "VALIDATION"
-                        },
-                        "data": {
-                          "type": "object",
-                          "properties": {
-                            "issues": {
-                              "type": "array",
-                              "items": {
-                                "type": "object",
-                                "properties": {
-                                  "code": {
-                                    "type": "string"
-                                  },
-                                  "path": {
-                                    "type": "array",
-                                    "items": {
-                                      "anyOf": [
-                                        {
-                                          "type": "string"
-                                        },
-                                        {
-                                          "type": "number"
-                                        }
-                                      ]
-                                    }
-                                  },
-                                  "message": {
-                                    "type": "string"
-                                  }
-                                },
-                                "required": [
-                                  "code",
-                                  "path",
-                                  "message"
-                                ],
-                                "additionalProperties": {}
-                              }
-                            }
-                          },
-                          "required": [
-                            "issues"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message",
-                        "data"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": false
-                        },
-                        "code": {
-                          "type": "string"
-                        },
-                        "status": {
-                          "type": "number"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
           "401": {
             "description": "401",
             "content": {
@@ -51741,31 +48789,6 @@
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -53120,97 +50143,12 @@
               }
             }
           },
-          "404": {
-            "description": "404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "NOT_FOUND"
-                        },
-                        "status": {
-                          "const": 404
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Not Found"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": false
-                        },
-                        "code": {
-                          "type": "string"
-                        },
-                        "status": {
-                          "type": "number"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
           "409": {
             "description": "409",
             "content": {
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -53621,107 +50559,6 @@
               }
             }
           },
-          "400": {
-            "description": "400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "VALIDATION"
-                        },
-                        "status": {
-                          "const": 400
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "VALIDATION"
-                        },
-                        "data": {
-                          "type": "object",
-                          "properties": {
-                            "issues": {
-                              "type": "array",
-                              "items": {
-                                "type": "object",
-                                "properties": {
-                                  "code": {
-                                    "type": "string"
-                                  },
-                                  "path": {
-                                    "type": "array",
-                                    "items": {
-                                      "anyOf": [
-                                        {
-                                          "type": "string"
-                                        },
-                                        {
-                                          "type": "number"
-                                        }
-                                      ]
-                                    }
-                                  },
-                                  "message": {
-                                    "type": "string"
-                                  }
-                                },
-                                "required": [
-                                  "code",
-                                  "path",
-                                  "message"
-                                ],
-                                "additionalProperties": {}
-                              }
-                            }
-                          },
-                          "required": [
-                            "issues"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message",
-                        "data"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": false
-                        },
-                        "code": {
-                          "type": "string"
-                        },
-                        "status": {
-                          "type": "number"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
           "401": {
             "description": "401",
             "content": {
@@ -53908,31 +50745,6 @@
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -54573,97 +51385,12 @@
               }
             }
           },
-          "404": {
-            "description": "404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "NOT_FOUND"
-                        },
-                        "status": {
-                          "const": 404
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Not Found"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": false
-                        },
-                        "code": {
-                          "type": "string"
-                        },
-                        "status": {
-                          "type": "number"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
           "409": {
             "description": "409",
             "content": {
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -55368,31 +52095,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -56054,31 +52756,6 @@
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -56775,31 +53452,6 @@
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -57542,31 +54194,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -58221,97 +54848,12 @@
               }
             }
           },
-          "404": {
-            "description": "404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "NOT_FOUND"
-                        },
-                        "status": {
-                          "const": 404
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Not Found"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": false
-                        },
-                        "code": {
-                          "type": "string"
-                        },
-                        "status": {
-                          "type": "number"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
           "409": {
             "description": "409",
             "content": {
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -59003,31 +55545,6 @@
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -59739,31 +56256,6 @@
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -60513,31 +57005,6 @@
                           "const": true
                         },
                         "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
                           "const": "IDEMPOTENCY_CONFLICT"
                         },
                         "status": {
@@ -61234,31 +57701,6 @@
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {

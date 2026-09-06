@@ -61,6 +61,7 @@ export const abandonRequestContract = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: ["NOT_FOUND"],
   audit: true,
   timeout: 10_000,
 });

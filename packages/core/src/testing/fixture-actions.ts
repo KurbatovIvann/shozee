@@ -42,6 +42,7 @@ const contractDefaults = {
   emits: [] as const,
   atomicCalls: [] as const,
   atomicCallers: [] as const,
+  errors: [],
 };
 
 type CrmRow = typeof fixtureCrmCustomers.$inferSelect;
@@ -170,6 +171,7 @@ export function createCorrectFixtureActions() {
       defineActionContract({
         ...contractDefaults,
         name: "kitFixture.getProduct",
+        errors: ["NOT_FOUND"],
         description: "Staff read of one product in the verified company.",
         principal: "staff",
         input: productInput,
@@ -203,6 +205,7 @@ export function createCorrectFixtureActions() {
       defineActionContract({
         ...contractDefaults,
         name: "kitFixture.getOwnCrm",
+        errors: ["NOT_FOUND"],
         description: "Customer read of an owned CRM record.",
         principal: "customer",
         input: crmInput,
@@ -226,6 +229,7 @@ export function createCorrectFixtureActions() {
       defineActionContract({
         ...contractDefaults,
         name: "kitFixture.getPublishedProduct",
+        errors: ["NOT_FOUND"],
         description: "Anonymous read of one published product.",
         principal: "public",
         publicScope: "target",
@@ -290,6 +294,7 @@ export function createCorrectFixtureActions() {
       defineActionContract({
         ...contractDefaults,
         name: "kitFixture.systemGetProduct",
+        errors: ["NOT_FOUND"],
         description: "Tenant-scoped system read of one company product.",
         principal: "system",
         transport: "internal",
@@ -416,6 +421,7 @@ export function createCorrectFixtureActions() {
       defineActionContract({
         ...contractDefaults,
         name: "kitFixture.getShared",
+        errors: ["NOT_FOUND"],
         description: "Read a document through a valid share token.",
         principal: "share",
         input: shareInput,
@@ -439,6 +445,7 @@ export function createCorrectFixtureActions() {
       defineActionContract({
         ...contractDefaults,
         name: "kitFixture.submitShare",
+        errors: ["NOT_FOUND"],
         description: "Persist a dual-signed container through a share token.",
         principal: "share",
         input: shareInput,

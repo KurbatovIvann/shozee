@@ -126,6 +126,7 @@ const writeContract = defineActionContract({
   emits: ["emitFixture.noteCreated", "emitFixture.noteArchived"],
   atomicCalls: [],
   atomicCallers: [],
+  errors: [],
   audit: true,
   timeout: 5_000,
 });
@@ -146,6 +147,7 @@ const readContract = defineActionContract({
   emits: ["emitFixture.noteCreated"],
   atomicCalls: [],
   atomicCallers: [],
+  errors: [],
   audit: false,
   timeout: 5_000,
 });
@@ -170,6 +172,7 @@ const sweepContract = defineActionContract({
   emits: ["emitFixture.sweepCompleted", "emitFixture.noteCreated"],
   atomicCalls: [],
   atomicCallers: [],
+  errors: [],
   audit: true,
   timeout: 5_000,
 });

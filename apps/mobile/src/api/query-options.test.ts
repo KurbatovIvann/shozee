@@ -29,6 +29,7 @@ const ping = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: [],
   audit: false,
   timeout: 5_000,
   permissions: ["sample:view"],

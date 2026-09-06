@@ -59,6 +59,7 @@ const writeDefaults = {
   emits: [] as const,
   atomicCalls: [] as const,
   atomicCallers: [] as const,
+  errors: [],
   audit: true,
   timeout: 5_000,
 };

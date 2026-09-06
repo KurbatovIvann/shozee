@@ -169,6 +169,7 @@ const emitCancelledThenFail = implementAction(
     emits: ["documents.cancelled"],
     atomicCalls: [],
     atomicCallers: [],
+    errors: ["CONFLICT"],
     audit: true,
     timeout: 5_000,
   }),

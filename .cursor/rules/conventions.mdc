@@ -28,7 +28,7 @@ alwaysApply: true
   - `index.ts` — exports **only** actions and events. Nothing else leaves the module.
   - `index.contract.ts` — exports only client-safe action descriptors for `packages/contract`.
   - Owned tables live in `packages/db/src/schema/<module>.ts` (ADR-0014); a module imports only its own schema file.
-- **Action metadata is mandatory**: every action declares `description`, `principal`, `transport`, `input`/`output` (Zod v4), `permissions`, `aiExposure`, `risk`, `requiresConfirmation`, `idempotent`, `emits`, `audit`, `timeout`; conditional metadata/resolvers from `docs/specs/core.md` are mandatory when applicable.
+- **Action metadata is mandatory**: every action declares `description`, `principal`, `transport`, `input`/`output` (Zod v4), `permissions`, `aiExposure`, `risk`, `requiresConfirmation`, `idempotent`, `emits`, `errors`, `audit`, `timeout`; conditional metadata/resolvers from `docs/specs/core.md` are mandatory when applicable.
 - **Errors**: typed error classes from `packages/core/errors`. Never `throw new Error("...")` in domain code.
 - **Validation**: Zod v4 schemas are the single source — form, API contract, AI tool, and DB boundary all derive from the same schema.
 - **DB access**: Drizzle only, and only inside action handlers, module services, or typed action target resolvers running under the core transaction. Tables are owned by exactly one module (defined in `packages/db/src/schema/<module>.ts`, ADR-0014).

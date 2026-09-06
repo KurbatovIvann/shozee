@@ -81,6 +81,7 @@ const contractDefaults = {
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: [],
   audit: false,
   timeout: 5_000,
   input: z.object({}),

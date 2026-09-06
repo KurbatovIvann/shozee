@@ -6,6 +6,7 @@ import { z } from "zod";
 import {
   buildContractRouter,
   ContractCompositionError,
+  toContractProcedure,
 } from "./contract-router.js";
 
 const readDefaults = {
@@ -16,6 +17,7 @@ const readDefaults = {
   emits: [] as const,
   atomicCalls: [] as const,
   atomicCallers: [] as const,
+  errors: [],
   audit: false,
   timeout: 5_000,
 };
@@ -86,6 +88,28 @@ describe("buildContractRouter", () => {
     expect(() => buildContractRouter({ catalog: { listThings } })).toThrow(
       /catalog.listThings/,
     );
+  });
+
+  it("attaches pipeline-universal errors plus declared domain codes", () => {
+    const getThing = defineActionContract({
+      ...readDefaults,
+      name: "sample.getThing",
+      description: "Get one sample thing.",
+      principal: "staff",
+      transport: "client",
+      input: z.object({ id: z.uuid() }),
+      output: z.object({ id: z.uuid() }),
+      permissions: ["sample:view"],
+      errors: ["NOT_FOUND"],
+    });
+    const procedure = toContractProcedure(getThing);
+    expect(isContractProcedure(procedure)).toBe(true);
+    const errorMap = procedure["~orpc"].errorMap;
+    expect(errorMap.NOT_FOUND).toBeDefined();
+    expect(errorMap.CONFIRMATION_REQUIRED).toBeDefined();
+    expect(errorMap.IDEMPOTENCY_CONFLICT).toBeDefined();
+    expect(errorMap.CONFLICT).toBeUndefined();
+    expect(errorMap.VALIDATION).toBeUndefined();
   });
 
   it("collects every problem instead of stopping at the first", () => {

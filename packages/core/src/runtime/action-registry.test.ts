@@ -30,6 +30,7 @@ function ordersGetContract(): ActionContract<typeof input, typeof output> {
     emits: [],
     atomicCalls: [],
     atomicCallers: [],
+    errors: ["NOT_FOUND"],
     audit: false,
     timeout: 5_000,
   });
@@ -153,6 +154,7 @@ describe("ActionRegistry — boot-time pairing validation (ADR-0016)", () => {
       defineActionContract({
         ...ordersGetContract(),
         name: "orders.list",
+        errors: ["VALIDATION"],
       }),
       { handler },
     );

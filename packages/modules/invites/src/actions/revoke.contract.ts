@@ -34,6 +34,7 @@ export const revokeInviteContract = defineActionContract({
   emits: ["invites.revoked"],
   atomicCalls: [],
   atomicCallers: [],
+  errors: ["NOT_FOUND"],
   audit: true,
   timeout: 5_000,
 });

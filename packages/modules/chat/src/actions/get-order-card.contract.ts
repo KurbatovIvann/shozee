@@ -37,6 +37,7 @@ export const getOrderCardContract = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: ["VALIDATION", "NOT_FOUND"],
   audit: false,
   timeout: 2_000,
 });

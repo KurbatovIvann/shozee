@@ -172,6 +172,7 @@ const placeContract = defineActionContract({
   emits: ["deliveryFixture.orderPlaced", "deliveryFixture.orderNoted"],
   atomicCalls: [],
   atomicCallers: [],
+  errors: [],
   audit: true,
   timeout: 5_000,
 });
@@ -206,6 +207,7 @@ const sweepContract = defineActionContract({
   emits: ["deliveryFixture.sweepCompleted"],
   atomicCalls: [],
   atomicCallers: [],
+  errors: [],
   audit: true,
   timeout: 5_000,
 });
@@ -248,6 +250,7 @@ const upsertCardContract = defineActionContract({
   emits: ["deliveryFixtureChat.cardUpserted"],
   atomicCalls: [],
   atomicCallers: [],
+  errors: [],
   audit: true,
   timeout: 5_000,
 });
@@ -287,6 +290,7 @@ const registerOrderContract = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: [],
   audit: true,
   timeout: 5_000,
 });
@@ -319,6 +323,7 @@ const recordSweepContract = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: [],
   audit: true,
   timeout: 5_000,
 });

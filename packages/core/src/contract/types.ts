@@ -8,6 +8,8 @@
  */
 import type { z } from "zod";
 
+import type { DeclaredErrorCode } from "./declared-error-codes.js";
+
 /** ADR-0013, ADR-0018, ADR-0020, ADR-0022 — exactly one mode per action. */
 export type ActionPrincipal =
   "staff" | "customer" | "public" | "system" | "consumer" | "account" | "share";
@@ -99,6 +101,16 @@ export interface ActionContractDefinition<
    */
   readonly emits: readonly string[];
   /**
+   * Domain error codes this action may let escape `executeAction`.
+   * Empty is a real answer and the common one. Only `VALIDATION`,
+   * `NOT_FOUND`, and `CONFLICT` are declarable — `INTERNAL` is a bug
+   * signal, and pipeline codes are universal. Runtime validation in
+   * `defineActionContract` is the authority; the input type stays a
+   * string array so rejection of undeclarable codes is testable without
+   * type suppressions.
+   */
+  readonly errors: readonly string[];
+  /**
    * ADR-0021 allowlist edges. `atomicCalls` lists internal atomic callees
    * this root action may invoke; `atomicCallers` lists root actions allowed
    * to invoke this internal callee. Both are usually `[]`; declaring them
@@ -129,7 +141,8 @@ export type ActionContract<
   TInput extends z.ZodType = z.ZodType,
   TOutput extends z.ZodType = z.ZodType,
   TPrincipal extends ActionPrincipal = ActionPrincipal,
-> = Readonly<ActionContractDefinition<TInput, TOutput>> & {
+> = Readonly<Omit<ActionContractDefinition<TInput, TOutput>, "errors">> & {
   readonly principal: TPrincipal;
+  readonly errors: readonly DeclaredErrorCode[];
   readonly [actionContractBrand]: true;
 };

@@ -54,6 +54,7 @@ const consumerContract = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: [],
   audit: true,
   timeout: 5_000,
 });
@@ -80,6 +81,7 @@ const wrongEverythingContract = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: [],
   audit: false,
   timeout: 5_000,
 });

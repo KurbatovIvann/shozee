@@ -171,7 +171,11 @@ Clients get a discriminated union typed by wire code — no string matching.
 Generated from the contract layer in CI and committed as an artifact
 (`packages/contract/openapi.json`); drift check like migrations. Action
 `description` doubles as the OpenAPI summary — one more reason it is
-written carefully (it also becomes the AI tool description).
+written carefully (it also becomes the AI tool description). Per-operation
+error responses come from `toContractProcedure`: pipeline-universal §4
+codes union the action's declared `errors` (`VALIDATION`, `NOT_FOUND`,
+`CONFLICT`). Shared HTTP statuses stay a oneOf — declaring `CONFLICT`
+does not replace `CONFIRMATION_REQUIRED` or `IDEMPOTENCY_CONFLICT` on 409.
 
 ## 6. Versioning policy
 
@@ -244,6 +248,7 @@ API consumers.
 
 ## Changelog
 
+| 2026-09-06 | §5: per-operation errors are pipeline-universal ∪ `contract.errors` on `toContractProcedure`; 409 stays a oneOf | SHO-485: replacing OpenAPI responses by status dropped confirmation/idempotency 409 codes | SHO-485 |
 | 2026-09-06 | Client apps may also import `@showzy/copy` (staff copy leaf) | Shared orders copy package (SHO-414) | SHO-414 |
 | 2026-08-19 | Seventh principal `share` (ADR-0022): client/OpenAPI mount, no-session dispatch, token in action input only, AI never lists share | HTTP dispatch for unauthenticated capability-token writes; core.md already amended | owner via `/rework-spec contract.md` |
 | 2026-08-19 | Status: Active; Active surface: entire file | Ledger catch-up: first merged packages/contract (fnd-T23…T25) | owner via spec-process-after-phase-0 |

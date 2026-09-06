@@ -74,6 +74,7 @@ export const renderPdfContract = defineActionContract({
   emits: [],
   atomicCalls: ["files.recordGeneratedObject"],
   atomicCallers: [],
+  errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
   audit: true,
   timeout: 30_000,
 });

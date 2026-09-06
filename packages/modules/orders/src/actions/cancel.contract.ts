@@ -36,6 +36,7 @@ export const cancelOrderContract = defineActionContract({
   emits: ["orders.canceled"],
   atomicCalls: [],
   atomicCallers: [],
+  errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
   audit: true,
   timeout: 5_000,
 });

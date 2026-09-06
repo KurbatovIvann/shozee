@@ -45,6 +45,7 @@ const contractDefaults = {
   requiresConfirmation: false,
   atomicCalls: [] as const,
   atomicCallers: [] as const,
+  errors: [],
 };
 
 const acceptThenFail = implementAction(
@@ -71,6 +72,7 @@ const acceptThenFail = implementAction(
     emits: ["invites.accepted"],
     atomicCalls: ["customers.applyInviteCrm"],
     atomicCallers: [],
+    errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
     audit: true,
     timeout: 10_000,
   }),
@@ -164,6 +166,7 @@ const mismatchStock = implementAction(
     idempotent: false,
     emits: [],
     atomicCallers: ["kitOrders.confirmMismatch"],
+    errors: [],
     audit: true,
     timeout: 5_000,
   }),
@@ -214,6 +217,7 @@ const nestedCallee = implementAction(
     idempotent: false,
     emits: [],
     atomicCallers: ["kitOrders.confirmNested"],
+    errors: [],
     audit: true,
     timeout: 5_000,
   }),

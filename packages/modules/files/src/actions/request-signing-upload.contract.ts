@@ -40,6 +40,7 @@ export const requestSigningUploadContract = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: ["VALIDATION"],
   audit: true,
   timeout: 5_000,
 });

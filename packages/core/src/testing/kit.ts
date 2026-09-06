@@ -62,6 +62,7 @@ import type {
   TargetResolutionEnv,
   TargetResolver,
 } from "../runtime/types.js";
+import { checkInvokeActionError } from "./declared-errors.js";
 import { kitIdentities, type KitIdentities } from "./identities.js";
 import {
   kitShareDocuments,
@@ -425,12 +426,17 @@ export async function invokeAction<
       : {}),
     ...options.request,
   };
-  return executeAction(options.deps ?? kit.pipeline, {
-    action,
-    input,
-    request,
-    principal: principalInvocation(contract.principal, actor, contract),
-  });
+  try {
+    return await executeAction(options.deps ?? kit.pipeline, {
+      action,
+      input,
+      request,
+      principal: principalInvocation(contract.principal, actor, contract),
+    });
+  } catch (error) {
+    checkInvokeActionError(contract, error);
+    throw error;
+  }
 }
 
 function principalInvocation(

@@ -55,6 +55,7 @@ export const completeSigningContract = defineActionContract({
   emits: ["docSigning.recorded"],
   atomicCalls: ["files.recordSigningObject"],
   atomicCallers: [],
+  errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
   audit: true,
   timeout: COMPLETE_SIGNING_TIMEOUT_MS,
 });

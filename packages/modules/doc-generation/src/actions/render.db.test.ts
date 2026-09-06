@@ -161,6 +161,7 @@ const contractDefaults = {
   requiresConfirmation: false,
   atomicCalls: [] as const,
   atomicCallers: [] as const,
+  errors: [],
 };
 
 const emitCreatedThenFail = implementAction(
@@ -180,6 +181,7 @@ const emitCreatedThenFail = implementAction(
     emits: ["documents.created"],
     atomicCalls: [],
     atomicCallers: [],
+    errors: ["CONFLICT"],
     audit: true,
     timeout: 5_000,
   }),
@@ -236,6 +238,7 @@ const recordThenMaybeFail = implementAction(
     emits: [],
     atomicCalls: ["files.recordGeneratedObject"],
     atomicCallers: [],
+    errors: ["NOT_FOUND", "CONFLICT"],
     audit: true,
     timeout: 15_000,
   }),
@@ -335,6 +338,7 @@ const mismatchStock = implementAction(
     idempotent: false,
     emits: [],
     atomicCallers: ["kitOrders.confirmMismatch"],
+    errors: [],
     audit: true,
     timeout: 5_000,
   }),
@@ -385,6 +389,7 @@ const nestedCallee = implementAction(
     idempotent: false,
     emits: [],
     atomicCallers: ["kitOrders.confirmNested"],
+    errors: [],
     audit: true,
     timeout: 5_000,
   }),

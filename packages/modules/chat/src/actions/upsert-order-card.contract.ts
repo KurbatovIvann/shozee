@@ -69,6 +69,7 @@ export const upsertOrderCardContract = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: ["NOT_FOUND"],
   audit: true,
   timeout: 5_000,
 });

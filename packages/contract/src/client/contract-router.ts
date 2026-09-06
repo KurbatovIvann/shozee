@@ -15,7 +15,7 @@ import { oc } from "@orpc/contract";
 import type { ActionContract } from "@showzy/core/contract";
 import type { z } from "zod";
 
-import { wireErrorDefinitions } from "./wire-errors.js";
+import { procedureErrorDefinitions } from "./wire-errors.js";
 
 /**
  * Thrown when the composition violates contract.md §2 at build time. A
@@ -47,15 +47,17 @@ export interface ContractModuleMap {
 
 /**
  * One descriptor → one oRPC contract procedure: the action's own Zod
- * schemas, the §4 wire-error map, and the description as the OpenAPI/AI
- * summary (contract.md §5).
+ * schemas, pipeline-universal §4 errors union `contract.errors`, and the
+ * description as the OpenAPI/AI summary (contract.md §5). OpenAPI and the
+ * typed client both derive from this map — do not post-process responses
+ * by HTTP status.
  */
 export function toContractProcedure<
   TInput extends z.ZodType,
   TOutput extends z.ZodType,
 >(contract: ActionContract<TInput, TOutput>) {
   return oc
-    .errors(wireErrorDefinitions)
+    .errors(procedureErrorDefinitions(contract.errors))
     .route({ summary: contract.description })
     .input(contract.input)
     .output(contract.output);

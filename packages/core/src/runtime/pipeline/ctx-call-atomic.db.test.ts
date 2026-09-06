@@ -299,6 +299,7 @@ const contractDefaults = {
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: [],
 } as const;
 
 const stockAdjusted = defineEvent({
@@ -344,6 +345,7 @@ const decrementStock = implementAction(
     audit: true,
     emits: ["atomCatalog.stockAdjusted"],
     atomicCallers: ["atomOrders.confirm"],
+    errors: [],
     timeout: 5_000,
   }),
   {
@@ -745,6 +747,7 @@ describe("edge enforcement (ADR-0021)", () => {
         risk: "write",
         audit: true,
         atomicCallers: ["atomSysOrders.sweep"],
+        errors: [],
         timeout: 5_000,
       }),
       {
@@ -876,6 +879,7 @@ describe("tenant scope on customer atomic edges", () => {
         risk: "write",
         audit: true,
         atomicCallers: ["atomCheckout.create"],
+        errors: [],
         timeout: 5_000,
       }),
       {
@@ -963,6 +967,7 @@ describe("one atomic edge below the root", () => {
         risk: "write",
         audit: true,
         atomicCallers: ["atomOrders.confirmTwice"],
+        errors: [],
         timeout: 5_000,
       }),
       {
@@ -1045,6 +1050,7 @@ describe("one atomic edge below the root", () => {
         risk: "write",
         audit: true,
         atomicCallers: ["atomOrders.confirmCascade"],
+        errors: [],
         timeout: 5_000,
       }),
       {
@@ -1178,6 +1184,7 @@ describe("one atomic edge below the root", () => {
         risk: "write",
         audit: true,
         atomicCallers: ["atomOrders.confirmChain"],
+        errors: [],
         timeout: 5_000,
       }),
       {
@@ -1254,6 +1261,7 @@ describe("callee validation and the escaped-context guard", () => {
         risk: "write",
         audit: true,
         atomicCallers: ["atomOrders.confirmMisreport"],
+        errors: [],
         timeout: 5_000,
       }),
       {

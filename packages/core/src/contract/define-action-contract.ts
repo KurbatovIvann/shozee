@@ -8,6 +8,11 @@
  */
 import { z } from "zod";
 
+import {
+  DECLARED_ERROR_CODES,
+  isDeclaredErrorCode,
+  undeclarableErrorReason,
+} from "./declared-error-codes.js";
 import { moduleOf } from "./module-of.js";
 import type {
   ActionContract,
@@ -128,6 +133,7 @@ function collectDefinitionProblems(
   }
 
   validateEmits(definition, problems);
+  validateErrors(definition, problems);
   validateAtomicEdges(definition, problems);
 
   if (!Number.isInteger(definition.timeout) || definition.timeout <= 0) {
@@ -337,6 +343,32 @@ function validateEmits(
   }
   if (hasDuplicates(definition.emits)) {
     problems.push("emits must not contain duplicates");
+  }
+}
+
+/**
+ * Rejects INTERNAL, pipeline-only codes, duplicates, and unknown strings.
+ * Empty is a real answer. Registry-wide caller-superset is contract-check.
+ */
+function validateErrors(
+  definition: ActionContractDefinition,
+  problems: string[],
+): void {
+  const { errors } = definition;
+  if (hasDuplicates(errors)) {
+    problems.push("errors must not contain duplicates");
+  }
+  for (const code of errors) {
+    const undeclarable = undeclarableErrorReason(code);
+    if (undeclarable !== undefined) {
+      problems.push(`errors must not include "${code}": ${undeclarable}`);
+      continue;
+    }
+    if (!isDeclaredErrorCode(code)) {
+      problems.push(
+        `error code "${code}" is not declarable — declared errors are ${DECLARED_ERROR_CODES.join(", ")}`,
+      );
+    }
   }
 }
 
