@@ -118,6 +118,7 @@ export async function applyInviteCrmRecord(env: {
           userId,
           groupId,
           priceListId,
+          createdVia: ctx.channel,
         })
         .returning({ id: companyCustomers.id })
     )[0];

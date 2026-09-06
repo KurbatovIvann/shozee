@@ -29,6 +29,8 @@ import { products, productVariants } from "./catalog.js";
 import { counterparties } from "./customers.js";
 import { orders } from "./orders.js";
 import {
+  recordProvenanceChecks,
+  recordProvenanceColumns,
   tenantCompanyId,
   tenantRowUnique,
   timestampColumns,
@@ -59,6 +61,7 @@ export const documents = pgTable(
     templateSource: text("template_source").notNull().default("system"),
     templateName: text("template_name").notNull(),
     ...timestampColumns(),
+    ...recordProvenanceColumns(),
     signRequestedAt: timestamp("sign_requested_at", { withTimezone: true }),
     /**
      * Optional create-time «Підстава» (SHO-365). Snapshot string, not an
@@ -118,6 +121,7 @@ export const documents = pgTable(
       "documents_basis_check",
       sql`${table.basis} IS NULL OR char_length(${table.basis}) BETWEEN 1 AND 500`,
     ),
+    ...recordProvenanceChecks("documents", table),
   ],
 );
 

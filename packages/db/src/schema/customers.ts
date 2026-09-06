@@ -22,6 +22,8 @@ import { userIdColumn } from "./auth-ids.js";
 import { user } from "./auth.js";
 import { priceLists } from "./pricing.js";
 import {
+  recordProvenanceChecks,
+  recordProvenanceColumns,
   tenantCompanyId,
   tenantRowUnique,
   timestampColumns,
@@ -43,6 +45,7 @@ export const customerGroups = pgTable(
     sortOrder: integer("sort_order").notNull().default(0),
     priceListId: uuid("price_list_id"),
     ...timestampColumns(),
+    ...recordProvenanceColumns(),
   },
   (table) => [
     tenantRowUnique("customer_groups_company_id_id_uq", table),
@@ -61,6 +64,7 @@ export const customerGroups = pgTable(
         return [priceLists.companyId, priceLists.id];
       },
     }).onDelete("set null"),
+    ...recordProvenanceChecks("customer_groups", table),
   ],
 );
 
@@ -85,6 +89,7 @@ export const companyCustomers = pgTable(
     groupId: uuid("group_id"),
     priceListId: uuid("price_list_id"),
     ...timestampColumns(),
+    ...recordProvenanceColumns(),
   },
   (table) => [
     tenantRowUnique("company_customers_company_id_id_uq", table),
@@ -145,6 +150,7 @@ export const companyCustomers = pgTable(
       "company_customers_contact_check",
       sql`${table.phone} IS NOT NULL OR ${table.email} IS NOT NULL OR ${table.userId} IS NOT NULL`,
     ),
+    ...recordProvenanceChecks("company_customers", table),
   ],
 );
 
@@ -169,6 +175,7 @@ export const counterparties = pgTable(
     email: text("email"),
     notes: text("notes"),
     ...timestampColumns(),
+    ...recordProvenanceColumns(),
   },
   (table) => [
     tenantRowUnique("counterparties_company_id_id_uq", table),
@@ -189,6 +196,7 @@ export const counterparties = pgTable(
       columns: [table.companyId, table.customerId],
       foreignColumns: [companyCustomers.companyId, companyCustomers.id],
     }).onDelete("set null"),
+    ...recordProvenanceChecks("counterparties", table),
   ],
 );
 

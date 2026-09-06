@@ -327,6 +327,9 @@ describe("documents schema slice", () => {
       "updated_at",
       "sign_requested_at",
       "basis",
+      "created_via",
+      "vouched_by",
+      "vouched_at",
     ]);
     expect(byTableColumn.get("documents.sign_requested_at")?.data_type).toBe(
       "timestamp with time zone",

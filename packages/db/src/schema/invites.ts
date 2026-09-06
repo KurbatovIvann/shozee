@@ -25,6 +25,8 @@ import { user } from "./auth.js";
 import { companyCustomers, customerGroups } from "./customers.js";
 import { priceLists } from "./pricing.js";
 import {
+  recordProvenanceChecks,
+  recordProvenanceColumns,
   tenantCompanyId,
   tenantRowUnique,
   timestampColumns,
@@ -56,6 +58,7 @@ export const companyCustomerInvites = pgTable(
     phone: text("phone"),
     email: text("email"),
     ...timestampColumns(),
+    ...recordProvenanceColumns(),
   },
   (table) => [
     tenantRowUnique("company_customer_invites_company_id_id_uq", table),
@@ -114,6 +117,7 @@ export const companyCustomerInvites = pgTable(
       "company_customer_invites_personal_check",
       sql`${table.isReusable} = true OR (${table.maxUses} IS NOT NULL AND ${table.maxUses} = 1)`,
     ),
+    ...recordProvenanceChecks("company_customer_invites", table),
   ],
 );
 

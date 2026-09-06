@@ -362,6 +362,33 @@ describe("catalog.createVariant", () => {
   });
 });
 
+describe("catalog.createVariant provenance (SHO-465)", () => {
+  it("stores ctx.channel and leaves vouched columns null", async () => {
+    const viaUi = await kit.invoke(
+      createVariant,
+      { productId: fixtures.productA, name: "Provenance UI variant" },
+      {},
+      { request: { channel: "ui" } },
+    );
+    const viaAi = await kit.invoke(
+      createVariant,
+      { productId: fixtures.productA, name: "Provenance AI variant" },
+      {},
+      { request: { channel: "ai", aiTraceId: "sho-465-variant" } },
+    );
+    expect(await variantRow(viaUi.variantId)).toMatchObject({
+      createdVia: "ui",
+      vouchedBy: null,
+      vouchedAt: null,
+    });
+    expect(await variantRow(viaAi.variantId)).toMatchObject({
+      createdVia: "ai",
+      vouchedBy: null,
+      vouchedAt: null,
+    });
+  });
+});
+
 describe("catalog.updateVariant", () => {
   it("updates name and override, can clear the override, and audits once", async () => {
     const created = await kit.invoke(createVariant, {

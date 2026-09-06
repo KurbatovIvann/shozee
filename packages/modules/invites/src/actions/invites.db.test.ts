@@ -787,3 +787,30 @@ describe("invites.create / list / get / revoke", () => {
     ).rejects.toBeInstanceOf(NotFoundError);
   });
 });
+
+describe("invites.create provenance (SHO-465)", () => {
+  it("stores ctx.channel and leaves vouched columns null", async () => {
+    const viaUi = await kit.invoke(
+      createInvite,
+      { isReusable: true, expiresAt: futureExpiry },
+      {},
+      { request: { channel: "ui" } },
+    );
+    const viaAi = await kit.invoke(
+      createInvite,
+      { isReusable: true, expiresAt: futureExpiry },
+      {},
+      { request: { channel: "ai", aiTraceId: "sho-465-invite" } },
+    );
+    expect(await inviteRow(viaUi.id)).toMatchObject({
+      createdVia: "ui",
+      vouchedBy: null,
+      vouchedAt: null,
+    });
+    expect(await inviteRow(viaAi.id)).toMatchObject({
+      createdVia: "ai",
+      vouchedBy: null,
+      vouchedAt: null,
+    });
+  });
+});

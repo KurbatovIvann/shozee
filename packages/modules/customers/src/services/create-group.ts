@@ -52,6 +52,7 @@ export async function createStaffGroup(env: {
     name: input.name,
     description: storedDescription(input.description),
     priceListId: storedPriceListId(priceListId),
+    createdVia: ctx.channel,
   });
 
   ctx.log.info({ group_id: row.id }, "customers.createGroup created group");
@@ -66,6 +67,7 @@ async function insertGroupWithAllocatedSlug(
     readonly name: string;
     readonly description: string | null;
     readonly priceListId: string | null;
+    readonly createdVia: StaffCtx["channel"];
   },
 ): Promise<{
   id: string;
@@ -91,6 +93,7 @@ async function insertGroupWithAllocatedSlug(
           description: values.description,
           sortOrder: 0,
           priceListId: values.priceListId,
+          createdVia: values.createdVia,
         })
         .returning(groupReturning)
     )[0];

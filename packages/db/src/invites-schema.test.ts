@@ -222,6 +222,9 @@ describe("customer invite schema slice", () => {
       "email",
       "created_at",
       "updated_at",
+      "created_via",
+      "vouched_by",
+      "vouched_at",
     ]);
     for (const row of invites.rows) {
       if (row.column_name.endsWith("_at")) {

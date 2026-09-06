@@ -23,6 +23,8 @@ import {
 import { products, productVariants } from "./catalog.js";
 import { companyCustomers } from "./customers.js";
 import {
+  recordProvenanceChecks,
+  recordProvenanceColumns,
   tenantCompanyId,
   tenantRowUnique,
   timestampColumns,
@@ -58,6 +60,7 @@ export const orders = pgTable(
     currency: char("currency", { length: 3 }).notNull().default("UAH"),
     confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
     ...timestampColumns(),
+    ...recordProvenanceColumns(),
   },
   (table) => [
     tenantRowUnique("orders_company_id_id_uq", table),
@@ -115,6 +118,7 @@ export const orders = pgTable(
     check("orders_total_tax_minor_check", sql`${table.totalTaxMinor} >= 0`),
     check("orders_total_gross_minor_check", sql`${table.totalGrossMinor} >= 0`),
     check("orders_currency_check", sql`${table.currency} ~ '^[A-Z]{3}$'`),
+    ...recordProvenanceChecks("orders", table),
   ],
 );
 

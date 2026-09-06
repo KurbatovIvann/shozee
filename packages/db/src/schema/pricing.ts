@@ -22,6 +22,8 @@ import {
 import { products, productVariants } from "./catalog.js";
 import { companyCustomers } from "./customers.js";
 import {
+  recordProvenanceChecks,
+  recordProvenanceColumns,
   tenantCompanyId,
   tenantRowUnique,
   timestampColumns,
@@ -41,6 +43,7 @@ export const priceLists = pgTable(
     isActive: boolean("is_active").notNull().default(true),
     isDefault: boolean("is_default").notNull().default(false),
     ...timestampColumns(),
+    ...recordProvenanceColumns(),
   },
   (table) => [
     tenantRowUnique("price_lists_company_id_id_uq", table),
@@ -51,6 +54,7 @@ export const priceLists = pgTable(
       "price_lists_name_length_check",
       sql`char_length(${table.name}) BETWEEN 1 AND 120`,
     ),
+    ...recordProvenanceChecks("price_lists", table),
   ],
 );
 

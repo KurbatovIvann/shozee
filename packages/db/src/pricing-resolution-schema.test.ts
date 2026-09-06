@@ -230,6 +230,9 @@ describe("price resolution schema slice", () => {
       "updated_at",
       "name",
       "status",
+      "created_via",
+      "vouched_by",
+      "vouched_at",
     ]);
     expect(columns.get("product_variants")).toEqual([
       "id",
@@ -241,6 +244,9 @@ describe("price resolution schema slice", () => {
       "updated_at",
       "name",
       "status",
+      "created_via",
+      "vouched_by",
+      "vouched_at",
     ]);
     expect(columns.get("customer_groups")).toEqual([
       "id",
@@ -252,6 +258,9 @@ describe("price resolution schema slice", () => {
       "slug",
       "description",
       "sort_order",
+      "created_via",
+      "vouched_by",
+      "vouched_at",
     ]);
     expect(columns.get("company_customers")).toEqual([
       "id",
@@ -266,6 +275,9 @@ describe("price resolution schema slice", () => {
       "user_id",
       "notes",
       "status",
+      "created_via",
+      "vouched_by",
+      "vouched_at",
     ]);
     expect(columns.get("price_lists")).toEqual([
       "id",
@@ -275,6 +287,9 @@ describe("price resolution schema slice", () => {
       "created_at",
       "updated_at",
       "name",
+      "created_via",
+      "vouched_by",
+      "vouched_at",
     ]);
     expect(columns.get("price_list_entries")).toEqual([
       "id",

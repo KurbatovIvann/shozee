@@ -2113,6 +2113,60 @@ describe("orders.create reference resolve (SHO-352)", () => {
   });
 });
 
+describe("orders.create provenance (SHO-465)", () => {
+  async function orderProvenance(orderId: string) {
+    const rows = await kit.db.runtime.db
+      .select({
+        createdVia: orders.createdVia,
+        vouchedBy: orders.vouchedBy,
+        vouchedAt: orders.vouchedAt,
+      })
+      .from(orders)
+      .where(eq(orders.id, orderId));
+    return rows[0];
+  }
+
+  it("stores ctx.channel on the header and leaves vouched columns null", async () => {
+    const viaUi = await kit.invoke(
+      createOrder,
+      createById(fixtures.customerBare, [{ productId: fixtures.pZero }]),
+      {},
+      { request: { channel: "ui" } },
+    );
+    const viaAi = await kit.invoke(
+      createOrder,
+      createById(fixtures.customerBare, [{ productId: fixtures.pZero }]),
+      {},
+      { request: { channel: "ai", aiTraceId: "sho-465-orders" } },
+    );
+    expect(await orderProvenance(viaUi.orderId)).toEqual({
+      createdVia: "ui",
+      vouchedBy: null,
+      vouchedAt: null,
+    });
+    expect(await orderProvenance(viaAi.orderId)).toEqual({
+      createdVia: "ai",
+      vouchedBy: null,
+      vouchedAt: null,
+    });
+  });
+
+  it("does not change created_via on confirm", async () => {
+    const created = await kit.invoke(
+      createOrder,
+      createById(fixtures.customerBare, [{ productId: fixtures.pZero }]),
+      {},
+      { request: { channel: "ai", aiTraceId: "sho-465-confirm" } },
+    );
+    await kit.invoke(confirmOrder, { orderId: created.orderId });
+    expect(await orderProvenance(created.orderId)).toMatchObject({
+      createdVia: "ai",
+      vouchedBy: null,
+      vouchedAt: null,
+    });
+  });
+});
+
 describe("orders.create variantSelection (SHO-406)", () => {
   it("creates a zero-variant simple product with omit, unspecified, or base as variantId null", async () => {
     const omitted = await kit.invoke(

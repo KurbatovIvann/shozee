@@ -32,6 +32,7 @@ export async function createStaffProduct(env: {
     name: input.name,
     basePriceMinor: moneyFromCanonical(input.basePriceMinor),
     currency: input.currency,
+    createdVia: ctx.channel,
   });
 
   const insertedVariants: {
@@ -58,6 +59,7 @@ export async function createStaffProduct(env: {
         name: variant.name,
         basePriceMinor: price.basePriceMinor,
         currency: price.currency,
+        createdVia: ctx.channel,
       };
     });
     await db.insert(productVariants).values(values);

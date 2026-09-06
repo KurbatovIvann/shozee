@@ -539,6 +539,51 @@ describe("customers.createCustomer", () => {
   });
 });
 
+describe("customers.createCustomer provenance (SHO-465)", () => {
+  it("stores ctx.channel and leaves vouched columns null", async () => {
+    const viaUi = await kit.invoke(
+      createCustomer,
+      { name: "Provenance UI", phone: "+380501000101" },
+      {},
+      { request: { channel: "ui" } },
+    );
+    const viaAi = await kit.invoke(
+      createCustomer,
+      { name: "Provenance AI", phone: "+380501000102" },
+      {},
+      { request: { channel: "ai", aiTraceId: "sho-465-customer" } },
+    );
+    const rows = await kit.db.runtime.db
+      .select({
+        id: companyCustomers.id,
+        createdVia: companyCustomers.createdVia,
+        vouchedBy: companyCustomers.vouchedBy,
+        vouchedAt: companyCustomers.vouchedAt,
+      })
+      .from(companyCustomers)
+      .where(eq(companyCustomers.id, viaUi.id));
+    const aiRows = await kit.db.runtime.db
+      .select({
+        createdVia: companyCustomers.createdVia,
+        vouchedBy: companyCustomers.vouchedBy,
+        vouchedAt: companyCustomers.vouchedAt,
+      })
+      .from(companyCustomers)
+      .where(eq(companyCustomers.id, viaAi.id));
+    expect(rows[0]).toEqual({
+      id: viaUi.id,
+      createdVia: "ui",
+      vouchedBy: null,
+      vouchedAt: null,
+    });
+    expect(aiRows[0]).toEqual({
+      createdVia: "ai",
+      vouchedBy: null,
+      vouchedAt: null,
+    });
+  });
+});
+
 describe("customers.updateCustomer", () => {
   it("changes name, reassigns and clears group, sets and clears price list", async () => {
     const created = await kit.invoke(createCustomer, {

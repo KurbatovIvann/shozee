@@ -20,6 +20,8 @@ import {
 
 import { files } from "./files.js";
 import {
+  recordProvenanceChecks,
+  recordProvenanceColumns,
   tenantCompanyId,
   tenantRowUnique,
   timestampColumns,
@@ -36,6 +38,7 @@ export const products = pgTable(
     currency: char("currency", { length: 3 }).notNull().default("UAH"),
     status: text("status").notNull().default("active"),
     ...timestampColumns(),
+    ...recordProvenanceColumns(),
   },
   (table) => [
     tenantRowUnique("products_company_id_id_uq", table),
@@ -55,6 +58,7 @@ export const products = pgTable(
       sql`${table.status} IN ('active', 'archived')`,
     ),
     check("products_currency_check", sql`${table.currency} ~ '^[A-Z]{3}$'`),
+    ...recordProvenanceChecks("products", table),
   ],
 );
 
@@ -75,6 +79,7 @@ export const productVariants = pgTable(
     currency: char("currency", { length: 3 }),
     status: text("status").notNull().default("active"),
     ...timestampColumns(),
+    ...recordProvenanceColumns(),
   },
   (table) => [
     tenantRowUnique("product_variants_company_id_id_uq", table),
@@ -100,6 +105,7 @@ export const productVariants = pgTable(
       "product_variants_status_check",
       sql`${table.status} IN ('active', 'archived')`,
     ),
+    ...recordProvenanceChecks("product_variants", table),
   ],
 );
 

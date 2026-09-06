@@ -60,6 +60,7 @@ export async function createStaffInvite(env: {
           name: nullableText(input.name),
           phone: nullableText(input.phone),
           email: nullableText(input.email),
+          createdVia: ctx.channel,
         })
         .returning({
           id: companyCustomerInvites.id,

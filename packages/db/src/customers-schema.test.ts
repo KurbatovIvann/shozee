@@ -165,6 +165,9 @@ describe("customers CRM schema slice", () => {
       "slug",
       "description",
       "sort_order",
+      "created_via",
+      "vouched_by",
+      "vouched_at",
     ]);
 
     const customers = await admin.query<{
@@ -191,6 +194,9 @@ describe("customers CRM schema slice", () => {
       "user_id",
       "notes",
       "status",
+      "created_via",
+      "vouched_by",
+      "vouched_at",
     ]);
     const status = customers.rows.find((row) => row.column_name === "status");
     expect(status?.data_type).toBe("text");
@@ -247,6 +253,9 @@ describe("customers CRM schema slice", () => {
       "notes",
       "created_at",
       "updated_at",
+      "created_via",
+      "vouched_by",
+      "vouched_at",
     ]);
     expect(faces.rows.map((row) => row.column_name)).not.toContain("user_id");
     expect(faces.rows.map((row) => row.column_name)).not.toContain("group_id");

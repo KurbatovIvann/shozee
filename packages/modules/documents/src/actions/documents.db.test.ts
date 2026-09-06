@@ -913,3 +913,64 @@ describe("documents.createFromOrder", () => {
     ).rejects.toBeInstanceOf(ValidationError);
   });
 });
+
+describe("documents.createFromOrder provenance (SHO-465)", () => {
+  it("stores ctx.channel and leaves vouched columns null", async () => {
+    const orderUi = randomUUID();
+    const orderAi = randomUUID();
+    await insertSeedOrder({
+      id: orderUi,
+      itemId: randomUUID(),
+      companyId: kitIdentities.companies.a,
+      customerId: fixtures.customerA,
+      productId: fixtures.productA,
+      status: "new",
+    });
+    await insertSeedOrder({
+      id: orderAi,
+      itemId: randomUUID(),
+      companyId: kitIdentities.companies.a,
+      customerId: fixtures.customerA,
+      productId: fixtures.productA,
+      status: "new",
+    });
+    const viaUi = await kit.invoke(
+      createFromOrder,
+      { orderId: orderUi, type: "payment_invoice" },
+      {},
+      { request: { channel: "ui" } },
+    );
+    const viaAi = await kit.invoke(
+      createFromOrder,
+      { orderId: orderAi, type: "payment_invoice" },
+      {},
+      { request: { channel: "ai", aiTraceId: "sho-465-document" } },
+    );
+    const uiRow = await kit.db.runtime.db
+      .select({
+        createdVia: documents.createdVia,
+        vouchedBy: documents.vouchedBy,
+        vouchedAt: documents.vouchedAt,
+      })
+      .from(documents)
+      .where(eq(documents.id, viaUi.documentId));
+    const aiRow = await kit.db.runtime.db
+      .select({
+        createdVia: documents.createdVia,
+        vouchedBy: documents.vouchedBy,
+        vouchedAt: documents.vouchedAt,
+      })
+      .from(documents)
+      .where(eq(documents.id, viaAi.documentId));
+    expect(uiRow[0]).toEqual({
+      createdVia: "ui",
+      vouchedBy: null,
+      vouchedAt: null,
+    });
+    expect(aiRow[0]).toEqual({
+      createdVia: "ai",
+      vouchedBy: null,
+      vouchedAt: null,
+    });
+  });
+});
