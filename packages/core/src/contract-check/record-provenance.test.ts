@@ -16,8 +16,11 @@ import { implementAction } from "../runtime/implement-action.js";
 import type { ContractCheckInput } from "./contract-check.js";
 import { runContractCheck } from "./contract-check.js";
 import {
+  collectRecordProvenanceProblems,
+  deriveRecordProvenanceRequirements,
   RECORD_PROVENANCE_CREATE_EXCLUSIONS,
   RECORD_PROVENANCE_PHYSICAL_TABLE_ALIASES,
+  type RecordProvenanceRequirement,
   type SchemaTableRef,
 } from "./record-provenance.js";
 import { type SuiteCoverageManifest } from "./suite-coverage.js";
@@ -333,3 +336,244 @@ describe("contract check — record provenance on AI-exposed creates (SHO-467)",
     ]);
   });
 });
+
+const MISSING_TABLE_MESSAGE =
+  'action "widgets.create": AI-exposed create requires provenance columns on table "widgets", but no matching table was found in the schema catalog for module "widgets". Add the table with recordProvenanceColumns() / recordProvenanceChecks(), or add "widgets" to RECORD_PROVENANCE_CREATE_EXCLUSIONS if this create is a deliberate exclusion (SHO-464).';
+
+function collectProblems(
+  contracts: readonly ActionContract[],
+  schemaTables: readonly SchemaTableRef[],
+): string[] {
+  const problems: string[] = [];
+  collectRecordProvenanceProblems(contracts, schemaTables, problems);
+  return problems;
+}
+
+function fixtureHasProvenance(table: SchemaTableRef): boolean {
+  const names = new Set(table.columns.map((column) => column.name));
+  return (
+    names.has("created_via") &&
+    names.has("vouched_by") &&
+    names.has("vouched_at") &&
+    table.checks.some(
+      (check) => check.name === `${table.name}_created_via_check`,
+    )
+  );
+}
+
+function actionFromProblem(problem: string): string {
+  const match = /^action "([^"]+)"/.exec(problem);
+  expect(match?.[1]).toBeTruthy();
+  return match?.[1] ?? "";
+}
+
+describe("contract check — record provenance resolution (SHO-488)", () => {
+  it("adding a third alias map entry changes which table a fixture action resolves to", () => {
+    const contracts = [writeCreate("widgets.createToken")];
+    const schemaTables = [emptyTable("token_store", "widgets")];
+    const without = deriveRecordProvenanceRequirements(contracts, schemaTables);
+    expect(without).toEqual([
+      {
+        action: "widgets.createToken",
+        module: "widgets",
+        table: "tokens",
+        stem: "token",
+        resolution: "missing",
+      },
+    ]);
+
+    const aliases = {
+      ...RECORD_PROVENANCE_PHYSICAL_TABLE_ALIASES,
+      tokens: "token_store",
+    };
+    const withAlias = deriveRecordProvenanceRequirements(
+      contracts,
+      schemaTables,
+      aliases,
+    );
+    expect(withAlias).toEqual([
+      {
+        action: "widgets.createToken",
+        module: "widgets",
+        table: "token_store",
+        stem: "token",
+        resolution: "found",
+        resolvedTable: schemaTables[0],
+      },
+    ]);
+  });
+
+  it("two suffix matches produce a problem naming both candidates even when the shorter table is complete", () => {
+    const contracts = [writeCreate("orders.createItem")];
+    const schemaTables = [
+      provenanceTable("order_items", "orders"),
+      emptyTable("document_items", "orders"),
+    ];
+    const requirements = deriveRecordProvenanceRequirements(
+      contracts,
+      schemaTables,
+    );
+    expect(requirements).toHaveLength(1);
+    const requirement = requirements[0];
+    expect(requirement?.resolution).toBe("ambiguous");
+    expect(requirement?.stem).toBe("item");
+    expect(requirement?.action).toBe("orders.createItem");
+    if (requirement?.resolution === "ambiguous") {
+      expect(requirement.candidates.map((table) => table.name).sort()).toEqual([
+        "document_items",
+        "order_items",
+      ]);
+    }
+
+    const problems = collectProblems(contracts, schemaTables);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('action "orders.createItem"');
+    expect(problems[0]).toContain('stem "item"');
+    expect(problems[0]).toContain("document_items");
+    expect(problems[0]).toContain("order_items");
+    expect(problems[0]).toContain("RECORD_PROVENANCE_PHYSICAL_TABLE_ALIASES");
+    expect(problems[0]).not.toContain("Missing:");
+  });
+
+  it("one suffix match still resolves", () => {
+    const contracts = [writeCreate("gadgets.createWidget")];
+    const schemaTables = [emptyTable("gadget_widgets", "gadgets")];
+    const requirements = deriveRecordProvenanceRequirements(
+      contracts,
+      schemaTables,
+    );
+    expect(requirements).toHaveLength(1);
+    expect(requirements[0]?.resolution).toBe("found");
+    expect(requirements[0]?.table).toBe("gadget_widgets");
+    expect(collectProblems(contracts, schemaTables)[0]).toContain(
+      'table "gadget_widgets"',
+    );
+  });
+
+  it("an exact match still wins over a suffix match", () => {
+    const contracts = [writeCreate("widgets.create")];
+    const schemaTables = [
+      provenanceTable("widgets", "widgets"),
+      emptyTable("extra_widgets", "widgets"),
+    ];
+    const requirements = deriveRecordProvenanceRequirements(
+      contracts,
+      schemaTables,
+    );
+    expect(requirements).toHaveLength(1);
+    expect(requirements[0]?.resolution).toBe("found");
+    expect(requirements[0]?.table).toBe("widgets");
+    expect(collectProblems(contracts, schemaTables)).toEqual([]);
+  });
+
+  it("an unmatched stem still produces the existing missingTableProblem text", () => {
+    const contracts = [writeCreate("widgets.create")];
+    expect(collectProblems(contracts, [])).toEqual([MISSING_TABLE_MESSAGE]);
+  });
+
+  it("createFrom1 no longer takes the module branch", () => {
+    const contracts = [writeCreate("widgets.createFrom1")];
+    const schemaTables = [provenanceTable("widgets", "widgets")];
+    const requirements = deriveRecordProvenanceRequirements(
+      contracts,
+      schemaTables,
+    );
+    expect(requirements).toEqual([
+      {
+        action: "widgets.createFrom1",
+        module: "widgets",
+        table: "from1s",
+        stem: "from1",
+        resolution: "missing",
+      },
+    ]);
+    expect(collectProblems(contracts, schemaTables)).toEqual([
+      'action "widgets.createFrom1": AI-exposed create requires provenance columns on table "from1s", but no matching table was found in the schema catalog for module "widgets". Add the table with recordProvenanceColumns() / recordProvenanceChecks(), or add "widgets" to RECORD_PROVENANCE_CREATE_EXCLUSIONS if this create is a deliberate exclusion (SHO-464).',
+    ]);
+  });
+
+  it("deriveRecordProvenanceRequirements and collectRecordProvenanceProblems agree on the same fixture set", () => {
+    const contracts = [
+      writeCreate("widgets.create"),
+      writeCreate("orders.createItem"),
+      writeCreate("sprockets.create"),
+      writeCreate("customers.createCustomer"),
+      writeCreate("widgets.createFrom1"),
+      writeCreate("companies.create", {
+        principal: "account",
+        permissions: [],
+      }),
+      writeCreate("gadgets.createWidget"),
+    ];
+    const schemaTables = [
+      emptyTable("widgets", "widgets"),
+      provenanceTable("order_items", "orders"),
+      emptyTable("document_items", "orders"),
+      emptyTable("company_customers", "customers"),
+      emptyTable("gadget_widgets", "gadgets"),
+    ];
+    const requirements = deriveRecordProvenanceRequirements(
+      contracts,
+      schemaTables,
+    );
+    const problems = collectProblems(contracts, schemaTables);
+
+    expect(requirements.map((requirement) => requirement.action)).toEqual([
+      "widgets.create",
+      "orders.createItem",
+      "sprockets.create",
+      "customers.createCustomer",
+      "widgets.createFrom1",
+      "gadgets.createWidget",
+    ]);
+
+    const expectedProblemCount = requirements.filter((requirement) =>
+      requirementNeedsProblem(requirement),
+    ).length;
+    expect(problems).toHaveLength(expectedProblemCount);
+    expect(problems.map(actionFromProblem)).toEqual(
+      requirements
+        .filter((requirement) => requirementNeedsProblem(requirement))
+        .map((requirement) => requirement.action),
+    );
+
+    for (const requirement of requirements) {
+      const matching = problems.filter((problem) =>
+        problem.startsWith(`action "${requirement.action}"`),
+      );
+      if (requirement.resolution === "missing") {
+        expect(matching).toEqual([
+          `action "${requirement.action}": AI-exposed create requires provenance columns on table "${requirement.table}", but no matching table was found in the schema catalog for module "${requirement.module}". Add the table with recordProvenanceColumns() / recordProvenanceChecks(), or add "${requirement.module}" to RECORD_PROVENANCE_CREATE_EXCLUSIONS if this create is a deliberate exclusion (SHO-464).`,
+        ]);
+        continue;
+      }
+      if (requirement.resolution === "ambiguous") {
+        expect(matching).toHaveLength(1);
+        expect(matching[0]).toContain(`stem "${requirement.stem}"`);
+        for (const candidate of requirement.candidates) {
+          expect(matching[0]).toContain(candidate.name);
+        }
+        expect(matching[0]).toContain(
+          "RECORD_PROVENANCE_PHYSICAL_TABLE_ALIASES",
+        );
+        continue;
+      }
+      if (fixtureHasProvenance(requirement.resolvedTable)) {
+        expect(matching).toEqual([]);
+        continue;
+      }
+      expect(matching).toHaveLength(1);
+      expect(matching[0]).toContain(`table "${requirement.table}"`);
+      expect(matching[0]).toContain("Missing:");
+    }
+  });
+});
+
+function requirementNeedsProblem(
+  requirement: RecordProvenanceRequirement,
+): boolean {
+  if (requirement.resolution !== "found") {
+    return true;
+  }
+  return !fixtureHasProvenance(requirement.resolvedTable);
+}

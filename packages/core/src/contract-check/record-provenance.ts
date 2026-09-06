@@ -1,8 +1,10 @@
 /**
- * SHO-467: AI-exposed create actions require provenance columns on the
- * entity table they write. The required set is derived from the registry
- * (via `deriveAiToolSources`) plus the schema catalog — never a hardcoded
- * list of the nine T1 tables.
+ * SHO-467 / SHO-488: AI-exposed create actions require provenance columns
+ * on the entity table they write. The required set is derived from the
+ * registry (via `deriveAiToolSources`) plus the schema catalog — never a
+ * hardcoded list of the nine T1 tables. Table resolution reads
+ * `RECORD_PROVENANCE_PHYSICAL_TABLE_ALIASES` and refuses to guess when
+ * more than one suffix matches.
  */
 import { RECORD_CREATED_VIA_CHANNELS } from "@showzy/db/schema/tenant-columns";
 
@@ -27,13 +29,17 @@ export const RECORD_PROVENANCE_CREATE_EXCLUSIONS = Object.freeze({
 
 /**
  * Card-level entity names that do not match the physical SQL table
- * (SHO-465). Matching still walks the schema catalog; these two aliases
- * are the known name mismatches, not the required table set.
+ * (SHO-465). Matching still walks the schema catalog; these aliases
+ * are the known name mismatches, not the required table set. Adding an
+ * entry is the whole edit for a new alias — `aliasedTableName` looks
+ * keys up with `in` plus an indexed read.
  */
-export const RECORD_PROVENANCE_PHYSICAL_TABLE_ALIASES = Object.freeze({
+export const RECORD_PROVENANCE_PHYSICAL_TABLE_ALIASES: Readonly<
+  Record<string, string>
+> = Object.freeze({
   customers: "company_customers",
   invites: "company_customer_invites",
-} as const);
+});
 
 const CREATE_FROM_PREFIX = "createFrom";
 const REQUIRED_COLUMNS = ["created_via", "vouched_by", "vouched_at"] as const;
@@ -61,11 +67,38 @@ export interface SchemaTableRef {
   readonly checks: readonly SchemaCheckRef[];
 }
 
-export interface RecordProvenanceRequirement {
+/**
+ * One AI-exposed create and how the catalog resolved its table. `table` is
+ * the physical name when found, otherwise the expected (alias or plural)
+ * name. Widened in SHO-488 so collect iterates this output instead of
+ * re-deriving.
+ */
+export type RecordProvenanceRequirement = {
   readonly action: string;
   readonly table: string;
   readonly module: string;
-}
+  readonly stem: string;
+} & (
+  | {
+      readonly resolution: "found";
+      readonly resolvedTable: SchemaTableRef;
+    }
+  | {
+      readonly resolution: "missing";
+    }
+  | {
+      readonly resolution: "ambiguous";
+      readonly candidates: readonly SchemaTableRef[];
+    }
+);
+
+type TableResolution =
+  | { readonly kind: "found"; readonly table: SchemaTableRef }
+  | { readonly kind: "missing" }
+  | {
+      readonly kind: "ambiguous";
+      readonly candidates: readonly SchemaTableRef[];
+    };
 
 function actionVerb(name: string): string {
   const dot = name.indexOf(".");
@@ -100,6 +133,10 @@ function pluralize(stem: string): string {
   return `${stem}s`;
 }
 
+function isUpperCaseLetter(char: string | undefined): boolean {
+  return char !== undefined && char >= "A" && char <= "Z";
+}
+
 /**
  * Entity stem used to find the table: bare `create` / `createFrom*` uses
  * the module name; `createCustomer` uses the remainder (`customer`).
@@ -117,9 +154,7 @@ export function entityStemForCreateAction(
   }
   if (
     verb.startsWith(CREATE_FROM_PREFIX) &&
-    verb.length > CREATE_FROM_PREFIX.length &&
-    verb[CREATE_FROM_PREFIX.length] ===
-      verb[CREATE_FROM_PREFIX.length]?.toUpperCase()
+    isUpperCaseLetter(verb[CREATE_FROM_PREFIX.length])
   ) {
     return moduleOf(actionName);
   }
@@ -131,13 +166,16 @@ export function entityStemForCreateAction(
   return camelToSnake(first.toLowerCase() + remainder.slice(1));
 }
 
-function aliasedTableName(stem: string): string | undefined {
-  if (stem === "customers" || stem === "invites") {
-    return RECORD_PROVENANCE_PHYSICAL_TABLE_ALIASES[stem];
+function aliasedTableName(
+  stem: string,
+  aliases: Readonly<Record<string, string>>,
+): string | undefined {
+  if (stem in aliases) {
+    return aliases[stem];
   }
   const plural = pluralize(stem);
-  if (plural === "customers" || plural === "invites") {
-    return RECORD_PROVENANCE_PHYSICAL_TABLE_ALIASES[plural];
+  if (plural in aliases) {
+    return aliases[plural];
   }
   return undefined;
 }
@@ -146,13 +184,14 @@ function resolveTable(
   stem: string,
   moduleName: string,
   tables: readonly SchemaTableRef[],
-): SchemaTableRef | undefined {
+  aliases: Readonly<Record<string, string>>,
+): TableResolution {
   const owned = tables.filter((table) => table.owner === moduleName);
   const search = owned.length > 0 ? owned : tables;
-  const preferred = aliasedTableName(stem) ?? pluralize(stem);
+  const preferred = aliasedTableName(stem, aliases) ?? pluralize(stem);
   const exact = search.find((table) => table.name === preferred);
   if (exact !== undefined) {
-    return exact;
+    return { kind: "found", table: exact };
   }
   const plural = pluralize(stem);
   const suffixMatches = search.filter(
@@ -164,18 +203,22 @@ function resolveTable(
       table.name.endsWith(plural),
   );
   if (suffixMatches.length === 1) {
-    return suffixMatches[0];
+    const match = suffixMatches[0];
+    if (match !== undefined) {
+      return { kind: "found", table: match };
+    }
   }
   if (suffixMatches.length > 1) {
-    return suffixMatches.reduce((shortest, table) =>
-      table.name.length < shortest.name.length ? table : shortest,
-    );
+    return { kind: "ambiguous", candidates: suffixMatches };
   }
-  return undefined;
+  return { kind: "missing" };
 }
 
-function expectedTableName(stem: string): string {
-  return aliasedTableName(stem) ?? pluralize(stem);
+function expectedTableName(
+  stem: string,
+  aliases: Readonly<Record<string, string>>,
+): string {
+  return aliasedTableName(stem, aliases) ?? pluralize(stem);
 }
 
 function createdViaCheckSqlIsValid(sql: string): boolean {
@@ -241,13 +284,65 @@ function missingTableProblem(
   );
 }
 
+function ambiguousTableProblem(
+  action: string,
+  stem: string,
+  candidates: readonly SchemaTableRef[],
+): string {
+  const names = candidates
+    .map((table) => table.name)
+    .slice()
+    .sort()
+    .join(", ");
+  return (
+    `action "${action}": AI-exposed create stem "${stem}" matches multiple ` +
+    `tables (${names}). Add an entry to RECORD_PROVENANCE_PHYSICAL_TABLE_ALIASES ` +
+    `so the rule does not guess which table the create writes (SHO-464).`
+  );
+}
+
+function problemForRequirement(
+  requirement: RecordProvenanceRequirement,
+): string | undefined {
+  switch (requirement.resolution) {
+    case "missing":
+      return missingTableProblem(
+        requirement.action,
+        requirement.module,
+        requirement.table,
+      );
+    case "ambiguous":
+      return ambiguousTableProblem(
+        requirement.action,
+        requirement.stem,
+        requirement.candidates,
+      );
+    case "found": {
+      const missing = provenanceGaps(requirement.resolvedTable);
+      if (missing.length === 0) {
+        return undefined;
+      }
+      return provenanceProblem(
+        requirement.action,
+        requirement.resolvedTable.name,
+        missing,
+      );
+    }
+  }
+}
+
 /**
  * AI-exposed create writes (after exclusions) and the table each one
  * requires. Used by the check and by the composition regression snapshot.
+ * Optional `aliases` lets a test prove that adding a map entry changes
+ * resolution; production callers omit it.
  */
 export function deriveRecordProvenanceRequirements(
   contracts: readonly ActionContract[],
   schemaTables: readonly SchemaTableRef[],
+  aliases: Readonly<
+    Record<string, string>
+  > = RECORD_PROVENANCE_PHYSICAL_TABLE_ALIASES,
 ): readonly RecordProvenanceRequirement[] {
   const requirements: RecordProvenanceRequirement[] = [];
   for (const contract of deriveAiToolSources(contracts)) {
@@ -262,11 +357,36 @@ export function deriveRecordProvenanceRequirements(
     if (stem === undefined) {
       continue;
     }
-    const table = resolveTable(stem, moduleName, schemaTables);
+    const resolved = resolveTable(stem, moduleName, schemaTables, aliases);
+    const expectedTable = expectedTableName(stem, aliases);
+    if (resolved.kind === "found") {
+      requirements.push({
+        action: contract.name,
+        module: moduleName,
+        table: resolved.table.name,
+        stem,
+        resolution: "found",
+        resolvedTable: resolved.table,
+      });
+      continue;
+    }
+    if (resolved.kind === "ambiguous") {
+      requirements.push({
+        action: contract.name,
+        module: moduleName,
+        table: expectedTable,
+        stem,
+        resolution: "ambiguous",
+        candidates: resolved.candidates,
+      });
+      continue;
+    }
     requirements.push({
       action: contract.name,
       module: moduleName,
-      table: table?.name ?? expectedTableName(stem),
+      table: expectedTable,
+      stem,
+      resolution: "missing",
     });
   }
   return requirements;
@@ -277,31 +397,13 @@ export function collectRecordProvenanceProblems(
   schemaTables: readonly SchemaTableRef[],
   problems: string[],
 ): void {
-  const tablesByName = new Map(
-    schemaTables.map((table) => [table.name, table]),
-  );
-  for (const contract of deriveAiToolSources(contracts)) {
-    if (!isWriteRisk(contract)) {
-      continue;
-    }
-    const moduleName = moduleOf(contract.name);
-    if (isExcludedModule(moduleName)) {
-      continue;
-    }
-    const stem = entityStemForCreateAction(contract.name);
-    if (stem === undefined) {
-      continue;
-    }
-    const table = resolveTable(stem, moduleName, schemaTables);
-    if (table === undefined) {
-      problems.push(
-        missingTableProblem(contract.name, moduleName, expectedTableName(stem)),
-      );
-      continue;
-    }
-    const missing = provenanceGaps(tablesByName.get(table.name) ?? table);
-    if (missing.length > 0) {
-      problems.push(provenanceProblem(contract.name, table.name, missing));
+  for (const requirement of deriveRecordProvenanceRequirements(
+    contracts,
+    schemaTables,
+  )) {
+    const problem = problemForRequirement(requirement);
+    if (problem !== undefined) {
+      problems.push(problem);
     }
   }
 }
