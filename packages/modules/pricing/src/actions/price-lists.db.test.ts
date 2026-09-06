@@ -300,6 +300,33 @@ describe("pricing.createPriceList", () => {
   });
 });
 
+describe("pricing.createPriceList provenance (SHO-465)", () => {
+  it("stores ctx.channel and leaves vouched columns null", async () => {
+    const viaUi = await kit.invoke(
+      createPriceList,
+      { name: "Provenance UI list" },
+      {},
+      { request: { channel: "ui" } },
+    );
+    const viaAi = await kit.invoke(
+      createPriceList,
+      { name: "Provenance AI list" },
+      {},
+      { request: { channel: "ai", aiTraceId: "sho-465-list" } },
+    );
+    expect(await listRow(viaUi.id)).toMatchObject({
+      createdVia: "ui",
+      vouchedBy: null,
+      vouchedAt: null,
+    });
+    expect(await listRow(viaAi.id)).toMatchObject({
+      createdVia: "ai",
+      vouchedBy: null,
+      vouchedAt: null,
+    });
+  });
+});
+
 describe("pricing.updatePriceList", () => {
   it("renames the list, keeps entryCount, and audits once", async () => {
     const requestId = randomUUID();

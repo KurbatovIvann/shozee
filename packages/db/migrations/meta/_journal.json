@@ -330,6 +330,13 @@
       "when": 1788553219318,
       "tag": "0046_wet_paladin",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1788704877905,
+      "tag": "0047_stiff_marten_broadcloak",
+      "breakpoints": true
     }
   ]
 }

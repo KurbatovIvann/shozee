@@ -313,6 +313,55 @@ describe("catalog.createProduct", () => {
   });
 });
 
+describe("catalog.createProduct provenance (SHO-465)", () => {
+  it("stores ctx.channel on the product and nested variants", async () => {
+    const viaUi = await kit.invoke(
+      createProduct,
+      {
+        name: "Provenance UI product",
+        basePriceMinor: "100",
+        variants: [{ name: "UI nested" }],
+      },
+      {},
+      { request: { channel: "ui" } },
+    );
+    const viaAi = await kit.invoke(
+      createProduct,
+      {
+        name: "Provenance AI product",
+        basePriceMinor: "100",
+        variants: [{ name: "AI nested" }],
+      },
+      {},
+      { request: { channel: "ai", aiTraceId: "sho-465-product" } },
+    );
+    expect(await productRow(viaUi.productId)).toMatchObject({
+      createdVia: "ui",
+      vouchedBy: null,
+      vouchedAt: null,
+    });
+    expect(await productRow(viaAi.productId)).toMatchObject({
+      createdVia: "ai",
+      vouchedBy: null,
+      vouchedAt: null,
+    });
+    const uiVariants = await variantRowsFor(viaUi.productId);
+    const aiVariants = await variantRowsFor(viaAi.productId);
+    expect(uiVariants).toHaveLength(1);
+    expect(aiVariants).toHaveLength(1);
+    expect(uiVariants[0]).toMatchObject({
+      createdVia: "ui",
+      vouchedBy: null,
+      vouchedAt: null,
+    });
+    expect(aiVariants[0]).toMatchObject({
+      createdVia: "ai",
+      vouchedBy: null,
+      vouchedAt: null,
+    });
+  });
+});
+
 describe("catalog.updateProduct", () => {
   it("updates name and base price, leaves variants in place, and audits once", async () => {
     const created = await kit.invoke(createProduct, {

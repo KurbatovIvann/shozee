@@ -50,6 +50,7 @@ export async function createStaffVariant(env: {
     name: input.name,
     basePriceMinor: price.basePriceMinor,
     currency: price.currency,
+    createdVia: ctx.channel,
   });
 
   ctx.log.info(

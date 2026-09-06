@@ -107,6 +107,7 @@ async function insertNumberedHeader(
     readonly totalTaxMinor: bigint;
     readonly totalGrossMinor: bigint;
     readonly currency: string;
+    readonly createdVia: StaffCtx["channel"];
   },
 ): Promise<{ createdAt: Date; orderNumber: string }> {
   let lastConflict: ConflictError | undefined;
@@ -136,6 +137,7 @@ async function insertNumberedHeader(
             totalTaxMinor: values.totalTaxMinor,
             totalGrossMinor: values.totalGrossMinor,
             currency: values.currency,
+            createdVia: values.createdVia,
           })
           .returning({
             createdAt: orders.createdAt,
@@ -336,6 +338,7 @@ export async function createStaffOrder(env: {
     totalTaxMinor,
     totalGrossMinor,
     currency,
+    createdVia: ctx.channel,
   });
 
   await db.insert(orderItems).values(lines.map((line) => line.row));

@@ -56,6 +56,7 @@ export async function createStaffCustomer(env: {
           notes: nullableText(input.notes),
           groupId,
           priceListId,
+          createdVia: ctx.channel,
         })
         .returning(customerColumns)
     )[0];

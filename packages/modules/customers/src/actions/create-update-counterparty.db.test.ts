@@ -448,6 +448,49 @@ describe("customers.createCounterparty", () => {
   });
 });
 
+describe("customers.createCounterparty provenance (SHO-465)", () => {
+  it("stores ctx.channel and leaves vouched columns null", async () => {
+    const viaUi = await kit.invoke(
+      createCounterparty,
+      { name: "Provenance UI party" },
+      {},
+      { request: { channel: "ui" } },
+    );
+    const viaAi = await kit.invoke(
+      createCounterparty,
+      { name: "Provenance AI party" },
+      {},
+      { request: { channel: "ai", aiTraceId: "sho-465-party" } },
+    );
+    const rows = await kit.db.runtime.db
+      .select({
+        createdVia: counterparties.createdVia,
+        vouchedBy: counterparties.vouchedBy,
+        vouchedAt: counterparties.vouchedAt,
+      })
+      .from(counterparties)
+      .where(eq(counterparties.id, viaUi.id));
+    const aiRows = await kit.db.runtime.db
+      .select({
+        createdVia: counterparties.createdVia,
+        vouchedBy: counterparties.vouchedBy,
+        vouchedAt: counterparties.vouchedAt,
+      })
+      .from(counterparties)
+      .where(eq(counterparties.id, viaAi.id));
+    expect(rows[0]).toEqual({
+      createdVia: "ui",
+      vouchedBy: null,
+      vouchedAt: null,
+    });
+    expect(aiRows[0]).toEqual({
+      createdVia: "ai",
+      vouchedBy: null,
+      vouchedAt: null,
+    });
+  });
+});
+
 describe("customers.updateCounterparty", () => {
   it("changes name and requisites, links, unlinks, and relinks", async () => {
     const created = await kit.invoke(createCounterparty, {

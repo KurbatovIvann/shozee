@@ -40,6 +40,7 @@ export async function createStaffPriceList(env: {
           name: input.name,
           isDefault,
           isActive,
+          createdVia: ctx.channel,
         })
         .returning(priceListViewColumns)
     )[0];

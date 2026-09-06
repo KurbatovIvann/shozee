@@ -391,6 +391,33 @@ describe("customers.createGroup", () => {
   });
 });
 
+describe("customers.createGroup provenance (SHO-465)", () => {
+  it("stores ctx.channel and leaves vouched columns null", async () => {
+    const viaUi = await kit.invoke(
+      createGroup,
+      { name: "Provenance UI group" },
+      {},
+      { request: { channel: "ui" } },
+    );
+    const viaAi = await kit.invoke(
+      createGroup,
+      { name: "Provenance AI group" },
+      {},
+      { request: { channel: "ai", aiTraceId: "sho-465-group" } },
+    );
+    expect(await groupRow(viaUi.id)).toMatchObject({
+      createdVia: "ui",
+      vouchedBy: null,
+      vouchedAt: null,
+    });
+    expect(await groupRow(viaAi.id)).toMatchObject({
+      createdVia: "ai",
+      vouchedBy: null,
+      vouchedAt: null,
+    });
+  });
+});
+
 describe("customers.updateGroup", () => {
   it("renames without changing slug, sets and clears the price list, and audits once", async () => {
     const created = await kit.invoke(createGroup, {

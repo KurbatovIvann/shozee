@@ -52,6 +52,7 @@ export async function createStaffCounterparty(env: {
         .values({
           id: randomUUID(),
           companyId: ctx.companyId,
+          createdVia: ctx.channel,
           ...fields,
         })
         .returning(counterpartyReturning)

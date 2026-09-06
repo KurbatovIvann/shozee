@@ -248,6 +248,10 @@ describe("staff orders schema slice", () => {
       "order_number",
       // 0040 ADD COLUMN appends after order_number.
       "customer_name_snapshot",
+      // 0047 ADD COLUMN appends after customer_name_snapshot (SHO-465).
+      "created_via",
+      "vouched_by",
+      "vouched_at",
     ]);
     expect(columns.get("order_items")).toEqual([
       "id",

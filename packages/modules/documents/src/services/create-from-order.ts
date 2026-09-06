@@ -223,6 +223,7 @@ export async function createStaffDocument(env: {
           templateSource: "system",
           templateName,
           basis,
+          createdVia: ctx.channel,
         })
         .returning({ createdAt: documents.createdAt })
     )[0];
