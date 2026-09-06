@@ -1,8 +1,9 @@
 /**
- * SHO-465: 0047 adds provenance columns and backfills created_via from
- * the earliest audit_log row per (target_type, target_id). Unmatched
- * rows stay NULL. Empty-DB apply is the harness template; this file
- * proves SQL shape and a pre-0047 database with fixture rows.
+ * SHO-465 / SHO-487: 0047 adds provenance columns and backfills
+ * created_via from the earliest successful attesting create audit_log
+ * row per (target_type, target_id). Unmatched rows stay NULL. Empty-DB
+ * apply is the harness template; this file proves SQL shape and a
+ * pre-0047 database with fixture rows.
  */
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -39,6 +40,21 @@ const BACKFILL_TARGETS = [
   { table: "company_customer_invites", targetType: "invite" },
 ] as const;
 
+const ATTESTING_ACTIONS = {
+  order: ["orders.create"],
+  customer: ["customers.createCustomer", "customers.applyInviteCrm"],
+  counterparty: ["customers.createCounterparty"],
+  customer_group: ["customers.createGroup"],
+  product: ["catalog.createProduct"],
+  variant: ["catalog.createVariant"],
+  price_list: ["pricing.createPriceList"],
+  document: ["documents.createFromOrder"],
+  invite: ["invites.create"],
+} as const satisfies Record<
+  (typeof BACKFILL_TARGETS)[number]["targetType"],
+  readonly string[]
+>;
+
 let database: TestDatabase;
 
 beforeAll(async () => {
@@ -62,6 +78,23 @@ function statementsOf(sql: string): string[] {
     .filter((part) => part.length > 0);
 }
 
+function backfillCteBodies(sql: string): string[] {
+  const bodies: string[] = [];
+  const startToken = "WITH earliest AS (";
+  const endToken = "\n)\nUPDATE";
+  let from = 0;
+  let start = sql.indexOf(startToken, from);
+  while (start >= 0) {
+    const selectStart = start + startToken.length;
+    const end = sql.indexOf(endToken, selectStart);
+    assert.ok(end >= 0, "backfill CTE is missing its UPDATE closer");
+    bodies.push(sql.slice(selectStart, end));
+    from = end;
+    start = sql.indexOf(startToken, from);
+  }
+  return bodies;
+}
+
 async function insertAudit(
   probe: pg.Client,
   values: {
@@ -69,6 +102,8 @@ async function insertAudit(
     targetId: string;
     channel: "ui" | "ai" | "system" | "webhook";
     createdAt: string;
+    action: string;
+    outcome: string;
   },
 ): Promise<void> {
   await probe.query(
@@ -77,23 +112,25 @@ async function insertAudit(
        channel, target_type, target_id, input_hash, outcome, duration_ms,
        created_at
      ) VALUES (
-       $1, $2, $3, 'fixture.create', 'user', 'actor-1',
-       $4, $5, $6, 'hash', 'ok', 1, $7
+       $1, $2, $3, $4, 'user', 'actor-1',
+       $5, $6, $7, 'hash', $8, 1, $9
      )`,
     [
       randomUUID(),
       randomUUID(),
       randomUUID(),
+      values.action,
       values.channel,
       values.targetType,
       values.targetId,
+      values.outcome,
       values.createdAt,
     ],
   );
 }
 
 describe("record provenance migration (0047)", () => {
-  it("adds nullable columns and CHECKs, backfills from earliest audit, and does not guess ui", () => {
+  it("adds nullable columns and CHECKs, backfills from the earliest successful create, and does not guess ui", () => {
     expect(provenanceMigrationSql).toContain(
       `ALTER TABLE "orders" ADD COLUMN "created_via" text;`,
     );
@@ -117,12 +154,32 @@ describe("record provenance migration (0047)", () => {
     expect(provenanceMigrationSql).toContain(
       'ORDER BY "target_type", "target_id", "created_at" ASC, "id" ASC',
     );
-    for (const target of BACKFILL_TARGETS) {
+    const cteBodies = backfillCteBodies(provenanceMigrationSql);
+    expect(cteBodies).toHaveLength(BACKFILL_TARGETS.length);
+    for (const [index, target] of BACKFILL_TARGETS.entries()) {
       expect(provenanceMigrationSql).toContain(`UPDATE "${target.table}" AS t`);
       expect(provenanceMigrationSql).toContain(
         `earliest."target_type" = '${target.targetType}'`,
       );
+      const cte = cteBodies[index];
+      assert.ok(cte !== undefined);
+      const whereAt = cte.indexOf(
+        `WHERE "target_type" = '${target.targetType}'`,
+      );
+      const actionList = ATTESTING_ACTIONS[target.targetType]
+        .map((action) => `'${action}'`)
+        .join(", ");
+      const actionAt = cte.indexOf(`AND "action" IN (${actionList})`);
+      const outcomeAt = cte.indexOf(`AND "outcome" = 'ok'`);
+      const orderAt = cte.indexOf(
+        'ORDER BY "target_type", "target_id", "created_at" ASC, "id" ASC',
+      );
+      expect(whereAt).toBeGreaterThan(-1);
+      expect(actionAt).toBeGreaterThan(whereAt);
+      expect(outcomeAt).toBeGreaterThan(actionAt);
+      expect(orderAt).toBeGreaterThan(outcomeAt);
     }
+    expect(provenanceMigrationSql).toContain("'customers.applyInviteCrm'");
     expect(provenanceMigrationSql).toContain("DROP CONSTRAINT");
     expect(provenanceMigrationSql).toContain("DROP COLUMN");
   });
@@ -193,6 +250,10 @@ describe("record provenance migration (0047)", () => {
         documents: { ai: randomUUID(), ui: randomUUID(), none: randomUUID() },
         invites: { ai: randomUUID(), ui: randomUUID(), none: randomUUID() },
         earliest: randomUUID(),
+        deniedCreate: randomUUID(),
+        filterWins: randomUUID(),
+        updateOnlyVariant: randomUUID(),
+        inviteCrm: randomUUID(),
       };
 
       for (const [kind, id] of Object.entries(ids.groups)) {
@@ -228,6 +289,21 @@ describe("record provenance migration (0047)", () => {
           [id, companyId, `Product ${kind}`],
         );
       }
+      for (const extraProduct of [
+        { id: ids.deniedCreate, name: "Product denied-create" },
+        { id: ids.filterWins, name: "Product filter-wins" },
+      ]) {
+        await probe.query(
+          `INSERT INTO products (id, company_id, name, base_price_minor)
+           VALUES ($1, $2, $3, 100)`,
+          [extraProduct.id, companyId, extraProduct.name],
+        );
+      }
+      await probe.query(
+        `INSERT INTO company_customers (id, company_id, name, phone)
+         VALUES ($1, $2, $3, $4)`,
+        [ids.inviteCrm, companyId, "Customer invite-crm", "+380504000001"],
+      );
       let variantIndex = 0;
       for (const [kind, id] of Object.entries(ids.variants)) {
         variantIndex += 1;
@@ -242,6 +318,16 @@ describe("record provenance migration (0047)", () => {
           ],
         );
       }
+      await probe.query(
+        `INSERT INTO product_variants (id, company_id, product_id, name)
+         VALUES ($1, $2, $3, $4)`,
+        [
+          ids.updateOnlyVariant,
+          companyId,
+          ids.products.ai,
+          "Variant update-only",
+        ],
+      );
       for (const [kind, id] of Object.entries(ids.lists)) {
         await probe.query(
           `INSERT INTO price_lists (id, company_id, name)
@@ -298,7 +384,7 @@ describe("record provenance migration (0047)", () => {
       }
 
       const auditCases: {
-        targetType: string;
+        targetType: keyof typeof ATTESTING_ACTIONS;
         ai: string;
         ui: string;
       }[] = [
@@ -321,17 +407,23 @@ describe("record provenance migration (0047)", () => {
         { targetType: "invite", ai: ids.invites.ai, ui: ids.invites.ui },
       ];
       for (const row of auditCases) {
+        const [action] = ATTESTING_ACTIONS[row.targetType];
+        assert.ok(action);
         await insertAudit(probe, {
           targetType: row.targetType,
           targetId: row.ai,
           channel: "ai",
           createdAt: "2026-01-02T00:00:00.000Z",
+          action,
+          outcome: "ok",
         });
         await insertAudit(probe, {
           targetType: row.targetType,
           targetId: row.ui,
           channel: "ui",
           createdAt: "2026-01-02T00:00:00.000Z",
+          action,
+          outcome: "ok",
         });
       }
       await insertAudit(probe, {
@@ -339,12 +431,56 @@ describe("record provenance migration (0047)", () => {
         targetId: ids.earliest,
         channel: "ai",
         createdAt: "2026-01-01T00:00:00.000Z",
+        action: "orders.create",
+        outcome: "ok",
       });
       await insertAudit(probe, {
         targetType: "order",
         targetId: ids.earliest,
         channel: "ui",
         createdAt: "2026-01-03T00:00:00.000Z",
+        action: "orders.create",
+        outcome: "ok",
+      });
+      await insertAudit(probe, {
+        targetType: "product",
+        targetId: ids.deniedCreate,
+        channel: "ai",
+        createdAt: "2026-01-02T00:00:00.000Z",
+        action: "catalog.createProduct",
+        outcome: "PERMISSION_DENIED",
+      });
+      await insertAudit(probe, {
+        targetType: "product",
+        targetId: ids.filterWins,
+        channel: "ai",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        action: "catalog.updateProduct",
+        outcome: "PERMISSION_DENIED",
+      });
+      await insertAudit(probe, {
+        targetType: "product",
+        targetId: ids.filterWins,
+        channel: "ui",
+        createdAt: "2026-01-03T00:00:00.000Z",
+        action: "catalog.createProduct",
+        outcome: "ok",
+      });
+      await insertAudit(probe, {
+        targetType: "variant",
+        targetId: ids.updateOnlyVariant,
+        channel: "ai",
+        createdAt: "2026-01-02T00:00:00.000Z",
+        action: "catalog.updateVariant",
+        outcome: "ok",
+      });
+      await insertAudit(probe, {
+        targetType: "customer",
+        targetId: ids.inviteCrm,
+        channel: "ui",
+        createdAt: "2026-01-02T00:00:00.000Z",
+        action: "customers.applyInviteCrm",
+        outcome: "ok",
       });
 
       for (const statement of statementsOf(provenanceMigrationSql)) {
@@ -376,6 +512,11 @@ describe("record provenance migration (0047)", () => {
           createdVia: null,
         },
         {
+          table: "company_customers",
+          id: ids.inviteCrm,
+          createdVia: "ui",
+        },
+        {
           table: "counterparties",
           id: ids.counterparties.ai,
           createdVia: "ai",
@@ -396,9 +537,16 @@ describe("record provenance migration (0047)", () => {
         { table: "products", id: ids.products.ai, createdVia: "ai" },
         { table: "products", id: ids.products.ui, createdVia: "ui" },
         { table: "products", id: ids.products.none, createdVia: null },
+        { table: "products", id: ids.deniedCreate, createdVia: null },
+        { table: "products", id: ids.filterWins, createdVia: "ui" },
         { table: "product_variants", id: ids.variants.ai, createdVia: "ai" },
         { table: "product_variants", id: ids.variants.ui, createdVia: "ui" },
         { table: "product_variants", id: ids.variants.none, createdVia: null },
+        {
+          table: "product_variants",
+          id: ids.updateOnlyVariant,
+          createdVia: null,
+        },
         { table: "price_lists", id: ids.lists.ai, createdVia: "ai" },
         { table: "price_lists", id: ids.lists.ui, createdVia: "ui" },
         { table: "price_lists", id: ids.lists.none, createdVia: null },
@@ -460,11 +608,11 @@ describe("record provenance migration (0047)", () => {
       }
       expect(counts).toEqual({
         orders: { ui: 1, ai: 2, null: 1 },
-        company_customers: { ui: 1, ai: 1, null: 1 },
+        company_customers: { ui: 2, ai: 1, null: 1 },
         counterparties: { ui: 1, ai: 1, null: 1 },
         customer_groups: { ui: 1, ai: 1, null: 1 },
-        products: { ui: 1, ai: 1, null: 1 },
-        product_variants: { ui: 1, ai: 1, null: 1 },
+        products: { ui: 2, ai: 1, null: 2 },
+        product_variants: { ui: 1, ai: 1, null: 2 },
         price_lists: { ui: 1, ai: 1, null: 1 },
         documents: { ui: 1, ai: 1, null: 1 },
         company_customer_invites: { ui: 1, ai: 1, null: 1 },
