@@ -139,9 +139,9 @@ describe("ASSISTANT_SURFACE_REGISTRY integrity", () => {
       ).toBe(true);
     }
     expect(kinds.has("screen")).toBe(true);
-    expect(ASSISTANT_SURFACE_REGISTRY.map((entry) => entry.destination)).toEqual(
-      [{ kind: "screen" }, { kind: "screen" }, { kind: "screen" }],
-    );
+    expect(
+      ASSISTANT_SURFACE_REGISTRY.map((entry) => entry.destination),
+    ).toEqual([{ kind: "screen" }, { kind: "screen" }, { kind: "screen" }]);
 
     type Extends<A, B> = A extends B ? true : false;
     const omissionRejected: Extends<

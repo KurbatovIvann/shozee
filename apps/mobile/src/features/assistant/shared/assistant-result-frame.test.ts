@@ -144,9 +144,9 @@ describe("assistant result provenance marks (SHO-469)", () => {
 
 describe("assistant result destination handoff (SHO-470)", () => {
   it("renders a handoff row for screen pointing at the declared route", () => {
-    expect(
-      assistantResultHandoff({ kind: "screen", href: "/orders" }),
-    ).toEqual({ href: "/orders" });
+    expect(assistantResultHandoff({ kind: "screen", href: "/orders" })).toEqual(
+      { href: "/orders" },
+    );
     expect(
       assistantResultHandoff({
         kind: "screen",
@@ -168,7 +168,7 @@ describe("assistant result destination handoff (SHO-470)", () => {
     expect(assistantResultHandoff(undefined)).toBeNull();
     expect(assistantResultHandoff(null)).toBeNull();
     expect(FRAME).not.toContain('destination = { kind: "terminal" }');
-    expect(FRAME).not.toContain("kind: \"terminal\"");
+    expect(FRAME).not.toContain('kind: "terminal"');
     expect(CONFIRMATION).not.toContain("destination=");
     expect(CONFIRMATION).not.toContain("handoffLabel");
   });
