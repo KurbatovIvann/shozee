@@ -86,16 +86,19 @@ the same directory.
 - `src/prefs/` — device preferences (theme + last staff company selector).
   Native = MMKV (`platform-storage.native.ts`); web + tests = memory
   (`platform-storage.ts`). Never cookies, never the query cache.
-- `src/i18n/` — `locale.ts` (pure `detectLocale(tag)` + interpolation) plus
+- `src/i18n/` — `locale.ts` (device bind over `@showzy/copy/locale`
+  `detectLocale(tag)` + interpolation) plus
   `device-locale.ts` / `install-locale.ts` (read `getLocales()` once at app
   start so no-argument `detectLocale()` follows the device; Ukrainian is
   still the default before init and for non-`en*` tags). Shared chrome lives
-  in `copy.ts` (`CountForms`, `WriteErrorsCopy`, `FormChromeCopy`,
-  `selectCopy`). Ukrainian one/few/many rules live in `plural.ts` — do not
-  copy mod-10/mod-100 into a feature. One copy namespace per feature
-  (`auth.ts`, `customers.ts` composing `customers/`). uk/en, matching V1's
-  namespace split. New features add a namespace here instead of a local
-  `copy.ts`.
+  in `copy.ts` (`WriteErrorsCopy`, `FormChromeCopy`; `CountForms` /
+  `selectCopy` re-exported from `@showzy/copy`). Ukrainian one/few/many
+  rules re-export `@showzy/copy/plural` from `plural.ts` — do not copy
+  mod-10/mod-100 into a feature. Orders copy composes `@showzy/copy/orders`
+  with a mobile extension (offline/back leftovers stay here). One copy
+  namespace per remaining feature (`auth.ts`, `customers.ts` composing
+  `customers/`). uk/en, matching V1's namespace split. New features add a
+  namespace here instead of a local `copy.ts`.
 - `src/api/client.ts` — `createShowzyClient` wraps `createContractClient`
   with the env-driven API origin. Mobile passes `getCookie` from the Expo
   plugin; Bearer is optional for other clients.
@@ -111,7 +114,7 @@ the same directory.
 
 ## Rules
 
-- Client apps may import only `@showzy/contract`, `@showzy/validation`, `@showzy/ui` (`@showzy/ui` does not exist yet), and `@showzy/document-signing` (native/web adapters for on-device QES; never `/node`). Never `@showzy/core`, `@showzy/db`, or `@showzy/config`. `better-auth` and `@better-auth/expo` are allowed only under `src/auth/`.
+- Client apps may import only `@showzy/contract`, `@showzy/validation`, `@showzy/copy`, `@showzy/ui` (`@showzy/ui` does not exist yet), and `@showzy/document-signing` (native/web adapters for on-device QES; never `/node`). Never `@showzy/core`, `@showzy/db`, or `@showzy/config`. `better-auth` and `@better-auth/expo` are allowed only under `src/auth/`.
 - Config is `EXPO_PUBLIC_API_URL` (Metro-inlined). Empty string is unset. Do not read `process.env` through `@showzy/config`.
 - Mobile session transport is a Cookie header from `@better-auth/expo` (SecureStore). Web export-smoke keeps cookies in memory. Never log tokens, cookies, or OTP codes. Classify auth HTTP failures by status, not message text.
 - Auth is phone/email OTP only (ADR-0006). Google and guest browse are not in this slice.

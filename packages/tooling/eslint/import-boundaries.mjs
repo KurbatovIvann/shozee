@@ -20,6 +20,7 @@ const PLATFORM_PACKAGES = new Set([
   "ai",
   "config",
   "contract",
+  "copy",
   "core",
   "db",
   "document-signing",
@@ -97,6 +98,9 @@ function classify(filename) {
   }
   if (path.includes("/packages/ai/")) {
     return { kind: "ai" };
+  }
+  if (path.includes("/packages/copy/")) {
+    return { kind: "copy" };
   }
   return { kind: "skip" };
 }
@@ -192,6 +196,13 @@ function violation(from, spec, typeOnly) {
     return null;
   }
 
+  if (from.kind === "copy") {
+    if (isRelative(spec) && !spec.includes("/apps/")) {
+      return null;
+    }
+    return { messageId: "copyLeaf" };
+  }
+
   if (from.kind === "client-app") {
     if (pkg === null) {
       return null;
@@ -199,7 +210,7 @@ function violation(from, spec, typeOnly) {
     if (pkg.name === "contract" && pkg.rest === "") {
       return null;
     }
-    if (pkg.name === "validation" || pkg.name === "ui") {
+    if (pkg.name === "validation" || pkg.name === "ui" || pkg.name === "copy") {
       return null;
     }
     // SHO-251 / SHO-260: on-device QES via Nitro. Native and web adapters
@@ -232,6 +243,9 @@ function violation(from, spec, typeOnly) {
     }
     if (pkg.name === "ai") {
       return { messageId: "moduleAi" };
+    }
+    if (pkg.name === "copy") {
+      return { messageId: "copyClientOnly" };
     }
     if (pkg.name === "contract") {
       return { messageId: "moduleCross" };
@@ -358,7 +372,11 @@ export const importBoundariesRule = {
       contractModules:
         "packages/contract may import only a module's index.contract.ts barrel (@showzy/<module>/contract) (ADR-0016).",
       clientApp:
-        "Client apps may import only @showzy/contract, @showzy/validation, @showzy/ui, and @showzy/document-signing (native/web adapters; never /node) (contract.md §2, SHO-251).",
+        "Client apps may import only @showzy/contract, @showzy/validation, @showzy/copy, @showzy/ui, and @showzy/document-signing (native/web adapters; never /node) (contract.md §2, SHO-251, SHO-414).",
+      copyLeaf:
+        "packages/copy is a client-safe leaf: only relative imports (no React, React Native, Unistyles, Tailwind, Expo, apps, or other packages) (SHO-414).",
+      copyClientOnly:
+        "Domain modules may not import @showzy/copy (client staff copy, SHO-414).",
       contractClient:
         "The contract client layer must not import Node builtins, @showzy/db, core server paths, or @showzy/contract/server (ADR-0016).",
       aiModuleBarrel:

@@ -1,0 +1,25 @@
+{
+  "name": "@showzy/copy",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Client-safe staff copy strings, Locale, and plural machinery. Domain slices are exported as subpaths; this package owns no React, actions, or tables.",
+  "exports": {
+    "./locale": "./src/locale.ts",
+    "./plural": "./src/plural.ts",
+    "./orders": "./src/orders.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:unit": "vitest run"
+  },
+  "devDependencies": {
+    "@showzy/tooling": "workspace:*",
+    "@types/node": "^22.20.1",
+    "eslint": "^10.8.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10"
+  }
+}

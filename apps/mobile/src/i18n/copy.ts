@@ -3,14 +3,12 @@
  * spread the uk/en value objects and keep one-namespace-per-feature.
  * Do not change these strings to "unify" a namespace that already
  * differs — override the differing keys at the spread site.
+ *
+ * `CountForms` / `selectCopy` live in `@showzy/copy`; this file
+ * re-exports them so other namespaces keep importing chrome from here.
  */
-import type { Locale } from "./locale";
-
-export type CountForms = {
-  readonly one: string;
-  readonly few: string;
-  readonly many: string;
-};
+export type { CountForms } from "@showzy/copy/plural";
+export { selectCopy } from "@showzy/copy/locale";
 
 export type WriteErrorsCopy = {
   readonly validation: string;
@@ -77,10 +75,3 @@ export const formChromeUk: FormChromeCopy = {
   submitEdit: "Зберегти",
   submitEditLoading: "Збереження…",
 };
-
-export function selectCopy<T>(
-  locale: Locale,
-  copies: { readonly uk: T; readonly en: T },
-): T {
-  return locale === "uk" ? copies.uk : copies.en;
-}
