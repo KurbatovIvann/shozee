@@ -1,75 +1,22 @@
 /**
- * Shared parse helpers for result-card kinds. Cards stay a projection of
- * live tool parts (ADR-0011). Do not persist list JSON.
+ * Localized formatters for assistant result cards. Unlocalized parse
+ * lives in `@showzy/validation/assistant-surfaces` (SHO-456).
  */
-import { formatMoneyMinor, groupDigits } from "../../../format/money";
-import { confirmationFromChatPart } from "../shared/confirmation";
 import {
-  isToolErrorOutput,
-  type AssistantChatPart,
-} from "../shared/confirmation-presenter";
+  UNLINKED_CUSTOMER_NAME_SNAPSHOT,
+  moneyMinorFromFields,
+  type AssistantMoneyMinor,
+  type AssistantSurfaceToolResult,
+} from "@showzy/validation/assistant-surfaces";
+
+import { formatMoneyMinor, groupDigits } from "../../../format/money";
+import type { AssistantChatPart } from "../shared/confirmation-presenter";
 import { toolNameFromPart } from "../shared/turn-timeline";
 
-export const UNLINKED_CUSTOMER_NAME_SNAPSHOT = "unlinked";
+export { UNLINKED_CUSTOMER_NAME_SNAPSHOT };
 
 const QUANTITY_MILLI_SCALE = 1000n;
 const QUANTITY_WIRE = /^(0|[1-9][0-9]*)$/;
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isClippedOutput(value: unknown): value is {
-  readonly status: "clipped";
-  readonly preview: unknown;
-  readonly omitted: unknown;
-} {
-  return isRecord(value) && value["status"] === "clipped";
-}
-
-export function unwrapToolOutput(output: unknown): {
-  readonly payload: unknown;
-  readonly clipped: boolean;
-} {
-  if (isClippedOutput(output)) {
-    return { payload: output.preview, clipped: true };
-  }
-  return { payload: output, clipped: false };
-}
-
-export function isSuccessfulToolOutput(output: unknown): boolean {
-  if (output === undefined) {
-    return false;
-  }
-  if (isToolErrorOutput(output)) {
-    return false;
-  }
-  if (confirmationFromChatPart(output) !== undefined) {
-    return false;
-  }
-  return true;
-}
-
-export function lastSuccessfulPart(
-  parts: readonly AssistantChatPart[],
-  matches: (toolName: string) => boolean,
-): AssistantChatPart | null {
-  let found: AssistantChatPart | null = null;
-  for (const part of parts) {
-    const toolName = toolNameFromPart(part);
-    if (toolName === null || !matches(toolName)) {
-      continue;
-    }
-    if (part.state !== "output-available") {
-      continue;
-    }
-    if (!isSuccessfulToolOutput(part.output)) {
-      continue;
-    }
-    found = part;
-  }
-  return found;
-}
 
 export function formatQuantityLabel(wire: unknown): string | null {
   if (typeof wire !== "string" || !QUANTITY_WIRE.test(wire)) {
@@ -86,58 +33,72 @@ export function formatQuantityLabel(wire: unknown): string | null {
   return `${grouped},${fraction}`;
 }
 
-export function formatTotal(minor: unknown, currency: unknown): string | null {
-  if (typeof minor !== "string" || typeof currency !== "string") {
-    return null;
-  }
-  if (currency.length !== 3) {
+export function formatMoneyAmount(
+  money: AssistantMoneyMinor | null,
+): string | null {
+  if (money === null) {
     return null;
   }
   try {
-    return formatMoneyMinor(minor, currency);
+    return formatMoneyMinor(money.amountMinor, money.currency);
   } catch {
     return null;
   }
 }
 
+export function formatTotal(minor: unknown, currency: unknown): string | null {
+  return formatMoneyAmount(moneyMinorFromFields(minor, currency));
+}
+
 export function localizeCustomerName(
-  nameSnapshot: string,
+  nameSnapshot: string | null,
   missingCustomer: string,
 ): string {
-  if (nameSnapshot === UNLINKED_CUSTOMER_NAME_SNAPSHOT) {
+  if (
+    nameSnapshot === null ||
+    nameSnapshot.length === 0 ||
+    nameSnapshot === UNLINKED_CUSTOMER_NAME_SNAPSHOT
+  ) {
     return missingCustomer;
   }
   return nameSnapshot;
 }
 
-export function customerNameFromPayload(
-  payload: Record<string, unknown>,
-  missingCustomer: string,
-): string | null {
-  const customer = payload["customer"];
-  if (!isRecord(customer)) {
-    return null;
-  }
-  const nameSnapshot = customer["nameSnapshot"];
-  if (typeof nameSnapshot !== "string" || nameSnapshot.length === 0) {
-    return missingCustomer;
-  }
-  return localizeCustomerName(nameSnapshot, missingCustomer);
-}
-
-export function grossLabels(value: unknown): readonly string[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
+export function moneyLabels(
+  amounts: readonly AssistantMoneyMinor[],
+): readonly string[] {
   const labels: string[] = [];
-  for (const row of value) {
-    if (!isRecord(row)) {
-      continue;
-    }
-    const formatted = formatTotal(row["grossAmountMinor"], row["currency"]);
+  for (const amount of amounts) {
+    const formatted = formatMoneyAmount(amount);
     if (formatted !== null) {
       labels.push(formatted);
     }
   }
   return labels;
+}
+
+/**
+ * Chat-part adapter (SHO-456). The shared parse never sees a part: drop
+ * non-tool parts, keep `state === "output-available"`, then map.
+ */
+export function assistantSurfaceToolResultsFromParts(
+  parts: readonly AssistantChatPart[],
+): readonly AssistantSurfaceToolResult[] {
+  const results: AssistantSurfaceToolResult[] = [];
+  for (const part of parts) {
+    const toolName = toolNameFromPart(part);
+    if (toolName === null) {
+      continue;
+    }
+    if (part.state !== "output-available") {
+      continue;
+    }
+    const toolCallId = part.toolCallId;
+    if (typeof toolCallId === "string" && toolCallId.length > 0) {
+      results.push({ toolName, output: part.output, toolCallId });
+      continue;
+    }
+    results.push({ toolName, output: part.output });
+  }
+  return results;
 }

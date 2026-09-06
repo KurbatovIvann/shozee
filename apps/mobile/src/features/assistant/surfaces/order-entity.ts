@@ -1,8 +1,18 @@
 /**
- * Order entity result surface (SHO-369 / SHO-385). Binds live
+ * Order entity result surface (SHO-369 / SHO-385 / SHO-456). Localizes
+ * shared `@showzy/validation/assistant-surfaces` data. Binds live
  * `orders.get` / `orders.create` only. Do not walk list `items[].orderId`.
  * Do not import `@showzy/ai`.
  */
+import {
+  parseOrderEntitySurfaces as parseOrderEntityData,
+  ORDER_ENTITY_PROMPT_LINE,
+  ORDER_ENTITY_SURFACE_TOOLS,
+  ORDERS_CREATE_TOOLS,
+  ORDERS_GET_TOOLS,
+  type AssistantOrderEntityData,
+} from "@showzy/validation/assistant-surfaces";
+
 import { ordersCopy } from "../../../i18n/orders";
 import { orderDetailHref } from "../../orders/shared/order-hrefs";
 import {
@@ -11,27 +21,18 @@ import {
   type OrderStatusTone,
 } from "../../orders/shared/order-status";
 import type { AssistantChatPart } from "../shared/confirmation-presenter";
-import { toolNameFromPart } from "../shared/turn-timeline";
 import {
-  customerNameFromPayload,
-  formatTotal,
-  isRecord,
-  isSuccessfulToolOutput,
-  unwrapToolOutput,
+  assistantSurfaceToolResultsFromParts,
+  formatMoneyAmount,
+  localizeCustomerName,
 } from "./helpers";
 
-export const ORDERS_GET_TOOLS = new Set(["orders_get", "orders.get"]);
-export const ORDERS_CREATE_TOOLS = new Set(["orders_create", "orders.create"]);
-
-export const ORDER_ENTITY_SURFACE_TOOLS = [
-  "orders.get",
-  "orders.create",
-  "orders_get",
-  "orders_create",
-] as const;
-
-export const ORDER_ENTITY_PROMPT_LINE =
-  "After orders.get or orders.create, the UI already shows an order entity card. Reply with a short product-language summary. Do not dump tool JSON.";
+export {
+  ORDER_ENTITY_PROMPT_LINE,
+  ORDER_ENTITY_SURFACE_TOOLS,
+  ORDERS_CREATE_TOOLS,
+  ORDERS_GET_TOOLS,
+};
 
 export type AssistantOrderEntityCardView = {
   readonly kind: "order-entity";
@@ -45,34 +46,30 @@ export type AssistantOrderEntityCardView = {
   readonly totalLabel: string | null;
 };
 
-function parseEntityCard(
-  part: AssistantChatPart,
+export function localizeOrderEntityCard(
+  data: AssistantOrderEntityData,
   orders: ReturnType<typeof ordersCopy>,
-): AssistantOrderEntityCardView | null {
-  const callId = part.toolCallId;
+): AssistantOrderEntityCardView {
+  const status = isOrderStatus(data.status) ? data.status : null;
+  const callId = data.toolCallId;
   const id =
     typeof callId === "string" && callId.length > 0 ? callId : "order-entity";
-  const { payload } = unwrapToolOutput(part.output);
-  if (!isRecord(payload)) {
-    return null;
-  }
-  const orderId = payload["orderId"];
-  if (typeof orderId !== "string" || orderId.length === 0) {
-    return null;
-  }
-  const orderNumber =
-    typeof payload["orderNumber"] === "string" ? payload["orderNumber"] : "";
-  const status = isOrderStatus(payload["status"]) ? payload["status"] : null;
   return {
     kind: "order-entity",
     id,
-    orderId,
-    href: orderDetailHref(orderId),
-    orderNumberLabel: orderNumber.length > 0 ? `#${orderNumber}` : "",
-    customerName: customerNameFromPayload(payload, orders.missingCustomer),
+    orderId: data.orderId,
+    href: orderDetailHref(data.orderId),
+    orderNumberLabel: data.orderNumber.length > 0 ? `#${data.orderNumber}` : "",
+    customerName:
+      data.customerNameSnapshot === null
+        ? null
+        : localizeCustomerName(
+            data.customerNameSnapshot,
+            orders.missingCustomer,
+          ),
     statusLabel: status !== null ? orders.statuses[status] : null,
     statusTone: status !== null ? orderStatusTone(status) : "action",
-    totalLabel: formatTotal(payload["totalGrossMinor"], payload["currency"]),
+    totalLabel: formatMoneyAmount(data.total),
   };
 }
 
@@ -85,25 +82,7 @@ export function parseOrderEntitySurfaces(
   locale: Parameters<typeof ordersCopy>[0],
 ): readonly AssistantOrderEntityCardView[] {
   const orders = ordersCopy(locale);
-  const entityCards: AssistantOrderEntityCardView[] = [];
-  for (const part of parts) {
-    const toolName = toolNameFromPart(part);
-    if (toolName === null) {
-      continue;
-    }
-    if (!ORDERS_GET_TOOLS.has(toolName) && !ORDERS_CREATE_TOOLS.has(toolName)) {
-      continue;
-    }
-    if (part.state !== "output-available") {
-      continue;
-    }
-    if (!isSuccessfulToolOutput(part.output)) {
-      continue;
-    }
-    const entity = parseEntityCard(part, orders);
-    if (entity !== null) {
-      entityCards.push(entity);
-    }
-  }
-  return entityCards;
+  return parseOrderEntityData(assistantSurfaceToolResultsFromParts(parts)).map(
+    (data) => localizeOrderEntityCard(data, orders),
+  );
 }
