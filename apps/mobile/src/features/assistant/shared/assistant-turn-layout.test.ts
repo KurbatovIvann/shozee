@@ -24,6 +24,10 @@ const AGGREGATE = readFileSync(
   new URL("../sheet/orders-aggregate-result-card.tsx", import.meta.url),
   "utf8",
 );
+const AGGREGATE_BLOCK = readFileSync(
+  new URL("../sheet/assistant-aggregate-block.tsx", import.meta.url),
+  "utf8",
+);
 const CONFIRMATION = readFileSync(
   new URL("../sheet/confirmation-card.tsx", import.meta.url),
   "utf8",
@@ -76,7 +80,8 @@ describe("assistant turn layout composition", () => {
   it("leaves flex:1 on list/aggregate rows and HITL actions", () => {
     expect(LIST).toContain("AssistantCollectionBlock");
     expect(COLLECTION).toContain("flex: 1");
-    expect(AGGREGATE).toContain("flex: 1");
+    expect(AGGREGATE).toContain("AssistantAggregateBlock");
+    expect(AGGREGATE_BLOCK).toContain("AssistantCollectionResultRow");
     expect(FRAME).toContain("flex: 1");
     expect(CONFIRMATION).toContain("AssistantResultFrame");
   });

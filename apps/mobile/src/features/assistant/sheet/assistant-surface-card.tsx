@@ -14,10 +14,12 @@ import { OrdersAggregateResultCard } from "./orders-aggregate-result-card";
 import { OrdersListResultCard } from "./orders-list-result-card";
 
 /**
- * SHO-469 / SHO-472: one frame plus a block switch for registered
- * result-card kinds. List-shaped kinds share `AssistantCollectionBlock`.
- * Timeline and HITL stay in the message row; HITL chrome uses the same
- * frame with no block.
+ * SHO-469 / SHO-472 / SHO-473: one frame plus a block switch for
+ * registered result-card kinds. List-shaped kinds share
+ * `AssistantCollectionBlock`. Aggregate kinds share
+ * `AssistantAggregateBlock` (`summary` | `breakdown`). Timeline and
+ * HITL stay in the message row; HITL chrome uses the same frame with
+ * no block.
  */
 export const AssistantSurfaceCard = memo(function AssistantSurfaceCard(props: {
   readonly surface: AssistantSurface;
@@ -63,7 +65,9 @@ const AssistantSurfaceBlock = memo(function AssistantSurfaceBlock(props: {
         />
       );
     case "orders-aggregate":
-      return <OrdersAggregateResultCard card={surface} />;
+      return (
+        <OrdersAggregateResultCard card={surface} onOpenHref={onOpenHref} />
+      );
     case "order-entity":
       return <OrderEntityCard card={surface} onOpenHref={onOpenHref} />;
   }

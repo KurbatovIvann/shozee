@@ -54,5 +54,23 @@ describe("shared assistant copy", () => {
     expect("periodToday" in shared.ordersList).toBe(false);
     expect("openOrder" in shared.customersList).toBe(false);
     expect("customerMatchTruncated" in shared.customersList).toBe(false);
+    expect("periodToday" in shared.aggregate).toBe(false);
+    expect("orderCount" in shared.aggregate).toBe(false);
+    expect("aggregateEmptyTitle" in shared.aggregate).toBe(false);
+    expect("noneBucket" in shared.aggregate).toBe(false);
+  });
+
+  it("pins breakdown totals and column labels", () => {
+    const uk = sharedAssistantCopy("uk").aggregate;
+    const en = sharedAssistantCopy("en").aggregate;
+    expect(uk.totals).toBe("Разом");
+    expect(en.totals).toBe("Total");
+    expect(uk.countColumn).toBe("К-сть");
+    expect(en.countColumn).toBe("Qty");
+    expect(uk.amountColumn).toBe("Сума");
+    expect(en.amountColumn).toBe("Amount");
+    expect(uk.productColumn).toBe("Товар і варіант");
+    expect(uk.statusColumn).toBe("Статус і товар");
+    expect(uk.customerColumn).toBe("Замовник і товар");
   });
 });

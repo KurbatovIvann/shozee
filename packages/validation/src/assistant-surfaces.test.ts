@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ASSISTANT_AGGREGATE_LAYOUTS,
   ASSISTANT_CUSTOMERS_LIST_ROW_MAX,
   ASSISTANT_CUSTOMERS_LIST_SCREEN_HREF,
   ASSISTANT_ORDERS_LIST_ROW_MAX,
@@ -13,6 +14,8 @@ import {
   ORDERS_LIST_COUNTS_TOOL,
   ORDERS_LIST_PAGE_TOOL,
   UNLINKED_CUSTOMER_NAME_SNAPSHOT,
+  assistantAggregateBreakdown,
+  assistantAggregateSummary,
   assistantCollectionDescriptor,
   assistantCustomerEditorScreenHref,
   assistantOrderDetailScreenHref,
@@ -29,6 +32,7 @@ import {
   staffAssistantPresentationEnvelopesFromToolResults,
   unrestorableAssistantActionNames,
   unwrapToolOutput,
+  type AssistantAggregateDescriptor,
   type AssistantCollectionDescriptor,
   type AssistantCustomersListData,
   type AssistantOrdersAggregateData,
@@ -457,6 +461,18 @@ describe("parseOrdersAggregateSurface", () => {
         gross: [{ amountMinor: "1000", currency: "UAH" }],
       },
     ]);
+    expect(data?.aggregate.layout).toBe("summary");
+    expect(ASSISTANT_AGGREGATE_LAYOUTS).toEqual(["summary", "breakdown"]);
+    if (data?.aggregate.layout !== "summary") {
+      return;
+    }
+    expect(data.aggregate.groupingKey).toBe("status");
+    expect(data.aggregate.featured).toBeNull();
+    expect(data.aggregate.headlineCount).toBe(6);
+    expect("total" in data.aggregate).toBe(false);
+    expect(data.aggregate.sections[0]?.id).toBe("status");
+    expect(data.aggregate.sections[0]?.rows[0]?.badge).toBe("new");
+    expect(data.aggregate.sections[0]?.rows[0]?.cells[0]).toBe("2");
   });
 });
 
@@ -959,6 +975,171 @@ describe("customers-list collection (SHO-472)", () => {
       (entry) => entry.kind,
     );
     expect(registeredKinds.includes("price-lists-list")).toBe(false);
+  });
+});
+
+function breakdownFixture(groupingKey: string): AssistantAggregateDescriptor {
+  const groupLabel =
+    groupingKey === "product"
+      ? "product"
+      : groupingKey === "status"
+        ? "status"
+        : "customer";
+  return assistantAggregateBreakdown({
+    groupingKey,
+    columns: [
+      {
+        id: "group",
+        label: groupLabel,
+        width: "flex",
+        alignment: "start",
+      },
+      {
+        id: "count",
+        label: "count",
+        width: "auto",
+        alignment: "end",
+      },
+      {
+        id: "amount",
+        label: "amount",
+        width: "auto",
+        alignment: "end",
+      },
+    ],
+    groups: [
+      {
+        id: `${groupingKey}-parent`,
+        head: {
+          id: `${groupingKey}-head`,
+          title: groupingKey,
+          badge: null,
+          meta: null,
+          cells: ["2", "1000"],
+          href: null,
+        },
+        children: [
+          {
+            id: `${groupingKey}-child`,
+            title: "child",
+            badge: null,
+            meta: null,
+            cells: ["1", "500"],
+            href: null,
+          },
+        ],
+      },
+    ],
+    total: {
+      id: "total",
+      title: "total",
+      badge: null,
+      meta: null,
+      cells: ["2", "1000"],
+      href: null,
+    },
+  });
+}
+
+describe("aggregate layouts (SHO-473)", () => {
+  it("parses orders_list_counts onto summary, not breakdown", () => {
+    const data = parseOrdersAggregateSurface([
+      result(
+        ORDERS_LIST_COUNTS_TOOL,
+        countsOutput(
+          [
+            {
+              identity: { kind: "status", status: "new" },
+              orderCount: 2,
+              grossByCurrency: [],
+            },
+          ],
+          {
+            statusBuckets: [
+              {
+                identity: { kind: "status", status: "new" },
+                orderCount: 2,
+                grossByCurrency: [
+                  { currency: "UAH", grossAmountMinor: "1000" },
+                ],
+              },
+            ],
+          },
+        ),
+      ),
+    ]);
+    expect(data?.aggregate.layout).toBe("summary");
+    expect(data?.aggregate.layout).not.toBe("breakdown");
+    if (data?.aggregate.layout !== "summary") {
+      return;
+    }
+    expect("total" in data.aggregate).toBe(false);
+    expect(data.aggregate.featured).toBeNull();
+  });
+
+  it("keeps summary and breakdown as the same descriptor union with two layouts", () => {
+    const summary: AssistantAggregateDescriptor = assistantAggregateSummary({
+      groupingKey: "status",
+      headlineCount: 3,
+      headlineGross: [{ amountMinor: "1000", currency: "UAH" }],
+      sections: [
+        {
+          id: "status",
+          heading: "",
+          rows: [
+            {
+              id: "new",
+              title: "",
+              badge: "new",
+              meta: null,
+              cells: ["3", "1000"],
+              href: null,
+            },
+          ],
+        },
+      ],
+      featured: null,
+    });
+    const breakdown = breakdownFixture("product");
+    expect(ASSISTANT_AGGREGATE_LAYOUTS).toEqual(["summary", "breakdown"]);
+    expect(summary.layout).toBe("summary");
+    expect(breakdown.layout).toBe("breakdown");
+    expect("total" in summary).toBe(false);
+    if (breakdown.layout !== "breakdown") {
+      return;
+    }
+    expect(breakdown.total).not.toBeNull();
+  });
+
+  it("treats 3.5 / 3.6 / 3.7 as one breakdown layout with different grouping keys", () => {
+    const product = breakdownFixture("product");
+    const status = breakdownFixture("status");
+    const customer = breakdownFixture("customer");
+    const fixtures = [product, status, customer];
+    expect(fixtures.map((fixture) => fixture.layout)).toEqual([
+      "breakdown",
+      "breakdown",
+      "breakdown",
+    ]);
+    expect(fixtures.map((fixture) => fixture.groupingKey)).toEqual([
+      "product",
+      "status",
+      "customer",
+    ]);
+    for (const fixture of fixtures) {
+      expect(fixture.layout).toBe("breakdown");
+      if (fixture.layout !== "breakdown") {
+        continue;
+      }
+      expect(fixture.total).not.toBeNull();
+      expect(fixture.groups.length).toBeGreaterThan(0);
+      expect(fixture.columns).toHaveLength(3);
+    }
+    const registeredKinds: readonly string[] = ASSISTANT_SURFACE_REGISTRY.map(
+      (entry) => entry.kind,
+    );
+    expect(registeredKinds.includes("orders-breakdown")).toBe(false);
+    expect(ASSISTANT_AGGREGATE_LAYOUTS).toEqual(["summary", "breakdown"]);
   });
 });
 

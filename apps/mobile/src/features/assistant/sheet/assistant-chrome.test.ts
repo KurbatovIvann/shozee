@@ -37,6 +37,10 @@ const aggregateCard = readFileSync(
   new URL("./orders-aggregate-result-card.tsx", import.meta.url),
   "utf8",
 );
+const aggregateBlock = readFileSync(
+  new URL("./assistant-aggregate-block.tsx", import.meta.url),
+  "utf8",
+);
 const entityCard = readFileSync(
   new URL("./order-entity-card.tsx", import.meta.url),
   "utf8",
@@ -111,6 +115,8 @@ describe("assistant conversation chrome (SHO-392)", () => {
     expect(collectionBlock).not.toContain("dig.svg");
     expect(aggregateCard).not.toContain("sit.svg");
     expect(aggregateCard).not.toContain("dig.svg");
+    expect(aggregateBlock).not.toContain("sit.svg");
+    expect(aggregateBlock).not.toContain("dig.svg");
     expect(entityCard).not.toContain("sit.svg");
     expect(entityCard).not.toContain("dig.svg");
   });

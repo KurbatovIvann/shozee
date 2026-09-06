@@ -23,8 +23,11 @@ import {
   ASSISTANT_ORDERS_LIST_ROW_MAX,
   ASSISTANT_RESULT_SURFACE_REGISTRY,
   assistantSurfacesFromParts,
+  isAssistantAggregateLayout,
   isOrderStatus,
+  localizeAggregateColumns,
   ORDER_STATUSES,
+  type AssistantAggregateView,
   type AssistantCollectionView,
   type AssistantCustomersListCardView,
   type AssistantOrderEntityCardView,
@@ -821,6 +824,15 @@ function assertLabeledBucketList(card: AssistantOrdersAggregateCardView): void {
   expect(card.handoffLabel).toBe(uk.cards.openOrders);
   expect(card.ctaHref).toBeNull();
   expect(card.ctaLabel).toBeNull();
+  expect(card.aggregate.layout).toBe("summary");
+  expect("total" in card.aggregate).toBe(false);
+  if (card.aggregate.layout !== "summary") {
+    return;
+  }
+  expect(card.aggregate.featured).toBeNull();
+  expect(card.aggregate.periodLabel).toBe(card.periodLabel);
+  expect(card.aggregate.headlineCountLabel).toBe(card.orderCountLabel);
+  expect(card.aggregate.headlineMoneyLabels).toEqual(card.moneyLabels);
 }
 
 describe("assistantSurfacesFromParts aggregate (SHO-370 / SHO-395)", () => {
@@ -1540,6 +1552,10 @@ describe("assistant result-card surface registry", () => {
       new URL("../sheet/orders-aggregate-result-card.tsx", import.meta.url),
       "utf8",
     );
+    const aggregateBlock = readFileSync(
+      new URL("../sheet/assistant-aggregate-block.tsx", import.meta.url),
+      "utf8",
+    );
     const surfaceCard = readFileSync(
       new URL("../sheet/assistant-surface-card.tsx", import.meta.url),
       "utf8",
@@ -1597,14 +1613,16 @@ describe("assistant result-card surface registry", () => {
     expect(entityCard).toContain("onOpenHref");
     expect(entityCard.includes("orders-list-screen")).toBe(false);
     expect(entityCard.includes("order-row")).toBe(false);
-    expect(aggregateCard).toContain("StatusPill");
+    expect(aggregateCard).toContain("AssistantAggregateBlock");
+    expect(aggregateCard).not.toContain("StatusPill");
+    expect(aggregateBlock).toContain("AssistantCollectionResultRow");
     expect(resultFrame).toContain("Button");
     expect(resultFrame).toContain("Card");
-    expect(aggregateCard).toContain('from "../../../components/ui"');
     expect(aggregateCard.includes("orders-list-screen")).toBe(false);
     expect(aggregateCard.includes("order-row")).toBe(false);
     expect(aggregateCard.includes("BarChart")).toBe(false);
     expect(aggregateCard.includes("wow")).toBe(false);
+    expect(aggregateBlock.includes("BarChart")).toBe(false);
     expect(surfaceCard).toContain("OrdersListResultCard");
     expect(surfaceCard).toContain("AssistantCollectionBlock");
     expect(surfaceCard).toContain('case "customers-list"');
@@ -1848,5 +1866,215 @@ describe("customers-list collection surface (SHO-472)", () => {
     expect(surfaceCard).not.toContain("customers-list-result-card");
     expect(surfaceCard).toContain("AssistantCollectionBlock");
     expect(collectionBlock).toContain("AssistantCollectionBlock");
+  });
+});
+
+function breakdownView(
+  groupingKey: "product" | "status" | "customer",
+): Extract<AssistantAggregateView, { layout: "breakdown" }> {
+  const copy = assistantChromeUk.aggregate;
+  const groupLabel =
+    groupingKey === "product"
+      ? copy.productColumn
+      : groupingKey === "status"
+        ? copy.statusColumn
+        : copy.customerColumn;
+  return {
+    layout: "breakdown",
+    groupingKey,
+    columns: localizeAggregateColumns([
+      {
+        id: "group",
+        label: groupLabel,
+        width: "flex",
+        alignment: "start",
+      },
+      {
+        id: "count",
+        label: copy.countColumn,
+        width: "auto",
+        alignment: "end",
+      },
+      {
+        id: "amount",
+        label: copy.amountColumn,
+        width: "auto",
+        alignment: "end",
+      },
+    ]),
+    groups: [
+      {
+        id: `${groupingKey}-parent`,
+        head: {
+          id: `${groupingKey}-head`,
+          title: groupingKey,
+          badge: null,
+          badgeTone: "neutral",
+          meta: null,
+          cells: ["2", "1 000,00 ₴"],
+          href: null,
+        },
+        children: [
+          {
+            id: `${groupingKey}-child`,
+            title: "child",
+            badge: null,
+            badgeTone: "neutral",
+            meta: null,
+            cells: ["1", "500,00 ₴"],
+            href: null,
+          },
+        ],
+      },
+    ],
+    total: {
+      id: "total",
+      title: copy.totals,
+      badge: null,
+      badgeTone: "neutral",
+      meta: null,
+      cells: ["2", "1 000,00 ₴"],
+      href: null,
+    },
+  };
+}
+
+describe("aggregate block layouts (SHO-473)", () => {
+  it("renders summary and breakdown through the same block", () => {
+    const aggregateBlock = readFileSync(
+      new URL("../sheet/assistant-aggregate-block.tsx", import.meta.url),
+      "utf8",
+    );
+    const aggregateCard = readFileSync(
+      new URL("../sheet/orders-aggregate-result-card.tsx", import.meta.url),
+      "utf8",
+    );
+    const collectionBlock = readFileSync(
+      new URL("../sheet/assistant-collection-block.tsx", import.meta.url),
+      "utf8",
+    );
+    const surfaceCard = readFileSync(
+      new URL("../sheet/assistant-surface-card.tsx", import.meta.url),
+      "utf8",
+    );
+    expect(aggregateBlock).toContain("export const AssistantAggregateBlock");
+    expect(aggregateBlock).toContain('case "summary"');
+    expect(aggregateBlock).toContain('case "breakdown"');
+    expect(aggregateBlock.match(/case "/g)?.length).toBe(2);
+    expect(isAssistantAggregateLayout("summary")).toBe(true);
+    expect(isAssistantAggregateLayout("breakdown")).toBe(true);
+    expect(isAssistantAggregateLayout("chart")).toBe(false);
+    expect(aggregateBlock).toContain("AssistantCollectionResultRow");
+    expect(aggregateBlock).toContain("AssistantCollectionColumnHeaders");
+    expect(aggregateBlock).not.toContain("AggregateBucketRow");
+    expect(collectionBlock).toContain(
+      "export const AssistantCollectionResultRow",
+    );
+    expect(aggregateCard).toContain("AssistantAggregateBlock");
+    expect(surfaceCard).toContain("OrdersAggregateResultCard");
+    expect(surfaceCard).toContain("onOpenHref={onOpenHref}");
+  });
+
+  it("uses one breakdown layout for 3.5 / 3.6 / 3.7 grouping keys, with a totals row", () => {
+    const product = breakdownView("product");
+    const status = breakdownView("status");
+    const customer = breakdownView("customer");
+    const fixtures = [product, status, customer];
+    expect(fixtures.map((fixture) => fixture.layout)).toEqual([
+      "breakdown",
+      "breakdown",
+      "breakdown",
+    ]);
+    expect(fixtures.map((fixture) => fixture.groupingKey)).toEqual([
+      "product",
+      "status",
+      "customer",
+    ]);
+    expect(
+      new Set(fixtures.map((fixture) => fixture.columns[0]?.label)).size,
+    ).toBe(3);
+    for (const fixture of fixtures) {
+      expect(fixture.total).not.toBeNull();
+      expect(fixture.total?.title).toBe(assistantChromeUk.aggregate.totals);
+      expect(fixture.groups).toHaveLength(1);
+    }
+    const summary = aggregateOf(
+      assistantSurfacesFromParts(
+        [
+          countsPart(
+            countsOutput(
+              [
+                {
+                  identity: { kind: "status", status: "new" },
+                  orderCount: 1,
+                },
+              ],
+              {
+                statusBuckets: [statusBucket("new", 1)],
+              },
+            ),
+          ),
+        ],
+        "uk",
+      ),
+    );
+    expect(summary?.aggregate.layout).toBe("summary");
+    expect("total" in (summary?.aggregate ?? {})).toBe(false);
+  });
+
+  it("keeps the live orders-aggregate staff-visible fields on summary", () => {
+    const card = aggregateOf(
+      assistantSurfacesFromParts(
+        [
+          countsPart(
+            countsOutput(
+              [
+                {
+                  identity: {
+                    kind: "product",
+                    productId: PRODUCT_A,
+                    variantId: null,
+                  },
+                  label: "Троянда",
+                  orderCount: 2,
+                  grossByCurrency: [
+                    { currency: "UAH", grossAmountMinor: "5000" },
+                  ],
+                  quantityMilli: "1500",
+                },
+              ],
+              {
+                orderCount: 2,
+                grossByCurrency: [
+                  { currency: "UAH", grossAmountMinor: "5000" },
+                ],
+                statusBuckets: [
+                  statusBucket("new", 2, [
+                    { currency: "UAH", grossAmountMinor: "5000" },
+                  ]),
+                ],
+              },
+            ),
+            { groupBy: "product" },
+          ),
+        ],
+        "uk",
+      ),
+    );
+    expect(card).not.toBeNull();
+    if (card === null) {
+      return;
+    }
+    assertLabeledBucketList(card);
+    expect(card.aggregate.layout).toBe("summary");
+    if (card.aggregate.layout !== "summary") {
+      return;
+    }
+    expect(card.aggregate.sections).toHaveLength(2);
+    expect(card.aggregate.sections[0]?.rows[0]?.badge).toBe(
+      ordersUk.statuses.new,
+    );
+    expect(card.aggregate.sections[1]?.rows[0]?.title).toBe("Троянда");
+    expect(card.aggregate.featured).toBeNull();
   });
 });
