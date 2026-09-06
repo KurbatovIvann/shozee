@@ -1,6 +1,6 @@
 /// <reference types="node" />
 import { readFileSync, readdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -162,7 +162,9 @@ describe("promptLine definitions (SHO-457)", () => {
       );
       expect(matches, name).toHaveLength(1);
       expect(
-        matches[0]?.includes("/packages/validation/src/assistant-surfaces/"),
+        matches[0]?.includes(
+          join("packages", "validation", "src", "assistant-surfaces") + sep,
+        ),
       ).toBe(true);
     }
     const spokenReply = readFileSync(join(aiSrc, "spoken-reply.ts"), "utf8");
