@@ -1,8 +1,9 @@
 /**
- * Orders list result surface (SHO-369 / SHO-385 / SHO-456). Localizes
- * shared `@showzy/validation/assistant-surfaces` data. Do not walk
- * `items[].orderId` into entity cards. Do not import `@showzy/ai`.
+ * Orders list result surface (SHO-369 / SHO-385 / SHO-456 / SHO-472).
+ * Localizes shared `@showzy/validation/assistant-surfaces` data. Do not
+ * walk `items[].orderId` into entity cards. Do not import `@showzy/ai`.
  */
+import { sharedAssistantCopy } from "@showzy/copy/assistant";
 import {
   parseOrdersListSurface as parseOrdersListData,
   assistantSurfaceHandoffHref,
@@ -17,7 +18,6 @@ import {
   type AssistantSurfaceDestination,
 } from "@showzy/validation/assistant-surfaces";
 
-import { assistantCopy } from "../../../i18n/assistant";
 import type { Locale } from "../../../i18n/locale";
 import { ordersCopy } from "../../../i18n/orders";
 import { itemCountLabel } from "../../orders/shared/item-count";
@@ -31,6 +31,10 @@ import {
   type OrderStatusTone,
 } from "../../orders/shared/order-status";
 import type { AssistantChatPart } from "../shared/confirmation-presenter";
+import {
+  localizeAssistantCollection,
+  type AssistantCollectionView,
+} from "./collection";
 import {
   assistantSurfaceToolResultsFromParts,
   formatMoneyAmount,
@@ -68,6 +72,7 @@ export type AssistantOrdersListCardView = {
   readonly kind: "orders-list";
   readonly destination: AssistantSurfaceDestination;
   readonly handoffLabel: string;
+  readonly collection: AssistantCollectionView;
   readonly rows: readonly AssistantOrdersListRowView[];
   readonly chips: readonly AssistantOrdersListChipView[];
   readonly emptyTitle: string | null;
@@ -115,6 +120,20 @@ function localizeListRow(
   };
 }
 
+function collectionRowsFromLocalized(
+  rows: readonly AssistantOrdersListRowView[],
+): AssistantCollectionView["rows"] {
+  return rows.map((row) => ({
+    id: row.orderId,
+    title: row.customerName,
+    badge: row.statusLabel,
+    badgeTone: row.statusTone,
+    meta: row.metaLabel.length > 0 ? row.metaLabel : null,
+    cells: row.totalLabel !== null ? [row.totalLabel] : [],
+    href: row.href,
+  }));
+}
+
 function localizeChips(
   data: AssistantOrdersListData,
   orders: ReturnType<typeof ordersCopy>,
@@ -142,7 +161,7 @@ export function localizeOrdersListCard(
   data: AssistantOrdersListData,
   locale: Locale,
 ): AssistantOrdersListCardView {
-  const assistant = assistantCopy(locale);
+  const chrome = sharedAssistantCopy(locale).ordersList;
   const orders = ordersCopy(locale);
   const parsedRows = data.rows.map((row) =>
     localizeListRow(row, locale, orders),
@@ -155,22 +174,26 @@ export function localizeOrdersListCard(
       : null;
   const footnotes: string[] = [];
   if (data.customerMatchTruncated) {
-    footnotes.push(assistant.cards.customerMatchTruncated);
+    footnotes.push(chrome.customerMatchTruncated);
   }
   if (data.clipped) {
-    footnotes.push(assistant.cards.clipped);
+    footnotes.push(chrome.clipped);
   }
   const empty = parsedRows.length === 0;
   return {
     kind: "orders-list",
     destination: data.destination,
-    handoffLabel: assistant.cards.openOrders,
+    handoffLabel: chrome.openList,
+    collection: localizeAssistantCollection(
+      data.collection,
+      collectionRowsFromLocalized(parsedRows),
+    ),
     rows: parsedRows,
     chips: localizeChips(data, orders),
-    emptyTitle: empty ? assistant.cards.listEmptyTitle : null,
-    emptyDescription: empty ? assistant.cards.listEmptyDescription : null,
+    emptyTitle: empty ? chrome.listEmptyTitle : null,
+    emptyDescription: empty ? chrome.listEmptyDescription : null,
     footnotes,
-    ctaLabel: ctaHref !== null ? assistant.cards.openOrders : null,
+    ctaLabel: ctaHref !== null ? chrome.openList : null,
     ctaHref,
   };
 }

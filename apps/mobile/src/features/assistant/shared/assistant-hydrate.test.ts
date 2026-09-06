@@ -322,6 +322,42 @@ describe("hydratedUiMessagesFromConversation", () => {
     expect(visible[1]?.text).toBe("Ось активні замовлення.");
   });
 
+  it("does not restore a customers-list card on resume (hydratable: false)", () => {
+    const messages = hydratedUiMessagesFromConversation({
+      messages: [
+        message({
+          id: MSG_USER,
+          role: "user",
+          body: "Покажи клієнтів",
+          createdAt: "2026-09-03T10:00:00.000Z",
+        }),
+        message({
+          id: MSG_ASSISTANT,
+          role: "assistant",
+          body: "Ось клієнти.",
+          createdAt: "2026-09-03T10:00:01.000Z",
+        }),
+      ],
+      toolRuns: [
+        toolRun({
+          id: RUN_LIST,
+          actionName: "customers.listCustomers",
+          toolCallId: "call-customers-list",
+          resultIds: [],
+          createdAt: "2026-09-03T10:00:01.000Z",
+        }),
+      ],
+      ordersById: new Map(),
+    });
+    expect(messages[1]?.parts).toEqual([
+      { type: "text", text: "Ось клієнти." },
+    ]);
+    expect(assistantSurfacesFromParts(messages[1]?.parts ?? [], "uk")).toEqual(
+      [],
+    );
+    expect(JSON.stringify(messages)).not.toContain("customers_list_customers");
+  });
+
   it("hydrates thin entity cards via live orders.get snapshots", () => {
     const getOutput = orderSnapshot(ORDER_A, "in_progress");
     const createOutput = orderSnapshot(ORDER_B, "new", {
@@ -1036,7 +1072,10 @@ describe("hydration registry derivation (SHO-456)", () => {
       "orders.create",
       "orders.get",
     ]);
-    expect([...UNRESTORABLE_LIST_ACTIONS]).toEqual(["orders.list"]);
+    expect([...UNRESTORABLE_LIST_ACTIONS].sort()).toEqual([
+      "customers.listCustomers",
+      "orders.list",
+    ]);
     expect(
       isHydratableOrderEntityRun({
         id: RUN_GET,
@@ -1062,6 +1101,16 @@ describe("hydration registry derivation (SHO-456)", () => {
         id: RUN_LIST,
         actionName: "orders.list",
         toolCallId: "call-list",
+        resultIds: [],
+        outcome: "success",
+        createdAt: "2026-09-03T10:00:01.000Z",
+      }),
+    ).toBe(true);
+    expect(
+      isUnrestorableListRun({
+        id: RUN_GET,
+        actionName: "customers.listCustomers",
+        toolCallId: "call-customers-list",
         resultIds: [],
         outcome: "success",
         createdAt: "2026-09-03T10:00:01.000Z",

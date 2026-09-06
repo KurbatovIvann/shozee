@@ -1,4 +1,5 @@
 import {
+  CUSTOMERS_LIST_PROMPT_LINE,
   ORDER_ENTITY_PROMPT_LINE,
   ORDERS_AGGREGATE_PROMPT_LINE,
   ORDERS_LIST_PROMPT_LINE,
@@ -147,6 +148,7 @@ describe("staffAssistantSystemPrompt", () => {
     expect(staffAssistantSystemPrompt).toContain(ORDERS_LIST_PROMPT_LINE);
     expect(staffAssistantSystemPrompt).toContain(ORDERS_AGGREGATE_PROMPT_LINE);
     expect(staffAssistantSystemPrompt).toContain(ORDER_ENTITY_PROMPT_LINE);
+    expect(staffAssistantSystemPrompt).toContain(CUSTOMERS_LIST_PROMPT_LINE);
     expect(staffAssistantSystemPrompt).toContain("Do not emit card JSON");
     expect(staffAssistantSystemPrompt).toContain(
       'Do not name those surfaces "cards" to the staff member',

@@ -1,13 +1,22 @@
 /**
- * Assistant result-surface registry (SHO-456 / SHO-470). Each kind owns
- * the façade tools it binds, parse into an unlocalized view-model,
- * English `promptLine`, a required destination, and hydration flags.
- * Timeline and HITL are not registered here.
+ * Assistant result-surface registry (SHO-456 / SHO-470 / SHO-472). Each
+ * kind owns the façade tools it binds, parse into an unlocalized
+ * view-model, English `promptLine`, a required destination, and
+ * hydration flags. Timeline and HITL are not registered here.
  *
- * Adding the **second list-shaped** surface is a later ticket — do not
- * generalise `orders-list` into a generic table in this slice.
+ * List-shaped surfaces share one collection block driven by a typed
+ * column descriptor (per-surface row cap, not one shared constant).
+ * `customers-list` is the second list. Do not copy `orders-list.ts` and
+ * swap the columns — a later list is a new descriptor, not a new card.
  */
 import type { AssistantSurfaceData, AssistantSurfaceKind } from "./compose.js";
+import {
+  CUSTOMERS_LIST_ACTION_NAME,
+  CUSTOMERS_LIST_DESTINATION,
+  CUSTOMERS_LIST_PROMPT_LINE,
+  CUSTOMERS_LIST_SURFACE_TOOLS,
+  parseCustomersListSurface,
+} from "./customers-list.js";
 import type { AssistantSurfaceDestinationDeclaration } from "./destination.js";
 import type { AssistantSurfaceToolResult } from "./helpers.js";
 import {
@@ -77,6 +86,19 @@ export const ASSISTANT_SURFACE_REGISTRY: readonly AssistantSurfaceDescriptor[] =
       promptLine: ORDER_ENTITY_PROMPT_LINE,
       destination: ORDER_ENTITY_DESTINATION,
       parse: parseOrderEntitySurfaces,
+    },
+    {
+      kind: "customers-list",
+      version: 1,
+      toolNames: CUSTOMERS_LIST_SURFACE_TOOLS,
+      actionNames: [CUSTOMERS_LIST_ACTION_NAME],
+      // Lists are unrestorable today (`assistant-hydrate.ts`: "Do not
+      // restore list cards"; `orders-list` is `hydratable: false`). No
+      // ticket mandates hydrating customers-list on resume.
+      hydratable: false,
+      promptLine: CUSTOMERS_LIST_PROMPT_LINE,
+      destination: CUSTOMERS_LIST_DESTINATION,
+      parse: parseCustomersListSurface,
     },
   ];
 

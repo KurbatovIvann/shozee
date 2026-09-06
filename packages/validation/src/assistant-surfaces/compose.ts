@@ -1,8 +1,13 @@
 /**
- * SHO-456 compose: page (+ optional counts) → one list surface;
- * counts-only → one aggregate; never both; N entity surfaces from
- * get/create. Do not walk `items[].orderId` into entities.
+ * SHO-456 / SHO-472 compose: page (+ optional counts) → one orders-list
+ * surface; counts-only → one aggregate; never both; customers-list from
+ * `customers_list_customers`; N entity surfaces from get/create. Do not
+ * walk `items[].orderId` or customer ids into entity cards.
  */
+import {
+  parseCustomersListSurface,
+  type AssistantCustomersListData,
+} from "./customers-list.js";
 import type { AssistantSurfaceToolResult } from "./helpers.js";
 import {
   parseOrderEntitySurfaces,
@@ -20,7 +25,8 @@ import {
 export type AssistantSurfaceData =
   | AssistantOrdersListData
   | AssistantOrdersAggregateData
-  | AssistantOrderEntityData;
+  | AssistantOrderEntityData
+  | AssistantCustomersListData;
 
 export type AssistantSurfaceKind = AssistantSurfaceData["kind"];
 
@@ -33,6 +39,7 @@ export function assistantSurfacesFromToolResults(
 ): readonly AssistantSurfaceData[] {
   const list = parseOrdersListSurface(results);
   const aggregate = list === null ? parseOrdersAggregateSurface(results) : null;
+  const customers = parseCustomersListSurface(results);
   const entities = parseOrderEntitySurfaces(results);
   const surfaces: AssistantSurfaceData[] = [];
   if (list !== null) {
@@ -40,6 +47,9 @@ export function assistantSurfacesFromToolResults(
   }
   if (aggregate !== null) {
     surfaces.push(aggregate);
+  }
+  if (customers !== null) {
+    surfaces.push(customers);
   }
   surfaces.push(...entities);
   return surfaces;

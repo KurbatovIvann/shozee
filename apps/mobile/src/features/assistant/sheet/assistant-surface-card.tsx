@@ -1,6 +1,7 @@
 import { memo } from "react";
 
 import type { AssistantSurface } from "../surfaces";
+import { AssistantCollectionBlock } from "./assistant-collection-block";
 import {
   assistantResultCta,
   assistantResultMarks,
@@ -13,9 +14,10 @@ import { OrdersAggregateResultCard } from "./orders-aggregate-result-card";
 import { OrdersListResultCard } from "./orders-list-result-card";
 
 /**
- * SHO-469: one frame plus a block switch for registered result-card
- * kinds. Timeline and HITL stay in the message row; HITL chrome uses
- * the same frame with no block.
+ * SHO-469 / SHO-472: one frame plus a block switch for registered
+ * result-card kinds. List-shaped kinds share `AssistantCollectionBlock`.
+ * Timeline and HITL stay in the message row; HITL chrome uses the same
+ * frame with no block.
  */
 export const AssistantSurfaceCard = memo(function AssistantSurfaceCard(props: {
   readonly surface: AssistantSurface;
@@ -52,6 +54,13 @@ const AssistantSurfaceBlock = memo(function AssistantSurfaceBlock(props: {
     case "orders-list":
       return surface.emptyTitle !== null ? null : (
         <OrdersListResultCard card={surface} onOpenHref={onOpenHref} />
+      );
+    case "customers-list":
+      return surface.emptyTitle !== null ? null : (
+        <AssistantCollectionBlock
+          collection={surface.collection}
+          onOpenHref={onOpenHref}
+        />
       );
     case "orders-aggregate":
       return <OrdersAggregateResultCard card={surface} />;

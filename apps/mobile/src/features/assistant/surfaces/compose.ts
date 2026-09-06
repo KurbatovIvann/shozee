@@ -1,9 +1,11 @@
 /**
- * SHO-367 / SHO-385 / SHO-456 / SHO-458 compose: page (+ optional
- * counts) → one list surface; counts-only → one aggregate; never both;
- * N entity surfaces from get/create. Live turns prefer the server
+ * SHO-367 / SHO-385 / SHO-456 / SHO-458 / SHO-472 compose: page
+ * (+ optional counts) → one orders-list; counts-only → one aggregate;
+ * never both; customers-list from `customers_list_customers`; N entity
+ * surfaces from get/create. Live turns prefer the server
  * `data-presentation` envelope; absent / unknown / malformed fall back
- * to the shared parse. Do not walk `items[].orderId` into entities.
+ * to the shared parse. Do not walk `items[].orderId` or customer ids
+ * into entities.
  */
 import {
   ASSISTANT_SURFACE_REGISTRY,
@@ -21,6 +23,10 @@ import type { Locale } from "../../../i18n/locale";
 import { ordersCopy } from "../../../i18n/orders";
 import type { AssistantChatPart } from "../shared/confirmation-presenter";
 import { toolNameFromPart } from "../shared/turn-timeline";
+import {
+  localizeCustomersListCard,
+  type AssistantCustomersListCardView,
+} from "./customers-list";
 import { assistantSurfaceToolResultsFromParts } from "./helpers";
 import {
   localizeOrderEntityCard,
@@ -41,7 +47,8 @@ const PRESENTATION_PART_TYPE = "data-presentation";
 export type AssistantSurface =
   | AssistantOrdersListCardView
   | AssistantOrdersAggregateCardView
-  | AssistantOrderEntityCardView;
+  | AssistantOrderEntityCardView
+  | AssistantCustomersListCardView;
 
 export function assistantSurfaceKey(surface: AssistantSurface): string {
   switch (surface.kind) {
@@ -51,6 +58,8 @@ export function assistantSurfaceKey(surface: AssistantSurface): string {
       return "orders-aggregate";
     case "order-entity":
       return surface.id;
+    case "customers-list":
+      return "customers-list";
   }
 }
 
@@ -84,6 +93,8 @@ function localizeSurface(
       return localizeOrdersAggregateCard(data, locale, lastCountsInput(parts));
     case "order-entity":
       return localizeOrderEntityCard(data, ordersCopy(locale), locale);
+    case "customers-list":
+      return localizeCustomersListCard(data, locale);
   }
 }
 

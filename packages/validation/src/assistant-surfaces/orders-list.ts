@@ -4,7 +4,14 @@
  * walk `items[].orderId` into entity surfaces.
  */
 import {
+  assistantCollectionDescriptor,
+  capCollectionRows,
+  type AssistantCollectionColumn,
+  type AssistantCollectionDescriptor,
+} from "./collection.js";
+import {
   ASSISTANT_ORDERS_LIST_SCREEN_HREF,
+  assistantOrderDetailScreenHref,
   resolveAssistantSurfaceDestination,
   type AssistantSurfaceDestination,
   type AssistantSurfaceDestinationDeclaration,
@@ -61,6 +68,22 @@ export type AssistantOrdersListChipData = {
   readonly orderCount: number;
 };
 
+export const ORDERS_LIST_COLLECTION_COLUMNS: readonly AssistantCollectionColumn[] =
+  [
+    {
+      id: "title",
+      label: "",
+      width: "flex",
+      alignment: "start",
+    },
+    {
+      id: "total",
+      label: "",
+      width: "auto",
+      alignment: "end",
+    },
+  ];
+
 export type AssistantOrdersListData = {
   readonly kind: "orders-list";
   readonly destination: AssistantSurfaceDestination;
@@ -70,7 +93,21 @@ export type AssistantOrdersListData = {
   readonly hasMore: boolean;
   readonly nextCursor: string | null;
   readonly customerMatchTruncated: boolean;
+  readonly collection: AssistantCollectionDescriptor;
 };
+
+function collectionRowFromListRow(
+  row: AssistantOrdersListRowData,
+): AssistantCollectionDescriptor["rows"][number] {
+  return {
+    id: row.orderId,
+    title: row.customerNameSnapshot ?? "",
+    badge: row.status,
+    meta: null,
+    cells: row.total !== null ? [row.total.amountMinor] : [],
+    href: assistantOrderDetailScreenHref(row.orderId),
+  };
+}
 
 function parseListRow(row: unknown): AssistantOrdersListRowData | null {
   if (!isRecord(row)) {
@@ -191,26 +228,32 @@ export function parseOrdersListSurface(
   const { payload, clipped } = unwrapToolOutput(pageResult.output);
   const parsedRows: AssistantOrdersListRowData[] = [];
   for (const row of pageItems(payload)) {
-    if (parsedRows.length >= ASSISTANT_ORDERS_LIST_ROW_MAX) {
-      break;
-    }
     const parsed = parseListRow(row);
     if (parsed !== null) {
       parsedRows.push(parsed);
     }
   }
+  const capped = capCollectionRows(parsedRows, ASSISTANT_ORDERS_LIST_ROW_MAX);
+  const hasMore = pageHasMore(payload, clipped);
   return {
     kind: "orders-list",
     destination: resolveAssistantSurfaceDestination(
       ORDERS_LIST_DESTINATION,
       ASSISTANT_ORDERS_LIST_SCREEN_HREF,
     ),
-    rows: parsedRows,
+    rows: capped.rows,
     chips:
       countsResult === null ? [] : statusChipsFromCounts(countsResult.output),
     clipped,
-    hasMore: pageHasMore(payload, clipped),
+    hasMore,
     nextCursor: pageNextCursor(payload),
     customerMatchTruncated: pageCustomerMatchTruncated(payload),
+    collection: assistantCollectionDescriptor({
+      columns: ORDERS_LIST_COLLECTION_COLUMNS,
+      rows: capped.rows.map(collectionRowFromListRow),
+      surface: "plain",
+      rowCap: ASSISTANT_ORDERS_LIST_ROW_MAX,
+      truncated: clipped || hasMore || capped.truncatedByCap,
+    }),
   };
 }

@@ -8,6 +8,7 @@ import {
   assistantSurfacesFromToolResults,
   type AssistantSurfaceData,
 } from "./compose.js";
+import { CUSTOMERS_LIST_CUSTOMERS_TOOL } from "./customers-list.js";
 import {
   lastSuccessfulResult,
   type AssistantSurfaceToolResult,
@@ -79,6 +80,14 @@ function toolCallIdsForSurface(
     );
     pushUniqueId(ids, page?.toolCallId);
     pushUniqueId(ids, counts?.toolCallId);
+    return ids;
+  }
+  if (surface.kind === "customers-list") {
+    const page = lastSuccessfulResult(
+      results,
+      (name) => name === CUSTOMERS_LIST_CUSTOMERS_TOOL,
+    );
+    pushUniqueId(ids, page?.toolCallId);
     return ids;
   }
   const counts = lastSuccessfulResult(

@@ -15,6 +15,7 @@ import {
   STAFF_ASSISTANT_DEFAULT_LOCALE,
 } from "./presenter.js";
 import { STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK } from "./spoken-reply.js";
+import { CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME } from "./tool-facades/customers-list-customers.js";
 import { ORDERS_CREATE_TOOL_NAME } from "./tool-facades/orders-create.js";
 import {
   ORDERS_LIST_COUNTS_TOOL_NAME,
@@ -63,6 +64,55 @@ describe("presentCompletedStaffAssistantTurn", () => {
         toolResults: results,
       }),
     ).toBe("Latest orders: #1049 (New), #1050 (Confirmed).");
+  });
+
+  it("presents a customers list as a short product summary, not a table", () => {
+    const results = [
+      {
+        toolName: CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME,
+        output: {
+          items: [
+            {
+              id: ORDER_A,
+              name: "Ivan",
+              phone: "+380501112233",
+              email: "ivan@example.com",
+              status: "active",
+              groupId: null,
+              priceListId: null,
+            },
+            {
+              id: ORDER_B,
+              name: "Olya",
+              phone: null,
+              email: null,
+              status: "archived",
+              groupId: null,
+              priceListId: null,
+            },
+          ],
+          nextCursor: null,
+        },
+      },
+    ];
+    expect(
+      presentCompletedStaffAssistantTurn({
+        locale: "uk",
+        toolResults: results,
+      }),
+    ).toBe("Клієнти: Ivan, Olya.");
+    expect(
+      presentCompletedStaffAssistantTurn({
+        locale: "en",
+        toolResults: results,
+      }),
+    ).toBe("Customers: Ivan, Olya.");
+    const spoken = presentCompletedStaffAssistantTurn({
+      locale: "en",
+      toolResults: results,
+    });
+    expect(spoken).not.toContain("|");
+    expect(spoken).not.toContain("ivan@example.com");
   });
 
   it("presents an empty page", () => {

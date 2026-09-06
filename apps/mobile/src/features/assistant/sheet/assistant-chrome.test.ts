@@ -29,6 +29,10 @@ const listCard = readFileSync(
   new URL("./orders-list-result-card.tsx", import.meta.url),
   "utf8",
 );
+const collectionBlock = readFileSync(
+  new URL("./assistant-collection-block.tsx", import.meta.url),
+  "utf8",
+);
 const aggregateCard = readFileSync(
   new URL("./orders-aggregate-result-card.tsx", import.meta.url),
   "utf8",
@@ -103,6 +107,8 @@ describe("assistant conversation chrome (SHO-392)", () => {
   it("does not put Shozik assets on SHO-383 result cards", () => {
     expect(listCard).not.toContain("sit.svg");
     expect(listCard).not.toContain("dig.svg");
+    expect(collectionBlock).not.toContain("sit.svg");
+    expect(collectionBlock).not.toContain("dig.svg");
     expect(aggregateCard).not.toContain("sit.svg");
     expect(aggregateCard).not.toContain("dig.svg");
     expect(entityCard).not.toContain("sit.svg");
