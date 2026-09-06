@@ -9,6 +9,7 @@ import {
   isAssistantSurfaceResultOutput,
   isRecord,
   parseOrdersAggregateSurface as parseOrdersAggregateData,
+  assistantSurfaceHandoffHref,
   ORDERS_AGGREGATE_PROMPT_LINE,
   ORDERS_AGGREGATE_SURFACE_TOOLS,
   ORDERS_LIST_COUNTS_TOOL,
@@ -67,8 +68,8 @@ export type AssistantOrdersAggregateCardView = {
   readonly emptyTitle: string | null;
   readonly emptyDescription: string | null;
   readonly footnotes: readonly string[];
-  readonly ctaLabel: string;
-  readonly ctaHref: typeof ASSISTANT_ORDERS_LIST_HREF;
+  readonly ctaLabel: string | null;
+  readonly ctaHref: typeof ASSISTANT_ORDERS_LIST_HREF | null;
 };
 
 function orderCountLabel(
@@ -232,6 +233,11 @@ export function localizeOrdersAggregateCard(
     footnotes.push(assistant.cards.clipped);
   }
   const empty = parsedStatusBuckets.length === 0 && extraBuckets.length === 0;
+  const destinationHref = assistantSurfaceHandoffHref(data.destination);
+  const ctaHref =
+    destinationHref === ASSISTANT_ORDERS_LIST_HREF
+      ? null
+      : ASSISTANT_ORDERS_LIST_HREF;
   return {
     kind: "orders-aggregate",
     destination: data.destination,
@@ -249,8 +255,8 @@ export function localizeOrdersAggregateCard(
     emptyTitle: empty ? assistant.cards.aggregateEmptyTitle : null,
     emptyDescription: empty ? assistant.cards.aggregateEmptyDescription : null,
     footnotes,
-    ctaLabel: assistant.cards.openOrders,
-    ctaHref: ASSISTANT_ORDERS_LIST_HREF,
+    ctaLabel: ctaHref !== null ? assistant.cards.openOrders : null,
+    ctaHref,
   };
 }
 

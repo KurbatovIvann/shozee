@@ -5,6 +5,7 @@
  */
 import {
   parseOrdersListSurface as parseOrdersListData,
+  assistantSurfaceHandoffHref,
   ORDERS_LIST_COUNTS_TOOL,
   ORDERS_LIST_PAGE_TOOL,
   ORDERS_LIST_PROMPT_LINE,
@@ -147,6 +148,11 @@ export function localizeOrdersListCard(
     localizeListRow(row, locale, orders),
   );
   const showCta = data.hasMore || data.nextCursor !== null;
+  const destinationHref = assistantSurfaceHandoffHref(data.destination);
+  const ctaHref =
+    showCta && destinationHref !== ASSISTANT_ORDERS_LIST_HREF
+      ? ASSISTANT_ORDERS_LIST_HREF
+      : null;
   const footnotes: string[] = [];
   if (data.customerMatchTruncated) {
     footnotes.push(assistant.cards.customerMatchTruncated);
@@ -164,8 +170,8 @@ export function localizeOrdersListCard(
     emptyTitle: empty ? assistant.cards.listEmptyTitle : null,
     emptyDescription: empty ? assistant.cards.listEmptyDescription : null,
     footnotes,
-    ctaLabel: showCta ? assistant.cards.openOrders : null,
-    ctaHref: showCta ? ASSISTANT_ORDERS_LIST_HREF : null,
+    ctaLabel: ctaHref !== null ? assistant.cards.openOrders : null,
+    ctaHref,
   };
 }
 

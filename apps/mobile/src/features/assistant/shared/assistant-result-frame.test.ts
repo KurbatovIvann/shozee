@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
+  assistantResultCta,
   assistantResultHandoff,
   assistantResultMarks,
   assistantResultMarksFromUnknown,
@@ -68,6 +69,7 @@ describe("AssistantResultFrame notice card (SHO-469)", () => {
     expect(FRAME).toContain("emptyDescription");
     expect(FRAME).toContain("<Button");
     expect(SURFACE).toContain("emptyTitle={empty.title}");
+    expect(SURFACE).toContain("secondaryCta");
     expect(SURFACE).toContain('id: "cta"');
     expect(SURFACE).toContain('variant: "secondary"');
     expect(importsNamed(LIST, "Card")).toBe(false);
@@ -171,5 +173,31 @@ describe("assistant result destination handoff (SHO-470)", () => {
     expect(FRAME).not.toContain('kind: "terminal"');
     expect(CONFIRMATION).not.toContain("destination=");
     expect(CONFIRMATION).not.toContain("handoffLabel");
+  });
+
+  it("omits the T1 CTA when ctaHref equals the screen destination", () => {
+    expect(
+      assistantResultCta("Open orders", "/orders", {
+        kind: "screen",
+        href: "/orders",
+      }),
+    ).toBeNull();
+    expect(
+      assistantResultCta("Open orders", "/orders", {
+        kind: "screen",
+        href: "/orders/0f0e2d5c-4a1b-4c3d-9e8f-102938475601",
+      }),
+    ).toEqual({ label: "Open orders", href: "/orders" });
+    expect(
+      assistantResultCta("Open orders", "/orders", { kind: "terminal" }),
+    ).toEqual({ label: "Open orders", href: "/orders" });
+    expect(
+      assistantResultCta("Open orders", "/orders", { kind: "document" }),
+    ).toEqual({ label: "Open orders", href: "/orders" });
+    expect(
+      assistantResultCta(null, "/orders", { kind: "terminal" }),
+    ).toBeNull();
+    expect(SURFACE).toContain("assistantResultCta");
+    expect(SURFACE).toContain("secondaryCta");
   });
 });

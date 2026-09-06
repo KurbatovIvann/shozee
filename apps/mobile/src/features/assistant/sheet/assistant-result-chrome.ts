@@ -98,3 +98,22 @@ export function assistantResultHandoff(
   }
   return { href };
 }
+
+/**
+ * T1 secondary CTA. Omitted when it would open the same screen as the
+ * destination handoff — two identical doors (SHO-470).
+ */
+export function assistantResultCta(
+  label: string | null,
+  href: string | null,
+  destination: AssistantSurfaceDestination | null | undefined,
+): { readonly label: string; readonly href: string } | null {
+  if (label === null || href === null || label.length === 0) {
+    return null;
+  }
+  const handoff = assistantResultHandoff(destination);
+  if (handoff !== null && handoff.href === href) {
+    return null;
+  }
+  return { label, href };
+}

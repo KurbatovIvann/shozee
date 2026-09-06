@@ -173,8 +173,16 @@ describe("assistantSurfacesFromParts", () => {
       ],
       "uk",
     );
-    expect(listOf(surfaces)?.rows).toHaveLength(3);
-    expect(listOf(surfaces)?.ctaHref).toBe("/orders");
+    const list = listOf(surfaces);
+    expect(list?.rows).toHaveLength(3);
+    expect(list?.destination).toEqual({
+      kind: "screen",
+      href: "/orders",
+    });
+    expect(list?.handoffLabel).toBe(uk.cards.openOrders);
+    expect(list?.ctaHref).toBeNull();
+    expect(list?.rows[0]?.href).toBe(orderDetailHref(ORDER_A));
+    expect(list?.rows[1]?.href).toBe(orderDetailHref(ORDER_B));
   });
 
   it("adds status chips when counts are on the same turn", () => {
@@ -256,9 +264,18 @@ describe("assistantSurfacesFromParts", () => {
       "uk",
     );
     const list = listOf(surfaces);
-    expect(list?.ctaHref).toBe(ASSISTANT_ORDERS_LIST_HREF);
-    expect(list?.ctaHref).toBe("/orders");
-    expect(list?.ctaLabel).toBe(uk.cards.openOrders);
+    expect(list?.destination).toEqual({
+      kind: "screen",
+      href: ASSISTANT_ORDERS_LIST_HREF,
+    });
+    expect(list?.destination).toEqual({
+      kind: "screen",
+      href: "/orders",
+    });
+    expect(list?.handoffLabel).toBe(uk.cards.openOrders);
+    expect(list?.ctaHref).toBeNull();
+    expect(list?.ctaLabel).toBeNull();
+    expect(list?.rows[0]?.href).toBe(orderDetailHref(ORDER_A));
     expect(list !== null && "nextCursor" in list).toBe(false);
     expect(list !== null && "loadMore" in list).toBe(false);
     expect(list !== null && "cursor" in list).toBe(false);
@@ -280,9 +297,15 @@ describe("assistantSurfacesFromParts", () => {
       ],
       "uk",
     );
-    expect(listOf(surfaces)?.ctaHref).toBe("/orders");
+    expect(listOf(surfaces)?.destination).toEqual({
+      kind: "screen",
+      href: "/orders",
+    });
+    expect(listOf(surfaces)?.handoffLabel).toBe(uk.cards.openOrders);
+    expect(listOf(surfaces)?.ctaHref).toBeNull();
     expect(listOf(surfaces)?.footnotes).toContain(uk.cards.clipped);
     expect(listOf(surfaces)?.rows).toHaveLength(1);
+    expect(listOf(surfaces)?.rows[0]?.href).toBe(orderDetailHref(ORDER_A));
   });
 
   it("shows customerMatchTruncated as a footnote, not paging", () => {
@@ -755,8 +778,17 @@ function assertLabeledBucketList(card: AssistantOrdersAggregateCardView): void {
   expect("chart" in card).toBe(false);
   expect("wowPercent" in card).toBe(false);
   expect("averageCheck" in card).toBe(false);
-  expect(card.ctaHref).toBe(ASSISTANT_ORDERS_LIST_HREF);
-  expect(card.ctaHref).toBe("/orders");
+  expect(card.destination).toEqual({
+    kind: "screen",
+    href: ASSISTANT_ORDERS_LIST_HREF,
+  });
+  expect(card.destination).toEqual({
+    kind: "screen",
+    href: "/orders",
+  });
+  expect(card.handoffLabel).toBe(uk.cards.openOrders);
+  expect(card.ctaHref).toBeNull();
+  expect(card.ctaLabel).toBeNull();
 }
 
 describe("assistantSurfacesFromParts aggregate (SHO-370 / SHO-395)", () => {
@@ -807,7 +839,7 @@ describe("assistantSurfacesFromParts aggregate (SHO-370 / SHO-395)", () => {
     expect(card.statusBuckets[2]?.statusTone).toBe("attention");
     expect(card.statusBuckets[0]?.statusTone).toBe("action");
     expect(card.emptyTitle).toBeNull();
-    expect(card.ctaLabel).toBe(uk.cards.openOrders);
+    expect(card.handoffLabel).toBe(uk.cards.openOrders);
     expect(JSON.stringify(card).includes(uk.cards.noneBucket)).toBe(false);
     expect(entitiesOf(surfaces)).toEqual([]);
   });
@@ -856,7 +888,7 @@ describe("assistantSurfacesFromParts aggregate (SHO-370 / SHO-395)", () => {
     expect(card.statusBuckets[0]?.orderCountLabel).toBe("6");
     expect(JSON.stringify(card)).not.toContain(uk.cards.noneBucket);
     expect(JSON.stringify(card)).not.toContain("Усього");
-    expect(card.ctaHref).toBe("/orders");
+    expect(card.ctaHref).toBeNull();
   });
 
   it("maps period=today to the period line", () => {
@@ -870,7 +902,11 @@ describe("assistantSurfacesFromParts aggregate (SHO-370 / SHO-395)", () => {
       "uk",
     );
     expect(aggregateOf(surfaces)?.periodLabel).toBe("Сьогодні");
-    expect(aggregateOf(surfaces)?.ctaHref).toBe("/orders");
+    expect(aggregateOf(surfaces)?.destination).toEqual({
+      kind: "screen",
+      href: "/orders",
+    });
+    expect(aggregateOf(surfaces)?.ctaHref).toBeNull();
   });
 
   it("omits the period line when the call has no period or dates", () => {
@@ -888,7 +924,11 @@ describe("assistantSurfacesFromParts aggregate (SHO-370 / SHO-395)", () => {
     );
     const card = aggregateOf(surfaces);
     expect(card?.periodLabel).toBeNull();
-    expect(card?.ctaHref).toBe("/orders");
+    expect(card?.destination).toEqual({
+      kind: "screen",
+      href: "/orders",
+    });
+    expect(card?.ctaHref).toBeNull();
   });
 
   it("formats ISO createdFrom/createdTo as the period line", () => {
@@ -1127,7 +1167,8 @@ describe("assistantSurfacesFromParts aggregate (SHO-370 / SHO-395)", () => {
     expect(card.emptyTitle).toBe(uk.cards.aggregateEmptyTitle);
     expect(card.emptyDescription).toBe(uk.cards.aggregateEmptyDescription);
     expect(card.orderCountLabel).toBe("0 замовлень");
-    expect(card.ctaLabel).toBe(uk.cards.openOrders);
+    expect(card.handoffLabel).toBe(uk.cards.openOrders);
+    expect(card.ctaLabel).toBeNull();
   });
 
   it("renders product and customer extra sections alongside statusBuckets", () => {
@@ -1408,7 +1449,7 @@ describe("assistant result-card surface registry", () => {
       kind: "screen",
       href: ASSISTANT_ORDERS_LIST_HREF,
     });
-    expect(aggregate?.ctaHref).toBe(ASSISTANT_ORDERS_LIST_HREF);
+    expect(aggregate?.ctaHref).toBeNull();
     expect(entity?.destination).toEqual({
       kind: "screen",
       href: orderDetailHref(ORDER_A),
