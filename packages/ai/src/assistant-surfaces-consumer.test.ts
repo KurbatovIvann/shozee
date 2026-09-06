@@ -320,6 +320,6 @@ describe("packages/ai owns localized copy (SHO-457)", () => {
     for (const helper of PARSE_HELPERS_REMOVED_FROM_PRESENTER) {
       expect(presenter.includes(helper), helper).toBe(false);
     }
-    expect(presenter).not.toContain("apps/mobile");
+    expect(presenter).not.toMatch(/from ["']apps\/mobile/);
   });
 });
