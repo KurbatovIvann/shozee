@@ -19,7 +19,7 @@ export function ConfirmationCard(props: {
       body={props.summary}
       actions={
         props.applying
-          ? undefined
+          ? []
           : [
               {
                 id: "dismiss",

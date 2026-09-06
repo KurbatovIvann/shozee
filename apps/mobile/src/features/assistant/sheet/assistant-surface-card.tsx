@@ -60,9 +60,9 @@ const AssistantSurfaceBlock = memo(function AssistantSurfaceBlock(props: {
 
 function surfaceChips(
   surface: AssistantSurface,
-): readonly AssistantResultChip[] | undefined {
+): readonly AssistantResultChip[] {
   if (surface.kind !== "orders-list" || surface.chips.length === 0) {
-    return undefined;
+    return [];
   }
   return surface.chips.map((chip) => ({
     key: chip.status,
@@ -84,11 +84,9 @@ function surfaceEmpty(surface: AssistantSurface): {
   };
 }
 
-function surfaceFootnotes(
-  surface: AssistantSurface,
-): readonly string[] | undefined {
+function surfaceFootnotes(surface: AssistantSurface): readonly string[] {
   if (surface.kind === "order-entity" || surface.footnotes.length === 0) {
-    return undefined;
+    return [];
   }
   return surface.footnotes;
 }
@@ -96,9 +94,9 @@ function surfaceFootnotes(
 function surfaceActions(
   surface: AssistantSurface,
   onOpenHref: (href: string) => void,
-): readonly AssistantResultAction[] | undefined {
+): readonly AssistantResultAction[] {
   if (surface.kind === "order-entity") {
-    return undefined;
+    return [];
   }
   if (surface.kind === "orders-list") {
     return secondaryCta(surface.ctaLabel, surface.ctaHref, onOpenHref);
@@ -120,9 +118,9 @@ function secondaryCta(
   label: string | null,
   href: string | null,
   onOpenHref: (href: string) => void,
-): readonly AssistantResultAction[] | undefined {
+): readonly AssistantResultAction[] {
   if (label === null || href === null) {
-    return undefined;
+    return [];
   }
   return [
     {
