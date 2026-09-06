@@ -33,6 +33,7 @@ export const getForGenerationContract = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: ["NOT_FOUND"],
   audit: false,
   timeout: 5_000,
 });

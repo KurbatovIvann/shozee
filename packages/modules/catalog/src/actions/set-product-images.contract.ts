@@ -57,6 +57,7 @@ export const setProductImagesContract = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: ["VALIDATION", "NOT_FOUND"],
   audit: true,
   timeout: 10_000,
 });

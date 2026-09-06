@@ -29,6 +29,7 @@ const shareWrite = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: [],
   audit: true,
   timeout: 5_000,
 });
@@ -48,6 +49,7 @@ const staffWrite = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
   audit: true,
   timeout: 5_000,
 });

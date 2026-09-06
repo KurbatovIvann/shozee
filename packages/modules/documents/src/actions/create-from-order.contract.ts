@@ -52,6 +52,7 @@ export const createFromOrderContract = defineActionContract({
   emits: ["documents.created"],
   atomicCalls: [],
   atomicCallers: [],
+  errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
   audit: true,
   timeout: 15_000,
 });

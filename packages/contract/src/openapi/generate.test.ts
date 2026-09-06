@@ -19,6 +19,7 @@ const readDefaults = {
   emits: [] as const,
   atomicCalls: [] as const,
   atomicCallers: [] as const,
+  errors: [] as const,
   audit: false,
   timeout: 5_000,
 };
@@ -107,5 +108,29 @@ describe("OpenAPI generation", () => {
       "Anonymous share-token write of a dual-signed container.",
     );
     expect(json).not.toContain("x-share-token");
+  });
+
+  it("emits per-operation responses from the action's declared errors", async () => {
+    const getThing = defineActionContract({
+      ...readDefaults,
+      name: "sample.getThing",
+      description: "Get one sample thing.",
+      principal: "staff",
+      transport: "client",
+      input: z.object({ id: z.uuid() }),
+      output: z.object({ id: z.uuid() }),
+      permissions: ["sample:view"],
+      errors: ["NOT_FOUND", "CONFLICT"],
+    });
+    const modules = { sample: { getThing } };
+    const populated = await generateOpenApiDocument(
+      buildContractRouter(modules),
+      modules,
+    );
+    const json = JSON.stringify(populated);
+    expect(json).toContain('"404"');
+    expect(json).toContain('"NOT_FOUND"');
+    expect(json).toContain('"409"');
+    expect(json).toContain('"CONFLICT"');
   });
 });

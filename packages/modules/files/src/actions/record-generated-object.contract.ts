@@ -44,6 +44,7 @@ export const recordGeneratedObjectContract = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: ["docGeneration.renderPdf"],
+  errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
   audit: true,
   timeout: 15_000,
 });

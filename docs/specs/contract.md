@@ -171,7 +171,10 @@ Clients get a discriminated union typed by wire code — no string matching.
 Generated from the contract layer in CI and committed as an artifact
 (`packages/contract/openapi.json`); drift check like migrations. Action
 `description` doubles as the OpenAPI summary — one more reason it is
-written carefully (it also becomes the AI tool description).
+written carefully (it also becomes the AI tool description). Per-operation
+error responses are generated from each action's declared `errors` set
+(`VALIDATION`, `NOT_FOUND`, `CONFLICT`); pipeline-universal codes remain
+on the global §4 table.
 
 ## 6. Versioning policy
 

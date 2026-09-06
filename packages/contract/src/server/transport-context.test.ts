@@ -18,6 +18,7 @@ const readDefaults = {
   emits: [] as const,
   atomicCalls: [] as const,
   atomicCallers: [] as const,
+  errors: [],
   audit: false,
   timeout: 5_000,
   input: z.object({}),

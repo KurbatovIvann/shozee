@@ -54,6 +54,7 @@ function fixtureContract(
     emits: [],
     atomicCalls: [],
     atomicCallers: [],
+    errors: [],
     audit: false,
     timeout: 5_000,
     ...overrides,
@@ -254,6 +255,7 @@ describe("contract check — event definitions (core.md §6)", () => {
     const registry = buildRegistry(
       fixtureContract({
         name: "orders.create",
+        errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
         risk: "write",
         idempotent: true,
         audit: true,
@@ -345,6 +347,7 @@ describe("contract check — emitter/event scope consistency (core.md §6)", () 
     const registry = buildRegistry(
       fixtureContract({
         name: "companies.create",
+        errors: ["VALIDATION", "CONFLICT"],
         principal: "account",
         permissions: [],
         risk: "write",
@@ -389,6 +392,7 @@ describe("contract check — emitter/event scope consistency (core.md §6)", () 
     const registry = buildRegistry(
       fixtureContract({
         name: "orders.create",
+        errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
         risk: "write",
         idempotent: true,
         audit: true,
@@ -396,6 +400,7 @@ describe("contract check — emitter/event scope consistency (core.md §6)", () 
       }),
       fixtureContract({
         name: "companies.create",
+        errors: ["VALIDATION", "CONFLICT"],
         principal: "account",
         permissions: [],
         risk: "write",
@@ -420,6 +425,7 @@ describe("contract check — subscription bindings (core.md §6)", () => {
   const orderCreated = { name: "orders.created", scope: "tenant" } as const;
   const validConsumerAction = fixtureContract({
     name: "chat.upsertOrderCard",
+    errors: ["NOT_FOUND"],
     principal: "system",
     transport: "internal",
     systemScope: "tenant",
@@ -527,6 +533,7 @@ describe("contract check — subscription bindings (core.md §6)", () => {
     const registry = buildRegistry(
       fixtureContract({
         name: "chat.getOrderCard",
+        errors: ["VALIDATION", "NOT_FOUND"],
         aiExposure: "exposed",
         risk: "write",
         idempotent: true,
@@ -616,6 +623,7 @@ describe("contract check — subscription bindings (core.md §6)", () => {
 describe("contract check — ctx.call edges (core.md §9, ADR-0015)", () => {
   const staffCaller = fixtureContract({
     name: "orders.create",
+    errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
     risk: "write",
     idempotent: true,
     audit: true,
@@ -794,6 +802,7 @@ describe("contract check — ctx.call edges (core.md §9, ADR-0015)", () => {
     const registry = buildRegistry(
       fixtureContract({
         name: "companies.listMine",
+        errors: ["VALIDATION"],
         principal: "account",
         permissions: [],
       }),
@@ -925,11 +934,72 @@ describe("contract check — ctx.call edges (core.md §9, ADR-0015)", () => {
   });
 });
 
-describe("contract check — atomic edges (ADR-0021)", () => {
-  function atomicPair(): readonly [ActionContract, ActionContract] {
-    return [
+describe("contract check — declared error superset (SHO-485)", () => {
+  it("rejects a caller declaring [] whose ctx.call callee declares CONFLICT", () => {
+    const registry = buildRegistry(
+      fixtureContract({
+        name: "orders.create",
+        errors: [],
+        risk: "write",
+        idempotent: true,
+        audit: true,
+      }),
+      fixtureContract({
+        name: "customers.resolveCustomerReference",
+        errors: ["CONFLICT"],
+      }),
+    );
+    const problems = problemsOf(
+      checkInput(registry, {
+        callEdges: [
+          {
+            caller: "orders.create",
+            callee: "customers.resolveCustomerReference",
+          },
+        ],
+      }),
+    );
+    expect(problems).toEqual([
+      expect.stringMatching(
+        /action "orders\.create".*does not include CONFLICT declared by ctx\.call callee "customers\.resolveCustomerReference"/,
+      ),
+    ]);
+    expect(problems[0]).toContain("orders.create");
+    expect(problems[0]).toContain("customers.resolveCustomerReference");
+  });
+
+  it("accepts a caller whose declared set includes the callee's codes", () => {
+    const registry = buildRegistry(
+      fixtureContract({
+        name: "orders.create",
+        risk: "write",
+        idempotent: true,
+        audit: true,
+        errors: ["CONFLICT", "NOT_FOUND"],
+      }),
+      fixtureContract({
+        name: "customers.resolveCustomerReference",
+        errors: ["CONFLICT"],
+      }),
+    );
+    const result = runContractCheck(
+      checkInput(registry, {
+        callEdges: [
+          {
+            caller: "orders.create",
+            callee: "customers.resolveCustomerReference",
+          },
+        ],
+      }),
+    );
+    expect(result.problems).toEqual([]);
+  });
+
+  it("rejects a caller declaring [] whose atomic callee declares CONFLICT", () => {
+    const registry = buildRegistry(
       fixtureContract({
         name: "orders.confirm",
+        errors: [],
         risk: "write",
         idempotent: true,
         audit: true,
@@ -941,6 +1011,36 @@ describe("contract check — atomic edges (ADR-0021)", () => {
         risk: "write",
         audit: true,
         atomicCallers: ["orders.confirm"],
+        errors: ["CONFLICT"],
+      }),
+    );
+    const problems = problemsOf(checkInput(registry));
+    expect(problems).toEqual([
+      expect.stringMatching(
+        /action "orders\.confirm".*does not include CONFLICT declared by ctx\.callAtomic callee "catalog\.decrementStock"/,
+      ),
+    ]);
+  });
+});
+
+describe("contract check — atomic edges (ADR-0021)", () => {
+  function atomicPair(): readonly [ActionContract, ActionContract] {
+    return [
+      fixtureContract({
+        name: "orders.confirm",
+        errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
+        risk: "write",
+        idempotent: true,
+        audit: true,
+        atomicCalls: ["catalog.decrementStock"],
+      }),
+      fixtureContract({
+        name: "catalog.decrementStock",
+        transport: "internal",
+        risk: "write",
+        audit: true,
+        atomicCallers: ["orders.confirm"],
+        errors: [],
       }),
     ];
   }
@@ -995,6 +1095,7 @@ describe("contract check — atomic edges (ADR-0021)", () => {
     const registry = buildRegistry(
       fixtureContract({
         name: "orders.confirm",
+        errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
         risk: "write",
         idempotent: true,
         audit: true,
@@ -1013,6 +1114,7 @@ describe("contract check — atomic edges (ADR-0021)", () => {
     const registry = buildRegistry(
       fixtureContract({
         name: "orders.confirm",
+        errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
         risk: "write",
         idempotent: true,
         audit: true,
@@ -1027,6 +1129,7 @@ describe("contract check — atomic edges (ADR-0021)", () => {
         risk: "write",
         audit: true,
         atomicCallers: ["orders.confirm"],
+        errors: [],
       }),
     );
     expect(problemsOf(checkInput(registry))).toEqual([
@@ -1086,6 +1189,7 @@ describe("contract check — call-graph acyclicity (core.md §9, ADR-0021)", () 
     const registry = buildRegistry(
       fixtureContract({
         name: "orders.confirm",
+        errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
         risk: "write",
         idempotent: true,
         audit: true,
@@ -1097,6 +1201,7 @@ describe("contract check — call-graph acyclicity (core.md §9, ADR-0021)", () 
         risk: "write",
         audit: true,
         atomicCallers: ["orders.confirm"],
+        errors: [],
       }),
     );
     const problems = problemsOf(
@@ -1202,6 +1307,7 @@ describe("contract check — reporting", () => {
     const registry = buildRegistry(
       fixtureContract({
         name: "orders.create",
+        errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
         risk: "write",
         idempotent: true,
         audit: true,
@@ -1210,6 +1316,7 @@ describe("contract check — reporting", () => {
       fixtureContract({ name: "pricing.resolvePrices" }),
       fixtureContract({
         name: "chat.upsertOrderCard",
+        errors: ["NOT_FOUND"],
         principal: "system",
         transport: "internal",
         systemScope: "tenant",
@@ -1317,6 +1424,7 @@ describe("contract check — inherited suite coverage (core.md §12)", () => {
   it("fails when an account action omits accountIsolationSuite", () => {
     const contract = fixtureContract({
       name: "companies.listMine",
+      errors: ["VALIDATION"],
       principal: "account",
       permissions: [],
     });
@@ -1361,6 +1469,7 @@ describe("contract check — inherited suite coverage (core.md §12)", () => {
   it("fails when an idempotent mutation omits idempotencySuite", () => {
     const contract = fixtureContract({
       name: "orders.create",
+      errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
       risk: "write",
       idempotent: true,
       audit: true,
@@ -1384,6 +1493,7 @@ describe("contract check — inherited suite coverage (core.md §12)", () => {
   it("does not require idempotencySuite for an event-consumer binding", () => {
     const consumer = fixtureContract({
       name: "chat.upsertOrderCard",
+      errors: ["NOT_FOUND"],
       principal: "system",
       systemScope: "tenant",
       transport: "internal",
@@ -1416,6 +1526,7 @@ describe("contract check — inherited suite coverage (core.md §12)", () => {
   it("fails when an emitting module omits eventSuite", () => {
     const contract = fixtureContract({
       name: "orders.create",
+      errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
       risk: "write",
       idempotent: true,
       audit: true,
@@ -1442,6 +1553,7 @@ describe("contract check — inherited suite coverage (core.md §12)", () => {
   it("fails when a declared atomic edge omits atomicCallSuite", () => {
     const root = fixtureContract({
       name: "orders.confirm",
+      errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
       transport: "internal",
       risk: "write",
       idempotent: true,
@@ -1454,6 +1566,7 @@ describe("contract check — inherited suite coverage (core.md §12)", () => {
       risk: "write",
       audit: true,
       atomicCallers: ["orders.confirm"],
+      errors: [],
     });
     expect(
       problemsOf(

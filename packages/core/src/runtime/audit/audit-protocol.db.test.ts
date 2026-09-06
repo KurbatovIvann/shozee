@@ -119,6 +119,7 @@ const contractDefaults = {
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: [],
 } as const;
 
 function requestMeta(

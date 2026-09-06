@@ -49,6 +49,7 @@ const listOrders = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: ["VALIDATION"],
   audit: false,
   timeout: 10_000,
   input: z.looseObject({}),

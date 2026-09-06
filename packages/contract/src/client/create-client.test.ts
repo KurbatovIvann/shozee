@@ -24,6 +24,7 @@ const submit = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: [],
   audit: true,
   timeout: 5_000,
   permissions: ["sample:manage"],

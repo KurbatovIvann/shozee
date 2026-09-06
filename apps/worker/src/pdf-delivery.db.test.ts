@@ -104,6 +104,7 @@ const emitOrphanCreated = implementAction(
     emits: ["documents.created"],
     atomicCalls: [],
     atomicCallers: [],
+    errors: [],
     audit: true,
     timeout: 5_000,
   }),

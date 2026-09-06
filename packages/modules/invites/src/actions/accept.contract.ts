@@ -44,6 +44,7 @@ export const acceptInviteContract = defineActionContract({
   emits: ["invites.accepted"],
   atomicCalls: ["customers.applyInviteCrm"],
   atomicCallers: [],
+  errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
   audit: true,
   timeout: 10_000,
 });

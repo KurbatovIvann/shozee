@@ -397,6 +397,7 @@ const upsertAction = implementAction(
     emits: [],
     atomicCalls: [],
     atomicCallers: [],
+    errors: [],
     audit: true,
     timeout: 5_000,
   }),

@@ -8,6 +8,11 @@
  */
 import { z } from "zod";
 
+import {
+  DECLARED_ERROR_CODES,
+  isDeclaredErrorCode,
+  undeclarableErrorReason,
+} from "./declared-error-codes.js";
 import { moduleOf } from "./module-of.js";
 import type {
   ActionContract,
@@ -128,6 +133,7 @@ function collectDefinitionProblems(
   }
 
   validateEmits(definition, problems);
+  validateErrors(definition, problems);
   validateAtomicEdges(definition, problems);
 
   if (!Number.isInteger(definition.timeout) || definition.timeout <= 0) {
@@ -345,6 +351,28 @@ function validateEmits(
  * are mutually declared (and exist at all) is a registry question for the
  * contract check (fnd-T10).
  */
+function validateErrors(
+  definition: ActionContractDefinition,
+  problems: string[],
+): void {
+  const { errors } = definition;
+  if (hasDuplicates(errors)) {
+    problems.push("errors must not contain duplicates");
+  }
+  for (const code of errors) {
+    const undeclarable = undeclarableErrorReason(code);
+    if (undeclarable !== undefined) {
+      problems.push(`errors must not include "${code}": ${undeclarable}`);
+      continue;
+    }
+    if (!isDeclaredErrorCode(code)) {
+      problems.push(
+        `error code "${code}" is not declarable — declared errors are ${DECLARED_ERROR_CODES.join(", ")}`,
+      );
+    }
+  }
+}
+
 function validateAtomicEdges(
   definition: ActionContractDefinition,
   problems: string[],

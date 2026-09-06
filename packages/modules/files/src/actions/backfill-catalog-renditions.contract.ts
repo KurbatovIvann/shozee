@@ -60,6 +60,7 @@ export const backfillCatalogRenditionsContract = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: ["VALIDATION"],
   audit: true,
   timeout: 30_000,
 });

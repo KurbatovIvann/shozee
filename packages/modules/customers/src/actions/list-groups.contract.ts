@@ -89,6 +89,7 @@ export const listGroupsContract = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: ["VALIDATION"],
   audit: false,
   timeout: 5_000,
 });

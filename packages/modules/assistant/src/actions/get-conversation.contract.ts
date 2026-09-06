@@ -38,6 +38,7 @@ export const getConversationContract = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: ["VALIDATION", "NOT_FOUND"],
   audit: false,
   timeout: 5_000,
 });

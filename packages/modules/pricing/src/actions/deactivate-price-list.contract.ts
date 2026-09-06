@@ -43,6 +43,7 @@ export const deactivatePriceListContract = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: ["VALIDATION", "NOT_FOUND"],
   audit: true,
   timeout: 5_000,
 });

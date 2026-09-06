@@ -35,6 +35,7 @@ export const confirmOrderContract = defineActionContract({
   emits: ["orders.confirmed"],
   atomicCalls: [],
   atomicCallers: [],
+  errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
   audit: true,
   timeout: 5_000,
 });

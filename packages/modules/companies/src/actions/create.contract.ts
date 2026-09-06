@@ -74,6 +74,7 @@ export const createCompanyContract = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: ["VALIDATION", "CONFLICT"],
   audit: true,
   timeout: 5_000,
   rateLimit: { scope: "user", limit: 10, windowSec: 300 },

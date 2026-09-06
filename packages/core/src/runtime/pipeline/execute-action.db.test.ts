@@ -261,6 +261,7 @@ const contractDefaults = {
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: [],
 } as const;
 
 /** The staff write fixture: inserts one row, optionally failing afterwards. */

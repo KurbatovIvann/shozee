@@ -37,6 +37,7 @@ export const getArtifactContract = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: ["NOT_FOUND"],
   audit: false,
   timeout: 2_000,
 });

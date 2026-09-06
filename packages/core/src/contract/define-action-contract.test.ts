@@ -29,6 +29,7 @@ function staffWriteDefinition(): ActionContractDefinition {
     emits: ["orders.created"],
     atomicCalls: [],
     atomicCallers: [],
+    errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
     audit: true,
     timeout: 10_000,
   };
@@ -72,6 +73,7 @@ describe("defineActionContract — valid descriptors per principal mode", () => 
     const contract = defineActionContract({
       ...staffWriteDefinition(),
       name: "pricing.resolveProductPrices",
+      errors: ["VALIDATION", "NOT_FOUND"],
       permissions: ["pricing:view"],
       risk: "read",
       idempotent: false,
@@ -144,6 +146,7 @@ describe("defineActionContract — valid descriptors per principal mode", () => 
     const contract = defineActionContract({
       ...staffWriteDefinition(),
       name: "chat.upsertOrderCard",
+      errors: ["NOT_FOUND"],
       principal: "system",
       transport: "internal",
       systemScope: "tenant",
@@ -173,6 +176,7 @@ describe("defineActionContract — valid descriptors per principal mode", () => 
     const contract = defineActionContract({
       ...staffWriteDefinition(),
       name: "companies.create",
+      errors: ["VALIDATION", "CONFLICT"],
       principal: "account",
       permissions: [],
       emits: ["companies.created"],
@@ -214,6 +218,7 @@ describe("defineActionContract — valid descriptors per principal mode", () => 
     const root = defineActionContract({
       ...staffWriteDefinition(),
       name: "orders.confirm",
+      errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
       permissions: ["orders:confirm"],
       atomicCalls: ["catalog.decrementStockForOrder"],
       emits: ["orders.confirmed"],
@@ -225,6 +230,7 @@ describe("defineActionContract — valid descriptors per principal mode", () => 
       aiExposure: "internal",
       permissions: ["catalog:manageStock"],
       atomicCallers: ["orders.confirm"],
+      errors: [],
       emits: ["catalog.stockAdjusted"],
     });
     expect(root.atomicCalls).toEqual(["catalog.decrementStockForOrder"]);
@@ -296,6 +302,7 @@ describe("defineActionContract — define-time rejections", () => {
       {
         ...staffWriteDefinition(),
         name: "chat.upsertOrderCard",
+        errors: ["NOT_FOUND"],
         principal: "system",
         transport: "internal",
         systemScope: "tenant",
@@ -630,6 +637,7 @@ describe("defineActionContract — define-time rejections", () => {
         ...staffWriteDefinition(),
         atomicCalls: ["catalog.decrementStockForOrder"],
         atomicCallers: ["orders.confirm"],
+        errors: [],
       },
       "cannot be both an atomic root and an atomic callee",
     );
@@ -664,6 +672,7 @@ describe("defineActionContract — define-time rejections", () => {
       aiExposure: "internal",
       permissions: ["catalog:manageStock"],
       atomicCallers: ["orders.confirm"],
+      errors: [],
       emits: [],
     } as const;
     expectProblem(
@@ -706,6 +715,60 @@ describe("defineActionContract — define-time rejections", () => {
       },
       "rateLimit.windowSec must be a positive integer",
     );
+  });
+
+  it("rejects INTERNAL and each pipeline-only code on errors", () => {
+    expectProblem(
+      { ...staffWriteDefinition(), errors: ["INTERNAL"] },
+      'errors must not include "INTERNAL": INTERNAL is a bug signal, not a contract',
+    );
+    expectProblem(
+      { ...staffWriteDefinition(), errors: ["PERMISSION_DENIED"] },
+      'errors must not include "PERMISSION_DENIED": PERMISSION_DENIED is pipeline-level and universal',
+    );
+    expectProblem(
+      { ...staffWriteDefinition(), errors: ["IDEMPOTENCY_CONFLICT"] },
+      'errors must not include "IDEMPOTENCY_CONFLICT": IDEMPOTENCY_CONFLICT is pipeline-level and universal',
+    );
+    expectProblem(
+      { ...staffWriteDefinition(), errors: ["RETRY_IN_PROGRESS"] },
+      'errors must not include "RETRY_IN_PROGRESS": RETRY_IN_PROGRESS is pipeline-level and universal',
+    );
+    expectProblem(
+      { ...staffWriteDefinition(), errors: ["CONFIRMATION_REQUIRED"] },
+      'errors must not include "CONFIRMATION_REQUIRED": CONFIRMATION_REQUIRED is pipeline-level and universal',
+    );
+    expectProblem(
+      { ...staffWriteDefinition(), errors: ["RATE_LIMITED"] },
+      'errors must not include "RATE_LIMITED": RATE_LIMITED is pipeline-level and universal',
+    );
+    expectProblem(
+      { ...staffWriteDefinition(), errors: ["TIMEOUT"] },
+      'errors must not include "TIMEOUT": TIMEOUT is pipeline-level and universal',
+    );
+  });
+
+  it("rejects duplicate and unknown declared error codes", () => {
+    expectProblem(
+      { ...staffWriteDefinition(), errors: ["NOT_FOUND", "NOT_FOUND"] },
+      "errors must not contain duplicates",
+    );
+    expectProblem(
+      { ...staffWriteDefinition(), errors: ["NOT_A_CODE"] },
+      'error code "NOT_A_CODE" is not declarable — declared errors are VALIDATION, NOT_FOUND, CONFLICT',
+    );
+  });
+
+  it("accepts the three declarable codes and an empty list", () => {
+    expect(
+      defineActionContract({ ...staffWriteDefinition(), errors: [] }).errors,
+    ).toEqual([]);
+    expect(
+      defineActionContract({
+        ...staffWriteDefinition(),
+        errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
+      }).errors,
+    ).toEqual(["VALIDATION", "NOT_FOUND", "CONFLICT"]);
   });
 
   it("reports every violation at once with the action name", () => {

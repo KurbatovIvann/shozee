@@ -51,6 +51,7 @@ export const readPendingSigningObjectContract = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: ["VALIDATION", "NOT_FOUND"],
   audit: false,
   timeout: 15_000,
 });

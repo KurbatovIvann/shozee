@@ -52,6 +52,7 @@ export const createPriceListContract = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: ["VALIDATION"],
   audit: true,
   timeout: 5_000,
 });

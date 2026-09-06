@@ -31,6 +31,7 @@ const contractDefaults = {
   requiresConfirmation: false,
   atomicCalls: [] as const,
   atomicCallers: [] as const,
+  errors: [],
 };
 
 function requireWritable(capability: ReadTx | Tx): Tx {
@@ -68,6 +69,7 @@ export function createProtocolFixtureActions() {
     defineActionContract({
       ...contractDefaults,
       name: "kitFixture.createNote",
+      errors: ["CONFLICT"],
       description: "Idempotent staff write that emits a tenant event.",
       principal: "staff",
       transport: "client",
@@ -210,6 +212,7 @@ export function createProtocolFixtureActions() {
       idempotent: false,
       emits: ["kitCatalog.stockAdjusted"],
       atomicCallers: ["kitOrders.confirm", "kitOrders.leakyConfirm"],
+      errors: [],
       audit: true,
       timeout: 5_000,
     }),
@@ -246,6 +249,7 @@ export function createProtocolFixtureActions() {
     defineActionContract({
       ...contractDefaults,
       name: "kitOrders.confirm",
+      errors: ["CONFLICT"],
       description: "Atomic root: persist a note-order and decrement stock.",
       principal: "staff",
       transport: "client",
@@ -355,6 +359,7 @@ export function createProtocolFixtureActions() {
       idempotent: false,
       emits: [],
       atomicCallers: ["kitOrders.confirmNested"],
+      errors: [],
       audit: true,
       timeout: 5_000,
     }),
@@ -407,6 +412,7 @@ export function createProtocolFixtureActions() {
       idempotent: false,
       emits: [],
       atomicCallers: ["kitOrders.confirmMismatch"],
+      errors: [],
       audit: true,
       timeout: 5_000,
     }),
@@ -448,6 +454,7 @@ export function createProtocolFixtureActions() {
       defineActionContract({
         ...contractDefaults,
         name: "kitOrders.leakyConfirm",
+        errors: ["CONFLICT"],
         description:
           "Atomic root that smuggles an outbox row out of the handler transaction.",
         principal: "staff",

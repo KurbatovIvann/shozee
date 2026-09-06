@@ -79,6 +79,7 @@ const emitCreatedThenFail = implementAction(
     emits: ["orders.created"],
     atomicCalls: [],
     atomicCallers: [],
+    errors: ["CONFLICT"],
     audit: true,
     timeout: 5_000,
   }),

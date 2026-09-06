@@ -65,6 +65,7 @@ export const startSigningContract = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
   audit: true,
   timeout: START_SIGNING_TIMEOUT_MS,
 });

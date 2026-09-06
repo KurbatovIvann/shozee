@@ -12,6 +12,12 @@
 export { kitIdentities } from "./identities.js";
 export type { KitIdentities } from "./identities.js";
 export {
+  assertDeclaredEscapingError,
+  checkInvokeActionError,
+  declaredErrorsReportPath,
+  UndeclaredActionError,
+} from "./declared-errors.js";
+export {
   buildTestContext,
   createCapturingLogger,
   createTestKit,

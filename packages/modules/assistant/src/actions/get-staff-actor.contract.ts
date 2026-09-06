@@ -32,6 +32,7 @@ export const getStaffActorContract = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: [],
   audit: false,
   timeout: 5_000,
 });

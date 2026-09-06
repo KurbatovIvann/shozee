@@ -112,6 +112,7 @@ const contract = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: [],
   name: "idemFixture.createNote",
   description: "Idempotent write fixture.",
   principal: "staff",

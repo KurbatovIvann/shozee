@@ -373,6 +373,7 @@ describe("composition suiteCoverage gate", () => {
       emits: [],
       atomicCalls: [],
       atomicCallers: [],
+      errors: [],
       audit: false,
       timeout: 5_000,
     });

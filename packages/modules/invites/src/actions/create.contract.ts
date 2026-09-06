@@ -105,6 +105,7 @@ export const createInviteContract = defineActionContract({
   emits: ["invites.created"],
   atomicCalls: [],
   atomicCallers: [],
+  errors: ["VALIDATION", "NOT_FOUND"],
   audit: true,
   timeout: 10_000,
 });

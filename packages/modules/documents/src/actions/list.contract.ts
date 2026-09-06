@@ -107,6 +107,7 @@ export const listDocumentsContract = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
+  errors: ["VALIDATION"],
   audit: false,
   timeout: 10_000,
 });

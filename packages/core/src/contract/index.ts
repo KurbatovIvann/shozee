@@ -11,6 +11,15 @@ export {
   deriveAiToolSources,
 } from "./ai-exposure.js";
 export {
+  DECLARED_ERROR_CODES,
+  isDeclaredErrorCode,
+  undeclarableErrorReason,
+} from "./declared-error-codes.js";
+export type {
+  DeclaredErrorCode,
+  UndeclarableErrorCode,
+} from "./declared-error-codes.js";
+export {
   ActionContractDefinitionError,
   defineActionContract,
 } from "./define-action-contract.js";

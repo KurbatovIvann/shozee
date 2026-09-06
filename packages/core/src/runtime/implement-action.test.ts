@@ -29,6 +29,7 @@ function staffWriteContract(): ActionContract<typeof input, typeof output> {
     emits: ["orders.confirmed"],
     atomicCalls: [],
     atomicCallers: [],
+    errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
     audit: true,
     timeout: 10_000,
   });
@@ -51,6 +52,7 @@ function customerReadContract(): ActionContract<typeof input, typeof output> {
     emits: [],
     atomicCalls: [],
     atomicCallers: [],
+    errors: [],
     audit: false,
     timeout: 5_000,
   });

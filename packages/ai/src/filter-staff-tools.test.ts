@@ -14,6 +14,7 @@ const readDefaults = {
   emits: [] as const,
   atomicCalls: [] as const,
   atomicCallers: [] as const,
+  errors: [],
   audit: false,
   timeout: 5_000,
 };
@@ -21,6 +22,7 @@ const readDefaults = {
 const staffList = defineActionContract({
   ...readDefaults,
   name: "orders.list",
+  errors: ["VALIDATION"],
   description: "List orders in the active company.",
   principal: "staff",
   transport: "client",
@@ -31,6 +33,7 @@ const staffList = defineActionContract({
 const deleteCustomer = defineActionContract({
   ...readDefaults,
   name: "customers.deleteCustomer",
+  errors: ["VALIDATION", "NOT_FOUND"],
   description: "Hard-delete an archived CRM customer. Requires confirmation.",
   principal: "staff",
   transport: "client",
@@ -47,6 +50,7 @@ const deleteCustomer = defineActionContract({
 const staffInternal = defineActionContract({
   ...readDefaults,
   name: "assistant.recordAssistantTurn",
+  errors: ["VALIDATION", "NOT_FOUND"],
   description: "Internal assistant persistence — never an AI tool.",
   principal: "staff",
   transport: "internal",
@@ -60,6 +64,7 @@ const staffInternal = defineActionContract({
 const staffHiddenClient = defineActionContract({
   ...readDefaults,
   name: "docSigning.start",
+  errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
   description: "Client action deliberately kept away from models.",
   principal: "staff",
   transport: "client",

@@ -49,6 +49,7 @@ bound by `implementAction`. All fields are required unless noted:
 | `confirmationSummary` | server fn, conditional | Required when `requiresConfirmation: true`; returns a redacted, human-readable summary from validated input + resolved target |
 | `idempotent` | boolean | Write actions with `true` participate in the idempotency protocol (§5) |
 | `emits` | `string[]` event names | Declared outbox events; `ctx.emit` of an undeclared event throws; CI checks declared events have a definition |
+| `errors` | `string[]` of `VALIDATION` \| `NOT_FOUND` \| `CONFLICT` | Domain codes this action may let escape `executeAction`. Empty is a real answer. `INTERNAL` and pipeline codes are not declarable. Enforced from observed `invokeAction` throws; a caller's set must include every code declared by its `ctx.call` / `ctx.callAtomic` callees |
 | `atomicCalls` / `atomicCallers` | action-name arrays | ADR-0021 allowlist edges; empty unless this action is a root caller/internal atomic callee |
 | `audit` | boolean | §8. Mandatory `true` for `risk: write`/`high` |
 | `auditTarget` | server fn, conditional | Required when `audit: true`; derives `{ type, id }` from validated input/output/context |
@@ -76,7 +77,8 @@ satisfying the share subset below (`transport: client`, `aiExposure: internal`,
 + `risk: high` + `idempotent: true`), `emits` naming violations
 (`<module>.<pastVerb>`), undeclared event definitions, `ctx.call` targets
 that are not `risk: read` or do not accept the caller's principal, undeclared
-or invalid `ctx.callAtomic` edges (ADR-0021),
+or invalid `ctx.callAtomic` edges (ADR-0021), a caller's `errors` that does
+not include every code declared by its `ctx.call` / `ctx.callAtomic` callees,
 event scope inconsistent with action/system scope, `risk: write|high` with
 `audit: false`, `audit: true` without `auditTarget`, event subscriptions not
 bound to a compatible internal idempotent system action. The same CI phase
