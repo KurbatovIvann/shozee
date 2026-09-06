@@ -166,6 +166,7 @@ function checkInput(
     projectionGrants: new Set<string>(),
     readModelGrants: [],
     schemaImports: [],
+    schemaTables: [],
     ...overrides,
   };
   return {

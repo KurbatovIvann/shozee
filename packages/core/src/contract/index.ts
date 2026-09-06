@@ -7,6 +7,10 @@
  * probe (fnd-T25) enforces this.
  */
 export {
+  aiToolSourcesForPrincipal,
+  deriveAiToolSources,
+} from "./ai-exposure.js";
+export {
   ActionContractDefinitionError,
   defineActionContract,
 } from "./define-action-contract.js";

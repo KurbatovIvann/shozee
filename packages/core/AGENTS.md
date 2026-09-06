@@ -383,9 +383,11 @@ stage (`pnpm --filter @showzy/api contract:check`):
    runtime assert), atomic-edge
    mutuality/compatibility (ADR-0021), the ADR-0015 schema-ownership
    manifest (foreign schema imports need an owner-declared read-model grant
-   to `search`/`analytics`), and inherited-suite coverage (core.md §12:
+   to `search`/`analytics`), inherited-suite coverage (core.md §12:
    every registered action and declared atomic edge must appear in
-   `suiteCoverage`).
+   `suiteCoverage`), and AI-exposed create provenance (SHO-467: derived
+   tables must carry `created_via` / `vouched_by` / `vouched_at`; named
+   exclusions `companies` and `files`).
 
 The composition root is `apps/api/src/composition.ts`
 (`createActionRegistry` and `buildContractCheckInput`). Module tasks

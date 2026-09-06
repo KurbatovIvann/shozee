@@ -60,6 +60,7 @@ import {
   ActionRegistry,
   emptySuiteCoverage,
   eventSubscriptionRefs,
+  schemaTablesFromModules,
   type ContractCheckInput,
   type DeclaredCallEdge,
   type EventDefinitionRef,
@@ -68,7 +69,7 @@ import {
   type SchemaImportRef,
   type SuiteCoverageManifest,
 } from "@showzy/core";
-import { projectionGrants } from "@showzy/db";
+import { ownedSchemaModules, projectionGrants } from "@showzy/db";
 import type { z } from "zod";
 import { registeredEventSubscriptions } from "./subscriptions.js";
 
@@ -371,5 +372,6 @@ export function buildContractCheckInput(): ContractCheckInput {
     readModelGrants,
     schemaImports,
     suiteCoverage: mergeSuiteCoverage(moduleSuiteCoverage),
+    schemaTables: schemaTablesFromModules(ownedSchemaModules),
   };
 }

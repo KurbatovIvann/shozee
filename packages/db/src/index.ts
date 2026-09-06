@@ -25,6 +25,7 @@ export {
   type DbClient,
   type DbSchema,
 } from "./client.js";
+export { ownedSchemaModules } from "./schema-modules.js";
 export * from "./schema/assistant.js";
 export * from "./schema/catalog.js";
 export * from "./schema/chat.js";
