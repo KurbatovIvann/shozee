@@ -1,4 +1,5 @@
 import {
+  ASSISTANT_CUSTOMERS_LIST_ROW_MAX,
   ASSISTANT_ORDERS_LIST_ROW_MAX,
   ORDER_ENTITY_SURFACE_TOOLS,
   ORDERS_CREATE_TOOLS,
@@ -7,6 +8,7 @@ import {
 import { describe, expect, it } from "vitest";
 
 import { toProviderToolName } from "./action-tool.js";
+import { CUSTOMERS_LIST_CUSTOMERS_ASSISTANT_LIMIT } from "./tool-facades/customers-list-customers.js";
 import { ORDERS_CREATE_TOOL_NAME } from "./tool-facades/orders-create.js";
 import { ORDERS_LIST_PAGE_ASSISTANT_MAX_LIMIT } from "./tool-facades/orders-list.js";
 
@@ -14,6 +16,16 @@ describe("assistant surface literals vs authorities (SHO-462)", () => {
   it("keeps the shared list row cap equal to the orders.list façade max", () => {
     expect(ASSISTANT_ORDERS_LIST_ROW_MAX).toBe(
       ORDERS_LIST_PAGE_ASSISTANT_MAX_LIMIT,
+    );
+  });
+
+  it("keeps the customers-list row cap equal to the customers.listCustomers façade max", () => {
+    expect(ASSISTANT_CUSTOMERS_LIST_ROW_MAX).toBe(
+      CUSTOMERS_LIST_CUSTOMERS_ASSISTANT_LIMIT,
+    );
+    expect(ASSISTANT_CUSTOMERS_LIST_ROW_MAX).toBe(7);
+    expect(ASSISTANT_CUSTOMERS_LIST_ROW_MAX).not.toBe(
+      ASSISTANT_ORDERS_LIST_ROW_MAX,
     );
   });
 

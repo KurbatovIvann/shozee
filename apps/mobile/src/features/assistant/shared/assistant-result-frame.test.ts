@@ -26,6 +26,10 @@ const LIST = readFileSync(
   new URL("../sheet/orders-list-result-card.tsx", import.meta.url),
   "utf8",
 );
+const COLLECTION = readFileSync(
+  new URL("../sheet/assistant-collection-block.tsx", import.meta.url),
+  "utf8",
+);
 const AGGREGATE = readFileSync(
   new URL("../sheet/orders-aggregate-result-card.tsx", import.meta.url),
   "utf8",
@@ -61,6 +65,8 @@ describe("AssistantResultFrame notice card (SHO-469)", () => {
     expect(importsNamed(CONFIRMATION, "Card")).toBe(false);
     expect(SURFACE).toContain("AssistantResultFrame");
     expect(SURFACE).toContain("AssistantSurfaceBlock");
+    expect(SURFACE).toContain("AssistantCollectionBlock");
+    expect(SURFACE).toContain('case "customers-list"');
     expect(SURFACE).toContain("switch (surface.kind)");
   });
 
@@ -73,6 +79,9 @@ describe("AssistantResultFrame notice card (SHO-469)", () => {
     expect(SURFACE).toContain('id: "cta"');
     expect(SURFACE).toContain('variant: "secondary"');
     expect(importsNamed(LIST, "Card")).toBe(false);
+    expect(importsNamed(COLLECTION, "Card")).toBe(false);
+    expect(COLLECTION).toContain("StatusPill");
+    expect(COLLECTION).toContain("flex: 1");
     expect(importsNamed(AGGREGATE, "Card")).toBe(false);
     expect(importsNamed(ENTITY, "Card")).toBe(false);
     expect(importsNamed(CONFIRMATION, "Card")).toBe(false);

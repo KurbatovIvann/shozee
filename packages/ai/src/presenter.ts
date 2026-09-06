@@ -7,7 +7,9 @@
  * locale, labels, and spoken phrasing. Do not import `apps/mobile`.
  */
 import {
+  ASSISTANT_CUSTOMERS_LIST_ROW_MAX,
   ASSISTANT_ORDERS_LIST_ROW_MAX,
+  CUSTOMERS_LIST_CUSTOMERS_TOOL,
   ORDERS_LIST_COUNTS_TOOL,
   ORDERS_LIST_PAGE_TOOL,
   UNLINKED_CUSTOMER_NAME_SNAPSHOT,
@@ -15,6 +17,7 @@ import {
   isRecord,
   lastSuccessfulResult,
   unwrapToolOutput,
+  type AssistantCustomersListData,
   type AssistantOrderEntityData,
   type AssistantOrdersAggregateData,
   type AssistantOrdersListData,
@@ -140,6 +143,9 @@ const COPY: Record<
     readonly customerMatchTruncated: string;
     readonly missingCustomer: string;
     readonly entityPrefix: string;
+    readonly customersEmpty: string;
+    readonly customersPrefix: string;
+    readonly customersHasMore: string;
     readonly orderCount: {
       readonly one: string;
       readonly few: string;
@@ -155,6 +161,9 @@ const COPY: Record<
       "Customer name matches were truncated. Refine the search or open the list.",
     missingCustomer: "Deleted customer",
     entityPrefix: "Order",
+    customersEmpty: "No customers.",
+    customersPrefix: "Customers",
+    customersHasMore: "There are more customers.",
     orderCount: {
       one: "{{count}} order",
       few: "{{count}} orders",
@@ -169,6 +178,9 @@ const COPY: Record<
       "Збіги за імʼям клієнта обрізано. Уточніть запит або відкрийте список.",
     missingCustomer: "Клієнт видалений",
     entityPrefix: "Замовлення",
+    customersEmpty: "Немає клієнтів.",
+    customersPrefix: "Клієнти",
+    customersHasMore: "Є ще клієнти.",
     orderCount: {
       one: "{{count}} замовлення",
       few: "{{count}} замовлення",
@@ -294,6 +306,15 @@ function surfaceSourceIndex(
   if (surface.kind === "order-entity") {
     return sourceIndexOfResult(results, entitySourceResult(surface, results));
   }
+  if (surface.kind === "customers-list") {
+    return sourceIndexOfResult(
+      results,
+      lastSuccessfulResult(
+        results,
+        (name) => name === CUSTOMERS_LIST_CUSTOMERS_TOOL,
+      ),
+    );
+  }
   const toolName =
     surface.kind === "orders-list"
       ? ORDERS_LIST_PAGE_TOOL
@@ -412,6 +433,30 @@ function presentEntitySurface(
   return `${copy.entityPrefix} ${bits.join(", ")}.`;
 }
 
+function presentCustomersListSurface(
+  data: AssistantCustomersListData,
+  locale: StaffAssistantLocale,
+): string {
+  const copy = COPY[locale];
+  const labels: string[] = [];
+  for (const row of data.rows) {
+    if (labels.length >= ASSISTANT_CUSTOMERS_LIST_ROW_MAX) {
+      break;
+    }
+    if (row.name.length > 0) {
+      labels.push(row.name);
+    }
+  }
+  const main =
+    labels.length === 0
+      ? copy.customersEmpty
+      : `${copy.customersPrefix}: ${labels.join(", ")}.`;
+  if (!data.hasMore) {
+    return main;
+  }
+  return `${main} ${copy.customersHasMore}`;
+}
+
 function presentSurface(
   surface: AssistantSurfaceData,
   locale: StaffAssistantLocale,
@@ -423,6 +468,8 @@ function presentSurface(
       return presentAggregateSurface(surface, locale);
     case "order-entity":
       return presentEntitySurface(surface, locale);
+    case "customers-list":
+      return presentCustomersListSurface(surface, locale);
   }
 }
 

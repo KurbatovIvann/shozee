@@ -1,21 +1,32 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-import { ASSISTANT_ORDERS_LIST_SCREEN_HREF } from "@showzy/validation/assistant-surfaces";
+import { sharedAssistantCopy } from "@showzy/copy/assistant";
+import {
+  ASSISTANT_CUSTOMERS_LIST_SCREEN_HREF,
+  ASSISTANT_ORDERS_LIST_SCREEN_HREF,
+  CUSTOMERS_LIST_CUSTOMERS_TOOL,
+} from "@showzy/validation/assistant-surfaces";
 
 import { formatMoneyMinor } from "../../../format/money";
 import { assistantCopy } from "../../../i18n/assistant";
+import { customersCopy } from "../../../i18n/customers";
 import { ordersCopy } from "../../../i18n/orders";
+import { customerEditorHref } from "../../customers/shared/customer-hrefs";
 import { itemCountLabel } from "../../orders/shared/item-count";
 import { formatOrderCreatedAt } from "../../orders/shared/order-created-at";
 import { orderDetailHref } from "../../orders/shared/order-hrefs";
 import {
+  ASSISTANT_CUSTOMERS_LIST_HREF,
+  ASSISTANT_CUSTOMERS_LIST_ROW_MAX,
   ASSISTANT_ORDERS_LIST_HREF,
   ASSISTANT_ORDERS_LIST_ROW_MAX,
   ASSISTANT_RESULT_SURFACE_REGISTRY,
   assistantSurfacesFromParts,
   isOrderStatus,
   ORDER_STATUSES,
+  type AssistantCollectionView,
+  type AssistantCustomersListCardView,
   type AssistantOrderEntityCardView,
   type AssistantOrdersAggregateCardView,
   type AssistantOrdersListCardView,
@@ -52,6 +63,17 @@ function entitiesOf(
     (surface): surface is AssistantOrderEntityCardView =>
       surface.kind === "order-entity",
   );
+}
+
+function customersOf(
+  surfaces: readonly AssistantSurface[],
+): AssistantCustomersListCardView | null {
+  for (const surface of surfaces) {
+    if (surface.kind === "customers-list") {
+      return surface;
+    }
+  }
+  return null;
 }
 
 const ORDER_A = "0f0e2d5c-4a1b-4c3d-9e8f-102938475601";
@@ -573,6 +595,16 @@ describe("assistantSurfacesFromParts", () => {
     expect(row?.statusLabel).toBe(ordersUk.statuses.new);
     expect(row?.totalLabel).toBe(formatMoneyMinor("33000", "UAH"));
     expect(row?.metaLabel.includes("1049")).toBe(true);
+    const collectionRow = listOf(surfaces)?.collection.rows[0];
+    expect(collectionRow?.title).toBe(row?.customerName);
+    expect(collectionRow?.badge).toBe(row?.statusLabel);
+    expect(collectionRow?.meta).toBe(row?.metaLabel);
+    expect(collectionRow?.cells).toEqual(
+      row?.totalLabel !== null && row?.totalLabel !== undefined
+        ? [row.totalLabel]
+        : [],
+    );
+    expect(collectionRow?.href).toBe(row?.href);
   });
 
   it("formats createdAt with the same locale helper as /orders", () => {
@@ -1373,10 +1405,15 @@ describe("assistantSurfacesFromParts aggregate (SHO-370 / SHO-395)", () => {
 });
 
 describe("assistant result-card surface registry", () => {
-  it("registers the three orders kinds with English prompt lines", () => {
+  it("registers orders kinds plus customers-list with English prompt lines", () => {
     expect(
       ASSISTANT_RESULT_SURFACE_REGISTRY.map((entry) => entry.kind),
-    ).toEqual(["orders-list", "orders-aggregate", "order-entity"]);
+    ).toEqual([
+      "orders-list",
+      "orders-aggregate",
+      "order-entity",
+      "customers-list",
+    ]);
     for (const entry of ASSISTANT_RESULT_SURFACE_REGISTRY) {
       expect(entry.promptLine.length).toBeGreaterThan(20);
       expect(entry.promptLine.includes("**")).toBe(false);
@@ -1386,7 +1423,16 @@ describe("assistant result-card surface registry", () => {
     }
     expect(
       ASSISTANT_RESULT_SURFACE_REGISTRY.map((entry) => entry.destination),
-    ).toEqual([{ kind: "screen" }, { kind: "screen" }, { kind: "screen" }]);
+    ).toEqual([
+      { kind: "screen" },
+      { kind: "screen" },
+      { kind: "screen" },
+      { kind: "screen" },
+    ]);
+    const customers = ASSISTANT_RESULT_SURFACE_REGISTRY.find(
+      (entry) => entry.kind === "customers-list",
+    );
+    expect(customers?.hydratable).toBe(false);
   });
 
   it("keeps list, aggregate, and entity card destinations on today's order-hrefs", () => {
@@ -1478,6 +1524,10 @@ describe("assistant result-card surface registry", () => {
   });
 
   it("composes Card / StatusPill and does not embed OrdersListScreen / OrderRow", () => {
+    const collectionBlock = readFileSync(
+      new URL("../sheet/assistant-collection-block.tsx", import.meta.url),
+      "utf8",
+    );
     const listCard = readFileSync(
       new URL("../sheet/orders-list-result-card.tsx", import.meta.url),
       "utf8",
@@ -1500,6 +1550,10 @@ describe("assistant result-card surface registry", () => {
     );
     const listParse = readFileSync(
       new URL("../surfaces/orders-list.ts", import.meta.url),
+      "utf8",
+    );
+    const customersParse = readFileSync(
+      new URL("../surfaces/customers-list.ts", import.meta.url),
       "utf8",
     );
     const aggregateParse = readFileSync(
@@ -1530,8 +1584,11 @@ describe("assistant result-card surface registry", () => {
       new URL("../sheet/use-assistant-sheet.ts", import.meta.url),
       "utf8",
     );
-    expect(listCard).toContain("StatusPill");
-    expect(listCard).toContain('from "../../../components/ui"');
+    expect(collectionBlock).toContain("StatusPill");
+    expect(collectionBlock).toContain('from "../../../components/ui"');
+    expect(collectionBlock).toContain("onOpenHref");
+    expect(listCard).toContain("AssistantCollectionBlock");
+    expect(listCard).not.toContain("StatusPill");
     expect(listCard).toContain("onOpenHref");
     expect(listCard.includes("orders-list-screen")).toBe(false);
     expect(listCard.includes("order-row")).toBe(false);
@@ -1549,6 +1606,8 @@ describe("assistant result-card surface registry", () => {
     expect(aggregateCard.includes("BarChart")).toBe(false);
     expect(aggregateCard.includes("wow")).toBe(false);
     expect(surfaceCard).toContain("OrdersListResultCard");
+    expect(surfaceCard).toContain("AssistantCollectionBlock");
+    expect(surfaceCard).toContain('case "customers-list"');
     expect(surfaceCard).toContain("OrdersAggregateResultCard");
     expect(surfaceCard).toContain("onOpenHref={onOpenHref}");
     expect(surfaceCard).toContain("OrderEntityCard");
@@ -1574,6 +1633,9 @@ describe("assistant result-card surface registry", () => {
     expect(hook.includes("orders-list-screen")).toBe(false);
     expect(hook.includes("order-row")).toBe(false);
     expect(listParse.includes('from "@showzy/ai"')).toBe(false);
+    expect(customersParse.includes('from "@showzy/ai"')).toBe(false);
+    expect(listParse).toContain("@showzy/copy/assistant");
+    expect(customersParse).toContain("@showzy/copy/assistant");
     expect(aggregateParse.includes('from "@showzy/ai"')).toBe(false);
     expect(entityParse.includes('from "@showzy/ai"')).toBe(false);
     expect(compose.includes('from "@showzy/ai"')).toBe(false);
@@ -1585,6 +1647,7 @@ describe("assistant result-card surface registry", () => {
     expect(aggregateParse).toContain("formatOrderCreatedAt");
     expect(aggregateParse).toContain("../../orders/shared/order-created-at");
     expect(listParse).not.toContain("extractUuidResultIds");
+    expect(customersParse).not.toContain("extractUuidResultIds");
     expect(aggregateParse).not.toContain("extractUuidResultIds");
     expect(entityParse).not.toContain("extractUuidResultIds");
     expect(compose).not.toContain("extractUuidResultIds");
@@ -1595,5 +1658,196 @@ describe("assistant result-card surface registry", () => {
     expect(aggregateCard).not.toContain("sit.svg");
     expect(aggregateCard).not.toContain("dig.svg");
     expect(aggregateCard).not.toContain("listen.svg");
+  });
+});
+
+const CUSTOMER_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const CUSTOMER_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const customersUk = customersCopy("uk");
+const assistantChromeUk = sharedAssistantCopy("uk");
+
+function customerRow(
+  id: string,
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    id,
+    name: "Іван",
+    phone: "+380501112233",
+    email: "ivan@example.com",
+    status: "active",
+    groupId: null,
+    priceListId: null,
+    ...overrides,
+  };
+}
+
+function customersOutput(
+  items: unknown[],
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    items,
+    nextCursor: null,
+    ...extra,
+  };
+}
+
+describe("customers-list collection surface (SHO-472)", () => {
+  it("parses façade-shaped output onto the same collection view as orders-list", () => {
+    const surfaces = assistantSurfacesFromParts(
+      [
+        {
+          type: `tool-${CUSTOMERS_LIST_CUSTOMERS_TOOL}`,
+          toolCallId: "call-customers",
+          state: "output-available",
+          output: customersOutput([
+            customerRow(CUSTOMER_A),
+            customerRow(CUSTOMER_B, {
+              name: "Оля",
+              status: "archived",
+              phone: null,
+              email: "olya@example.com",
+            }),
+          ]),
+        },
+      ],
+      "uk",
+    );
+    const customers = customersOf(surfaces);
+    expect(customers?.kind).toBe("customers-list");
+    expect(customers?.destination).toEqual({
+      kind: "screen",
+      href: ASSISTANT_CUSTOMERS_LIST_HREF,
+    });
+    expect(ASSISTANT_CUSTOMERS_LIST_HREF).toBe(
+      ASSISTANT_CUSTOMERS_LIST_SCREEN_HREF,
+    );
+    expect(customers?.handoffLabel).toBe(
+      assistantChromeUk.customersList.openList,
+    );
+    expect(customers?.ctaHref).toBeNull();
+    expect(customers?.rows[0]?.href).toBe(customerEditorHref(CUSTOMER_A));
+    expect(customers?.rows[0]?.name).toBe("Іван");
+    expect(customers?.rows[0]?.statusLabel).toBeNull();
+    expect(customers?.rows[0]?.metaLabel).toBe(
+      "+380501112233 · ivan@example.com",
+    );
+    expect(customers?.rows[1]?.statusLabel).toBe(customersUk.archivedBadge);
+    expect(customers?.collection.rowCap).toBe(ASSISTANT_CUSTOMERS_LIST_ROW_MAX);
+    expect(customers?.collection.surface).toBe("plain");
+    expect(customers?.collection.rows[0]?.href).toBe(
+      customerEditorHref(CUSTOMER_A),
+    );
+    expect(customers?.collection.rows[0]?.title).toBe(
+      customers?.rows[0]?.name,
+    );
+    expect(customers?.collection.rows[1]?.badge).toBe(
+      customersUk.archivedBadge,
+    );
+  });
+
+  it("truncates customers at 7 from that surface's cap and omits a duplicate CTA", () => {
+    const items = Array.from({ length: 10 }, (_, index) =>
+      customerRow(
+        `aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa${String(index).padStart(2, "0")}`,
+      ),
+    );
+    const customers = customersOf(
+      assistantSurfacesFromParts(
+        [
+          {
+            type: `tool-${CUSTOMERS_LIST_CUSTOMERS_TOOL}`,
+            toolCallId: "call-customers",
+            state: "output-available",
+            output: customersOutput(items),
+          },
+        ],
+        "uk",
+      ),
+    );
+    expect(ASSISTANT_CUSTOMERS_LIST_ROW_MAX).toBe(7);
+    expect(customers?.rows).toHaveLength(7);
+    expect(customers?.collection.truncated).toBe(true);
+    expect(customers?.collection.rowCap).toBe(7);
+    expect(customers?.ctaHref).toBeNull();
+    expect(ASSISTANT_ORDERS_LIST_ROW_MAX).toBe(50);
+  });
+
+  it("shows empty chrome from @showzy/copy/assistant, not app i18n leftovers", () => {
+    const customers = customersOf(
+      assistantSurfacesFromParts(
+        [
+          {
+            type: `tool-${CUSTOMERS_LIST_CUSTOMERS_TOOL}`,
+            toolCallId: "call-customers",
+            state: "output-available",
+            output: customersOutput([]),
+          },
+        ],
+        "uk",
+      ),
+    );
+    expect(customers?.emptyTitle).toBe(
+      assistantChromeUk.customersList.listEmptyTitle,
+    );
+    expect(customers?.emptyDescription).toBe(
+      assistantChromeUk.customersList.listEmptyDescription,
+    );
+    expect(customers?.handoffLabel).toBe(
+      assistantChromeUk.customersList.openList,
+    );
+    expect(customers?.rows).toEqual([]);
+  });
+
+  it("does not walk customer ids into entity cards", () => {
+    const surfaces = assistantSurfacesFromParts(
+      [
+        {
+          type: `tool-${CUSTOMERS_LIST_CUSTOMERS_TOOL}`,
+          toolCallId: "call-customers",
+          state: "output-available",
+          output: customersOutput([customerRow(CUSTOMER_A)]),
+        },
+      ],
+      "uk",
+    );
+    expect(entitiesOf(surfaces)).toEqual([]);
+    expect(listOf(surfaces)).toBeNull();
+    expect(customersOf(surfaces)?.kind).toBe("customers-list");
+  });
+
+  it("proves a third list needs only a collection descriptor, not a new card file", () => {
+    const thirdList: AssistantCollectionView = {
+      surface: "inset",
+      rowCap: 3,
+      truncated: true,
+      columns: [
+        { id: "title", label: "", width: "flex", alignment: "start" },
+        { id: "total", label: "", width: "auto", alignment: "end" },
+      ],
+      rows: [
+        {
+          id: CUSTOMER_A,
+          title: "Price list A",
+          badge: null,
+          badgeTone: "neutral",
+          meta: "3 entries",
+          cells: ["1 200,00 ₴"],
+          href: "/price-lists",
+        },
+      ],
+    };
+    expect(thirdList.surface).toBe("inset");
+    expect(
+      existsSync(
+        new URL("../sheet/customers-list-result-card.tsx", import.meta.url),
+      ),
+    ).toBe(false);
+    expect(
+      existsSync(
+        new URL("../sheet/assistant-collection-block.tsx", import.meta.url),
+      ),
+    ).toBe(true);
   });
 });

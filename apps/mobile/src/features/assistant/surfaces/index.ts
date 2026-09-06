@@ -4,6 +4,21 @@ export {
   type AssistantSurface,
 } from "./compose";
 export {
+  localizeAssistantCollection,
+  type AssistantCollectionColumnView,
+  type AssistantCollectionRowView,
+  type AssistantCollectionView,
+} from "./collection";
+export {
+  parseCustomersListSurface,
+  ASSISTANT_CUSTOMERS_LIST_HREF,
+  ASSISTANT_CUSTOMERS_LIST_ROW_MAX,
+  CUSTOMERS_LIST_PROMPT_LINE,
+  CUSTOMERS_LIST_SURFACE_TOOLS,
+  type AssistantCustomersListCardView,
+  type AssistantCustomersListRowView,
+} from "./customers-list";
+export {
   parseOrdersAggregateSurface,
   ORDERS_AGGREGATE_PROMPT_LINE,
   ORDERS_AGGREGATE_SURFACE_TOOLS,

@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   ASSISTANT_SURFACE_REGISTRY,
+  CUSTOMERS_LIST_PROMPT_LINE,
   ORDER_ENTITY_PROMPT_LINE,
   ORDERS_AGGREGATE_PROMPT_LINE,
   ORDERS_LIST_COUNTS_TOOL,
@@ -30,13 +31,14 @@ const validationSurfaces = join(
 const ORDER_A = "11111111-1111-4111-8111-111111111111";
 const ORDER_B = "22222222-2222-4222-8222-222222222222";
 
-/** Byte-identical `<presentation>` block from before SHO-457. */
+/** `<presentation>` block including every registered promptLine. */
 const PRE_CHANGE_PRESENTATION_BLOCK = `<presentation>
 The staff UI already renders registered result surfaces from tool JSON. Do not emit card JSON, view-models, kind discriminators, or row arrays. Do not name those surfaces "cards" to the staff member. Reply with a short product-language summary (count, period, notable status). Do not restate rows as a table, markdown grid, or long bullet dump. No **, |, headings, or code fences.
 
 After orders_list_page (chips from same-turn orders_list_counts), the UI already shows the orders list card. Reply with a short product-language summary. Do not dump a markdown table of the rows.
 After orders_list_counts with no page on the same turn, the UI already shows the orders aggregate card with period, totals, and a status breakdown. Reply with a short product-language summary of the totals. Do not dump a markdown table of buckets. Do not call orders_list_counts or orders.list again for the card.
 After orders.get or orders.create, the UI already shows an order entity card. Reply with a short product-language summary. Do not dump tool JSON.
+After customers_list_customers, the UI already shows the customers list card. Reply with a short product-language summary. Do not dump a markdown table of the rows.
 </presentation>`;
 
 const PRESENTER_OWNED_COPY = [
@@ -48,6 +50,10 @@ const PRESENTER_OWNED_COPY = [
   "Останні замовлення",
   "Є ще замовлення.",
   "Клієнт видалений",
+  "No customers.",
+  "There are more customers.",
+  "Немає клієнтів.",
+  "Є ще клієнти.",
   "не має активних варіантів",
   "в архіві, в замовлення",
   "More variants exist. Reply with the exact flavour name.",
@@ -69,6 +75,7 @@ const PROMPT_LINE_CONSTANTS = [
   "ORDERS_LIST_PROMPT_LINE",
   "ORDERS_AGGREGATE_PROMPT_LINE",
   "ORDER_ENTITY_PROMPT_LINE",
+  "CUSTOMERS_LIST_PROMPT_LINE",
 ] as const;
 
 const SKIP_DIR = new Set([
@@ -144,6 +151,7 @@ describe("staff assistant presentation cache prefix (SHO-457)", () => {
         ORDERS_LIST_PROMPT_LINE,
         ORDERS_AGGREGATE_PROMPT_LINE,
         ORDER_ENTITY_PROMPT_LINE,
+        CUSTOMERS_LIST_PROMPT_LINE,
       ],
     );
   });

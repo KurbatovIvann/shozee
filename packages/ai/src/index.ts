@@ -206,6 +206,7 @@ export {
   type StaffAssistantSpokenOutput,
 } from "./spoken-reply.js";
 export {
+  CUSTOMERS_LIST_PROMPT_LINE,
   ORDER_ENTITY_PROMPT_LINE,
   ORDERS_AGGREGATE_PROMPT_LINE,
   ORDERS_LIST_PROMPT_LINE,
