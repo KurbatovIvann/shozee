@@ -4,7 +4,31 @@ export {
   type AssistantSurfaceKind,
 } from "./compose.js";
 export {
+  assistantCollectionDescriptor,
+  capCollectionRows,
+  type AssistantCollectionColumn,
+  type AssistantCollectionColumnAlignment,
+  type AssistantCollectionColumnWidth,
+  type AssistantCollectionDescriptor,
+  type AssistantCollectionRow,
+  type AssistantCollectionSurface,
+} from "./collection.js";
+export {
+  ASSISTANT_CUSTOMERS_LIST_ROW_MAX,
+  CUSTOMERS_LIST_ACTION_NAME,
+  CUSTOMERS_LIST_COLLECTION_COLUMNS,
+  CUSTOMERS_LIST_CUSTOMERS_TOOL,
+  CUSTOMERS_LIST_DESTINATION,
+  CUSTOMERS_LIST_PROMPT_LINE,
+  CUSTOMERS_LIST_SURFACE_TOOLS,
+  parseCustomersListSurface,
+  type AssistantCustomersListData,
+  type AssistantCustomersListRowData,
+} from "./customers-list.js";
+export {
+  ASSISTANT_CUSTOMERS_LIST_SCREEN_HREF,
   ASSISTANT_ORDERS_LIST_SCREEN_HREF,
+  assistantCustomerEditorScreenHref,
   assistantOrderDetailScreenHref,
   assistantSurfaceHandoffHref,
   resolveAssistantSurfaceDestination,
@@ -62,6 +86,7 @@ export {
 export {
   ASSISTANT_ORDERS_LIST_ROW_MAX,
   ORDERS_LIST_ACTION_NAME,
+  ORDERS_LIST_COLLECTION_COLUMNS,
   ORDERS_LIST_COUNTS_TOOL,
   ORDERS_LIST_DESTINATION,
   ORDERS_LIST_PAGE_TOOL,

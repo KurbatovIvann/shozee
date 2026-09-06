@@ -2,19 +2,25 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ASSISTANT_CUSTOMERS_LIST_ROW_MAX,
+  ASSISTANT_CUSTOMERS_LIST_SCREEN_HREF,
   ASSISTANT_ORDERS_LIST_ROW_MAX,
   ASSISTANT_ORDERS_LIST_SCREEN_HREF,
   ASSISTANT_SURFACE_REGISTRY,
   ASSISTANT_TOOL_CLIPPED_STATUS,
   ASSISTANT_TOOL_NON_RESULT_STATUSES,
+  CUSTOMERS_LIST_CUSTOMERS_TOOL,
   ORDERS_LIST_COUNTS_TOOL,
   ORDERS_LIST_PAGE_TOOL,
   UNLINKED_CUSTOMER_NAME_SNAPSHOT,
+  assistantCollectionDescriptor,
+  assistantCustomerEditorScreenHref,
   assistantOrderDetailScreenHref,
   assistantSurfaceHandoffHref,
   assistantSurfacesFromToolResults,
   hydratableAssistantActionNames,
   isAssistantSurfaceResultOutput,
+  parseCustomersListSurface,
   parseOrderEntitySurfaces,
   parseOrdersAggregateSurface,
   parseOrdersListSurface,
@@ -23,6 +29,8 @@ import {
   staffAssistantPresentationEnvelopesFromToolResults,
   unrestorableAssistantActionNames,
   unwrapToolOutput,
+  type AssistantCollectionDescriptor,
+  type AssistantCustomersListData,
   type AssistantOrdersAggregateData,
   type AssistantOrdersListData,
   type AssistantSurfaceData,
@@ -103,6 +111,17 @@ function listOf(
   return null;
 }
 
+function customersOf(
+  surfaces: readonly AssistantSurfaceData[],
+): AssistantCustomersListData | null {
+  for (const surface of surfaces) {
+    if (surface.kind === "customers-list") {
+      return surface;
+    }
+  }
+  return null;
+}
+
 function aggregateOf(
   surfaces: readonly AssistantSurfaceData[],
 ): AssistantOrdersAggregateData | null {
@@ -114,10 +133,45 @@ function aggregateOf(
   return null;
 }
 
+const CUSTOMER_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const CUSTOMER_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+
+function customerRow(
+  id: string,
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    id,
+    name: "Ivan",
+    phone: "+380501112233",
+    email: "ivan@example.com",
+    status: "active",
+    groupId: null,
+    priceListId: null,
+    ...overrides,
+  };
+}
+
+function customersOutput(
+  items: unknown[],
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    items,
+    nextCursor: null,
+    ...extra,
+  };
+}
+
 describe("ASSISTANT_SURFACE_REGISTRY integrity", () => {
   it("has unique kinds, positive integer versions, and non-empty toolNames/promptLine", () => {
     const kinds = ASSISTANT_SURFACE_REGISTRY.map((entry) => entry.kind);
-    expect(kinds).toEqual(["orders-list", "orders-aggregate", "order-entity"]);
+    expect(kinds).toEqual([
+      "orders-list",
+      "orders-aggregate",
+      "order-entity",
+      "customers-list",
+    ]);
     expect(new Set(kinds).size).toBe(kinds.length);
     for (const entry of ASSISTANT_SURFACE_REGISTRY) {
       expect(Number.isInteger(entry.version)).toBe(true);
@@ -139,7 +193,12 @@ describe("ASSISTANT_SURFACE_REGISTRY integrity", () => {
     expect(kinds.has("screen")).toBe(true);
     expect(
       ASSISTANT_SURFACE_REGISTRY.map((entry) => entry.destination),
-    ).toEqual([{ kind: "screen" }, { kind: "screen" }, { kind: "screen" }]);
+    ).toEqual([
+      { kind: "screen" },
+      { kind: "screen" },
+      { kind: "screen" },
+      { kind: "screen" },
+    ]);
 
     type Extends<A, B> = A extends B ? true : false;
     const omissionRejected: Extends<
@@ -228,6 +287,10 @@ describe("assistant surface destination (SHO-470)", () => {
     });
     expect(assistantOrderDetailScreenHref(ORDER_A)).toBe(`/orders/${ORDER_A}`);
     expect(ASSISTANT_ORDERS_LIST_SCREEN_HREF).toBe("/orders");
+    expect(ASSISTANT_CUSTOMERS_LIST_SCREEN_HREF).toBe("/customers");
+    expect(assistantCustomerEditorScreenHref(CUSTOMER_A)).toBe(
+      `/customers/clients/${CUSTOMER_A}/edit`,
+    );
   });
 });
 
@@ -333,6 +396,9 @@ describe("parseOrdersListSurface", () => {
     ]);
     expect(ASSISTANT_ORDERS_LIST_ROW_MAX).toBe(50);
     expect(data?.rows).toHaveLength(50);
+    expect(data?.collection.rowCap).toBe(ASSISTANT_ORDERS_LIST_ROW_MAX);
+    expect(data?.collection.truncated).toBe(true);
+    expect(data?.collection.surface).toBe("plain");
   });
 
   it("unwraps clipped page output", () => {
@@ -543,7 +609,10 @@ describe("hydration flags", () => {
       "orders.create",
       "orders.get",
     ]);
-    expect([...unrestorableAssistantActionNames()]).toEqual(["orders.list"]);
+    expect([...unrestorableAssistantActionNames()].sort()).toEqual([
+      "customers.listCustomers",
+      "orders.list",
+    ]);
     const list = ASSISTANT_SURFACE_REGISTRY.find(
       (entry) => entry.kind === "orders-list",
     );
@@ -553,9 +622,14 @@ describe("hydration flags", () => {
     const entity = ASSISTANT_SURFACE_REGISTRY.find(
       (entry) => entry.kind === "order-entity",
     );
+    const customers = ASSISTANT_SURFACE_REGISTRY.find(
+      (entry) => entry.kind === "customers-list",
+    );
     expect(list?.hydratable).toBe(false);
     expect(aggregate?.hydratable).toBe(false);
     expect(entity?.hydratable).toBe(true);
+    expect(customers?.hydratable).toBe(false);
+    expect(customers?.destination).toEqual({ kind: "screen" });
   });
 
   it("recognises every unrestorable action name in a fixture registry (SHO-461)", () => {
@@ -708,6 +782,180 @@ describe("staffAssistantPresentationEnvelope (SHO-458)", () => {
       toolCallIds: ["call-page"],
     });
     expect(parsed.success).toBe(true);
+  });
+});
+
+describe("customers-list collection (SHO-472)", () => {
+  it("parses façade-shaped output into the same collection descriptor type as orders-list", () => {
+    const orders = parseOrdersListSurface([
+      result(ORDERS_LIST_PAGE_TOOL, pageOutput([pageRow(ORDER_A)])),
+    ]);
+    const customers = parseCustomersListSurface([
+      result(
+        CUSTOMERS_LIST_CUSTOMERS_TOOL,
+        customersOutput([customerRow(CUSTOMER_A), customerRow(CUSTOMER_B)]),
+      ),
+    ]);
+    expect(orders?.kind).toBe("orders-list");
+    expect(customers?.kind).toBe("customers-list");
+    const ordersCollection: AssistantCollectionDescriptor | undefined =
+      orders?.collection;
+    const customersCollection: AssistantCollectionDescriptor | undefined =
+      customers?.collection;
+    expect(ordersCollection).toBeDefined();
+    expect(customersCollection).toBeDefined();
+    if (ordersCollection === undefined || customersCollection === undefined) {
+      return;
+    }
+    expect(ordersCollection.rowCap).toBe(ASSISTANT_ORDERS_LIST_ROW_MAX);
+    expect(customersCollection.rowCap).toBe(ASSISTANT_CUSTOMERS_LIST_ROW_MAX);
+    expect(ASSISTANT_ORDERS_LIST_ROW_MAX).not.toBe(
+      ASSISTANT_CUSTOMERS_LIST_ROW_MAX,
+    );
+    expect(ordersCollection.columns[0]?.width).toBe(
+      customersCollection.columns[0]?.width,
+    );
+    expect(customers?.destination).toEqual({
+      kind: "screen",
+      href: ASSISTANT_CUSTOMERS_LIST_SCREEN_HREF,
+    });
+    expect(customersCollection.rows[0]?.href).toBe(
+      assistantCustomerEditorScreenHref(CUSTOMER_A),
+    );
+    expect(customers?.rows).toEqual([
+      {
+        customerId: CUSTOMER_A,
+        name: "Ivan",
+        phone: "+380501112233",
+        email: "ivan@example.com",
+        status: "active",
+        groupId: null,
+        priceListId: null,
+      },
+      {
+        customerId: CUSTOMER_B,
+        name: "Ivan",
+        phone: "+380501112233",
+        email: "ivan@example.com",
+        status: "active",
+        groupId: null,
+        priceListId: null,
+      },
+    ]);
+  });
+
+  it("truncates customers at 7 and orders at 50 from that surface's own cap", () => {
+    const customerItems = Array.from({ length: 10 }, (_, index) =>
+      customerRow(
+        `aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa${String(index).padStart(2, "0")}`,
+      ),
+    );
+    const customers = parseCustomersListSurface([
+      result(CUSTOMERS_LIST_CUSTOMERS_TOOL, customersOutput(customerItems)),
+    ]);
+    expect(ASSISTANT_CUSTOMERS_LIST_ROW_MAX).toBe(7);
+    expect(customers?.rows).toHaveLength(7);
+    expect(customers?.collection.truncated).toBe(true);
+    expect(customers?.collection.rowCap).toBe(7);
+
+    const underCap = parseCustomersListSurface([
+      result(
+        CUSTOMERS_LIST_CUSTOMERS_TOOL,
+        customersOutput([customerRow(CUSTOMER_A)]),
+      ),
+    ]);
+    expect(underCap?.collection.truncated).toBe(false);
+    expect(underCap?.collection.rowCap).toBe(7);
+  });
+
+  it("sets customers truncated from nextCursor without changing the orders cap", () => {
+    const customers = parseCustomersListSurface([
+      result(
+        CUSTOMERS_LIST_CUSTOMERS_TOOL,
+        customersOutput([customerRow(CUSTOMER_A)], {
+          nextCursor: "more",
+        }),
+      ),
+    ]);
+    expect(customers?.hasMore).toBe(true);
+    expect(customers?.nextCursor).toBe("more");
+    expect(customers?.collection.truncated).toBe(true);
+    expect(customers?.collection.rowCap).toBe(ASSISTANT_CUSTOMERS_LIST_ROW_MAX);
+    expect(ASSISTANT_ORDERS_LIST_ROW_MAX).toBe(50);
+  });
+
+  it("emits customers-list from compose without walking ids into entities", () => {
+    const surfaces = assistantSurfacesFromToolResults([
+      result(
+        CUSTOMERS_LIST_CUSTOMERS_TOOL,
+        customersOutput([customerRow(CUSTOMER_A)]),
+        "call-customers",
+      ),
+      result(ORDERS_LIST_PAGE_TOOL, pageOutput([pageRow(ORDER_A)]), "call-page"),
+    ]);
+    expect(listOf(surfaces)?.kind).toBe("orders-list");
+    expect(customersOf(surfaces)?.kind).toBe("customers-list");
+    expect(
+      surfaces.filter((surface) => surface.kind === "order-entity"),
+    ).toEqual([]);
+    const envelopes = staffAssistantPresentationEnvelopesFromToolResults([
+      result(
+        CUSTOMERS_LIST_CUSTOMERS_TOOL,
+        customersOutput([customerRow(CUSTOMER_A)]),
+        "call-customers",
+      ),
+    ]);
+    expect(envelopes).toEqual([
+      {
+        surface: "customers-list",
+        version: 1,
+        toolCallIds: ["call-customers"],
+      },
+    ]);
+  });
+
+  it("proves a third list needs only a collection descriptor, not a new component", () => {
+    const thirdList: AssistantCollectionDescriptor =
+      assistantCollectionDescriptor({
+        surface: "inset",
+        rowCap: 3,
+        truncated: true,
+        columns: [
+          {
+            id: "title",
+            label: "",
+            width: "flex",
+            alignment: "start",
+          },
+          {
+            id: "total",
+            label: "",
+            width: "auto",
+            alignment: "end",
+          },
+        ],
+        rows: [
+          {
+            id: CUSTOMER_A,
+            title: "Price list A",
+            badge: null,
+            meta: "3 entries",
+            cells: ["1200"],
+            href: "/price-lists",
+          },
+        ],
+      });
+    const orders = parseOrdersListSurface([
+      result(ORDERS_LIST_PAGE_TOOL, pageOutput([pageRow(ORDER_A)])),
+    ]);
+    expect(orders?.collection.surface).toBe("plain");
+    expect(thirdList.surface).toBe("inset");
+    expect(thirdList.rowCap).not.toBe(orders?.collection.rowCap);
+    expect(
+      ASSISTANT_SURFACE_REGISTRY.some(
+        (entry) => entry.kind === "price-lists-list",
+      ),
+    ).toBe(false);
   });
 });
 

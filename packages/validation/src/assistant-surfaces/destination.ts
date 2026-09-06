@@ -20,9 +20,20 @@ export type AssistantSurfaceDestination =
 /** Orders list screen. Same string as mobile `ASSISTANT_ORDERS_LIST_HREF`. */
 export const ASSISTANT_ORDERS_LIST_SCREEN_HREF = "/orders";
 
+/** Customers tab. Same string as mobile `ASSISTANT_CUSTOMERS_LIST_HREF`. */
+export const ASSISTANT_CUSTOMERS_LIST_SCREEN_HREF = "/customers";
+
 /** Order detail screen. Same path as mobile `orderDetailHref`. */
 export function assistantOrderDetailScreenHref(orderId: string): string {
   return `/orders/${orderId}`;
+}
+
+/**
+ * Customer editor screen. Same path as mobile `customerEditorHref` —
+ * there is no separate read-only customer detail route.
+ */
+export function assistantCustomerEditorScreenHref(customerId: string): string {
+  return `/customers/clients/${customerId}/edit`;
 }
 
 export function resolveAssistantSurfaceDestination(
