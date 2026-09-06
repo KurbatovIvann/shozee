@@ -2,9 +2,10 @@
  * One verification policy point (SHO-466 / SHO-464).
  *
  * Answers "does this record count?" for writes, totals, lists and
- * aggregates. Flipping enforcement to "everything not created via `ui`
- * is unvouched" is a change to `RECORD_VERIFICATION.mode` — not a
- * re-audit of every query.
+ * aggregates. Flipping enforcement so rows outside
+ * `countedCreatedVia` (and without a vouch) drop from totals is a
+ * change to `RECORD_VERIFICATION.mode` — not a re-audit of every
+ * query.
  *
  * Lives in `@showzy/validation` because the predicate is pure (row +
  * policy → boolean) and needs no action runtime. T3 (contract-check in
@@ -17,11 +18,25 @@
  * `narrow`: nothing is unvouched. Every row counts, including
  * `created_via: 'ai'` with `vouched_by` null. Default so no total moves.
  *
- * `strict`: a row is unvouched when `created_via` is a known non-`ui`
- * channel and `vouched_by` is null. Pre-migration `created_via = NULL`
- * still counts (grandfathering). T1 left those columns honest rather
- * than guessing `'ui'`; unknown provenance is not evidence the
- * assistant wrote the row.
+ * `strict`: a row counts when `created_via` is in `countedCreatedVia`,
+ * `vouched_by` is not null, or (when grandfathering) `created_via` is
+ * NULL. A row is unvouched when `created_via` is a known channel
+ * outside that set and `vouched_by` is null. Pre-migration
+ * `created_via = NULL` still counts (grandfathering). T1 left those
+ * columns honest rather than guessing `'ui'`; unknown provenance is
+ * not evidence the assistant wrote the row.
+ *
+ * ## Counted channels under strict (SHO-490)
+ *
+ * `countedCreatedVia` is `["ui", "system"]`. SHO-464 / SHO-466 frame
+ * the axis as identified-human vouching and name `ai` and `webhook`
+ * as the channels that lack it. `ui` is a human at the panel.
+ * `system` is machinery executing work a human already asked for
+ * (worker jobs, event delivery) — excluding it would mix "no human
+ * vouched" with "no human was involved in this step", the same
+ * conflation SHO-464 rejects between `vouchedBy` and order lifecycle.
+ * `ai` and `webhook` stay unvouched until a human attests. Changing
+ * the set is this field and this comment, not a second WHERE.
  *
  * Queries must call `recordCounts` / `recordCountsSql` (same spec). Do
  * not add a second `WHERE vouched_by IS NOT NULL`.
@@ -69,7 +84,7 @@ type NarrowVerificationPolicy = {
 
 type StrictVerificationPolicy = {
   readonly unvouched: "non_ui_without_vouch";
-  readonly countedCreatedVia: "ui";
+  readonly countedCreatedVia: readonly RecordCreatedVia[];
   readonly grandfatherUnknownCreatedVia: boolean;
 };
 
@@ -83,7 +98,7 @@ export const RECORD_VERIFICATION_POLICIES: {
   },
   strict: {
     unvouched: "non_ui_without_vouch",
-    countedCreatedVia: "ui",
+    countedCreatedVia: ["ui", "system"],
     grandfatherUnknownCreatedVia: true,
   },
 };
@@ -102,7 +117,7 @@ export type RecordCountClause =
   | {
       readonly field: "createdVia";
       readonly op: "eq";
-      readonly value: "ui";
+      readonly value: RecordCreatedVia;
     }
   | { readonly field: "vouchedBy"; readonly op: "isNotNull" };
 
@@ -119,7 +134,7 @@ export type RecordCountSqlOps<TCreatedVia, TVouchedBy, TSql> = {
   readonly alwaysTrue: TSql;
   readonly isNull: (column: TCreatedVia) => TSql;
   readonly isNotNull: (column: TVouchedBy) => TSql;
-  readonly eq: (column: TCreatedVia, value: "ui") => TSql;
+  readonly eq: (column: TCreatedVia, value: RecordCreatedVia) => TSql;
   readonly or: (clauses: readonly TSql[]) => TSql;
 };
 
@@ -164,11 +179,13 @@ export function recordCountSpec(
   if (policy.grandfatherUnknownCreatedVia) {
     clauses.push({ field: "createdVia", op: "isNull" });
   }
-  clauses.push({
-    field: "createdVia",
-    op: "eq",
-    value: policy.countedCreatedVia,
-  });
+  for (const value of policy.countedCreatedVia) {
+    clauses.push({
+      field: "createdVia",
+      op: "eq",
+      value,
+    });
+  }
   clauses.push({ field: "vouchedBy", op: "isNotNull" });
   return { kind: "or", clauses };
 }
