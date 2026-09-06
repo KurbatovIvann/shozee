@@ -2,6 +2,7 @@ import { memo } from "react";
 
 import type { AssistantSurface } from "../surfaces";
 import {
+  assistantResultCta,
   assistantResultMarks,
   type AssistantResultAction,
   type AssistantResultChip,
@@ -30,6 +31,9 @@ export const AssistantSurfaceCard = memo(function AssistantSurfaceCard(props: {
       emptyDescription={empty.description}
       footnotes={surfaceFootnotes(surface)}
       actions={surfaceActions(surface, onOpenHref)}
+      destination={surface.destination}
+      handoffLabel={surface.handoffLabel}
+      onOpenHref={onOpenHref}
       provisional={marks.provisional}
       origin={marks.origin}
       originLabel={marks.originLabel}
@@ -96,38 +100,32 @@ function surfaceActions(
   if (surface.kind === "order-entity") {
     return [];
   }
-  if (surface.kind === "orders-list") {
-    return secondaryCta(surface.ctaLabel, surface.ctaHref, onOpenHref);
-  }
-  return [
-    {
-      id: "cta",
-      label: surface.ctaLabel,
-      variant: "secondary",
-      fullWidth: true,
-      onPress: () => {
-        onOpenHref(surface.ctaHref);
-      },
-    },
-  ];
+  return secondaryCta(
+    surface.ctaLabel,
+    surface.ctaHref,
+    surface.destination,
+    onOpenHref,
+  );
 }
 
 function secondaryCta(
   label: string | null,
   href: string | null,
+  destination: AssistantSurface["destination"],
   onOpenHref: (href: string) => void,
 ): readonly AssistantResultAction[] {
-  if (label === null || href === null) {
+  const cta = assistantResultCta(label, href, destination);
+  if (cta === null) {
     return [];
   }
   return [
     {
       id: "cta",
-      label,
+      label: cta.label,
       variant: "secondary",
       fullWidth: true,
       onPress: () => {
-        onOpenHref(href);
+        onOpenHref(cta.href);
       },
     },
   ];

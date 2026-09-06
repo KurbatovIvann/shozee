@@ -3,6 +3,12 @@
  * `orders.get` / `orders.create` only. Do not walk list `items[].orderId`.
  */
 import {
+  assistantOrderDetailScreenHref,
+  resolveAssistantSurfaceDestination,
+  type AssistantSurfaceDestination,
+  type AssistantSurfaceDestinationDeclaration,
+} from "./destination.js";
+import {
   customerNameSnapshotFromPayload,
   isAssistantSurfaceResultOutput,
   isRecord,
@@ -37,8 +43,13 @@ export const ORDER_ENTITY_ACTION_NAMES = [
 export const ORDER_ENTITY_PROMPT_LINE =
   "After orders.get or orders.create, the UI already shows an order entity card. Reply with a short product-language summary. Do not dump tool JSON.";
 
+export const ORDER_ENTITY_DESTINATION = {
+  kind: "screen",
+} as const satisfies AssistantSurfaceDestinationDeclaration;
+
 export type AssistantOrderEntityData = {
   readonly kind: "order-entity";
+  readonly destination: AssistantSurfaceDestination;
   readonly orderId: string;
   readonly orderNumber: string;
   readonly customerNameSnapshot: string | null;
@@ -64,6 +75,10 @@ function parseEntity(
     typeof payload["status"] === "string" ? payload["status"] : null;
   const entity: AssistantOrderEntityData = {
     kind: "order-entity",
+    destination: resolveAssistantSurfaceDestination(
+      ORDER_ENTITY_DESTINATION,
+      assistantOrderDetailScreenHref(orderId),
+    ),
     orderId,
     orderNumber,
     customerNameSnapshot: customerNameSnapshotFromPayload(payload),

@@ -4,6 +4,12 @@
  * walk `items[].orderId` into entity surfaces.
  */
 import {
+  ASSISTANT_ORDERS_LIST_SCREEN_HREF,
+  resolveAssistantSurfaceDestination,
+  type AssistantSurfaceDestination,
+  type AssistantSurfaceDestinationDeclaration,
+} from "./destination.js";
+import {
   customerNameSnapshotFromPayload,
   isRecord,
   lastSuccessfulResult,
@@ -36,6 +42,10 @@ export const ORDERS_LIST_ACTION_NAME = "orders.list";
 export const ORDERS_LIST_PROMPT_LINE =
   "After orders_list_page (chips from same-turn orders_list_counts), the UI already shows the orders list card. Reply with a short product-language summary. Do not dump a markdown table of the rows.";
 
+export const ORDERS_LIST_DESTINATION = {
+  kind: "screen",
+} as const satisfies AssistantSurfaceDestinationDeclaration;
+
 export type AssistantOrdersListRowData = {
   readonly orderId: string;
   readonly orderNumber: string;
@@ -53,6 +63,7 @@ export type AssistantOrdersListChipData = {
 
 export type AssistantOrdersListData = {
   readonly kind: "orders-list";
+  readonly destination: AssistantSurfaceDestination;
   readonly rows: readonly AssistantOrdersListRowData[];
   readonly chips: readonly AssistantOrdersListChipData[];
   readonly clipped: boolean;
@@ -190,6 +201,10 @@ export function parseOrdersListSurface(
   }
   return {
     kind: "orders-list",
+    destination: resolveAssistantSurfaceDestination(
+      ORDERS_LIST_DESTINATION,
+      ASSISTANT_ORDERS_LIST_SCREEN_HREF,
+    ),
     rows: parsedRows,
     chips:
       countsResult === null ? [] : statusChipsFromCounts(countsResult.output),

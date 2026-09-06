@@ -4,6 +4,14 @@ export {
   type AssistantSurfaceKind,
 } from "./compose.js";
 export {
+  ASSISTANT_ORDERS_LIST_SCREEN_HREF,
+  assistantOrderDetailScreenHref,
+  assistantSurfaceHandoffHref,
+  resolveAssistantSurfaceDestination,
+  type AssistantSurfaceDestination,
+  type AssistantSurfaceDestinationDeclaration,
+} from "./destination.js";
+export {
   isStaffAssistantPresentationEnvelope,
   staffAssistantPresentationDescriptor,
   staffAssistantPresentationEnvelopeSchema,
@@ -30,6 +38,7 @@ export {
 } from "./helpers.js";
 export {
   ORDER_ENTITY_ACTION_NAMES,
+  ORDER_ENTITY_DESTINATION,
   ORDER_ENTITY_PROMPT_LINE,
   ORDER_ENTITY_SURFACE_TOOLS,
   ORDERS_CREATE_TOOLS,
@@ -38,6 +47,7 @@ export {
   type AssistantOrderEntityData,
 } from "./order-entity.js";
 export {
+  ORDERS_AGGREGATE_DESTINATION,
   ORDERS_AGGREGATE_PROMPT_LINE,
   ORDERS_AGGREGATE_SURFACE_TOOLS,
   isAssistantOrdersAggregateGroupBy,
@@ -53,6 +63,7 @@ export {
   ASSISTANT_ORDERS_LIST_ROW_MAX,
   ORDERS_LIST_ACTION_NAME,
   ORDERS_LIST_COUNTS_TOOL,
+  ORDERS_LIST_DESTINATION,
   ORDERS_LIST_PAGE_TOOL,
   ORDERS_LIST_PROMPT_LINE,
   ORDERS_LIST_SURFACE_TOOLS,

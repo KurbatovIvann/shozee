@@ -1078,6 +1078,7 @@ describe("hydration registry derivation (SHO-456)", () => {
         actionNames: ["orders.list"],
         hydratable: false,
         promptLine: "fixture",
+        destination: { kind: "screen" },
         parse: () => null,
       },
       {
@@ -1087,6 +1088,7 @@ describe("hydration registry derivation (SHO-456)", () => {
         actionNames: ["customers.list"],
         hydratable: false,
         promptLine: "fixture",
+        destination: { kind: "screen" },
         parse: () => null,
       },
       {
@@ -1096,6 +1098,7 @@ describe("hydration registry derivation (SHO-456)", () => {
         actionNames: ["orders.get", "orders.create"],
         hydratable: true,
         promptLine: "fixture",
+        destination: { kind: "screen" },
         parse: () => null,
       },
     ];

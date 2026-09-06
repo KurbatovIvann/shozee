@@ -1,9 +1,15 @@
+import {
+  assistantSurfaceHandoffHref,
+  type AssistantSurfaceDestination,
+} from "@showzy/validation/assistant-surfaces";
+
 import type { StatusPillTone } from "../../../components/ui/status-pill";
 
 /**
- * Shared assistant result chrome (SHO-469). Canvas CardFrame slots, not a
- * new surface kind. Provenance marks read optional fields when present
- * (SHO-464); absent columns render nothing.
+ * Shared assistant result chrome (SHO-469 / SHO-470). Canvas CardFrame
+ * slots, not a new surface kind. Provenance marks read optional fields
+ * when present (SHO-464); absent columns render nothing. Destination
+ * handoff is screen-only; terminal is declared, never defaulted.
  */
 
 export type AssistantResultPill = {
@@ -73,4 +79,41 @@ export function assistantResultMarksFromUnknown(
     return EMPTY_MARKS;
   }
   return assistantResultMarks(value);
+}
+
+/**
+ * Frame handoff for a declared destination (SHO-470). `screen` yields
+ * the route. `terminal` / `document` / absent yield nothing — never
+ * default missing to terminal.
+ */
+export function assistantResultHandoff(
+  destination: AssistantSurfaceDestination | null | undefined,
+): { readonly href: string } | null {
+  if (destination === null || destination === undefined) {
+    return null;
+  }
+  const href = assistantSurfaceHandoffHref(destination);
+  if (href === null) {
+    return null;
+  }
+  return { href };
+}
+
+/**
+ * T1 secondary CTA. Omitted when it would open the same screen as the
+ * destination handoff — two identical doors (SHO-470).
+ */
+export function assistantResultCta(
+  label: string | null,
+  href: string | null,
+  destination: AssistantSurfaceDestination | null | undefined,
+): { readonly label: string; readonly href: string } | null {
+  if (label === null || href === null || label.length === 0) {
+    return null;
+  }
+  const handoff = assistantResultHandoff(destination);
+  if (handoff !== null && handoff.href === href) {
+    return null;
+  }
+  return { label, href };
 }

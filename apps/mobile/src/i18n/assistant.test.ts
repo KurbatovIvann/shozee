@@ -34,6 +34,8 @@ describe("assistant copy", () => {
     const en = assistantCopy("en");
     expect(uk.cards.openOrders).toBe("Відкрити замовлення");
     expect(en.cards.openOrders).toBe("Open orders");
+    expect(uk.cards.openOrder).toBe("Відкрити замовлення");
+    expect(en.cards.openOrder).toBe("Open order");
     expect(uk.cards.listEmptyTitle).toBe("Немає замовлень");
     expect(uk.cards.customerMatchTruncated.includes("імʼям")).toBe(true);
     expect(JSON.stringify(uk.cards).includes("active")).toBe(false);
