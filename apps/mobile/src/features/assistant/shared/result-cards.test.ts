@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { sharedAssistantCopy } from "@showzy/copy/assistant";
@@ -1661,8 +1661,8 @@ describe("assistant result-card surface registry", () => {
   });
 });
 
-const CUSTOMER_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-const CUSTOMER_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const CLIENT_A = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const CLIENT_B = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const customersUk = customersCopy("uk");
 const assistantChromeUk = sharedAssistantCopy("uk");
 
@@ -1702,8 +1702,8 @@ describe("customers-list collection surface (SHO-472)", () => {
           toolCallId: "call-customers",
           state: "output-available",
           output: customersOutput([
-            customerRow(CUSTOMER_A),
-            customerRow(CUSTOMER_B, {
+            customerRow(CLIENT_A),
+            customerRow(CLIENT_B, {
               name: "Оля",
               status: "archived",
               phone: null,
@@ -1727,7 +1727,7 @@ describe("customers-list collection surface (SHO-472)", () => {
       assistantChromeUk.customersList.openList,
     );
     expect(customers?.ctaHref).toBeNull();
-    expect(customers?.rows[0]?.href).toBe(customerEditorHref(CUSTOMER_A));
+    expect(customers?.rows[0]?.href).toBe(customerEditorHref(CLIENT_A));
     expect(customers?.rows[0]?.name).toBe("Іван");
     expect(customers?.rows[0]?.statusLabel).toBeNull();
     expect(customers?.rows[0]?.metaLabel).toBe(
@@ -1737,7 +1737,7 @@ describe("customers-list collection surface (SHO-472)", () => {
     expect(customers?.collection.rowCap).toBe(ASSISTANT_CUSTOMERS_LIST_ROW_MAX);
     expect(customers?.collection.surface).toBe("plain");
     expect(customers?.collection.rows[0]?.href).toBe(
-      customerEditorHref(CUSTOMER_A),
+      customerEditorHref(CLIENT_A),
     );
     expect(customers?.collection.rows[0]?.title).toBe(
       customers?.rows[0]?.name,
@@ -1807,7 +1807,7 @@ describe("customers-list collection surface (SHO-472)", () => {
           type: `tool-${CUSTOMERS_LIST_CUSTOMERS_TOOL}`,
           toolCallId: "call-customers",
           state: "output-available",
-          output: customersOutput([customerRow(CUSTOMER_A)]),
+          output: customersOutput([customerRow(CLIENT_A)]),
         },
       ],
       "uk",
@@ -1828,7 +1828,7 @@ describe("customers-list collection surface (SHO-472)", () => {
       ],
       rows: [
         {
-          id: CUSTOMER_A,
+          id: CLIENT_A,
           title: "Price list A",
           badge: null,
           badgeTone: "neutral",
@@ -1839,15 +1839,16 @@ describe("customers-list collection surface (SHO-472)", () => {
       ],
     };
     expect(thirdList.surface).toBe("inset");
-    expect(
-      existsSync(
-        new URL("../sheet/customers-list-result-card.tsx", import.meta.url),
-      ),
-    ).toBe(false);
-    expect(
-      existsSync(
-        new URL("../sheet/assistant-collection-block.tsx", import.meta.url),
-      ),
-    ).toBe(true);
+    const surfaceCard = readFileSync(
+      new URL("../sheet/assistant-surface-card.tsx", import.meta.url),
+      "utf8",
+    );
+    const collectionBlock = readFileSync(
+      new URL("../sheet/assistant-collection-block.tsx", import.meta.url),
+      "utf8",
+    );
+    expect(surfaceCard).not.toContain("customers-list-result-card");
+    expect(surfaceCard).toContain("AssistantCollectionBlock");
+    expect(collectionBlock).toContain("AssistantCollectionBlock");
   });
 });

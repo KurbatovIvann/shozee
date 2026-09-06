@@ -951,11 +951,10 @@ describe("customers-list collection (SHO-472)", () => {
     expect(orders?.collection.surface).toBe("plain");
     expect(thirdList.surface).toBe("inset");
     expect(thirdList.rowCap).not.toBe(orders?.collection.rowCap);
-    expect(
-      ASSISTANT_SURFACE_REGISTRY.some(
-        (entry) => entry.kind === "price-lists-list",
-      ),
-    ).toBe(false);
+    const registeredKinds: readonly string[] = ASSISTANT_SURFACE_REGISTRY.map(
+      (entry) => entry.kind,
+    );
+    expect(registeredKinds.includes("price-lists-list")).toBe(false);
   });
 });
 
