@@ -137,7 +137,6 @@ function omitDismissedToolPart(
  * `data-choice`, `data-presentation`, Anthropic synthetic `json`
  * structured-output tools, and dismissed/ignored HITL tools. Does not
  * stringify `output`.
- * dismissed/ignored HITL tools. Does not stringify `output`.
  */
 export function toolStepsFromParts(
   parts: readonly AssistantChatPart[],

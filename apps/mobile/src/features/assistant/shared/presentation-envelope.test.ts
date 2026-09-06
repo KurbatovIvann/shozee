@@ -1,7 +1,9 @@
+import { staffAssistantPresentationEnvelopesFromToolResults } from "@showzy/validation/assistant-surfaces";
 import { describe, expect, it } from "vitest";
 
 import type { AssistantChatPart } from "./confirmation-presenter";
 import { assistantSurfacesFromParts } from "../surfaces";
+import { assistantSurfaceToolResultsFromParts } from "../surfaces/helpers";
 
 const ORDER_A = "0f0e2d5c-4a1b-4c3d-9e8f-102938475601";
 
@@ -128,8 +130,12 @@ describe("data-presentation envelope (SHO-458)", () => {
   it("server-chosen kind equals client-rendered kind for all three surfaces", () => {
     for (const fixture of fixtures) {
       const composed = assistantSurfacesFromParts(fixture.parts, "uk");
+      const envelopes = staffAssistantPresentationEnvelopesFromToolResults(
+        assistantSurfaceToolResultsFromParts(fixture.parts),
+      );
+      expect(envelopes, fixture.name).toEqual([fixture.envelope]);
       const named = assistantSurfacesFromParts(
-        withEnvelope(fixture.parts, fixture.envelope),
+        withEnvelope(fixture.parts, envelopes[0]),
         "uk",
       );
       expect(
@@ -142,6 +148,31 @@ describe("data-presentation envelope (SHO-458)", () => {
       ).toEqual([fixture.envelope.surface]);
       expect(named, fixture.name).toEqual(composed);
     }
+  });
+
+  it("renders the envelope kind when it disagrees with compose", () => {
+    expect(
+      assistantSurfacesFromParts(listParts, "uk").map(
+        (surface) => surface.kind,
+      ),
+    ).toEqual(["orders-list"]);
+
+    const envelopes = staffAssistantPresentationEnvelopesFromToolResults(
+      assistantSurfaceToolResultsFromParts(aggregateParts),
+    );
+    expect(envelopes).toEqual([
+      {
+        surface: "orders-aggregate",
+        version: 1,
+        toolCallIds: ["call-counts"],
+      },
+    ]);
+
+    const named = assistantSurfacesFromParts(
+      withEnvelope(listParts, envelopes[0]),
+      "uk",
+    );
+    expect(named.map((surface) => surface.kind)).toEqual(["orders-aggregate"]);
   });
 
   it("envelope absent renders identically to the shared compose path", () => {
