@@ -15,6 +15,7 @@ import {
   type AssistantOrdersAggregateData,
   type AssistantOrdersAggregateExtraBucketData,
   type AssistantOrdersAggregateGroupBy,
+  type AssistantSurfaceDestination,
 } from "@showzy/validation/assistant-surfaces";
 
 import { assistantCopy } from "../../../i18n/assistant";
@@ -55,6 +56,8 @@ export type AssistantOrdersAggregateBucketView = {
 
 export type AssistantOrdersAggregateCardView = {
   readonly kind: "orders-aggregate";
+  readonly destination: AssistantSurfaceDestination;
+  readonly handoffLabel: string;
   readonly groupBy: AssistantOrdersAggregateGroupBy;
   readonly periodLabel: string | null;
   readonly orderCountLabel: string;
@@ -231,6 +234,8 @@ export function localizeOrdersAggregateCard(
   const empty = parsedStatusBuckets.length === 0 && extraBuckets.length === 0;
   return {
     kind: "orders-aggregate",
+    destination: data.destination,
+    handoffLabel: assistant.cards.openOrders,
     groupBy,
     periodLabel: parsePeriodLabel(countsInput, locale, assistant.cards),
     orderCountLabel: orderCountLabel(

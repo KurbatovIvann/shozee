@@ -83,7 +83,7 @@ function localizeSurface(
     case "orders-aggregate":
       return localizeOrdersAggregateCard(data, locale, lastCountsInput(parts));
     case "order-entity":
-      return localizeOrderEntityCard(data, ordersCopy(locale));
+      return localizeOrderEntityCard(data, ordersCopy(locale), locale);
   }
 }
 

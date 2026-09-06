@@ -22,6 +22,7 @@ export type AssistantCardsCopy = {
   readonly listEmptyTitle: string;
   readonly listEmptyDescription: string;
   readonly openOrders: string;
+  readonly openOrder: string;
   readonly customerMatchTruncated: string;
   readonly clipped: string;
   readonly orderCount: CountForms;
@@ -111,6 +112,7 @@ const en: AssistantCopy = {
     listEmptyTitle: "No orders",
     listEmptyDescription: "No orders match this request.",
     openOrders: "Open orders",
+    openOrder: "Open order",
     customerMatchTruncated:
       "Customer name matches were truncated. Refine the search or open the list.",
     clipped: "The list was clipped. Open orders to see everything.",
@@ -184,6 +186,7 @@ const uk: AssistantCopy = {
     listEmptyTitle: "Немає замовлень",
     listEmptyDescription: "За цим запитом замовлень немає.",
     openOrders: "Відкрити замовлення",
+    openOrder: "Відкрити замовлення",
     customerMatchTruncated:
       "Збіги за імʼям клієнта обрізано. Уточніть запит або відкрийте список.",
     clipped: "Список обрізано. Відкрийте замовлення, щоб побачити все.",

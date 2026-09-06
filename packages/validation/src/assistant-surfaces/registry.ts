@@ -1,27 +1,31 @@
 /**
- * Assistant result-surface registry (SHO-456). Each kind owns the façade
- * tools it binds, parse into an unlocalized view-model, English
- * `promptLine`, and hydration flags. Timeline and HITL are not
- * registered here.
+ * Assistant result-surface registry (SHO-456 / SHO-470). Each kind owns
+ * the façade tools it binds, parse into an unlocalized view-model,
+ * English `promptLine`, a required destination, and hydration flags.
+ * Timeline and HITL are not registered here.
  *
  * Adding the **second list-shaped** surface is a later ticket — do not
  * generalise `orders-list` into a generic table in this slice.
  */
 import type { AssistantSurfaceData, AssistantSurfaceKind } from "./compose.js";
+import type { AssistantSurfaceDestinationDeclaration } from "./destination.js";
 import type { AssistantSurfaceToolResult } from "./helpers.js";
 import {
   ORDER_ENTITY_ACTION_NAMES,
+  ORDER_ENTITY_DESTINATION,
   ORDER_ENTITY_PROMPT_LINE,
   ORDER_ENTITY_SURFACE_TOOLS,
   parseOrderEntitySurfaces,
 } from "./order-entity.js";
 import {
+  ORDERS_AGGREGATE_DESTINATION,
   ORDERS_AGGREGATE_PROMPT_LINE,
   ORDERS_AGGREGATE_SURFACE_TOOLS,
   parseOrdersAggregateSurface,
 } from "./orders-aggregate.js";
 import {
   ORDERS_LIST_ACTION_NAME,
+  ORDERS_LIST_DESTINATION,
   ORDERS_LIST_PROMPT_LINE,
   ORDERS_LIST_SURFACE_TOOLS,
   parseOrdersListSurface,
@@ -38,6 +42,7 @@ export type AssistantSurfaceDescriptor = {
   readonly actionNames: readonly string[];
   readonly hydratable: boolean;
   readonly promptLine: string;
+  readonly destination: AssistantSurfaceDestinationDeclaration;
   readonly parse: AssistantSurfaceParse;
 };
 
@@ -50,6 +55,7 @@ export const ASSISTANT_SURFACE_REGISTRY: readonly AssistantSurfaceDescriptor[] =
       actionNames: [ORDERS_LIST_ACTION_NAME],
       hydratable: false,
       promptLine: ORDERS_LIST_PROMPT_LINE,
+      destination: ORDERS_LIST_DESTINATION,
       parse: parseOrdersListSurface,
     },
     {
@@ -59,6 +65,7 @@ export const ASSISTANT_SURFACE_REGISTRY: readonly AssistantSurfaceDescriptor[] =
       actionNames: [ORDERS_LIST_ACTION_NAME],
       hydratable: false,
       promptLine: ORDERS_AGGREGATE_PROMPT_LINE,
+      destination: ORDERS_AGGREGATE_DESTINATION,
       parse: parseOrdersAggregateSurface,
     },
     {
@@ -68,6 +75,7 @@ export const ASSISTANT_SURFACE_REGISTRY: readonly AssistantSurfaceDescriptor[] =
       actionNames: ORDER_ENTITY_ACTION_NAMES,
       hydratable: true,
       promptLine: ORDER_ENTITY_PROMPT_LINE,
+      destination: ORDER_ENTITY_DESTINATION,
       parse: parseOrderEntitySurfaces,
     },
   ];

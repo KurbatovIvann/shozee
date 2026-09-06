@@ -1,10 +1,13 @@
 import type { ReactNode } from "react";
-import { Text, View } from "react-native";
-import { SparklesIcon } from "lucide-react-native";
+import { Pressable, Text, View } from "react-native";
+import { ChevronRightIcon, SparklesIcon } from "lucide-react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
+
+import type { AssistantSurfaceDestination } from "@showzy/validation/assistant-surfaces";
 
 import { Button, Card, StatusPill } from "../../../components/ui";
 import {
+  assistantResultHandoff,
   ORIGIN_MARK_ICON_SIZE,
   type AssistantResultAction,
   type AssistantResultChip,
@@ -12,9 +15,10 @@ import {
 } from "./assistant-result-chrome";
 
 /**
- * The one place assistant result-card chrome lives (SHO-469). A frame
- * with no block is a complete notice card (HITL / permission / failed
- * write). Blocks render as `children`.
+ * The one place assistant result-card chrome lives (SHO-469 / SHO-470).
+ * A frame with no block is a complete notice card (HITL / permission /
+ * failed write). Blocks render as `children`. Screen destinations render
+ * a handoff row; terminal destinations render none.
  */
 export function AssistantResultFrame(props: {
   readonly pill?: AssistantResultPill;
@@ -32,6 +36,9 @@ export function AssistantResultFrame(props: {
   readonly provisional?: boolean;
   readonly origin?: boolean;
   readonly originLabel?: string | null;
+  readonly destination?: AssistantSurfaceDestination | null;
+  readonly handoffLabel?: string | null;
+  readonly onOpenHref?: (href: string) => void;
   readonly children?: ReactNode;
 }) {
   const pill = props.pill;
@@ -49,6 +56,9 @@ export function AssistantResultFrame(props: {
   const provisional = props.provisional === true;
   const origin = props.origin === true;
   const originLabel = props.originLabel ?? null;
+  const handoff = assistantResultHandoff(props.destination);
+  const handoffLabel = props.handoffLabel ?? null;
+  const onOpenHref = props.onOpenHref;
   const hasHeader = avatar !== undefined || pill !== undefined;
   const hasTitleRow =
     title !== undefined ||
@@ -108,6 +118,16 @@ export function AssistantResultFrame(props: {
             {footnote}
           </Text>
         ))}
+        {handoff !== null &&
+        onOpenHref !== undefined &&
+        handoffLabel !== null &&
+        handoffLabel.length > 0 ? (
+          <DestinationHandoff
+            href={handoff.href}
+            label={handoffLabel}
+            onOpenHref={onOpenHref}
+          />
+        ) : null}
         {actions.length > 0 ? (
           <View style={styles.actions}>
             {actions.map((action) => (
@@ -146,6 +166,33 @@ function OriginMark(props: { readonly label: string | null }) {
         <Text style={styles.originLabel}>{props.label}</Text>
       ) : null}
     </View>
+  );
+}
+
+function DestinationHandoff(props: {
+  readonly href: string;
+  readonly label: string;
+  readonly onOpenHref: (href: string) => void;
+}) {
+  const { theme } = useUnistyles();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={props.label}
+      onPress={() => {
+        props.onOpenHref(props.href);
+      }}
+      style={({ pressed }) => [
+        styles.handoff,
+        pressed ? styles.handoffPressed : null,
+      ]}
+    >
+      <Text style={styles.handoffLabel}>{props.label}</Text>
+      <ChevronRightIcon
+        size={theme.iconSize.sm}
+        color={theme.colors.icon.muted}
+      />
+    </Pressable>
   );
 }
 
@@ -234,5 +281,23 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.icon.muted,
     fontSize: theme.typography.xs.fontSize,
     lineHeight: theme.typography.xs.lineHeight,
+  },
+  handoff: {
+    minHeight: theme.hitTarget.min,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: theme.spacing.sm,
+  },
+  handoffPressed: {
+    opacity: theme.pressedOpacity,
+  },
+  handoffLabel: {
+    flex: 1,
+    minWidth: 0,
+    color: theme.colors.foreground,
+    fontSize: theme.typography.sm.fontSize,
+    lineHeight: theme.typography.sm.lineHeight,
+    fontWeight: "500",
   },
 }));

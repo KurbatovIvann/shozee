@@ -3,18 +3,22 @@ import { describe, expect, it } from "vitest";
 
 import {
   ASSISTANT_ORDERS_LIST_ROW_MAX,
+  ASSISTANT_ORDERS_LIST_SCREEN_HREF,
   ASSISTANT_SURFACE_REGISTRY,
   ASSISTANT_TOOL_CLIPPED_STATUS,
   ASSISTANT_TOOL_NON_RESULT_STATUSES,
   ORDERS_LIST_COUNTS_TOOL,
   ORDERS_LIST_PAGE_TOOL,
   UNLINKED_CUSTOMER_NAME_SNAPSHOT,
+  assistantOrderDetailScreenHref,
+  assistantSurfaceHandoffHref,
   assistantSurfacesFromToolResults,
   hydratableAssistantActionNames,
   isAssistantSurfaceResultOutput,
   parseOrderEntitySurfaces,
   parseOrdersAggregateSurface,
   parseOrdersListSurface,
+  resolveAssistantSurfaceDestination,
   staffAssistantPresentationEnvelopeSchema,
   staffAssistantPresentationEnvelopesFromToolResults,
   unrestorableAssistantActionNames,
@@ -23,6 +27,8 @@ import {
   type AssistantOrdersListData,
   type AssistantSurfaceData,
   type AssistantSurfaceDescriptor,
+  type AssistantSurfaceDestination,
+  type AssistantSurfaceDestinationDeclaration,
   type AssistantSurfaceToolResult,
 } from "./assistant-surfaces/index.js";
 
@@ -121,6 +127,110 @@ describe("ASSISTANT_SURFACE_REGISTRY integrity", () => {
       expect(entry.actionNames.length).toBeGreaterThan(0);
     }
   });
+
+  it("requires every entry to declare a destination (omission is not terminal)", () => {
+    const kinds = new Set<AssistantSurfaceDestinationDeclaration["kind"]>();
+    for (const entry of ASSISTANT_SURFACE_REGISTRY) {
+      kinds.add(entry.destination.kind);
+      expect(
+        entry.destination.kind === "screen" ||
+          entry.destination.kind === "document" ||
+          entry.destination.kind === "terminal",
+      ).toBe(true);
+    }
+    expect(kinds.has("screen")).toBe(true);
+    expect(ASSISTANT_SURFACE_REGISTRY.map((entry) => entry.destination)).toEqual(
+      [{ kind: "screen" }, { kind: "screen" }, { kind: "screen" }],
+    );
+
+    type Extends<A, B> = A extends B ? true : false;
+    const omissionRejected: Extends<
+      Omit<AssistantSurfaceDescriptor, "destination">,
+      AssistantSurfaceDescriptor
+    > = false;
+    const screenWithoutHrefRejected: Extends<
+      { readonly kind: "screen" },
+      AssistantSurfaceDestination
+    > = false;
+    const terminalDeclared: Extends<
+      { readonly kind: "terminal" },
+      AssistantSurfaceDestination
+    > = true;
+    expect(omissionRejected).toBe(false);
+    expect(screenWithoutHrefRejected).toBe(false);
+    expect(terminalDeclared).toBe(true);
+
+    const fixtureWithoutDestination = {
+      kind: "orders-list" as const,
+      version: 1,
+      toolNames: ["orders_list_page"],
+      actionNames: ["orders.list"],
+      hydratable: false,
+      promptLine: "fixture",
+      parse: () => null,
+    };
+    expect("destination" in fixtureWithoutDestination).toBe(false);
+    const complete: AssistantSurfaceDescriptor = {
+      ...fixtureWithoutDestination,
+      destination: { kind: "terminal" },
+    };
+    expect(complete.destination.kind).toBe("terminal");
+    expect(
+      assistantSurfaceHandoffHref(
+        resolveAssistantSurfaceDestination(complete.destination, "/orders"),
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("assistant surface destination (SHO-470)", () => {
+  it("hands off only for screen; terminal and document have no href", () => {
+    expect(
+      assistantSurfaceHandoffHref({
+        kind: "screen",
+        href: ASSISTANT_ORDERS_LIST_SCREEN_HREF,
+      }),
+    ).toBe("/orders");
+    expect(assistantSurfaceHandoffHref({ kind: "terminal" })).toBeNull();
+    expect(assistantSurfaceHandoffHref({ kind: "document" })).toBeNull();
+    expect(
+      resolveAssistantSurfaceDestination({ kind: "terminal" }, "/orders"),
+    ).toEqual({ kind: "terminal" });
+    expect(
+      resolveAssistantSurfaceDestination({ kind: "document" }, "/orders"),
+    ).toEqual({ kind: "document" });
+  });
+
+  it("keeps the three existing surfaces on today's orders routes", () => {
+    const list = parseOrdersListSurface([
+      result(ORDERS_LIST_PAGE_TOOL, pageOutput([pageRow(ORDER_A)])),
+    ]);
+    const aggregate = parseOrdersAggregateSurface([
+      result(
+        ORDERS_LIST_COUNTS_TOOL,
+        countsOutput([
+          { identity: { kind: "status", status: "new" }, orderCount: 1 },
+        ]),
+      ),
+    ]);
+    const entities = parseOrderEntitySurfaces([
+      result("orders.get", { orderId: ORDER_A, orderNumber: "1049" }),
+    ]);
+    expect(list?.destination).toEqual({
+      kind: "screen",
+      href: ASSISTANT_ORDERS_LIST_SCREEN_HREF,
+    });
+    expect(aggregate?.destination).toEqual({
+      kind: "screen",
+      href: ASSISTANT_ORDERS_LIST_SCREEN_HREF,
+    });
+    expect(entities[0]?.destination).toEqual({
+      kind: "screen",
+      href: assistantOrderDetailScreenHref(ORDER_A),
+    });
+    expect(assistantOrderDetailScreenHref(ORDER_A)).toBe(`/orders/${ORDER_A}`);
+    expect(ASSISTANT_ORDERS_LIST_SCREEN_HREF).toBe("/orders");
+  });
 });
 
 describe("isAssistantSurfaceResultOutput", () => {
@@ -208,6 +318,10 @@ describe("parseOrdersListSurface", () => {
     ]);
     expect(data?.clipped).toBe(false);
     expect(data?.hasMore).toBe(false);
+    expect(data?.destination).toEqual({
+      kind: "screen",
+      href: ASSISTANT_ORDERS_LIST_SCREEN_HREF,
+    });
   });
 
   it("caps rows at the named façade page cap", () => {
@@ -265,6 +379,10 @@ describe("parseOrdersAggregateSurface", () => {
       ),
     ]);
     expect(data?.kind).toBe("orders-aggregate");
+    expect(data?.destination).toEqual({
+      kind: "screen",
+      href: ASSISTANT_ORDERS_LIST_SCREEN_HREF,
+    });
     expect(data?.groupBy).toBe("status");
     expect(data?.orderCount).toBe(6);
     expect(data?.gross).toEqual([{ amountMinor: "1000", currency: "UAH" }]);
@@ -308,8 +426,16 @@ describe("parseOrderEntitySurfaces", () => {
     ]);
     expect(entities).toHaveLength(2);
     expect(entities[0]?.orderId).toBe(ORDER_A);
+    expect(entities[0]?.destination).toEqual({
+      kind: "screen",
+      href: assistantOrderDetailScreenHref(ORDER_A),
+    });
     expect(entities[0]?.toolCallId).toBe("call-get");
     expect(entities[1]?.customerNameSnapshot).toBe("Olya");
+    expect(entities[1]?.destination).toEqual({
+      kind: "screen",
+      href: assistantOrderDetailScreenHref(ORDER_B),
+    });
   });
 
   it("omits needs_choice and error entity outputs", () => {
@@ -399,6 +525,7 @@ function fixtureDescriptor(args: {
   readonly kind: AssistantSurfaceDescriptor["kind"];
   readonly actionNames: readonly string[];
   readonly hydratable: boolean;
+  readonly destination: AssistantSurfaceDestinationDeclaration;
 }): AssistantSurfaceDescriptor {
   return {
     kind: args.kind,
@@ -407,6 +534,7 @@ function fixtureDescriptor(args: {
     actionNames: args.actionNames,
     hydratable: args.hydratable,
     promptLine: "fixture",
+    destination: args.destination,
     parse: () => null,
   };
 }
@@ -438,16 +566,19 @@ describe("hydration flags", () => {
         kind: "orders-list",
         actionNames: ["orders.list"],
         hydratable: false,
+        destination: { kind: "screen" },
       }),
       fixtureDescriptor({
         kind: "orders-aggregate",
         actionNames: ["customers.list"],
         hydratable: false,
+        destination: { kind: "screen" },
       }),
       fixtureDescriptor({
         kind: "order-entity",
         actionNames: ["orders.get", "orders.create"],
         hydratable: true,
+        destination: { kind: "screen" },
       }),
     ];
     expect(

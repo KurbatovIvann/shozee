@@ -11,8 +11,10 @@ import {
   ORDERS_CREATE_TOOLS,
   ORDERS_GET_TOOLS,
   type AssistantOrderEntityData,
+  type AssistantSurfaceDestination,
 } from "@showzy/validation/assistant-surfaces";
 
+import { assistantCopy } from "../../../i18n/assistant";
 import { ordersCopy } from "../../../i18n/orders";
 import { orderDetailHref } from "../../orders/shared/order-hrefs";
 import {
@@ -36,6 +38,8 @@ export {
 
 export type AssistantOrderEntityCardView = {
   readonly kind: "order-entity";
+  readonly destination: AssistantSurfaceDestination;
+  readonly handoffLabel: string;
   readonly id: string;
   readonly orderId: string;
   readonly href: string;
@@ -49,16 +53,20 @@ export type AssistantOrderEntityCardView = {
 export function localizeOrderEntityCard(
   data: AssistantOrderEntityData,
   orders: ReturnType<typeof ordersCopy>,
+  locale: Parameters<typeof ordersCopy>[0],
 ): AssistantOrderEntityCardView {
   const status = isOrderStatus(data.status) ? data.status : null;
   const callId = data.toolCallId;
   const id =
     typeof callId === "string" && callId.length > 0 ? callId : "order-entity";
+  const href = orderDetailHref(data.orderId);
   return {
     kind: "order-entity",
+    destination: data.destination,
+    handoffLabel: assistantCopy(locale).cards.openOrder,
     id,
     orderId: data.orderId,
-    href: orderDetailHref(data.orderId),
+    href,
     orderNumberLabel: data.orderNumber.length > 0 ? `#${data.orderNumber}` : "",
     customerName:
       data.customerNameSnapshot === null
@@ -83,6 +91,6 @@ export function parseOrderEntitySurfaces(
 ): readonly AssistantOrderEntityCardView[] {
   const orders = ordersCopy(locale);
   return parseOrderEntityData(assistantSurfaceToolResultsFromParts(parts)).map(
-    (data) => localizeOrderEntityCard(data, orders),
+    (data) => localizeOrderEntityCard(data, orders, locale),
   );
 }

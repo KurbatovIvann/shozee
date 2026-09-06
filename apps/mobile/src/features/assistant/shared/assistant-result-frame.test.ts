@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
+  assistantResultHandoff,
   assistantResultMarks,
   assistantResultMarksFromUnknown,
   ORIGIN_MARK_ICON_SIZE,
@@ -138,5 +139,37 @@ describe("assistant result provenance marks (SHO-469)", () => {
     expect(CHROME).toContain("provisional");
     expect(CHROME).toContain("originLabel");
     expect(CHROME).not.toContain("createdVia");
+  });
+});
+
+describe("assistant result destination handoff (SHO-470)", () => {
+  it("renders a handoff row for screen pointing at the declared route", () => {
+    expect(
+      assistantResultHandoff({ kind: "screen", href: "/orders" }),
+    ).toEqual({ href: "/orders" });
+    expect(
+      assistantResultHandoff({
+        kind: "screen",
+        href: "/orders/0f0e2d5c-4a1b-4c3d-9e8f-102938475601",
+      }),
+    ).toEqual({ href: "/orders/0f0e2d5c-4a1b-4c3d-9e8f-102938475601" });
+    expect(FRAME).toContain("assistantResultHandoff");
+    expect(FRAME).toContain("DestinationHandoff");
+    expect(FRAME).toContain("handoff !== null");
+    expect(FRAME).toContain("props.destination");
+    expect(SURFACE).toContain("destination={surface.destination}");
+    expect(SURFACE).toContain("handoffLabel={surface.handoffLabel}");
+    expect(SURFACE).toContain("onOpenHref={onOpenHref}");
+  });
+
+  it("renders no handoff row for terminal (or document, or absent)", () => {
+    expect(assistantResultHandoff({ kind: "terminal" })).toBeNull();
+    expect(assistantResultHandoff({ kind: "document" })).toBeNull();
+    expect(assistantResultHandoff(undefined)).toBeNull();
+    expect(assistantResultHandoff(null)).toBeNull();
+    expect(FRAME).not.toContain('destination = { kind: "terminal" }');
+    expect(FRAME).not.toContain("kind: \"terminal\"");
+    expect(CONFIRMATION).not.toContain("destination=");
+    expect(CONFIRMATION).not.toContain("handoffLabel");
   });
 });

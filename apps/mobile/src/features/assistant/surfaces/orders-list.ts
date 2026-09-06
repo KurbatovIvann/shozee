@@ -10,8 +10,10 @@ import {
   ORDERS_LIST_PROMPT_LINE,
   ORDERS_LIST_SURFACE_TOOLS,
   ASSISTANT_ORDERS_LIST_ROW_MAX,
+  ASSISTANT_ORDERS_LIST_SCREEN_HREF,
   type AssistantOrdersListData,
   type AssistantOrdersListRowData,
+  type AssistantSurfaceDestination,
 } from "@showzy/validation/assistant-surfaces";
 
 import { assistantCopy } from "../../../i18n/assistant";
@@ -34,7 +36,7 @@ import {
   localizeCustomerName,
 } from "./helpers";
 
-export const ASSISTANT_ORDERS_LIST_HREF = "/orders";
+export const ASSISTANT_ORDERS_LIST_HREF = ASSISTANT_ORDERS_LIST_SCREEN_HREF;
 
 export {
   ASSISTANT_ORDERS_LIST_ROW_MAX,
@@ -63,6 +65,8 @@ export type AssistantOrdersListRowView = {
 
 export type AssistantOrdersListCardView = {
   readonly kind: "orders-list";
+  readonly destination: AssistantSurfaceDestination;
+  readonly handoffLabel: string;
   readonly rows: readonly AssistantOrdersListRowView[];
   readonly chips: readonly AssistantOrdersListChipView[];
   readonly emptyTitle: string | null;
@@ -153,6 +157,8 @@ export function localizeOrdersListCard(
   const empty = parsedRows.length === 0;
   return {
     kind: "orders-list",
+    destination: data.destination,
+    handoffLabel: assistant.cards.openOrders,
     rows: parsedRows,
     chips: localizeChips(data, orders),
     emptyTitle: empty ? assistant.cards.listEmptyTitle : null,

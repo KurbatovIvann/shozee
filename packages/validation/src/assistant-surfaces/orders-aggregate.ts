@@ -4,6 +4,12 @@
  * the same turn.
  */
 import {
+  ASSISTANT_ORDERS_LIST_SCREEN_HREF,
+  resolveAssistantSurfaceDestination,
+  type AssistantSurfaceDestination,
+  type AssistantSurfaceDestinationDeclaration,
+} from "./destination.js";
+import {
   grossAmounts,
   isRecord,
   lastSuccessfulResult,
@@ -20,6 +26,10 @@ export const ORDERS_AGGREGATE_SURFACE_TOOLS = [
 
 export const ORDERS_AGGREGATE_PROMPT_LINE =
   "After orders_list_counts with no page on the same turn, the UI already shows the orders aggregate card with period, totals, and a status breakdown. Reply with a short product-language summary of the totals. Do not dump a markdown table of buckets. Do not call orders_list_counts or orders.list again for the card.";
+
+export const ORDERS_AGGREGATE_DESTINATION = {
+  kind: "screen",
+} as const satisfies AssistantSurfaceDestinationDeclaration;
 
 export type AssistantOrdersAggregateGroupBy =
   "none" | "status" | "product" | "customer";
@@ -64,6 +74,7 @@ export type AssistantOrdersAggregateExtraBucketData =
 
 export type AssistantOrdersAggregateData = {
   readonly kind: "orders-aggregate";
+  readonly destination: AssistantSurfaceDestination;
   readonly groupBy: AssistantOrdersAggregateGroupBy;
   readonly orderCount: number;
   readonly gross: readonly AssistantMoneyMinor[];
@@ -239,6 +250,10 @@ export function parseOrdersAggregateSurface(
   const omitted = payload["bucketsOmitted"];
   return {
     kind: "orders-aggregate",
+    destination: resolveAssistantSurfaceDestination(
+      ORDERS_AGGREGATE_DESTINATION,
+      ASSISTANT_ORDERS_LIST_SCREEN_HREF,
+    ),
     groupBy,
     orderCount:
       typeof payload["orderCount"] === "number" ? payload["orderCount"] : 0,
