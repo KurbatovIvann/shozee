@@ -7,7 +7,8 @@
   "exports": {
     "./locale": "./src/locale.ts",
     "./plural": "./src/plural.ts",
-    "./orders": "./src/orders.ts"
+    "./orders": "./src/orders.ts",
+    "./assistant": "./src/assistant.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
