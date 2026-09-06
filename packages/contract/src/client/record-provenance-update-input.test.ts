@@ -8,15 +8,6 @@ import { z } from "zod";
 
 import { contractModules } from "./modules.js";
 
-const PROVENANCE_MODULES = [
-  "catalog",
-  "customers",
-  "documents",
-  "invites",
-  "orders",
-  "pricing",
-] as const;
-
 const FORBIDDEN = [
   "createdVia",
   "vouchedBy",
@@ -64,19 +55,31 @@ function collectPropertyKeys(node: unknown, keys: Set<string>): void {
   }
 }
 
+function scanModule(
+  moduleName: string,
+  actions: { readonly [verb: string]: { readonly input: z.ZodType } },
+): string[] {
+  const scanned: string[] = [];
+  for (const [verb, contract] of Object.entries(actions)) {
+    scanned.push(`${moduleName}.${verb}`);
+    const keys = jsonSchemaPropertyKeys(contract.input);
+    for (const forbidden of FORBIDDEN) {
+      expect(keys).not.toContain(forbidden);
+    }
+  }
+  return scanned;
+}
+
 describe("record provenance input schemas (SHO-465)", () => {
   it("keeps createdVia and vouchedBy off every contract input in the six modules", () => {
-    const scanned: string[] = [];
-    for (const moduleName of PROVENANCE_MODULES) {
-      const actions = contractModules[moduleName];
-      for (const [verb, contract] of Object.entries(actions)) {
-        scanned.push(`${moduleName}.${verb}`);
-        const keys = jsonSchemaPropertyKeys(contract.input);
-        for (const forbidden of FORBIDDEN) {
-          expect(keys).not.toContain(forbidden);
-        }
-      }
-    }
+    const scanned = [
+      ...scanModule("catalog", contractModules.catalog),
+      ...scanModule("customers", contractModules.customers),
+      ...scanModule("documents", contractModules.documents),
+      ...scanModule("invites", contractModules.invites),
+      ...scanModule("orders", contractModules.orders),
+      ...scanModule("pricing", contractModules.pricing),
+    ];
     expect(scanned).toEqual(
       expect.arrayContaining([
         "orders.create",
