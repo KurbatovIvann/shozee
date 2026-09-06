@@ -13,7 +13,14 @@ import {
   type AssistantSurfaceToolResult,
 } from "./helpers.js";
 
-/** Named façade page cap (SHO-403). */
+/**
+ * Named façade page cap (SHO-403). Literal copy of
+ * LIST_ORDERS_SUMMARY_MAX_LIMIT (façade alias
+ * ORDERS_LIST_PAGE_ASSISTANT_MAX_LIMIT). This zod-only leaf must not
+ * depend on a module contract or packages/ai to read that number.
+ * packages/ai owns the equality guard (SHO-462). Do not derive this
+ * by adding a forbidden dependency.
+ */
 export const ASSISTANT_ORDERS_LIST_ROW_MAX = 50;
 
 export const ORDERS_LIST_PAGE_TOOL = "orders_list_page";
