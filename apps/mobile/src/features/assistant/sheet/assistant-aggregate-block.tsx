@@ -144,7 +144,7 @@ const AggregateCollectionRow = memo(function AggregateCollectionRow(props: {
   readonly cellLayout?: "inline" | "stacked";
   readonly indent?: boolean;
 }) {
-  const { row, onOpenHref } = props;
+  const { row, onOpenHref, cellLayout, indent } = props;
   return (
     <AssistantCollectionResultRow
       title={row.title}
@@ -154,8 +154,8 @@ const AggregateCollectionRow = memo(function AggregateCollectionRow(props: {
       cells={row.cells}
       href={row.href}
       onOpenHref={onOpenHref}
-      cellLayout={props.cellLayout}
-      indent={props.indent}
+      {...(cellLayout !== undefined ? { cellLayout } : {})}
+      {...(indent !== undefined ? { indent } : {})}
     />
   );
 });

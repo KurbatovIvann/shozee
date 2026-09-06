@@ -1139,7 +1139,7 @@ describe("aggregate layouts (SHO-473)", () => {
       (entry) => entry.kind,
     );
     expect(registeredKinds.includes("orders-breakdown")).toBe(false);
-    expect(ASSISTANT_AGGREGATE_LAYOUTS.includes("chart")).toBe(false);
+    expect(ASSISTANT_AGGREGATE_LAYOUTS).toEqual(["summary", "breakdown"]);
   });
 });
 
