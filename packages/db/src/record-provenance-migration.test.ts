@@ -83,16 +83,14 @@ function backfillCteBodies(sql: string): string[] {
   const startToken = "WITH earliest AS (";
   const endToken = "\n)\nUPDATE";
   let from = 0;
-  while (true) {
-    const start = sql.indexOf(startToken, from);
-    if (start === -1) {
-      break;
-    }
+  let start = sql.indexOf(startToken, from);
+  while (start >= 0) {
     const selectStart = start + startToken.length;
     const end = sql.indexOf(endToken, selectStart);
-    assert.ok(end !== -1, "backfill CTE is missing its UPDATE closer");
+    assert.ok(end >= 0, "backfill CTE is missing its UPDATE closer");
     bodies.push(sql.slice(selectStart, end));
     from = end;
+    start = sql.indexOf(startToken, from);
   }
   return bodies;
 }
