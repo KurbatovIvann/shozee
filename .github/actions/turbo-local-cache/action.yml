@@ -11,6 +11,6 @@ runs:
       uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: .turbo
-        key: turbo-${{ runner.os }}-node22-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'package.json', 'turbo.json', 'prettier.config.mjs', 'packages/tooling/package.json', 'packages/tooling/tsconfig/base.json', 'packages/tooling/prettier/index.mjs', 'packages/tooling/eslint/base.mjs', 'packages/tooling/eslint/import-boundaries.mjs') }}-${{ github.job }}-${{ github.sha }}
+        key: turbo-${{ runner.os }}-node22-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'package.json', 'turbo.json', 'prettier.config.mjs', 'packages/tooling/package.json', 'packages/tooling/tsconfig/base.json', 'packages/tooling/prettier/index.mjs', 'packages/tooling/eslint/base.mjs', 'packages/tooling/eslint/import-boundaries.mjs', 'packages/tooling/eslint/record-verification-aggregates.mjs') }}-${{ github.job }}-${{ github.sha }}
         restore-keys: |
-          turbo-${{ runner.os }}-node22-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'package.json', 'turbo.json', 'prettier.config.mjs', 'packages/tooling/package.json', 'packages/tooling/tsconfig/base.json', 'packages/tooling/prettier/index.mjs', 'packages/tooling/eslint/base.mjs', 'packages/tooling/eslint/import-boundaries.mjs') }}-${{ github.job }}-
+          turbo-${{ runner.os }}-node22-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'package.json', 'turbo.json', 'prettier.config.mjs', 'packages/tooling/package.json', 'packages/tooling/tsconfig/base.json', 'packages/tooling/prettier/index.mjs', 'packages/tooling/eslint/base.mjs', 'packages/tooling/eslint/import-boundaries.mjs', 'packages/tooling/eslint/record-verification-aggregates.mjs') }}-${{ github.job }}-

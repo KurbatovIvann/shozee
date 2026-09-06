@@ -1,6 +1,17 @@
 import { orderItems, orders } from "@showzy/db/schema/orders";
 import { moneyToCanonical } from "@showzy/module-kit/canonical";
-import { and, count, eq, sql, sum } from "drizzle-orm";
+import { recordCountsSql } from "@showzy/validation/record-verification";
+import {
+  and,
+  count,
+  eq,
+  isNotNull,
+  isNull,
+  or,
+  sql,
+  sum,
+  type SQL,
+} from "drizzle-orm";
 
 import {
   LIST_ORDERS_AGGREGATE_BUCKETS_MAX,
@@ -14,7 +25,6 @@ import {
   grossByCurrencyFromMap,
   headerPredicates,
   mergeGross,
-  recordCountsPredicate,
   toBigint,
   toCount,
   type QueryMatch,
@@ -24,6 +34,29 @@ import {
 type ListInput = ListOrdersInput;
 type Bucket = ListOrdersBucket;
 type ListOutput = ListOrdersOutput;
+
+/**
+ * Totals consult the shared verification predicate (SHO-466 / SHO-489).
+ * Under the narrow default this is `TRUE`. Do not re-express
+ * vouched/created_via filters here — flip `RECORD_VERIFICATION.mode`
+ * instead. Money-shaped answers (revenue, gross by currency) exclude
+ * unvouched rows; operational answers do not (SHO-464).
+ */
+function recordCountsPredicate(): SQL {
+  return recordCountsSql(
+    {
+      createdVia: orders.createdVia,
+      vouchedBy: orders.vouchedBy,
+    },
+    {
+      alwaysTrue: sql`true`,
+      isNull: (column) => isNull(column),
+      isNotNull: (column) => isNotNull(column),
+      eq: (column, value) => eq(column, value),
+      or: (clauses) => or(...clauses) ?? sql`true`,
+    },
+  );
+}
 
 type MutableBucket = {
   identity: Bucket["identity"];

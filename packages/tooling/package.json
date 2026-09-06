@@ -11,8 +11,8 @@
   },
   "scripts": {
     "lint": "eslint .",
-    "test": "node --test eslint/import-boundaries.test.mjs ci/*.test.mjs",
-    "test:unit": "node --test eslint/import-boundaries.test.mjs ci/*.test.mjs"
+    "test": "node --test eslint/import-boundaries.test.mjs eslint/record-verification-aggregates.test.mjs ci/*.test.mjs",
+    "test:unit": "node --test eslint/import-boundaries.test.mjs eslint/record-verification-aggregates.test.mjs ci/*.test.mjs"
   },
   "dependencies": {
     "@eslint/js": "^10.0.1",

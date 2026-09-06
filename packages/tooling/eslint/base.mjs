@@ -7,6 +7,7 @@ import boundaries from "eslint-plugin-boundaries";
 import tseslint from "typescript-eslint";
 
 import { importBoundariesRule } from "./import-boundaries.mjs";
+import { recordVerificationAggregatesRule } from "./record-verification-aggregates.mjs";
 
 /**
  * Walk from a package's eslint config directory to the monorepo root so
@@ -65,6 +66,7 @@ const showzyPlugin = {
   meta: { name: "showzy", version: "0.0.0" },
   rules: {
     "import-boundaries": importBoundariesRule,
+    "record-verification-aggregates": recordVerificationAggregatesRule,
   },
 };
 
@@ -206,6 +208,7 @@ export function showzyEslintConfig({ tsconfigRootDir }) {
       settings: showzyBoundarySettings(repoRoot),
       rules: {
         "showzy/import-boundaries": "error",
+        "showzy/record-verification-aggregates": "error",
         "boundaries/dependencies": ["error", showzyBoundaryDependencyOptions],
         // Prohibitions (.cursor/rules/prohibitions.mdc): no `any`,
         // no suppression comments without a linked issue.
