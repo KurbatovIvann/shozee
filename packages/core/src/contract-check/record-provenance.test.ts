@@ -3,7 +3,8 @@
  * derived entity table. Rule-matrix tests; the composition stage proves
  * the live registry after T1 (nine tables, zero violations).
  */
-import { describe, expect, it } from "vitest";
+import type { RecordCreatedVia } from "@showzy/db/schema/tenant-columns";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import { z } from "zod";
 
 import type {
@@ -12,6 +13,7 @@ import type {
 } from "../contract/index.js";
 import { defineActionContract } from "../contract/index.js";
 import { ActionRegistry } from "../runtime/action-registry.js";
+import type { ActionChannel } from "../runtime/context/types.js";
 import { implementAction } from "../runtime/implement-action.js";
 import type { ContractCheckInput } from "./contract-check.js";
 import { runContractCheck } from "./contract-check.js";
@@ -20,6 +22,7 @@ import {
   deriveRecordProvenanceRequirements,
   RECORD_PROVENANCE_CREATE_EXCLUSIONS,
   RECORD_PROVENANCE_PHYSICAL_TABLE_ALIASES,
+  type ActionChannelEqualsDbRecordCreatedVia,
   type RecordProvenanceRequirement,
   type SchemaTableRef,
 } from "./record-provenance.js";
@@ -568,6 +571,13 @@ describe("contract check — record provenance resolution (SHO-488)", () => {
       expect(matching[0]).toContain(`table "${requirement.table}"`);
       expect(matching[0]).toContain("Missing:");
     }
+  });
+});
+
+describe("SHO-491 channel type parity", () => {
+  it("keeps ActionChannel mutually assignable with db RecordCreatedVia", () => {
+    expectTypeOf<ActionChannel>().toEqualTypeOf<RecordCreatedVia>();
+    expectTypeOf<ActionChannelEqualsDbRecordCreatedVia>().toEqualTypeOf<true>();
   });
 });
 

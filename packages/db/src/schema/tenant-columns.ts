@@ -23,6 +23,7 @@ import {
   type UniqueConstraintBuilder,
 } from "drizzle-orm/pg-core";
 
+import { userIdColumn } from "./auth-ids.js";
 import { companies } from "./companies.js";
 
 type TenantRow = {
@@ -60,7 +61,10 @@ export function timestampColumns() {
 /**
  * Channel values stored on `created_via`. Same four strings as
  * `audit_log.channel` / `ActionChannel` — duplicated here so `@showzy/db`
- * does not import `@showzy/core`.
+ * does not import `@showzy/core`. Mutual assignability with `ActionChannel`
+ * is enforced in `packages/core/src/contract-check/record-provenance.ts`
+ * (SHO-491). The CHECK below interpolates this array; do not re-list the
+ * literals there.
  */
 export const RECORD_CREATED_VIA_CHANNELS = [
   "ui",
@@ -70,6 +74,11 @@ export const RECORD_CREATED_VIA_CHANNELS = [
 ] as const;
 
 export type RecordCreatedVia = (typeof RECORD_CREATED_VIA_CHANNELS)[number];
+
+/** `'ui', 'ai', 'system', 'webhook'` — spacing matches 0047 / snapshot. */
+const RECORD_CREATED_VIA_IN_LIST = RECORD_CREATED_VIA_CHANNELS.map(
+  (channel) => `'${channel}'`,
+).join(", ");
 
 type RecordProvenanceRow = {
   createdVia: PgColumn;
@@ -85,7 +94,12 @@ type RecordProvenanceRow = {
 export function recordProvenanceColumns() {
   return {
     createdVia: text("created_via").$type<RecordCreatedVia | null>(),
-    vouchedBy: text("vouched_by"),
+    // Responsible-person attribution for primary-document rules, not a live
+    // membership FK. No `.references()`: ON DELETE SET NULL would erase that
+    // attribution; RESTRICT would block deleting a user who ever vouched.
+    // `invites.invitedBy` uses RESTRICT — the opposite precedent two files
+    // away. Adding an FK needs a migration and is out of SHO-491.
+    vouchedBy: userIdColumn("vouched_by"),
     vouchedAt: timestamp("vouched_at", { withTimezone: true }),
   };
 }
@@ -101,7 +115,7 @@ export function recordProvenanceChecks(
   return [
     check(
       `${tableName}_created_via_check`,
-      sql`${table.createdVia} IN ('ui', 'ai', 'system', 'webhook')`,
+      sql`${table.createdVia} IN (${sql.raw(RECORD_CREATED_VIA_IN_LIST)})`,
     ),
     check(
       `${tableName}_vouched_pair_check`,
