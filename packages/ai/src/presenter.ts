@@ -1,13 +1,26 @@
 /**
- * Completed-turn spoken presenter (SHO-402 / SHO-401 T1).
+ * Completed-turn spoken presenter (SHO-402 / SHO-401 T1 / SHO-457).
  *
  * When a turn produced a registered result surface, persist the same
- * view the client registry would show — not model `{ spoken }`. Copy is
- * duplicated here so `@showzy/ai` does not import `apps/mobile`.
+ * view the client registry would show — not model `{ spoken }`. Parse
+ * lives in `@showzy/validation/assistant-surfaces`; this file owns
+ * locale, labels, and spoken phrasing. Do not import `apps/mobile`.
  */
+import {
+  ASSISTANT_ORDERS_LIST_ROW_MAX,
+  ORDERS_LIST_COUNTS_TOOL,
+  ORDERS_LIST_PAGE_TOOL,
+  UNLINKED_CUSTOMER_NAME_SNAPSHOT,
+  assistantSurfacesFromToolResults,
+  lastSuccessfulResult,
+  type AssistantOrderEntityData,
+  type AssistantOrdersAggregateData,
+  type AssistantOrdersListData,
+  type AssistantSurfaceData,
+  type AssistantSurfaceToolResult,
+} from "@showzy/validation/assistant-surfaces";
 import { z } from "zod";
 
-import { toProviderToolName } from "./action-tool.js";
 import {
   catalogDomainErrorExtrasFromToolOutput,
   isStaffAssistantNeedsChoiceOutput,
@@ -18,18 +31,10 @@ import {
   type StaffAssistantNeedsChoiceInteraction,
   type StaffAssistantNeedsChoiceOutput,
 } from "./choice.js";
-import { STAFF_ASSISTANT_CLIPPED_STATUS } from "./clip-tool-result.js";
-import { isStaffAssistantConfirmationOutput } from "./confirmation.js";
 import {
   lastStaffAssistantTypedToolErrorMessage,
   spokenTurnText,
 } from "./spoken-reply.js";
-import { ORDERS_CREATE_TOOL_NAME } from "./tool-facades/orders-create.js";
-import {
-  ORDERS_LIST_COUNTS_TOOL_NAME,
-  ORDERS_LIST_PAGE_ASSISTANT_MAX_LIMIT,
-  ORDERS_LIST_PAGE_TOOL_NAME,
-} from "./tool-facades/orders-list.js";
 
 export const STAFF_ASSISTANT_LOCALES = ["uk", "en"] as const;
 export type StaffAssistantLocale = (typeof STAFF_ASSISTANT_LOCALES)[number];
@@ -95,10 +100,6 @@ export function presentDomainErrorStaffAssistantTurn(options: {
 
 export const staffAssistantLocaleSchema = z.enum(STAFF_ASSISTANT_LOCALES);
 
-const ORDERS_GET_TOOL_NAME = toProviderToolName("orders.get");
-const ORDERS_GET_TOOLS = new Set(["orders.get", ORDERS_GET_TOOL_NAME]);
-const ORDERS_CREATE_TOOLS = new Set(["orders.create", ORDERS_CREATE_TOOL_NAME]);
-
 const ORDER_STATUSES = [
   "new",
   "confirmed",
@@ -107,8 +108,6 @@ const ORDER_STATUSES = [
   "canceled",
 ] as const;
 type OrderStatus = (typeof ORDER_STATUSES)[number];
-
-const UNLINKED_CUSTOMER_NAME_SNAPSHOT = "unlinked";
 
 const STATUS_LABELS: Record<
   StaffAssistantLocale,
@@ -191,44 +190,6 @@ type PresentedSurface = {
   readonly spoken: string;
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isTypedToolError(value: unknown): boolean {
-  return (
-    isRecord(value) &&
-    value["status"] === "error" &&
-    typeof value["code"] === "string"
-  );
-}
-
-function isSuccessfulToolOutput(output: unknown): boolean {
-  if (output === undefined) {
-    return false;
-  }
-  if (isTypedToolError(output)) {
-    return false;
-  }
-  if (isStaffAssistantConfirmationOutput(output)) {
-    return false;
-  }
-  if (isStaffAssistantNeedsChoiceOutput(output)) {
-    return false;
-  }
-  return true;
-}
-
-function unwrapToolOutput(output: unknown): {
-  readonly payload: unknown;
-  readonly clipped: boolean;
-} {
-  if (isRecord(output) && output["status"] === STAFF_ASSISTANT_CLIPPED_STATUS) {
-    return { payload: output["preview"], clipped: true };
-  }
-  return { payload: output, clipped: false };
-}
-
 function isOrderStatus(value: unknown): value is OrderStatus {
   return (
     typeof value === "string" &&
@@ -263,89 +224,69 @@ function orderCountSpoken(count: number, locale: StaffAssistantLocale): string {
   return interpolate(COPY[locale].orderCount[form], count);
 }
 
-function customerNameFromPayload(
-  payload: Record<string, unknown>,
+function customerSpokenName(
+  snapshot: string | null,
   missingCustomer: string,
 ): string | null {
-  const customer = payload["customer"];
-  if (!isRecord(customer)) {
+  if (snapshot === null) {
     return null;
   }
-  const nameSnapshot = customer["nameSnapshot"];
-  if (typeof nameSnapshot !== "string" || nameSnapshot.length === 0) {
+  if (snapshot.length === 0 || snapshot === UNLINKED_CUSTOMER_NAME_SNAPSHOT) {
     return missingCustomer;
   }
-  if (nameSnapshot === UNLINKED_CUSTOMER_NAME_SNAPSHOT) {
-    return missingCustomer;
-  }
-  return nameSnapshot;
+  return snapshot;
 }
 
 function formatOrderNumber(value: unknown): string {
   return typeof value === "string" && value.length > 0 ? `#${value}` : "";
 }
 
-function lastSuccessfulIndex(
+function toSurfaceToolResults(
   results: readonly StaffAssistantPresentedToolResult[],
-  matches: (toolName: string) => boolean,
+): AssistantSurfaceToolResult[] {
+  return results.map((result, index) => ({
+    toolName: result.toolName,
+    output: result.output,
+    toolCallId: String(index),
+  }));
+}
+
+function sourceIndexFromToolCallId(toolCallId: string | undefined): number {
+  if (toolCallId === undefined) {
+    return 0;
+  }
+  const parsed = Number(toolCallId);
+  return Number.isInteger(parsed) ? parsed : 0;
+}
+
+function surfaceSourceIndex(
+  surface: AssistantSurfaceData,
+  results: readonly AssistantSurfaceToolResult[],
 ): number {
-  let found = -1;
-  for (const [index, result] of results.entries()) {
-    if (!matches(result.toolName) || !isSuccessfulToolOutput(result.output)) {
-      continue;
-    }
-    found = index;
+  if (surface.kind === "order-entity") {
+    return sourceIndexFromToolCallId(surface.toolCallId);
   }
-  return found;
-}
-
-function pageRows(payload: unknown): unknown[] {
-  if (!isRecord(payload)) {
-    return [];
-  }
-  if (Array.isArray(payload["rows"])) {
-    return payload["rows"];
-  }
-  if (Array.isArray(payload["items"])) {
-    return payload["items"];
-  }
-  return [];
-}
-
-function pageHasMore(payload: unknown, clipped: boolean): boolean {
-  if (clipped) {
-    return true;
-  }
-  if (isRecord(payload) && typeof payload["hasMore"] === "boolean") {
-    return payload["hasMore"];
-  }
-  return (
-    isRecord(payload) &&
-    typeof payload["nextCursor"] === "string" &&
-    payload["nextCursor"].length > 0
-  );
+  const toolName =
+    surface.kind === "orders-list"
+      ? ORDERS_LIST_PAGE_TOOL
+      : ORDERS_LIST_COUNTS_TOOL;
+  const found = lastSuccessfulResult(results, (name) => name === toolName);
+  return sourceIndexFromToolCallId(found?.toolCallId);
 }
 
 function presentListSurface(
-  pageOutput: unknown,
+  data: AssistantOrdersListData,
   locale: StaffAssistantLocale,
 ): string {
   const copy = COPY[locale];
-  const { payload, clipped } = unwrapToolOutput(pageOutput);
-  const items = pageRows(payload);
-  const customerMatchTruncated =
-    isRecord(payload) && payload["customerMatchTruncated"] === true;
   const labels: string[] = [];
-  for (const row of items) {
-    if (labels.length >= ORDERS_LIST_PAGE_ASSISTANT_MAX_LIMIT) {
+  for (const row of data.rows) {
+    if (labels.length >= ASSISTANT_ORDERS_LIST_ROW_MAX) {
       break;
     }
-    if (!isRecord(row)) {
-      continue;
-    }
-    const numberLabel = formatOrderNumber(row["orderNumber"]);
-    const status = isOrderStatus(row["status"])
-      ? STATUS_LABELS[locale][row["status"]]
+    const numberLabel = formatOrderNumber(row.orderNumber);
+    const status = isOrderStatus(row.status)
+      ? STATUS_LABELS[locale][row.status]
       : null;
     const numberPart = numberLabel.length > 0 ? numberLabel : null;
     if (numberPart !== null && status !== null) {
@@ -357,10 +298,10 @@ function presentListSurface(
     }
   }
   const footnotes: string[] = [];
-  if (customerMatchTruncated) {
+  if (data.customerMatchTruncated) {
     footnotes.push(copy.customerMatchTruncated);
   }
-  if (pageHasMore(payload, clipped)) {
+  if (data.hasMore) {
     footnotes.push(copy.hasMore);
   }
   const main =
@@ -374,33 +315,16 @@ function presentListSurface(
 }
 
 function presentAggregateSurface(
-  countsOutput: unknown,
+  data: AssistantOrdersAggregateData,
   locale: StaffAssistantLocale,
 ): string {
   const copy = COPY[locale];
-  const { payload, clipped } = unwrapToolOutput(countsOutput);
-  if (!isRecord(payload) || payload["kind"] !== "aggregate") {
-    return copy.empty;
-  }
-  const orderCount =
-    typeof payload["orderCount"] === "number" ? payload["orderCount"] : 0;
-  const rawBuckets = payload["buckets"];
-  const buckets = Array.isArray(rawBuckets) ? rawBuckets : [];
   const byStatus = new Map<OrderStatus, number>();
-  for (const bucket of buckets) {
-    if (!isRecord(bucket)) {
+  for (const bucket of data.statusBuckets) {
+    if (!isOrderStatus(bucket.status)) {
       continue;
     }
-    const identity = bucket["identity"];
-    if (!isRecord(identity) || identity["kind"] !== "status") {
-      continue;
-    }
-    if (!isOrderStatus(identity["status"])) {
-      continue;
-    }
-    const count =
-      typeof bucket["orderCount"] === "number" ? bucket["orderCount"] : 0;
-    byStatus.set(identity["status"], count);
+    byStatus.set(bucket.status, bucket.orderCount);
   }
   const chipParts: string[] = [];
   for (const status of ORDER_STATUSES) {
@@ -411,18 +335,18 @@ function presentAggregateSurface(
     chipParts.push(`${STATUS_LABELS[locale][status]} · ${String(count)}`);
   }
   const footnotes: string[] = [];
-  if (payload["customerMatchTruncated"] === true) {
+  if (data.customerMatchTruncated) {
     footnotes.push(copy.customerMatchTruncated);
   }
-  if (clipped) {
+  if (data.clipped) {
     footnotes.push(copy.hasMore);
   }
-  const empty = chipParts.length === 0 && orderCount === 0;
+  const empty = chipParts.length === 0 && data.orderCount === 0;
   const main = empty
     ? copy.empty
     : chipParts.length === 0
-      ? `${orderCountSpoken(orderCount, locale)}.`
-      : `${orderCountSpoken(orderCount, locale)}. ${chipParts.join(", ")}.`;
+      ? `${orderCountSpoken(data.orderCount, locale)}.`
+      : `${orderCountSpoken(data.orderCount, locale)}. ${chipParts.join(", ")}.`;
   if (footnotes.length === 0) {
     return main;
   }
@@ -430,23 +354,18 @@ function presentAggregateSurface(
 }
 
 function presentEntitySurface(
-  output: unknown,
+  data: AssistantOrderEntityData,
   locale: StaffAssistantLocale,
-): string | null {
+): string {
   const copy = COPY[locale];
-  const { payload } = unwrapToolOutput(output);
-  if (!isRecord(payload)) {
-    return null;
-  }
-  const orderId = payload["orderId"];
-  if (typeof orderId !== "string" || orderId.length === 0) {
-    return null;
-  }
-  const numberLabel = formatOrderNumber(payload["orderNumber"]);
-  const status = isOrderStatus(payload["status"])
-    ? STATUS_LABELS[locale][payload["status"]]
+  const numberLabel = formatOrderNumber(data.orderNumber);
+  const status = isOrderStatus(data.status)
+    ? STATUS_LABELS[locale][data.status]
     : null;
-  const customer = customerNameFromPayload(payload, copy.missingCustomer);
+  const customer = customerSpokenName(
+    data.customerNameSnapshot,
+    copy.missingCustomer,
+  );
   const bits: string[] = [];
   if (numberLabel.length > 0) {
     bits.push(numberLabel);
@@ -463,6 +382,20 @@ function presentEntitySurface(
   return `${copy.entityPrefix} ${bits.join(", ")}.`;
 }
 
+function presentSurface(
+  surface: AssistantSurfaceData,
+  locale: StaffAssistantLocale,
+): string {
+  switch (surface.kind) {
+    case "orders-list":
+      return presentListSurface(surface, locale);
+    case "orders-aggregate":
+      return presentAggregateSurface(surface, locale);
+    case "order-entity":
+      return presentEntitySurface(surface, locale);
+  }
+}
+
 /**
  * Same surfaces as the mobile result-card registry: page (+ optional
  * counts) → one list; counts-only → one aggregate; N entities from
@@ -472,53 +405,17 @@ export function presentCompletedStaffAssistantTurn(options: {
   readonly locale: StaffAssistantLocale;
   readonly toolResults: readonly StaffAssistantPresentedToolResult[];
 }): string | undefined {
-  const { locale, toolResults } = options;
-  const pageIndex = lastSuccessfulIndex(
-    toolResults,
-    (name) => name === ORDERS_LIST_PAGE_TOOL_NAME,
-  );
-  const countsIndex = lastSuccessfulIndex(
-    toolResults,
-    (name) => name === ORDERS_LIST_COUNTS_TOOL_NAME,
-  );
-  const surfaces: PresentedSurface[] = [];
-  if (pageIndex >= 0) {
-    const page = toolResults[pageIndex];
-    if (page !== undefined) {
-      surfaces.push({
-        index: pageIndex,
-        spoken: presentListSurface(page.output, locale),
-      });
-    }
-  } else if (countsIndex >= 0) {
-    const counts = toolResults[countsIndex];
-    if (counts !== undefined) {
-      surfaces.push({
-        index: countsIndex,
-        spoken: presentAggregateSurface(counts.output, locale),
-      });
-    }
-  }
-  for (const [index, result] of toolResults.entries()) {
-    if (!isSuccessfulToolOutput(result.output)) {
-      continue;
-    }
-    if (
-      !ORDERS_GET_TOOLS.has(result.toolName) &&
-      !ORDERS_CREATE_TOOLS.has(result.toolName)
-    ) {
-      continue;
-    }
-    const spoken = presentEntitySurface(result.output, locale);
-    if (spoken !== null) {
-      surfaces.push({ index, spoken });
-    }
-  }
+  const results = toSurfaceToolResults(options.toolResults);
+  const surfaces = assistantSurfacesFromToolResults(results);
   if (surfaces.length === 0) {
     return undefined;
   }
-  surfaces.sort((left, right) => left.index - right.index);
-  return surfaces.map((surface) => surface.spoken).join("\n");
+  const presented: PresentedSurface[] = surfaces.map((surface) => ({
+    index: surfaceSourceIndex(surface, results),
+    spoken: presentSurface(surface, options.locale),
+  }));
+  presented.sort((left, right) => left.index - right.index);
+  return presented.map((surface) => surface.spoken).join("\n");
 }
 
 function presentChoiceIntro(

@@ -1,4 +1,5 @@
 import { defineActionContract } from "@showzy/core/contract";
+import { ORDER_ENTITY_PROMPT_LINE } from "@showzy/validation/assistant-surfaces";
 import { asSchema } from "ai";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -25,7 +26,6 @@ import {
   STAFF_ASSISTANT_CACHE_CONTROL,
   STAFF_ASSISTANT_DEFER_PROVIDER_OPTIONS,
 } from "./anthropic-options.js";
-import { ORDER_ENTITY_PROMPT_LINE } from "./spoken-reply.js";
 import { CUSTOMERS_LIST_CUSTOMERS_ASSISTANT_LIMIT } from "./tool-facades/customers-list-customers.js";
 import { CUSTOMERS_LIST_GROUPS_ASSISTANT_LIMIT } from "./tool-facades/customers-list-groups.js";
 import { ORDERS_LIST_PAGE_ASSISTANT_DEFAULT_LIMIT } from "./tool-facades/orders-list.js";

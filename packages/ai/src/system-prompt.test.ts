@@ -1,12 +1,12 @@
-import { describe, expect, it } from "vitest";
-
-import { STAFF_ASSISTANT_CACHE_CONTROL } from "./anthropic-options.js";
-import { STAFF_ASSISTANT_PRODUCT_GLOSSARY } from "./product-glossary.js";
 import {
   ORDER_ENTITY_PROMPT_LINE,
   ORDERS_AGGREGATE_PROMPT_LINE,
   ORDERS_LIST_PROMPT_LINE,
-} from "./spoken-reply.js";
+} from "@showzy/validation/assistant-surfaces";
+import { describe, expect, it } from "vitest";
+
+import { STAFF_ASSISTANT_CACHE_CONTROL } from "./anthropic-options.js";
+import { STAFF_ASSISTANT_PRODUCT_GLOSSARY } from "./product-glossary.js";
 import {
   staffAssistantSystemMessage,
   staffAssistantSystemMessages,

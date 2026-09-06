@@ -199,14 +199,16 @@ export {
 } from "./staff-assistant-stream.js";
 export {
   isStaffAssistantSyntheticJsonTool,
-  ORDER_ENTITY_PROMPT_LINE,
-  ORDERS_AGGREGATE_PROMPT_LINE,
-  ORDERS_LIST_PROMPT_LINE,
   staffAssistantSpokenOutputSchema,
   STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK,
   STAFF_ASSISTANT_SYNTHETIC_JSON_TOOL_NAME,
   type StaffAssistantSpokenOutput,
 } from "./spoken-reply.js";
+export {
+  ORDER_ENTITY_PROMPT_LINE,
+  ORDERS_AGGREGATE_PROMPT_LINE,
+  ORDERS_LIST_PROMPT_LINE,
+} from "@showzy/validation/assistant-surfaces";
 export {
   staffAssistantSystemMessage,
   staffAssistantSystemMessages,

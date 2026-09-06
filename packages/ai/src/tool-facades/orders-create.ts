@@ -11,6 +11,7 @@ import {
   CREATE_ORDER_COMMENT_MAX,
   CREATE_ORDER_MAX_ITEMS,
 } from "@showzy/orders/contract";
+import { ORDER_ENTITY_PROMPT_LINE } from "@showzy/validation/assistant-surfaces";
 import { ENTITY_REF_QUERY_MAX } from "@showzy/validation/entity-ref";
 import {
   DECIMAL_QUANTITY_MESSAGE,
@@ -21,7 +22,6 @@ import { tool, type Tool } from "ai";
 import { z } from "zod";
 
 import type { ActionToolExecute } from "../action-tool.js";
-import { ORDER_ENTITY_PROMPT_LINE } from "../spoken-reply.js";
 
 export const ORDERS_CREATE_ACTION_NAME = "orders.create";
 export const ORDERS_CREATE_TOOL_NAME = "orders_create";

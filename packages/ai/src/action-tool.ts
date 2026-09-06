@@ -1,6 +1,7 @@
 import { anthropic } from "@ai-sdk/anthropic";
-import { CoreInvariantError } from "@showzy/core/errors";
 import type { ActionContract } from "@showzy/core/contract";
+import { CoreInvariantError } from "@showzy/core/errors";
+import { ORDER_ENTITY_PROMPT_LINE } from "@showzy/validation/assistant-surfaces";
 import { jsonSchema, tool, type Tool, type ToolSet } from "ai";
 import { z } from "zod";
 
@@ -8,7 +9,6 @@ import {
   STAFF_ASSISTANT_CACHE_PROVIDER_OPTIONS,
   STAFF_ASSISTANT_DEFER_PROVIDER_OPTIONS,
 } from "./anthropic-options.js";
-import { ORDER_ENTITY_PROMPT_LINE } from "./spoken-reply.js";
 import {
   CATALOG_LIST_PRODUCTS_ACTION_NAME,
   CATALOG_LIST_PRODUCTS_TOOL_NAME,

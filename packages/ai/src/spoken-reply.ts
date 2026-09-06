@@ -2,34 +2,13 @@
  * Spoken reply envelope for the staff assistant (SHO-386 / SHO-383 T3).
  *
  * `Output.object` here is a **reply envelope only** — `{ spoken }` — not
- * card protocol. Cards stay a projection of tool parts (ADR-0011). Prompt
- * lines are copied by hand from T2 mobile `promptLine`s; do not import
- * `apps/mobile`.
+ * card protocol. Cards stay a projection of tool parts (ADR-0011). Surface
+ * `promptLine`s live in `@showzy/validation/assistant-surfaces`; this file
+ * does not copy them.
  */
 import { z } from "zod";
 
 import { STAFF_ASSISTANT_CONFIRMATION_FALLBACK_TEXT } from "./confirmation.js";
-
-/**
- * Copied from `apps/mobile/.../surfaces/orders-list.ts`
- * `ORDERS_LIST_PROMPT_LINE`. Do not import mobile.
- */
-export const ORDERS_LIST_PROMPT_LINE =
-  "After orders_list_page (chips from same-turn orders_list_counts), the UI already shows the orders list card. Reply with a short product-language summary. Do not dump a markdown table of the rows.";
-
-/**
- * Copied from `apps/mobile/.../surfaces/orders-aggregate.ts`
- * `ORDERS_AGGREGATE_PROMPT_LINE`. Do not import mobile.
- */
-export const ORDERS_AGGREGATE_PROMPT_LINE =
-  "After orders_list_counts with no page on the same turn, the UI already shows the orders aggregate card with period, totals, and a status breakdown. Reply with a short product-language summary of the totals. Do not dump a markdown table of buckets. Do not call orders_list_counts or orders.list again for the card.";
-
-/**
- * Copied from `apps/mobile/.../surfaces/order-entity.ts`
- * `ORDER_ENTITY_PROMPT_LINE`. Do not import mobile.
- */
-export const ORDER_ENTITY_PROMPT_LINE =
-  "After orders.get or orders.create, the UI already shows an order entity card. Reply with a short product-language summary. Do not dump tool JSON.";
 
 /** Anthropic json-tool / structured-output synthetic name. Not a domain action. */
 export const STAFF_ASSISTANT_SYNTHETIC_JSON_TOOL_NAME = "json";
