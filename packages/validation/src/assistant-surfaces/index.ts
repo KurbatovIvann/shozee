@@ -65,7 +65,6 @@ export {
   ASSISTANT_SURFACE_REGISTRY,
   hydratableAssistantActionNames,
   unrestorableAssistantActionNames,
-  unrestorableAssistantListAction,
   type AssistantSurfaceDescriptor,
   type AssistantSurfaceParse,
 } from "./registry.js";

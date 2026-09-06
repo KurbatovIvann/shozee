@@ -104,6 +104,24 @@ describe("@showzy/validation/assistant-surfaces guards", () => {
     }
   });
 
+  it("exports unrestorableAssistantActionNames with a production caller (SHO-461)", () => {
+    const index = readFileSync(join(surfacesDir, "index.ts"), "utf8");
+    const registry = readFileSync(join(surfacesDir, "registry.ts"), "utf8");
+    const hydrate = readFileSync(
+      join(
+        repoRoot,
+        "apps/mobile/src/features/assistant/shared/assistant-hydrate.ts",
+      ),
+      "utf8",
+    );
+    expect(index).toContain("unrestorableAssistantActionNames");
+    expect(index).not.toContain("unrestorableAssistantListAction");
+    expect(registry).not.toContain("unrestorableAssistantListAction");
+    expect(hydrate).toContain("unrestorableAssistantActionNames");
+    expect(hydrate).toContain("hydratableAssistantActionNames");
+    expect(hydrate).not.toContain("unrestorableAssistantListAction");
+  });
+
   it("is the clipped-status source for packages/ai clip-tool-result", () => {
     const clip = readFileSync(
       join(repoRoot, "packages/ai/src/clip-tool-result.ts"),

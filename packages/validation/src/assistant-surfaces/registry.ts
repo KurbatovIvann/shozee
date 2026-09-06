@@ -72,10 +72,13 @@ export const ASSISTANT_SURFACE_REGISTRY: readonly AssistantSurfaceDescriptor[] =
     },
   ];
 
-export function hydratableAssistantActionNames(): ReadonlySet<string> {
+function actionNamesFromRegistry(
+  registry: readonly AssistantSurfaceDescriptor[],
+  hydratable: boolean,
+): ReadonlySet<string> {
   const names = new Set<string>();
-  for (const descriptor of ASSISTANT_SURFACE_REGISTRY) {
-    if (!descriptor.hydratable) {
+  for (const descriptor of registry) {
+    if (descriptor.hydratable !== hydratable) {
       continue;
     }
     for (const actionName of descriptor.actionNames) {
@@ -85,22 +88,14 @@ export function hydratableAssistantActionNames(): ReadonlySet<string> {
   return names;
 }
 
-export function unrestorableAssistantActionNames(): ReadonlySet<string> {
-  const names = new Set<string>();
-  for (const descriptor of ASSISTANT_SURFACE_REGISTRY) {
-    if (descriptor.hydratable) {
-      continue;
-    }
-    for (const actionName of descriptor.actionNames) {
-      names.add(actionName);
-    }
-  }
-  return names;
+export function hydratableAssistantActionNames(
+  registry: readonly AssistantSurfaceDescriptor[] = ASSISTANT_SURFACE_REGISTRY,
+): ReadonlySet<string> {
+  return actionNamesFromRegistry(registry, true);
 }
 
-export function unrestorableAssistantListAction(): string {
-  for (const name of unrestorableAssistantActionNames()) {
-    return name;
-  }
-  return ORDERS_LIST_ACTION_NAME;
+export function unrestorableAssistantActionNames(
+  registry: readonly AssistantSurfaceDescriptor[] = ASSISTANT_SURFACE_REGISTRY,
+): ReadonlySet<string> {
+  return actionNamesFromRegistry(registry, false);
 }

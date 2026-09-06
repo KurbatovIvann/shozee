@@ -1,6 +1,11 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
+import {
+  unrestorableAssistantActionNames,
+  type AssistantSurfaceDescriptor,
+} from "@showzy/validation/assistant-surfaces";
+
 import { assistantCopy } from "../../../i18n/assistant";
 import { ordersCopy } from "../../../i18n/orders";
 import { orderDetailHref } from "../../orders/shared/order-hrefs";
@@ -20,7 +25,7 @@ import {
   isUnrestorableListRun,
   loadChoiceEnvelopes,
   loadOrdersById,
-  UNRESTORABLE_LIST_ACTION,
+  UNRESTORABLE_LIST_ACTIONS,
   type AssistantConversationListItem,
   type AssistantHistoryMessage,
   type AssistantHistoryToolRun,
@@ -1010,6 +1015,10 @@ describe("assistant hydrate source", () => {
     expect(source).not.toContain("sit.svg");
     expect(source).not.toContain("dig.svg");
     expect(source).toContain("next.createdAt > run.createdAt");
+    expect(source).toContain("unrestorableAssistantActionNames");
+    expect(source).toContain("unrestorableActions.has(");
+    expect(source).not.toContain("unrestorableAssistantListAction");
+    expect(source).not.toMatch(/\bUNRESTORABLE_LIST_ACTION\b/);
     expect(session).toContain("resumeOwnAssistantConversation");
     expect(session).not.toContain("orders_list_page");
     expect(hook).toContain("resumeOwnAssistantConversation");
@@ -1027,7 +1036,7 @@ describe("hydration registry derivation (SHO-456)", () => {
       "orders.create",
       "orders.get",
     ]);
-    expect(UNRESTORABLE_LIST_ACTION).toBe("orders.list");
+    expect([...UNRESTORABLE_LIST_ACTIONS]).toEqual(["orders.list"]);
     expect(
       isHydratableOrderEntityRun({
         id: RUN_GET,
@@ -1036,6 +1045,16 @@ describe("hydration registry derivation (SHO-456)", () => {
         resultIds: [ORDER_A],
         outcome: "success",
         createdAt: "2026-09-03T10:00:01.000Z",
+      }),
+    ).toBe(true);
+    expect(
+      isHydratableOrderEntityRun({
+        id: RUN_CREATE,
+        actionName: "orders.create",
+        toolCallId: "call-create",
+        resultIds: [ORDER_B],
+        outcome: "success",
+        createdAt: "2026-09-03T10:00:02.000Z",
       }),
     ).toBe(true);
     expect(
@@ -1048,5 +1067,63 @@ describe("hydration registry derivation (SHO-456)", () => {
         createdAt: "2026-09-03T10:00:01.000Z",
       }),
     ).toBe(true);
+  });
+
+  it("recognises every unrestorable action from a fixture registry (SHO-461)", () => {
+    const fixtureRegistry: readonly AssistantSurfaceDescriptor[] = [
+      {
+        kind: "orders-list",
+        version: 1,
+        toolNames: [],
+        actionNames: ["orders.list"],
+        hydratable: false,
+        promptLine: "fixture",
+        parse: () => null,
+      },
+      {
+        kind: "orders-aggregate",
+        version: 1,
+        toolNames: [],
+        actionNames: ["customers.list"],
+        hydratable: false,
+        promptLine: "fixture",
+        parse: () => null,
+      },
+      {
+        kind: "order-entity",
+        version: 1,
+        toolNames: [],
+        actionNames: ["orders.get", "orders.create"],
+        hydratable: true,
+        promptLine: "fixture",
+        parse: () => null,
+      },
+    ];
+    const unrestorable = unrestorableAssistantActionNames(fixtureRegistry);
+    expect([...unrestorable].sort()).toEqual(["customers.list", "orders.list"]);
+    const listRun = toolRun({
+      id: RUN_LIST,
+      actionName: "orders.list",
+      toolCallId: "call-list",
+      createdAt: "2026-09-03T10:00:01.000Z",
+    });
+    const customersListRun = toolRun({
+      id: RUN_GET,
+      actionName: "customers.list",
+      toolCallId: "call-customers-list",
+      createdAt: "2026-09-03T10:00:01.000Z",
+    });
+    const getRun = toolRun({
+      id: RUN_CREATE,
+      actionName: "orders.get",
+      toolCallId: "call-get",
+      resultIds: [ORDER_A],
+      createdAt: "2026-09-03T10:00:01.000Z",
+    });
+    expect(isUnrestorableListRun(listRun, unrestorable)).toBe(true);
+    expect(isUnrestorableListRun(customersListRun, unrestorable)).toBe(true);
+    expect(isUnrestorableListRun(getRun, unrestorable)).toBe(false);
+    expect(isHydratableOrderEntityRun(getRun)).toBe(true);
+    expect(isHydratableOrderEntityRun(customersListRun)).toBe(false);
   });
 });
