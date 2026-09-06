@@ -11,9 +11,12 @@
 import {
   deriveRecordProvenanceRequirements,
   runContractCheck,
+  type ActionChannel,
 } from "@showzy/core";
+import type { RecordCreatedVia as DbRecordCreatedVia } from "@showzy/db/schema/tenant-columns";
 import { ASSISTANT_SURFACE_REGISTRY } from "@showzy/validation/assistant-surfaces";
-import { describe, expect, it } from "vitest";
+import type { RecordCreatedVia as ValidationRecordCreatedVia } from "@showzy/validation/record-verification";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
 import { buildContractCheckInput } from "./composition.js";
 
@@ -49,6 +52,12 @@ describe("CI contract-check stage", () => {
         problem.includes("provenance"),
       ),
     ).toEqual([]);
+  });
+
+  it("SHO-491: ActionChannel, db RecordCreatedVia, and validation RecordCreatedVia match", () => {
+    expectTypeOf<ActionChannel>().toEqualTypeOf<DbRecordCreatedVia>();
+    expectTypeOf<ActionChannel>().toEqualTypeOf<ValidationRecordCreatedVia>();
+    expectTypeOf<DbRecordCreatedVia>().toEqualTypeOf<ValidationRecordCreatedVia>();
   });
 
   it("SHO-471: every registered assistant surface binding resolves (no hardcoded kinds)", () => {

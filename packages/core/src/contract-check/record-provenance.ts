@@ -6,11 +6,15 @@
  * `RECORD_PROVENANCE_PHYSICAL_TABLE_ALIASES` and refuses to guess when
  * more than one suffix matches.
  */
-import { RECORD_CREATED_VIA_CHANNELS } from "@showzy/db/schema/tenant-columns";
+import {
+  RECORD_CREATED_VIA_CHANNELS,
+  type RecordCreatedVia,
+} from "@showzy/db/schema/tenant-columns";
 
 import { deriveAiToolSources } from "../contract/ai-exposure.js";
 import { moduleOf } from "../contract/module-of.js";
 import type { ActionContract } from "../contract/types.js";
+import type { ActionChannel } from "../runtime/context/types.js";
 
 /**
  * Modules whose AI-exposed creates are deliberately out of the
@@ -43,8 +47,24 @@ export const RECORD_PROVENANCE_PHYSICAL_TABLE_ALIASES: Readonly<
 
 const CREATE_FROM_PREFIX = "createFrom";
 const REQUIRED_COLUMNS = ["created_via", "vouched_by", "vouched_at"] as const;
-const CREATED_VIA_CHECK_CHANNELS: readonly string[] =
-  RECORD_CREATED_VIA_CHANNELS;
+const CREATED_VIA_CHECK_CHANNELS = RECORD_CREATED_VIA_CHANNELS;
+
+type MutuallyAssignable<Left, Right> = [Left] extends [Right]
+  ? [Right] extends [Left]
+    ? true
+    : false
+  : false;
+
+type ExpectTrue<Value extends true> = Value;
+
+/**
+ * SHO-491: `ActionChannel` and db `RecordCreatedVia` must stay the same
+ * four members. Diverging in either direction fails `tsc`. Validation's
+ * copy is bound in `apps/api` (no `@showzy/validation` dependency here).
+ */
+export type ActionChannelEqualsDbRecordCreatedVia = ExpectTrue<
+  MutuallyAssignable<ActionChannel, RecordCreatedVia>
+>;
 
 export interface SchemaColumnRef {
   readonly name: string;
