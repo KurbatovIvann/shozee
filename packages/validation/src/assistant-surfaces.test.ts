@@ -132,11 +132,9 @@ describe("ASSISTANT_SURFACE_REGISTRY integrity", () => {
     const kinds = new Set<AssistantSurfaceDestinationDeclaration["kind"]>();
     for (const entry of ASSISTANT_SURFACE_REGISTRY) {
       kinds.add(entry.destination.kind);
-      expect(
-        entry.destination.kind === "screen" ||
-          entry.destination.kind === "document" ||
-          entry.destination.kind === "terminal",
-      ).toBe(true);
+      expect(["screen", "document", "terminal"]).toContain(
+        entry.destination.kind,
+      );
     }
     expect(kinds.has("screen")).toBe(true);
     expect(
