@@ -54,7 +54,21 @@ export type RecordProvenance = {
   readonly vouchedBy: string | null;
 };
 
-export const RECORD_VERIFICATION_POLICIES = {
+type NarrowVerificationPolicy = {
+  readonly unvouched: "none";
+  readonly grandfatherUnknownCreatedVia: boolean;
+};
+
+type StrictVerificationPolicy = {
+  readonly unvouched: "non_ui_without_vouch";
+  readonly countedCreatedVia: "ui";
+  readonly grandfatherUnknownCreatedVia: boolean;
+};
+
+export const RECORD_VERIFICATION_POLICIES: {
+  readonly narrow: NarrowVerificationPolicy;
+  readonly strict: StrictVerificationPolicy;
+} = {
   narrow: {
     unvouched: "none",
     grandfatherUnknownCreatedVia: true,
@@ -64,7 +78,7 @@ export const RECORD_VERIFICATION_POLICIES = {
     countedCreatedVia: "ui",
     grandfatherUnknownCreatedVia: true,
   },
-} as const;
+};
 
 /**
  * Active mode. Production stays `"narrow"` (SHO-466). Flip this field
