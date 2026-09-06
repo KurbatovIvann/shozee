@@ -26,6 +26,14 @@
  * Queries must call `recordCounts` / `recordCountsSql` (same spec). Do
  * not add a second `WHERE vouched_by IS NOT NULL`.
  *
+ * ## Which totals move when the mode flips (SHO-489 / SHO-464)
+ *
+ * Money-shaped answers (revenue, gross by currency) exclude unvouched
+ * rows; operational answers (what to cook, how many members, how many
+ * price-list entries) do not. Totals that should move consult this
+ * file. Operational aggregates are named exemptions in the ESLint
+ * guard, not silent skips.
+ *
  * ## Writes (vouch after an update)
  *
  * Whether an AI update clears `vouched_by` differs by kind, encoded in

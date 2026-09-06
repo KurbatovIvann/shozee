@@ -25,7 +25,11 @@ used by `.github/workflows/ci.yml` (SHO-334 aggregator, SHO-387
   specifier rules that cannot depend on pnpm resolving workspace packages:
   `*.contract.ts` allowlist (zod, `@showzy/core/contract`, `@showzy/validation`
   only — never `@showzy/module-kit`), own-schema (ADR-0014), module index-only
-  cross-imports, `packages/contract` → `index.contract.ts` only, client apps
+  cross-imports, `showzy/record-verification-aggregates` (SHO-489: a module
+  file that imports drizzle `count`/`sum` and a T1 provenance table must
+  import `@showzy/validation/record-verification` or sit on
+  `RECORD_VERIFICATION_AGGREGATE_EXEMPTIONS` with an inline reason;
+  paths go through `toPosix()`), `packages/contract` → `index.contract.ts` only, client apps
   → `@showzy/contract` + validation/copy/ui/document-signing (never module-kit,
   never `@showzy/ai`). `@showzy/copy` is a client-safe leaf (SHO-414): apps
   may import it; it must not import React, React Native, Unistyles, Tailwind,

@@ -1570,24 +1570,4 @@ describe("orders.list", () => {
       [uiId, aiUnvouchedId, unknownId, aiVouchedId].toSorted(),
     );
   });
-
-  it("aggregate consults the shared record-verification predicate", () => {
-    const filter = readFileSync(
-      new URL("../services/order-list/filter.ts", import.meta.url),
-      "utf8",
-    );
-    const aggregate = readFileSync(
-      new URL("../services/order-list/aggregate.ts", import.meta.url),
-      "utf8",
-    );
-    const page = readFileSync(
-      new URL("../services/order-list/page.ts", import.meta.url),
-      "utf8",
-    );
-    expect(filter).toContain("@showzy/validation/record-verification");
-    expect(filter).toContain("recordCountsSql");
-    expect(aggregate).toContain("recordCountsPredicate");
-    expect(page).not.toContain("recordCountsPredicate");
-    expect(aggregate).not.toMatch(/vouchedBy|createdVia/);
-  });
 });
