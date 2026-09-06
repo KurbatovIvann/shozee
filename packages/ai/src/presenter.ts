@@ -12,7 +12,9 @@ import {
   ORDERS_LIST_PAGE_TOOL,
   UNLINKED_CUSTOMER_NAME_SNAPSHOT,
   assistantSurfacesFromToolResults,
+  isRecord,
   lastSuccessfulResult,
+  unwrapToolOutput,
   type AssistantOrderEntityData,
   type AssistantOrdersAggregateData,
   type AssistantOrdersListData,
@@ -245,34 +247,61 @@ function formatOrderNumber(value: unknown): string {
 function toSurfaceToolResults(
   results: readonly StaffAssistantPresentedToolResult[],
 ): AssistantSurfaceToolResult[] {
-  return results.map((result, index) => ({
-    toolName: result.toolName,
-    output: result.output,
-    toolCallId: String(index),
-  }));
+  return results.map((result) => {
+    if (typeof result.toolCallId === "string" && result.toolCallId.length > 0) {
+      return {
+        toolName: result.toolName,
+        output: result.output,
+        toolCallId: result.toolCallId,
+      };
+    }
+    return { toolName: result.toolName, output: result.output };
+  });
 }
 
-function sourceIndexFromToolCallId(toolCallId: string | undefined): number {
-  if (toolCallId === undefined) {
+function sourceIndexOfResult(
+  results: readonly AssistantSurfaceToolResult[],
+  result: AssistantSurfaceToolResult | null | undefined,
+): number {
+  if (result === null || result === undefined) {
     return 0;
   }
-  const parsed = Number(toolCallId);
-  return Number.isInteger(parsed) ? parsed : 0;
+  const index = results.indexOf(result);
+  return index < 0 ? 0 : index;
 }
 
+function entitySourceResult(
+  surface: AssistantOrderEntityData,
+  results: readonly AssistantSurfaceToolResult[],
+): AssistantSurfaceToolResult | undefined {
+  if (surface.toolCallId !== undefined) {
+    return results.find((result) => result.toolCallId === surface.toolCallId);
+  }
+  return results.find((result) => {
+    const { payload } = unwrapToolOutput(result.output);
+    return isRecord(payload) && payload["orderId"] === surface.orderId;
+  });
+}
+
+/**
+ * Spoken fragment order follows the originating tool-result index
+ * (object identity in `results`), not a parse of `toolCallId`.
+ */
 function surfaceSourceIndex(
   surface: AssistantSurfaceData,
   results: readonly AssistantSurfaceToolResult[],
 ): number {
   if (surface.kind === "order-entity") {
-    return sourceIndexFromToolCallId(surface.toolCallId);
+    return sourceIndexOfResult(results, entitySourceResult(surface, results));
   }
   const toolName =
     surface.kind === "orders-list"
       ? ORDERS_LIST_PAGE_TOOL
       : ORDERS_LIST_COUNTS_TOOL;
-  const found = lastSuccessfulResult(results, (name) => name === toolName);
-  return sourceIndexFromToolCallId(found?.toolCallId);
+  return sourceIndexOfResult(
+    results,
+    lastSuccessfulResult(results, (name) => name === toolName),
+  );
 }
 
 function presentListSurface(

@@ -68,6 +68,7 @@ import {
 
 export const STAFF_ASSISTANT_TOOL_RUNS_MAX = 50;
 export const STAFF_ASSISTANT_RESULT_IDS_MAX = 50;
+/** Persistence budget for `toolRuns` / executeAction — not envelope wire identity. */
 export const STAFF_ASSISTANT_TOOL_CALL_ID_MAX = 128;
 /**
  * Mechanical cap so a looping model cannot run unbounded tool steps.
@@ -254,6 +255,7 @@ function wrapExecute(
   },
 ): ActionToolExecute {
   return async (actionName, input, options) => {
+    // Persistence / executeAction budget only. Envelope identity stays unclipped.
     const toolCallId = clipToolCallId(options.toolCallId);
     if (runs.length >= STAFF_ASSISTANT_TOOL_RUNS_MAX) {
       return {
@@ -372,10 +374,14 @@ function clipToolExecutes(
           output,
           clipStaffAssistantToolResult(output),
         );
+        // Envelope `toolCallIds` must match the unclipped id the UI
+        // stream carries on the tool part. The 128-char clip is a
+        // persistence budget for `toolRuns` / executeAction, not wire
+        // identity (SHO-463).
         const toolCallId =
           typeof options.toolCallId === "string" &&
           options.toolCallId.length > 0
-            ? clipToolCallId(options.toolCallId)
+            ? options.toolCallId
             : undefined;
         if (toolCallId === undefined) {
           presented.push({ toolName: name, output: returned });

@@ -240,6 +240,46 @@ describe("presentCompletedStaffAssistantTurn", () => {
     ).toBe("6 orders. New · 2, Confirmed · 4.");
   });
 
+  it("speaks the status breakdown for a groupBy=product aggregate", () => {
+    const results = [
+      {
+        toolName: ORDERS_LIST_COUNTS_TOOL_NAME,
+        output: {
+          kind: "aggregate",
+          orderCount: 5,
+          grossByCurrency: [],
+          buckets: [
+            {
+              identity: {
+                kind: "product",
+                productId: ORDER_A,
+                variantId: ORDER_B,
+              },
+              label: "Coffee",
+              orderCount: 5,
+            },
+          ],
+          statusBuckets: [
+            {
+              identity: { kind: "status", status: "new" },
+              orderCount: 2,
+            },
+            {
+              identity: { kind: "status", status: "confirmed" },
+              orderCount: 3,
+            },
+          ],
+        },
+      },
+    ];
+    expect(
+      presentCompletedStaffAssistantTurn({
+        locale: "en",
+        toolResults: results,
+      }),
+    ).toBe("5 orders. New · 2, Confirmed · 3.");
+  });
+
   it("presents an empty aggregate", () => {
     const results = [
       {
@@ -319,6 +359,42 @@ describe("presentCompletedStaffAssistantTurn", () => {
       { toolName: ORDERS_LIST_PAGE_TOOL_NAME, output: listPage },
       {
         toolName: ORDERS_CREATE_TOOL_NAME,
+        output: {
+          orderId: ORDER_B,
+          orderNumber: "1050",
+          status: "confirmed",
+        },
+      },
+    ];
+    expect(
+      presentCompletedStaffAssistantTurn({
+        locale: "en",
+        toolResults: results,
+      }),
+    ).toBe(
+      "Order #1049, New.\nLatest orders: #1049 (New), #1050 (Confirmed).\nOrder #1050, Confirmed.",
+    );
+  });
+
+  it("orders spoken fragments by source index, not by parsing toolCallId", () => {
+    const results = [
+      {
+        toolName: "orders_get",
+        toolCallId: "call_entity_first",
+        output: {
+          orderId: ORDER_A,
+          orderNumber: "1049",
+          status: "new",
+        },
+      },
+      {
+        toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+        toolCallId: "call_list_page",
+        output: listPage,
+      },
+      {
+        toolName: ORDERS_CREATE_TOOL_NAME,
+        toolCallId: "call_entity_second",
         output: {
           orderId: ORDER_B,
           orderNumber: "1050",

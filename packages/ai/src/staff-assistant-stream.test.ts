@@ -41,6 +41,7 @@ import {
 import {
   extractUuidResultIds,
   STAFF_ASSISTANT_MAX_STEPS,
+  STAFF_ASSISTANT_TOOL_CALL_ID_MAX,
   streamStaffAssistantChat,
 } from "./staff-assistant-stream.js";
 import {
@@ -2641,6 +2642,63 @@ describe("data-presentation envelope (SHO-458)", () => {
         toolCallIds: ["call-get"],
       },
     });
+  });
+
+  it("keeps an unclipped tool-call id as envelope wire identity", async () => {
+    const longToolCallId = `call-${"x".repeat(STAFF_ASSISTANT_TOOL_CALL_ID_MAX)}`;
+    expect(longToolCallId.length).toBeGreaterThan(
+      STAFF_ASSISTANT_TOOL_CALL_ID_MAX,
+    );
+    const execute = vi.fn(() =>
+      Promise.resolve({
+        kind: "page.summary",
+        items: [
+          {
+            orderId: customerId,
+            orderNumber: "1049",
+            status: "new",
+          },
+        ],
+        nextCursor: null,
+      }),
+    );
+    const model = new MockLanguageModelV3({
+      doStream: [
+        mockToolCallStream(longToolCallId, ORDERS_LIST_PAGE_TOOL_NAME, "{}"),
+        mockSpokenStream("MODEL_SPOKEN"),
+      ],
+    });
+    const { response, completion } = streamStaffAssistantChat({
+      model,
+      messages: [{ role: "user", content: "Show orders" }],
+      contracts: [listOrders],
+      execute,
+    });
+    const payloads = await readUiMessageSsePayloads(response);
+    const turn = await completion;
+    const chunks = presentationChunks(payloads);
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0]).toMatchObject({
+      type: "data-presentation",
+      data: {
+        surface: "orders-list",
+        version: 1,
+        toolCallIds: [longToolCallId],
+      },
+    });
+    expect(turn.toolRuns).toEqual([
+      {
+        actionName: "orders.list",
+        toolCallId: longToolCallId.slice(0, STAFF_ASSISTANT_TOOL_CALL_ID_MAX),
+        resultIds: [],
+        outcome: "success",
+      },
+    ]);
+    expect(execute).toHaveBeenCalledWith(
+      "orders.list",
+      { kind: "page.summary", limit: ORDERS_LIST_PAGE_ASSISTANT_DEFAULT_LIMIT },
+      { toolCallId: longToolCallId.slice(0, STAFF_ASSISTANT_TOOL_CALL_ID_MAX) },
+    );
   });
 
   it("does not persist presentation on the turn result (live-turn only)", async () => {

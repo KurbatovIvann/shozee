@@ -227,6 +227,37 @@ describe("data-presentation envelope (SHO-458)", () => {
     }
   });
 
+  it("binds a surface when the tool-call id is longer than the server clip cap", () => {
+    const longToolCallId = `call-${"x".repeat(128)}`;
+    expect(longToolCallId.length).toBeGreaterThan(128);
+    const parts: AssistantChatPart[] = [
+      {
+        type: "tool-orders_get",
+        toolCallId: longToolCallId,
+        state: "output-available",
+        output: {
+          orderId: ORDER_A,
+          orderNumber: "1049",
+          status: "new",
+          totalGrossMinor: "33000",
+          currency: "UAH",
+        },
+      },
+    ];
+    const envelope = {
+      surface: "order-entity",
+      version: 1,
+      toolCallIds: [longToolCallId],
+    };
+    const named = assistantSurfacesFromParts(
+      withEnvelope(parts, envelope),
+      "uk",
+    );
+    const composed = assistantSurfacesFromParts(parts, "uk");
+    expect(named.map((surface) => surface.kind)).toEqual(["order-entity"]);
+    expect(named).toEqual(composed);
+  });
+
   it("does not render a partial card for an unknown kind when tools would compose a list", () => {
     const parts = withEnvelope(listParts, {
       surface: "orders-table",
