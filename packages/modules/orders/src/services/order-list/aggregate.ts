@@ -14,6 +14,7 @@ import {
   grossByCurrencyFromMap,
   headerPredicates,
   mergeGross,
+  recordCountsPredicate,
   toBigint,
   toCount,
   type QueryMatch,
@@ -166,6 +167,7 @@ export async function listAggregate(
 ): Promise<ListOutput> {
   const where = and(
     ...headerPredicates(ctx, input.filter, queryMatch.predicate),
+    recordCountsPredicate(),
   );
   const totals = await ctx.db
     .select({
