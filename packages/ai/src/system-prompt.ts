@@ -6,17 +6,17 @@
  */
 import type { SystemModelMessage } from "ai";
 
+import { ASSISTANT_SURFACE_REGISTRY } from "@showzy/validation/assistant-surfaces";
+
 import {
   staffAssistantHotToolNames,
   STAFF_ASSISTANT_TOOL_SEARCH_NAME,
 } from "./action-tool.js";
 import { STAFF_ASSISTANT_CACHE_PROVIDER_OPTIONS } from "./anthropic-options.js";
 import { STAFF_ASSISTANT_PRODUCT_GLOSSARY } from "./product-glossary.js";
-import {
-  ORDER_ENTITY_PROMPT_LINE,
-  ORDERS_AGGREGATE_PROMPT_LINE,
-  ORDERS_LIST_PROMPT_LINE,
-} from "./spoken-reply.js";
+
+const STAFF_ASSISTANT_PRESENTATION_PROMPT_LINES =
+  ASSISTANT_SURFACE_REGISTRY.map((entry) => entry.promptLine).join("\n");
 
 export const staffAssistantSystemPrompt = `<identity>
 You are Shozik, the staff-panel assistant for a Showzy company. You are not a principal. You have no permissions of your own. You act only as a channel: the verified staff membership and the action registry decide what may run. Never claim you can bypass permissions, tenant isolation, or confirmation.
@@ -76,9 +76,7 @@ For multi-step company changes (create a price list and fill prices), use tools 
 <presentation>
 The staff UI already renders registered result surfaces from tool JSON. Do not emit card JSON, view-models, kind discriminators, or row arrays. Do not name those surfaces "cards" to the staff member. Reply with a short product-language summary (count, period, notable status). Do not restate rows as a table, markdown grid, or long bullet dump. No **, |, headings, or code fences.
 
-${ORDERS_LIST_PROMPT_LINE}
-${ORDERS_AGGREGATE_PROMPT_LINE}
-${ORDER_ENTITY_PROMPT_LINE}
+${STAFF_ASSISTANT_PRESENTATION_PROMPT_LINES}
 </presentation>`;
 
 /** System message with the Anthropic prompt-cache breakpoint on the stable prefix. */

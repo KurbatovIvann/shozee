@@ -1,6 +1,10 @@
 import { readFileSync } from "node:fs";
 
 import { defineActionContract } from "@showzy/core/contract";
+import {
+  ORDERS_AGGREGATE_PROMPT_LINE,
+  ORDERS_LIST_PROMPT_LINE,
+} from "@showzy/validation/assistant-surfaces";
 import { asSchema } from "ai";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -10,10 +14,6 @@ import {
   STAFF_ASSISTANT_CLIP_JSON_MAX,
 } from "../clip-tool-result.js";
 import { STAFF_ASSISTANT_CONFIRMATION_STATUS } from "../confirmation.js";
-import {
-  ORDERS_AGGREGATE_PROMPT_LINE,
-  ORDERS_LIST_PROMPT_LINE,
-} from "../spoken-reply.js";
 import {
   CUSTOMER_NAME_MAX,
   LIST_ORDERS_CURSOR_MAX,

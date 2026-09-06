@@ -118,9 +118,13 @@ describe("presentCompletedStaffAssistantTurn", () => {
 
   it("speaks rows.length labels and hasMore from the completed view", () => {
     const rows = [
-      { orderNumber: "1", status: "new" },
-      { orderNumber: "2", status: "confirmed" },
-      { orderNumber: "3", status: "done" },
+      { orderId: ORDER_A, orderNumber: "1", status: "new" },
+      { orderId: ORDER_B, orderNumber: "2", status: "confirmed" },
+      {
+        orderId: "33333333-3333-4333-8333-333333333333",
+        orderNumber: "3",
+        status: "done",
+      },
     ];
     const results = [
       {
@@ -147,6 +151,7 @@ describe("presentCompletedStaffAssistantTurn", () => {
 
   it("lists all default-20 rows and omits hasMore when the view says false", () => {
     const rows = Array.from({ length: 20 }, (_, index) => ({
+      orderId: `11111111-1111-4111-8111-${String(index).padStart(12, "0")}`,
       orderNumber: String(1000 + index),
       status: "new" as const,
     }));
@@ -199,6 +204,16 @@ describe("presentCompletedStaffAssistantTurn", () => {
           orderCount: 6,
           grossByCurrency: [],
           buckets: [
+            {
+              identity: { kind: "status", status: "confirmed" },
+              orderCount: 4,
+            },
+            {
+              identity: { kind: "status", status: "new" },
+              orderCount: 2,
+            },
+          ],
+          statusBuckets: [
             {
               identity: { kind: "status", status: "confirmed" },
               orderCount: 4,

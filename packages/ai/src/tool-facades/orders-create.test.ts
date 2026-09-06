@@ -3,7 +3,7 @@ import { asSchema } from "ai";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
-import { ORDER_ENTITY_PROMPT_LINE } from "../spoken-reply.js";
+import { ORDER_ENTITY_PROMPT_LINE } from "@showzy/validation/assistant-surfaces";
 import {
   CREATE_ORDER_COMMENT_MAX,
   CREATE_ORDER_MAX_ITEMS,

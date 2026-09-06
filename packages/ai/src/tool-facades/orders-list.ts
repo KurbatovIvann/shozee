@@ -14,6 +14,10 @@ import {
   LIST_ORDERS_SUMMARY_DEFAULT_LIMIT,
   LIST_ORDERS_SUMMARY_MAX_LIMIT,
 } from "@showzy/orders/contract";
+import {
+  ORDERS_AGGREGATE_PROMPT_LINE,
+  ORDERS_LIST_PROMPT_LINE,
+} from "@showzy/validation/assistant-surfaces";
 import { CUSTOMER_NAME_MAX } from "@showzy/validation/customers";
 import { tool, type Tool } from "ai";
 import { z } from "zod";
@@ -26,10 +30,6 @@ import {
   ORDERS_LIST_PERIODS,
   type OrdersListPeriod,
 } from "../kyiv-calendar.js";
-import {
-  ORDERS_AGGREGATE_PROMPT_LINE,
-  ORDERS_LIST_PROMPT_LINE,
-} from "../spoken-reply.js";
 
 export const ORDERS_LIST_ACTION_NAME = "orders.list";
 export const ORDERS_LIST_PAGE_TOOL_NAME = "orders_list_page";
