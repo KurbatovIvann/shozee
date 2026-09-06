@@ -4,6 +4,12 @@
  * the same turn.
  */
 import {
+  assistantAggregateSummary,
+  type AssistantAggregateDescriptor,
+  type AssistantAggregateSection,
+} from "./aggregate.js";
+import type { AssistantCollectionRow } from "./collection.js";
+import {
   ASSISTANT_ORDERS_LIST_SCREEN_HREF,
   resolveAssistantSurfaceDestination,
   type AssistantSurfaceDestination,
@@ -84,6 +90,7 @@ export type AssistantOrdersAggregateData = {
   readonly bucketsTruncated: boolean;
   readonly bucketsOmitted: number;
   readonly clipped: boolean;
+  readonly aggregate: AssistantAggregateDescriptor;
 };
 
 function inferAggregateGroupBy(
@@ -224,6 +231,80 @@ function parseExtraBuckets(
   }
 }
 
+function moneyCellValues(
+  gross: readonly AssistantMoneyMinor[],
+): readonly string[] {
+  return gross.map((amount) => amount.amountMinor);
+}
+
+function collectionRowFromStatusBucket(
+  bucket: AssistantOrdersAggregateStatusBucketData,
+): AssistantCollectionRow {
+  return {
+    id: bucket.status,
+    title: "",
+    badge: bucket.status,
+    meta: null,
+    cells: [String(bucket.orderCount), ...moneyCellValues(bucket.gross)],
+    href: null,
+  };
+}
+
+function collectionRowFromExtraBucket(
+  bucket: AssistantOrdersAggregateExtraBucketData,
+): AssistantCollectionRow {
+  if (bucket.identityKind === "product") {
+    return {
+      id: bucket.id,
+      title: bucket.name,
+      badge: null,
+      meta: bucket.quantityMilli,
+      cells: [String(bucket.orderCount), ...moneyCellValues(bucket.gross)],
+      href: null,
+    };
+  }
+  return {
+    id: bucket.id,
+    title: bucket.nameSnapshot ?? "",
+    badge: null,
+    meta: null,
+    cells: [String(bucket.orderCount), ...moneyCellValues(bucket.gross)],
+    href: null,
+  };
+}
+
+function summaryFromBuckets(args: {
+  readonly groupingKey: AssistantOrdersAggregateGroupBy;
+  readonly orderCount: number;
+  readonly gross: readonly AssistantMoneyMinor[];
+  readonly statusBuckets: readonly AssistantOrdersAggregateStatusBucketData[];
+  readonly extraBuckets: readonly AssistantOrdersAggregateExtraBucketData[];
+}): AssistantAggregateDescriptor {
+  const sections: AssistantAggregateSection[] = [];
+  if (args.statusBuckets.length > 0) {
+    sections.push({
+      id: "status",
+      heading: "",
+      rows: args.statusBuckets.map(collectionRowFromStatusBucket),
+    });
+  }
+  if (args.extraBuckets.length > 0) {
+    const extraKind = args.extraBuckets[0]?.identityKind ?? "extra";
+    sections.push({
+      id: extraKind,
+      heading: "",
+      rows: args.extraBuckets.map(collectionRowFromExtraBucket),
+    });
+  }
+  return assistantAggregateSummary({
+    groupingKey: args.groupingKey,
+    headlineCount: args.orderCount,
+    headlineGross: args.gross,
+    sections,
+    featured: null,
+  });
+}
+
 /**
  * Counts-only aggregate. Compose must not call this when a list page is
  * already on the turn.
@@ -248,6 +329,11 @@ export function parseOrdersAggregateSurface(
   const statusSource = Array.isArray(rawStatusBuckets) ? rawStatusBuckets : [];
   const groupBy = inferAggregateGroupBy(buckets);
   const omitted = payload["bucketsOmitted"];
+  const orderCount =
+    typeof payload["orderCount"] === "number" ? payload["orderCount"] : 0;
+  const gross = grossAmounts(payload["grossByCurrency"]);
+  const statusBuckets = parseStatusBuckets(statusSource);
+  const extraBuckets = parseExtraBuckets(groupBy, buckets);
   return {
     kind: "orders-aggregate",
     destination: resolveAssistantSurfaceDestination(
@@ -255,14 +341,20 @@ export function parseOrdersAggregateSurface(
       ASSISTANT_ORDERS_LIST_SCREEN_HREF,
     ),
     groupBy,
-    orderCount:
-      typeof payload["orderCount"] === "number" ? payload["orderCount"] : 0,
-    gross: grossAmounts(payload["grossByCurrency"]),
-    statusBuckets: parseStatusBuckets(statusSource),
-    extraBuckets: parseExtraBuckets(groupBy, buckets),
+    orderCount,
+    gross,
+    statusBuckets,
+    extraBuckets,
     customerMatchTruncated: payload["customerMatchTruncated"] === true,
     bucketsTruncated: payload["bucketsTruncated"] === true,
     bucketsOmitted: typeof omitted === "number" && omitted > 0 ? omitted : 0,
     clipped,
+    aggregate: summaryFromBuckets({
+      groupingKey: groupBy,
+      orderCount,
+      gross,
+      statusBuckets,
+      extraBuckets,
+    }),
   };
 }

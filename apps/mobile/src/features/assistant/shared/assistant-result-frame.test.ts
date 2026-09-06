@@ -68,6 +68,8 @@ describe("AssistantResultFrame notice card (SHO-469)", () => {
     expect(SURFACE).toContain("AssistantCollectionBlock");
     expect(SURFACE).toContain('case "customers-list"');
     expect(SURFACE).toContain("switch (surface.kind)");
+    expect(SURFACE).toContain("OrdersAggregateResultCard");
+    expect(AGGREGATE).toContain("AssistantAggregateBlock");
   });
 
   it("puts empty state and CTA on the frame — card modules do not import Card", () => {
@@ -83,6 +85,8 @@ describe("AssistantResultFrame notice card (SHO-469)", () => {
     expect(COLLECTION).toContain("StatusPill");
     expect(COLLECTION).toContain("flex: 1");
     expect(importsNamed(AGGREGATE, "Card")).toBe(false);
+    expect(AGGREGATE).not.toContain("StatusPill");
+    expect(AGGREGATE).toContain("AssistantAggregateBlock");
     expect(importsNamed(ENTITY, "Card")).toBe(false);
     expect(importsNamed(CONFIRMATION, "Card")).toBe(false);
     expect(importsNamed(FRAME, "Card")).toBe(true);

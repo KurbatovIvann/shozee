@@ -1,8 +1,8 @@
 /**
- * Orders aggregate result surface (SHO-370 / SHO-385 / SHO-395 / SHO-456).
- * Localizes shared `@showzy/validation/assistant-surfaces` data. Compose
- * skips this kind when a list page is on the same turn. Do not import
- * `@showzy/ai`.
+ * Orders aggregate result surface (SHO-370 / SHO-385 / SHO-395 / SHO-456 /
+ * SHO-473). Localizes shared `@showzy/validation/assistant-surfaces`
+ * data onto the generic `summary` layout. Compose skips this kind when
+ * a list page is on the same turn. Do not import `@showzy/ai`.
  */
 import {
   isAssistantOrdersAggregateGroupBy,
@@ -33,6 +33,11 @@ import {
 } from "../../orders/shared/order-status";
 import type { AssistantChatPart } from "../shared/confirmation-presenter";
 import { toolNameFromPart } from "../shared/turn-timeline";
+import type {
+  AssistantAggregateSectionView,
+  AssistantAggregateView,
+} from "./aggregate";
+import type { AssistantCollectionRowView } from "./collection";
 import {
   assistantSurfaceToolResultsFromParts,
   formatQuantityLabel,
@@ -70,6 +75,7 @@ export type AssistantOrdersAggregateCardView = {
   readonly footnotes: readonly string[];
   readonly ctaLabel: string | null;
   readonly ctaHref: typeof ASSISTANT_ORDERS_LIST_HREF | null;
+  readonly aggregate: AssistantAggregateView;
 };
 
 function orderCountLabel(
@@ -198,6 +204,55 @@ function overlayGroupBy(
   return data.groupBy;
 }
 
+function collectionRowFromBucket(
+  bucket: AssistantOrdersAggregateBucketView,
+): AssistantCollectionRowView {
+  const statusRow = bucket.status !== null && bucket.statusTone !== null;
+  return {
+    id: bucket.id,
+    title: statusRow ? "" : bucket.label,
+    badge: statusRow ? bucket.label : null,
+    badgeTone: bucket.statusTone ?? "neutral",
+    meta: bucket.quantityLabel,
+    cells: [bucket.orderCountLabel, ...bucket.moneyLabels],
+    href: null,
+  };
+}
+
+function summaryViewFromBuckets(args: {
+  readonly groupingKey: AssistantOrdersAggregateGroupBy;
+  readonly periodLabel: string | null;
+  readonly orderCountLabel: string;
+  readonly moneyLabels: readonly string[];
+  readonly statusBuckets: readonly AssistantOrdersAggregateBucketView[];
+  readonly extraBuckets: readonly AssistantOrdersAggregateBucketView[];
+}): AssistantAggregateView {
+  const sections: AssistantAggregateSectionView[] = [];
+  if (args.statusBuckets.length > 0) {
+    sections.push({
+      id: "status",
+      heading: "",
+      rows: args.statusBuckets.map(collectionRowFromBucket),
+    });
+  }
+  if (args.extraBuckets.length > 0) {
+    sections.push({
+      id: args.groupingKey,
+      heading: "",
+      rows: args.extraBuckets.map(collectionRowFromBucket),
+    });
+  }
+  return {
+    layout: "summary",
+    groupingKey: args.groupingKey,
+    periodLabel: args.periodLabel,
+    headlineCountLabel: args.orderCountLabel,
+    headlineMoneyLabels: args.moneyLabels,
+    sections,
+    featured: null,
+  };
+}
+
 export function localizeOrdersAggregateCard(
   data: AssistantOrdersAggregateData,
   locale: Locale,
@@ -238,18 +293,21 @@ export function localizeOrdersAggregateCard(
     destinationHref === ASSISTANT_ORDERS_LIST_HREF
       ? null
       : ASSISTANT_ORDERS_LIST_HREF;
+  const periodLabel = parsePeriodLabel(countsInput, locale, assistant.cards);
+  const countLabel = orderCountLabel(
+    data.orderCount,
+    locale,
+    assistant.cards.orderCount,
+  );
+  const totals = moneyLabels(data.gross);
   return {
     kind: "orders-aggregate",
     destination: data.destination,
     handoffLabel: assistant.cards.openOrders,
     groupBy,
-    periodLabel: parsePeriodLabel(countsInput, locale, assistant.cards),
-    orderCountLabel: orderCountLabel(
-      data.orderCount,
-      locale,
-      assistant.cards.orderCount,
-    ),
-    moneyLabels: moneyLabels(data.gross),
+    periodLabel,
+    orderCountLabel: countLabel,
+    moneyLabels: totals,
     statusBuckets: parsedStatusBuckets,
     extraBuckets,
     emptyTitle: empty ? assistant.cards.aggregateEmptyTitle : null,
@@ -257,6 +315,14 @@ export function localizeOrdersAggregateCard(
     footnotes,
     ctaLabel: ctaHref !== null ? assistant.cards.openOrders : null,
     ctaHref,
+    aggregate: summaryViewFromBuckets({
+      groupingKey: groupBy,
+      periodLabel,
+      orderCountLabel: countLabel,
+      moneyLabels: totals,
+      statusBuckets: parsedStatusBuckets,
+      extraBuckets,
+    }),
   };
 }
 

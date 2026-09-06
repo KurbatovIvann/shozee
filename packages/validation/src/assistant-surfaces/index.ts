@@ -4,6 +4,17 @@ export {
   type AssistantSurfaceKind,
 } from "./compose.js";
 export {
+  ASSISTANT_AGGREGATE_LAYOUTS,
+  assistantAggregateBreakdown,
+  assistantAggregateSummary,
+  type AssistantAggregateBreakdownDescriptor,
+  type AssistantAggregateDescriptor,
+  type AssistantAggregateGroup,
+  type AssistantAggregateLayout,
+  type AssistantAggregateSection,
+  type AssistantAggregateSummaryDescriptor,
+} from "./aggregate.js";
+export {
   assistantCollectionDescriptor,
   capCollectionRows,
   type AssistantCollectionColumn,

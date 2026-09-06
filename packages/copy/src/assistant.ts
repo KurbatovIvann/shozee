@@ -1,9 +1,11 @@
 /**
- * Staff assistant result-surface chrome shared by mobile (SHO-472).
+ * Staff assistant result-surface chrome shared by mobile (SHO-472 /
+ * SHO-473).
  *
- * Intersection of collection chrome both locales share. App-only
- * leftovers (sheet title, wait lines, job labels, entity `openOrder`,
- * aggregate copy) stay in the app. Do not "harmonise" those here.
+ * Intersection of collection and aggregate chrome both locales share.
+ * App-only leftovers (sheet title, wait lines, job labels, entity
+ * `openOrder`, leftover aggregate period/empty/orderCount) stay in the
+ * app. Do not "harmonise" those here.
  *
  * Orders list empty/handoff/footnote strings are byte-identical to the
  * leftover keys in `apps/mobile` `i18n/assistant.ts` `cards` so the
@@ -26,9 +28,19 @@ export type SharedAssistantCustomersListCopy = {
   readonly clipped: string;
 };
 
+export type SharedAssistantAggregateCopy = {
+  readonly totals: string;
+  readonly countColumn: string;
+  readonly amountColumn: string;
+  readonly productColumn: string;
+  readonly statusColumn: string;
+  readonly customerColumn: string;
+};
+
 export type SharedAssistantCopy = {
   readonly ordersList: SharedAssistantOrdersListCopy;
   readonly customersList: SharedAssistantCustomersListCopy;
+  readonly aggregate: SharedAssistantAggregateCopy;
 };
 
 const en: SharedAssistantCopy = {
@@ -46,6 +58,14 @@ const en: SharedAssistantCopy = {
     openList: "Open customers",
     clipped: "The list was clipped. Open customers to see everything.",
   },
+  aggregate: {
+    totals: "Total",
+    countColumn: "Qty",
+    amountColumn: "Amount",
+    productColumn: "Product and variant",
+    statusColumn: "Status and product",
+    customerColumn: "Customer and product",
+  },
 };
 
 const uk: SharedAssistantCopy = {
@@ -62,6 +82,14 @@ const uk: SharedAssistantCopy = {
     listEmptyDescription: "За цим запитом клієнтів немає.",
     openList: "Відкрити клієнтів",
     clipped: "Список обрізано. Відкрийте клієнтів, щоб побачити все.",
+  },
+  aggregate: {
+    totals: "Разом",
+    countColumn: "К-сть",
+    amountColumn: "Сума",
+    productColumn: "Товар і варіант",
+    statusColumn: "Статус і товар",
+    customerColumn: "Замовник і товар",
   },
 };
 

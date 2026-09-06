@@ -10,6 +10,15 @@ export {
   type AssistantCollectionView,
 } from "./collection";
 export {
+  isAssistantAggregateLayout,
+  localizeAggregateColumns,
+  type AssistantAggregateBreakdownView,
+  type AssistantAggregateGroupView,
+  type AssistantAggregateSectionView,
+  type AssistantAggregateSummaryView,
+  type AssistantAggregateView,
+} from "./aggregate";
+export {
   parseCustomersListSurface,
   ASSISTANT_CUSTOMERS_LIST_HREF,
   ASSISTANT_CUSTOMERS_LIST_ROW_MAX,

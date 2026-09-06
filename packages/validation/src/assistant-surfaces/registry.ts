@@ -8,6 +8,10 @@
  * column descriptor (per-surface row cap, not one shared constant).
  * `customers-list` is the second list. Do not copy `orders-list.ts` and
  * swap the columns — a later list is a new descriptor, not a new card.
+ *
+ * Aggregate surfaces share one block with two declared layouts
+ * (`summary` | `breakdown`). `orders-aggregate` parses onto `summary`.
+ * A later cut is a grouping key, not a new layout.
  */
 import type { AssistantSurfaceData, AssistantSurfaceKind } from "./compose.js";
 import {
