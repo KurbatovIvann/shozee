@@ -168,14 +168,17 @@ export {
   type StaffAssistantPresentedToolResult,
 } from "./presenter.js";
 export {
+  applyStaffAssistantHistoryWindow,
   lastStaffAssistantUserMessage,
   pausedToolAttemptForChallenge,
   pausedToolAttemptFromToolRuns,
   resolvePausedToolAttempt,
+  resolveStaffAssistantChatUserMessage,
   staffAssistantChatBodySchema,
   staffAssistantChatMessageSchema,
   staffAssistantHistoryStats,
   staffAssistantModelMessages,
+  staffAssistantModelMessagesFromPersisted,
   STAFF_ASSISTANT_CHAT_MESSAGES_MAX,
   STAFF_ASSISTANT_CHAT_MESSAGE_TEXT_MAX,
   STAFF_ASSISTANT_CHAT_PARTS_MAX,
@@ -184,6 +187,7 @@ export {
   type PausedToolAttemptResolution,
   type StaffAssistantChatBody,
   type StaffAssistantChatMessage,
+  type StaffAssistantPersistedMessage,
   type StaffAssistantToolRunRef,
   type StaffUserMessageAttempt,
 } from "./messages.js";

@@ -15,15 +15,15 @@ import {
   EMPTY_STAFF_ASSISTANT_TURN_USAGE,
   estimateStaffAssistantTurnCostUsd,
   filterStaffAiTools,
-  lastStaffAssistantUserMessage,
   pausedToolAttemptForChallenge,
   pausedToolAttemptFromToolRuns,
   resolvePausedToolAttempt,
+  resolveStaffAssistantChatUserMessage,
   StaffAssistantNotConfiguredError,
   staffAssistantCacheHitRatio,
   staffAssistantChatBodySchema,
   staffAssistantGateToolPolicy,
-  staffAssistantModelMessages,
+  staffAssistantModelMessagesFromPersisted,
   staffAssistantShouldSkipIntentGate,
   staffAssistantTurnContextAddendum,
   staffAssistantUncachedInputTokens,
@@ -41,6 +41,7 @@ import {
   type StaffAssistantLocale,
   type StaffAssistantTurnResult,
   type StaffAssistantTurnUsage,
+  type StaffUserMessageAttempt,
 } from "@showzy/ai";
 import {
   appendUserMessage,
@@ -48,6 +49,7 @@ import {
   getStaffActor,
   recordAssistantTurn,
 } from "@showzy/assistant";
+import { GET_CONVERSATION_MESSAGES_MAX } from "@showzy/assistant/contract";
 import { getCompany } from "@showzy/companies";
 import {
   COMPANY_SELECTOR_HEADER,
@@ -390,7 +392,8 @@ function confirmationResumeIssue(message: string): ValidationError {
 
 async function parseChatBody(request: Request): Promise<{
   conversationId: string;
-  messages: StaffAssistantChatMessage[];
+  protocolMessages: StaffAssistantChatMessage[];
+  userMessage: StaffUserMessageAttempt | undefined;
   locale: StaffAssistantLocale;
 }> {
   let raw: unknown;
@@ -412,7 +415,8 @@ async function parseChatBody(request: Request): Promise<{
   }
   return {
     conversationId: parsed.data.conversationId,
-    messages: parsed.data.messages,
+    protocolMessages: parsed.data.messages ?? [],
+    userMessage: resolveStaffAssistantChatUserMessage(parsed.data),
     locale: parsed.data.locale ?? STAFF_ASSISTANT_DEFAULT_LOCALE,
   };
 }
@@ -486,24 +490,12 @@ export async function executeStaffAssistantChat(
     });
 
     const body = await parseChatBody(options.request);
-    const userMessage = lastStaffAssistantUserMessage(body.messages);
+    const userMessage = body.userMessage;
     if (userMessage === undefined && confirmationChallengeId === undefined) {
       throw new ValidationError([
         {
           code: "custom",
-          path: ["messages"],
-          message: "A user message is required.",
-          input: undefined,
-        },
-      ]);
-    }
-
-    const modelMessages = staffAssistantModelMessages(body.messages);
-    if (modelMessages.length === 0) {
-      throw new ValidationError([
-        {
-          code: "custom",
-          path: ["messages"],
+          path: ["text"],
           message: "A user message is required.",
           input: undefined,
         },
@@ -512,7 +504,10 @@ export async function executeStaffAssistantChat(
 
     const conversation = await executeAction(options.pipeline, {
       action: getConversation,
-      input: { conversationId: body.conversationId },
+      input: {
+        conversationId: body.conversationId,
+        limit: GET_CONVERSATION_MESSAGES_MAX,
+      },
       request: baseRequest,
       principal: staffPrincipal,
     });
@@ -536,7 +531,7 @@ export async function executeStaffAssistantChat(
     let pausedAttempt: PausedToolAttempt | undefined;
     if (confirmationChallengeId !== undefined) {
       const clientAttempt = pausedToolAttemptForChallenge(
-        body.messages,
+        body.protocolMessages,
         confirmationChallengeId,
       );
       const persistedAttempt = pausedToolAttemptFromToolRuns(
@@ -682,6 +677,32 @@ export async function executeStaffAssistantChat(
           }),
           principal: staffPrincipal,
         });
+      }
+
+      const historyConversation =
+        userMessage === undefined
+          ? conversation
+          : await executeAction(options.pipeline, {
+              action: getConversation,
+              input: {
+                conversationId: body.conversationId,
+                limit: GET_CONVERSATION_MESSAGES_MAX,
+              },
+              request: baseRequest,
+              principal: staffPrincipal,
+            });
+      const modelMessages = staffAssistantModelMessagesFromPersisted(
+        historyConversation.messages,
+      );
+      if (modelMessages.length === 0) {
+        throw new ValidationError([
+          {
+            code: "custom",
+            path: ["text"],
+            message: "A user message is required.",
+            input: undefined,
+          },
+        ]);
       }
 
       const contracts = filterStaffAiTools(options.registry.contracts(), {

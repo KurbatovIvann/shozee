@@ -64,26 +64,120 @@ export const staffAssistantChatMessageSchema = z
     }
   });
 
-export const staffAssistantChatBodySchema = z.strictObject({
-  conversationId: z.uuid(),
-  messages: z
-    .array(staffAssistantChatMessageSchema)
-    .min(1)
-    .max(STAFF_ASSISTANT_CHAT_MESSAGES_MAX),
-  locale: staffAssistantLocaleSchema.optional(),
-});
-
 export type StaffAssistantChatMessage = z.infer<
   typeof staffAssistantChatMessageSchema
 >;
+
+export interface StaffUserMessageAttempt {
+  readonly id: string;
+  readonly text: string;
+}
+
+export function lastStaffAssistantUserMessage(
+  messages: readonly StaffAssistantChatMessage[],
+): StaffUserMessageAttempt | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message === undefined || message.role !== "user") {
+      continue;
+    }
+    const text = textFromParts(message.parts);
+    if (text !== "") {
+      return { id: message.id, text };
+    }
+  }
+  return undefined;
+}
+
+const MIXED_CHAT_BODY_MESSAGE =
+  "Chat body must not mix incomplete or conflicting message representations.";
+
+export const staffAssistantChatBodySchema = z
+  .strictObject({
+    conversationId: z.uuid(),
+    text: z
+      .string()
+      .min(1)
+      .max(STAFF_ASSISTANT_CHAT_MESSAGE_TEXT_MAX)
+      .optional(),
+    messageId: z.string().min(1).max(128).optional(),
+    messages: z
+      .array(staffAssistantChatMessageSchema)
+      .max(STAFF_ASSISTANT_CHAT_MESSAGES_MAX)
+      .optional(),
+    locale: staffAssistantLocaleSchema.optional(),
+  })
+  .superRefine((body, ctx) => {
+    const hasText = body.text !== undefined;
+    const hasMessageId = body.messageId !== undefined;
+    if (hasText !== hasMessageId) {
+      ctx.addIssue({
+        code: "custom",
+        path: hasText ? ["messageId"] : ["text"],
+        message: MIXED_CHAT_BODY_MESSAGE,
+      });
+      return;
+    }
+    if (!hasText || body.messages === undefined) {
+      return;
+    }
+    const lastUser = lastStaffAssistantUserMessage(body.messages);
+    if (lastUser === undefined) {
+      return;
+    }
+    if (lastUser.text !== body.text || lastUser.id !== body.messageId) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["messages"],
+        message: MIXED_CHAT_BODY_MESSAGE,
+      });
+    }
+  });
 
 export type StaffAssistantChatBody = z.infer<
   typeof staffAssistantChatBodySchema
 >;
 
 /**
+ * Fresh `text` + `messageId` win. Legacy bodies without those fields
+ * derive both from the last user message. Never invents an attempt id.
+ */
+export function resolveStaffAssistantChatUserMessage(
+  body: StaffAssistantChatBody,
+): StaffUserMessageAttempt | undefined {
+  if (body.text !== undefined && body.messageId !== undefined) {
+    return { id: body.messageId, text: body.text };
+  }
+  if (body.messages === undefined) {
+    return undefined;
+  }
+  return lastStaffAssistantUserMessage(body.messages);
+}
+
+export interface StaffAssistantPersistedMessage {
+  readonly role: "user" | "assistant";
+  readonly body: string;
+}
+
+/**
+ * Model history from persisted conversation rows. Client `messages` are
+ * never a history source (SHO-506).
+ */
+export function staffAssistantModelMessagesFromPersisted(
+  messages: readonly StaffAssistantPersistedMessage[],
+): ModelMessage[] {
+  return applyStaffAssistantHistoryWindow(
+    messages.map((message) => ({
+      role: message.role,
+      content: message.body,
+    })),
+  );
+}
+
+/**
  * Drop client-supplied system messages. The mount always uses
- * `staffAssistantSystemPrompt` instead.
+ * `staffAssistantSystemPrompt` instead. Kept for protocol-envelope
+ * tests; HTTP model history uses persisted rows.
  */
 export function staffAssistantModelMessages(
   messages: readonly StaffAssistantChatMessage[],
@@ -171,27 +265,6 @@ export function staffAssistantHistoryStats(messages: readonly ModelMessage[]): {
     chars += modelContentChars(message.content);
   }
   return { messageCount: messages.length, chars };
-}
-
-export interface StaffUserMessageAttempt {
-  readonly id: string;
-  readonly text: string;
-}
-
-export function lastStaffAssistantUserMessage(
-  messages: readonly StaffAssistantChatMessage[],
-): StaffUserMessageAttempt | undefined {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message === undefined || message.role !== "user") {
-      continue;
-    }
-    const text = textFromParts(message.parts);
-    if (text !== "") {
-      return { id: message.id, text };
-    }
-  }
-  return undefined;
 }
 
 /**

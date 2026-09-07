@@ -7,6 +7,7 @@ export const getConversation = implementAction(getConversationContract, {
     return getStaffConversation({
       ctx,
       conversationId: input.conversationId,
+      ...(input.limit !== undefined ? { limit: input.limit } : {}),
     });
   },
 });

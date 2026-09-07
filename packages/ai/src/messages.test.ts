@@ -2,13 +2,16 @@ import { describe, expect, it } from "vitest";
 
 import { STAFF_ASSISTANT_CACHE_PROVIDER_OPTIONS } from "./anthropic-options.js";
 import {
+  applyStaffAssistantHistoryWindow,
   lastStaffAssistantUserMessage,
   pausedToolAttemptForChallenge,
   pausedToolAttemptFromToolRuns,
   resolvePausedToolAttempt,
+  resolveStaffAssistantChatUserMessage,
   staffAssistantChatBodySchema,
   staffAssistantHistoryStats,
   staffAssistantModelMessages,
+  staffAssistantModelMessagesFromPersisted,
   STAFF_ASSISTANT_CHAT_MESSAGES_MAX,
   STAFF_ASSISTANT_CHAT_MESSAGE_TEXT_MAX,
   STAFF_ASSISTANT_EMPTY_ASSISTANT_HISTORY_PLACEHOLDER,
@@ -26,7 +29,108 @@ function userMessage(text: string, id = "m1") {
   };
 }
 
+const confirmationPart = {
+  type: "data-confirmation" as const,
+  data: {
+    status: "confirmation_required" as const,
+    challengeId,
+    summary: "Delete this archived customer.",
+    expiresAt: "2026-09-01T12:00:00.000Z",
+    actionName: "customers.deleteCustomer",
+    toolCallId: "call-delete",
+  },
+};
+
 describe("staffAssistantChatBodySchema", () => {
+  it("accepts a fresh body with text and messageId", () => {
+    const parsed = staffAssistantChatBodySchema.safeParse({
+      conversationId,
+      text: "List orders",
+      messageId: "m1",
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.messages).toBeUndefined();
+      expect(resolveStaffAssistantChatUserMessage(parsed.data)).toEqual({
+        id: "m1",
+        text: "List orders",
+      });
+    }
+  });
+
+  it("derives text and messageId from the last legacy user message", () => {
+    const parsed = staffAssistantChatBodySchema.safeParse({
+      conversationId,
+      messages: [userMessage("List orders", "legacy-1")],
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(resolveStaffAssistantChatUserMessage(parsed.data)).toEqual({
+        id: "legacy-1",
+        text: "List orders",
+      });
+    }
+  });
+
+  it("rejects incomplete or conflicting mixed representations", () => {
+    expect(
+      staffAssistantChatBodySchema.safeParse({
+        conversationId,
+        text: "List orders",
+      }).success,
+    ).toBe(false);
+    expect(
+      staffAssistantChatBodySchema.safeParse({
+        conversationId,
+        messageId: "m1",
+      }).success,
+    ).toBe(false);
+    expect(
+      staffAssistantChatBodySchema.safeParse({
+        conversationId,
+        text: "List orders",
+        messageId: "m1",
+        messages: [userMessage("Different text", "m1")],
+      }).success,
+    ).toBe(false);
+    expect(
+      staffAssistantChatBodySchema.safeParse({
+        conversationId,
+        text: "List orders",
+        messageId: "m1",
+        messages: [userMessage("List orders", "other-id")],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("accepts matching mixed representations and confirmation-only messages", () => {
+    expect(
+      staffAssistantChatBodySchema.safeParse({
+        conversationId,
+        text: "List orders",
+        messageId: "m1",
+        messages: [userMessage("List orders", "m1")],
+      }).success,
+    ).toBe(true);
+    expect(
+      staffAssistantChatBodySchema.safeParse({
+        conversationId,
+        messages: [
+          {
+            id: "a",
+            role: "assistant",
+            parts: [confirmationPart],
+          },
+        ],
+      }).success,
+    ).toBe(true);
+    expect(
+      staffAssistantChatBodySchema.safeParse({
+        conversationId,
+      }).success,
+    ).toBe(true);
+  });
+
   it("rejects a client summary field", () => {
     expect(
       staffAssistantChatBodySchema.safeParse({
@@ -104,6 +208,48 @@ describe("staffAssistantChatBodySchema", () => {
         locale: "fr",
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("applyStaffAssistantHistoryWindow", () => {
+  it("windows 20 persisted rows to 8 and caches the last history assistant", () => {
+    const rows = Array.from({ length: 20 }, (_, index) =>
+      index % 2 === 0
+        ? {
+            role: "assistant" as const,
+            body: `assistant-${String(index)}`,
+          }
+        : {
+            role: "user" as const,
+            body: `user-${String(index)}`,
+          },
+    );
+    const windowed = staffAssistantModelMessagesFromPersisted(rows);
+    expect(windowed).toHaveLength(STAFF_ASSISTANT_MODEL_HISTORY_MAX);
+    expect(windowed.map((message) => message.content)).toEqual([
+      "assistant-12",
+      "user-13",
+      "assistant-14",
+      "user-15",
+      "assistant-16",
+      "user-17",
+      "assistant-18",
+      "user-19",
+    ]);
+    expect(windowed.map((message) => message.content)).not.toContain(
+      "assistant-0",
+    );
+    expect(windowed.at(-1)).toMatchObject({ role: "user", content: "user-19" });
+    expect(windowed.at(-2)).toMatchObject({
+      role: "assistant",
+      content: "assistant-18",
+      providerOptions: STAFF_ASSISTANT_CACHE_PROVIDER_OPTIONS,
+    });
+    const breakpoint = applyStaffAssistantHistoryWindow(windowed);
+    expect(breakpoint.at(-2)).toMatchObject({
+      providerOptions: STAFF_ASSISTANT_CACHE_PROVIDER_OPTIONS,
+    });
+    expect(breakpoint.at(-1)).not.toHaveProperty("providerOptions");
   });
 });
 
@@ -267,18 +413,6 @@ describe("lastStaffAssistantUserMessage", () => {
     ).toEqual({ id: "u2", text: "Delete the customer" });
   });
 });
-
-const confirmationPart = {
-  type: "data-confirmation" as const,
-  data: {
-    status: "confirmation_required" as const,
-    challengeId,
-    summary: "Delete this archived customer.",
-    expiresAt: "2026-09-01T12:00:00.000Z",
-    actionName: "customers.deleteCustomer",
-    toolCallId: "call-delete",
-  },
-};
 
 describe("pausedToolAttemptForChallenge", () => {
   it("returns actionName and toolCallId from a matching data-confirmation part", () => {

@@ -466,6 +466,45 @@ describe("assistant staff conversation actions", () => {
     }
   });
 
+  it("optional limit returns the newest messages in chronological order", async () => {
+    const conversationId = randomUUID();
+    await insertConversation({
+      id: conversationId,
+      companyId: kitIdentities.companies.a,
+      userId: kitIdentities.users.anna,
+      title: "Limit",
+    });
+    await kit.invoke(appendUserMessage, {
+      conversationId,
+      body: "oldest user",
+    });
+    await kit.invoke(recordAssistantTurn, {
+      conversationId,
+      body: "oldest assistant",
+      toolRuns: [],
+    });
+    await kit.invoke(appendUserMessage, {
+      conversationId,
+      body: "newest user",
+    });
+
+    const unbounded = await kit.invoke(getConversation, { conversationId });
+    expect(unbounded.messages.map((message) => message.body)).toEqual([
+      "oldest user",
+      "oldest assistant",
+      "newest user",
+    ]);
+
+    const limited = await kit.invoke(getConversation, {
+      conversationId,
+      limit: 2,
+    });
+    expect(limited.messages.map((message) => message.body)).toEqual([
+      "oldest assistant",
+      "newest user",
+    ]);
+  });
+
   it("forces append role user and does not log the prompt body", async () => {
     const capturing = createCapturingLogger();
     const prompt = "Secret user prompt that must not hit logs";

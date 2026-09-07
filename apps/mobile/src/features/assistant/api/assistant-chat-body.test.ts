@@ -173,7 +173,7 @@ describe("staffChatWireMessages", () => {
 });
 
 describe("prepareStaffAssistantChatRequest", () => {
-  it("builds the strict body without companyId", () => {
+  it("builds the fresh body with text and messageId, without messages or companyId", () => {
     const prepared = prepareStaffAssistantChatRequest({
       conversationId,
       messages: [
@@ -186,17 +186,45 @@ describe("prepareStaffAssistantChatRequest", () => {
     });
     expect(prepared.body).toEqual({
       conversationId,
-      messages: [
-        {
-          id: "u1",
-          role: "user",
-          parts: [{ type: "text", text: "List orders" }],
-        },
-      ],
+      text: "List orders",
+      messageId: "u1",
       locale: "uk",
     });
+    expect(prepared.body).not.toHaveProperty("messages");
     expect(prepared.body).not.toHaveProperty("companyId");
     expect(JSON.stringify(prepared.body)).not.toContain("companyId");
+  });
+
+  it("reuses the same messageId on retry and mints a new one for a new send", () => {
+    const retryMessages = [
+      {
+        id: "attempt-1",
+        role: "user" as const,
+        parts: [{ type: "text" as const, text: "так" }],
+      },
+    ];
+    const first = prepareStaffAssistantChatRequest({
+      conversationId,
+      messages: retryMessages,
+    });
+    const retry = prepareStaffAssistantChatRequest({
+      conversationId,
+      messages: retryMessages,
+    });
+    expect(first.body.messageId).toBe("attempt-1");
+    expect(retry.body.messageId).toBe("attempt-1");
+    const nextSend = prepareStaffAssistantChatRequest({
+      conversationId,
+      messages: [
+        {
+          id: "attempt-2",
+          role: "user",
+          parts: [{ type: "text", text: "так" }],
+        },
+      ],
+    });
+    expect(nextSend.body.messageId).toBe("attempt-2");
+    expect(nextSend.body.text).toBe("так");
   });
 
   it("sends an explicit English locale", () => {
@@ -239,13 +267,58 @@ describe("prepareStaffAssistantSendMessagesRequest", () => {
           role: "user",
           parts: [{ type: "text", text: "Delete the customer" }],
         },
+        {
+          id: "a1",
+          role: "assistant",
+          parts: [
+            { type: "text", text: "Confirmation required." },
+            {
+              type: "data-confirmation",
+              data: {
+                status: "confirmation_required",
+                challengeId,
+                summary: "Delete this archived customer.",
+                expiresAt: "2026-09-01T12:00:00.000Z",
+                actionName: "customers.deleteCustomer",
+                toolCallId: "call-delete",
+              },
+            },
+          ],
+        },
       ],
       headers,
     });
     expect(prepared.headers).toEqual(headers);
     expect(prepared.credentials).toBe("omit");
     expect(prepared.body).not.toHaveProperty("companyId");
+    expect(prepared.body).not.toHaveProperty("text");
+    expect(prepared.body).not.toHaveProperty("messageId");
     expect(prepared.body.locale).toBe("uk");
+    expect(prepared.body.messages).toEqual([
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [
+          {
+            type: "data-confirmation",
+            data: {
+              status: "confirmation_required",
+              challengeId,
+              summary: "Delete this archived customer.",
+              expiresAt: "2026-09-01T12:00:00.000Z",
+              actionName: "customers.deleteCustomer",
+              toolCallId: "call-delete",
+            },
+          },
+        ],
+      },
+    ]);
+    expect(JSON.stringify(prepared.body.messages)).not.toContain(
+      "Delete the customer",
+    );
+    expect(JSON.stringify(prepared.body.messages)).not.toContain(
+      "Confirmation required.",
+    );
   });
 });
 
