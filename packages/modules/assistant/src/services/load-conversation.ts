@@ -1,3 +1,7 @@
+/**
+ * Load one staff conversation the verified caller authored. Missing,
+ * foreign-author, and foreign-company ids fail with the same not-found.
+ */
 import type { ActionCtx } from "@showzy/core";
 import { NotFoundError } from "@showzy/core/errors";
 import { assistantConversations } from "@showzy/db/schema/assistant";
@@ -13,6 +17,7 @@ type StaffDb = Extract<ActionCtx, { principal: "staff" }>["db"];
 export async function loadOwnConversation(env: {
   readonly db: StaffDb;
   readonly companyId: string;
+  readonly userId: string;
   readonly conversationId: string;
 }): Promise<ConversationRow> {
   const row = (
@@ -22,6 +27,7 @@ export async function loadOwnConversation(env: {
       .where(
         and(
           eq(assistantConversations.companyId, env.companyId),
+          eq(assistantConversations.userId, env.userId),
           eq(assistantConversations.id, env.conversationId),
         ),
       )

@@ -10,6 +10,14 @@
  */
 import { z } from "zod";
 
+/**
+ * Author-only visibility (SHO-503). Quoted on `assistant_conversations`
+ * and on the five conversation-action descriptions so the next reader
+ * does not re-open company-wide list/get.
+ */
+export const STAFF_CONVERSATION_AUTHOR_INVARIANT =
+  "A staff assistant conversation is a company record with one author. The author reads and writes it under `assistant:use`. Nobody else in the company — owner included — can list, read, append to, or record into it. Review of staff conversations is a separate feature with its own actions and permission. A foreign author and a foreign company fail with the same not-found.";
+
 export const CONVERSATION_TITLE_MAX = 200;
 export const MESSAGE_BODY_MAX = 16_000;
 export const ACTION_NAME_MAX = 128;

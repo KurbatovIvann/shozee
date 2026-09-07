@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { STAFF_CONVERSATION_AUTHOR_INVARIANT } from "./conversation-view.contract.js";
 import {
   LIST_CONVERSATIONS_CURSOR_MAX,
   LIST_CONVERSATIONS_DEFAULT_LIMIT,
@@ -20,6 +21,9 @@ describe("assistant.listConversations contract", () => {
     expect(listConversationsContract.audit).toBe(false);
     expect(listConversationsContract.idempotent).toBe(false);
     expect(listConversationsContract.emits).toEqual([]);
+    expect(listConversationsContract.description).toContain(
+      STAFF_CONVERSATION_AUTHOR_INVARIANT,
+    );
     expect(listConversationsContract.timeout).toBe(5_000);
     expect(listConversationsContract.rateLimit).toBeUndefined();
     expect(LIST_CONVERSATIONS_DEFAULT_LIMIT).toBe(20);
@@ -46,6 +50,14 @@ describe("assistant.listConversations contract", () => {
       listConversationsContract.input.safeParse({
         companyId: "11111111-1111-4111-8111-111111111111",
       }).success,
+    ).toBe(false);
+    expect(
+      listConversationsContract.input.safeParse({
+        userId: "11111111-1111-4111-8111-111111111111",
+      }).success,
+    ).toBe(false);
+    expect(
+      listConversationsContract.input.safeParse({ scope: "all" }).success,
     ).toBe(false);
     expect(parseListConversationsCursor("nope")).toBeUndefined();
   });

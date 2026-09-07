@@ -9,6 +9,7 @@ import { z } from "zod";
 import {
   messageBodySchema,
   messageViewSchema,
+  STAFF_CONVERSATION_AUTHOR_INVARIANT,
 } from "./conversation-view.contract.js";
 
 export const appendUserMessageInputSchema = z.strictObject({
@@ -20,8 +21,7 @@ export const appendUserMessageOutputSchema = messageViewSchema;
 
 export const appendUserMessageContract = defineActionContract({
   name: "assistant.appendUserMessage",
-  description:
-    "Append a user message to a staff assistant conversation in the active company. The stored role is always user; clients cannot supply a role. Missing or foreign-company conversations fail with the same not-found. Company id is never input. Re-submitting the identical payload with the same idempotency key returns the already-appended message and does not insert duplicates.",
+  description: `${STAFF_CONVERSATION_AUTHOR_INVARIANT} Append a user message to a conversation the caller authored. The stored role is always user; clients cannot supply a role. Company id is never input. Re-submitting the identical payload with the same idempotency key returns the already-appended message and does not insert duplicates.`,
   principal: "staff",
   transport: "client",
   input: appendUserMessageInputSchema,

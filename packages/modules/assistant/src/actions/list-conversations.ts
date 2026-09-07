@@ -43,6 +43,7 @@ export const listConversations = implementAction(listConversationsContract, {
       .where(
         and(
           eq(assistantConversations.companyId, ctx.companyId),
+          eq(assistantConversations.userId, ctx.userId),
           cursorPredicate,
         ),
       )

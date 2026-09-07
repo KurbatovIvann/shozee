@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { TOOL_RUNS_MAX } from "./conversation-view.contract.js";
+import {
+  STAFF_CONVERSATION_AUTHOR_INVARIANT,
+  TOOL_RUNS_MAX,
+} from "./conversation-view.contract.js";
 import {
   recordAssistantTurnContract,
   recordAssistantTurnInputSchema,
@@ -19,6 +22,9 @@ describe("assistant.recordAssistantTurn contract", () => {
     expect(recordAssistantTurnContract.audit).toBe(true);
     expect(recordAssistantTurnContract.idempotent).toBe(true);
     expect(recordAssistantTurnContract.emits).toEqual([]);
+    expect(recordAssistantTurnContract.description).toContain(
+      STAFF_CONVERSATION_AUTHOR_INVARIANT,
+    );
     expect(recordAssistantTurnContract.timeout).toBe(5_000);
   });
 
@@ -81,6 +87,13 @@ describe("assistant.recordAssistantTurn contract", () => {
         conversationId,
         body: "Done.",
         companyId: "22222222-2222-4222-8222-222222222222",
+      }).success,
+    ).toBe(false);
+    expect(
+      recordAssistantTurnInputSchema.safeParse({
+        conversationId,
+        body: "Done.",
+        userId: "22222222-2222-4222-8222-222222222222",
       }).success,
     ).toBe(false);
     expect(
