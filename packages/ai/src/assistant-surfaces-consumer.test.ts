@@ -35,8 +35,8 @@ const ORDER_B = "22222222-2222-4222-8222-222222222222";
 const PRE_CHANGE_PRESENTATION_BLOCK = `<presentation>
 Reply in one or two sentences about the result, in the user's language. The UI already shows the rows on a card — do not repeat counts the card already shows unless asked. Never a table, markdown grid, or long bullet dump. Do not emit card JSON, view-models, kind discriminators, or row arrays. Do not name those surfaces "cards" to the staff member. No **, |, headings, or code fences.
 
-After orders_list_page (chips from same-turn orders_list_counts), the UI already shows the orders list card. Reply with a short product-language summary. Do not dump a markdown table of the rows.
-After orders_list_counts with no page on the same turn, the UI already shows the orders aggregate card with period, totals, and a status breakdown. Reply with a short product-language summary of the totals. Do not dump a markdown table of buckets. Do not call orders_list_counts or orders.list again for the card.
+After orders_list_page (chips from same-turn orders_list_counts), the UI already shows the orders list card. Reply with a short product-language summary. Do not restate the rows the card already shows unless asked. Do not dump a markdown table of the rows.
+After orders_list_counts with no page on the same turn, the UI already shows the orders aggregate card with period, totals, and a status breakdown. Reply with a short product-language summary of the totals. Do not restate the totals the card already shows unless asked. Do not dump a markdown table of buckets. Do not call orders_list_counts or orders.list again for the card.
 After orders.get or orders.create, the UI already shows an order entity card. Reply with a short product-language summary. Do not dump tool JSON.
 After customers_list_customers, the UI already shows the customers list card. Reply with a short product-language summary. Do not dump a markdown table of the rows.
 </presentation>`;

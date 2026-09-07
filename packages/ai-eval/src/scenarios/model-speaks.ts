@@ -8,6 +8,16 @@ import type { EvalScenario } from "../scenario.js";
 
 const FORBIDDEN_ENVELOPE = ['{"spoken"', '"spoken":', "```"] as const;
 
+/** Presenter prefixes / legacy count stems. Do not add orderCountSpoken stems. */
+const FORBIDDEN_PRESENTER = [
+  "Останні замовлення",
+  "Latest orders",
+  "Клієнти",
+  "Customers",
+  "Знайшов",
+  "Found",
+] as const;
+
 export const MODEL_SPEAKS_SCENARIOS: readonly EvalScenario[] = [
   {
     id: "t6.model-speaks.last-3-orders",
@@ -18,7 +28,7 @@ export const MODEL_SPEAKS_SCENARIOS: readonly EvalScenario[] = [
     expectation: {
       ordered: [{ name: ORDERS_LIST_PAGE_TOOL_NAME }],
       textIncludesToolValues: ["orderNumber"],
-      textExcludes: [...FORBIDDEN_ENVELOPE, "|"],
+      textExcludes: [...FORBIDDEN_ENVELOPE, "|", ...FORBIDDEN_PRESENTER],
     },
   },
   {
@@ -35,7 +45,7 @@ export const MODEL_SPEAKS_SCENARIOS: readonly EvalScenario[] = [
         },
       ],
       textIncludesToolValues: ["orderCount"],
-      textExcludes: [...FORBIDDEN_ENVELOPE, "|"],
+      textExcludes: [...FORBIDDEN_ENVELOPE, "|", ...FORBIDDEN_PRESENTER],
     },
   },
   {
@@ -47,7 +57,7 @@ export const MODEL_SPEAKS_SCENARIOS: readonly EvalScenario[] = [
     expectation: {
       ordered: [{ name: CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME }],
       textIncludesToolValues: ["customerName"],
-      textExcludes: [...FORBIDDEN_ENVELOPE, "|"],
+      textExcludes: [...FORBIDDEN_ENVELOPE, "|", ...FORBIDDEN_PRESENTER],
     },
   },
 ];

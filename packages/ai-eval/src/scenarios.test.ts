@@ -100,6 +100,27 @@ describe("MODEL_SPEAKS_SCENARIOS", () => {
     expect(
       MODEL_SPEAKS_SCENARIOS[2]?.expectation.textIncludesToolValues,
     ).toEqual(["customerName"]);
+    for (const scenario of MODEL_SPEAKS_SCENARIOS) {
+      expect(scenario.expectation.textExcludes).toEqual(
+        expect.arrayContaining([
+          '{"spoken"',
+          '"spoken":',
+          "```",
+          "|",
+          "Останні замовлення",
+          "Latest orders",
+          "Клієнти",
+          "Customers",
+          "Знайшов",
+          "Found",
+        ]),
+      );
+      expect(scenario.expectation.textExcludes).not.toContain(" замовлень");
+      expect(scenario.expectation.textExcludes).not.toContain(" orders");
+      expect(scenario.expectation.textExcludes).not.toContain(
+        "{{count}} order",
+      );
+    }
   });
 });
 

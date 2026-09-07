@@ -231,6 +231,15 @@ describe("matchEvalExpectation", () => {
     ).toMatchObject({ ok: false });
     expect(
       matchEvalExpectation(
+        {
+          textIncludesToolValues: ["orderNumber"],
+          textExcludes: ["Останні замовлення"],
+        },
+        { ...pageTrace, text: "Останні замовлення: #12 (Нове)." },
+      ),
+    ).toMatchObject({ ok: false });
+    expect(
+      matchEvalExpectation(
         { textIncludesToolValues: ["orderCount"] },
         {
           text: "Цього тижня 4.",

@@ -46,7 +46,7 @@ export const ORDERS_LIST_SURFACE_TOOLS = [
 export const ORDERS_LIST_ACTION_NAME = "orders.list";
 
 export const ORDERS_LIST_PROMPT_LINE =
-  "After orders_list_page (chips from same-turn orders_list_counts), the UI already shows the orders list card. Reply with a short product-language summary. Do not dump a markdown table of the rows.";
+  "After orders_list_page (chips from same-turn orders_list_counts), the UI already shows the orders list card. Reply with a short product-language summary. Do not restate the rows the card already shows unless asked. Do not dump a markdown table of the rows.";
 
 export const ORDERS_LIST_DESTINATION = {
   kind: "screen",
