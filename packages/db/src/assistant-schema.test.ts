@@ -259,7 +259,7 @@ describe("assistant schema slice", () => {
     >().toEqualTypeOf<string | null>();
     expectTypeOf<
       (typeof assistantToolRuns.$inferSelect)["modelTrace"]
-    >().toEqualTypeOf<unknown | null>();
+    >().toEqualTypeOf<unknown>();
   });
 
   it("declares UNIQUE (company_id, id) and the conversation list index", async () => {

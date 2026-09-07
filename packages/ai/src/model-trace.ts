@@ -5,7 +5,7 @@
  * deterministic identity digest for older turns, and 8 000 chars across
  * the window. Digests are not a model call.
  */
-import type { JSONValue, ToolResultOutput } from "ai";
+import type { JSONValue, ToolResultPart } from "ai";
 
 import {
   compactStaffAssistantTraceIdentity,
@@ -22,7 +22,7 @@ export const STAFF_ASSISTANT_HISTORY_TRACE_MAX = 8_000;
 export interface StaffAssistantPersistedToolRun {
   readonly action: string;
   readonly toolCallId: string;
-  readonly modelTrace: unknown | null;
+  readonly modelTrace: unknown;
 }
 
 export interface StaffAssistantPersistedMessage {
@@ -167,7 +167,7 @@ function hasStoredTrace(message: StaffAssistantPersistedMessage): boolean {
 type BudgetedRun = {
   readonly action: string;
   readonly toolCallId: string;
-  readonly modelTrace: unknown | null;
+  readonly modelTrace: unknown;
   readonly kind: "full" | "digest" | "omit";
 };
 
@@ -302,11 +302,10 @@ function toJsonValue(value: unknown): JSONValue | undefined {
   if (value === null) {
     return null;
   }
-  const kind = typeof value;
-  if (kind === "string" || kind === "boolean") {
+  if (typeof value === "string" || typeof value === "boolean") {
     return value;
   }
-  if (kind === "number") {
+  if (typeof value === "number") {
     return Number.isFinite(value) ? value : undefined;
   }
   if (Array.isArray(value)) {
@@ -339,7 +338,7 @@ function toJsonValue(value: unknown): JSONValue | undefined {
 
 export function staffAssistantToolResultOutput(
   payload: unknown,
-): ToolResultOutput {
+): ToolResultPart["output"] {
   if (typeof payload === "string") {
     return { type: "text", value: payload };
   }
@@ -347,12 +346,11 @@ export function staffAssistantToolResultOutput(
   if (json !== undefined) {
     return { type: "json", value: json };
   }
-  const encoded = JSON.stringify(payload);
-  return { type: "text", value: encoded === undefined ? "null" : encoded };
+  return { type: "text", value: JSON.stringify(payload) };
 }
 
 export function staffAssistantToolResultChars(
-  output: ToolResultOutput,
+  output: ToolResultPart["output"],
 ): number {
   if (output.type === "text") {
     return output.value.length;

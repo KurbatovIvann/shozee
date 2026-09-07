@@ -1186,10 +1186,16 @@ describe("streamStaffAssistantChat", () => {
         outcome: "success",
       },
     ]);
-    expect(turn.toolRuns[0]?.modelTrace).toMatchObject({
+    const listTrace = turn.toolRuns[0]?.modelTrace;
+    expect(listTrace).toMatchObject({
       kind: "page.summary",
-      rows: expect.any(Array),
     });
+    expect(
+      typeof listTrace === "object" &&
+        listTrace !== null &&
+        "rows" in listTrace &&
+        Array.isArray(listTrace.rows),
+    ).toBe(true);
     expect(JSON.stringify(turn.toolRuns[0]?.modelTrace)).not.toContain(
       "extra-handler-field",
     );
