@@ -4,11 +4,16 @@ import {
 } from "@showzy/validation/assistant-surfaces";
 
 import type { StatusPillTone } from "../../../components/ui/status-pill";
+import type {
+  AssistantResultMarks,
+  AssistantResultMarksCarrier,
+} from "../surfaces";
 
 /**
  * Shared assistant result chrome (SHO-469 / SHO-470). Canvas CardFrame
- * slots, not a new surface kind. Provenance marks read optional fields
- * when present (SHO-464); absent columns render nothing. Destination
+ * slots, not a new surface kind. Provenance marks read the `marks` field
+ * a card view declares (`../surfaces/marks.ts`, SHO-497); no surface
+ * declares one yet and an absent field renders nothing. Destination
  * handoff is screen-only; terminal is declared, never defaulted.
  */
 
@@ -31,12 +36,6 @@ export type AssistantResultAction = {
   readonly onPress: () => void;
 };
 
-export type AssistantResultMarks = {
-  readonly provisional: boolean;
-  readonly origin: boolean;
-  readonly originLabel: string | null;
-};
-
 /** Canvas origin sparkle. Optical, not a hit target (iconSize.sm is 18). */
 export const ORIGIN_MARK_ICON_SIZE = 12;
 
@@ -47,38 +46,15 @@ const EMPTY_MARKS: AssistantResultMarks = {
 };
 
 /**
- * Read unvouched fill / origin mark from whatever the surface (or a
- * later SHO-464 column) already carries. Unknown objects without those
- * keys are not provisional and have no origin mark.
+ * Unvouched fill / origin mark for one card. Reads the field the view
+ * declares — see `../surfaces/marks.ts` for the shape, why nothing fills
+ * it yet, and what the producer will have to do. A view without `marks`
+ * is not provisional and has no origin mark.
  */
-export function assistantResultMarks(value: object): AssistantResultMarks {
-  const provisional = "provisional" in value && value.provisional === true;
-  const origin = "origin" in value && value.origin === true;
-  if (
-    "originLabel" in value &&
-    typeof value.originLabel === "string" &&
-    value.originLabel.length > 0
-  ) {
-    return {
-      provisional,
-      origin,
-      originLabel: value.originLabel,
-    };
-  }
-  return {
-    provisional,
-    origin,
-    originLabel: null,
-  };
-}
-
-export function assistantResultMarksFromUnknown(
-  value: unknown,
+export function assistantResultMarks(
+  view: AssistantResultMarksCarrier,
 ): AssistantResultMarks {
-  if (typeof value !== "object" || value === null) {
-    return EMPTY_MARKS;
-  }
-  return assistantResultMarks(value);
+  return view.marks ?? EMPTY_MARKS;
 }
 
 /**

@@ -27,6 +27,7 @@ import {
   type AssistantCollectionView,
 } from "./collection";
 import { assistantSurfaceToolResultsFromParts } from "./helpers";
+import type { AssistantResultMarks } from "./marks";
 
 export const ASSISTANT_CUSTOMERS_LIST_HREF =
   ASSISTANT_CUSTOMERS_LIST_SCREEN_HREF;
@@ -57,6 +58,7 @@ export type AssistantCustomersListCardView = {
   readonly footnotes: readonly string[];
   readonly ctaLabel: string | null;
   readonly ctaHref: typeof ASSISTANT_CUSTOMERS_LIST_HREF | null;
+  readonly marks?: AssistantResultMarks;
 };
 
 function joinMeta(parts: readonly string[]): string {
