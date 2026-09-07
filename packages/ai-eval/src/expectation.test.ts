@@ -249,7 +249,7 @@ describe("matchEvalExpectation", () => {
       matchEvalExpectation(
         { textIncludesToolValues: ["customerName"] },
         {
-          text: "Знайшла Катю Самбуку.",
+          text: "Знайшла Катя Самбука.",
           toolCalls: [
             {
               toolCallId: "c1",
