@@ -5,8 +5,9 @@
  * - Pagination is a stable `(updated_at desc, id desc)` cursor, not offset.
  *   `limit` defaults to 20 and caps at 50.
  * - Cursor payload is `updatedAt|id` (ISO datetime, then uuid).
- * - Own-company page: every conversation in the active company, not only
- *   the caller's `user_id` (schema comment on `assistant_conversations`).
+ * - Author-only page: `company_id` + `user_id` from the verified staff
+ *   context. A colleague's conversation is the same not-found as a
+ *   foreign company. Review of staff conversations is a separate feature.
  * - `timeout: 5000` matches the golden staff reads.
  * - No `rateLimit` override — staff default 120/min per user.
  * - `idempotent: false` like other staff reads: core.md §5 treats reads as
@@ -20,7 +21,10 @@ import {
 } from "@showzy/validation/pagination";
 import { z } from "zod";
 
-import { conversationViewSchema } from "./conversation-view.contract.js";
+import {
+  conversationViewSchema,
+  STAFF_CONVERSATION_AUTHOR_INVARIANT,
+} from "./conversation-view.contract.js";
 
 export const LIST_CONVERSATIONS_DEFAULT_LIMIT = 20;
 export const LIST_CONVERSATIONS_MAX_LIMIT = 50;
@@ -68,8 +72,7 @@ export const listConversationsOutputSchema = z.object({
 
 export const listConversationsContract = defineActionContract({
   name: "assistant.listConversations",
-  description:
-    "List staff assistant conversations in the active company, newest-updated first. Paginate with an updated-at/id cursor and a page size of at most 50. Company id is never input. Does not return messages or tool-run rows.",
+  description: `${STAFF_CONVERSATION_AUTHOR_INVARIANT} List the calling author's conversations, newest-updated first. Paginate with an updated-at/id cursor and a page size of at most 50. Company id is never input. Does not return messages or tool-run rows.`,
   principal: "staff",
   transport: "client",
   input: listConversationsInputSchema,

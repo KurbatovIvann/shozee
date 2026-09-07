@@ -26,6 +26,7 @@ export async function getStaffConversation(env: {
   const conversation = await loadOwnConversation({
     db: env.ctx.db,
     companyId: env.ctx.companyId,
+    userId: env.ctx.userId,
     conversationId: env.conversationId,
   });
 

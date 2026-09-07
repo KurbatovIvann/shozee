@@ -729,6 +729,7 @@ describe("POST /assistant/choice (seeded store)", () => {
       permissions: { granted: ["assistant:use"], denied: [] },
     });
     const clerkToken = await insertBearer(kit, clerkId);
+    const missingConversationId = randomUUID();
 
     const wrongActor = await postChoice(app, {
       token: clerkToken,
@@ -739,8 +740,27 @@ describe("POST /assistant/choice (seeded store)", () => {
         optionId,
       },
     });
-    expect(wrongActor.status).toBe(200);
-    expect(await wrongActor.json()).toEqual({ status: "expired" });
+    const missingConversation = await postChoice(app, {
+      token: clerkToken,
+      companyId: kitIdentities.companies.a,
+      body: {
+        conversationId: missingConversationId,
+        choiceId: record.choiceId,
+        optionId,
+      },
+    });
+    expect(wrongActor.status).toBe(404);
+    expect(missingConversation.status).toBe(404);
+    const wrongActorBody = (await wrongActor.json()) as {
+      readonly code?: string;
+      readonly message?: string;
+    };
+    const missingConversationBody = (await missingConversation.json()) as {
+      readonly code?: string;
+      readonly message?: string;
+    };
+    expect(wrongActorBody).toMatchObject({ code: "NOT_FOUND" });
+    expect(wrongActorBody.message).toBe(missingConversationBody.message);
 
     const wrongConversation = await postChoice(app, {
       token: annaToken,

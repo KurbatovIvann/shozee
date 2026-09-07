@@ -10,6 +10,7 @@ import { z } from "zod";
 import {
   TOOL_RUNS_MAX,
   messageBodySchema,
+  STAFF_CONVERSATION_AUTHOR_INVARIANT,
   toolRunInputSchema,
   toolRunViewSchema,
 } from "./conversation-view.contract.js";
@@ -28,8 +29,7 @@ export const recordAssistantTurnOutputSchema = z.object({
 
 export const recordAssistantTurnContract = defineActionContract({
   name: "assistant.recordAssistantTurn",
-  description:
-    "Record an assistant turn on a staff conversation in the active company: assistant text plus tool-run rows (action name, toolCallId, optional challengeId, result ids, outcome). Outcome is success, error, confirmation_required, or choice_required. challengeId is the opaque interaction id for confirmation or choice. Result ids are traces, not order or document status. Missing or foreign-company conversations fail with the same not-found. Company id is never input. Internal — not mounted on HTTP. Re-submitting the identical payload with the same idempotency key returns the already-recorded turn and does not insert duplicates.",
+  description: `${STAFF_CONVERSATION_AUTHOR_INVARIANT} Record an assistant turn on a conversation the caller authored: assistant text plus tool-run rows (action name, toolCallId, optional challengeId, result ids, outcome). Outcome is success, error, confirmation_required, or choice_required. challengeId is the opaque interaction id for confirmation or choice. Result ids are traces, not order or document status. Company id is never input. Internal — not mounted on HTTP. Re-submitting the identical payload with the same idempotency key returns the already-recorded turn and does not insert duplicates.`,
   principal: "staff",
   transport: "internal",
   input: recordAssistantTurnInputSchema,

@@ -42,6 +42,7 @@ const fixtures = {
   appendIdempotent: randomUUID(),
   recordIdempotent: randomUUID(),
   recordIds: randomUUID(),
+  employee: randomUUID(),
 };
 
 const clerks = {
@@ -53,6 +54,7 @@ const clerks = {
 const stamps = {
   newest: new Date("2026-04-01T00:00:00.000Z"),
   older: new Date("2026-03-01T00:00:00.000Z"),
+  employee: new Date("2026-05-01T00:00:00.000Z"),
 };
 
 const orderId = randomUUID();
@@ -86,6 +88,30 @@ async function countToolRuns(conversationId: string): Promise<number> {
     .from(assistantToolRuns)
     .where(eq(assistantToolRuns.conversationId, conversationId));
   return rows.length;
+}
+
+function notFoundWire(error: unknown): {
+  readonly code: string;
+  readonly clientMessage: string;
+} {
+  expect(error).toBeInstanceOf(NotFoundError);
+  expect(error).not.toBeInstanceOf(PermissionDeniedError);
+  if (!(error instanceof NotFoundError)) {
+    throw error;
+  }
+  return { code: error.code, clientMessage: error.clientMessage };
+}
+
+async function invokeAsNotFound(
+  invoke: Promise<unknown>,
+  detail: string,
+): Promise<{ readonly code: string; readonly clientMessage: string }> {
+  return invoke.then(
+    () => {
+      throw new Error(`expected NotFoundError for ${detail}`);
+    },
+    (error: unknown) => notFoundWire(error),
+  );
 }
 
 async function insertConversation(values: {
@@ -193,6 +219,15 @@ beforeAll(async () => {
       permissions: { granted: [], denied: [] },
     },
   ]);
+
+  await insertConversation({
+    id: fixtures.employee,
+    companyId: kitIdentities.companies.a,
+    userId: clerks.employee,
+    title: "Employee thread",
+    createdAt: stamps.employee,
+    updatedAt: stamps.employee,
+  });
 });
 
 afterAll(async () => {
@@ -334,16 +369,20 @@ describe("assistant staff conversation actions", () => {
     });
   });
 
-  it("lists own-company conversations newest-updated-first and omits company B", async () => {
+  it("lists the author's conversations newest-updated-first and omits colleagues and company B", async () => {
     const result = await kit.invoke(listConversations, { limit: 50 });
     const ids = result.items.map((item) => item.id);
     expect(ids).toContain(fixtures.newest);
     expect(ids).toContain(fixtures.older);
     expect(ids).toContain(fixtures.convA);
     expect(ids).not.toContain(fixtures.convB);
+    expect(ids).not.toContain(fixtures.employee);
     expect(ids.indexOf(fixtures.newest)).toBeLessThan(
       ids.indexOf(fixtures.older),
     );
+    expect(
+      result.items.every((item) => item.userId === kitIdentities.users.anna),
+    ).toBe(true);
     expect(result.items[0]).not.toHaveProperty("companyId");
   });
 
@@ -738,5 +777,198 @@ describe("assistant staff conversation actions", () => {
     ).rejects.toBeInstanceOf(NotFoundError);
     expect(await countMessages(fixtures.convB)).toBe(0);
     expect(await countToolRuns(fixtures.convB)).toBe(0);
+  });
+
+  it("a colleague with assistant:use gets the same not-found as a foreign company", async () => {
+    const colleague = {
+      userId: clerks.employee,
+      companyId: kitIdentities.companies.a,
+    };
+    const colleagueGet = await invokeAsNotFound(
+      kit.invoke(
+        getConversation,
+        { conversationId: fixtures.convA },
+        colleague,
+      ),
+      "colleague getConversation of another author's id",
+    );
+    const foreignGet = await invokeAsNotFound(
+      kit.invoke(
+        getConversation,
+        { conversationId: fixtures.convB },
+        colleague,
+      ),
+      "colleague getConversation of a foreign-company id",
+    );
+    expect(colleagueGet).toEqual(foreignGet);
+
+    const colleagueAppend = await invokeAsNotFound(
+      kit.invoke(
+        appendUserMessage,
+        { conversationId: fixtures.convA, body: "peer append" },
+        colleague,
+      ),
+      "colleague appendUserMessage into another author's thread",
+    );
+    const foreignAppend = await invokeAsNotFound(
+      kit.invoke(
+        appendUserMessage,
+        { conversationId: fixtures.convB, body: "peer append" },
+        colleague,
+      ),
+      "colleague appendUserMessage into a foreign-company thread",
+    );
+    expect(colleagueAppend).toEqual(foreignAppend);
+
+    const colleagueRecord = await invokeAsNotFound(
+      kit.invoke(
+        recordAssistantTurn,
+        {
+          conversationId: fixtures.convA,
+          body: "peer record",
+          toolRuns: [],
+        },
+        colleague,
+      ),
+      "colleague recordAssistantTurn into another author's thread",
+    );
+    const foreignRecord = await invokeAsNotFound(
+      kit.invoke(
+        recordAssistantTurn,
+        {
+          conversationId: fixtures.convB,
+          body: "peer record",
+          toolRuns: [],
+        },
+        colleague,
+      ),
+      "colleague recordAssistantTurn into a foreign-company thread",
+    );
+    expect(colleagueRecord).toEqual(foreignRecord);
+  });
+
+  it("listConversations for a colleague omits the author's rows and leaves the author's page intact", async () => {
+    const colleague = {
+      userId: clerks.employee,
+      companyId: kitIdentities.companies.a,
+    };
+    const authorFirst = await kit.invoke(listConversations, { limit: 2 });
+    const authorIds = new Set(
+      (await kit.invoke(listConversations, { limit: 50 })).items.map(
+        (item) => item.id,
+      ),
+    );
+    const colleaguePage = await kit.invoke(
+      listConversations,
+      { limit: 50 },
+      colleague,
+    );
+
+    expect(colleaguePage.items.map((item) => item.id)).toContain(
+      fixtures.employee,
+    );
+    expect(colleaguePage.items.map((item) => item.id)).not.toContain(
+      fixtures.convA,
+    );
+    expect(colleaguePage.items.map((item) => item.id)).not.toContain(
+      fixtures.newest,
+    );
+    expect(
+      colleaguePage.items.every((item) => item.userId === clerks.employee),
+    ).toBe(true);
+    expect(authorIds.has(fixtures.employee)).toBe(false);
+    expect(authorIds.has(fixtures.newest)).toBe(true);
+
+    const authorFirstAgain = await kit.invoke(listConversations, {
+      limit: 2,
+    });
+    expect(authorFirstAgain.items.map((item) => item.id)).toEqual(
+      authorFirst.items.map((item) => item.id),
+    );
+    expect(authorFirstAgain.nextCursor).toBe(authorFirst.nextCursor);
+  });
+
+  it("the company owner gets the same not-found on an employee's conversation", async () => {
+    const ownerGet = await invokeAsNotFound(
+      kit.invoke(getConversation, { conversationId: fixtures.employee }),
+      "owner getConversation of an employee's id",
+    );
+    const foreignGet = await invokeAsNotFound(
+      kit.invoke(getConversation, { conversationId: fixtures.convB }),
+      "owner getConversation of a foreign-company id",
+    );
+    expect(ownerGet).toEqual(foreignGet);
+
+    const listed = await kit.invoke(listConversations, { limit: 50 });
+    expect(listed.items.map((item) => item.id)).not.toContain(
+      fixtures.employee,
+    );
+
+    await expect(
+      kit.invoke(appendUserMessage, {
+        conversationId: fixtures.employee,
+        body: "owner append",
+      }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+    await expect(
+      kit.invoke(recordAssistantTurn, {
+        conversationId: fixtures.employee,
+        body: "owner record",
+        toolRuns: [],
+      }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it("an employee still creates, lists, gets, appends, and records their own", async () => {
+    const colleague = {
+      userId: clerks.employee,
+      companyId: kitIdentities.companies.a,
+    };
+    const created = await kit.invoke(
+      createConversation,
+      { title: "Employee own" },
+      colleague,
+    );
+    expect(created.userId).toBe(clerks.employee);
+
+    const listed = await kit.invoke(
+      listConversations,
+      { limit: 50 },
+      colleague,
+    );
+    expect(listed.items.map((item) => item.id)).toEqual(
+      expect.arrayContaining([created.id, fixtures.employee]),
+    );
+    expect(listed.items.every((item) => item.userId === clerks.employee)).toBe(
+      true,
+    );
+
+    const appended = await kit.invoke(
+      appendUserMessage,
+      { conversationId: created.id, body: "my prompt" },
+      colleague,
+    );
+    expect(appended.role).toBe("user");
+
+    const recorded = await kit.invoke(
+      recordAssistantTurn,
+      {
+        conversationId: created.id,
+        body: "my reply",
+        toolRuns: [],
+      },
+      colleague,
+    );
+    expect(recorded.conversationId).toBe(created.id);
+
+    const detail = await kit.invoke(
+      getConversation,
+      { conversationId: created.id },
+      colleague,
+    );
+    expect(detail.messages.map((message) => message.body)).toEqual([
+      "my prompt",
+      "my reply",
+    ]);
   });
 });

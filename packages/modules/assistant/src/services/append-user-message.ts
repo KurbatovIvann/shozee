@@ -28,6 +28,7 @@ export async function appendStaffUserMessage(env: {
   await loadOwnConversation({
     db,
     companyId: ctx.companyId,
+    userId: ctx.userId,
     conversationId: input.conversationId,
   });
 

@@ -35,6 +35,7 @@ export async function recordStaffAssistantTurn(env: {
   await loadOwnConversation({
     db,
     companyId: ctx.companyId,
+    userId: ctx.userId,
     conversationId: input.conversationId,
   });
 

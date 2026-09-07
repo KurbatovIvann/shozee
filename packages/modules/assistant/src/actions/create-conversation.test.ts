@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CONVERSATION_TITLE_MAX,
+  STAFF_CONVERSATION_AUTHOR_INVARIANT,
+} from "./conversation-view.contract.js";
+import {
   createConversationContract,
   createConversationInputSchema,
   createConversationOutputSchema,
 } from "./create-conversation.contract.js";
-import { CONVERSATION_TITLE_MAX } from "./conversation-view.contract.js";
 
 describe("assistant.createConversation contract", () => {
   it("is a staff client write with assistant:use, idempotent audit, and AI-internal", () => {
@@ -20,6 +23,9 @@ describe("assistant.createConversation contract", () => {
     expect(createConversationContract.audit).toBe(true);
     expect(createConversationContract.idempotent).toBe(true);
     expect(createConversationContract.emits).toEqual([]);
+    expect(createConversationContract.description).toContain(
+      STAFF_CONVERSATION_AUTHOR_INVARIANT,
+    );
     expect(createConversationContract.timeout).toBe(5_000);
     expect(createConversationContract.rateLimit).toBeUndefined();
   });
@@ -34,6 +40,11 @@ describe("assistant.createConversation contract", () => {
     expect(
       createConversationInputSchema.safeParse({
         companyId: "11111111-1111-4111-8111-111111111111",
+      }).success,
+    ).toBe(false);
+    expect(
+      createConversationInputSchema.safeParse({
+        userId: "11111111-1111-4111-8111-111111111111",
       }).success,
     ).toBe(false);
     expect(

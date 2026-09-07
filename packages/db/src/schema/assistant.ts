@@ -29,8 +29,12 @@ import {
 } from "./tenant-columns.js";
 
 /**
- * One staff conversation per row. List surface is company-scoped
- * (`assistant.listConversations`); `user_id` is the creating staff user.
+ * One staff conversation per row. A staff assistant conversation is a
+ * company record with one author. The author reads and writes it under
+ * `assistant:use`. Nobody else in the company — owner included — can
+ * list, read, append to, or record into it. Review of staff conversations
+ * is a separate feature with its own actions and permission. A foreign
+ * author and a foreign company fail with the same not-found.
  */
 export const assistantConversations = pgTable(
   "assistant_conversations",
