@@ -24,6 +24,7 @@ import {
 
 const ORDER_A = "11111111-1111-4111-8111-111111111111";
 const ORDER_B = "22222222-2222-4222-8222-222222222222";
+const MODEL_SPEAKS_LIST = "Ось три останні, найбільше — № 12";
 
 const listPage = {
   kind: "page.summary" as const,
@@ -478,7 +479,7 @@ describe("presentCompletedStaffAssistantTurn", () => {
 });
 
 describe("staffAssistantTurnUsesCompletedPresenter", () => {
-  it("is true for a completed list and false when HITL is on the turn", () => {
+  it("is true for a silent completed list and false when the model spoke", () => {
     const toolResults = [
       { toolName: ORDERS_LIST_PAGE_TOOL_NAME, output: listPage },
     ];
@@ -487,6 +488,31 @@ describe("staffAssistantTurnUsesCompletedPresenter", () => {
         locale: "uk",
         toolResults,
         runs: [{ outcome: "success" }],
+        rawText: "",
+      }),
+    ).toBe(true);
+    expect(
+      staffAssistantTurnUsesCompletedPresenter({
+        locale: "uk",
+        toolResults,
+        runs: [{ outcome: "success" }],
+        rawText: MODEL_SPEAKS_LIST,
+      }),
+    ).toBe(false);
+    expect(
+      staffAssistantTurnUsesCompletedPresenter({
+        locale: "uk",
+        toolResults,
+        runs: [{ outcome: "success" }],
+        rawText: '{"spoken":"Four orders this week."}',
+      }),
+    ).toBe(true);
+    expect(
+      staffAssistantTurnUsesCompletedPresenter({
+        locale: "uk",
+        toolResults,
+        runs: [{ outcome: "success" }],
+        rawText: "| order | total |\n| **#1** | 10 |",
       }),
     ).toBe(true);
     expect(
@@ -494,6 +520,7 @@ describe("staffAssistantTurnUsesCompletedPresenter", () => {
         locale: "uk",
         toolResults,
         runs: [{ outcome: "success" }, { outcome: "confirmation_required" }],
+        rawText: MODEL_SPEAKS_LIST,
       }),
     ).toBe(false);
     expect(
@@ -501,6 +528,7 @@ describe("staffAssistantTurnUsesCompletedPresenter", () => {
         locale: "uk",
         toolResults,
         runs: [{ outcome: "choice_required" }],
+        rawText: "",
       }),
     ).toBe(false);
   });
@@ -528,6 +556,7 @@ describe("staffAssistantTurnUsesCompletedPresenter", () => {
         locale: "en",
         toolResults,
         runs: [{ outcome: "choice_required" }],
+        rawText: "MODEL_SPOKEN_SHOULD_NOT_PERSIST",
       }),
     ).toBe(true);
     expect(presentChoiceStaffAssistantTurn({ locale: "en", toolResults })).toBe(
@@ -562,6 +591,7 @@ describe("staffAssistantTurnUsesCompletedPresenter", () => {
         locale: "uk",
         toolResults: [],
         runs: [{ outcome: "success" }],
+        rawText: "Four orders this week.",
       }),
     ).toBe(false);
   });
@@ -579,6 +609,7 @@ describe("staffAssistantTurnUsesCompletedPresenter", () => {
         locale: "uk",
         toolResults: [{ toolName: ORDERS_CREATE_TOOL_NAME, output: archived }],
         runs: [{ outcome: "error" }],
+        rawText: "MODEL_SPOKEN_SHOULD_NOT_PERSIST",
       }),
     ).toBe(true);
     expect(
@@ -796,7 +827,42 @@ describe("presentChoiceStaffAssistantNeedsChoice", () => {
 });
 
 describe("staffAssistantPersistedTurnText", () => {
-  it("uses the presenter when a list surface exists, not model spoken", () => {
+  it("uses model text for a list surface when the sentence is usable", () => {
+    const presented = presentCompletedStaffAssistantTurn({
+      locale: "uk",
+      toolResults: [{ toolName: ORDERS_LIST_PAGE_TOOL_NAME, output: listPage }],
+    });
+    expect(
+      staffAssistantPersistedTurnText({
+        locale: "uk",
+        toolResults: [
+          { toolName: ORDERS_LIST_PAGE_TOOL_NAME, output: listPage },
+        ],
+        rawText: MODEL_SPEAKS_LIST,
+        runs: [{ outcome: "success" }],
+      }),
+    ).toBe(MODEL_SPEAKS_LIST);
+    expect(presented).not.toBe(MODEL_SPEAKS_LIST);
+  });
+
+  it("uses presenter text when a list surface is silent", () => {
+    const presented = presentCompletedStaffAssistantTurn({
+      locale: "en",
+      toolResults: [{ toolName: ORDERS_LIST_PAGE_TOOL_NAME, output: listPage }],
+    });
+    expect(
+      staffAssistantPersistedTurnText({
+        locale: "en",
+        toolResults: [
+          { toolName: ORDERS_LIST_PAGE_TOOL_NAME, output: listPage },
+        ],
+        rawText: "",
+        runs: [{ outcome: "success" }],
+      }),
+    ).toBe(presented);
+  });
+
+  it("uses presenter text for leftover spoken JSON or a markdown dump", () => {
     const presented = presentCompletedStaffAssistantTurn({
       locale: "en",
       toolResults: [{ toolName: ORDERS_LIST_PAGE_TOOL_NAME, output: listPage }],
@@ -811,7 +877,18 @@ describe("staffAssistantPersistedTurnText", () => {
         runs: [{ outcome: "success" }],
       }),
     ).toBe(presented);
+    expect(
+      staffAssistantPersistedTurnText({
+        locale: "en",
+        toolResults: [
+          { toolName: ORDERS_LIST_PAGE_TOOL_NAME, output: listPage },
+        ],
+        rawText: "| order | total |\n| **#1** | 10 |",
+        runs: [{ outcome: "success" }],
+      }),
+    ).toBe(presented);
     expect(presented).not.toBe("MODEL_SPOKEN_SHOULD_NOT_PERSIST");
+    expect(presented).not.toBe(STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK);
   });
 
   it("keeps model prose when there is no registered surface", () => {

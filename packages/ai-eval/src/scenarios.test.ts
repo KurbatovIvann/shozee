@@ -8,6 +8,7 @@ import {
 import { describe, expect, it } from "vitest";
 
 import { collectEvalToolCalls } from "./trace.js";
+import { MODEL_SPEAKS_SCENARIOS } from "./scenarios/model-speaks.js";
 import { PLAIN_REPLY_SCENARIOS } from "./scenarios/plain-reply.js";
 import { PROOF_SCENARIOS } from "./scenarios/proof.js";
 
@@ -62,6 +63,64 @@ describe("PLAIN_REPLY_SCENARIOS", () => {
     expect(PLAIN_REPLY_SCENARIOS[0]?.expectation.textExcludes).toContain(
       '{"spoken"',
     );
+  });
+});
+
+describe("MODEL_SPEAKS_SCENARIOS", () => {
+  it("defines the three T6 corpus ids", () => {
+    expect(MODEL_SPEAKS_SCENARIOS.map((scenario) => scenario.id)).toEqual([
+      "t6.model-speaks.last-3-orders",
+      "t6.model-speaks.counts-this-week",
+      "t6.model-speaks.find-customer-katya",
+    ]);
+    expect(MODEL_SPEAKS_SCENARIOS[0]?.turns[0]?.text).toBe(
+      "останні 3 замовлення",
+    );
+    expect(MODEL_SPEAKS_SCENARIOS[1]?.turns[0]?.text).toBe(
+      "скільки замовлень цього тижня",
+    );
+    expect(MODEL_SPEAKS_SCENARIOS[2]?.turns[0]?.text).toBe(
+      "знайди клієнта Катя",
+    );
+    expect(MODEL_SPEAKS_SCENARIOS[0]?.expectation.ordered?.[0]?.name).toBe(
+      ORDERS_LIST_PAGE_TOOL_NAME,
+    );
+    expect(MODEL_SPEAKS_SCENARIOS[1]?.expectation.ordered?.[0]?.name).toBe(
+      ORDERS_LIST_COUNTS_TOOL_NAME,
+    );
+    expect(MODEL_SPEAKS_SCENARIOS[2]?.expectation.ordered?.[0]?.name).toBe(
+      CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME,
+    );
+    expect(
+      MODEL_SPEAKS_SCENARIOS[0]?.expectation.textIncludesToolValues,
+    ).toEqual(["orderNumber"]);
+    expect(
+      MODEL_SPEAKS_SCENARIOS[1]?.expectation.textIncludesToolValues,
+    ).toEqual(["orderCount"]);
+    expect(
+      MODEL_SPEAKS_SCENARIOS[2]?.expectation.textIncludesToolValues,
+    ).toEqual(["customerName"]);
+    for (const scenario of MODEL_SPEAKS_SCENARIOS) {
+      expect(scenario.expectation.textExcludes).toEqual(
+        expect.arrayContaining([
+          '{"spoken"',
+          '"spoken":',
+          "```",
+          "|",
+          "Останні замовлення",
+          "Latest orders",
+          "Клієнти",
+          "Customers",
+          "Знайшов",
+          "Found",
+        ]),
+      );
+      expect(scenario.expectation.textExcludes).not.toContain(" замовлень");
+      expect(scenario.expectation.textExcludes).not.toContain(" orders");
+      expect(scenario.expectation.textExcludes).not.toContain(
+        "{{count}} order",
+      );
+    }
   });
 });
 

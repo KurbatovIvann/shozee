@@ -158,6 +158,12 @@ describe("staffAssistantSystemPrompt", () => {
     expect(staffAssistantSystemPrompt).toContain(ORDERS_AGGREGATE_PROMPT_LINE);
     expect(staffAssistantSystemPrompt).toContain(ORDER_ENTITY_PROMPT_LINE);
     expect(staffAssistantSystemPrompt).toContain(CUSTOMERS_LIST_PROMPT_LINE);
+    expect(staffAssistantSystemPrompt).toContain(
+      "Reply in one or two sentences about the result",
+    );
+    expect(staffAssistantSystemPrompt).toContain(
+      "do not repeat counts the card already shows unless asked",
+    );
     expect(staffAssistantSystemPrompt).toContain("Do not emit card JSON");
     expect(staffAssistantSystemPrompt).toContain(
       'Do not name those surfaces "cards" to the staff member',

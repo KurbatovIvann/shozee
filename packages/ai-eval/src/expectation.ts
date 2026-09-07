@@ -31,6 +31,13 @@ export interface EvalExpectation {
   readonly forbidden?: readonly string[];
   /** Values in final text (count, order number) — never phrasing. */
   readonly textIncludes?: readonly string[];
+  /**
+   * Require the final text to contain a value from the tool result
+   * (order number, orderCount, customer name) — never presenter phrasing.
+   */
+  readonly textIncludesToolValues?: readonly (
+    "orderNumber" | "orderCount" | "customerName"
+  )[];
   readonly textExcludes?: readonly string[];
   readonly maxTextChars?: number;
 }
@@ -188,6 +195,82 @@ function toolCallMatches(
   return true;
 }
 
+function collectStringField(rows: readonly unknown[], key: string): string[] {
+  const values: string[] = [];
+  for (const row of rows) {
+    if (!isRecord(row)) {
+      continue;
+    }
+    const value = row[key];
+    if (typeof value === "string" && value.trim() !== "") {
+      values.push(value);
+    } else if (typeof value === "number" && Number.isFinite(value)) {
+      values.push(String(value));
+    }
+  }
+  return values;
+}
+
+function arrayField(result: unknown, key: string): unknown[] {
+  if (!isRecord(result) || !Array.isArray(result[key])) {
+    return [];
+  }
+  return result[key];
+}
+
+function toolValuesOfKind(
+  kind: "orderNumber" | "orderCount" | "customerName",
+  calls: readonly EvalToolCall[],
+): string[] {
+  const values: string[] = [];
+  for (const call of calls) {
+    const result = call.result;
+    if (kind === "orderNumber") {
+      values.push(
+        ...collectStringField(arrayField(result, "rows"), "orderNumber"),
+      );
+      values.push(
+        ...collectStringField(arrayField(result, "items"), "orderNumber"),
+      );
+      if (isRecord(result) && typeof result["orderNumber"] === "string") {
+        const number = result["orderNumber"].trim();
+        if (number !== "") {
+          values.push(number);
+        }
+      }
+    } else if (kind === "orderCount") {
+      if (isRecord(result)) {
+        const count = result["orderCount"];
+        if (typeof count === "number" && Number.isFinite(count)) {
+          values.push(String(count));
+        } else if (typeof count === "string" && count.trim() !== "") {
+          values.push(count.trim());
+        }
+      }
+    } else {
+      values.push(...collectStringField(arrayField(result, "items"), "name"));
+      values.push(...collectStringField(arrayField(result, "rows"), "name"));
+    }
+  }
+  return values;
+}
+
+function matchTextIncludesToolValues(
+  kinds: readonly ("orderNumber" | "orderCount" | "customerName")[],
+  trace: EvalTurnTrace,
+): EvalMatchResult {
+  for (const kind of kinds) {
+    const values = toolValuesOfKind(kind, trace.toolCalls);
+    if (values.length === 0) {
+      return fail(`no ${kind} in tool results`);
+    }
+    if (!values.some((value) => trace.text.includes(value))) {
+      return fail(`final text missing tool value ${kind}`);
+    }
+  }
+  return { ok: true };
+}
+
 function matchOrdered(
   expected: readonly EvalToolCallExpectation[],
   actual: readonly EvalToolCall[],
@@ -249,6 +332,15 @@ export function matchEvalExpectation(
       if (!trace.text.includes(snippet)) {
         return fail(`final text missing value ${snippet}`);
       }
+    }
+  }
+  if (expectation.textIncludesToolValues !== undefined) {
+    const toolValues = matchTextIncludesToolValues(
+      expectation.textIncludesToolValues,
+      trace,
+    );
+    if (!toolValues.ok) {
+      return toolValues;
     }
   }
   if (expectation.textExcludes !== undefined) {

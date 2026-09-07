@@ -1,11 +1,12 @@
 /**
- * Completed-turn spoken presenter (SHO-402 / SHO-401 T1 / SHO-457).
+ * Completed-turn spoken presenter (SHO-402 / SHO-401 T1 / SHO-457 / SHO-511).
  *
- * When a turn produced a registered result surface, persist the same
- * view the client registry would show — not model text. Parse lives in
- * `@showzy/validation/assistant-surfaces`; this file owns locale, labels,
- * and spoken phrasing. Do not import `apps/mobile`. Presenter precedence
- * is unchanged until T6.
+ * For completed surfaces the presenter is the **fallback** when model
+ * text is empty, a markdown dump, leftover `{ spoken }` JSON, or a tool
+ * error has no usable prose. Otherwise the model text is the bubble and
+ * the persist body. Confirmation and choice stay presenter-owned. Parse
+ * lives in `@showzy/validation/assistant-surfaces`; this file owns
+ * locale, labels, and fallback phrasing. Do not import `apps/mobile`.
  */
 import {
   ASSISTANT_CUSTOMERS_LIST_ROW_MAX,
@@ -40,6 +41,7 @@ import {
 import {
   lastStaffAssistantTypedToolErrorMessage,
   spokenTurnText,
+  usableStaffAssistantModelText,
 } from "./spoken-reply.js";
 
 export const STAFF_ASSISTANT_LOCALES = ["uk", "en"] as const;
@@ -565,15 +567,38 @@ export function presentChoiceStaffAssistantNeedsChoice(options: {
   });
 }
 
+function staffAssistantToolErrorMessage(
+  toolResults: readonly StaffAssistantPresentedToolResult[],
+): string | undefined {
+  return lastStaffAssistantTypedToolErrorMessage(
+    toolResults.map((result) => result.output),
+  );
+}
+
+function staffAssistantSpokenTurnText(options: {
+  readonly toolResults: readonly StaffAssistantPresentedToolResult[];
+  readonly rawText: string;
+  readonly runs: readonly SpokenTurnRun[];
+}): string {
+  const toolErrorMessage = staffAssistantToolErrorMessage(options.toolResults);
+  return spokenTurnText({
+    rawText: options.rawText,
+    runs: options.runs,
+    ...(toolErrorMessage !== undefined ? { toolErrorMessage } : {}),
+  });
+}
+
 /**
- * True when the live bubble and persist body must come from the completed
- * presenter, not model text. HITL confirmation still uses reply
- * sanitization / HITL fallback. Unchanged until T6.
+ * True when the live bubble and persist body come from the presenter
+ * (choice, archived / no_active_variants, or completed-surface fallback),
+ * not usable model prose. HITL confirmation still uses the confirmation
+ * text path, not this completed presenter.
  */
 export function staffAssistantTurnUsesCompletedPresenter(options: {
   readonly locale: StaffAssistantLocale;
   readonly toolResults: readonly StaffAssistantPresentedToolResult[];
   readonly runs: readonly SpokenTurnRun[];
+  readonly rawText: string;
 }): boolean {
   if (options.runs.some((run) => run.outcome === "confirmation_required")) {
     return false;
@@ -597,18 +622,21 @@ export function staffAssistantTurnUsesCompletedPresenter(options: {
   if (options.runs.some((run) => run.outcome === "choice_required")) {
     return false;
   }
-  return (
+  if (
     presentCompletedStaffAssistantTurn({
       locale: options.locale,
       toolResults: options.toolResults,
-    }) !== undefined
-  );
+    }) === undefined
+  ) {
+    return false;
+  }
+  return usableStaffAssistantModelText(options.rawText) === undefined;
 }
 
 /**
- * Visible bubble and persist body: presenter when a registered completed
- * surface exists, otherwise sanitized model text. HITL confirmation still
- * wins. Unchanged until T6.
+ * One decision for the visible bubble and persist body (SHO-511). Choice
+ * and confirmation stay presenter-owned. Completed surfaces use sanitized
+ * model text when it is usable; otherwise the presenter fallback.
  */
 export function staffAssistantPersistedTurnText(options: {
   readonly locale: StaffAssistantLocale;
@@ -616,35 +644,33 @@ export function staffAssistantPersistedTurnText(options: {
   readonly rawText: string;
   readonly runs: readonly SpokenTurnRun[];
 }): string {
-  if (staffAssistantTurnUsesCompletedPresenter(options)) {
-    const choice = presentChoiceStaffAssistantTurn({
-      locale: options.locale,
-      toolResults: options.toolResults,
-    });
-    if (choice !== undefined) {
-      return choice;
-    }
-    const domainError = presentDomainErrorStaffAssistantTurn({
-      locale: options.locale,
-      toolResults: options.toolResults,
-    });
-    if (domainError !== undefined) {
-      return domainError;
-    }
-    const presented = presentCompletedStaffAssistantTurn({
-      locale: options.locale,
-      toolResults: options.toolResults,
-    });
-    if (presented !== undefined) {
-      return presented;
-    }
-  }
-  const toolErrorMessage = lastStaffAssistantTypedToolErrorMessage(
-    options.toolResults.map((result) => result.output),
-  );
-  return spokenTurnText({
-    rawText: options.rawText,
-    runs: options.runs,
-    ...(toolErrorMessage !== undefined ? { toolErrorMessage } : {}),
+  const choice = presentChoiceStaffAssistantTurn({
+    locale: options.locale,
+    toolResults: options.toolResults,
   });
+  if (choice !== undefined) {
+    return choice;
+  }
+  if (options.runs.some((run) => run.outcome === "confirmation_required")) {
+    return staffAssistantSpokenTurnText(options);
+  }
+  const domainError = presentDomainErrorStaffAssistantTurn({
+    locale: options.locale,
+    toolResults: options.toolResults,
+  });
+  if (domainError !== undefined) {
+    return domainError;
+  }
+  const usable = usableStaffAssistantModelText(options.rawText);
+  if (usable !== undefined) {
+    return usable;
+  }
+  const presented = presentCompletedStaffAssistantTurn({
+    locale: options.locale,
+    toolResults: options.toolResults,
+  });
+  if (presented !== undefined) {
+    return presented;
+  }
+  return staffAssistantSpokenTurnText(options);
 }

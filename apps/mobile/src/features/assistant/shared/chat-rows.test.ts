@@ -13,6 +13,9 @@ import type { PendingConfirmation } from "./confirmation-presenter";
 
 const copy = assistantCopy("uk");
 
+const TWO_LINE_MODEL_SENTENCE =
+  "Ось три останні, найбільше — № 12.\nМожна відкрити картку.";
+
 const pending: PendingConfirmation = {
   status: "confirmation_required",
   challengeId: "22222222-2222-4222-8222-222222222222",
@@ -717,6 +720,45 @@ describe("assistantDisplayRows", () => {
       "orders-list",
     ]);
     expect(visible[0]?.id).toBe("a1");
+  });
+
+  it("SHO-511: two-line model sentence sits above a list card when ready", () => {
+    const mapped = assistantChatRows(
+      [
+        {
+          id: "u1",
+          role: "user",
+          parts: [{ type: "text", text: "Останні 3 замовлення" }],
+        },
+        {
+          id: "a1",
+          role: "assistant",
+          parts: [
+            { type: "text", text: TWO_LINE_MODEL_SENTENCE },
+            {
+              type: "tool-orders_list_page",
+              toolCallId: "call-page",
+              state: "output-available",
+              output: pageOutput,
+            },
+          ],
+        },
+      ],
+      null,
+      copy,
+    );
+    const visible = assistantDisplayRows(
+      mapped,
+      assistantTurnIsWaiting({ status: "ready", rows: mapped }),
+    );
+    expect(visible).toHaveLength(2);
+    expect(visible[1]?.waiting).toBe(false);
+    expect(visible[1]?.text).toBe(TWO_LINE_MODEL_SENTENCE);
+    expect(visible[1]?.text.includes("\n")).toBe(true);
+    expect(visible[1]?.surfaces.map((surface) => surface.kind)).toEqual([
+      "orders-list",
+    ]);
+    expect(visible[1]?.id).toBe("a1");
   });
 
   it("reveals on error the same way as ready — no wait line", () => {

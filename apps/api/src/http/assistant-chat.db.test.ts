@@ -740,11 +740,9 @@ describe("POST /assistant/chat mock-model parity", () => {
     expect(response.status).toBe(200);
     const payloads = await readUiMessageSsePayloads(response);
     const visible = sseVisibleTextFromPayloads(payloads);
-    expect(visible).not.toContain("You have no orders.");
-    expect(
-      visible === "Немає замовлень." ||
-        visible.startsWith("Останні замовлення:"),
-    ).toBe(true);
+    expect(visible).toBe("You have no orders.");
+    expect(visible).not.toBe("Немає замовлень.");
+    expect(await waitForAssistantBody(conversation.id)).toBe(visible);
     await waitFor(async () => {
       const runs = await kit.db.runtime.db.select().from(assistantToolRuns);
       return runs.some(
@@ -758,7 +756,34 @@ describe("POST /assistant/chat mock-model parity", () => {
     fetchSpy.mockRestore();
   });
 
-  it("persists presenter list spoken in assistant_messages.body, not mock model spoken", async () => {
+  it("persists the model-speaks list sentence as the last visible text", async () => {
+    const spoken = "Ось три останні, найбільше — № 12";
+    const app = chatApp(
+      new MockLanguageModelV3({
+        doStream: [
+          mockToolCallStream("call-list", ORDERS_LIST_PAGE_TOOL_NAME, "{}"),
+          mockTextStream(spoken),
+        ],
+      }),
+    );
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await staffInvoke(createConversation, {
+      title: "Model speaks persist",
+    });
+    const response = await postChat(app, {
+      token,
+      companyId: kitIdentities.companies.a,
+      body: userChatBody(conversation.id, "останні 3 замовлення"),
+    });
+    expect(response.status).toBe(200);
+    const payloads = await readUiMessageSsePayloads(response);
+    const visible = sseVisibleTextFromPayloads(payloads);
+    expect(visible).toBe(spoken);
+    expect(visible.startsWith("Останні замовлення:")).toBe(false);
+    expect(await waitForAssistantBody(conversation.id)).toBe(visible);
+  });
+
+  it("persists leftover spoken JSON as presenter list text, not extracted spoken", async () => {
     const modelSpoken = "MODEL_SPOKEN_SHOULD_NOT_PERSIST";
     const app = chatApp(
       new MockLanguageModelV3({

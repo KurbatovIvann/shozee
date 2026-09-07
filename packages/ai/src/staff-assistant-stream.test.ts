@@ -424,10 +424,10 @@ describe("streamStaffAssistantChat", () => {
         modelTrace: { items: [], nextCursor: null },
       },
     ]);
-    expect(turn.text).toBe("Немає замовлень.");
-    expect(turn.text).not.toBe("You have no orders.");
+    expect(turn.text).toBe("You have no orders.");
+    expect(turn.text).not.toBe("Немає замовлень.");
     expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
-    expect(JSON.stringify(payloads)).not.toContain("You have no orders.");
+    expect(JSON.stringify(payloads)).toContain("You have no orders.");
     expect(turn.toolsAttached).toBe(true);
     expect(turn.usage.inputTokens).toEqual(expect.any(Number));
     expect(turn.usage.outputTokens).toEqual(expect.any(Number));
@@ -1117,8 +1117,8 @@ describe("streamStaffAssistantChat", () => {
     expect(onAbandoned).not.toHaveBeenCalled();
   });
 
-  it("holds candidate text and emits presenter after orders_list_page and keeps the tool part", async () => {
-    const spoken = "Albina has 4 orders this week.";
+  it("holds candidate text and emits the model sentence after orders_list_page", async () => {
+    const spoken = "Ось три останні, найбільше — № 12";
     const execute = vi.fn(() =>
       Promise.resolve({
         kind: "page.summary",
@@ -1167,12 +1167,13 @@ describe("streamStaffAssistantChat", () => {
       ],
     });
     expect(presented).toBeDefined();
-    expect(turn.text).toBe(presented);
-    expect(turn.text).not.toBe(spoken);
+    expect(presented).not.toBe(spoken);
+    expect(turn.text).toBe(spoken);
+    expect(turn.text).not.toBe(presented);
     expect(turn.text).not.toContain("|");
     expect(turn.text).not.toContain("**");
     expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
-    expect(payloadText).not.toContain(spoken);
+    expect(payloadText).toContain(spoken);
     expect(payloadText).not.toContain('{"spoken"');
     expect(payloadText).toContain(ORDERS_LIST_PAGE_TOOL_NAME);
     expect(turn.toolRuns).toMatchObject([
@@ -1199,7 +1200,7 @@ describe("streamStaffAssistantChat", () => {
     );
   });
 
-  it("holds candidate text and emits presenter after counts-only aggregate", async () => {
+  it("holds candidate text and emits the model sentence after counts-only aggregate", async () => {
     const spoken = "6 orders this week, mostly confirmed.";
     const execute = vi.fn(() =>
       Promise.resolve({
@@ -1255,12 +1256,13 @@ describe("streamStaffAssistantChat", () => {
       ],
     });
     expect(presented).toBeDefined();
-    expect(turn.text).toBe(presented);
-    expect(turn.text).not.toBe(spoken);
+    expect(presented).not.toBe(spoken);
+    expect(turn.text).toBe(spoken);
+    expect(turn.text).not.toBe(presented);
     expect(turn.text).not.toContain("|");
     expect(turn.text).not.toContain("**");
     expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
-    expect(payloadText).not.toContain(spoken);
+    expect(payloadText).toContain(spoken);
     expect(payloadText).not.toContain('{"spoken"');
     expect(payloadText).toContain(ORDERS_LIST_COUNTS_TOOL_NAME);
     expect(turn.toolRuns).toMatchObject([
@@ -1298,10 +1300,10 @@ describe("streamStaffAssistantChat", () => {
     expect(turn.toolRuns.map((run) => run.toolCallId)).not.toContain(
       "call-json",
     );
-    expect(turn.text).toBe("Немає замовлень.");
-    expect(turn.text).not.toBe(spoken);
+    expect(turn.text).toBe(spoken);
+    expect(turn.text).not.toBe("Немає замовлень.");
     expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
-    expect(JSON.stringify(payloads)).not.toContain(spoken);
+    expect(JSON.stringify(payloads)).toContain(spoken);
     expect(JSON.stringify(payloads)).not.toContain('{"spoken"');
   });
 
@@ -1419,8 +1421,7 @@ describe("streamStaffAssistantChat", () => {
     expect(confirmationChunks.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("persists presenter text for a list tool, not mock model spoken", async () => {
-    const spoken = "MODEL_SPOKEN_SHOULD_NOT_PERSIST";
+  it("persists presenter text when a list tool is silent", async () => {
     const page = {
       kind: "page.summary" as const,
       items: [
@@ -1436,7 +1437,7 @@ describe("streamStaffAssistantChat", () => {
     const model = new MockLanguageModelV3({
       doStream: [
         mockToolCallStream("call-list", ORDERS_LIST_PAGE_TOOL_NAME, "{}"),
-        mockTextStream(spoken),
+        mockTextStream(""),
       ],
     });
     const { response, completion } = streamStaffAssistantChat({
@@ -1448,12 +1449,47 @@ describe("streamStaffAssistantChat", () => {
     const payloads = await readUiMessageSsePayloads(response);
     const turn = await completion;
     expect(turn.text).toBe("Останні замовлення: #1049 (Нове).");
-    expect(turn.text).not.toBe(spoken);
     expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
-    expect(JSON.stringify(payloads)).not.toContain(spoken);
   });
 
-  it("persists English presenter text when locale is en", async () => {
+  it("holds leftover spoken JSON fragments and emits presenter for a list", async () => {
+    const execute = vi.fn(() =>
+      Promise.resolve({
+        kind: "page.summary",
+        items: [
+          {
+            orderId: customerId,
+            orderNumber: "1049",
+            status: "new",
+          },
+        ],
+        nextCursor: null,
+      }),
+    );
+    const model = new MockLanguageModelV3({
+      doStream: [
+        mockToolCallStream("call-list", ORDERS_LIST_PAGE_TOOL_NAME, "{}"),
+        mockSplitTextStream(['{"spo', 'ken":"SECRETX"}']),
+      ],
+    });
+    const { response, completion } = streamStaffAssistantChat({
+      model,
+      messages: [{ role: "user", content: "Show the last orders" }],
+      contracts: [listOrders],
+      execute,
+    });
+    const payloads = await readUiMessageSsePayloads(response);
+    const turn = await completion;
+    const payloadText = JSON.stringify(payloads);
+    expect(turn.text).toBe("Останні замовлення: #1049 (Нове).");
+    expect(turn.text).not.toBe("SECRETX");
+    expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
+    expect(payloadText).not.toContain('{"spo');
+    expect(payloadText).not.toContain("SECRETX");
+    expect(payloadText).not.toContain('{"spoken"');
+  });
+
+  it("persists English presenter text when locale is en and model text is invalid", async () => {
     const spoken = "MODEL_SPOKEN_SHOULD_NOT_PERSIST";
     const execute = vi.fn(() =>
       Promise.resolve({
@@ -1471,7 +1507,7 @@ describe("streamStaffAssistantChat", () => {
     const model = new MockLanguageModelV3({
       doStream: [
         mockToolCallStream("call-list", ORDERS_LIST_PAGE_TOOL_NAME, "{}"),
-        mockTextStream(spoken),
+        mockSpokenStream(spoken),
       ],
     });
     const { response, completion } = streamStaffAssistantChat({
@@ -1636,7 +1672,7 @@ describe("streamStaffAssistantChat", () => {
     expect(textIndex).toBeGreaterThan(confirmationIndex);
   });
 
-  it("persists presenter text for an entity tool, not mock model spoken", async () => {
+  it("persists presenter text for an entity tool when model text is leftover spoken JSON", async () => {
     const spoken = "MODEL_SPOKEN_SHOULD_NOT_PERSIST";
     const execute = vi.fn(() =>
       Promise.resolve({
@@ -1652,7 +1688,7 @@ describe("streamStaffAssistantChat", () => {
           toProviderToolName("orders.get"),
           JSON.stringify({ orderId: customerId }),
         ),
-        mockTextStream(spoken),
+        mockSpokenStream(spoken),
       ],
     });
     const { response, completion } = streamStaffAssistantChat({
@@ -1700,7 +1736,7 @@ describe("streamStaffAssistantChat", () => {
           JSON.stringify({ orderId: customerId }),
         ),
         mockToolCallStream("call-list", ORDERS_LIST_PAGE_TOOL_NAME, "{}"),
-        mockTextStream(spoken),
+        mockSpokenStream(spoken),
       ],
     });
     const { response, completion } = streamStaffAssistantChat({

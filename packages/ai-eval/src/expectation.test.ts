@@ -204,4 +204,71 @@ describe("matchEvalExpectation", () => {
       ),
     ).toEqual({ ok: true });
   });
+
+  it("requires tool-result values in the final text, never phrasing", () => {
+    const pageTrace = {
+      text: "Ось три останні, найбільше — № 12",
+      toolCalls: [
+        {
+          toolCallId: "c1",
+          name: ORDERS_LIST_PAGE_TOOL_NAME,
+          args: {},
+          result: { rows: [{ orderNumber: "12" }] },
+        },
+      ],
+    };
+    expect(
+      matchEvalExpectation(
+        { textIncludesToolValues: ["orderNumber"] },
+        pageTrace,
+      ),
+    ).toEqual({ ok: true });
+    expect(
+      matchEvalExpectation(
+        { textIncludesToolValues: ["orderNumber"] },
+        { ...pageTrace, text: "Останні замовлення." },
+      ),
+    ).toMatchObject({ ok: false });
+    expect(
+      matchEvalExpectation(
+        {
+          textIncludesToolValues: ["orderNumber"],
+          textExcludes: ["Останні замовлення"],
+        },
+        { ...pageTrace, text: "Останні замовлення: #12 (Нове)." },
+      ),
+    ).toMatchObject({ ok: false });
+    expect(
+      matchEvalExpectation(
+        { textIncludesToolValues: ["orderCount"] },
+        {
+          text: "Цього тижня 4.",
+          toolCalls: [
+            {
+              toolCallId: "c1",
+              name: ORDERS_LIST_COUNTS_TOOL_NAME,
+              args: { period: "this_week" },
+              result: { orderCount: 4 },
+            },
+          ],
+        },
+      ),
+    ).toEqual({ ok: true });
+    expect(
+      matchEvalExpectation(
+        { textIncludesToolValues: ["customerName"] },
+        {
+          text: "Знайшла Катя Самбука.",
+          toolCalls: [
+            {
+              toolCallId: "c1",
+              name: CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME,
+              args: { search: "Катя" },
+              result: { items: [{ name: "Катя Самбука" }] },
+            },
+          ],
+        },
+      ),
+    ).toEqual({ ok: true });
+  });
 });

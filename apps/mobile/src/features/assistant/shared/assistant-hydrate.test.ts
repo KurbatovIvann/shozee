@@ -287,7 +287,7 @@ describe("hydratedUiMessagesFromConversation", () => {
         message({
           id: MSG_ASSISTANT,
           role: "assistant",
-          body: "Ось активні замовлення.",
+          body: "Ось три останні, найбільше — № 12.\nМожна відкрити картку.",
           createdAt: "2026-09-03T10:00:01.000Z",
         }),
       ],
@@ -303,12 +303,17 @@ describe("hydratedUiMessagesFromConversation", () => {
       ordersById: new Map(),
     });
     expect(messages[1]?.parts).toEqual([
-      { type: "text", text: "Ось активні замовлення." },
+      {
+        type: "text",
+        text: "Ось три останні, найбільше — № 12.\nМожна відкрити картку.",
+      },
     ]);
     const surfaces = assistantSurfacesFromParts(messages[1]?.parts ?? [], "uk");
     expect(surfaces).toEqual([]);
     const rows = assistantChatRows(messages, null, uk);
-    expect(rows[1]?.text).toBe("Ось активні замовлення.");
+    expect(rows[1]?.text).toBe(
+      "Ось три останні, найбільше — № 12.\nМожна відкрити картку.",
+    );
     expect(rows[1]?.surfaces).toEqual([]);
     expect(JSON.stringify(rows[1])).not.toContain("orders_list_page");
     expect(JSON.stringify(rows[1])).not.toContain("orders_list_counts");
@@ -319,7 +324,9 @@ describe("hydratedUiMessagesFromConversation", () => {
       assistantTurnIsWaiting({ status: "ready", rows }),
     );
     expect(visible.every((row) => !row.waiting)).toBe(true);
-    expect(visible[1]?.text).toBe("Ось активні замовлення.");
+    expect(visible[1]?.text).toBe(
+      "Ось три останні, найбільше — № 12.\nМожна відкрити картку.",
+    );
   });
 
   it("does not restore a customers-list card on resume (hydratable: false)", () => {
