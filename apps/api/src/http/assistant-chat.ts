@@ -49,7 +49,6 @@ import {
   getStaffActor,
   recordAssistantTurn,
 } from "@showzy/assistant";
-import { GET_CONVERSATION_MESSAGES_MAX } from "@showzy/assistant/contract";
 import { getCompany } from "@showzy/companies";
 import {
   COMPANY_SELECTOR_HEADER,
@@ -522,7 +521,8 @@ export async function executeStaffAssistantChat(
       action: getConversation,
       input: {
         conversationId: body.conversationId,
-        limit: GET_CONVERSATION_MESSAGES_MAX,
+        // Same cap as GET_CONVERSATION_MESSAGES_MAX on getConversation input.
+        limit: 200,
       },
       request: baseRequest,
       principal: staffPrincipal,
