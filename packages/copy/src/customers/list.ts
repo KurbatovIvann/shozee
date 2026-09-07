@@ -1,5 +1,5 @@
-/** Customers list + confirm + empty copy (uk/en). */
-import type { CountForms } from "../copy";
+/** Customers list + confirm + empty copy (uk/en). Wholesale mobile tree (SHO-476). */
+import type { CountForms } from "../plural.js";
 
 export type CustomersCountForms = CountForms;
 

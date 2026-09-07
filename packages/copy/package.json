@@ -9,6 +9,7 @@
     "./plural": "./src/plural.ts",
     "./chrome": "./src/chrome.ts",
     "./auth": "./src/auth.ts",
+    "./customers": "./src/customers.ts",
     "./orders": "./src/orders.ts",
     "./assistant": "./src/assistant.ts",
     "./panel": "./src/panel.ts",

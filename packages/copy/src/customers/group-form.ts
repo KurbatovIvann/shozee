@@ -1,4 +1,4 @@
-/** Group create/edit copy (uk/en). */
+/** Group create/edit copy (uk/en). Wholesale mobile tree (SHO-476). */
 import {
   formChromeEn,
   formChromeUk,
@@ -6,7 +6,7 @@ import {
   writeErrorsUk,
   type FormChromeCopy,
   type WriteErrorsCopy,
-} from "../copy";
+} from "../chrome.js";
 
 export type CustomersGroupFormCopy = FormChromeCopy & {
   readonly aboutTitle: string;

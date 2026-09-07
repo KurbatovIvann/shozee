@@ -96,8 +96,10 @@ the same directory.
   spreads keep compiling. Ukrainian one/few/many rules re-export
   `@showzy/copy/plural` from `plural.ts` — do not copy mod-10/mod-100 into
   a feature. Orders copy composes `@showzy/copy/orders` with a mobile
-  extension (offline/back leftovers stay here). One copy namespace per
-  remaining feature (`auth.ts`, `customers.ts` composing `customers/`).
+  extension (offline/back leftovers stay here). Customers copy is a
+  thin re-export of `@showzy/copy/customers` (wholesale; web has none).
+  One copy namespace per remaining feature (`auth.ts`, form namespaces
+  still in this folder until their tickets).
   uk/en, matching V1's namespace split. New namespaces: follow
   [`packages/copy/AGENTS.md`](../../packages/copy/AGENTS.md) — feature
   code keeps importing this folder, not the package.

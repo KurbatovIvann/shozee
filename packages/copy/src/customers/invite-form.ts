@@ -1,4 +1,4 @@
-/** Invitation create copy (uk/en). */
+/** Invitation create copy (uk/en). Wholesale mobile tree (SHO-476). */
 import {
   formChromeEn,
   formChromeUk,
@@ -6,7 +6,7 @@ import {
   writeErrorsUk,
   type FormChromeCopy,
   type WriteErrorsCopy,
-} from "../copy";
+} from "../chrome.js";
 
 export type CustomersInviteFormCopy = Omit<
   FormChromeCopy,
