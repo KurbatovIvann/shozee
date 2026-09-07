@@ -32,3 +32,7 @@ every projection (dashboards, notifications, analytics).
   state" — enforced in review and by prohibition rules.
 - Order cards update via the outbox → event bus → chat subscription path,
   which must exist by phase 3 (order vertical).
+- Amended by ADR-0034 (2026-09-07): "never duplicates domain state" means
+  never as a projection or source of truth. A bounded model-prompt cache
+  that no client renders (`assistant_tool_runs.model_trace`) is prompt
+  state, not a projection.
