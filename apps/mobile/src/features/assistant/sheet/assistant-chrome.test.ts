@@ -25,8 +25,8 @@ const i18n = readFileSync(
   new URL("../../../i18n/assistant.ts", import.meta.url),
   "utf8",
 );
-const listCard = readFileSync(
-  new URL("./orders-list-result-card.tsx", import.meta.url),
+const surfaceCard = readFileSync(
+  new URL("./assistant-surface-card.tsx", import.meta.url),
   "utf8",
 );
 const collectionBlock = readFileSync(
@@ -109,8 +109,8 @@ describe("assistant conversation chrome (SHO-392)", () => {
   });
 
   it("does not put Shozik assets on SHO-383 result cards", () => {
-    expect(listCard).not.toContain("sit.svg");
-    expect(listCard).not.toContain("dig.svg");
+    expect(surfaceCard).not.toContain("sit.svg");
+    expect(surfaceCard).not.toContain("dig.svg");
     expect(collectionBlock).not.toContain("sit.svg");
     expect(collectionBlock).not.toContain("dig.svg");
     expect(aggregateCard).not.toContain("sit.svg");

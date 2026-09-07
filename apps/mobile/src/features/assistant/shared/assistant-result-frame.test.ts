@@ -22,10 +22,6 @@ const SURFACE = readFileSync(
   new URL("../sheet/assistant-surface-card.tsx", import.meta.url),
   "utf8",
 );
-const LIST = readFileSync(
-  new URL("../sheet/orders-list-result-card.tsx", import.meta.url),
-  "utf8",
-);
 const COLLECTION = readFileSync(
   new URL("../sheet/assistant-collection-block.tsx", import.meta.url),
   "utf8",
@@ -72,6 +68,24 @@ describe("AssistantResultFrame notice card (SHO-469)", () => {
     expect(AGGREGATE).toContain("AssistantAggregateBlock");
   });
 
+  it("fails the build on an unhandled surface kind instead of an empty frame (SHO-498)", () => {
+    // The block switch is what decides whether a card appears at all. A
+    // fifth registered kind must not compile into a silent empty frame:
+    // the declared return type refuses `undefined`, and the `never`
+    // assignment after the switch names the kind tsc could not place.
+    expect(SURFACE).toContain("}): ReactElement | null {");
+    expect(SURFACE).toContain("const unhandledSurfaceKind: never = surface;");
+    expect(SURFACE).toContain("return unhandledSurfaceKind;");
+    expect(SURFACE).not.toContain("default:");
+  });
+
+  it("routes both list kinds through one spelling of the collection block (SHO-498)", () => {
+    expect(SURFACE).toContain('case "orders-list":');
+    expect(SURFACE).toContain('case "customers-list":');
+    expect(SURFACE.match(/<AssistantCollectionBlock/g)?.length).toBe(1);
+    expect(SURFACE).not.toContain("OrdersListResultCard");
+  });
+
   it("puts empty state and CTA on the frame — card modules do not import Card", () => {
     expect(FRAME).toContain("emptyTitle");
     expect(FRAME).toContain("emptyDescription");
@@ -80,7 +94,6 @@ describe("AssistantResultFrame notice card (SHO-469)", () => {
     expect(SURFACE).toContain("secondaryCta");
     expect(SURFACE).toContain('id: "cta"');
     expect(SURFACE).toContain('variant: "secondary"');
-    expect(importsNamed(LIST, "Card")).toBe(false);
     expect(importsNamed(COLLECTION, "Card")).toBe(false);
     expect(COLLECTION).toContain("StatusPill");
     expect(COLLECTION).toContain("flex: 1");
@@ -90,9 +103,9 @@ describe("AssistantResultFrame notice card (SHO-469)", () => {
     expect(importsNamed(ENTITY, "Card")).toBe(false);
     expect(importsNamed(CONFIRMATION, "Card")).toBe(false);
     expect(importsNamed(FRAME, "Card")).toBe(true);
-    expect(LIST).not.toContain("<Button");
+    expect(COLLECTION).not.toContain("<Button");
     expect(AGGREGATE).not.toContain("<Button");
-    expect(LIST).not.toContain("emptyTitle");
+    expect(COLLECTION).not.toContain("emptyTitle");
     expect(ENTITY).not.toContain("emptyTitle");
   });
 });

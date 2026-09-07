@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, type ReactElement } from "react";
 
 import type { AssistantSurface } from "../surfaces";
 import { AssistantCollectionBlock } from "./assistant-collection-block";
@@ -11,7 +11,6 @@ import {
 import { AssistantResultFrame } from "./assistant-result-frame";
 import { OrderEntityCard } from "./order-entity-card";
 import { OrdersAggregateResultCard } from "./orders-aggregate-result-card";
-import { OrdersListResultCard } from "./orders-list-result-card";
 
 /**
  * SHO-469 / SHO-472 / SHO-473: one frame plus a block switch for
@@ -47,16 +46,20 @@ export const AssistantSurfaceCard = memo(function AssistantSurfaceCard(props: {
   );
 });
 
+/**
+ * SHO-498: the switch that decides whether a card appears at all. The
+ * declared return type plus the `never` assignment below make an
+ * unhandled `surface.kind` a compile error, not an empty frame. Both
+ * list kinds call `AssistantCollectionBlock` directly — there is one
+ * spelling of that call, not a per-list pass-through wrapper.
+ */
 const AssistantSurfaceBlock = memo(function AssistantSurfaceBlock(props: {
   readonly surface: AssistantSurface;
   readonly onOpenHref: (href: string) => void;
-}) {
+}): ReactElement | null {
   const { surface, onOpenHref } = props;
   switch (surface.kind) {
     case "orders-list":
-      return surface.emptyTitle !== null ? null : (
-        <OrdersListResultCard card={surface} onOpenHref={onOpenHref} />
-      );
     case "customers-list":
       return surface.emptyTitle !== null ? null : (
         <AssistantCollectionBlock
@@ -71,6 +74,8 @@ const AssistantSurfaceBlock = memo(function AssistantSurfaceBlock(props: {
     case "order-entity":
       return <OrderEntityCard card={surface} onOpenHref={onOpenHref} />;
   }
+  const unhandledSurfaceKind: never = surface;
+  return unhandledSurfaceKind;
 });
 
 function surfaceChips(
