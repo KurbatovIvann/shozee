@@ -2,9 +2,10 @@
  * Completed-turn spoken presenter (SHO-402 / SHO-401 T1 / SHO-457).
  *
  * When a turn produced a registered result surface, persist the same
- * view the client registry would show — not model `{ spoken }`. Parse
- * lives in `@showzy/validation/assistant-surfaces`; this file owns
- * locale, labels, and spoken phrasing. Do not import `apps/mobile`.
+ * view the client registry would show — not model text. Parse lives in
+ * `@showzy/validation/assistant-surfaces`; this file owns locale, labels,
+ * and spoken phrasing. Do not import `apps/mobile`. Presenter precedence
+ * is unchanged until T6.
  */
 import {
   ASSISTANT_CUSTOMERS_LIST_ROW_MAX,
@@ -566,8 +567,8 @@ export function presentChoiceStaffAssistantNeedsChoice(options: {
 
 /**
  * True when the live bubble and persist body must come from the completed
- * presenter, not model `{ spoken }`. HITL confirmation still uses the
- * spoken flatten.
+ * presenter, not model text. HITL confirmation still uses reply
+ * sanitization / HITL fallback. Unchanged until T6.
  */
 export function staffAssistantTurnUsesCompletedPresenter(options: {
   readonly locale: StaffAssistantLocale;
@@ -606,12 +607,12 @@ export function staffAssistantTurnUsesCompletedPresenter(options: {
 
 /**
  * Visible bubble and persist body: presenter when a registered completed
- * surface exists, otherwise model `{ spoken }`. HITL confirmation still wins.
+ * surface exists, otherwise sanitized model text. HITL confirmation still
+ * wins. Unchanged until T6.
  */
 export function staffAssistantPersistedTurnText(options: {
   readonly locale: StaffAssistantLocale;
   readonly toolResults: readonly StaffAssistantPresentedToolResult[];
-  readonly parsedSpoken: string | undefined;
   readonly rawText: string;
   readonly runs: readonly SpokenTurnRun[];
 }): string {
@@ -642,7 +643,6 @@ export function staffAssistantPersistedTurnText(options: {
     options.toolResults.map((result) => result.output),
   );
   return spokenTurnText({
-    parsedSpoken: options.parsedSpoken,
     rawText: options.rawText,
     runs: options.runs,
     ...(toolErrorMessage !== undefined ? { toolErrorMessage } : {}),

@@ -211,11 +211,8 @@ export {
   type StaffAssistantUIMessage,
 } from "./staff-assistant-stream.js";
 export {
-  isStaffAssistantSyntheticJsonTool,
-  staffAssistantSpokenOutputSchema,
   STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK,
-  STAFF_ASSISTANT_SYNTHETIC_JSON_TOOL_NAME,
-  type StaffAssistantSpokenOutput,
+  STAFF_ASSISTANT_TOOL_ERROR_FALLBACK,
 } from "./spoken-reply.js";
 export {
   CUSTOMERS_LIST_PROMPT_LINE,

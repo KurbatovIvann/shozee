@@ -35,7 +35,6 @@ import {
 } from "./confirmation.js";
 import {
   STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK,
-  STAFF_ASSISTANT_SYNTHETIC_JSON_TOOL_NAME,
   STAFF_ASSISTANT_TOOL_ERROR_FALLBACK,
 } from "./spoken-reply.js";
 import {
@@ -54,8 +53,8 @@ import {
 import { staffAssistantSystemPrompt } from "./system-prompt.js";
 import {
   MockLanguageModelV3,
-  mockJsonToolAndSpokenStream,
   mockSpokenStream,
+  mockSplitTextStream,
   mockTextStream,
   mockToolCallAndSpokenStream,
   mockToolCallStream,
@@ -381,7 +380,7 @@ describe("staffAssistantTools", () => {
 });
 
 describe("streamStaffAssistantChat", () => {
-  it("raises the step cap so tool calls plus spoken JSON still fit", () => {
+  it("caps looping tool steps without an extra structured-output step", () => {
     expect(STAFF_ASSISTANT_MAX_STEPS).toBe(9);
   });
 
@@ -529,22 +528,17 @@ describe("streamStaffAssistantChat", () => {
     expect(anthropicDeferLoading(counts)).toBeUndefined();
     expect(anthropicCacheControl(remove)).toBeUndefined();
     expect(
-      tools.some(
-        (entry) =>
-          isRecord(entry) &&
-          entry["name"] === STAFF_ASSISTANT_SYNTHETIC_JSON_TOOL_NAME,
-      ),
+      tools.some((entry) => isRecord(entry) && entry["name"] === "json"),
     ).toBe(false);
-    expect(call?.responseFormat).toMatchObject({
-      type: "json",
-    });
+    expect(call?.responseFormat).not.toEqual(
+      expect.objectContaining({ type: "json" }),
+    );
     const responseFormat = call?.responseFormat;
-    expect(responseFormat?.type).toBe("json");
     const schemaJson =
       responseFormat?.type === "json"
         ? JSON.stringify(responseFormat.schema)
         : "";
-    expect(schemaJson).toContain("spoken");
+    expect(schemaJson).not.toContain("spoken");
     expect(schemaJson).not.toContain("rows");
     expect(schemaJson).not.toContain("cards");
   });
@@ -1123,7 +1117,7 @@ describe("streamStaffAssistantChat", () => {
     expect(onAbandoned).not.toHaveBeenCalled();
   });
 
-  it("flattens spoken after orders_list_page and keeps the tool part", async () => {
+  it("holds candidate text and emits presenter after orders_list_page and keeps the tool part", async () => {
     const spoken = "Albina has 4 orders this week.";
     const execute = vi.fn(() =>
       Promise.resolve({
@@ -1141,7 +1135,7 @@ describe("streamStaffAssistantChat", () => {
     const model = new MockLanguageModelV3({
       doStream: [
         mockToolCallStream("call-list", ORDERS_LIST_PAGE_TOOL_NAME, "{}"),
-        mockSpokenStream(spoken),
+        mockTextStream(spoken),
       ],
     });
     const { response, completion } = streamStaffAssistantChat({
@@ -1205,7 +1199,7 @@ describe("streamStaffAssistantChat", () => {
     );
   });
 
-  it("flattens spoken after counts-only aggregate", async () => {
+  it("holds candidate text and emits presenter after counts-only aggregate", async () => {
     const spoken = "6 orders this week, mostly confirmed.";
     const execute = vi.fn(() =>
       Promise.resolve({
@@ -1228,7 +1222,7 @@ describe("streamStaffAssistantChat", () => {
           ORDERS_LIST_COUNTS_TOOL_NAME,
           JSON.stringify({ period: "this_week" }),
         ),
-        mockSpokenStream(spoken),
+        mockTextStream(spoken),
       ],
     });
     const { response, completion } = streamStaffAssistantChat({
@@ -1281,7 +1275,7 @@ describe("streamStaffAssistantChat", () => {
     expect(turn.toolRuns[0]?.modelTrace).toBeDefined();
   });
 
-  it("does not record a synthetic json tool as a domain toolRun", async () => {
+  it("does not persist leftover envelope JSON as a domain toolRun", async () => {
     const spoken = "Four orders this week.";
     const execute = vi.fn(() =>
       Promise.resolve({ items: [], nextCursor: null }),
@@ -1289,7 +1283,7 @@ describe("streamStaffAssistantChat", () => {
     const model = new MockLanguageModelV3({
       doStream: [
         mockToolCallStream("call-list", ORDERS_LIST_PAGE_TOOL_NAME, "{}"),
-        mockJsonToolAndSpokenStream(spoken),
+        mockTextStream(spoken),
       ],
     });
     const { response, completion } = streamStaffAssistantChat({
@@ -1308,9 +1302,7 @@ describe("streamStaffAssistantChat", () => {
     expect(turn.text).not.toBe(spoken);
     expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
     expect(JSON.stringify(payloads)).not.toContain(spoken);
-    expect(JSON.stringify(payloads)).not.toContain(
-      `"toolName":"${STAFF_ASSISTANT_SYNTHETIC_JSON_TOOL_NAME}"`,
-    );
+    expect(JSON.stringify(payloads)).not.toContain('{"spoken"');
   });
 
   it("fail-opens a markdown table spoken line after a successful list", async () => {
@@ -1444,7 +1436,7 @@ describe("streamStaffAssistantChat", () => {
     const model = new MockLanguageModelV3({
       doStream: [
         mockToolCallStream("call-list", ORDERS_LIST_PAGE_TOOL_NAME, "{}"),
-        mockSpokenStream(spoken),
+        mockTextStream(spoken),
       ],
     });
     const { response, completion } = streamStaffAssistantChat({
@@ -1479,7 +1471,7 @@ describe("streamStaffAssistantChat", () => {
     const model = new MockLanguageModelV3({
       doStream: [
         mockToolCallStream("call-list", ORDERS_LIST_PAGE_TOOL_NAME, "{}"),
-        mockSpokenStream(spoken),
+        mockTextStream(spoken),
       ],
     });
     const { response, completion } = streamStaffAssistantChat({
@@ -1520,10 +1512,10 @@ describe("streamStaffAssistantChat", () => {
     expect(JSON.stringify(payloads)).not.toContain("MODEL_SPOKEN");
   });
 
-  it("persists model spoken when there is no registered surface", async () => {
+  it("emits selected plain text after finalization with no structured-output step", async () => {
     const spoken = "I can look up orders when you ask.";
     const model = new MockLanguageModelV3({
-      doStream: [mockSpokenStream(spoken)],
+      doStream: [mockTextStream(spoken)],
     });
     const { response, completion } = streamStaffAssistantChat({
       model,
@@ -1536,7 +1528,112 @@ describe("streamStaffAssistantChat", () => {
     expect(turn.text).toBe(spoken);
     expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
     expect(turn.toolRuns).toEqual([]);
+    expect(turn.modelSteps).toBe(1);
+    expect(model.doStreamCalls).toHaveLength(1);
+    expect(model.doStreamCalls[0]?.responseFormat).not.toEqual(
+      expect.objectContaining({ type: "json" }),
+    );
     expect(JSON.stringify(payloads)).not.toContain("data-presentation");
+  });
+
+  it("does not emit leftover spoken JSON fragments or extract spoken", async () => {
+    const model = new MockLanguageModelV3({
+      doStream: [mockSplitTextStream(['{"spo', 'ken":"SECRETX"}'])],
+    });
+    const { response, completion } = streamStaffAssistantChat({
+      model,
+      messages: [{ role: "user", content: "Hello" }],
+      contracts: [listOrders],
+      execute: () => Promise.resolve({ items: [], nextCursor: null }),
+    });
+    const payloads = await readUiMessageSsePayloads(response);
+    const turn = await completion;
+    const payloadText = JSON.stringify(payloads);
+    expect(turn.text).toBe("Done.");
+    expect(turn.text).not.toBe("SECRETX");
+    expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
+    expect(payloadText).not.toContain('{"spo');
+    expect(payloadText).not.toContain("SECRETX");
+    expect(payloadText).not.toContain('{"spoken"');
+  });
+
+  it("holds a markdown dump split across deltas and emits the fallback", async () => {
+    const model = new MockLanguageModelV3({
+      doStream: [
+        mockSplitTextStream(["| order | tot", "al |\n| **#1** | 10 |"]),
+      ],
+    });
+    const { response, completion } = streamStaffAssistantChat({
+      model,
+      messages: [{ role: "user", content: "Hello" }],
+      contracts: [listOrders],
+      execute: () => Promise.resolve({ items: [], nextCursor: null }),
+    });
+    const payloads = await readUiMessageSsePayloads(response);
+    const turn = await completion;
+    const payloadText = JSON.stringify(payloads);
+    expect(turn.text).toBe(STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK);
+    expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
+    expect(payloadText).not.toContain("| order");
+    expect(payloadText).not.toContain("**#1**");
+  });
+
+  it("holds markdown-dump deltas and emits the fallback; tools and HITL do not wait", async () => {
+    const summary =
+      "Delete this archived customer. Confirm the name and primary contact.";
+    const execute = vi.fn((actionName: string) => {
+      if (actionName === "customers.deleteCustomer") {
+        return Promise.reject(
+          new ConfirmationRequiredError({
+            challengeId,
+            summary,
+            expiresAt: "2026-09-01T12:00:00.000Z",
+          }),
+        );
+      }
+      return Promise.resolve({ items: [], nextCursor: null });
+    });
+    const model = new MockLanguageModelV3({
+      doStream: [
+        mockToolCallStream(
+          "call-delete",
+          toProviderToolName("customers.deleteCustomer"),
+          JSON.stringify({ id: customerId }),
+        ),
+        mockSplitTextStream(["| order | tot", "al |\n| **#1** | 10 |"]),
+      ],
+    });
+    const { response, completion } = streamStaffAssistantChat({
+      model,
+      messages: [{ role: "user", content: "Delete the customer" }],
+      contracts: [deleteCustomer],
+      execute,
+    });
+    const payloads = await readUiMessageSsePayloads(response);
+    const turn = await completion;
+    const payloadText = JSON.stringify(payloads);
+    expect(turn.text).toBe(STAFF_ASSISTANT_CONFIRMATION_FALLBACK_TEXT);
+    expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
+    expect(payloadText).not.toContain("| order");
+    expect(payloadText).not.toContain("**#1**");
+    const confirmationIndex = payloads.findIndex((payload) => {
+      return (
+        typeof payload === "object" &&
+        payload !== null &&
+        "type" in payload &&
+        payload.type === "data-confirmation"
+      );
+    });
+    const textIndex = payloads.findIndex((payload) => {
+      return (
+        typeof payload === "object" &&
+        payload !== null &&
+        "type" in payload &&
+        payload.type === "text-delta"
+      );
+    });
+    expect(confirmationIndex).toBeGreaterThanOrEqual(0);
+    expect(textIndex).toBeGreaterThan(confirmationIndex);
   });
 
   it("persists presenter text for an entity tool, not mock model spoken", async () => {
@@ -1555,7 +1652,7 @@ describe("streamStaffAssistantChat", () => {
           toProviderToolName("orders.get"),
           JSON.stringify({ orderId: customerId }),
         ),
-        mockSpokenStream(spoken),
+        mockTextStream(spoken),
       ],
     });
     const { response, completion } = streamStaffAssistantChat({
@@ -1603,7 +1700,7 @@ describe("streamStaffAssistantChat", () => {
           JSON.stringify({ orderId: customerId }),
         ),
         mockToolCallStream("call-list", ORDERS_LIST_PAGE_TOOL_NAME, "{}"),
-        mockSpokenStream(spoken),
+        mockTextStream(spoken),
       ],
     });
     const { response, completion } = streamStaffAssistantChat({
@@ -2281,7 +2378,7 @@ describe("streamStaffAssistantChat", () => {
                 ],
               }),
             ),
-            mockSpokenStream(spoken),
+            mockTextStream(spoken),
           ],
         });
         const { response, completion } = streamStaffAssistantChat({
@@ -2413,7 +2510,7 @@ describe("streamStaffAssistantChat", () => {
           ORDERS_CREATE_TOOL_NAME,
           ordersCreateMacaronsInput,
         ),
-        mockSpokenStream(spoken),
+        mockTextStream(spoken),
         mockToolCallStream("call-retry", CATALOG_LIST_PRODUCTS_TOOL_NAME, "{}"),
       ],
     });
@@ -2493,7 +2590,7 @@ describe("streamStaffAssistantChat", () => {
             items: [{ productQuery: "xyzzy", quantityDecimal: "1" }],
           }),
         ),
-        mockSpokenStream(spoken),
+        mockTextStream(spoken),
       ],
     });
     const { response, completion } = streamStaffAssistantChat({

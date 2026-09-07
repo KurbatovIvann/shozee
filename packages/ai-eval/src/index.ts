@@ -35,6 +35,7 @@ export {
   type EvalScenario,
   type EvalUserTurn,
 } from "./scenario.js";
+export { PLAIN_REPLY_SCENARIOS } from "./scenarios/plain-reply.js";
 export {
   PROOF_CUSTOMER_NAME,
   PROOF_CUSTOMER_PHONE,

@@ -205,11 +205,13 @@ function lastIndexOfRole(
 }
 
 /**
- * Live-turn presentation: one wait row while in flight; spoken + surfaces
- * together when ready. Past / hydrate turns never wait. Hide streamed
- * text/surfaces only for the current-turn assistant (after the last user
- * row). A previous ready reply — including leftover HITL on that past
- * assistant — stays visible during a follow-up wait.
+ * Live-turn presentation: one wait row while in flight; prose text +
+ * surfaces together when ready. Past / hydrate turns never wait. Hide
+ * streamed text/surfaces only for the current-turn assistant (after the
+ * last user row). A previous ready reply — including leftover HITL on
+ * that past assistant — stays visible during a follow-up wait. Server
+ * text parts are already prose (SHO-507); this mapper does not parse a
+ * `{ spoken }` envelope.
  */
 export function assistantDisplayRows(
   rows: readonly AssistantChatRow[],

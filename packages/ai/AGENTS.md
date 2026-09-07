@@ -61,6 +61,24 @@ Zod 4 discriminated unions omit top-level `type`. Anthropic requires
 remaining 1:1 union tools. Object façades already emit `type: "object"`
 and must not rely on that patch.
 
+## Reply (SHO-507)
+
+The model streams **plain text**. Do not add `Output.object`,
+`experimental_output`, or a `{ spoken }` envelope. Do not parse model
+JSON to extract `spoken`, invent a delimiter protocol, or make a second
+model call to clean the reply.
+
+`streamStaffAssistantChat` buffers candidate user-visible text until
+final presenter selection and sanitization, then emits that exact string
+through the existing `text-*` events. Persist uses the same value
+(`StaffAssistantTurnResult.text` → `assistant_messages.body`). Tool
+progress, result surfaces, and HITL events keep streaming immediately.
+
+Invalid presentation (markdown dump, accidental `{ "spoken": ... }`
+JSON) uses the existing fallback. Do not parse the object to extract
+`spoken`. Presenter precedence is unchanged until T6: a registered
+completed surface still supplies the visible bubble.
+
 ## Tests
 
 No live LLM in CI. Inject `MockLanguageModelV3`. Façade tests must prove
