@@ -21,6 +21,11 @@ On any conflict, in this order: `.cursor/rules/`, accepted ADRs,
 Do not add npm dependencies. Do not introduce NativeWind, Tailwind,
 `@expo/ui`, `@gorhom/bottom-sheet`, Ionicons, or a second theme.
 
+Staff copy (how to add a namespace, shared vs leftover, typed
+extensions) lives in `packages/copy/AGENTS.md`. Point there; do not
+duplicate the how-to. Feature screens keep importing `src/i18n/<ns>`;
+device bind stays in the app.
+
 ## Installed leaves (read the matching `SKILL.md`)
 
 | Task | Skill path |

@@ -23,6 +23,10 @@ Do not add npm dependencies. Do not introduce Zustand, XState, a
 hand-written REST/`fetch` client, Next.js App Router, NativeWind, or a
 universal form/page/view-model framework.
 
+Staff copy (how to add a namespace, shared vs leftover, typed
+extensions) lives in `packages/copy/AGENTS.md`. Point there; do not
+duplicate the how-to. Feature screens keep importing `src/i18n/<ns>`.
+
 ## What to read (web only)
 
 | Task | Read |

@@ -1,19 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { leafAt, leafPaths } from "./leaf-paths.js";
 import { sharedOrdersCopy } from "./orders.js";
-
-function leafPaths(value: unknown, prefix = ""): string[] {
-  if (value === null || typeof value !== "object") {
-    return prefix === "" ? [] : [prefix];
-  }
-  const entries = Object.entries(value as Record<string, unknown>);
-  if (entries.length === 0) {
-    return prefix === "" ? [] : [prefix];
-  }
-  return entries.flatMap(([key, child]) =>
-    leafPaths(child, prefix === "" ? key : `${prefix}.${key}`),
-  );
-}
 
 describe("shared orders copy", () => {
   it("keeps uk/en key parity across the shared tree", () => {
@@ -21,18 +9,8 @@ describe("shared orders copy", () => {
     const en = sharedOrdersCopy("en");
     expect(leafPaths(uk)).toEqual(leafPaths(en));
     for (const path of leafPaths(uk)) {
-      const ukValue = path.split(".").reduce<unknown>((current, key) => {
-        if (current === null || typeof current !== "object") {
-          return undefined;
-        }
-        return (current as Record<string, unknown>)[key];
-      }, uk);
-      const enValue = path.split(".").reduce<unknown>((current, key) => {
-        if (current === null || typeof current !== "object") {
-          return undefined;
-        }
-        return (current as Record<string, unknown>)[key];
-      }, en);
+      const ukValue = leafAt(uk, path);
+      const enValue = leafAt(en, path);
       expect(typeof ukValue, path).toBe("string");
       expect(typeof enValue, path).toBe("string");
       expect(String(ukValue).length, path).toBeGreaterThan(0);

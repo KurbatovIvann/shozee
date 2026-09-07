@@ -3,7 +3,11 @@ import { selectCopy, type Locale } from "@showzy/copy/locale";
 import { sharedOrdersCopy, type SharedOrdersCopy } from "@showzy/copy/orders";
 import type { CountForms } from "@showzy/copy/plural";
 
-import { formChromeEn, formChromeUk, type FormChromeCopy } from "./copy";
+import {
+  formChromeEn,
+  formChromeUk,
+  type FormChromeCopy,
+} from "@showzy/copy/chrome";
 
 export type OrdersCountForms = CountForms;
 

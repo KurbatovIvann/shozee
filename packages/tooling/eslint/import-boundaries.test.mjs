@@ -137,6 +137,7 @@ test("showzy/import-boundaries", () => {
           import { catalogNameSchema } from "@showzy/validation/catalog";
           import { Button } from "@showzy/ui";
           import { sharedOrdersCopy } from "@showzy/copy/orders";
+          import { formChromeEn } from "@showzy/copy/chrome";
           import { DocumentSigner } from "@showzy/document-signing";
           import { createNativeAdapter } from "@showzy/document-signing/native";
           import { useState } from "react";

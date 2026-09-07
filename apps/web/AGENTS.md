@@ -57,8 +57,11 @@ components/ui/ → nothing in features, layouts, routes, or api
 
 Never import `@showzy/core`, `@showzy/db`, `@showzy/config`,
 `@showzy/ai`, module packages, or `@showzy/contract/server` (ESLint
-`clientApp` boundary). Staff copy comes from `@showzy/copy`. `better-auth`
-only under `src/auth/`. Layer
+`clientApp` boundary). Staff copy comes from `@showzy/copy`. How to add
+a namespace, shared vs leftover, and how this app composes a typed
+extension: [`packages/copy/AGENTS.md`](../../packages/copy/AGENTS.md).
+Feature screens keep importing `src/i18n/<ns>`; device bind stays in
+`src/i18n/locale.ts`. `better-auth` only under `src/auth/`. Layer
 direction is `showzy-web/layer-boundaries` (fixture tests in
 `eslint/import-boundaries.test.mjs`).
 
