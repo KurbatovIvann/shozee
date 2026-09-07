@@ -18,6 +18,7 @@ import {
   presentCatalogDomainError,
   presentChoiceStaffAssistantNeedsChoice,
   presentChoiceStaffAssistantTurn,
+  presentOrderCreatedSpeech,
   staffAssistantChoiceCardEnvelopeSchema,
   successorChoiceId,
   type ChoiceCanonicalCreateInput,
@@ -530,10 +531,13 @@ describe("POST /assistant/choice (seeded store)", () => {
     if (body.status !== "completed") {
       return;
     }
-    expect(body.text.length).toBeGreaterThan(0);
     expect(body.entity.orderNumber.length).toBeGreaterThan(0);
-    expect(body.text).toContain(body.entity.orderNumber);
-    expect(body.text.startsWith("Замовлення")).toBe(true);
+    expect(body.text).toBe(
+      presentOrderCreatedSpeech({
+        locale: "uk",
+        orderNumber: body.entity.orderNumber,
+      }),
+    );
 
     const chatProbe = await app.request(ASSISTANT_CHAT_PATH, {
       method: "POST",
@@ -1368,7 +1372,12 @@ describe("POST /assistant/choice (seeded store)", () => {
       stream.mockRestore();
       return;
     }
-    expect(secondBody.text.startsWith("Замовлення")).toBe(true);
+    expect(secondBody.text).toBe(
+      presentOrderCreatedSpeech({
+        locale: "uk",
+        orderNumber: secondBody.entity.orderNumber,
+      }),
+    );
     const completedTurns = (
       await kit.db.runtime.db.select().from(assistantMessages)
     ).filter(

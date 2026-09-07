@@ -21,7 +21,7 @@ they resume through two different mechanisms.
 | Resume entry | `POST /assistant/chat` + `x-confirmation-challenge-id` header + the client's echoed history | `POST /assistant/choice { conversationId, choiceId, optionId }` |
 | Who re-emits the action input | **The model.** The gate is skipped, the main model runs again and must re-emit the identical tool call; core consumes the challenge (`GETDEL`) and checks the input hash and bindings | **The server.** Claim `open → claimed` (CAS), patch the stored canonical input with the mapped id, `executeAction("orders.create")`, mark `completed`; no model |
 | Store semantics | Single-use `GETDEL` | `open → claimed → completed`, replay of the same option is idempotent, a different option is `conflict` |
-| Reply text | Whatever the model says after the tool result | Protocol speech via `commitTurnSpeech` (ADR-0036) |
+| Reply text | Whatever the model says after the tool result | Protocol copy via `presentOrderCreatedSpeech` (ADR-0036) |
 | Cost | Two full model calls per confirmed write | Zero model calls on resume |
 
 The confirmation resume has a structural problem, not a tuning problem: the
