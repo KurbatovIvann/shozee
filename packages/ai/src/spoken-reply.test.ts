@@ -181,27 +181,28 @@ describe("createHoldCandidateReplyTextTransform", () => {
     }>();
     const writer = transform.writable.getWriter();
     const reader = transform.readable.getReader();
-    const first = reader.read();
+    const parts: unknown[] = [];
+    const read = (async () => {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        parts.push(value);
+      }
+    })();
     await writer.write({
-      type: "data-confirmation",
-      data: { status: "confirmation_required" },
-    });
-    const { done, value } = await first;
-    expect(done).toBe(false);
-    expect(value).toEqual({
       type: "data-confirmation",
       data: { status: "confirmation_required" },
     });
     await writer.write({ type: "text-delta", text: "| order |" });
     await writer.close();
-    const rest: unknown[] = [];
-    for (;;) {
-      const next = await reader.read();
-      if (next.done) {
-        break;
-      }
-      rest.push(next.value);
-    }
-    expect(rest).toEqual([]);
+    await read;
+    expect(parts).toEqual([
+      {
+        type: "data-confirmation",
+        data: { status: "confirmation_required" },
+      },
+    ]);
   });
 });

@@ -5,11 +5,7 @@ import {
 
 import type { EvalScenario } from "../scenario.js";
 
-const FORBIDDEN_ENVELOPE = [
-  '{"spoken"',
-  '"spoken":',
-  "```",
-] as const;
+const FORBIDDEN_ENVELOPE = ['{"spoken"', '"spoken":', "```"] as const;
 
 export const PLAIN_REPLY_SCENARIOS: readonly EvalScenario[] = [
   {

@@ -528,11 +528,7 @@ describe("streamStaffAssistantChat", () => {
     expect(anthropicDeferLoading(counts)).toBeUndefined();
     expect(anthropicCacheControl(remove)).toBeUndefined();
     expect(
-      tools.some(
-        (entry) =>
-          isRecord(entry) &&
-          entry["name"] === "json",
-      ),
+      tools.some((entry) => isRecord(entry) && entry["name"] === "json"),
     ).toBe(false);
     expect(call?.responseFormat).not.toEqual(
       expect.objectContaining({ type: "json" }),
@@ -1563,7 +1559,9 @@ describe("streamStaffAssistantChat", () => {
 
   it("holds a markdown dump split across deltas and emits the fallback", async () => {
     const model = new MockLanguageModelV3({
-      doStream: [mockSplitTextStream(["| order | tot", "al |\n| **#1** | 10 |"])],
+      doStream: [
+        mockSplitTextStream(["| order | tot", "al |\n| **#1** | 10 |"]),
+      ],
     });
     const { response, completion } = streamStaffAssistantChat({
       model,
