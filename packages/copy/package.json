@@ -10,6 +10,7 @@
     "./chrome": "./src/chrome.ts",
     "./auth": "./src/auth.ts",
     "./customers": "./src/customers.ts",
+    "./products": "./src/products.ts",
     "./orders": "./src/orders.ts",
     "./assistant": "./src/assistant.ts",
     "./panel": "./src/panel.ts",

@@ -21,6 +21,7 @@ shared tree plus typed leftovers composed in those app files.
 | `./panel`     | Byte-identical panel-shell intersection (SHO-481)             |
 | `./companies` | Onboarding / settings / legal / scope intersections (SHO-482) |
 | `./customers` | Wholesale mobile customers list + forms (SHO-476)             |
+| `./products`  | Wholesale mobile products list + form + detail (SHO-477)      |
 
 Do not add a package root barrel. Domain modules must not import this
 package (ESLint `copyClientOnly`).
