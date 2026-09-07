@@ -68,7 +68,9 @@ describe("SHO-509 staff assistant exposure", () => {
 
   it("keeps the advertised hot tool set unchanged", () => {
     expect(staffAssistantHotToolNames()).toEqual([...HOT_TOOL_NAMES]);
-    expect(staffAssistantHotToolNames()).not.toContain("catalog_setProductImages");
+    expect(staffAssistantHotToolNames()).not.toContain(
+      "catalog_setProductImages",
+    );
     expect(staffAssistantHotToolNames()).not.toContain(
       CUSTOMERS_LIST_GROUPS_TOOL_NAME,
     );
