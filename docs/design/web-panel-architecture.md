@@ -434,5 +434,5 @@ MSW intercepts `/rpc`. Do not reconstruct the route hierarchy from
 ## Stop-conditions
 
 Use the [stop-conditions in apps/web/AGENTS.md](../../apps/web/AGENTS.md#stop-conditions).
-They cover product/backend forks, routing, auth, state ownership, and
-scope boundaries; do not maintain a second checklist here.
+They name Zustand / XState, `routeTree.gen.ts`, CORS/cookie changes,
+and the other parent-card stops; do not maintain a second checklist here.

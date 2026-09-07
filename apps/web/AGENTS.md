@@ -30,10 +30,13 @@ repository. Do not paste Magic Patterns React/Tailwind as-is.
 
 Use [canonical source ownership](../../docs/design/web-panel-architecture.md#canonical-source-ownership)
 and the [route conventions](../../docs/design/web-panel-architecture.md#directory-route-tree).
-`app/` composes, `routes/` adapts, `layouts/` owns chrome, and
-`features/` owns product behavior. Create feature subfolders only when a
-real file needs them. Shared integration support lives in `src/test/`;
-feature-local tests colocate. Views do not import the contract client.
+`app/` (`runtime.ts`; `QueryRuntimeProvider` binds company lifecycle)
+composes, `routes/` adapts, `layouts/` owns chrome, `features/` owns
+product behavior, and `components/ui/` holds domain-neutral primitives.
+`api/`, `auth/`, `prefs/`, and `src/test/` stay in that tree. Create
+feature subfolders only when a real file needs them; do not create empty
+directories to match the diagram. Feature-local tests colocate. Views do
+not import the contract client.
 
 ## Import direction
 
@@ -49,7 +52,7 @@ features/A    → api/, components/ui, i18n, src/auth, prefs;
                 A/list|detail|form → same-area api/ and shared/
                 form/ must not import detail/ (and vice versa)
                 other domains only via that domain's shared/
-components/ui → nothing in features, layouts, routes, or api
+components/ui/ → nothing in features, layouts, routes, or api
 ```
 
 Never import `@showzy/core`, `@showzy/db`, `@showzy/config`,
