@@ -35,8 +35,7 @@ export interface StaffAssistantGateResult {
 }
 
 export type StaffAssistantGateToolPolicy =
-  | { readonly kind: "none" }
-  | { readonly kind: "all" };
+  { readonly kind: "none" } | { readonly kind: "all" };
 
 const FAIL_OPEN_GATE: Omit<StaffAssistantGateResult, "usage"> = {
   mode: "job",

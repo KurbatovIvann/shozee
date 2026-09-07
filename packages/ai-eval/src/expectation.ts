@@ -261,9 +261,7 @@ function isSuccessfulDomainResult(result: unknown): boolean {
   if (typeof result["orderCount"] === "number") {
     return true;
   }
-  return (
-    result["kind"] === "page.summary" || result["kind"] === "aggregate"
-  );
+  return result["kind"] === "page.summary" || result["kind"] === "aggregate";
 }
 
 function isSuccessfulWriteResult(result: unknown): boolean {
@@ -297,9 +295,7 @@ function matchFailedWriteSuccessClaim(trace: EvalTurnTrace): EvalMatchResult {
 
 function matchRequireChoice(trace: EvalTurnTrace): EvalMatchResult {
   if (
-    trace.toolCalls.some(
-      (call) => resultStatus(call.result) === "needs_choice",
-    )
+    trace.toolCalls.some((call) => resultStatus(call.result) === "needs_choice")
   ) {
     return { ok: true };
   }

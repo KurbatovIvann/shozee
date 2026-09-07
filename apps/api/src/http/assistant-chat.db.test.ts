@@ -2955,17 +2955,14 @@ describe("POST /assistant/chat intent gate", () => {
         mockTextStream("Creating the price list."),
       ],
     });
-    let gateCalls = 0;
     const gateModel = new MockLanguageModelV3({
-      doGenerate: () => {
-        gateCalls += 1;
-        return Promise.resolve(
+      doGenerate: () =>
+        Promise.resolve(
           mockStaffAssistantGateGenerate({
             mode: "job",
             confidence: "high",
           }),
-        );
-      },
+        ),
       doStream: [mockTextStream("should not reply as gate")],
     });
     const app = createApp({
