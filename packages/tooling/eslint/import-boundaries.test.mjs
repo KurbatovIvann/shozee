@@ -176,6 +176,18 @@ test("showzy/import-boundaries", () => {
           import type { CountForms } from "./plural.js";
         `,
       },
+      {
+        filename: file("packages/ai-eval/src/run-turn.ts"),
+        code: `
+          import { streamStaffAssistantChat } from "@showzy/ai";
+          import { executeAction } from "@showzy/core";
+          import { createTestKit } from "@showzy/core/testing";
+          import { loadServerConfig } from "@showzy/config";
+          import { listOrdersContract } from "@showzy/orders/contract";
+          import { createOrder } from "@showzy/orders";
+          import type { ActionContract } from "@showzy/core/contract";
+        `,
+      },
     ],
     invalid: [
       {
@@ -340,6 +352,26 @@ test("showzy/import-boundaries", () => {
         code: `import { users } from "@showzy/db";`,
         errors: [{ messageId: "aiModuleBarrel" }],
       },
+      {
+        filename: file("packages/ai/src/index.ts"),
+        code: `import { runEvalSuite } from "@showzy/ai-eval";`,
+        errors: [{ messageId: "aiEvalImport" }],
+      },
+      {
+        filename: file("packages/modules/orders/actions/create.ts"),
+        code: `import { runEvalSuite } from "@showzy/ai-eval";`,
+        errors: [{ messageId: "moduleAiEval" }],
+      },
+      {
+        filename: file("packages/ai-eval/src/run-turn.ts"),
+        code: `import { createApiApp } from "@showzy/api";`,
+        errors: [{ messageId: "aiEvalLeaf" }],
+      },
+      {
+        filename: file("packages/ai-eval/src/run-turn.ts"),
+        code: `import { sharedOrdersCopy } from "@showzy/copy/orders";`,
+        errors: [{ messageId: "aiEvalLeaf" }],
+      },
     ],
   });
   assert.ok(true);
@@ -380,6 +412,63 @@ test("boundaries map includes the ai element and forbids client/module imports",
     ),
     "domain modules must be disallowed from importing @showzy/ai",
   );
+});
+
+test("boundaries map includes the ai-eval element (SHO-412)", () => {
+  const settings = showzyBoundarySettings(repoRoot);
+  const elements = settings["boundaries/elements"];
+  assert.ok(
+    elements.some(
+      (element) =>
+        element.type === "ai-eval" && element.pattern === "packages/ai-eval",
+    ),
+    "boundaries/elements must declare type ai-eval for packages/ai-eval",
+  );
+
+  const policies = showzyBoundaryDependencyOptions.policies;
+  assert.ok(
+    policies.some(
+      (policy) =>
+        policy.from?.element?.type === "ai" &&
+        policy.disallow?.to?.element?.type === "ai-eval",
+    ),
+    "packages/ai must be disallowed from depending on ai-eval",
+  );
+  assert.ok(
+    policies.some(
+      (policy) =>
+        policy.from?.element?.type === "module" &&
+        policy.disallow?.to?.element?.type === "ai-eval",
+    ),
+    "domain modules must be disallowed from depending on ai-eval",
+  );
+  assert.ok(
+    policies.some(
+      (policy) =>
+        policy.from?.element?.type === "app" &&
+        policy.disallow?.to?.element?.type === "ai-eval",
+    ),
+    "apps must be disallowed from depending on ai-eval",
+  );
+});
+
+test("@showzy/ai and apps do not depend on @showzy/ai-eval (SHO-412)", () => {
+  const manifests = [
+    "packages/ai/package.json",
+    "apps/api/package.json",
+    "apps/web/package.json",
+    "apps/mobile/package.json",
+    "apps/worker/package.json",
+  ];
+  for (const relative of manifests) {
+    const pkg = JSON.parse(readFileSync(path.join(repoRoot, relative), "utf8"));
+    const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+    assert.equal(
+      deps["@showzy/ai-eval"],
+      undefined,
+      `${relative} must not depend on @showzy/ai-eval`,
+    );
+  }
 });
 
 test("@showzy/validation runtime dependency is only zod (SHO-423)", () => {

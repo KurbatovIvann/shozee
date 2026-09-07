@@ -34,6 +34,18 @@ const PLATFORM_PACKAGES = new Set([
 /** Projection modules may import foreign schemas; contract-check enforces grants. */
 const PROJECTION_MODULES = new Set(["search", "analytics"]);
 
+/**
+ * Domain barrels the eval sandbox may import so tool `execute` is
+ * `executeAction` (SHO-412). Not a general module allowlist.
+ */
+const AI_EVAL_MODULE_PACKAGES = new Set([
+  "catalog",
+  "companies",
+  "customers",
+  "orders",
+  "pricing",
+]);
+
 const CLIENT_APPS = new Set(["mobile", "web"]);
 
 /**
@@ -95,6 +107,9 @@ function classify(filename) {
   const moduleMatch = /\/packages\/modules\/([^/]+)\//.exec(path);
   if (moduleMatch !== null && moduleMatch[1] !== undefined) {
     return { kind: "module", module: moduleMatch[1] };
+  }
+  if (path.includes("/packages/ai-eval/")) {
+    return { kind: "ai-eval" };
   }
   if (path.includes("/packages/ai/")) {
     return { kind: "ai" };
@@ -244,6 +259,9 @@ function violation(from, spec, typeOnly) {
     if (pkg.name === "ai") {
       return { messageId: "moduleAi" };
     }
+    if (pkg.name === "ai-eval") {
+      return { messageId: "moduleAiEval" };
+    }
     if (pkg.name === "copy") {
       return { messageId: "copyClientOnly" };
     }
@@ -346,7 +364,39 @@ function violation(from, spec, typeOnly) {
     if (!PLATFORM_PACKAGES.has(pkg.name) && pkg.rest === "contract") {
       return null;
     }
+    if (pkg.name === "ai-eval") {
+      return { messageId: "aiEvalImport" };
+    }
     return { messageId: "aiModuleBarrel" };
+  }
+
+  if (from.kind === "ai-eval") {
+    if (isRelative(spec) && !spec.includes("/apps/")) {
+      return null;
+    }
+    if (spec.startsWith("node:") || NODE_BUILTINS.has(spec)) {
+      return null;
+    }
+    if (pkg === null) {
+      return null;
+    }
+    if (
+      pkg.name === "ai" ||
+      pkg.name === "core" ||
+      pkg.name === "config" ||
+      pkg.name === "contract" ||
+      pkg.name === "validation" ||
+      pkg.name === "db"
+    ) {
+      return null;
+    }
+    if (
+      AI_EVAL_MODULE_PACKAGES.has(pkg.name) &&
+      (pkg.rest === "" || pkg.rest === "contract")
+    ) {
+      return null;
+    }
+    return { messageId: "aiEvalLeaf" };
   }
 
   return null;
@@ -381,6 +431,10 @@ export const importBoundariesRule = {
         "The contract client layer must not import Node builtins, @showzy/db, core server paths, or @showzy/contract/server (ADR-0016).",
       aiModuleBarrel:
         "packages/ai may import @showzy/core/*, @showzy/contract, @showzy/validation/*, and @showzy/<module>/contract; it must not import a module barrel or @showzy/db (ADR-0016, ADR-0032).",
+      aiEvalImport: "packages/ai must not import @showzy/ai-eval (SHO-412).",
+      aiEvalLeaf:
+        "packages/ai-eval may import @showzy/ai, @showzy/core, @showzy/config, @showzy/contract, @showzy/validation, @showzy/db, and the catalog/companies/customers/orders/pricing barrels or */contract; it must not import apps, copy, or ui (SHO-412).",
+      moduleAiEval: "Domain modules may not import @showzy/ai-eval (SHO-412).",
     },
   },
   create(context) {

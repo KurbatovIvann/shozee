@@ -46,6 +46,7 @@ const boundaryElements = [
   { type: "money", pattern: "packages/money" },
   { type: "config", pattern: "packages/config" },
   { type: "ai", pattern: "packages/ai" },
+  { type: "ai-eval", pattern: "packages/ai-eval" },
   { type: "validation", pattern: "packages/validation" },
   { type: "copy", pattern: "packages/copy" },
   { type: "module-kit", pattern: "packages/module-kit" },
@@ -169,6 +170,31 @@ export const showzyBoundaryDependencyOptions = {
       disallow: { to: { module: { source: "@showzy/ai" } } },
       message:
         "Domain modules may not import @showzy/ai (ADR-0032). The API composition root mounts the AI loop.",
+    },
+    {
+      from: { element: { type: "ai" } },
+      disallow: { to: { element: { type: "ai-eval" } } },
+      message: "packages/ai must not depend on packages/ai-eval (SHO-412).",
+    },
+    {
+      from: { element: { type: "module" } },
+      disallow: { to: { element: { type: "ai-eval" } } },
+      message: "Domain modules may not import packages/ai-eval (SHO-412).",
+    },
+    {
+      from: { element: { type: "app" } },
+      disallow: { to: { element: { type: "ai-eval" } } },
+      message: "Apps may not import packages/ai-eval (SHO-412).",
+    },
+    {
+      from: { element: { type: "ai-eval" } },
+      disallow: { to: { element: { type: "app" } } },
+      message: "packages/ai-eval must not import an app (SHO-412).",
+    },
+    {
+      from: { element: { type: "ai-eval" } },
+      disallow: { to: { element: { type: "copy" } } },
+      message: "packages/ai-eval must not import packages/copy (SHO-412).",
     },
   ],
 };

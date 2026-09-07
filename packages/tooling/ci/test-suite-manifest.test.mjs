@@ -50,6 +50,14 @@ test("packages/db postgres tests that are not *.db.test.ts stay classified as db
     classifyTestFile("packages/core/src/testing/kit.db.test.ts"),
     "db",
   );
+  assert.equal(
+    classifyTestFile("packages/ai-eval/src/eval/live.eval.ts"),
+    null,
+  );
+  assert.equal(
+    classifyTestFile("packages/ai-eval/src/expectation.test.ts"),
+    "unit",
+  );
 });
 
 test("on-disk classification matches vitest.db.config include/exclude", () => {
