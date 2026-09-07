@@ -26,8 +26,8 @@ domain state?
 Forces: server-owned history ([SHO-506](https://linear.app/showzy-v2/issue/SHO-506))
 moves model-context assembly to the server, so the server needs a source
 for tool results; every turn in the window pays input tokens for whatever
-is stored; Anthropic prompt caching makes a monotonically growing prefix
-cheap to re-send.
+is stored; Anthropic prompt caching can make a *stable* prefix cheap to
+re-send, but only when the cached prefix bytes match exactly.
 
 ## Decision
 
@@ -78,13 +78,20 @@ bounded model-prompt caches that no client renders are prompt state (ADR-0034)".
 ## Consequences
 
 - Positive: follow-ups about just-fetched data are answered from context;
-  server-owned history has one source for tool results; the cost is
-  bounded (~2.5k tokens worst case, mostly cache reads) and visible in
-  `logTurnUsage` as `traceChars`.
+  server-owned history has one source for tool results; payload size is
+  bounded (≤ 8 000 trace characters across the window, ~2.5k tokens as a
+  character-to-token estimate) and visible in `logTurnUsage` as
+  `traceChars`. Token counts and cached vs fresh billing depend on the
+  actual prompt and must be measured.
 - Negative: input tokens rise for every turn in the window whether or not
-  the follow-up needs the trace; the budget in rule 3 is the mitigation and
-  the harness ([SHO-412](https://linear.app/showzy-v2/issue/SHO-412)) must
-  report the measured delta in the T4 PR.
+  the follow-up needs the trace; the budget in rule 3 is the mitigation.
+  Full-trace → digest conversion, the sliding eight-message window, and
+  the uncached turn-context addendum (including the clock) change prompt
+  prefixes. Anthropic caching matches prefixes, so these changes can miss
+  the cache even within the TTL. A breakpoint is not a cache-hit
+  guarantee. The harness ([SHO-412](https://linear.app/showzy-v2/issue/SHO-412))
+  must report the measured delta in the T4 PR; if cache savings do not
+  appear, say so — bounded context may still justify the change.
 - Guard tests: `model_trace` never appears in the client conversation view;
   `getModelHistory` is not on oRPC and not an AI tool; oversized trace is
   rejected by the CHECK.
