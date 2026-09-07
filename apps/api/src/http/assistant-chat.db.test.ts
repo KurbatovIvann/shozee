@@ -2952,6 +2952,7 @@ describe("POST /assistant/chat intent gate", () => {
     const streamModel = new MockLanguageModelV3({
       doStream: [
         mockToolCallStream("call-list", ORDERS_LIST_PAGE_TOOL_NAME, "{}"),
+        mockTextStream("You have no orders."),
         mockTextStream("Creating the price list."),
       ],
     });
