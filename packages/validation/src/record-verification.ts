@@ -38,6 +38,13 @@
  * `ai` and `webhook` stay unvouched until a human attests. Changing
  * the set is this field and this comment, not a second WHERE.
  *
+ * The `strict` discriminant states that rule —
+ * `outside_counted_set_without_vouch` — and never a member of the
+ * set. A channel-shaped name (`non_ui_without_vouch`) went stale the
+ * moment `system` joined `countedCreatedVia`, and read as a second,
+ * contradicting statement of the counted set one line above the
+ * correction (SHO-495).
+ *
  * Queries must call `recordCounts` / `recordCountsSql` (same spec). Do
  * not add a second `WHERE vouched_by IS NOT NULL`.
  *
@@ -83,7 +90,7 @@ type NarrowVerificationPolicy = {
 };
 
 type StrictVerificationPolicy = {
-  readonly unvouched: "non_ui_without_vouch";
+  readonly unvouched: "outside_counted_set_without_vouch";
   readonly countedCreatedVia: readonly RecordCreatedVia[];
   readonly grandfatherUnknownCreatedVia: boolean;
 };
@@ -97,7 +104,7 @@ export const RECORD_VERIFICATION_POLICIES: {
     grandfatherUnknownCreatedVia: true,
   },
   strict: {
-    unvouched: "non_ui_without_vouch",
+    unvouched: "outside_counted_set_without_vouch",
     countedCreatedVia: ["ui", "system"],
     grandfatherUnknownCreatedVia: true,
   },
