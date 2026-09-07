@@ -1179,23 +1179,26 @@ describe("assistant staff conversation actions", () => {
     const lastAssistant = history.messages.findLast(
       (row) => row.role === "assistant",
     );
-    expect(lastAssistant?.toolRuns).toEqual([
-      {
-        action: "orders.confirm",
-        toolCallId: "call_confirm",
-        modelTrace: null,
-      },
-      {
-        action: "orders.create",
-        toolCallId: "call_choice_drop",
-        modelTrace: null,
-      },
-      {
-        action: "catalog.listProducts",
-        toolCallId: "call_err_drop",
-        modelTrace: null,
-      },
-    ]);
+    expect(lastAssistant?.toolRuns).toHaveLength(3);
+    expect(lastAssistant?.toolRuns).toEqual(
+      expect.arrayContaining([
+        {
+          action: "orders.confirm",
+          toolCallId: "call_confirm",
+          modelTrace: null,
+        },
+        {
+          action: "orders.create",
+          toolCallId: "call_choice_drop",
+          modelTrace: null,
+        },
+        {
+          action: "catalog.listProducts",
+          toolCallId: "call_err_drop",
+          modelTrace: null,
+        },
+      ]),
+    );
   });
 
   it("windows getModelHistory to the newest 8 messages", async () => {

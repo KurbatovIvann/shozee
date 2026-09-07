@@ -195,9 +195,9 @@ describe("assistant schema slice", () => {
       "challenge_id",
       "result_ids",
       "outcome",
-      "model_trace",
       "created_at",
       "updated_at",
+      "model_trace",
     ]);
 
     const resultIds = result.rows.find(
