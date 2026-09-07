@@ -1206,6 +1206,110 @@ describe("assistant staff conversation actions", () => {
     );
   });
 
+  it("keeps each turn's runs on its own message across a confirmation resume", async () => {
+    // A confirmation resume records a second assistant turn with no user
+    // message between the two, so the run/message join cannot use "the next
+    // row of any role" as its upper bound.
+    const conversation = await kit.invoke(createConversation, {
+      title: "HITL resume trace",
+    });
+    await kit.invoke(appendUserMessage, {
+      conversationId: conversation.id,
+      body: "видали клієнта",
+    });
+    await kit.invoke(recordAssistantTurn, {
+      conversationId: conversation.id,
+      body: "Підтвердьте видалення.",
+      toolRuns: [
+        {
+          actionName: "customers.deleteCustomer",
+          toolCallId: "call_pause",
+          challengeId,
+          outcome: "confirmation_required",
+        },
+      ],
+    });
+    await kit.invoke(recordAssistantTurn, {
+      conversationId: conversation.id,
+      body: "Видалив.",
+      toolRuns: [
+        {
+          actionName: "customers.deleteCustomer",
+          toolCallId: "call_resumed",
+          resultIds: [],
+          outcome: "success",
+          toolName: "customers_delete_customer",
+          modelTrace: { deleted: true },
+        },
+      ],
+    });
+
+    const history = await kit.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    const assistants = history.messages.filter(
+      (message) => message.role === "assistant",
+    );
+    expect(assistants).toHaveLength(2);
+    expect(assistants[0]?.toolRuns.map((run) => run.toolCallId)).toEqual([
+      "call_pause",
+    ]);
+    expect(assistants[1]?.toolRuns).toEqual([
+      {
+        action: "customers.deleteCustomer",
+        toolCallId: "call_resumed",
+        toolName: "customers_delete_customer",
+        modelTrace: { deleted: true },
+      },
+    ]);
+  });
+
+  it("keeps runs recorded with the oldest windowed message", async () => {
+    // The run read is scoped to the windowed message ids, so the oldest
+    // message in the window must still bring its own runs.
+    const conversation = await kit.invoke(createConversation, {
+      title: "Window boundary trace",
+    });
+    await kit.invoke(recordAssistantTurn, {
+      conversationId: conversation.id,
+      body: "перший список",
+      toolRuns: [
+        {
+          actionName: "orders.list",
+          toolCallId: "call_window_start",
+          resultIds: [orderId],
+          outcome: "success",
+          toolName: "orders_list_page",
+          modelTrace: { kind: "page.summary", rows: [{ orderNumber: "1" }] },
+        },
+      ],
+    });
+    for (let index = 0; index < 3; index += 1) {
+      await kit.invoke(appendUserMessage, {
+        conversationId: conversation.id,
+        body: `user-${String(index)}`,
+      });
+      await kit.invoke(recordAssistantTurn, {
+        conversationId: conversation.id,
+        body: `assistant-${String(index)}`,
+        toolRuns: [],
+      });
+    }
+
+    const history = await kit.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    expect(history.messages[0]?.text).toBe("перший список");
+    expect(history.messages[0]?.toolRuns).toEqual([
+      {
+        action: "orders.list",
+        toolCallId: "call_window_start",
+        toolName: "orders_list_page",
+        modelTrace: { kind: "page.summary", rows: [{ orderNumber: "1" }] },
+      },
+    ]);
+  });
+
   it("windows getModelHistory to the newest 8 messages", async () => {
     const conversation = await kit.invoke(createConversation, {
       title: "History window",

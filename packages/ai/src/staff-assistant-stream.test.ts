@@ -463,6 +463,107 @@ describe("streamStaffAssistantChat", () => {
     }
   });
 
+  it("strips reconstructed tool parts when the gate attaches no tools", async () => {
+    const model = new MockLanguageModelV3({
+      doStream: [mockTextStream("Будь ласка!")],
+    });
+    // Anthropic rejects `tool_use` / `tool_result` blocks unless the request
+    // defines tools, and a chitchat turn (`gatePolicy.kind === "none"`)
+    // attaches none. SHO-510 model history carries those blocks.
+    const { response, completion } = streamStaffAssistantChat({
+      model,
+      messages: [
+        { role: "user", content: "останні 3 замовлення" },
+        {
+          role: "assistant",
+          content: [
+            { type: "text", text: "Ось останні три." },
+            {
+              type: "tool-call",
+              toolCallId: "call_list_trace",
+              toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+              input: {},
+            },
+          ],
+        },
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "call_list_trace",
+              toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+              output: {
+                type: "json",
+                value: { rows: [{ orderNumber: "12" }] },
+              },
+            },
+          ],
+        },
+        { role: "user", content: "дякую" },
+      ],
+      contracts: [],
+      execute: () => Promise.resolve({}),
+    });
+    await readUiMessageSsePayloads(response);
+    const turn = await completion;
+
+    const prompt = model.doStreamCalls[0]?.prompt ?? [];
+    expect(prompt.some((message) => message.role === "tool")).toBe(false);
+    expect(JSON.stringify(prompt)).not.toContain("tool-call");
+    expect(JSON.stringify(prompt)).not.toContain("call_list_trace");
+    expect(JSON.stringify(prompt)).toContain("Ось останні три.");
+    expect(turn.toolsAttached).toBe(false);
+    expect(turn.historyTraceChars).toBe(0);
+  });
+
+  it("keeps reconstructed tool parts when tools are attached", async () => {
+    const model = new MockLanguageModelV3({
+      doStream: [mockTextStream("Найдорожче — №12.")],
+    });
+    const { response, completion } = streamStaffAssistantChat({
+      model,
+      messages: [
+        { role: "user", content: "останні 3 замовлення" },
+        {
+          role: "assistant",
+          content: [
+            { type: "text", text: "Ось останні три." },
+            {
+              type: "tool-call",
+              toolCallId: "call_list_trace",
+              toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+              input: {},
+            },
+          ],
+        },
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "call_list_trace",
+              toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+              output: {
+                type: "json",
+                value: { rows: [{ orderNumber: "12" }] },
+              },
+            },
+          ],
+        },
+        { role: "user", content: "яке з них найдорожче?" },
+      ],
+      contracts: [listOrders],
+      execute: () => Promise.resolve({ items: [], nextCursor: null }),
+    });
+    await readUiMessageSsePayloads(response);
+    const turn = await completion;
+
+    const prompt = model.doStreamCalls[0]?.prompt ?? [];
+    expect(prompt.some((message) => message.role === "tool")).toBe(true);
+    expect(turn.historyTraceChars).toBeGreaterThan(0);
+  });
+
   it("sets Anthropic cache breakpoints on the system message and last tool", async () => {
     const model = new MockLanguageModelV3({
       doStream: [mockTextStream("ok")],

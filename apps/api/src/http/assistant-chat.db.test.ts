@@ -2625,6 +2625,57 @@ describe("POST /assistant/chat intent gate", () => {
     ).toBe(false);
   });
 
+  it("SHO-510: a chitchat turn after a tool turn carries no tool parts", async () => {
+    // Anthropic rejects `tool_use` / `tool_result` blocks on a request that
+    // defines no tools, and the gate attaches none for chitchat.
+    const streamModel = new MockLanguageModelV3({
+      doStream: [mockTextStream("should not run")],
+    });
+    const gateModel = new MockLanguageModelV3({
+      doGenerate: mockOperationalGateGenerate(false),
+      doStream: [mockTextStream("Будь ласка!")],
+    });
+    const app = chatApp(streamModel, gateModel);
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await staffInvoke(createConversation, {
+      title: "Trace then chitchat",
+    });
+    await staffInvoke(appendUserMessage, {
+      conversationId: conversation.id,
+      body: "останні замовлення",
+    });
+    await staffInvoke(recordAssistantTurn, {
+      conversationId: conversation.id,
+      body: "Ось останні.",
+      toolRuns: [
+        {
+          actionName: "orders.list",
+          toolCallId: "call_chitchat_trace",
+          resultIds: [],
+          outcome: "success",
+          toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+          modelTrace: { kind: "page.summary", rows: [{ orderNumber: "12" }] },
+        },
+      ],
+    });
+
+    const response = await postChat(app, {
+      token,
+      companyId: kitIdentities.companies.a,
+      body: userChatBody(conversation.id, "дякую"),
+    });
+    expect(response.status).toBe(200);
+    await readUiMessageSsePayloads(response);
+
+    expect(streamToolsLength(gateModel)).toBe(0);
+    const prompt = gateModel.doStreamCalls[0]?.prompt ?? [];
+    expect(prompt.some((message) => message.role === "tool")).toBe(false);
+    const promptJson = JSON.stringify(prompt);
+    expect(promptJson).not.toContain("tool-call");
+    expect(promptJson).not.toContain("call_chitchat_trace");
+    expect(promptJson).toContain("Ось останні.");
+  });
+
   it("attaches tools when the gate is true", async () => {
     const streamModel = new MockLanguageModelV3({
       doStream: [
