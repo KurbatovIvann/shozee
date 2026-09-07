@@ -13,7 +13,6 @@ import {
   commitTurnSpeech,
   extractUuidResultIds,
   STAFF_ASSISTANT_CONFIRMATION_EXPIRED_COPY,
-  STAFF_ASSISTANT_DEFAULT_LOCALE,
   toProviderToolName,
   type AssistantConfirmInteractionResult,
   type ConfirmationPendingRecord,
@@ -383,7 +382,7 @@ export async function runPendingConfirmationResume(
   if (pending.status === "completed" && pending.resumeResult !== undefined) {
     return toHttpResult(pending.resumeResult);
   }
-  const locale = pending.locale ?? STAFF_ASSISTANT_DEFAULT_LOCALE;
+  const locale = pending.locale;
   const action = requireImplementation(options.registry, pending.actionName);
   const toolName = toProviderToolName(pending.actionName);
 

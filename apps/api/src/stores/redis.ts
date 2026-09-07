@@ -34,6 +34,7 @@ import type { AuthRateLimitStore, SecondaryStorage } from "./memory.js";
 import {
   bindPendingStoreBacking,
   createChoiceStoreFromPending,
+  isConfirmationPendingRecord,
   type PendingClaimDecision,
   type PendingCompleteDecision,
   type StaffAssistantPendingInteractionStore,
@@ -446,7 +447,7 @@ export function createRedisPendingInteractionStore(
       if (!bindsMatch(pendingBindOf(record), input.bind)) {
         return { kind: "forbidden" };
       }
-      if (pendingKindOf(record) !== "choice") {
+      if (isConfirmationPendingRecord(record)) {
         return { kind: "expired" };
       }
       return { kind: "found", record: pendingToChoiceRecord(record) };

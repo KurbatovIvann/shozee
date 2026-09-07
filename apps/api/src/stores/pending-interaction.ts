@@ -93,6 +93,12 @@ interface MemoryEntry {
 
 const CONFIRMATION_RESOLUTION = "confirmed";
 
+export function isConfirmationPendingRecord(
+  record: PendingInteractionRecord,
+): record is ConfirmationPendingRecord {
+  return record.kind === "confirmation";
+}
+
 function isLiveChoiceRecord(
   record: PendingInteractionRecord,
 ): record is ChoicePendingRecord {
@@ -116,12 +122,13 @@ function withClaimedResolution(
   record: PendingInteractionRecord,
   resolution: string,
 ): PendingInteractionRecord {
-  if (record.kind === "confirmation") {
-    return {
+  if (isConfirmationPendingRecord(record)) {
+    const claimed: ConfirmationPendingRecord = {
       ...record,
       status: "claimed",
-      claimedResolution: "confirmed",
+      claimedResolution: CONFIRMATION_RESOLUTION,
     };
+    return claimed;
   }
   return {
     ...record,
@@ -134,7 +141,7 @@ function withCompletedResume(
   record: PendingInteractionRecord,
   resumeResult: ConfirmationResumeResult | undefined,
 ): PendingInteractionRecord {
-  if (record.kind === "confirmation") {
+  if (isConfirmationPendingRecord(record)) {
     return {
       ...record,
       status: "completed",
@@ -300,7 +307,7 @@ export function createMemoryPendingInteractionStore(options?: {
           return Promise.resolve();
         }
         const record = parsePendingInteractionRecord(existing.value);
-        if (record === undefined) {
+        if (record === undefined || !isConfirmationPendingRecord(record)) {
           return Promise.resolve();
         }
         write(
@@ -395,10 +402,4 @@ export function createChoiceStoreFromPending(
       );
     },
   };
-}
-
-export function isConfirmationPendingRecord(
-  record: PendingInteractionRecord,
-): record is ConfirmationPendingRecord {
-  return record.kind === "confirmation";
 }

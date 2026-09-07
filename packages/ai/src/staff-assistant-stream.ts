@@ -823,7 +823,7 @@ export function createModellessAssistantTextStreamResponse(options: {
   readonly output?: unknown;
 }): Response {
   const stream = createUIMessageStream({
-    execute: async ({ writer }) => {
+    execute: ({ writer }) => {
       if (
         options.toolCallId !== undefined &&
         options.toolCallId !== "" &&

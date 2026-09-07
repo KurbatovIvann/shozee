@@ -57,30 +57,18 @@ export type ConfirmationAppendPart =
 export type ConfirmationConfirmRecoverability =
   "terminal" | "retryable" | "ambiguous";
 
-export type ConfirmationConfirmResult =
-  | {
-      readonly status: "completed";
-      readonly text: string;
-      readonly actionName: string;
-      readonly toolCallId: string;
-      readonly output?: unknown;
-      readonly httpStatus?: number;
-      readonly recoverability: ConfirmationConfirmRecoverability;
-    }
-  | {
-      readonly status: "expired";
-      readonly httpStatus?: number;
-      readonly recoverability: ConfirmationConfirmRecoverability;
-    }
-  | {
-      readonly status: "error";
-      readonly code?: string;
-      readonly message?: string;
-      readonly text?: string;
-      readonly httpStatus?: number;
-      readonly retryAfterSec?: number;
-      readonly recoverability: ConfirmationConfirmRecoverability;
-    };
+export type ConfirmationConfirmResult = {
+  readonly status: string;
+  readonly text?: string | undefined;
+  readonly actionName?: string | undefined;
+  readonly toolCallId?: string | undefined;
+  readonly output?: unknown;
+  readonly code?: string | undefined;
+  readonly message?: string | undefined;
+  readonly httpStatus?: number | undefined;
+  readonly retryAfterSec?: number | undefined;
+  readonly recoverability?: ConfirmationConfirmRecoverability | undefined;
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -262,14 +250,24 @@ export function confirmationConfirmAppendParts(args: {
   readonly locale: "uk" | "en";
 }): readonly ConfirmationAppendPart[] {
   if (args.result.status === "completed") {
-    const parts: ConfirmationAppendPart[] = [
-      { type: "text", text: args.result.text },
-    ];
-    if (args.result.output !== undefined) {
+    const text = args.result.text;
+    if (typeof text !== "string" || text.length === 0) {
+      return [];
+    }
+    const parts: ConfirmationAppendPart[] = [{ type: "text", text }];
+    const actionName = args.result.actionName;
+    const toolCallId = args.result.toolCallId;
+    if (
+      args.result.output !== undefined &&
+      typeof actionName === "string" &&
+      actionName.length > 0 &&
+      typeof toolCallId === "string" &&
+      toolCallId.length > 0
+    ) {
       parts.push({
         type: "dynamic-tool",
-        toolName: args.result.actionName,
-        toolCallId: args.result.toolCallId,
+        toolName: actionName,
+        toolCallId,
         state: "output-available",
         input: {},
         output: args.result.output,
