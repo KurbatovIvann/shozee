@@ -218,6 +218,41 @@ function modelMessagesFromPersistedRow(
 }
 
 /**
+ * Anthropic rejects `tool_use` / `tool_result` blocks on a request that
+ * defines no tools, and the intent gate attaches none on a chitchat turn
+ * (`gatePolicy.kind === "none"`). Flatten reconstructed tool parts back to
+ * text-only history so «дякую» after a tool turn is not a 400. Applied by
+ * `streamStaffAssistantChat` whenever the ToolSet is empty — the caller
+ * never has to know the model history carries tool parts.
+ */
+export function stripStaffAssistantToolParts(
+  messages: readonly ModelMessage[],
+): ModelMessage[] {
+  const flattened: ModelMessage[] = [];
+  for (const message of messages) {
+    if (message.role === "tool") {
+      continue;
+    }
+    if (message.role !== "assistant" || typeof message.content === "string") {
+      flattened.push(message);
+      continue;
+    }
+    const text = message.content
+      .filter((part) => part.type === "text")
+      .map((part) => part.text)
+      .join("");
+    flattened.push({
+      role: "assistant",
+      content:
+        text === ""
+          ? STAFF_ASSISTANT_EMPTY_ASSISTANT_HISTORY_PLACEHOLDER
+          : text,
+    });
+  }
+  return applyStaffAssistantHistoryWindow(flattened);
+}
+
+/**
  * Drop client-supplied system messages. The mount always uses
  * `staffAssistantSystemPrompt` instead. Kept for protocol-envelope
  * tests; HTTP model history uses persisted rows.

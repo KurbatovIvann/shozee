@@ -3,7 +3,7 @@ import {
   assistantMessages,
   assistantToolRuns,
 } from "@showzy/db/schema/assistant";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, gte } from "drizzle-orm";
 import type { z } from "zod";
 
 import {
@@ -26,6 +26,15 @@ const modelHistoryToolRunColumns = {
   id: assistantToolRuns.id,
 };
 
+/**
+ * `created_at` defaults to `now()`, which is transaction time, so an
+ * assistant message and the tool runs recorded with it share the exact
+ * same timestamp. A run therefore belongs to the newest **assistant**
+ * message at or before it — the next row of any role is the wrong bound:
+ * a confirmation resume records two assistant messages in a row with no
+ * user message between them, and `runAt > nextAt` then handed the second
+ * turn's runs to the first.
+ */
 function attachToolRunsToMessages(
   messages: ReadonlyArray<{
     readonly id: string;
@@ -44,12 +53,20 @@ function attachToolRunsToMessages(
   }>,
 ): ModelHistory["messages"] {
   const remaining = [...toolRuns];
+  const nextAssistantAt = (index: number): number | undefined => {
+    for (let ahead = index + 1; ahead < messages.length; ahead += 1) {
+      const candidate = messages[ahead];
+      if (candidate !== undefined && candidate.role === "assistant") {
+        return candidate.createdAt.getTime();
+      }
+    }
+    return undefined;
+  };
   return messages.map((message, index) => {
-    const next = messages[index + 1];
     const assigned: typeof remaining = [];
     if (message.role === "assistant") {
       const messageAt = message.createdAt.getTime();
-      const nextAt = next?.createdAt.getTime();
+      const nextAt = nextAssistantAt(index);
       while (remaining.length > 0) {
         const run = remaining[0];
         if (run === undefined) {
@@ -60,7 +77,7 @@ function attachToolRunsToMessages(
           remaining.shift();
           continue;
         }
-        if (nextAt !== undefined && runAt > nextAt) {
+        if (nextAt !== undefined && runAt >= nextAt) {
           break;
         }
         assigned.push(run);
@@ -100,25 +117,33 @@ export async function getStaffModelHistory(env: {
     eq(assistantMessages.conversationId, env.conversationId),
   );
 
-  const [messageRows, toolRunRows] = await Promise.all([
-    env.ctx.db
-      .select(messageColumns)
-      .from(assistantMessages)
-      .where(messageFilter)
-      .orderBy(desc(assistantMessages.createdAt), desc(assistantMessages.id))
-      .limit(GET_MODEL_HISTORY_WINDOW)
-      .then((rows) => rows.slice().reverse()),
-    env.ctx.db
-      .select(modelHistoryToolRunColumns)
-      .from(assistantToolRuns)
-      .where(
-        and(
-          eq(assistantToolRuns.companyId, env.ctx.companyId),
-          eq(assistantToolRuns.conversationId, env.conversationId),
-        ),
-      )
-      .orderBy(asc(assistantToolRuns.createdAt), asc(assistantToolRuns.id)),
-  ]);
+  const messageRows = await env.ctx.db
+    .select(messageColumns)
+    .from(assistantMessages)
+    .where(messageFilter)
+    .orderBy(desc(assistantMessages.createdAt), desc(assistantMessages.id))
+    .limit(GET_MODEL_HISTORY_WINDOW)
+    .then((rows) => rows.slice().reverse());
+
+  // `model_trace` is up to 22 000 chars per run, so the run read is bounded
+  // by the oldest windowed message. Runs older than that are dropped by
+  // `attachToolRunsToMessages` anyway; reading the whole conversation would
+  // fetch megabytes of jsonb per chat request to discard nearly all of it.
+  const windowStart = messageRows[0]?.createdAt;
+  const toolRunRows =
+    windowStart === undefined
+      ? []
+      : await env.ctx.db
+          .select(modelHistoryToolRunColumns)
+          .from(assistantToolRuns)
+          .where(
+            and(
+              eq(assistantToolRuns.companyId, env.ctx.companyId),
+              eq(assistantToolRuns.conversationId, env.conversationId),
+              gte(assistantToolRuns.createdAt, windowStart),
+            ),
+          )
+          .orderBy(asc(assistantToolRuns.createdAt), asc(assistantToolRuns.id));
 
   const messages = messageRows.map((row) => {
     const view = toMessageView(row);

@@ -153,6 +153,40 @@ describe("budgetStaffAssistantToolRuns", () => {
     );
   });
 
+  it("digests an oversized tier-1 trace instead of dropping it", () => {
+    // Identity-compacting cannot rescue it: the identity field is the bulk.
+    const only = { orderNumber: "3", name: "Катя ".repeat(4_000) };
+    const budgeted = budgetStaffAssistantToolRuns([
+      toolTurn("only", "orders.list", "call_huge", only),
+    ]);
+    const kept = budgeted[0]?.toolRuns?.[0]?.modelTrace;
+    expect(kept).not.toBeNull();
+    expect(kept).toBe(
+      staffAssistantTraceDigest(ORDERS_LIST_PAGE_TOOL_NAME, only),
+    );
+  });
+
+  it("reduces an oversized tier-1 trace before spending older digests", () => {
+    const oldest = pageTrace([{ orderNumber: "1", name: "Anna" }]);
+    const middle = pageTrace([{ orderNumber: "2", name: "Boris" }]);
+    // Alone over the cap: dropping the two ≤300-char digests cannot help.
+    const newest = { orderNumber: "3", name: "z".repeat(21_000) };
+    const budgeted = budgetStaffAssistantToolRuns([
+      toolTurn("old", "orders.list", "call_1", oldest),
+      toolTurn("mid", "orders.list", "call_2", middle),
+      toolTurn("new", "orders.list", "call_3", newest),
+    ]);
+    expect(budgeted[0]?.toolRuns?.[0]?.modelTrace).toBe(
+      staffAssistantTraceDigest(ORDERS_LIST_PAGE_TOOL_NAME, oldest),
+    );
+    expect(budgeted[1]?.toolRuns?.[0]?.modelTrace).toBe(
+      staffAssistantTraceDigest(ORDERS_LIST_PAGE_TOOL_NAME, middle),
+    );
+    expect(budgeted[2]?.toolRuns?.[0]?.modelTrace).toBe(
+      staffAssistantTraceDigest(ORDERS_LIST_PAGE_TOOL_NAME, newest),
+    );
+  });
+
   it("falls back to the registry action when toolName was not stored", () => {
     const budgeted = budgetStaffAssistantToolRuns([
       {
