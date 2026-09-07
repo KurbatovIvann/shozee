@@ -8,7 +8,6 @@ import {
   streamStaffAssistantChat,
   type ActionToolExecute,
   type LanguageModel,
-  type StaffAssistantForcedToolName,
   type StaffAssistantTurnUsage,
 } from "@showzy/ai";
 import type { ActionContract } from "@showzy/core/contract";
@@ -34,7 +33,6 @@ export interface EvalTurnResult {
   readonly estimatedCostUsd: number;
   readonly replyModelId: string;
   readonly gateModelId: string;
-  readonly forcedToolName?: StaffAssistantForcedToolName;
 }
 
 function lastUserText(messages: readonly ModelMessage[]): string {
@@ -51,8 +49,8 @@ function lastUserText(messages: readonly ModelMessage[]): string {
 }
 
 /**
- * One staff-assistant turn with the HTTP gate policy (chitchat / forced
- * job / full catalog) and injected models + `execute`.
+ * One staff-assistant turn with the HTTP gate policy (chitchat / full
+ * catalog) and injected models + `execute`.
  */
 export async function runStaffAssistantEvalTurn(options: {
   readonly models: EvalTurnModels;
@@ -64,7 +62,6 @@ export async function runStaffAssistantEvalTurn(options: {
 }): Promise<EvalTurnResult> {
   const catalog = filterStaffAiTools(options.contracts, OWNER_MEMBERSHIP);
   let gateUsage = EMPTY_STAFF_ASSISTANT_TURN_USAGE;
-  let forcedToolName: StaffAssistantForcedToolName | undefined;
   let attachTools = true;
 
   const lastText = lastUserText(options.messages);
@@ -80,8 +77,6 @@ export async function runStaffAssistantEvalTurn(options: {
     const policy = staffAssistantGateToolPolicy(classified);
     if (policy.kind === "none") {
       attachTools = false;
-    } else if (policy.kind === "forced") {
-      forcedToolName = policy.toolName;
     }
   }
 
@@ -106,7 +101,6 @@ export async function runStaffAssistantEvalTurn(options: {
     messages: [...options.messages],
     contracts: streamContracts,
     execute,
-    ...(forcedToolName !== undefined ? { forcedToolName } : {}),
     turnContextAddendum: staffAssistantTurnContextAddendum({
       now: new Date(),
       ...(options.companyName !== undefined
@@ -151,6 +145,5 @@ export async function runStaffAssistantEvalTurn(options: {
     estimatedCostUsd,
     replyModelId,
     gateModelId: options.models.gateModelId,
-    ...(forcedToolName !== undefined ? { forcedToolName } : {}),
   };
 }

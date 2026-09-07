@@ -1,9 +1,12 @@
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it, vi } from "vitest";
 
 import {
   classifyStaffAssistantTurn,
   STAFF_ASSISTANT_GATE_SYSTEM,
-  STAFF_ASSISTANT_JOB_INTENT_TOOLS,
   staffAssistantGateOutputSchema,
   staffAssistantGateToolPolicy,
 } from "./gate.js";
@@ -23,16 +26,13 @@ const mockGateUsage = {
 };
 
 describe("STAFF_ASSISTANT_GATE_SYSTEM", () => {
-  it("shares the product glossary and names T3 modes, intents, and examples", () => {
+  it("shares the product glossary and names modes without job intents", () => {
     expect(STAFF_ASSISTANT_GATE_SYSTEM).toContain(
       STAFF_ASSISTANT_PRODUCT_GLOSSARY,
     );
     expect(STAFF_ASSISTANT_GATE_SYSTEM).toContain("show last 3 orders");
-    expect(STAFF_ASSISTANT_GATE_SYSTEM).toContain("orders_page");
     expect(STAFF_ASSISTANT_GATE_SYSTEM).toContain("how many orders today");
-    expect(STAFF_ASSISTANT_GATE_SYSTEM).toContain("orders_counts");
     expect(STAFF_ASSISTANT_GATE_SYSTEM).toContain("create an order for");
-    expect(STAFF_ASSISTANT_GATE_SYSTEM).toContain("orders_create");
     expect(STAFF_ASSISTANT_GATE_SYSTEM).toContain("hello");
     expect(STAFF_ASSISTANT_GATE_SYSTEM).toContain("chitchat");
     expect(STAFF_ASSISTANT_GATE_SYSTEM).toContain(
@@ -45,11 +45,14 @@ describe("STAFF_ASSISTANT_GATE_SYSTEM", () => {
     expect(STAFF_ASSISTANT_GATE_SYSTEM).toContain(
       "А з чим ти можеш допомогти ще?",
     );
-    expect(STAFF_ASSISTANT_GATE_SYSTEM).toContain("mixed-domain");
-    expect(STAFF_ASSISTANT_GATE_SYSTEM).toContain("intent other");
     expect(STAFF_ASSISTANT_GATE_SYSTEM).toContain(
-      "If you are unsure, mode job, intent other, confidence low",
+      "If you are unsure, mode job, confidence low",
     );
+    expect(STAFF_ASSISTANT_GATE_SYSTEM).not.toContain("orders_page");
+    expect(STAFF_ASSISTANT_GATE_SYSTEM).not.toContain("orders_counts");
+    expect(STAFF_ASSISTANT_GATE_SYSTEM).not.toContain("orders_create");
+    expect(STAFF_ASSISTANT_GATE_SYSTEM).not.toContain('"intent"');
+    expect(STAFF_ASSISTANT_GATE_SYSTEM).not.toContain("intent other");
     expect(STAFF_ASSISTANT_GATE_SYSTEM).not.toContain("operational true");
     expect(STAFF_ASSISTANT_GATE_SYSTEM).not.toContain(
       "what you can do, or anything off-topic",
@@ -58,32 +61,16 @@ describe("STAFF_ASSISTANT_GATE_SYSTEM", () => {
 });
 
 describe("staffAssistantGateOutputSchema", () => {
-  it("parses classifier examples for page, counts, create, chitchat, and capability", () => {
+  it("parses classifier examples for job, chitchat, and capability", () => {
     expect(
       staffAssistantGateOutputSchema.parse({
         mode: "job",
-        intent: "orders_page",
         confidence: "high",
       }),
     ).toEqual({
       mode: "job",
-      intent: "orders_page",
       confidence: "high",
     });
-    expect(
-      staffAssistantGateOutputSchema.parse({
-        mode: "job",
-        intent: "orders_counts",
-        confidence: "high",
-      }).intent,
-    ).toBe("orders_counts");
-    expect(
-      staffAssistantGateOutputSchema.parse({
-        mode: "job",
-        intent: "orders_create",
-        confidence: "high",
-      }).intent,
-    ).toBe("orders_create");
     expect(
       staffAssistantGateOutputSchema.parse({
         mode: "chitchat",
@@ -98,77 +85,51 @@ describe("staffAssistantGateOutputSchema", () => {
     ).toBe("capability");
   });
 
-  it("rejects a job without intent", () => {
+  it("accepts a job without a retired intent field", () => {
     expect(
       staffAssistantGateOutputSchema.safeParse({
         mode: "job",
         confidence: "high",
       }).success,
-    ).toBe(false);
+    ).toBe(true);
   });
 });
 
 describe("staffAssistantGateToolPolicy", () => {
-  it("narrows only a high-confidence single job intent to one forced tool", () => {
+  it("attaches the full set for high-confidence job and capability", () => {
     expect(
       staffAssistantGateToolPolicy({
         mode: "job",
-        intent: "orders_page",
         confidence: "high",
       }),
-    ).toEqual({
-      kind: "forced",
-      toolName: STAFF_ASSISTANT_JOB_INTENT_TOOLS.orders_page,
-    });
-    expect(
-      staffAssistantGateToolPolicy({
-        mode: "job",
-        intent: "orders_counts",
-        confidence: "high",
-      }),
-    ).toEqual({
-      kind: "forced",
-      toolName: STAFF_ASSISTANT_JOB_INTENT_TOOLS.orders_counts,
-    });
-    expect(
-      staffAssistantGateToolPolicy({
-        mode: "job",
-        intent: "orders_create",
-        confidence: "high",
-      }),
-    ).toEqual({
-      kind: "forced",
-      toolName: STAFF_ASSISTANT_JOB_INTENT_TOOLS.orders_create,
-    });
-  });
-
-  it("returns other/full for low confidence, mixed other, and capability", () => {
-    expect(
-      staffAssistantGateToolPolicy({
-        mode: "job",
-        intent: "orders_page",
-        confidence: "low",
-      }),
-    ).toEqual({ kind: "full" });
-    expect(
-      staffAssistantGateToolPolicy({
-        mode: "job",
-        intent: "other",
-        confidence: "high",
-      }),
-    ).toEqual({ kind: "full" });
+    ).toEqual({ kind: "all" });
     expect(
       staffAssistantGateToolPolicy({
         mode: "capability",
         confidence: "high",
       }),
-    ).toEqual({ kind: "full" });
+    ).toEqual({ kind: "all" });
+  });
+
+  it("fail-opens to all tools for low confidence, including chitchat", () => {
+    expect(
+      staffAssistantGateToolPolicy({
+        mode: "job",
+        confidence: "low",
+      }),
+    ).toEqual({ kind: "all" });
     expect(
       staffAssistantGateToolPolicy({
         mode: "chitchat",
         confidence: "low",
       }),
-    ).toEqual({ kind: "full" });
+    ).toEqual({ kind: "all" });
+    expect(
+      staffAssistantGateToolPolicy({
+        mode: "capability",
+        confidence: "low",
+      }),
+    ).toEqual({ kind: "all" });
   });
 
   it("attaches no tools for high-confidence chitchat", () => {
@@ -208,60 +169,20 @@ describe("classifyStaffAssistantTurn", () => {
     fetchSpy.mockRestore();
   });
 
-  it("returns high-confidence job intents for page, counts, and create examples", async () => {
-    const page = new MockLanguageModelV3({
+  it("returns high-confidence job for operational examples", async () => {
+    const model = new MockLanguageModelV3({
       doGenerate: mockStaffAssistantGateGenerate({
         mode: "job",
-        intent: "orders_page",
         confidence: "high",
       }),
     });
     await expect(
       classifyStaffAssistantTurn({
-        model: page,
+        model,
         lastUserText: "show last 3 orders",
       }),
     ).resolves.toEqual({
       mode: "job",
-      intent: "orders_page",
-      confidence: "high",
-      usage: mockGateUsage,
-    });
-
-    const counts = new MockLanguageModelV3({
-      doGenerate: mockStaffAssistantGateGenerate({
-        mode: "job",
-        intent: "orders_counts",
-        confidence: "high",
-      }),
-    });
-    await expect(
-      classifyStaffAssistantTurn({
-        model: counts,
-        lastUserText: "how many orders today",
-      }),
-    ).resolves.toEqual({
-      mode: "job",
-      intent: "orders_counts",
-      confidence: "high",
-      usage: mockGateUsage,
-    });
-
-    const create = new MockLanguageModelV3({
-      doGenerate: mockStaffAssistantGateGenerate({
-        mode: "job",
-        intent: "orders_create",
-        confidence: "high",
-      }),
-    });
-    await expect(
-      classifyStaffAssistantTurn({
-        model: create,
-        lastUserText: "create an order for Леха",
-      }),
-    ).resolves.toEqual({
-      mode: "job",
-      intent: "orders_create",
       confidence: "high",
       usage: mockGateUsage,
     });
@@ -297,7 +218,6 @@ describe("classifyStaffAssistantTurn", () => {
       classifyStaffAssistantTurn({ model, lastUserText: "   " }),
     ).resolves.toEqual({
       mode: "job",
-      intent: "other",
       confidence: "low",
       usage: EMPTY_STAFF_ASSISTANT_TURN_USAGE,
     });
@@ -315,7 +235,6 @@ describe("classifyStaffAssistantTurn", () => {
       }),
     ).resolves.toEqual({
       mode: "job",
-      intent: "other",
       confidence: "low",
       usage: EMPTY_STAFF_ASSISTANT_TURN_USAGE,
     });
@@ -330,9 +249,33 @@ describe("classifyStaffAssistantTurn", () => {
       }),
     ).resolves.toEqual({
       mode: "job",
-      intent: "other",
       confidence: "low",
       usage: EMPTY_STAFF_ASSISTANT_TURN_USAGE,
     });
+  });
+});
+
+describe("packages/ai/src production sources", () => {
+  it("never mentions toolChoice outside tests that assert absence", () => {
+    const root = path.dirname(fileURLToPath(import.meta.url));
+    const files: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(full);
+          continue;
+        }
+        if (entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts")) {
+          files.push(full);
+        }
+      }
+    };
+    walk(root);
+    expect(files.length).toBeGreaterThan(0);
+    for (const file of files) {
+      const source = readFileSync(file, "utf8");
+      expect(source, path.relative(root, file)).not.toMatch(/toolChoice/);
+    }
   });
 });

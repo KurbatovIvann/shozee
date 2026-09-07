@@ -1,5 +1,5 @@
 /**
- * Bilingual product map shared by the intent gate and the Shozik
+ * Bilingual product map shared by the mode classifier and the Shozik
  * system prompt. Action names stay English; staff messages are often
  * Ukrainian. Keep this the single translation table — do not fork a
  * second list in gate.ts or system-prompt.ts.

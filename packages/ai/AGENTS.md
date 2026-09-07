@@ -94,6 +94,14 @@ Do not delete the presenter or a surface. Do not add a second model call
 to summarize the card. Do not re-introduce a JSON spoken envelope or
 live≠persisted replies.
 
+## Gate (SHO-513)
+
+The gate classifies `{ mode: chitchat | capability | job, confidence }`
+only. High-confidence chitchat attaches no tools; job, capability, and
+fail-open (low confidence / error) attach the full permitted set plus
+BM25. It does not force a tool. Call one terminal tool per job; do not
+narrate instead of calling.
+
 ## Tests
 
 No live LLM in CI. Inject `MockLanguageModelV3`. Façade tests must prove

@@ -35,7 +35,6 @@ import {
   type LanguageModel,
   type PausedToolAttempt,
   type StaffAssistantChatMessage,
-  type StaffAssistantForcedToolName,
   type StaffAssistantGateSkipReason,
   type StaffAssistantGateToolPolicy,
   type StaffAssistantLocale,
@@ -278,9 +277,7 @@ function logTurnGate(options: {
   readonly logger: Logger;
   readonly requestId: string;
   readonly gateModel: string;
-  readonly policy: StaffAssistantGateToolPolicy;
   readonly mode?: string;
-  readonly intent?: string;
   readonly confidence?: string;
   readonly skip?: StaffAssistantGateSkipReason;
 }): void {
@@ -289,12 +286,8 @@ function logTurnGate(options: {
       request_id: options.requestId,
       gate_model: options.gateModel,
       ...(options.mode !== undefined ? { gate_mode: options.mode } : {}),
-      ...(options.intent !== undefined ? { gate_intent: options.intent } : {}),
       ...(options.confidence !== undefined
         ? { gate_confidence: options.confidence }
-        : {}),
-      ...(options.policy.kind === "forced"
-        ? { gate_forced_tool: options.policy.toolName }
         : {}),
       ...(options.skip !== undefined ? { gate_skip: options.skip } : {}),
     },
@@ -647,11 +640,10 @@ export async function executeStaffAssistantChat(
         confirmationResume,
         choiceResume,
       });
-      let gatePolicy: StaffAssistantGateToolPolicy = { kind: "full" };
+      let gatePolicy: StaffAssistantGateToolPolicy = { kind: "all" };
       let gateRan = false;
       let gateSkip: StaffAssistantGateSkipReason | undefined;
       let gateUsage = EMPTY_STAFF_ASSISTANT_TURN_USAGE;
-      let forcedToolName: StaffAssistantForcedToolName | undefined;
 
       if (!skipGate && gateLanguageModel !== undefined) {
         const lastUserText = userMessage?.text ?? "";
@@ -664,18 +656,11 @@ export async function executeStaffAssistantChat(
           gatePolicy = staffAssistantGateToolPolicy(classified);
           gateUsage = classified.usage;
           gateRan = true;
-          if (gatePolicy.kind === "forced") {
-            forcedToolName = gatePolicy.toolName;
-          }
           logTurnGate({
             logger: options.pipeline.logger,
             requestId: options.requestId,
             gateModel: options.assistant?.gateModel ?? "unconfigured",
-            policy: gatePolicy,
             mode: classified.mode,
-            ...(classified.intent !== undefined
-              ? { intent: classified.intent }
-              : {}),
             confidence: classified.confidence,
           });
         }
@@ -685,7 +670,6 @@ export async function executeStaffAssistantChat(
           logger: options.pipeline.logger,
           requestId: options.requestId,
           gateModel: options.assistant?.gateModel ?? "unconfigured",
-          policy: { kind: "full" },
           skip: gateSkip,
         });
       }
@@ -775,7 +759,6 @@ export async function executeStaffAssistantChat(
         model: replyModel,
         messages: modelMessages,
         contracts: streamContracts,
-        ...(forcedToolName !== undefined ? { forcedToolName } : {}),
         abortSignal: options.request.signal,
         turnContextAddendum,
         locale: body.locale,

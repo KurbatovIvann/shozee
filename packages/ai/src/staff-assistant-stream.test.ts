@@ -1857,61 +1857,51 @@ describe("streamStaffAssistantChat", () => {
     expect(JSON.stringify(payloads)).not.toContain(spoken);
   });
 
-  it("attaches only the forced job tool with toolChoice required", async () => {
-    const execute = vi.fn(() =>
-      Promise.resolve({ items: [], nextCursor: null }),
-    );
-    const model = new MockLanguageModelV3({
-      doStream: [
-        mockToolCallStream("call-list", ORDERS_LIST_PAGE_TOOL_NAME, "{}"),
-        mockSpokenStream("should not need a second tool"),
-      ],
-    });
-    const { response, completion } = streamStaffAssistantChat({
-      model,
-      messages: [{ role: "user", content: "show last 3 orders" }],
-      contracts: [listOrders, deleteCustomer, createOrder],
-      execute,
-      forcedToolName: ORDERS_LIST_PAGE_TOOL_NAME,
-    });
-    await readUiMessageSsePayloads(response);
-    const turn = await completion;
-    const first = model.doStreamCalls[0];
-    const names = (first?.tools ?? []).map((tool) => tool.name);
-    expect(names).toEqual([ORDERS_LIST_PAGE_TOOL_NAME]);
-    expect(names).not.toContain(STAFF_ASSISTANT_TOOL_SEARCH_NAME);
-    expect(names).not.toContain(ORDERS_LIST_COUNTS_TOOL_NAME);
-    expect(names).not.toContain(ORDERS_CREATE_TOOL_NAME);
-    expect(first?.toolChoice).toEqual({ type: "required" });
-    expect(model.doStreamCalls).toHaveLength(1);
-    expect(turn.toolsAttached).toBe(true);
-    expect(execute).toHaveBeenCalledOnce();
-  });
-
-  it("fail-opens to the full catalog when the forced job tool is missing", async () => {
+  it("never sets toolChoice on the stream", async () => {
     const model = new MockLanguageModelV3({
       doStream: [mockTextStream("You have no orders.")],
     });
     const { response, completion } = streamStaffAssistantChat({
       model,
       messages: [{ role: "user", content: "show last 3 orders" }],
-      contracts: [deleteCustomer, listProducts, createOrder],
+      contracts: [listOrders, deleteCustomer, createOrder],
       execute: () => Promise.resolve({ items: [], nextCursor: null }),
-      forcedToolName: ORDERS_LIST_PAGE_TOOL_NAME,
     });
     await readUiMessageSsePayloads(response);
     const turn = await completion;
     const first = model.doStreamCalls[0];
-    const names = (first?.tools ?? []).map((tool) => tool.name);
-    expect(names.length).toBeGreaterThan(0);
+    expect(first?.toolChoice).not.toEqual({ type: "required" });
+    expect(first?.toolChoice).not.toEqual({ type: "none" });
+    expect(first?.toolChoice).toEqual({ type: "auto" });
+    expect(turn.toolsAttached).toBe(true);
+    const production = readFileSync(
+      new URL("./staff-assistant-stream.ts", import.meta.url),
+      "utf8",
+    );
+    expect(production).not.toMatch(/toolChoice/);
+  });
+
+  it("attaches the full permitted set including BM25 on a job turn", async () => {
+    const model = new MockLanguageModelV3({
+      doStream: [mockTextStream("You have no orders.")],
+    });
+    const { response, completion } = streamStaffAssistantChat({
+      model,
+      messages: [{ role: "user", content: "show last 3 orders" }],
+      contracts: [listOrders, deleteCustomer, listProducts, createOrder],
+      execute: () => Promise.resolve({ items: [], nextCursor: null }),
+    });
+    await readUiMessageSsePayloads(response);
+    const turn = await completion;
+    const names = (model.doStreamCalls[0]?.tools ?? []).map(
+      (tool) => tool.name,
+    );
     expect(names).toContain(STAFF_ASSISTANT_TOOL_SEARCH_NAME);
+    expect(names).toContain(ORDERS_LIST_PAGE_TOOL_NAME);
+    expect(names).toContain(ORDERS_LIST_COUNTS_TOOL_NAME);
     expect(names).toContain(CATALOG_LIST_PRODUCTS_TOOL_NAME);
     expect(names).toContain(ORDERS_CREATE_TOOL_NAME);
     expect(names).toContain(toProviderToolName("customers.deleteCustomer"));
-    expect(names).not.toContain(ORDERS_LIST_PAGE_TOOL_NAME);
-    expect(names).not.toContain(ORDERS_LIST_COUNTS_TOOL_NAME);
-    expect(first?.toolChoice).not.toEqual({ type: "required" });
-    expect(first?.toolChoice).toEqual({ type: "auto" });
     expect(turn.toolsAttached).toBe(true);
   });
 
@@ -1940,7 +1930,6 @@ describe("streamStaffAssistantChat", () => {
       messages: [{ role: "user", content: "create an order for macarons" }],
       contracts: [listOrders, createOrder],
       execute,
-      forcedToolName: ORDERS_CREATE_TOOL_NAME,
     });
     await readUiMessageSsePayloads(response);
     expect(model.doStreamCalls).toHaveLength(1);
@@ -2110,7 +2099,6 @@ describe("streamStaffAssistantChat", () => {
       messages: [{ role: "user", content: "create an order for macarons" }],
       contracts: [listOrders, createOrder],
       execute,
-      forcedToolName: ORDERS_CREATE_TOOL_NAME,
       choiceBind: {
         actorId: "anna",
         companyId: customerId,
@@ -2387,7 +2375,6 @@ describe("streamStaffAssistantChat", () => {
         messages: [{ role: "user", content: "create macarons" }],
         contracts: [createOrder],
         execute,
-        forcedToolName: ORDERS_CREATE_TOOL_NAME,
       });
       const payloads = await readUiMessageSsePayloads(response);
       const turn = await completion;
@@ -2424,7 +2411,6 @@ describe("streamStaffAssistantChat", () => {
       messages: [{ role: "user", content: "create macarons" }],
       contracts: [createOrder],
       execute,
-      forcedToolName: ORDERS_CREATE_TOOL_NAME,
     });
     const payloads = await readUiMessageSsePayloads(response);
     const turn = await completion;
@@ -2457,7 +2443,6 @@ describe("streamStaffAssistantChat", () => {
       messages: [{ role: "user", content: "create archived widget" }],
       contracts: [createOrder],
       execute,
-      forcedToolName: ORDERS_CREATE_TOOL_NAME,
     });
     const payloads = await readUiMessageSsePayloads(response);
     const turn = await completion;
@@ -2523,7 +2508,6 @@ describe("streamStaffAssistantChat", () => {
           messages: [{ role: "user", content: "create" }],
           contracts: [createOrder],
           execute,
-          forcedToolName: ORDERS_CREATE_TOOL_NAME,
           locale,
         });
         const payloads = await readUiMessageSsePayloads(response);
@@ -2544,68 +2528,7 @@ describe("streamStaffAssistantChat", () => {
     }
   });
 
-  it("attaches only orders_list_counts when that job is forced", async () => {
-    const execute = vi.fn(() =>
-      Promise.resolve({
-        kind: "aggregate",
-        orderCount: 0,
-        buckets: [],
-        grossByCurrency: [],
-        statusBuckets: [],
-      }),
-    );
-    const model = new MockLanguageModelV3({
-      doStream: [
-        mockToolCallStream("call-counts", ORDERS_LIST_COUNTS_TOOL_NAME, "{}"),
-      ],
-    });
-    const { response } = streamStaffAssistantChat({
-      model,
-      messages: [{ role: "user", content: "how many orders today" }],
-      contracts: [listOrders, createOrder],
-      execute,
-      forcedToolName: ORDERS_LIST_COUNTS_TOOL_NAME,
-    });
-    await readUiMessageSsePayloads(response);
-    const names = (model.doStreamCalls[0]?.tools ?? []).map(
-      (tool) => tool.name,
-    );
-    expect(names).toEqual([ORDERS_LIST_COUNTS_TOOL_NAME]);
-    expect(model.doStreamCalls[0]?.toolChoice).toEqual({ type: "required" });
-  });
-
-  it("attaches only orders_create when that job is forced", async () => {
-    const execute = vi.fn(() =>
-      Promise.resolve({ orderId: customerId, orderNumber: "1" }),
-    );
-    const model = new MockLanguageModelV3({
-      doStream: [
-        mockToolCallStream(
-          "call-create",
-          ORDERS_CREATE_TOOL_NAME,
-          JSON.stringify({
-            customerQuery: "Леха",
-            items: [{ productQuery: "Cake", quantityDecimal: "1" }],
-          }),
-        ),
-      ],
-    });
-    const { response } = streamStaffAssistantChat({
-      model,
-      messages: [{ role: "user", content: "create an order for Леха" }],
-      contracts: [listOrders, createOrder],
-      execute,
-      forcedToolName: ORDERS_CREATE_TOOL_NAME,
-    });
-    await readUiMessageSsePayloads(response);
-    const names = (model.doStreamCalls[0]?.tools ?? []).map(
-      (tool) => tool.name,
-    );
-    expect(names).toEqual([ORDERS_CREATE_TOOL_NAME]);
-    expect(model.doStreamCalls[0]?.toolChoice).toEqual({ type: "required" });
-  });
-
-  it("fail-open without a forced tool attaches the current full toolset", async () => {
+  it("fail-open attaches the current full toolset including BM25", async () => {
     const model = new MockLanguageModelV3({
       doStream: [mockTextStream("You have no orders.")],
     });
@@ -2624,7 +2547,9 @@ describe("streamStaffAssistantChat", () => {
     expect(names).toContain(ORDERS_LIST_COUNTS_TOOL_NAME);
     expect(names).toContain(toProviderToolName("customers.deleteCustomer"));
     expect(names.length).toBeGreaterThan(1);
-    expect(model.doStreamCalls[0]?.toolChoice).toEqual({ type: "auto" });
+    expect(model.doStreamCalls[0]?.toolChoice).not.toEqual({
+      type: "required",
+    });
   });
 
   const macaronsConflictMessage =
@@ -2635,7 +2560,7 @@ describe("streamStaffAssistantChat", () => {
     items: [{ productQuery: "макаронс", quantityDecimal: "10" }],
   });
 
-  it("does not stop a forced create on CONFLICT; recovery is speech-only", async () => {
+  it("keeps model text after a tool error in step 1 (SHO-429 via T6)", async () => {
     const execute = vi.fn(() =>
       Promise.reject(new ConflictError(macaronsConflictMessage)),
     );
@@ -2658,15 +2583,18 @@ describe("streamStaffAssistantChat", () => {
       ],
       contracts: [listOrders, createOrder, listProducts],
       execute,
-      forcedToolName: ORDERS_CREATE_TOOL_NAME,
       locale: "uk",
     });
     const payloads = await readUiMessageSsePayloads(response);
     const turn = await completion;
     expect(execute).toHaveBeenCalledOnce();
     expect(model.doStreamCalls).toHaveLength(2);
-    expect(model.doStreamCalls[0]?.toolChoice).toEqual({ type: "required" });
-    expect(model.doStreamCalls[1]?.toolChoice).toEqual({ type: "none" });
+    expect(model.doStreamCalls[0]?.toolChoice).not.toEqual({
+      type: "required",
+    });
+    expect(model.doStreamCalls[1]?.toolChoice).not.toEqual({
+      type: "required",
+    });
     expect(turn.toolRuns[0]?.outcome).toBe("error");
     expect(turn.text).toBe(spoken);
     expect(turn.text).not.toBe("Done.");
@@ -2698,7 +2626,6 @@ describe("streamStaffAssistantChat", () => {
         ],
         contracts: [createOrder],
         execute,
-        forcedToolName: ORDERS_CREATE_TOOL_NAME,
         locale,
       });
       const payloads = await readUiMessageSsePayloads(response);
@@ -2712,7 +2639,7 @@ describe("streamStaffAssistantChat", () => {
     }
   });
 
-  it("does not stop a forced create on NOT_FOUND; recovery is speech-only", async () => {
+  it("keeps model text after a NOT_FOUND tool error in step 1", async () => {
     const execute = vi.fn(() =>
       Promise.reject(new NotFoundError(unknownProductMessage)),
     );
@@ -2735,14 +2662,15 @@ describe("streamStaffAssistantChat", () => {
       messages: [{ role: "user", content: "create an order for xyzzy" }],
       contracts: [createOrder],
       execute,
-      forcedToolName: ORDERS_CREATE_TOOL_NAME,
       locale: "en",
     });
     const payloads = await readUiMessageSsePayloads(response);
     const turn = await completion;
     expect(execute).toHaveBeenCalledOnce();
     expect(model.doStreamCalls).toHaveLength(2);
-    expect(model.doStreamCalls[1]?.toolChoice).toEqual({ type: "none" });
+    expect(model.doStreamCalls[0]?.toolChoice).not.toEqual({
+      type: "required",
+    });
     expect(turn.toolRuns[0]?.outcome).toBe("error");
     expect(turn.text).toBe(spoken);
     expect(turn.text).not.toBe("Done.");
@@ -2771,7 +2699,6 @@ describe("streamStaffAssistantChat", () => {
       messages: [{ role: "user", content: "create an order for xyzzy" }],
       contracts: [createOrder],
       execute,
-      forcedToolName: ORDERS_CREATE_TOOL_NAME,
       locale: "en",
     });
     const payloads = await readUiMessageSsePayloads(response);

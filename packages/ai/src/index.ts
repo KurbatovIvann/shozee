@@ -2,7 +2,6 @@ export {
   actionContractToTool,
   ensureAnthropicToolInputSchemaType,
   fromProviderToolName,
-  pickStaffAssistantForcedTool,
   staffAssistantHotToolNames,
   staffAssistantTools,
   toProviderToolName,
@@ -45,20 +44,15 @@ export {
 } from "./clip-tool-result.js";
 export {
   classifyStaffAssistantTurn,
-  STAFF_ASSISTANT_FORCED_JOB_TOOL_NAMES,
   STAFF_ASSISTANT_GATE_CONFIDENCE,
-  STAFF_ASSISTANT_GATE_JOB_INTENTS,
   STAFF_ASSISTANT_GATE_MODES,
   STAFF_ASSISTANT_GATE_SYSTEM,
-  STAFF_ASSISTANT_JOB_INTENT_TOOLS,
   staffAssistantGateOutputSchema,
   staffAssistantGateToolPolicy,
-  type StaffAssistantForcedToolName,
   type StaffAssistantGateConfidence,
   type StaffAssistantGateMode,
   type StaffAssistantGateResult,
   type StaffAssistantGateToolPolicy,
-  type StaffAssistantJobIntent,
 } from "./gate.js";
 export { STAFF_ASSISTANT_PRODUCT_GLOSSARY } from "./product-glossary.js";
 export {

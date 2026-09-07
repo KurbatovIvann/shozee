@@ -7,10 +7,11 @@ import {
 } from "@showzy/ai";
 import { describe, expect, it } from "vitest";
 
-import { collectEvalToolCalls } from "./trace.js";
+import { GATE_CLASSIFIES_SCENARIOS } from "./scenarios/gate-classifies.js";
 import { MODEL_SPEAKS_SCENARIOS } from "./scenarios/model-speaks.js";
 import { PLAIN_REPLY_SCENARIOS } from "./scenarios/plain-reply.js";
 import { PROOF_SCENARIOS } from "./scenarios/proof.js";
+import { collectEvalToolCalls } from "./trace.js";
 
 describe("PROOF_SCENARIOS", () => {
   it("defines the five card-named proof ids", () => {
@@ -121,6 +122,48 @@ describe("MODEL_SPEAKS_SCENARIOS", () => {
         "{{count}} order",
       );
     }
+  });
+});
+
+describe("GATE_CLASSIFIES_SCENARIOS", () => {
+  it("defines the four SHO-428 corpus ids", () => {
+    expect(GATE_CLASSIFIES_SCENARIOS.map((scenario) => scenario.id)).toEqual([
+      "t7.sho-428.create-order-cake-macarons",
+      "t7.sho-428.last-3-orders",
+      "t7.sho-428.counts-today",
+      "t7.sho-428.macarons-lemon-picker",
+    ]);
+    expect(GATE_CLASSIFIES_SCENARIOS[0]?.turns[0]?.text).toContain(
+      "створи замовлення для",
+    );
+    expect(GATE_CLASSIFIES_SCENARIOS[0]?.turns[0]?.text).toContain(
+      "3 торта 10 макаронс",
+    );
+    expect(GATE_CLASSIFIES_SCENARIOS[1]?.turns[0]?.text).toBe(
+      "покажи останні 3 замовлення",
+    );
+    expect(GATE_CLASSIFIES_SCENARIOS[2]?.turns[0]?.text).toBe(
+      "скільки замовлень сьогодні",
+    );
+    expect(GATE_CLASSIFIES_SCENARIOS[3]?.turns[0]?.text).toBe("макаронс лемон");
+    expect(GATE_CLASSIFIES_SCENARIOS[0]?.expectation.ordered?.[0]?.name).toBe(
+      ORDERS_CREATE_TOOL_NAME,
+    );
+    expect(GATE_CLASSIFIES_SCENARIOS[1]?.expectation.ordered?.[0]?.name).toBe(
+      ORDERS_LIST_PAGE_TOOL_NAME,
+    );
+    expect(
+      GATE_CLASSIFIES_SCENARIOS[1]?.expectation.ordered?.[0]
+        ?.requireSuccessfulResult,
+    ).toBe(true);
+    expect(GATE_CLASSIFIES_SCENARIOS[2]?.expectation.ordered?.[0]?.name).toBe(
+      ORDERS_LIST_COUNTS_TOOL_NAME,
+    );
+    expect(GATE_CLASSIFIES_SCENARIOS[3]?.expectation.requireChoice).toBe(true);
+    expect(
+      GATE_CLASSIFIES_SCENARIOS[3]?.expectation.ordered?.[0]
+        ?.requireResultStatus,
+    ).toBe("needs_choice");
   });
 });
 

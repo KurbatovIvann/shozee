@@ -1,6 +1,11 @@
 import { isRecord } from "./record.js";
 import type { EvalToolCall } from "./trace.js";
 
+const ORDERS_CREATE_TOOL_NAME = "orders_create";
+
+const WRITE_SUCCESS_CLAIM =
+  /створено|створив|замовлення готове|order created|created an order|i(?:'| ha)?ve created/i;
+
 export interface EvalTurnTrace {
   readonly text: string;
   readonly toolCalls: readonly EvalToolCall[];
@@ -21,6 +26,14 @@ export interface EvalToolCallExpectation {
   readonly requireKeys?: readonly string[];
   /** String keys that must appear on at least one `items[]` row. */
   readonly requireItemKeys?: readonly string[];
+  /**
+   * Tool result must be a successful domain effect (id / rows / count),
+   * not `{ status: "error" }` or HITL. An attempted failed write is not
+   * a success.
+   */
+  readonly requireSuccessfulResult?: boolean;
+  /** Tool result `status` (e.g. `needs_choice` picker). */
+  readonly requireResultStatus?: "needs_choice";
 }
 
 export interface EvalExpectation {
@@ -40,6 +53,11 @@ export interface EvalExpectation {
   )[];
   readonly textExcludes?: readonly string[];
   readonly maxTextChars?: number;
+  /**
+   * At least one tool result is a ChoiceCard pause. A prose success claim
+   * without this (or a successful write) is not enough.
+   */
+  readonly requireChoice?: boolean;
 }
 
 export interface EvalMatchFailure {
@@ -192,7 +210,96 @@ function toolCallMatches(
       return false;
     }
   }
+  if (expected.requireSuccessfulResult === true) {
+    if (!isSuccessfulDomainResult(call.result)) {
+      return false;
+    }
+  }
+  if (expected.requireResultStatus !== undefined) {
+    if (resultStatus(call.result) !== expected.requireResultStatus) {
+      return false;
+    }
+  }
   return true;
+}
+
+function resultStatus(result: unknown): string | undefined {
+  if (!isRecord(result) || typeof result["status"] !== "string") {
+    return undefined;
+  }
+  return result["status"];
+}
+
+function isHitlOrErrorResult(result: unknown): boolean {
+  const status = resultStatus(result);
+  return (
+    status === "error" ||
+    status === "needs_choice" ||
+    status === "confirmation_required"
+  );
+}
+
+function isSuccessfulDomainResult(result: unknown): boolean {
+  if (result === undefined || isHitlOrErrorResult(result)) {
+    return false;
+  }
+  if (!isRecord(result)) {
+    return false;
+  }
+  if (typeof result["orderId"] === "string" && result["orderId"] !== "") {
+    return true;
+  }
+  if (
+    typeof result["orderNumber"] === "string" &&
+    result["orderNumber"] !== ""
+  ) {
+    return true;
+  }
+  if (Array.isArray(result["rows"]) || Array.isArray(result["items"])) {
+    return true;
+  }
+  if (typeof result["orderCount"] === "number") {
+    return true;
+  }
+  return result["kind"] === "page.summary" || result["kind"] === "aggregate";
+}
+
+function isSuccessfulWriteResult(result: unknown): boolean {
+  if (result === undefined || isHitlOrErrorResult(result)) {
+    return false;
+  }
+  if (!isRecord(result)) {
+    return false;
+  }
+  return (
+    (typeof result["orderId"] === "string" && result["orderId"] !== "") ||
+    (typeof result["orderNumber"] === "string" && result["orderNumber"] !== "")
+  );
+}
+
+function matchFailedWriteSuccessClaim(trace: EvalTurnTrace): EvalMatchResult {
+  const writes = trace.toolCalls.filter(
+    (call) => call.name === ORDERS_CREATE_TOOL_NAME,
+  );
+  if (writes.length === 0) {
+    return { ok: true };
+  }
+  if (writes.some((call) => isSuccessfulWriteResult(call.result))) {
+    return { ok: true };
+  }
+  if (WRITE_SUCCESS_CLAIM.test(trace.text)) {
+    return fail("success claim without a successful write outcome");
+  }
+  return { ok: true };
+}
+
+function matchRequireChoice(trace: EvalTurnTrace): EvalMatchResult {
+  if (
+    trace.toolCalls.some((call) => resultStatus(call.result) === "needs_choice")
+  ) {
+    return { ok: true };
+  }
+  return fail("expected needs_choice tool outcome");
 }
 
 function collectStringField(rows: readonly unknown[], key: string): string[] {
@@ -358,5 +465,11 @@ export function matchEvalExpectation(
       `final text length ${String(trace.text.length)} exceeds ${String(expectation.maxTextChars)}`,
     );
   }
-  return { ok: true };
+  if (expectation.requireChoice === true) {
+    const choice = matchRequireChoice(trace);
+    if (!choice.ok) {
+      return choice;
+    }
+  }
+  return matchFailedWriteSuccessClaim(trace);
 }

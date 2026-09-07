@@ -35,6 +35,7 @@ export {
   type EvalScenario,
   type EvalUserTurn,
 } from "./scenario.js";
+export { GATE_CLASSIFIES_SCENARIOS } from "./scenarios/gate-classifies.js";
 export { MODEL_SPEAKS_SCENARIOS } from "./scenarios/model-speaks.js";
 export { PLAIN_REPLY_SCENARIOS } from "./scenarios/plain-reply.js";
 export {

@@ -16,6 +16,12 @@ import { pricingActions } from "@showzy/pricing";
 import type { z } from "zod";
 
 import {
+  T7_CAKE_PRODUCT_NAME,
+  T7_MACARONS_LEMON_VARIANT,
+  T7_MACARONS_PRODUCT_NAME,
+  T7_MACARONS_VANILLA_VARIANT,
+} from "./scenarios/gate-classifies.js";
+import {
   PROOF_CUSTOMER_NAME,
   PROOF_CUSTOMER_PHONE,
   PROOF_PRODUCT_NAME,
@@ -68,6 +74,18 @@ async function seedProofFixture(kit: TestKit): Promise<string> {
   await kit.invoke(createProduct, {
     name: PROOF_PRODUCT_NAME,
     basePriceMinor: PROOF_PRODUCT_PRICE_MINOR,
+  });
+  await kit.invoke(createProduct, {
+    name: T7_CAKE_PRODUCT_NAME,
+    basePriceMinor: "40000",
+  });
+  await kit.invoke(createProduct, {
+    name: T7_MACARONS_PRODUCT_NAME,
+    basePriceMinor: "15000",
+    variants: [
+      { name: T7_MACARONS_LEMON_VARIANT },
+      { name: T7_MACARONS_VANILLA_VARIANT },
+    ],
   });
   await kit.invoke(createOrder, {
     customer: { by: "query", value: PROOF_CUSTOMER_NAME },

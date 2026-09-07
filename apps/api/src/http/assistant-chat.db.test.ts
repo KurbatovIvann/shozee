@@ -2481,7 +2481,7 @@ describe("POST /assistant/chat logs and /rpc channel", () => {
       .find((entry) => entry["msg"] === "staff assistant turn gate");
     expect(gateLog?.["gate_model"]).toBe("mock-gate");
     expect(gateLog?.["gate_mode"]).toBe("job");
-    expect(gateLog?.["gate_intent"]).toBe("other");
+    expect(gateLog).not.toHaveProperty("gate_intent");
     expect(gateLog?.["gate_confidence"]).toBe("high");
     expect(gateLog).not.toHaveProperty("gate_skip");
   });
@@ -2724,7 +2724,7 @@ describe("POST /assistant/chat intent gate", () => {
     });
   });
 
-  it("forces a single terminal job tool with toolChoice required", async () => {
+  it("attaches the full permitted set on a high-confidence job", async () => {
     const streamModel = new MockLanguageModelV3({
       doStream: [
         mockToolCallStream("call-list", ORDERS_LIST_PAGE_TOOL_NAME, "{}"),
@@ -2734,7 +2734,6 @@ describe("POST /assistant/chat intent gate", () => {
     const gateModel = new MockLanguageModelV3({
       doGenerate: mockStaffAssistantGateGenerate({
         mode: "job",
-        intent: "orders_page",
         confidence: "high",
       }),
       doStream: [mockTextStream("should not reply as gate")],
@@ -2742,7 +2741,7 @@ describe("POST /assistant/chat intent gate", () => {
     const app = chatApp(streamModel, gateModel);
     const token = await insertBearer(kit, kitIdentities.users.anna);
     const conversation = await staffInvoke(createConversation, {
-      title: "Forced page",
+      title: "Job page",
     });
     const response = await postChat(app, {
       token,
@@ -2751,8 +2750,11 @@ describe("POST /assistant/chat intent gate", () => {
     });
     expect(response.status).toBe(200);
     await readUiMessageSsePayloads(response);
-    expect(streamToolNames(streamModel)).toEqual([ORDERS_LIST_PAGE_TOOL_NAME]);
-    expect(streamModel.doStreamCalls[0]?.toolChoice).toEqual({
+    const names = streamToolNames(streamModel);
+    expect(names).toContain(STAFF_ASSISTANT_TOOL_SEARCH_NAME);
+    expect(names).toContain(ORDERS_LIST_PAGE_TOOL_NAME);
+    expect(names).toContain(ORDERS_LIST_COUNTS_TOOL_NAME);
+    expect(streamModel.doStreamCalls[0]?.toolChoice).not.toEqual({
       type: "required",
     });
     expect(gateModel.doStreamCalls).toHaveLength(0);
@@ -2768,7 +2770,6 @@ describe("POST /assistant/chat intent gate", () => {
     const gateModel = new MockLanguageModelV3({
       doGenerate: mockStaffAssistantGateGenerate({
         mode: "job",
-        intent: "orders_page",
         confidence: "low",
       }),
       doStream: [mockTextStream("should not reply as gate")],
@@ -2894,7 +2895,7 @@ describe("POST /assistant/chat intent gate", () => {
       .find((entry) => entry["msg"] === "staff assistant turn gate");
     expect(classifiedGate?.["gate_model"]).toBe("mock-gate");
     expect(classifiedGate?.["gate_mode"]).toBe("job");
-    expect(classifiedGate?.["gate_intent"]).toBe("other");
+    expect(classifiedGate).not.toHaveProperty("gate_intent");
     expect(classifiedGate?.["gate_confidence"]).toBe("high");
     expect(classifiedGate).not.toHaveProperty("gate_skip");
 
@@ -2935,7 +2936,6 @@ describe("POST /assistant/chat intent gate", () => {
     const gateModel = new MockLanguageModelV3({
       doGenerate: mockStaffAssistantGateGenerate({
         mode: "job",
-        intent: "orders_page",
         confidence: "high",
       }),
       doStream: [mockTextStream("should not reply as gate")],
@@ -3003,21 +3003,18 @@ describe("POST /assistant/chat intent gate", () => {
     const streamModel = new MockLanguageModelV3({
       doStream: [
         mockToolCallStream("call-list", ORDERS_LIST_PAGE_TOOL_NAME, "{}"),
+        mockTextStream("You have no orders."),
         mockTextStream("Creating the price list."),
       ],
     });
-    let gateCalls = 0;
     const gateModel = new MockLanguageModelV3({
-      doGenerate: () => {
-        gateCalls += 1;
-        return Promise.resolve(
+      doGenerate: () =>
+        Promise.resolve(
           mockStaffAssistantGateGenerate({
             mode: "job",
-            intent: gateCalls === 1 ? "orders_page" : "other",
             confidence: "high",
           }),
-        );
-      },
+        ),
       doStream: [mockTextStream("should not reply as gate")],
     });
     const app = createApp({
@@ -3059,7 +3056,10 @@ describe("POST /assistant/chat intent gate", () => {
       );
     }, "orders.list before second-turn routing");
     expect(gateModel.doGenerateCalls).toHaveLength(1);
-    expect(streamToolNames(streamModel)).toEqual([ORDERS_LIST_PAGE_TOOL_NAME]);
+    expect(streamToolNames(streamModel)).toContain(ORDERS_LIST_PAGE_TOOL_NAME);
+    expect(streamToolNames(streamModel)).toContain(
+      STAFF_ASSISTANT_TOOL_SEARCH_NAME,
+    );
 
     const followUp = await postChat(app, {
       token,
@@ -3104,7 +3104,6 @@ describe("POST /assistant/chat intent gate", () => {
             gateCalls === 1
               ? {
                   mode: "job",
-                  intent: "orders_page",
                   confidence: "high",
                 }
               : { mode: "chitchat", confidence: "high" },

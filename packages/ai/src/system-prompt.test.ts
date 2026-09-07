@@ -90,6 +90,9 @@ describe("staffAssistantSystemPrompt", () => {
     expect(staffAssistantSystemPrompt).toContain(
       "Do not create a customer, group, or price list in that same write",
     );
+    expect(staffAssistantSystemPrompt).toContain(
+      "Call one terminal tool per job. Do not narrate instead of calling.",
+    );
   });
 
   it("sends find-customer to customers_list_customers instead of getCustomer loops", () => {
