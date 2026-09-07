@@ -377,7 +377,7 @@ describe("loadServerConfig", () => {
     expect(withKey.ai.gateModel).toBe("claude-haiku-4-5-20251001");
   });
 
-  it("maps assistant budget env, accepts 0 to disable, and rejects negatives", () => {
+  it("maps assistant budget env, accepts 0 to disable limits, and rejects unknown-model 0", () => {
     const configured = validEnv();
     configured["AI_CHAT_TURNS_PER_MINUTE_PER_USER"] = "7";
     configured["AI_DAILY_BUDGET_USD_PER_COMPANY"] = "1.5";
@@ -393,12 +393,15 @@ describe("loadServerConfig", () => {
     disabled["AI_CHAT_TURNS_PER_MINUTE_PER_USER"] = "0";
     disabled["AI_DAILY_BUDGET_USD_PER_COMPANY"] = "0";
     disabled["AI_DAILY_BUDGET_USD_GLOBAL"] = "0";
-    disabled["AI_UNKNOWN_MODEL_TURN_USD"] = "0";
     const zeroed = loadServerConfig(disabled);
     expect(zeroed.ai.chatTurnsPerMinutePerUser).toBe(0);
     expect(zeroed.ai.dailyBudgetUsdPerCompany).toBe(0);
     expect(zeroed.ai.dailyBudgetUsdGlobal).toBe(0);
-    expect(zeroed.ai.unknownModelTurnUsd).toBe(0);
+    expect(zeroed.ai.unknownModelTurnUsd).toBe(0.1);
+
+    const unknownZero = validEnv();
+    unknownZero["AI_UNKNOWN_MODEL_TURN_USD"] = "0";
+    expect(() => loadServerConfig(unknownZero)).toThrow(ConfigValidationError);
 
     for (const key of [
       "AI_CHAT_TURNS_PER_MINUTE_PER_USER",

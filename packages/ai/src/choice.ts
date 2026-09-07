@@ -373,7 +373,7 @@ export function peekEnvelopeFromRecord(
 export function bindsMatch(left: ChoiceBind, right: ChoiceBind): boolean {
   return (
     left.actorId === right.actorId &&
-    left.companyId.toLowerCase() === right.companyId.toLowerCase() &&
+    left.companyId === right.companyId &&
     left.conversationId === right.conversationId
   );
 }

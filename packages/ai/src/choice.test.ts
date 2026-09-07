@@ -104,23 +104,23 @@ describe("choice transport (SHO-409)", () => {
     expect(choiceRedisKey(choiceId)).toBe(`choice:${choiceId}`);
   });
 
-  it("matches company bind case-insensitively without rewriting stored ids", () => {
+  it("matches binds with exact actor, company, and conversation ids", () => {
     const left = {
       actorId: "actor-1",
-      companyId: companyId.toLowerCase(),
+      companyId,
       conversationId,
     };
     const right = {
       actorId: "actor-1",
-      companyId: companyId.toUpperCase(),
+      companyId,
       conversationId,
     };
     expect(bindsMatch(left, right)).toBe(true);
-    expect(left.companyId).toBe(companyId.toLowerCase());
-    expect(right.companyId).toBe(companyId.toUpperCase());
     expect(bindsMatch(left, { ...right, conversationId: choiceId })).toBe(
       false,
     );
+    expect(bindsMatch(left, { ...right, actorId: "other" })).toBe(false);
+    expect(bindsMatch(left, { ...right, companyId: choiceId })).toBe(false);
   });
 
   it("rejects extra client fields on the resume body", () => {

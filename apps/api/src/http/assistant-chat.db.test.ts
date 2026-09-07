@@ -2665,69 +2665,6 @@ describe("SHO-418 orders_create choice activation", () => {
     expect(runs[0]?.challengeId).toBe(choice?.challengeId);
   });
 
-  it("claims a choice opened with lowercase x-company-id using the uppercase selector", async () => {
-    const store = createMemoryChoiceStore();
-    await staffInvoke(createCustomer, {
-      name: "SHO505 Case Buyer",
-      phone: "+380671110507",
-    });
-    await seedVariableProduct("SHO505 Case Macarons", ["Lemon", "Vanilla"]);
-    const streamModel = new MockLanguageModelV3({
-      doStream: [
-        mockToolCallStream(
-          "call-create-case",
-          ORDERS_CREATE_TOOL_NAME,
-          JSON.stringify({
-            customerQuery: "SHO505 Case Buyer",
-            items: [
-              {
-                productQuery: "SHO505 Case Macarons",
-                quantityDecimal: "1",
-              },
-            ],
-          }),
-        ),
-      ],
-    });
-    const app = chatApp(streamModel, undefined, store);
-    const token = await insertBearer(kit, kitIdentities.users.anna);
-    const conversation = await staffInvoke(createConversation, {
-      title: "SHO505 choice case",
-    });
-    const chatResponse = await postChat(app, {
-      token,
-      companyId: kitIdentities.companies.a.toLowerCase(),
-      body: userChatBody(
-        conversation.id,
-        "Create SHO505 Case Macarons",
-        randomUUID(),
-        "en",
-      ),
-    });
-    expect(chatResponse.status).toBe(200);
-    const choice = choiceFromSsePayloads(
-      await readUiMessageSsePayloads(chatResponse),
-    );
-    expect(choice).toBeDefined();
-    expect(choice?.challengeId).toBeDefined();
-    const lemon = choice?.options.find((option) => option.label === "Lemon");
-    expect(lemon?.id).toBeDefined();
-    const resume = await postChoice(app, {
-      token,
-      companyId: kitIdentities.companies.a.toUpperCase(),
-      body: {
-        conversationId: conversation.id,
-        choiceId: choice?.challengeId,
-        optionId: lemon?.id,
-      },
-    });
-    expect(resume.status).toBe(200);
-    const body = assistantChoiceInteractionResultSchema.parse(
-      await resume.json(),
-    );
-    expect(body.status).toBe("completed");
-  });
-
   it("unique variantQuery Lemon creates without writing a choice record", async () => {
     const store = createMemoryChoiceStore();
     const open = vi.spyOn(store, "open");

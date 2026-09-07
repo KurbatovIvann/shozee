@@ -43,12 +43,19 @@ export const DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS: StaffAssistantBudgetLimits =
 export interface StaffAssistantBudgetHold {
   readonly companyReservedUsd: number;
   readonly globalReservedUsd: number;
+  /** Europe/Kyiv `YYYY-MM-DD` captured at admit time. Settle/release use this. */
+  readonly kyivDate: string;
 }
 
-export const EMPTY_STAFF_ASSISTANT_BUDGET_HOLD: StaffAssistantBudgetHold = {
-  companyReservedUsd: 0,
-  globalReservedUsd: 0,
-};
+export function emptyStaffAssistantBudgetHold(
+  kyivDate: string,
+): StaffAssistantBudgetHold {
+  return {
+    companyReservedUsd: 0,
+    globalReservedUsd: 0,
+    kyivDate,
+  };
+}
 
 export function staffAssistantBudgetSpendUsd(
   estimated: number | null,
@@ -96,8 +103,8 @@ export async function enforceStaffAssistantBudget(options: {
     companyId,
     companyKey,
     globalKey,
+    kyivDate,
     retryAfterSec: secondsUntilKyivMidnight(now),
-    now,
     budgetStore: options.budgetStore,
     limits: options.limits,
   });
@@ -123,7 +130,6 @@ export async function enforceStaffAssistantBudget(options: {
       requestId: options.requestId,
       companyId,
       hold,
-      now,
       budgetStore: options.budgetStore,
     });
     logStaffAssistantBudgetDenial({
@@ -140,7 +146,6 @@ export async function enforceStaffAssistantBudget(options: {
       requestId: options.requestId,
       companyId,
       hold,
-      now,
       budgetStore: options.budgetStore,
     });
     logStaffAssistantBudgetDenial({
@@ -160,6 +165,10 @@ export async function recordStaffAssistantBudgetSpend(options: {
   readonly companyId: string;
   readonly estimatedCostUsd: number | null;
   readonly hold: StaffAssistantBudgetHold;
+  /**
+   * Ignored for Redis keys. Settlement uses `hold.kyivDate` from admit
+   * time so a turn that crosses Kyiv midnight writes the same day's counters.
+   */
   readonly now?: Date;
   readonly budgetStore?: AiBudgetStore | undefined;
   readonly limits: StaffAssistantBudgetLimits;
@@ -172,8 +181,7 @@ export async function recordStaffAssistantBudgetSpend(options: {
     options.estimatedCostUsd,
     options.limits.unknownModelTurnUsd,
   );
-  const now = options.now ?? new Date();
-  const kyivDate = kyivCalendarDate(now);
+  const kyivDate = options.hold.kyivDate;
   try {
     await addBudgetDelta(
       options.budgetStore,
@@ -203,17 +211,18 @@ async function reserveStaffAssistantBudget(options: {
   readonly companyId: string;
   readonly companyKey: string;
   readonly globalKey: string;
+  readonly kyivDate: string;
   readonly retryAfterSec: number;
-  readonly now: Date;
   readonly budgetStore?: AiBudgetStore | undefined;
   readonly limits: StaffAssistantBudgetLimits;
 }): Promise<StaffAssistantBudgetHold> {
   if (options.budgetStore === undefined) {
-    return EMPTY_STAFF_ASSISTANT_BUDGET_HOLD;
+    return emptyStaffAssistantBudgetHold(options.kyivDate);
   }
-  const hold: { companyReservedUsd: number; globalReservedUsd: number } = {
+  const hold = {
     companyReservedUsd: 0,
     globalReservedUsd: 0,
+    kyivDate: options.kyivDate,
   };
   try {
     if (options.limits.dailyBudgetUsdPerCompany > 0) {
@@ -248,7 +257,6 @@ async function reserveStaffAssistantBudget(options: {
       requestId: options.requestId,
       companyId: options.companyId,
       hold,
-      now: options.now,
       budgetStore: options.budgetStore,
     });
     throw error;
@@ -322,6 +330,10 @@ export async function releaseStaffAssistantBudgetHold(options: {
   readonly requestId: string;
   readonly companyId: string;
   readonly hold: StaffAssistantBudgetHold;
+  /**
+   * Ignored for Redis keys. Release uses `hold.kyivDate` from admit
+   * time so a turn that crosses Kyiv midnight undoes the same day's reservation.
+   */
   readonly now?: Date;
   readonly budgetStore?: AiBudgetStore | undefined;
 }): Promise<void> {
@@ -329,7 +341,7 @@ export async function releaseStaffAssistantBudgetHold(options: {
     return;
   }
   const companyId = canonicalizeAiBudgetCompanyId(options.companyId);
-  const kyivDate = kyivCalendarDate(options.now ?? new Date());
+  const kyivDate = options.hold.kyivDate;
   try {
     await addBudgetDelta(
       options.budgetStore,

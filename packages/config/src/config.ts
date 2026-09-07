@@ -161,11 +161,11 @@ const envObjectSchema = z.object({
    */
   AI_DAILY_BUDGET_USD_GLOBAL: z.coerce.number().min(0).default(100),
   /**
-   * Budget spend charged when `estimateStaffAssistantTurnCostUsd` is
-   * `null` (unpriced model). Not a disable switch — `0` means an unknown
-   * model adds nothing. Default 0.10.
+   * Admission reservation and unknown-pricing accounting fallback
+   * (`estimateStaffAssistantTurnCostUsd` is `null`). Must be finite and
+   * greater than 0 — not a disable switch. Default 0.10.
    */
-  AI_UNKNOWN_MODEL_TURN_USD: z.coerce.number().min(0).default(0.1),
+  AI_UNKNOWN_MODEL_TURN_USD: z.coerce.number().positive().default(0.1),
 });
 
 const envSchema = envObjectSchema.superRefine((parsed, ctx) => {
@@ -291,7 +291,10 @@ export interface ServerConfig {
     readonly dailyBudgetUsdPerCompany: number;
     /** `0` disables the global Kyiv-day USD check. */
     readonly dailyBudgetUsdGlobal: number;
-    /** Spend used when the turn cost estimate is `null`. */
+    /**
+     * Admission reservation and unknown-pricing fallback. Finite and
+     * greater than 0 — not a disable switch.
+     */
     readonly unknownModelTurnUsd: number;
   };
 }

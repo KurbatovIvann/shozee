@@ -12,7 +12,7 @@ import {
 } from "../stores/budget.js";
 import {
   DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
-  EMPTY_STAFF_ASSISTANT_BUDGET_HOLD,
+  emptyStaffAssistantBudgetHold,
   enforceStaffAssistantBudget,
   logStaffAssistantBudgetDenial,
   recordStaffAssistantBudgetSpend,
@@ -23,6 +23,11 @@ import {
 const COMPANY_A = "11111111-1111-4111-8111-111111111111";
 const USER_A = "22222222-2222-4222-8222-222222222222";
 const NOW = new Date("2026-09-02T12:00:00.000Z");
+const KYIV_DATE = "2026-09-02";
+const NEXT_KYIV_DATE = "2026-09-03";
+const JUST_BEFORE_KYIV_MIDNIGHT = new Date("2026-09-02T20:59:59.600Z");
+const JUST_AFTER_KYIV_MIDNIGHT = new Date("2026-09-02T21:00:00.100Z");
+const EMPTY_HOLD = emptyStaffAssistantBudgetHold(KYIV_DATE);
 
 describe("staffAssistantBudgetSpendUsd", () => {
   it("uses the unknown-model ceiling when the estimate is null", () => {
@@ -89,7 +94,7 @@ describe("enforceStaffAssistantBudget", () => {
         ...request,
         userId: "33333333-3333-4333-8333-333333333333",
       }),
-    ).resolves.toEqual(EMPTY_STAFF_ASSISTANT_BUDGET_HOLD);
+    ).resolves.toEqual(EMPTY_HOLD);
   });
 
   it("treats 0 as disable for turn and budget checks", async () => {
@@ -129,7 +134,7 @@ describe("enforceStaffAssistantBudget", () => {
           unknownModelTurnUsd: 0.1,
         },
       }),
-    ).resolves.toEqual(EMPTY_STAFF_ASSISTANT_BUDGET_HOLD);
+    ).resolves.toEqual(EMPTY_HOLD);
   });
 
   it("skips the turn bucket on confirmation resume", async () => {
@@ -153,7 +158,7 @@ describe("enforceStaffAssistantBudget", () => {
           chatTurnsPerMinutePerUser: 1,
         },
       }),
-    ).resolves.toEqual(EMPTY_STAFF_ASSISTANT_BUDGET_HOLD);
+    ).resolves.toEqual(EMPTY_HOLD);
     await expect(
       enforceStaffAssistantBudget({
         logger: createCapturingLogger().logger,
@@ -204,6 +209,7 @@ describe("enforceStaffAssistantBudget", () => {
     ).resolves.toEqual({
       companyReservedUsd: 0.1,
       globalReservedUsd: 0.1,
+      kyivDate: KYIV_DATE,
     });
   });
 
@@ -380,6 +386,7 @@ describe("recordStaffAssistantBudgetSpend", () => {
     });
     expect(hold.companyReservedUsd).toBeCloseTo(0.1);
     expect(hold.globalReservedUsd).toBeCloseTo(0.1);
+    expect(hold.kyivDate).toBe(KYIV_DATE);
     expect(
       await budgetStore.read(aiCompanyBudgetKey(COMPANY_A, "2026-09-02")),
     ).toBeCloseTo(0.1);
@@ -399,6 +406,52 @@ describe("recordStaffAssistantBudgetSpend", () => {
     expect(await budgetStore.read(aiGlobalBudgetKey("2026-09-02"))).toBeCloseTo(
       0.42,
     );
+  });
+
+  it("settles the reserve-day keys when wall clock is after Kyiv midnight", async () => {
+    const budgetStore = createMemoryAiBudgetStore();
+    const logger = createCapturingLogger().logger;
+    const hold = await enforceStaffAssistantBudget({
+      logger,
+      requestId: "req-settle-midnight",
+      userId: USER_A,
+      companyId: COMPANY_A,
+      skipTurnLimit: true,
+      now: JUST_BEFORE_KYIV_MIDNIGHT,
+      budgetStore,
+      limits: DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+    });
+    expect(hold.kyivDate).toBe(KYIV_DATE);
+    expect(
+      await budgetStore.read(aiCompanyBudgetKey(COMPANY_A, KYIV_DATE)),
+    ).toBeCloseTo(0.1);
+    expect(await budgetStore.read(aiGlobalBudgetKey(KYIV_DATE))).toBeCloseTo(
+      0.1,
+    );
+    expect(
+      await budgetStore.read(aiCompanyBudgetKey(COMPANY_A, NEXT_KYIV_DATE)),
+    ).toBe(0);
+    expect(await budgetStore.read(aiGlobalBudgetKey(NEXT_KYIV_DATE))).toBe(0);
+    await recordStaffAssistantBudgetSpend({
+      logger,
+      requestId: "req-settle-midnight",
+      companyId: COMPANY_A,
+      estimatedCostUsd: 0.42,
+      hold,
+      now: JUST_AFTER_KYIV_MIDNIGHT,
+      budgetStore,
+      limits: DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+    });
+    expect(
+      await budgetStore.read(aiCompanyBudgetKey(COMPANY_A, KYIV_DATE)),
+    ).toBeCloseTo(0.42);
+    expect(await budgetStore.read(aiGlobalBudgetKey(KYIV_DATE))).toBeCloseTo(
+      0.42,
+    );
+    expect(
+      await budgetStore.read(aiCompanyBudgetKey(COMPANY_A, NEXT_KYIV_DATE)),
+    ).toBe(0);
+    expect(await budgetStore.read(aiGlobalBudgetKey(NEXT_KYIV_DATE))).toBe(0);
   });
 });
 
@@ -446,5 +499,49 @@ describe("releaseStaffAssistantBudgetHold", () => {
     expect(await budgetStore.read(aiGlobalBudgetKey("2026-09-02"))).toBeCloseTo(
       2,
     );
+  });
+
+  it("releases the reserve-day keys when wall clock is after Kyiv midnight", async () => {
+    const budgetStore = createMemoryAiBudgetStore();
+    const logger = createCapturingLogger().logger;
+    await budgetStore.add(
+      aiCompanyBudgetKey(COMPANY_A, KYIV_DATE),
+      1,
+      AI_BUDGET_TTL_SEC,
+    );
+    await budgetStore.add(aiGlobalBudgetKey(KYIV_DATE), 2, AI_BUDGET_TTL_SEC);
+    const hold = await enforceStaffAssistantBudget({
+      logger,
+      requestId: "req-release-midnight",
+      userId: USER_A,
+      companyId: COMPANY_A,
+      skipTurnLimit: true,
+      now: JUST_BEFORE_KYIV_MIDNIGHT,
+      budgetStore,
+      limits: DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+    });
+    expect(hold.kyivDate).toBe(KYIV_DATE);
+    expect(
+      await budgetStore.read(aiCompanyBudgetKey(COMPANY_A, KYIV_DATE)),
+    ).toBeCloseTo(1.1);
+    expect(await budgetStore.read(aiGlobalBudgetKey(KYIV_DATE))).toBeCloseTo(
+      2.1,
+    );
+    await releaseStaffAssistantBudgetHold({
+      logger,
+      requestId: "req-release-midnight",
+      companyId: COMPANY_A,
+      hold,
+      now: JUST_AFTER_KYIV_MIDNIGHT,
+      budgetStore,
+    });
+    expect(
+      await budgetStore.read(aiCompanyBudgetKey(COMPANY_A, KYIV_DATE)),
+    ).toBeCloseTo(1);
+    expect(await budgetStore.read(aiGlobalBudgetKey(KYIV_DATE))).toBeCloseTo(2);
+    expect(
+      await budgetStore.read(aiCompanyBudgetKey(COMPANY_A, NEXT_KYIV_DATE)),
+    ).toBe(0);
+    expect(await budgetStore.read(aiGlobalBudgetKey(NEXT_KYIV_DATE))).toBe(0);
   });
 });
