@@ -521,6 +521,40 @@ async function writeUiMessageChunks<T>(
   }
 }
 
+function staffAssistantAbortError(): Error {
+  const error = new Error("The assistant turn was aborted.");
+  error.name = "AbortError";
+  return error;
+}
+
+async function awaitUnlessAborted<T>(
+  promise: Promise<T>,
+  abortSignal: AbortSignal | undefined,
+): Promise<T> {
+  if (abortSignal === undefined) {
+    return promise;
+  }
+  if (abortSignal.aborted) {
+    throw staffAssistantAbortError();
+  }
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => {
+      reject(staffAssistantAbortError());
+    };
+    abortSignal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        abortSignal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        abortSignal.removeEventListener("abort", onAbort);
+        reject(error instanceof Error ? error : staffAssistantAbortError());
+      },
+    );
+  });
+}
+
 /**
  * High-confidence job intents attach one ToolSet key with
  * `toolChoice: "required"`. A missing key is a wrong narrow set — fail-open
@@ -583,6 +617,12 @@ export function streamStaffAssistantChat(options: {
   readonly mintChoiceId?: () => string;
   /** Awaited inside the UI-message stream after `result.text`. A throw fails the stream. */
   readonly onTurn?: (turn: StaffAssistantTurnResult) => Promise<void>;
+  /**
+   * Awaited when execute ends without a successful `onTurn` (model
+   * error, abort, or `onTurn` throw). HTTP uses this to drop an unused
+   * budget reservation.
+   */
+  readonly onAbandoned?: () => Promise<void>;
 }): {
   readonly response: Response;
   readonly completion: Promise<StaffAssistantTurnResult>;
@@ -621,151 +661,168 @@ export function streamStaffAssistantChat(options: {
 
   const stream = createUIMessageStream<StaffAssistantUIMessage>({
     execute: async ({ writer }) => {
-      const result = streamText({
-        model: options.model,
-        system: staffAssistantSystemMessages(
-          options.turnContextAddendum !== undefined &&
-            options.turnContextAddendum !== ""
-            ? options.turnContextAddendum
-            : staffAssistantTurnContextAddendum({ now: new Date() }),
-        ),
-        messages: options.messages,
-        tools,
-        ...(forceJobTool ? { toolChoice: "required" as const } : {}),
-        output: Output.object({ schema: staffAssistantSpokenOutputSchema }),
-        providerOptions: {
-          anthropic: STAFF_ASSISTANT_ANTHROPIC_PROVIDER_OPTIONS,
-        },
-        ...(options.abortSignal !== undefined
-          ? { abortSignal: options.abortSignal }
-          : {}),
-        prepareStep: ({ steps }) => {
-          if (!forceJobTool) {
-            return undefined;
-          }
-          if (stepReachedForcedJobTerminal(steps)) {
-            return { toolChoice: "none" as const };
-          }
-          if (steps.length === 0) {
-            return { toolChoice: "required" as const };
-          }
-          return { toolChoice: "none" as const };
-        },
-        stopWhen: [
-          ({ steps }) => steps.length >= STAFF_ASSISTANT_MAX_STEPS,
-          ({ steps }) => stepRequestedConfirmation(steps),
-          ({ steps }) => stepRequestedChoice(steps),
-          ({ steps }) => forceJobTool && stepReachedForcedJobTerminal(steps),
-        ],
-        onStepEnd: ({ toolResults }) => {
-          for (const toolResult of toolResults) {
-            if (isStaffAssistantConfirmationOutput(toolResult.output)) {
-              writer.write({
-                type: "data-confirmation",
-                data: toolResult.output,
-              });
-            }
-            if (isStaffAssistantNeedsChoiceOutput(toolResult.output)) {
-              writer.write({
-                type: "data-choice",
-                data: choiceCardEnvelope({
-                  challengeId: toolResult.output.challengeId,
-                  status: "needs_choice",
-                  reason: toolResult.output.reason,
-                  ...(toolResult.output.choiceKind !== undefined
-                    ? { choiceKind: toolResult.output.choiceKind }
-                    : {}),
-                  productName: toolResult.output.productName,
-                  options: toolResult.output.options,
-                  optionsTruncated: toolResult.output.optionsTruncated,
-                }),
-              });
-            }
-          }
-        },
-      });
-      const visibleText = { chars: 0 };
-      await writeUiMessageChunks(
-        writer,
-        toUIMessageStream({
-          stream: result.stream
-            .pipeThrough(
-              createSpokenReplyUiTransform({
-                runs,
-                toolErrorMessage: () =>
-                  lastStaffAssistantTypedToolErrorMessage(
-                    presentedToolResults.map((item) => item.output),
-                  ),
-              }),
-            )
-            .pipeThrough(
-              createSuppressCompletedPresenterTextTransform(() =>
-                staffAssistantTurnUsesCompletedPresenter({
-                  locale,
-                  toolResults: presentedToolResults,
-                  runs,
-                }),
-              ),
-            )
-            .pipeThrough(createRecordVisibleTextTransform(visibleText)),
+      let onTurnSettled = false;
+      try {
+        if (options.abortSignal?.aborted === true) {
+          throw staffAssistantAbortError();
+        }
+        const result = streamText({
+          model: options.model,
+          system: staffAssistantSystemMessages(
+            options.turnContextAddendum !== undefined &&
+              options.turnContextAddendum !== ""
+              ? options.turnContextAddendum
+              : staffAssistantTurnContextAddendum({ now: new Date() }),
+          ),
+          messages: options.messages,
           tools,
-        }),
-      );
-      let parsedSpoken: string | undefined;
-      try {
-        parsedSpoken = (await result.output).spoken;
-      } catch {
-        parsedSpoken = undefined;
-      }
-      let rawText: string;
-      try {
-        rawText = await result.text;
-      } catch {
-        rawText = "The assistant could not complete this turn.";
-      }
-      const turn: StaffAssistantTurnResult = {
-        text: staffAssistantPersistedTurnText({
-          locale,
-          toolResults: presentedToolResults,
-          parsedSpoken,
-          rawText,
-          runs,
-        }),
-        toolRuns: domainToolRuns(runs).slice(0, STAFF_ASSISTANT_TOOL_RUNS_MAX),
-        usage: await staffAssistantTurnUsageFromTotal(result.usage),
-        toolsAttached: Object.keys(tools).length > 0,
-        modelSteps: await staffAssistantModelStepCount(result.steps),
-        toolResultBytesIn: clipBytes.in,
-        toolResultBytesOut: clipBytes.out,
-        toolsetHash,
-        historyMessageCount: history.messageCount,
-        historyChars: history.chars,
-      };
-      writePresentationEnvelopes(writer, presentedToolResults, runs);
-      if (
-        staffAssistantTurnUsesCompletedPresenter({
-          locale,
-          toolResults: presentedToolResults,
-          runs,
-        })
-      ) {
-        const id = STAFF_ASSISTANT_PRESENTER_STREAM_TEXT_ID;
-        writer.write({ type: "text-start", id });
-        writer.write({ type: "text-delta", id, delta: turn.text });
-        writer.write({ type: "text-end", id });
-      } else if (
-        domainToolRuns(runs).length > 0 &&
-        turn.text.trim() !== "" &&
-        visibleText.chars === 0
-      ) {
-        const id = STAFF_ASSISTANT_TOOL_ERROR_STREAM_TEXT_ID;
-        writer.write({ type: "text-start", id });
-        writer.write({ type: "text-delta", id, delta: turn.text });
-        writer.write({ type: "text-end", id });
-      }
-      resolveCompletion(turn);
-      if (options.onTurn !== undefined) {
-        await options.onTurn(turn);
+          ...(forceJobTool ? { toolChoice: "required" as const } : {}),
+          output: Output.object({ schema: staffAssistantSpokenOutputSchema }),
+          providerOptions: {
+            anthropic: STAFF_ASSISTANT_ANTHROPIC_PROVIDER_OPTIONS,
+          },
+          ...(options.abortSignal !== undefined
+            ? { abortSignal: options.abortSignal }
+            : {}),
+          prepareStep: ({ steps }) => {
+            if (!forceJobTool) {
+              return undefined;
+            }
+            if (stepReachedForcedJobTerminal(steps)) {
+              return { toolChoice: "none" as const };
+            }
+            if (steps.length === 0) {
+              return { toolChoice: "required" as const };
+            }
+            return { toolChoice: "none" as const };
+          },
+          stopWhen: [
+            ({ steps }) => steps.length >= STAFF_ASSISTANT_MAX_STEPS,
+            ({ steps }) => stepRequestedConfirmation(steps),
+            ({ steps }) => stepRequestedChoice(steps),
+            ({ steps }) => forceJobTool && stepReachedForcedJobTerminal(steps),
+          ],
+          onStepEnd: ({ toolResults }) => {
+            for (const toolResult of toolResults) {
+              if (isStaffAssistantConfirmationOutput(toolResult.output)) {
+                writer.write({
+                  type: "data-confirmation",
+                  data: toolResult.output,
+                });
+              }
+              if (isStaffAssistantNeedsChoiceOutput(toolResult.output)) {
+                writer.write({
+                  type: "data-choice",
+                  data: choiceCardEnvelope({
+                    challengeId: toolResult.output.challengeId,
+                    status: "needs_choice",
+                    reason: toolResult.output.reason,
+                    ...(toolResult.output.choiceKind !== undefined
+                      ? { choiceKind: toolResult.output.choiceKind }
+                      : {}),
+                    productName: toolResult.output.productName,
+                    options: toolResult.output.options,
+                    optionsTruncated: toolResult.output.optionsTruncated,
+                  }),
+                });
+              }
+            }
+          },
+        });
+        const visibleText = { chars: 0 };
+        await awaitUnlessAborted(
+          writeUiMessageChunks(
+            writer,
+            toUIMessageStream({
+              stream: result.stream
+                .pipeThrough(
+                  createSpokenReplyUiTransform({
+                    runs,
+                    toolErrorMessage: () =>
+                      lastStaffAssistantTypedToolErrorMessage(
+                        presentedToolResults.map((item) => item.output),
+                      ),
+                  }),
+                )
+                .pipeThrough(
+                  createSuppressCompletedPresenterTextTransform(() =>
+                    staffAssistantTurnUsesCompletedPresenter({
+                      locale,
+                      toolResults: presentedToolResults,
+                      runs,
+                    }),
+                  ),
+                )
+                .pipeThrough(createRecordVisibleTextTransform(visibleText)),
+              tools,
+            }),
+          ),
+          options.abortSignal,
+        );
+        let parsedSpoken: string | undefined;
+        try {
+          parsedSpoken = (await result.output).spoken;
+        } catch {
+          parsedSpoken = undefined;
+        }
+        let rawText: string;
+        try {
+          rawText = await result.text;
+        } catch {
+          rawText = "The assistant could not complete this turn.";
+        }
+        const turn: StaffAssistantTurnResult = {
+          text: staffAssistantPersistedTurnText({
+            locale,
+            toolResults: presentedToolResults,
+            parsedSpoken,
+            rawText,
+            runs,
+          }),
+          toolRuns: domainToolRuns(runs).slice(
+            0,
+            STAFF_ASSISTANT_TOOL_RUNS_MAX,
+          ),
+          usage: await staffAssistantTurnUsageFromTotal(result.usage),
+          toolsAttached: Object.keys(tools).length > 0,
+          modelSteps: await staffAssistantModelStepCount(result.steps),
+          toolResultBytesIn: clipBytes.in,
+          toolResultBytesOut: clipBytes.out,
+          toolsetHash,
+          historyMessageCount: history.messageCount,
+          historyChars: history.chars,
+        };
+        writePresentationEnvelopes(writer, presentedToolResults, runs);
+        if (
+          staffAssistantTurnUsesCompletedPresenter({
+            locale,
+            toolResults: presentedToolResults,
+            runs,
+          })
+        ) {
+          const id = STAFF_ASSISTANT_PRESENTER_STREAM_TEXT_ID;
+          writer.write({ type: "text-start", id });
+          writer.write({ type: "text-delta", id, delta: turn.text });
+          writer.write({ type: "text-end", id });
+        } else if (
+          domainToolRuns(runs).length > 0 &&
+          turn.text.trim() !== "" &&
+          visibleText.chars === 0
+        ) {
+          const id = STAFF_ASSISTANT_TOOL_ERROR_STREAM_TEXT_ID;
+          writer.write({ type: "text-start", id });
+          writer.write({ type: "text-delta", id, delta: turn.text });
+          writer.write({ type: "text-end", id });
+        }
+        resolveCompletion(turn);
+        if (options.onTurn !== undefined) {
+          await options.onTurn(turn);
+        }
+        onTurnSettled = true;
+      } finally {
+        if (!onTurnSettled && options.onAbandoned !== undefined) {
+          await options.onAbandoned();
+        }
       }
     },
     onError: () => "The assistant could not complete this turn.",

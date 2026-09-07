@@ -81,6 +81,7 @@ import {
   DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
   enforceStaffAssistantBudget,
   recordStaffAssistantBudgetSpend,
+  releaseStaffAssistantBudgetHold,
   staffAssistantBudgetSpendUsd,
   type StaffAssistantBudgetLimits,
 } from "./assistant-budget-guard.js";
@@ -566,7 +567,7 @@ export async function executeStaffAssistantChat(
         "staff assistant budget guard requires a verified company selector",
       );
     }
-    const companyId = canonicalizeAiBudgetCompanyId(companySelector);
+    const budgetCompanyId = canonicalizeAiBudgetCompanyId(companySelector);
     const budgetLimits =
       options.budgetLimits ?? DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS;
     const model = resolveLanguageModel(options.assistant);
@@ -575,7 +576,7 @@ export async function executeStaffAssistantChat(
       logger: options.pipeline.logger,
       requestId: options.requestId,
       userId: session.userId,
-      companyId,
+      companyId: budgetCompanyId,
       skipTurnLimit: confirmationResume || choiceResume,
       ...(options.rateLimitStore === undefined
         ? {}
@@ -585,242 +586,268 @@ export async function executeStaffAssistantChat(
         : { budgetStore: options.budgetStore }),
       limits: budgetLimits,
     });
-    const skipGate = staffAssistantShouldSkipIntentGate({
-      confirmationResume,
-      choiceResume,
-    });
-    let gatePolicy: StaffAssistantGateToolPolicy = { kind: "full" };
-    let gateRan = false;
-    let gateSkip: StaffAssistantGateSkipReason | undefined;
-    let gateUsage = EMPTY_STAFF_ASSISTANT_TURN_USAGE;
-    let forcedToolName: StaffAssistantForcedToolName | undefined;
+    let budgetSettled = false;
+    let budgetReleased = false;
+    const releaseUnusedBudgetHold = async (): Promise<void> => {
+      if (budgetSettled || budgetReleased) {
+        return;
+      }
+      budgetReleased = true;
+      await releaseStaffAssistantBudgetHold({
+        logger: options.pipeline.logger,
+        requestId: options.requestId,
+        companyId: budgetCompanyId,
+        hold: budgetHold,
+        ...(options.budgetStore === undefined
+          ? {}
+          : { budgetStore: options.budgetStore }),
+      });
+    };
+    let streamStarted = false;
+    try {
+      const skipGate = staffAssistantShouldSkipIntentGate({
+        confirmationResume,
+        choiceResume,
+      });
+      let gatePolicy: StaffAssistantGateToolPolicy = { kind: "full" };
+      let gateRan = false;
+      let gateSkip: StaffAssistantGateSkipReason | undefined;
+      let gateUsage = EMPTY_STAFF_ASSISTANT_TURN_USAGE;
+      let forcedToolName: StaffAssistantForcedToolName | undefined;
 
-    if (!skipGate && gateLanguageModel !== undefined) {
-      const lastUserText = userMessage?.text ?? "";
-      if (lastUserText.trim() !== "") {
-        const classified = await classifyStaffAssistantTurn({
-          model: gateLanguageModel,
-          lastUserText,
-          abortSignal: options.request.signal,
-        });
-        gatePolicy = staffAssistantGateToolPolicy(classified);
-        gateUsage = classified.usage;
-        gateRan = true;
-        if (gatePolicy.kind === "forced") {
-          forcedToolName = gatePolicy.toolName;
+      if (!skipGate && gateLanguageModel !== undefined) {
+        const lastUserText = userMessage?.text ?? "";
+        if (lastUserText.trim() !== "") {
+          const classified = await classifyStaffAssistantTurn({
+            model: gateLanguageModel,
+            lastUserText,
+            abortSignal: options.request.signal,
+          });
+          gatePolicy = staffAssistantGateToolPolicy(classified);
+          gateUsage = classified.usage;
+          gateRan = true;
+          if (gatePolicy.kind === "forced") {
+            forcedToolName = gatePolicy.toolName;
+          }
+          logTurnGate({
+            logger: options.pipeline.logger,
+            requestId: options.requestId,
+            gateModel: options.assistant?.gateModel ?? "unconfigured",
+            policy: gatePolicy,
+            mode: classified.mode,
+            ...(classified.intent !== undefined
+              ? { intent: classified.intent }
+              : {}),
+            confidence: classified.confidence,
+          });
         }
+      } else if (skipGate) {
+        gateSkip = confirmationResume ? "confirmation_resume" : "choice_resume";
         logTurnGate({
           logger: options.pipeline.logger,
           requestId: options.requestId,
           gateModel: options.assistant?.gateModel ?? "unconfigured",
-          policy: gatePolicy,
-          mode: classified.mode,
-          ...(classified.intent !== undefined
-            ? { intent: classified.intent }
-            : {}),
-          confidence: classified.confidence,
+          policy: { kind: "full" },
+          skip: gateSkip,
         });
       }
-    } else if (skipGate) {
-      gateSkip = confirmationResume ? "confirmation_resume" : "choice_resume";
-      logTurnGate({
-        logger: options.pipeline.logger,
-        requestId: options.requestId,
-        gateModel: options.assistant?.gateModel ?? "unconfigured",
-        policy: { kind: "full" },
-        skip: gateSkip,
-      });
-    }
 
-    const attachTools = gatePolicy.kind !== "none";
-    const replyModel =
-      !attachTools && gateLanguageModel !== undefined
-        ? gateLanguageModel
-        : model;
-    const replyModelId = attachTools
-      ? (options.assistant?.model ?? "unconfigured")
-      : (options.assistant?.gateModel ??
-        options.assistant?.model ??
-        "unconfigured");
+      const attachTools = gatePolicy.kind !== "none";
+      const replyModel =
+        !attachTools && gateLanguageModel !== undefined
+          ? gateLanguageModel
+          : model;
+      const replyModelId = attachTools
+        ? (options.assistant?.model ?? "unconfigured")
+        : (options.assistant?.gateModel ??
+          options.assistant?.model ??
+          "unconfigured");
 
-    if (userMessage !== undefined) {
-      await executeAction(options.pipeline, {
-        action: appendUserMessage,
-        input: {
-          conversationId: body.conversationId,
-          body: userMessage.text,
-        },
-        request: staffRequest({
-          requestId: options.requestId,
-          clientIp: options.clientIp,
-          aiTraceId,
-          idempotencyKey: attemptKey(
-            "message",
-            body.conversationId,
-            userMessage.id,
-          ),
-        }),
-        principal: staffPrincipal,
-      });
-    }
-
-    const contracts = filterStaffAiTools(options.registry.contracts(), {
-      role: actor.role,
-      permissions: actor.permissions,
-    });
-    const streamContracts = attachTools ? contracts : [];
-
-    let confirmationClaimed = false;
-    function claimPausedAttempt(
-      actionName: string,
-      requiresConfirmation: boolean,
-    ): PausedToolAttempt | undefined {
-      if (
-        confirmationClaimed ||
-        confirmationChallengeId === undefined ||
-        pausedAttempt === undefined ||
-        !requiresConfirmation ||
-        actionName !== pausedAttempt.actionName
-      ) {
-        return undefined;
-      }
-      confirmationClaimed = true;
-      return pausedAttempt;
-    }
-
-    const { response } = streamStaffAssistantChat({
-      model: replyModel,
-      messages: modelMessages,
-      contracts: streamContracts,
-      ...(forcedToolName !== undefined ? { forcedToolName } : {}),
-      abortSignal: options.request.signal,
-      turnContextAddendum,
-      locale: body.locale,
-      responseHeaders: {
-        "cache-control": "private, no-store",
-        [REQUEST_ID_HEADER]: options.requestId,
-      },
-      choiceBind: {
-        actorId: session.userId,
-        companyId,
-        conversationId: body.conversationId,
-      },
-      ...(options.choiceStore === undefined
-        ? {}
-        : (() => {
-            const choiceStore = options.choiceStore;
-            return {
-              openChoice: (
-                record: Parameters<StaffAssistantChoiceStore["open"]>[0],
-              ) => choiceStore.open(record),
-            };
-          })()),
-      execute: (actionName, input, toolOptions) => {
-        const action = requireImplementation(options.registry, actionName);
-        const resumedAttempt = claimPausedAttempt(
-          action.contract.name,
-          action.contract.requiresConfirmation,
-        );
-        const logicalToolCallId =
-          resumedAttempt?.toolCallId ?? toolOptions.toolCallId;
-        const idempotencyKey = action.contract.idempotent
-          ? attemptKey("tool", body.conversationId, logicalToolCallId)
-          : undefined;
-        return executeAction(options.pipeline, {
-          action,
-          input,
+      if (userMessage !== undefined) {
+        await executeAction(options.pipeline, {
+          action: appendUserMessage,
+          input: {
+            conversationId: body.conversationId,
+            body: userMessage.text,
+          },
           request: staffRequest({
             requestId: options.requestId,
             clientIp: options.clientIp,
             aiTraceId,
-            toolCallId: toolOptions.toolCallId,
-            ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
-            ...(resumedAttempt !== undefined &&
-            confirmationChallengeId !== undefined
-              ? { confirmationChallengeId }
-              : {}),
+            idempotencyKey: attemptKey(
+              "message",
+              body.conversationId,
+              userMessage.id,
+            ),
           }),
           principal: staffPrincipal,
         });
-      },
-      onTurn: async (turn) => {
-        const estimateTurnCostUsd =
-          options.assistant?.estimateTurnCostUsd ??
-          estimateStaffAssistantTurnCostUsd;
-        const estimatedCostUsd = estimateTurnCostUsd({
-          reply: turn.usage,
-          replyModelId,
-          gate: gateUsage,
-          gateModelId:
-            options.assistant?.gateModel ??
-            options.assistant?.model ??
-            "unconfigured",
-        });
-        logTurnUsage({
-          logger: options.pipeline.logger,
-          requestId: options.requestId,
-          conversationId: body.conversationId,
-          companyId,
-          actorId: session.userId,
-          model: replyModelId,
-          ...(gateRan && options.assistant?.gateModel !== undefined
-            ? { gateModel: options.assistant.gateModel }
-            : {}),
-          ...(gateSkip !== undefined
-            ? {
-                gateModel:
-                  options.assistant?.gateModel ??
-                  options.assistant?.model ??
-                  "unconfigured",
-                gateSkip,
-              }
-            : {}),
-          gateUsage,
-          toolsAttached: turn.toolsAttached,
-          usage: turn.usage,
-          modelSteps: turn.modelSteps,
-          toolNames: turn.toolRuns
-            .slice(0, STAFF_ASSISTANT_TOOL_RUNS_MAX)
-            .map((run) => run.actionName),
-          historyMessageCount: turn.historyMessageCount,
-          historyChars: turn.historyChars,
-          toolResultBytesIn: turn.toolResultBytesIn,
-          toolResultBytesOut: turn.toolResultBytesOut,
-          toolsetHash: turn.toolsetHash,
-          estimatedCostUsd: staffAssistantBudgetSpendUsd(
-            estimatedCostUsd,
-            budgetLimits.unknownModelTurnUsd,
-          ),
-        });
-        await recordStaffAssistantBudgetSpend({
-          logger: options.pipeline.logger,
-          requestId: options.requestId,
-          companyId,
-          estimatedCostUsd,
-          hold: budgetHold,
-          ...(options.budgetStore === undefined
-            ? {}
-            : { budgetStore: options.budgetStore }),
-          limits: budgetLimits,
-        });
-        try {
-          await persistAssistantTurn({
-            pipeline: options.pipeline,
-            conversationId: body.conversationId,
-            requestId: options.requestId,
-            clientIp: options.clientIp,
-            aiTraceId,
-            principal: staffPrincipal,
-            turn,
-          });
-        } catch (error: unknown) {
-          logFailure(options.pipeline.logger, options.requestId, error);
-          throw error;
-        }
-      },
-    });
+      }
 
-    return response;
+      const contracts = filterStaffAiTools(options.registry.contracts(), {
+        role: actor.role,
+        permissions: actor.permissions,
+      });
+      const streamContracts = attachTools ? contracts : [];
+
+      let confirmationClaimed = false;
+      function claimPausedAttempt(
+        actionName: string,
+        requiresConfirmation: boolean,
+      ): PausedToolAttempt | undefined {
+        if (
+          confirmationClaimed ||
+          confirmationChallengeId === undefined ||
+          pausedAttempt === undefined ||
+          !requiresConfirmation ||
+          actionName !== pausedAttempt.actionName
+        ) {
+          return undefined;
+        }
+        confirmationClaimed = true;
+        return pausedAttempt;
+      }
+
+      const { response } = streamStaffAssistantChat({
+        model: replyModel,
+        messages: modelMessages,
+        contracts: streamContracts,
+        ...(forcedToolName !== undefined ? { forcedToolName } : {}),
+        abortSignal: options.request.signal,
+        turnContextAddendum,
+        locale: body.locale,
+        responseHeaders: {
+          "cache-control": "private, no-store",
+          [REQUEST_ID_HEADER]: options.requestId,
+        },
+        choiceBind: {
+          actorId: session.userId,
+          companyId: companySelector,
+          conversationId: body.conversationId,
+        },
+        ...(options.choiceStore === undefined
+          ? {}
+          : (() => {
+              const choiceStore = options.choiceStore;
+              return {
+                openChoice: (
+                  record: Parameters<StaffAssistantChoiceStore["open"]>[0],
+                ) => choiceStore.open(record),
+              };
+            })()),
+        execute: (actionName, input, toolOptions) => {
+          const action = requireImplementation(options.registry, actionName);
+          const resumedAttempt = claimPausedAttempt(
+            action.contract.name,
+            action.contract.requiresConfirmation,
+          );
+          const logicalToolCallId =
+            resumedAttempt?.toolCallId ?? toolOptions.toolCallId;
+          const idempotencyKey = action.contract.idempotent
+            ? attemptKey("tool", body.conversationId, logicalToolCallId)
+            : undefined;
+          return executeAction(options.pipeline, {
+            action,
+            input,
+            request: staffRequest({
+              requestId: options.requestId,
+              clientIp: options.clientIp,
+              aiTraceId,
+              toolCallId: toolOptions.toolCallId,
+              ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
+              ...(resumedAttempt !== undefined &&
+              confirmationChallengeId !== undefined
+                ? { confirmationChallengeId }
+                : {}),
+            }),
+            principal: staffPrincipal,
+          });
+        },
+        onTurn: async (turn) => {
+          const estimateTurnCostUsd =
+            options.assistant?.estimateTurnCostUsd ??
+            estimateStaffAssistantTurnCostUsd;
+          const estimatedCostUsd = estimateTurnCostUsd({
+            reply: turn.usage,
+            replyModelId,
+            gate: gateUsage,
+            gateModelId:
+              options.assistant?.gateModel ??
+              options.assistant?.model ??
+              "unconfigured",
+          });
+          logTurnUsage({
+            logger: options.pipeline.logger,
+            requestId: options.requestId,
+            conversationId: body.conversationId,
+            companyId: companySelector,
+            actorId: session.userId,
+            model: replyModelId,
+            ...(gateRan && options.assistant?.gateModel !== undefined
+              ? { gateModel: options.assistant.gateModel }
+              : {}),
+            ...(gateSkip !== undefined
+              ? {
+                  gateModel:
+                    options.assistant?.gateModel ??
+                    options.assistant?.model ??
+                    "unconfigured",
+                  gateSkip,
+                }
+              : {}),
+            gateUsage,
+            toolsAttached: turn.toolsAttached,
+            usage: turn.usage,
+            modelSteps: turn.modelSteps,
+            toolNames: turn.toolRuns
+              .slice(0, STAFF_ASSISTANT_TOOL_RUNS_MAX)
+              .map((run) => run.actionName),
+            historyMessageCount: turn.historyMessageCount,
+            historyChars: turn.historyChars,
+            toolResultBytesIn: turn.toolResultBytesIn,
+            toolResultBytesOut: turn.toolResultBytesOut,
+            toolsetHash: turn.toolsetHash,
+            estimatedCostUsd: staffAssistantBudgetSpendUsd(
+              estimatedCostUsd,
+              budgetLimits.unknownModelTurnUsd,
+            ),
+          });
+          await recordStaffAssistantBudgetSpend({
+            logger: options.pipeline.logger,
+            requestId: options.requestId,
+            companyId: budgetCompanyId,
+            estimatedCostUsd,
+            hold: budgetHold,
+            ...(options.budgetStore === undefined
+              ? {}
+              : { budgetStore: options.budgetStore }),
+            limits: budgetLimits,
+          });
+          budgetSettled = true;
+          try {
+            await persistAssistantTurn({
+              pipeline: options.pipeline,
+              conversationId: body.conversationId,
+              requestId: options.requestId,
+              clientIp: options.clientIp,
+              aiTraceId,
+              principal: staffPrincipal,
+              turn,
+            });
+          } catch (error: unknown) {
+            logFailure(options.pipeline.logger, options.requestId, error);
+            throw error;
+          }
+        },
+        onAbandoned: releaseUnusedBudgetHold,
+      });
+      streamStarted = true;
+      return response;
+    } finally {
+      if (!streamStarted) {
+        await releaseUnusedBudgetHold();
+      }
+    }
   } catch (error) {
     if (!(error instanceof RateLimitError)) {
       logFailure(options.pipeline.logger, options.requestId, error);

@@ -16,6 +16,7 @@ import {
   enforceStaffAssistantBudget,
   logStaffAssistantBudgetDenial,
   recordStaffAssistantBudgetSpend,
+  releaseStaffAssistantBudgetHold,
   staffAssistantBudgetSpendUsd,
 } from "./assistant-budget-guard.js";
 
@@ -397,6 +398,53 @@ describe("recordStaffAssistantBudgetSpend", () => {
     ).toBeCloseTo(0.42);
     expect(await budgetStore.read(aiGlobalBudgetKey("2026-09-02"))).toBeCloseTo(
       0.42,
+    );
+  });
+});
+
+describe("releaseStaffAssistantBudgetHold", () => {
+  it("restores company and global counters to the pre-reserve value", async () => {
+    const budgetStore = createMemoryAiBudgetStore();
+    const logger = createCapturingLogger().logger;
+    await budgetStore.add(
+      aiCompanyBudgetKey(COMPANY_A, "2026-09-02"),
+      1,
+      AI_BUDGET_TTL_SEC,
+    );
+    await budgetStore.add(
+      aiGlobalBudgetKey("2026-09-02"),
+      2,
+      AI_BUDGET_TTL_SEC,
+    );
+    const hold = await enforceStaffAssistantBudget({
+      logger,
+      requestId: "req-release",
+      userId: USER_A,
+      companyId: COMPANY_A,
+      skipTurnLimit: true,
+      now: NOW,
+      budgetStore,
+      limits: DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+    });
+    expect(
+      await budgetStore.read(aiCompanyBudgetKey(COMPANY_A, "2026-09-02")),
+    ).toBeCloseTo(1.1);
+    expect(await budgetStore.read(aiGlobalBudgetKey("2026-09-02"))).toBeCloseTo(
+      2.1,
+    );
+    await releaseStaffAssistantBudgetHold({
+      logger,
+      requestId: "req-release",
+      companyId: COMPANY_A.toUpperCase(),
+      hold,
+      now: NOW,
+      budgetStore,
+    });
+    expect(
+      await budgetStore.read(aiCompanyBudgetKey(COMPANY_A, "2026-09-02")),
+    ).toBeCloseTo(1);
+    expect(await budgetStore.read(aiGlobalBudgetKey("2026-09-02"))).toBeCloseTo(
+      2,
     );
   });
 });

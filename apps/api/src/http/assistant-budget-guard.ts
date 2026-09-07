@@ -97,6 +97,7 @@ export async function enforceStaffAssistantBudget(options: {
     companyKey,
     globalKey,
     retryAfterSec: secondsUntilKyivMidnight(now),
+    now,
     budgetStore: options.budgetStore,
     limits: options.limits,
   });
@@ -121,10 +122,9 @@ export async function enforceStaffAssistantBudget(options: {
       logger: options.logger,
       requestId: options.requestId,
       companyId,
-      companyKey,
-      globalKey,
-      budgetStore: options.budgetStore,
       hold,
+      now,
+      budgetStore: options.budgetStore,
     });
     logStaffAssistantBudgetDenial({
       logger: options.logger,
@@ -139,10 +139,9 @@ export async function enforceStaffAssistantBudget(options: {
       logger: options.logger,
       requestId: options.requestId,
       companyId,
-      companyKey,
-      globalKey,
-      budgetStore: options.budgetStore,
       hold,
+      now,
+      budgetStore: options.budgetStore,
     });
     logStaffAssistantBudgetDenial({
       logger: options.logger,
@@ -205,6 +204,7 @@ async function reserveStaffAssistantBudget(options: {
   readonly companyKey: string;
   readonly globalKey: string;
   readonly retryAfterSec: number;
+  readonly now: Date;
   readonly budgetStore?: AiBudgetStore | undefined;
   readonly limits: StaffAssistantBudgetLimits;
 }): Promise<StaffAssistantBudgetHold> {
@@ -247,10 +247,9 @@ async function reserveStaffAssistantBudget(options: {
       logger: options.logger,
       requestId: options.requestId,
       companyId: options.companyId,
-      companyKey: options.companyKey,
-      globalKey: options.globalKey,
-      budgetStore: options.budgetStore,
       hold,
+      now: options.now,
+      budgetStore: options.budgetStore,
     });
     throw error;
   }
@@ -318,34 +317,35 @@ async function reserveBudgetKey(options: {
   return 0;
 }
 
-async function releaseStaffAssistantBudgetHold(options: {
+export async function releaseStaffAssistantBudgetHold(options: {
   readonly logger: Logger;
   readonly requestId: string;
   readonly companyId: string;
-  readonly companyKey: string;
-  readonly globalKey: string;
-  readonly budgetStore?: AiBudgetStore | undefined;
   readonly hold: StaffAssistantBudgetHold;
+  readonly now?: Date;
+  readonly budgetStore?: AiBudgetStore | undefined;
 }): Promise<void> {
   if (options.budgetStore === undefined) {
     return;
   }
+  const companyId = canonicalizeAiBudgetCompanyId(options.companyId);
+  const kyivDate = kyivCalendarDate(options.now ?? new Date());
   try {
     await addBudgetDelta(
       options.budgetStore,
-      options.companyKey,
+      aiCompanyBudgetKey(companyId, kyivDate),
       -options.hold.companyReservedUsd,
     );
     await addBudgetDelta(
       options.budgetStore,
-      options.globalKey,
+      aiGlobalBudgetKey(kyivDate),
       -options.hold.globalReservedUsd,
     );
   } catch (error: unknown) {
     options.logger.error(
       {
         request_id: options.requestId,
-        company_id: options.companyId,
+        company_id: companyId,
         err: error,
       },
       "staff assistant budget reservation release failed",

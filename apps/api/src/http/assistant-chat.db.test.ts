@@ -402,6 +402,7 @@ async function postChat(
     readonly body: unknown;
     readonly challengeId?: string;
     readonly extraHeaders?: Record<string, string>;
+    readonly signal?: AbortSignal;
   },
 ): Promise<Response> {
   const headers = new Headers({
@@ -426,6 +427,7 @@ async function postChat(
     method: "POST",
     headers,
     body: JSON.stringify(options.body),
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
   });
 }
 
@@ -2663,6 +2665,69 @@ describe("SHO-418 orders_create choice activation", () => {
     expect(runs[0]?.challengeId).toBe(choice?.challengeId);
   });
 
+  it("claims a choice opened with lowercase x-company-id using the uppercase selector", async () => {
+    const store = createMemoryChoiceStore();
+    await staffInvoke(createCustomer, {
+      name: "SHO505 Case Buyer",
+      phone: "+380671110507",
+    });
+    await seedVariableProduct("SHO505 Case Macarons", ["Lemon", "Vanilla"]);
+    const streamModel = new MockLanguageModelV3({
+      doStream: [
+        mockToolCallStream(
+          "call-create-case",
+          ORDERS_CREATE_TOOL_NAME,
+          JSON.stringify({
+            customerQuery: "SHO505 Case Buyer",
+            items: [
+              {
+                productQuery: "SHO505 Case Macarons",
+                quantityDecimal: "1",
+              },
+            ],
+          }),
+        ),
+      ],
+    });
+    const app = chatApp(streamModel, undefined, store);
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await staffInvoke(createConversation, {
+      title: "SHO505 choice case",
+    });
+    const chatResponse = await postChat(app, {
+      token,
+      companyId: kitIdentities.companies.a.toLowerCase(),
+      body: userChatBody(
+        conversation.id,
+        "Create SHO505 Case Macarons",
+        randomUUID(),
+        "en",
+      ),
+    });
+    expect(chatResponse.status).toBe(200);
+    const choice = choiceFromSsePayloads(
+      await readUiMessageSsePayloads(chatResponse),
+    );
+    expect(choice).toBeDefined();
+    expect(choice?.challengeId).toBeDefined();
+    const lemon = choice?.options.find((option) => option.label === "Lemon");
+    expect(lemon?.id).toBeDefined();
+    const resume = await postChoice(app, {
+      token,
+      companyId: kitIdentities.companies.a.toUpperCase(),
+      body: {
+        conversationId: conversation.id,
+        choiceId: choice?.challengeId,
+        optionId: lemon?.id,
+      },
+    });
+    expect(resume.status).toBe(200);
+    const body = assistantChoiceInteractionResultSchema.parse(
+      await resume.json(),
+    );
+    expect(body.status).toBe("completed");
+  });
+
   it("unique variantQuery Lemon creates without writing a choice record", async () => {
     const store = createMemoryChoiceStore();
     const open = vi.spyOn(store, "open");
@@ -3773,5 +3838,99 @@ describe("POST /assistant/chat budget guard (SHO-505)", () => {
     expect(allowed.status).toBe(200);
     await readUiMessageSsePayloads(allowed);
     expect(gateModel.doGenerateCalls).toHaveLength(1);
+  });
+
+  it("releases the reserved USD when classify throws before onTurn", async () => {
+    const streamModel = new MockLanguageModelV3({
+      doStream: [mockTextStream("ok")],
+    });
+    const gateModel = new MockLanguageModelV3({
+      doGenerate: mockOperationalGateGenerate(true),
+      doStream: [mockTextStream("should not chitchat")],
+    });
+    const classify = vi
+      .spyOn(ShowzyAi, "classifyStaffAssistantTurn")
+      .mockRejectedValue(new Error("gate down"));
+    try {
+      const app = budgetApp({ streamModel, gateModel });
+      const kyivDate = kyivCalendarDate(new Date());
+      const budgetStore = createRedisAiBudgetStore(redis);
+      const companyKey = aiCompanyBudgetKey(
+        kitIdentities.companies.a,
+        kyivDate,
+      );
+      const globalKey = aiGlobalBudgetKey(kyivDate);
+      await budgetStore.add(companyKey, 1, AI_BUDGET_TTL_SEC);
+      await budgetStore.add(globalKey, 2, AI_BUDGET_TTL_SEC);
+      const token = await insertBearer(kit, kitIdentities.users.anna);
+      const conversation = await staffInvoke(createConversation, {
+        title: "Release on gate throw",
+      });
+      const response = await postChat(app, {
+        token,
+        companyId: kitIdentities.companies.a,
+        body: userChatBody(conversation.id, "gate throw"),
+      });
+      expect(response.status).toBeGreaterThanOrEqual(400);
+      expect(await budgetStore.read(companyKey)).toBeCloseTo(1);
+      expect(await budgetStore.read(globalKey)).toBeCloseTo(2);
+      expect(streamModel.doStreamCalls).toHaveLength(0);
+    } finally {
+      classify.mockRestore();
+    }
+  });
+
+  it("releases the reserved USD when the SSE aborts before onTurn", async () => {
+    let streamStarted = false;
+    const streamModel = new MockLanguageModelV3({
+      doStream: () => {
+        streamStarted = true;
+        return new Promise((_, reject) => {
+          setTimeout(() => {
+            reject(new Error("test timeout"));
+          }, 20_000);
+        });
+      },
+    });
+    const gateModel = new MockLanguageModelV3({
+      doGenerate: mockOperationalGateGenerate(true),
+      doStream: [mockTextStream("should not chitchat")],
+    });
+    const app = budgetApp({ streamModel, gateModel });
+    const kyivDate = kyivCalendarDate(new Date());
+    const budgetStore = createRedisAiBudgetStore(redis);
+    const companyKey = aiCompanyBudgetKey(kitIdentities.companies.a, kyivDate);
+    const globalKey = aiGlobalBudgetKey(kyivDate);
+    await budgetStore.add(companyKey, 1, AI_BUDGET_TTL_SEC);
+    await budgetStore.add(globalKey, 2, AI_BUDGET_TTL_SEC);
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await staffInvoke(createConversation, {
+      title: "Release on abort",
+    });
+    const controller = new AbortController();
+    const responsePromise = postChat(app, {
+      token,
+      companyId: kitIdentities.companies.a,
+      body: userChatBody(conversation.id, "abort hold"),
+      signal: controller.signal,
+    });
+    await waitFor(async () => {
+      if (!streamStarted) {
+        return false;
+      }
+      const spent = await budgetStore.read(companyKey);
+      return spent >= 1.099;
+    }, "budget reserved and stream started");
+    controller.abort();
+    await responsePromise.catch(() => undefined);
+    await waitFor(async () => {
+      const companySpent = await budgetStore.read(companyKey);
+      const globalSpent = await budgetStore.read(globalKey);
+      return (
+        Math.abs(companySpent - 1) < 0.001 && Math.abs(globalSpent - 2) < 0.001
+      );
+    }, "budget released after abort");
+    expect(await budgetStore.read(companyKey)).toBeCloseTo(1);
+    expect(await budgetStore.read(globalKey)).toBeCloseTo(2);
   });
 });

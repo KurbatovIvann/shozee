@@ -1047,6 +1047,74 @@ describe("streamStaffAssistantChat", () => {
     );
   });
 
+  it("calls onAbandoned when abortSignal is already aborted before onTurn", async () => {
+    const onTurn = vi.fn(() => Promise.resolve());
+    const onAbandoned = vi.fn(() => Promise.resolve());
+    const abortController = new AbortController();
+    abortController.abort();
+    const model = new MockLanguageModelV3({
+      doStream: [mockTextStream("You have no orders.")],
+    });
+    const { response } = streamStaffAssistantChat({
+      model,
+      messages: [{ role: "user", content: "List orders" }],
+      contracts: [listOrders],
+      execute: () => Promise.resolve({ items: [], nextCursor: null }),
+      abortSignal: abortController.signal,
+      onTurn,
+      onAbandoned,
+    });
+    await readUiMessageSsePayloads(response);
+    expect(onAbandoned).toHaveBeenCalledOnce();
+    expect(onTurn).not.toHaveBeenCalled();
+  });
+
+  it("calls onAbandoned when abortSignal fires during the model stream", async () => {
+    const onTurn = vi.fn(() => Promise.resolve());
+    const onAbandoned = vi.fn(() => Promise.resolve());
+    const abortController = new AbortController();
+    const model = new MockLanguageModelV3({
+      doStream: () =>
+        new Promise(() => {
+          queueMicrotask(() => {
+            abortController.abort();
+          });
+        }),
+    });
+    const { response } = streamStaffAssistantChat({
+      model,
+      messages: [{ role: "user", content: "List orders" }],
+      contracts: [listOrders],
+      execute: () => Promise.resolve({ items: [], nextCursor: null }),
+      abortSignal: abortController.signal,
+      onTurn,
+      onAbandoned,
+    });
+    await readUiMessageSsePayloads(response);
+    expect(onAbandoned).toHaveBeenCalledOnce();
+    expect(onTurn).not.toHaveBeenCalled();
+  });
+
+  it("does not call onAbandoned after a successful onTurn", async () => {
+    const onTurn = vi.fn(() => Promise.resolve());
+    const onAbandoned = vi.fn(() => Promise.resolve());
+    const model = new MockLanguageModelV3({
+      doStream: [mockTextStream("You have no orders.")],
+    });
+    const { response, completion } = streamStaffAssistantChat({
+      model,
+      messages: [{ role: "user", content: "List orders" }],
+      contracts: [listOrders],
+      execute: () => Promise.resolve({ items: [], nextCursor: null }),
+      onTurn,
+      onAbandoned,
+    });
+    await readUiMessageSsePayloads(response);
+    await completion;
+    expect(onTurn).toHaveBeenCalledOnce();
+    expect(onAbandoned).not.toHaveBeenCalled();
+  });
+
   it("flattens spoken after orders_list_page and keeps the tool part", async () => {
     const spoken = "Albina has 4 orders this week.";
     const execute = vi.fn(() =>
