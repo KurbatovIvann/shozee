@@ -17,15 +17,16 @@ import type { ConfirmationStore, RateLimitStore } from "@showzy/core";
 import type { Redis } from "ioredis";
 
 import type { OtpSendStore } from "../auth/otp-send-guard.js";
+import {
+  hmacBetterAuthConsumeKey,
+  requireAuthIpHmacSecret,
+} from "./auth-ip-hmac.js";
+import { parseAiBudgetSpent, type AiBudgetStore } from "./budget.js";
 import type {
   ChoiceClaimDecision,
   ChoiceCompleteDecision,
   StaffAssistantChoiceStore,
 } from "./choice.js";
-import {
-  hmacBetterAuthConsumeKey,
-  requireAuthIpHmacSecret,
-} from "./auth-ip-hmac.js";
 import type { AuthRateLimitStore, SecondaryStorage } from "./memory.js";
 
 /** Adapter failure — the rate-limit/confirmation hooks own fail-open/closed. */
@@ -303,6 +304,25 @@ export function createRedisRateLimitStore(
         String(now()),
       );
       return parseTokenBucketResult(result);
+    },
+  };
+}
+
+/**
+ * Daily USD counters: INCRBYFLOAT then EXPIRE. Not Lua — a lost EXPIRE
+ * still leaves a key an operator can DEL (SHO-505).
+ */
+export function createRedisAiBudgetStore(
+  redis: Pick<Redis, "get" | "incrbyfloat" | "expire">,
+): AiBudgetStore {
+  return {
+    async read(key) {
+      return parseAiBudgetSpent(await redis.get(key));
+    },
+    async add(key, amountUsd, ttlSec) {
+      const next = await redis.incrbyfloat(key, amountUsd);
+      await redis.expire(key, ttlSec);
+      return parseAiBudgetSpent(String(next));
     },
   };
 }

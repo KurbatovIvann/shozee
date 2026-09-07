@@ -26,6 +26,7 @@ import { createApp, type AuthInstance } from "./http/app.js";
 import { createProcessObservability } from "./observability.js";
 import { createActionPipeline } from "./pipeline.js";
 import {
+  createRedisAiBudgetStore,
   createRedisAuthRateLimitStore,
   createRedisChoiceStore,
   createRedisConfirmationStore,
@@ -134,6 +135,16 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
         : {}),
     },
     choiceStore: createRedisChoiceStore(redis),
+    assistantBudget: {
+      rateLimitStore,
+      budgetStore: createRedisAiBudgetStore(redis),
+      limits: {
+        chatTurnsPerMinutePerUser: config.ai.chatTurnsPerMinutePerUser,
+        dailyBudgetUsdPerCompany: config.ai.dailyBudgetUsdPerCompany,
+        dailyBudgetUsdGlobal: config.ai.dailyBudgetUsdGlobal,
+        unknownModelTurnUsd: config.ai.unknownModelTurnUsd,
+      },
+    },
   });
 
   return {

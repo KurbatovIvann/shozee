@@ -218,7 +218,9 @@ export {
 } from "./system-prompt.js";
 export { staffAssistantTurnContextAddendum } from "./turn-context.js";
 export {
+  kyivCalendarDate,
   mapOrdersListPeriod,
+  secondsUntilKyivMidnight,
   staffAssistantClockLines,
   STAFF_ASSISTANT_TIME_ZONE,
   type OrdersListPeriod,

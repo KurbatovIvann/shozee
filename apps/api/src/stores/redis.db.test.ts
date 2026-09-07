@@ -13,6 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { hmacBetterAuthConsumeKey } from "./auth-ip-hmac.js";
 import {
+  createRedisAiBudgetStore,
   createRedisAuthRateLimitStore,
   createRedisChoiceStore,
   createRedisConfirmationStore,
@@ -111,6 +112,20 @@ describe("createRedisRateLimitStore", () => {
     clock.advance(30_000);
     expect(await store.consume(request)).toEqual({ allowed: true });
     expect((await store.consume(request)).allowed).toBe(false);
+  });
+});
+
+describe("createRedisAiBudgetStore", () => {
+  it("INCRBYFLOAT adds spend and EXPIRE keeps the key for 48h", async () => {
+    const store = createRedisAiBudgetStore(redis);
+    const key = `ai-budget:test:${randomUUID()}`;
+    expect(await store.read(key)).toBe(0);
+    expect(await store.add(key, 0.1, 48 * 60 * 60)).toBeCloseTo(0.1);
+    expect(await store.add(key, 0.05, 48 * 60 * 60)).toBeCloseTo(0.15);
+    expect(await store.read(key)).toBeCloseTo(0.15);
+    const ttl = await redis.ttl(key);
+    expect(ttl).toBeGreaterThan(47 * 60 * 60);
+    expect(ttl).toBeLessThanOrEqual(48 * 60 * 60);
   });
 });
 

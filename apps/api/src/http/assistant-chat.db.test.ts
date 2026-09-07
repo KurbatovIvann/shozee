@@ -10,12 +10,14 @@ import {
   catalogDomainErrorExtrasFromError,
   isStaffAssistantConfirmationOutput,
   isStaffAssistantNeedsChoiceOutput,
+  kyivCalendarDate,
   ORDERS_CREATE_TOOL_NAME,
   ORDERS_LIST_COUNTS_TOOL_NAME,
   ORDERS_LIST_PAGE_TOOL_NAME,
   presentCatalogDomainError,
   presentChoiceStaffAssistantTurn,
   PRICING_LIST_PRICE_LISTS_TOOL_NAME,
+  secondsUntilKyivMidnight,
   STAFF_ASSISTANT_MODEL_HISTORY_MAX,
   STAFF_ASSISTANT_TOOL_SEARCH_NAME,
   toProviderToolName,
@@ -78,19 +80,45 @@ import {
 } from "@showzy/db/schema/assistant";
 import { companyCustomers, customerGroups } from "@showzy/db/schema/customers";
 import { orders } from "@showzy/db/schema/orders";
+import {
+  RedisContainer,
+  type StartedRedisContainer,
+} from "@testcontainers/redis";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { Redis } from "ioredis";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import type { z } from "zod";
 
 import { buildAuthOptions } from "../auth/options.js";
 import { createAtomicOtpSendStore } from "../auth/otp-send-guard.js";
 import { createActionRegistry } from "../composition.js";
+import {
+  AI_BUDGET_TTL_SEC,
+  aiCompanyBudgetKey,
+  aiGlobalBudgetKey,
+} from "../stores/budget.js";
 import { createMemoryChoiceStore } from "../stores/choice.js";
 import {
   createMemoryAuthRateLimitStore,
   createMemorySecondaryStorage,
 } from "../stores/memory.js";
+import {
+  createRedisAiBudgetStore,
+  createRedisRateLimitStore,
+} from "../stores/redis.js";
+import {
+  DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+  type StaffAssistantBudgetLimits,
+} from "./assistant-budget-guard.js";
 import {
   createApp,
   HTTP_INVOCATION_CHANNEL,
@@ -100,6 +128,7 @@ import {
   ASSISTANT_CHAT_PATH,
   ASSISTANT_INVOCATION_CHANNEL,
   executeStaffAssistantChat,
+  type StaffAssistantRuntime,
 } from "./assistant-chat.js";
 import { ASSISTANT_CHOICE_PATH } from "./assistant-choice.js";
 import { REQUEST_ID_HEADER } from "./request-id.js";
@@ -3214,5 +3243,403 @@ describe("SHO-442 presenter-owned archived / no_active_variants chat turns", () 
       await kit.db.runtime.db.select().from(orders)
     ).filter((row) => row.customerId === customer.id);
     expect(companyOrders).toHaveLength(0);
+  });
+});
+
+describe("POST /assistant/chat budget guard (SHO-505)", () => {
+  let redisContainer: StartedRedisContainer;
+  let redis: Redis;
+
+  beforeAll(async () => {
+    redisContainer = await new RedisContainer("redis:8-alpine").start();
+    redis = new Redis(redisContainer.getConnectionUrl());
+  });
+
+  afterAll(async () => {
+    await redis.quit();
+    await redisContainer.stop();
+  });
+
+  beforeEach(async () => {
+    await redis.flushdb();
+  });
+
+  function budgetApp(options: {
+    readonly streamModel: LanguageModel;
+    readonly gateModel: LanguageModel;
+    readonly logger?: ReturnType<typeof createCapturingLogger>["logger"];
+    readonly limits?: StaffAssistantBudgetLimits;
+    readonly estimateTurnCostUsd?: StaffAssistantRuntime["estimateTurnCostUsd"];
+  }) {
+    return createApp({
+      auth,
+      registry,
+      contractModules,
+      pipeline:
+        options.logger === undefined
+          ? pipeline
+          : { ...pipeline, logger: options.logger },
+      trustedProxies: [],
+      getPeerAddress: () => REAL_CLIENT,
+      pkiProxy: {
+        rateLimitStore: createInMemoryRateLimitStore(),
+        ipHmacSecret: "test-pki-proxy-ip-hmac-secret!!",
+      },
+      assistant: {
+        model: "mock",
+        gateModel: "mock-gate",
+        languageModel: options.streamModel,
+        gateLanguageModel: options.gateModel,
+        ...(options.estimateTurnCostUsd === undefined
+          ? {}
+          : { estimateTurnCostUsd: options.estimateTurnCostUsd }),
+      },
+      assistantBudget: {
+        rateLimitStore: createRedisRateLimitStore(redis),
+        budgetStore: createRedisAiBudgetStore(redis),
+        limits: options.limits ?? DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+      },
+    });
+  }
+
+  async function insertCompanyAMember(): Promise<{
+    readonly userId: string;
+    readonly token: string;
+  }> {
+    const userId = randomUUID();
+    await kit.db.runtime.db.insert(user).values({
+      id: userId,
+      name: "Budget Clerk",
+      email: `budget-clerk-${userId}@assistant-kit.test`,
+    });
+    await kit.db.runtime.db.insert(companyMembers).values({
+      companyId: kitIdentities.companies.a,
+      userId,
+      role: "employee",
+      permissions: { granted: ["assistant:use"], denied: [] },
+    });
+    return { userId, token: await insertBearer(kit, userId) };
+  }
+
+  it("returns 429 on the 21st turn in a minute without calling gate or model", async () => {
+    const streamModel = new MockLanguageModelV3({
+      doStream: async () => mockTextStream("ok"),
+    });
+    const gateModel = new MockLanguageModelV3({
+      doGenerate: mockOperationalGateGenerate(true),
+      doStream: async () => mockTextStream("should not chitchat"),
+    });
+    const capturing = createCapturingLogger();
+    const app = budgetApp({
+      streamModel,
+      gateModel,
+      logger: capturing.logger,
+    });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await staffInvoke(createConversation, {
+      title: "Turn limit",
+    });
+    const sentinel = "BUDGET_DENIAL_SENTINEL_sho505";
+    for (let i = 0; i < 20; i += 1) {
+      const response = await postChat(app, {
+        token,
+        companyId: kitIdentities.companies.a,
+        body: userChatBody(conversation.id, `turn ${String(i)}`),
+      });
+      expect(response.status).toBe(200);
+      await readUiMessageSsePayloads(response);
+    }
+    expect(gateModel.doGenerateCalls).toHaveLength(20);
+    expect(streamModel.doStreamCalls.length).toBeGreaterThan(0);
+    const streamCallsAfterAllowed = streamModel.doStreamCalls.length;
+    const twentyFirst = await postChat(app, {
+      token,
+      companyId: kitIdentities.companies.a,
+      body: userChatBody(conversation.id, sentinel),
+    });
+    expect(twentyFirst.status).toBe(429);
+    const body = (await twentyFirst.json()) as {
+      code: string;
+      status: number;
+      data?: { retryAfterSec?: number };
+    };
+    expect(body).toMatchObject({ code: "RATE_LIMITED", status: 429 });
+    expect(body.data?.retryAfterSec).toBeGreaterThanOrEqual(1);
+    expect(gateModel.doGenerateCalls).toHaveLength(20);
+    expect(streamModel.doStreamCalls).toHaveLength(streamCallsAfterAllowed);
+    const denial = capturing
+      .entries()
+      .find((entry) => entry["msg"] === "staff assistant budget denied");
+    expect(denial?.["reason"]).toBe("turn_limit");
+    expect(denial?.["company_id"]).toBe(kitIdentities.companies.a);
+    expect(JSON.stringify(denial)).not.toContain(sentinel);
+
+    const other = await insertCompanyAMember();
+    const otherConversation = await staffInvoke(
+      createConversation,
+      { title: "Other user" },
+      { userId: other.userId, companyId: kitIdentities.companies.a },
+    );
+    const otherTurn = await postChat(app, {
+      token: other.token,
+      companyId: kitIdentities.companies.a,
+      body: userChatBody(otherConversation.id, "hello from other user"),
+    });
+    expect(otherTurn.status).toBe(200);
+    await readUiMessageSsePayloads(otherTurn);
+    expect(gateModel.doGenerateCalls).toHaveLength(21);
+  });
+
+  it("returns 429 when the company counter is at the limit and isolates tenants", async () => {
+    const streamModel = new MockLanguageModelV3({
+      doStream: [mockTextStream("ok")],
+    });
+    const gateModel = new MockLanguageModelV3({
+      doGenerate: mockOperationalGateGenerate(true),
+      doStream: [mockTextStream("should not chitchat")],
+    });
+    const limits: StaffAssistantBudgetLimits = {
+      ...DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+      dailyBudgetUsdPerCompany: 1,
+    };
+    const app = budgetApp({ streamModel, gateModel, limits });
+    const kyivDate = kyivCalendarDate(new Date());
+    const budgetStore = createRedisAiBudgetStore(redis);
+    await budgetStore.add(
+      aiCompanyBudgetKey(kitIdentities.companies.a, kyivDate),
+      1,
+      AI_BUDGET_TTL_SEC,
+    );
+    const anna = await insertBearer(kit, kitIdentities.users.anna);
+    const annaConversation = await staffInvoke(createConversation, {
+      title: "Company budget A",
+    });
+    const denied = await postChat(app, {
+      token: anna,
+      companyId: kitIdentities.companies.a,
+      body: userChatBody(annaConversation.id, "spend"),
+    });
+    expect(denied.status).toBe(429);
+    const body = (await denied.json()) as {
+      data?: { retryAfterSec?: number };
+    };
+    const untilMidnight = secondsUntilKyivMidnight(new Date());
+    expect(body.data?.retryAfterSec).toBeGreaterThanOrEqual(1);
+    expect(body.data?.retryAfterSec).toBeLessThanOrEqual(untilMidnight);
+    expect(gateModel.doGenerateCalls).toHaveLength(0);
+    expect(streamModel.doStreamCalls).toHaveLength(0);
+
+    const boris = await insertBearer(kit, kitIdentities.users.boris);
+    const borsConversation = await staffInvoke(
+      createConversation,
+      { title: "Company budget B" },
+      {
+        userId: kitIdentities.users.boris,
+        companyId: kitIdentities.companies.b,
+      },
+    );
+    const otherCompany = await postChat(app, {
+      token: boris,
+      companyId: kitIdentities.companies.b,
+      body: userChatBody(borsConversation.id, "hello from B"),
+    });
+    expect(otherCompany.status).toBe(200);
+    await readUiMessageSsePayloads(otherCompany);
+    expect(gateModel.doGenerateCalls).toHaveLength(1);
+  });
+
+  it("returns 429 for every company when the global counter is at the limit", async () => {
+    const streamModel = new MockLanguageModelV3({
+      doStream: [mockTextStream("ok")],
+    });
+    const gateModel = new MockLanguageModelV3({
+      doGenerate: mockOperationalGateGenerate(true),
+      doStream: [mockTextStream("should not chitchat")],
+    });
+    const limits: StaffAssistantBudgetLimits = {
+      ...DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+      dailyBudgetUsdGlobal: 2,
+    };
+    const app = budgetApp({ streamModel, gateModel, limits });
+    await createRedisAiBudgetStore(redis).add(
+      aiGlobalBudgetKey(kyivCalendarDate(new Date())),
+      2,
+      AI_BUDGET_TTL_SEC,
+    );
+    const anna = await insertBearer(kit, kitIdentities.users.anna);
+    const annaConversation = await staffInvoke(createConversation, {
+      title: "Global A",
+    });
+    const annaDenied = await postChat(app, {
+      token: anna,
+      companyId: kitIdentities.companies.a,
+      body: userChatBody(annaConversation.id, "global a"),
+    });
+    expect(annaDenied.status).toBe(429);
+    const boris = await insertBearer(kit, kitIdentities.users.boris);
+    const borsConversation = await staffInvoke(
+      createConversation,
+      { title: "Global B" },
+      {
+        userId: kitIdentities.users.boris,
+        companyId: kitIdentities.companies.b,
+      },
+    );
+    const borisDenied = await postChat(app, {
+      token: boris,
+      companyId: kitIdentities.companies.b,
+      body: userChatBody(borsConversation.id, "global b"),
+    });
+    expect(borisDenied.status).toBe(429);
+    expect(gateModel.doGenerateCalls).toHaveLength(0);
+    expect(streamModel.doStreamCalls).toHaveLength(0);
+  });
+
+  it("increments company and global counters by estimated USD, or the unknown-model ceiling", async () => {
+    const streamModel = new MockLanguageModelV3({
+      doStream: [mockTextStream("ok")],
+    });
+    const gateModel = new MockLanguageModelV3({
+      doGenerate: mockOperationalGateGenerate(true),
+      doStream: [mockTextStream("should not chitchat")],
+    });
+    const priced = budgetApp({
+      streamModel,
+      gateModel,
+      estimateTurnCostUsd: () => 0.42,
+    });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await staffInvoke(createConversation, {
+      title: "Increment priced",
+    });
+    const pricedTurn = await postChat(priced, {
+      token,
+      companyId: kitIdentities.companies.a,
+      body: userChatBody(conversation.id, "priced turn"),
+    });
+    expect(pricedTurn.status).toBe(200);
+    await readUiMessageSsePayloads(pricedTurn);
+    const kyivDate = kyivCalendarDate(new Date());
+    const budgetStore = createRedisAiBudgetStore(redis);
+    expect(
+      await budgetStore.read(
+        aiCompanyBudgetKey(kitIdentities.companies.a, kyivDate),
+      ),
+    ).toBeCloseTo(0.42);
+    expect(await budgetStore.read(aiGlobalBudgetKey(kyivDate))).toBeCloseTo(
+      0.42,
+    );
+
+    await redis.flushdb();
+    const unknown = budgetApp({
+      streamModel: new MockLanguageModelV3({
+        doStream: [mockTextStream("ok")],
+      }),
+      gateModel: new MockLanguageModelV3({
+        doGenerate: mockOperationalGateGenerate(true),
+        doStream: [mockTextStream("should not chitchat")],
+      }),
+      estimateTurnCostUsd: () => null,
+    });
+    const unknownTurn = await postChat(unknown, {
+      token,
+      companyId: kitIdentities.companies.a,
+      body: userChatBody(conversation.id, "unknown model"),
+    });
+    expect(unknownTurn.status).toBe(200);
+    await readUiMessageSsePayloads(unknownTurn);
+    expect(
+      await budgetStore.read(
+        aiCompanyBudgetKey(kitIdentities.companies.a, kyivDate),
+      ),
+    ).toBeCloseTo(0.1);
+    expect(await budgetStore.read(aiGlobalBudgetKey(kyivDate))).toBeCloseTo(
+      0.1,
+    );
+  });
+
+  it("does not turn-limit a confirmation resume and still counts its cost", async () => {
+    const customer = await staffInvoke(createCustomer, {
+      name: "Budget Resume",
+      phone: "+380671110505",
+    });
+    await staffInvoke(archiveCustomer, { id: customer.id });
+    const deleteInput = JSON.stringify({ id: customer.id });
+    const streamModel = new MockLanguageModelV3({
+      doStream: [
+        mockToolCallStream(
+          "call-delete",
+          toProviderToolName("customers.deleteCustomer"),
+          deleteInput,
+        ),
+        mockToolCallStream(
+          "call-delete-resume",
+          toProviderToolName("customers.deleteCustomer"),
+          deleteInput,
+        ),
+        mockTextStream("The customer was deleted."),
+      ],
+    });
+    const gateModel = new MockLanguageModelV3({
+      doGenerate: mockOperationalGateGenerate(true),
+      doStream: [mockTextStream("should not chitchat")],
+    });
+    const app = budgetApp({
+      streamModel,
+      gateModel,
+      limits: {
+        ...DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+        chatTurnsPerMinutePerUser: 1,
+      },
+      estimateTurnCostUsd: () => 0.07,
+    });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await staffInvoke(createConversation, {
+      title: "Budget confirmation resume",
+    });
+    const pause = await postChat(app, {
+      token,
+      companyId: kitIdentities.companies.a,
+      body: userChatBody(conversation.id, "Delete the archived customer"),
+    });
+    expect(pause.status).toBe(200);
+    const confirmation = confirmationFromSsePayloads(
+      await readUiMessageSsePayloads(pause),
+    );
+    expect(confirmation).toBeDefined();
+    if (!isStaffAssistantConfirmationOutput(confirmation)) {
+      expect.unreachable("expected confirmation part");
+    }
+    const kyivDate = kyivCalendarDate(new Date());
+    const budgetStore = createRedisAiBudgetStore(redis);
+    expect(
+      await budgetStore.read(
+        aiCompanyBudgetKey(kitIdentities.companies.a, kyivDate),
+      ),
+    ).toBeCloseTo(0.07);
+
+    const blocked = await postChat(app, {
+      token,
+      companyId: kitIdentities.companies.a,
+      body: userChatBody(conversation.id, "another turn"),
+    });
+    expect(blocked.status).toBe(429);
+
+    const resume = await postChat(app, {
+      token,
+      companyId: kitIdentities.companies.a,
+      body: userChatBody(conversation.id, "так"),
+      challengeId: confirmation.challengeId,
+    });
+    expect(resume.status).toBe(200);
+    await readUiMessageSsePayloads(resume);
+    expect(
+      await budgetStore.read(
+        aiCompanyBudgetKey(kitIdentities.companies.a, kyivDate),
+      ),
+    ).toBeCloseTo(0.14);
+    expect(await budgetStore.read(aiGlobalBudgetKey(kyivDate))).toBeCloseTo(
+      0.14,
+    );
   });
 });

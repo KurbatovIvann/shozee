@@ -13,7 +13,8 @@ export type AssistantChatErrorKind =
   | "unavailable"
   | "permission"
   | "unauthenticated"
-  | "notConfigured";
+  | "notConfigured"
+  | "rateLimited";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -48,6 +49,8 @@ export function assistantChatErrorKind(error: unknown): AssistantChatErrorKind {
       return "permission";
     case "ASSISTANT_NOT_CONFIGURED":
       return "notConfigured";
+    case "RATE_LIMITED":
+      return "rateLimited";
     default:
       return "unavailable";
   }
@@ -63,6 +66,8 @@ export function queryFailureToAssistantKind(
     case "permission":
     case "unauthenticated":
       return kind;
+    case "rate_limited":
+      return "rateLimited";
     default:
       return "unavailable";
   }

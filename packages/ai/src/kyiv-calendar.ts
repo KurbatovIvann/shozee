@@ -159,6 +159,21 @@ export function mapOrdersListPeriod(
   };
 }
 
+/** Europe/Kyiv calendar date as `YYYY-MM-DD` (assistant budget keys). */
+export function kyivCalendarDate(now: Date): string {
+  const date = kyivDateParts(now);
+  return `${String(date.year).padStart(4, "0")}-${String(date.month).padStart(2, "0")}-${String(date.day).padStart(2, "0")}`;
+}
+
+/**
+ * Whole seconds until the next Europe/Kyiv midnight, never less than 1
+ * (RATE_LIMITED `retryAfterSec` must not be optimistic).
+ */
+export function secondsUntilKyivMidnight(now: Date): number {
+  const nextMidnight = startOfKyivDayUtc(addCalendarDays(kyivDateParts(now), 1));
+  return Math.max(1, Math.ceil((nextMidnight.getTime() - now.getTime()) / 1000));
+}
+
 /** English clock line for the uncached turn-context addendum. */
 export function staffAssistantClockLines(now: Date): string {
   const weekday = new Intl.DateTimeFormat("en-GB", {

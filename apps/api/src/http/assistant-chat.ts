@@ -59,18 +59,28 @@ import {
   type ActionPipelineDeps,
   type ActionRegistry,
   type ImplementedAction,
+  type RateLimitStore,
   type SessionPrincipal,
 } from "@showzy/core";
 import {
   CoreError,
   CoreInvariantError,
   PermissionDeniedError,
+  RateLimitError,
   ValidationError,
 } from "@showzy/core/errors";
 import type { Logger } from "pino";
 import type { z } from "zod";
 
+import type { AiBudgetStore } from "../stores/budget.js";
 import type { StaffAssistantChoiceStore } from "../stores/choice.js";
+import {
+  DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+  enforceStaffAssistantBudget,
+  recordStaffAssistantBudgetSpend,
+  staffAssistantBudgetSpendUsd,
+  type StaffAssistantBudgetLimits,
+} from "./assistant-budget-guard.js";
 import { REQUEST_ID_HEADER } from "./request-id.js";
 
 export const ASSISTANT_CHAT_PATH = "/assistant/chat";
@@ -104,6 +114,16 @@ export interface StaffAssistantRuntime {
   /** Tests inject MockLanguageModelV3 — never a live LLM in CI. */
   readonly languageModel?: LanguageModel;
   readonly gateLanguageModel?: LanguageModel;
+  /**
+   * Tests inject a cost estimate (including `null` for an unpriced model).
+   * Production uses `estimateStaffAssistantTurnCostUsd`.
+   */
+  readonly estimateTurnCostUsd?: (options: {
+    readonly reply: StaffAssistantTurnUsage;
+    readonly replyModelId: string;
+    readonly gate: StaffAssistantTurnUsage;
+    readonly gateModelId: string;
+  }) => number | null;
 }
 
 export interface StaffAssistantChatOptions {
@@ -121,6 +141,9 @@ export interface StaffAssistantChatOptions {
    */
   readonly choiceResume?: boolean;
   readonly choiceStore?: StaffAssistantChoiceStore;
+  readonly rateLimitStore?: RateLimitStore;
+  readonly budgetStore?: AiBudgetStore;
+  readonly budgetLimits?: StaffAssistantBudgetLimits;
 }
 
 function headerOrNull(headers: Headers, name: string): string | null {
@@ -531,10 +554,33 @@ export async function executeStaffAssistantChat(
       pausedAttempt = resolved.attempt;
     }
 
-    const model = resolveLanguageModel(options.assistant);
-    const gateLanguageModel = resolveGateLanguageModel(options.assistant);
     const confirmationResume = confirmationChallengeId !== undefined;
     const choiceResume = options.choiceResume === true;
+    if (companySelector === null) {
+      throw new CoreInvariantError(
+        "staff assistant budget guard requires a verified company selector",
+      );
+    }
+    const companyId = companySelector;
+    const budgetLimits =
+      options.budgetLimits ?? DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS;
+    await enforceStaffAssistantBudget({
+      logger: options.pipeline.logger,
+      requestId: options.requestId,
+      userId: session.userId,
+      companyId,
+      skipTurnLimit: confirmationResume || choiceResume,
+      ...(options.rateLimitStore === undefined
+        ? {}
+        : { rateLimitStore: options.rateLimitStore }),
+      ...(options.budgetStore === undefined
+        ? {}
+        : { budgetStore: options.budgetStore }),
+      limits: budgetLimits,
+    });
+
+    const model = resolveLanguageModel(options.assistant);
+    const gateLanguageModel = resolveGateLanguageModel(options.assistant);
     const skipGate = staffAssistantShouldSkipIntentGate({
       confirmationResume,
       choiceResume,
@@ -698,11 +744,23 @@ export async function executeStaffAssistantChat(
         });
       },
       onTurn: async (turn) => {
+        const estimateTurnCostUsd =
+          options.assistant?.estimateTurnCostUsd ??
+          estimateStaffAssistantTurnCostUsd;
+        const estimatedCostUsd = estimateTurnCostUsd({
+          reply: turn.usage,
+          replyModelId,
+          gate: gateUsage,
+          gateModelId:
+            options.assistant?.gateModel ??
+            options.assistant?.model ??
+            "unconfigured",
+        });
         logTurnUsage({
           logger: options.pipeline.logger,
           requestId: options.requestId,
           conversationId: body.conversationId,
-          companyId: companySelector,
+          companyId,
           actorId: session.userId,
           model: replyModelId,
           ...(gateRan && options.assistant?.gateModel !== undefined
@@ -729,15 +787,20 @@ export async function executeStaffAssistantChat(
           toolResultBytesIn: turn.toolResultBytesIn,
           toolResultBytesOut: turn.toolResultBytesOut,
           toolsetHash: turn.toolsetHash,
-          estimatedCostUsd: estimateStaffAssistantTurnCostUsd({
-            reply: turn.usage,
-            replyModelId,
-            gate: gateUsage,
-            gateModelId:
-              options.assistant?.gateModel ??
-              options.assistant?.model ??
-              "unconfigured",
-          }),
+          estimatedCostUsd: staffAssistantBudgetSpendUsd(
+            estimatedCostUsd,
+            budgetLimits.unknownModelTurnUsd,
+          ),
+        });
+        await recordStaffAssistantBudgetSpend({
+          logger: options.pipeline.logger,
+          requestId: options.requestId,
+          companyId,
+          estimatedCostUsd,
+          ...(options.budgetStore === undefined
+            ? {}
+            : { budgetStore: options.budgetStore }),
+          limits: budgetLimits,
         });
         try {
           await persistAssistantTurn({
@@ -758,7 +821,9 @@ export async function executeStaffAssistantChat(
 
     return response;
   } catch (error) {
-    logFailure(options.pipeline.logger, options.requestId, error);
+    if (!(error instanceof RateLimitError)) {
+      logFailure(options.pipeline.logger, options.requestId, error);
+    }
     return wireResponse(error, options.requestId);
   }
 }

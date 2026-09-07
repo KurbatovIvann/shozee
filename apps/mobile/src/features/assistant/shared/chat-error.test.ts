@@ -7,6 +7,24 @@ import {
 } from "./chat-error";
 
 describe("assistantChatErrorKind", () => {
+  it("maps RATE_LIMITED 429 JSON onto the assistant rate-limit copy", () => {
+    const error = new Error(
+      JSON.stringify({
+        code: "RATE_LIMITED",
+        status: 429,
+        message: "Too many requests. Retry later.",
+        data: { retryAfterSec: 42 },
+      }),
+    );
+    expect(assistantChatErrorKind(error)).toBe("rateLimited");
+    expect(assistantChatErrorMessage("rateLimited", assistantCopy("en"))).toBe(
+      "Too many requests. Try again later.",
+    );
+    expect(assistantChatErrorMessage("rateLimited", assistantCopy("uk"))).toBe(
+      "Забагато запитів. Спробуйте пізніше.",
+    );
+  });
+
   it("maps ASSISTANT_NOT_CONFIGURED from the SSE JSON body", () => {
     const error = new Error(
       JSON.stringify({
