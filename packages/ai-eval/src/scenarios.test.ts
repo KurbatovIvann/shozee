@@ -66,7 +66,7 @@ describe("PLAIN_REPLY_SCENARIOS", () => {
 });
 
 describe("collectEvalToolCalls", () => {
-  it("skips the synthetic json tool and overlays execute results", () => {
+  it("ignores a leftover json tool name and overlays execute results", () => {
     const calls = collectEvalToolCalls(
       [
         {

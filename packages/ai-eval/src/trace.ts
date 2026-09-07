@@ -29,10 +29,10 @@ function toolCallIdOf(payload: Record<string, unknown>): string | undefined {
 }
 
 /**
- * Collect façade / provider tool calls from UI-message SSE. Skips a
- * leftover `json` tool name if a model still emits one. Overlay `execute`
- * results by `toolCallId` when the provider does not stream them
- * (`tool_search`).
+ * Collect façade / provider tool calls from UI-message SSE. Ignores a
+ * leftover `json` tool name as harness defense (not a staff façade call;
+ * do not count it in eval tool traces). Overlay `execute` results by
+ * `toolCallId` when the provider does not stream them (`tool_search`).
  */
 export function collectEvalToolCalls(
   payloads: readonly unknown[],
@@ -52,6 +52,7 @@ export function collectEvalToolCalls(
     if (type === "tool-input-available" || type === "tool-call") {
       const name =
         typeof payload["toolName"] === "string" ? payload["toolName"] : "";
+      // Harness defense: a leftover `json` tool name is not a staff façade.
       if (name === "" || name === "json") {
         continue;
       }

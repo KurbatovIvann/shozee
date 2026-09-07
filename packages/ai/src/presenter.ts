@@ -567,8 +567,8 @@ export function presentChoiceStaffAssistantNeedsChoice(options: {
 
 /**
  * True when the live bubble and persist body must come from the completed
- * presenter, not model text. HITL confirmation still uses the reply
- * flatten. Unchanged until T6.
+ * presenter, not model text. HITL confirmation still uses reply
+ * sanitization / HITL fallback. Unchanged until T6.
  */
 export function staffAssistantTurnUsesCompletedPresenter(options: {
   readonly locale: StaffAssistantLocale;

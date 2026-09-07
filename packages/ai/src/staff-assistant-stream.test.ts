@@ -1117,7 +1117,7 @@ describe("streamStaffAssistantChat", () => {
     expect(onAbandoned).not.toHaveBeenCalled();
   });
 
-  it("flattens spoken after orders_list_page and keeps the tool part", async () => {
+  it("holds candidate text and emits presenter after orders_list_page and keeps the tool part", async () => {
     const spoken = "Albina has 4 orders this week.";
     const execute = vi.fn(() =>
       Promise.resolve({
@@ -1199,7 +1199,7 @@ describe("streamStaffAssistantChat", () => {
     );
   });
 
-  it("flattens spoken after counts-only aggregate", async () => {
+  it("holds candidate text and emits presenter after counts-only aggregate", async () => {
     const spoken = "6 orders this week, mostly confirmed.";
     const execute = vi.fn(() =>
       Promise.resolve({
