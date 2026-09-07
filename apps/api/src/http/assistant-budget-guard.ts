@@ -29,6 +29,13 @@ export interface StaffAssistantBudgetLimits {
   readonly chatTurnsPerMinutePerUser: number;
   readonly dailyBudgetUsdPerCompany: number;
   readonly dailyBudgetUsdGlobal: number;
+  /**
+   * Admission reservation, and the accounting fallback for an unpriced
+   * model. Greater than 0 — `AI_UNKNOWN_MODEL_TURN_USD` is validated
+   * `.positive()`, so admission always runs through the atomic
+   * increment-with-cap. Never a disable switch: `0` would put admission
+   * back on a read-then-check race.
+   */
   readonly unknownModelTurnUsd: number;
 }
 
@@ -275,45 +282,15 @@ async function reserveBudgetKey(options: {
   readonly reason: StaffAssistantBudgetDenialReason;
   readonly retryAfterSec: number;
 }): Promise<number> {
-  if (options.reserveUsd > 0) {
-    let decision: AiBudgetTryAddDecision;
-    try {
-      decision = await options.store.tryAdd(
-        options.key,
-        options.reserveUsd,
-        options.capUsd,
-        AI_BUDGET_TTL_SEC,
-      );
-    } catch {
-      logStaffAssistantBudgetDenial({
-        logger: options.logger,
-        requestId: options.requestId,
-        companyId: options.companyId,
-        reason: options.reason,
-      });
-      throw new RateLimitError(options.retryAfterSec);
-    }
-    if (!decision.allowed) {
-      logStaffAssistantBudgetDenial({
-        logger: options.logger,
-        requestId: options.requestId,
-        companyId: options.companyId,
-        reason: options.reason,
-      });
-      throw new RateLimitError(options.retryAfterSec);
-    }
-    return options.reserveUsd;
-  }
-  const spent = await readBudgetOrDeny({
-    store: options.store,
-    key: options.key,
-    logger: options.logger,
-    requestId: options.requestId,
-    companyId: options.companyId,
-    reason: options.reason,
-    retryAfterSec: options.retryAfterSec,
-  });
-  if (spent >= options.capUsd) {
+  let decision: AiBudgetTryAddDecision;
+  try {
+    decision = await options.store.tryAdd(
+      options.key,
+      options.reserveUsd,
+      options.capUsd,
+      AI_BUDGET_TTL_SEC,
+    );
+  } catch {
     logStaffAssistantBudgetDenial({
       logger: options.logger,
       requestId: options.requestId,
@@ -322,7 +299,16 @@ async function reserveBudgetKey(options: {
     });
     throw new RateLimitError(options.retryAfterSec);
   }
-  return 0;
+  if (!decision.allowed) {
+    logStaffAssistantBudgetDenial({
+      logger: options.logger,
+      requestId: options.requestId,
+      companyId: options.companyId,
+      reason: options.reason,
+    });
+    throw new RateLimitError(options.retryAfterSec);
+  }
+  return options.reserveUsd;
 }
 
 export async function releaseStaffAssistantBudgetHold(options: {
@@ -374,26 +360,4 @@ async function addBudgetDelta(
     return;
   }
   await store.add(key, deltaUsd, AI_BUDGET_TTL_SEC);
-}
-
-async function readBudgetOrDeny(options: {
-  readonly store: AiBudgetStore;
-  readonly key: string;
-  readonly logger: Logger;
-  readonly requestId: string;
-  readonly companyId: string;
-  readonly reason: StaffAssistantBudgetDenialReason;
-  readonly retryAfterSec: number;
-}): Promise<number> {
-  try {
-    return await options.store.read(options.key);
-  } catch {
-    logStaffAssistantBudgetDenial({
-      logger: options.logger,
-      requestId: options.requestId,
-      companyId: options.companyId,
-      reason: options.reason,
-    });
-    throw new RateLimitError(options.retryAfterSec);
-  }
 }

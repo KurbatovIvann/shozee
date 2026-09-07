@@ -368,6 +368,30 @@ describe("enforceStaffAssistantBudget", () => {
       }),
     ).rejects.toBeInstanceOf(RateLimitError);
   });
+
+  it("admits through the atomic reservation and never reads first", async () => {
+    const memory = createMemoryAiBudgetStore();
+    const budgetStore = {
+      ...memory,
+      read: () => Promise.reject(new Error("admission must not read")),
+    };
+    const hold = await enforceStaffAssistantBudget({
+      logger: createCapturingLogger().logger,
+      requestId: "req-no-read-then-check",
+      userId: USER_A,
+      companyId: COMPANY_A,
+      skipTurnLimit: true,
+      now: NOW,
+      budgetStore,
+      limits: DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+    });
+    expect(hold.companyReservedUsd).toBeCloseTo(0.1);
+    expect(hold.globalReservedUsd).toBeCloseTo(0.1);
+    expect(
+      await memory.read(aiCompanyBudgetKey(COMPANY_A, KYIV_DATE)),
+    ).toBeCloseTo(0.1);
+    expect(await memory.read(aiGlobalBudgetKey(KYIV_DATE))).toBeCloseTo(0.1);
+  });
 });
 
 describe("recordStaffAssistantBudgetSpend", () => {
