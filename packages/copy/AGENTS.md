@@ -17,7 +17,7 @@ shared tree plus typed leftovers composed in those app files.
 | `./chrome`    | Shared `FormChromeCopy` / `WriteErrorsCopy` objects           |
 | `./auth`      | Byte-identical auth intersection (SHO-481)                    |
 | `./orders`    | Byte-identical orders intersection (SHO-414)                  |
-| `./assistant` | Wholesale mobile assistant sheet + result-surface chrome (SHO-484) |
+| `./assistant` | Wholesale mobile assistant sheet + result chrome (SHO-484)    |
 | `./panel`     | Byte-identical panel-shell intersection (SHO-481)             |
 | `./companies` | Onboarding / settings / legal / scope intersections (SHO-482) |
 | `./customers` | Wholesale mobile customers list + forms (SHO-476)             |

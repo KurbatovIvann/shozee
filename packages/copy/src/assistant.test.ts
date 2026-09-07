@@ -93,7 +93,9 @@ describe("wholesale assistant copy", () => {
     expect(cardsUk.listEmptyTitle).toBe(chromeUk.listEmptyTitle);
     expect(cardsUk.listEmptyDescription).toBe(chromeUk.listEmptyDescription);
     expect(cardsUk.openOrders).toBe(chromeUk.openList);
-    expect(cardsUk.customerMatchTruncated).toBe(chromeUk.customerMatchTruncated);
+    expect(cardsUk.customerMatchTruncated).toBe(
+      chromeUk.customerMatchTruncated,
+    );
     expect(cardsUk.clipped).toBe(chromeUk.clipped);
     expect(cardsEn.listEmptyTitle).toBe(chromeEn.listEmptyTitle);
     expect(cardsEn.openOrders).toBe(chromeEn.openList);
