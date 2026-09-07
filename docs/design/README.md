@@ -33,19 +33,19 @@ This directory holds UX and design-system artifacts for Showzy V2.
   record product dispositions and candidate actions. They do not set
   layout, color, or navigation.
 
-## Current status
+## Approval records
 
-Owner reset the visual canon on 2026-08-20 (ADR-0024). Linear project
-[Experience Foundation](https://linear.app/showzy-v2/project/experience-foundation-863513f2aa0a)
-is **In Progress**. Visual acceptance is the Magic Patterns canvas mapped
-into Expo. A Magic Patterns design-system preset is not part of the
-workflow.
+The owner reset the visual canon on 2026-08-20 (ADR-0024). The
+[Experience Foundation project](https://linear.app/showzy-v2/project/experience-foundation-863513f2aa0a)
+and the relevant feature card hold approval evidence. This index does
+not cache a project status or declare the UX gate globally open/closed.
 
-The UX gate is closed — **product screens in `apps/mobile`** remain blocked
-until the Unistyles theme matches `mp-to-mobile.md` and the screen exists
-on the canvas. Backend work is not gated. Expo shell/auth/deep-link
-infrastructure remains the documented exception; new auth visuals still
-follow the canvas.
+Before implementing a mobile product screen, verify all
+[UX gate criteria](process.md#ux-gate), including the owner's recorded
+approval for the canvas-covered surface. Missing evidence is a stop;
+existing JSX alone is not approval. Backend and Expo shell/auth/deep-link
+infrastructure keep their documented exceptions. New auth visuals still
+follow the canvas. Web follows its own [canvas read rule](mapping/mp-to-web.md).
 
 Figma is not a source of tokens or components.
 

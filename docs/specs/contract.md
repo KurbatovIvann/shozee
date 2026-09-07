@@ -248,8 +248,11 @@ API consumers.
 
 ## Changelog
 
+| Date | Change | Why | Reported by |
+| --- | --- | --- | --- |
 | 2026-09-06 | §5: per-operation errors are pipeline-universal ∪ `contract.errors` on `toContractProcedure`; 409 stays a oneOf | SHO-485: replacing OpenAPI responses by status dropped confirmation/idempotency 409 codes | SHO-485 |
 | 2026-09-06 | Client apps may also import `@showzy/copy` (staff copy leaf) | Shared orders copy package (SHO-414) | SHO-414 |
+| 2026-08-21 | Expo sessions use cookies (`@better-auth/expo`); bearer remains for non-RN callers | Align transport with the Expo integration; drop client-side bearer as the mobile path | owner |
 | 2026-08-19 | Seventh principal `share` (ADR-0022): client/OpenAPI mount, no-session dispatch, token in action input only, AI never lists share | HTTP dispatch for unauthenticated capability-token writes; core.md already amended | owner via `/rework-spec contract.md` |
 | 2026-08-19 | Status: Active; Active surface: entire file | Ledger catch-up: first merged packages/contract (fnd-T23…T25) | owner via spec-process-after-phase-0 |
 | 2026-08-19 | §3/§7: key reuse is manual via `attempt.options` (no automatic retry layer); §7: composition fixture for the first `ctx.callAtomic` callee is owed when that edge lands | Align living spec with the client (fnd-G1 A12) | scaffold (fnd-G1 A12) |

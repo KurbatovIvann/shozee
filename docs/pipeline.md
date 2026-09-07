@@ -34,8 +34,7 @@ PLANNER → [parent orchestrator, optional] → EXECUTOR → VERIFIER → GUARDI
 (human+agent)   (/implement on feature parent)   (one cloud /ticket per child)
 ```
 
-Constitution stays: blueprint §2–§6, accepted ADRs (including ADR-0033
-once accepted), `.cursor/rules/`, `docs/scope.md`,
+Constitution stays: blueprint §2–§6, accepted ADRs (including ADR-0033), `.cursor/rules/`, `docs/scope.md`,
 `docs/module-ownership.md`. Do not open `docs/archive/`. The executable
 contract of a feature is `*.contract.ts` plus the tests in the definition
 of done.
@@ -91,8 +90,9 @@ not reopen Done.
 | Done when | PR opened with green local checks. Description names the feature card, the tests, and any deviations (there should be none — deviations mean stop). The executor does **not** merge |
 | Escalation | 2 failed verify/review rounds → ask the human; 3 → design review or a new ADR |
 
-The first backend slice becomes the golden API template. Do not start
-catalog/companies (or extract backend skills) until that slice has merged.
+Use the merged reference files listed below. A new layer without an
+approved reference still needs a first-slice review before its pattern
+is copied.
 
 ### 4. VERIFIER — CI always; `/review` by lane
 
@@ -133,22 +133,26 @@ is green again.
 A golden is a designation, not a special package. Later Executors copy
 those files. They do not invent a new folder shape.
 
-**Backend (first).** Thin closed cut through the action stack — not an
-entire product module and not API+UI in one blob:
+**Backend.** The merged order slice and its pricing/chat collaborators
+establish the action, transaction, event, and test protocols (ADR-0026).
+For new staff list inputs use
+[`orders.list`](../packages/modules/orders/src/actions/list.contract.ts);
+for reference-aware writes use
+[`orders.create`](../packages/modules/orders/src/actions/create.contract.ts)
+and its [implementation](../packages/modules/orders/src/actions/create.ts).
+ADR-0033 supersedes the early UUID-only / screen-page input shapes.
+Select the relevant action, owned schema, exports, suite coverage, and
+tests in the feature card's context pack; do not copy the whole module.
 
-- `packages/db/src/schema/<module>.ts` + generated migration
-- one `risk: read` action
-- one write action with event + subscriber if the slice needs the outbox
-- `index.ts`, `index.contract.ts`, `suite-coverage`
-- required DoD tests
+**Mobile.** Product feature placement follows
+[`catalog/products`](../apps/mobile/src/features/catalog/products/AGENTS.md)
+and the [`showzy-mobile` router](../.cursor/skills/showzy-mobile/SKILL.md).
+Each product screen still needs the recorded
+[UX gate](design/process.md#ux-gate) and canvas coverage.
 
-Candidate: `pricing.resolveProductPrices` or thin `orders.create/confirm`
-plus the order-card projection — whichever is the smaller closed cut.
-
-**UI (later, after the UX gate).** One owner-first panel screen in
-`apps/mobile`, bound to an already-shipped action, following
-`docs/design/mapping/mp-to-mobile.md`. Until it exists, feature
-cards that need a screen stop at the API ticket.
+**Web.** Copy the companies onboarding/query patterns named in
+[`apps/web/AGENTS.md`](../apps/web/AGENTS.md) and follow the
+[web canvas port rule](design/mapping/mp-to-web.md).
 
 Core test fixtures in `packages/core/src/testing/` stay core-internal.
 

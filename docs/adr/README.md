@@ -49,4 +49,4 @@ humans) don't relitigate settled questions or silently deviate.
 | [0030](0030-web-panel-spa-and-deferred-storefront.md) | Web panel is a Vite SPA; storefront is a separate later app | Accepted |
 | [0031](0031-module-kit-server-micro-utilities.md) | Server module micro-utilities live in `@showzy/module-kit` | Accepted |
 | [0032](0032-ai-sdk-7-thin-loop-no-harness.md) | AI loop is AI SDK 7; no coding harness | Accepted |
-| [0033](0033-channel-neutral-actions.md) | Channel-neutral actions — task-complete lists and reference writes | Proposed |
+| [0033](0033-channel-neutral-actions.md) | Channel-neutral actions — task-complete lists and reference writes | Accepted |

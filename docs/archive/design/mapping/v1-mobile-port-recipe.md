@@ -11,11 +11,11 @@
 > acceptance.
 >
 > Status: Owner-approved working rule, 2026-08-19 (superseded).
-> Authority: [ADR-0019](../../adr/0019-v1-mobile-canonical-ux.md) (superseded).
+> Authority: [ADR-0019](../../../adr/0019-v1-mobile-canonical-ux.md) (superseded).
 > Product source: `E:\showzy\apps\mobile` (read-only). Never modify it.
 
 This was the operating rule for `apps/mobile` under V1 parity. It is not
-the current redesign brief. Use [`mp-to-mobile.md`](mp-to-mobile.md) instead.
+the current redesign brief. Use [`mp-to-mobile.md`](../../../design/mapping/mp-to-mobile.md) instead.
 
 Figma is not a gate and is not a source of spacing, color, or components.
 The contextual AI overlay is `vm-T29` and is out of scope until that task.
@@ -26,8 +26,8 @@ The contextual AI overlay is `vm-T29` and is out of scope until that task.
 | --- | --- |
 | Visual language (color, type, space, radius, motion) | V1 `theme` + [`v1-mobile-token-baseline.md`](../inventory/v1-mobile-token-baseline.md), then the V2 Unistyles theme |
 | Layout, gestures, sheets, empty/error, copy keys | V1 screen/component files + golden screenshots as a visual check |
-| Keep / adapt / drop | [`v1-to-v2-conflict-register.md`](v1-to-v2-conflict-register.md) |
-| Which V2 action replaces a V1 call | [`v1-ux-to-v2-capability-matrix.md`](v1-ux-to-v2-capability-matrix.md) |
+| Keep / adapt / drop | [`v1-to-v2-conflict-register.md`](../../../design/mapping/v1-to-v2-conflict-register.md) |
+| Which V2 action replaces a V1 call | [`v1-ux-to-v2-capability-matrix.md`](../../../design/mapping/v1-ux-to-v2-capability-matrix.md) |
 | Craft vs product UX findings | [`v1-port-findings.md`](v1-port-findings.md) |
 | Domain behavior | The owning V2 spec and `@showzy/contract` |
 

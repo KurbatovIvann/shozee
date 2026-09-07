@@ -1,8 +1,10 @@
 # Shozee 2.0 — Architecture Blueprint
 
-> Final document: architecture, technology stack, and the feature pipeline.
+> Approved target architecture, technology stack, and feature pipeline.
+> Shipped behavior is recorded by current code/tests and Linear; this is not
+> a deployment inventory. Documentation map: [README](README.md).
 > Status: approved. Date: August 2026.
-> Sources: audit of the current system (apps/api ~36k lines, apps/web ~119k,
+> Sources: audit of Showzy V1 (apps/api ~36k lines, apps/web ~119k,
 > apps/mobile ~58k, 77+ tables, 83 migrations, ~240 RLS policies).
 
 ---
@@ -46,7 +48,7 @@ writes (customer, then prices, then order) — never a workflow mega-action.
 reads are not tools. Lists grow by additive filter fields, not new public
 action names.
 
-### Main problems of the current system (from the audit)
+### V1 problems that motivated the rewrite
 
 1. **Two data paths**: clients hit Supabase directly (CRUD via PostgREST + ~240 RLS policies + 79 RPCs) and NestJS in parallel (chat, documents, payments, AI). Logic is smeared across RLS, triggers, RPCs, and the API.
 2. **No shared contract**: DTOs are hand-duplicated in web and mobile (`documents-api.ts` vs `get-panel-documents.ts`).
@@ -58,7 +60,7 @@ action names.
 ## 2. Architectural principles
 
 1. **One data path.** All business logic goes through the API only. Clients never touch the DB directly. RLS disappears; authorization lives in code.
-2. **The action registry is the single source of truth.** Every business operation is described once (`defineAction`), and from it we generate: the oRPC procedure, the AI tool, the form schema, the permission check, the audit log.
+2. **The action registry is the single source of truth.** Every business operation has a client-safe `defineActionContract` descriptor and a server `implementAction` binding (ADR-0016). The descriptor drives transport, validation, permissions, and protocol requirements. Exposed AI tools may map their schema in `packages/ai` (ADR-0033); both channels execute the same handler.
 3. **Interface parity is guaranteed physically**: the classic UI and the AI call the same handler.
 4. **Explicit code, no magic.** No decorators with hidden behavior, no DI containers, no "default" conventions. An agent must see the whole flow in the code.
 5. **Static guarantees above all.** TypeScript strict end-to-end: DB schema → types → API contract → clients → AI tools. An agent's mistake = red CI, not a bug report.
@@ -111,7 +113,7 @@ tests before any domain module is built:
 - **NestJS** — decorators/DI hide the flow from agents; all the value (guards, pipes) is reproduced by the action registry in ~10× less code.
 - **Encore** — framework-shaped vendor; our workload (Socket.IO, Puppeteer, WASM) does not fit its managed-primitives model. But its lesson is taken: durability decisions are fixed by the architecture, not by the agent.
 - **tRPC** — oRPC gives the same + OpenAPI for external consumers.
-- **RLS** — authorization only in code (`defineAction.permissions`); the `has_company_permission` model is carried over conceptually 1:1.
+- **RLS** — authorization only in code (`defineActionContract.permissions`); the `has_company_permission` model is carried over conceptually 1:1.
 - **Microservices, GraphQL, event sourcing** — needless complexity for a team of agents.
 - **Coding / agent harnesses** (DeepSeek Harness, Claude Agent SDK, Google ADK, Mastra as a second runtime) — the model’s environment is the staff action registry, not a shell or filesystem (ADR-0032). Vercel AI Gateway is not a required path; keys stay in `packages/config`.
 
@@ -119,66 +121,32 @@ tests before any domain module is built:
 
 ## 4. The core: action registry
 
-```ts
-// packages/modules/orders/actions/create.contract.ts — client-safe
-export const createOrderContract = defineActionContract({
-  name: "orders.create",
-  description: "Create an order for a company customer", // ← goes into the AI tool
-  input: z.object({
-    // companyId is NOT here — it is injected by ctx from the authenticated
-    // membership (tenant isolation invariant, §2.1)
-    customerId: z.string().uuid(),
-    items: z.array(orderItemSchema).min(1),
-  }),
-  output: orderSchema,
-  principal: "staff",              // staff | customer | public | system | consumer | account (ADR-0013, ADR-0018)
-  transport: "client",             // client route | internal-only capability
-  permissions: ["orders:create"],  // checked before the handler
+The descriptor is client-safe (`@showzy/core/contract`); `implementAction`
+binds server callbacks; `executeAction` applies the runtime protocols.
+See [core §2](specs/core.md#2-the-action-contract) for mandatory and
+conditional metadata and [core §4](specs/core.md#4-execution-pipeline) for
+execution order.
 
-  // AI & execution metadata — designed in at phase 0, consumed from phase 9
-  aiExposure: "exposed",           // product choice: exposed | internal (internal never becomes an AI tool; ADR-0033)
-  risk: "write",                   // read | draft | write | high
-  requiresConfirmation: false,     // high-risk: UI renders a human confirmation step
-  idempotent: true,                // safe to retry (workers, webhooks, AI loop)
-  emits: ["orders.created"],       // declared outbox events; CI checks vs ctx.emit
-  timeout: 5_000,
-  audit: true,                     // written to the audit log
-});
+Use checked-in examples rather than a second schema in this blueprint:
 
-// packages/modules/orders/actions/create.ts — server-only
-export const createOrder = implementAction(createOrderContract, {
-  handler: async (input, ctx) => {
-    // ctx shape depends on the declared principal mode (ADR-0013);
-    // for staff: { db, userId, companyId, membership, emit, call }
-    // one transaction; ctx.emit puts the event into the outbox in the same
-    // transaction; ctx.call invokes another module's read action (ADR-0015)
-  },
-});
-```
+- [orders.create contract](../packages/modules/orders/src/actions/create.contract.ts)
+  and [implementation](../packages/modules/orders/src/actions/create.ts):
+  staff write with human references, snapshots, audit, and events.
+- [orders.list contract](../packages/modules/orders/src/actions/list.contract.ts):
+  bounded pages and aggregates (ADR-0033).
+- [AI adapters](../packages/ai/AGENTS.md): mapped input/output over the same
+  registry action, without a second domain API.
 
-The sample is the registry *shape* (tenant not in input, metadata
-mandatory). Staff list/write **jobs** (discriminated list `kind`, EntityRef
-writes, which routes are AI tools) are ADR-0033 — do not treat this
-UUID-only `orders.create` illustration as the destination input.
+Risk and confirmation are declared per action. `read`, `draft`, `write`,
+and `high` describe execution policy; they do not imply that every action
+is an exposed AI tool. High-risk operations use the confirmation protocol
+in [core §7](specs/core.md#7-confirmation-protocol-requiresconfirmation).
+QES private keys stay on the device.
 
-From one logical definition (one client-safe descriptor paired with one
-server implementation; ADR-0008, ADR-0016, and contract.md) we
-generate:
+### Client-side AI UI tools (destination, executed on the client)
 
-1. **oRPC procedure** → typed client for web/mobile + OpenAPI spec.
-2. **AI tool** → only when `aiExposure: "exposed"` (ADR-0033); `name`/`description`/`input` become the tool definition; the handler is the same.
-3. **Form schema** → the same Zod schema in react-hook-form.
-4. **Permissions + audit** → in one place, regardless of who called.
-
-The AI metadata is part of the definition from phase 0 precisely so that
-phase 9 becomes "connect the LLM to the existing capability graph" rather than
-"rewrite half the backend for AI". Examples of the gradient:
-`orders.get` → `risk: read`, no confirmation · `documents.createDraft` →
-`risk: draft`, no confirmation · `documents.sign` → `risk: high`,
-`requiresConfirmation: true`, the final step is human-only (QES key never
-leaves the device).
-
-### Client-side AI UI tools (executed on the client, not the server)
+The names below illustrate intended interactions, not a list of currently
+registered tools. Check `packages/ai` and the app adapters for shipped support.
 
 - `ui.navigate(route)` — go to a page
 - `ui.openModal(modal, props)` — open a modal/form
@@ -204,13 +172,15 @@ showzy/
 │  ├─ mobile/         # Expo — primary client (V2 launch)
 │  └─ web/            # Vite SPA + TanStack Router — staff panel (ADR-0030)
 ├─ packages/
-│  ├─ core/           # defineAction, registry, context, event bus, outbox client
+│  ├─ core/           # action descriptors/runtime, registry, contexts, event protocols
 │  ├─ db/             # Drizzle schema (source of types), migrations, seed
 │  ├─ contract/       # oRPC router generated from the action registry
 │  ├─ modules/        # domain modules (see §6) — actions + services + events
 │  ├─ ai/             # AI SDK 7 loop, system prompts, UI tools, generative mappings (ADR-0032)
 │  ├─ document-signing/  # UAPKI (crypto core carried over; integration re-audited)
 │  ├─ validation/     # shared Zod schemas (carried over, extended)
+│  ├─ copy/           # client-safe staff copy shared by mobile and web
+│  ├─ module-kit/     # server module micro-utilities (ADR-0031)
 │  ├─ ui/             # shared design tokens/types for web+mobile
 │  ├─ config/         # validated runtime env (Zod-parsed process.env; no secrets in code)
 │  └─ tooling/        # eslint presets (boundaries!), tsconfig, prettier
@@ -239,8 +209,8 @@ rules) · `orders` (carts, snapshots, log, fixed statuses) · `payments`
 `acquiring` · `banking` · `subscriptions`.
 
 Exact table/capability ownership and sanctioned composition edges are tracked
-in `docs/module-ownership.md`; module specs refine but may not silently move
-these boundaries.
+in `docs/module-ownership.md`; feature cards and executable contracts
+refine but may not silently move these boundaries.
 
 Boundary rule: a module's server barrel exports only actions/events and its
 client-safe barrel only descriptors. Directly importing another module's
@@ -308,9 +278,9 @@ implement.
    screen) waits on the Experience Foundation UX gate. Agents copy by
    layer — not API+UI in one blob. The Encore lesson stands: an agent on
    an empty framework invents anti-patterns.
-6. **CI.** Merging is impossible without green: format + secret/dependency
-   checks → `tsc --noEmit` → ESLint (boundaries, no `any`, no direct
-   cross-module imports) → Vitest (unit + integration with Testcontainers
+6. **CI.** Merge policy requires green: format + secret/dependency
+   checks → `tsc --noEmit` → ESLint (boundaries, no `any`, no foreign
+   module internals) → Vitest (unit + integration with Testcontainers
    Postgres) → action/event contract checks (mandatory metadata including
    `principal`/`transport`, pairing, resolver and event definitions) →
    migration drift/safety → e2e smoke: Playwright against the built web
@@ -320,6 +290,9 @@ implement.
    (isolated `/review`, when launched, waits for APPROVE with nits
    already applied on that branch).
    A leaf `/ticket` without a parent still does not merge itself.
+   Actual GitHub enforcement and its accepted limitations are documented
+   in [branch protection](operations/branch-protection.md); policy is not
+   proof that repository settings enforce every gate.
 
 Leftover phase 0–1 foundation work may still use `/scaffold` on the
 allowlisted packages. New domain work uses `/feature`.

@@ -11,8 +11,11 @@ and entry paths for Staff, Global discovery, and Customer company contexts.
 English action names, enums, permission keys, IDs, and module terms remain
 internal.
 
-Content authority, highest first: approved scope/ADRs, Active specs, approved
-Experience Foundation research, then working terms in this document.
+Content must agree with approved scope/ADRs and the Linear feature card
+plus executable contracts (ADR-0023). Research and the working terms here
+provide evidence, not a separate domain specification. Visual authority
+is the Magic Patterns canvas (ADR-0024); the historical DEFINE approval
+below does not reopen archived component or journey contracts.
 
 There is no external language research. Pricing, catalog, invite, delivery,
 document, and signing labels remain assumptions where approved specs or legal

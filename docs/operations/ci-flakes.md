@@ -44,11 +44,12 @@ Unresolved comparison SHAs still run the audit. Do not pass
 3. Fix the race, isolation, or leftover-state bug on its own ticket.
    Do not skip, quarantine, or weaken the test to go green.
 
-## Known files until SHO-142 children land
+## Historical race examples (SHO-142)
 
-Until the clock and visibility children of SHO-142 are on `main`, these
-files have confirmed races. A red check on them is still a `flake`
-ticket, not a retrigger:
+These are the cases that motivated this policy, not a live list of
+currently broken tests. Check the linked issues and current code before
+attributing a new failure to one of these causes. A recurrence still
+needs investigation and a `flake` ticket, not a retrigger:
 
 - `packages/core/src/testing/kit.db.test.ts` — isolation-suite rate-limit
   race against a live token-bucket clock (SHO-146 freezes the suite
