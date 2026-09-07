@@ -22,6 +22,7 @@ import {
   StaffAssistantNotConfiguredError,
   staffAssistantCacheHitRatio,
   staffAssistantChatBodySchema,
+  staffAssistantCostLogFields,
   staffAssistantGateToolPolicy,
   staffAssistantModelMessagesFromPersisted,
   staffAssistantShouldSkipIntentGate,
@@ -40,6 +41,7 @@ import {
   type StaffAssistantLocale,
   type StaffAssistantTurnResult,
   type StaffAssistantTurnUsage,
+  type StaffProviderAdapter,
   type StaffUserMessageAttempt,
   type StaffAssistantPersistedMessage,
 } from "@showzy/ai";
@@ -84,7 +86,6 @@ import {
   enforceStaffAssistantBudget,
   recordStaffAssistantBudgetSpend,
   releaseStaffAssistantBudgetHold,
-  staffAssistantBudgetSpendUsd,
   type StaffAssistantBudgetLimits,
 } from "./assistant-budget-guard.js";
 import { REQUEST_ID_HEADER } from "./request-id.js";
@@ -117,6 +118,8 @@ export interface StaffAssistantRuntime {
   readonly model: string;
   readonly gateModel?: string;
   readonly anthropicApiKey?: string;
+  /** Constructed once in `apps/api` composition from config (SHO-508). */
+  readonly provider?: StaffProviderAdapter;
   /** Tests inject MockLanguageModelV3 — never a live LLM in CI. */
   readonly languageModel?: LanguageModel;
   readonly gateLanguageModel?: LanguageModel;
@@ -233,7 +236,7 @@ function logTurnUsage(options: {
   readonly toolResultBytesIn: number;
   readonly toolResultBytesOut: number;
   readonly toolsetHash: string;
-  readonly estimatedCostUsd: number;
+  readonly estimatedCostUsd: number | null;
 }): void {
   options.logger.info(
     {
@@ -267,7 +270,7 @@ function logTurnUsage(options: {
       tool_result_bytes_in: options.toolResultBytesIn,
       tool_result_bytes_out: options.toolResultBytesOut,
       toolset_hash: options.toolsetHash,
-      estimated_cost_usd: options.estimatedCostUsd,
+      ...staffAssistantCostLogFields(options.estimatedCostUsd),
     },
     "staff assistant turn usage",
   );
@@ -320,11 +323,32 @@ function logFailure(logger: Logger, requestId: string, error: unknown): void {
   );
 }
 
+function tryCreateProviderModel(
+  provider: StaffProviderAdapter | undefined,
+  kind: "reply" | "gate",
+): LanguageModel | undefined {
+  if (provider === undefined) {
+    return undefined;
+  }
+  try {
+    return provider.createModel(kind);
+  } catch (error) {
+    if (error instanceof StaffAssistantNotConfiguredError) {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
 function resolveLanguageModel(
   assistant: StaffAssistantRuntime | undefined,
 ): LanguageModel {
   if (assistant?.languageModel !== undefined) {
     return assistant.languageModel;
+  }
+  const fromProvider = tryCreateProviderModel(assistant?.provider, "reply");
+  if (fromProvider !== undefined) {
+    return fromProvider;
   }
   if (
     assistant !== undefined &&
@@ -344,6 +368,10 @@ function resolveGateLanguageModel(
 ): LanguageModel | undefined {
   if (assistant?.gateLanguageModel !== undefined) {
     return assistant.gateLanguageModel;
+  }
+  const fromProvider = tryCreateProviderModel(assistant?.provider, "gate");
+  if (fromProvider !== undefined) {
+    return fromProvider;
   }
   if (
     assistant !== undefined &&
@@ -652,6 +680,9 @@ export async function executeStaffAssistantChat(
             model: gateLanguageModel,
             lastUserText,
             abortSignal: options.request.signal,
+            ...(options.assistant?.provider !== undefined
+              ? { provider: options.assistant.provider }
+              : {}),
           });
           gatePolicy = staffAssistantGateToolPolicy(classified);
           gateUsage = classified.usage;
@@ -719,6 +750,7 @@ export async function executeStaffAssistantChat(
       );
       const modelMessages = staffAssistantModelMessagesFromPersisted(
         modelHistoryToPersisted(historyRows),
+        options.assistant?.provider,
       );
       if (modelMessages.length === 0) {
         throw new ValidationError([
@@ -762,6 +794,9 @@ export async function executeStaffAssistantChat(
         abortSignal: options.request.signal,
         turnContextAddendum,
         locale: body.locale,
+        ...(options.assistant?.provider !== undefined
+          ? { provider: options.assistant.provider }
+          : {}),
         responseHeaders: {
           "cache-control": "private, no-store",
           [REQUEST_ID_HEADER]: options.requestId,
@@ -810,18 +845,27 @@ export async function executeStaffAssistantChat(
           });
         },
         onTurn: async (turn) => {
-          const estimateTurnCostUsd =
-            options.assistant?.estimateTurnCostUsd ??
-            estimateStaffAssistantTurnCostUsd;
-          const estimatedCostUsd = estimateTurnCostUsd({
-            reply: turn.usage,
-            replyModelId,
-            gate: gateUsage,
-            gateModelId:
-              options.assistant?.gateModel ??
-              options.assistant?.model ??
-              "unconfigured",
-          });
+          const estimatedCostUsd =
+            options.assistant?.estimateTurnCostUsd !== undefined
+              ? options.assistant.estimateTurnCostUsd({
+                  reply: turn.usage,
+                  replyModelId,
+                  gate: gateUsage,
+                  gateModelId:
+                    options.assistant.gateModel ?? options.assistant.model,
+                })
+              : estimateStaffAssistantTurnCostUsd({
+                  reply: turn.usage,
+                  replyModelId,
+                  gate: gateUsage,
+                  gateModelId:
+                    options.assistant?.gateModel ??
+                    options.assistant?.model ??
+                    "unconfigured",
+                  ...(options.assistant?.provider !== undefined
+                    ? { provider: options.assistant.provider }
+                    : {}),
+                });
           logTurnUsage({
             logger: options.pipeline.logger,
             requestId: options.requestId,
@@ -854,10 +898,7 @@ export async function executeStaffAssistantChat(
             toolResultBytesIn: turn.toolResultBytesIn,
             toolResultBytesOut: turn.toolResultBytesOut,
             toolsetHash: turn.toolsetHash,
-            estimatedCostUsd: staffAssistantBudgetSpendUsd(
-              estimatedCostUsd,
-              budgetLimits.unknownModelTurnUsd,
-            ),
+            estimatedCostUsd,
           });
           await recordStaffAssistantBudgetSpend({
             logger: options.pipeline.logger,

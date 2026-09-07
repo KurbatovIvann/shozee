@@ -27,7 +27,6 @@ import {
   isStaffAssistantConfirmationOutput,
   type StaffAssistantConfirmationOutput,
 } from "./confirmation.js";
-import { STAFF_ASSISTANT_ANTHROPIC_PROVIDER_OPTIONS } from "./anthropic-options.js";
 import {
   clipStaffAssistantToolResult,
   STAFF_ASSISTANT_CLIP_JSON_MAX,
@@ -56,6 +55,8 @@ import {
   type StaffAssistantLocale,
   type StaffAssistantPresentedToolResult,
 } from "./presenter.js";
+import { anthropicStaffProvider } from "./provider/anthropic.js";
+import type { StaffProviderAdapter } from "./provider/types.js";
 import {
   createHoldCandidateReplyTextTransform,
   isStaffAssistantTypedToolError,
@@ -569,6 +570,8 @@ export function streamStaffAssistantChat(options: {
    * budget reservation.
    */
   readonly onAbandoned?: () => Promise<void>;
+  /** Explicit provider. Tests and HTTP pass this; default is Anthropic. */
+  readonly provider?: StaffProviderAdapter;
 }): {
   readonly response: Response;
   readonly completion: Promise<StaffAssistantTurnResult>;
@@ -577,6 +580,7 @@ export function streamStaffAssistantChat(options: {
   const presentedToolResults: StaffAssistantPresentedToolResult[] = [];
   const clipBytes: ClipByteMeter = { in: 0, out: 0 };
   const locale = options.locale ?? STAFF_ASSISTANT_DEFAULT_LOCALE;
+  const provider = options.provider ?? anthropicStaffProvider;
   const tools = staffAssistantTools(
     options.contracts,
     wrapExecute(options.execute, runs, {
@@ -591,15 +595,19 @@ export function streamStaffAssistantChat(options: {
         ? { mintChoiceId: options.mintChoiceId }
         : {}),
     }),
+    provider,
   );
   clipToolExecutes(tools, clipBytes, presentedToolResults);
-  const toolsetHash = staffAssistantToolsetHash(Object.keys(tools));
+  const toolsetHash = staffAssistantToolsetHash(
+    Object.keys(tools),
+    provider.id,
+  );
   // A request with no tools cannot carry reconstructed tool-call/result
   // parts: Anthropic rejects `tool_use` / `tool_result` blocks unless
   // `tools` is defined, and the provider omits `tools` for an empty set.
   const messages =
     Object.keys(tools).length === 0
-      ? stripStaffAssistantToolParts(options.messages)
+      ? stripStaffAssistantToolParts(options.messages, provider)
       : options.messages;
   const history = staffAssistantHistoryStats(messages);
 
@@ -622,12 +630,11 @@ export function streamStaffAssistantChat(options: {
               options.turnContextAddendum !== ""
               ? options.turnContextAddendum
               : staffAssistantTurnContextAddendum({ now: new Date() }),
+            provider,
           ),
           messages,
           tools,
-          providerOptions: {
-            anthropic: STAFF_ASSISTANT_ANTHROPIC_PROVIDER_OPTIONS,
-          },
+          providerOptions: provider.replyProviderOptions(),
           ...(options.abortSignal !== undefined
             ? { abortSignal: options.abortSignal }
             : {}),

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   EMPTY_STAFF_ASSISTANT_TURN_USAGE,
   staffAssistantCacheHitRatio,
+  staffAssistantCostLogFields,
   staffAssistantTurnUsageFromTotal,
   staffAssistantTurnUsageFromUnknown,
   staffAssistantUncachedInputTokens,
@@ -85,6 +86,19 @@ describe("staffAssistantUncachedInputTokens", () => {
         cacheWriteTokens: 0,
       }),
     ).toBe(0);
+  });
+});
+
+describe("staffAssistantCostLogFields", () => {
+  it("logs unknown spend as null with cost_known false", () => {
+    expect(staffAssistantCostLogFields(null)).toEqual({
+      estimated_cost_usd: null,
+      cost_known: false,
+    });
+    expect(staffAssistantCostLogFields(0.012)).toEqual({
+      estimated_cost_usd: 0.012,
+      cost_known: true,
+    });
   });
 });
 

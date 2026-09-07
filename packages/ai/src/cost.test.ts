@@ -6,7 +6,10 @@ import {
   staffAssistantAnthropicRateTier,
   STAFF_ASSISTANT_ANTHROPIC_RATES_USD_PER_MTOK,
 } from "./cost.js";
-import type { StaffAssistantTurnUsage } from "./usage.js";
+import {
+  staffAssistantCostLogFields,
+  type StaffAssistantTurnUsage,
+} from "./usage.js";
 
 const fixture: StaffAssistantTurnUsage = {
   inputTokens: 100_000,
@@ -30,6 +33,12 @@ describe("STAFF_ASSISTANT_ANTHROPIC_RATES_USD_PER_MTOK", () => {
         cacheRead: 0.1,
         cacheWrite: 2,
       },
+      opus: {
+        input: 15,
+        output: 75,
+        cacheRead: 1.5,
+        cacheWrite: 30,
+      },
     });
   });
 });
@@ -40,11 +49,34 @@ describe("estimateStaffAssistantCostUsd", () => {
     const expected =
       (uncached * 3 + 80_000 * 0.3 + 16_000 * 6 + 200 * 15) / 1_000_000;
     const usd = estimateStaffAssistantCostUsd(fixture, "claude-sonnet-4-6");
-    expect(Number.isFinite(usd)).toBe(true);
     expect(usd).toBeCloseTo(expected, 8);
     expect(staffAssistantAnthropicRateTier("claude-haiku-4-5")).toBe("haiku");
     const haiku = estimateStaffAssistantCostUsd(fixture, "claude-haiku-4-5");
+    expect(usd).not.toBeNull();
+    expect(haiku).not.toBeNull();
+    if (usd === null || haiku === null) {
+      return;
+    }
     expect(haiku).toBeLessThan(usd);
+  });
+
+  it("returns null for a model the adapter does not price", () => {
+    expect(staffAssistantAnthropicRateTier("some-unknown-model")).toBeNull();
+    expect(
+      estimateStaffAssistantCostUsd(fixture, "some-unknown-model"),
+    ).toBeNull();
+    expect(staffAssistantCostLogFields(null)).toEqual({
+      estimated_cost_usd: null,
+      cost_known: false,
+    });
+    const opus = estimateStaffAssistantCostUsd(fixture, "claude-opus-4-6");
+    const sonnet = estimateStaffAssistantCostUsd(fixture, "claude-sonnet-4-6");
+    expect(opus).not.toBeNull();
+    expect(sonnet).not.toBeNull();
+    if (opus === null || sonnet === null) {
+      return;
+    }
+    expect(opus).toBeGreaterThan(sonnet);
   });
 
   it("adds gate and reply spend on a turn", () => {
@@ -60,9 +92,23 @@ describe("estimateStaffAssistantCostUsd", () => {
       gate,
       gateModelId: "claude-haiku-4-5",
     });
-    expect(Number.isFinite(total)).toBe(true);
-    expect(total).toBeGreaterThan(
-      estimateStaffAssistantCostUsd(fixture, "claude-sonnet-4-6"),
+    const replyOnly = estimateStaffAssistantCostUsd(
+      fixture,
+      "claude-sonnet-4-6",
     );
+    expect(total).not.toBeNull();
+    expect(replyOnly).not.toBeNull();
+    if (total === null || replyOnly === null) {
+      return;
+    }
+    expect(total).toBeGreaterThan(replyOnly);
+    expect(
+      estimateStaffAssistantTurnCostUsd({
+        reply: fixture,
+        replyModelId: "claude-sonnet-4-6",
+        gate,
+        gateModelId: "some-unknown-model",
+      }),
+    ).toBeNull();
   });
 });

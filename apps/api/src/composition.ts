@@ -15,7 +15,11 @@
  * and must list the same `defineEventHandler` objects this file passes
  * through `eventSubscriptionRefs`.
  */
-import { STAFF_ASSISTANT_FACADE_TOOL_NAMES } from "@showzy/ai";
+import {
+  createAnthropicStaffProviderAdapter,
+  STAFF_ASSISTANT_FACADE_TOOL_NAMES,
+  type StaffProviderAdapter,
+} from "@showzy/ai";
 import { assistantActions } from "@showzy/assistant";
 import { assistantSuiteCoverage } from "@showzy/assistant/suite-coverage";
 import { catalogActions } from "@showzy/catalog";
@@ -382,4 +386,20 @@ export function buildContractCheckInput(): ContractCheckInput {
     })),
     assistantFacadeToolNames: STAFF_ASSISTANT_FACADE_TOOL_NAMES,
   };
+}
+
+/**
+ * Staff-assistant provider from validated process config. Constructed
+ * once at boot and passed into the HTTP mount (SHO-508). Not a registry.
+ */
+export function createStaffAssistantProvider(ai: {
+  readonly anthropicApiKey: string | undefined;
+  readonly model: string;
+  readonly gateModel: string;
+}): StaffProviderAdapter {
+  return createAnthropicStaffProviderAdapter({
+    ...(ai.anthropicApiKey !== undefined ? { apiKey: ai.anthropicApiKey } : {}),
+    replyModel: ai.model,
+    gateModel: ai.gateModel,
+  });
 }

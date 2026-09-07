@@ -24,7 +24,7 @@ import {
 import {
   STAFF_ASSISTANT_STATIC_CACHE_CONTROL,
   STAFF_ASSISTANT_THINKING_DISABLED,
-} from "./anthropic-options.js";
+} from "./provider/anthropic.js";
 import {
   STAFF_ASSISTANT_CLIPPED_STATUS,
   STAFF_ASSISTANT_CLIP_ARRAY_MAX,

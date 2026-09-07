@@ -8,8 +8,9 @@
 import { generateText, Output, type LanguageModel } from "ai";
 import { z } from "zod";
 
-import { STAFF_ASSISTANT_ANTHROPIC_PROVIDER_OPTIONS } from "./anthropic-options.js";
 import { STAFF_ASSISTANT_PRODUCT_GLOSSARY } from "./product-glossary.js";
+import { anthropicStaffProvider } from "./provider/anthropic.js";
+import type { StaffProviderAdapter } from "./provider/types.js";
 import {
   EMPTY_STAFF_ASSISTANT_TURN_USAGE,
   staffAssistantTurnUsageFromUnknown,
@@ -90,20 +91,20 @@ export async function classifyStaffAssistantTurn(options: {
   readonly model: LanguageModel;
   readonly lastUserText: string;
   readonly abortSignal?: AbortSignal;
+  readonly provider?: StaffProviderAdapter;
 }): Promise<StaffAssistantGateResult> {
   const trimmed = options.lastUserText.trim();
   if (trimmed === "") {
     return { ...FAIL_OPEN_GATE, usage: EMPTY_STAFF_ASSISTANT_TURN_USAGE };
   }
+  const provider = options.provider ?? anthropicStaffProvider;
   try {
     const result = await generateText({
       model: options.model,
       output: Output.object({ schema: staffAssistantGateOutputSchema }),
       system: STAFF_ASSISTANT_GATE_SYSTEM,
       prompt: trimmed,
-      providerOptions: {
-        anthropic: STAFF_ASSISTANT_ANTHROPIC_PROVIDER_OPTIONS,
-      },
+      providerOptions: provider.replyProviderOptions(),
       ...(options.abortSignal !== undefined
         ? { abortSignal: options.abortSignal }
         : {}),

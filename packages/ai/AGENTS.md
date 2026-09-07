@@ -54,12 +54,22 @@ contract-check (not a second façade set).
 `orders_create` — that key stays advertised, with the named object
 schema, not the EntityRef union.
 
-## Anthropic JSON Schema
+## Provider (SHO-508)
+
+Anthropic specifics live in `src/provider/anthropic.ts`. The rest of
+`packages/ai` consumes `StaffProviderAdapter`. Adding a provider is
+**one file in `provider/`** plus passing that instance from `apps/api`
+composition — no other change, no DI container, no adapter registry, and
+no new `@ai-sdk/*` package without owner approval.
+
+`apps/api` constructs the adapter once from validated config
+(`createStaffAssistantProvider`) and passes it into the HTTP mount.
 
 Zod 4 discriminated unions omit top-level `type`. Anthropic requires
-`input_schema.type`. `ensureAnthropicToolInputSchemaType` patches
-remaining 1:1 union tools. Object façades already emit `type: "object"`
-and must not rely on that patch.
+`input_schema.type`. `provider.toolInputSchema` (Anthropic:
+`ensureAnthropicToolInputSchemaType`) patches remaining 1:1 union tools.
+Object façades already emit `type: "object"` and must not rely on that
+patch.
 
 ## Reply (SHO-507)
 

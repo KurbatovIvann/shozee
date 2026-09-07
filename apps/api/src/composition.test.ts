@@ -27,6 +27,7 @@ import { z } from "zod";
 import {
   buildContractCheckInput,
   createActionRegistry,
+  createStaffAssistantProvider,
   mergeSuiteCoverage,
   registerAction,
 } from "./composition.js";
@@ -60,6 +61,7 @@ describe("composition root identity", () => {
     );
     expect(bootSource).toContain('from "./composition.js"');
     expect(bootSource).toContain("createActionRegistry");
+    expect(bootSource).toContain("createStaffAssistantProvider");
     expect(bootSource).toContain("createRedisAuthRateLimitStore(redis, {");
     expect(bootSource).toContain("ipHmacSecret: config.rateLimit.ipHmacSecret");
     expect(bootSource).toContain("configureFilesObjectStore");
@@ -67,6 +69,19 @@ describe("composition root identity", () => {
     expect(bootSource).toContain("closeFilesObjectStore");
     expect(bootSource).toContain("configureDocumentShareOrigin");
     expect(bootSource).not.toMatch(/new ActionRegistry\s*\(/);
+  });
+
+  it("constructs the staff assistant provider from config without a registry", () => {
+    const provider = createStaffAssistantProvider({
+      anthropicApiKey: undefined,
+      model: "claude-sonnet-4-6",
+      gateModel: "claude-haiku-4-5",
+    });
+    expect(provider.id).toBe("anthropic");
+    expect(provider.pricing("claude-sonnet-4-6")?.cacheWrite).toBe(6);
+    expect(provider.pricing("claude-haiku-4-5")?.cacheWrite).toBe(2);
+    expect(provider.pricing("claude-opus-4-6")?.cacheWrite).toBe(30);
+    expect(provider.pricing("some-unknown-model")).toBeNull();
   });
 
   it("the contract-check input is the boot registry plus the db grant manifest", () => {

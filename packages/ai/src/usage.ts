@@ -114,3 +114,17 @@ export function staffAssistantCacheHitRatio(
   }
   return usage.cacheReadTokens / usage.inputTokens;
 }
+
+/**
+ * Log fields for estimated spend. Unknown models stay unknown — never a
+ * silent Sonnet fallback (SHO-508).
+ */
+export function staffAssistantCostLogFields(estimatedCostUsd: number | null): {
+  readonly estimated_cost_usd: number | null;
+  readonly cost_known: boolean;
+} {
+  return {
+    estimated_cost_usd: estimatedCostUsd,
+    cost_known: estimatedCostUsd !== null,
+  };
+}

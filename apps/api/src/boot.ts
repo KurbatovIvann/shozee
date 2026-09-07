@@ -21,7 +21,10 @@ import { Redis } from "ioredis";
 
 import { buildAuthOptions } from "./auth/options.js";
 import { otpSendersFromConfig } from "./auth/otp-delivery.js";
-import { createActionRegistry } from "./composition.js";
+import {
+  createActionRegistry,
+  createStaffAssistantProvider,
+} from "./composition.js";
 import { createApp, type AuthInstance } from "./http/app.js";
 import { createProcessObservability } from "./observability.js";
 import { createActionPipeline } from "./pipeline.js";
@@ -116,6 +119,7 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
   });
 
   const registry = createActionRegistry();
+  const staffProvider = createStaffAssistantProvider(config.ai);
   const app = createApp({
     auth,
     registry,
@@ -130,6 +134,7 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
     assistant: {
       model: config.ai.model,
       gateModel: config.ai.gateModel,
+      provider: staffProvider,
       ...(config.ai.anthropicApiKey !== undefined
         ? { anthropicApiKey: config.ai.anthropicApiKey }
         : {}),

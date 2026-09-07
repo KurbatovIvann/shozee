@@ -4,15 +4,21 @@ import { createHash } from "node:crypto";
 export const STAFF_ASSISTANT_EMPTY_TOOLSET_HASH = "empty";
 
 /**
- * Stable short hash of sorted provider tool names. Logs only — never
- * includes schemas or payloads.
+ * Stable short hash of sorted provider tool names plus adapter id.
+ * Logs only — never includes schemas or payloads. A provider change
+ * invalidates cache assumptions (SHO-508).
  */
 export function staffAssistantToolsetHash(
   providerNames: readonly string[],
+  adapterId?: string,
 ): string {
   if (providerNames.length === 0) {
     return STAFF_ASSISTANT_EMPTY_TOOLSET_HASH;
   }
-  const canonical = [...providerNames].sort().join("\n");
+  const names = [...providerNames].sort().join("\n");
+  const canonical =
+    adapterId === undefined || adapterId === ""
+      ? names
+      : `${adapterId}\n${names}`;
   return createHash("sha256").update(canonical).digest("hex").slice(0, 16);
 }
