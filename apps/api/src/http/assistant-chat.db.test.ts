@@ -19,6 +19,7 @@ import {
   PRICING_LIST_PRICE_LISTS_TOOL_NAME,
   secondsUntilKyivMidnight,
   STAFF_ASSISTANT_MODEL_HISTORY_MAX,
+  STAFF_ASSISTANT_TOOL_ERROR_FALLBACK,
   STAFF_ASSISTANT_TOOL_SEARCH_NAME,
   toProviderToolName,
   type LanguageModel,
@@ -2325,7 +2326,10 @@ describe("POST /assistant/chat server-owned history (SHO-506)", () => {
       expect(response.status).toBe(200);
       const payloads = await readUiMessageSsePayloads(response);
       expect(JSON.stringify(payloads)).toContain(
-        "The assistant could not complete this turn.",
+        STAFF_ASSISTANT_TOOL_ERROR_FALLBACK.uk,
+      );
+      expect(JSON.stringify(payloads)).not.toContain(
+        STAFF_ASSISTANT_TOOL_ERROR_FALLBACK.en,
       );
       const assistantRows = (
         await kit.db.runtime.db.select().from(assistantMessages)

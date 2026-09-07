@@ -1129,27 +1129,96 @@ describe("streamStaffAssistantChat", () => {
     fetchSpy.mockRestore();
   });
 
-  it("awaits onTurn after text and fails the stream when persist fails", async () => {
-    const onTurn = vi.fn(() => Promise.reject(new Error("persist failed")));
-    const model = new MockLanguageModelV3({
-      doStream: [mockTextStream("You have no orders.")],
-    });
-    const { response, completion } = streamStaffAssistantChat({
-      model,
-      messages: [{ role: "user", content: "List orders" }],
-      contracts: [listOrders],
-      execute: () => Promise.resolve({ items: [], nextCursor: null }),
-      onTurn,
-    });
-    const payloads = await readUiMessageSsePayloads(response);
-    const turn = await completion;
-    expect(turn.text).toContain("You have no orders.");
-    expect(onTurn).toHaveBeenCalledOnce();
-    expect(onTurn).toHaveBeenCalledWith(turn);
-    expect(JSON.stringify(payloads)).toContain(
-      "The assistant could not complete this turn.",
-    );
-  });
+  it.each([
+    {
+      locale: undefined,
+      overlay: STAFF_ASSISTANT_TOOL_ERROR_FALLBACK.uk,
+    },
+    {
+      locale: "uk" as const,
+      overlay: STAFF_ASSISTANT_TOOL_ERROR_FALLBACK.uk,
+    },
+    {
+      locale: "en" as const,
+      overlay: STAFF_ASSISTANT_TOOL_ERROR_FALLBACK.en,
+    },
+  ])(
+    "overlays locale tool-error fallback when persist fails (locale=$locale)",
+    async ({ locale, overlay }) => {
+      const onTurn = vi.fn(() => Promise.reject(new Error("persist failed")));
+      const model = new MockLanguageModelV3({
+        doStream: [mockTextStream("You have no orders.")],
+      });
+      const { response, completion } = streamStaffAssistantChat({
+        model,
+        messages: [{ role: "user", content: "List orders" }],
+        contracts: [listOrders],
+        execute: () => Promise.resolve({ items: [], nextCursor: null }),
+        onTurn,
+        ...(locale === undefined ? {} : { locale }),
+      });
+      const payloads = await readUiMessageSsePayloads(response);
+      const turn = await completion;
+      expect(turn.text).toContain("You have no orders.");
+      expect(onTurn).toHaveBeenCalledOnce();
+      expect(onTurn).toHaveBeenCalledWith(turn);
+      const payloadText = JSON.stringify(payloads);
+      expect(payloadText).toContain(overlay);
+      if (overlay === STAFF_ASSISTANT_TOOL_ERROR_FALLBACK.uk) {
+        expect(payloadText).not.toContain(
+          STAFF_ASSISTANT_TOOL_ERROR_FALLBACK.en,
+        );
+      }
+    },
+  );
+
+  it.each([
+    {
+      locale: undefined,
+      expected: STAFF_ASSISTANT_TOOL_ERROR_FALLBACK.uk,
+    },
+    {
+      locale: "uk" as const,
+      expected: STAFF_ASSISTANT_TOOL_ERROR_FALLBACK.uk,
+    },
+    {
+      locale: "en" as const,
+      expected: STAFF_ASSISTANT_TOOL_ERROR_FALLBACK.en,
+    },
+  ])(
+    "uses locale tool-error fallback for INTERNAL execute failures (locale=$locale)",
+    async ({ locale, expected }) => {
+      const execute = vi.fn(() =>
+        Promise.reject(new Error("secret boom must not surface")),
+      );
+      const model = new MockLanguageModelV3({
+        doStream: [
+          mockToolCallStream("call-list", ORDERS_LIST_PAGE_TOOL_NAME, "{}"),
+          mockTextStream(""),
+        ],
+      });
+      const { response, completion } = streamStaffAssistantChat({
+        model,
+        messages: [{ role: "user", content: "List orders" }],
+        contracts: [listOrders],
+        execute,
+        ...(locale === undefined ? {} : { locale }),
+      });
+      const payloads = await readUiMessageSsePayloads(response);
+      const turn = await completion;
+      const payloadText = JSON.stringify(payloads);
+      expect(turn.toolRuns[0]?.outcome).toBe("error");
+      expect(turn.text).toBe(expected);
+      expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
+      expect(payloadText).not.toContain("secret boom must not surface");
+      if (expected === STAFF_ASSISTANT_TOOL_ERROR_FALLBACK.uk) {
+        expect(turn.text).not.toBe(STAFF_ASSISTANT_TOOL_ERROR_FALLBACK.en);
+        expect(payloadText).not.toContain(
+          STAFF_ASSISTANT_TOOL_ERROR_FALLBACK.en,
+        );
+      }
+    },
+  );
 
   it("calls onAbandoned when abortSignal is already aborted before onTurn", async () => {
     const onTurn = vi.fn(() => Promise.resolve());
@@ -1699,7 +1768,9 @@ describe("streamStaffAssistantChat", () => {
     const turn = await completion;
     const payloadText = JSON.stringify(payloads);
     expect(turn.text).toBe(STAFF_ASSISTANT_EMPTY_SPOKEN_FALLBACK.uk);
+    expect(turn.text).toBe("Готово.");
     expect(turn.text).not.toBe("SECRETX");
+    expect(turn.text).not.toBe(STAFF_ASSISTANT_TOOL_ERROR_FALLBACK.en);
     expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
     expect(payloadText).not.toContain('{"spo');
     expect(payloadText).not.toContain("SECRETX");

@@ -59,6 +59,8 @@ import {
 import {
   createHoldCandidateReplyTextTransform,
   isStaffAssistantTypedToolError,
+  STAFF_ASSISTANT_TOOL_ERROR_FALLBACK,
+  staffAssistantSpokenFallbackLocale,
 } from "./spoken-reply.js";
 import { staffAssistantSystemMessages } from "./system-prompt.js";
 import { staffAssistantToolsetHash } from "./toolset-hash.js";
@@ -245,6 +247,14 @@ function meterToolResult(
   return returned;
 }
 
+function staffAssistantInternalToolErrorMessage(
+  locale: StaffAssistantLocale,
+): string {
+  return STAFF_ASSISTANT_TOOL_ERROR_FALLBACK[
+    staffAssistantSpokenFallbackLocale(locale)
+  ];
+}
+
 function wrapExecute(
   execute: ActionToolExecute,
   runs: StaffAssistantToolRun[],
@@ -262,7 +272,7 @@ function wrapExecute(
       return {
         status: "error",
         code: "INTERNAL",
-        message: "The assistant could not complete this turn.",
+        message: staffAssistantInternalToolErrorMessage(hooks.locale),
       };
     }
     try {
@@ -343,7 +353,7 @@ function wrapExecute(
       return {
         status: "error",
         code: "INTERNAL",
-        message: "The assistant could not complete this turn.",
+        message: staffAssistantInternalToolErrorMessage(hooks.locale),
       };
     }
   };
@@ -669,7 +679,8 @@ export function streamStaffAssistantChat(options: {
         try {
           rawText = await result.text;
         } catch {
-          rawText = "The assistant could not complete this turn.";
+          // Empty so presenter / spoken lookup runs (SHO-514).
+          rawText = "";
         }
         const turn: StaffAssistantTurnResult = {
           text: staffAssistantPersistedTurnText({
@@ -710,7 +721,10 @@ export function streamStaffAssistantChat(options: {
         }
       }
     },
-    onError: () => "The assistant could not complete this turn.",
+    onError: () =>
+      STAFF_ASSISTANT_TOOL_ERROR_FALLBACK[
+        staffAssistantSpokenFallbackLocale(locale)
+      ],
   });
 
   return {
