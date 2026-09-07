@@ -3,6 +3,7 @@
  */
 import { randomUUID } from "node:crypto";
 
+import { confirmationPendingRecordFromPause } from "@showzy/ai";
 import { CoreInvariantError } from "@showzy/core/errors";
 import {
   RedisContainer,
@@ -17,6 +18,7 @@ import {
   createRedisAuthRateLimitStore,
   createRedisChoiceStore,
   createRedisConfirmationStore,
+  createRedisPendingInteractionStore,
   createRedisOtpSendStore,
   createRedisRateLimitStore,
   createRedisSecondaryStorage,
@@ -334,7 +336,7 @@ describe("createRedisChoiceStore", () => {
     const deadline = Date.now() + 2_000;
     while (
       Date.now() < deadline &&
-      (await redis.pttl(`choice:${choiceId}`)) !== -2
+      (await redis.pttl(`pending:choice:${choiceId}`)) !== -2
     ) {
       await new Promise((resolve) => {
         setTimeout(resolve, 25);
@@ -343,5 +345,47 @@ describe("createRedisChoiceStore", () => {
     expect(
       await store.claim({ choiceId, bind, optionId: optionLemon }),
     ).toEqual({ kind: "expired" });
+  });
+});
+
+describe("createRedisPendingInteractionStore confirmation", () => {
+  const conversationId = "11111111-1111-4111-8111-111111111111";
+  const companyId = "22222222-2222-4222-8222-222222222222";
+  const customerId = "77777777-7777-4777-8777-777777777777";
+  const bind = {
+    actorId: "anna",
+    companyId,
+    conversationId,
+  };
+
+  it("lets exactly one concurrent confirmation claim win via Lua", async () => {
+    const store = createRedisPendingInteractionStore(redis);
+    const record = confirmationPendingRecordFromPause({
+      challengeId: randomUUID(),
+      bind,
+      actionName: "customers.deleteCustomer",
+      toolCallId: "call-delete",
+      canonicalInput: { id: customerId },
+      locale: "uk",
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+    });
+    expect(await store.open(record)).toBe(true);
+    const decisions = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        store.claim({
+          kind: "confirmation",
+          id: record.id,
+          bind,
+          resolution: "confirmed",
+        }),
+      ),
+    );
+    const claimed = decisions.filter((decision) => decision.kind === "claimed");
+    const replay = decisions.filter((decision) => decision.kind === "replay");
+    expect(claimed).toHaveLength(1);
+    expect(claimed.length + replay.length).toBe(8);
+    expect(
+      await redis.pttl(`pending:confirmation:${record.id}`),
+    ).toBeGreaterThan(0);
   });
 });

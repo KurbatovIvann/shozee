@@ -9,13 +9,14 @@ import { useBoundContractMutation } from "../../../api/use-bound-contract-mutati
 import { useAuthSession } from "../../../auth/session-provider";
 import { clipAssistantInput } from "../api/assistant-chat-body";
 import {
-  peekAssistantChoice,
-  postAssistantChoice,
-} from "../api/assistant-choice";
-import {
   createStaffAssistantTransport,
   type StaffAssistantUiMessage,
 } from "../api/assistant-chat-transport";
+import {
+  peekAssistantChoice,
+  postAssistantChoice,
+} from "../api/assistant-choice";
+import { postAssistantConfirm } from "../api/assistant-confirm";
 import { bindCreateConversationMutate } from "../api/create-conversation";
 import {
   resetAssistantTenantSession,
@@ -31,7 +32,11 @@ import type {
   ChoiceAppendPart,
   ChoiceSelectResult,
 } from "../shared/choice-presenter";
-import type { AssistantChatMessage } from "../shared/confirmation-presenter";
+import type {
+  AssistantChatMessage,
+  ConfirmationAppendPart,
+  ConfirmationConfirmResult,
+} from "../shared/confirmation-presenter";
 import type { AssistantChatStatus } from "./use-assistant-confirmation";
 
 function resolveApiUrl(): string | null {
@@ -66,7 +71,12 @@ export function useAssistantChat(): {
     readonly choiceId: string;
     readonly optionId: string;
   }) => Promise<ChoiceSelectResult>;
-  readonly appendAssistantParts: (parts: readonly ChoiceAppendPart[]) => void;
+  readonly postConfirm: (input: {
+    readonly challengeId: string;
+  }) => Promise<ConfirmationConfirmResult>;
+  readonly appendAssistantParts: (
+    parts: readonly (ChoiceAppendPart | ConfirmationAppendPart)[],
+  ) => void;
 } {
   const auth = useAuthSession();
   const apiClient = useApiClient();
@@ -133,7 +143,7 @@ export function useAssistantChat(): {
   );
 
   const appendAssistantParts = useCallback(
-    (parts: readonly ChoiceAppendPart[]) => {
+    (parts: readonly (ChoiceAppendPart | ConfirmationAppendPart)[]) => {
       setMessages((current) => [
         ...current,
         {
@@ -162,6 +172,26 @@ export function useAssistantChat(): {
         conversationId,
         choiceId: input.choiceId,
         optionId: input.optionId,
+      });
+    },
+    [apiUrl],
+  );
+
+  const postConfirm = useCallback(
+    (input: { readonly challengeId: string }) => {
+      const conversationId = conversationIdRef.current;
+      if (conversationId === null || apiUrl === null) {
+        return Promise.resolve({
+          status: "error" as const,
+          recoverability: "retryable" as const,
+        });
+      }
+      return postAssistantConfirm({
+        apiUrl,
+        getCookie: () => cookieRef.current(),
+        getCompanyId: () => companyIdRef.current,
+        conversationId,
+        challengeId: input.challengeId,
       });
     },
     [apiUrl],
@@ -311,6 +341,7 @@ export function useAssistantChat(): {
     choiceResetRef,
     companyEpochRef,
     postChoice,
+    postConfirm,
     appendAssistantParts,
   };
 }

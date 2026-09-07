@@ -108,6 +108,18 @@ fail-open (low confidence / error) attach the full permitted set plus
 BM25. It does not force a tool. Call one terminal tool per job; do not
 narrate instead of calling.
 
+## Pending interaction (ADR-0035)
+
+Confirmation and choice share one pending-interaction protocol. Pause
+writes a discriminated Redis record (`kind: confirmation | choice`) with
+server-authoritative canonical input. Resume is HTTP
+(`POST /assistant/confirm` or `POST /assistant/choice`) — claim, execute
+the stored action, persist, complete — with no model. Core still issues
+and consumes the confirmation challenge (hash + bindings). Dismiss is
+client-local. Canonical input and challenge ids are not logged at info.
+`x-confirmation-challenge-id` on `POST /assistant/chat` is a temporary
+adapter for old mobile builds.
+
 ## Tests
 
 No live LLM in CI. Inject `MockLanguageModelV3`. Façade tests must prove

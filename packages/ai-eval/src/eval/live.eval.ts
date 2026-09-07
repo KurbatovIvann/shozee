@@ -15,6 +15,7 @@ import { runStaffAssistantEvalTurn, type EvalTurnResult } from "../run-turn.js";
 import { createEvalSandbox, type EvalSandbox } from "../sandbox.js";
 import type { EvalScenario } from "../scenario.js";
 import { GATE_CLASSIFIES_SCENARIOS } from "../scenarios/gate-classifies.js";
+import { HITL_CONFIRMATION_SCENARIOS } from "../scenarios/hitl.js";
 import { MODEL_SPEAKS_SCENARIOS } from "../scenarios/model-speaks.js";
 import { PLAIN_REPLY_SCENARIOS } from "../scenarios/plain-reply.js";
 import { PROOF_SCENARIOS } from "../scenarios/proof.js";
@@ -24,6 +25,7 @@ const EVAL_CORPUS_SCENARIOS = [
   ...PLAIN_REPLY_SCENARIOS,
   ...MODEL_SPEAKS_SCENARIOS,
   ...GATE_CLASSIFIES_SCENARIOS,
+  ...HITL_CONFIRMATION_SCENARIOS,
 ];
 
 const logger = createEvalLogger();

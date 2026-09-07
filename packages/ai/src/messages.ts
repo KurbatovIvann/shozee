@@ -1,7 +1,6 @@
 import type { ModelMessage } from "ai";
 import { z } from "zod";
 
-import { confirmationFromChatPart } from "./confirmation.js";
 import {
   budgetStaffAssistantToolRuns,
   staffAssistantToolResultChars,
@@ -405,96 +404,9 @@ export function staffAssistantHistoryStats(messages: readonly ModelMessage[]): {
   return { messageCount: messages.length, chars, traceChars };
 }
 
-/**
- * HITL paused context: the action the human confirmed and the tool-call
- * id of that logical attempt. Used to pin `idempotencyKey` on resume;
- * tracing still uses the provider `toolCallId`.
- */
-export interface PausedToolAttempt {
-  readonly actionName: string;
-  readonly toolCallId: string;
-}
-
-export type PausedToolAttemptResolution =
-  | { readonly status: "ok"; readonly attempt: PausedToolAttempt }
-  | { readonly status: "missing" }
-  | { readonly status: "mismatch" };
-
-/**
- * Client envelope: matching `data-confirmation` part (core.md §7).
- */
-export function pausedToolAttemptForChallenge(
-  messages: readonly StaffAssistantChatMessage[],
-  challengeId: string,
-): PausedToolAttempt | undefined {
-  for (const message of messages) {
-    for (const part of message.parts) {
-      const confirmation = confirmationFromChatPart(part);
-      if (confirmation?.challengeId === challengeId) {
-        return {
-          actionName: confirmation.actionName,
-          toolCallId: confirmation.toolCallId,
-        };
-      }
-    }
-  }
-  return undefined;
-}
-
 export interface StaffAssistantToolRunRef {
   readonly actionName: string;
   readonly toolCallId: string;
   readonly challengeId: string | null;
   readonly outcome: string;
-}
-
-/**
- * Server-authoritative paused attempt from `assistant.getConversation`
- * tool-run rows.
- */
-export function pausedToolAttemptFromToolRuns(
-  toolRuns: readonly StaffAssistantToolRunRef[],
-  challengeId: string,
-): PausedToolAttempt | undefined {
-  for (let index = toolRuns.length - 1; index >= 0; index -= 1) {
-    const run = toolRuns[index];
-    if (
-      run !== undefined &&
-      run.outcome === "confirmation_required" &&
-      run.challengeId === challengeId
-    ) {
-      return {
-        actionName: run.actionName,
-        toolCallId: run.toolCallId,
-      };
-    }
-  }
-  return undefined;
-}
-
-/**
- * Resume uses persisted rows when present, the client envelope when the
- * card streamed before persist finished, and rejects a forged/stale
- * envelope that disagrees with the server.
- */
-export function resolvePausedToolAttempt(
-  persisted: PausedToolAttempt | undefined,
-  client: PausedToolAttempt | undefined,
-): PausedToolAttemptResolution {
-  if (persisted !== undefined && client !== undefined) {
-    if (
-      persisted.actionName !== client.actionName ||
-      persisted.toolCallId !== client.toolCallId
-    ) {
-      return { status: "mismatch" };
-    }
-    return { status: "ok", attempt: persisted };
-  }
-  if (persisted !== undefined) {
-    return { status: "ok", attempt: persisted };
-  }
-  if (client !== undefined) {
-    return { status: "ok", attempt: client };
-  }
-  return { status: "missing" };
 }

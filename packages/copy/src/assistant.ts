@@ -85,6 +85,7 @@ export type AssistantCopy = {
   readonly dismissLabel: string;
   readonly confirmingLabel: string;
   readonly confirmationTitle: string;
+  readonly confirmationExpired: string;
   readonly choiceTitle: string;
   readonly choiceTruncated: string;
   readonly choiceTruncatedMatch: string;
@@ -171,6 +172,7 @@ const assistantEn: AssistantCopy = {
   dismissLabel: "Cancel",
   confirmingLabel: "Confirming…",
   confirmationTitle: "Confirmation required",
+  confirmationExpired: "Confirmation expired. Ask again.",
   choiceTitle: "Select a variant",
   choiceTruncated: "More variants exist. Reply with the exact flavour name.",
   choiceTruncatedMatch: "More matches exist. Reply with the exact name.",
@@ -245,6 +247,7 @@ const assistantUk: AssistantCopy = {
   dismissLabel: "Скасувати",
   confirmingLabel: "Підтверджую…",
   confirmationTitle: "Потрібне підтвердження",
+  confirmationExpired: "Підтвердження прострочене. Запитай ще раз.",
   choiceTitle: "Обери варіант",
   choiceTruncated: "Є ще варіанти. Напиши точну назву смаку.",
   choiceTruncatedMatch: "Є ще збіги. Напиши точну назву.",

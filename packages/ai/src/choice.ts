@@ -35,7 +35,12 @@ export const CHOICE_TTL_MS = 15 * 60 * 1000;
  */
 export const CHOICE_OPTIONS_MAX = 20;
 
-export const CHOICE_REDIS_KEY_PREFIX = "choice:" as const;
+/**
+ * Historical prefix. Live keys are `pending:choice:{id}` (ADR-0035).
+ * Old `choice:{id}` keys expire unused; the choice route reads the new
+ * shape only.
+ */
+export const CHOICE_REDIS_KEY_PREFIX = "pending:choice:" as const;
 
 export function choiceRedisKey(choiceId: string): string {
   return `${CHOICE_REDIS_KEY_PREFIX}${choiceId}`;
@@ -224,6 +229,12 @@ export const choiceRecordSchema = z.strictObject({
   envelope: staffAssistantChoiceCardEnvelopeSchema,
   locale: z.enum(["uk", "en"]).optional(),
   claimedOptionId: z.uuid().optional(),
+  /** ADR-0035 pending-interaction fields. Optional so old fixtures parse. */
+  kind: z.literal("choice").optional(),
+  id: z.uuid().optional(),
+  actionName: z.string().min(1).optional(),
+  toolCallId: z.string().min(1).optional(),
+  expiresAt: z.string().min(1).optional(),
 });
 
 export type ChoiceRecord = z.output<typeof choiceRecordSchema>;
@@ -779,6 +790,11 @@ export function choiceRecordFromPickerConflict(args: {
     optionMap: { ...bound.optionMap },
     envelope,
     ...(args.locale !== undefined ? { locale: args.locale } : {}),
+    kind: "choice",
+    id: args.choiceId,
+    actionName: "orders.create",
+    toolCallId: `choice:${args.choiceId}`,
+    expiresAt: new Date(Date.now() + CHOICE_TTL_MS).toISOString(),
   });
 }
 

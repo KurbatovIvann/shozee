@@ -27,10 +27,11 @@ export function useAssistantSheet(): AssistantSheetViewModel & {
   const chat = useAssistantChat();
   const confirmation = useAssistantConfirmation({
     messages: chat.messages,
-    status: chat.status,
-    error: chat.error,
+    locale,
     sendBusy: chat.sendBusy,
-    resume: chat.resume,
+    companyEpochRef: chat.companyEpochRef,
+    postConfirm: chat.postConfirm,
+    appendParts: chat.appendAssistantParts,
   });
   chat.confirmationResetRef.current = confirmation.reset;
   const choice = useAssistantChoice({

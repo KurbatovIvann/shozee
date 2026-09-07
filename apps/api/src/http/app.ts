@@ -2,8 +2,9 @@
  * The Hono HTTP app (ADR-0003, contract.md §3): request-id, trusted-proxy
  * IP, better-auth, oRPC at `/rpc`, OpenAPI REST aliases at `/api/v1`,
  * document-share landing, PKI proxy, staff AI SSE at `/assistant/chat`,
- * and a liveness endpoint. Business logic does not live here — every
- * action runs `executeAction` through the contract server router or the
+ * HITL resume at `/assistant/confirm` and `/assistant/choice`, and a
+ * liveness endpoint. Business logic does not live here — every action
+ * runs `executeAction` through the contract server router or the
  * dedicated AI mount. `POST /pki/proxy` is HTTP, not an action.
  */
 import { OpenAPIHandler } from "@orpc/openapi/fetch";
@@ -36,10 +37,14 @@ import {
   createMemoryAiBudgetStore,
   type AiBudgetStore,
 } from "../stores/budget.js";
+import { type StaffAssistantChoiceStore } from "../stores/choice.js";
 import {
-  createMemoryChoiceStore,
-  type StaffAssistantChoiceStore,
-} from "../stores/choice.js";
+  bindPendingStoreBacking,
+  createChoiceStoreFromPending,
+  createMemoryPendingInteractionStore,
+  pendingStoreBacking,
+  type StaffAssistantPendingInteractionStore,
+} from "../stores/pending-interaction.js";
 import {
   DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
   type StaffAssistantBudgetLimits,
@@ -54,6 +59,10 @@ import {
   executeStaffAssistantChoicePeek,
   executeStaffAssistantChoiceResume,
 } from "./assistant-choice.js";
+import {
+  ASSISTANT_CONFIRM_PATH,
+  executeStaffAssistantConfirmResume,
+} from "./assistant-confirm.js";
 import { createTrustedProxyMatcher, resolveClientIp } from "./client-ip.js";
 import {
   DOCUMENT_SHARE_LANDING_ROUTE,
@@ -117,6 +126,11 @@ export interface CreateAppOptions {
    * Boot mounts Redis Lua. Tests inject the in-memory CAS store.
    */
   readonly choiceStore?: StaffAssistantChoiceStore;
+  /**
+   * Pending-interaction store (confirmation + choice). When omitted,
+   * derived from `choiceStore` WeakMap backing or an in-memory store.
+   */
+  readonly pendingStore?: StaffAssistantPendingInteractionStore;
   /**
    * Per-user turn limit + Kyiv-day USD budget on `POST /assistant/chat`
    * (SHO-505). Boot mounts Redis. Tests inject memory stores.
@@ -380,7 +394,15 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     return c.html(result.html, result.status);
   });
 
-  const choiceStore = options.choiceStore ?? createMemoryChoiceStore();
+  const pendingStore =
+    options.pendingStore ??
+    pendingStoreBacking(options.choiceStore) ??
+    createMemoryPendingInteractionStore();
+  const choiceStore =
+    options.choiceStore ?? createChoiceStoreFromPending(pendingStore);
+  if (options.choiceStore === undefined) {
+    bindPendingStoreBacking(choiceStore, pendingStore);
+  }
   const assistantBudget = options.assistantBudget ?? {
     rateLimitStore: createInMemoryRateLimitStore(),
     budgetStore: createMemoryAiBudgetStore(),
@@ -398,12 +420,26 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
       pipeline: options.pipeline,
       getSession: (headers) => resolveSession(options.auth, headers),
       choiceStore,
+      pendingStore,
       rateLimitStore: assistantBudget.rateLimitStore,
       budgetStore: assistantBudget.budgetStore,
       budgetLimits,
       ...(options.assistant !== undefined
         ? { assistant: options.assistant }
         : {}),
+    });
+    return withRequestId(response, c.get("requestId"));
+  });
+
+  app.post(ASSISTANT_CONFIRM_PATH, async (c) => {
+    const response = await executeStaffAssistantConfirmResume({
+      request: c.req.raw,
+      requestId: c.get("requestId"),
+      clientIp: c.get("clientIp"),
+      registry: options.registry,
+      pipeline: options.pipeline,
+      getSession: (headers) => resolveSession(options.auth, headers),
+      pendingStore,
     });
     return withRequestId(response, c.get("requestId"));
   });

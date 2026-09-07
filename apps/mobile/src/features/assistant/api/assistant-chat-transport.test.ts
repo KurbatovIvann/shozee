@@ -70,7 +70,7 @@ describe("createStaffAssistantTransport", () => {
     });
   });
 
-  it("sends x-confirmation-challenge-id on confirm resume", async () => {
+  it("forwards x-confirmation-challenge-id when leftover resume() headers are set", async () => {
     const transport = createStaffAssistantTransport({
       apiUrl: "https://api.example.com",
       getCookie: () => "better-auth.session_token=abc",

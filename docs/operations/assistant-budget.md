@@ -50,11 +50,12 @@ recorded in full. The next request is denied when the counter is at or
 over the cap.
 
 Chat confirmation resume (`x-confirmation-challenge-id` on
-`POST /assistant/chat`) skips the turn bucket but still reserves and
-settles estimated USD on both budget keys.
+`POST /assistant/chat`, and `POST /assistant/confirm`) does not call a
+model, costs `$0`, and does not write budget Redis — the same as
+`POST /assistant/choice`.
 
 `POST /assistant/choice` does not call a model, costs `$0`, and does
-not write Redis.
+not write Redis budget keys.
 
 A budget 429 does not consume a turn slot. A 503 (`AI_NOT_CONFIGURED`)
 does not consume a turn slot or reserve budget.

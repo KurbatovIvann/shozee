@@ -1,13 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
+import type { AssistantCompanyEpochRef } from "../shared/assistant-session";
 import {
   confirmationCardState,
+  commitConfirmationConfirmResult,
   executeConfirmationConfirm,
   executeConfirmationDismiss,
   pendingConfirmationFromMessages,
-  shouldMarkConfirmationResolved,
   type AssistantChatMessage,
+  type ConfirmationAppendPart,
   type ConfirmationCardState,
+  type ConfirmationConfirmResult,
   type PendingConfirmation,
 } from "../shared/confirmation-presenter";
 
@@ -15,10 +18,13 @@ export type AssistantChatStatus = "submitted" | "streaming" | "ready" | "error";
 
 export function useAssistantConfirmation(args: {
   readonly messages: readonly AssistantChatMessage[];
-  readonly status: AssistantChatStatus;
-  readonly error: unknown;
+  readonly locale: "uk" | "en";
   readonly sendBusy: boolean;
-  readonly resume: (headers: Readonly<Record<string, string>>) => Promise<void>;
+  readonly companyEpochRef: AssistantCompanyEpochRef;
+  readonly postConfirm: (input: {
+    readonly challengeId: string;
+  }) => Promise<ConfirmationConfirmResult>;
+  readonly appendParts: (parts: readonly ConfirmationAppendPart[]) => void;
 }): {
   readonly pending: PendingConfirmation | null;
   readonly ignoredChallengeIds: ReadonlySet<string>;
@@ -30,13 +36,12 @@ export function useAssistantConfirmation(args: {
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
-  const [resolved, setResolved] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
+  const [ignored, setIgnored] = useState<ReadonlySet<string>>(() => new Set());
   const [resolvingChallengeId, setResolvingChallengeId] = useState<
     string | null
   >(null);
   const dismissedRef = useRef<ReadonlySet<string>>(new Set());
+  const ignoredRef = useRef<ReadonlySet<string>>(new Set());
   const resolvingRef = useRef<string | null>(null);
 
   const clearResolving = useCallback(() => {
@@ -44,15 +49,15 @@ export function useAssistantConfirmation(args: {
     setResolvingChallengeId(null);
   }, []);
 
-  const ignored = useMemo(() => {
+  const hiddenIds = useMemo(() => {
     const next = new Set(dismissed);
-    for (const challengeId of resolved) {
+    for (const challengeId of ignored) {
       next.add(challengeId);
     }
     return next;
-  }, [dismissed, resolved]);
+  }, [dismissed, ignored]);
 
-  const pending = pendingConfirmationFromMessages(args.messages, ignored);
+  const pending = pendingConfirmationFromMessages(args.messages, hiddenIds);
   const pendingRef = useRef(pending);
   pendingRef.current = pending;
 
@@ -61,67 +66,54 @@ export function useAssistantConfirmation(args: {
     resolvingChallengeId,
   });
 
-  const previousStatus = useRef(args.status);
-  useEffect(() => {
-    if (args.status === "error") {
-      clearResolving();
-    }
-  }, [args.status, clearResolving]);
-
-  useEffect(() => {
-    const previous = previousStatus.current;
-    previousStatus.current = args.status;
-    const wasBusy = previous === "submitted" || previous === "streaming";
-    if (args.status !== "ready" || !wasBusy || resolvingChallengeId === null) {
-      return;
-    }
-    if (
-      shouldMarkConfirmationResolved({
-        resolvingChallengeId,
-        pending,
-        hasError: args.error !== undefined && args.error !== null,
-        messages: args.messages,
-      })
-    ) {
-      const challengeId = resolvingChallengeId;
-      setResolved((current) => {
-        const next = new Set(current);
-        next.add(challengeId);
-        return next;
-      });
-    }
-    clearResolving();
-  }, [
-    args.error,
-    args.messages,
-    args.status,
-    clearResolving,
-    pending,
-    resolvingChallengeId,
-  ]);
-
   const confirm = useCallback(() => {
     const current = pendingRef.current;
     if (current === null || resolvingRef.current !== null) {
       return;
     }
+    const epoch = args.companyEpochRef.current;
     setResolvingChallengeId(current.challengeId);
     void executeConfirmationConfirm({
       pending: current,
       sendBusy: args.sendBusy,
       dismissedChallengeIds: dismissedRef.current,
       resolvingRef,
-      resume: args.resume,
+      postConfirm: args.postConfirm,
     })
       .then((result) => {
-        if (result === "skipped") {
-          clearResolving();
+        const outcome = commitConfirmationConfirmResult({
+          result,
+          previousChallengeId: current.challengeId,
+          locale: args.locale,
+          companyEpochRef: args.companyEpochRef,
+          epoch,
+          resolvingRef,
+          appendParts: args.appendParts,
+          ignoreChallenge: (challengeId) => {
+            const next = new Set(ignoredRef.current);
+            next.add(challengeId);
+            ignoredRef.current = next;
+            setIgnored(next);
+          },
+        });
+        if (outcome === "stale") {
+          return;
         }
+        clearResolving();
       })
       .catch(() => {
-        clearResolving();
+        if (resolvingRef.current === current.challengeId) {
+          clearResolving();
+        }
       });
-  }, [args.resume, args.sendBusy, clearResolving]);
+  }, [
+    args.appendParts,
+    args.companyEpochRef,
+    args.locale,
+    args.postConfirm,
+    args.sendBusy,
+    clearResolving,
+  ]);
 
   const dismiss = useCallback(() => {
     const next = executeConfirmationDismiss({
@@ -135,16 +127,17 @@ export function useAssistantConfirmation(args: {
   const reset = useCallback(() => {
     const empty = new Set<string>();
     dismissedRef.current = empty;
+    ignoredRef.current = empty;
     pendingRef.current = null;
     resolvingRef.current = null;
     setDismissed(empty);
-    setResolved(new Set());
+    setIgnored(empty);
     setResolvingChallengeId(null);
   }, []);
 
   return {
     pending,
-    ignoredChallengeIds: ignored,
+    ignoredChallengeIds: hiddenIds,
     card,
     confirm,
     dismiss,

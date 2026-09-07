@@ -5,12 +5,18 @@ import { catalogActions, createProduct } from "@showzy/catalog";
 import { companiesActions, getCompany } from "@showzy/companies";
 import {
   ActionRegistry,
+  createConfirmationHook,
+  createInMemoryConfirmationStore,
   executeAction,
   type ImplementedAction,
 } from "@showzy/core";
 import type { ActionContract } from "@showzy/core/contract";
 import { createTestKit, type TestKit } from "@showzy/core/testing";
-import { createCustomer, customersActions } from "@showzy/customers";
+import {
+  archiveCustomer,
+  createCustomer,
+  customersActions,
+} from "@showzy/customers";
 import { createOrder, ordersActions } from "@showzy/orders";
 import { pricingActions } from "@showzy/pricing";
 import type { z } from "zod";
@@ -21,6 +27,10 @@ import {
   T7_MACARONS_PRODUCT_NAME,
   T7_MACARONS_VANILLA_VARIANT,
 } from "./scenarios/gate-classifies.js";
+import {
+  HITL_ARCHIVED_CUSTOMER_NAME,
+  HITL_ARCHIVED_CUSTOMER_PHONE,
+} from "./scenarios/hitl.js";
 import {
   PROOF_CUSTOMER_NAME,
   PROOF_CUSTOMER_PHONE,
@@ -71,6 +81,11 @@ async function seedProofFixture(kit: TestKit): Promise<string> {
     name: PROOF_CUSTOMER_NAME,
     phone: PROOF_CUSTOMER_PHONE,
   });
+  const archived = await kit.invoke(createCustomer, {
+    name: HITL_ARCHIVED_CUSTOMER_NAME,
+    phone: HITL_ARCHIVED_CUSTOMER_PHONE,
+  });
+  await kit.invoke(archiveCustomer, { id: archived.id });
   await kit.invoke(createProduct, {
     name: PROOF_PRODUCT_NAME,
     basePriceMinor: PROOF_PRODUCT_PRICE_MINOR,
@@ -114,6 +129,14 @@ export interface EvalSandbox {
  */
 export async function createEvalSandbox(): Promise<EvalSandbox> {
   const kit = await createTestKit();
+  const confirmationStore = createInMemoryConfirmationStore();
+  const pipeline = {
+    ...kit.pipeline,
+    hooks: {
+      ...kit.pipeline.hooks,
+      confirmation: createConfirmationHook({ store: confirmationStore }),
+    },
+  };
   const registry = new ActionRegistry();
   registerActions(registry, catalogActions);
   registerActions(registry, companiesActions);
@@ -126,7 +149,7 @@ export async function createEvalSandbox(): Promise<EvalSandbox> {
   const execute: ActionToolExecute = (actionName, input, toolOptions) => {
     const action = requireEvalImplementation(registry, actionName);
     const requestId = randomUUID();
-    return executeAction(kit.pipeline, {
+    return executeAction(pipeline, {
       action,
       input,
       request: {

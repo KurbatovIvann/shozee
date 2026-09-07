@@ -719,6 +719,58 @@ describe("choice hydrate (SHO-418)", () => {
     });
   });
 
+  it("does not restore a confirmation card; reload shows completed speech", () => {
+    const challengeId = "22222222-2222-4222-8222-222222222222";
+    const pauseBody = "Потрібне підтвердження.";
+    const successBody = "Коротко про результат.";
+    const messages = hydratedUiMessagesFromConversation({
+      messages: [
+        message({
+          id: MSG_USER,
+          role: "user",
+          body: "Delete the archived customer",
+          createdAt: "2026-09-03T10:00:00.000Z",
+        }),
+        message({
+          id: MSG_ASSISTANT,
+          role: "assistant",
+          body: pauseBody,
+          createdAt: "2026-09-03T10:00:01.000Z",
+        }),
+        message({
+          id: MSG_ASSISTANT_B,
+          role: "assistant",
+          body: successBody,
+          createdAt: "2026-09-03T10:00:02.000Z",
+        }),
+      ],
+      toolRuns: [
+        {
+          id: RUN_GET,
+          actionName: "customers.deleteCustomer",
+          toolCallId: "call-delete",
+          challengeId,
+          resultIds: [],
+          outcome: "confirmation_required",
+          createdAt: "2026-09-03T10:00:01.000Z",
+        },
+        {
+          id: RUN_CREATE,
+          actionName: "customers.deleteCustomer",
+          toolCallId: "call-delete",
+          resultIds: ["44444444-4444-4444-8444-444444444444"],
+          outcome: "success",
+          createdAt: "2026-09-03T10:00:02.000Z",
+        },
+      ],
+      ordersById: new Map(),
+    });
+    expect(JSON.stringify(messages)).not.toContain("data-confirmation");
+    expect(JSON.stringify(messages)).not.toContain(challengeId);
+    expect(messages[1]?.parts).toEqual([{ type: "text", text: pauseBody }]);
+    expect(messages[2]?.parts).toEqual([{ type: "text", text: successBody }]);
+  });
+
   it("does not restore a list card when a list run sits next to a choice", () => {
     const messages = hydratedUiMessagesFromConversation({
       messages: [

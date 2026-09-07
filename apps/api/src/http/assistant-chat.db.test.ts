@@ -19,6 +19,7 @@ import {
   PRICING_LIST_PRICE_LISTS_TOOL_NAME,
   secondsUntilKyivMidnight,
   STAFF_ASSISTANT_MODEL_HISTORY_MAX,
+  STAFF_ASSISTANT_CONFIRMATION_EXPIRED_COPY,
   STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK,
   STAFF_ASSISTANT_TOOL_ERROR_FALLBACK,
   STAFF_ASSISTANT_TOOL_SEARCH_NAME,
@@ -1277,23 +1278,16 @@ describe("POST /assistant/chat mock-model parity", () => {
     });
     await staffInvoke(archiveCustomer, { id: customer.id });
     const deleteInput = JSON.stringify({ id: customer.id });
-    const app = chatApp(
-      new MockLanguageModelV3({
-        doStream: [
-          mockToolCallStream(
-            "call-delete",
-            toProviderToolName("customers.deleteCustomer"),
-            deleteInput,
-          ),
-          mockToolCallStream(
-            "call-delete-resume",
-            toProviderToolName("customers.deleteCustomer"),
-            deleteInput,
-          ),
-          mockTextStream("The customer was deleted."),
-        ],
-      }),
-    );
+    const streamModel = new MockLanguageModelV3({
+      doStream: [
+        mockToolCallStream(
+          "call-delete",
+          toProviderToolName("customers.deleteCustomer"),
+          deleteInput,
+        ),
+      ],
+    });
+    const app = chatApp(streamModel);
     const token = await insertBearer(kit, kitIdentities.users.anna);
     const conversation = await staffInvoke(createConversation, {
       title: "Delete",
@@ -1335,7 +1329,11 @@ describe("POST /assistant/chat mock-model parity", () => {
       extraHeaders: { [REQUEST_ID_HEADER]: resumeRequestId },
     });
     expect(resume.status).toBe(200);
-    await readUiMessageSsePayloads(resume);
+    const resumePayloads = await readUiMessageSsePayloads(resume);
+    expect(sseVisibleTextFromPayloads(resumePayloads)).toBe(
+      STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK.uk,
+    );
+    expect(streamModel.doStreamCalls).toHaveLength(1);
 
     await waitFor(async () => {
       const rows = await kit.db.runtime.db.select().from(companyCustomers);
@@ -1355,7 +1353,7 @@ describe("POST /assistant/chat mock-model parity", () => {
     );
     expect(resumeAudit).toMatchObject({
       channel: ASSISTANT_INVOCATION_CHANNEL,
-      toolCallId: "call-delete-resume",
+      toolCallId: "call-delete",
     });
     const keys = await kit.db.runtime.db.select().from(idempotencyKeys);
     const pausedKey = keys.find(
@@ -1376,29 +1374,16 @@ describe("POST /assistant/chat mock-model parity", () => {
       name: "AI Challenge Group",
     });
     const deleteCustomerInput = JSON.stringify({ id: customer.id });
-    const deleteGroupInput = JSON.stringify({ id: group.id });
-    const app = chatApp(
-      new MockLanguageModelV3({
-        doStream: [
-          mockToolCallStream(
-            "call-delete",
-            toProviderToolName("customers.deleteCustomer"),
-            deleteCustomerInput,
-          ),
-          mockToolCallStream(
-            "call-wrong",
-            toProviderToolName("customers.deleteGroup"),
-            deleteGroupInput,
-          ),
-          mockToolCallStream(
-            "call-delete-resume",
-            toProviderToolName("customers.deleteCustomer"),
-            deleteCustomerInput,
-          ),
-          mockTextStream("The customer was deleted."),
-        ],
-      }),
-    );
+    const streamModel = new MockLanguageModelV3({
+      doStream: [
+        mockToolCallStream(
+          "call-delete",
+          toProviderToolName("customers.deleteCustomer"),
+          deleteCustomerInput,
+        ),
+      ],
+    });
+    const app = chatApp(streamModel);
     const token = await insertBearer(kit, kitIdentities.users.anna);
     const conversation = await staffInvoke(createConversation, {
       title: "Challenge scope",
@@ -1417,34 +1402,6 @@ describe("POST /assistant/chat mock-model parity", () => {
     }
     expect(confirmation.actionName).toBe("customers.deleteCustomer");
 
-    const mismatched = await postChat(app, {
-      token,
-      companyId: kitIdentities.companies.a,
-      body: userChatBody(conversation.id, "Delete the archived customer"),
-      challengeId: confirmation.challengeId,
-    });
-    expect(mismatched.status).toBe(200);
-    const mismatchedPayloads = await readUiMessageSsePayloads(mismatched);
-    const mismatchedConfirmation =
-      confirmationFromSsePayloads(mismatchedPayloads);
-    expect(mismatchedConfirmation).toBeDefined();
-    if (!isStaffAssistantConfirmationOutput(mismatchedConfirmation)) {
-      expect.unreachable("expected a new confirmation for the other tool");
-    }
-    expect(mismatchedConfirmation.actionName).toBe("customers.deleteGroup");
-    expect(mismatchedConfirmation.challengeId).not.toBe(
-      confirmation.challengeId,
-    );
-
-    const stillCustomer = (
-      await kit.db.runtime.db.select().from(companyCustomers)
-    ).filter((row) => row.id === customer.id);
-    expect(stillCustomer).toHaveLength(1);
-    const stillGroup = (
-      await kit.db.runtime.db.select().from(customerGroups)
-    ).filter((row) => row.id === group.id);
-    expect(stillGroup).toHaveLength(1);
-
     const resume = await postChat(app, {
       token,
       companyId: kitIdentities.companies.a,
@@ -1452,7 +1409,9 @@ describe("POST /assistant/chat mock-model parity", () => {
       challengeId: confirmation.challengeId,
     });
     expect(resume.status).toBe(200);
-    await readUiMessageSsePayloads(resume);
+    const resumePayloads = await readUiMessageSsePayloads(resume);
+    expect(confirmationFromSsePayloads(resumePayloads)).toBeUndefined();
+    expect(streamModel.doStreamCalls).toHaveLength(1);
 
     await waitFor(async () => {
       const rows = await kit.db.runtime.db.select().from(companyCustomers);
@@ -1641,34 +1600,23 @@ describe("POST /assistant/chat attempt identity", () => {
     ).toBe(true);
   });
 
-  it("uses only the first matching resume call as the paused attempt", async () => {
+  it("uses the stored paused toolCallId and does not start a second model call", async () => {
     const customer = await staffInvoke(createCustomer, {
       name: "AI One Shot",
       phone: "+380671110005",
     });
     await staffInvoke(archiveCustomer, { id: customer.id });
     const deleteInput = JSON.stringify({ id: customer.id });
-    const app = chatApp(
-      new MockLanguageModelV3({
-        doStream: [
-          mockToolCallStream(
-            "call-delete",
-            toProviderToolName("customers.deleteCustomer"),
-            deleteInput,
-          ),
-          mockToolCallStream(
-            "call-resume-b",
-            toProviderToolName("customers.deleteCustomer"),
-            deleteInput,
-          ),
-          mockToolCallStream(
-            "call-resume-c",
-            toProviderToolName("customers.deleteCustomer"),
-            deleteInput,
-          ),
-        ],
-      }),
-    );
+    const streamModel = new MockLanguageModelV3({
+      doStream: [
+        mockToolCallStream(
+          "call-delete",
+          toProviderToolName("customers.deleteCustomer"),
+          deleteInput,
+        ),
+      ],
+    });
+    const app = chatApp(streamModel);
     const token = await insertBearer(kit, kitIdentities.users.anna);
     const conversation = await staffInvoke(createConversation, {
       title: "One-shot claim",
@@ -1695,19 +1643,16 @@ describe("POST /assistant/chat attempt identity", () => {
     });
     expect(resume.status).toBe(200);
     const resumePayloads = await readUiMessageSsePayloads(resume);
-    const secondConfirmation = confirmationFromSsePayloads(resumePayloads);
-    expect(secondConfirmation).toBeDefined();
-    if (!isStaffAssistantConfirmationOutput(secondConfirmation)) {
-      expect.unreachable("expected a new confirmation for the second call");
-    }
-    expect(secondConfirmation.actionName).toBe("customers.deleteCustomer");
-    expect(secondConfirmation.toolCallId).toBe("call-resume-c");
-    expect(secondConfirmation.challengeId).not.toBe(confirmation.challengeId);
+    expect(confirmationFromSsePayloads(resumePayloads)).toBeUndefined();
+    expect(sseVisibleTextFromPayloads(resumePayloads)).toBe(
+      STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK.uk,
+    );
+    expect(streamModel.doStreamCalls).toHaveLength(1);
 
     await waitFor(async () => {
       const rows = await kit.db.runtime.db.select().from(companyCustomers);
       return !rows.some((row) => row.id === customer.id);
-    }, "deleted customer after first matching resume");
+    }, "deleted customer after stored toolCallId resume");
 
     const keys = await kit.db.runtime.db.select().from(idempotencyKeys);
     expect(
@@ -1718,39 +1663,25 @@ describe("POST /assistant/chat attempt identity", () => {
           row.status === "completed",
       ),
     ).toBe(true);
-    expect(
-      keys.some(
-        (row) =>
-          row.action === "customers.deleteCustomer" &&
-          row.key === attemptKey("tool", conversation.id, "call-resume-c"),
-      ),
-    ).toBe(false);
   });
 
-  it("rejects a persisted vs client confirmation mismatch before consuming the challenge", async () => {
+  it("ignores a mismatched client envelope and resumes from the Redis confirmation record", async () => {
     const customer = await staffInvoke(createCustomer, {
       name: "AI Mismatch",
       phone: "+380671110006",
     });
     await staffInvoke(archiveCustomer, { id: customer.id });
     const deleteInput = JSON.stringify({ id: customer.id });
-    const app = chatApp(
-      new MockLanguageModelV3({
-        doStream: [
-          mockToolCallStream(
-            "call-delete",
-            toProviderToolName("customers.deleteCustomer"),
-            deleteInput,
-          ),
-          mockToolCallStream(
-            "call-delete-resume",
-            toProviderToolName("customers.deleteCustomer"),
-            deleteInput,
-          ),
-          mockTextStream("The customer was deleted."),
-        ],
-      }),
-    );
+    const streamModel = new MockLanguageModelV3({
+      doStream: [
+        mockToolCallStream(
+          "call-delete",
+          toProviderToolName("customers.deleteCustomer"),
+          deleteInput,
+        ),
+      ],
+    });
+    const app = chatApp(streamModel);
     const token = await insertBearer(kit, kitIdentities.users.anna);
     const conversation = await staffInvoke(createConversation, {
       title: "Mismatch",
@@ -1779,36 +1710,24 @@ describe("POST /assistant/chat attempt identity", () => {
       ),
       challengeId: confirmation.challengeId,
     });
-    expect(forged.status).toBe(400);
-    expect(await forged.json()).toMatchObject({
-      code: "VALIDATION",
-      status: 400,
-    });
-    const stillThere = (
-      await kit.db.runtime.db.select().from(companyCustomers)
-    ).filter((row) => row.id === customer.id);
-    expect(stillThere).toHaveLength(1);
-
-    const resume = await postChat(app, {
-      token,
-      companyId: kitIdentities.companies.a,
-      body: userChatBody(conversation.id, "Delete the archived customer"),
-      challengeId: confirmation.challengeId,
-    });
-    expect(resume.status).toBe(200);
-    await readUiMessageSsePayloads(resume);
+    expect(forged.status).toBe(200);
+    const forgedPayloads = await readUiMessageSsePayloads(forged);
+    expect(confirmationFromSsePayloads(forgedPayloads)).toBeUndefined();
+    expect(sseVisibleTextFromPayloads(forgedPayloads)).toBe(
+      STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK.uk,
+    );
+    expect(streamModel.doStreamCalls).toHaveLength(1);
     await waitFor(async () => {
       const rows = await kit.db.runtime.db.select().from(companyCustomers);
       return !rows.some((row) => row.id === customer.id);
-    }, "deleted customer after mismatch reject");
+    }, "deleted customer despite mismatched client envelope");
   });
 
-  it("rejects a confirmation resume with no paused attempt before starting the model", async () => {
-    const app = chatApp(
-      new MockLanguageModelV3({
-        doStream: [mockTextStream("should not run")],
-      }),
-    );
+  it("returns expired confirmation speech without a model call when the Redis record is missing", async () => {
+    const streamModel = new MockLanguageModelV3({
+      doStream: [mockTextStream("should not run")],
+    });
+    const app = chatApp(streamModel);
     const token = await insertBearer(kit, kitIdentities.users.anna);
     const conversation = await staffInvoke(createConversation, {
       title: "Missing pause",
@@ -1819,11 +1738,12 @@ describe("POST /assistant/chat attempt identity", () => {
       body: userChatBody(conversation.id, "так"),
       challengeId: randomUUID(),
     });
-    expect(response.status).toBe(400);
-    expect(await response.json()).toMatchObject({
-      code: "VALIDATION",
-      status: 400,
-    });
+    expect(response.status).toBe(200);
+    const payloads = await readUiMessageSsePayloads(response);
+    expect(sseVisibleTextFromPayloads(payloads)).toContain(
+      STAFF_ASSISTANT_CONFIRMATION_EXPIRED_COPY.uk,
+    );
+    expect(streamModel.doStreamCalls).toHaveLength(0);
   });
 });
 
@@ -2129,12 +2049,6 @@ describe("POST /assistant/chat server-owned history (SHO-506)", () => {
           toProviderToolName("customers.deleteCustomer"),
           deleteInput,
         ),
-        mockToolCallStream(
-          "call-delete-resume",
-          toProviderToolName("customers.deleteCustomer"),
-          deleteInput,
-        ),
-        mockTextStream("The customer was deleted."),
       ],
     });
     const app = chatApp(model);
@@ -2210,17 +2124,19 @@ describe("POST /assistant/chat server-owned history (SHO-506)", () => {
       challengeId: confirmation.challengeId,
     });
     expect(resume.status).toBe(200);
-    await readUiMessageSsePayloads(resume);
+    const resumePayloads = await readUiMessageSsePayloads(resume);
+    expect(sseVisibleTextFromPayloads(resumePayloads)).toBe(
+      STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK.uk,
+    );
     expect(await userMessageCount(conversation.id)).toBe(usersAfterPause);
-    const resumePrompt = JSON.stringify(model.doStreamCalls[1]?.prompt ?? []);
-    expect(resumePrompt).not.toContain(forgedResume);
+    expect(model.doStreamCalls).toHaveLength(1);
     await waitFor(async () => {
       const rows = await kit.db.runtime.db.select().from(companyCustomers);
       return !rows.some((row) => row.id === customer.id);
     }, "deleted customer without appending a resume user message");
   });
 
-  it("resumes confirmation from the client envelope when the tool run is not persisted yet", async () => {
+  it("resumes confirmation from the Redis record when the tool run is not persisted yet", async () => {
     const customer = await staffInvoke(createCustomer, {
       name: "AI Before Persist",
       phone: "+380671110032",
@@ -2235,12 +2151,6 @@ describe("POST /assistant/chat server-owned history (SHO-506)", () => {
             toProviderToolName("customers.deleteCustomer"),
             deleteInput,
           ),
-          mockToolCallStream(
-            "call-delete-resume",
-            toProviderToolName("customers.deleteCustomer"),
-            deleteInput,
-          ),
-          mockTextStream("The customer was deleted."),
         ],
       }),
     );
@@ -2263,8 +2173,7 @@ describe("POST /assistant/chat server-owned history (SHO-506)", () => {
     }
     const usersAfterPause = await userMessageCount(conversation.id);
     expect(usersAfterPause).toBe(1);
-    // Isolated file clone: drop tool-run rows so resume must use the
-    // client confirmation envelope (card streamed before persist).
+    // Redis confirmation record is independent of assistant_tool_runs.
     await kit.db.runtime.db.delete(assistantToolRuns);
     const resume = await postChat(app, {
       token,
@@ -2282,12 +2191,15 @@ describe("POST /assistant/chat server-owned history (SHO-506)", () => {
       challengeId: confirmation.challengeId,
     });
     expect(resume.status).toBe(200);
-    await readUiMessageSsePayloads(resume);
+    const resumePayloads = await readUiMessageSsePayloads(resume);
+    expect(sseVisibleTextFromPayloads(resumePayloads)).toBe(
+      STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK.uk,
+    );
     expect(await userMessageCount(conversation.id)).toBe(usersAfterPause);
     await waitFor(async () => {
       const rows = await kit.db.runtime.db.select().from(companyCustomers);
       return !rows.some((row) => row.id === customer.id);
-    }, "deleted customer via client envelope fallback");
+    }, "deleted customer via Redis record after dropping tool-run rows");
   });
 
   it("reports onTurn persist failure as a stream error", async () => {
@@ -2827,7 +2739,7 @@ describe("POST /assistant/chat intent gate", () => {
     expect(streamToolsLength(streamModel)).toBeGreaterThan(0);
   });
 
-  it("skips the gate on confirmation resume and still attaches tools", async () => {
+  it("does not invoke the gate or model on confirmation resume via the legacy header", async () => {
     const capturing = createCapturingLogger();
     const customer = await staffInvoke(createCustomer, {
       name: "AI Gate Resume",
@@ -2842,12 +2754,6 @@ describe("POST /assistant/chat intent gate", () => {
           toProviderToolName("customers.deleteCustomer"),
           deleteInput,
         ),
-        mockToolCallStream(
-          "call-delete-resume",
-          toProviderToolName("customers.deleteCustomer"),
-          deleteInput,
-        ),
-        mockTextStream("The customer was deleted."),
       ],
     });
     const gateModel = new MockLanguageModelV3({
@@ -2898,6 +2804,12 @@ describe("POST /assistant/chat intent gate", () => {
     expect(classifiedGate).not.toHaveProperty("gate_intent");
     expect(classifiedGate?.["gate_confidence"]).toBe("high");
     expect(classifiedGate).not.toHaveProperty("gate_skip");
+    expect(streamToolsLength(streamModel)).toBeGreaterThan(0);
+    const pauseNames = streamToolNames(streamModel);
+    expect(pauseNames).toContain(STAFF_ASSISTANT_TOOL_SEARCH_NAME);
+    expect(pauseNames).toContain(
+      toProviderToolName("customers.deleteCustomer"),
+    );
 
     const resume = await postChat(app, {
       token,
@@ -2908,21 +2820,24 @@ describe("POST /assistant/chat intent gate", () => {
     expect(resume.status).toBe(200);
     await readUiMessageSsePayloads(resume);
     expect(gateModel.doGenerateCalls).toHaveLength(1);
-    expect(streamToolsLength(streamModel)).toBeGreaterThan(0);
-    const resumeNames = streamToolNames(streamModel);
-    expect(resumeNames).toContain(STAFF_ASSISTANT_TOOL_SEARCH_NAME);
-    expect(resumeNames).toContain(
-      toProviderToolName("customers.deleteCustomer"),
-    );
-    const resumeGate = capturing
+    expect(streamModel.doStreamCalls).toHaveLength(1);
+    const legacyHeader = capturing
       .entries()
-      .filter((entry) => entry["msg"] === "staff assistant turn gate")
-      .at(-1);
-    expect(resumeGate?.["gate_skip"]).toBe("confirmation_resume");
-    expect(resumeGate?.["gate_model"]).toBe("mock-gate");
-    expect(resumeGate).not.toHaveProperty("gate_mode");
-    expect(resumeGate).not.toHaveProperty("gate_intent");
-    expect(resumeGate).not.toHaveProperty("gate_confidence");
+      .find(
+        (entry) => entry["event"] === "assistant.legacy_confirmation_header",
+      );
+    expect(legacyHeader?.["msg"]).toBe(
+      "staff assistant confirmation resume via legacy chat header",
+    );
+    expect(legacyHeader).not.toHaveProperty("challengeId");
+    expect(JSON.stringify(legacyHeader)).not.toContain(
+      confirmation.challengeId,
+    );
+    expect(
+      capturing
+        .entries()
+        .some((entry) => entry["gate_skip"] === "confirmation_resume"),
+    ).toBe(false);
   });
 
   it("skips the gate on choice resume and still attaches tools", async () => {
@@ -4231,7 +4146,7 @@ describe("POST /assistant/chat budget guard (SHO-505)", () => {
     );
   });
 
-  it("does not turn-limit a confirmation resume and still counts its cost", async () => {
+  it("does not turn-limit a confirmation resume and does not count a second model cost", async () => {
     const customer = await staffInvoke(createCustomer, {
       name: "Budget Resume",
       phone: "+380671110505",
@@ -4245,12 +4160,6 @@ describe("POST /assistant/chat budget guard (SHO-505)", () => {
           toProviderToolName("customers.deleteCustomer"),
           deleteInput,
         ),
-        mockToolCallStream(
-          "call-delete-resume",
-          toProviderToolName("customers.deleteCustomer"),
-          deleteInput,
-        ),
-        mockTextStream("The customer was deleted."),
       ],
     });
     const gateModel = new MockLanguageModelV3({
@@ -4306,13 +4215,15 @@ describe("POST /assistant/chat budget guard (SHO-505)", () => {
     });
     expect(resume.status).toBe(200);
     await readUiMessageSsePayloads(resume);
+    expect(streamModel.doStreamCalls).toHaveLength(1);
+    expect(gateModel.doGenerateCalls).toHaveLength(1);
     expect(
       await budgetStore.read(
         aiCompanyBudgetKey(kitIdentities.companies.a, kyivDate),
       ),
-    ).toBeCloseTo(0.14);
+    ).toBeCloseTo(0.07);
     expect(await budgetStore.read(aiGlobalBudgetKey(kyivDate))).toBeCloseTo(
-      0.14,
+      0.07,
     );
   });
 

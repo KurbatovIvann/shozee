@@ -42,6 +42,11 @@ import {
   type StaffAssistantChoiceCardEnvelope,
 } from "./choice.js";
 import {
+  choiceRecordToPending,
+  confirmationPendingRecordFromPause,
+  type PendingInteractionRecord,
+} from "./pending-interaction.js";
+import {
   staffAssistantJsonChars,
   staffAssistantPostgresJsonbTextChars,
 } from "./json-chars.js";
@@ -287,7 +292,9 @@ function wrapExecute(
   hooks: {
     readonly locale: StaffAssistantLocale;
     readonly choiceBind?: ChoiceBind;
-    readonly openChoice?: (record: ChoiceRecord) => Promise<boolean>;
+    readonly openPendingInteraction?: (
+      record: PendingInteractionRecord,
+    ) => Promise<boolean>;
     readonly mintChoiceId?: () => string;
   },
 ): ActionToolExecute {
@@ -321,6 +328,35 @@ function wrapExecute(
           actionName,
           toolCallId,
         );
+        if (
+          hooks.choiceBind !== undefined &&
+          hooks.openPendingInteraction !== undefined
+        ) {
+          const opened = await hooks.openPendingInteraction(
+            confirmationPendingRecordFromPause({
+              challengeId: confirmation.challengeId,
+              bind: hooks.choiceBind,
+              actionName,
+              toolCallId,
+              canonicalInput: input,
+              locale: hooks.locale,
+              expiresAt: error.challenge.expiresAt,
+            }),
+          );
+          if (!opened) {
+            runs.push({
+              actionName,
+              toolCallId,
+              resultIds: [],
+              outcome: "error",
+            });
+            return {
+              status: "error",
+              code: "INTERNAL",
+              message: staffAssistantInternalToolErrorMessage(hooks.locale),
+            };
+          }
+        }
         runs.push({
           actionName,
           toolCallId,
@@ -330,15 +366,19 @@ function wrapExecute(
         });
         return confirmation;
       }
+      const openChoice =
+        hooks.openPendingInteraction === undefined
+          ? undefined
+          : async (record: ChoiceRecord) =>
+              hooks.openPendingInteraction?.(choiceRecordToPending(record)) ??
+              Promise.resolve(true);
       const needsChoice = await needsChoiceFromOrdersCreateConflict({
         actionName,
         input,
         error,
         locale: hooks.locale,
         ...(hooks.choiceBind !== undefined ? { bind: hooks.choiceBind } : {}),
-        ...(hooks.openChoice !== undefined
-          ? { openChoice: hooks.openChoice }
-          : {}),
+        ...(openChoice !== undefined ? { openChoice } : {}),
         ...(hooks.mintChoiceId !== undefined
           ? { mintChoiceId: hooks.mintChoiceId }
           : {}),
@@ -581,11 +621,13 @@ export function streamStaffAssistantChat(options: {
    */
   readonly locale?: StaffAssistantLocale;
   /**
-   * Tenant bind for a user-turn ChoiceCard. Canonical input stays
+   * Tenant bind for a user-turn HITL record. Canonical input stays
    * server-side; the stream only writes the envelope.
    */
   readonly choiceBind?: ChoiceBind;
-  readonly openChoice?: (record: ChoiceRecord) => Promise<boolean>;
+  readonly openPendingInteraction?: (
+    record: PendingInteractionRecord,
+  ) => Promise<boolean>;
   readonly mintChoiceId?: () => string;
   /** Awaited inside the UI-message stream after `result.text`. A throw fails the stream. */
   readonly onTurn?: (turn: StaffAssistantTurnResult) => Promise<void>;
@@ -613,8 +655,8 @@ export function streamStaffAssistantChat(options: {
       ...(options.choiceBind !== undefined
         ? { choiceBind: options.choiceBind }
         : {}),
-      ...(options.openChoice !== undefined
-        ? { openChoice: options.openChoice }
+      ...(options.openPendingInteraction !== undefined
+        ? { openPendingInteraction: options.openPendingInteraction }
         : {}),
       ...(options.mintChoiceId !== undefined
         ? { mintChoiceId: options.mintChoiceId }
@@ -767,4 +809,43 @@ export function streamStaffAssistantChat(options: {
     }),
     completion,
   };
+}
+
+/**
+ * Modelless HITL resume (ADR-0035). Old mobile still consumes SSE from
+ * `POST /assistant/chat` + `x-confirmation-challenge-id`. JSON confirm
+ * uses the same speech/output; this only wraps it as a UI message stream.
+ */
+export function createModellessAssistantTextStreamResponse(options: {
+  readonly text: string;
+  readonly headers?: Record<string, string>;
+  readonly toolCallId?: string;
+  readonly output?: unknown;
+}): Response {
+  const stream = createUIMessageStream({
+    execute: async ({ writer }) => {
+      if (
+        options.toolCallId !== undefined &&
+        options.toolCallId !== "" &&
+        options.output !== undefined
+      ) {
+        writer.write({
+          type: "tool-output-available",
+          toolCallId: options.toolCallId,
+          output: options.output,
+        });
+      }
+      const text = options.text.trim();
+      if (text !== "") {
+        const id = STAFF_ASSISTANT_REPLY_STREAM_TEXT_ID;
+        writer.write({ type: "text-start", id });
+        writer.write({ type: "text-delta", id, delta: text });
+        writer.write({ type: "text-end", id });
+      }
+    },
+  });
+  return createUIMessageStreamResponse({
+    stream,
+    ...(options.headers !== undefined ? { headers: options.headers } : {}),
+  });
 }

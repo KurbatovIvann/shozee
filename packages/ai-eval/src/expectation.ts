@@ -6,6 +6,9 @@ const ORDERS_CREATE_TOOL_NAME = "orders_create";
 const WRITE_SUCCESS_CLAIM =
   /створено|створив|замовлення готове|order created|created an order|i(?:'| ha)?ve created/i;
 
+const DELETE_SUCCESS_CLAIM =
+  /видалено|видалив|клієнта видалено|customer was deleted|deleted the customer|already deleted/i;
+
 export interface EvalTurnTrace {
   readonly text: string;
   readonly toolCalls: readonly EvalToolCall[];
@@ -32,8 +35,8 @@ export interface EvalToolCallExpectation {
    * a success.
    */
   readonly requireSuccessfulResult?: boolean;
-  /** Tool result `status` (e.g. `needs_choice` picker). */
-  readonly requireResultStatus?: "needs_choice";
+  /** Tool result `status` (e.g. `needs_choice` picker, `confirmation_required`). */
+  readonly requireResultStatus?: "needs_choice" | "confirmation_required";
 }
 
 export interface EvalExpectation {
@@ -58,6 +61,11 @@ export interface EvalExpectation {
    * without this (or a successful write) is not enough.
    */
   readonly requireChoice?: boolean;
+  /**
+   * At least one tool result is a confirmation pause. The model must not
+   * claim the high-risk write already happened.
+   */
+  readonly requireConfirmation?: boolean;
 }
 
 export interface EvalMatchFailure {
@@ -302,6 +310,20 @@ function matchRequireChoice(trace: EvalTurnTrace): EvalMatchResult {
   return fail("expected needs_choice tool outcome");
 }
 
+function matchRequireConfirmation(trace: EvalTurnTrace): EvalMatchResult {
+  if (
+    !trace.toolCalls.some(
+      (call) => resultStatus(call.result) === "confirmation_required",
+    )
+  ) {
+    return fail("expected confirmation_required tool outcome");
+  }
+  if (DELETE_SUCCESS_CLAIM.test(trace.text)) {
+    return fail("success claim while confirmation is still required");
+  }
+  return { ok: true };
+}
+
 function collectStringField(rows: readonly unknown[], key: string): string[] {
   const values: string[] = [];
   for (const row of rows) {
@@ -469,6 +491,12 @@ export function matchEvalExpectation(
     const choice = matchRequireChoice(trace);
     if (!choice.ok) {
       return choice;
+    }
+  }
+  if (expectation.requireConfirmation === true) {
+    const confirmation = matchRequireConfirmation(trace);
+    if (!confirmation.ok) {
+      return confirmation;
     }
   }
   return matchFailedWriteSuccessClaim(trace);

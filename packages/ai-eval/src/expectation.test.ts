@@ -339,5 +339,47 @@ describe("matchEvalExpectation", () => {
         },
       ),
     ).toEqual({ ok: true });
+    expect(
+      matchEvalExpectation(
+        {
+          ordered: [
+            {
+              name: "customers_deleteCustomer",
+              requireResultStatus: "confirmation_required",
+            },
+          ],
+          requireConfirmation: true,
+        },
+        {
+          text: "Потрібне підтвердження.",
+          toolCalls: [
+            {
+              toolCallId: "c1",
+              name: "customers_deleteCustomer",
+              args: { id: CUSTOMER_ID },
+              result: { status: "confirmation_required" },
+            },
+          ],
+        },
+      ),
+    ).toEqual({ ok: true });
+    expect(
+      matchEvalExpectation(
+        {
+          requireConfirmation: true,
+        },
+        {
+          text: "Клієнта видалено.",
+          toolCalls: [
+            {
+              toolCallId: "c1",
+              name: "customers_deleteCustomer",
+              args: { id: CUSTOMER_ID },
+              result: { status: "confirmation_required" },
+            },
+          ],
+        },
+      ),
+    ).toMatchObject({ ok: false });
   });
 });

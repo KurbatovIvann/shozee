@@ -48,7 +48,7 @@ import {
 import type { z } from "zod";
 
 import type { StaffAssistantChoiceStore } from "../stores/choice.js";
-import { ASSISTANT_INVOCATION_CHANNEL } from "./assistant-chat.js";
+import { ASSISTANT_INVOCATION_CHANNEL } from "./assistant-invocation.js";
 import { REQUEST_ID_HEADER } from "./request-id.js";
 
 export const ASSISTANT_CHOICE_PATH = "/assistant/choice";

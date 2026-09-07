@@ -3,12 +3,14 @@ import { CONFIRMATION_CHALLENGE_HEADER } from "@showzy/contract";
 
 import {
   confirmationCardState,
+  confirmationConfirmAppendParts,
   confirmationResumeHeaders,
   executeConfirmationConfirm,
   executeConfirmationDismiss,
   pendingConfirmationFromMessages,
   shouldMarkConfirmationResolved,
   type AssistantChatMessage,
+  type ConfirmationConfirmResult,
 } from "./confirmation-presenter";
 
 const challengeA = "22222222-2222-4222-8222-222222222222";
@@ -65,6 +67,15 @@ const mergedResumeMessages: readonly AssistantChatMessage[] = [
   },
 ];
 
+const completed: ConfirmationConfirmResult = {
+  status: "completed",
+  text: "Here is a short summary of the result.",
+  actionName: "customers.deleteCustomer",
+  toolCallId: "call-delete",
+  output: { id: "44444444-4444-4444-8444-444444444444" },
+  recoverability: "terminal",
+};
+
 describe("pendingConfirmationFromMessages", () => {
   it("shows a card when confirmation is required", () => {
     expect(pendingConfirmationFromMessages(messages, new Set())).toEqual({
@@ -117,8 +128,8 @@ describe("pendingConfirmationFromMessages", () => {
 });
 
 describe("executeConfirmationConfirm", () => {
-  it("calls challenge resume with the confirmation header", async () => {
-    const resume = vi.fn(() => Promise.resolve());
+  it("POSTs challenge id without a chat resume header", async () => {
+    const postConfirm = vi.fn(() => Promise.resolve(completed));
     const pending = pendingConfirmationFromMessages(messages, new Set());
     await expect(
       executeConfirmationConfirm({
@@ -126,20 +137,18 @@ describe("executeConfirmationConfirm", () => {
         sendBusy: false,
         dismissedChallengeIds: new Set(),
         resolvingRef: { current: null },
-        resume,
+        postConfirm,
       }),
-    ).resolves.toBe("resumed");
-    expect(resume).toHaveBeenCalledOnce();
-    expect(resume).toHaveBeenCalledWith({
-      [CONFIRMATION_CHALLENGE_HEADER]: challengeA,
-    });
+    ).resolves.toEqual(completed);
+    expect(postConfirm).toHaveBeenCalledOnce();
+    expect(postConfirm).toHaveBeenCalledWith({ challengeId: challengeA });
     expect(confirmationResumeHeaders(challengeA)).toEqual({
       [CONFIRMATION_CHALLENGE_HEADER]: challengeA,
     });
   });
 
-  it("does not resume when dismiss runs instead", async () => {
-    const resume = vi.fn(() => Promise.resolve());
+  it("does not confirm when dismiss runs instead", async () => {
+    const postConfirm = vi.fn(() => Promise.resolve(completed));
     const pending = pendingConfirmationFromMessages(messages, new Set());
     const dismissed = executeConfirmationDismiss({
       pending,
@@ -151,14 +160,14 @@ describe("executeConfirmationConfirm", () => {
         sendBusy: false,
         dismissedChallengeIds: dismissed,
         resolvingRef: { current: null },
-        resume,
+        postConfirm,
       }),
     ).resolves.toBe("skipped");
-    expect(resume).not.toHaveBeenCalled();
+    expect(postConfirm).not.toHaveBeenCalled();
   });
 
-  it("does not resume when dismiss then confirm share the live dismissed set", async () => {
-    const resume = vi.fn(() => Promise.resolve());
+  it("does not confirm when dismiss then confirm share the live dismissed set", async () => {
+    const postConfirm = vi.fn(() => Promise.resolve(completed));
     const pending = pendingConfirmationFromMessages(messages, new Set());
     const gate = {
       dismissed: new Set<string>(),
@@ -175,14 +184,14 @@ describe("executeConfirmationConfirm", () => {
         sendBusy: false,
         dismissedChallengeIds: gate.dismissed,
         resolvingRef: { current: null },
-        resume,
+        postConfirm,
       }),
     ).resolves.toBe("skipped");
-    expect(resume).not.toHaveBeenCalled();
+    expect(postConfirm).not.toHaveBeenCalled();
   });
 
-  it("resumes later challenge B with its header after A is resolved", async () => {
-    const resume = vi.fn(() => Promise.resolve());
+  it("confirms later challenge B after A is resolved", async () => {
+    const postConfirm = vi.fn(() => Promise.resolve(completed));
     const pending = pendingConfirmationFromMessages(
       mergedResumeMessages,
       new Set([challengeA]),
@@ -193,16 +202,14 @@ describe("executeConfirmationConfirm", () => {
         sendBusy: false,
         dismissedChallengeIds: new Set([challengeA]),
         resolvingRef: { current: null },
-        resume,
+        postConfirm,
       }),
-    ).resolves.toBe("resumed");
-    expect(resume).toHaveBeenCalledWith({
-      [CONFIRMATION_CHALLENGE_HEADER]: challengeB,
-    });
+    ).resolves.toEqual(completed);
+    expect(postConfirm).toHaveBeenCalledWith({ challengeId: challengeB });
   });
 
-  it("two confirm() calls before busy resume once", async () => {
-    const resume = vi.fn(() => Promise.resolve());
+  it("two confirm() calls before busy POST once", async () => {
+    const postConfirm = vi.fn(() => Promise.resolve(completed));
     const pending = pendingConfirmationFromMessages(messages, new Set());
     const resolvingRef = { current: null as string | null };
     const args = {
@@ -210,15 +217,38 @@ describe("executeConfirmationConfirm", () => {
       sendBusy: false,
       dismissedChallengeIds: new Set<string>(),
       resolvingRef,
-      resume,
+      postConfirm,
     };
     const [first, second] = await Promise.all([
       executeConfirmationConfirm(args),
       executeConfirmationConfirm(args),
     ]);
-    expect(new Set([first, second])).toEqual(new Set(["resumed", "skipped"]));
-    expect(resume).toHaveBeenCalledOnce();
+    expect(
+      new Set([
+        first === "skipped" ? "skipped" : "posted",
+        second === "skipped" ? "skipped" : "posted",
+      ]),
+    ).toEqual(new Set(["posted", "skipped"]));
+    expect(postConfirm).toHaveBeenCalledOnce();
     expect(resolvingRef.current).toBe(challengeA);
+  });
+});
+
+describe("confirmationConfirmAppendParts", () => {
+  it("appends protocol text and the tool output on completed", () => {
+    expect(
+      confirmationConfirmAppendParts({ result: completed, locale: "uk" }),
+    ).toEqual([
+      { type: "text", text: completed.text },
+      {
+        type: "dynamic-tool",
+        toolName: "customers.deleteCustomer",
+        toolCallId: "call-delete",
+        state: "output-available",
+        input: {},
+        output: completed.output,
+      },
+    ]);
   });
 });
 

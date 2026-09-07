@@ -171,10 +171,16 @@ export function commitTurnSpeech(options: {
   readonly toolResults: readonly StaffAssistantPresentedToolResult[];
   readonly rawText: string;
   readonly runs: readonly StaffAssistantTurnRun[];
+  /** Modelless HITL resume protocol line (confirmation expired). */
+  readonly protocolOverride?: string;
 }): CommittedSpeech {
   const locale = staffAssistantLocale(
     typeof options.locale === "string" ? options.locale : undefined,
   );
+  const protocolOverride = options.protocolOverride?.trim();
+  if (protocolOverride !== undefined && protocolOverride !== "") {
+    return { source: "protocol", text: protocolOverride };
+  }
   const choice = presentChoiceStaffAssistantTurn({
     locale,
     toolResults: options.toolResults,

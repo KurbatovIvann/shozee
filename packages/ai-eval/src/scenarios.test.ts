@@ -8,6 +8,7 @@ import {
 import { describe, expect, it } from "vitest";
 
 import { GATE_CLASSIFIES_SCENARIOS } from "./scenarios/gate-classifies.js";
+import { HITL_CONFIRMATION_SCENARIOS } from "./scenarios/hitl.js";
 import { MODEL_SPEAKS_SCENARIOS } from "./scenarios/model-speaks.js";
 import { PLAIN_REPLY_SCENARIOS } from "./scenarios/plain-reply.js";
 import { PROOF_SCENARIOS } from "./scenarios/proof.js";
@@ -164,6 +165,27 @@ describe("GATE_CLASSIFIES_SCENARIOS", () => {
       GATE_CLASSIFIES_SCENARIOS[3]?.expectation.ordered?.[0]
         ?.requireResultStatus,
     ).toBe("needs_choice");
+  });
+});
+
+describe("HITL_CONFIRMATION_SCENARIOS", () => {
+  it("defines the SHO-516 confirmation pause id", () => {
+    expect(HITL_CONFIRMATION_SCENARIOS.map((scenario) => scenario.id)).toEqual([
+      "t3.sho-516.delete-archived-customer-confirmation",
+    ]);
+    expect(HITL_CONFIRMATION_SCENARIOS[0]?.turns[0]?.text).toContain(
+      "Олена Архівна",
+    );
+    expect(HITL_CONFIRMATION_SCENARIOS[0]?.turns[0]?.text).not.toContain(
+      "Катя Самбука",
+    );
+    expect(
+      HITL_CONFIRMATION_SCENARIOS[0]?.expectation.requireConfirmation,
+    ).toBe(true);
+    expect(
+      HITL_CONFIRMATION_SCENARIOS[0]?.expectation.ordered?.[0]
+        ?.requireResultStatus,
+    ).toBe("confirmation_required");
   });
 });
 

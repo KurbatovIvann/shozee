@@ -2150,7 +2150,7 @@ describe("streamStaffAssistantChat", () => {
         companyId: customerId,
         conversationId: challengeId,
       },
-      openChoice: (record) => {
+      openPendingInteraction: (record) => {
         opened.push(record);
         return Promise.resolve(true);
       },
@@ -2307,7 +2307,7 @@ describe("streamStaffAssistantChat", () => {
     }
   });
 
-  it("returns an ordinary error when openChoice SET NX fails", async () => {
+  it("returns an ordinary error when openPendingInteraction SET NX fails", async () => {
     const execute = vi.fn(() =>
       Promise.reject(
         new DuckTypedPickerConflict({
@@ -2338,7 +2338,7 @@ describe("streamStaffAssistantChat", () => {
         companyId: customerId,
         conversationId: challengeId,
       },
-      openChoice: () => Promise.resolve(false),
+      openPendingInteraction: () => Promise.resolve(false),
       mintChoiceId: () => challengeId,
     });
     const payloads = await readUiMessageSsePayloads(response);

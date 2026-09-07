@@ -66,14 +66,14 @@ describe("POST /assistant/choice unit", () => {
     expect(chat).toContain("CONFIRMATION_CHALLENGE_HEADER");
     const redis = readFileSync(join(here, "../stores/redis.ts"), "utf8");
     expect(redis).toContain('redis.call("GETDEL"');
-    expect(redis).toContain("CHOICE_CLAIM_LUA");
+    expect(redis).toContain("PENDING_CLAIM_LUA");
     const claimLua = redis.slice(
-      redis.indexOf("const CHOICE_CLAIM_LUA"),
-      redis.indexOf("const CHOICE_COMPLETE_LUA"),
+      redis.indexOf("const PENDING_CLAIM_LUA"),
+      redis.indexOf("const PENDING_COMPLETE_LUA"),
     );
     expect(claimLua).not.toContain("GETDEL");
     const completeLua = redis.slice(
-      redis.indexOf("const CHOICE_COMPLETE_LUA"),
+      redis.indexOf("const PENDING_COMPLETE_LUA"),
       redis.indexOf("export function createRedisSecondaryStorage"),
     );
     expect(completeLua).not.toContain("GETDEL");
@@ -150,6 +150,6 @@ describe("POST /assistant/choice unit", () => {
     expect(chat).not.toContain("choiceCardEnvelope");
     expect(chat).not.toContain("openSuccessorChoice");
     expect(chat).not.toContain("ReferenceResolutionConflictError");
-    expect(chat).toContain("openChoice:");
+    expect(chat).toContain("openPendingInteraction:");
   });
 });

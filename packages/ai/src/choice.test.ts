@@ -105,8 +105,8 @@ describe("choice transport (SHO-409)", () => {
     expect(CHOICE_OPTIONS_MAX).toBe(20);
   });
 
-  it("names Redis keys choice:{choiceId}", () => {
-    expect(choiceRedisKey(choiceId)).toBe(`choice:${choiceId}`);
+  it("names Redis keys pending:choice:{choiceId}", () => {
+    expect(choiceRedisKey(choiceId)).toBe(`pending:choice:${choiceId}`);
   });
 
   it("matches binds with exact actor, company, and conversation ids", () => {

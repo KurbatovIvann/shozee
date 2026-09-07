@@ -6,12 +6,15 @@
  */
 import {
   bindsMatch,
-  CHOICE_TTL_MS,
-  choiceRedisKey,
-  parseChoiceRecord,
-  recordBind,
-  serializeChoiceRecord,
-  type ChoiceRecord,
+  parsePendingInteractionRecord,
+  pendingBindOf,
+  pendingIdOf,
+  pendingKindOf,
+  pendingRecordTtlMs,
+  pendingRedisKey,
+  pendingToChoiceRecord,
+  serializePendingInteractionRecord,
+  type PendingInteractionRecord,
 } from "@showzy/ai";
 import type { ConfirmationStore, RateLimitStore } from "@showzy/core";
 import type { Redis } from "ioredis";
@@ -26,12 +29,15 @@ import {
   type AiBudgetStore,
   type AiBudgetTryAddDecision,
 } from "./budget.js";
-import type {
-  ChoiceClaimDecision,
-  ChoiceCompleteDecision,
-  StaffAssistantChoiceStore,
-} from "./choice.js";
+import type { StaffAssistantChoiceStore } from "./choice.js";
 import type { AuthRateLimitStore, SecondaryStorage } from "./memory.js";
+import {
+  bindPendingStoreBacking,
+  createChoiceStoreFromPending,
+  type PendingClaimDecision,
+  type PendingCompleteDecision,
+  type StaffAssistantPendingInteractionStore,
+} from "./pending-interaction.js";
 
 /** Adapter failure — the rate-limit/confirmation hooks own fail-open/closed. */
 export class RedisStoreError extends Error {
@@ -133,12 +139,13 @@ return {0, ttl}
 `;
 
 /**
- * Atomic choice claim: exactly one transition out of `open`. Same optionId
- * after claim/complete replays; a different optionId is rejected. Never
- * GETDEL — confirmation keeps that primitive.
+ * Atomic pending-interaction claim: exactly one transition out of `open`.
+ * Confirmation uses resolution `confirmed`; choice uses optionId against
+ * optionMap. Same resolution after claim/complete replays; a different
+ * one is rejected. Never GETDEL — core's challenge keeps that primitive.
  */
-const CHOICE_CLAIM_LUA = `
-local optionId = ARGV[1]
+const PENDING_CLAIM_LUA = `
+local resolution = ARGV[1]
 local actorId = ARGV[2]
 local companyId = ARGV[3]
 local conversationId = ARGV[4]
@@ -154,8 +161,15 @@ end
 if rec.actorId ~= actorId or rec.companyId ~= companyId or rec.conversationId ~= conversationId then
   return {-1}
 end
-if type(rec.optionMap) ~= 'table' or rec.optionMap[optionId] == nil then
-  return {-3}
+local isConfirmation = rec.kind == 'confirmation'
+if isConfirmation then
+  if resolution ~= 'confirmed' then
+    return {-3}
+  end
+else
+  if type(rec.optionMap) ~= 'table' or rec.optionMap[resolution] == nil then
+    return {-3}
+  end
 end
 local ttl = tonumber(redis.call('PTTL', KEYS[1]))
 if ttl == nil or ttl < 1 then
@@ -164,21 +178,32 @@ if ttl == nil or ttl < 1 then
 end
 if rec.status == 'open' then
   rec.status = 'claimed'
-  rec.claimedOptionId = optionId
+  if isConfirmation then
+    rec.claimedResolution = resolution
+  else
+    rec.claimedOptionId = resolution
+  end
   redis.call('SET', KEYS[1], cjson.encode(rec), 'PX', ttl)
   return {1, redis.call('GET', KEYS[1])}
 end
-if rec.claimedOptionId == optionId then
-  return {2, raw}
+if isConfirmation then
+  if rec.claimedResolution == resolution then
+    return {2, raw}
+  end
+else
+  if rec.claimedOptionId == resolution then
+    return {2, raw}
+  end
 end
 return {-2}
 `;
 
-const CHOICE_COMPLETE_LUA = `
-local optionId = ARGV[1]
+const PENDING_COMPLETE_LUA = `
+local resolution = ARGV[1]
 local actorId = ARGV[2]
 local companyId = ARGV[3]
 local conversationId = ARGV[4]
+local resumeRaw = ARGV[5]
 local raw = redis.call('GET', KEYS[1])
 if type(raw) ~= 'string' or raw == '' then
   return {0}
@@ -196,16 +221,24 @@ if ttl == nil or ttl < 1 then
   redis.call('DEL', KEYS[1])
   return {0}
 end
+local isConfirmation = rec.kind == 'confirmation'
+local claimed = isConfirmation and rec.claimedResolution or rec.claimedOptionId
 if rec.status == 'completed' then
-  if rec.claimedOptionId == optionId then
+  if claimed == resolution then
     return {2, raw}
   end
   return {-2}
 end
-if rec.status ~= 'claimed' or rec.claimedOptionId ~= optionId then
+if rec.status ~= 'claimed' or claimed ~= resolution then
   return {-2}
 end
 rec.status = 'completed'
+if type(resumeRaw) == 'string' and resumeRaw ~= '' then
+  local rok, resume = pcall(cjson.decode, resumeRaw)
+  if rok then
+    rec.resumeResult = resume
+  end
+end
 redis.call('SET', KEYS[1], cjson.encode(rec), 'PX', ttl)
 return {1, redis.call('GET', KEYS[1])}
 `;
@@ -365,19 +398,24 @@ export function createRedisAiBudgetStore(
   };
 }
 
-export function createRedisChoiceStore(
+export function createRedisPendingInteractionStore(
   redis: Pick<Redis, "eval" | "get" | "set">,
   options?: { readonly ttlMs?: number },
-): StaffAssistantChoiceStore {
-  const ttlMs = options?.ttlMs ?? CHOICE_TTL_MS;
+): StaffAssistantPendingInteractionStore {
+  function ttlMsFor(record: PendingInteractionRecord): number {
+    if (options?.ttlMs !== undefined) {
+      return options.ttlMs;
+    }
+    return pendingRecordTtlMs(pendingKindOf(record));
+  }
 
   return {
     async open(record) {
       const result = await redis.set(
-        choiceRedisKey(record.choiceId),
-        serializeChoiceRecord({ ...record, status: "open" }),
+        pendingRedisKey(pendingKindOf(record), pendingIdOf(record)),
+        serializePendingInteractionRecord({ ...record, status: "open" }),
         "PX",
-        ttlMs,
+        ttlMsFor(record),
         "NX",
       );
       return result === "OK";
@@ -385,58 +423,86 @@ export function createRedisChoiceStore(
 
     async claim(input) {
       const result = await redis.eval(
-        CHOICE_CLAIM_LUA,
+        PENDING_CLAIM_LUA,
         1,
-        choiceRedisKey(input.choiceId),
-        input.optionId,
+        pendingRedisKey(input.kind, input.id),
+        input.resolution,
         input.bind.actorId,
         input.bind.companyId,
         input.bind.conversationId,
       );
-      return parseChoiceClaimResult(result);
+      return parsePendingClaimResult(result);
     },
 
     async peek(input) {
-      const raw = await redis.get(choiceRedisKey(input.choiceId));
+      const raw = await redis.get(pendingRedisKey(input.kind, input.id));
       if (typeof raw !== "string" || raw === "") {
         return { kind: "expired" };
       }
-      const record = parseChoiceRecord(raw);
+      const record = parsePendingInteractionRecord(raw);
       if (record === undefined) {
         return { kind: "expired" };
       }
-      if (!bindsMatch(recordBind(record), input.bind)) {
+      if (!bindsMatch(pendingBindOf(record), input.bind)) {
         return { kind: "forbidden" };
       }
-      return { kind: "found", record };
+      if (pendingKindOf(record) !== "choice") {
+        return { kind: "expired" };
+      }
+      return { kind: "found", record: pendingToChoiceRecord(record) };
     },
 
     async complete(input) {
+      const resumeRaw =
+        input.resumeResult === undefined
+          ? ""
+          : JSON.stringify(input.resumeResult);
       const result = await redis.eval(
-        CHOICE_COMPLETE_LUA,
+        PENDING_COMPLETE_LUA,
         1,
-        choiceRedisKey(input.choiceId),
-        input.optionId,
+        pendingRedisKey(input.kind, input.id),
+        input.resolution,
         input.bind.actorId,
         input.bind.companyId,
         input.bind.conversationId,
+        resumeRaw,
       );
-      return parseChoiceCompleteResult(result);
+      return parsePendingCompleteResult(result);
+    },
+
+    async get(input) {
+      const raw = await redis.get(pendingRedisKey(input.kind, input.id));
+      if (typeof raw !== "string" || raw === "") {
+        return null;
+      }
+      return parsePendingInteractionRecord(raw) ?? null;
     },
   };
 }
 
-function parseChoiceScriptRecord(result: unknown): ChoiceRecord | undefined {
+export function createRedisChoiceStore(
+  redis: Pick<Redis, "eval" | "get" | "set">,
+  options?: { readonly ttlMs?: number },
+): StaffAssistantChoiceStore {
+  const pending = createRedisPendingInteractionStore(redis, options);
+  const choice = createChoiceStoreFromPending(pending);
+  bindPendingStoreBacking(choice, pending);
+  return choice;
+}
+
+function parsePendingScriptRecord(
+  result: unknown,
+): PendingInteractionRecord | undefined {
   if (!Array.isArray(result) || typeof result[1] !== "string") {
     return undefined;
   }
-  return parseChoiceRecord(result[1]);
+  return parsePendingInteractionRecord(result[1]);
 }
 
-function parseChoiceClaimResult(result: unknown): ChoiceClaimDecision {
+function parsePendingClaimResult(result: unknown): PendingClaimDecision {
   if (!Array.isArray(result) || result.length === 0) {
     throw new RedisStoreError(
-      "choice-claim Redis script returned an unexpected value",
+      "pending-claim Redis script returned an unexpected value",
     );
   }
   const code = Number(result[0]);
@@ -452,10 +518,10 @@ function parseChoiceClaimResult(result: unknown): ChoiceClaimDecision {
   if (code === -3) {
     return { kind: "invalid_option" };
   }
-  const record = parseChoiceScriptRecord(result);
+  const record = parsePendingScriptRecord(result);
   if (record === undefined) {
     throw new RedisStoreError(
-      "choice-claim Redis script returned an unreadable record",
+      "pending-claim Redis script returned an unreadable record",
     );
   }
   if (code === 1) {
@@ -465,14 +531,14 @@ function parseChoiceClaimResult(result: unknown): ChoiceClaimDecision {
     return { kind: "replay", record };
   }
   throw new RedisStoreError(
-    "choice-claim Redis script returned an unexpected code",
+    "pending-claim Redis script returned an unexpected code",
   );
 }
 
-function parseChoiceCompleteResult(result: unknown): ChoiceCompleteDecision {
+function parsePendingCompleteResult(result: unknown): PendingCompleteDecision {
   if (!Array.isArray(result) || result.length === 0) {
     throw new RedisStoreError(
-      "choice-complete Redis script returned an unexpected value",
+      "pending-complete Redis script returned an unexpected value",
     );
   }
   const code = Number(result[0]);
@@ -485,10 +551,10 @@ function parseChoiceCompleteResult(result: unknown): ChoiceCompleteDecision {
   if (code === -2) {
     return { kind: "conflict" };
   }
-  const record = parseChoiceScriptRecord(result);
+  const record = parsePendingScriptRecord(result);
   if (record === undefined) {
     throw new RedisStoreError(
-      "choice-complete Redis script returned an unreadable record",
+      "pending-complete Redis script returned an unreadable record",
     );
   }
   if (code === 1) {
@@ -498,7 +564,7 @@ function parseChoiceCompleteResult(result: unknown): ChoiceCompleteDecision {
     return { kind: "replay", record };
   }
   throw new RedisStoreError(
-    "choice-complete Redis script returned an unexpected code",
+    "pending-complete Redis script returned an unexpected code",
   );
 }
 

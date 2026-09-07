@@ -1,10 +1,11 @@
 /**
- * HITL card presenter for the staff assistant (SHO-323). Confirm resumes
- * the SSE mount with `x-confirmation-challenge-id` and echoed
- * `data-confirmation` parts. Dismiss is local — it must not execute.
+ * HITL card presenter for the staff assistant (SHO-516). Confirm POSTs
+ * `/assistant/confirm`. Dismiss is local — it must not execute.
  */
 import { CONFIRMATION_CHALLENGE_HEADER } from "@showzy/contract";
 
+import { assistantCopy } from "../../../i18n/assistant";
+import type { AssistantCompanyEpochRef } from "./assistant-session";
 import {
   confirmationFromChatPart,
   type StaffAssistantConfirmation,
@@ -42,6 +43,45 @@ export type ConfirmationCardState =
       readonly confirmation: PendingConfirmation;
     };
 
+export type ConfirmationAppendPart =
+  | { readonly type: "text"; readonly text: string }
+  | {
+      readonly type: "dynamic-tool";
+      readonly toolName: string;
+      readonly toolCallId: string;
+      readonly state: "output-available";
+      readonly input: Record<string, never>;
+      readonly output: unknown;
+    };
+
+export type ConfirmationConfirmRecoverability =
+  "terminal" | "retryable" | "ambiguous";
+
+export type ConfirmationConfirmResult =
+  | {
+      readonly status: "completed";
+      readonly text: string;
+      readonly actionName: string;
+      readonly toolCallId: string;
+      readonly output?: unknown;
+      readonly httpStatus?: number;
+      readonly recoverability: ConfirmationConfirmRecoverability;
+    }
+  | {
+      readonly status: "expired";
+      readonly httpStatus?: number;
+      readonly recoverability: ConfirmationConfirmRecoverability;
+    }
+  | {
+      readonly status: "error";
+      readonly code?: string;
+      readonly message?: string;
+      readonly text?: string;
+      readonly httpStatus?: number;
+      readonly retryAfterSec?: number;
+      readonly recoverability: ConfirmationConfirmRecoverability;
+    };
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -54,7 +94,7 @@ export function isToolErrorOutput(output: unknown): boolean {
 /**
  * Latest unignored `data-confirmation`. Ignored (dismissed/resolved) ids
  * are skipped so a later HITL card on a merged assistant message still
- * shows (AI SDK 7 resume merge + core.md §7).
+ * shows.
  */
 export function pendingConfirmationFromMessages(
   messages: readonly AssistantChatMessage[],
@@ -92,6 +132,10 @@ export function confirmationCardState(args: {
   return { kind: "proposed", confirmation: args.pending };
 }
 
+/**
+ * Kept for old mobile builds that still `resume()` the chat transport.
+ * Current confirm does not send this header.
+ */
 export function confirmationResumeHeaders(
   challengeId: string,
 ): Readonly<Record<string, string>> {
@@ -163,7 +207,7 @@ export function shouldMarkConfirmationResolved(args: {
 
 /**
  * Claim the in-flight HITL resolve synchronously so two confirm() calls
- * before `sendBusy` cannot both POST. Same pattern as dismiss: a live ref.
+ * cannot both POST. Same pattern as dismiss: a live ref.
  */
 export function claimConfirmationConfirm(args: {
   readonly pending: PendingConfirmation | null;
@@ -184,20 +228,134 @@ export function claimConfirmationConfirm(args: {
   return args.pending;
 }
 
+export function confirmationConfirmShouldIgnoreChallenge(
+  result: ConfirmationConfirmResult,
+): boolean {
+  return result.recoverability === "terminal";
+}
+
+export function presentConfirmationConfirmErrorText(
+  result: ConfirmationConfirmResult,
+  locale: "uk" | "en",
+): string {
+  if (typeof result.text === "string" && result.text.length > 0) {
+    return result.text;
+  }
+  const copy = assistantCopy(locale);
+  if (result.status === "expired") {
+    return copy.confirmationExpired;
+  }
+  if (result.code === "UNAUTHENTICATED" || result.httpStatus === 401) {
+    return copy.errors.unauthenticated;
+  }
+  if (result.code === "PERMISSION_DENIED" || result.httpStatus === 403) {
+    return copy.errors.permission;
+  }
+  if (typeof result.message === "string" && result.message.length > 0) {
+    return result.message;
+  }
+  return copy.errors.unavailable;
+}
+
+export function confirmationConfirmAppendParts(args: {
+  readonly result: ConfirmationConfirmResult;
+  readonly locale: "uk" | "en";
+}): readonly ConfirmationAppendPart[] {
+  if (args.result.status === "completed") {
+    const parts: ConfirmationAppendPart[] = [
+      { type: "text", text: args.result.text },
+    ];
+    if (args.result.output !== undefined) {
+      parts.push({
+        type: "dynamic-tool",
+        toolName: args.result.actionName,
+        toolCallId: args.result.toolCallId,
+        state: "output-available",
+        input: {},
+        output: args.result.output,
+      });
+    }
+    return parts;
+  }
+  if (
+    args.result.status === "expired" ||
+    (args.result.status === "error" &&
+      args.result.recoverability === "terminal")
+  ) {
+    return [
+      {
+        type: "text",
+        text: presentConfirmationConfirmErrorText(args.result, args.locale),
+      },
+    ];
+  }
+  return [];
+}
+
+export type CommitConfirmationConfirmResult = "skipped" | "stale" | "applied";
+
+export function isCurrentAssistantConfirmationConfirm(args: {
+  readonly companyEpochRef: AssistantCompanyEpochRef;
+  readonly epoch: number;
+  readonly resolvingRef: { readonly current: string | null };
+  readonly challengeId: string;
+}): boolean {
+  return (
+    args.companyEpochRef.current === args.epoch &&
+    args.resolvingRef.current === args.challengeId
+  );
+}
+
+export function commitConfirmationConfirmResult(args: {
+  readonly result: ConfirmationConfirmResult | "skipped";
+  readonly previousChallengeId: string;
+  readonly locale: "uk" | "en";
+  readonly companyEpochRef: AssistantCompanyEpochRef;
+  readonly epoch: number;
+  readonly resolvingRef: { readonly current: string | null };
+  readonly appendParts: (parts: readonly ConfirmationAppendPart[]) => void;
+  readonly ignoreChallenge: (challengeId: string) => void;
+}): CommitConfirmationConfirmResult {
+  if (args.result === "skipped") {
+    return "skipped";
+  }
+  if (
+    !isCurrentAssistantConfirmationConfirm({
+      companyEpochRef: args.companyEpochRef,
+      epoch: args.epoch,
+      resolvingRef: args.resolvingRef,
+      challengeId: args.previousChallengeId,
+    })
+  ) {
+    return "stale";
+  }
+  const parts = confirmationConfirmAppendParts({
+    result: args.result,
+    locale: args.locale,
+  });
+  if (parts.length > 0) {
+    args.appendParts(parts);
+  }
+  if (confirmationConfirmShouldIgnoreChallenge(args.result)) {
+    args.ignoreChallenge(args.previousChallengeId);
+  }
+  return "applied";
+}
+
 /**
- * AI-mount equivalent of `submitWithProtocolConfirmation`: the challenge
- * already streamed as `data-confirmation`. Confirm POSTs the same
- * messages plus the challenge header. Never skip HITL. Same-tick dismiss
+ * Confirm POSTs `/assistant/confirm`. Never sendMessage. Same-tick dismiss
  * is visible when `dismissedChallengeIds` is the live set (a ref).
- * `resolvingRef` is claimed synchronously before the resume await.
+ * `resolvingRef` is claimed synchronously before the POST await.
  */
 export async function executeConfirmationConfirm(args: {
   readonly pending: PendingConfirmation | null;
   readonly sendBusy: boolean;
   readonly dismissedChallengeIds: ReadonlySet<string>;
   readonly resolvingRef: { current: string | null };
-  readonly resume: (headers: Readonly<Record<string, string>>) => Promise<void>;
-}): Promise<"resumed" | "skipped"> {
+  readonly postConfirm: (input: {
+    readonly challengeId: string;
+  }) => Promise<ConfirmationConfirmResult>;
+}): Promise<ConfirmationConfirmResult | "skipped"> {
   const claimed = claimConfirmationConfirm({
     pending: args.pending,
     sendBusy: args.sendBusy,
@@ -207,8 +365,7 @@ export async function executeConfirmationConfirm(args: {
   if (claimed === null) {
     return "skipped";
   }
-  await args.resume(confirmationResumeHeaders(claimed.challengeId));
-  return "resumed";
+  return args.postConfirm({ challengeId: claimed.challengeId });
 }
 
 export function executeConfirmationDismiss(args: {

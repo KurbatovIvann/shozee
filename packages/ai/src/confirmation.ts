@@ -55,3 +55,15 @@ export const STAFF_ASSISTANT_CONFIRMATION_COPY: Record<
 /** English alias of `STAFF_ASSISTANT_CONFIRMATION_COPY.en`. */
 export const STAFF_ASSISTANT_CONFIRMATION_FALLBACK_TEXT =
   STAFF_ASSISTANT_CONFIRMATION_COPY.en;
+
+/**
+ * Protocol speech when confirmation resume fails closed (expired challenge,
+ * hash/binding mismatch). Ask again — do not surface a fresh challenge.
+ */
+export const STAFF_ASSISTANT_CONFIRMATION_EXPIRED_COPY: Record<
+  StaffAssistantLocale,
+  string
+> = {
+  en: "Confirmation expired. Ask again.",
+  uk: "Підтвердження прострочене. Запитай ще раз.",
+};

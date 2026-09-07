@@ -170,9 +170,23 @@ tool result. Zod validation is necessary but never grants tenant access.
   idempotency or reconciliation.
 - **Invocation `channel` (phase 0):** every HTTP transport invocation —
   oRPC at `/rpc` and OpenAPI REST aliases at `/api/v1` — is labeled
-  `channel: "ui"`. `POST /assistant/chat` uses `channel: "ai"`. Webhooks
-  and workers set `system` / `webhook` when those mounts exist. Do not add
-  a client-spoofable `x-channel` header on `/rpc`.
+  `channel: "ui"`. `POST /assistant/chat` uses `channel: "ai"`.
+  `POST /assistant/confirm` and `POST /assistant/choice` use the same
+  `channel: "ai"` and do not call a model. Webhooks and workers set
+  `system` / `webhook` when those mounts exist. Do not add a
+  client-spoofable `x-channel` header on `/rpc`.
+- **Assistant HITL (ADR-0035):** high-risk `requiresConfirmation` pauses
+  write a pending-interaction Redis record (`kind: confirmation`) whose
+  `id` is core's `challengeId` and whose canonical input is the object
+  `executeAction` already validated. Resume is `POST /assistant/confirm`
+  `{ conversationId, challengeId }` (or the legacy
+  `x-confirmation-challenge-id` adapter on `/assistant/chat`). The api
+  record is what to run; core's single-use challenge (hash + bindings)
+  is permission to run it — neither is trusted instead of the other.
+  Bind mismatch answers `expired` (indistinguishable from a real
+  expiry). Canonical input and challenge ids are never logged at info.
+  Dismiss is client-local; there is no server `reject`. Choice is the
+  same protocol (`kind: choice`, `POST /assistant/choice`).
 
 ## 5. Environments, database, and release safety
 
@@ -276,6 +290,7 @@ review. A critical/high unresolved finding blocks merge.
 
 | Date | Change | Why | Reported by |
 | --- | --- | --- | --- |
+| 2026-09-07 | §4: assistant HITL is one pending-interaction protocol; confirmation resume is `POST /assistant/confirm` (modelless); legacy chat header is an adapter | ADR-0035 / SHO-516 | SHO-516 |
 | 2026-09-01 | §4: `POST /assistant/chat` uses `channel: "ai"`; `/rpc` and `/api/v1` stay `ui` | Staff AI SSE mount (SHO-322 / SHO-318) | SHO-322 |
 | 2026-08-25 | §2: OTP IP cap remains 20/hour per trusted-proxy IP; Redis stores HMAC-SHA256 of the Better Auth consume key (32 hex chars, no 24h rotation) | Variant A (SHO-147): Redis must not retain client IPs of OTP senders; rotation would reset the 20-send bucket | SHO-147 |
 | 2026-08-21 | Session TTL 7d / sliding 1d; Expo cookie origin `showzy://`; bearer kept for non-RN | Pin better-auth defaults; mobile uses `@better-auth/expo` cookies | owner |

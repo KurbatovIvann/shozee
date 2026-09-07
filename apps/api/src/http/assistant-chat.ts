@@ -11,13 +11,11 @@
 import {
   attemptKey,
   classifyStaffAssistantTurn,
+  createModellessAssistantTextStreamResponse,
   createStaffLanguageModel,
   EMPTY_STAFF_ASSISTANT_TURN_USAGE,
   estimateStaffAssistantTurnCostUsd,
   filterStaffAiTools,
-  pausedToolAttemptForChallenge,
-  pausedToolAttemptFromToolRuns,
-  resolvePausedToolAttempt,
   resolveStaffAssistantChatUserMessage,
   StaffAssistantNotConfiguredError,
   staffAssistantCacheHitRatio,
@@ -30,11 +28,12 @@ import {
   staffAssistantUncachedInputTokens,
   staffAssistantWorkingSetAddendum,
   streamStaffAssistantChat,
+  STAFF_ASSISTANT_CONFIRMATION_EXPIRED_COPY,
   STAFF_ASSISTANT_DEFAULT_LOCALE,
   STAFF_ASSISTANT_THINKING_DISABLED,
   STAFF_ASSISTANT_TOOL_RUNS_MAX,
+  type AssistantConfirmInteractionResult,
   type LanguageModel,
-  type PausedToolAttempt,
   type StaffAssistantChatMessage,
   type StaffAssistantGateSkipReason,
   type StaffAssistantGateToolPolicy,
@@ -82,17 +81,23 @@ import {
 } from "../stores/budget.js";
 import type { StaffAssistantChoiceStore } from "../stores/choice.js";
 import {
+  pendingStoreBacking,
+  type StaffAssistantPendingInteractionStore,
+} from "../stores/pending-interaction.js";
+import {
   DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
   enforceStaffAssistantBudget,
   recordStaffAssistantBudgetSpend,
   releaseStaffAssistantBudgetHold,
   type StaffAssistantBudgetLimits,
 } from "./assistant-budget-guard.js";
+import { runPendingConfirmationResume } from "./assistant-confirm.js";
+import { ASSISTANT_INVOCATION_CHANNEL } from "./assistant-invocation.js";
 import { REQUEST_ID_HEADER } from "./request-id.js";
 
 export const ASSISTANT_CHAT_PATH = "/assistant/chat";
 
-export const ASSISTANT_INVOCATION_CHANNEL = "ai" as const;
+export { ASSISTANT_INVOCATION_CHANNEL };
 
 /**
  * Trade name for the uncached turn-context addendum. `companies.get`
@@ -145,11 +150,13 @@ export interface StaffAssistantChatOptions {
   readonly assistant?: StaffAssistantRuntime;
   /**
    * Choice HITL resume (SHO-401 T8) calls this executor with
-   * `choiceResume: true`. `POST /assistant/chat` omits it. Not a client
-   * header — confirmation resume stays `x-confirmation-challenge-id`.
+   * `choiceResume: true`. `POST /assistant/chat` omits it. Confirmation
+   * resume is `POST /assistant/confirm` or the legacy
+   * `x-confirmation-challenge-id` adapter (SHO-516).
    */
   readonly choiceResume?: boolean;
   readonly choiceStore?: StaffAssistantChoiceStore;
+  readonly pendingStore?: StaffAssistantPendingInteractionStore;
   readonly rateLimitStore?: RateLimitStore;
   readonly budgetStore?: AiBudgetStore;
   readonly budgetLimits?: StaffAssistantBudgetLimits;
@@ -403,15 +410,49 @@ function requireImplementation(
   return implementation as ImplementedAction<z.ZodType, z.ZodType, unknown>;
 }
 
-function confirmationResumeIssue(message: string): ValidationError {
-  return new ValidationError([
+function pendingStoreForChat(
+  options: StaffAssistantChatOptions,
+): StaffAssistantPendingInteractionStore | undefined {
+  return options.pendingStore ?? pendingStoreBacking(options.choiceStore);
+}
+
+function logLegacyConfirmationHeader(logger: Logger, requestId: string): void {
+  logger.info(
     {
-      code: "custom",
-      path: ["messages"],
-      message,
-      input: undefined,
+      request_id: requestId,
+      event: "assistant.legacy_confirmation_header",
     },
-  ]);
+    "staff assistant confirmation resume via legacy chat header",
+  );
+}
+
+function modellessConfirmationSse(
+  result: AssistantConfirmInteractionResult,
+  requestId: string,
+  locale: StaffAssistantLocale,
+): Response {
+  const headers = {
+    "cache-control": "private, no-store",
+    [REQUEST_ID_HEADER]: requestId,
+  };
+  if (result.status === "completed") {
+    return createModellessAssistantTextStreamResponse({
+      text: result.text,
+      headers,
+      toolCallId: result.toolCallId,
+      ...(result.output !== undefined ? { output: result.output } : {}),
+    });
+  }
+  if (result.status === "error") {
+    return createModellessAssistantTextStreamResponse({
+      text: result.message,
+      headers,
+    });
+  }
+  return createModellessAssistantTextStreamResponse({
+    text: STAFF_ASSISTANT_CONFIRMATION_EXPIRED_COPY[locale],
+    headers,
+  });
 }
 
 /**
@@ -557,6 +598,30 @@ export async function executeStaffAssistantChat(
       ]);
     }
 
+    if (confirmationChallengeId !== undefined) {
+      logLegacyConfirmationHeader(options.pipeline.logger, options.requestId);
+      const pendingStore = pendingStoreForChat(options);
+      if (pendingStore === undefined) {
+        return modellessConfirmationSse(
+          { status: "expired" },
+          options.requestId,
+          body.locale,
+        );
+      }
+      const result = await runPendingConfirmationResume({
+        conversationId: body.conversationId,
+        challengeId: confirmationChallengeId,
+        requestId: options.requestId,
+        clientIp: options.clientIp,
+        registry: options.registry,
+        pipeline: options.pipeline,
+        pendingStore,
+        session,
+        companySelector,
+      });
+      return modellessConfirmationSse(result, options.requestId, body.locale);
+    }
+
     const [conversation, modelHistory] = await Promise.all([
       executeAction(options.pipeline, {
         action: getConversation,
@@ -592,34 +657,6 @@ export async function executeStaffAssistantChat(
       ...(workingSetAddendum !== undefined ? { workingSetAddendum } : {}),
     });
 
-    let pausedAttempt: PausedToolAttempt | undefined;
-    if (confirmationChallengeId !== undefined) {
-      const clientAttempt = pausedToolAttemptForChallenge(
-        body.protocolMessages,
-        confirmationChallengeId,
-      );
-      const persistedAttempt = pausedToolAttemptFromToolRuns(
-        conversation.toolRuns,
-        confirmationChallengeId,
-      );
-      const resolved = resolvePausedToolAttempt(
-        persistedAttempt,
-        clientAttempt,
-      );
-      if (resolved.status === "missing") {
-        throw confirmationResumeIssue(
-          "A paused tool attempt is required to resume confirmation.",
-        );
-      }
-      if (resolved.status === "mismatch") {
-        throw confirmationResumeIssue(
-          "Confirmation context does not match the paused tool attempt.",
-        );
-      }
-      pausedAttempt = resolved.attempt;
-    }
-
-    const confirmationResume = confirmationChallengeId !== undefined;
     const choiceResume = options.choiceResume === true;
     if (companySelector === null) {
       throw new CoreInvariantError(
@@ -636,7 +673,7 @@ export async function executeStaffAssistantChat(
       requestId: options.requestId,
       userId: session.userId,
       companyId: budgetCompanyId,
-      skipTurnLimit: confirmationResume || choiceResume,
+      skipTurnLimit: choiceResume,
       ...(options.rateLimitStore === undefined
         ? {}
         : { rateLimitStore: options.rateLimitStore }),
@@ -665,7 +702,7 @@ export async function executeStaffAssistantChat(
     let streamStarted = false;
     try {
       const skipGate = staffAssistantShouldSkipIntentGate({
-        confirmationResume,
+        confirmationResume: false,
         choiceResume,
       });
       let gatePolicy: StaffAssistantGateToolPolicy = { kind: "all" };
@@ -696,7 +733,7 @@ export async function executeStaffAssistantChat(
           });
         }
       } else if (skipGate) {
-        gateSkip = confirmationResume ? "confirmation_resume" : "choice_resume";
+        gateSkip = "choice_resume";
         logTurnGate({
           logger: options.pipeline.logger,
           requestId: options.requestId,
@@ -769,23 +806,7 @@ export async function executeStaffAssistantChat(
       });
       const streamContracts = attachTools ? contracts : [];
 
-      let confirmationClaimed = false;
-      function claimPausedAttempt(
-        actionName: string,
-        requiresConfirmation: boolean,
-      ): PausedToolAttempt | undefined {
-        if (
-          confirmationClaimed ||
-          confirmationChallengeId === undefined ||
-          pausedAttempt === undefined ||
-          !requiresConfirmation ||
-          actionName !== pausedAttempt.actionName
-        ) {
-          return undefined;
-        }
-        confirmationClaimed = true;
-        return pausedAttempt;
-      }
+      const pendingStore = pendingStoreForChat(options);
 
       const { response } = streamStaffAssistantChat({
         model: replyModel,
@@ -806,26 +827,19 @@ export async function executeStaffAssistantChat(
           companyId: companySelector,
           conversationId: body.conversationId,
         },
-        ...(options.choiceStore === undefined
+        ...(pendingStore === undefined
           ? {}
-          : (() => {
-              const choiceStore = options.choiceStore;
-              return {
-                openChoice: (
-                  record: Parameters<StaffAssistantChoiceStore["open"]>[0],
-                ) => choiceStore.open(record),
-              };
-            })()),
+          : {
+              openPendingInteraction: (
+                record: Parameters<
+                  StaffAssistantPendingInteractionStore["open"]
+                >[0],
+              ) => pendingStore.open(record),
+            }),
         execute: (actionName, input, toolOptions) => {
           const action = requireImplementation(options.registry, actionName);
-          const resumedAttempt = claimPausedAttempt(
-            action.contract.name,
-            action.contract.requiresConfirmation,
-          );
-          const logicalToolCallId =
-            resumedAttempt?.toolCallId ?? toolOptions.toolCallId;
           const idempotencyKey = action.contract.idempotent
-            ? attemptKey("tool", body.conversationId, logicalToolCallId)
+            ? attemptKey("tool", body.conversationId, toolOptions.toolCallId)
             : undefined;
           return executeAction(options.pipeline, {
             action,
@@ -836,10 +850,6 @@ export async function executeStaffAssistantChat(
               aiTraceId,
               toolCallId: toolOptions.toolCallId,
               ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
-              ...(resumedAttempt !== undefined &&
-              confirmationChallengeId !== undefined
-                ? { confirmationChallengeId }
-                : {}),
             }),
             principal: staffPrincipal,
           });
