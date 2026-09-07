@@ -1,5 +1,6 @@
-/** Panel chrome / nav copy namespace (uk/en). Locale plumbing lives in `../locale`. */
-import type { Locale } from "../locale";
+/** Panel chrome / nav copy namespace (uk/en). Shared strings live in `@showzy/copy/panel`. */
+import { selectCopy, type Locale } from "@showzy/copy/locale";
+import { sharedPanelCopy, type SharedPanelCopy } from "@showzy/copy/panel";
 
 export type MemberRoleCopy = {
   readonly owner: string;
@@ -62,13 +63,57 @@ export type PanelChromeCopy = {
   readonly accountFallback: string;
 };
 
-const en: PanelChromeCopy = {
-  mainNav: "Main navigation",
+type WebPanelChromeExtension = {
+  readonly mobileNav: string;
+  readonly menu: string;
+  readonly closeMenu: string;
+  readonly backToList: string;
+  readonly aiHint: string;
+  readonly close: string;
+  readonly closeAi: string;
+  readonly accountMenu: string;
+  readonly signOut: string;
+  readonly theme: string;
+  readonly themeMock: string;
+  readonly themeLight: string;
+  readonly themeSystem: string;
+  readonly themeDark: string;
+  readonly myAccount: string;
+  readonly myAccountBody: string;
+  readonly notifications: string;
+  readonly notificationsBody: string;
+  readonly keyboard: string;
+  readonly keyboardBody: string;
+  readonly help: string;
+  readonly helpBody: string;
+  readonly mockEyebrow: string;
+  readonly more: string;
+  readonly closeMore: string;
+  readonly groupOperations: string;
+  readonly groupCustomers: string;
+  readonly groupSettings: string;
+  readonly moduleHint: string;
+  readonly detailLabel: string;
+  readonly customerGroups: string;
+  readonly customerGroupsShort: string;
+  readonly counterparties: string;
+  readonly invites: string;
+  readonly pricingShort: string;
+  readonly company: string;
+  readonly documentsTab: string;
+  readonly templatesTab: string;
+  readonly companyProfile: string;
+  readonly companyLegal: string;
+  readonly companyTeam: string;
+  readonly roles: MemberRoleCopy;
+  readonly accountFallback: string;
+};
+
+const extraEn: WebPanelChromeExtension = {
   mobileNav: "Mobile navigation",
   menu: "Menu",
   closeMenu: "Close menu",
   backToList: "Back to list",
-  aiName: "Shozik",
   aiHint: "Owner assistant. Stub, no chat yet.",
   close: "Close",
   closeAi: "Close Shozik",
@@ -96,18 +141,12 @@ const en: PanelChromeCopy = {
   groupOperations: "Operations",
   groupCustomers: "Customers",
   groupSettings: "Settings",
-  moduleTitle: "Module in development",
   moduleHint: "Pick an item in the list. This section will appear soon.",
   detailLabel: "Details",
-  orders: "Orders",
-  documents: "Documents",
-  products: "Products",
-  customers: "Customers",
   customerGroups: "Customer groups",
   customerGroupsShort: "Groups",
   counterparties: "Counterparties",
   invites: "Invites",
-  pricing: "Price lists",
   pricingShort: "Prices",
   company: "Company",
   documentsTab: "Documents",
@@ -124,13 +163,11 @@ const en: PanelChromeCopy = {
   accountFallback: "Account",
 };
 
-const uk: PanelChromeCopy = {
-  mainNav: "Основна навігація",
+const extraUk: WebPanelChromeExtension = {
   mobileNav: "Мобільна навігація",
   menu: "Меню",
   closeMenu: "Закрити меню",
   backToList: "Назад до списку",
-  aiName: "Шозік",
   aiHint: "Помічник власника. Макет, без чату.",
   close: "Закрити",
   closeAi: "Закрити Шозік",
@@ -158,18 +195,12 @@ const uk: PanelChromeCopy = {
   groupOperations: "Операції",
   groupCustomers: "Клієнти",
   groupSettings: "Налаштування",
-  moduleTitle: "Модуль у розробці",
   moduleHint: "Оберіть елемент у списку. Цей розділ незабаром з’явиться.",
   detailLabel: "Деталі",
-  orders: "Замовлення",
-  documents: "Документи",
-  products: "Товари",
-  customers: "Клієнти",
   customerGroups: "Групи клієнтів",
   customerGroupsShort: "Групи",
   counterparties: "Контрагенти",
   invites: "Запрошення",
-  pricing: "Прайс-листи",
   pricingShort: "Прайси",
   company: "Компанія",
   documentsTab: "Документи",
@@ -187,5 +218,24 @@ const uk: PanelChromeCopy = {
 };
 
 export function panelChromeCopy(locale: Locale): PanelChromeCopy {
-  return locale === "uk" ? uk : en;
+  const shared = sharedPanelCopy(locale);
+  const extra = selectCopy(locale, { uk: extraUk, en: extraEn });
+  return composeWebPanelChromeCopy(shared, extra);
+}
+
+function composeWebPanelChromeCopy(
+  shared: SharedPanelCopy,
+  extra: WebPanelChromeExtension,
+): PanelChromeCopy {
+  return {
+    mainNav: shared.navigation,
+    aiName: shared.tabs.ai,
+    moduleTitle: shared.moduleTitle,
+    orders: shared.tabs.orders,
+    documents: shared.documents,
+    products: shared.tabs.products,
+    customers: shared.tabs.customers,
+    pricing: shared.priceLists,
+    ...extra,
+  };
 }

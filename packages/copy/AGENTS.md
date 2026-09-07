@@ -15,8 +15,10 @@ shared tree plus typed leftovers composed in those app files.
 | `./locale`    | `Locale`, `detectLocale(tag)`, `interpolate`, `selectCopy` |
 | `./plural`    | Ukrainian one/few/many and English one/`many`              |
 | `./chrome`    | Shared `FormChromeCopy` / `WriteErrorsCopy` objects        |
+| `./auth`      | Byte-identical auth intersection (SHO-481)                 |
 | `./orders`    | Byte-identical orders intersection (SHO-414)               |
 | `./assistant` | Shared assistant result-surface chrome                     |
+| `./panel`     | Byte-identical panel-shell intersection (SHO-481)          |
 
 Do not add a package root barrel. Domain modules must not import this
 package (ESLint `copyClientOnly`).
@@ -65,6 +67,8 @@ copying. Web-only keys stay in `apps/web/src/i18n/`.
 
 Form chrome that every namespace already spreads lives in `./chrome`.
 App `copy.ts` files may re-export it so existing spreads keep compiling.
+Panel shell (`./panel`) is a separate tree — do not merge it into
+`./chrome`.
 
 ## Leaf constraints
 

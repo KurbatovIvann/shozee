@@ -8,8 +8,10 @@
     "./locale": "./src/locale.ts",
     "./plural": "./src/plural.ts",
     "./chrome": "./src/chrome.ts",
+    "./auth": "./src/auth.ts",
     "./orders": "./src/orders.ts",
-    "./assistant": "./src/assistant.ts"
+    "./assistant": "./src/assistant.ts",
+    "./panel": "./src/panel.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
