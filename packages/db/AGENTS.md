@@ -45,9 +45,9 @@ actions/services running under the core pipeline.
   and the drift check. Foundation protocol rows are produced by the core
   kit through runtime protocols — this package does not export outbox /
   idempotency / audit row factories.
-- `seed/` — phase 0 ships only `role_permission_defaults`. The local-dev
-  company/staff/customer/products fixture set waits on catalog schema
-  (fnd-T29+, db.md §9).
+- `seed/` — currently exports only `role_permission_defaults`. Treat
+  db.md §9 domain fixtures as planned until implemented; production
+  bootstrap must not depend on hypothetical demo data.
 
 ## Raw SQL policy
 

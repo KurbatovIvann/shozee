@@ -1,7 +1,8 @@
 # Experience Foundation — Design Process
 
 > Status: reset 2026-08-20 for Magic Patterns as V2 UX canon (ADR-0024).
-> UX gate closed. Port rule:
+> Gate criteria are below; current approval evidence belongs to the
+> relevant Linear feature. Port rule:
 > [`mapping/mp-to-mobile.md`](mapping/mp-to-mobile.md).
 > Owner: human product owner.
 > Companion to ADR-0024 (supersedes ADR-0019) and ADR-0020.

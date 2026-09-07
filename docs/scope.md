@@ -115,7 +115,7 @@ with the web phase or with a mobile editor after the research spike (see §9).
 ### 2.2 Customer expansion (same product, later)
 
 Not dropped. Architecture (principals, publication, chat as projection) is
-specified as Living intent. Do not implement as owner-first launch work.
+defined as destination scope by the accepted ADRs. Do not implement as owner-first launch work.
 
 | Functionality | Notes |
 | --- | --- |

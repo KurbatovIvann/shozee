@@ -26,63 +26,14 @@ ADRs, and this file win.
 Figma is not a source of spacing or color. Never modify the V1
 repository. Do not paste Magic Patterns React/Tailwind as-is.
 
-## Canonical source tree
+## Placement
 
-Placement rule — **not** authorization to create empty directories.
-
-```text
-apps/web/src/
-  app/                 # bootstrap only: main, router, providers, runtime
-  routes/              # TanStack Router adapters
-  api/                 # oRPC client, query options, mutations, errors
-  auth/                # better-auth client, session, OTP — no screens
-  layouts/
-    panel/             # panel chrome (nav, responsive, not a domain feature)
-  features/
-    auth/              # sign-in / verify screens
-    companies/         # membership, picker, onboarding, scope
-    <domain>/
-      api/
-      list/
-      detail/
-      form/
-      shared/
-      testing/
-  components/ui/       # domain-neutral primitives
-  i18n/
-  prefs/
-  theme/               # CSS variables (already exists; not in the product tree as a feature)
-  test/
-    integration/
-    fixtures/
-    support/
-```
-
-**Placement is the tree above.** Feature subfolders (`api/`, `list/`,
-`detail/`, `form/`, `shared/`, `testing/`) are created **when the first
-real file needs them**. Do not create empty folders to match the
-diagram. Integration suites live under `src/test/integration/`;
-shared fixtures/support stay under `src/test/`.
-
-## Ownership
-
-| Area             | Owns                                                                                                                                                                     | Does not own                                |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------- |
-| `app/`           | Bootstrap, router construction, provider composition. `runtime.ts` constructs the auth client. `QueryRuntimeProvider` binds active-company lifecycle. Not a state store. | Screens, chrome, contract calls             |
-| `routes/`        | Params/search validation, optional prefetch with the same query options the page uses, render a feature page or layout `<Outlet />`                                      | Workflows, forms, `fetch`, pathname regex   |
-| `layouts/`       | Cross-feature page shells. Panel is a **layout**.                                                                                                                        | Domain lists/details/forms                  |
-| `features/`      | User-facing capabilities and screen behavior                                                                                                                             | Generated route tree, generic UI kit        |
-| `features/auth`  | Auth screens                                                                                                                                                             | better-auth client (that stays in `auth/`)  |
-| `api/`           | `createShowzyClient`, `contractQueryOptions`, `useContractMutation`, wire-error mapping                                                                                  | Feature view-models                         |
-| `components/ui/` | Domain-neutral Button, Field, Dialog primitives                                                                                                                          | Panel CSS, section titles, company switcher |
-| `auth/`          | Session, OTP reducer, HTTP status → kind                                                                                                                                 | Screens                                     |
-| `prefs/`         | Last company slug, theme preference (localStorage)                                                                                                                       | Server cache, cookies                       |
-| `theme/`         | Canvas CSS variables                                                                                                                                                     | Components                                  |
-| `test/`          | Shared MSW, `renderApp`, fixtures, cross-feature integration                                                                                                             | Feature-local unit tests (those colocate)   |
-
-Feature subfolders (`api/`, `list/`, `detail/`, `form/`, `shared/`,
-`testing/`) are created **when the first real file needs them**. Do
-not create empty folders to match the diagram.
+Use [canonical source ownership](../../docs/design/web-panel-architecture.md#canonical-source-ownership)
+and the [route conventions](../../docs/design/web-panel-architecture.md#directory-route-tree).
+`app/` composes, `routes/` adapts, `layouts/` owns chrome, and
+`features/` owns product behavior. Create feature subfolders only when a
+real file needs them. Shared integration support lives in `src/test/`;
+feature-local tests colocate. Views do not import the contract client.
 
 ## Import direction
 
@@ -143,12 +94,12 @@ layout + `index.tsx` exact list). Template editor lives under `_full`.
 
 No global store (no Zustand, no copied server state). Four owners:
 
-| Owner                           | What                                                                                                                                                                                                       |
-| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Router URL / search             | Navigation, selected record, list tabs, filters, dialog flags                                                                                                                                              |
-| TanStack Query                  | Server state. Keys always include action name, company/account scope, and semantic input. Do not persist the cache.                                                                                        |
-| React Hook Form                 | Form fields (ADR-0030). Install the already-approved package when the first product form needs it. Today's onboarding planner in `features/companies/onboarding/` is allowed until that screen adopts RHF. |
-| Local `useState` / `useReducer` | Ephemeral UI (dialogs, OTP session, tab chrome that is not a route)                                                                                                                                        |
+| Owner                           | What                                                                                                                                                                |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Router URL / search             | Navigation, selected record, list tabs, filters, dialog flags                                                                                                       |
+| TanStack Query                  | Server state. Keys always include action name, company/account scope, and semantic input. Do not persist the cache.                                                 |
+| React Hook Form                 | Form fields (ADR-0030). Already installed with Zod resolvers. The existing onboarding planner in `features/companies/onboarding/` remains an allowed local pattern. |
+| Local `useState` / `useReducer` | Ephemeral UI (dialogs, OTP session, tab chrome that is not a route)                                                                                                 |
 
 Do not keep a parallel `clientErrors` pile when RHF `formState` exists.
 Do not put selection ids in React state when they belong in the URL.
@@ -228,42 +179,11 @@ Halt and ask; do not invent a workaround:
 - Production routing/data behavior change in a documentation-only
   ticket.
 
-## Checklists
+## Implementation recipes
 
-### List page (when the domain screen exists)
-
-1. `features/<area>/api/` — `contractQueryOptions` with action name,
-   company id from `useActiveCompany`, semantic input (filters from
-   search params, not a second store).
-2. `features/<area>/list/` — hook loads Query; view gets rows +
-   `onOpen(id)` that `navigate`s to the detail route.
-3. `routes/.../<area>/route.tsx` — list pane + `<Outlet />`.
-4. `routes/.../<area>/index.tsx` — exact list (empty detail).
-5. Typed `validateSearch` for q/filter/tab.
-
-### Detail route
-
-1. Child route file (or `$id/index.tsx` if `$id` has children).
-2. Parent layout still mounted — detail fills the `<Outlet />`.
-3. Back on phone is `navigate` to the list route id, not `history -1`
-   guessed from a pathname prefix.
-4. `loader` may prefetch `get` with the same query options as the page.
-
-### Form mutation
-
-1. Feature `form/` owns draft/plan. Fields: RHF when installed; copy
-   the onboarding planner until then.
-2. `bindXMutate` in `form/` or `api/` calls `client.client.<action>`.
-3. `useContractMutation` — `submit` vs `retry` from a planner
-   (`planCreateCompanySubmit` is the golden).
-4. Map `describeQueryFailure` kinds onto field/banner copy. Never
-   `error.message`.
-5. On success, `setQueryData` / `invalidateQueries` only relevant keys.
-
-### Route integration test
-
-1. `renderApp(path)` from `src/test/render.tsx`.
-2. Seed `sessionState` / RPC via MSW in `src/test/msw.ts`.
-3. Assert URL + visible heading. Do not parse pathname prefixes to
-   decide what the user should see.
-4. Deep-link reload: `renderApp("/{slug}/orders/{id}")` shows detail.
+Use the architecture manual's [list](../../docs/design/web-panel-architecture.md#list-page),
+[detail](../../docs/design/web-panel-architecture.md#detail-route),
+[mutation](../../docs/design/web-panel-architecture.md#form-mutation), and
+[integration test](../../docs/design/web-panel-architecture.md#route-integration-test)
+recipes with the existing companies feature. The manual owns these
+examples; do not duplicate them here.

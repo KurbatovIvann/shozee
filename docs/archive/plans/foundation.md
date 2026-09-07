@@ -13,14 +13,14 @@
 > Tasks fnd-T1…T4 are merged; the remaining task contracts below include the
 > ADR-0019/0020/0021 mobile-parity rework.
 >
-> Sources: [`docs/blueprint.md`](../blueprint.md) (§2.1, §4, §5, §7),
-> [`docs/scope.md`](../scope.md) (§7 phases 0–1),
-> [`docs/pipeline.md`](../pipeline.md),
-> [`.cursor/commands/scaffold.md`](../../.cursor/commands/scaffold.md),
+> Sources: [`docs/blueprint.md`](../../blueprint.md) (§2.1, §4, §5, §7),
+> [`docs/scope.md`](../../scope.md) (§7 phases 0–1),
+> [`docs/pipeline.md`](../../pipeline.md),
+> [`.cursor/commands/scaffold.md`](../../../.cursor/commands/scaffold.md),
 > protocol manuals (`core`, `db`, `contract`, `security-operations`, `money`,
 > `companies-foundation`), archived domain novels in `docs/archive/specs/`,
 > ADR-0012…0016, ADR-0018…0023,
-> [`docs/module-ownership.md`](../module-ownership.md).
+> [`docs/module-ownership.md`](../../module-ownership.md).
 
 This is the task breakdown for **Phase 0 (Foundation)** and **Phase 1
 (Reference Slices)** as one coordinated sequence. Unlike module plans, the

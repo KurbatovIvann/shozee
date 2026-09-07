@@ -7,7 +7,7 @@ from client-safe action descriptors; the `./server` subpath pairs those
 procedures with registered implementations through the core execution
 pipeline. **Owns no domain logic and no state.**
 
-## Current state (fnd-T25)
+## Public exports
 
 Two export subpaths:
 
@@ -28,9 +28,9 @@ paths (`@showzy/core/contract` is allowed). OpenAPI is generated from
 `contractRouter` into the committed `openapi.json`; `openapi:check` diffs
 it like migrations.
 
-No domain modules exist yet, so `contractModules` is explicitly empty.
-Module tasks add their `index.contract.ts` barrels there and regenerate
-the OpenAPI artifact.
+`src/client/modules.ts` is the populated client exposure record. Module
+tasks add their `index.contract.ts` descriptors there and regenerate the
+OpenAPI artifact; preserve the existing entries.
 
 ## Client-safe root (`src/client/`)
 

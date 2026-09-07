@@ -54,10 +54,10 @@ wakeup, polling fallback, graceful drain, and the job host.
 - `src/stores/redis.ts` — confirmation `GETDEL` and Lua token-bucket
   stores. Must stay behaviorally identical to `apps/api/src/stores/redis.ts`.
   Never reuse this client as the blocking BullMQ connection.
-- `src/subscriptions.ts` — composition root for event subscriptions.
-  Must list the same `defineEventHandler` objects as
-  `apps/api/src/composition.ts` (`eventSubscriptionRefs`). Today:
-  `chat.order-card-updater` and `docGeneration.pdf-renderer`.
+- `src/subscriptions.ts` — re-exports `@showzy/api/subscriptions`.
+  Register subscriptions once in `apps/api/src/subscriptions.ts`; both
+  API contract checks and worker delivery derive from that array. Do not
+  introduce a second hand-maintained list (SHO-279).
 - `src/observability.ts` — `createProcessObservability` (redacting pino
   logger + optional Sentry). Keep in lockstep with
   `apps/api/src/observability.ts`. `flushProcessObservability` drains

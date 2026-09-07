@@ -26,7 +26,13 @@ live in `docs/specs/` (`core`, `db`, `contract`, `money`,
 use `docs/reference/`. Do not contradict an accepted ADR in `docs/adr/`;
 deviations need a new ADR first.
 
-Constitution and conventions are in `.cursor/rules/` (already applied).
+Documentation map: [`docs/README.md`](docs/README.md). Read the root and
+nearest package/feature `AGENTS.md`, then the task context pack.
+
+Repository rules live in `.cursor/rules/`. Outside Cursor, load
+`prohibitions.mdc`, `conventions.mdc`, and `definition-of-done.mdc`
+explicitly; do not assume an editor has injected them. Load the
+area-specific rules when their scope applies.
 
 ## Non-negotiable invariants (blueprint §2.1)
 
@@ -53,13 +59,16 @@ Constitution and conventions are in `.cursor/rules/` (already applied).
 
 ## Core rules
 
-- **One data path.** All business logic goes through `defineAction`. Clients
-  never touch the DB directly. Authorization lives in action `permissions`.
+- **One data path.** `defineActionContract` describes an action;
+  `implementAction` binds it; `executeAction` runs it. Clients never touch
+  the DB directly. Authorization lives in action `permissions`.
 - **TypeScript strict end-to-end.** No `any`, no `as unknown as`.
-- Modules (`packages/modules/*`) export only actions and events. No direct
-  cross-module imports (enforced by ESLint boundaries). Cross-module writes
-  are asynchronous events unless ADR-0021 explicitly declares a
-  same-transaction atomic capability.
+- Module server barrels export actions/events, not internals. Cross-module
+  reads use declared `ctx.call` edges through public action exports
+  (ADR-0015); writes use events or declared `ctx.callAtomic` capabilities
+  (ADR-0021). Import boundaries and approved subpaths are enforced by
+  ESLint; ownership is in `docs/module-ownership.md`. Shared server
+  micro-utilities belong to `@showzy/module-kit` (ADR-0031).
 - Explicit code, no magic: no decorators with hidden behavior, no DI
   containers.
 - All code, comments, and documentation are in **English**.
