@@ -18,6 +18,10 @@ export {
   type AssistantAggregateSummaryView,
   type AssistantAggregateView,
 } from "./aggregate";
+export type {
+  AssistantResultMarks,
+  AssistantResultMarksCarrier,
+} from "./marks";
 export {
   parseCustomersListSurface,
   ASSISTANT_CUSTOMERS_LIST_HREF,

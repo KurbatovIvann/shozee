@@ -40,6 +40,7 @@ import {
   formatMoneyAmount,
   localizeCustomerName,
 } from "./helpers";
+import type { AssistantResultMarks } from "./marks";
 
 export const ASSISTANT_ORDERS_LIST_HREF = ASSISTANT_ORDERS_LIST_SCREEN_HREF;
 
@@ -80,6 +81,7 @@ export type AssistantOrdersListCardView = {
   readonly footnotes: readonly string[];
   readonly ctaLabel: string | null;
   readonly ctaHref: typeof ASSISTANT_ORDERS_LIST_HREF | null;
+  readonly marks?: AssistantResultMarks;
 };
 
 function formatCreatedAt(iso: string | null, locale: Locale): string {

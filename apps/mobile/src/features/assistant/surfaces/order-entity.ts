@@ -28,6 +28,7 @@ import {
   formatMoneyAmount,
   localizeCustomerName,
 } from "./helpers";
+import type { AssistantResultMarks } from "./marks";
 
 export {
   ORDER_ENTITY_PROMPT_LINE,
@@ -48,6 +49,7 @@ export type AssistantOrderEntityCardView = {
   readonly statusLabel: string | null;
   readonly statusTone: OrderStatusTone;
   readonly totalLabel: string | null;
+  readonly marks?: AssistantResultMarks;
 };
 
 export function localizeOrderEntityCard(

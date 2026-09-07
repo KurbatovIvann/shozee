@@ -6,9 +6,9 @@ import {
   assistantResultCta,
   assistantResultHandoff,
   assistantResultMarks,
-  assistantResultMarksFromUnknown,
   ORIGIN_MARK_ICON_SIZE,
 } from "../sheet/assistant-result-chrome";
+import type { AssistantResultMarksCarrier } from "../surfaces";
 
 const FRAME = readFileSync(
   new URL("../sheet/assistant-result-frame.tsx", import.meta.url),
@@ -41,6 +41,18 @@ const ENTITY = readFileSync(
 const CONFIRMATION = readFileSync(
   new URL("../sheet/confirmation-card.tsx", import.meta.url),
   "utf8",
+);
+const MARKS = readFileSync(
+  new URL("../surfaces/marks.ts", import.meta.url),
+  "utf8",
+);
+const CARD_VIEWS = [
+  "customers-list",
+  "order-entity",
+  "orders-aggregate",
+  "orders-list",
+].map((name) =>
+  readFileSync(new URL(`../surfaces/${name}.ts`, import.meta.url), "utf8"),
 );
 
 function importsNamed(source: string, name: string): boolean {
@@ -97,19 +109,15 @@ describe("AssistantResultFrame notice card (SHO-469)", () => {
   });
 });
 
-describe("assistant result provenance marks (SHO-469)", () => {
-  it("renders nothing when the fields are absent", () => {
+describe("assistant result provenance marks (SHO-469 / SHO-497)", () => {
+  it("renders nothing when the view declares no marks", () => {
+    const unmarked: AssistantResultMarksCarrier = {};
+    expect(assistantResultMarks(unmarked)).toEqual({
+      provisional: false,
+      origin: false,
+      originLabel: null,
+    });
     expect(assistantResultMarks({})).toEqual({
-      provisional: false,
-      origin: false,
-      originLabel: null,
-    });
-    expect(assistantResultMarksFromUnknown(null)).toEqual({
-      provisional: false,
-      origin: false,
-      originLabel: null,
-    });
-    expect(assistantResultMarksFromUnknown("ai")).toEqual({
       provisional: false,
       origin: false,
       originLabel: null,
@@ -120,40 +128,62 @@ describe("assistant result provenance marks (SHO-469)", () => {
     expect(FRAME).toContain("{showOrigin ? <OriginMark");
   });
 
-  it("renders both marks when both flags are present", () => {
-    expect(
-      assistantResultMarks({
-        provisional: true,
-        origin: true,
-        originLabel: "Шозік",
-      }),
-    ).toEqual({
+  it("renders both marks when the view declares them", () => {
+    const marked: AssistantResultMarksCarrier = {
+      marks: { provisional: true, origin: true, originLabel: "Шозік" },
+    };
+    expect(assistantResultMarks(marked)).toEqual({
       provisional: true,
       origin: true,
       originLabel: "Шозік",
     });
+    expect(
+      assistantResultMarks({
+        marks: { provisional: false, origin: true, originLabel: null },
+      }),
+    ).toEqual({ provisional: false, origin: true, originLabel: null });
     expect(FRAME).toContain("<Card provisional={provisional}>");
     expect(FRAME).toContain("const showOrigin = origin;");
     expect(FRAME).toContain("{showOrigin ? <OriginMark");
     expect(FRAME).not.toContain("origin && !provisional");
-    expect(assistantResultMarks({ origin: true })).toEqual({
-      provisional: false,
-      origin: true,
-      originLabel: null,
-    });
-    expect(assistantResultMarks({ provisional: false, origin: false })).toEqual(
-      {
-        provisional: false,
-        origin: false,
-        originLabel: null,
-      },
-    );
     expect(FRAME).toContain("SparklesIcon");
     expect(FRAME).toContain("ORIGIN_MARK_ICON_SIZE");
     expect(ORIGIN_MARK_ICON_SIZE).toBe(12);
     expect(CHROME).toContain("provisional");
     expect(CHROME).toContain("originLabel");
     expect(CHROME).not.toContain("createdVia");
+  });
+
+  it("makes a mark that is not the declared field a compile error", () => {
+    // Each of these compiled before SHO-497 and read as a silent `false`:
+    // the reader took `value: object` and probed string keys.
+    // @ts-expect-error SHO-497: loose flags are not the `marks` field.
+    const looseFlags: AssistantResultMarksCarrier = { origin: true };
+    // @ts-expect-error SHO-497: a misspelled mark field does not compile.
+    const misspelled: AssistantResultMarksCarrier = { mark: null };
+    // @ts-expect-error SHO-497: an unknown value is not a card view.
+    const notAView: AssistantResultMarksCarrier = "ai";
+    expect(assistantResultMarks(looseFlags)).toEqual({
+      provisional: false,
+      origin: false,
+      originLabel: null,
+    });
+    expect(misspelled).toBeDefined();
+    expect(notAView).toBe("ai");
+    expect(CHROME).not.toContain("assistantResultMarksFromUnknown");
+    expect(CHROME).not.toContain("value: object");
+    expect(CHROME).toContain("view.marks ?? EMPTY_MARKS");
+  });
+
+  it("declares the field on every card view and fills it nowhere", () => {
+    for (const source of CARD_VIEWS) {
+      expect(source).toContain("readonly marks?: AssistantResultMarks;");
+      expect(source).not.toContain("marks: {");
+    }
+    expect(MARKS).toContain("No surface produces marks today");
+    expect(MARKS).toContain("SHO-464");
+    expect(MARKS).toContain("createdVia");
+    expect(MARKS).toContain("vouchedBy");
   });
 });
 

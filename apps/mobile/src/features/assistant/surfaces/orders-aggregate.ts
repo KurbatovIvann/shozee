@@ -44,6 +44,7 @@ import {
   localizeCustomerName,
   moneyLabels,
 } from "./helpers";
+import type { AssistantResultMarks } from "./marks";
 import { ASSISTANT_ORDERS_LIST_HREF } from "./orders-list";
 
 export { ORDERS_AGGREGATE_PROMPT_LINE, ORDERS_AGGREGATE_SURFACE_TOOLS };
@@ -76,6 +77,7 @@ export type AssistantOrdersAggregateCardView = {
   readonly ctaLabel: string | null;
   readonly ctaHref: typeof ASSISTANT_ORDERS_LIST_HREF | null;
   readonly aggregate: AssistantAggregateView;
+  readonly marks?: AssistantResultMarks;
 };
 
 function orderCountLabel(
