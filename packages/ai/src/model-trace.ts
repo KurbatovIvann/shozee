@@ -182,7 +182,7 @@ function hasStoredTrace(message: StaffAssistantPersistedMessage): boolean {
 type BudgetedRun = {
   readonly action: string;
   readonly toolCallId: string;
-  readonly toolName?: string | null;
+  readonly toolName: string | null;
   readonly modelTrace: unknown;
   readonly kind: "full" | "digest" | "omit";
 };
@@ -219,11 +219,15 @@ export function budgetStaffAssistantToolRuns(
     const runs = message.toolRuns ?? [];
     const tier: "full" | "digest" = index === lastToolIndex ? "full" : "digest";
     return runs.map((run) => {
+      const toolName =
+        typeof run.toolName === "string" && run.toolName.length > 0
+          ? run.toolName
+          : null;
       if (run.modelTrace === null || run.modelTrace === undefined) {
         return {
           action: run.action,
           toolCallId: run.toolCallId,
-          toolName: run.toolName,
+          toolName,
           modelTrace: null,
           kind: "omit" as const,
         };
@@ -232,7 +236,7 @@ export function budgetStaffAssistantToolRuns(
         return {
           action: run.action,
           toolCallId: run.toolCallId,
-          toolName: run.toolName,
+          toolName,
           modelTrace: staffAssistantTraceDigest(
             staffAssistantToolSetKey(run),
             run.modelTrace,
@@ -243,7 +247,7 @@ export function budgetStaffAssistantToolRuns(
       return {
         action: run.action,
         toolCallId: run.toolCallId,
-        toolName: run.toolName,
+        toolName,
         modelTrace: run.modelTrace,
         kind: "full" as const,
       };
@@ -314,9 +318,7 @@ export function budgetStaffAssistantToolRuns(
       toolRuns: runs.map((run) => ({
         action: run.action,
         toolCallId: run.toolCallId,
-        ...(run.toolName !== undefined && run.toolName !== null
-          ? { toolName: run.toolName }
-          : {}),
+        ...(run.toolName !== null ? { toolName: run.toolName } : {}),
         modelTrace: run.kind === "omit" ? null : run.modelTrace,
       })),
     };
