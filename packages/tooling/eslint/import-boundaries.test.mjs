@@ -140,6 +140,7 @@ test("showzy/import-boundaries", () => {
           import { formChromeEn } from "@showzy/copy/chrome";
           import { sharedAuthCopy } from "@showzy/copy/auth";
           import { sharedPanelCopy } from "@showzy/copy/panel";
+          import { sharedCompaniesOnboardingCopy } from "@showzy/copy/companies";
           import { DocumentSigner } from "@showzy/document-signing";
           import { createNativeAdapter } from "@showzy/document-signing/native";
           import { useState } from "react";

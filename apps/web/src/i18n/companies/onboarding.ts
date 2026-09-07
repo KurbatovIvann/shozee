@@ -1,5 +1,11 @@
-/** Company onboarding copy namespace (uk/en). Locale plumbing lives in `../locale`. */
-import { interpolate, type Locale } from "../locale";
+/** Company onboarding copy namespace (uk/en). Shared strings live in `@showzy/copy/companies`. */
+import { interpolate, selectCopy, type Locale } from "@showzy/copy/locale";
+import {
+  sharedCompaniesLegalCopy,
+  sharedCompaniesOnboardingCopy,
+  type SharedCompaniesLegalCopy,
+  type SharedCompaniesOnboardingCopy,
+} from "@showzy/copy/companies";
 
 export type OnboardingCopy = {
   readonly companyTitle: string;
@@ -48,106 +54,107 @@ export type OnboardingCopy = {
   };
 };
 
-const en: OnboardingCopy = {
-  companyTitle: "About your business",
-  companySubtitle:
-    "Basic information to create your business profile on Shozee.",
-  nameLabel: "Business name",
-  namePlaceholder: "Business name",
-  slugLabel: "Public address",
-  slugPlaceholder: "your-business",
+type WebOnboardingExtension = {
+  readonly slugPreview: string;
+  readonly legalTitle: string;
+  readonly legalSubtitle: string;
+  readonly legalSkip: string;
+  readonly edrpouPlaceholder: string;
+  readonly legalSubmit: string;
+  readonly legalSubmitLoading: string;
+  readonly stepLabel: string;
+  readonly errors: {
+    readonly legalNameTooLong: string;
+    readonly tooLong: string;
+    readonly validation: string;
+  };
+};
+
+const extraEn: WebOnboardingExtension = {
   slugPreview: "shozee.com.ua/{{slug}}",
-  createSubmit: "Create business profile",
-  createSubmitLoading: "Creating…",
   legalTitle: "Legal details",
   legalSubtitle:
     "Requisites for invoices and documents. You can fill them in later.",
   legalSkip: "Fill in later in settings",
-  typeLabel: "Entity type",
-  typeFop: "FOP",
-  typeTov: "LLC",
-  companySection: "Company information",
-  legalNameLabel: "Legal name",
-  legalNamePlaceholder: "FOP Last First Patronymic",
-  edrpouLabel: "EDRPOU / TIN",
   edrpouPlaceholder: "12345678",
-  legalAddressLabel: "Legal address",
-  legalAddressPlaceholder: "Kyiv, Khreshchatyk St, 1",
-  bankSection: "Bank details",
-  ibanLabel: "IBAN",
-  ibanPlaceholder: "UA00 0000 0000 0000 0000 0000 000",
-  bankNameLabel: "Bank",
-  bankNamePlaceholder: "Monobank",
-  bankMfoLabel: "MFO",
-  bankMfoPlaceholder: "322001",
   legalSubmit: "Save and continue",
   legalSubmitLoading: "Saving…",
   stepLabel: "Step {{step}} of {{total}}",
   errors: {
-    nameRequired: "Enter a business name",
-    nameTooLong: "Name is too long",
-    slugInvalid:
-      "Latin letters, digits, and hyphen only. At least 3 characters.",
-    slugOccupied: "This address is already taken. Choose another.",
-    legalNameRequired: "Enter the legal name",
     legalNameTooLong: "Legal name is too long",
     tooLong: "This value is too long",
     validation: "Check the fields and try again.",
-    network: "Network error. Check your connection.",
-    unavailable: "Something went wrong. Try again.",
   },
 };
 
-const uk: OnboardingCopy = {
-  companyTitle: "Про ваш бізнес",
-  companySubtitle: "Основна інформація для створення профілю бізнесу на Шозі.",
-  nameLabel: "Назва бізнесу",
-  namePlaceholder: "Назва бізнесу",
-  slugLabel: "Публічна адреса",
-  slugPlaceholder: "vash-biznes",
+const extraUk: WebOnboardingExtension = {
   slugPreview: "shozee.com.ua/{{slug}}",
-  createSubmit: "Створити профіль бізнесу",
-  createSubmitLoading: "Створюємо…",
   legalTitle: "Юридичні дані",
   legalSubtitle:
     "Реквізити для рахунків і документів. Можна заповнити пізніше.",
   legalSkip: "Заповнити пізніше в налаштуваннях",
-  typeLabel: "Тип суб’єкта",
-  typeFop: "ФОП",
-  typeTov: "ТОВ",
-  companySection: "Інформація про компанію",
-  legalNameLabel: "Юридична назва",
-  legalNamePlaceholder: "ФОП Прізвище Ім’я По батькові",
-  edrpouLabel: "ЄДРПОУ / ІПН",
   edrpouPlaceholder: "12345678",
-  legalAddressLabel: "Юридична адреса",
-  legalAddressPlaceholder: "м. Київ, вул. Хрещатик, 1",
-  bankSection: "Банківські реквізити",
-  ibanLabel: "IBAN",
-  ibanPlaceholder: "UA00 0000 0000 0000 0000 0000 000",
-  bankNameLabel: "Банк",
-  bankNamePlaceholder: "Монобанк",
-  bankMfoLabel: "МФО",
-  bankMfoPlaceholder: "322001",
   legalSubmit: "Зберегти та продовжити",
   legalSubmitLoading: "Зберігаємо…",
   stepLabel: "Крок {{step}} з {{total}}",
   errors: {
-    nameRequired: "Вкажіть назву бізнесу",
-    nameTooLong: "Назва занадто довга",
-    slugInvalid: "Тільки латиниця, цифри та дефіс. Мінімум 3 символи.",
-    slugOccupied: "Ця адреса вже зайнята. Оберіть іншу.",
-    legalNameRequired: "Вкажіть юридичну назву",
     legalNameTooLong: "Юридична назва занадто довга",
     tooLong: "Значення занадто довге",
     validation: "Перевірте поля і спробуйте ще раз.",
-    network: "Помилка мережі. Перевірте з’єднання.",
-    unavailable: "Щось пішло не так. Спробуйте ще раз.",
   },
 };
 
 export function onboardingCopy(locale: Locale): OnboardingCopy {
-  return locale === "uk" ? uk : en;
+  const shared = sharedCompaniesOnboardingCopy(locale);
+  const legal = sharedCompaniesLegalCopy(locale);
+  const extra = selectCopy(locale, { uk: extraUk, en: extraEn });
+  return composeWebOnboardingCopy(shared, legal, extra);
+}
+
+function composeWebOnboardingCopy(
+  shared: SharedCompaniesOnboardingCopy,
+  legal: SharedCompaniesLegalCopy,
+  extra: WebOnboardingExtension,
+): OnboardingCopy {
+  return {
+    companyTitle: shared.title,
+    companySubtitle: shared.subtitle,
+    nameLabel: shared.nameLabel,
+    namePlaceholder: shared.namePlaceholder,
+    slugLabel: shared.slugLabel,
+    slugPlaceholder: shared.slugPlaceholder,
+    slugPreview: extra.slugPreview,
+    createSubmit: shared.submit,
+    createSubmitLoading: shared.submitLoading,
+    legalTitle: extra.legalTitle,
+    legalSubtitle: extra.legalSubtitle,
+    legalSkip: extra.legalSkip,
+    typeLabel: legal.typeLabel,
+    typeFop: legal.typeFop,
+    typeTov: legal.typeTov,
+    companySection: legal.companyTitle,
+    legalNameLabel: legal.legalNameLabel,
+    legalNamePlaceholder: legal.legalNamePlaceholder,
+    edrpouLabel: legal.edrpouLabel,
+    edrpouPlaceholder: extra.edrpouPlaceholder,
+    legalAddressLabel: legal.legalAddressLabel,
+    legalAddressPlaceholder: legal.legalAddressPlaceholder,
+    bankSection: legal.bankTitle,
+    ibanLabel: legal.ibanLabel,
+    ibanPlaceholder: legal.ibanPlaceholder,
+    bankNameLabel: legal.bankNameLabel,
+    bankNamePlaceholder: legal.bankNamePlaceholder,
+    bankMfoLabel: legal.bankMfoLabel,
+    bankMfoPlaceholder: legal.bankMfoPlaceholder,
+    legalSubmit: extra.legalSubmit,
+    legalSubmitLoading: extra.legalSubmitLoading,
+    stepLabel: extra.stepLabel,
+    errors: {
+      ...shared.errors,
+      legalNameRequired: legal.errors.legalNameRequired,
+      ...extra.errors,
+    },
+  };
 }
 
 export function slugPreviewCopy(copy: OnboardingCopy, slug: string): string {
