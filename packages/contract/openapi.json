@@ -1305,7 +1305,7 @@
     "/assistant/getConversation": {
       "post": {
         "operationId": "assistant.getConversation",
-        "summary": "A staff assistant conversation is a company record with one author. The author reads and writes it under `assistant:use`. Nobody else in the company — owner included — can list, read, append to, or record into it. Review of staff conversations is a separate feature with its own actions and permission. A foreign author and a foreign company fail with the same not-found. Return one conversation the caller authored, including messages and tool-run refs (action name, toolCallId, challengeId, result ids, outcome). challengeId is the opaque interaction id for confirmation or choice; outcome may be success, error, confirmation_required, or choice_required. Company id is never input. Tool-run rows store ids and outcome only — never order or document status.",
+        "summary": "A staff assistant conversation is a company record with one author. The author reads and writes it under `assistant:use`. Nobody else in the company — owner included — can list, read, append to, or record into it. Review of staff conversations is a separate feature with its own actions and permission. A foreign author and a foreign company fail with the same not-found. Return one conversation the caller authored, including messages and tool-run refs (action name, toolCallId, challengeId, result ids, outcome). challengeId is the opaque interaction id for confirmation or choice; outcome may be success, error, confirmation_required, or choice_required. Optional limit returns the newest messages (max 200); omitted keeps the unbounded read. Company id is never input. Tool-run rows store ids and outcome only — never order or document status.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1316,6 +1316,11 @@
                   "conversationId": {
                     "type": "string",
                     "format": "uuid"
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 200
                   }
                 },
                 "required": [

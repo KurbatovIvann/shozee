@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { STAFF_CONVERSATION_AUTHOR_INVARIANT } from "./conversation-view.contract.js";
 import {
+  GET_CONVERSATION_MESSAGES_MAX,
   getConversationContract,
   getConversationInputSchema,
 } from "./get-conversation.contract.js";
@@ -23,13 +24,37 @@ describe("assistant.getConversation contract", () => {
     expect(getConversationContract.timeout).toBe(5_000);
   });
 
-  it("takes conversationId only and rejects companyId", () => {
+  it("takes conversationId and optional limit, and rejects companyId", () => {
     expect(Object.keys(getConversationInputSchema.shape).toSorted()).toEqual([
       "conversationId",
+      "limit",
     ]);
     expect(
       getConversationInputSchema.safeParse({ conversationId: "not-a-uuid" })
         .success,
+    ).toBe(false);
+    expect(
+      getConversationInputSchema.safeParse({
+        conversationId: "11111111-1111-4111-8111-111111111111",
+      }).success,
+    ).toBe(true);
+    expect(
+      getConversationInputSchema.safeParse({
+        conversationId: "11111111-1111-4111-8111-111111111111",
+        limit: GET_CONVERSATION_MESSAGES_MAX,
+      }).success,
+    ).toBe(true);
+    expect(
+      getConversationInputSchema.safeParse({
+        conversationId: "11111111-1111-4111-8111-111111111111",
+        limit: GET_CONVERSATION_MESSAGES_MAX + 1,
+      }).success,
+    ).toBe(false);
+    expect(
+      getConversationInputSchema.safeParse({
+        conversationId: "11111111-1111-4111-8111-111111111111",
+        limit: 0,
+      }).success,
     ).toBe(false);
     expect(
       getConversationInputSchema.safeParse({

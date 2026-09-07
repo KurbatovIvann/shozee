@@ -1,4 +1,5 @@
 import { StaffAssistantNotConfiguredError } from "@showzy/ai";
+import type { ServerConfig } from "@showzy/config";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -9,10 +10,19 @@ import {
   requireStaffAssistantApiKey,
 } from "./config.js";
 
-const AI_UNSET = {
+/** SHO-505 config defaults; eval only needs a complete `ServerConfig["ai"]`. */
+const AI_BUDGET_DEFAULTS = {
+  chatTurnsPerMinutePerUser: 20,
+  dailyBudgetUsdPerCompany: 5,
+  dailyBudgetUsdGlobal: 100,
+  unknownModelTurnUsd: 0.1,
+} as const;
+
+const AI_UNSET: ServerConfig["ai"] = {
   anthropicApiKey: undefined,
   model: "claude-sonnet-4-6",
   gateModel: "claude-haiku-4-5",
+  ...AI_BUDGET_DEFAULTS,
 };
 
 describe("parseEvalRuns", () => {
@@ -73,6 +83,7 @@ describe("requireStaffAssistantApiKey", () => {
         anthropicApiKey: "sk-ant-test-not-a-real-key",
         model: "claude-sonnet-4-6",
         gateModel: "claude-haiku-4-5",
+        ...AI_BUDGET_DEFAULTS,
       }),
     ).toBe("sk-ant-test-not-a-real-key");
   });

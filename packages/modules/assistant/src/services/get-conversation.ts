@@ -3,7 +3,7 @@ import {
   assistantMessages,
   assistantToolRuns,
 } from "@showzy/db/schema/assistant";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import type { z } from "zod";
 
 import type { getConversationOutputSchema } from "../actions/get-conversation.contract.js";
@@ -22,6 +22,7 @@ type ConversationDetail = z.output<typeof getConversationOutputSchema>;
 export async function getStaffConversation(env: {
   readonly ctx: StaffCtx;
   readonly conversationId: string;
+  readonly limit?: number;
 }): Promise<ConversationDetail> {
   const conversation = await loadOwnConversation({
     db: env.ctx.db,
@@ -30,17 +31,28 @@ export async function getStaffConversation(env: {
     conversationId: env.conversationId,
   });
 
+  const messageFilter = and(
+    eq(assistantMessages.companyId, env.ctx.companyId),
+    eq(assistantMessages.conversationId, env.conversationId),
+  );
+
   const [messages, toolRuns] = await Promise.all([
-    env.ctx.db
-      .select(messageColumns)
-      .from(assistantMessages)
-      .where(
-        and(
-          eq(assistantMessages.companyId, env.ctx.companyId),
-          eq(assistantMessages.conversationId, env.conversationId),
-        ),
-      )
-      .orderBy(asc(assistantMessages.createdAt), asc(assistantMessages.id)),
+    env.limit === undefined
+      ? env.ctx.db
+          .select(messageColumns)
+          .from(assistantMessages)
+          .where(messageFilter)
+          .orderBy(asc(assistantMessages.createdAt), asc(assistantMessages.id))
+      : env.ctx.db
+          .select(messageColumns)
+          .from(assistantMessages)
+          .where(messageFilter)
+          .orderBy(
+            desc(assistantMessages.createdAt),
+            desc(assistantMessages.id),
+          )
+          .limit(env.limit)
+          .then((rows) => rows.slice().reverse()),
     env.ctx.db
       .select(toolRunColumns)
       .from(assistantToolRuns)

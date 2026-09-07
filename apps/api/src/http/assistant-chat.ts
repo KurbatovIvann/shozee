@@ -15,15 +15,15 @@ import {
   EMPTY_STAFF_ASSISTANT_TURN_USAGE,
   estimateStaffAssistantTurnCostUsd,
   filterStaffAiTools,
-  lastStaffAssistantUserMessage,
   pausedToolAttemptForChallenge,
   pausedToolAttemptFromToolRuns,
   resolvePausedToolAttempt,
+  resolveStaffAssistantChatUserMessage,
   StaffAssistantNotConfiguredError,
   staffAssistantCacheHitRatio,
   staffAssistantChatBodySchema,
   staffAssistantGateToolPolicy,
-  staffAssistantModelMessages,
+  staffAssistantModelMessagesFromPersisted,
   staffAssistantShouldSkipIntentGate,
   staffAssistantTurnContextAddendum,
   staffAssistantUncachedInputTokens,
@@ -41,6 +41,7 @@ import {
   type StaffAssistantLocale,
   type StaffAssistantTurnResult,
   type StaffAssistantTurnUsage,
+  type StaffUserMessageAttempt,
 } from "@showzy/ai";
 import {
   appendUserMessage,
@@ -388,9 +389,26 @@ function confirmationResumeIssue(message: string): ValidationError {
   ]);
 }
 
+/**
+ * History after `appendUserMessage`: persisted `getConversation` rows,
+ * ending with the append output. Dedupes the same id so an idempotent
+ * retry does not double the user turn. One getConversation per request
+ * (staff 120/min bucket is per action).
+ */
+function persistedMessagesEndingWithAppend<T extends { readonly id: string }>(
+  loaded: readonly T[],
+  appended: T | undefined,
+): T[] {
+  if (appended === undefined) {
+    return [...loaded];
+  }
+  return [...loaded.filter((message) => message.id !== appended.id), appended];
+}
+
 async function parseChatBody(request: Request): Promise<{
   conversationId: string;
-  messages: StaffAssistantChatMessage[];
+  protocolMessages: StaffAssistantChatMessage[];
+  userMessage: StaffUserMessageAttempt | undefined;
   locale: StaffAssistantLocale;
 }> {
   let raw: unknown;
@@ -412,7 +430,8 @@ async function parseChatBody(request: Request): Promise<{
   }
   return {
     conversationId: parsed.data.conversationId,
-    messages: parsed.data.messages,
+    protocolMessages: parsed.data.messages ?? [],
+    userMessage: resolveStaffAssistantChatUserMessage(parsed.data),
     locale: parsed.data.locale ?? STAFF_ASSISTANT_DEFAULT_LOCALE,
   };
 }
@@ -486,24 +505,12 @@ export async function executeStaffAssistantChat(
     });
 
     const body = await parseChatBody(options.request);
-    const userMessage = lastStaffAssistantUserMessage(body.messages);
+    const userMessage = body.userMessage;
     if (userMessage === undefined && confirmationChallengeId === undefined) {
       throw new ValidationError([
         {
           code: "custom",
-          path: ["messages"],
-          message: "A user message is required.",
-          input: undefined,
-        },
-      ]);
-    }
-
-    const modelMessages = staffAssistantModelMessages(body.messages);
-    if (modelMessages.length === 0) {
-      throw new ValidationError([
-        {
-          code: "custom",
-          path: ["messages"],
+          path: ["text"],
           message: "A user message is required.",
           input: undefined,
         },
@@ -512,7 +519,11 @@ export async function executeStaffAssistantChat(
 
     const conversation = await executeAction(options.pipeline, {
       action: getConversation,
-      input: { conversationId: body.conversationId },
+      input: {
+        conversationId: body.conversationId,
+        // Same cap as GET_CONVERSATION_MESSAGES_MAX on getConversation input.
+        limit: 200,
+      },
       request: baseRequest,
       principal: staffPrincipal,
     });
@@ -536,7 +547,7 @@ export async function executeStaffAssistantChat(
     let pausedAttempt: PausedToolAttempt | undefined;
     if (confirmationChallengeId !== undefined) {
       const clientAttempt = pausedToolAttemptForChallenge(
-        body.messages,
+        body.protocolMessages,
         confirmationChallengeId,
       );
       const persistedAttempt = pausedToolAttemptFromToolRuns(
@@ -663,25 +674,39 @@ export async function executeStaffAssistantChat(
           options.assistant?.model ??
           "unconfigured");
 
-      if (userMessage !== undefined) {
-        await executeAction(options.pipeline, {
-          action: appendUserMessage,
-          input: {
-            conversationId: body.conversationId,
-            body: userMessage.text,
+      const appended =
+        userMessage === undefined
+          ? undefined
+          : await executeAction(options.pipeline, {
+              action: appendUserMessage,
+              input: {
+                conversationId: body.conversationId,
+                body: userMessage.text,
+              },
+              request: staffRequest({
+                requestId: options.requestId,
+                clientIp: options.clientIp,
+                aiTraceId,
+                idempotencyKey: attemptKey(
+                  "message",
+                  body.conversationId,
+                  userMessage.id,
+                ),
+              }),
+              principal: staffPrincipal,
+            });
+      const modelMessages = staffAssistantModelMessagesFromPersisted(
+        persistedMessagesEndingWithAppend(conversation.messages, appended),
+      );
+      if (modelMessages.length === 0) {
+        throw new ValidationError([
+          {
+            code: "custom",
+            path: ["text"],
+            message: "A user message is required.",
+            input: undefined,
           },
-          request: staffRequest({
-            requestId: options.requestId,
-            clientIp: options.clientIp,
-            aiTraceId,
-            idempotencyKey: attemptKey(
-              "message",
-              body.conversationId,
-              userMessage.id,
-            ),
-          }),
-          principal: staffPrincipal,
-        });
+        ]);
       }
 
       const contracts = filterStaffAiTools(options.registry.contracts(), {
