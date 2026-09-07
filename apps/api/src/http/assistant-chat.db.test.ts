@@ -908,7 +908,7 @@ describe("POST /assistant/chat mock-model parity", () => {
     const payloads = await readUiMessageSsePayloads(response);
     const visible = sseVisibleTextFromPayloads(payloads);
     const body = await waitForAssistantBody(conversation.id);
-    expect(visible).toBe("Done.");
+    expect(visible).toBe("Готово.");
     expect(body).toBe(visible);
     expect(visible).not.toBe("SECRETX");
     expect(JSON.stringify(payloads)).not.toContain("SECRETX");
