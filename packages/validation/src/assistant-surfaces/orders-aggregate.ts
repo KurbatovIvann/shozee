@@ -3,7 +3,10 @@
  * `orders_list_counts`. Compose skips this kind when a list page is on
  * the same turn.
  */
-import { assistantAggregateSummary } from "./aggregate.js";
+import {
+  assistantAggregateSummary,
+  type AssistantAggregateDescriptor,
+} from "./aggregate.js";
 import {
   ASSISTANT_ORDERS_LIST_SCREEN_HREF,
   resolveAssistantSurfaceDestination,
