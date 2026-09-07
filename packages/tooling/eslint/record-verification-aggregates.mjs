@@ -26,8 +26,14 @@ const DRIZZLE_AGGREGATES = new Set(["count", "sum"]);
  * company_customer_invites, company_customers, counterparties,
  * customer_groups, documents, orders, price_lists, product_variants,
  * products.
+ *
+ * SHO-494: this list is bound to the `recordProvenanceColumns()` call
+ * sites in `packages/db/src/schema/*.ts` by the last test in
+ * `record-verification-aggregates.test.mjs` — a tenth provenance table
+ * fails that test until it is named here. The derivation lives in the
+ * test, not in the rule: lint stays a cheap import-conjunction check.
  */
-const PROVENANCE_TABLE_EXPORTS = new Set([
+export const PROVENANCE_TABLE_EXPORTS = new Set([
   "companyCustomerInvites",
   "companyCustomers",
   "counterparties",
