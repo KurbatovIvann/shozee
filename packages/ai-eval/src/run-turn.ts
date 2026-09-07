@@ -114,12 +114,15 @@ export async function runStaffAssistantEvalTurn(options: {
     executeResults,
   );
   const turn = await completion;
-  const estimatedCostUsd = estimateStaffAssistantTurnCostUsd({
-    reply: turn.usage,
-    replyModelId,
-    gate: gateUsage,
-    gateModelId: options.models.gateModelId,
-  });
+  // Live eval models are priced. Unknown stays 0 in the harness sum —
+  // not a Sonnet fallback (SHO-508).
+  const estimatedCostUsd =
+    estimateStaffAssistantTurnCostUsd({
+      reply: turn.usage,
+      replyModelId,
+      gate: gateUsage,
+      gateModelId: options.models.gateModelId,
+    }) ?? 0;
 
   logEvalInfo(
     options.logger,

@@ -63,6 +63,9 @@ export { filterStaffAiTools } from "./filter-staff-tools.js";
 export { createStaffLanguageModel } from "./language-model.js";
 export type { LanguageModel } from "ai";
 export {
+  createAnthropicStaffProviderAdapter,
+  anthropicStaffProvider,
+  ANTHROPIC_STAFF_PROVIDER_ID,
   STAFF_ASSISTANT_ANTHROPIC_PROVIDER_OPTIONS,
   STAFF_ASSISTANT_ANTHROPIC_THINKING,
   STAFF_ASSISTANT_CACHE_CONTROL,
@@ -71,10 +74,17 @@ export {
   STAFF_ASSISTANT_HISTORY_CACHE_PROVIDER_OPTIONS,
   STAFF_ASSISTANT_STATIC_CACHE_CONTROL,
   STAFF_ASSISTANT_THINKING_DISABLED,
-} from "./anthropic-options.js";
+} from "./provider/anthropic.js";
+export type {
+  StaffAssistantModelRates,
+  StaffProviderAdapter,
+  StaffProviderModelKind,
+  StaffProviderToolDecoration,
+} from "./provider/types.js";
 export {
   EMPTY_STAFF_ASSISTANT_TURN_USAGE,
   staffAssistantCacheHitRatio,
+  staffAssistantCostLogFields,
   staffAssistantTurnUsageFromUnknown,
   staffAssistantUncachedInputTokens,
   type StaffAssistantTurnUsage,

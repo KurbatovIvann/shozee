@@ -1,7 +1,6 @@
 import type { ModelMessage } from "ai";
 import { z } from "zod";
 
-import { STAFF_ASSISTANT_HISTORY_CACHE_PROVIDER_OPTIONS } from "./anthropic-options.js";
 import { confirmationFromChatPart } from "./confirmation.js";
 import {
   budgetStaffAssistantToolRuns,
@@ -11,6 +10,8 @@ import {
   type StaffAssistantPersistedMessage,
 } from "./model-trace.js";
 import { staffAssistantLocaleSchema } from "./presenter.js";
+import { anthropicStaffProvider } from "./provider/anthropic.js";
+import type { StaffProviderAdapter } from "./provider/types.js";
 
 /**
  * Match `assistant` `messageBodySchema` (16_000). Request validation so
@@ -173,13 +174,14 @@ export type {
  */
 export function staffAssistantModelMessagesFromPersisted(
   messages: readonly StaffAssistantPersistedMessage[],
+  provider: StaffProviderAdapter = anthropicStaffProvider,
 ): ModelMessage[] {
   const budgeted = budgetStaffAssistantToolRuns(messages);
   const expanded: ModelMessage[] = [];
   for (const message of budgeted) {
     expanded.push(...modelMessagesFromPersistedRow(message));
   }
-  return applyStaffAssistantHistoryWindow(expanded);
+  return applyStaffAssistantHistoryWindow(expanded, provider);
 }
 
 function modelMessagesFromPersistedRow(
@@ -227,6 +229,7 @@ function modelMessagesFromPersistedRow(
  */
 export function stripStaffAssistantToolParts(
   messages: readonly ModelMessage[],
+  provider: StaffProviderAdapter = anthropicStaffProvider,
 ): ModelMessage[] {
   const flattened: ModelMessage[] = [];
   for (const message of messages) {
@@ -249,7 +252,7 @@ export function stripStaffAssistantToolParts(
           : text,
     });
   }
-  return applyStaffAssistantHistoryWindow(flattened);
+  return applyStaffAssistantHistoryWindow(flattened, provider);
 }
 
 /**
@@ -259,6 +262,7 @@ export function stripStaffAssistantToolParts(
  */
 export function staffAssistantModelMessages(
   messages: readonly StaffAssistantChatMessage[],
+  provider: StaffProviderAdapter = anthropicStaffProvider,
 ): ModelMessage[] {
   const modelMessages: ModelMessage[] = [];
   for (const message of messages) {
@@ -277,15 +281,18 @@ export function staffAssistantModelMessages(
     }
     modelMessages.push({ role: message.role, content: text });
   }
-  return applyStaffAssistantHistoryWindow(modelMessages);
+  return applyStaffAssistantHistoryWindow(modelMessages, provider);
 }
 
-function withHistoryCacheBreakpoint(message: ModelMessage): ModelMessage {
+function withHistoryCacheBreakpoint(
+  message: ModelMessage,
+  provider: StaffProviderAdapter,
+): ModelMessage {
   return {
     ...message,
     providerOptions: {
       ...message.providerOptions,
-      ...STAFF_ASSISTANT_HISTORY_CACHE_PROVIDER_OPTIONS,
+      ...provider.historyBreakpointOptions(),
     },
   };
 }
@@ -302,6 +309,7 @@ function withHistoryCacheBreakpoint(message: ModelMessage): ModelMessage {
  */
 export function applyStaffAssistantHistoryWindow(
   messages: readonly ModelMessage[],
+  provider: StaffProviderAdapter = anthropicStaffProvider,
 ): ModelMessage[] {
   const windowed = windowKeepingToolPairs(
     messages,
@@ -321,7 +329,7 @@ export function applyStaffAssistantHistoryWindow(
   ) {
     return windowed;
   }
-  windowed[prefixIndex] = withHistoryCacheBreakpoint(prefix);
+  windowed[prefixIndex] = withHistoryCacheBreakpoint(prefix, provider);
   return windowed;
 }
 

@@ -1,14 +1,10 @@
-import { anthropic } from "@ai-sdk/anthropic";
 import type { ActionContract } from "@showzy/core/contract";
 import { CoreInvariantError } from "@showzy/core/errors";
 import { ORDER_ENTITY_PROMPT_LINE } from "@showzy/validation/assistant-surfaces";
 import { jsonSchema, tool, type Tool, type ToolSet } from "ai";
-import { z } from "zod";
 
-import {
-  STAFF_ASSISTANT_CACHE_PROVIDER_OPTIONS,
-  STAFF_ASSISTANT_DEFER_PROVIDER_OPTIONS,
-} from "./anthropic-options.js";
+import { anthropicStaffProvider } from "./provider/anthropic.js";
+import type { StaffProviderAdapter } from "./provider/types.js";
 import {
   CATALOG_LIST_PRODUCTS_ACTION_NAME,
   CATALOG_LIST_PRODUCTS_TOOL_NAME,
@@ -43,11 +39,10 @@ import {
 } from "./tool-facades/pricing-list-price-lists.js";
 
 /**
- * Anthropic custom tool names (`@ai-sdk/anthropic` sends `tool.name`
- * unchanged) must match `^[a-zA-Z0-9_-]{1,128}$`. Action contracts keep
- * the dotted `module.verb` identity (`orders.list`); the ToolSet key is
- * the provider-safe mapping (`orders_list`). Mechanical adapter only —
- * not a new principal and not a `packages/core` patch.
+ * Provider custom tool names must match `^[a-zA-Z0-9_-]{1,128}$`.
+ * Action contracts keep the dotted `module.verb` identity (`orders.list`);
+ * the ToolSet key is the provider-safe mapping (`orders_list`). Mechanical
+ * adapter only — not a new principal and not a `packages/core` patch.
  */
 export const PROVIDER_TOOL_NAME_PATTERN = /^[a-zA-Z0-9_-]{1,128}$/;
 
@@ -67,8 +62,10 @@ const HOT_ACTION_DESCRIPTION_SUFFIXES: Readonly<Record<string, string>> = {
 
 const HOT_ACTION_NAME_SET = new Set<string>(STAFF_ASSISTANT_HOT_ACTION_NAMES);
 
-/** ToolSet key for Anthropic BM25 tool search (provider-executed). */
-export const STAFF_ASSISTANT_TOOL_SEARCH_NAME = "tool_search_tool_bm25";
+export {
+  ensureAnthropicToolInputSchemaType,
+  STAFF_ASSISTANT_TOOL_SEARCH_NAME,
+} from "./provider/anthropic.js";
 
 export {
   CATALOG_LIST_PRODUCTS_ACTION_NAME,
@@ -179,23 +176,11 @@ export function staffAssistantHotToolNames(): readonly string[] {
   );
 }
 
-/**
- * Anthropic requires `input_schema.type`. Zod 4 discriminated unions
- * emit `oneOf` without a top-level `type`. Named object façades already
- * have `type: "object"` — do not flatten `*.contract.ts` to appease this.
- */
-export function ensureAnthropicToolInputSchemaType(
-  schema: Record<string, unknown>,
-): Record<string, unknown> {
-  if (typeof schema["type"] === "string") {
-    return schema;
-  }
-  return { ...schema, type: "object" };
-}
-
-function actionContractJsonSchema(contract: ActionContract) {
-  const json = z.toJSONSchema(contract.input);
-  return jsonSchema(ensureAnthropicToolInputSchemaType({ ...json }), {
+function actionContractJsonSchema(
+  contract: ActionContract,
+  provider: StaffProviderAdapter,
+) {
+  return jsonSchema(provider.toolInputSchema(contract.input), {
     validate: (value: unknown) => {
       const result = contract.input.safeParse(value);
       if (result.success) {
@@ -211,18 +196,22 @@ function actionContractJsonSchema(contract: ActionContract) {
  * and `description` are the executeAction identity; Zod `input` is the
  * schema. `execute` is injected so this package does not own the action
  * pipeline. Provider-safe ToolSet keys are applied by
- * `staffAssistantTools`. Union inputs get `ensureAnthropicToolInputSchemaType`.
+ * `staffAssistantTools`. Union inputs get `provider.toolInputSchema`.
  * Optional `description` keeps the 1:1 schema while teaching BM25/search
  * (pricing create/fill path) without flattening the contract.
  */
 export function actionContractToTool(
   contract: ActionContract,
   execute: ActionToolExecute,
-  options?: { readonly description?: string },
+  options?: {
+    readonly description?: string;
+    readonly provider?: StaffProviderAdapter;
+  },
 ): Tool {
+  const provider = options?.provider ?? anthropicStaffProvider;
   return tool({
     description: options?.description ?? contract.description,
-    inputSchema: actionContractJsonSchema(contract),
+    inputSchema: actionContractJsonSchema(contract, provider),
     execute: async (input: unknown, executeOptions) => {
       const parsed: unknown = contract.input.parse(input);
       return execute(contract.name, parsed, {
@@ -233,17 +222,16 @@ export function actionContractToTool(
 }
 
 /**
- * Build the AI SDK tool map keyed by the Anthropic-safe provider name.
- * Operational catalogs include BM25 tool search; hot actions stay in
- * context; every other exposed action is `deferLoading`. `execute` still
- * receives `contract.name` (`orders.list`). Empty catalogs attach nothing
+ * Build the AI SDK tool map keyed by the provider-safe name. The adapter
+ * adds search / defer / cache breakpoints. `execute` still receives
+ * `contract.name` (`orders.list`). Empty catalogs attach nothing
  * (chitchat). The HTTP mount injects `executeAction`; this helper never
  * fetches `/rpc`. Façade actions (`orders.list`, `orders.create`,
  * `catalog.listProducts`, `pricing.listPriceLists`,
  * `customers.listCustomers`, `customers.listGroups`) are not raw 1:1
  * ToolSet keys — named tools map onto the same handlers. Hot façades stay
- * in context. Deferred façades (`customers.listGroups`) are advertised
- * with `deferLoading` so BM25 can find `customers_list_groups`;
+ * in context. Deferred façades (`customers.listGroups`) are advertised so
+ * BM25 can find `customers_list_groups`;
  * `toProviderToolName("customers.listGroups")` is not advertised.
  * `orders_create` is both the façade key and
  * `toProviderToolName("orders.create")`; the advertised schema is the
@@ -252,15 +240,15 @@ export function actionContractToTool(
 export function staffAssistantTools(
   contracts: readonly ActionContract[],
   execute: ActionToolExecute,
+  provider: StaffProviderAdapter = anthropicStaffProvider,
 ): ToolSet {
   const tools: ToolSet = {};
   if (contracts.length === 0) {
     return tools;
   }
 
-  tools[STAFF_ASSISTANT_TOOL_SEARCH_NAME] =
-    anthropic.tools.toolSearchBm25_20251119();
-
+  const hot: string[] = [];
+  const deferred: string[] = [];
   const byName = new Map<string, ActionContract>();
   for (const contract of contracts) {
     byName.set(contract.name, contract);
@@ -273,10 +261,10 @@ export function staffAssistantTools(
     }
     const facadeFactory = HOT_FACADE_FACTORIES[hotName];
     if (facadeFactory !== undefined) {
-      insertFacadeTools(tools, contract, execute, facadeFactory);
+      hot.push(...insertFacadeTools(tools, contract, execute, facadeFactory));
       continue;
     }
-    insertActionTool(tools, contract, execute);
+    hot.push(insertActionTool(tools, contract, execute, provider));
   }
 
   for (const contract of contracts) {
@@ -285,28 +273,18 @@ export function staffAssistantTools(
     }
     const deferredFactory = DEFERRED_FACADE_FACTORIES[contract.name];
     if (deferredFactory !== undefined) {
-      insertFacadeTools(
-        tools,
-        contract,
-        execute,
-        deferredFactory,
-        STAFF_ASSISTANT_DEFER_PROVIDER_OPTIONS,
+      deferred.push(
+        ...insertFacadeTools(tools, contract, execute, deferredFactory),
       );
       continue;
     }
     if (FACADE_ACTION_NAME_SET.has(contract.name)) {
       continue;
     }
-    insertActionTool(
-      tools,
-      contract,
-      execute,
-      STAFF_ASSISTANT_DEFER_PROVIDER_OPTIONS,
-    );
+    deferred.push(insertActionTool(tools, contract, execute, provider));
   }
 
-  markLastNonDeferredToolCacheBreakpoint(tools);
-  return tools;
+  return provider.decorateToolSet(tools, { hot, deferred });
 }
 
 function insertFacadeTools(
@@ -314,8 +292,8 @@ function insertFacadeTools(
   contract: ActionContract,
   execute: ActionToolExecute,
   factory: FacadeToolsFactory,
-  providerOptions?: typeof STAFF_ASSISTANT_DEFER_PROVIDER_OPTIONS,
-): void {
+): string[] {
+  const names: string[] = [];
   const facades = factory(contract, execute);
   for (const [name, aiTool] of Object.entries(facades)) {
     if (tools[name] !== undefined) {
@@ -323,17 +301,18 @@ function insertFacadeTools(
         `duplicate provider tool name "${name}" for "${contract.name}"`,
       );
     }
-    tools[name] =
-      providerOptions === undefined ? aiTool : { ...aiTool, providerOptions };
+    tools[name] = aiTool;
+    names.push(name);
   }
+  return names;
 }
 
 function insertActionTool(
   tools: ToolSet,
   contract: ActionContract,
   execute: ActionToolExecute,
-  providerOptions?: typeof STAFF_ASSISTANT_DEFER_PROVIDER_OPTIONS,
-): void {
+  provider: StaffProviderAdapter,
+): string {
   const providerName = toProviderToolName(contract.name);
   if (tools[providerName] !== undefined) {
     throw new CoreInvariantError(
@@ -343,49 +322,15 @@ function insertActionTool(
   const descriptionSuffix =
     PRICING_DEFERRED_TOOL_DESCRIPTION_SUFFIXES[contract.name] ??
     HOT_ACTION_DESCRIPTION_SUFFIXES[contract.name];
-  const aiTool = actionContractToTool(
+  tools[providerName] = actionContractToTool(
     contract,
     execute,
     descriptionSuffix === undefined
-      ? undefined
-      : { description: `${contract.description} ${descriptionSuffix}` },
+      ? { provider }
+      : {
+          description: `${contract.description} ${descriptionSuffix}`,
+          provider,
+        },
   );
-  tools[providerName] =
-    providerOptions === undefined ? aiTool : { ...aiTool, providerOptions };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isDeferredTool(tool: { readonly providerOptions?: unknown }): boolean {
-  if (!isRecord(tool.providerOptions)) {
-    return false;
-  }
-  const anthropicOptions = tool.providerOptions["anthropic"];
-  return (
-    isRecord(anthropicOptions) && anthropicOptions["deferLoading"] === true
-  );
-}
-
-function markLastNonDeferredToolCacheBreakpoint(tools: ToolSet): void {
-  const names = Object.keys(tools);
-  for (let index = names.length - 1; index >= 0; index -= 1) {
-    const lastName = names[index];
-    if (lastName === undefined) {
-      continue;
-    }
-    const lastTool = tools[lastName];
-    if (lastTool === undefined || isDeferredTool(lastTool)) {
-      continue;
-    }
-    tools[lastName] = {
-      ...lastTool,
-      providerOptions: {
-        ...lastTool.providerOptions,
-        ...STAFF_ASSISTANT_CACHE_PROVIDER_OPTIONS,
-      },
-    };
-    return;
-  }
+  return providerName;
 }

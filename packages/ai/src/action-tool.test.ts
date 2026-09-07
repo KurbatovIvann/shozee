@@ -23,9 +23,9 @@ import {
   toProviderToolName,
 } from "./action-tool.js";
 import {
-  STAFF_ASSISTANT_STATIC_CACHE_CONTROL,
   STAFF_ASSISTANT_DEFER_PROVIDER_OPTIONS,
-} from "./anthropic-options.js";
+  STAFF_ASSISTANT_STATIC_CACHE_CONTROL,
+} from "./provider/anthropic.js";
 import { CUSTOMERS_LIST_CUSTOMERS_ASSISTANT_LIMIT } from "./tool-facades/customers-list-customers.js";
 import { CUSTOMERS_LIST_GROUPS_ASSISTANT_LIMIT } from "./tool-facades/customers-list-groups.js";
 import { ORDERS_LIST_PAGE_ASSISTANT_DEFAULT_LIMIT } from "./tool-facades/orders-list.js";

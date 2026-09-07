@@ -21,4 +21,15 @@ describe("staffAssistantToolsetHash", () => {
     expect(reversed).toBe(listed);
     expect(reversed).not.toBe(listOnly);
   });
+
+  it("changes when the adapter id changes", () => {
+    const names = ["orders_list", "orders_get"] as const;
+    const anthropic = staffAssistantToolsetHash(names, "anthropic");
+    const fake = staffAssistantToolsetHash(names, "fake");
+    expect(anthropic).not.toBe(fake);
+    expect(staffAssistantToolsetHash(names)).not.toBe(anthropic);
+    expect(staffAssistantToolsetHash([], "anthropic")).toBe(
+      STAFF_ASSISTANT_EMPTY_TOOLSET_HASH,
+    );
+  });
 });

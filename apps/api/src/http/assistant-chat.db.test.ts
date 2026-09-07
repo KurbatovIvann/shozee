@@ -2425,8 +2425,8 @@ describe("POST /assistant/chat logs and /rpc channel", () => {
     expect(typeof usage?.["tool_result_bytes_in"]).toBe("number");
     expect(typeof usage?.["tool_result_bytes_out"]).toBe("number");
     expect(typeof usage?.["toolset_hash"]).toBe("string");
-    expect(typeof usage?.["estimated_cost_usd"]).toBe("number");
-    expect(Number.isFinite(usage?.["estimated_cost_usd"])).toBe(true);
+    expect(usage?.["estimated_cost_usd"]).toBeNull();
+    expect(usage?.["cost_known"]).toBe(false);
     expect(JSON.stringify(usage)).not.toContain(prompt);
     expect(JSON.stringify(usage)).not.toContain(
       "ASSISTANT_BODY_SENTINEL_never_log",
@@ -2478,7 +2478,8 @@ describe("POST /assistant/chat logs and /rpc channel", () => {
     expect(usage?.["gate_model"]).toBe("mock-gate");
     expect(usage?.["gate_input_tokens"]).toBe(1);
     expect(usage?.["gate_output_tokens"]).toBe(1);
-    expect(typeof usage?.["estimated_cost_usd"]).toBe("number");
+    expect(usage?.["estimated_cost_usd"]).toBeNull();
+    expect(usage?.["cost_known"]).toBe(false);
     expect(JSON.stringify(usage)).not.toContain("List orders");
     const gateLog = capturing
       .entries()

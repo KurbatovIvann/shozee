@@ -6,7 +6,7 @@ import {
 } from "@showzy/validation/assistant-surfaces";
 import { describe, expect, it } from "vitest";
 
-import { STAFF_ASSISTANT_STATIC_CACHE_CONTROL } from "./anthropic-options.js";
+import { STAFF_ASSISTANT_STATIC_CACHE_CONTROL } from "./provider/anthropic.js";
 import { STAFF_ASSISTANT_PRODUCT_GLOSSARY } from "./product-glossary.js";
 import {
   staffAssistantSystemMessage,

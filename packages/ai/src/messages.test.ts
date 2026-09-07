@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ORDERS_LIST_PAGE_TOOL_NAME } from "./action-tool.js";
-import { STAFF_ASSISTANT_HISTORY_CACHE_PROVIDER_OPTIONS } from "./anthropic-options.js";
+import { STAFF_ASSISTANT_HISTORY_CACHE_PROVIDER_OPTIONS } from "./provider/anthropic.js";
 import {
   applyStaffAssistantHistoryWindow,
   lastStaffAssistantUserMessage,

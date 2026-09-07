@@ -12,8 +12,9 @@ import {
   staffAssistantHotToolNames,
   STAFF_ASSISTANT_TOOL_SEARCH_NAME,
 } from "./action-tool.js";
-import { STAFF_ASSISTANT_CACHE_PROVIDER_OPTIONS } from "./anthropic-options.js";
 import { STAFF_ASSISTANT_PRODUCT_GLOSSARY } from "./product-glossary.js";
+import { anthropicStaffProvider } from "./provider/anthropic.js";
+import type { StaffProviderAdapter } from "./provider/types.js";
 
 const STAFF_ASSISTANT_PRESENTATION_PROMPT_LINES =
   ASSISTANT_SURFACE_REGISTRY.map((entry) => entry.promptLine).join("\n");
@@ -83,12 +84,14 @@ Reply in one or two sentences about the result, in the user's language. The UI a
 ${STAFF_ASSISTANT_PRESENTATION_PROMPT_LINES}
 </presentation>`;
 
-/** System message with the Anthropic prompt-cache breakpoint on the stable prefix. */
-export function staffAssistantSystemMessage(): SystemModelMessage {
+/** System message with the provider prompt-cache breakpoint on the stable prefix. */
+export function staffAssistantSystemMessage(
+  provider: StaffProviderAdapter = anthropicStaffProvider,
+): SystemModelMessage {
   return {
     role: "system",
     content: staffAssistantSystemPrompt,
-    providerOptions: STAFF_ASSISTANT_CACHE_PROVIDER_OPTIONS,
+    providerOptions: provider.systemProviderOptions(),
   };
 }
 
@@ -99,9 +102,10 @@ export function staffAssistantSystemMessage(): SystemModelMessage {
  */
 export function staffAssistantSystemMessages(
   turnContextAddendum: string,
+  provider: StaffProviderAdapter = anthropicStaffProvider,
 ): SystemModelMessage[] {
   return [
-    staffAssistantSystemMessage(),
+    staffAssistantSystemMessage(provider),
     {
       role: "system",
       content: turnContextAddendum,
