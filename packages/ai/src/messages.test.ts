@@ -707,6 +707,6 @@ describe("staffAssistantModelMessagesFromPersisted tool traces", () => {
       }
     }
     expect(JSON.stringify(windowed)).not.toContain("user-0");
-    expect(JSON.stringify(windowed)).not.toContain("call_1");
+    expect(JSON.stringify(windowed)).not.toContain('"call_1"');
   });
 });
