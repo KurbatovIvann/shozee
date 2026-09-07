@@ -21,17 +21,15 @@ vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
   return {
     ...actual,
-    streamText: ((...args: Parameters<typeof actual.streamText>) => {
+    streamText: (...args: Parameters<typeof actual.streamText>) => {
       const result = actual.streamText(...args);
-      return new Proxy(result, {
-        get(target, prop, receiver) {
-          if (prop === "text") {
-            return Promise.reject(new Error("model text failed"));
-          }
-          return Reflect.get(target, prop, receiver);
-        },
+      Object.defineProperty(result, "text", {
+        configurable: true,
+        get: (): Promise<string> =>
+          Promise.reject(new Error("model text failed")),
       });
-    }) as typeof actual.streamText,
+      return result;
+    },
   };
 });
 
