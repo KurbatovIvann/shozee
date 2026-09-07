@@ -42,10 +42,12 @@ import {
   type StaffAssistantTurnResult,
   type StaffAssistantTurnUsage,
   type StaffUserMessageAttempt,
+  type StaffAssistantPersistedMessage,
 } from "@showzy/ai";
 import {
   appendUserMessage,
   getConversation,
+  getModelHistory,
   getStaffActor,
   recordAssistantTurn,
 } from "@showzy/assistant";
@@ -228,6 +230,7 @@ function logTurnUsage(options: {
   readonly toolNames: readonly string[];
   readonly historyMessageCount: number;
   readonly historyChars: number;
+  readonly historyTraceChars: number;
   readonly toolResultBytesIn: number;
   readonly toolResultBytesOut: number;
   readonly toolsetHash: string;
@@ -261,6 +264,7 @@ function logTurnUsage(options: {
       cache_hit_ratio: staffAssistantCacheHitRatio(options.usage),
       history_message_count: options.historyMessageCount,
       history_chars: options.historyChars,
+      history_trace_chars: options.historyTraceChars,
       tool_result_bytes_in: options.toolResultBytesIn,
       tool_result_bytes_out: options.toolResultBytesOut,
       toolset_hash: options.toolsetHash,
@@ -390,10 +394,11 @@ function confirmationResumeIssue(message: string): ValidationError {
 }
 
 /**
- * History after `appendUserMessage`: persisted `getConversation` rows,
- * ending with the append output. Dedupes the same id so an idempotent
- * retry does not double the user turn. One getConversation per request
- * (staff 120/min bucket is per action).
+ * History after `appendUserMessage` is assembled from
+ * `assistant.getModelHistory` plus the just-appended user row. Dedupes
+ * the same message id so an idempotent retry does not double the user
+ * turn (SHO-506). Client `messages` are never a history source
+ * (SHO-506 / SHO-510).
  */
 function persistedMessagesEndingWithAppend<T extends { readonly id: string }>(
   loaded: readonly T[],
@@ -403,6 +408,20 @@ function persistedMessagesEndingWithAppend<T extends { readonly id: string }>(
     return [...loaded];
   }
   return [...loaded.filter((message) => message.id !== appended.id), appended];
+}
+
+function modelHistoryToPersisted(
+  messages: ReadonlyArray<{
+    readonly role: "user" | "assistant";
+    readonly text: string;
+    readonly toolRuns: StaffAssistantPersistedMessage["toolRuns"];
+  }>,
+): StaffAssistantPersistedMessage[] {
+  return messages.map((message) => ({
+    role: message.role,
+    body: message.text,
+    ...(message.toolRuns !== undefined ? { toolRuns: message.toolRuns } : {}),
+  }));
 }
 
 async function parseChatBody(request: Request): Promise<{
@@ -517,16 +536,24 @@ export async function executeStaffAssistantChat(
       ]);
     }
 
-    const conversation = await executeAction(options.pipeline, {
-      action: getConversation,
-      input: {
-        conversationId: body.conversationId,
-        // Same cap as GET_CONVERSATION_MESSAGES_MAX on getConversation input.
-        limit: 200,
-      },
-      request: baseRequest,
-      principal: staffPrincipal,
-    });
+    const [conversation, modelHistory] = await Promise.all([
+      executeAction(options.pipeline, {
+        action: getConversation,
+        input: {
+          conversationId: body.conversationId,
+          // Same cap as GET_CONVERSATION_MESSAGES_MAX on getConversation input.
+          limit: 200,
+        },
+        request: baseRequest,
+        principal: staffPrincipal,
+      }),
+      executeAction(options.pipeline, {
+        action: getModelHistory,
+        input: { conversationId: body.conversationId },
+        request: baseRequest,
+        principal: staffPrincipal,
+      }),
+    ]);
     const workingSetAddendum = staffAssistantWorkingSetAddendum(
       conversation.toolRuns,
     );
@@ -695,8 +722,19 @@ export async function executeStaffAssistantChat(
               }),
               principal: staffPrincipal,
             });
+      const historyRows = persistedMessagesEndingWithAppend(
+        modelHistory.messages,
+        appended === undefined
+          ? undefined
+          : {
+              id: appended.id,
+              role: "user",
+              text: appended.body,
+              toolRuns: [],
+            },
+      );
       const modelMessages = staffAssistantModelMessagesFromPersisted(
-        persistedMessagesEndingWithAppend(conversation.messages, appended),
+        modelHistoryToPersisted(historyRows),
       );
       if (modelMessages.length === 0) {
         throw new ValidationError([
@@ -829,6 +867,7 @@ export async function executeStaffAssistantChat(
               .map((run) => run.actionName),
             historyMessageCount: turn.historyMessageCount,
             historyChars: turn.historyChars,
+            historyTraceChars: turn.historyTraceChars,
             toolResultBytesIn: turn.toolResultBytesIn,
             toolResultBytesOut: turn.toolResultBytesOut,
             toolsetHash: turn.toolsetHash,
@@ -907,6 +946,9 @@ async function persistAssistantTurn(options: {
           : {}),
         resultIds: [...run.resultIds],
         outcome: run.outcome,
+        ...(run.outcome === "success" && run.modelTrace !== undefined
+          ? { modelTrace: run.modelTrace }
+          : {}),
       })),
     },
     request: staffRequest({

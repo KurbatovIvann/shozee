@@ -195,6 +195,7 @@ describe("assistant schema slice", () => {
       "challenge_id",
       "result_ids",
       "outcome",
+      "model_trace",
       "created_at",
       "updated_at",
     ]);
@@ -223,6 +224,14 @@ describe("assistant schema slice", () => {
     expect(challengeId?.data_type).toBe("uuid");
     expect(challengeId?.is_nullable).toBe("YES");
 
+    const modelTrace = result.rows.find(
+      (row) =>
+        row.table_name === "assistant_tool_runs" &&
+        row.column_name === "model_trace",
+    );
+    expect(modelTrace?.udt_name).toBe("jsonb");
+    expect(modelTrace?.is_nullable).toBe("YES");
+
     const names = result.rows.map((row) => row.column_name);
     for (const forbidden of [
       "status",
@@ -248,6 +257,9 @@ describe("assistant schema slice", () => {
     expectTypeOf<
       (typeof assistantToolRuns.$inferSelect)["challengeId"]
     >().toEqualTypeOf<string | null>();
+    expectTypeOf<
+      (typeof assistantToolRuns.$inferSelect)["modelTrace"]
+    >().toEqualTypeOf<unknown | null>();
   });
 
   it("declares UNIQUE (company_id, id) and the conversation list index", async () => {
@@ -357,6 +369,12 @@ describe("assistant schema slice", () => {
     );
     expect(defs.get("assistant_tool_runs_outcome_check")).not.toContain(
       "'confirmed'",
+    );
+    expect(defs.get("assistant_tool_runs_model_trace_length_check")).toContain(
+      "22000",
+    );
+    expect(defs.get("assistant_tool_runs_model_trace_length_check")).toMatch(
+      /length\(.*model_trace.*::text\)/i,
     );
   });
 
@@ -533,6 +551,8 @@ describe("assistant schema slice", () => {
       outcome: "success",
     });
     expect(succeeded.resultIds).toEqual([orderId]);
+    expect(succeeded.modelTrace).toBeNull();
+    expect(pending.modelTrace).toBeNull();
 
     const failed = await insertToolRun({
       companyId: company.id,
@@ -542,6 +562,31 @@ describe("assistant schema slice", () => {
       outcome: "error",
     });
     expect(failed.resultIds).toEqual([]);
+
+    const traced = await insertToolRun({
+      companyId: company.id,
+      conversationId: conversation.id,
+      actionName: "orders.list",
+      toolCallId: "call_trace",
+      outcome: "success",
+      modelTrace: { kind: "page.summary", rows: [{ orderNumber: "12" }] },
+    });
+    expect(traced.modelTrace).toEqual({
+      kind: "page.summary",
+      rows: [{ orderNumber: "12" }],
+    });
+
+    await expectSqlState(
+      insertToolRun({
+        companyId: company.id,
+        conversationId: conversation.id,
+        actionName: "orders.list",
+        toolCallId: "call_trace_huge",
+        outcome: "success",
+        modelTrace: { pad: "x".repeat(22_000) },
+      }),
+      "23514",
+    );
 
     await expectSqlState(
       admin.query(

@@ -39,6 +39,7 @@ import {
 import {
   appendUserMessage,
   createConversation,
+  getConversation,
   recordAssistantTurn,
 } from "@showzy/assistant";
 import {
@@ -1961,6 +1962,108 @@ describe("POST /assistant/chat server-owned history (SHO-506)", () => {
     });
   });
 
+  it("SHO-510: stored modelTrace reaches the model as tool-call/result pairs", async () => {
+    const listTrace = {
+      kind: "page.summary",
+      requestedLimit: 3,
+      rows: [
+        {
+          orderId: randomUUID(),
+          orderNumber: "12",
+          name: "Катя",
+          totalGrossMinor: "120000",
+          currency: "UAH",
+        },
+        {
+          orderId: randomUUID(),
+          orderNumber: "13",
+          name: "Леха",
+          totalGrossMinor: "90000",
+          currency: "UAH",
+        },
+        {
+          orderId: randomUUID(),
+          orderNumber: "14",
+          name: "Оля",
+          totalGrossMinor: "45000",
+          currency: "UAH",
+        },
+      ],
+      hasMore: false,
+      nextCursor: null,
+    };
+    const model = new MockLanguageModelV3({
+      doStream: [mockTextStream("Найдорожче — №12.")],
+    });
+    const capturing = createCapturingLogger();
+    const app = createApp({
+      auth,
+      registry,
+      contractModules,
+      pipeline: { ...pipeline, logger: capturing.logger },
+      trustedProxies: [],
+      getPeerAddress: () => REAL_CLIENT,
+      pkiProxy: {
+        rateLimitStore: createInMemoryRateLimitStore(),
+        ipHmacSecret: "test-pki-proxy-ip-hmac-secret!!",
+      },
+      assistant: {
+        model: "mock",
+        gateModel: "mock-gate",
+        languageModel: model,
+      },
+    });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await staffInvoke(createConversation, {
+      title: "Trace follow-up",
+    });
+    await staffInvoke(appendUserMessage, {
+      conversationId: conversation.id,
+      body: "останні 3 замовлення",
+    });
+    await staffInvoke(recordAssistantTurn, {
+      conversationId: conversation.id,
+      body: "Ось останні три.",
+      toolRuns: [
+        {
+          actionName: "orders.list",
+          toolCallId: "call_list_trace",
+          resultIds: listTrace.rows.map((row) => row.orderId),
+          outcome: "success",
+          modelTrace: listTrace,
+        },
+      ],
+    });
+    const clientView = await staffInvoke(getConversation, {
+      conversationId: conversation.id,
+    });
+    expect(JSON.stringify(clientView)).not.toMatch(/modelTrace|model_trace/);
+
+    const response = await postChat(app, {
+      token,
+      companyId: kitIdentities.companies.a,
+      body: userChatBody(conversation.id, "яке з цих трьох найдорожче?"),
+    });
+    expect(response.status).toBe(200);
+    await readUiMessageSsePayloads(response);
+    const prompt = model.doStreamCalls[0]?.prompt ?? [];
+    const toolMessages = prompt.filter((part) => part.role === "tool");
+    expect(toolMessages.length).toBeGreaterThan(0);
+    const promptJson = JSON.stringify(prompt);
+    expect(promptJson).toContain("call_list_trace");
+    expect(promptJson).toContain("orders.list");
+    expect(promptJson).toContain("120000");
+    expect(promptJson).toContain("tool-call");
+    expect(promptJson).toContain("tool-result");
+    expect(promptJson).not.toContain("FORGED");
+
+    const usage = capturing
+      .entries()
+      .find((entry) => entry["msg"] === "staff assistant turn usage");
+    expect(typeof usage?.["history_trace_chars"]).toBe("number");
+    expect(Number(usage?.["history_trace_chars"])).toBeGreaterThan(0);
+  });
+
   it("accepts fresh and legacy bodies, rejects mixed incompletes, and resumes confirmation without a new user message", async () => {
     const customer = await staffInvoke(createCustomer, {
       name: "AI Resume No Append",
@@ -2260,6 +2363,7 @@ describe("POST /assistant/chat logs and /rpc channel", () => {
     expect(typeof usage?.["cache_hit_ratio"]).toBe("number");
     expect(typeof usage?.["history_message_count"]).toBe("number");
     expect(typeof usage?.["history_chars"]).toBe("number");
+    expect(typeof usage?.["history_trace_chars"]).toBe("number");
     expect(typeof usage?.["tool_result_bytes_in"]).toBe("number");
     expect(typeof usage?.["tool_result_bytes_out"]).toBe("number");
     expect(typeof usage?.["toolset_hash"]).toBe("string");

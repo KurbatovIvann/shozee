@@ -72,6 +72,12 @@ export async function recordStaffAssistantTurn(env: {
               challengeId: run.challengeId,
               resultIds: run.resultIds,
               outcome: run.outcome,
+              modelTrace:
+                run.outcome === "success" &&
+                run.modelTrace !== undefined &&
+                run.modelTrace !== null
+                  ? run.modelTrace
+                  : null,
             })),
           )
           .returning(toolRunColumns);

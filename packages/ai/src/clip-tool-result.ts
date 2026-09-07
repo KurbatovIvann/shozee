@@ -1,8 +1,9 @@
 /**
  * Clip large tool results before they are fed back into the model within
- * a turn (SHO-341 / SHO-346). Persistence still uses the unclipped
- * execute output. Oversized previews keep identity fields, never
- * `{ truncated: true }` alone.
+ * a turn (SHO-341 / SHO-346). ADR-0034 `model_trace` persists this same
+ * post-clip façade output, not the unclipped registry payload. Result
+ * ids still come from wrapExecute's registry output. Oversized previews
+ * keep identity fields, never `{ truncated: true }` alone.
  */
 import {
   ASSISTANT_TOOL_CLIPPED_STATUS,
@@ -156,6 +157,14 @@ function shrinkRow(value: unknown): unknown {
   return value;
 }
 
+export function shrinkStaffAssistantTracePreview(value: unknown): unknown {
+  return shrinkPreview(value);
+}
+
+export function compactStaffAssistantTraceIdentity(value: unknown): unknown {
+  return compactIdentity(value);
+}
+
 function shrinkPreview(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value
@@ -206,11 +215,11 @@ export function clipStaffAssistantToolResult(output: unknown): unknown {
   let omitted = clipped.omitted;
 
   if (jsonLength(preview) > STAFF_ASSISTANT_CLIP_JSON_MAX) {
-    preview = shrinkPreview(preview);
+    preview = shrinkStaffAssistantTracePreview(preview);
     omitted = Math.max(omitted, 1);
   }
   if (jsonLength(preview) > STAFF_ASSISTANT_CLIP_JSON_MAX) {
-    preview = compactIdentity(preview);
+    preview = compactStaffAssistantTraceIdentity(preview);
     omitted = Math.max(omitted, 1);
   }
 

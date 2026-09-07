@@ -15,10 +15,38 @@ import {
   toolRunViewSchema,
 } from "./conversation-view.contract.js";
 
+/** Matches `STAFF_ASSISTANT_CLIP_JSON_MAX` and the `model_trace` CHECK. */
+export const MODEL_TRACE_JSON_MAX = 22_000;
+
+function modelTraceJsonLength(value: unknown): number {
+  try {
+    return JSON.stringify(value).length;
+  } catch {
+    return MODEL_TRACE_JSON_MAX + 1;
+  }
+}
+
+export const recordToolRunInputSchema = toolRunInputSchema
+  .extend({
+    modelTrace: z.unknown().optional(),
+  })
+  .superRefine((run, ctx) => {
+    if (run.modelTrace === undefined) {
+      return;
+    }
+    if (modelTraceJsonLength(run.modelTrace) > MODEL_TRACE_JSON_MAX) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["modelTrace"],
+        message: `modelTrace JSON must be at most ${String(MODEL_TRACE_JSON_MAX)} characters.`,
+      });
+    }
+  });
+
 export const recordAssistantTurnInputSchema = z.strictObject({
   conversationId: z.uuid(),
   body: messageBodySchema,
-  toolRuns: z.array(toolRunInputSchema).max(TOOL_RUNS_MAX).default([]),
+  toolRuns: z.array(recordToolRunInputSchema).max(TOOL_RUNS_MAX).default([]),
 });
 
 export const recordAssistantTurnOutputSchema = z.object({
@@ -29,7 +57,7 @@ export const recordAssistantTurnOutputSchema = z.object({
 
 export const recordAssistantTurnContract = defineActionContract({
   name: "assistant.recordAssistantTurn",
-  description: `${STAFF_CONVERSATION_AUTHOR_INVARIANT} Record an assistant turn on a conversation the caller authored: assistant text plus tool-run rows (action name, toolCallId, optional challengeId, result ids, outcome). Outcome is success, error, confirmation_required, or choice_required. challengeId is the opaque interaction id for confirmation or choice. Result ids are traces, not order or document status. Company id is never input. Internal — not mounted on HTTP. Re-submitting the identical payload with the same idempotency key returns the already-recorded turn and does not insert duplicates.`,
+  description: `${STAFF_CONVERSATION_AUTHOR_INVARIANT} Record an assistant turn on a conversation the caller authored: assistant text plus tool-run rows (action name, toolCallId, optional challengeId, result ids, outcome, optional modelTrace). Outcome is success, error, confirmation_required, or choice_required. challengeId is the opaque interaction id for confirmation or choice. Result ids are traces, not order or document status. modelTrace is ADR-0034 prompt state: the post-clip façade output (JSON length at most 22000), stored only for successful runs. Company id is never input. Internal — not mounted on HTTP. Re-submitting the identical payload with the same idempotency key returns the already-recorded turn and does not insert duplicates.`,
   principal: "staff",
   transport: "internal",
   input: recordAssistantTurnInputSchema,

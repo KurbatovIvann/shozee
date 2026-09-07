@@ -337,6 +337,13 @@
       "when": 1788704877905,
       "tag": "0047_stiff_marten_broadcloak",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1788796608979,
+      "tag": "0048_overconfident_black_queen",
+      "breakpoints": true
     }
   ]
 }

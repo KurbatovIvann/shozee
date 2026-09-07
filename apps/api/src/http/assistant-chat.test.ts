@@ -35,6 +35,7 @@ describe("staff AI tool manifest (SHO-322)", () => {
     expect(names).not.toContain("docSigning.complete");
     expect(names).not.toContain("assistant.getStaffActor");
     expect(names).not.toContain("assistant.recordAssistantTurn");
+    expect(names).not.toContain("assistant.getModelHistory");
     expect(names).not.toContain("assistant.appendUserMessage");
     expect(names).not.toContain("pricing.resolveProductPrices");
     expect(names.some((name) => name.startsWith("docSigning."))).toBe(false);

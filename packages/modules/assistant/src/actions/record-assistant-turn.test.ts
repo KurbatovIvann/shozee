@@ -5,6 +5,7 @@ import {
   TOOL_RUNS_MAX,
 } from "./conversation-view.contract.js";
 import {
+  MODEL_TRACE_JSON_MAX,
   recordAssistantTurnContract,
   recordAssistantTurnInputSchema,
 } from "./record-assistant-turn.contract.js";
@@ -105,6 +106,40 @@ describe("assistant.recordAssistantTurn contract", () => {
           toolCallId: `call_${String(index)}`,
           outcome: "success" as const,
         })),
+      }).success,
+    ).toBe(false);
+  });
+
+  it("accepts optional bounded modelTrace and rejects oversized JSON", () => {
+    const conversationId = "11111111-1111-4111-8111-111111111111";
+    const parsed = recordAssistantTurnInputSchema.parse({
+      conversationId,
+      body: "Listed.",
+      toolRuns: [
+        {
+          actionName: "orders.list",
+          toolCallId: "call_trace",
+          outcome: "success",
+          modelTrace: { kind: "page.summary", rows: [{ orderNumber: "12" }] },
+        },
+      ],
+    });
+    expect(parsed.toolRuns[0]?.modelTrace).toEqual({
+      kind: "page.summary",
+      rows: [{ orderNumber: "12" }],
+    });
+    expect(
+      recordAssistantTurnInputSchema.safeParse({
+        conversationId,
+        body: "Listed.",
+        toolRuns: [
+          {
+            actionName: "orders.list",
+            toolCallId: "call_huge",
+            outcome: "success",
+            modelTrace: { pad: "x".repeat(MODEL_TRACE_JSON_MAX) },
+          },
+        ],
       }).success,
     ).toBe(false);
   });

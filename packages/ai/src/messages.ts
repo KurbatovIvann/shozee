@@ -3,6 +3,12 @@ import { z } from "zod";
 
 import { STAFF_ASSISTANT_CACHE_PROVIDER_OPTIONS } from "./anthropic-options.js";
 import { confirmationFromChatPart } from "./confirmation.js";
+import {
+  budgetStaffAssistantToolRuns,
+  staffAssistantToolResultChars,
+  staffAssistantToolResultOutput,
+  type StaffAssistantPersistedMessage,
+} from "./model-trace.js";
 import { staffAssistantLocaleSchema } from "./presenter.js";
 
 /**
@@ -154,24 +160,60 @@ export function resolveStaffAssistantChatUserMessage(
   return lastStaffAssistantUserMessage(body.messages);
 }
 
-export interface StaffAssistantPersistedMessage {
-  readonly role: "user" | "assistant";
-  readonly body: string;
-}
+export type {
+  StaffAssistantPersistedMessage,
+  StaffAssistantPersistedToolRun,
+} from "./model-trace.js";
 
 /**
  * Model history from persisted conversation rows. Client `messages` are
- * never a history source (SHO-506).
+ * never a history source (SHO-506). Tool-call/result parts come from
+ * ADR-0034 `modelTrace` under the read-time token budget (SHO-510).
  */
 export function staffAssistantModelMessagesFromPersisted(
   messages: readonly StaffAssistantPersistedMessage[],
 ): ModelMessage[] {
-  return applyStaffAssistantHistoryWindow(
-    messages.map((message) => ({
-      role: message.role,
-      content: message.body,
-    })),
+  const budgeted = budgetStaffAssistantToolRuns(messages);
+  const expanded: ModelMessage[] = [];
+  for (const message of budgeted) {
+    expanded.push(...modelMessagesFromPersistedRow(message));
+  }
+  return applyStaffAssistantHistoryWindow(expanded);
+}
+
+function modelMessagesFromPersistedRow(
+  message: StaffAssistantPersistedMessage,
+): ModelMessage[] {
+  const tracedRuns = (message.toolRuns ?? []).filter(
+    (run) => run.modelTrace !== null && run.modelTrace !== undefined,
   );
+  if (message.role === "user" || tracedRuns.length === 0) {
+    const body =
+      message.role === "assistant" && message.body === ""
+        ? STAFF_ASSISTANT_EMPTY_ASSISTANT_HISTORY_PLACEHOLDER
+        : message.body;
+    return [{ role: message.role, content: body }];
+  }
+  const textParts =
+    message.body === ""
+      ? []
+      : ([{ type: "text" as const, text: message.body }] as const);
+  const toolCalls = tracedRuns.map((run) => ({
+    type: "tool-call" as const,
+    toolCallId: run.toolCallId,
+    toolName: run.action,
+    input: {},
+  }));
+  const toolResults = tracedRuns.map((run) => ({
+    type: "tool-result" as const,
+    toolCallId: run.toolCallId,
+    toolName: run.action,
+    output: staffAssistantToolResultOutput(run.modelTrace),
+  }));
+  return [
+    { role: "assistant", content: [...textParts, ...toolCalls] },
+    { role: "tool", content: toolResults },
+  ];
 }
 
 /**
@@ -213,17 +255,21 @@ function withHistoryCacheBreakpoint(message: ModelMessage): ModelMessage {
 }
 
 /**
- * Keep the last 8 text turns and cache the previous assistant message so
- * the growing prefix can hit within the 5-minute TTL. The newest user
- * turn is never a cache breakpoint.
+ * Keep the last 8 user/assistant text turns. Tool messages stay attached
+ * to the assistant turn that produced them so reconstructed
+ * tool-call/result pairs remain valid. Cache the last completed history
+ * message (assistant or tool) so the growing prefix can hit within the
+ * 5-minute TTL. The newest user turn is never a cache breakpoint. A
+ * breakpoint is not a cache-hit guarantee — sliding windows and digest
+ * conversion change prefixes.
  */
 export function applyStaffAssistantHistoryWindow(
   messages: readonly ModelMessage[],
 ): ModelMessage[] {
-  const windowed =
-    messages.length > STAFF_ASSISTANT_MODEL_HISTORY_MAX
-      ? messages.slice(-STAFF_ASSISTANT_MODEL_HISTORY_MAX)
-      : [...messages];
+  const windowed = windowKeepingToolPairs(
+    messages,
+    STAFF_ASSISTANT_MODEL_HISTORY_MAX,
+  );
   if (windowed.length < 2) {
     return windowed;
   }
@@ -234,12 +280,43 @@ export function applyStaffAssistantHistoryWindow(
     last === undefined ||
     last.role !== "user" ||
     prefix === undefined ||
-    prefix.role !== "assistant"
+    (prefix.role !== "assistant" && prefix.role !== "tool")
   ) {
     return windowed;
   }
   windowed[prefixIndex] = withHistoryCacheBreakpoint(prefix);
   return windowed;
+}
+
+function windowKeepingToolPairs(
+  messages: readonly ModelMessage[],
+  maxTextTurns: number,
+): ModelMessage[] {
+  let textTurns = 0;
+  for (const message of messages) {
+    if (message.role === "user" || message.role === "assistant") {
+      textTurns += 1;
+    }
+  }
+  if (textTurns <= maxTextTurns) {
+    return [...messages];
+  }
+  let seen = 0;
+  let start = 0;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message === undefined) {
+      continue;
+    }
+    if (message.role === "user" || message.role === "assistant") {
+      seen += 1;
+      if (seen === maxTextTurns) {
+        start = index;
+        break;
+      }
+    }
+  }
+  return messages.slice(start);
 }
 
 function modelContentChars(content: ModelMessage["content"]): number {
@@ -255,16 +332,32 @@ function modelContentChars(content: ModelMessage["content"]): number {
   return chars;
 }
 
-/** Count and character length of model messages (text parts only). */
+function modelTraceChars(content: ModelMessage["content"]): number {
+  if (typeof content === "string") {
+    return 0;
+  }
+  let chars = 0;
+  for (const part of content) {
+    if (part.type === "tool-result") {
+      chars += staffAssistantToolResultChars(part.output);
+    }
+  }
+  return chars;
+}
+
+/** Count and character length of model messages (text parts and traces). */
 export function staffAssistantHistoryStats(messages: readonly ModelMessage[]): {
   readonly messageCount: number;
   readonly chars: number;
+  readonly traceChars: number;
 } {
   let chars = 0;
+  let traceChars = 0;
   for (const message of messages) {
     chars += modelContentChars(message.content);
+    traceChars += modelTraceChars(message.content);
   }
-  return { messageCount: messages.length, chars };
+  return { messageCount: messages.length, chars, traceChars };
 }
 
 /**
