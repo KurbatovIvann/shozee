@@ -8,7 +8,8 @@
  *
  * ON DELETE: `user_id → user` is RESTRICT (files/chat staff-user
  * convention). Composite FKs to conversations are CASCADE so deleting a
- * conversation removes its messages and tool runs. `company_id →
+ * conversation removes its messages and tool runs, and `assistant_tool_runs
+ * → assistant_messages` is CASCADE for the same reason. `company_id →
  * companies` stays CASCADE for tenant wipe.
  */
 import { sql } from "drizzle-orm";
@@ -104,7 +105,12 @@ export const assistantMessages = pgTable(
  * model already saw. Nullable; no client renders it; CHECK
  * `length(model_trace::text) <= 22000`. `tool_name` is the live ToolSet
  * key (`orders_list_page`) for reconstruction; `action_name` stays the
- * executeAction registry identity.
+ * executeAction registry identity. `message_id` is the assistant turn that
+ * produced the run — recorded in the same transaction as that message, so
+ * model-history assembly joins on it instead of inferring the turn from
+ * `created_at` (SHO-510 review: `now()` is transaction time, and a
+ * confirmation resume writes two assistant messages with no user message
+ * between them).
  */
 export const assistantToolRuns = pgTable(
   "assistant_tool_runs",
@@ -112,6 +118,7 @@ export const assistantToolRuns = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     companyId: tenantCompanyId(),
     conversationId: uuid("conversation_id").notNull(),
+    messageId: uuid("message_id").notNull(),
     actionName: text("action_name").notNull(),
     toolCallId: text("tool_call_id").notNull(),
     challengeId: uuid("challenge_id"),
@@ -130,6 +137,10 @@ export const assistantToolRuns = pgTable(
       table.companyId,
       table.conversationId,
     ),
+    index("assistant_tool_runs_company_message_idx").on(
+      table.companyId,
+      table.messageId,
+    ),
     foreignKey({
       name: "assistant_tool_runs_conversations_company_fk",
       columns: [table.companyId, table.conversationId],
@@ -137,6 +148,11 @@ export const assistantToolRuns = pgTable(
         assistantConversations.companyId,
         assistantConversations.id,
       ],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "assistant_tool_runs_messages_company_fk",
+      columns: [table.companyId, table.messageId],
+      foreignColumns: [assistantMessages.companyId, assistantMessages.id],
     }).onDelete("cascade"),
     check(
       "assistant_tool_runs_outcome_check",

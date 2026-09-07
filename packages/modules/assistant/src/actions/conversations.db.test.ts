@@ -1265,8 +1265,8 @@ describe("assistant staff conversation actions", () => {
   });
 
   it("keeps runs recorded with the oldest windowed message", async () => {
-    // The run read is bounded by the oldest windowed message's created_at,
-    // which is the same transaction timestamp as that message's own runs.
+    // The run read is scoped to the windowed message ids, so the oldest
+    // message in the window must still bring its own runs.
     const conversation = await kit.invoke(createConversation, {
       title: "Window boundary trace",
     });

@@ -5,6 +5,8 @@
  */
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import { eq } from "drizzle-orm";
 import pg from "pg";
@@ -110,14 +112,46 @@ async function insertMessage(values: typeof assistantMessages.$inferInsert) {
   return row;
 }
 
-async function insertToolRun(values: typeof assistantToolRuns.$inferInsert) {
+/**
+ * `message_id` is NOT NULL: a run is always recorded with the assistant
+ * turn that produced it. Cases that do not care which turn get a fresh
+ * assistant message in the same conversation.
+ */
+async function insertToolRun(
+  values: Omit<typeof assistantToolRuns.$inferInsert, "messageId"> & {
+    messageId?: string;
+  },
+) {
+  const messageId =
+    values.messageId ??
+    (
+      await insertMessage({
+        companyId: values.companyId,
+        conversationId: values.conversationId,
+        role: "assistant",
+        body: "turn",
+      })
+    ).id;
   const rows = await dbClient.db
     .insert(assistantToolRuns)
-    .values(values)
+    .values({ ...values, messageId })
     .returning();
   const row = rows[0];
   assert.ok(row);
   return row;
+}
+
+/** The `message_id` backfill statement shipped in migration 0050. */
+function backfillMessageIdStatement(): string {
+  const path = fileURLToPath(
+    new URL("../migrations/0050_panoramic_prodigy.sql", import.meta.url),
+  );
+  const statement = readFileSync(path, "utf8")
+    .split("--> statement-breakpoint")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith("UPDATE"));
+  assert.ok(statement, "0050 must ship a message_id backfill UPDATE");
+  return statement;
 }
 
 async function foreignKeysFor(
@@ -199,6 +233,7 @@ describe("assistant schema slice", () => {
       "updated_at",
       "model_trace",
       "tool_name",
+      "message_id",
     ]);
 
     const resultIds = result.rows.find(
@@ -331,6 +366,12 @@ describe("assistant schema slice", () => {
     expect(defs.get("assistant_tool_runs_conversations_company_fk")).toContain(
       "ON DELETE CASCADE",
     );
+    expect(defs.get("assistant_tool_runs_messages_company_fk")).toContain(
+      "(company_id, message_id) REFERENCES assistant_messages(company_id, id)",
+    );
+    expect(defs.get("assistant_tool_runs_messages_company_fk")).toContain(
+      "ON DELETE CASCADE",
+    );
 
     const joined = [...defs.values()].join("\n");
     expect(joined).not.toMatch(/REFERENCES (orders|documents|files)\b/);
@@ -432,17 +473,61 @@ describe("assistant schema slice", () => {
     const companyA = await insertCompany();
     const companyB = await insertCompany();
     const userId = await insertUser();
+    const conversationA = await insertConversation({
+      companyId: companyA.id,
+      userId,
+    });
     const conversationB = await insertConversation({
       companyId: companyB.id,
       userId,
+    });
+    // Own-tenant message, so the conversation FK is what rejects the row.
+    const messageA = await insertMessage({
+      companyId: companyA.id,
+      conversationId: conversationA.id,
+      role: "assistant",
+      body: "own turn",
     });
 
     await expectSqlState(
       insertToolRun({
         companyId: companyA.id,
         conversationId: conversationB.id,
+        messageId: messageA.id,
         actionName: "orders.list",
         toolCallId: "call_cross",
+        outcome: "success",
+      }),
+      "23503",
+    );
+  });
+
+  it("rejects a tool run that points at another tenant's message", async () => {
+    const companyA = await insertCompany();
+    const companyB = await insertCompany();
+    const userId = await insertUser();
+    const conversationA = await insertConversation({
+      companyId: companyA.id,
+      userId,
+    });
+    const conversationB = await insertConversation({
+      companyId: companyB.id,
+      userId,
+    });
+    const messageB = await insertMessage({
+      companyId: companyB.id,
+      conversationId: conversationB.id,
+      role: "assistant",
+      body: "foreign turn",
+    });
+
+    await expectSqlState(
+      insertToolRun({
+        companyId: companyA.id,
+        conversationId: conversationA.id,
+        messageId: messageB.id,
+        actionName: "orders.list",
+        toolCallId: "call_cross_message",
         outcome: "success",
       }),
       "23503",
@@ -627,6 +712,105 @@ describe("assistant schema slice", () => {
       ),
       "42804",
     );
+  });
+
+  it("backfills message_id from the newest assistant message at or before the run", async () => {
+    // The shipped 0050 statement, run verbatim against rows unlinked the way
+    // pre-SHO-510 rows were. A confirmation resume writes two assistant
+    // messages with no user message between them, which is the shape the
+    // created_at heuristic used to get wrong.
+    const company = await insertCompany();
+    const userId = await insertUser();
+    const conversation = await insertConversation({
+      companyId: company.id,
+      userId,
+    });
+    const paused = await insertMessage({
+      companyId: company.id,
+      conversationId: conversation.id,
+      role: "assistant",
+      body: "Confirm?",
+    });
+    const pausedRun = await insertToolRun({
+      companyId: company.id,
+      conversationId: conversation.id,
+      messageId: paused.id,
+      actionName: "customers.deleteCustomer",
+      toolCallId: "call_backfill_pause",
+      outcome: "confirmation_required",
+    });
+    const resumed = await insertMessage({
+      companyId: company.id,
+      conversationId: conversation.id,
+      role: "assistant",
+      body: "Deleted.",
+    });
+    const resumedRun = await insertToolRun({
+      companyId: company.id,
+      conversationId: conversation.id,
+      messageId: resumed.id,
+      actionName: "customers.deleteCustomer",
+      toolCallId: "call_backfill_resume",
+      outcome: "success",
+    });
+
+    await admin.query(
+      `ALTER TABLE assistant_tool_runs ALTER COLUMN message_id DROP NOT NULL`,
+    );
+    try {
+      await admin.query(
+        `UPDATE assistant_tool_runs SET message_id = NULL WHERE id = ANY($1::uuid[])`,
+        [[pausedRun.id, resumedRun.id]],
+      );
+      await admin.query(backfillMessageIdStatement());
+    } finally {
+      await admin.query(
+        `ALTER TABLE assistant_tool_runs ALTER COLUMN message_id SET NOT NULL`,
+      );
+    }
+
+    const relinked = await dbClient.db
+      .select()
+      .from(assistantToolRuns)
+      .where(eq(assistantToolRuns.conversationId, conversation.id));
+    const byToolCallId = new Map(
+      relinked.map((row) => [row.toolCallId, row.messageId]),
+    );
+    expect(byToolCallId.get("call_backfill_pause")).toBe(paused.id);
+    expect(byToolCallId.get("call_backfill_resume")).toBe(resumed.id);
+  });
+
+  it("cascades tool runs when their assistant message is deleted", async () => {
+    const company = await insertCompany();
+    const userId = await insertUser();
+    const conversation = await insertConversation({
+      companyId: company.id,
+      userId,
+    });
+    const message = await insertMessage({
+      companyId: company.id,
+      conversationId: conversation.id,
+      role: "assistant",
+      body: "listed",
+    });
+    await insertToolRun({
+      companyId: company.id,
+      conversationId: conversation.id,
+      messageId: message.id,
+      actionName: "orders.list",
+      toolCallId: "call_message_cascade",
+      outcome: "success",
+    });
+
+    await dbClient.db
+      .delete(assistantMessages)
+      .where(eq(assistantMessages.id, message.id));
+    expect(
+      await dbClient.db
+        .select()
+        .from(assistantToolRuns)
+        .where(eq(assistantToolRuns.conversationId, conversation.id)),
+    ).toEqual([]);
   });
 
   it("cascades conversation deletion and restricts deleting a staff user with conversations", async () => {

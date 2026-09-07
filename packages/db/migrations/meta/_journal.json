@@ -351,6 +351,13 @@
       "when": 1788800771609,
       "tag": "0049_jazzy_ikaris",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1788806929856,
+      "tag": "0050_panoramic_prodigy",
+      "breakpoints": true
     }
   ]
 }
