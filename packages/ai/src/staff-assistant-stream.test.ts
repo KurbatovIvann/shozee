@@ -22,7 +22,7 @@ import {
   toProviderToolName,
 } from "./action-tool.js";
 import {
-  STAFF_ASSISTANT_CACHE_CONTROL,
+  STAFF_ASSISTANT_STATIC_CACHE_CONTROL,
   STAFF_ASSISTANT_THINKING_DISABLED,
 } from "./anthropic-options.js";
 import {
@@ -34,6 +34,7 @@ import {
   STAFF_ASSISTANT_CONFIRMATION_FALLBACK_TEXT,
 } from "./confirmation.js";
 import {
+  STAFF_ASSISTANT_EMPTY_SPOKEN_FALLBACK,
   STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK,
   STAFF_ASSISTANT_TOOL_ERROR_FALLBACK,
 } from "./spoken-reply.js";
@@ -585,7 +586,7 @@ describe("streamStaffAssistantChat", () => {
       content: staffAssistantSystemPrompt,
     });
     expect(anthropicCacheControl(systemMessages[0])).toEqual(
-      STAFF_ASSISTANT_CACHE_CONTROL,
+      STAFF_ASSISTANT_STATIC_CACHE_CONTROL,
     );
     expect(anthropicCacheControl(systemMessages[1])).toBeUndefined();
     expect(JSON.stringify(systemMessages[0])).not.toContain(
@@ -622,7 +623,7 @@ describe("streamStaffAssistantChat", () => {
       tools.some((entry) => isRecord(entry) && entry["name"] === "orders_list"),
     ).toBe(false);
     expect(anthropicCacheControl(counts)).toEqual(
-      STAFF_ASSISTANT_CACHE_CONTROL,
+      STAFF_ASSISTANT_STATIC_CACHE_CONTROL,
     );
     expect(anthropicDeferLoading(remove)).toBe(true);
     expect(anthropicDeferLoading(page)).toBeUndefined();
@@ -678,7 +679,7 @@ describe("streamStaffAssistantChat", () => {
     );
     expect(systemMessages).toHaveLength(2);
     expect(anthropicCacheControl(systemMessages[0])).toEqual(
-      STAFF_ASSISTANT_CACHE_CONTROL,
+      STAFF_ASSISTANT_STATIC_CACHE_CONTROL,
     );
     expect(anthropicCacheControl(systemMessages[1])).toBeUndefined();
     expect(JSON.stringify(systemMessages[0])).not.toContain(productId);
@@ -1457,7 +1458,12 @@ describe("streamStaffAssistantChat", () => {
     expect(turn.text).not.toContain("|");
     expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
     expect(payloadText).not.toContain("|");
-    expect(payloadText).not.toContain(STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK);
+    expect(payloadText).not.toContain(
+      STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK.uk,
+    );
+    expect(payloadText).not.toContain(
+      STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK.en,
+    );
     expect(turn.toolRuns[0]?.outcome).toBe("success");
   });
 
@@ -1503,10 +1509,16 @@ describe("streamStaffAssistantChat", () => {
       "confirmation_required",
     ]);
     expect(turn.text).toBe(STAFF_ASSISTANT_CONFIRMATION_FALLBACK_TEXT);
-    expect(turn.text).not.toBe(STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK);
+    expect(turn.text).not.toBe(STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK.uk);
+    expect(turn.text).not.toBe(STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK.en);
     expect(turn.text).not.toBe("Done.");
     expect(turn.text).not.toMatch(/action is done|action done/i);
-    expect(payloadText).not.toContain(STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK);
+    expect(payloadText).not.toContain(
+      STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK.uk,
+    );
+    expect(payloadText).not.toContain(
+      STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK.en,
+    );
     expect(payloadText).not.toContain("| order");
     expect(payloadText).not.toContain("NoObjectGeneratedError");
     expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
@@ -1686,7 +1698,7 @@ describe("streamStaffAssistantChat", () => {
     const payloads = await readUiMessageSsePayloads(response);
     const turn = await completion;
     const payloadText = JSON.stringify(payloads);
-    expect(turn.text).toBe("Done.");
+    expect(turn.text).toBe(STAFF_ASSISTANT_EMPTY_SPOKEN_FALLBACK.uk);
     expect(turn.text).not.toBe("SECRETX");
     expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
     expect(payloadText).not.toContain('{"spo');
@@ -1709,7 +1721,7 @@ describe("streamStaffAssistantChat", () => {
     const payloads = await readUiMessageSsePayloads(response);
     const turn = await completion;
     const payloadText = JSON.stringify(payloads);
-    expect(turn.text).toBe(STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK);
+    expect(turn.text).toBe(STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK.uk);
     expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
     expect(payloadText).not.toContain("| order");
     expect(payloadText).not.toContain("**#1**");
@@ -2633,7 +2645,8 @@ describe("streamStaffAssistantChat", () => {
       expect(turn.toolRuns[0]?.outcome).toBe("error");
       expect(turn.text).toBe(macaronsConflictMessage);
       expect(turn.text).not.toBe("Done.");
-      expect(turn.text).not.toBe(STAFF_ASSISTANT_TOOL_ERROR_FALLBACK);
+      expect(turn.text).not.toBe(STAFF_ASSISTANT_TOOL_ERROR_FALLBACK.uk);
+      expect(turn.text).not.toBe(STAFF_ASSISTANT_TOOL_ERROR_FALLBACK.en);
       expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
       expect(sseVisibleTextFromPayloads(payloads).length).toBeGreaterThan(0);
     }

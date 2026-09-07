@@ -5,7 +5,9 @@ import {
   createHoldCandidateReplyTextTransform,
   spokenContainsMarkdownDump,
   spokenTurnText,
+  staffAssistantSpokenFallbackLocale,
   usableStaffAssistantModelText,
+  STAFF_ASSISTANT_EMPTY_SPOKEN_FALLBACK,
   STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK,
   STAFF_ASSISTANT_TOOL_ERROR_FALLBACK,
 } from "./spoken-reply.js";
@@ -25,6 +27,81 @@ describe("usableStaffAssistantModelText", () => {
   });
 });
 
+describe("staff assistant spoken fallback locale", () => {
+  it("looks up uk, en, and defaults to uk", () => {
+    expect(staffAssistantSpokenFallbackLocale("uk")).toBe("uk");
+    expect(staffAssistantSpokenFallbackLocale("en")).toBe("en");
+    expect(staffAssistantSpokenFallbackLocale(undefined)).toBe("uk");
+    expect(staffAssistantSpokenFallbackLocale("fr")).toBe("uk");
+    expect(STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK.uk).toBe(
+      "Коротко про результат.",
+    );
+    expect(STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK.en).toBe(
+      "Here is a short summary of the result.",
+    );
+    expect(STAFF_ASSISTANT_TOOL_ERROR_FALLBACK.uk).toBe(
+      "Не вдалося завершити цей хід.",
+    );
+    expect(STAFF_ASSISTANT_TOOL_ERROR_FALLBACK.en).toBe(
+      "The assistant could not complete this turn.",
+    );
+    expect(STAFF_ASSISTANT_EMPTY_SPOKEN_FALLBACK.uk).toBe("Готово.");
+    expect(STAFF_ASSISTANT_EMPTY_SPOKEN_FALLBACK.en).toBe("Done.");
+  });
+
+  it("uses Ukrainian fallbacks for locale uk and when omitted", () => {
+    expect(
+      spokenTurnText({
+        rawText: "",
+        runs: [{ outcome: "success" }],
+        locale: "uk",
+      }),
+    ).toBe(STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK.uk);
+    expect(
+      spokenTurnText({
+        rawText: "",
+        runs: [{ outcome: "success" }],
+      }),
+    ).toBe(STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK.uk);
+    expect(
+      spokenTurnText({
+        rawText: "",
+        runs: [{ outcome: "error" }],
+      }),
+    ).toBe(STAFF_ASSISTANT_TOOL_ERROR_FALLBACK.uk);
+    expect(
+      spokenTurnText({
+        rawText: '{"spoken":"x"}',
+        runs: [],
+      }),
+    ).toBe(STAFF_ASSISTANT_EMPTY_SPOKEN_FALLBACK.uk);
+  });
+
+  it("uses English fallbacks for locale en", () => {
+    expect(
+      spokenTurnText({
+        rawText: "",
+        runs: [{ outcome: "success" }],
+        locale: "en",
+      }),
+    ).toBe(STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK.en);
+    expect(
+      spokenTurnText({
+        rawText: "",
+        runs: [{ outcome: "error" }],
+        locale: "en",
+      }),
+    ).toBe(STAFF_ASSISTANT_TOOL_ERROR_FALLBACK.en);
+    expect(
+      spokenTurnText({
+        rawText: '{"spoken":"x"}',
+        runs: [],
+        locale: "en",
+      }),
+    ).toBe(STAFF_ASSISTANT_EMPTY_SPOKEN_FALLBACK.en);
+  });
+});
+
 describe("spokenTurnText", () => {
   it("keeps plain prose", () => {
     expect(
@@ -40,18 +117,21 @@ describe("spokenTurnText", () => {
       spokenTurnText({
         rawText: '{"spoken":"Albina has 4 orders this week."}',
         runs: [{ outcome: "success" }],
+        locale: "en",
       }),
-    ).toBe(STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK);
+    ).toBe(STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK.en);
     expect(
       spokenTurnText({
         rawText: '{"spoken":"x"}',
         runs: [],
+        locale: "en",
       }),
-    ).toBe("Done.");
+    ).toBe(STAFF_ASSISTANT_EMPTY_SPOKEN_FALLBACK.en);
     expect(
       spokenTurnText({
         rawText: '{"spoken":"x"}',
         runs: [],
+        locale: "en",
       }),
     ).not.toBe("x");
   });
@@ -64,14 +144,16 @@ describe("spokenTurnText", () => {
       spokenTurnText({
         rawText: "| order | total |\n| **new** | 1 |",
         runs: [{ outcome: "success" }],
+        locale: "en",
       }),
-    ).toBe(STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK);
+    ).toBe(STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK.en);
     expect(
       spokenTurnText({
         rawText: "",
         runs: [{ outcome: "success" }],
+        locale: "en",
       }),
-    ).toBe(STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK);
+    ).toBe(STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK.en);
   });
 
   it("lets confirmation_required win over markdown fail-open after a successful list", () => {
@@ -86,7 +168,13 @@ describe("spokenTurnText", () => {
         rawText: "| order | total |\n| **new** | 1 |",
         runs: [{ outcome: "success" }, { outcome: "confirmation_required" }],
       }),
-    ).not.toBe(STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK);
+    ).not.toBe(STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK.en);
+    expect(
+      spokenTurnText({
+        rawText: "| order | total |\n| **new** | 1 |",
+        runs: [{ outcome: "success" }, { outcome: "confirmation_required" }],
+      }),
+    ).not.toBe(STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK.uk);
   });
 
   it("keeps the HITL confirmation fallback when the model wrote prose", () => {
@@ -120,13 +208,14 @@ describe("spokenTurnText", () => {
         runs: [{ outcome: "error" }],
         toolErrorMessage: message,
       }),
-    ).not.toBe("Done.");
+    ).not.toBe(STAFF_ASSISTANT_EMPTY_SPOKEN_FALLBACK.en);
     expect(
       spokenTurnText({
         rawText: "",
         runs: [{ outcome: "error" }],
+        locale: "en",
       }),
-    ).toBe(STAFF_ASSISTANT_TOOL_ERROR_FALLBACK);
+    ).toBe(STAFF_ASSISTANT_TOOL_ERROR_FALLBACK.en);
   });
 
   it("keeps model prose over the typed tool error message", () => {

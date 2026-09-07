@@ -8,19 +8,52 @@
  */
 import { STAFF_ASSISTANT_CONFIRMATION_FALLBACK_TEXT } from "./confirmation.js";
 
+export const STAFF_ASSISTANT_SPOKEN_FALLBACK_LOCALES = ["uk", "en"] as const;
+export type StaffAssistantSpokenFallbackLocale =
+  (typeof STAFF_ASSISTANT_SPOKEN_FALLBACK_LOCALES)[number];
+export const STAFF_ASSISTANT_SPOKEN_FALLBACK_DEFAULT_LOCALE: StaffAssistantSpokenFallbackLocale =
+  "uk";
+
 /**
  * Short product-language line when spoken is empty or a markdown dump
  * after a successful tool turn. Never "Done." for a successful list.
  */
-export const STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK =
-  "Here is a short summary of the result.";
+export const STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK: Record<
+  StaffAssistantSpokenFallbackLocale,
+  string
+> = {
+  uk: "Коротко про результат.",
+  en: "Here is a short summary of the result.",
+};
 
 /**
  * Persist/stream fallback when a tool run failed and the model produced
  * no usable reply. Never `"Done."` after a tool error (SHO-429).
  */
-export const STAFF_ASSISTANT_TOOL_ERROR_FALLBACK =
-  "The assistant could not complete this turn.";
+export const STAFF_ASSISTANT_TOOL_ERROR_FALLBACK: Record<
+  StaffAssistantSpokenFallbackLocale,
+  string
+> = {
+  uk: "Не вдалося завершити цей хід.",
+  en: "The assistant could not complete this turn.",
+};
+
+/** Last-resort line when there is no model text and no successful run. */
+export const STAFF_ASSISTANT_EMPTY_SPOKEN_FALLBACK: Record<
+  StaffAssistantSpokenFallbackLocale,
+  string
+> = {
+  uk: "Готово.",
+  en: "Done.",
+};
+
+export function staffAssistantSpokenFallbackLocale(
+  locale: string | undefined,
+): StaffAssistantSpokenFallbackLocale {
+  return locale === "en"
+    ? "en"
+    : STAFF_ASSISTANT_SPOKEN_FALLBACK_DEFAULT_LOCALE;
+}
 
 type SpokenTurnRun = {
   readonly outcome:
@@ -107,47 +140,51 @@ function turnHasHitlPause(runs: readonly SpokenTurnRun[]): boolean {
 
 function typedToolErrorSpokenFallback(
   toolErrorMessage: string | undefined,
+  locale: StaffAssistantSpokenFallbackLocale,
 ): string {
   const fallback = toolErrorMessage?.trim();
   if (fallback !== undefined && fallback !== "") {
     return fallback;
   }
-  return STAFF_ASSISTANT_TOOL_ERROR_FALLBACK;
+  return STAFF_ASSISTANT_TOOL_ERROR_FALLBACK[locale];
 }
 
 function spokenMarkdownDumpFallback(
   runs: readonly SpokenTurnRun[],
   toolErrorMessage: string | undefined,
+  locale: StaffAssistantSpokenFallbackLocale,
 ): string {
   if (turnHasHitlPause(runs)) {
     return STAFF_ASSISTANT_CONFIRMATION_FALLBACK_TEXT;
   }
   if (runs.some((run) => run.outcome === "error")) {
-    return typedToolErrorSpokenFallback(toolErrorMessage);
+    return typedToolErrorSpokenFallback(toolErrorMessage, locale);
   }
-  return STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK;
+  return STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK[locale];
 }
 
 function spokenFallbackFromRuns(
   runs: readonly SpokenTurnRun[],
   toolErrorMessage: string | undefined,
+  locale: StaffAssistantSpokenFallbackLocale,
 ): string {
   if (turnHasHitlPause(runs)) {
     return STAFF_ASSISTANT_CONFIRMATION_FALLBACK_TEXT;
   }
   if (runs.some((run) => run.outcome === "error")) {
-    return typedToolErrorSpokenFallback(toolErrorMessage);
+    return typedToolErrorSpokenFallback(toolErrorMessage, locale);
   }
   if (runs.some((run) => run.outcome === "success")) {
-    return STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK;
+    return STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK[locale];
   }
-  return "Done.";
+  return STAFF_ASSISTANT_EMPTY_SPOKEN_FALLBACK[locale];
 }
 
 function sanitizeSpoken(
   spoken: string | undefined,
   runs: readonly SpokenTurnRun[],
   toolErrorMessage: string | undefined,
+  locale: StaffAssistantSpokenFallbackLocale,
 ): string | undefined {
   if (spoken === undefined) {
     return undefined;
@@ -159,7 +196,7 @@ function sanitizeSpoken(
   if (!spokenContainsMarkdownDump(trimmed)) {
     return trimmed;
   }
-  return spokenMarkdownDumpFallback(runs, toolErrorMessage);
+  return spokenMarkdownDumpFallback(runs, toolErrorMessage, locale);
 }
 
 /**
@@ -173,18 +210,21 @@ export function spokenTurnText(options: {
   readonly runs: readonly SpokenTurnRun[];
   /** Typed tool `message` when `outcome` is `error`. Model prose still wins. */
   readonly toolErrorMessage?: string;
+  /** Request locale. Default `uk`. */
+  readonly locale?: string;
 }): string {
+  const locale = staffAssistantSpokenFallbackLocale(options.locale);
   if (turnHasHitlPause(options.runs)) {
     return STAFF_ASSISTANT_CONFIRMATION_FALLBACK_TEXT;
   }
   const trimmed = options.rawText.trim();
   if (trimmed !== "" && !looksLikeJsonObject(trimmed)) {
     return (
-      sanitizeSpoken(trimmed, options.runs, options.toolErrorMessage) ??
-      spokenFallbackFromRuns(options.runs, options.toolErrorMessage)
+      sanitizeSpoken(trimmed, options.runs, options.toolErrorMessage, locale) ??
+      spokenFallbackFromRuns(options.runs, options.toolErrorMessage, locale)
     );
   }
-  return spokenFallbackFromRuns(options.runs, options.toolErrorMessage);
+  return spokenFallbackFromRuns(options.runs, options.toolErrorMessage, locale);
 }
 
 function isStaffAssistantTextStreamPartType(type: string): boolean {

@@ -456,7 +456,7 @@ describe("choiceSelectAppendParts", () => {
   });
 
   it("appends server truncated copy as-is for uk and en, including after a locale mismatch", () => {
-    const ukText = `Оберіть варіант для Еклери: Кава. ${CHOICE_TRUNCATED_COPY.uk}`;
+    const ukText = `Обери варіант для Еклери: Кава. ${CHOICE_TRUNCATED_COPY.uk}`;
     const enText = `Select a variant for Eclairs: Coffee. ${CHOICE_TRUNCATED_COPY.en}`;
     const ukParts = choiceSelectAppendParts({
       result: {
@@ -1200,7 +1200,7 @@ describe("incomplete success-shaped bodies (SHO-452)", () => {
 describe("HTTP 200 domain error vs HTTP 409 uncertain (SHO-452)", () => {
   it("treats a valid HTTP 200 interaction CONFLICT as terminal presenter text", () => {
     const uk =
-      "«Macarons» в архіві, в замовлення його додати не можна. Напишіть інший товар або повторіть замовлення без нього.";
+      "«Macarons» в архіві, в замовлення його додати не можна. Напиши інший товар або повтори замовлення без нього.";
     const result = {
       status: "error" as const,
       code: "CONFLICT",

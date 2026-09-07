@@ -1,7 +1,7 @@
 import type { ModelMessage } from "ai";
 import { z } from "zod";
 
-import { STAFF_ASSISTANT_CACHE_PROVIDER_OPTIONS } from "./anthropic-options.js";
+import { STAFF_ASSISTANT_HISTORY_CACHE_PROVIDER_OPTIONS } from "./anthropic-options.js";
 import { confirmationFromChatPart } from "./confirmation.js";
 import {
   budgetStaffAssistantToolRuns,
@@ -285,7 +285,7 @@ function withHistoryCacheBreakpoint(message: ModelMessage): ModelMessage {
     ...message,
     providerOptions: {
       ...message.providerOptions,
-      ...STAFF_ASSISTANT_CACHE_PROVIDER_OPTIONS,
+      ...STAFF_ASSISTANT_HISTORY_CACHE_PROVIDER_OPTIONS,
     },
   };
 }
@@ -295,9 +295,10 @@ function withHistoryCacheBreakpoint(message: ModelMessage): ModelMessage {
  * to the assistant turn that produced them so reconstructed
  * tool-call/result pairs remain valid. Cache the last completed history
  * message (assistant or tool) so the growing prefix can hit within the
- * 5-minute TTL. The newest user turn is never a cache breakpoint. A
- * breakpoint is not a cache-hit guarantee — sliding windows and digest
- * conversion change prefixes.
+ * 5-minute TTL. Do not put the 1h static-prefix TTL on this breakpoint.
+ * The newest user turn is never a cache breakpoint. A breakpoint is not
+ * a cache-hit guarantee — sliding windows and digest conversion change
+ * prefixes.
  */
 export function applyStaffAssistantHistoryWindow(
   messages: readonly ModelMessage[],

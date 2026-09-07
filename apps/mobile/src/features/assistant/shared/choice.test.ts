@@ -96,7 +96,7 @@ describe("choice truncated copy", () => {
       "More variants exist. Reply with the exact flavour name.",
     );
     expect(CHOICE_TRUNCATED_COPY.uk).toBe(
-      "Є ще варіанти. Напишіть точну назву смаку.",
+      "Є ще варіанти. Напиши точну назву смаку.",
     );
     const en = assistantCopy("en");
     const uk = assistantCopy("uk");

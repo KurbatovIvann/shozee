@@ -6,7 +6,7 @@ import {
 } from "@showzy/validation/assistant-surfaces";
 import { describe, expect, it } from "vitest";
 
-import { STAFF_ASSISTANT_CACHE_CONTROL } from "./anthropic-options.js";
+import { STAFF_ASSISTANT_STATIC_CACHE_CONTROL } from "./anthropic-options.js";
 import { STAFF_ASSISTANT_PRODUCT_GLOSSARY } from "./product-glossary.js";
 import {
   staffAssistantSystemMessage,
@@ -182,16 +182,16 @@ describe("staffAssistantSystemPrompt", () => {
     expect(staffAssistantSystemPrompt).not.toContain("JSON object");
   });
 
-  it("marks the system message with a 5-minute ephemeral cache breakpoint", () => {
+  it("marks the system message with a 1-hour ephemeral cache breakpoint", () => {
     const message = staffAssistantSystemMessage();
     expect(message.role).toBe("system");
     expect(message.content).toBe(staffAssistantSystemPrompt);
     expect(message.providerOptions).toEqual({
-      anthropic: { cacheControl: STAFF_ASSISTANT_CACHE_CONTROL },
+      anthropic: { cacheControl: STAFF_ASSISTANT_STATIC_CACHE_CONTROL },
     });
-    expect(STAFF_ASSISTANT_CACHE_CONTROL).toEqual({
+    expect(STAFF_ASSISTANT_STATIC_CACHE_CONTROL).toEqual({
       type: "ephemeral",
-      ttl: "5m",
+      ttl: "1h",
     });
   });
 
