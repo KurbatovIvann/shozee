@@ -22,9 +22,9 @@ describe("kyivCalendarDate", () => {
 describe("secondsUntilKyivMidnight", () => {
   it("counts whole seconds until the next Europe/Kyiv midnight", () => {
     expect(secondsUntilKyivMidnight(WEDNESDAY_SEP_2)).toBe(32_400);
-    expect(
-      secondsUntilKyivMidnight(new Date("2026-01-15T12:00:00.000Z")),
-    ).toBe(36_000);
+    expect(secondsUntilKyivMidnight(new Date("2026-01-15T12:00:00.000Z"))).toBe(
+      36_000,
+    );
   });
 
   it("never returns less than 1", () => {

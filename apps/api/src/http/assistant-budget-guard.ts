@@ -3,10 +3,7 @@
  * (SHO-505). Consumes core `RateLimitStore` and `AiBudgetStore`. Throws
  * `RateLimitError` — no new error code.
  */
-import {
-  kyivCalendarDate,
-  secondsUntilKyivMidnight,
-} from "@showzy/ai";
+import { kyivCalendarDate, secondsUntilKyivMidnight } from "@showzy/ai";
 import type { RateLimitDecision, RateLimitStore } from "@showzy/core";
 import { RateLimitError } from "@showzy/core/errors";
 import type { Logger } from "pino";
@@ -21,9 +18,7 @@ import {
 } from "../stores/budget.js";
 
 export type StaffAssistantBudgetDenialReason =
-  | "turn_limit"
-  | "company_budget"
-  | "global_budget";
+  "turn_limit" | "company_budget" | "global_budget";
 
 export interface StaffAssistantBudgetLimits {
   readonly chatTurnsPerMinutePerUser: number;

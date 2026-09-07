@@ -83,7 +83,11 @@ describe("enforceStaffAssistantBudget", () => {
       99,
       AI_BUDGET_TTL_SEC,
     );
-    await budgetStore.add(aiGlobalBudgetKey("2026-09-02"), 99, AI_BUDGET_TTL_SEC);
+    await budgetStore.add(
+      aiGlobalBudgetKey("2026-09-02"),
+      99,
+      AI_BUDGET_TTL_SEC,
+    );
     for (let i = 0; i < 5; i += 1) {
       await rateLimitStore.consume({
         key: aiChatTurnLimitKey(USER_A),
@@ -185,7 +189,11 @@ describe("enforceStaffAssistantBudget", () => {
 
   it("denies every company when the global Kyiv-day USD limit is reached", async () => {
     const budgetStore = createMemoryAiBudgetStore();
-    await budgetStore.add(aiGlobalBudgetKey("2026-09-02"), 100, AI_BUDGET_TTL_SEC);
+    await budgetStore.add(
+      aiGlobalBudgetKey("2026-09-02"),
+      100,
+      AI_BUDGET_TTL_SEC,
+    );
     await expect(
       enforceStaffAssistantBudget({
         logger: createCapturingLogger().logger,

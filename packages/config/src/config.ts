@@ -149,11 +149,7 @@ const envObjectSchema = z.object({
    * Staff-assistant HTTP turn bucket (`POST /assistant/chat`). `0` disables
    * the per-user turn check (SHO-505). Default 20 turns / 60s / user.
    */
-  AI_CHAT_TURNS_PER_MINUTE_PER_USER: z.coerce
-    .number()
-    .int()
-    .min(0)
-    .default(20),
+  AI_CHAT_TURNS_PER_MINUTE_PER_USER: z.coerce.number().int().min(0).default(20),
   /**
    * Kyiv-calendar daily USD ceiling per company for `/assistant/chat`.
    * `0` disables the company check. Default 5.

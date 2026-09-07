@@ -170,8 +170,13 @@ export function kyivCalendarDate(now: Date): string {
  * (RATE_LIMITED `retryAfterSec` must not be optimistic).
  */
 export function secondsUntilKyivMidnight(now: Date): number {
-  const nextMidnight = startOfKyivDayUtc(addCalendarDays(kyivDateParts(now), 1));
-  return Math.max(1, Math.ceil((nextMidnight.getTime() - now.getTime()) / 1000));
+  const nextMidnight = startOfKyivDayUtc(
+    addCalendarDays(kyivDateParts(now), 1),
+  );
+  return Math.max(
+    1,
+    Math.ceil((nextMidnight.getTime() - now.getTime()) / 1000),
+  );
 }
 
 /** English clock line for the uncached turn-context addendum. */

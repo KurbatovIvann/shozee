@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  AI_BUDGET_TTL_SEC,
-  createMemoryAiBudgetStore,
-} from "./budget.js";
+import { AI_BUDGET_TTL_SEC, createMemoryAiBudgetStore } from "./budget.js";
 
 describe("createMemoryAiBudgetStore", () => {
   it("reads 0 for a missing key and adds spend with TTL", async () => {
