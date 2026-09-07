@@ -1,7 +1,8 @@
-/** Panel shell copy namespace (uk/en). Locale plumbing lives in `./locale`. */
+/** Panel shell copy namespace (uk/en). Shared strings live in `@showzy/copy/panel`. */
+import { selectCopy, type Locale } from "@showzy/copy/locale";
+import { sharedPanelCopy, type SharedPanelCopy } from "@showzy/copy/panel";
+
 import type { PanelTab } from "../components/screens/panel/panel-tabs";
-import { selectCopy } from "./copy";
-import type { Locale } from "./locale";
 
 export type MoreCopy = {
   readonly session: string;
@@ -29,17 +30,33 @@ export type PanelCopy = {
   readonly more: MoreCopy;
 };
 
-const en: PanelCopy = {
-  navigation: "Main navigation",
+type MobilePanelExtension = {
+  readonly placeholderDescription: string;
+  readonly tabs: {
+    readonly more: string;
+  };
+  readonly more: {
+    readonly session: string;
+    readonly userId: string;
+    readonly phone: string;
+    readonly email: string;
+    readonly companySelector: string;
+    readonly signOut: string;
+    readonly management: string;
+    readonly priceListsDescription: string;
+    readonly documentsDescription: string;
+    readonly documentsDisabledHint: string;
+    readonly settings: string;
+    readonly companySettings: string;
+    readonly companySettingsDescription: string;
+  };
+};
+
+const extraEn: MobilePanelExtension = {
+  placeholderDescription: "This section is coming soon.",
   tabs: {
-    orders: "Orders",
-    products: "Products",
-    ai: "Shozik",
-    customers: "Customers",
     more: "More",
   },
-  placeholderTitle: "Module in development",
-  placeholderDescription: "This section is coming soon.",
   more: {
     session: "Session",
     userId: "User ID",
@@ -48,9 +65,7 @@ const en: PanelCopy = {
     companySelector: "Active company",
     signOut: "Sign Out",
     management: "Management",
-    priceLists: "Price lists",
     priceListsDescription: "Different prices for customer groups",
-    documents: "Documents",
     documentsDescription: "Invoices and delivery notes",
     documentsDisabledHint: "Coming soon",
     settings: "Settings",
@@ -59,17 +74,11 @@ const en: PanelCopy = {
   },
 };
 
-const uk: PanelCopy = {
-  navigation: "Основна навігація",
+const extraUk: MobilePanelExtension = {
+  placeholderDescription: "Цей розділ незабаром з’явиться.",
   tabs: {
-    orders: "Замовлення",
-    products: "Товари",
-    ai: "Шозік",
-    customers: "Клієнти",
     more: "Ще",
   },
-  placeholderTitle: "Модуль у розробці",
-  placeholderDescription: "Цей розділ незабаром з’явиться.",
   more: {
     session: "Сесія",
     userId: "ID користувача",
@@ -78,9 +87,7 @@ const uk: PanelCopy = {
     companySelector: "Активна компанія",
     signOut: "Вийти",
     management: "Керування",
-    priceLists: "Прайс-листи",
     priceListsDescription: "Різні ціни для груп клієнтів",
-    documents: "Документи",
     documentsDescription: "Рахунки та видаткові накладні",
     documentsDisabledHint: "Незабаром",
     settings: "Налаштування",
@@ -90,5 +97,27 @@ const uk: PanelCopy = {
 };
 
 export function panelCopy(locale: Locale): PanelCopy {
-  return selectCopy(locale, { uk, en });
+  const shared = sharedPanelCopy(locale);
+  const extra = selectCopy(locale, { uk: extraUk, en: extraEn });
+  return composeMobilePanelCopy(shared, extra);
+}
+
+function composeMobilePanelCopy(
+  shared: SharedPanelCopy,
+  extra: MobilePanelExtension,
+): PanelCopy {
+  return {
+    navigation: shared.navigation,
+    placeholderTitle: shared.moduleTitle,
+    placeholderDescription: extra.placeholderDescription,
+    tabs: {
+      ...shared.tabs,
+      ...extra.tabs,
+    },
+    more: {
+      ...extra.more,
+      priceLists: shared.priceLists,
+      documents: shared.documents,
+    },
+  };
 }
