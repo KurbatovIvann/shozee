@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { AI_BUDGET_TTL_SEC, createMemoryAiBudgetStore } from "./budget.js";
+import {
+  AI_BUDGET_TTL_SEC,
+  aiCompanyBudgetKey,
+  createMemoryAiBudgetStore,
+} from "./budget.js";
 
 describe("createMemoryAiBudgetStore", () => {
   it("reads 0 for a missing key and adds spend with TTL", async () => {
@@ -25,5 +29,20 @@ describe("createMemoryAiBudgetStore", () => {
     const allowed = [first, second].filter((decision) => decision.allowed);
     expect(allowed).toHaveLength(1);
     expect(await store.read(key)).toBeCloseTo(0.1);
+  });
+});
+
+describe("aiCompanyBudgetKey", () => {
+  it("lowercases companyId so mixed-case UUIDs share one Redis key", () => {
+    const kyivDate = "2026-09-02";
+    const lower = "abcdef00-0000-4000-8000-00000000c001";
+    const mixed = "ABCDef00-0000-4000-8000-00000000c001";
+    const upper = "ABCDEF00-0000-4000-8000-00000000C001";
+    expect(aiCompanyBudgetKey(mixed, kyivDate)).toBe(
+      `ai-budget:${lower}:${kyivDate}`,
+    );
+    expect(aiCompanyBudgetKey(upper, kyivDate)).toBe(
+      aiCompanyBudgetKey(lower, kyivDate),
+    );
   });
 });

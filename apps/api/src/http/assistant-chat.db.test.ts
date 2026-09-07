@@ -3418,18 +3418,21 @@ describe("POST /assistant/chat budget guard (SHO-505)", () => {
     const annaConversation = await staffInvoke(createConversation, {
       title: "Company budget A",
     });
+    const before = secondsUntilKyivMidnight(new Date());
     const denied = await postChat(app, {
       token: anna,
       companyId: kitIdentities.companies.a,
       body: userChatBody(annaConversation.id, "spend"),
     });
+    const after = secondsUntilKyivMidnight(new Date());
     expect(denied.status).toBe(429);
     const body = (await denied.json()) as {
       data?: { retryAfterSec?: number };
     };
-    const untilMidnight = secondsUntilKyivMidnight(new Date());
-    expect(body.data?.retryAfterSec).toBeGreaterThanOrEqual(1);
-    expect(body.data?.retryAfterSec).toBeLessThanOrEqual(untilMidnight);
+    const retryAfterSec = body.data?.retryAfterSec;
+    expect(retryAfterSec).toBeGreaterThanOrEqual(1);
+    expect(retryAfterSec).toBeGreaterThanOrEqual(after);
+    expect(retryAfterSec).toBeLessThanOrEqual(before);
     expect(gateModel.doGenerateCalls).toHaveLength(0);
     expect(streamModel.doStreamCalls).toHaveLength(0);
 
@@ -3450,6 +3453,53 @@ describe("POST /assistant/chat budget guard (SHO-505)", () => {
     expect(otherCompany.status).toBe(200);
     await readUiMessageSsePayloads(otherCompany);
     expect(gateModel.doGenerateCalls).toHaveLength(1);
+  });
+
+  it("treats uppercase x-company-id as the same company Redis budget key", async () => {
+    const streamModel = new MockLanguageModelV3({
+      doStream: [mockTextStream("ok")],
+    });
+    const gateModel = new MockLanguageModelV3({
+      doGenerate: mockOperationalGateGenerate(true),
+      doStream: [mockTextStream("should not chitchat")],
+    });
+    const limits: StaffAssistantBudgetLimits = {
+      ...DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+      dailyBudgetUsdPerCompany: 1,
+    };
+    const app = budgetApp({
+      streamModel,
+      gateModel,
+      limits,
+      estimateTurnCostUsd: () => 1,
+    });
+    const anna = await insertBearer(kit, kitIdentities.users.anna);
+    const annaConversation = await staffInvoke(createConversation, {
+      title: "Company budget UUID case",
+    });
+    const lowercaseCompanyId = kitIdentities.companies.a.toLowerCase();
+    const spent = await postChat(app, {
+      token: anna,
+      companyId: lowercaseCompanyId,
+      body: userChatBody(annaConversation.id, "spend lowercase"),
+    });
+    expect(spent.status).toBe(200);
+    await readUiMessageSsePayloads(spent);
+    expect(gateModel.doGenerateCalls).toHaveLength(1);
+    expect(streamModel.doStreamCalls).toHaveLength(1);
+
+    const uppercaseDenied = await postChat(app, {
+      token: anna,
+      companyId: kitIdentities.companies.a.toUpperCase(),
+      body: userChatBody(annaConversation.id, "spend uppercase"),
+    });
+    expect(uppercaseDenied.status).toBe(429);
+    expect(await uppercaseDenied.json()).toMatchObject({
+      code: "RATE_LIMITED",
+      status: 429,
+    });
+    expect(gateModel.doGenerateCalls).toHaveLength(1);
+    expect(streamModel.doStreamCalls).toHaveLength(1);
   });
 
   it("returns 429 for every company when the global counter is at the limit", async () => {

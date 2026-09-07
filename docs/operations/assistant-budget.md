@@ -34,16 +34,22 @@ ai-budget:{companyId}:{yyyy-mm-dd}
 ai-budget:global:{yyyy-mm-dd}
 ```
 
-The date is Europe/Kyiv. Before the gate/model, the guard **reserves**
-`AI_UNKNOWN_MODEL_TURN_USD` on each enabled counter with an atomic
-increment-with-cap (Redis Lua; memory store serializes per key). After
-the turn, `INCRBYFLOAT` settles the delta `(estimated − reserved)`.
-Unknown-model `null` estimates stay at the reserved ceiling.
+The date is Europe/Kyiv. `{companyId}` is the lowercase UUID. Before the
+gate/model, the guard **reserves** `AI_UNKNOWN_MODEL_TURN_USD` on each
+enabled counter with an atomic increment-with-cap (Redis Lua; memory
+store serializes per key). After the turn, `INCRBYFLOAT` settles the
+delta `(estimated − reserved)`. Unknown-model `null` estimates stay at
+the reserved ceiling.
 
-Confirmation and choice resumes skip the turn bucket (second half of a
-turn already consumed) and still reserve/settle estimated USD on both
-budget keys. A budget 429 does not consume a turn slot. A 503
-(`AI_NOT_CONFIGURED`) does not consume a turn slot or reserve budget.
+Chat confirmation resume (`x-confirmation-challenge-id` on
+`POST /assistant/chat`) skips the turn bucket but still reserves and
+settles estimated USD on both budget keys.
+
+`POST /assistant/choice` does not call a model, costs `$0`, and does
+not write Redis.
+
+A budget 429 does not consume a turn slot. A 503 (`AI_NOT_CONFIGURED`)
+does not consume a turn slot or reserve budget.
 
 ## Raise a company's budget for today
 

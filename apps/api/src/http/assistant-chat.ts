@@ -72,7 +72,10 @@ import {
 import type { Logger } from "pino";
 import type { z } from "zod";
 
-import type { AiBudgetStore } from "../stores/budget.js";
+import {
+  canonicalizeAiBudgetCompanyId,
+  type AiBudgetStore,
+} from "../stores/budget.js";
 import type { StaffAssistantChoiceStore } from "../stores/choice.js";
 import {
   DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
@@ -563,7 +566,7 @@ export async function executeStaffAssistantChat(
         "staff assistant budget guard requires a verified company selector",
       );
     }
-    const companyId = companySelector;
+    const companyId = canonicalizeAiBudgetCompanyId(companySelector);
     const budgetLimits =
       options.budgetLimits ?? DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS;
     const model = resolveLanguageModel(options.assistant);

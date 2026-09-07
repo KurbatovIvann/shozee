@@ -17,6 +17,7 @@ import {
   aiChatTurnLimitKey,
   aiCompanyBudgetKey,
   aiGlobalBudgetKey,
+  canonicalizeAiBudgetCompanyId,
   type AiBudgetStore,
   type AiBudgetTryAddDecision,
 } from "../stores/budget.js";
@@ -65,7 +66,7 @@ export function logStaffAssistantBudgetDenial(options: {
   options.logger.warn(
     {
       request_id: options.requestId,
-      company_id: options.companyId,
+      company_id: canonicalizeAiBudgetCompanyId(options.companyId),
       reason: options.reason,
     },
     "staff assistant budget denied",
@@ -85,13 +86,14 @@ export async function enforceStaffAssistantBudget(options: {
 }): Promise<StaffAssistantBudgetHold> {
   const now = options.now ?? new Date();
   const kyivDate = kyivCalendarDate(now);
-  const companyKey = aiCompanyBudgetKey(options.companyId, kyivDate);
+  const companyId = canonicalizeAiBudgetCompanyId(options.companyId);
+  const companyKey = aiCompanyBudgetKey(companyId, kyivDate);
   const globalKey = aiGlobalBudgetKey(kyivDate);
 
   const hold = await reserveStaffAssistantBudget({
     logger: options.logger,
     requestId: options.requestId,
-    companyId: options.companyId,
+    companyId,
     companyKey,
     globalKey,
     retryAfterSec: secondsUntilKyivMidnight(now),
@@ -118,7 +120,7 @@ export async function enforceStaffAssistantBudget(options: {
     await releaseStaffAssistantBudgetHold({
       logger: options.logger,
       requestId: options.requestId,
-      companyId: options.companyId,
+      companyId,
       companyKey,
       globalKey,
       budgetStore: options.budgetStore,
@@ -127,7 +129,7 @@ export async function enforceStaffAssistantBudget(options: {
     logStaffAssistantBudgetDenial({
       logger: options.logger,
       requestId: options.requestId,
-      companyId: options.companyId,
+      companyId,
       reason: "turn_limit",
     });
     throw new RateLimitError(AI_CHAT_TURN_WINDOW_SEC);
@@ -136,7 +138,7 @@ export async function enforceStaffAssistantBudget(options: {
     await releaseStaffAssistantBudgetHold({
       logger: options.logger,
       requestId: options.requestId,
-      companyId: options.companyId,
+      companyId,
       companyKey,
       globalKey,
       budgetStore: options.budgetStore,
@@ -145,7 +147,7 @@ export async function enforceStaffAssistantBudget(options: {
     logStaffAssistantBudgetDenial({
       logger: options.logger,
       requestId: options.requestId,
-      companyId: options.companyId,
+      companyId,
       reason: "turn_limit",
     });
     throw new RateLimitError(decision.retryAfterSec);
@@ -166,6 +168,7 @@ export async function recordStaffAssistantBudgetSpend(options: {
   if (options.budgetStore === undefined) {
     return;
   }
+  const companyId = canonicalizeAiBudgetCompanyId(options.companyId);
   const spend = staffAssistantBudgetSpendUsd(
     options.estimatedCostUsd,
     options.limits.unknownModelTurnUsd,
@@ -175,7 +178,7 @@ export async function recordStaffAssistantBudgetSpend(options: {
   try {
     await addBudgetDelta(
       options.budgetStore,
-      aiCompanyBudgetKey(options.companyId, kyivDate),
+      aiCompanyBudgetKey(companyId, kyivDate),
       spend - options.hold.companyReservedUsd,
     );
     await addBudgetDelta(
@@ -187,7 +190,7 @@ export async function recordStaffAssistantBudgetSpend(options: {
     options.logger.error(
       {
         request_id: options.requestId,
-        company_id: options.companyId,
+        company_id: companyId,
         err: error,
       },
       "staff assistant budget increment failed",

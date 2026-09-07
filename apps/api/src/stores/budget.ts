@@ -15,11 +15,20 @@ export function aiChatTurnLimitKey(userId: string): string {
   return `ai-chat:${userId}`;
 }
 
+/**
+ * Postgres UUID compare is case-insensitive; Redis keys are not.
+ * Budget keys and denial `company_id` logs use this spelling. Not an
+ * access grant — tenant scope stays verified staff membership.
+ */
+export function canonicalizeAiBudgetCompanyId(companyId: string): string {
+  return companyId.toLowerCase();
+}
+
 export function aiCompanyBudgetKey(
   companyId: string,
   kyivDate: string,
 ): string {
-  return `ai-budget:${companyId}:${kyivDate}`;
+  return `ai-budget:${canonicalizeAiBudgetCompanyId(companyId)}:${kyivDate}`;
 }
 
 export function aiGlobalBudgetKey(kyivDate: string): string {

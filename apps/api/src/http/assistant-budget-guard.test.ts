@@ -49,6 +49,20 @@ describe("logStaffAssistantBudgetDenial", () => {
     expect(entry).not.toHaveProperty("body");
     expect(JSON.stringify(entry)).not.toContain("SHOW_ME_THE_ORDERS");
   });
+
+  it("logs company_id in lowercase even when the selector is mixed-case", () => {
+    const capturing = createCapturingLogger();
+    logStaffAssistantBudgetDenial({
+      logger: capturing.logger,
+      requestId: "req-budget-case",
+      companyId: COMPANY_A.toUpperCase(),
+      reason: "company_budget",
+    });
+    const entry = capturing.entries().find((row) => {
+      return row["msg"] === "staff assistant budget denied";
+    });
+    expect(entry?.["company_id"]).toBe(COMPANY_A.toLowerCase());
+  });
 });
 
 describe("enforceStaffAssistantBudget", () => {
@@ -190,6 +204,33 @@ describe("enforceStaffAssistantBudget", () => {
       companyReservedUsd: 0.1,
       globalReservedUsd: 0.1,
     });
+  });
+
+  it("denies mixed-case companyId against the lowercase Redis key", async () => {
+    const budgetStore = createMemoryAiBudgetStore();
+    await budgetStore.add(
+      aiCompanyBudgetKey(COMPANY_A.toLowerCase(), "2026-09-02"),
+      5,
+      AI_BUDGET_TTL_SEC,
+    );
+    const capturing = createCapturingLogger();
+    await expect(
+      enforceStaffAssistantBudget({
+        logger: capturing.logger,
+        requestId: "req-company-case",
+        userId: USER_A,
+        companyId: COMPANY_A.toUpperCase(),
+        skipTurnLimit: true,
+        now: NOW,
+        budgetStore,
+        limits: DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+      }),
+    ).rejects.toBeInstanceOf(RateLimitError);
+    const denial = capturing.entries().find((row) => {
+      return row["msg"] === "staff assistant budget denied";
+    });
+    expect(denial?.["reason"]).toBe("company_budget");
+    expect(denial?.["company_id"]).toBe(COMPANY_A.toLowerCase());
   });
 
   it("denies every company when the global Kyiv-day USD limit is reached", async () => {
