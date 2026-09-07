@@ -17,10 +17,12 @@ describe("staffAssistantPostgresJsonbTextChars", () => {
     expect(staffAssistantPostgresJsonbTextChars({ pad: "a:b,c" })).toBe(
       '{"pad": "a:b,c"}'.length,
     );
-    expect(staffAssistantJsonChars({ a: 1, b: 2 })).toBe('{"a":1,"b":2}'.length);
-    expect(staffAssistantPostgresJsonbTextChars({ a: 1, b: 2 })).toBeGreaterThan(
-      staffAssistantJsonChars({ a: 1, b: 2 }),
+    expect(staffAssistantJsonChars({ a: 1, b: 2 })).toBe(
+      '{"a":1,"b":2}'.length,
     );
+    expect(
+      staffAssistantPostgresJsonbTextChars({ a: 1, b: 2 }),
+    ).toBeGreaterThan(staffAssistantJsonChars({ a: 1, b: 2 }));
   });
 
   it("is one character longer than stringify for { pad: xs } so CHECK can reject a stringify-accepted payload", () => {
