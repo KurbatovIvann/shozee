@@ -41,7 +41,26 @@ if ! grep -q '"storage-driver": "fuse-overlayfs"' /etc/docker/daemon.json 2>/dev
   printf '{\n  "storage-driver": "fuse-overlayfs"\n}\n' | sudo tee /etc/docker/daemon.json >/dev/null
 fi
 
-# --- 3. Workspace dependencies ----------------------------------------------
+# --- 3. pnpm toolchain -------------------------------------------------------
+# pnpm 12 ships as a Rust native binary behind a thin wrapper. pnpm's own
+# package-manager-version manager materializes the pinned `packageManager`
+# (pnpm@12.3.2) from a bare `npm install`, which skips the wrapper's build
+# script, so `bin/pnpm` is left as a text placeholder. Invoking it then dies
+# with "Syntax error: ) unexpected" (a shell trying to run that stub). Pin the
+# version through Corepack instead: its shim loads the wrapper's Corepack entry
+# (bin/pnpm.mjs), which fetches and caches the real native binary next to the
+# wrapper. Idempotent: once a working pnpm resolves, this whole block is a
+# no-op, and a materialized binary carried in a snapshot is reused offline.
+pm_version="$(node -p "require('./package.json').packageManager" 2>/dev/null || echo pnpm@12.3.2)"
+if ! pnpm --version >/dev/null 2>&1; then
+  log "bootstrapping ${pm_version} via corepack"
+  corepack enable pnpm
+  corepack prepare "${pm_version}" --activate
+  pnpm --version >/dev/null # force the one-time native-binary download now
+fi
+log "pnpm ready: $(pnpm --version)"
+
+# --- 4. Workspace dependencies ----------------------------------------------
 log "installing workspace dependencies (pnpm, frozen lockfile)"
 pnpm install --frozen-lockfile
 
