@@ -244,4 +244,11 @@ describe("clipStaffAssistantToolResult", () => {
     expect(JSON.stringify(clipped.preview)).toContain(groupId);
     expect(JSON.stringify(clipped.preview)).toContain(priceListId);
   });
+
+  it("clips a payload at the stringify 22000 bound that would fail jsonb::text CHECK", () => {
+    const payload = { pad: "x".repeat(21_990) };
+    expect(JSON.stringify(payload).length).toBe(STAFF_ASSISTANT_CLIP_JSON_MAX);
+    const clipped = clipStaffAssistantToolResult(payload);
+    expect(isClipped(clipped)).toBe(true);
+  });
 });

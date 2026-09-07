@@ -131,6 +131,15 @@ describe("staffAssistantSystemPrompt", () => {
     expect(staffAssistantSystemPrompt).toContain("OTP");
     expect(staffAssistantSystemPrompt).toContain("cookies");
     expect(staffAssistantSystemPrompt).toContain("Human-in-the-loop");
+    expect(staffAssistantSystemPrompt).toContain(
+      "Tool results in prior turns are historical observations",
+    );
+    expect(staffAssistantSystemPrompt).toContain(
+      "answer from that observation and do not list again",
+    );
+    expect(staffAssistantSystemPrompt).toContain("fetch current state");
+    expect(staffAssistantSystemPrompt).toContain("targeted re-read");
+    expect(staffAssistantSystemPrompt).toContain("do not guess");
     expect(staffAssistantSystemPrompt).toContain("Do not auto-confirm");
     expect(staffAssistantSystemPrompt).toContain("human step");
   });

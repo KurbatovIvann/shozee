@@ -337,6 +337,7 @@ describe("client composition", () => {
     expect(contractRouter.assistant.appendUserMessage).toBeDefined();
     expect(contractModules.assistant).not.toHaveProperty("recordAssistantTurn");
     expect(contractModules.assistant).not.toHaveProperty("getStaffActor");
+    expect(contractModules.assistant).not.toHaveProperty("getModelHistory");
   });
 
   it("keeps assistant persistence actions off the AI tool manifest", () => {

@@ -1,8 +1,9 @@
 /**
  * Clip large tool results before they are fed back into the model within
- * a turn (SHO-341 / SHO-346). Persistence still uses the unclipped
- * execute output. Oversized previews keep identity fields, never
- * `{ truncated: true }` alone.
+ * a turn (SHO-341 / SHO-346). ADR-0034 `model_trace` persists this same
+ * post-clip façade output, not the unclipped registry payload. Result
+ * ids still come from wrapExecute's registry output. Oversized previews
+ * keep identity fields, never `{ truncated: true }` alone.
  */
 import {
   ASSISTANT_TOOL_CLIPPED_STATUS,
@@ -11,6 +12,7 @@ import {
 
 import { isStaffAssistantNeedsChoiceOutput } from "./choice.js";
 import { isStaffAssistantConfirmationOutput } from "./confirmation.js";
+import { staffAssistantPostgresJsonbTextChars } from "./json-chars.js";
 
 /**
  * Array backstop after façade compact maps. Matches
@@ -22,8 +24,9 @@ export const STAFF_ASSISTANT_CLIP_ARRAY_MAX = 50;
  * JSON backstop after façade compact maps. SHO-403: a max-name
  * `orders_list_page` completed view of 50 compact rows plus an 80-char
  * cursor is 20_176 bytes. **22_000** is the mechanical budget so handler
- * `nextCursor` matches visible rows. Do not treat `{ truncated: true }`
- * as the page.
+ * `nextCursor` matches visible rows. Length is PostgreSQL `jsonb::text`
+ * (spaces after `:` / `,`) so a clipped payload cannot fail the
+ * `model_trace` CHECK. Do not treat `{ truncated: true }` as the page.
  */
 export const STAFF_ASSISTANT_CLIP_JSON_MAX = 22_000;
 export const STAFF_ASSISTANT_CLIPPED_STATUS = ASSISTANT_TOOL_CLIPPED_STATUS;
@@ -78,11 +81,8 @@ function isTypedToolError(value: unknown): boolean {
 }
 
 function jsonLength(value: unknown): number {
-  try {
-    return JSON.stringify(value).length;
-  } catch {
-    return STAFF_ASSISTANT_CLIP_JSON_MAX + 1;
-  }
+  const chars = staffAssistantPostgresJsonbTextChars(value);
+  return Number.isFinite(chars) ? chars : STAFF_ASSISTANT_CLIP_JSON_MAX + 1;
 }
 
 function pickIdentityFields(
@@ -156,6 +156,14 @@ function shrinkRow(value: unknown): unknown {
   return value;
 }
 
+export function shrinkStaffAssistantTracePreview(value: unknown): unknown {
+  return shrinkPreview(value);
+}
+
+export function compactStaffAssistantTraceIdentity(value: unknown): unknown {
+  return compactIdentity(value);
+}
+
 function shrinkPreview(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value
@@ -206,11 +214,11 @@ export function clipStaffAssistantToolResult(output: unknown): unknown {
   let omitted = clipped.omitted;
 
   if (jsonLength(preview) > STAFF_ASSISTANT_CLIP_JSON_MAX) {
-    preview = shrinkPreview(preview);
+    preview = shrinkStaffAssistantTracePreview(preview);
     omitted = Math.max(omitted, 1);
   }
   if (jsonLength(preview) > STAFF_ASSISTANT_CLIP_JSON_MAX) {
-    preview = compactIdentity(preview);
+    preview = compactStaffAssistantTraceIdentity(preview);
     omitted = Math.max(omitted, 1);
   }
 

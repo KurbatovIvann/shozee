@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { ORDERS_LIST_PAGE_TOOL_NAME } from "./action-tool.js";
 import { STAFF_ASSISTANT_CACHE_PROVIDER_OPTIONS } from "./anthropic-options.js";
 import {
   applyStaffAssistantHistoryWindow,
@@ -279,6 +280,7 @@ describe("staffAssistantModelMessages", () => {
     expect(staffAssistantHistoryStats(messages)).toEqual({
       messageCount: 2,
       chars: "List orders".length + "You have no orders.".length,
+      traceChars: 0,
     });
   });
 
@@ -551,5 +553,165 @@ describe("resolvePausedToolAttempt", () => {
     expect(resolvePausedToolAttempt(undefined, undefined)).toEqual({
       status: "missing",
     });
+  });
+});
+
+describe("staffAssistantModelMessagesFromPersisted tool traces", () => {
+  const listTrace = {
+    kind: "page.summary",
+    rows: [
+      { orderNumber: "12", name: "Катя", totalGrossMinor: "120000" },
+      { orderNumber: "13", name: "Леха", totalGrossMinor: "80000" },
+    ],
+  };
+  const getTrace = { orderNumber: "12", status: "new" };
+
+  it("emits tool-call then tool-result parts in stored order", () => {
+    const messages = staffAssistantModelMessagesFromPersisted([
+      { role: "user", body: "останні 2 замовлення" },
+      {
+        role: "assistant",
+        body: "Ось вони.",
+        toolRuns: [
+          {
+            action: "orders.list",
+            toolCallId: "call_list",
+            toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+            modelTrace: listTrace,
+          },
+          {
+            action: "orders.get",
+            toolCallId: "call_get",
+            toolName: "orders_get",
+            modelTrace: getTrace,
+          },
+        ],
+      },
+      { role: "user", body: "яке найдорожче?" },
+    ]);
+    const assistant = messages.find((message) => message.role === "assistant");
+    const tool = messages.find((message) => message.role === "tool");
+    expect(assistant?.content).toEqual([
+      { type: "text", text: "Ось вони." },
+      {
+        type: "tool-call",
+        toolCallId: "call_list",
+        toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+        input: {},
+      },
+      {
+        type: "tool-call",
+        toolCallId: "call_get",
+        toolName: "orders_get",
+        input: {},
+      },
+    ]);
+    expect(tool?.content).toEqual([
+      {
+        type: "tool-result",
+        toolCallId: "call_list",
+        toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+        output: { type: "json", value: listTrace },
+      },
+      {
+        type: "tool-result",
+        toolCallId: "call_get",
+        toolName: "orders_get",
+        output: { type: "json", value: getTrace },
+      },
+    ]);
+    expect(JSON.stringify(assistant?.content)).not.toContain("orders.list");
+    expect(JSON.stringify(tool?.content)).not.toContain("orders.list");
+    expect(staffAssistantHistoryStats(messages).traceChars).toBeGreaterThan(0);
+    expect(messages.at(-1)).toMatchObject({
+      role: "user",
+      content: "яке найдорожче?",
+    });
+    expect(messages.at(-2)?.role).toBe("tool");
+    expect(messages.at(-2)).toMatchObject({
+      providerOptions: STAFF_ASSISTANT_CACHE_PROVIDER_OPTIONS,
+    });
+  });
+
+  it("stays text-only when every modelTrace is null", () => {
+    const messages = staffAssistantModelMessagesFromPersisted([
+      { role: "user", body: "confirm" },
+      {
+        role: "assistant",
+        body: "Need confirmation.",
+        toolRuns: [
+          {
+            action: "customers.deleteCustomer",
+            toolCallId: "call_hitl",
+            modelTrace: null,
+          },
+        ],
+      },
+      { role: "user", body: "ok" },
+    ]);
+    expect(messages.map((message) => message.role)).toEqual([
+      "user",
+      "assistant",
+      "user",
+    ]);
+    expect(messages[1]).toMatchObject({
+      role: "assistant",
+      content: "Need confirmation.",
+    });
+    expect(staffAssistantHistoryStats(messages).traceChars).toBe(0);
+  });
+
+  it("keeps reconstructed tool-call/result pairs when the 8-turn window drops older text", () => {
+    const rows = Array.from({ length: 12 }, (_, index) =>
+      index % 2 === 0
+        ? {
+            role: "user" as const,
+            body: `user-${String(index)}`,
+          }
+        : {
+            role: "assistant" as const,
+            body: `assistant-${String(index)}`,
+            toolRuns: [
+              {
+                action: "orders.list",
+                toolCallId: `call_${String(index)}`,
+                modelTrace: { orderNumber: String(index) },
+              },
+            ],
+          },
+    );
+    const windowed = staffAssistantModelMessagesFromPersisted(rows);
+    const textTurns = windowed.filter(
+      (message) => message.role === "user" || message.role === "assistant",
+    );
+    expect(textTurns).toHaveLength(STAFF_ASSISTANT_MODEL_HISTORY_MAX);
+    const toolMessages = windowed.filter((message) => message.role === "tool");
+    expect(toolMessages.length).toBeGreaterThan(0);
+    for (const toolMessage of toolMessages) {
+      if (!Array.isArray(toolMessage.content)) {
+        throw new Error("expected tool-result parts");
+      }
+      for (const part of toolMessage.content) {
+        expect(part.type).toBe("tool-result");
+        if (part.type === "tool-result") {
+          const matchingCall = windowed.some((message) => {
+            if (
+              message.role !== "assistant" ||
+              !Array.isArray(message.content)
+            ) {
+              return false;
+            }
+            return message.content.some(
+              (entry) =>
+                entry.type === "tool-call" &&
+                entry.toolCallId === part.toolCallId,
+            );
+          });
+          expect(matchingCall).toBe(true);
+        }
+      }
+    }
+    expect(JSON.stringify(windowed)).not.toContain("user-0");
+    expect(JSON.stringify(windowed)).not.toContain('"call_1"');
   });
 });

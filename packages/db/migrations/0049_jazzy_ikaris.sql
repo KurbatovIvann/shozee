@@ -1,0 +1,1 @@
+ALTER TABLE "assistant_tool_runs" ADD COLUMN "tool_name" text;

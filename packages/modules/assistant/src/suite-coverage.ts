@@ -8,6 +8,7 @@ export const assistantSuiteCoverage = {
     "assistant.appendUserMessage",
     "assistant.recordAssistantTurn",
     "assistant.getStaffActor",
+    "assistant.getModelHistory",
   ],
   publicProjection: [],
   consumerIsolation: [],

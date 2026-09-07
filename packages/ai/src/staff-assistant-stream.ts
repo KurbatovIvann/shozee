@@ -31,7 +31,10 @@ import {
   type StaffAssistantConfirmationOutput,
 } from "./confirmation.js";
 import { STAFF_ASSISTANT_ANTHROPIC_PROVIDER_OPTIONS } from "./anthropic-options.js";
-import { clipStaffAssistantToolResult } from "./clip-tool-result.js";
+import {
+  clipStaffAssistantToolResult,
+  STAFF_ASSISTANT_CLIP_JSON_MAX,
+} from "./clip-tool-result.js";
 import {
   choiceCardEnvelope,
   isStaffAssistantNeedsChoiceOutput,
@@ -42,7 +45,10 @@ import {
   type ChoiceRecord,
   type StaffAssistantChoiceCardEnvelope,
 } from "./choice.js";
-import { staffAssistantJsonChars } from "./json-chars.js";
+import {
+  staffAssistantJsonChars,
+  staffAssistantPostgresJsonbTextChars,
+} from "./json-chars.js";
 import { staffAssistantHistoryStats } from "./messages.js";
 import {
   staffAssistantPersistedTurnText,
@@ -98,6 +104,9 @@ export interface StaffAssistantToolRun {
   readonly challengeId?: string;
   readonly resultIds: readonly string[];
   readonly outcome: StaffAssistantToolRunOutcome;
+  /** Live ToolSet key from `clipToolExecutes` (`orders_list_page`). */
+  readonly toolName?: string;
+  readonly modelTrace?: unknown;
 }
 
 export interface StaffAssistantTurnResult {
@@ -111,6 +120,7 @@ export interface StaffAssistantTurnResult {
   readonly toolsetHash: string;
   readonly historyMessageCount: number;
   readonly historyChars: number;
+  readonly historyTraceChars: number;
 }
 
 export type StaffAssistantUIMessage = UIMessage<
@@ -221,6 +231,48 @@ function stepReachedForcedJobTerminal(
   );
 }
 
+function attachClippedModelTraces(
+  runs: readonly StaffAssistantToolRun[],
+  presented: readonly StaffAssistantPresentedToolResult[],
+): StaffAssistantToolRun[] {
+  const traces = new Map<
+    string,
+    { readonly output: unknown; readonly toolName: string }
+  >();
+  for (const item of presented) {
+    if (item.toolCallId !== undefined && item.toolCallId.length > 0) {
+      traces.set(clipToolCallId(item.toolCallId), {
+        output: item.output,
+        toolName: item.toolName,
+      });
+    }
+  }
+  return runs.map((run) => {
+    if (run.outcome !== "success") {
+      return run;
+    }
+    const presentedRun = traces.get(run.toolCallId);
+    if (presentedRun === undefined) {
+      return run;
+    }
+    const modelTrace = presentedRun.output;
+    if (
+      isStaffAssistantConfirmationOutput(modelTrace) ||
+      isStaffAssistantNeedsChoiceOutput(modelTrace) ||
+      isStaffAssistantTypedToolError(modelTrace)
+    ) {
+      return run;
+    }
+    if (
+      staffAssistantPostgresJsonbTextChars(modelTrace) >
+      STAFF_ASSISTANT_CLIP_JSON_MAX
+    ) {
+      return run;
+    }
+    return { ...run, toolName: presentedRun.toolName, modelTrace };
+  });
+}
+
 function domainToolRuns(
   runs: readonly StaffAssistantToolRun[],
 ): StaffAssistantToolRun[] {
@@ -268,6 +320,8 @@ function wrapExecute(
       const output: unknown = await execute(actionName, input, {
         toolCallId,
       });
+      // Registry name is executeAction identity (ADR-0033). Reconstructed
+      // `toolName` / digest prefix come from clipToolExecutes' ToolSet key.
       runs.push({
         actionName,
         toolCallId,
@@ -349,7 +403,10 @@ function wrapExecute(
 /**
  * Clip the Tool execute return (after named façades map a compact view)
  * so catalog list prices are not stripped because images bloated the
- * executeAction payload. Persistence still records the registry output.
+ * executeAction payload. wrapExecute still records result ids from the
+ * registry output. `model_trace` uses this clipped façade output.
+ * Loop `name` is the live ToolSet key (`orders_list_page`); persist it
+ * as `toolName` so reconstruction does not emit `orders.list`.
  */
 function clipToolExecutes(
   tools: ToolSet,
@@ -779,9 +836,9 @@ export function streamStaffAssistantChat(options: {
             rawText,
             runs,
           }),
-          toolRuns: domainToolRuns(runs).slice(
-            0,
-            STAFF_ASSISTANT_TOOL_RUNS_MAX,
+          toolRuns: attachClippedModelTraces(
+            domainToolRuns(runs).slice(0, STAFF_ASSISTANT_TOOL_RUNS_MAX),
+            presentedToolResults,
           ),
           usage: await staffAssistantTurnUsageFromTotal(result.usage),
           toolsAttached: Object.keys(tools).length > 0,
@@ -791,6 +848,7 @@ export function streamStaffAssistantChat(options: {
           toolsetHash,
           historyMessageCount: history.messageCount,
           historyChars: history.chars,
+          historyTraceChars: history.traceChars,
         };
         writePresentationEnvelopes(writer, presentedToolResults, runs);
         if (

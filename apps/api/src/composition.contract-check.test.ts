@@ -243,4 +243,19 @@ describe("CI contract-check stage", () => {
     }
     expect(inputRequiresFileIdOrFileIds(setProductImages)).toBe(true);
   });
+
+  it("SHO-510: assistant.getModelHistory is internal and not an AI tool", () => {
+    const contracts = buildContractCheckInput().registry.contracts();
+    const history = contracts.find(
+      (contract) => contract.name === "assistant.getModelHistory",
+    );
+    expect(history).toBeDefined();
+    expect(history?.transport).toBe("internal");
+    expect(history?.aiExposure).toBe("internal");
+    expect(history?.risk).toBe("read");
+    expect(history?.principal).toBe("staff");
+    expect(staffExposedActionNames(contracts)).not.toContain(
+      "assistant.getModelHistory",
+    );
+  });
 });

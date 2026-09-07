@@ -1,0 +1,2 @@
+ALTER TABLE "assistant_tool_runs" ADD COLUMN "model_trace" jsonb;--> statement-breakpoint
+ALTER TABLE "assistant_tool_runs" ADD CONSTRAINT "assistant_tool_runs_model_trace_length_check" CHECK (length("assistant_tool_runs"."model_trace"::text) <= 22000);

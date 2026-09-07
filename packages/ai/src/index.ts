@@ -192,6 +192,14 @@ export {
   type StaffUserMessageAttempt,
 } from "./messages.js";
 export {
+  budgetStaffAssistantToolRuns,
+  staffAssistantTraceDigest,
+  staffAssistantToolSetKey,
+  STAFF_ASSISTANT_HISTORY_TRACE_MAX,
+  STAFF_ASSISTANT_TRACE_DIGEST_MAX,
+  type StaffAssistantPersistedToolRun,
+} from "./model-trace.js";
+export {
   extractUuidResultIds,
   streamStaffAssistantChat,
   STAFF_ASSISTANT_MAX_STEPS,

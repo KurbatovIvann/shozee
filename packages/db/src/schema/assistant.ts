@@ -2,8 +2,9 @@
  * Staff assistant persistence (SHO-320 / feature SHO-318). Owned by the
  * assistant module (ADR-0014). Conversations, user/assistant text, and
  * tool-run traces (action names, tool-call ids, challenge ids, result
- * ids, outcome). Deliberately absent: FKs to orders/documents, order or
- * document status snapshots, prompts in audit/logs, SSE/session columns.
+ * ids, outcome, bounded `model_trace` prompt state). Deliberately absent:
+ * FKs to orders/documents, order or document status snapshots, prompts in
+ * audit/logs, SSE/session columns.
  *
  * ON DELETE: `user_id → user` is RESTRICT (files/chat staff-user
  * convention). Composite FKs to conversations are CASCADE so deleting a
@@ -15,6 +16,7 @@ import {
   check,
   foreignKey,
   index,
+  jsonb,
   pgTable,
   text,
   uuid,
@@ -98,6 +100,11 @@ export const assistantMessages = pgTable(
  * closed HITL/tool set (success, error, confirmation_required,
  * choice_required). `challenge_id` is the opaque interaction id for
  * confirmation or choice. Never order/document status.
+ * `model_trace` is ADR-0034 prompt state: the post-clip façade output the
+ * model already saw. Nullable; no client renders it; CHECK
+ * `length(model_trace::text) <= 22000`. `tool_name` is the live ToolSet
+ * key (`orders_list_page`) for reconstruction; `action_name` stays the
+ * executeAction registry identity.
  */
 export const assistantToolRuns = pgTable(
   "assistant_tool_runs",
@@ -113,6 +120,8 @@ export const assistantToolRuns = pgTable(
       .notNull()
       .default(sql`'{}'::uuid[]`),
     outcome: text("outcome").notNull(),
+    modelTrace: jsonb("model_trace"),
+    toolName: text("tool_name"),
     ...timestampColumns(),
   },
   (table) => [
@@ -132,6 +141,10 @@ export const assistantToolRuns = pgTable(
     check(
       "assistant_tool_runs_outcome_check",
       sql`${table.outcome} IN ('success', 'error', 'confirmation_required', 'choice_required')`,
+    ),
+    check(
+      "assistant_tool_runs_model_trace_length_check",
+      sql`length(${table.modelTrace}::text) <= 22000`,
     ),
   ],
 );

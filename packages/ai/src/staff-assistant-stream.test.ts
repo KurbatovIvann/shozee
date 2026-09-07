@@ -421,6 +421,8 @@ describe("streamStaffAssistantChat", () => {
         toolCallId: "call-list",
         resultIds: [],
         outcome: "success",
+        toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+        modelTrace: { items: [], nextCursor: null },
       },
     ]);
     expect(turn.text).toBe("Немає замовлень.");
@@ -435,6 +437,7 @@ describe("streamStaffAssistantChat", () => {
     expect(turn.modelSteps).toBeGreaterThanOrEqual(1);
     expect(turn.historyMessageCount).toBe(1);
     expect(turn.historyChars).toBe("List orders".length);
+    expect(turn.historyTraceChars).toBe(0);
     expect(turn.toolsetHash).not.toBe(STAFF_ASSISTANT_EMPTY_TOOLSET_HASH);
     expect(turn.toolResultBytesIn).toBeGreaterThan(0);
     expect(turn.toolResultBytesOut).toBe(turn.toolResultBytesIn);
@@ -832,14 +835,16 @@ describe("streamStaffAssistantChat", () => {
       { query: "Opt", availability: "all", limit: 20 },
       { toolCallId: "call-pricing" },
     );
-    expect(turn.toolRuns).toEqual([
+    expect(turn.toolRuns).toMatchObject([
       {
         actionName: "pricing.listPriceLists",
         toolCallId: "call-pricing",
         resultIds: [],
         outcome: "success",
+        toolName: PRICING_LIST_PRICE_LISTS_TOOL_NAME,
       },
     ]);
+    expect(turn.toolRuns[0]?.modelTrace).toBeDefined();
     const toolNames = (model.doStreamCalls[0]?.tools ?? []).map(
       (tool) => tool.name,
     );
@@ -895,14 +900,16 @@ describe("streamStaffAssistantChat", () => {
       },
       { toolCallId: "call-create" },
     );
-    expect(turn.toolRuns).toEqual([
+    expect(turn.toolRuns).toMatchObject([
       {
         actionName: "orders.create",
         toolCallId: "call-create",
         resultIds: [customerId],
         outcome: "success",
+        toolName: ORDERS_CREATE_TOOL_NAME,
       },
     ]);
+    expect(turn.toolRuns[0]?.modelTrace).toBeDefined();
     const toolNames = (model.doStreamCalls[0]?.tools ?? []).map(
       (tool) => tool.name,
     );
@@ -984,6 +991,7 @@ describe("streamStaffAssistantChat", () => {
         outcome: "confirmation_required",
       },
     ]);
+    expect(turn.toolRuns[0]).not.toHaveProperty("modelTrace");
     expect(turn.text).toBe(STAFF_ASSISTANT_CONFIRMATION_FALLBACK_TEXT);
     expect(JSON.stringify(payloads)).not.toContain("should not auto-confirm");
 
@@ -1173,14 +1181,28 @@ describe("streamStaffAssistantChat", () => {
     expect(payloadText).not.toContain(spoken);
     expect(payloadText).not.toContain('{"spoken"');
     expect(payloadText).toContain(ORDERS_LIST_PAGE_TOOL_NAME);
-    expect(turn.toolRuns).toEqual([
+    expect(turn.toolRuns).toMatchObject([
       {
         actionName: "orders.list",
         toolCallId: "call-list",
         resultIds: [],
         outcome: "success",
+        toolName: ORDERS_LIST_PAGE_TOOL_NAME,
       },
     ]);
+    const listTrace = turn.toolRuns[0]?.modelTrace;
+    expect(listTrace).toMatchObject({
+      kind: "page.summary",
+    });
+    expect(
+      typeof listTrace === "object" &&
+        listTrace !== null &&
+        "rows" in listTrace &&
+        Array.isArray(listTrace.rows),
+    ).toBe(true);
+    expect(JSON.stringify(turn.toolRuns[0]?.modelTrace)).not.toContain(
+      "extra-handler-field",
+    );
   });
 
   it("flattens spoken after counts-only aggregate", async () => {
@@ -1247,14 +1269,16 @@ describe("streamStaffAssistantChat", () => {
     expect(payloadText).not.toContain(spoken);
     expect(payloadText).not.toContain('{"spoken"');
     expect(payloadText).toContain(ORDERS_LIST_COUNTS_TOOL_NAME);
-    expect(turn.toolRuns).toEqual([
+    expect(turn.toolRuns).toMatchObject([
       {
         actionName: "orders.list",
         toolCallId: "call-counts",
         resultIds: [],
         outcome: "success",
+        toolName: ORDERS_LIST_COUNTS_TOOL_NAME,
       },
     ]);
+    expect(turn.toolRuns[0]?.modelTrace).toBeDefined();
   });
 
   it("does not record a synthetic json tool as a domain toolRun", async () => {
@@ -1871,6 +1895,7 @@ describe("streamStaffAssistantChat", () => {
     expect(model.doStreamCalls).toHaveLength(1);
     expect(turn.toolRuns[0]?.outcome).toBe("choice_required");
     expect(turn.toolRuns[0]?.challengeId).toBe(challengeId);
+    expect(turn.toolRuns[0]).not.toHaveProperty("modelTrace");
     expect(opened).toHaveLength(1);
     expect(JSON.stringify(opened[0])).toContain("canonicalInput");
     const choiceChunks = payloads.filter((payload) => {
@@ -2762,7 +2787,7 @@ describe("data-presentation envelope (SHO-458)", () => {
         toolCallIds: [longToolCallId],
       },
     });
-    expect(turn.toolRuns).toEqual([
+    expect(turn.toolRuns).toMatchObject([
       {
         actionName: "orders.list",
         toolCallId: longToolCallId.slice(0, STAFF_ASSISTANT_TOOL_CALL_ID_MAX),
@@ -2770,6 +2795,7 @@ describe("data-presentation envelope (SHO-458)", () => {
         outcome: "success",
       },
     ]);
+    expect(turn.toolRuns[0]?.modelTrace).toBeDefined();
     expect(execute).toHaveBeenCalledWith(
       "orders.list",
       { kind: "page.summary", limit: ORDERS_LIST_PAGE_ASSISTANT_DEFAULT_LIMIT },
@@ -2802,7 +2828,7 @@ describe("data-presentation envelope (SHO-458)", () => {
     await readUiMessageSsePayloads(response);
     const turn = await completion;
     expect(turn).not.toHaveProperty("presentation");
-    expect(turn.toolRuns).toEqual([
+    expect(turn.toolRuns).toMatchObject([
       {
         actionName: "orders.list",
         toolCallId: "call-list",
@@ -2810,6 +2836,9 @@ describe("data-presentation envelope (SHO-458)", () => {
         outcome: "success",
       },
     ]);
+    expect(turn.toolRuns[0]?.modelTrace).toMatchObject({
+      kind: "page.summary",
+    });
     expect(JSON.stringify(onTurn.mock.calls[0])).not.toContain(
       "data-presentation",
     );

@@ -5,6 +5,8 @@ import {
   TOOL_RUNS_MAX,
 } from "./conversation-view.contract.js";
 import {
+  MODEL_TRACE_JSON_MAX,
+  modelTracePostgresJsonbTextLength,
   recordAssistantTurnContract,
   recordAssistantTurnInputSchema,
 } from "./record-assistant-turn.contract.js";
@@ -107,5 +109,88 @@ describe("assistant.recordAssistantTurn contract", () => {
         })),
       }).success,
     ).toBe(false);
+  });
+
+  it("accepts optional bounded modelTrace and rejects oversized JSON", () => {
+    const conversationId = "11111111-1111-4111-8111-111111111111";
+    const parsed = recordAssistantTurnInputSchema.parse({
+      conversationId,
+      body: "Listed.",
+      toolRuns: [
+        {
+          actionName: "orders.list",
+          toolCallId: "call_trace",
+          outcome: "success",
+          modelTrace: { kind: "page.summary", rows: [{ orderNumber: "12" }] },
+        },
+      ],
+    });
+    expect(parsed.toolRuns[0]?.modelTrace).toEqual({
+      kind: "page.summary",
+      rows: [{ orderNumber: "12" }],
+    });
+    expect(
+      recordAssistantTurnInputSchema.parse({
+        conversationId,
+        body: "Listed.",
+        toolRuns: [
+          {
+            actionName: "orders.list",
+            toolCallId: "call_trace_named",
+            outcome: "success",
+            toolName: "orders_list_page",
+            modelTrace: { kind: "page.summary", rows: [{ orderNumber: "12" }] },
+          },
+        ],
+      }).toolRuns[0]?.toolName,
+    ).toBe("orders_list_page");
+    expect(
+      recordAssistantTurnInputSchema.safeParse({
+        conversationId,
+        body: "Listed.",
+        toolRuns: [
+          {
+            actionName: "orders.list",
+            toolCallId: "call_huge",
+            outcome: "success",
+            modelTrace: { pad: "x".repeat(MODEL_TRACE_JSON_MAX) },
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      recordAssistantTurnInputSchema.safeParse({
+        conversationId,
+        body: "Listed.",
+        toolRuns: [
+          {
+            actionName: "orders.list",
+            toolCallId: "call_stringify_ok_postgres_over",
+            outcome: "success",
+            modelTrace: { pad: "x".repeat(21_990) },
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      recordAssistantTurnInputSchema.safeParse({
+        conversationId,
+        body: "Listed.",
+        toolRuns: [
+          {
+            actionName: "orders.list",
+            toolCallId: "call_postgres_limit",
+            outcome: "success",
+            modelTrace: { pad: "x".repeat(21_989) },
+          },
+        ],
+      }).success,
+    ).toBe(true);
+    expect(modelTracePostgresJsonbTextLength({ pad: "x".repeat(21_990) })).toBe(
+      MODEL_TRACE_JSON_MAX + 1,
+    );
+    expect(JSON.stringify({ pad: "x".repeat(21_990) }).length).toBe(
+      MODEL_TRACE_JSON_MAX,
+    );
   });
 });

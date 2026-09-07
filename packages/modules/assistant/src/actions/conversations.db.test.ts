@@ -29,9 +29,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { appendUserMessage } from "./append-user-message.js";
 import { createConversation } from "./create-conversation.js";
 import { getConversation } from "./get-conversation.js";
+import { getModelHistory } from "./get-model-history.js";
 import { getStaffActor } from "./get-staff-actor.js";
 import { listConversations } from "./list-conversations.js";
 import { LIST_CONVERSATIONS_MAX_LIMIT } from "./list-conversations.contract.js";
+import { MODEL_TRACE_JSON_MAX } from "./record-assistant-turn.contract.js";
 import { recordAssistantTurn } from "./record-assistant-turn.js";
 
 const fixtures = {
@@ -42,6 +44,7 @@ const fixtures = {
   appendIdempotent: randomUUID(),
   recordIdempotent: randomUUID(),
   recordIds: randomUUID(),
+  modelTrace: randomUUID(),
   employee: randomUUID(),
 };
 
@@ -181,6 +184,12 @@ beforeAll(async () => {
     userId: kitIdentities.users.anna,
     title: "Record ids",
   });
+  await insertConversation({
+    id: fixtures.modelTrace,
+    companyId: kitIdentities.companies.a,
+    userId: kitIdentities.users.anna,
+    title: "Model trace",
+  });
 
   await kit.db.runtime.db.insert(user).values([
     {
@@ -257,6 +266,11 @@ crossTenantSuite(
     ),
     isolationCase(
       getConversation,
+      { input: { conversationId: fixtures.convA } },
+      { input: { conversationId: fixtures.convB } },
+    ),
+    isolationCase(
+      getModelHistory,
       { input: { conversationId: fixtures.convA } },
       { input: { conversationId: fixtures.convB } },
     ),
@@ -434,6 +448,8 @@ describe("assistant staff conversation actions", () => {
         challengeId: null,
       }),
     ]);
+    expect(detail.toolRuns[0]).not.toHaveProperty("modelTrace");
+    expect(JSON.stringify(detail)).not.toMatch(/modelTrace|model_trace/);
     expect(detail).not.toHaveProperty("companyId");
     expect(JSON.stringify(detail.toolRuns)).not.toMatch(
       /confirmed|issued|paid|status/,
@@ -645,6 +661,8 @@ describe("assistant staff conversation actions", () => {
       outcome: "success",
     });
     expect(hitl).not.toHaveProperty("status");
+    expect(hitl?.modelTrace).toBeNull();
+    expect(created?.modelTrace).toBeNull();
     expect(JSON.stringify(rows)).not.toMatch(/confirmed|issued|paid/);
 
     const confirmationMessage = (
@@ -695,6 +713,7 @@ describe("assistant staff conversation actions", () => {
     expect(rows[0]).toMatchObject({
       challengeId,
       outcome: "choice_required",
+      modelTrace: null,
     });
 
     const message = (
@@ -744,6 +763,9 @@ describe("assistant staff conversation actions", () => {
       kit.invoke(getConversation, { conversationId: fixtures.convA }, denied),
     ).rejects.toBeInstanceOf(PermissionDeniedError);
     await expect(
+      kit.invoke(getModelHistory, { conversationId: fixtures.convA }, denied),
+    ).rejects.toBeInstanceOf(PermissionDeniedError);
+    await expect(
       kit.invoke(
         appendUserMessage,
         { conversationId: fixtures.convA, body: "nope" },
@@ -781,6 +803,9 @@ describe("assistant staff conversation actions", () => {
       kit.invoke(getConversation, { conversationId: "not-a-uuid" }),
     ).rejects.toBeInstanceOf(ValidationError);
     await expect(
+      kit.invoke(getModelHistory, { conversationId: "not-a-uuid" }),
+    ).rejects.toBeInstanceOf(ValidationError);
+    await expect(
       kit.invoke(listConversations, {
         limit: LIST_CONVERSATIONS_MAX_LIMIT + 1,
       }),
@@ -794,6 +819,20 @@ describe("assistant staff conversation actions", () => {
             actionName: "orders.create",
             toolCallId: "call_bad",
             outcome: "issued",
+          },
+        ],
+      }),
+    ).rejects.toBeInstanceOf(ValidationError);
+    await expect(
+      kit.invoke(recordAssistantTurn, {
+        conversationId: fixtures.convA,
+        body: "x",
+        toolRuns: [
+          {
+            actionName: "orders.list",
+            toolCallId: "call_huge",
+            outcome: "success",
+            modelTrace: { pad: "x".repeat(MODEL_TRACE_JSON_MAX) },
           },
         ],
       }),
@@ -884,6 +923,24 @@ describe("assistant staff conversation actions", () => {
       "colleague recordAssistantTurn into a foreign-company thread",
     );
     expect(colleagueRecord).toEqual(foreignRecord);
+
+    const colleagueHistory = await invokeAsNotFound(
+      kit.invoke(
+        getModelHistory,
+        { conversationId: fixtures.convA },
+        colleague,
+      ),
+      "colleague getModelHistory of another author's id",
+    );
+    const foreignHistory = await invokeAsNotFound(
+      kit.invoke(
+        getModelHistory,
+        { conversationId: fixtures.convB },
+        colleague,
+      ),
+      "colleague getModelHistory of a foreign-company id",
+    );
+    expect(colleagueHistory).toEqual(foreignHistory);
   });
 
   it("listConversations for a colleague omits the author's rows and leaves the author's page intact", async () => {
@@ -956,6 +1013,11 @@ describe("assistant staff conversation actions", () => {
         toolRuns: [],
       }),
     ).rejects.toBeInstanceOf(NotFoundError);
+    const ownerHistory = await invokeAsNotFound(
+      kit.invoke(getModelHistory, { conversationId: fixtures.employee }),
+      "owner getModelHistory of an employee's id",
+    );
+    expect(ownerHistory).toEqual(foreignGet);
   });
 
   it("an employee still creates, lists, gets, appends, and records their own", async () => {
@@ -1008,6 +1070,170 @@ describe("assistant staff conversation actions", () => {
     expect(detail.messages.map((message) => message.body)).toEqual([
       "my prompt",
       "my reply",
+    ]);
+    const ownHistory = await kit.invoke(
+      getModelHistory,
+      { conversationId: created.id },
+      colleague,
+    );
+    expect(ownHistory.conversationId).toBe(created.id);
+    expect(ownHistory.messages.map((message) => message.text)).toEqual([
+      "my prompt",
+      "my reply",
+    ]);
+  });
+
+  it("persists post-clip modelTrace on success and returns it only from getModelHistory", async () => {
+    const trace = {
+      kind: "page.summary",
+      rows: [{ orderId: orderId, orderNumber: "12", name: "Катя" }],
+    };
+    const recorded = await kit.invoke(recordAssistantTurn, {
+      conversationId: fixtures.modelTrace,
+      body: "Here are the last orders.",
+      toolRuns: [
+        {
+          actionName: "orders.list",
+          toolCallId: "call_trace",
+          resultIds: [orderId],
+          outcome: "success",
+          toolName: "orders_list_page",
+          modelTrace: trace,
+        },
+      ],
+    });
+    const clientView = await kit.invoke(getConversation, {
+      conversationId: fixtures.modelTrace,
+    });
+    const history = await kit.invoke(getModelHistory, {
+      conversationId: fixtures.modelTrace,
+    });
+
+    expect(recorded.toolRuns[0]).toEqual(
+      expect.objectContaining({
+        actionName: "orders.list",
+        toolCallId: "call_trace",
+        resultIds: [orderId],
+        outcome: "success",
+      }),
+    );
+    expect(recorded.toolRuns[0]).not.toHaveProperty("modelTrace");
+    expect(JSON.stringify(clientView)).not.toMatch(/modelTrace|model_trace/);
+    expect(clientView.toolRuns[0]).not.toHaveProperty("modelTrace");
+    const lastAssistant = history.messages.findLast(
+      (row) => row.role === "assistant",
+    );
+    expect(lastAssistant?.text).toBe("Here are the last orders.");
+    expect(lastAssistant?.toolRuns).toEqual([
+      {
+        action: "orders.list",
+        toolCallId: "call_trace",
+        toolName: "orders_list_page",
+        modelTrace: trace,
+      },
+    ]);
+  });
+
+  it("does not persist modelTrace for confirmation_required, choice_required, or error", async () => {
+    const conversation = await kit.invoke(createConversation, {
+      title: "No HITL trace",
+    });
+    await kit.invoke(recordAssistantTurn, {
+      conversationId: conversation.id,
+      body: "Need a choice.",
+      toolRuns: [
+        {
+          actionName: "orders.confirm",
+          toolCallId: "call_confirm",
+          outcome: "confirmation_required",
+          modelTrace: { shouldNotStore: true },
+        },
+        {
+          actionName: "orders.create",
+          toolCallId: "call_choice_drop",
+          challengeId,
+          outcome: "choice_required",
+          modelTrace: { alsoDrop: true },
+        },
+        {
+          actionName: "catalog.listProducts",
+          toolCallId: "call_err_drop",
+          outcome: "error",
+          modelTrace: { dropError: true },
+        },
+      ],
+    });
+    const stored = await kit.db.runtime.db
+      .select()
+      .from(assistantToolRuns)
+      .where(
+        and(
+          eq(assistantToolRuns.companyId, kitIdentities.companies.a),
+          eq(assistantToolRuns.conversationId, conversation.id),
+        ),
+      );
+    expect(stored).toHaveLength(3);
+    expect(stored.every((row) => row.modelTrace === null)).toBe(true);
+
+    const history = await kit.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    const lastAssistant = history.messages.findLast(
+      (row) => row.role === "assistant",
+    );
+    expect(lastAssistant?.toolRuns).toHaveLength(3);
+    expect(lastAssistant?.toolRuns).toEqual(
+      expect.arrayContaining([
+        {
+          action: "orders.confirm",
+          toolCallId: "call_confirm",
+          toolName: null,
+          modelTrace: null,
+        },
+        {
+          action: "orders.create",
+          toolCallId: "call_choice_drop",
+          toolName: null,
+          modelTrace: null,
+        },
+        {
+          action: "catalog.listProducts",
+          toolCallId: "call_err_drop",
+          toolName: null,
+          modelTrace: null,
+        },
+      ]),
+    );
+  });
+
+  it("windows getModelHistory to the newest 8 messages", async () => {
+    const conversation = await kit.invoke(createConversation, {
+      title: "History window",
+    });
+    for (let index = 0; index < 5; index += 1) {
+      await kit.invoke(appendUserMessage, {
+        conversationId: conversation.id,
+        body: `user-${String(index)}`,
+      });
+      await kit.invoke(recordAssistantTurn, {
+        conversationId: conversation.id,
+        body: `assistant-${String(index)}`,
+        toolRuns: [],
+      });
+    }
+    const history = await kit.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    expect(history.messages).toHaveLength(8);
+    expect(history.messages.map((message) => message.text)).toEqual([
+      "user-1",
+      "assistant-1",
+      "user-2",
+      "assistant-2",
+      "user-3",
+      "assistant-3",
+      "user-4",
+      "assistant-4",
     ]);
   });
 });
