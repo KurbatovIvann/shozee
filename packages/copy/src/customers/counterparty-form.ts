@@ -1,4 +1,4 @@
-/** Counterparty create/edit copy (uk/en). */
+/** Counterparty create/edit copy (uk/en). Wholesale mobile tree (SHO-476). */
 import {
   formChromeEn,
   formChromeUk,
@@ -6,7 +6,7 @@ import {
   writeErrorsUk,
   type FormChromeCopy,
   type WriteErrorsCopy,
-} from "../copy";
+} from "../chrome.js";
 
 export type CustomersCounterpartyFormCopy = FormChromeCopy & {
   readonly customerTitle: string;

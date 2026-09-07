@@ -20,6 +20,7 @@ shared tree plus typed leftovers composed in those app files.
 | `./assistant` | Shared assistant result-surface chrome                        |
 | `./panel`     | Byte-identical panel-shell intersection (SHO-481)             |
 | `./companies` | Onboarding / settings / legal / scope intersections (SHO-482) |
+| `./customers` | Wholesale mobile customers list + forms (SHO-476)             |
 
 Do not add a package root barrel. Domain modules must not import this
 package (ESLint `copyClientOnly`).

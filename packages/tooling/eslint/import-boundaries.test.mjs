@@ -139,6 +139,7 @@ test("showzy/import-boundaries", () => {
           import { sharedOrdersCopy } from "@showzy/copy/orders";
           import { formChromeEn } from "@showzy/copy/chrome";
           import { sharedAuthCopy } from "@showzy/copy/auth";
+          import { sharedCustomersCopy } from "@showzy/copy/customers";
           import { sharedPanelCopy } from "@showzy/copy/panel";
           import { sharedCompaniesOnboardingCopy } from "@showzy/copy/companies";
           import { DocumentSigner } from "@showzy/document-signing";
