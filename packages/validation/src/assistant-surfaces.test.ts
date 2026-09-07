@@ -461,12 +461,12 @@ describe("parseOrdersAggregateSurface", () => {
       return;
     }
     expect(data.aggregate.groupingKey).toBe("status");
-    expect(data.aggregate.featured).toBeNull();
     expect(data.aggregate.headlineCount).toBe(6);
+    expect(data.aggregate.headlineGross).toEqual(data.gross);
+    expect("sections" in data.aggregate).toBe(false);
+    expect("featured" in data.aggregate).toBe(false);
+    expect("groups" in data.aggregate).toBe(false);
     expect("total" in data.aggregate).toBe(false);
-    expect(data.aggregate.sections[0]?.id).toBe("status");
-    expect(data.aggregate.sections[0]?.rows[0]?.badge).toBe("new");
-    expect(data.aggregate.sections[0]?.rows[0]?.cells[0]).toBe("2");
   });
 });
 
@@ -962,6 +962,7 @@ describe("customers-list collection (SHO-472)", () => {
 });
 
 function breakdownFixture(groupingKey: string): AssistantAggregateDescriptor {
+  // Shape-only. Row fixtures for this layout live on AssistantAggregateView.
   const groupLabel =
     groupingKey === "product"
       ? "product"
@@ -990,37 +991,6 @@ function breakdownFixture(groupingKey: string): AssistantAggregateDescriptor {
         alignment: "end",
       },
     ],
-    groups: [
-      {
-        id: `${groupingKey}-parent`,
-        head: {
-          id: `${groupingKey}-head`,
-          title: groupingKey,
-          badge: null,
-          meta: null,
-          cells: ["2", "1000"],
-          href: null,
-        },
-        children: [
-          {
-            id: `${groupingKey}-child`,
-            title: "child",
-            badge: null,
-            meta: null,
-            cells: ["1", "500"],
-            href: null,
-          },
-        ],
-      },
-    ],
-    total: {
-      id: "total",
-      title: "total",
-      badge: null,
-      meta: null,
-      cells: ["2", "1000"],
-      href: null,
-    },
   });
 }
 
@@ -1057,7 +1027,8 @@ describe("aggregate layouts (SHO-473)", () => {
       return;
     }
     expect("total" in data.aggregate).toBe(false);
-    expect(data.aggregate.featured).toBeNull();
+    expect("sections" in data.aggregate).toBe(false);
+    expect("featured" in data.aggregate).toBe(false);
   });
 
   it("keeps summary and breakdown as the same descriptor union with two layouts", () => {
@@ -1065,33 +1036,20 @@ describe("aggregate layouts (SHO-473)", () => {
       groupingKey: "status",
       headlineCount: 3,
       headlineGross: [{ amountMinor: "1000", currency: "UAH" }],
-      sections: [
-        {
-          id: "status",
-          heading: "",
-          rows: [
-            {
-              id: "new",
-              title: "",
-              badge: "new",
-              meta: null,
-              cells: ["3", "1000"],
-              href: null,
-            },
-          ],
-        },
-      ],
-      featured: null,
     });
     const breakdown = breakdownFixture("product");
     expect(ASSISTANT_AGGREGATE_LAYOUTS).toEqual(["summary", "breakdown"]);
     expect(summary.layout).toBe("summary");
     expect(breakdown.layout).toBe("breakdown");
+    expect("sections" in summary).toBe(false);
+    expect("featured" in summary).toBe(false);
     expect("total" in summary).toBe(false);
     if (breakdown.layout !== "breakdown") {
       return;
     }
-    expect(breakdown.total).not.toBeNull();
+    expect("groups" in breakdown).toBe(false);
+    expect("total" in breakdown).toBe(false);
+    expect(breakdown.columns).toHaveLength(3);
   });
 
   it("treats 3.5 / 3.6 / 3.7 as one breakdown layout with different grouping keys", () => {
@@ -1114,8 +1072,8 @@ describe("aggregate layouts (SHO-473)", () => {
       if (fixture.layout !== "breakdown") {
         continue;
       }
-      expect(fixture.total).not.toBeNull();
-      expect(fixture.groups.length).toBeGreaterThan(0);
+      expect("groups" in fixture).toBe(false);
+      expect("total" in fixture).toBe(false);
       expect(fixture.columns).toHaveLength(3);
     }
     const registeredKinds: readonly string[] = ASSISTANT_SURFACE_REGISTRY.map(

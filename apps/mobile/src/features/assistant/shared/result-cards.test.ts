@@ -1308,6 +1308,18 @@ describe("assistantSurfacesFromParts aggregate (SHO-370 / SHO-395)", () => {
     expect(customer.extraBuckets[0]?.label).toBe("Іван");
     expect(customer.extraBuckets[0]?.quantityLabel).toBeNull();
     expect(customer.extraBuckets[0]?.status).toBeNull();
+    if (product.aggregate.layout === "summary") {
+      expect(product.aggregate.sections[1]?.id).toBe("product");
+      expect(product.aggregate.sections[1]?.id).toBe(
+        product.aggregate.groupingKey,
+      );
+    }
+    if (customer.aggregate.layout === "summary") {
+      expect(customer.aggregate.sections[1]?.id).toBe("customer");
+      expect(customer.aggregate.sections[1]?.id).toBe(
+        customer.aggregate.groupingKey,
+      );
+    }
     expect("chartType" in product).toBe(false);
     expect("chartType" in customer).toBe(false);
   });
@@ -2090,9 +2102,12 @@ describe("aggregate block layouts (SHO-473)", () => {
       return;
     }
     expect(card.aggregate.sections).toHaveLength(2);
+    expect(card.aggregate.sections[0]?.id).toBe("status");
     expect(card.aggregate.sections[0]?.rows[0]?.badge).toBe(
       ordersUk.statuses.new,
     );
+    expect(card.aggregate.sections[1]?.id).toBe("product");
+    expect(card.aggregate.sections[1]?.id).toBe(card.aggregate.groupingKey);
     expect(card.aggregate.sections[1]?.rows[0]?.title).toBe("Троянда");
     expect(card.aggregate.featured).toBeNull();
   });

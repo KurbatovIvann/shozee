@@ -3,12 +3,7 @@
  * `orders_list_counts`. Compose skips this kind when a list page is on
  * the same turn.
  */
-import {
-  assistantAggregateSummary,
-  type AssistantAggregateDescriptor,
-  type AssistantAggregateSection,
-  type AssistantCollectionRow,
-} from "./aggregate.js";
+import { assistantAggregateSummary } from "./aggregate.js";
 import {
   ASSISTANT_ORDERS_LIST_SCREEN_HREF,
   resolveAssistantSurfaceDestination,
@@ -231,80 +226,6 @@ function parseExtraBuckets(
   }
 }
 
-function moneyCellValues(
-  gross: readonly AssistantMoneyMinor[],
-): readonly string[] {
-  return gross.map((amount) => amount.amountMinor);
-}
-
-function collectionRowFromStatusBucket(
-  bucket: AssistantOrdersAggregateStatusBucketData,
-): AssistantCollectionRow {
-  return {
-    id: bucket.status,
-    title: "",
-    badge: bucket.status,
-    meta: null,
-    cells: [String(bucket.orderCount), ...moneyCellValues(bucket.gross)],
-    href: null,
-  };
-}
-
-function collectionRowFromExtraBucket(
-  bucket: AssistantOrdersAggregateExtraBucketData,
-): AssistantCollectionRow {
-  if (bucket.identityKind === "product") {
-    return {
-      id: bucket.id,
-      title: bucket.name,
-      badge: null,
-      meta: bucket.quantityMilli,
-      cells: [String(bucket.orderCount), ...moneyCellValues(bucket.gross)],
-      href: null,
-    };
-  }
-  return {
-    id: bucket.id,
-    title: bucket.nameSnapshot ?? "",
-    badge: null,
-    meta: null,
-    cells: [String(bucket.orderCount), ...moneyCellValues(bucket.gross)],
-    href: null,
-  };
-}
-
-function summaryFromBuckets(args: {
-  readonly groupingKey: AssistantOrdersAggregateGroupBy;
-  readonly orderCount: number;
-  readonly gross: readonly AssistantMoneyMinor[];
-  readonly statusBuckets: readonly AssistantOrdersAggregateStatusBucketData[];
-  readonly extraBuckets: readonly AssistantOrdersAggregateExtraBucketData[];
-}): AssistantAggregateDescriptor {
-  const sections: AssistantAggregateSection[] = [];
-  if (args.statusBuckets.length > 0) {
-    sections.push({
-      id: "status",
-      heading: "",
-      rows: args.statusBuckets.map(collectionRowFromStatusBucket),
-    });
-  }
-  if (args.extraBuckets.length > 0) {
-    const extraKind = args.extraBuckets[0]?.identityKind ?? "extra";
-    sections.push({
-      id: extraKind,
-      heading: "",
-      rows: args.extraBuckets.map(collectionRowFromExtraBucket),
-    });
-  }
-  return assistantAggregateSummary({
-    groupingKey: args.groupingKey,
-    headlineCount: args.orderCount,
-    headlineGross: args.gross,
-    sections,
-    featured: null,
-  });
-}
-
 /**
  * Counts-only aggregate. Compose must not call this when a list page is
  * already on the turn.
@@ -349,12 +270,10 @@ export function parseOrdersAggregateSurface(
     bucketsTruncated: payload["bucketsTruncated"] === true,
     bucketsOmitted: typeof omitted === "number" && omitted > 0 ? omitted : 0,
     clipped,
-    aggregate: summaryFromBuckets({
+    aggregate: assistantAggregateSummary({
       groupingKey: groupBy,
-      orderCount,
-      gross,
-      statusBuckets,
-      extraBuckets,
+      headlineCount: orderCount,
+      headlineGross: gross,
     }),
   };
 }

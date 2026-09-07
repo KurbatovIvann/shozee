@@ -236,6 +236,7 @@ function summaryViewFromBuckets(args: {
     });
   }
   if (args.extraBuckets.length > 0) {
+    // Extra section id is groupingKey — the id the block already rendered.
     sections.push({
       id: args.groupingKey,
       heading: "",
