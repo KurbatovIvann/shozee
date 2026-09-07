@@ -509,12 +509,17 @@ function parseAiBudgetTryAddResult(result: unknown): AiBudgetTryAddDecision {
     );
   }
   const allowedFlag = Number(result[0]);
-  const spentRaw = result[1];
-  const spent =
-    typeof spentRaw === "string" || typeof spentRaw === "number"
-      ? parseAiBudgetSpent(spentRaw)
-      : 0;
-  return { allowed: allowedFlag === 1, spent };
+  return {
+    allowed: allowedFlag === 1,
+    spent: parseAiBudgetSpent(aiBudgetScriptSpentRaw(result[1])),
+  };
+}
+
+function aiBudgetScriptSpentRaw(value: unknown): string | number | null {
+  if (typeof value === "string" || typeof value === "number") {
+    return value;
+  }
+  return null;
 }
 
 function parseTokenBucketResult(

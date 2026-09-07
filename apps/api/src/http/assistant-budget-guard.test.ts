@@ -12,6 +12,7 @@ import {
 } from "../stores/budget.js";
 import {
   DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+  EMPTY_STAFF_ASSISTANT_BUDGET_HOLD,
   enforceStaffAssistantBudget,
   logStaffAssistantBudgetDenial,
   recordStaffAssistantBudgetSpend,
@@ -73,7 +74,7 @@ describe("enforceStaffAssistantBudget", () => {
         ...request,
         userId: "33333333-3333-4333-8333-333333333333",
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual(EMPTY_STAFF_ASSISTANT_BUDGET_HOLD);
   });
 
   it("treats 0 as disable for turn and budget checks", async () => {
@@ -113,7 +114,7 @@ describe("enforceStaffAssistantBudget", () => {
           unknownModelTurnUsd: 0.1,
         },
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual(EMPTY_STAFF_ASSISTANT_BUDGET_HOLD);
   });
 
   it("skips the turn bucket on confirmation resume", async () => {
@@ -137,7 +138,7 @@ describe("enforceStaffAssistantBudget", () => {
           chatTurnsPerMinutePerUser: 1,
         },
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual(EMPTY_STAFF_ASSISTANT_BUDGET_HOLD);
     await expect(
       enforceStaffAssistantBudget({
         logger: createCapturingLogger().logger,
@@ -185,7 +186,10 @@ describe("enforceStaffAssistantBudget", () => {
         budgetStore,
         limits: DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({
+      companyReservedUsd: 0.1,
+      globalReservedUsd: 0.1,
+    });
   });
 
   it("denies every company when the global Kyiv-day USD limit is reached", async () => {

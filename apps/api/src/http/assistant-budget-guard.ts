@@ -79,8 +79,8 @@ export async function enforceStaffAssistantBudget(options: {
   readonly companyId: string;
   readonly skipTurnLimit: boolean;
   readonly now?: Date;
-  readonly rateLimitStore?: RateLimitStore;
-  readonly budgetStore?: AiBudgetStore;
+  readonly rateLimitStore?: RateLimitStore | undefined;
+  readonly budgetStore?: AiBudgetStore | undefined;
   readonly limits: StaffAssistantBudgetLimits;
 }): Promise<StaffAssistantBudgetHold> {
   const now = options.now ?? new Date();
@@ -160,7 +160,7 @@ export async function recordStaffAssistantBudgetSpend(options: {
   readonly estimatedCostUsd: number | null;
   readonly hold: StaffAssistantBudgetHold;
   readonly now?: Date;
-  readonly budgetStore?: AiBudgetStore;
+  readonly budgetStore?: AiBudgetStore | undefined;
   readonly limits: StaffAssistantBudgetLimits;
 }): Promise<void> {
   if (options.budgetStore === undefined) {
@@ -202,7 +202,7 @@ async function reserveStaffAssistantBudget(options: {
   readonly companyKey: string;
   readonly globalKey: string;
   readonly retryAfterSec: number;
-  readonly budgetStore?: AiBudgetStore;
+  readonly budgetStore?: AiBudgetStore | undefined;
   readonly limits: StaffAssistantBudgetLimits;
 }): Promise<StaffAssistantBudgetHold> {
   if (options.budgetStore === undefined) {
@@ -321,7 +321,7 @@ async function releaseStaffAssistantBudgetHold(options: {
   readonly companyId: string;
   readonly companyKey: string;
   readonly globalKey: string;
-  readonly budgetStore?: AiBudgetStore;
+  readonly budgetStore?: AiBudgetStore | undefined;
   readonly hold: StaffAssistantBudgetHold;
 }): Promise<void> {
   if (options.budgetStore === undefined) {

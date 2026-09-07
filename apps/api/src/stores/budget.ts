@@ -104,7 +104,7 @@ export function createMemoryAiBudgetStore(options?: {
     },
 
     tryAdd(key, amountUsd, capUsd, ttlSec) {
-      return withKeyLock(tails, key, () => {
+      return withKeyLock(tails, key, (): Promise<AiBudgetTryAddDecision> => {
         const current = liveValue(key);
         const next = current + amountUsd;
         if (next > capUsd) {
