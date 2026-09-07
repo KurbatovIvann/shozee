@@ -1,15 +1,14 @@
 /**
- * Shared aggregate descriptor for assistant result surfaces (SHO-473).
- * Two declared layouts: `summary` (flat sections + headline) and
- * `breakdown` (two-level table + totals). A new cut is data (`groupingKey`,
- * section/column labels). A new layout is a design decision that enters
- * this closed set. Do not add a third layout here.
+ * Shared aggregate descriptor for assistant result surfaces (SHO-473 /
+ * SHO-499). Two declared layouts: `summary` (headline + grouping) and
+ * `breakdown` (column headers + grouping). A new cut is data
+ * (`groupingKey`, headline, columns). A new layout is a design decision
+ * that enters this closed set. Do not add a third layout here.
  *
- * Columns reuse T4 collection primitives. Row cells stay on this
- * descriptor until SHO-499 (T2); collection descriptors (SHO-496) do
- * not carry rows. `orders-aggregate` parses onto `summary`.
- * `breakdown` is proven with fixtures — not a second live domain
- * surface.
+ * The descriptor guarantees layout and grouping; the client builds the
+ * rows. Parse does not carry display strings. `orders-aggregate` parses
+ * onto `summary`. `breakdown` is proven with fixtures — not a second
+ * live domain surface.
  */
 import type { AssistantCollectionColumn } from "./collection.js";
 import type { AssistantMoneyMinor } from "./helpers.js";
@@ -19,46 +18,17 @@ export const ASSISTANT_AGGREGATE_LAYOUTS = ["summary", "breakdown"] as const;
 export type AssistantAggregateLayout =
   (typeof ASSISTANT_AGGREGATE_LAYOUTS)[number];
 
-/**
- * Unlocalized row cells for the aggregate descriptor. SHO-496 removed
- * this shape from collection; SHO-499 (T2) removes it here.
- */
-export type AssistantCollectionRow = {
-  readonly id: string;
-  readonly title: string;
-  readonly badge: string | null;
-  readonly meta: string | null;
-  readonly cells: readonly string[];
-  readonly href: string | null;
-};
-
-export type AssistantAggregateSection = {
-  readonly id: string;
-  readonly heading: string;
-  readonly rows: readonly AssistantCollectionRow[];
-};
-
-export type AssistantAggregateGroup = {
-  readonly id: string;
-  readonly head: AssistantCollectionRow;
-  readonly children: readonly AssistantCollectionRow[];
-};
-
 export type AssistantAggregateSummaryDescriptor = {
   readonly layout: "summary";
   readonly groupingKey: string;
   readonly headlineCount: number;
   readonly headlineGross: readonly AssistantMoneyMinor[];
-  readonly sections: readonly AssistantAggregateSection[];
-  readonly featured: AssistantCollectionRow | null;
 };
 
 export type AssistantAggregateBreakdownDescriptor = {
   readonly layout: "breakdown";
   readonly groupingKey: string;
   readonly columns: readonly AssistantCollectionColumn[];
-  readonly groups: readonly AssistantAggregateGroup[];
-  readonly total: AssistantCollectionRow | null;
 };
 
 export type AssistantAggregateDescriptor =
@@ -68,30 +38,22 @@ export function assistantAggregateSummary(args: {
   readonly groupingKey: string;
   readonly headlineCount: number;
   readonly headlineGross: readonly AssistantMoneyMinor[];
-  readonly sections: readonly AssistantAggregateSection[];
-  readonly featured: AssistantCollectionRow | null;
 }): AssistantAggregateSummaryDescriptor {
   return {
     layout: "summary",
     groupingKey: args.groupingKey,
     headlineCount: args.headlineCount,
     headlineGross: args.headlineGross,
-    sections: args.sections,
-    featured: args.featured,
   };
 }
 
 export function assistantAggregateBreakdown(args: {
   readonly groupingKey: string;
   readonly columns: readonly AssistantCollectionColumn[];
-  readonly groups: readonly AssistantAggregateGroup[];
-  readonly total: AssistantCollectionRow | null;
 }): AssistantAggregateBreakdownDescriptor {
   return {
     layout: "breakdown",
     groupingKey: args.groupingKey,
     columns: args.columns,
-    groups: args.groups,
-    total: args.total,
   };
 }

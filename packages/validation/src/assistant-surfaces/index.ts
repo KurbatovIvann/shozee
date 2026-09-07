@@ -9,11 +9,8 @@ export {
   assistantAggregateSummary,
   type AssistantAggregateBreakdownDescriptor,
   type AssistantAggregateDescriptor,
-  type AssistantAggregateGroup,
   type AssistantAggregateLayout,
-  type AssistantAggregateSection,
   type AssistantAggregateSummaryDescriptor,
-  type AssistantCollectionRow,
 } from "./aggregate.js";
 export {
   assistantCollectionDescriptor,

@@ -1,7 +1,8 @@
 /**
- * Localized aggregate view (SHO-473). Parse descriptors stay
- * unlocalized; this is what the aggregate block renders. Both layouts
- * reuse T4 collection row/column views — a new grouping key is data.
+ * Localized aggregate view (SHO-473 / SHO-499). Parse descriptors stay
+ * unlocalized and carry layout and grouping only; this is what the
+ * aggregate block renders. Both layouts reuse T4 collection row/column
+ * views — a new grouping key is data. The client builds the rows.
  */
 import type {
   AssistantAggregateLayout,
