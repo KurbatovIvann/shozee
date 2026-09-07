@@ -10,15 +10,16 @@ shared tree plus typed leftovers composed in those app files.
 
 ## Subpaths
 
-| Subpath       | Owns                                                       |
-| ------------- | ---------------------------------------------------------- |
-| `./locale`    | `Locale`, `detectLocale(tag)`, `interpolate`, `selectCopy` |
-| `./plural`    | Ukrainian one/few/many and English one/`many`              |
-| `./chrome`    | Shared `FormChromeCopy` / `WriteErrorsCopy` objects        |
-| `./auth`      | Byte-identical auth intersection (SHO-481)                 |
-| `./orders`    | Byte-identical orders intersection (SHO-414)               |
-| `./assistant` | Shared assistant result-surface chrome                     |
-| `./panel`     | Byte-identical panel-shell intersection (SHO-481)          |
+| Subpath       | Owns                                                          |
+| ------------- | ------------------------------------------------------------- |
+| `./locale`    | `Locale`, `detectLocale(tag)`, `interpolate`, `selectCopy`    |
+| `./plural`    | Ukrainian one/few/many and English one/`many`                 |
+| `./chrome`    | Shared `FormChromeCopy` / `WriteErrorsCopy` objects           |
+| `./auth`      | Byte-identical auth intersection (SHO-481)                    |
+| `./orders`    | Byte-identical orders intersection (SHO-414)                  |
+| `./assistant` | Shared assistant result-surface chrome                        |
+| `./panel`     | Byte-identical panel-shell intersection (SHO-481)             |
+| `./companies` | Onboarding / settings / legal / scope intersections (SHO-482) |
 
 Do not add a package root barrel. Domain modules must not import this
 package (ESLint `copyClientOnly`).

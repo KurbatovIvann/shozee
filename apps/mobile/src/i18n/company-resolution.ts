@@ -1,9 +1,11 @@
-import { selectCopy } from "./copy";
-import type { Locale } from "./locale";
+/** Company-resolution copy namespace (uk/en). Shared strings live in `@showzy/copy/companies`. */
+import { selectCopy, type Locale } from "@showzy/copy/locale";
+import {
+  sharedCompaniesScopeCopy,
+  type SharedCompaniesScopeCopy,
+} from "@showzy/copy/companies";
 
-export type CompanyResolutionCopy = {
-  readonly loading: string;
-  readonly errorTitle: string;
+export type CompanyResolutionCopy = SharedCompaniesScopeCopy & {
   readonly errorDescription: string;
   readonly retry: string;
   readonly multipleTitle: string;
@@ -11,9 +13,15 @@ export type CompanyResolutionCopy = {
   readonly signOut: string;
 };
 
-const en: CompanyResolutionCopy = {
-  loading: "Loading your company",
-  errorTitle: "Couldn’t load your companies",
+type MobileCompanyResolutionExtension = {
+  readonly errorDescription: string;
+  readonly retry: string;
+  readonly multipleTitle: string;
+  readonly multipleDescription: string;
+  readonly signOut: string;
+};
+
+const extraEn: MobileCompanyResolutionExtension = {
   errorDescription:
     "Check your connection and try again. Company onboarding has not started.",
   retry: "Try Again",
@@ -23,9 +31,7 @@ const en: CompanyResolutionCopy = {
   signOut: "Sign Out",
 };
 
-const uk: CompanyResolutionCopy = {
-  loading: "Завантаження вашої компанії",
-  errorTitle: "Не вдалося завантажити компанії",
+const extraUk: MobileCompanyResolutionExtension = {
   errorDescription:
     "Перевірте з’єднання та спробуйте ще раз. Створення компанії не розпочато.",
   retry: "Спробувати ще раз",
@@ -36,5 +42,7 @@ const uk: CompanyResolutionCopy = {
 };
 
 export function companyResolutionCopy(locale: Locale): CompanyResolutionCopy {
-  return selectCopy(locale, { uk, en });
+  const shared = sharedCompaniesScopeCopy(locale);
+  const extra = selectCopy(locale, { uk: extraUk, en: extraEn });
+  return { ...shared, ...extra };
 }
