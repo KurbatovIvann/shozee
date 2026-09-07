@@ -15,6 +15,7 @@ shared tree plus typed leftovers composed in those app files.
 | `./locale`    | `Locale`, `detectLocale(tag)`, `interpolate`, `selectCopy` |
 | `./plural`    | Ukrainian one/few/many and English one/`many`              |
 | `./chrome`    | Shared `FormChromeCopy` / `WriteErrorsCopy` objects        |
+| `./auth`      | Byte-identical auth intersection (SHO-481)                 |
 | `./orders`    | Byte-identical orders intersection (SHO-414)               |
 | `./assistant` | Shared assistant result-surface chrome                     |
 

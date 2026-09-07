@@ -43,6 +43,7 @@ const probeFiles = {
     import { moneySchema } from "@showzy/validation";
     import { Button } from "@showzy/ui";
     import { sharedOrdersCopy } from "@showzy/copy/orders";
+    import { sharedAuthCopy } from "@showzy/copy/auth";
     import { createWebAdapter } from "@showzy/document-signing/web";
     import { useQuery } from "@tanstack/react-query";
     import { createFileRoute } from "@tanstack/react-router";
