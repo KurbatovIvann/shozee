@@ -31,7 +31,7 @@ export const getDownloadUrlContract = defineActionContract({
   input: getDownloadUrlInputSchema,
   output: getDownloadUrlOutputSchema,
   permissions: ["files:view"],
-  aiExposure: "exposed",
+  aiExposure: "internal",
   risk: "read",
   requiresConfirmation: false,
   idempotent: false,

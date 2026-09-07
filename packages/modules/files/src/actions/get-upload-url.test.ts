@@ -12,7 +12,7 @@ describe("files.getUploadUrl contract", () => {
     expect(getUploadUrlContract.transport).toBe("client");
     expect(getUploadUrlContract.risk).toBe("read");
     expect(getUploadUrlContract.permissions).toEqual(["files:upload"]);
-    expect(getUploadUrlContract.aiExposure).toBe("exposed");
+    expect(getUploadUrlContract.aiExposure).toBe("internal");
     expect(getUploadUrlContract.audit).toBe(false);
     expect(getUploadUrlContract.idempotent).toBe(false);
     expect(getUploadUrlContract.emits).toEqual([]);

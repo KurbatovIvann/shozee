@@ -18,7 +18,7 @@ describe("catalog.setProductImages contract", () => {
     expect(setProductImagesContract.transport).toBe("client");
     expect(setProductImagesContract.risk).toBe("write");
     expect(setProductImagesContract.permissions).toEqual(["products:edit"]);
-    expect(setProductImagesContract.aiExposure).toBe("exposed");
+    expect(setProductImagesContract.aiExposure).toBe("internal");
     expect(setProductImagesContract.requiresConfirmation).toBe(false);
     expect(setProductImagesContract.idempotent).toBe(true);
     expect(setProductImagesContract.audit).toBe(true);

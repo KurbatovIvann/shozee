@@ -3,7 +3,8 @@
  * ordered image list after `ctx.call files.getAttachmentFacts`.
  *
  * Card-named metadata: staff principal, client transport, `products:edit`,
- * write risk, exposed to AI, no confirmation, idempotent, audited, no events.
+ * write risk, not exposed to the staff assistant, no confirmation,
+ * idempotent, audited, no events.
  *
  * Mechanical choices the feature card left unnamed:
  * - `timeout: 10000` — nested `files.getAttachmentFacts` (`timeout: 5000`)
@@ -50,7 +51,7 @@ export const setProductImagesContract = defineActionContract({
   input: setProductImagesInputSchema,
   output: setProductImagesOutputSchema,
   permissions: ["products:edit"],
-  aiExposure: "exposed",
+  aiExposure: "internal",
   risk: "write",
   requiresConfirmation: false,
   idempotent: true,

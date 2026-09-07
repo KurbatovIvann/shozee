@@ -14,7 +14,7 @@ describe("files.requestUpload contract", () => {
     expect(requestUploadContract.transport).toBe("client");
     expect(requestUploadContract.risk).toBe("write");
     expect(requestUploadContract.permissions).toEqual(["files:upload"]);
-    expect(requestUploadContract.aiExposure).toBe("exposed");
+    expect(requestUploadContract.aiExposure).toBe("internal");
     expect(requestUploadContract.audit).toBe(true);
     expect(requestUploadContract.idempotent).toBe(true);
     expect(requestUploadContract.emits).toEqual([]);

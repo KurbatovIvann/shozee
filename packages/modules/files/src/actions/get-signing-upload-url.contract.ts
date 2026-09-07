@@ -27,7 +27,7 @@ export const getSigningUploadUrlContract = defineActionContract({
   input: getSigningUploadUrlInputSchema,
   output: getSigningUploadUrlOutputSchema,
   permissions: ["documents:edit"],
-  aiExposure: "exposed",
+  aiExposure: "internal",
   risk: "read",
   requiresConfirmation: false,
   idempotent: false,

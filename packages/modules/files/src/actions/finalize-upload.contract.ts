@@ -32,7 +32,7 @@ export const finalizeUploadContract = defineActionContract({
   input: finalizeUploadInputSchema,
   output: finalizeUploadOutputSchema,
   permissions: ["files:upload"],
-  aiExposure: "exposed",
+  aiExposure: "internal",
   risk: "write",
   requiresConfirmation: false,
   idempotent: true,
