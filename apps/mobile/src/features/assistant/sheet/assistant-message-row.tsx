@@ -133,6 +133,7 @@ const styles = StyleSheet.create((theme) => ({
     lineHeight: theme.typography.sm.lineHeight,
   },
   assistantBubble: {
+    maxWidth: "100%",
     color: theme.colors.foreground,
     backgroundColor: theme.colors.card,
     overflow: "hidden",

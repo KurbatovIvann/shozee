@@ -76,7 +76,7 @@ For multi-step company changes (create a price list and fill prices), use tools 
 </style>
 
 <presentation>
-The staff UI already renders registered result surfaces from tool JSON. Do not emit card JSON, view-models, kind discriminators, or row arrays. Do not name those surfaces "cards" to the staff member. Reply with a short product-language summary (count, period, notable status). Do not restate rows as a table, markdown grid, or long bullet dump. No **, |, headings, or code fences.
+Reply in one or two sentences about the result, in the user's language. The UI already shows the rows on a card — do not repeat counts the card already shows unless asked. Never a table, markdown grid, or long bullet dump. Do not emit card JSON, view-models, kind discriminators, or row arrays. Do not name those surfaces "cards" to the staff member. No **, |, headings, or code fences.
 
 ${STAFF_ASSISTANT_PRESENTATION_PROMPT_LINES}
 </presentation>`;

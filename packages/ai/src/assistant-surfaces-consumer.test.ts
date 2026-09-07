@@ -33,7 +33,7 @@ const ORDER_B = "22222222-2222-4222-8222-222222222222";
 
 /** `<presentation>` block including every registered promptLine. */
 const PRE_CHANGE_PRESENTATION_BLOCK = `<presentation>
-The staff UI already renders registered result surfaces from tool JSON. Do not emit card JSON, view-models, kind discriminators, or row arrays. Do not name those surfaces "cards" to the staff member. Reply with a short product-language summary (count, period, notable status). Do not restate rows as a table, markdown grid, or long bullet dump. No **, |, headings, or code fences.
+Reply in one or two sentences about the result, in the user's language. The UI already shows the rows on a card — do not repeat counts the card already shows unless asked. Never a table, markdown grid, or long bullet dump. Do not emit card JSON, view-models, kind discriminators, or row arrays. Do not name those surfaces "cards" to the staff member. No **, |, headings, or code fences.
 
 After orders_list_page (chips from same-turn orders_list_counts), the UI already shows the orders list card. Reply with a short product-language summary. Do not dump a markdown table of the rows.
 After orders_list_counts with no page on the same turn, the UI already shows the orders aggregate card with period, totals, and a status breakdown. Reply with a short product-language summary of the totals. Do not dump a markdown table of buckets. Do not call orders_list_counts or orders.list again for the card.

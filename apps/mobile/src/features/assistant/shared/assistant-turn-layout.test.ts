@@ -53,6 +53,18 @@ describe("assistantTurnColumnLayout", () => {
 });
 
 describe("assistant turn layout composition", () => {
+  it("wraps a two-line model sentence above a list card without shrinking the column", () => {
+    expect(ROW).toContain("assistantTurnColumnLayout");
+    expect(ROW).toContain("assistantTurnResultStretch");
+    expect(assistantTurnColumnLayout.width).toBe("92%");
+    expect(ROW).toContain('maxWidth: "100%"');
+    expect(ROW).not.toMatch(/assistantBubble[\s\S]{0,400}numberOfLines/);
+    const textIndex = ROW.indexOf("{props.text}");
+    const cardIndex = ROW.indexOf("AssistantSurfaceCard");
+    expect(textIndex).toBeGreaterThan(0);
+    expect(cardIndex).toBeGreaterThan(textIndex);
+  });
+
   it("applies the extracted column and stretch styles to every result Card", () => {
     expect(ROW).toContain("assistantTurnColumnLayout");
     expect(ROW).toContain("assistantTurnResultStretch");

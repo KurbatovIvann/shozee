@@ -79,6 +79,24 @@ function looksLikeJsonObject(text: string): boolean {
   return text.trimStart().startsWith("{");
 }
 
+/**
+ * Candidate model prose after T5 buffering, before presenter fallback.
+ * Empty, leftover `{ "spoken" }` JSON, and markdown dumps are not usable.
+ * Do not extract `spoken` from the object.
+ */
+export function usableStaffAssistantModelText(
+  rawText: string,
+): string | undefined {
+  const trimmed = rawText.trim();
+  if (trimmed === "") {
+    return undefined;
+  }
+  if (looksLikeJsonObject(trimmed) || spokenContainsMarkdownDump(trimmed)) {
+    return undefined;
+  }
+  return trimmed;
+}
+
 function turnHasHitlPause(runs: readonly SpokenTurnRun[]): boolean {
   return runs.some(
     (run) =>
@@ -148,8 +166,7 @@ function sanitizeSpoken(
  * Resolve the visible reply from model text after presenter selection.
  * JSON objects (including a leftover `{ "spoken": ... }` envelope) are
  * invalid presentation: use the existing fallback and do not extract
- * `spoken`. HITL confirmation/choice still win over candidate prose
- * (unchanged until T6).
+ * `spoken`. HITL confirmation and choice stay presenter-owned (SHO-511).
  */
 export function spokenTurnText(options: {
   readonly rawText: string;

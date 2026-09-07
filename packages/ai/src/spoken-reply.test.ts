@@ -5,9 +5,25 @@ import {
   createHoldCandidateReplyTextTransform,
   spokenContainsMarkdownDump,
   spokenTurnText,
+  usableStaffAssistantModelText,
   STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK,
   STAFF_ASSISTANT_TOOL_ERROR_FALLBACK,
 } from "./spoken-reply.js";
+
+describe("usableStaffAssistantModelText", () => {
+  it("keeps plain prose and rejects empty, JSON, and markdown dumps", () => {
+    expect(
+      usableStaffAssistantModelText("Ось три останні, найбільше — № 12"),
+    ).toBe("Ось три останні, найбільше — № 12");
+    expect(usableStaffAssistantModelText("  ")).toBeUndefined();
+    expect(
+      usableStaffAssistantModelText('{"spoken":"Four orders this week."}'),
+    ).toBeUndefined();
+    expect(
+      usableStaffAssistantModelText("| order | total |\n| **#1** | 10 |"),
+    ).toBeUndefined();
+  });
+});
 
 describe("spokenTurnText", () => {
   it("keeps plain prose", () => {

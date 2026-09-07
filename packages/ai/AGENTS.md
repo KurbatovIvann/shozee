@@ -75,9 +75,24 @@ through the existing `text-*` events. Persist uses the same value
 progress, result surfaces, and HITL events keep streaming immediately.
 
 Invalid presentation (markdown dump, accidental `{ "spoken": ... }`
-JSON) uses the existing fallback. Do not parse the object to extract
-`spoken`. Presenter precedence is unchanged until T6: a registered
-completed surface still supplies the visible bubble.
+JSON) is never briefly shown.
+
+## Presenter (SHO-511)
+
+The presenter is the **fallback**, not the default spoken line.
+
+- Completed surfaces (`orders-list`, `orders-aggregate`, `order-entity`,
+  `customers-list`): usable model text is the bubble and the persist
+  body. Fall back to presenter copy when that text is empty, a markdown
+  dump, leftover `{ spoken }` JSON, or a tool error has no usable prose.
+- Confirmation and choice stay presenter-owned. Do not let model text
+  win on those turns.
+- One function (`staffAssistantPersistedTurnText`) decides; live emit
+  and `onTurn` both use that string.
+
+Do not delete the presenter or a surface. Do not add a second model call
+to summarize the card. Do not re-introduce a JSON spoken envelope or
+live≠persisted replies.
 
 ## Tests
 
