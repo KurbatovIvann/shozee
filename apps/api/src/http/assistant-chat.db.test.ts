@@ -85,7 +85,6 @@ import {
 } from "@showzy/db/schema/assistant";
 import { companyCustomers, customerGroups } from "@showzy/db/schema/customers";
 import { orders } from "@showzy/db/schema/orders";
-import { eq } from "drizzle-orm";
 import {
   RedisContainer,
   type StartedRedisContainer,
@@ -1277,9 +1276,7 @@ describe("POST /assistant/chat mock-model parity", () => {
       conversation.id,
       "Delete the archived customer",
     );
-    expect(
-      JSON.stringify(resumeBody.messages).includes("data-confirmation"),
-    ).toBe(false);
+    expect(resumeBody).not.toHaveProperty("messages");
     const resume = await postChat(app, {
       token,
       companyId: kitIdentities.companies.a,
@@ -2100,9 +2097,9 @@ describe("POST /assistant/chat server-owned history (SHO-506)", () => {
     if (!isStaffAssistantConfirmationOutput(confirmation)) {
       expect.unreachable("expected confirmation part");
     }
-    await kit.db.runtime.db
-      .delete(assistantToolRuns)
-      .where(eq(assistantToolRuns.conversationId, conversation.id));
+    // Isolated file clone: drop tool-run rows so resume must use the
+    // client confirmation envelope (card streamed before persist).
+    await kit.db.runtime.db.delete(assistantToolRuns);
     const resume = await postChat(app, {
       token,
       companyId: kitIdentities.companies.a,
