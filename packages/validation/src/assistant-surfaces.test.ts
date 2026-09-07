@@ -17,8 +17,6 @@ import {
   assistantAggregateBreakdown,
   assistantAggregateSummary,
   assistantCollectionDescriptor,
-  assistantCustomerEditorScreenHref,
-  assistantOrderDetailScreenHref,
   assistantSurfaceHandoffHref,
   assistantSurfacesFromToolResults,
   hydratableAssistantActionNames,
@@ -287,14 +285,10 @@ describe("assistant surface destination (SHO-470)", () => {
     });
     expect(entities[0]?.destination).toEqual({
       kind: "screen",
-      href: assistantOrderDetailScreenHref(ORDER_A),
+      href: `/orders/${ORDER_A}`,
     });
-    expect(assistantOrderDetailScreenHref(ORDER_A)).toBe(`/orders/${ORDER_A}`);
     expect(ASSISTANT_ORDERS_LIST_SCREEN_HREF).toBe("/orders");
     expect(ASSISTANT_CUSTOMERS_LIST_SCREEN_HREF).toBe("/customers");
-    expect(assistantCustomerEditorScreenHref(CUSTOMER_A)).toBe(
-      `/customers/clients/${CUSTOMER_A}/edit`,
-    );
   });
 });
 
@@ -508,13 +502,13 @@ describe("parseOrderEntitySurfaces", () => {
     expect(entities[0]?.orderId).toBe(ORDER_A);
     expect(entities[0]?.destination).toEqual({
       kind: "screen",
-      href: assistantOrderDetailScreenHref(ORDER_A),
+      href: `/orders/${ORDER_A}`,
     });
     expect(entities[0]?.toolCallId).toBe("call-get");
     expect(entities[1]?.customerNameSnapshot).toBe("Olya");
     expect(entities[1]?.destination).toEqual({
       kind: "screen",
-      href: assistantOrderDetailScreenHref(ORDER_B),
+      href: `/orders/${ORDER_B}`,
     });
   });
 
@@ -835,9 +829,8 @@ describe("customers-list collection (SHO-472)", () => {
       kind: "screen",
       href: ASSISTANT_CUSTOMERS_LIST_SCREEN_HREF,
     });
-    expect(customersCollection.rows[0]?.href).toBe(
-      assistantCustomerEditorScreenHref(CUSTOMER_A),
-    );
+    expect("rows" in ordersCollection).toBe(false);
+    expect("rows" in customersCollection).toBe(false);
     expect(customers?.rows).toEqual([
       {
         customerId: CUSTOMER_A,
@@ -952,16 +945,6 @@ describe("customers-list collection (SHO-472)", () => {
             label: "",
             width: "auto",
             alignment: "end",
-          },
-        ],
-        rows: [
-          {
-            id: CUSTOMER_A,
-            title: "Price list A",
-            badge: null,
-            meta: "3 entries",
-            cells: ["1200"],
-            href: "/price-lists",
           },
         ],
       });

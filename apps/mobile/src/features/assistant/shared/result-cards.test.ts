@@ -6,6 +6,8 @@ import {
   ASSISTANT_CUSTOMERS_LIST_SCREEN_HREF,
   ASSISTANT_ORDERS_LIST_SCREEN_HREF,
   CUSTOMERS_LIST_CUSTOMERS_TOOL,
+  parseCustomersListSurface as parseCustomersListData,
+  parseOrdersListSurface as parseOrdersListData,
 } from "@showzy/validation/assistant-surfaces";
 
 import { formatMoneyMinor } from "../../../format/money";
@@ -16,6 +18,9 @@ import { customerEditorHref } from "../../customers/shared/customer-hrefs";
 import { itemCountLabel } from "../../orders/shared/item-count";
 import { formatOrderCreatedAt } from "../../orders/shared/order-created-at";
 import { orderDetailHref } from "../../orders/shared/order-hrefs";
+import { localizeCustomersListCard } from "../surfaces/customers-list";
+import { assistantSurfaceToolResultsFromParts } from "../surfaces/helpers";
+import { localizeOrdersListCard } from "../surfaces/orders-list";
 import {
   ASSISTANT_CUSTOMERS_LIST_HREF,
   ASSISTANT_CUSTOMERS_LIST_ROW_MAX,
@@ -571,17 +576,15 @@ describe("assistantSurfacesFromParts", () => {
   });
 
   it("maps compact list rows onto orderDetailHref", () => {
-    const surfaces = assistantSurfacesFromParts(
-      [
-        {
-          type: "tool-orders_list_page",
-          toolCallId: "call-page",
-          state: "output-available",
-          output: pageOutput([pageRow(ORDER_A)]),
-        },
-      ],
-      "uk",
-    );
+    const parts = [
+      {
+        type: "tool-orders_list_page" as const,
+        toolCallId: "call-page",
+        state: "output-available" as const,
+        output: pageOutput([pageRow(ORDER_A)]),
+      },
+    ];
+    const surfaces = assistantSurfacesFromParts(parts, "uk");
     const row = listOf(surfaces)?.rows[0];
     expect(row?.href).toBe(orderDetailHref(ORDER_A));
     expect(listOf(surfaces)?.destination).toEqual({
@@ -598,7 +601,15 @@ describe("assistantSurfacesFromParts", () => {
     expect(row?.statusLabel).toBe(ordersUk.statuses.new);
     expect(row?.totalLabel).toBe(formatMoneyMinor("33000", "UAH"));
     expect(row?.metaLabel.includes("1049")).toBe(true);
-    const collectionRow = listOf(surfaces)?.collection.rows[0];
+    const parsed = parseOrdersListData(
+      assistantSurfaceToolResultsFromParts(parts),
+    );
+    expect(parsed).not.toBeNull();
+    if (parsed === null) {
+      return;
+    }
+    const collectionRow = localizeOrdersListCard(parsed, "uk").collection
+      .rows[0];
     expect(collectionRow?.title).toBe(row?.customerName);
     expect(collectionRow?.badge).toBe(row?.statusLabel);
     expect(collectionRow?.meta).toBe(row?.metaLabel);
@@ -1713,25 +1724,23 @@ function customersOutput(
 
 describe("customers-list collection surface (SHO-472)", () => {
   it("parses façade-shaped output onto the same collection view as orders-list", () => {
-    const surfaces = assistantSurfacesFromParts(
-      [
-        {
-          type: `tool-${CUSTOMERS_LIST_CUSTOMERS_TOOL}`,
-          toolCallId: "call-customers",
-          state: "output-available",
-          output: customersOutput([
-            customerRow(CLIENT_A),
-            customerRow(CLIENT_B, {
-              name: "Оля",
-              status: "archived",
-              phone: null,
-              email: "olya@example.com",
-            }),
-          ]),
-        },
-      ],
-      "uk",
-    );
+    const parts = [
+      {
+        type: `tool-${CUSTOMERS_LIST_CUSTOMERS_TOOL}` as const,
+        toolCallId: "call-customers",
+        state: "output-available" as const,
+        output: customersOutput([
+          customerRow(CLIENT_A),
+          customerRow(CLIENT_B, {
+            name: "Оля",
+            status: "archived",
+            phone: null,
+            email: "olya@example.com",
+          }),
+        ]),
+      },
+    ];
+    const surfaces = assistantSurfacesFromParts(parts, "uk");
     const customers = customersOf(surfaces);
     expect(customers?.kind).toBe("customers-list");
     expect(customers?.destination).toEqual({
@@ -1754,36 +1763,46 @@ describe("customers-list collection surface (SHO-472)", () => {
     expect(customers?.rows[1]?.statusLabel).toBe(customersUk.archivedBadge);
     expect(customers?.collection.rowCap).toBe(ASSISTANT_CUSTOMERS_LIST_ROW_MAX);
     expect(customers?.collection.surface).toBe("plain");
-    expect(customers?.collection.rows[0]?.href).toBe(
-      customerEditorHref(CLIENT_A),
+    const parsed = parseCustomersListData(
+      assistantSurfaceToolResultsFromParts(parts),
     );
-    expect(customers?.collection.rows[0]?.title).toBe(customers?.rows[0]?.name);
-    expect(customers?.collection.rows[1]?.badge).toBe(
-      customersUk.archivedBadge,
-    );
+    expect(parsed).not.toBeNull();
+    if (parsed === null) {
+      return;
+    }
+    const collection = localizeCustomersListCard(parsed, "uk").collection;
+    expect(collection.rows[0]?.href).toBe(customerEditorHref(CLIENT_A));
+    expect(collection.rows[0]?.title).toBe(customers?.rows[0]?.name);
+    expect(collection.rows[1]?.badge).toBe(customersUk.archivedBadge);
   });
 
   it("truncates customers at 7 from that surface's cap and omits a duplicate CTA", () => {
-    const items = Array.from({ length: 10 }, (_, index) =>
+    const items = Array.from({ length: 8 }, (_, index) =>
       customerRow(
         `aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa${String(index).padStart(2, "0")}`,
       ),
     );
-    const customers = customersOf(
-      assistantSurfacesFromParts(
-        [
-          {
-            type: `tool-${CUSTOMERS_LIST_CUSTOMERS_TOOL}`,
-            toolCallId: "call-customers",
-            state: "output-available",
-            output: customersOutput(items),
-          },
-        ],
-        "uk",
-      ),
+    const parts = [
+      {
+        type: `tool-${CUSTOMERS_LIST_CUSTOMERS_TOOL}` as const,
+        toolCallId: "call-customers",
+        state: "output-available" as const,
+        output: customersOutput(items),
+      },
+    ];
+    const customers = customersOf(assistantSurfacesFromParts(parts, "uk"));
+    const parsed = parseCustomersListData(
+      assistantSurfaceToolResultsFromParts(parts),
     );
+    expect(parsed).not.toBeNull();
+    if (parsed === null) {
+      return;
+    }
+    const collection = localizeCustomersListCard(parsed, "uk").collection;
     expect(ASSISTANT_CUSTOMERS_LIST_ROW_MAX).toBe(7);
     expect(customers?.rows).toHaveLength(7);
+    expect(collection.rows).toHaveLength(7);
+    expect(collection.truncated).toBe(true);
     expect(customers?.collection.truncated).toBe(true);
     expect(customers?.collection.rowCap).toBe(7);
     expect(customers?.ctaHref).toBeNull();

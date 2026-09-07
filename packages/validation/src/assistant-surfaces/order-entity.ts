@@ -3,7 +3,6 @@
  * `orders.get` / `orders.create` only. Do not walk list `items[].orderId`.
  */
 import {
-  assistantOrderDetailScreenHref,
   resolveAssistantSurfaceDestination,
   type AssistantSurfaceDestination,
   type AssistantSurfaceDestinationDeclaration,
@@ -77,7 +76,8 @@ function parseEntity(
     kind: "order-entity",
     destination: resolveAssistantSurfaceDestination(
       ORDER_ENTITY_DESTINATION,
-      assistantOrderDetailScreenHref(orderId),
+      // Same path as mobile `orderDetailHref`. The app owns the route.
+      `/orders/${orderId}`,
     ),
     orderId,
     orderNumber,

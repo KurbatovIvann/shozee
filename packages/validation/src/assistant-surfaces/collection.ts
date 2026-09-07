@@ -1,11 +1,13 @@
 /**
  * Shared collection (table) descriptor for list-shaped assistant
- * surfaces (SHO-472). Orders-list and customers-list parse into this
- * type; they do not share a row cap. A third list is a new descriptor,
- * not a new block.
+ * surfaces (SHO-472 / SHO-496). Orders-list and customers-list parse
+ * into this type; they do not share a row cap. A third list is a new
+ * descriptor, not a new block.
  *
- * `label` on columns is unlocalized at parse (empty or a stable id).
- * Cards localize before the block renders.
+ * The descriptor guarantees shape — columns, cap, truncation, surface —
+ * and each client builds its own rows. Parse does not carry display
+ * strings: `label` on columns is unlocalized at parse (empty or a
+ * stable id). Cards localize before the block renders.
  */
 export type AssistantCollectionColumnAlignment = "start" | "end";
 
@@ -20,18 +22,8 @@ export type AssistantCollectionColumn = {
   readonly alignment: AssistantCollectionColumnAlignment;
 };
 
-export type AssistantCollectionRow = {
-  readonly id: string;
-  readonly title: string;
-  readonly badge: string | null;
-  readonly meta: string | null;
-  readonly cells: readonly string[];
-  readonly href: string | null;
-};
-
 export type AssistantCollectionDescriptor = {
   readonly columns: readonly AssistantCollectionColumn[];
-  readonly rows: readonly AssistantCollectionRow[];
   readonly surface: AssistantCollectionSurface;
   readonly rowCap: number;
   readonly truncated: boolean;
@@ -52,14 +44,12 @@ export function capCollectionRows<T>(
 
 export function assistantCollectionDescriptor(args: {
   readonly columns: readonly AssistantCollectionColumn[];
-  readonly rows: readonly AssistantCollectionRow[];
   readonly surface: AssistantCollectionSurface;
   readonly rowCap: number;
   readonly truncated: boolean;
 }): AssistantCollectionDescriptor {
   return {
     columns: args.columns,
-    rows: args.rows,
     surface: args.surface,
     rowCap: args.rowCap,
     truncated: args.truncated,

@@ -7,8 +7,8 @@ import {
   assistantAggregateSummary,
   type AssistantAggregateDescriptor,
   type AssistantAggregateSection,
+  type AssistantCollectionRow,
 } from "./aggregate.js";
-import type { AssistantCollectionRow } from "./collection.js";
 import {
   ASSISTANT_ORDERS_LIST_SCREEN_HREF,
   resolveAssistantSurfaceDestination,

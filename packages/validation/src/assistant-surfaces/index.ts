@@ -13,6 +13,7 @@ export {
   type AssistantAggregateLayout,
   type AssistantAggregateSection,
   type AssistantAggregateSummaryDescriptor,
+  type AssistantCollectionRow,
 } from "./aggregate.js";
 export {
   assistantCollectionDescriptor,
@@ -21,7 +22,6 @@ export {
   type AssistantCollectionColumnAlignment,
   type AssistantCollectionColumnWidth,
   type AssistantCollectionDescriptor,
-  type AssistantCollectionRow,
   type AssistantCollectionSurface,
 } from "./collection.js";
 export {
@@ -39,8 +39,6 @@ export {
 export {
   ASSISTANT_CUSTOMERS_LIST_SCREEN_HREF,
   ASSISTANT_ORDERS_LIST_SCREEN_HREF,
-  assistantCustomerEditorScreenHref,
-  assistantOrderDetailScreenHref,
   assistantSurfaceHandoffHref,
   resolveAssistantSurfaceDestination,
   type AssistantSurfaceDestination,
