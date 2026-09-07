@@ -16,19 +16,19 @@ const fixture: StaffAssistantTurnUsage = {
 };
 
 describe("STAFF_ASSISTANT_ANTHROPIC_RATES_USD_PER_MTOK", () => {
-  it("documents published Sonnet 4.6 and Haiku 4.5 list prices", () => {
+  it("prices cache writes at 2× input for mixed 1h+5m admission", () => {
     expect(STAFF_ASSISTANT_ANTHROPIC_RATES_USD_PER_MTOK).toEqual({
       sonnet: {
         input: 3,
         output: 15,
         cacheRead: 0.3,
-        cacheWrite: 3.75,
+        cacheWrite: 6,
       },
       haiku: {
         input: 1,
         output: 5,
         cacheRead: 0.1,
-        cacheWrite: 1.25,
+        cacheWrite: 2,
       },
     });
   });
@@ -38,7 +38,7 @@ describe("estimateStaffAssistantCostUsd", () => {
   it("returns a finite USD estimate for a known token fixture", () => {
     const uncached = 100_000 - 80_000 - 16_000;
     const expected =
-      (uncached * 3 + 80_000 * 0.3 + 16_000 * 3.75 + 200 * 15) / 1_000_000;
+      (uncached * 3 + 80_000 * 0.3 + 16_000 * 6 + 200 * 15) / 1_000_000;
     const usd = estimateStaffAssistantCostUsd(fixture, "claude-sonnet-4-6");
     expect(Number.isFinite(usd)).toBe(true);
     expect(usd).toBeCloseTo(expected, 8);
