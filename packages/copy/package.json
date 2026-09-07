@@ -12,6 +12,7 @@
     "./customers": "./src/customers.ts",
     "./products": "./src/products.ts",
     "./pricing": "./src/pricing.ts",
+    "./documents": "./src/documents.ts",
     "./orders": "./src/orders.ts",
     "./assistant": "./src/assistant.ts",
     "./panel": "./src/panel.ts",
