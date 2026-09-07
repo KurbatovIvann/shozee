@@ -1,7 +1,7 @@
 /**
- * Intent-routing skip for HITL resumes only (SHO-404). Confirmation and
- * choice resumes do not run the classifier. A later user turn after tool
- * runs still routes — `sticky_session` must not bypass intent.
+ * Classifier skip for HITL resumes only (SHO-404 / SHO-513). Confirmation
+ * and choice resumes do not run the classifier. Every fresh user turn is
+ * classified — `sticky_session` must not skip the gate.
  */
 export type StaffAssistantGateSkipReason =
   "confirmation_resume" | "choice_resume";

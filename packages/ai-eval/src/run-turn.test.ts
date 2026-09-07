@@ -49,7 +49,6 @@ describe("runStaffAssistantEvalTurn", () => {
         gateLanguageModel: new MockLanguageModelV3({
           doGenerate: mockStaffAssistantGateGenerate({
             mode: "job",
-            intent: "orders_counts",
             confidence: "high",
           }),
         }),
@@ -63,7 +62,6 @@ describe("runStaffAssistantEvalTurn", () => {
     });
     expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
-    expect(result.forcedToolName).toBe(ORDERS_LIST_COUNTS_TOOL_NAME);
     expect(execute).toHaveBeenCalled();
     const scenario = PROOF_SCENARIOS.find(
       (entry) => entry.id === "proof.orders-counts-today",
@@ -104,7 +102,6 @@ describe("runStaffAssistantEvalTurn", () => {
         gateLanguageModel: new MockLanguageModelV3({
           doGenerate: mockStaffAssistantGateGenerate({
             mode: "job",
-            intent: "other",
             confidence: "high",
           }),
         }),

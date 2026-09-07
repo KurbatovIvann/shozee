@@ -271,4 +271,73 @@ describe("matchEvalExpectation", () => {
       ),
     ).toEqual({ ok: true });
   });
+
+  it("rejects a success claim when the write was attempted and failed", () => {
+    expect(
+      matchEvalExpectation(
+        { ordered: [{ name: ORDERS_CREATE_TOOL_NAME }] },
+        {
+          text: "Замовлення створено.",
+          toolCalls: [
+            {
+              toolCallId: "c1",
+              name: ORDERS_CREATE_TOOL_NAME,
+              args: { customerQuery: "Катя" },
+              result: { status: "error", message: "conflict" },
+            },
+          ],
+        },
+      ),
+    ).toMatchObject({
+      ok: false,
+      reason: "success claim without a successful write outcome",
+    });
+    expect(
+      matchEvalExpectation(
+        {
+          ordered: [
+            {
+              name: ORDERS_CREATE_TOOL_NAME,
+              requireSuccessfulResult: true,
+            },
+          ],
+        },
+        {
+          text: "Потрібен вибір.",
+          toolCalls: [
+            {
+              toolCallId: "c1",
+              name: ORDERS_CREATE_TOOL_NAME,
+              args: { customerQuery: "Катя" },
+              result: { status: "needs_choice" },
+            },
+          ],
+        },
+      ),
+    ).toMatchObject({ ok: false });
+    expect(
+      matchEvalExpectation(
+        {
+          ordered: [
+            {
+              name: ORDERS_CREATE_TOOL_NAME,
+              requireResultStatus: "needs_choice",
+            },
+          ],
+          requireChoice: true,
+        },
+        {
+          text: "Оберіть смак.",
+          toolCalls: [
+            {
+              toolCallId: "c1",
+              name: ORDERS_CREATE_TOOL_NAME,
+              args: { productQuery: "макаронс лемон" },
+              result: { status: "needs_choice" },
+            },
+          ],
+        },
+      ),
+    ).toEqual({ ok: true });
+  });
 });

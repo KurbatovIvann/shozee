@@ -14,7 +14,6 @@ import {
   ORDERS_CREATE_TOOL_NAME,
   ORDERS_LIST_COUNTS_TOOL_NAME,
   ORDERS_LIST_PAGE_TOOL_NAME,
-  pickStaffAssistantForcedTool,
   PRICING_LIST_PRICE_LISTS_TOOL_NAME,
   PROVIDER_TOOL_NAME_PATTERN,
   staffAssistantHotToolNames,
@@ -341,22 +340,6 @@ describe("staffAssistantTools", () => {
   it("attaches nothing when the contract list is empty", () => {
     const tools = staffAssistantTools([], () => Promise.resolve({}));
     expect(tools).toEqual({});
-  });
-
-  it("picks a single forced job tool and drops BM25 plus sibling façades", () => {
-    const tools = staffAssistantTools([listOrders, deleteCustomer], () =>
-      Promise.resolve({ items: [] }),
-    );
-    const forced = pickStaffAssistantForcedTool(
-      tools,
-      ORDERS_LIST_PAGE_TOOL_NAME,
-    );
-    expect(Object.keys(forced)).toEqual([ORDERS_LIST_PAGE_TOOL_NAME]);
-    expect(forced[STAFF_ASSISTANT_TOOL_SEARCH_NAME]).toBeUndefined();
-    expect(forced[ORDERS_LIST_COUNTS_TOOL_NAME]).toBeUndefined();
-    expect(pickStaffAssistantForcedTool(tools, "orders_list_missing")).toEqual(
-      {},
-    );
   });
 
   it("advertises catalog_list_products and still dispatches to catalog.listProducts", async () => {

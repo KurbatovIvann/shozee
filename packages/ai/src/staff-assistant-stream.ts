@@ -19,12 +19,10 @@ import {
 import { z } from "zod";
 
 import {
-  pickStaffAssistantForcedTool,
   staffAssistantTools,
   STAFF_ASSISTANT_TOOL_SEARCH_NAME,
   type ActionToolExecute,
 } from "./action-tool.js";
-import type { StaffAssistantForcedToolName } from "./gate.js";
 import {
   isStaffAssistantConfirmationOutput,
   type StaffAssistantConfirmationOutput,
@@ -184,43 +182,6 @@ function stepRequestedChoice(steps: Array<StepResult<ToolSet>>): boolean {
   }
   return last.toolResults.some((result) =>
     toolOutputRequestsChoice(result.output),
-  );
-}
-
-/**
- * Forced-job lifecycle: stop after a completed view, `needs_choice`, or
- * `confirmation_required`. A typed tool `{ status: "error" }` is not
- * terminal — the model gets one `toolChoice: "none"` speech step, then
- * this becomes true once that step has no domain tool result (SHO-429).
- */
-function domainToolResults(
-  step: StepResult<ToolSet>,
-): ReadonlyArray<{ readonly toolName: string; readonly output: unknown }> {
-  return step.toolResults;
-}
-
-function isForcedJobTerminalOutput(output: unknown): boolean {
-  return !isStaffAssistantTypedToolError(output);
-}
-
-function stepReachedForcedJobTerminal(
-  steps: Array<StepResult<ToolSet>>,
-): boolean {
-  const last = steps.at(-1);
-  if (last === undefined) {
-    return false;
-  }
-  const lastDomain = domainToolResults(last);
-  if (lastDomain.some((result) => isForcedJobTerminalOutput(result.output))) {
-    return true;
-  }
-  if (lastDomain.length > 0) {
-    return false;
-  }
-  return steps.some((step) =>
-    domainToolResults(step).some((result) =>
-      isStaffAssistantTypedToolError(result.output),
-    ),
   );
 }
 
@@ -555,25 +516,6 @@ async function awaitUnlessAborted<T>(
 }
 
 /**
- * High-confidence job intents attach one ToolSet key with
- * `toolChoice: "required"`. A missing key is a wrong narrow set — fail-open
- * to the permission-filtered catalog (same as `other`) and do not force.
- */
-function staffAssistantStreamTools(
-  catalog: ToolSet,
-  forcedToolName: StaffAssistantForcedToolName | undefined,
-): { readonly tools: ToolSet; readonly forceJobTool: boolean } {
-  if (forcedToolName === undefined) {
-    return { tools: catalog, forceJobTool: false };
-  }
-  const pickedForced = pickStaffAssistantForcedTool(catalog, forcedToolName);
-  if (pickedForced[forcedToolName] === undefined) {
-    return { tools: catalog, forceJobTool: false };
-  }
-  return { tools: pickedForced, forceJobTool: true };
-}
-
-/**
  * AI SDK 7 staff-panel loop (ADR-0032). `execute` is injected so this
  * package never calls `/rpc`. ConfirmationRequiredError pauses the loop
  * and is streamed as a `data-confirmation` part (redacted summary only).
@@ -600,14 +542,6 @@ export function streamStaffAssistantChat(options: {
    */
   readonly locale?: StaffAssistantLocale;
   /**
-   * High-confidence job intent (SHO-404): attach only this ToolSet key
-   * and `toolChoice: "required"`. When the key is absent from the
-   * permission-filtered catalog, fail-open to the full catalog (same as
-   * `other`) and do not force `toolChoice: "required"`. Omit for today's
-   * hot set + BM25.
-   */
-  readonly forcedToolName?: StaffAssistantForcedToolName;
-  /**
    * Tenant bind for a user-turn ChoiceCard. Canonical input stays
    * server-side; the stream only writes the envelope.
    */
@@ -631,7 +565,7 @@ export function streamStaffAssistantChat(options: {
   const clipBytes: ClipByteMeter = { in: 0, out: 0 };
   const history = staffAssistantHistoryStats(options.messages);
   const locale = options.locale ?? STAFF_ASSISTANT_DEFAULT_LOCALE;
-  const catalog = staffAssistantTools(
+  const tools = staffAssistantTools(
     options.contracts,
     wrapExecute(options.execute, runs, {
       locale,
@@ -645,10 +579,6 @@ export function streamStaffAssistantChat(options: {
         ? { mintChoiceId: options.mintChoiceId }
         : {}),
     }),
-  );
-  const { tools, forceJobTool } = staffAssistantStreamTools(
-    catalog,
-    options.forcedToolName,
   );
   clipToolExecutes(tools, clipBytes, presentedToolResults);
   const toolsetHash = staffAssistantToolsetHash(Object.keys(tools));
@@ -675,30 +605,16 @@ export function streamStaffAssistantChat(options: {
           ),
           messages: options.messages,
           tools,
-          ...(forceJobTool ? { toolChoice: "required" as const } : {}),
           providerOptions: {
             anthropic: STAFF_ASSISTANT_ANTHROPIC_PROVIDER_OPTIONS,
           },
           ...(options.abortSignal !== undefined
             ? { abortSignal: options.abortSignal }
             : {}),
-          prepareStep: ({ steps }) => {
-            if (!forceJobTool) {
-              return undefined;
-            }
-            if (stepReachedForcedJobTerminal(steps)) {
-              return { toolChoice: "none" as const };
-            }
-            if (steps.length === 0) {
-              return { toolChoice: "required" as const };
-            }
-            return { toolChoice: "none" as const };
-          },
           stopWhen: [
             ({ steps }) => steps.length >= STAFF_ASSISTANT_MAX_STEPS,
             ({ steps }) => stepRequestedConfirmation(steps),
             ({ steps }) => stepRequestedChoice(steps),
-            ({ steps }) => forceJobTool && stepReachedForcedJobTerminal(steps),
           ],
           onStepEnd: ({ toolResults }) => {
             for (const toolResult of toolResults) {

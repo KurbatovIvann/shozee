@@ -249,22 +249,6 @@ export function actionContractToTool(
  * `toProviderToolName("orders.create")`; the advertised schema is the
  * named object, not the EntityRef union.
  */
-/**
- * High-confidence job intents attach this one ToolSet key (no BM25, no
- * sibling façades). `toolChoice: "required"` among several tools is not
- * enough — the catalog must already be this singleton.
- */
-export function pickStaffAssistantForcedTool(
-  tools: ToolSet,
-  toolName: string,
-): ToolSet {
-  const forced = tools[toolName];
-  if (forced === undefined) {
-    return {};
-  }
-  return { [toolName]: forced };
-}
-
 export function staffAssistantTools(
   contracts: readonly ActionContract[],
   execute: ActionToolExecute,

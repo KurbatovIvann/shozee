@@ -22,7 +22,6 @@ export function mockGenerateObjectResult(text: string) {
 
 export function mockStaffAssistantGateGenerate(output: {
   readonly mode: "chitchat" | "capability" | "job";
-  readonly intent?: "orders_page" | "orders_counts" | "orders_create" | "other";
   readonly confidence: "high" | "low";
 }) {
   return mockGenerateObjectResult(JSON.stringify(output));
@@ -32,7 +31,7 @@ export function mockStaffAssistantGateGenerate(output: {
 export function mockOperationalGateGenerate(operational: boolean) {
   return mockStaffAssistantGateGenerate(
     operational
-      ? { mode: "job", intent: "other", confidence: "high" }
+      ? { mode: "job", confidence: "high" }
       : { mode: "chitchat", confidence: "high" },
   );
 }
