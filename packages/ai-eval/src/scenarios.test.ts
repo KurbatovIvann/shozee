@@ -8,6 +8,7 @@ import {
 import { describe, expect, it } from "vitest";
 
 import { collectEvalToolCalls } from "./trace.js";
+import { PLAIN_REPLY_SCENARIOS } from "./scenarios/plain-reply.js";
 import { PROOF_SCENARIOS } from "./scenarios/proof.js";
 
 describe("PROOF_SCENARIOS", () => {
@@ -40,6 +41,26 @@ describe("PROOF_SCENARIOS", () => {
     expect(PROOF_SCENARIOS[3]?.expectation.none).toBe(true);
     expect(PROOF_SCENARIOS[4]?.expectation.first).toBe(
       STAFF_ASSISTANT_TOOL_SEARCH_NAME,
+    );
+  });
+});
+
+describe("PLAIN_REPLY_SCENARIOS", () => {
+  it("defines the three T5 corpus ids", () => {
+    expect(PLAIN_REPLY_SCENARIOS.map((scenario) => scenario.id)).toEqual([
+      "t5.plain-reply.list",
+      "t5.plain-reply.aggregate",
+      "t5.plain-reply.chitchat",
+    ]);
+    expect(PLAIN_REPLY_SCENARIOS[0]?.expectation.ordered?.[0]?.name).toBe(
+      ORDERS_LIST_PAGE_TOOL_NAME,
+    );
+    expect(PLAIN_REPLY_SCENARIOS[1]?.expectation.ordered?.[0]?.name).toBe(
+      ORDERS_LIST_COUNTS_TOOL_NAME,
+    );
+    expect(PLAIN_REPLY_SCENARIOS[2]?.expectation.none).toBe(true);
+    expect(PLAIN_REPLY_SCENARIOS[0]?.expectation.textExcludes).toContain(
+      '{"spoken"',
     );
   });
 });

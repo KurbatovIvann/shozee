@@ -668,6 +668,32 @@ describe("assistantDisplayRows", () => {
     expect(visible[1]?.surfaces).toEqual([]);
   });
 
+  it("renders assistant text parts as prose without parsing a spoken envelope", () => {
+    expect(
+      assistantChatRows(
+        [
+          {
+            id: "a1",
+            role: "assistant",
+            parts: [{ type: "text", text: '{"spoken":"nope"}' }],
+          },
+        ],
+        null,
+        copy,
+      ),
+    ).toEqual([
+      {
+        id: "a1",
+        role: "assistant",
+        text: '{"spoken":"nope"}',
+        confirmation: null,
+        choice: null,
+        timeline: [],
+        surfaces: [],
+      },
+    ]);
+  });
+
   it("reveals spoken text and surfaces together when the turn is ready", () => {
     const mapped = assistantChatRows(
       [

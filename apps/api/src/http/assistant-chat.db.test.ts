@@ -30,6 +30,7 @@ import {
   MockLanguageModelV3,
   mockOperationalGateGenerate,
   mockSpokenStream,
+  mockSplitTextStream,
   mockStaffAssistantGateGenerate,
   mockTextStream,
   mockToolCallStream,
@@ -841,16 +842,16 @@ describe("POST /assistant/chat mock-model parity", () => {
     ).toBe(true);
   });
 
-  it("persists model spoken when the turn has no registered surface", async () => {
+  it("persists the last visible text in assistant_messages.body", async () => {
     const spoken = "I can look up orders when you ask.";
     const app = chatApp(
       new MockLanguageModelV3({
-        doStream: [mockSpokenStream(spoken)],
+        doStream: [mockTextStream(spoken)],
       }),
     );
     const token = await insertBearer(kit, kitIdentities.users.anna);
     const conversation = await staffInvoke(createConversation, {
-      title: "Spoken-only persist",
+      title: "Plain-text persist",
     });
     const response = await postChat(app, {
       token,
@@ -858,8 +859,35 @@ describe("POST /assistant/chat mock-model parity", () => {
       body: userChatBody(conversation.id, "Hello"),
     });
     expect(response.status).toBe(200);
-    await readUiMessageSsePayloads(response);
+    const payloads = await readUiMessageSsePayloads(response);
+    expect(sseVisibleTextFromPayloads(payloads)).toBe(spoken);
     expect(await waitForAssistantBody(conversation.id)).toBe(spoken);
+  });
+
+  it("persists the fallback for leftover spoken JSON, without extracting spoken", async () => {
+    const app = chatApp(
+      new MockLanguageModelV3({
+        doStream: [mockSplitTextStream(['{"spo', 'ken":"SECRETX"}'])],
+      }),
+    );
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await staffInvoke(createConversation, {
+      title: "JSON envelope persist",
+    });
+    const response = await postChat(app, {
+      token,
+      companyId: kitIdentities.companies.a,
+      body: userChatBody(conversation.id, "Hello"),
+    });
+    expect(response.status).toBe(200);
+    const payloads = await readUiMessageSsePayloads(response);
+    const visible = sseVisibleTextFromPayloads(payloads);
+    const body = await waitForAssistantBody(conversation.id);
+    expect(visible).toBe("Done.");
+    expect(body).toBe(visible);
+    expect(visible).not.toBe("SECRETX");
+    expect(JSON.stringify(payloads)).not.toContain("SECRETX");
+    expect(JSON.stringify(payloads)).not.toContain('{"spoken"');
   });
 
   it("rejects an invalid locale before the model runs", async () => {
@@ -3738,7 +3766,7 @@ describe("SHO-442 presenter-owned archived / no_active_variants chat turns", () 
             ],
           }),
         ),
-        mockSpokenStream(spoken),
+        mockTextStream(spoken),
       ],
     });
     const app = chatApp(streamModel);

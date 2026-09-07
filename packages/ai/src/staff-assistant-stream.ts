@@ -8,7 +8,6 @@ import {
 import {
   createUIMessageStream,
   createUIMessageStreamResponse,
-  Output,
   streamText,
   toUIMessageStream,
   type LanguageModel,
@@ -52,17 +51,13 @@ import {
 import { staffAssistantHistoryStats } from "./messages.js";
 import {
   staffAssistantPersistedTurnText,
-  staffAssistantTurnUsesCompletedPresenter,
   STAFF_ASSISTANT_DEFAULT_LOCALE,
   type StaffAssistantLocale,
   type StaffAssistantPresentedToolResult,
 } from "./presenter.js";
 import {
-  createSpokenReplyUiTransform,
-  isStaffAssistantSyntheticJsonTool,
+  createHoldCandidateReplyTextTransform,
   isStaffAssistantTypedToolError,
-  lastStaffAssistantTypedToolErrorMessage,
-  staffAssistantSpokenOutputSchema,
 } from "./spoken-reply.js";
 import { staffAssistantSystemMessages } from "./system-prompt.js";
 import { staffAssistantToolsetHash } from "./toolset-hash.js";
@@ -78,7 +73,7 @@ export const STAFF_ASSISTANT_RESULT_IDS_MAX = 50;
 export const STAFF_ASSISTANT_TOOL_CALL_ID_MAX = 128;
 /**
  * Mechanical cap so a looping model cannot run unbounded tool steps.
- * Structured `{ spoken }` output is an extra step after tools (SHO-386).
+ * Reply text is plain (SHO-507); structured output is not an extra step.
  */
 export const STAFF_ASSISTANT_MAX_STEPS = 9;
 
@@ -201,9 +196,7 @@ function stepRequestedChoice(steps: Array<StepResult<ToolSet>>): boolean {
 function domainToolResults(
   step: StepResult<ToolSet>,
 ): ReadonlyArray<{ readonly toolName: string; readonly output: unknown }> {
-  return step.toolResults.filter(
-    (result) => !isStaffAssistantSyntheticJsonTool(result.toolName),
-  );
+  return step.toolResults;
 }
 
 function isForcedJobTerminalOutput(output: unknown): boolean {
@@ -271,14 +264,6 @@ function attachClippedModelTraces(
     }
     return { ...run, toolName: presentedRun.toolName, modelTrace };
   });
-}
-
-function domainToolRuns(
-  runs: readonly StaffAssistantToolRun[],
-): StaffAssistantToolRun[] {
-  return runs.filter(
-    (run) => !isStaffAssistantSyntheticJsonTool(run.actionName),
-  );
 }
 
 interface ClipByteMeter {
@@ -466,12 +451,7 @@ async function staffAssistantModelStepCount(
   }
 }
 
-const STAFF_ASSISTANT_PRESENTER_STREAM_TEXT_ID = "presenter";
-const STAFF_ASSISTANT_TOOL_ERROR_STREAM_TEXT_ID = "tool-error";
-
-function isStaffAssistantTextStreamPartType(type: string): boolean {
-  return type === "text-start" || type === "text-delta" || type === "text-end";
-}
+const STAFF_ASSISTANT_REPLY_STREAM_TEXT_ID = "reply";
 
 function presentedAsSurfaceToolResults(
   presented: readonly StaffAssistantPresentedToolResult[],
@@ -520,44 +500,6 @@ function writePresentationEnvelopes(
   for (const data of envelopes) {
     writer.write({ type: "data-presentation", data });
   }
-}
-
-/**
- * Drop model `{ spoken }` text parts when a registered completed surface
- * will replace the live bubble. Tool parts keep streaming.
- */
-function createSuppressCompletedPresenterTextTransform<
-  T extends { readonly type: string },
->(shouldSuppress: () => boolean): TransformStream<T, T> {
-  return new TransformStream<T, T>({
-    transform(part, controller) {
-      if (shouldSuppress() && isStaffAssistantTextStreamPartType(part.type)) {
-        return;
-      }
-      controller.enqueue(part);
-    },
-  });
-}
-
-function createRecordVisibleTextTransform<
-  T extends {
-    readonly type: string;
-    readonly delta?: unknown;
-    readonly text?: unknown;
-  },
->(seen: { chars: number }): TransformStream<T, T> {
-  return new TransformStream<T, T>({
-    transform(part, controller) {
-      if (part.type === "text-delta") {
-        if (typeof part.delta === "string") {
-          seen.chars += part.delta.length;
-        } else if (typeof part.text === "string") {
-          seen.chars += part.text.length;
-        }
-      }
-      controller.enqueue(part);
-    },
-  });
 }
 
 async function writeUiMessageChunks<T>(
@@ -636,8 +578,8 @@ function staffAssistantStreamTools(
  * package never calls `/rpc`. ConfirmationRequiredError pauses the loop
  * and is streamed as a `data-confirmation` part (redacted summary only).
  * The Redis challenge remains core.md §7 — this does not auto-confirm.
- * When a registered completed surface exists, SSE `text-*` parts are the
- * presenter string (same as persist), not model `{ spoken }`.
+ * Candidate reply text is buffered until presenter selection; SSE
+ * `text-*` parts are that same finalized string as persist (SHO-507).
  */
 export function streamStaffAssistantChat(options: {
   readonly model: LanguageModel;
@@ -734,7 +676,6 @@ export function streamStaffAssistantChat(options: {
           messages: options.messages,
           tools,
           ...(forceJobTool ? { toolChoice: "required" as const } : {}),
-          output: Output.object({ schema: staffAssistantSpokenOutputSchema }),
           providerOptions: {
             anthropic: STAFF_ASSISTANT_ANTHROPIC_PROVIDER_OPTIONS,
           },
@@ -786,42 +727,18 @@ export function streamStaffAssistantChat(options: {
             }
           },
         });
-        const visibleText = { chars: 0 };
         await awaitUnlessAborted(
           writeUiMessageChunks(
             writer,
             toUIMessageStream({
-              stream: result.stream
-                .pipeThrough(
-                  createSpokenReplyUiTransform({
-                    runs,
-                    toolErrorMessage: () =>
-                      lastStaffAssistantTypedToolErrorMessage(
-                        presentedToolResults.map((item) => item.output),
-                      ),
-                  }),
-                )
-                .pipeThrough(
-                  createSuppressCompletedPresenterTextTransform(() =>
-                    staffAssistantTurnUsesCompletedPresenter({
-                      locale,
-                      toolResults: presentedToolResults,
-                      runs,
-                    }),
-                  ),
-                )
-                .pipeThrough(createRecordVisibleTextTransform(visibleText)),
+              stream: result.stream.pipeThrough(
+                createHoldCandidateReplyTextTransform(),
+              ),
               tools,
             }),
           ),
           options.abortSignal,
         );
-        let parsedSpoken: string | undefined;
-        try {
-          parsedSpoken = (await result.output).spoken;
-        } catch {
-          parsedSpoken = undefined;
-        }
         let rawText: string;
         try {
           rawText = await result.text;
@@ -832,12 +749,11 @@ export function streamStaffAssistantChat(options: {
           text: staffAssistantPersistedTurnText({
             locale,
             toolResults: presentedToolResults,
-            parsedSpoken,
             rawText,
             runs,
           }),
           toolRuns: attachClippedModelTraces(
-            domainToolRuns(runs).slice(0, STAFF_ASSISTANT_TOOL_RUNS_MAX),
+            runs.slice(0, STAFF_ASSISTANT_TOOL_RUNS_MAX),
             presentedToolResults,
           ),
           usage: await staffAssistantTurnUsageFromTotal(result.usage),
@@ -851,23 +767,8 @@ export function streamStaffAssistantChat(options: {
           historyTraceChars: history.traceChars,
         };
         writePresentationEnvelopes(writer, presentedToolResults, runs);
-        if (
-          staffAssistantTurnUsesCompletedPresenter({
-            locale,
-            toolResults: presentedToolResults,
-            runs,
-          })
-        ) {
-          const id = STAFF_ASSISTANT_PRESENTER_STREAM_TEXT_ID;
-          writer.write({ type: "text-start", id });
-          writer.write({ type: "text-delta", id, delta: turn.text });
-          writer.write({ type: "text-end", id });
-        } else if (
-          domainToolRuns(runs).length > 0 &&
-          turn.text.trim() !== "" &&
-          visibleText.chars === 0
-        ) {
-          const id = STAFF_ASSISTANT_TOOL_ERROR_STREAM_TEXT_ID;
+        if (turn.text.trim() !== "") {
+          const id = STAFF_ASSISTANT_REPLY_STREAM_TEXT_ID;
           writer.write({ type: "text-start", id });
           writer.write({ type: "text-delta", id, delta: turn.text });
           writer.write({ type: "text-end", id });

@@ -14,13 +14,16 @@ import { runEvalSuite } from "../run-eval.js";
 import { runStaffAssistantEvalTurn, type EvalTurnResult } from "../run-turn.js";
 import { createEvalSandbox, type EvalSandbox } from "../sandbox.js";
 import type { EvalScenario } from "../scenario.js";
+import { PLAIN_REPLY_SCENARIOS } from "../scenarios/plain-reply.js";
 import { PROOF_SCENARIOS } from "../scenarios/proof.js";
+
+const EVAL_CORPUS_SCENARIOS = [...PROOF_SCENARIOS, ...PLAIN_REPLY_SCENARIOS];
 
 const logger = createEvalLogger();
 /** `eval-cli.mjs` injects `--runs`; this is not `ANTHROPIC_API_KEY`. */
 const runs = evalRunsFromInjectedFlag(process.env.SHOWZY_EVAL_RUNS);
 
-describe("staff assistant proof eval (live, SHO-412)", () => {
+describe("staff assistant corpus eval (live, SHO-412 / SHO-507)", () => {
   let sandbox: EvalSandbox | undefined;
   let config!: ServerConfig;
   let languageModel!: ReturnType<typeof createStaffLanguageModel>;
@@ -44,13 +47,13 @@ describe("staff assistant proof eval (live, SHO-412)", () => {
     await sandbox?.close();
   });
 
-  it(`runs ${String(PROOF_SCENARIOS.length)} proof scenarios × ${String(runs)}`, async () => {
+  it(`runs ${String(EVAL_CORPUS_SCENARIOS.length)} corpus scenarios × ${String(runs)}`, async () => {
     if (sandbox === undefined) {
       throw new EvalRunsConfigError("Eval sandbox was not created.");
     }
     const activeSandbox = sandbox;
     const report = await runEvalSuite({
-      scenarios: PROOF_SCENARIOS,
+      scenarios: EVAL_CORPUS_SCENARIOS,
       runs,
       runOnce: async (scenario: EvalScenario) => {
         const messages: ModelMessage[] = [];

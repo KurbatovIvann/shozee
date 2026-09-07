@@ -53,34 +53,22 @@ export function mockTextStream(text: string) {
   };
 }
 
+/** Leftover `{ spoken }` envelope — invalid presentation after SHO-507. */
 export function mockSpokenStream(spoken: string) {
   return mockTextStream(JSON.stringify({ spoken }));
 }
 
-export function mockJsonToolAndSpokenStream(spoken: string) {
-  const payload = JSON.stringify({ spoken });
+/** Split plain-text deltas (JSON fragments or markdown dump). */
+export function mockSplitTextStream(chunks: readonly string[]) {
   return {
     stream: convertArrayToReadableStream([
       { type: "stream-start" as const, warnings: [] },
-      {
-        type: "tool-input-start" as const,
-        id: "call-json",
-        toolName: "json",
-      },
-      {
-        type: "tool-input-delta" as const,
-        id: "call-json",
-        delta: payload,
-      },
-      { type: "tool-input-end" as const, id: "call-json" },
-      {
-        type: "tool-call" as const,
-        toolCallId: "call-json",
-        toolName: "json",
-        input: payload,
-      },
       { type: "text-start" as const, id: "t" },
-      { type: "text-delta" as const, id: "t", delta: payload },
+      ...chunks.map((delta) => ({
+        type: "text-delta" as const,
+        id: "t",
+        delta,
+      })),
       { type: "text-end" as const, id: "t" },
       {
         type: "finish" as const,
@@ -92,8 +80,8 @@ export function mockJsonToolAndSpokenStream(spoken: string) {
 }
 
 /**
- * Same-step tool call plus `{ spoken }` JSON. Used when HITL
- * `stopWhen` would skip a later spoken-only step.
+ * Same-step tool call plus leftover `{ spoken }` JSON. Used when HITL
+ * `stopWhen` would skip a later reply-only step.
  */
 export function mockToolCallAndSpokenStream(
   toolCallId: string,

@@ -167,6 +167,10 @@ describe("staffAssistantSystemPrompt", () => {
     );
     expect(staffAssistantSystemPrompt).not.toContain("reply with card JSON");
     expect(staffAssistantSystemPrompt).not.toContain("emit a cards array");
+    expect(staffAssistantSystemPrompt).not.toContain("{ spoken }");
+    expect(staffAssistantSystemPrompt).not.toContain('"spoken"');
+    expect(staffAssistantSystemPrompt).not.toContain("Output.object");
+    expect(staffAssistantSystemPrompt).not.toContain("JSON object");
   });
 
   it("marks the system message with a 5-minute ephemeral cache breakpoint", () => {

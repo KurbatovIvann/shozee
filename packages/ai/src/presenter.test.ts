@@ -540,7 +540,6 @@ describe("staffAssistantTurnUsesCompletedPresenter", () => {
       staffAssistantPersistedTurnText({
         locale: "en",
         toolResults,
-        parsedSpoken: "MODEL_SPOKEN_SHOULD_NOT_PERSIST",
         rawText: '{"spoken":"MODEL_SPOKEN_SHOULD_NOT_PERSIST"}',
         runs: [{ outcome: "choice_required" }],
       }),
@@ -808,7 +807,6 @@ describe("staffAssistantPersistedTurnText", () => {
         toolResults: [
           { toolName: ORDERS_LIST_PAGE_TOOL_NAME, output: listPage },
         ],
-        parsedSpoken: "MODEL_SPOKEN_SHOULD_NOT_PERSIST",
         rawText: '{"spoken":"MODEL_SPOKEN_SHOULD_NOT_PERSIST"}',
         runs: [{ outcome: "success" }],
       }),
@@ -816,16 +814,26 @@ describe("staffAssistantPersistedTurnText", () => {
     expect(presented).not.toBe("MODEL_SPOKEN_SHOULD_NOT_PERSIST");
   });
 
-  it("keeps model spoken when there is no registered surface", () => {
+  it("keeps model prose when there is no registered surface", () => {
     expect(
       staffAssistantPersistedTurnText({
         locale: "uk",
         toolResults: [],
-        parsedSpoken: "Four orders this week.",
-        rawText: '{"spoken":"Four orders this week."}',
+        rawText: "Four orders this week.",
         runs: [{ outcome: "success" }],
       }),
     ).toBe("Four orders this week.");
+  });
+
+  it("does not extract spoken from leftover JSON when there is no surface", () => {
+    expect(
+      staffAssistantPersistedTurnText({
+        locale: "uk",
+        toolResults: [],
+        rawText: '{"spoken":"Four orders this week."}',
+        runs: [{ outcome: "success" }],
+      }),
+    ).toBe(STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK);
   });
 
   it("keeps confirmation fallback over a completed list when spoken is a markdown dump", () => {
@@ -835,7 +843,6 @@ describe("staffAssistantPersistedTurnText", () => {
         toolResults: [
           { toolName: ORDERS_LIST_PAGE_TOOL_NAME, output: listPage },
         ],
-        parsedSpoken: "| order | total |",
         rawText: '{"spoken":"| order | total |"}',
         runs: [{ outcome: "success" }, { outcome: "confirmation_required" }],
       }),
@@ -855,7 +862,6 @@ describe("staffAssistantPersistedTurnText", () => {
       staffAssistantPersistedTurnText({
         locale: "uk",
         toolResults: [],
-        parsedSpoken: "| order | total |",
         rawText: '{"spoken":"| order | total |"}',
         runs: [{ outcome: "success" }],
       }),
@@ -876,7 +882,6 @@ describe("staffAssistantPersistedTurnText", () => {
               output: { status: "error", code: "CONFLICT", message },
             },
           ],
-          parsedSpoken: undefined,
           rawText: "",
           runs: [{ outcome: "error" }],
         }),
@@ -890,7 +895,6 @@ describe("staffAssistantPersistedTurnText", () => {
               output: { status: "error", code: "NOT_FOUND", message: notFound },
             },
           ],
-          parsedSpoken: undefined,
           rawText: "",
           runs: [{ outcome: "error" }],
         }),
@@ -898,7 +902,7 @@ describe("staffAssistantPersistedTurnText", () => {
     }
   });
 
-  it("keeps model spoken over catalog clientMessage on a tool error", () => {
+  it("keeps model prose over catalog clientMessage on a tool error", () => {
     expect(
       staffAssistantPersistedTurnText({
         locale: "uk",
@@ -913,8 +917,7 @@ describe("staffAssistantPersistedTurnText", () => {
             },
           },
         ],
-        parsedSpoken: "Не знайшла той товар. Уточніть назву.",
-        rawText: '{"spoken":"Не знайшла той товар. Уточніть назву."}',
+        rawText: "Не знайшла той товар. Уточніть назву.",
         runs: [{ outcome: "error" }],
       }),
     ).toBe("Не знайшла той товар. Уточніть назву.");
@@ -952,7 +955,6 @@ describe("staffAssistantPersistedTurnText", () => {
           toolResults: [
             { toolName: ORDERS_CREATE_TOOL_NAME, output: archivedOutput },
           ],
-          parsedSpoken: spoken,
           rawText: `{"spoken":"${spoken}"}`,
           runs: [{ outcome: "error" }],
         }),
@@ -971,7 +973,6 @@ describe("staffAssistantPersistedTurnText", () => {
           toolResults: [
             { toolName: ORDERS_CREATE_TOOL_NAME, output: queryOutput },
           ],
-          parsedSpoken: spoken,
           rawText: `{"spoken":"${spoken}"}`,
           runs: [{ outcome: "error" }],
         }),
@@ -990,7 +991,6 @@ describe("staffAssistantPersistedTurnText", () => {
           toolResults: [
             { toolName: ORDERS_CREATE_TOOL_NAME, output: variantsOutput },
           ],
-          parsedSpoken: spoken,
           rawText: `{"spoken":"${spoken}"}`,
           runs: [{ outcome: "error" }],
         }),
@@ -1028,8 +1028,7 @@ describe("staffAssistantPersistedTurnText", () => {
             },
           },
         ],
-        parsedSpoken: spoken,
-        rawText: `{"spoken":"${spoken}"}`,
+        rawText: spoken,
         runs: [{ outcome: "error" }],
       }),
     ).toBe(spoken);
