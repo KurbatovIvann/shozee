@@ -16,7 +16,6 @@ import {
 } from "./collection.js";
 import {
   ASSISTANT_CUSTOMERS_LIST_SCREEN_HREF,
-  assistantCustomerEditorScreenHref,
   resolveAssistantSurfaceDestination,
   type AssistantSurfaceDestination,
   type AssistantSurfaceDestinationDeclaration,
@@ -118,19 +117,6 @@ function pageNextCursor(payload: unknown): string | null {
   return typeof cursor === "string" && cursor.length > 0 ? cursor : null;
 }
 
-function collectionRowFromCustomer(
-  row: AssistantCustomersListRowData,
-): AssistantCollectionDescriptor["rows"][number] {
-  return {
-    id: row.customerId,
-    title: row.name,
-    badge: row.status,
-    meta: null,
-    cells: [],
-    href: assistantCustomerEditorScreenHref(row.customerId),
-  };
-}
-
 /**
  * One customers-list surface when a live `customers_list_customers`
  * result is present. Returns null when there is no successful page.
@@ -171,7 +157,6 @@ export function parseCustomersListSurface(
     nextCursor,
     collection: assistantCollectionDescriptor({
       columns: CUSTOMERS_LIST_COLLECTION_COLUMNS,
-      rows: capped.rows.map(collectionRowFromCustomer),
       surface: "plain",
       rowCap: ASSISTANT_CUSTOMERS_LIST_ROW_MAX,
       truncated: clipped || capped.truncatedByCap || nextCursor !== null,

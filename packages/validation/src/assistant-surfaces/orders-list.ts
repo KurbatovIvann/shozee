@@ -11,7 +11,6 @@ import {
 } from "./collection.js";
 import {
   ASSISTANT_ORDERS_LIST_SCREEN_HREF,
-  assistantOrderDetailScreenHref,
   resolveAssistantSurfaceDestination,
   type AssistantSurfaceDestination,
   type AssistantSurfaceDestinationDeclaration,
@@ -95,19 +94,6 @@ export type AssistantOrdersListData = {
   readonly customerMatchTruncated: boolean;
   readonly collection: AssistantCollectionDescriptor;
 };
-
-function collectionRowFromListRow(
-  row: AssistantOrdersListRowData,
-): AssistantCollectionDescriptor["rows"][number] {
-  return {
-    id: row.orderId,
-    title: row.customerNameSnapshot ?? "",
-    badge: row.status,
-    meta: null,
-    cells: row.total !== null ? [row.total.amountMinor] : [],
-    href: assistantOrderDetailScreenHref(row.orderId),
-  };
-}
 
 function parseListRow(row: unknown): AssistantOrdersListRowData | null {
   if (!isRecord(row)) {
@@ -250,7 +236,6 @@ export function parseOrdersListSurface(
     customerMatchTruncated: pageCustomerMatchTruncated(payload),
     collection: assistantCollectionDescriptor({
       columns: ORDERS_LIST_COLLECTION_COLUMNS,
-      rows: capped.rows.map(collectionRowFromListRow),
       surface: "plain",
       rowCap: ASSISTANT_ORDERS_LIST_ROW_MAX,
       truncated: clipped || hasMore || capped.truncatedByCap,

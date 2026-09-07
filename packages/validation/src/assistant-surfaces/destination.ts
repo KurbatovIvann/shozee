@@ -3,8 +3,10 @@
  * (SHO-470). Discriminated so `terminal` cannot be reached by omitting
  * a route. `document` is shape-only — no routes until that work exists.
  *
- * Canonical orders screen hrefs match `order-hrefs.ts` in the mobile app
- * (`/orders`, `/orders/${orderId}`). Do not invent document routes here.
+ * Canonical list screen hrefs match the mobile app (`/orders`,
+ * `/customers`) and are re-exported there. Per-record routes live in
+ * the app (`orderDetailHref`, `customerEditorHref`). Do not invent
+ * document routes here.
  */
 
 export type AssistantSurfaceDestinationDeclaration =
@@ -22,19 +24,6 @@ export const ASSISTANT_ORDERS_LIST_SCREEN_HREF = "/orders";
 
 /** Customers tab. Same string as mobile `ASSISTANT_CUSTOMERS_LIST_HREF`. */
 export const ASSISTANT_CUSTOMERS_LIST_SCREEN_HREF = "/customers";
-
-/** Order detail screen. Same path as mobile `orderDetailHref`. */
-export function assistantOrderDetailScreenHref(orderId: string): string {
-  return `/orders/${orderId}`;
-}
-
-/**
- * Customer editor screen. Same path as mobile `customerEditorHref` —
- * there is no separate read-only customer detail route.
- */
-export function assistantCustomerEditorScreenHref(customerId: string): string {
-  return `/customers/clients/${customerId}/edit`;
-}
 
 export function resolveAssistantSurfaceDestination(
   declaration: AssistantSurfaceDestinationDeclaration,

@@ -5,20 +5,32 @@
  * section/column labels). A new layout is a design decision that enters
  * this closed set. Do not add a third layout here.
  *
- * Rows and columns reuse T4 collection primitives. `orders-aggregate`
- * parses onto `summary`. `breakdown` is proven with fixtures — not a
- * second live domain surface.
+ * Columns reuse T4 collection primitives. Row cells stay on this
+ * descriptor until SHO-499 (T2); collection descriptors (SHO-496) do
+ * not carry rows. `orders-aggregate` parses onto `summary`.
+ * `breakdown` is proven with fixtures — not a second live domain
+ * surface.
  */
-import type {
-  AssistantCollectionColumn,
-  AssistantCollectionRow,
-} from "./collection.js";
+import type { AssistantCollectionColumn } from "./collection.js";
 import type { AssistantMoneyMinor } from "./helpers.js";
 
 export const ASSISTANT_AGGREGATE_LAYOUTS = ["summary", "breakdown"] as const;
 
 export type AssistantAggregateLayout =
   (typeof ASSISTANT_AGGREGATE_LAYOUTS)[number];
+
+/**
+ * Unlocalized row cells for the aggregate descriptor. SHO-496 removed
+ * this shape from collection; SHO-499 (T2) removes it here.
+ */
+export type AssistantCollectionRow = {
+  readonly id: string;
+  readonly title: string;
+  readonly badge: string | null;
+  readonly meta: string | null;
+  readonly cells: readonly string[];
+  readonly href: string | null;
+};
 
 export type AssistantAggregateSection = {
   readonly id: string;
