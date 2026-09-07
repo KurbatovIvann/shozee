@@ -21,7 +21,7 @@ they resume through two different mechanisms.
 | Resume entry | `POST /assistant/chat` + `x-confirmation-challenge-id` header + the client's echoed history | `POST /assistant/choice { conversationId, choiceId, optionId }` |
 | Who re-emits the action input | **The model.** The gate is skipped, the main model runs again and must re-emit the identical tool call; core consumes the challenge (`GETDEL`) and checks the input hash and bindings | **The server.** Claim `open → claimed` (CAS), patch the stored canonical input with the mapped id, `executeAction("orders.create")`, mark `completed`; no model |
 | Store semantics | Single-use `GETDEL` | `open → claimed → completed`, replay of the same option is idempotent, a different option is `conflict` |
-| Reply text | Whatever the model says after the tool result | Presenter text (`presentCompletedStaffAssistantTurn`) |
+| Reply text | Whatever the model says after the tool result | Protocol copy via `presentOrderCreatedSpeech` (ADR-0036) |
 | Cost | Two full model calls per confirmed write | Zero model calls on resume |
 
 The confirmation resume has a structural problem, not a tuning problem: the
@@ -113,7 +113,7 @@ canonicalInput, { confirmationChallengeId: challengeId, idempotencyKey:
 attemptKey("tool", conversationId, toolCallId) })` → core consumes the
 challenge and checks hash + bindings → persist the tool run
 (`recordAssistantTurn`, outcome `success`, plus `model_trace` per
-ADR-0034) → `complete` → one assistant turn with **presenter** text and the
+ADR-0034) → `complete` → one assistant turn with **protocol** speech and the
 entity card. Gate and reply model are not invoked.
 
 Dismiss stays **client-local** (today's behaviour): nothing executes, the
@@ -127,7 +127,7 @@ it*. Resume succeeds only if the record claim passes **and** core's
 `getAndDelete` + hash/binding check passes. Neither is trusted instead of
 the other. A core mismatch (tampered record, expired challenge, idempotency
 key drift) does not loop: the api marks the record failed, persists outcome
-`error`, and the presenter says the confirmation expired — ask again.
+`error`, and protocol speech says the confirmation expired — ask again.
 
 ### 6. Compatibility
 
@@ -200,7 +200,7 @@ Required by SHO-430; each is a test in SHO-516 unless marked otherwise.
 
 - **Keep confirmation distinct on purpose** (model re-emits the tool
   call) — rejected. The only argument for it is that the model can speak
-  after the write; the presenter already does that for choice, and
+  after the write; protocol speech already does that for choice, and
   ADR-0034 puts the confirmed result into the next turn's context. The
   cost is a second full model call and a card that can reappear.
 - **Move the canonical input into the core challenge record** (change

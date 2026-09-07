@@ -18,6 +18,8 @@ import { CoreError } from "@showzy/core/errors";
 import { createOrderInputSchema } from "@showzy/orders/contract";
 import { z } from "zod";
 
+import { fillStaffAssistantCopy, type StaffAssistantLocale } from "./locale.js";
+
 export const STAFF_ASSISTANT_NEEDS_CHOICE_STATUS = "needs_choice" as const;
 
 /**
@@ -55,7 +57,8 @@ export const CHOICE_PICKER_REASONS = [
 ] as const;
 
 /**
- * Non-picker catalog terminals. Presenter owns the turn; never a ChoiceCard.
+ * Non-picker catalog terminals. Protocol speech owns the turn; never a
+ * ChoiceCard.
  */
 export const CHOICE_DOMAIN_ERROR_REASONS = [
   "archived",
@@ -179,7 +182,7 @@ export type StaffAssistantNeedsChoiceOutput = z.output<
 
 /**
  * Sequential `POST /assistant/choice` result (SHO-427). Additive `text`
- * is presenter output for the same view-model — not catalog
+ * is protocol speech for the same view-model — not catalog
  * `clientMessage`. First-turn tool output stays the schema above.
  */
 export const staffAssistantNeedsChoiceInteractionSchema =
@@ -833,4 +836,126 @@ export async function needsChoiceFromOrdersCreateConflict(args: {
     options: bound.options,
     optionsTruncated: bound.optionsTruncated,
   });
+}
+
+export const CHOICE_TRUNCATED_COPY: Record<StaffAssistantLocale, string> = {
+  en: "More variants exist. Reply with the exact flavour name.",
+  uk: "Є ще варіанти. Напиши точну назву смаку.",
+};
+
+export const CHOICE_TRUNCATED_MATCH_COPY: Record<StaffAssistantLocale, string> =
+  {
+    en: "More matches exist. Reply with the exact name.",
+    uk: "Є ще збіги. Напиши точну назву.",
+  };
+
+export const STAFF_ASSISTANT_CHOICE_INTRO_COPY: Record<
+  StaffAssistantLocale,
+  {
+    readonly customer: string;
+    readonly product: string;
+    readonly variant: string;
+  }
+> = {
+  en: {
+    customer: "Select a customer matching {{name}}: {{labels}}.",
+    product: "Select a product matching {{name}}: {{labels}}.",
+    variant: "Select a variant for {{name}}: {{labels}}.",
+  },
+  uk: {
+    customer: "Обери клієнта «{{name}}»: {{labels}}.",
+    product: "Обери товар «{{name}}»: {{labels}}.",
+    variant: "Обери варіант для {{name}}: {{labels}}.",
+  },
+};
+
+export const STAFF_ASSISTANT_ORDER_CREATED_COPY: Record<
+  StaffAssistantLocale,
+  string
+> = {
+  en: "Order {{number}} created.",
+  uk: "Замовлення {{number}} створено.",
+};
+
+function presentChoiceIntro(
+  output: StaffAssistantNeedsChoiceOutput,
+  locale: StaffAssistantLocale,
+): string {
+  const labels = output.options.map((option) => option.label).join(", ");
+  const kind = output.choiceKind ?? "variant";
+  const templates = STAFF_ASSISTANT_CHOICE_INTRO_COPY[locale];
+  const template =
+    kind === "customer"
+      ? templates.customer
+      : kind === "product"
+        ? templates.product
+        : templates.variant;
+  return fillStaffAssistantCopy(template, {
+    name: output.productName,
+    labels,
+  });
+}
+
+function presentChoiceSurface(
+  output: StaffAssistantNeedsChoiceOutput,
+  locale: StaffAssistantLocale,
+): string {
+  const intro = presentChoiceIntro(output, locale);
+  const kind = output.choiceKind ?? "variant";
+  if (output.optionsTruncated) {
+    const truncated =
+      kind === "variant"
+        ? CHOICE_TRUNCATED_COPY[locale]
+        : CHOICE_TRUNCATED_MATCH_COPY[locale];
+    return `${intro} ${truncated}`;
+  }
+  return intro;
+}
+
+export function presentChoiceStaffAssistantTurn(options: {
+  readonly locale: StaffAssistantLocale;
+  readonly toolResults: readonly {
+    readonly toolName?: string;
+    readonly output: unknown;
+  }[];
+}): string | undefined {
+  for (let index = options.toolResults.length - 1; index >= 0; index -= 1) {
+    const result = options.toolResults[index];
+    if (
+      result !== undefined &&
+      isStaffAssistantNeedsChoiceOutput(result.output)
+    ) {
+      return presentChoiceSurface(result.output, options.locale);
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Sequential ChoiceCard speech from the successor record's view-model
+ * (SHO-427). Same copy as `presentChoiceStaffAssistantTurn` — not catalog
+ * `clientMessage`. Persist this string and return it as `text`.
+ */
+export function presentChoiceStaffAssistantNeedsChoice(options: {
+  readonly locale: StaffAssistantLocale;
+  readonly record: ChoiceRecord;
+}): StaffAssistantNeedsChoiceInteraction {
+  const output = needsChoiceOutputFromRecord(options.record);
+  return staffAssistantNeedsChoiceInteractionSchema.parse({
+    ...output,
+    text: presentChoiceSurface(output, options.locale),
+  });
+}
+
+export function presentOrderCreatedSpeech(options: {
+  readonly locale: StaffAssistantLocale;
+  readonly orderNumber: string;
+}): string {
+  const number = options.orderNumber.startsWith("#")
+    ? options.orderNumber
+    : `#${options.orderNumber}`;
+  return fillStaffAssistantCopy(
+    STAFF_ASSISTANT_ORDER_CREATED_COPY[options.locale],
+    { number },
+  );
 }

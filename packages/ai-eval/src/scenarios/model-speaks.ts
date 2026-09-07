@@ -22,7 +22,7 @@ export const MODEL_SPEAKS_SCENARIOS: readonly EvalScenario[] = [
   {
     id: "t6.model-speaks.last-3-orders",
     description:
-      "«останні 3 замовлення» lists a page; final text contains an order number from the tool result, not presenter phrasing.",
+      "«останні 3 замовлення» lists a page; final text contains an order number from the tool result, not a card dump.",
     fixture: "proof",
     turns: [{ text: "останні 3 замовлення" }],
     expectation: {

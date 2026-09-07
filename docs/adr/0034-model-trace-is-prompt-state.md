@@ -61,7 +61,8 @@ Rules that make it prompt state rather than a projection:
    the cap allows and loses the rest. Guaranteeing every run of such a turn
    would mean a per-run budget, which is not worth the machinery.
 4. **Only successful outcomes.** No trace for `confirmation_required`,
-   `needs_choice`, or error runs; presenter text already records those.
+   `needs_choice`, or error runs; committed protocol speech already
+   records those (`commitTurnSpeech`, ADR-0036).
 5. **Same lifecycle as the conversation.** It lives and dies with
    `assistant_tool_runs`; no separate retention, export, or backfill.
 

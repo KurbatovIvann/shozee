@@ -30,14 +30,14 @@ import {
   STAFF_ASSISTANT_CLIP_ARRAY_MAX,
 } from "./clip-tool-result.js";
 import {
+  STAFF_ASSISTANT_CONFIRMATION_COPY,
   isStaffAssistantConfirmationOutput,
-  STAFF_ASSISTANT_CONFIRMATION_FALLBACK_TEXT,
 } from "./confirmation.js";
 import {
-  STAFF_ASSISTANT_EMPTY_SPOKEN_FALLBACK,
-  STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK,
+  STAFF_ASSISTANT_EMPTY_SPEECH_FALLBACK,
+  STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK,
   STAFF_ASSISTANT_TOOL_ERROR_FALLBACK,
-} from "./spoken-reply.js";
+} from "./turn-speech.js";
 import {
   extractUuidResultIds,
   STAFF_ASSISTANT_MAX_STEPS,
@@ -47,10 +47,8 @@ import {
 import {
   CHOICE_TRUNCATED_COPY,
   CHOICE_TRUNCATED_MATCH_COPY,
-  presentCatalogDomainError,
-  presentCompletedStaffAssistantTurn,
-  STAFF_ASSISTANT_DEFAULT_LOCALE,
-} from "./presenter.js";
+} from "./choice.js";
+import { presentCatalogDomainError } from "./domain-error.js";
 import { staffAssistantSystemPrompt } from "./system-prompt.js";
 import {
   MockLanguageModelV3,
@@ -1088,7 +1086,8 @@ describe("streamStaffAssistantChat", () => {
       },
     ]);
     expect(turn.toolRuns[0]).not.toHaveProperty("modelTrace");
-    expect(turn.text).toBe(STAFF_ASSISTANT_CONFIRMATION_FALLBACK_TEXT);
+    expect(turn.speech.source).toBe("protocol");
+    expect(turn.text).toBe(STAFF_ASSISTANT_CONFIRMATION_COPY.uk);
     expect(JSON.stringify(payloads)).not.toContain("should not auto-confirm");
 
     const confirmationChunks = payloads.filter((payload) => {
@@ -1318,29 +1317,10 @@ describe("streamStaffAssistantChat", () => {
     const payloads = await readUiMessageSsePayloads(response);
     const turn = await completion;
     const payloadText = JSON.stringify(payloads);
-    const presented = presentCompletedStaffAssistantTurn({
-      locale: STAFF_ASSISTANT_DEFAULT_LOCALE,
-      toolResults: [
-        {
-          toolName: ORDERS_LIST_PAGE_TOOL_NAME,
-          output: {
-            kind: "page.summary",
-            items: [
-              {
-                orderId: customerId,
-                orderNumber: "1049",
-                status: "new",
-              },
-            ],
-            nextCursor: null,
-          },
-        },
-      ],
-    });
-    expect(presented).toBeDefined();
-    expect(presented).not.toBe(spoken);
+    expect(turn.speech.source).toBe("model");
     expect(turn.text).toBe(spoken);
-    expect(turn.text).not.toBe(presented);
+    expect(turn.text).not.toContain("Latest orders");
+    expect(turn.text).not.toContain("Останні замовлення");
     expect(turn.text).not.toContain("|");
     expect(turn.text).not.toContain("**");
     expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
@@ -1406,30 +1386,10 @@ describe("streamStaffAssistantChat", () => {
     const payloads = await readUiMessageSsePayloads(response);
     const turn = await completion;
     const payloadText = JSON.stringify(payloads);
-    const presented = presentCompletedStaffAssistantTurn({
-      locale: STAFF_ASSISTANT_DEFAULT_LOCALE,
-      toolResults: [
-        {
-          toolName: ORDERS_LIST_COUNTS_TOOL_NAME,
-          output: {
-            kind: "aggregate",
-            orderCount: 6,
-            grossByCurrency: [{ currency: "UAH", grossAmountMinor: "150000" }],
-            buckets: [
-              {
-                identity: { kind: "status", status: "confirmed" },
-                orderCount: 4,
-                grossByCurrency: [],
-              },
-            ],
-          },
-        },
-      ],
-    });
-    expect(presented).toBeDefined();
-    expect(presented).not.toBe(spoken);
+    expect(turn.speech.source).toBe("model");
     expect(turn.text).toBe(spoken);
-    expect(turn.text).not.toBe(presented);
+    expect(turn.text).not.toContain("Latest orders");
+    expect(turn.text).not.toContain("Останні замовлення");
     expect(turn.text).not.toContain("|");
     expect(turn.text).not.toContain("**");
     expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
@@ -1496,7 +1456,8 @@ describe("streamStaffAssistantChat", () => {
     });
     const payloads = await readUiMessageSsePayloads(response);
     const turn = await completion;
-    expect(turn.text).toBe("Немає замовлень.");
+    expect(turn.speech.source).toBe("fallback");
+    expect(turn.text).toBe(STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK.uk);
     expect(turn.text).not.toBe("Done.");
     expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
     expect(JSON.stringify(payloads)).not.toContain("|");
@@ -1522,17 +1483,12 @@ describe("streamStaffAssistantChat", () => {
     const payloads = await readUiMessageSsePayloads(response);
     const turn = await completion;
     const payloadText = JSON.stringify(payloads);
-    expect(turn.text).toBe("Немає замовлень.");
+    expect(turn.speech.source).toBe("fallback");
+    expect(turn.text).toBe(STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK.uk);
     expect(turn.text).not.toBe("Done.");
     expect(turn.text).not.toContain("|");
     expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
     expect(payloadText).not.toContain("|");
-    expect(payloadText).not.toContain(
-      STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK.uk,
-    );
-    expect(payloadText).not.toContain(
-      STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK.en,
-    );
     expect(turn.toolRuns[0]?.outcome).toBe("success");
   });
 
@@ -1577,21 +1533,22 @@ describe("streamStaffAssistantChat", () => {
       "success",
       "confirmation_required",
     ]);
-    expect(turn.text).toBe(STAFF_ASSISTANT_CONFIRMATION_FALLBACK_TEXT);
-    expect(turn.text).not.toBe(STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK.uk);
-    expect(turn.text).not.toBe(STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK.en);
+    expect(turn.speech.source).toBe("protocol");
+    expect(turn.text).toBe(STAFF_ASSISTANT_CONFIRMATION_COPY.uk);
+    expect(turn.text).not.toBe(STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK.uk);
+    expect(turn.text).not.toBe(STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK.en);
     expect(turn.text).not.toBe("Done.");
     expect(turn.text).not.toMatch(/action is done|action done/i);
     expect(payloadText).not.toContain(
-      STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK.uk,
+      STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK.uk,
     );
     expect(payloadText).not.toContain(
-      STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK.en,
+      STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK.en,
     );
     expect(payloadText).not.toContain("| order");
     expect(payloadText).not.toContain("NoObjectGeneratedError");
     expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
-    expect(payloadText).toContain(STAFF_ASSISTANT_CONFIRMATION_FALLBACK_TEXT);
+    expect(payloadText).toContain(STAFF_ASSISTANT_CONFIRMATION_COPY.uk);
     const confirmationChunks = payloads.filter((payload) => {
       return (
         typeof payload === "object" &&
@@ -1603,7 +1560,7 @@ describe("streamStaffAssistantChat", () => {
     expect(confirmationChunks.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("persists presenter text when a list tool is silent", async () => {
+  it("persists the success speech fallback when a list tool is silent", async () => {
     const page = {
       kind: "page.summary" as const,
       items: [
@@ -1630,11 +1587,12 @@ describe("streamStaffAssistantChat", () => {
     });
     const payloads = await readUiMessageSsePayloads(response);
     const turn = await completion;
-    expect(turn.text).toBe("Останні замовлення: #1049 (Нове).");
+    expect(turn.speech.source).toBe("fallback");
+    expect(turn.text).toBe(STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK.uk);
     expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
   });
 
-  it("holds leftover spoken JSON fragments and emits presenter for a list", async () => {
+  it("holds leftover spoken JSON fragments and emits the success fallback for a list", async () => {
     const execute = vi.fn(() =>
       Promise.resolve({
         kind: "page.summary",
@@ -1663,7 +1621,8 @@ describe("streamStaffAssistantChat", () => {
     const payloads = await readUiMessageSsePayloads(response);
     const turn = await completion;
     const payloadText = JSON.stringify(payloads);
-    expect(turn.text).toBe("Останні замовлення: #1049 (Нове).");
+    expect(turn.speech.source).toBe("fallback");
+    expect(turn.text).toBe(STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK.uk);
     expect(turn.text).not.toBe("SECRETX");
     expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
     expect(payloadText).not.toContain('{"spo');
@@ -1671,7 +1630,7 @@ describe("streamStaffAssistantChat", () => {
     expect(payloadText).not.toContain('{"spoken"');
   });
 
-  it("persists English presenter text when locale is en and model text is invalid", async () => {
+  it("persists English success speech fallback when locale is en and model text is invalid", async () => {
     const spoken = "MODEL_SPOKEN_SHOULD_NOT_PERSIST";
     const execute = vi.fn(() =>
       Promise.resolve({
@@ -1701,13 +1660,14 @@ describe("streamStaffAssistantChat", () => {
     });
     const payloads = await readUiMessageSsePayloads(response);
     const turn = await completion;
-    expect(turn.text).toBe("Latest orders: #1049 (New).");
+    expect(turn.speech.source).toBe("fallback");
+    expect(turn.text).toBe(STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK.en);
     expect(turn.text).not.toBe(spoken);
     expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
     expect(JSON.stringify(payloads)).not.toContain(spoken);
   });
 
-  it("defaults presenter locale to uk when omitted", async () => {
+  it("defaults speech fallback locale to uk when omitted", async () => {
     const execute = vi.fn(() =>
       Promise.resolve({ items: [], nextCursor: null }),
     );
@@ -1725,7 +1685,8 @@ describe("streamStaffAssistantChat", () => {
     });
     const payloads = await readUiMessageSsePayloads(response);
     const turn = await completion;
-    expect(turn.text).toBe("Немає замовлень.");
+    expect(turn.speech.source).toBe("fallback");
+    expect(turn.text).toBe(STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK.uk);
     expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
     expect(JSON.stringify(payloads)).not.toContain("MODEL_SPOKEN");
   });
@@ -1767,7 +1728,7 @@ describe("streamStaffAssistantChat", () => {
     const payloads = await readUiMessageSsePayloads(response);
     const turn = await completion;
     const payloadText = JSON.stringify(payloads);
-    expect(turn.text).toBe(STAFF_ASSISTANT_EMPTY_SPOKEN_FALLBACK.uk);
+    expect(turn.text).toBe(STAFF_ASSISTANT_EMPTY_SPEECH_FALLBACK.uk);
     expect(turn.text).toBe("Готово.");
     expect(turn.text).not.toBe("SECRETX");
     expect(turn.text).not.toBe(STAFF_ASSISTANT_TOOL_ERROR_FALLBACK.en);
@@ -1792,7 +1753,8 @@ describe("streamStaffAssistantChat", () => {
     const payloads = await readUiMessageSsePayloads(response);
     const turn = await completion;
     const payloadText = JSON.stringify(payloads);
-    expect(turn.text).toBe(STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK.uk);
+    expect(turn.speech.source).toBe("fallback");
+    expect(turn.text).toBe(STAFF_ASSISTANT_EMPTY_SPEECH_FALLBACK.uk);
     expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
     expect(payloadText).not.toContain("| order");
     expect(payloadText).not.toContain("**#1**");
@@ -1832,7 +1794,8 @@ describe("streamStaffAssistantChat", () => {
     const payloads = await readUiMessageSsePayloads(response);
     const turn = await completion;
     const payloadText = JSON.stringify(payloads);
-    expect(turn.text).toBe(STAFF_ASSISTANT_CONFIRMATION_FALLBACK_TEXT);
+    expect(turn.speech.source).toBe("protocol");
+    expect(turn.text).toBe(STAFF_ASSISTANT_CONFIRMATION_COPY.uk);
     expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
     expect(payloadText).not.toContain("| order");
     expect(payloadText).not.toContain("**#1**");
@@ -1856,7 +1819,7 @@ describe("streamStaffAssistantChat", () => {
     expect(textIndex).toBeGreaterThan(confirmationIndex);
   });
 
-  it("persists presenter text for an entity tool when model text is leftover spoken JSON", async () => {
+  it("persists the success speech fallback for an entity tool when model text is leftover spoken JSON", async () => {
     const spoken = "MODEL_SPOKEN_SHOULD_NOT_PERSIST";
     const execute = vi.fn(() =>
       Promise.resolve({
@@ -1884,13 +1847,14 @@ describe("streamStaffAssistantChat", () => {
     });
     const payloads = await readUiMessageSsePayloads(response);
     const turn = await completion;
-    expect(turn.text).toBe("Order #1049, New.");
+    expect(turn.speech.source).toBe("fallback");
+    expect(turn.text).toBe(STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK.en);
     expect(turn.text).not.toBe(spoken);
     expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
     expect(JSON.stringify(payloads)).not.toContain(spoken);
   });
 
-  it("joins multiple registered surfaces in tool-result order", async () => {
+  it("uses the success speech fallback when leftover JSON follows two tools", async () => {
     const spoken = "MODEL_SPOKEN_SHOULD_NOT_PERSIST";
     const execute = vi.fn((actionName: string) => {
       if (actionName === "orders.get") {
@@ -1932,9 +1896,8 @@ describe("streamStaffAssistantChat", () => {
     });
     const payloads = await readUiMessageSsePayloads(response);
     const turn = await completion;
-    expect(turn.text).toBe(
-      "Order #1049, New.\nLatest orders: #1050 (Confirmed).",
-    );
+    expect(turn.speech.source).toBe("fallback");
+    expect(turn.text).toBe(STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK.en);
     expect(turn.text).not.toBe(spoken);
     expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
     expect(JSON.stringify(payloads)).not.toContain(spoken);
@@ -2534,7 +2497,7 @@ describe("streamStaffAssistantChat", () => {
     expect(JSON.stringify(payloads)).not.toContain("needs_choice");
   });
 
-  it("streams presenter copy for archived and no_active_variants, not model spoken", async () => {
+  it("streams protocol copy for archived and no_active_variants, not model spoken", async () => {
     const spoken = "MODEL_SPOKEN_SHOULD_NOT_FLASH";
     const cases = [
       {
@@ -2600,6 +2563,7 @@ describe("streamStaffAssistantChat", () => {
           extras: fixture.extras,
         });
         expect(turn.toolRuns[0]?.outcome).toBe("error");
+        expect(turn.speech.source).toBe("protocol");
         expect(turn.text).toBe(expected);
         expect(turn.text).not.toBe(spoken);
         expect(turn.text).not.toBe(fixture.error.clientMessage);

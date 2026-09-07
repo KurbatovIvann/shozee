@@ -3,16 +3,16 @@ import { describe, expect, it } from "vitest";
 import {
   CHOICE_TRUNCATED_COPY,
   CHOICE_TRUNCATED_MATCH_COPY,
-  STAFF_ASSISTANT_CATALOG_DOMAIN_ERROR_COPY,
   STAFF_ASSISTANT_CHOICE_INTRO_COPY,
-  STAFF_ASSISTANT_ORDER_STATUS_LABELS,
-  STAFF_ASSISTANT_PRESENTER_COPY,
-} from "./presenter.js";
+  STAFF_ASSISTANT_ORDER_CREATED_COPY,
+} from "./choice.js";
+import { STAFF_ASSISTANT_CONFIRMATION_COPY } from "./confirmation.js";
+import { STAFF_ASSISTANT_CATALOG_DOMAIN_ERROR_COPY } from "./domain-error.js";
 import {
-  STAFF_ASSISTANT_EMPTY_SPOKEN_FALLBACK,
-  STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK,
+  STAFF_ASSISTANT_EMPTY_SPEECH_FALLBACK,
+  STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK,
   STAFF_ASSISTANT_TOOL_ERROR_FALLBACK,
-} from "./spoken-reply.js";
+} from "./turn-speech.js";
 
 /** Formal 2pl Ukrainian imperative endings («Напишіть», «Оберіть»). */
 const FORMAL_IMPERATIVE_ENDING = /(іть|йте)\b/;
@@ -36,18 +36,18 @@ function stringLeaves(value: unknown): string[] {
   return [];
 }
 
-describe("staff assistant uk presenter/HITL copy tone", () => {
+describe("staff assistant uk protocol/fallback copy tone", () => {
   it("has no formal Ви-form imperative endings", () => {
     const ukLeaves = [
-      ...stringLeaves(STAFF_ASSISTANT_PRESENTER_COPY.uk),
-      ...stringLeaves(STAFF_ASSISTANT_ORDER_STATUS_LABELS.uk),
       CHOICE_TRUNCATED_COPY.uk,
       CHOICE_TRUNCATED_MATCH_COPY.uk,
       ...stringLeaves(STAFF_ASSISTANT_CATALOG_DOMAIN_ERROR_COPY.uk),
       ...stringLeaves(STAFF_ASSISTANT_CHOICE_INTRO_COPY.uk),
-      STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK.uk,
+      STAFF_ASSISTANT_ORDER_CREATED_COPY.uk,
+      STAFF_ASSISTANT_CONFIRMATION_COPY.uk,
+      STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK.uk,
       STAFF_ASSISTANT_TOOL_ERROR_FALLBACK.uk,
-      STAFF_ASSISTANT_EMPTY_SPOKEN_FALLBACK.uk,
+      STAFF_ASSISTANT_EMPTY_SPEECH_FALLBACK.uk,
     ];
     expect(ukLeaves.length).toBeGreaterThan(0);
     const unexpected = ukLeaves.filter((text) => {

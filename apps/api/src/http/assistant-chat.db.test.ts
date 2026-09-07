@@ -19,6 +19,7 @@ import {
   PRICING_LIST_PRICE_LISTS_TOOL_NAME,
   secondsUntilKyivMidnight,
   STAFF_ASSISTANT_MODEL_HISTORY_MAX,
+  STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK,
   STAFF_ASSISTANT_TOOL_ERROR_FALLBACK,
   STAFF_ASSISTANT_TOOL_SEARCH_NAME,
   toProviderToolName,
@@ -784,7 +785,7 @@ describe("POST /assistant/chat mock-model parity", () => {
     expect(await waitForAssistantBody(conversation.id)).toBe(visible);
   });
 
-  it("persists leftover spoken JSON as presenter list text, not extracted spoken", async () => {
+  it("persists leftover spoken JSON as the success speech fallback, not extracted spoken", async () => {
     const modelSpoken = "MODEL_SPOKEN_SHOULD_NOT_PERSIST";
     const app = chatApp(
       new MockLanguageModelV3({
@@ -796,7 +797,7 @@ describe("POST /assistant/chat mock-model parity", () => {
     );
     const token = await insertBearer(kit, kitIdentities.users.anna);
     const conversation = await staffInvoke(createConversation, {
-      title: "Presenter persist uk",
+      title: "Speech persist uk",
     });
     const response = await postChat(app, {
       token,
@@ -807,12 +808,10 @@ describe("POST /assistant/chat mock-model parity", () => {
     await readUiMessageSsePayloads(response);
     const body = await waitForAssistantBody(conversation.id);
     expect(body).not.toBe(modelSpoken);
-    expect(
-      body === "Немає замовлень." || body.startsWith("Останні замовлення:"),
-    ).toBe(true);
+    expect(body).toBe(STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK.uk);
   });
 
-  it("persists English presenter text when locale is en", async () => {
+  it("persists English success speech fallback when locale is en", async () => {
     const modelSpoken = "MODEL_SPOKEN_SHOULD_NOT_PERSIST";
     const app = chatApp(
       new MockLanguageModelV3({
@@ -824,7 +823,7 @@ describe("POST /assistant/chat mock-model parity", () => {
     );
     const token = await insertBearer(kit, kitIdentities.users.anna);
     const conversation = await staffInvoke(createConversation, {
-      title: "Presenter persist en",
+      title: "Speech persist en",
     });
     const response = await postChat(app, {
       token,
@@ -835,12 +834,10 @@ describe("POST /assistant/chat mock-model parity", () => {
     await readUiMessageSsePayloads(response);
     const body = await waitForAssistantBody(conversation.id);
     expect(body).not.toBe(modelSpoken);
-    expect(body === "No orders." || body.startsWith("Latest orders:")).toBe(
-      true,
-    );
+    expect(body).toBe(STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK.en);
   });
 
-  it("defaults persisted presenter locale to uk when locale is omitted", async () => {
+  it("defaults persisted speech fallback locale to uk when locale is omitted", async () => {
     const modelSpoken = "MODEL_SPOKEN_SHOULD_NOT_PERSIST";
     const app = chatApp(
       new MockLanguageModelV3({
@@ -852,7 +849,7 @@ describe("POST /assistant/chat mock-model parity", () => {
     );
     const token = await insertBearer(kit, kitIdentities.users.anna);
     const conversation = await staffInvoke(createConversation, {
-      title: "Presenter persist default locale",
+      title: "Speech persist default locale",
     });
     const response = await postChat(app, {
       token,
@@ -863,9 +860,7 @@ describe("POST /assistant/chat mock-model parity", () => {
     await readUiMessageSsePayloads(response);
     const body = await waitForAssistantBody(conversation.id);
     expect(body).not.toBe(modelSpoken);
-    expect(
-      body === "Немає замовлень." || body.startsWith("Останні замовлення:"),
-    ).toBe(true);
+    expect(body).toBe(STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK.uk);
   });
 
   it("persists the last visible text in assistant_messages.body", async () => {
@@ -3579,7 +3574,7 @@ describe("SHO-418 orders_create choice activation", () => {
   });
 });
 
-describe("SHO-442 presenter-owned archived / no_active_variants chat turns", () => {
+describe("SHO-442 protocol archived / no_active_variants chat turns", () => {
   async function seedSimpleProduct(name: string) {
     return staffInvoke(createProduct, {
       name,

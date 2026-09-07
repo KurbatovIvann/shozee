@@ -28,6 +28,7 @@ export {
   confirmationFromChatPart,
   isStaffAssistantConfirmationOutput,
   staffAssistantConfirmationOutputSchema,
+  STAFF_ASSISTANT_CONFIRMATION_COPY,
   STAFF_ASSISTANT_CONFIRMATION_FALLBACK_TEXT,
   STAFF_ASSISTANT_CONFIRMATION_STATUS,
   type StaffAssistantConfirmationOutput,
@@ -124,6 +125,8 @@ export {
   CHOICE_OPTIONS_MAX,
   CHOICE_REDIS_KEY_PREFIX,
   CHOICE_TTL_MS,
+  CHOICE_TRUNCATED_COPY,
+  CHOICE_TRUNCATED_MATCH_COPY,
   choiceCanonicalCreateInputSchema,
   choiceCardEnvelope,
   choiceKindFromTarget,
@@ -133,13 +136,18 @@ export {
   needsChoiceOutputFromRecord,
   parseChoiceRecord,
   peekEnvelopeFromRecord,
+  presentChoiceStaffAssistantNeedsChoice,
+  presentChoiceStaffAssistantTurn,
+  presentOrderCreatedSpeech,
   recordBind,
   resolveMappedVariantId,
   serializeChoiceRecord,
   staffAssistantChoiceCardEnvelopeSchema,
   staffAssistantNeedsChoiceInteractionSchema,
   staffAssistantNeedsChoiceOutputSchema,
+  STAFF_ASSISTANT_CHOICE_INTRO_COPY,
   STAFF_ASSISTANT_NEEDS_CHOICE_STATUS,
+  STAFF_ASSISTANT_ORDER_CREATED_COPY,
   successorChoiceId,
   type AssistantChoiceBody,
   type AssistantChoiceInteractionResult,
@@ -159,25 +167,32 @@ export {
   type StaffAssistantNeedsChoiceOutput,
 } from "./choice.js";
 export {
-  CHOICE_TRUNCATED_COPY,
-  CHOICE_TRUNCATED_MATCH_COPY,
-  STAFF_ASSISTANT_CATALOG_DOMAIN_ERROR_COPY,
-  STAFF_ASSISTANT_CHOICE_INTRO_COPY,
-  STAFF_ASSISTANT_ORDER_STATUS_LABELS,
-  STAFF_ASSISTANT_PRESENTER_COPY,
   presentCatalogDomainError,
-  presentChoiceStaffAssistantNeedsChoice,
-  presentChoiceStaffAssistantTurn,
-  presentCompletedStaffAssistantTurn,
   presentDomainErrorStaffAssistantTurn,
+  STAFF_ASSISTANT_CATALOG_DOMAIN_ERROR_COPY,
+} from "./domain-error.js";
+export {
+  fillStaffAssistantCopy,
+  staffAssistantLocale,
   staffAssistantLocaleSchema,
-  staffAssistantPersistedTurnText,
-  staffAssistantTurnUsesCompletedPresenter,
   STAFF_ASSISTANT_DEFAULT_LOCALE,
   STAFF_ASSISTANT_LOCALES,
   type StaffAssistantLocale,
+} from "./locale.js";
+export {
+  commitTurnSpeech,
+  isStaffAssistantTypedToolError,
+  lastStaffAssistantTypedToolErrorMessage,
+  staffAssistantTypedToolErrorMessage,
+  usableStaffAssistantModelText,
+  STAFF_ASSISTANT_EMPTY_SPEECH_FALLBACK,
+  STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK,
+  STAFF_ASSISTANT_TOOL_ERROR_FALLBACK,
+  type CommittedSpeech,
+  type SpeechSource,
   type StaffAssistantPresentedToolResult,
-} from "./presenter.js";
+  type StaffAssistantTurnRun,
+} from "./turn-speech.js";
 export {
   applyStaffAssistantHistoryWindow,
   lastStaffAssistantUserMessage,
@@ -211,6 +226,7 @@ export {
   type StaffAssistantPersistedToolRun,
 } from "./model-trace.js";
 export {
+  createHoldCandidateReplyTextTransform,
   extractUuidResultIds,
   streamStaffAssistantChat,
   STAFF_ASSISTANT_MAX_STEPS,
@@ -221,12 +237,6 @@ export {
   type StaffAssistantTurnResult,
   type StaffAssistantUIMessage,
 } from "./staff-assistant-stream.js";
-export {
-  STAFF_ASSISTANT_EMPTY_SPOKEN_FALLBACK,
-  STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK,
-  STAFF_ASSISTANT_TOOL_ERROR_FALLBACK,
-  staffAssistantSpokenFallbackLocale,
-} from "./spoken-reply.js";
 export {
   CUSTOMERS_LIST_PROMPT_LINE,
   ORDER_ENTITY_PROMPT_LINE,

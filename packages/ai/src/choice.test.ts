@@ -22,12 +22,17 @@ import {
   CHOICE_PICKER_REASONS,
   CHOICE_RESOLUTION_REASONS,
   CHOICE_TTL_MS,
+  CHOICE_TRUNCATED_COPY,
+  CHOICE_TRUNCATED_MATCH_COPY,
   choiceCanonicalCreateInputSchema,
   choiceCardEnvelope,
   choiceRedisKey,
   needsChoiceFromOrdersCreateConflict,
   parseChoiceRecord,
   peekEnvelopeFromRecord,
+  presentChoiceStaffAssistantNeedsChoice,
+  presentChoiceStaffAssistantTurn,
+  presentOrderCreatedSpeech,
   serializeChoiceRecord,
   staffAssistantChoiceCardEnvelopeSchema,
   staffAssistantNeedsChoiceOutputSchema,
@@ -443,7 +448,7 @@ describe("choice transport (SHO-409)", () => {
     ).toThrow();
   });
 
-  it("requires presenter text on the sequential needs_choice interaction result", () => {
+  it("requires protocol text on the sequential needs_choice interaction result", () => {
     const view = {
       status: "needs_choice" as const,
       challengeId: choiceId,
@@ -963,5 +968,223 @@ describe("duck-typed product and customer CONFLICT extras (SHO-410)", () => {
     expect(output?.options).toHaveLength(2);
     expect(JSON.stringify(output)).not.toContain("Multiple matches");
     expect(JSON.stringify(output)).not.toContain(twinA);
+  });
+});
+
+describe("presentChoiceStaffAssistantTurn", () => {
+  const optionA = "55555555-5555-4555-8555-555555555555";
+  const optionB = "66666666-6666-4666-8666-666666666666";
+  const challengeId = "77777777-7777-4777-8777-777777777777";
+
+  it("renders variant, product, and customer pickers without Multiple matches prose", () => {
+    const needsChoice = {
+      status: "needs_choice" as const,
+      challengeId,
+      reason: "variant_required" as const,
+      productName: "Macarons",
+      options: [
+        { id: optionA, label: "Lemon" },
+        { id: optionB, label: "Vanilla" },
+      ],
+      optionsTruncated: false,
+    };
+    const toolResults = [{ toolName: "orders_create", output: needsChoice }];
+    expect(presentChoiceStaffAssistantTurn({ locale: "en", toolResults })).toBe(
+      "Select a variant for Macarons: Lemon, Vanilla.",
+    );
+    expect(presentChoiceStaffAssistantTurn({ locale: "uk", toolResults })).toBe(
+      "Обери варіант для Macarons: Lemon, Vanilla.",
+    );
+    expect(
+      presentChoiceStaffAssistantTurn({
+        locale: "en",
+        toolResults: [
+          {
+            toolName: "orders_create",
+            output: { ...needsChoice, optionsTruncated: true },
+          },
+        ],
+      }),
+    ).toContain(CHOICE_TRUNCATED_COPY.en);
+    const productOutput = {
+      status: "needs_choice" as const,
+      challengeId,
+      reason: "ambiguous" as const,
+      choiceKind: "product" as const,
+      productName: "макаронс",
+      options: [{ id: optionA, label: "Макаронси" }],
+      optionsTruncated: false,
+    };
+    const customerOutput = {
+      status: "needs_choice" as const,
+      challengeId,
+      reason: "ambiguous" as const,
+      choiceKind: "customer" as const,
+      productName: "Katya",
+      options: [
+        { id: optionA, label: "Katya (…2233)" },
+        { id: optionB, label: "Katya (…5566)" },
+      ],
+      optionsTruncated: false,
+    };
+    expect(
+      presentChoiceStaffAssistantTurn({
+        locale: "en",
+        toolResults: [{ toolName: "orders_create", output: productOutput }],
+      }),
+    ).toBe("Select a product matching макаронс: Макаронси.");
+    expect(
+      presentChoiceStaffAssistantTurn({
+        locale: "uk",
+        toolResults: [{ toolName: "orders_create", output: productOutput }],
+      }),
+    ).toBe("Обери товар «макаронс»: Макаронси.");
+    expect(
+      presentChoiceStaffAssistantTurn({
+        locale: "en",
+        toolResults: [{ toolName: "orders_create", output: customerOutput }],
+      }),
+    ).toBe("Select a customer matching Katya: Katya (…2233), Katya (…5566).");
+    expect(
+      presentChoiceStaffAssistantTurn({
+        locale: "en",
+        toolResults: [
+          {
+            toolName: "orders_create",
+            output: { ...productOutput, optionsTruncated: true },
+          },
+        ],
+      }),
+    ).toContain(CHOICE_TRUNCATED_MATCH_COPY.en);
+    expect(
+      presentChoiceStaffAssistantTurn({
+        locale: "uk",
+        toolResults: [
+          {
+            toolName: "orders_create",
+            output: { ...customerOutput, optionsTruncated: true },
+          },
+        ],
+      }),
+    ).toContain(CHOICE_TRUNCATED_MATCH_COPY.uk);
+    expect(
+      presentChoiceStaffAssistantTurn({
+        locale: "en",
+        toolResults: [{ toolName: "orders_create", output: productOutput }],
+      }),
+    ).not.toContain("Multiple matches");
+  });
+});
+
+describe("presentChoiceStaffAssistantNeedsChoice", () => {
+  const optionA = "55555555-5555-4555-8555-555555555555";
+  const optionB = "66666666-6666-4666-8666-666666666666";
+  const challengeId = "77777777-7777-4777-8777-777777777777";
+  const productIdLocal = "44444444-4444-4444-8444-444444444444";
+  const customerIdLocal = "88888888-8888-4888-8888-888888888888";
+  const companyIdLocal = "22222222-2222-4222-8222-222222222222";
+  const conversationIdLocal = "11111111-1111-4111-8111-111111111111";
+  const variantLemonLocal = "aaaaaaaa-5555-4555-8555-555555555555";
+
+  function successorRecord(optionsTruncated: boolean) {
+    return {
+      status: "open" as const,
+      choiceId: challengeId,
+      actorId: "anna",
+      companyId: companyIdLocal,
+      conversationId: conversationIdLocal,
+      canonicalInput: {
+        customer: { by: "id" as const, id: customerIdLocal },
+        items: [
+          {
+            product: { by: "id" as const, id: productIdLocal },
+            variantSelection: { kind: "unspecified" as const },
+            quantity: { milli: "1000" },
+          },
+        ],
+      },
+      target: {
+        lineIndex: 0,
+        productId: productIdLocal,
+        productName: "Еклери",
+      },
+      optionMap: { [optionA]: variantLemonLocal },
+      envelope: {
+        status: "needs_choice" as const,
+        challengeId,
+        reason: "variant_required" as const,
+        productName: "Еклери",
+        options: [
+          { id: optionA, label: "Кава" },
+          { id: optionB, label: "Шоколад" },
+        ],
+        optionsTruncated,
+      },
+    };
+  }
+
+  it("returns the same protocol string the first ChoiceCard would persist", () => {
+    const record = successorRecord(false);
+    const uk = presentChoiceStaffAssistantNeedsChoice({
+      locale: "uk",
+      record,
+    });
+    const en = presentChoiceStaffAssistantNeedsChoice({
+      locale: "en",
+      record,
+    });
+    const toolResults = [
+      {
+        toolName: "orders_create",
+        output: {
+          status: "needs_choice" as const,
+          challengeId,
+          reason: "variant_required" as const,
+          productName: "Еклери",
+          options: [
+            { id: optionA, label: "Кава" },
+            { id: optionB, label: "Шоколад" },
+          ],
+          optionsTruncated: false,
+        },
+      },
+    ];
+    expect(uk.text).toBe(
+      presentChoiceStaffAssistantTurn({ locale: "uk", toolResults }),
+    );
+    expect(en.text).toBe(
+      presentChoiceStaffAssistantTurn({ locale: "en", toolResults }),
+    );
+    expect(uk.text).toBe("Обери варіант для Еклери: Кава, Шоколад.");
+    expect(en.text).toBe("Select a variant for Еклери: Кава, Шоколад.");
+    expect(uk.challengeId).toBe(challengeId);
+  });
+
+  it("appends the same truncated refinement copy the first card uses", () => {
+    const truncated = presentChoiceStaffAssistantNeedsChoice({
+      locale: "uk",
+      record: successorRecord(true),
+    });
+    expect(truncated.text).toContain(CHOICE_TRUNCATED_COPY.uk);
+    expect(
+      presentChoiceStaffAssistantNeedsChoice({
+        locale: "en",
+        record: successorRecord(true),
+      }).text,
+    ).toContain(CHOICE_TRUNCATED_COPY.en);
+  });
+});
+
+describe("presentOrderCreatedSpeech", () => {
+  it("uses a past-tense protocol line with the order number", () => {
+    expect(presentOrderCreatedSpeech({ locale: "uk", orderNumber: "12" })).toBe(
+      "Замовлення #12 створено.",
+    );
+    expect(presentOrderCreatedSpeech({ locale: "en", orderNumber: "12" })).toBe(
+      "Order #12 created.",
+    );
+    expect(
+      presentOrderCreatedSpeech({ locale: "uk", orderNumber: "#1049" }),
+    ).toBe("Замовлення #1049 створено.");
   });
 });
