@@ -390,6 +390,22 @@ function confirmationResumeIssue(message: string): ValidationError {
   ]);
 }
 
+/**
+ * History after `appendUserMessage`: persisted `getConversation` rows,
+ * ending with the append output. Dedupes the same id so an idempotent
+ * retry does not double the user turn. One getConversation per request
+ * (staff 120/min bucket is per action).
+ */
+function persistedMessagesEndingWithAppend<T extends { readonly id: string }>(
+  loaded: readonly T[],
+  appended: T | undefined,
+): T[] {
+  if (appended === undefined) {
+    return [...loaded];
+  }
+  return [...loaded.filter((message) => message.id !== appended.id), appended];
+}
+
 async function parseChatBody(request: Request): Promise<{
   conversationId: string;
   protocolMessages: StaffAssistantChatMessage[];
@@ -658,41 +674,29 @@ export async function executeStaffAssistantChat(
           options.assistant?.model ??
           "unconfigured");
 
-      if (userMessage !== undefined) {
-        await executeAction(options.pipeline, {
-          action: appendUserMessage,
-          input: {
-            conversationId: body.conversationId,
-            body: userMessage.text,
-          },
-          request: staffRequest({
-            requestId: options.requestId,
-            clientIp: options.clientIp,
-            aiTraceId,
-            idempotencyKey: attemptKey(
-              "message",
-              body.conversationId,
-              userMessage.id,
-            ),
-          }),
-          principal: staffPrincipal,
-        });
-      }
-
-      const historyConversation =
+      const appended =
         userMessage === undefined
-          ? conversation
+          ? undefined
           : await executeAction(options.pipeline, {
-              action: getConversation,
+              action: appendUserMessage,
               input: {
                 conversationId: body.conversationId,
-                limit: GET_CONVERSATION_MESSAGES_MAX,
+                body: userMessage.text,
               },
-              request: baseRequest,
+              request: staffRequest({
+                requestId: options.requestId,
+                clientIp: options.clientIp,
+                aiTraceId,
+                idempotencyKey: attemptKey(
+                  "message",
+                  body.conversationId,
+                  userMessage.id,
+                ),
+              }),
               principal: staffPrincipal,
             });
       const modelMessages = staffAssistantModelMessagesFromPersisted(
-        historyConversation.messages,
+        persistedMessagesEndingWithAppend(conversation.messages, appended),
       );
       if (modelMessages.length === 0) {
         throw new ValidationError([
