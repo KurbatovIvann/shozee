@@ -9,7 +9,7 @@ describe("files.finalizeUpload contract", () => {
     expect(finalizeUploadContract.transport).toBe("client");
     expect(finalizeUploadContract.risk).toBe("write");
     expect(finalizeUploadContract.permissions).toEqual(["files:upload"]);
-    expect(finalizeUploadContract.aiExposure).toBe("exposed");
+    expect(finalizeUploadContract.aiExposure).toBe("internal");
     expect(finalizeUploadContract.audit).toBe(true);
     expect(finalizeUploadContract.idempotent).toBe(true);
     expect(finalizeUploadContract.emits).toEqual([]);

@@ -21,7 +21,7 @@ describe("files.requestSigningUpload contract", () => {
     expect(requestSigningUploadContract.permissions).not.toContain(
       "files:upload",
     );
-    expect(requestSigningUploadContract.aiExposure).toBe("exposed");
+    expect(requestSigningUploadContract.aiExposure).toBe("internal");
     expect(requestSigningUploadContract.audit).toBe(true);
     expect(requestSigningUploadContract.idempotent).toBe(true);
     expect(requestSigningUploadContract.emits).toEqual([]);

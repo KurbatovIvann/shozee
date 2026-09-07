@@ -8,6 +8,7 @@ import {
   ORDERS_LIST_PAGE_TOOL_NAME,
   PRICING_LIST_PRICE_LISTS_TOOL_NAME,
   PROVIDER_TOOL_NAME_PATTERN,
+  staffAssistantHotToolNames,
   staffAssistantTools,
   STAFF_ASSISTANT_DEFER_PROVIDER_OPTIONS,
   STAFF_ASSISTANT_TOOL_SEARCH_NAME,
@@ -153,6 +154,34 @@ describe("staff AI tool manifest (SHO-322)", () => {
       },
       { toolCallId: "call-create" },
     );
+  });
+
+  it("SHO-509: owner tool set has no files_* or catalog_setProductImages; hot names stay", () => {
+    const filtered = filterStaffAiTools(contracts, {
+      role: "owner",
+      permissions: [],
+    });
+    const names = Object.keys(
+      staffAssistantTools(filtered, () => Promise.resolve({})),
+    );
+    expect(names.filter((name) => name.startsWith("files_"))).toEqual([]);
+    expect(names).not.toContain("catalog_setProductImages");
+    expect(names).not.toContain(toProviderToolName("catalog.setProductImages"));
+    expect(names).toContain(ORDERS_LIST_PAGE_TOOL_NAME);
+    expect(names).toContain(ORDERS_LIST_COUNTS_TOOL_NAME);
+    expect(names).toContain(ORDERS_CREATE_TOOL_NAME);
+    expect(names).toContain(CATALOG_LIST_PRODUCTS_TOOL_NAME);
+    expect(names).toContain(PRICING_LIST_PRICE_LISTS_TOOL_NAME);
+    expect(names).toContain(CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME);
+    expect(staffAssistantHotToolNames()).toEqual([
+      ORDERS_LIST_PAGE_TOOL_NAME,
+      ORDERS_LIST_COUNTS_TOOL_NAME,
+      "orders_get",
+      ORDERS_CREATE_TOOL_NAME,
+      CATALOG_LIST_PRODUCTS_TOOL_NAME,
+      PRICING_LIST_PRICE_LISTS_TOOL_NAME,
+      CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME,
+    ]);
   });
 });
 

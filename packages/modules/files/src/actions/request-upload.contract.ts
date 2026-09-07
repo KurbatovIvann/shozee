@@ -33,7 +33,7 @@ export const requestUploadContract = defineActionContract({
   input: requestUploadInputSchema,
   output: requestUploadOutputSchema,
   permissions: ["files:upload"],
-  aiExposure: "exposed",
+  aiExposure: "internal",
   risk: "write",
   requiresConfirmation: false,
   idempotent: true,

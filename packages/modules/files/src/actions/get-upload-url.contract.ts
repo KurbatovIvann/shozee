@@ -27,7 +27,7 @@ export const getUploadUrlContract = defineActionContract({
   input: getUploadUrlInputSchema,
   output: getUploadUrlOutputSchema,
   permissions: ["files:upload"],
-  aiExposure: "exposed",
+  aiExposure: "internal",
   risk: "read",
   requiresConfirmation: false,
   idempotent: false,

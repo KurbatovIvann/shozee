@@ -33,7 +33,7 @@ export const requestSigningUploadContract = defineActionContract({
   input: requestSigningUploadInputSchema,
   output: requestSigningUploadOutputSchema,
   permissions: ["documents:edit"],
-  aiExposure: "exposed",
+  aiExposure: "internal",
   risk: "write",
   requiresConfirmation: false,
   idempotent: true,

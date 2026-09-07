@@ -14,7 +14,7 @@ describe("files.getDownloadUrl contract", () => {
     expect(getDownloadUrlContract.transport).toBe("client");
     expect(getDownloadUrlContract.risk).toBe("read");
     expect(getDownloadUrlContract.permissions).toEqual(["files:view"]);
-    expect(getDownloadUrlContract.aiExposure).toBe("exposed");
+    expect(getDownloadUrlContract.aiExposure).toBe("internal");
     expect(getDownloadUrlContract.audit).toBe(false);
     expect(getDownloadUrlContract.idempotent).toBe(false);
     expect(getDownloadUrlContract.emits).toEqual([]);

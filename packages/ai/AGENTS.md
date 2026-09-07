@@ -18,7 +18,9 @@ They do **not** need the same JSON Schema.
   `kind`, EntityRef unions) to appease Anthropic. Map a narrower object
   schema in the adapter instead.
 - `aiExposure: "exposed"` is a product choice. Composition-only reads
-  stay `internal`.
+  stay `internal`. Adding an action to the assistant means setting
+  `aiExposure: "exposed"` and appending its name to the literal staff
+  allowlist in `apps/api/src/composition.contract-check.test.ts`.
 
 Golden façade: `orders.list` → `orders_list_page` + `orders_list_counts`
 (SHO-355 input map, SHO-360 output map before clip: compact rows,
