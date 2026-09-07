@@ -1844,16 +1844,15 @@ describe("POST /assistant/chat server-owned history (SHO-506)", () => {
         part.role === "user" || part.role === "assistant",
     );
     expect(
-      conversationTurns.map((turn) => ({
-        role: turn.role,
-        text: turn.content
-          .filter(
-            (part): part is { type: "text"; text: string } =>
-              part.type === "text",
-          )
-          .map((part) => part.text)
-          .join(""),
-      })),
+      conversationTurns.map((turn) => {
+        const texts: string[] = [];
+        for (const part of turn.content) {
+          if (part.type === "text") {
+            texts.push(part.text);
+          }
+        }
+        return { role: turn.role, text: texts.join("") };
+      }),
     ).toEqual([
       { role: "user", text: "first user" },
       { role: "assistant", text: "first assistant" },
