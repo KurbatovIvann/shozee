@@ -50,11 +50,16 @@ Rules that make it prompt state rather than a projection:
    budget: full trace only for the most recent tool-bearing turn, a
    deterministic ≤ 300-char identity digest for older turns in the window,
    ≤ 8 000 chars across the whole window, oldest digests dropped first.
-   Two ordering rules keep that from misfiring: a tier-1 trace that alone
+   One ordering rule keeps that from misfiring: a tier-1 trace that alone
    exceeds the cap is shrunk and then digested **before** the window is
-   spent (deleting ≤ 300-char digests to make room for a 20 000-char trace
-   loses the window for nothing), and tier 1 is **never dropped** — shrink
-   → digest, so the newest observation always survives in some form.
+   spent, because deleting ≤ 300-char digests to make room for a
+   20 000-char trace loses the window for nothing. Tier 1 is *reduced*
+   (shrink → digest) rather than dropped outright, and its digests are the
+   newest, so they are the last to go — but the cap is hard and comes
+   first. A single turn is allowed up to 50 tool runs, and 50 digests do
+   not fit in 8 000 chars; that turn keeps as many of its newest runs as
+   the cap allows and loses the rest. Guaranteeing every run of such a turn
+   would mean a per-run budget, which is not worth the machinery.
 4. **Only successful outcomes.** No trace for `confirmation_required`,
    `needs_choice`, or error runs; presenter text already records those.
 5. **Same lifecycle as the conversation.** It lives and dies with

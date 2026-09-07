@@ -204,10 +204,16 @@ function budgetedChars(runs: readonly BudgetedRun[]): number {
  * Cap (ADR-0034 rule 3): drop oldest digests first, but only when that
  * can help. A tier-1 trace that alone exceeds the cap is shrunk and then
  * digested *before* the window is spent — deleting ≤ 300-char digests to
- * make room for a 20 000-char trace loses the window for nothing. Tier 1
- * is never dropped: shrink → digest keeps the newest observation, which is
- * the whole point of storing it. Dropping clears the run's trace entirely
- * so reconstructed tool-call/result pairs stay valid.
+ * make room for a 20 000-char trace loses the window for nothing.
+ *
+ * Tier 1 is reduced rather than dropped, and because its digests are the
+ * newest they are the last to go — but "last" is not "never". One turn may
+ * hold more runs than the cap fits at all (`STAFF_ASSISTANT_TOOL_RUNS_MAX`
+ * is 50, and 50 × ≤ 300 chars is over 8 000), and then tier-1 digests are
+ * dropped oldest-first too until the window fits. That is the accepted
+ * behaviour: the cap is hard, and a turn that called 50 tools cannot keep
+ * every observation. Dropping clears the run's trace entirely so
+ * reconstructed tool-call/result pairs stay valid.
  */
 export function budgetStaffAssistantToolRuns(
   messages: readonly StaffAssistantPersistedMessage[],
@@ -301,7 +307,7 @@ export function budgetStaffAssistantToolRuns(
     }
   };
 
-  /** Shrink, then digest. Never drop: the newest observation is tier 1. */
+  /** Shrink, then digest — reduce tier 1 instead of dropping it outright. */
   const reduceTierOne = (stillTooBig: () => boolean): void => {
     if (stillTooBig()) {
       mapFullRuns((run) => ({
