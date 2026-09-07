@@ -418,6 +418,16 @@ describe("loadServerConfig", () => {
         );
       }
     }
+
+    for (const key of [
+      "AI_DAILY_BUDGET_USD_PER_COMPANY",
+      "AI_DAILY_BUDGET_USD_GLOBAL",
+      "AI_UNKNOWN_MODEL_TURN_USD",
+    ] as const) {
+      const env = validEnv();
+      env[key] = "Infinity";
+      expect(() => loadServerConfig(env)).toThrow(ConfigValidationError);
+    }
   });
 
   it("treats an empty ANTHROPIC_API_KEY as unset", () => {

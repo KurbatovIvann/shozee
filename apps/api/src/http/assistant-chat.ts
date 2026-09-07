@@ -696,15 +696,11 @@ export async function executeStaffAssistantChat(
         "cache-control": "private, no-store",
         [REQUEST_ID_HEADER]: options.requestId,
       },
-      ...(companySelector !== null
-        ? {
-            choiceBind: {
-              actorId: session.userId,
-              companyId: companySelector,
-              conversationId: body.conversationId,
-            },
-          }
-        : {}),
+      choiceBind: {
+        actorId: session.userId,
+        companyId,
+        conversationId: body.conversationId,
+      },
       ...(options.choiceStore === undefined
         ? {}
         : (() => {

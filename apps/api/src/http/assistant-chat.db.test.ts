@@ -3323,11 +3323,11 @@ describe("POST /assistant/chat budget guard (SHO-505)", () => {
 
   it("returns 429 on the 21st turn in a minute without calling gate or model", async () => {
     const streamModel = new MockLanguageModelV3({
-      doStream: async () => mockTextStream("ok"),
+      doStream: () => Promise.resolve(mockTextStream("ok")),
     });
     const gateModel = new MockLanguageModelV3({
       doGenerate: mockOperationalGateGenerate(true),
-      doStream: async () => mockTextStream("should not chitchat"),
+      doStream: () => Promise.resolve(mockTextStream("should not chitchat")),
     });
     const capturing = createCapturingLogger();
     const app = budgetApp({

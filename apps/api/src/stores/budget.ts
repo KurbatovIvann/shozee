@@ -35,7 +35,7 @@ interface MemoryBudgetEntry {
   expiresAtMs: number;
 }
 
-function parseSpent(raw: string | null): number {
+function parseSpent(raw: string | number | null): number {
   if (raw === null || raw === "") {
     return 0;
   }

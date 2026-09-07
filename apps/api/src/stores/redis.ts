@@ -322,7 +322,7 @@ export function createRedisAiBudgetStore(
     async add(key, amountUsd, ttlSec) {
       const next = await redis.incrbyfloat(key, amountUsd);
       await redis.expire(key, ttlSec);
-      return parseAiBudgetSpent(String(next));
+      return parseAiBudgetSpent(next);
     },
   };
 }

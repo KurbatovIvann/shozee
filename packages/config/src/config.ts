@@ -154,18 +154,18 @@ const envObjectSchema = z.object({
    * Kyiv-calendar daily USD ceiling per company for `/assistant/chat`.
    * `0` disables the company check. Default 5.
    */
-  AI_DAILY_BUDGET_USD_PER_COMPANY: z.coerce.number().finite().min(0).default(5),
+  AI_DAILY_BUDGET_USD_PER_COMPANY: z.coerce.number().min(0).default(5),
   /**
    * Kyiv-calendar daily USD ceiling across every company. `0` disables
    * the global check. Default 100.
    */
-  AI_DAILY_BUDGET_USD_GLOBAL: z.coerce.number().finite().min(0).default(100),
+  AI_DAILY_BUDGET_USD_GLOBAL: z.coerce.number().min(0).default(100),
   /**
    * Budget spend charged when `estimateStaffAssistantTurnCostUsd` is
    * `null` (unpriced model). Not a disable switch — `0` means an unknown
    * model adds nothing. Default 0.10.
    */
-  AI_UNKNOWN_MODEL_TURN_USD: z.coerce.number().finite().min(0).default(0.1),
+  AI_UNKNOWN_MODEL_TURN_USD: z.coerce.number().min(0).default(0.1),
 });
 
 const envSchema = envObjectSchema.superRefine((parsed, ctx) => {
