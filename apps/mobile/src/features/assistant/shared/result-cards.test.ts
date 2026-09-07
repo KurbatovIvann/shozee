@@ -1563,10 +1563,6 @@ describe("assistant result-card surface registry", () => {
       new URL("../sheet/assistant-collection-block.tsx", import.meta.url),
       "utf8",
     );
-    const listCard = readFileSync(
-      new URL("../sheet/orders-list-result-card.tsx", import.meta.url),
-      "utf8",
-    );
     const entityCard = readFileSync(
       new URL("../sheet/order-entity-card.tsx", import.meta.url),
       "utf8",
@@ -1626,12 +1622,10 @@ describe("assistant result-card surface registry", () => {
     expect(collectionBlock).toContain("StatusPill");
     expect(collectionBlock).toContain('from "../../../components/ui"');
     expect(collectionBlock).toContain("onOpenHref");
-    expect(listCard).toContain("AssistantCollectionBlock");
-    expect(listCard).not.toContain("StatusPill");
-    expect(listCard).toContain("onOpenHref");
-    expect(listCard.includes("orders-list-screen")).toBe(false);
-    expect(listCard.includes("order-row")).toBe(false);
-    expect(listCard.includes('from "../../orders/list')).toBe(false);
+    expect(surfaceCard).not.toContain("StatusPill");
+    expect(surfaceCard.includes("orders-list-screen")).toBe(false);
+    expect(surfaceCard.includes("order-row")).toBe(false);
+    expect(surfaceCard.includes('from "../../orders/list')).toBe(false);
     expect(entityCard).toContain("StatusPill");
     expect(entityCard).toContain("onOpenHref");
     expect(entityCard.includes("orders-list-screen")).toBe(false);
@@ -1646,7 +1640,7 @@ describe("assistant result-card surface registry", () => {
     expect(aggregateCard.includes("BarChart")).toBe(false);
     expect(aggregateCard.includes("wow")).toBe(false);
     expect(aggregateBlock.includes("BarChart")).toBe(false);
-    expect(surfaceCard).toContain("OrdersListResultCard");
+    expect(surfaceCard).toContain('case "orders-list"');
     expect(surfaceCard).toContain("AssistantCollectionBlock");
     expect(surfaceCard).toContain('case "customers-list"');
     expect(surfaceCard).toContain("OrdersAggregateResultCard");
@@ -1694,8 +1688,8 @@ describe("assistant result-card surface registry", () => {
     expect(compose).not.toContain("extractUuidResultIds");
     expect(listParse).not.toContain("sit.svg");
     expect(listParse).not.toContain("dig.svg");
-    expect(listCard).not.toContain("sit.svg");
-    expect(listCard).not.toContain("listen.svg");
+    expect(surfaceCard).not.toContain("sit.svg");
+    expect(surfaceCard).not.toContain("listen.svg");
     expect(aggregateCard).not.toContain("sit.svg");
     expect(aggregateCard).not.toContain("dig.svg");
     expect(aggregateCard).not.toContain("listen.svg");

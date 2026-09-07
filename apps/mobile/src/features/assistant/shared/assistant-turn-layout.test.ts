@@ -12,8 +12,8 @@ const ROW = readFileSync(
   new URL("../sheet/assistant-message-row.tsx", import.meta.url),
   "utf8",
 );
-const LIST = readFileSync(
-  new URL("../sheet/orders-list-result-card.tsx", import.meta.url),
+const SURFACE = readFileSync(
+  new URL("../sheet/assistant-surface-card.tsx", import.meta.url),
   "utf8",
 );
 const COLLECTION = readFileSync(
@@ -78,7 +78,7 @@ describe("assistant turn layout composition", () => {
   });
 
   it("leaves flex:1 on list/aggregate rows and HITL actions", () => {
-    expect(LIST).toContain("AssistantCollectionBlock");
+    expect(SURFACE).toContain("AssistantCollectionBlock");
     expect(COLLECTION).toContain("flex: 1");
     expect(AGGREGATE).toContain("AssistantAggregateBlock");
     expect(AGGREGATE_BLOCK).toContain("AssistantCollectionResultRow");
