@@ -38,9 +38,9 @@ export const PROOF_SCENARIOS: readonly EvalScenario[] = [
   {
     id: "proof.orders-for-katya",
     description:
-      "«замовлення для Каті Самбуки» lists the customer with a nominative search, then the page by id.",
+      "«покажи замовлення Каті Самбуки» lists the customer with a nominative search, then the page by id. «замовлення для …» is create, not list.",
     fixture: "proof",
-    turns: [{ text: "замовлення для Каті Самбуки" }],
+    turns: [{ text: "покажи замовлення Каті Самбуки" }],
     expectation: {
       ordered: [
         {

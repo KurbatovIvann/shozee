@@ -22,6 +22,9 @@ describe("PROOF_SCENARIOS", () => {
     expect(PROOF_SCENARIOS[0]?.turns[0]?.text).toBe(
       "скільки замовлень сьогодні",
     );
+    expect(PROOF_SCENARIOS[1]?.turns[0]?.text).toBe(
+      "покажи замовлення Каті Самбуки",
+    );
     expect(PROOF_SCENARIOS[0]?.expectation.ordered?.[0]?.name).toBe(
       ORDERS_LIST_COUNTS_TOOL_NAME,
     );

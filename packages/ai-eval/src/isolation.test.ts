@@ -107,6 +107,9 @@ describe("unit suite isolation (SHO-412)", () => {
     expect(manifest.scripts?.eval).toBe("node ./eval-cli.mjs");
     expect(cli).toContain("SHOWZY_EVAL_RUNS");
     expect(cli).toContain("vitest.eval.config.ts");
+    expect(cli).toContain("process.execPath");
+    expect(cli).toContain("vitest.mjs");
+    expect(cli).not.toMatch(/spawn\(\s*"pnpm"/);
     expect(cli).not.toContain("ANTHROPIC_API_KEY");
     expect(cli).not.toMatch(/vitest", "run".*--runs/);
   });

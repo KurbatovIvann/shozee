@@ -23,6 +23,9 @@ describe("isNominativeKatyaSambukaSearch", () => {
     expect(isNominativeKatyaSambukaSearch("замовлення для Каті Самбуки")).toBe(
       false,
     );
+    expect(
+      isNominativeKatyaSambukaSearch("покажи замовлення Каті Самбуки"),
+    ).toBe(false);
     expect(isNominativeKatyaSambukaSearch("замовлення")).toBe(false);
   });
 });
@@ -109,7 +112,7 @@ describe("matchEvalExpectation", () => {
           {
             toolCallId: "c1",
             name: CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME,
-            args: { search: "замовлення для Каті Самбуки" },
+            args: { search: "покажи замовлення Каті Самбуки" },
             result: { items: [{ id: CUSTOMER_ID }] },
           },
           {

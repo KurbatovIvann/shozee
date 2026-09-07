@@ -111,7 +111,7 @@ describe("runStaffAssistantEvalTurn", () => {
         replyModelId: "mock-sonnet",
         gateModelId: "mock-haiku",
       },
-      messages: [{ role: "user", content: "замовлення для Каті Самбуки" }],
+      messages: [{ role: "user", content: "покажи замовлення Каті Самбуки" }],
       contracts: [listCustomersContract, listOrdersContract],
       execute,
       logger: silentLogger,
