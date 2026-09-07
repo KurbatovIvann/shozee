@@ -9,7 +9,7 @@ import {
   staffAssistantToolSetKey,
   type StaffAssistantPersistedMessage,
 } from "./model-trace.js";
-import { staffAssistantLocaleSchema } from "./presenter.js";
+import { staffAssistantLocaleSchema } from "./locale.js";
 import { anthropicStaffProvider } from "./provider/anthropic.js";
 import type { StaffProviderAdapter } from "./provider/types.js";
 

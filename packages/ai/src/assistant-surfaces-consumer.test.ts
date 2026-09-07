@@ -1,5 +1,5 @@
 /// <reference types="node" />
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -17,7 +17,6 @@ import {
 } from "@showzy/validation/assistant-surfaces";
 import { describe, expect, it } from "vitest";
 
-import { presentCompletedStaffAssistantTurn } from "./presenter.js";
 import { staffAssistantSystemPrompt } from "./system-prompt.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -58,17 +57,6 @@ const PRESENTER_OWNED_COPY = [
   "в архіві, в замовлення",
   "More variants exist. Reply with the exact flavour name.",
   "Є ще варіанти. Напиши точну назву смаку.",
-];
-
-const PARSE_HELPERS_REMOVED_FROM_PRESENTER = [
-  "function isRecord",
-  "function isTypedToolError",
-  "function isSuccessfulToolOutput",
-  "function unwrapToolOutput",
-  "function pageRows",
-  "function pageHasMore",
-  "function lastSuccessfulIndex",
-  "function customerNameFromPayload",
 ];
 
 const PROMPT_LINE_CONSTANTS = [
@@ -175,10 +163,11 @@ describe("promptLine definitions (SHO-457)", () => {
         ),
       ).toBe(true);
     }
-    const spokenReply = readFileSync(join(aiSrc, "spoken-reply.ts"), "utf8");
+    const turnSpeech = readFileSync(join(aiSrc, "turn-speech.ts"), "utf8");
     for (const name of PROMPT_LINE_CONSTANTS) {
-      expect(spokenReply).not.toMatch(new RegExp(`export const ${name}\\s*=`));
+      expect(turnSpeech).not.toMatch(new RegExp(`export const ${name}\\s*=`));
     }
+    expect(turnSpeech).not.toContain("assistantSurfacesFromToolResults");
   });
 });
 
@@ -250,12 +239,6 @@ describe("cross-consumer surface agreement (SHO-457)", () => {
     expect(list.rows.map((row) => row.status)).toEqual(["new", "confirmed"]);
     expect(list.hasMore).toBe(false);
     expect(list.customerMatchTruncated).toBe(false);
-    expect(
-      presentCompletedStaffAssistantTurn({
-        locale: "en",
-        toolResults: results,
-      }),
-    ).toBe("Latest orders: #1049 (New), #1050 (Confirmed).");
   });
 
   it("agrees with the shared compose on counts-only aggregate kind and status data", () => {
@@ -277,12 +260,6 @@ describe("cross-consumer surface agreement (SHO-457)", () => {
     expect(aggregate.statusBuckets.map((bucket) => bucket.orderCount)).toEqual([
       4, 2,
     ]);
-    expect(
-      presentCompletedStaffAssistantTurn({
-        locale: "en",
-        toolResults: results,
-      }),
-    ).toBe("6 orders. New · 2, Confirmed · 4.");
   });
 
   it("agrees with the shared compose on entity kind and order fields", () => {
@@ -300,12 +277,6 @@ describe("cross-consumer surface agreement (SHO-457)", () => {
     expect(first.orderNumber).toBe("1049");
     expect(first.status).toBe("new");
     expect(first.customerNameSnapshot).toBe("Albina");
-    expect(
-      presentCompletedStaffAssistantTurn({
-        locale: "en",
-        toolResults: results,
-      }),
-    ).toBe("Order #1049, Albina, New.");
   });
 });
 
@@ -323,13 +294,12 @@ describe("packages/ai owns localized copy (SHO-457)", () => {
     }
   });
 
-  it("does not keep the retired parse helpers in presenter.ts", () => {
-    const presenter = readFileSync(join(aiSrc, "presenter.ts"), "utf8");
-    expect(presenter).toContain("@showzy/validation/assistant-surfaces");
-    expect(presenter).toContain("assistantSurfacesFromToolResults");
-    for (const helper of PARSE_HELPERS_REMOVED_FROM_PRESENTER) {
-      expect(presenter.includes(helper), helper).toBe(false);
-    }
-    expect(presenter).not.toMatch(/from ["']apps\/mobile/);
+  it("does not keep a presenter.ts surface-to-text dump", () => {
+    expect(existsSync(join(aiSrc, "presenter.ts"))).toBe(false);
+    expect(existsSync(join(aiSrc, "spoken-reply.ts"))).toBe(false);
+    const turnSpeech = readFileSync(join(aiSrc, "turn-speech.ts"), "utf8");
+    expect(turnSpeech).not.toContain("@showzy/validation/assistant-surfaces");
+    expect(turnSpeech).not.toContain("assistantSurfacesFromToolResults");
+    expect(turnSpeech).not.toMatch(/from ["']apps\/mobile/);
   });
 });

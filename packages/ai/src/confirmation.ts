@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import type { StaffAssistantLocale } from "./locale.js";
+
 export const STAFF_ASSISTANT_CONFIRMATION_STATUS =
   "confirmation_required" as const;
 
@@ -42,5 +44,14 @@ export function confirmationFromChatPart(
   return isStaffAssistantConfirmationOutput(part.data) ? part.data : undefined;
 }
 
+export const STAFF_ASSISTANT_CONFIRMATION_COPY: Record<
+  StaffAssistantLocale,
+  string
+> = {
+  en: "Confirmation required.",
+  uk: "Потрібне підтвердження.",
+};
+
+/** English alias of `STAFF_ASSISTANT_CONFIRMATION_COPY.en`. */
 export const STAFF_ASSISTANT_CONFIRMATION_FALLBACK_TEXT =
-  "Confirmation required.";
+  STAFF_ASSISTANT_CONFIRMATION_COPY.en;

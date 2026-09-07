@@ -50,22 +50,21 @@ import {
   stripStaffAssistantToolParts,
 } from "./messages.js";
 import {
-  staffAssistantPersistedTurnText,
   STAFF_ASSISTANT_DEFAULT_LOCALE,
   type StaffAssistantLocale,
-  type StaffAssistantPresentedToolResult,
-} from "./presenter.js";
+} from "./locale.js";
 import { anthropicStaffProvider } from "./provider/anthropic.js";
 import type { StaffProviderAdapter } from "./provider/types.js";
-import {
-  createHoldCandidateReplyTextTransform,
-  isStaffAssistantTypedToolError,
-  STAFF_ASSISTANT_TOOL_ERROR_FALLBACK,
-  staffAssistantSpokenFallbackLocale,
-} from "./spoken-reply.js";
 import { staffAssistantSystemMessages } from "./system-prompt.js";
 import { staffAssistantToolsetHash } from "./toolset-hash.js";
 import { staffAssistantTurnContextAddendum } from "./turn-context.js";
+import {
+  commitTurnSpeech,
+  isStaffAssistantTypedToolError,
+  STAFF_ASSISTANT_TOOL_ERROR_FALLBACK,
+  type CommittedSpeech,
+  type StaffAssistantPresentedToolResult,
+} from "./turn-speech.js";
 import {
   staffAssistantTurnUsageFromTotal,
   type StaffAssistantTurnUsage,
@@ -94,6 +93,33 @@ const RESULT_ID_KEYS = [
   "fileId",
 ] as const;
 
+type StaffAssistantStreamPart = {
+  readonly type: string;
+};
+
+function isStaffAssistantTextStreamPartType(type: string): boolean {
+  return type === "text-start" || type === "text-delta" || type === "text-end";
+}
+
+/**
+ * Hold candidate reply text until the stream finalizes the selected
+ * prose (SHO-507 / ADR-0036). Tool progress, result surfaces, and HITL
+ * parts pass through immediately. Do not flatten JSON or extract
+ * `spoken`.
+ */
+export function createHoldCandidateReplyTextTransform<
+  T extends StaffAssistantStreamPart,
+>(): TransformStream<T, T> {
+  return new TransformStream<T, T>({
+    transform(part, controller) {
+      if (isStaffAssistantTextStreamPartType(part.type)) {
+        return;
+      }
+      controller.enqueue(part);
+    },
+  });
+}
+
 export type StaffAssistantToolRunOutcome =
   "success" | "error" | "confirmation_required" | "choice_required";
 
@@ -109,6 +135,7 @@ export interface StaffAssistantToolRun {
 }
 
 export interface StaffAssistantTurnResult {
+  readonly speech: CommittedSpeech;
   readonly text: string;
   readonly toolRuns: readonly StaffAssistantToolRun[];
   readonly usage: StaffAssistantTurnUsage;
@@ -251,9 +278,7 @@ function meterToolResult(
 function staffAssistantInternalToolErrorMessage(
   locale: StaffAssistantLocale,
 ): string {
-  return STAFF_ASSISTANT_TOOL_ERROR_FALLBACK[
-    staffAssistantSpokenFallbackLocale(locale)
-  ];
+  return STAFF_ASSISTANT_TOOL_ERROR_FALLBACK[locale];
 }
 
 function wrapExecute(
@@ -551,8 +576,8 @@ export function streamStaffAssistantChat(options: {
    */
   readonly turnContextAddendum?: string;
   /**
-   * Explicit presenter locale from the chat request. Legacy callers
-   * omit this; default is Ukrainian.
+   * Explicit request locale. Legacy callers omit this; default is
+   * Ukrainian.
    */
   readonly locale?: StaffAssistantLocale;
   /**
@@ -686,16 +711,18 @@ export function streamStaffAssistantChat(options: {
         try {
           rawText = await result.text;
         } catch {
-          // Empty so presenter / spoken lookup runs (SHO-514).
+          // Empty so commitTurnSpeech still runs (SHO-514).
           rawText = "";
         }
+        const speech = commitTurnSpeech({
+          locale,
+          toolResults: presentedToolResults,
+          rawText,
+          runs,
+        });
         const turn: StaffAssistantTurnResult = {
-          text: staffAssistantPersistedTurnText({
-            locale,
-            toolResults: presentedToolResults,
-            rawText,
-            runs,
-          }),
+          speech,
+          text: speech.text,
           toolRuns: attachClippedModelTraces(
             runs.slice(0, STAFF_ASSISTANT_TOOL_RUNS_MAX),
             presentedToolResults,
@@ -728,10 +755,7 @@ export function streamStaffAssistantChat(options: {
         }
       }
     },
-    onError: () =>
-      STAFF_ASSISTANT_TOOL_ERROR_FALLBACK[
-        staffAssistantSpokenFallbackLocale(locale)
-      ],
+    onError: () => STAFF_ASSISTANT_TOOL_ERROR_FALLBACK[locale],
   });
 
   return {

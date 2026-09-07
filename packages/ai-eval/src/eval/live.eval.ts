@@ -30,7 +30,7 @@ const logger = createEvalLogger();
 /** `eval-cli.mjs` injects `--runs`; this is not `ANTHROPIC_API_KEY`. */
 const runs = evalRunsFromInjectedFlag(process.env.SHOWZY_EVAL_RUNS);
 
-describe("staff assistant corpus eval (live, SHO-412 / SHO-507 / SHO-511 / SHO-513)", () => {
+describe("staff assistant corpus eval (live, SHO-412 / SHO-507 / SHO-511 / SHO-513 / SHO-518)", () => {
   let sandbox: EvalSandbox | undefined;
   let config!: ServerConfig;
   let languageModel!: ReturnType<typeof createStaffLanguageModel>;

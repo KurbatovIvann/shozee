@@ -71,38 +71,34 @@ Zod 4 discriminated unions omit top-level `type`. Anthropic requires
 Object façades already emit `type: "object"` and must not rely on that
 patch.
 
-## Reply (SHO-507)
+## Speech (ADR-0036)
+
+A turn is three parts: **speech** (`text-*` and
+`assistant_messages.body`), **surface** (generic card from the registry),
+and **pending** (HITL envelope). Speech never duplicates a surface.
 
 The model streams **plain text**. Do not add `Output.object`,
 `experimental_output`, or a `{ spoken }` envelope. Do not parse model
 JSON to extract `spoken`, invent a delimiter protocol, or make a second
 model call to clean the reply.
 
-`streamStaffAssistantChat` buffers candidate user-visible text until
-final presenter selection and sanitization, then emits that exact string
-through the existing `text-*` events. Persist uses the same value
-(`StaffAssistantTurnResult.text` → `assistant_messages.body`). Tool
-progress, result surfaces, and HITL events keep streaming immediately.
+`commitTurnSpeech` is the only writer of the visible/persisted line. It
+returns `{ source: "model" | "protocol" | "fallback", text }`. `source`
+is in-memory (`StaffAssistantTurnResult.speech`); it is not a database
+column. `StaffAssistantTurnResult.text` is `speech.text` so persist and
+`onTurn` stay one string. Live emit and persist use that string.
 
-Invalid presentation (markdown dump, accidental `{ "spoken": ... }`
-JSON) is never briefly shown.
+Priority: HITL / typed domain-error protocol copy; else usable model
+prose; else one locale-keyed generic fallback. A rule-based guardrail
+rejects empty text, leftover `{ … }` JSON, and markdown dumps.
 
-## Presenter (SHO-511)
+`streamStaffAssistantChat` holds candidate `text-*` until that commit
+so a tripped guardrail is never briefly shown. Tool progress, result
+surfaces, and HITL events keep streaming immediately.
 
-The presenter is the **fallback**, not the default spoken line.
-
-- Completed surfaces (`orders-list`, `orders-aggregate`, `order-entity`,
-  `customers-list`): usable model text is the bubble and the persist
-  body. Fall back to presenter copy when that text is empty, a markdown
-  dump, leftover `{ spoken }` JSON, or a tool error has no usable prose.
-- Confirmation and choice stay presenter-owned. Do not let model text
-  win on those turns.
-- One function (`staffAssistantPersistedTurnText`) decides; live emit
-  and `onTurn` both use that string.
-
-Do not delete the presenter or a surface. Do not add a second model call
-to summarize the card. Do not re-introduce a JSON spoken envelope or
-live≠persisted replies.
+Do not delete a **surface** (registry / cards). Do not add a second
+model call to summarize the card. Do not re-introduce a JSON spoken
+envelope, a presenter that serializes rows, or live≠persisted replies.
 
 ## Gate (SHO-513)
 

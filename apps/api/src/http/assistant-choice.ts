@@ -16,7 +16,7 @@ import {
   peekEnvelopeFromRecord,
   presentCatalogDomainError,
   presentChoiceStaffAssistantNeedsChoice,
-  presentCompletedStaffAssistantTurn,
+  presentOrderCreatedSpeech,
   resolveMappedVariantId,
   STAFF_ASSISTANT_DEFAULT_LOCALE,
   successorChoiceId,
@@ -443,11 +443,10 @@ export async function executeStaffAssistantChoiceResume(
         principal: staffPrincipal,
       });
       const entity = completedEntity(output);
-      const text =
-        presentCompletedStaffAssistantTurn({
-          locale,
-          toolResults: [{ toolName: "orders.create", output }],
-        }) ?? `Order ${entity.orderNumber}.`;
+      const text = presentOrderCreatedSpeech({
+        locale,
+        orderNumber: entity.orderNumber,
+      });
       await persistChoiceTurn({
         pipeline: options.pipeline,
         conversationId: conversation.id,

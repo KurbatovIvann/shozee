@@ -4,10 +4,14 @@ import { z } from "zod";
 
 import { ORDERS_LIST_PAGE_TOOL_NAME } from "./action-tool.js";
 import {
-  STAFF_ASSISTANT_EMPTY_SPOKEN_FALLBACK,
+  STAFF_ASSISTANT_EMPTY_SPEECH_FALLBACK,
+  STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK,
   STAFF_ASSISTANT_TOOL_ERROR_FALLBACK,
-} from "./spoken-reply.js";
-import { streamStaffAssistantChat } from "./staff-assistant-stream.js";
+} from "./turn-speech.js";
+import {
+  createHoldCandidateReplyTextTransform,
+  streamStaffAssistantChat,
+} from "./staff-assistant-stream.js";
 import {
   MockLanguageModelV3,
   mockSplitTextStream,
@@ -72,11 +76,20 @@ const listPage = {
 
 describe("streamStaffAssistantChat result.text failure (SHO-514)", () => {
   it.each([
-    { locale: undefined, expected: "Останні замовлення: #1049 (Нове)." },
-    { locale: "uk" as const, expected: "Останні замовлення: #1049 (Нове)." },
-    { locale: "en" as const, expected: "Latest orders: #1049 (New)." },
+    {
+      locale: undefined,
+      expected: STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK.uk,
+    },
+    {
+      locale: "uk" as const,
+      expected: STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK.uk,
+    },
+    {
+      locale: "en" as const,
+      expected: STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK.en,
+    },
   ])(
-    "runs presenter lookup when result.text throws (locale=$locale)",
+    "runs commitTurnSpeech when result.text throws (locale=$locale)",
     async ({ locale, expected }) => {
       const execute = vi.fn(() => Promise.resolve(listPage));
       const model = new MockLanguageModelV3({
@@ -95,6 +108,7 @@ describe("streamStaffAssistantChat result.text failure (SHO-514)", () => {
       const payloads = await readUiMessageSsePayloads(response);
       const turn = await completion;
       const payloadText = JSON.stringify(payloads);
+      expect(turn.speech.source).toBe("fallback");
       expect(turn.text).toBe(expected);
       expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
       expect(turn.text).not.toBe(STAFF_ASSISTANT_TOOL_ERROR_FALLBACK.en);
@@ -117,11 +131,81 @@ describe("streamStaffAssistantChat result.text failure (SHO-514)", () => {
     });
     const payloads = await readUiMessageSsePayloads(response);
     const turn = await completion;
-    expect(turn.text).toBe(STAFF_ASSISTANT_EMPTY_SPOKEN_FALLBACK.uk);
+    expect(turn.text).toBe(STAFF_ASSISTANT_EMPTY_SPEECH_FALLBACK.uk);
     expect(turn.text).toBe("Готово.");
     expect(turn.text).not.toBe("SECRETX");
     expect(turn.text).not.toBe(STAFF_ASSISTANT_TOOL_ERROR_FALLBACK.en);
     expect(sseVisibleTextFromPayloads(payloads)).toBe(turn.text);
     expect(JSON.stringify(payloads)).not.toContain("SECRETX");
+  });
+});
+
+describe("createHoldCandidateReplyTextTransform", () => {
+  it("passes tool parts immediately and holds candidate text", async () => {
+    const transform = createHoldCandidateReplyTextTransform<{
+      readonly type: string;
+      readonly toolCallId?: string;
+      readonly text?: string;
+    }>();
+    const writer = transform.writable.getWriter();
+    const reader = transform.readable.getReader();
+    const parts: unknown[] = [];
+    const read = (async () => {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        parts.push(value);
+      }
+    })();
+    await writer.write({
+      type: "tool-orders_list_page",
+      toolCallId: "call-list",
+    });
+    await writer.write({ type: "text-start" });
+    await writer.write({ type: "text-delta", text: '{"spo' });
+    await writer.write({ type: "text-delta", text: 'ken":"x"}' });
+    await writer.write({ type: "text-end" });
+    await writer.close();
+    await read;
+    expect(parts).toEqual([
+      { type: "tool-orders_list_page", toolCallId: "call-list" },
+    ]);
+    expect(JSON.stringify(parts)).not.toContain('{"spo');
+    expect(JSON.stringify(parts)).not.toContain("x");
+  });
+
+  it("passes HITL data parts without waiting for text finalization", async () => {
+    const transform = createHoldCandidateReplyTextTransform<{
+      readonly type: string;
+      readonly data?: unknown;
+      readonly text?: string;
+    }>();
+    const writer = transform.writable.getWriter();
+    const reader = transform.readable.getReader();
+    const parts: unknown[] = [];
+    const read = (async () => {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        parts.push(value);
+      }
+    })();
+    await writer.write({
+      type: "data-confirmation",
+      data: { status: "confirmation_required" },
+    });
+    await writer.write({ type: "text-delta", text: "| order |" });
+    await writer.close();
+    await read;
+    expect(parts).toEqual([
+      {
+        type: "data-confirmation",
+        data: { status: "confirmation_required" },
+      },
+    ]);
   });
 });
