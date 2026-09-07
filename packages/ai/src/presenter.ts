@@ -50,17 +50,74 @@ export const STAFF_ASSISTANT_DEFAULT_LOCALE: StaffAssistantLocale = "uk";
 
 export const CHOICE_TRUNCATED_COPY: Record<StaffAssistantLocale, string> = {
   en: "More variants exist. Reply with the exact flavour name.",
-  uk: "Є ще варіанти. Напишіть точну назву смаку.",
+  uk: "Є ще варіанти. Напиши точну назву смаку.",
 };
 
 export const CHOICE_TRUNCATED_MATCH_COPY: Record<StaffAssistantLocale, string> =
   {
     en: "More matches exist. Reply with the exact name.",
-    uk: "Є ще збіги. Напишіть точну назву.",
+    uk: "Є ще збіги. Напиши точну назву.",
   };
+
+export const STAFF_ASSISTANT_CATALOG_DOMAIN_ERROR_COPY: Record<
+  StaffAssistantLocale,
+  {
+    readonly noActiveVariants: string;
+    readonly archivedProduct: string;
+    readonly archivedQuery: string;
+  }
+> = {
+  en: {
+    noActiveVariants:
+      "{{quoted}} has no active variants and cannot be added to an order. Name a different product, or repeat the order without it.",
+    archivedProduct:
+      "{{quoted}} is archived and cannot be added to an order. Name a different product, or repeat the order without it.",
+    archivedQuery:
+      "No sellable product matched {{quoted}}; matching products are archived and cannot be added to an order. Name a different product, or repeat the order without them.",
+  },
+  uk: {
+    noActiveVariants:
+      "{{quoted}} не має активних варіантів, в замовлення його додати не можна. Напиши інший товар або повтори замовлення без нього.",
+    archivedProduct:
+      "{{quoted}} в архіві, в замовлення його додати не можна. Напиши інший товар або повтори замовлення без нього.",
+    archivedQuery:
+      "За запитом {{quoted}} знайдено лише товари в архіві, в замовлення їх додати не можна. Напиши інший товар або повтори замовлення без них.",
+  },
+};
+
+export const STAFF_ASSISTANT_CHOICE_INTRO_COPY: Record<
+  StaffAssistantLocale,
+  {
+    readonly customer: string;
+    readonly product: string;
+    readonly variant: string;
+  }
+> = {
+  en: {
+    customer: "Select a customer matching {{name}}: {{labels}}.",
+    product: "Select a product matching {{name}}: {{labels}}.",
+    variant: "Select a variant for {{name}}: {{labels}}.",
+  },
+  uk: {
+    customer: "Обери клієнта «{{name}}»: {{labels}}.",
+    product: "Обери товар «{{name}}»: {{labels}}.",
+    variant: "Обери варіант для {{name}}: {{labels}}.",
+  },
+};
 
 function quoteProductName(name: string, locale: StaffAssistantLocale): string {
   return locale === "uk" ? `«${name}»` : `"${name}"`;
+}
+
+function fillPlaceholders(
+  template: string,
+  values: Readonly<Record<string, string>>,
+): string {
+  let filled = template;
+  for (const [key, value] of Object.entries(values)) {
+    filled = filled.replaceAll(`{{${key}}}`, value);
+  }
+  return filled;
 }
 
 export function presentCatalogDomainError(options: {
@@ -68,22 +125,20 @@ export function presentCatalogDomainError(options: {
   readonly extras: CatalogDomainErrorExtras;
 }): string {
   const { locale, extras } = options;
+  const copy = STAFF_ASSISTANT_CATALOG_DOMAIN_ERROR_COPY[locale];
   if (extras.reason === "no_active_variants") {
-    const quoted = quoteProductName(extras.subject.name, locale);
-    return locale === "uk"
-      ? `${quoted} не має активних варіантів, в замовлення його додати не можна. Напишіть інший товар або повторіть замовлення без нього.`
-      : `${quoted} has no active variants and cannot be added to an order. Name a different product, or repeat the order without it.`;
+    return fillPlaceholders(copy.noActiveVariants, {
+      quoted: quoteProductName(extras.subject.name, locale),
+    });
   }
   if (extras.subject.kind === "product_name") {
-    const quoted = quoteProductName(extras.subject.name, locale);
-    return locale === "uk"
-      ? `${quoted} в архіві, в замовлення його додати не можна. Напишіть інший товар або повторіть замовлення без нього.`
-      : `${quoted} is archived and cannot be added to an order. Name a different product, or repeat the order without it.`;
+    return fillPlaceholders(copy.archivedProduct, {
+      quoted: quoteProductName(extras.subject.name, locale),
+    });
   }
-  const quoted = quoteProductName(extras.subject.query, locale);
-  return locale === "uk"
-    ? `За запитом ${quoted} знайдено лише товари в архіві, в замовлення їх додати не можна. Напишіть інший товар або повторіть замовлення без них.`
-    : `No sellable product matched ${quoted}; matching products are archived and cannot be added to an order. Name a different product, or repeat the order without them.`;
+  return fillPlaceholders(copy.archivedQuery, {
+    quoted: quoteProductName(extras.subject.query, locale),
+  });
 }
 
 export function presentDomainErrorStaffAssistantTurn(options: {
@@ -117,7 +172,7 @@ const ORDER_STATUSES = [
 ] as const;
 type OrderStatus = (typeof ORDER_STATUSES)[number];
 
-const STATUS_LABELS: Record<
+export const STAFF_ASSISTANT_ORDER_STATUS_LABELS: Record<
   StaffAssistantLocale,
   Record<OrderStatus, string>
 > = {
@@ -137,7 +192,7 @@ const STATUS_LABELS: Record<
   },
 };
 
-const COPY: Record<
+export const STAFF_ASSISTANT_PRESENTER_COPY: Record<
   StaffAssistantLocale,
   {
     readonly empty: string;
@@ -178,7 +233,7 @@ const COPY: Record<
     listPrefix: "Останні замовлення",
     hasMore: "Є ще замовлення.",
     customerMatchTruncated:
-      "Збіги за імʼям клієнта обрізано. Уточніть запит або відкрийте список.",
+      "Збіги за імʼям клієнта обрізано. Уточни запит або відкрий список.",
     missingCustomer: "Клієнт видалений",
     entityPrefix: "Замовлення",
     customersEmpty: "Немає клієнтів.",
@@ -239,7 +294,10 @@ function countPluralForm(
 
 function orderCountSpoken(count: number, locale: StaffAssistantLocale): string {
   const form = countPluralForm(count, locale);
-  return interpolate(COPY[locale].orderCount[form], count);
+  return interpolate(
+    STAFF_ASSISTANT_PRESENTER_COPY[locale].orderCount[form],
+    count,
+  );
 }
 
 function customerSpokenName(
@@ -332,7 +390,7 @@ function presentListSurface(
   data: AssistantOrdersListData,
   locale: StaffAssistantLocale,
 ): string {
-  const copy = COPY[locale];
+  const copy = STAFF_ASSISTANT_PRESENTER_COPY[locale];
   const labels: string[] = [];
   for (const row of data.rows) {
     if (labels.length >= ASSISTANT_ORDERS_LIST_ROW_MAX) {
@@ -340,7 +398,7 @@ function presentListSurface(
     }
     const numberLabel = formatOrderNumber(row.orderNumber);
     const status = isOrderStatus(row.status)
-      ? STATUS_LABELS[locale][row.status]
+      ? STAFF_ASSISTANT_ORDER_STATUS_LABELS[locale][row.status]
       : null;
     const numberPart = numberLabel.length > 0 ? numberLabel : null;
     if (numberPart !== null && status !== null) {
@@ -372,7 +430,7 @@ function presentAggregateSurface(
   data: AssistantOrdersAggregateData,
   locale: StaffAssistantLocale,
 ): string {
-  const copy = COPY[locale];
+  const copy = STAFF_ASSISTANT_PRESENTER_COPY[locale];
   const byStatus = new Map<OrderStatus, number>();
   for (const bucket of data.statusBuckets) {
     if (!isOrderStatus(bucket.status)) {
@@ -386,7 +444,9 @@ function presentAggregateSurface(
     if (count === undefined) {
       continue;
     }
-    chipParts.push(`${STATUS_LABELS[locale][status]} · ${String(count)}`);
+    chipParts.push(
+      `${STAFF_ASSISTANT_ORDER_STATUS_LABELS[locale][status]} · ${String(count)}`,
+    );
   }
   const footnotes: string[] = [];
   if (data.customerMatchTruncated) {
@@ -411,10 +471,10 @@ function presentEntitySurface(
   data: AssistantOrderEntityData,
   locale: StaffAssistantLocale,
 ): string {
-  const copy = COPY[locale];
+  const copy = STAFF_ASSISTANT_PRESENTER_COPY[locale];
   const numberLabel = formatOrderNumber(data.orderNumber);
   const status = isOrderStatus(data.status)
-    ? STATUS_LABELS[locale][data.status]
+    ? STAFF_ASSISTANT_ORDER_STATUS_LABELS[locale][data.status]
     : null;
   const customer = customerSpokenName(
     data.customerNameSnapshot,
@@ -440,7 +500,7 @@ function presentCustomersListSurface(
   data: AssistantCustomersListData,
   locale: StaffAssistantLocale,
 ): string {
-  const copy = COPY[locale];
+  const copy = STAFF_ASSISTANT_PRESENTER_COPY[locale];
   const labels: string[] = [];
   for (const row of data.rows) {
     if (labels.length >= ASSISTANT_CUSTOMERS_LIST_ROW_MAX) {
@@ -504,19 +564,17 @@ function presentChoiceIntro(
 ): string {
   const labels = output.options.map((option) => option.label).join(", ");
   const kind = output.choiceKind ?? "variant";
-  if (kind === "customer") {
-    return locale === "uk"
-      ? `Оберіть клієнта «${output.productName}»: ${labels}.`
-      : `Select a customer matching ${output.productName}: ${labels}.`;
-  }
-  if (kind === "product") {
-    return locale === "uk"
-      ? `Оберіть товар «${output.productName}»: ${labels}.`
-      : `Select a product matching ${output.productName}: ${labels}.`;
-  }
-  return locale === "uk"
-    ? `Оберіть варіант для ${output.productName}: ${labels}.`
-    : `Select a variant for ${output.productName}: ${labels}.`;
+  const templates = STAFF_ASSISTANT_CHOICE_INTRO_COPY[locale];
+  const template =
+    kind === "customer"
+      ? templates.customer
+      : kind === "product"
+        ? templates.product
+        : templates.variant;
+  return fillPlaceholders(template, {
+    name: output.productName,
+    labels,
+  });
 }
 
 function presentChoiceSurface(
@@ -576,6 +634,7 @@ function staffAssistantToolErrorMessage(
 }
 
 function staffAssistantSpokenTurnText(options: {
+  readonly locale: StaffAssistantLocale;
   readonly toolResults: readonly StaffAssistantPresentedToolResult[];
   readonly rawText: string;
   readonly runs: readonly SpokenTurnRun[];
@@ -584,6 +643,7 @@ function staffAssistantSpokenTurnText(options: {
   return spokenTurnText({
     rawText: options.rawText,
     runs: options.runs,
+    locale: options.locale,
     ...(toolErrorMessage !== undefined ? { toolErrorMessage } : {}),
   });
 }

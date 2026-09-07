@@ -461,7 +461,7 @@ describe("choice transport (SHO-409)", () => {
     expect(assistantChoiceInteractionResultSchema.safeParse(view).success).toBe(
       false,
     );
-    const presented = "Оберіть варіант для Еклери: Кава, Шоколад.";
+    const presented = "Обери варіант для Еклери: Кава, Шоколад.";
     const parsed = assistantChoiceInteractionResultSchema.parse({
       ...view,
       text: presented,

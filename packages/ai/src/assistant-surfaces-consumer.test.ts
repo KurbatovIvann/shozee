@@ -57,7 +57,7 @@ const PRESENTER_OWNED_COPY = [
   "не має активних варіантів",
   "в архіві, в замовлення",
   "More variants exist. Reply with the exact flavour name.",
-  "Є ще варіанти. Напишіть точну назву смаку.",
+  "Є ще варіанти. Напиши точну назву смаку.",
 ];
 
 const PARSE_HELPERS_REMOVED_FROM_PRESENTER = [

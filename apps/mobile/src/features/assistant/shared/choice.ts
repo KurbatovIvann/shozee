@@ -9,17 +9,17 @@ export const CHOICE_OPTIONS_MAX = 20;
 
 export const CHOICE_TRUNCATED_COPY = {
   en: "More variants exist. Reply with the exact flavour name.",
-  uk: "Є ще варіанти. Напишіть точну назву смаку.",
+  uk: "Є ще варіанти. Напиши точну назву смаку.",
 } as const;
 
 export const CHOICE_TRUNCATED_MATCH_COPY = {
   en: "More matches exist. Reply with the exact name.",
-  uk: "Є ще збіги. Напишіть точну назву.",
+  uk: "Є ще збіги. Напиши точну назву.",
 } as const;
 
 export const CHOICE_CLAIMED_COPY = {
   en: "This choice is already in progress. Continue to finish it.",
-  uk: "Цей вибір уже в процесі. Продовжіть, щоб завершити.",
+  uk: "Цей вибір уже в процесі. Продовжи, щоб завершити.",
 } as const;
 
 export const CHOICE_RETRY_COPY = {
@@ -149,17 +149,17 @@ export function presentChoiceCardText(
   if (kind === "customer") {
     intro =
       locale === "uk"
-        ? `Оберіть клієнта «${name}»: ${labels}.`
+        ? `Обери клієнта «${name}»: ${labels}.`
         : `Select a customer matching ${name}: ${labels}.`;
   } else if (kind === "product") {
     intro =
       locale === "uk"
-        ? `Оберіть товар «${name}»: ${labels}.`
+        ? `Обери товар «${name}»: ${labels}.`
         : `Select a product matching ${name}: ${labels}.`;
   } else {
     intro =
       locale === "uk"
-        ? `Оберіть варіант для ${name}: ${labels}.`
+        ? `Обери варіант для ${name}: ${labels}.`
         : `Select a variant for ${name}: ${labels}.`;
   }
   if (envelope.optionsTruncated) {

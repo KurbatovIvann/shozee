@@ -563,7 +563,7 @@ describe("staffAssistantTurnUsesCompletedPresenter", () => {
       "Select a variant for Macarons: Lemon, Vanilla.",
     );
     expect(presentChoiceStaffAssistantTurn({ locale: "uk", toolResults })).toBe(
-      "Оберіть варіант для Macarons: Lemon, Vanilla.",
+      "Обери варіант для Macarons: Lemon, Vanilla.",
     );
     expect(
       staffAssistantPersistedTurnText({
@@ -618,7 +618,7 @@ describe("staffAssistantTurnUsesCompletedPresenter", () => {
         toolResults: [{ toolName: ORDERS_CREATE_TOOL_NAME, output: archived }],
       }),
     ).toBe(
-      "«Old Widget» в архіві, в замовлення його додати не можна. Напишіть інший товар або повторіть замовлення без нього.",
+      "«Old Widget» в архіві, в замовлення його додати не можна. Напиши інший товар або повтори замовлення без нього.",
     );
   });
 });
@@ -702,7 +702,7 @@ describe("presentChoiceStaffAssistantNeedsChoice", () => {
     expect(en.text).toBe(
       presentChoiceStaffAssistantTurn({ locale: "en", toolResults }),
     );
-    expect(uk.text).toBe("Оберіть варіант для Еклери: Кава, Шоколад.");
+    expect(uk.text).toBe("Обери варіант для Еклери: Кава, Шоколад.");
     expect(en.text).toBe("Select a variant for Еклери: Кава, Шоколад.");
     expect(uk.text).toContain("Кава");
     expect(uk.text).toContain("Шоколад");
@@ -784,7 +784,7 @@ describe("presentChoiceStaffAssistantNeedsChoice", () => {
           { toolName: ORDERS_CREATE_TOOL_NAME, output: productOutput },
         ],
       }),
-    ).toBe("Оберіть товар «макаронс»: Макаронси.");
+    ).toBe("Обери товар «макаронс»: Макаронси.");
     expect(
       presentChoiceStaffAssistantTurn({
         locale: "en",
@@ -888,7 +888,8 @@ describe("staffAssistantPersistedTurnText", () => {
       }),
     ).toBe(presented);
     expect(presented).not.toBe("MODEL_SPOKEN_SHOULD_NOT_PERSIST");
-    expect(presented).not.toBe(STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK);
+    expect(presented).not.toBe(STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK.en);
+    expect(presented).not.toBe(STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK.uk);
   });
 
   it("keeps model prose when there is no registered surface", () => {
@@ -910,7 +911,7 @@ describe("staffAssistantPersistedTurnText", () => {
         rawText: '{"spoken":"Four orders this week."}',
         runs: [{ outcome: "success" }],
       }),
-    ).toBe(STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK);
+    ).toBe(STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK.uk);
   });
 
   it("keeps confirmation fallback over a completed list when spoken is a markdown dump", () => {
@@ -942,7 +943,7 @@ describe("staffAssistantPersistedTurnText", () => {
         rawText: '{"spoken":"| order | total |"}',
         runs: [{ outcome: "success" }],
       }),
-    ).toBe(STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK);
+    ).toBe(STAFF_ASSISTANT_SUCCESS_SPOKEN_FALLBACK.uk);
   });
 
   it("falls back to the typed tool message when create errors without spoken", () => {

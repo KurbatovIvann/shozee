@@ -115,7 +115,7 @@ describe("assistant copy", () => {
       "This choice is already in progress. Continue to finish it.",
     );
     expect(uk.choiceClaimed).toBe(
-      "Цей вибір уже в процесі. Продовжіть, щоб завершити.",
+      "Цей вибір уже в процесі. Продовжи, щоб завершити.",
     );
     expect(en.choiceRetry).toBe("Continue");
     expect(uk.choiceRetry).toBe("Продовжити");
@@ -147,11 +147,9 @@ describe("assistant copy", () => {
     expect(en.errors.unavailable).not.toBe(writeErrorsEn.unavailable);
     expect(en.errors.permission).not.toBe(writeErrorsEn.permission);
     expect(uk.errors.network).toBe(
-      "Не вдалося звʼязатися з асистентом. Спробуйте ще раз.",
+      "Не вдалося звʼязатися з асистентом. Спробуй ще раз.",
     );
-    expect(uk.errors.unavailable).toBe(
-      "Асистент недоступний. Спробуйте ще раз.",
-    );
+    expect(uk.errors.unavailable).toBe("Асистент недоступний. Спробуй ще раз.");
     expect(uk.errors.permission).toBe("Немає права користуватися асистентом.");
     expect(uk.errors.network).not.toBe(writeErrorsUk.network);
     expect(uk.errors.unavailable).not.toBe(writeErrorsUk.unavailable);

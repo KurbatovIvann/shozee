@@ -21,7 +21,7 @@ describe("assistantChatErrorKind", () => {
       "Too many requests. Try again later.",
     );
     expect(assistantChatErrorMessage("rateLimited", assistantCopy("uk"))).toBe(
-      "Забагато запитів. Спробуйте пізніше.",
+      "Забагато запитів. Спробуй пізніше.",
     );
   });
 
@@ -50,7 +50,7 @@ describe("assistantChatErrorKind", () => {
       "Could not reach the assistant. Try again.",
     );
     expect(assistantChatErrorMessage("network", assistantCopy("uk"))).toBe(
-      "Не вдалося звʼязатися з асистентом. Спробуйте ще раз.",
+      "Не вдалося звʼязатися з асистентом. Спробуй ще раз.",
     );
   });
 

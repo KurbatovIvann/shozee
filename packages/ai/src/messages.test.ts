@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ORDERS_LIST_PAGE_TOOL_NAME } from "./action-tool.js";
-import { STAFF_ASSISTANT_CACHE_PROVIDER_OPTIONS } from "./anthropic-options.js";
+import { STAFF_ASSISTANT_HISTORY_CACHE_PROVIDER_OPTIONS } from "./anthropic-options.js";
 import {
   applyStaffAssistantHistoryWindow,
   lastStaffAssistantUserMessage,
@@ -244,11 +244,11 @@ describe("applyStaffAssistantHistoryWindow", () => {
     expect(windowed.at(-2)).toMatchObject({
       role: "assistant",
       content: "assistant-18",
-      providerOptions: STAFF_ASSISTANT_CACHE_PROVIDER_OPTIONS,
+      providerOptions: STAFF_ASSISTANT_HISTORY_CACHE_PROVIDER_OPTIONS,
     });
     const breakpoint = applyStaffAssistantHistoryWindow(windowed);
     expect(breakpoint.at(-2)).toMatchObject({
-      providerOptions: STAFF_ASSISTANT_CACHE_PROVIDER_OPTIONS,
+      providerOptions: STAFF_ASSISTANT_HISTORY_CACHE_PROVIDER_OPTIONS,
     });
     expect(breakpoint.at(-1)).not.toHaveProperty("providerOptions");
   });
@@ -321,7 +321,7 @@ describe("staffAssistantModelMessages", () => {
     expect(windowed.at(-2)).toMatchObject({
       role: "assistant",
       content: "assistant-18",
-      providerOptions: STAFF_ASSISTANT_CACHE_PROVIDER_OPTIONS,
+      providerOptions: STAFF_ASSISTANT_HISTORY_CACHE_PROVIDER_OPTIONS,
     });
   });
 
@@ -347,7 +347,7 @@ describe("staffAssistantModelMessages", () => {
     expect(windowed[1]).toMatchObject({
       role: "assistant",
       content: "old assistant",
-      providerOptions: STAFF_ASSISTANT_CACHE_PROVIDER_OPTIONS,
+      providerOptions: STAFF_ASSISTANT_HISTORY_CACHE_PROVIDER_OPTIONS,
     });
     expect(windowed[2]).toEqual({ role: "user", content: "List orders" });
     expect(windowed[2]).not.toHaveProperty("providerOptions");
@@ -629,7 +629,7 @@ describe("staffAssistantModelMessagesFromPersisted tool traces", () => {
     });
     expect(messages.at(-2)?.role).toBe("tool");
     expect(messages.at(-2)).toMatchObject({
-      providerOptions: STAFF_ASSISTANT_CACHE_PROVIDER_OPTIONS,
+      providerOptions: STAFF_ASSISTANT_HISTORY_CACHE_PROVIDER_OPTIONS,
     });
   });
 

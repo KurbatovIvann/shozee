@@ -23,7 +23,7 @@ import {
   toProviderToolName,
 } from "./action-tool.js";
 import {
-  STAFF_ASSISTANT_CACHE_CONTROL,
+  STAFF_ASSISTANT_STATIC_CACHE_CONTROL,
   STAFF_ASSISTANT_DEFER_PROVIDER_OPTIONS,
 } from "./anthropic-options.js";
 import { CUSTOMERS_LIST_CUSTOMERS_ASSISTANT_LIMIT } from "./tool-facades/customers-list-customers.js";
@@ -266,7 +266,7 @@ describe("staffAssistantTools", () => {
     );
     expect(tools[STAFF_ASSISTANT_TOOL_SEARCH_NAME]).toBeDefined();
     expect(tools[ORDERS_LIST_COUNTS_TOOL_NAME]?.providerOptions).toEqual({
-      anthropic: { cacheControl: STAFF_ASSISTANT_CACHE_CONTROL },
+      anthropic: { cacheControl: STAFF_ASSISTANT_STATIC_CACHE_CONTROL },
     });
     expect(tools[ORDERS_LIST_PAGE_TOOL_NAME]?.providerOptions).toBeUndefined();
     expect(tools["customers_deleteCustomer"]?.providerOptions).toEqual(
@@ -330,7 +330,7 @@ describe("staffAssistantTools", () => {
       Promise.resolve({}),
     );
     expect(tools[STAFF_ASSISTANT_TOOL_SEARCH_NAME]?.providerOptions).toEqual({
-      anthropic: { cacheControl: STAFF_ASSISTANT_CACHE_CONTROL },
+      anthropic: { cacheControl: STAFF_ASSISTANT_STATIC_CACHE_CONTROL },
     });
     expect(tools["customers_deleteCustomer"]?.providerOptions).toEqual(
       STAFF_ASSISTANT_DEFER_PROVIDER_OPTIONS,
@@ -628,7 +628,7 @@ describe("staffAssistantTools", () => {
       { toolCallId: "call-create" },
     );
     expect(tools[ORDERS_CREATE_TOOL_NAME]?.providerOptions).toEqual({
-      anthropic: { cacheControl: STAFF_ASSISTANT_CACHE_CONTROL },
+      anthropic: { cacheControl: STAFF_ASSISTANT_STATIC_CACHE_CONTROL },
     });
   });
 
@@ -767,7 +767,7 @@ describe("staffAssistantTools", () => {
       STAFF_ASSISTANT_DEFER_PROVIDER_OPTIONS,
     );
     expect(tools[STAFF_ASSISTANT_TOOL_SEARCH_NAME]?.providerOptions).toEqual({
-      anthropic: { cacheControl: STAFF_ASSISTANT_CACHE_CONTROL },
+      anthropic: { cacheControl: STAFF_ASSISTANT_STATIC_CACHE_CONTROL },
     });
     const executeTool = tools[CUSTOMERS_LIST_GROUPS_TOOL_NAME]?.execute;
     expect(executeTool).toBeTypeOf("function");

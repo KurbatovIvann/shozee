@@ -111,8 +111,32 @@ describe("wholesale assistant copy", () => {
     expect(uk.errors.network).not.toBe(writeErrorsUk.network);
     expect(uk.errors.unavailable).not.toBe(writeErrorsUk.unavailable);
     expect(uk.errors.permission).not.toBe(writeErrorsUk.permission);
+    expect(uk.errors.validation).not.toBe(writeErrorsUk.validation);
+    expect(uk.errors.offline).not.toBe(writeErrorsUk.offline);
     expect(uk.cards.noneBucket).not.toBe(
       sharedAssistantCopy("uk").aggregate.totals,
     );
+  });
+
+  it("uses informal ти-form uk strings, not Ви-form imperatives", () => {
+    const FORMAL_IMPERATIVE_ENDING = /(іть|йте)\b/;
+    const FORMAL_IMPERATIVE_EXCEPTIONS: readonly string[] = [];
+    const ukLeaves = [
+      ...leafPaths(sharedAssistantCopy("uk")).map((path) =>
+        String(leafAt(sharedAssistantCopy("uk"), path)),
+      ),
+      ...leafPaths(assistantCopy("uk")).flatMap((path) => {
+        const value = leafAt(assistantCopy("uk"), path);
+        return typeof value === "string" ? [value] : [];
+      }),
+    ];
+    expect(ukLeaves.length).toBeGreaterThan(0);
+    const unexpected = ukLeaves.filter((text) => {
+      if (FORMAL_IMPERATIVE_EXCEPTIONS.includes(text)) {
+        return false;
+      }
+      return FORMAL_IMPERATIVE_ENDING.test(text);
+    });
+    expect(unexpected).toEqual([]);
   });
 });
