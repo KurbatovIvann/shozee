@@ -117,6 +117,7 @@ import {
   aiGlobalBudgetKey,
 } from "../stores/budget.js";
 import { createMemoryChoiceStore } from "../stores/choice.js";
+import { pendingStoreBacking } from "../stores/pending-interaction.js";
 import {
   createMemoryAuthRateLimitStore,
   createMemorySecondaryStorage,
@@ -3138,7 +3139,11 @@ describe("SHO-418 orders_create choice activation", () => {
 
   it("omits variantQuery → needs_choice with six active options and no parent", async () => {
     const store = createMemoryChoiceStore();
-    const open = vi.spyOn(store, "open");
+    const pending = pendingStoreBacking(store);
+    if (pending === undefined) {
+      throw new CoreInvariantError("choice store missing pending backing");
+    }
+    const open = vi.spyOn(pending, "open");
     await staffInvoke(createCustomer, {
       name: "T8b Six Buyer",
       phone: "+380671110041",
@@ -3199,7 +3204,11 @@ describe("SHO-418 orders_create choice activation", () => {
 
   it("unique variantQuery Lemon creates without writing a choice record", async () => {
     const store = createMemoryChoiceStore();
-    const open = vi.spyOn(store, "open");
+    const pending = pendingStoreBacking(store);
+    if (pending === undefined) {
+      throw new CoreInvariantError("choice store missing pending backing");
+    }
+    const open = vi.spyOn(pending, "open");
     const customer = await staffInvoke(createCustomer, {
       name: "T8b Lemon Buyer",
       phone: "+380671110042",
