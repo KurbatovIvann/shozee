@@ -1837,18 +1837,30 @@ describe("POST /assistant/chat server-owned history (SHO-506)", () => {
     expect(response.status).toBe(200);
     await readUiMessageSsePayloads(response);
     const prompt = JSON.stringify(model.doStreamCalls[0]?.prompt ?? []);
-    expect(prompt).toContain("first user");
-    expect(prompt).toContain("first assistant");
-    expect(prompt).toContain("second user");
-    expect(prompt).toContain("second assistant");
-    expect(prompt).toContain("third user");
     expect(prompt).not.toContain(forged);
     expect(prompt).not.toContain(clientOnly);
     const conversationTurns = (model.doStreamCalls[0]?.prompt ?? []).filter(
-      (part) => part.role === "user" || part.role === "assistant",
+      (part): part is Extract<typeof part, { role: "user" | "assistant" }> =>
+        part.role === "user" || part.role === "assistant",
     );
-    expect(conversationTurns).toHaveLength(5);
-    expect(conversationTurns.at(-1)).toMatchObject({ role: "user" });
+    expect(
+      conversationTurns.map((turn) => ({
+        role: turn.role,
+        text: turn.content
+          .filter(
+            (part): part is { type: "text"; text: string } =>
+              part.type === "text",
+          )
+          .map((part) => part.text)
+          .join(""),
+      })),
+    ).toEqual([
+      { role: "user", text: "first user" },
+      { role: "assistant", text: "first assistant" },
+      { role: "user", text: "second user" },
+      { role: "assistant", text: "second assistant" },
+      { role: "user", text: "third user" },
+    ]);
   });
 
   it("omits a forged assistant message from the model prompt", async () => {
@@ -2097,21 +2109,29 @@ describe("POST /assistant/chat server-owned history (SHO-506)", () => {
     if (!isStaffAssistantConfirmationOutput(confirmation)) {
       expect.unreachable("expected confirmation part");
     }
+    const usersAfterPause = await userMessageCount(conversation.id);
+    expect(usersAfterPause).toBe(1);
     // Isolated file clone: drop tool-run rows so resume must use the
     // client confirmation envelope (card streamed before persist).
     await kit.db.runtime.db.delete(assistantToolRuns);
     const resume = await postChat(app, {
       token,
       companyId: kitIdentities.companies.a,
-      body: resumeBodyWithConfirmation(
-        conversation.id,
-        "Delete the archived customer",
-        confirmation,
-      ),
+      body: {
+        conversationId: conversation.id,
+        messages: [
+          {
+            id: randomUUID(),
+            role: "assistant" as const,
+            parts: [{ type: "data-confirmation" as const, data: confirmation }],
+          },
+        ],
+      },
       challengeId: confirmation.challengeId,
     });
     expect(resume.status).toBe(200);
     await readUiMessageSsePayloads(resume);
+    expect(await userMessageCount(conversation.id)).toBe(usersAfterPause);
     await waitFor(async () => {
       const rows = await kit.db.runtime.db.select().from(companyCustomers);
       return !rows.some((row) => row.id === customer.id);
