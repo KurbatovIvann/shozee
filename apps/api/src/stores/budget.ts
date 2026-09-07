@@ -1,7 +1,8 @@
 /**
- * Staff-assistant daily USD counters (SHO-505). Redis uses INCRBYFLOAT +
- * EXPIRE (no Lua). Tests use the in-memory store. Never GETDEL — that
- * stays confirmation's primitive.
+ * Staff-assistant daily USD counters (SHO-505). Redis `tryAdd` is Lua
+ * increment-with-cap (reservation before the model). Settlement uses
+ * INCRBYFLOAT + EXPIRE. Tests use the in-memory store. Never GETDEL —
+ * that stays confirmation's primitive.
  */
 import { withKeyLock } from "./with-key-lock.js";
 
@@ -25,9 +26,24 @@ export function aiGlobalBudgetKey(kyivDate: string): string {
   return `ai-budget:global:${kyivDate}`;
 }
 
+export interface AiBudgetTryAddDecision {
+  readonly allowed: boolean;
+  readonly spent: number;
+}
+
 export interface AiBudgetStore {
   read(key: string): Promise<number>;
   add(key: string, amountUsd: number, ttlSec: number): Promise<number>;
+  /**
+   * Atomically add `amountUsd` only when `current + amountUsd <= capUsd`.
+   * Serializes overlapping reservations for the same key.
+   */
+  tryAdd(
+    key: string,
+    amountUsd: number,
+    capUsd: number,
+    ttlSec: number,
+  ): Promise<AiBudgetTryAddDecision>;
 }
 
 interface MemoryBudgetEntry {
@@ -41,6 +57,10 @@ function parseSpent(raw: string | number | null): number {
   }
   const spent = Number(raw);
   return Number.isFinite(spent) && spent > 0 ? spent : 0;
+}
+
+function clampSpent(value: number): number {
+  return Number.isFinite(value) && value > 0 ? value : 0;
 }
 
 export function createMemoryAiBudgetStore(options?: {
@@ -59,6 +79,19 @@ export function createMemoryAiBudgetStore(options?: {
     return entry.value;
   }
 
+  function write(key: string, value: number, ttlSec: number): number {
+    const spent = clampSpent(value);
+    if (spent === 0) {
+      entries.delete(key);
+      return 0;
+    }
+    entries.set(key, {
+      value: spent,
+      expiresAtMs: now() + ttlSec * 1000,
+    });
+    return spent;
+  }
+
   return {
     read(key) {
       return Promise.resolve(liveValue(key));
@@ -66,12 +99,21 @@ export function createMemoryAiBudgetStore(options?: {
 
     add(key, amountUsd, ttlSec) {
       return withKeyLock(tails, key, () => {
-        const next = liveValue(key) + amountUsd;
-        entries.set(key, {
-          value: next,
-          expiresAtMs: now() + ttlSec * 1000,
+        return Promise.resolve(write(key, liveValue(key) + amountUsd, ttlSec));
+      });
+    },
+
+    tryAdd(key, amountUsd, capUsd, ttlSec) {
+      return withKeyLock(tails, key, () => {
+        const current = liveValue(key);
+        const next = current + amountUsd;
+        if (next > capUsd) {
+          return Promise.resolve({ allowed: false, spent: current });
+        }
+        return Promise.resolve({
+          allowed: true,
+          spent: write(key, next, ttlSec),
         });
-        return Promise.resolve(next);
       });
     },
   };

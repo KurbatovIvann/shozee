@@ -14,6 +14,7 @@ import {
   DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
   enforceStaffAssistantBudget,
   logStaffAssistantBudgetDenial,
+  recordStaffAssistantBudgetSpend,
   staffAssistantBudgetSpendUsd,
 } from "./assistant-budget-guard.js";
 
@@ -206,5 +207,151 @@ describe("enforceStaffAssistantBudget", () => {
         limits: DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
       }),
     ).rejects.toBeInstanceOf(RateLimitError);
+  });
+
+  it("does not consume a turn slot when the request is denied for budget", async () => {
+    const rateLimitStore = createInMemoryRateLimitStore();
+    const budgetStore = createMemoryAiBudgetStore();
+    await budgetStore.add(
+      aiCompanyBudgetKey(COMPANY_A, "2026-09-02"),
+      0.1,
+      AI_BUDGET_TTL_SEC,
+    );
+    const request = {
+      logger: createCapturingLogger().logger,
+      requestId: "req-budget-then-turn",
+      userId: USER_A,
+      companyId: COMPANY_A,
+      skipTurnLimit: false,
+      now: NOW,
+      rateLimitStore,
+      budgetStore,
+    };
+    await expect(
+      enforceStaffAssistantBudget({
+        ...request,
+        limits: {
+          chatTurnsPerMinutePerUser: 1,
+          dailyBudgetUsdPerCompany: 0.1,
+          dailyBudgetUsdGlobal: 0,
+          unknownModelTurnUsd: 0.1,
+        },
+      }),
+    ).rejects.toBeInstanceOf(RateLimitError);
+    await expect(
+      enforceStaffAssistantBudget({
+        ...request,
+        requestId: "req-budget-then-turn-2",
+        limits: {
+          chatTurnsPerMinutePerUser: 1,
+          dailyBudgetUsdPerCompany: 0,
+          dailyBudgetUsdGlobal: 0,
+          unknownModelTurnUsd: 0.1,
+        },
+      }),
+    ).resolves.toMatchObject({
+      companyReservedUsd: 0,
+      globalReservedUsd: 0,
+    });
+  });
+
+  it("lets only one overlapping reservation proceed when remaining budget fits one turn", async () => {
+    const budgetStore = createMemoryAiBudgetStore();
+    const request = {
+      logger: createCapturingLogger().logger,
+      userId: USER_A,
+      companyId: COMPANY_A,
+      skipTurnLimit: true,
+      now: NOW,
+      budgetStore,
+      limits: {
+        chatTurnsPerMinutePerUser: 0,
+        dailyBudgetUsdPerCompany: 0.1,
+        dailyBudgetUsdGlobal: 0,
+        unknownModelTurnUsd: 0.1,
+      },
+    };
+    const [first, second] = await Promise.allSettled([
+      enforceStaffAssistantBudget({
+        ...request,
+        requestId: "req-overlap-a",
+      }),
+      enforceStaffAssistantBudget({
+        ...request,
+        requestId: "req-overlap-b",
+      }),
+    ]);
+    const fulfilled = [first, second].filter(
+      (result) => result.status === "fulfilled",
+    );
+    const rejected = [first, second].filter(
+      (result) => result.status === "rejected",
+    );
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(
+      rejected[0]?.status === "rejected" ? rejected[0].reason : undefined,
+    ).toBeInstanceOf(RateLimitError);
+    expect(
+      await budgetStore.read(aiCompanyBudgetKey(COMPANY_A, "2026-09-02")),
+    ).toBeCloseTo(0.1);
+  });
+
+  it("fails closed when tryAdd throws", async () => {
+    const budgetStore = {
+      read: () => Promise.resolve(0),
+      add: () => Promise.resolve(0),
+      tryAdd: () => Promise.reject(new Error("store down")),
+    };
+    await expect(
+      enforceStaffAssistantBudget({
+        logger: createCapturingLogger().logger,
+        requestId: "req-tryadd-throw",
+        userId: USER_A,
+        companyId: COMPANY_A,
+        skipTurnLimit: true,
+        now: NOW,
+        budgetStore,
+        limits: DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+      }),
+    ).rejects.toBeInstanceOf(RateLimitError);
+  });
+});
+
+describe("recordStaffAssistantBudgetSpend", () => {
+  it("settles the reserved ceiling to the estimated USD instead of double-counting", async () => {
+    const budgetStore = createMemoryAiBudgetStore();
+    const logger = createCapturingLogger().logger;
+    const hold = await enforceStaffAssistantBudget({
+      logger,
+      requestId: "req-settle",
+      userId: USER_A,
+      companyId: COMPANY_A,
+      skipTurnLimit: true,
+      now: NOW,
+      budgetStore,
+      limits: DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+    });
+    expect(hold.companyReservedUsd).toBeCloseTo(0.1);
+    expect(hold.globalReservedUsd).toBeCloseTo(0.1);
+    expect(
+      await budgetStore.read(aiCompanyBudgetKey(COMPANY_A, "2026-09-02")),
+    ).toBeCloseTo(0.1);
+    await recordStaffAssistantBudgetSpend({
+      logger,
+      requestId: "req-settle",
+      companyId: COMPANY_A,
+      estimatedCostUsd: 0.42,
+      hold,
+      now: NOW,
+      budgetStore,
+      limits: DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+    });
+    expect(
+      await budgetStore.read(aiCompanyBudgetKey(COMPANY_A, "2026-09-02")),
+    ).toBeCloseTo(0.42);
+    expect(await budgetStore.read(aiGlobalBudgetKey("2026-09-02"))).toBeCloseTo(
+      0.42,
+    );
   });
 });

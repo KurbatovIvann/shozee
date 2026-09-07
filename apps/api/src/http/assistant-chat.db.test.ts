@@ -3265,8 +3265,8 @@ describe("POST /assistant/chat budget guard (SHO-505)", () => {
   });
 
   function budgetApp(options: {
-    readonly streamModel: LanguageModel;
-    readonly gateModel: LanguageModel;
+    readonly streamModel?: LanguageModel;
+    readonly gateModel?: LanguageModel;
     readonly logger?: ReturnType<typeof createCapturingLogger>["logger"];
     readonly limits?: StaffAssistantBudgetLimits;
     readonly estimateTurnCostUsd?: StaffAssistantRuntime["estimateTurnCostUsd"];
@@ -3288,8 +3288,12 @@ describe("POST /assistant/chat budget guard (SHO-505)", () => {
       assistant: {
         model: "mock",
         gateModel: "mock-gate",
-        languageModel: options.streamModel,
-        gateLanguageModel: options.gateModel,
+        ...(options.streamModel === undefined
+          ? {}
+          : { languageModel: options.streamModel }),
+        ...(options.gateModel === undefined
+          ? {}
+          : { gateLanguageModel: options.gateModel }),
         ...(options.estimateTurnCostUsd === undefined
           ? {}
           : { estimateTurnCostUsd: options.estimateTurnCostUsd }),
@@ -3641,5 +3645,83 @@ describe("POST /assistant/chat budget guard (SHO-505)", () => {
     expect(await budgetStore.read(aiGlobalBudgetKey(kyivDate))).toBeCloseTo(
       0.14,
     );
+  });
+
+  it("does not consume a turn when the company budget denies the request", async () => {
+    const streamModel = new MockLanguageModelV3({
+      doStream: [mockTextStream("ok"), mockTextStream("ok")],
+    });
+    const gateModel = new MockLanguageModelV3({
+      doGenerate: mockOperationalGateGenerate(true),
+      doStream: [mockTextStream("should not chitchat")],
+    });
+    const limits: StaffAssistantBudgetLimits = {
+      ...DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+      chatTurnsPerMinutePerUser: 1,
+      dailyBudgetUsdPerCompany: 1,
+    };
+    const app = budgetApp({ streamModel, gateModel, limits });
+    const kyivDate = kyivCalendarDate(new Date());
+    const companyKey = aiCompanyBudgetKey(kitIdentities.companies.a, kyivDate);
+    await createRedisAiBudgetStore(redis).add(companyKey, 1, AI_BUDGET_TTL_SEC);
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await staffInvoke(createConversation, {
+      title: "Budget then turn",
+    });
+    const denied = await postChat(app, {
+      token,
+      companyId: kitIdentities.companies.a,
+      body: userChatBody(conversation.id, "blocked by budget"),
+    });
+    expect(denied.status).toBe(429);
+    expect(gateModel.doGenerateCalls).toHaveLength(0);
+    expect(streamModel.doStreamCalls).toHaveLength(0);
+    await redis.del(companyKey);
+    const allowed = await postChat(app, {
+      token,
+      companyId: kitIdentities.companies.a,
+      body: userChatBody(conversation.id, "second turn after budget 429"),
+    });
+    expect(allowed.status).toBe(200);
+    await readUiMessageSsePayloads(allowed);
+    expect(gateModel.doGenerateCalls).toHaveLength(1);
+  });
+
+  it("does not consume a turn when Anthropic is not configured", async () => {
+    const limits: StaffAssistantBudgetLimits = {
+      ...DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+      chatTurnsPerMinutePerUser: 1,
+    };
+    const unconfigured = budgetApp({ limits });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await staffInvoke(createConversation, {
+      title: "Not configured then turn",
+    });
+    const missing = await postChat(unconfigured, {
+      token,
+      companyId: kitIdentities.companies.a,
+      body: userChatBody(conversation.id, "no anthropic"),
+    });
+    expect(missing.status).toBe(503);
+    expect(await missing.json()).toMatchObject({
+      code: "AI_NOT_CONFIGURED",
+      status: 503,
+    });
+    const streamModel = new MockLanguageModelV3({
+      doStream: [mockTextStream("ok")],
+    });
+    const gateModel = new MockLanguageModelV3({
+      doGenerate: mockOperationalGateGenerate(true),
+      doStream: [mockTextStream("should not chitchat")],
+    });
+    const configured = budgetApp({ streamModel, gateModel, limits });
+    const allowed = await postChat(configured, {
+      token,
+      companyId: kitIdentities.companies.a,
+      body: userChatBody(conversation.id, "configured after 503"),
+    });
+    expect(allowed.status).toBe(200);
+    await readUiMessageSsePayloads(allowed);
+    expect(gateModel.doGenerateCalls).toHaveLength(1);
   });
 });

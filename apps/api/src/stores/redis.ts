@@ -21,7 +21,11 @@ import {
   hmacBetterAuthConsumeKey,
   requireAuthIpHmacSecret,
 } from "./auth-ip-hmac.js";
-import { parseAiBudgetSpent, type AiBudgetStore } from "./budget.js";
+import {
+  parseAiBudgetSpent,
+  type AiBudgetStore,
+  type AiBudgetTryAddDecision,
+} from "./budget.js";
 import type {
   ChoiceClaimDecision,
   ChoiceCompleteDecision,
@@ -309,11 +313,34 @@ export function createRedisRateLimitStore(
 }
 
 /**
- * Daily USD counters: INCRBYFLOAT then EXPIRE. Not Lua — a lost EXPIRE
- * still leaves a key an operator can DEL (SHO-505).
+ * Atomic increment-with-cap for a Kyiv-day USD reservation (SHO-505
+ * amendment). Settlement still uses INCRBYFLOAT + EXPIRE so an operator
+ * can GET/SET/DEL the key.
+ */
+const AI_BUDGET_TRY_ADD_LUA = `
+local amount = tonumber(ARGV[1])
+local cap = tonumber(ARGV[2])
+local ttlSec = tonumber(ARGV[3])
+local current = tonumber(redis.call('GET', KEYS[1]))
+if current == nil or current ~= current or current < 0 then
+  current = 0
+end
+local nxt = current + amount
+if nxt > cap then
+  return {0, tostring(current)}
+end
+local updated = redis.call('INCRBYFLOAT', KEYS[1], ARGV[1])
+redis.call('EXPIRE', KEYS[1], ttlSec)
+return {1, tostring(updated)}
+`;
+
+/**
+ * Daily USD counters: `tryAdd` is Lua increment-with-cap; `add` is
+ * INCRBYFLOAT then EXPIRE (settlement / release). A lost EXPIRE still
+ * leaves a key an operator can DEL (SHO-505).
  */
 export function createRedisAiBudgetStore(
-  redis: Pick<Redis, "get" | "incrbyfloat" | "expire">,
+  redis: Pick<Redis, "get" | "incrbyfloat" | "expire" | "eval">,
 ): AiBudgetStore {
   return {
     async read(key) {
@@ -323,6 +350,17 @@ export function createRedisAiBudgetStore(
       const next = await redis.incrbyfloat(key, amountUsd);
       await redis.expire(key, ttlSec);
       return parseAiBudgetSpent(next);
+    },
+    async tryAdd(key, amountUsd, capUsd, ttlSec) {
+      const result = await redis.eval(
+        AI_BUDGET_TRY_ADD_LUA,
+        1,
+        key,
+        String(amountUsd),
+        String(capUsd),
+        String(ttlSec),
+      );
+      return parseAiBudgetTryAddResult(result);
     },
   };
 }
@@ -462,6 +500,21 @@ function parseChoiceCompleteResult(result: unknown): ChoiceCompleteDecision {
   throw new RedisStoreError(
     "choice-complete Redis script returned an unexpected code",
   );
+}
+
+function parseAiBudgetTryAddResult(result: unknown): AiBudgetTryAddDecision {
+  if (!Array.isArray(result) || result.length < 2) {
+    throw new RedisStoreError(
+      "ai-budget tryAdd Redis script returned an unexpected value",
+    );
+  }
+  const allowedFlag = Number(result[0]);
+  const spentRaw = result[1];
+  const spent =
+    typeof spentRaw === "string" || typeof spentRaw === "number"
+      ? parseAiBudgetSpent(spentRaw)
+      : 0;
+  return { allowed: allowedFlag === 1, spent };
 }
 
 function parseTokenBucketResult(

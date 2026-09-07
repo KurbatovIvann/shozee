@@ -14,4 +14,16 @@ describe("createMemoryAiBudgetStore", () => {
     nowMs += AI_BUDGET_TTL_SEC * 1000 + 1;
     expect(await store.read("ai-budget:c:2026-09-02")).toBe(0);
   });
+
+  it("allows only one overlapping tryAdd when remaining budget fits one turn", async () => {
+    const store = createMemoryAiBudgetStore();
+    const key = "ai-budget:c:2026-09-02";
+    const [first, second] = await Promise.all([
+      store.tryAdd(key, 0.1, 0.1, AI_BUDGET_TTL_SEC),
+      store.tryAdd(key, 0.1, 0.1, AI_BUDGET_TTL_SEC),
+    ]);
+    const allowed = [first, second].filter((decision) => decision.allowed);
+    expect(allowed).toHaveLength(1);
+    expect(await store.read(key)).toBeCloseTo(0.1);
+  });
 });

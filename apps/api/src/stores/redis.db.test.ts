@@ -127,6 +127,18 @@ describe("createRedisAiBudgetStore", () => {
     expect(ttl).toBeGreaterThan(47 * 60 * 60);
     expect(ttl).toBeLessThanOrEqual(48 * 60 * 60);
   });
+
+  it("Lua increment-with-cap allows only one overlapping tryAdd under a one-turn remainder", async () => {
+    const store = createRedisAiBudgetStore(redis);
+    const key = `ai-budget:test:${randomUUID()}`;
+    const [first, second] = await Promise.all([
+      store.tryAdd(key, 0.1, 0.1, 48 * 60 * 60),
+      store.tryAdd(key, 0.1, 0.1, 48 * 60 * 60),
+    ]);
+    const allowed = [first, second].filter((decision) => decision.allowed);
+    expect(allowed).toHaveLength(1);
+    expect(await store.read(key)).toBeCloseTo(0.1);
+  });
 });
 
 describe("createRedisOtpSendStore", () => {

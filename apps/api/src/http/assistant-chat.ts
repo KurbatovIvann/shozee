@@ -441,7 +441,9 @@ function staffRequest(options: {
 
 /**
  * Handle `POST /assistant/chat`. Auth denial happens before model
- * construction so a missing Anthropic key cannot mask 401.
+ * construction so a missing Anthropic key cannot mask 401. The language
+ * model is resolved before the budget/turn guard so a 503 does not
+ * consume a turn slot.
  */
 export async function executeStaffAssistantChat(
   options: StaffAssistantChatOptions,
@@ -564,7 +566,9 @@ export async function executeStaffAssistantChat(
     const companyId = companySelector;
     const budgetLimits =
       options.budgetLimits ?? DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS;
-    await enforceStaffAssistantBudget({
+    const model = resolveLanguageModel(options.assistant);
+    const gateLanguageModel = resolveGateLanguageModel(options.assistant);
+    const budgetHold = await enforceStaffAssistantBudget({
       logger: options.pipeline.logger,
       requestId: options.requestId,
       userId: session.userId,
@@ -578,9 +582,6 @@ export async function executeStaffAssistantChat(
         : { budgetStore: options.budgetStore }),
       limits: budgetLimits,
     });
-
-    const model = resolveLanguageModel(options.assistant);
-    const gateLanguageModel = resolveGateLanguageModel(options.assistant);
     const skipGate = staffAssistantShouldSkipIntentGate({
       confirmationResume,
       choiceResume,
@@ -793,6 +794,7 @@ export async function executeStaffAssistantChat(
           requestId: options.requestId,
           companyId,
           estimatedCostUsd,
+          hold: budgetHold,
           ...(options.budgetStore === undefined
             ? {}
             : { budgetStore: options.budgetStore }),
