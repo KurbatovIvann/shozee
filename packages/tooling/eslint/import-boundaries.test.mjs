@@ -141,6 +141,7 @@ test("showzy/import-boundaries", () => {
           import { sharedAuthCopy } from "@showzy/copy/auth";
           import { sharedCustomersCopy } from "@showzy/copy/customers";
           import { sharedProductsCopy } from "@showzy/copy/products";
+          import { sharedPricingCopy } from "@showzy/copy/pricing";
           import { sharedPanelCopy } from "@showzy/copy/panel";
           import { sharedCompaniesOnboardingCopy } from "@showzy/copy/companies";
           import { DocumentSigner } from "@showzy/document-signing";
