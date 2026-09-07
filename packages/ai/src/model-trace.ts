@@ -22,6 +22,11 @@ export const STAFF_ASSISTANT_HISTORY_TRACE_MAX = 8_000;
 export interface StaffAssistantPersistedToolRun {
   readonly action: string;
   readonly toolCallId: string;
+  /**
+   * Live ToolSet key (`orders_list_page`). Absent on rows recorded
+   * before SHO-510 nits; reconstruction then falls back to `action`.
+   */
+  readonly toolName?: string | null;
   readonly modelTrace: unknown;
 }
 
@@ -119,6 +124,16 @@ function collectDigestRows(trace: unknown): unknown[] {
   return [unwrapped];
 }
 
+/** Digest / reconstruction name: façade ToolSet key when stored. */
+export function staffAssistantToolSetKey(
+  run: Pick<StaffAssistantPersistedToolRun, "action" | "toolName">,
+): string {
+  if (typeof run.toolName === "string" && run.toolName.length > 0) {
+    return run.toolName;
+  }
+  return run.action;
+}
+
 /** Deterministic one-line digest. No model call. */
 export function staffAssistantTraceDigest(
   action: string,
@@ -167,6 +182,7 @@ function hasStoredTrace(message: StaffAssistantPersistedMessage): boolean {
 type BudgetedRun = {
   readonly action: string;
   readonly toolCallId: string;
+  readonly toolName?: string | null;
   readonly modelTrace: unknown;
   readonly kind: "full" | "digest" | "omit";
 };
@@ -207,6 +223,7 @@ export function budgetStaffAssistantToolRuns(
         return {
           action: run.action,
           toolCallId: run.toolCallId,
+          toolName: run.toolName,
           modelTrace: null,
           kind: "omit" as const,
         };
@@ -215,13 +232,18 @@ export function budgetStaffAssistantToolRuns(
         return {
           action: run.action,
           toolCallId: run.toolCallId,
-          modelTrace: staffAssistantTraceDigest(run.action, run.modelTrace),
+          toolName: run.toolName,
+          modelTrace: staffAssistantTraceDigest(
+            staffAssistantToolSetKey(run),
+            run.modelTrace,
+          ),
           kind: "digest" as const,
         };
       }
       return {
         action: run.action,
         toolCallId: run.toolCallId,
+        toolName: run.toolName,
         modelTrace: run.modelTrace,
         kind: "full" as const,
       };
@@ -292,6 +314,9 @@ export function budgetStaffAssistantToolRuns(
       toolRuns: runs.map((run) => ({
         action: run.action,
         toolCallId: run.toolCallId,
+        ...(run.toolName !== undefined && run.toolName !== null
+          ? { toolName: run.toolName }
+          : {}),
         modelTrace: run.kind === "omit" ? null : run.modelTrace,
       })),
     };

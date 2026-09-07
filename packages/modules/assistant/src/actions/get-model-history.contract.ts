@@ -10,6 +10,7 @@ import { defineActionContract } from "@showzy/core/contract";
 import { z } from "zod";
 
 import {
+  ACTION_NAME_MAX,
   messageRoleSchema,
   STAFF_CONVERSATION_AUTHOR_INVARIANT,
 } from "./conversation-view.contract.js";
@@ -23,6 +24,7 @@ export const GET_MODEL_HISTORY_WINDOW = 8;
 export const modelHistoryToolRunSchema = z.object({
   action: z.string(),
   toolCallId: z.string(),
+  toolName: z.string().min(1).max(ACTION_NAME_MAX).nullable(),
   modelTrace: z.unknown().nullable(),
 });
 
@@ -44,7 +46,7 @@ export const getModelHistoryOutputSchema = z.object({
 
 export const getModelHistoryContract = defineActionContract({
   name: "assistant.getModelHistory",
-  description: `${STAFF_CONVERSATION_AUTHOR_INVARIANT} Return the newest 8 author-owned conversation messages as model-history rows: id, role, text, and per-run action / toolCallId / modelTrace (ADR-0034 prompt state — post-clip façade output, never a projection). Message id is the append-idempotency merge key for the HTTP mount (same as getConversation). Used only by the staff assistant HTTP mount to build ModelMessage tool-call and tool-result parts. Company id is never input. Internal — not mounted on HTTP and not an AI tool.`,
+  description: `${STAFF_CONVERSATION_AUTHOR_INVARIANT} Return the newest 8 author-owned conversation messages as model-history rows: id, role, text, and per-run action / toolCallId / toolName / modelTrace (ADR-0034 prompt state — post-clip façade output, never a projection). toolName is the live ToolSet key used to reconstruct model history; action is the executeAction registry identity. Message id is the append-idempotency merge key for the HTTP mount (same as getConversation). Used only by the staff assistant HTTP mount to build ModelMessage tool-call and tool-result parts. Company id is never input. Internal — not mounted on HTTP and not an AI tool.`,
   principal: "staff",
   transport: "internal",
   input: getModelHistoryInputSchema,

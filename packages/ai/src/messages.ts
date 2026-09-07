@@ -7,6 +7,7 @@ import {
   budgetStaffAssistantToolRuns,
   staffAssistantToolResultChars,
   staffAssistantToolResultOutput,
+  staffAssistantToolSetKey,
   type StaffAssistantPersistedMessage,
 } from "./model-trace.js";
 import { staffAssistantLocaleSchema } from "./presenter.js";
@@ -201,13 +202,13 @@ function modelMessagesFromPersistedRow(
   const toolCalls = tracedRuns.map((run) => ({
     type: "tool-call" as const,
     toolCallId: run.toolCallId,
-    toolName: run.action,
+    toolName: staffAssistantToolSetKey(run),
     input: {},
   }));
   const toolResults = tracedRuns.map((run) => ({
     type: "tool-result" as const,
     toolCallId: run.toolCallId,
-    toolName: run.action,
+    toolName: staffAssistantToolSetKey(run),
     output: staffAssistantToolResultOutput(run.modelTrace),
   }));
   return [

@@ -44,7 +44,7 @@
 | `files` | attachment metadata, ownership links, upload/finalization state | Object bytes live in S3 (Garage locally, R2 in prod); exposes signed-upload/finalize actions |
 | `feature-flags` | flag definitions and company overrides | Exposes reads; future subscriptions update it through events |
 | `search` | Global FTS/trigram discovery projections for published companies/products and public counters | Consumes events or declared read-model grants from `companies`/`catalog`/`orders`; owns no domain authority or pricing data; exposes declared public-global and consumer reads (ADR-0020) |
-| `assistant` | AI conversation/tool-run persistence | Stores action/tool IDs and results; never duplicates domain state as a projection or source of truth. `assistant_tool_runs.model_trace` is ADR-0034 prompt state (bounded post-clip façade output; no client renders it) |
+| `assistant` | AI conversation/tool-run persistence | Stores action/tool IDs and results; never duplicates domain state as a projection or source of truth. `assistant_tool_runs.model_trace` is ADR-0034 prompt state (bounded post-clip façade output; no client renders it). `tool_name` is the live ToolSet key used to reconstruct that trace (`orders_list_page`), not a second domain API |
 
 ## Post-launch ownership
 

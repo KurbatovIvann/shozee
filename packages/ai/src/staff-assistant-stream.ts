@@ -45,7 +45,10 @@ import {
   type ChoiceRecord,
   type StaffAssistantChoiceCardEnvelope,
 } from "./choice.js";
-import { staffAssistantJsonChars } from "./json-chars.js";
+import {
+  staffAssistantJsonChars,
+  staffAssistantPostgresJsonbTextChars,
+} from "./json-chars.js";
 import { staffAssistantHistoryStats } from "./messages.js";
 import {
   staffAssistantPersistedTurnText,
@@ -101,6 +104,8 @@ export interface StaffAssistantToolRun {
   readonly challengeId?: string;
   readonly resultIds: readonly string[];
   readonly outcome: StaffAssistantToolRunOutcome;
+  /** Live ToolSet key from `clipToolExecutes` (`orders_list_page`). */
+  readonly toolName?: string;
   readonly modelTrace?: unknown;
 }
 
@@ -230,20 +235,27 @@ function attachClippedModelTraces(
   runs: readonly StaffAssistantToolRun[],
   presented: readonly StaffAssistantPresentedToolResult[],
 ): StaffAssistantToolRun[] {
-  const traces = new Map<string, unknown>();
+  const traces = new Map<
+    string,
+    { readonly output: unknown; readonly toolName: string }
+  >();
   for (const item of presented) {
     if (item.toolCallId !== undefined && item.toolCallId.length > 0) {
-      traces.set(clipToolCallId(item.toolCallId), item.output);
+      traces.set(clipToolCallId(item.toolCallId), {
+        output: item.output,
+        toolName: item.toolName,
+      });
     }
   }
   return runs.map((run) => {
     if (run.outcome !== "success") {
       return run;
     }
-    const modelTrace = traces.get(run.toolCallId);
-    if (modelTrace === undefined) {
+    const presentedRun = traces.get(run.toolCallId);
+    if (presentedRun === undefined) {
       return run;
     }
+    const modelTrace = presentedRun.output;
     if (
       isStaffAssistantConfirmationOutput(modelTrace) ||
       isStaffAssistantNeedsChoiceOutput(modelTrace) ||
@@ -251,10 +263,13 @@ function attachClippedModelTraces(
     ) {
       return run;
     }
-    if (staffAssistantJsonChars(modelTrace) > STAFF_ASSISTANT_CLIP_JSON_MAX) {
+    if (
+      staffAssistantPostgresJsonbTextChars(modelTrace) >
+      STAFF_ASSISTANT_CLIP_JSON_MAX
+    ) {
       return run;
     }
-    return { ...run, modelTrace };
+    return { ...run, toolName: presentedRun.toolName, modelTrace };
   });
 }
 
@@ -305,6 +320,8 @@ function wrapExecute(
       const output: unknown = await execute(actionName, input, {
         toolCallId,
       });
+      // Registry name is executeAction identity (ADR-0033). Reconstructed
+      // `toolName` / digest prefix come from clipToolExecutes' ToolSet key.
       runs.push({
         actionName,
         toolCallId,
@@ -388,6 +405,8 @@ function wrapExecute(
  * so catalog list prices are not stripped because images bloated the
  * executeAction payload. wrapExecute still records result ids from the
  * registry output. `model_trace` uses this clipped façade output.
+ * Loop `name` is the live ToolSet key (`orders_list_page`); persist it
+ * as `toolName` so reconstruction does not emit `orders.list`.
  */
 function clipToolExecutes(
   tools: ToolSet,

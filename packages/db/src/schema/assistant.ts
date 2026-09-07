@@ -102,7 +102,9 @@ export const assistantMessages = pgTable(
  * confirmation or choice. Never order/document status.
  * `model_trace` is ADR-0034 prompt state: the post-clip façade output the
  * model already saw. Nullable; no client renders it; CHECK
- * `length(model_trace::text) <= 22000`.
+ * `length(model_trace::text) <= 22000`. `tool_name` is the live ToolSet
+ * key (`orders_list_page`) for reconstruction; `action_name` stays the
+ * executeAction registry identity.
  */
 export const assistantToolRuns = pgTable(
   "assistant_tool_runs",
@@ -119,6 +121,7 @@ export const assistantToolRuns = pgTable(
       .default(sql`'{}'::uuid[]`),
     outcome: text("outcome").notNull(),
     modelTrace: jsonb("model_trace"),
+    toolName: text("tool_name"),
     ...timestampColumns(),
   },
   (table) => [

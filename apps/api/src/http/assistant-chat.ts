@@ -946,6 +946,9 @@ async function persistAssistantTurn(options: {
           : {}),
         resultIds: [...run.resultIds],
         outcome: run.outcome,
+        ...(typeof run.toolName === "string" && run.toolName.length > 0
+          ? { toolName: run.toolName }
+          : {}),
         ...(run.outcome === "success" && run.modelTrace !== undefined
           ? { modelTrace: run.modelTrace }
           : {}),

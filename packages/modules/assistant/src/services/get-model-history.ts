@@ -19,6 +19,7 @@ type ModelHistory = z.output<typeof getModelHistoryOutputSchema>;
 const modelHistoryToolRunColumns = {
   actionName: assistantToolRuns.actionName,
   toolCallId: assistantToolRuns.toolCallId,
+  toolName: assistantToolRuns.toolName,
   outcome: assistantToolRuns.outcome,
   modelTrace: assistantToolRuns.modelTrace,
   createdAt: assistantToolRuns.createdAt,
@@ -35,6 +36,7 @@ function attachToolRunsToMessages(
   toolRuns: ReadonlyArray<{
     readonly actionName: string;
     readonly toolCallId: string;
+    readonly toolName: string | null;
     readonly outcome: string;
     readonly modelTrace: unknown;
     readonly createdAt: Date;
@@ -72,6 +74,7 @@ function attachToolRunsToMessages(
       toolRuns: assigned.map((run) => ({
         action: run.actionName,
         toolCallId: run.toolCallId,
+        toolName: run.toolName,
         modelTrace:
           run.outcome === "success" && run.modelTrace !== null
             ? run.modelTrace

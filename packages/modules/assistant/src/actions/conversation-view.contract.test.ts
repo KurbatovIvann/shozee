@@ -19,6 +19,7 @@ describe("assistant conversation client view (ADR-0034)", () => {
       "toolCallId",
     ]);
     expect(toolRunViewSchema.shape).not.toHaveProperty("modelTrace");
+    expect(toolRunViewSchema.shape).not.toHaveProperty("toolName");
     expect(Object.keys(getConversationOutputSchema.shape).toSorted()).toEqual(
       [
         "createdAt",

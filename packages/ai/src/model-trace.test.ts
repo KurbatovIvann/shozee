@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { ORDERS_LIST_PAGE_TOOL_NAME } from "./action-tool.js";
 import { STAFF_ASSISTANT_CLIP_SHRINK_ARRAY_MAX } from "./clip-tool-result.js";
 import {
   budgetStaffAssistantToolRuns,
@@ -31,25 +32,29 @@ function toolTurn(
   action: string,
   toolCallId: string,
   modelTrace: unknown,
+  toolName: string = ORDERS_LIST_PAGE_TOOL_NAME,
 ): StaffAssistantPersistedMessage {
   return {
     role: "assistant",
     body,
-    toolRuns: [{ action, toolCallId, modelTrace }],
+    toolRuns: [{ action, toolCallId, toolName, modelTrace }],
   };
 }
 
 describe("staffAssistantTraceDigest", () => {
-  it("builds a one-line identity summary without a model call", () => {
+  it("builds a one-line identity summary with the façade ToolSet key", () => {
     const digest = staffAssistantTraceDigest(
-      "orders.list",
+      ORDERS_LIST_PAGE_TOOL_NAME,
       pageTrace([
         { orderNumber: "12", name: "Катя" },
         { orderNumber: "13" },
         { orderNumber: "14" },
       ]),
     );
-    expect(digest).toBe("orders.list → 3 results: #12 (Катя), #13, #14");
+    expect(digest).toBe(
+      `${ORDERS_LIST_PAGE_TOOL_NAME} → 3 results: #12 (Катя), #13, #14`,
+    );
+    expect(digest).not.toContain("orders.list");
     expect(digest.length).toBeLessThanOrEqual(STAFF_ASSISTANT_TRACE_DIGEST_MAX);
   });
 });
@@ -85,13 +90,13 @@ describe("budgetStaffAssistantToolRuns", () => {
     ]);
     expect(budgeted[1]?.toolRuns?.[0]?.modelTrace).toBe(
       staffAssistantTraceDigest(
-        "orders.list",
+        ORDERS_LIST_PAGE_TOOL_NAME,
         pageTrace([{ orderNumber: "10", name: "Anna" }]),
       ),
     );
     expect(budgeted[3]?.toolRuns?.[0]?.modelTrace).toBe(
       staffAssistantTraceDigest(
-        "orders.list",
+        ORDERS_LIST_PAGE_TOOL_NAME,
         pageTrace([{ orderNumber: "11", name: "Boris" }]),
       ),
     );
@@ -118,7 +123,7 @@ describe("budgetStaffAssistantToolRuns", () => {
     const newestPayload = budgeted[2]?.toolRuns?.[0]?.modelTrace;
     expect(oldestPayload).toBeNull();
     expect(middlePayload).toBe(
-      staffAssistantTraceDigest("orders.list", middle),
+      staffAssistantTraceDigest(ORDERS_LIST_PAGE_TOOL_NAME, middle),
     );
     expect(newestPayload).toEqual(newest);
     expect(STAFF_ASSISTANT_HISTORY_TRACE_MAX).toBe(8_000);
@@ -145,6 +150,39 @@ describe("budgetStaffAssistantToolRuns", () => {
     }
     expect(shrunkRows.length).toBeLessThanOrEqual(
       STAFF_ASSISTANT_CLIP_SHRINK_ARRAY_MAX,
+    );
+  });
+
+  it("falls back to the registry action when toolName was not stored", () => {
+    const budgeted = budgetStaffAssistantToolRuns([
+      {
+        role: "assistant",
+        body: "listed",
+        toolRuns: [
+          {
+            action: "orders.list",
+            toolCallId: "call_legacy",
+            modelTrace: pageTrace([{ orderNumber: "10" }]),
+          },
+        ],
+      },
+      {
+        role: "assistant",
+        body: "listed again",
+        toolRuns: [
+          {
+            action: "orders.list",
+            toolCallId: "call_new",
+            modelTrace: pageTrace([{ orderNumber: "11" }]),
+          },
+        ],
+      },
+    ]);
+    expect(budgeted[0]?.toolRuns?.[0]?.modelTrace).toBe(
+      staffAssistantTraceDigest(
+        "orders.list",
+        pageTrace([{ orderNumber: "10" }]),
+      ),
     );
   });
 });

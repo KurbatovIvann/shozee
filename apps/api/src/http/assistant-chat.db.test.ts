@@ -2030,6 +2030,7 @@ describe("POST /assistant/chat server-owned history (SHO-506)", () => {
           toolCallId: "call_list_trace",
           resultIds: listTrace.rows.map((row) => row.orderId),
           outcome: "success",
+          toolName: "orders_list_page",
           modelTrace: listTrace,
         },
       ],
@@ -2051,7 +2052,7 @@ describe("POST /assistant/chat server-owned history (SHO-506)", () => {
     expect(toolMessages.length).toBeGreaterThan(0);
     const promptJson = JSON.stringify(prompt);
     expect(promptJson).toContain("call_list_trace");
-    expect(promptJson).toContain("orders.list");
+    expect(promptJson).toContain("orders_list_page");
     expect(promptJson).toContain("120000");
     expect(promptJson).toContain("tool-call");
     expect(promptJson).toContain("tool-result");

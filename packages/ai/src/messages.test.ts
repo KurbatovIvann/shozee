@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { ORDERS_LIST_PAGE_TOOL_NAME } from "./action-tool.js";
 import { STAFF_ASSISTANT_CACHE_PROVIDER_OPTIONS } from "./anthropic-options.js";
 import {
   applyStaffAssistantHistoryWindow,
@@ -575,11 +576,13 @@ describe("staffAssistantModelMessagesFromPersisted tool traces", () => {
           {
             action: "orders.list",
             toolCallId: "call_list",
+            toolName: ORDERS_LIST_PAGE_TOOL_NAME,
             modelTrace: listTrace,
           },
           {
             action: "orders.get",
             toolCallId: "call_get",
+            toolName: "orders_get",
             modelTrace: getTrace,
           },
         ],
@@ -593,13 +596,13 @@ describe("staffAssistantModelMessagesFromPersisted tool traces", () => {
       {
         type: "tool-call",
         toolCallId: "call_list",
-        toolName: "orders.list",
+        toolName: ORDERS_LIST_PAGE_TOOL_NAME,
         input: {},
       },
       {
         type: "tool-call",
         toolCallId: "call_get",
-        toolName: "orders.get",
+        toolName: "orders_get",
         input: {},
       },
     ]);
@@ -607,16 +610,18 @@ describe("staffAssistantModelMessagesFromPersisted tool traces", () => {
       {
         type: "tool-result",
         toolCallId: "call_list",
-        toolName: "orders.list",
+        toolName: ORDERS_LIST_PAGE_TOOL_NAME,
         output: { type: "json", value: listTrace },
       },
       {
         type: "tool-result",
         toolCallId: "call_get",
-        toolName: "orders.get",
+        toolName: "orders_get",
         output: { type: "json", value: getTrace },
       },
     ]);
+    expect(JSON.stringify(assistant?.content)).not.toContain("orders.list");
+    expect(JSON.stringify(tool?.content)).not.toContain("orders.list");
     expect(staffAssistantHistoryStats(messages).traceChars).toBeGreaterThan(0);
     expect(messages.at(-1)).toMatchObject({
       role: "user",

@@ -1097,6 +1097,7 @@ describe("assistant staff conversation actions", () => {
           toolCallId: "call_trace",
           resultIds: [orderId],
           outcome: "success",
+          toolName: "orders_list_page",
           modelTrace: trace,
         },
       ],
@@ -1127,6 +1128,7 @@ describe("assistant staff conversation actions", () => {
       {
         action: "orders.list",
         toolCallId: "call_trace",
+        toolName: "orders_list_page",
         modelTrace: trace,
       },
     ]);
@@ -1185,16 +1187,19 @@ describe("assistant staff conversation actions", () => {
         {
           action: "orders.confirm",
           toolCallId: "call_confirm",
+          toolName: null,
           modelTrace: null,
         },
         {
           action: "orders.create",
           toolCallId: "call_choice_drop",
+          toolName: null,
           modelTrace: null,
         },
         {
           action: "catalog.listProducts",
           toolCallId: "call_err_drop",
+          toolName: null,
           modelTrace: null,
         },
       ]),

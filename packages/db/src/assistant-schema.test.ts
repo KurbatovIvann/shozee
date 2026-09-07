@@ -198,6 +198,7 @@ describe("assistant schema slice", () => {
       "created_at",
       "updated_at",
       "model_trace",
+      "tool_name",
     ]);
 
     const resultIds = result.rows.find(
@@ -260,6 +261,9 @@ describe("assistant schema slice", () => {
     expectTypeOf<
       (typeof assistantToolRuns.$inferSelect)["modelTrace"]
     >().toEqualTypeOf<unknown>();
+    expectTypeOf<
+      (typeof assistantToolRuns.$inferSelect)["toolName"]
+    >().toEqualTypeOf<string | null>();
   });
 
   it("declares UNIQUE (company_id, id) and the conversation list index", async () => {
@@ -569,12 +573,36 @@ describe("assistant schema slice", () => {
       actionName: "orders.list",
       toolCallId: "call_trace",
       outcome: "success",
+      toolName: "orders_list_page",
       modelTrace: { kind: "page.summary", rows: [{ orderNumber: "12" }] },
     });
     expect(traced.modelTrace).toEqual({
       kind: "page.summary",
       rows: [{ orderNumber: "12" }],
     });
+    expect(traced.toolName).toBe("orders_list_page");
+
+    const postgresLimit = await insertToolRun({
+      companyId: company.id,
+      conversationId: conversation.id,
+      actionName: "orders.list",
+      toolCallId: "call_trace_postgres_limit",
+      outcome: "success",
+      modelTrace: { pad: "x".repeat(21_989) },
+    });
+    expect(postgresLimit.modelTrace).toEqual({ pad: "x".repeat(21_989) });
+
+    await expectSqlState(
+      insertToolRun({
+        companyId: company.id,
+        conversationId: conversation.id,
+        actionName: "orders.list",
+        toolCallId: "call_trace_stringify_ok",
+        outcome: "success",
+        modelTrace: { pad: "x".repeat(21_990) },
+      }),
+      "23514",
+    );
 
     await expectSqlState(
       insertToolRun({

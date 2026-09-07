@@ -7,6 +7,7 @@ import {
   getModelHistoryInputSchema,
   getModelHistoryOutputSchema,
   modelHistoryMessageSchema,
+  modelHistoryToolRunSchema,
 } from "./get-model-history.contract.js";
 
 describe("assistant.getModelHistory contract", () => {
@@ -24,6 +25,7 @@ describe("assistant.getModelHistory contract", () => {
       STAFF_CONVERSATION_AUTHOR_INVARIANT,
     );
     expect(getModelHistoryContract.description).toContain("modelTrace");
+    expect(getModelHistoryContract.description).toContain("toolName");
     expect(getModelHistoryContract.timeout).toBe(5_000);
     expect(GET_MODEL_HISTORY_WINDOW).toBe(8);
   });
@@ -41,6 +43,12 @@ describe("assistant.getModelHistory contract", () => {
       "role",
       "text",
       "toolRuns",
+    ]);
+    expect(Object.keys(modelHistoryToolRunSchema.shape).toSorted()).toEqual([
+      "action",
+      "modelTrace",
+      "toolCallId",
+      "toolName",
     ]);
     expect(
       getModelHistoryInputSchema.safeParse({ conversationId: "not-a-uuid" })

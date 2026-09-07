@@ -421,6 +421,7 @@ describe("streamStaffAssistantChat", () => {
         toolCallId: "call-list",
         resultIds: [],
         outcome: "success",
+        toolName: ORDERS_LIST_PAGE_TOOL_NAME,
         modelTrace: { items: [], nextCursor: null },
       },
     ]);
@@ -840,6 +841,7 @@ describe("streamStaffAssistantChat", () => {
         toolCallId: "call-pricing",
         resultIds: [],
         outcome: "success",
+        toolName: PRICING_LIST_PRICE_LISTS_TOOL_NAME,
       },
     ]);
     expect(turn.toolRuns[0]?.modelTrace).toBeDefined();
@@ -904,6 +906,7 @@ describe("streamStaffAssistantChat", () => {
         toolCallId: "call-create",
         resultIds: [customerId],
         outcome: "success",
+        toolName: ORDERS_CREATE_TOOL_NAME,
       },
     ]);
     expect(turn.toolRuns[0]?.modelTrace).toBeDefined();
@@ -1184,6 +1187,7 @@ describe("streamStaffAssistantChat", () => {
         toolCallId: "call-list",
         resultIds: [],
         outcome: "success",
+        toolName: ORDERS_LIST_PAGE_TOOL_NAME,
       },
     ]);
     const listTrace = turn.toolRuns[0]?.modelTrace;
@@ -1271,6 +1275,7 @@ describe("streamStaffAssistantChat", () => {
         toolCallId: "call-counts",
         resultIds: [],
         outcome: "success",
+        toolName: ORDERS_LIST_COUNTS_TOOL_NAME,
       },
     ]);
     expect(turn.toolRuns[0]?.modelTrace).toBeDefined();
