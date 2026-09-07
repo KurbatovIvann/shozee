@@ -46,7 +46,10 @@ import {
   staffAssistantJsonChars,
   staffAssistantPostgresJsonbTextChars,
 } from "./json-chars.js";
-import { staffAssistantHistoryStats } from "./messages.js";
+import {
+  staffAssistantHistoryStats,
+  stripStaffAssistantToolParts,
+} from "./messages.js";
 import {
   staffAssistantPersistedTurnText,
   STAFF_ASSISTANT_DEFAULT_LOCALE,
@@ -563,7 +566,6 @@ export function streamStaffAssistantChat(options: {
   const runs: StaffAssistantToolRun[] = [];
   const presentedToolResults: StaffAssistantPresentedToolResult[] = [];
   const clipBytes: ClipByteMeter = { in: 0, out: 0 };
-  const history = staffAssistantHistoryStats(options.messages);
   const locale = options.locale ?? STAFF_ASSISTANT_DEFAULT_LOCALE;
   const tools = staffAssistantTools(
     options.contracts,
@@ -582,6 +584,14 @@ export function streamStaffAssistantChat(options: {
   );
   clipToolExecutes(tools, clipBytes, presentedToolResults);
   const toolsetHash = staffAssistantToolsetHash(Object.keys(tools));
+  // A request with no tools cannot carry reconstructed tool-call/result
+  // parts: Anthropic rejects `tool_use` / `tool_result` blocks unless
+  // `tools` is defined, and the provider omits `tools` for an empty set.
+  const messages =
+    Object.keys(tools).length === 0
+      ? stripStaffAssistantToolParts(options.messages)
+      : options.messages;
+  const history = staffAssistantHistoryStats(messages);
 
   let resolveCompletion!: (value: StaffAssistantTurnResult) => void;
   const completion = new Promise<StaffAssistantTurnResult>((resolve) => {
@@ -603,7 +613,7 @@ export function streamStaffAssistantChat(options: {
               ? options.turnContextAddendum
               : staffAssistantTurnContextAddendum({ now: new Date() }),
           ),
-          messages: options.messages,
+          messages,
           tools,
           providerOptions: {
             anthropic: STAFF_ASSISTANT_ANTHROPIC_PROVIDER_OPTIONS,

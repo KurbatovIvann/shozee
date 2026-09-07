@@ -67,6 +67,7 @@ export async function recordStaffAssistantTurn(env: {
             input.toolRuns.map((run) => ({
               companyId: ctx.companyId,
               conversationId: input.conversationId,
+              messageId,
               actionName: run.actionName,
               toolCallId: run.toolCallId,
               challengeId: run.challengeId,

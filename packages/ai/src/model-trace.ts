@@ -36,8 +36,6 @@ export interface StaffAssistantPersistedMessage {
   readonly toolRuns?: readonly StaffAssistantPersistedToolRun[];
 }
 
-const IDENTITY_KEY_SET = new Set<string>(STAFF_ASSISTANT_CLIP_IDENTITY_KEYS);
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -93,7 +91,7 @@ function formatRowLabel(value: unknown): string {
   }
   const identityBits: string[] = [];
   for (const key of STAFF_ASSISTANT_CLIP_IDENTITY_KEYS) {
-    if (!IDENTITY_KEY_SET.has(key) || !(key in value)) {
+    if (!(key in value)) {
       continue;
     }
     const entry = value[key];
@@ -183,6 +181,8 @@ type BudgetedRun = {
   readonly action: string;
   readonly toolCallId: string;
   readonly toolName: string | null;
+  /** Stored trace, kept so tier 1 can fall back to a digest of the original. */
+  readonly storedTrace: unknown;
   readonly modelTrace: unknown;
   readonly kind: "full" | "digest" | "omit";
 };
@@ -201,8 +201,19 @@ function budgetedChars(runs: readonly BudgetedRun[]): number {
 /**
  * Tier 1: full trace on the last tool-bearing assistant turn.
  * Tier 2: digest on older tool-bearing turns.
- * Cap: drop oldest digests first, then shrink tier 1, then drop oldest
- * remaining traces so reconstructed tool-call/result pairs stay valid.
+ * Cap (ADR-0034 rule 3): drop oldest digests first, but only when that
+ * can help. A tier-1 trace that alone exceeds the cap is shrunk and then
+ * digested *before* the window is spent — deleting ≤ 300-char digests to
+ * make room for a 20 000-char trace loses the window for nothing.
+ *
+ * Tier 1 is reduced rather than dropped, and because its digests are the
+ * newest they are the last to go — but "last" is not "never". One turn may
+ * hold more runs than the cap fits at all (`STAFF_ASSISTANT_TOOL_RUNS_MAX`
+ * is 50, and 50 × ≤ 300 chars is over 8 000), and then tier-1 digests are
+ * dropped oldest-first too until the window fits. That is the accepted
+ * behaviour: the cap is hard, and a turn that called 50 tools cannot keep
+ * every observation. Dropping clears the run's trace entirely so
+ * reconstructed tool-call/result pairs stay valid.
  */
 export function budgetStaffAssistantToolRuns(
   messages: readonly StaffAssistantPersistedMessage[],
@@ -228,6 +239,7 @@ export function budgetStaffAssistantToolRuns(
           action: run.action,
           toolCallId: run.toolCallId,
           toolName,
+          storedTrace: null,
           modelTrace: null,
           kind: "omit" as const,
         };
@@ -237,6 +249,7 @@ export function budgetStaffAssistantToolRuns(
           action: run.action,
           toolCallId: run.toolCallId,
           toolName,
+          storedTrace: run.modelTrace,
           modelTrace: staffAssistantTraceDigest(
             staffAssistantToolSetKey(run),
             run.modelTrace,
@@ -248,6 +261,7 @@ export function budgetStaffAssistantToolRuns(
         action: run.action,
         toolCallId: run.toolCallId,
         toolName,
+        storedTrace: run.modelTrace,
         modelTrace: run.modelTrace,
         kind: "full" as const,
       };
@@ -256,7 +270,7 @@ export function budgetStaffAssistantToolRuns(
 
   const allRuns = (): BudgetedRun[] => budgeted.flat();
 
-  const dropOldestKind = (kind: "digest" | "full"): boolean => {
+  const dropOldestKind = (kind: "digest"): boolean => {
     for (const runs of budgeted) {
       for (let index = 0; index < runs.length; index += 1) {
         const run = runs[index];
@@ -270,14 +284,14 @@ export function budgetStaffAssistantToolRuns(
     return false;
   };
 
-  while (
-    budgetedChars(allRuns()) > STAFF_ASSISTANT_HISTORY_TRACE_MAX &&
-    dropOldestKind("digest")
-  ) {
-    // oldest digests first
-  }
+  const overBudget = (): boolean =>
+    budgetedChars(allRuns()) > STAFF_ASSISTANT_HISTORY_TRACE_MAX;
 
-  if (budgetedChars(allRuns()) > STAFF_ASSISTANT_HISTORY_TRACE_MAX) {
+  const tierOneOverBudget = (): boolean =>
+    budgetedChars(allRuns().filter((run) => run.kind === "full")) >
+    STAFF_ASSISTANT_HISTORY_TRACE_MAX;
+
+  const mapFullRuns = (next: (run: BudgetedRun) => BudgetedRun): void => {
     for (const runs of budgeted) {
       for (let index = 0; index < runs.length; index += 1) {
         const run = runs[index];
@@ -288,20 +302,38 @@ export function budgetStaffAssistantToolRuns(
         ) {
           continue;
         }
-        runs[index] = {
-          ...run,
-          modelTrace: shrinkFullTrace(run.modelTrace),
-        };
+        runs[index] = next(run);
       }
     }
+  };
+
+  /** Shrink, then digest — reduce tier 1 instead of dropping it outright. */
+  const reduceTierOne = (stillTooBig: () => boolean): void => {
+    if (stillTooBig()) {
+      mapFullRuns((run) => ({
+        ...run,
+        modelTrace: shrinkFullTrace(run.modelTrace),
+      }));
+    }
+    if (stillTooBig()) {
+      mapFullRuns((run) => ({
+        ...run,
+        modelTrace: staffAssistantTraceDigest(
+          staffAssistantToolSetKey(run),
+          run.storedTrace,
+        ),
+        kind: "digest" as const,
+      }));
+    }
+  };
+
+  reduceTierOne(tierOneOverBudget);
+
+  while (overBudget() && dropOldestKind("digest")) {
+    // oldest digests first
   }
 
-  while (
-    budgetedChars(allRuns()) > STAFF_ASSISTANT_HISTORY_TRACE_MAX &&
-    dropOldestKind("full")
-  ) {
-    // last resort: drop oldest remaining full traces
-  }
+  reduceTierOne(overBudget);
 
   return messages.map((message, index) => {
     const runs = budgeted[index];
