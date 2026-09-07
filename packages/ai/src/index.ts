@@ -78,6 +78,7 @@ export {
 export type {
   StaffAssistantModelRates,
   StaffProviderAdapter,
+  StaffProviderCallOptions,
   StaffProviderModelKind,
   StaffProviderToolDecoration,
 } from "./provider/types.js";

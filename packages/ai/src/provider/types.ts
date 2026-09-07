@@ -1,4 +1,4 @@
-import type { LanguageModel, ToolSet } from "ai";
+import type { JSONValue, LanguageModel, ToolSet } from "ai";
 import type { z } from "zod";
 
 /** USD per million tokens. Cache write is the adapter's admission rate. */
@@ -16,6 +16,12 @@ export interface StaffProviderToolDecoration {
   readonly deferred: readonly string[];
 }
 
+/** AI SDK `providerOptions` (`Record<string, JSONObject>`). */
+export type StaffProviderCallOptions = Record<
+  string,
+  { [key: string]: JSONValue }
+>;
+
 /**
  * Provider-specific staff-loop surface (SHO-508). `apps/api` constructs
  * one instance from config and passes it in. Not a registry, not DI.
@@ -27,9 +33,9 @@ export interface StaffProviderAdapter {
     tools: ToolSet,
     options: StaffProviderToolDecoration,
   ): ToolSet;
-  systemProviderOptions(): Record<string, unknown>;
-  historyBreakpointOptions(): Record<string, unknown>;
+  systemProviderOptions(): StaffProviderCallOptions;
+  historyBreakpointOptions(): StaffProviderCallOptions;
   toolInputSchema(schema: z.ZodType): Record<string, unknown>;
-  replyProviderOptions(): Record<string, unknown>;
+  replyProviderOptions(): StaffProviderCallOptions;
   pricing(modelId: string): StaffAssistantModelRates | null;
 }

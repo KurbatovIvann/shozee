@@ -110,9 +110,6 @@ describe("fake StaffProviderAdapter (SHO-508)", () => {
     ]);
     expect(tools[STAFF_ASSISTANT_TOOL_SEARCH_NAME]).toBeUndefined();
     for (const tool of Object.values(tools)) {
-      if (tool === undefined) {
-        continue;
-      }
       expect(toolHasDeferLoading(tool)).toBe(false);
     }
   });

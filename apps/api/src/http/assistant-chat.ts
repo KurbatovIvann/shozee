@@ -86,7 +86,6 @@ import {
   enforceStaffAssistantBudget,
   recordStaffAssistantBudgetSpend,
   releaseStaffAssistantBudgetHold,
-  staffAssistantBudgetSpendUsd,
   type StaffAssistantBudgetLimits,
 } from "./assistant-budget-guard.js";
 import { REQUEST_ID_HEADER } from "./request-id.js";
@@ -853,9 +852,7 @@ export async function executeStaffAssistantChat(
                   replyModelId,
                   gate: gateUsage,
                   gateModelId:
-                    options.assistant.gateModel ??
-                    options.assistant.model ??
-                    "unconfigured",
+                    options.assistant.gateModel ?? options.assistant.model,
                 })
               : estimateStaffAssistantTurnCostUsd({
                   reply: turn.usage,

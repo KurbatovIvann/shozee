@@ -1,16 +1,24 @@
-import type { Tool, ToolSet } from "ai";
+import type { ToolSet } from "ai";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function snapshotTool(tool: Tool): unknown {
-  const record = tool as unknown as Record<string, unknown>;
+function snapshotTool(tool: unknown): unknown {
+  if (!isRecord(tool)) {
+    return {
+      description: null,
+      providerOptions: null,
+      type: null,
+      id: null,
+    };
+  }
   return {
-    description: tool.description ?? null,
-    providerOptions: tool.providerOptions ?? null,
-    type: record["type"] ?? null,
-    id: record["id"] ?? null,
+    description:
+      typeof tool["description"] === "string" ? tool["description"] : null,
+    providerOptions: tool["providerOptions"] ?? null,
+    type: tool["type"] ?? null,
+    id: tool["id"] ?? null,
   };
 }
 
@@ -26,9 +34,6 @@ export function snapshotStaffProviderSurface(options: {
 }): string {
   const tools: Record<string, unknown> = {};
   for (const [name, tool] of Object.entries(options.tools)) {
-    if (tool === undefined) {
-      continue;
-    }
     tools[name] = snapshotTool(tool);
   }
   const payload = {
