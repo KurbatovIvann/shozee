@@ -70,6 +70,10 @@ describe("loadServerConfig", () => {
     expect(config.ai.anthropicApiKey).toBeUndefined();
     expect(config.ai.model).toBe("claude-sonnet-4-6");
     expect(config.ai.gateModel).toBe("claude-haiku-4-5");
+    expect(config.ai.chatTurnsPerMinutePerUser).toBe(20);
+    expect(config.ai.dailyBudgetUsdPerCompany).toBe(5);
+    expect(config.ai.dailyBudgetUsdGlobal).toBe(100);
+    expect(config.ai.unknownModelTurnUsd).toBe(0.1);
   });
 
   it("applies defaults for optional keys", () => {
@@ -103,6 +107,10 @@ describe("loadServerConfig", () => {
     expect(config.ai.anthropicApiKey).toBeUndefined();
     expect(config.ai.model).toBe("claude-sonnet-4-6");
     expect(config.ai.gateModel).toBe("claude-haiku-4-5");
+    expect(config.ai.chatTurnsPerMinutePerUser).toBe(20);
+    expect(config.ai.dailyBudgetUsdPerCompany).toBe(5);
+    expect(config.ai.dailyBudgetUsdGlobal).toBe(100);
+    expect(config.ai.unknownModelTurnUsd).toBe(0.1);
   });
 
   it("fails fast on missing required keys and reports every one of them", () => {
@@ -367,6 +375,62 @@ describe("loadServerConfig", () => {
     expect(withKey.ai.anthropicApiKey).toBe("sk-ant-test-not-a-real-key");
     expect(withKey.ai.model).toBe("claude-opus-4-6");
     expect(withKey.ai.gateModel).toBe("claude-haiku-4-5-20251001");
+  });
+
+  it("maps assistant budget env, accepts 0 to disable limits, and rejects unknown-model 0", () => {
+    const configured = validEnv();
+    configured["AI_CHAT_TURNS_PER_MINUTE_PER_USER"] = "7";
+    configured["AI_DAILY_BUDGET_USD_PER_COMPANY"] = "1.5";
+    configured["AI_DAILY_BUDGET_USD_GLOBAL"] = "12.25";
+    configured["AI_UNKNOWN_MODEL_TURN_USD"] = "0.2";
+    const mapped = loadServerConfig(configured);
+    expect(mapped.ai.chatTurnsPerMinutePerUser).toBe(7);
+    expect(mapped.ai.dailyBudgetUsdPerCompany).toBe(1.5);
+    expect(mapped.ai.dailyBudgetUsdGlobal).toBe(12.25);
+    expect(mapped.ai.unknownModelTurnUsd).toBe(0.2);
+
+    const disabled = validEnv();
+    disabled["AI_CHAT_TURNS_PER_MINUTE_PER_USER"] = "0";
+    disabled["AI_DAILY_BUDGET_USD_PER_COMPANY"] = "0";
+    disabled["AI_DAILY_BUDGET_USD_GLOBAL"] = "0";
+    const zeroed = loadServerConfig(disabled);
+    expect(zeroed.ai.chatTurnsPerMinutePerUser).toBe(0);
+    expect(zeroed.ai.dailyBudgetUsdPerCompany).toBe(0);
+    expect(zeroed.ai.dailyBudgetUsdGlobal).toBe(0);
+    expect(zeroed.ai.unknownModelTurnUsd).toBe(0.1);
+
+    const unknownZero = validEnv();
+    unknownZero["AI_UNKNOWN_MODEL_TURN_USD"] = "0";
+    expect(() => loadServerConfig(unknownZero)).toThrow(ConfigValidationError);
+
+    for (const key of [
+      "AI_CHAT_TURNS_PER_MINUTE_PER_USER",
+      "AI_DAILY_BUDGET_USD_PER_COMPANY",
+      "AI_DAILY_BUDGET_USD_GLOBAL",
+      "AI_UNKNOWN_MODEL_TURN_USD",
+    ] as const) {
+      const env = validEnv();
+      env[key] = "-1";
+      expect(() => loadServerConfig(env)).toThrow(ConfigValidationError);
+      try {
+        loadServerConfig(env);
+      } catch (error) {
+        const configError = error as ConfigValidationError;
+        expect(configError.issues.some((issue) => issue.key === key)).toBe(
+          true,
+        );
+      }
+    }
+
+    for (const key of [
+      "AI_DAILY_BUDGET_USD_PER_COMPANY",
+      "AI_DAILY_BUDGET_USD_GLOBAL",
+      "AI_UNKNOWN_MODEL_TURN_USD",
+    ] as const) {
+      const env = validEnv();
+      env[key] = "Infinity";
+      expect(() => loadServerConfig(env)).toThrow(ConfigValidationError);
+    }
   });
 
   it("treats an empty ANTHROPIC_API_KEY as unset", () => {

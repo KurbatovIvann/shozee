@@ -105,6 +105,7 @@ export type AssistantCopy = {
     readonly permission: string;
     readonly unauthenticated: string;
     readonly notConfigured: string;
+    readonly rateLimited: string;
   };
 };
 
@@ -228,6 +229,7 @@ const assistantEn: AssistantCopy = {
     permission: "You do not have permission to use the assistant.",
     unauthenticated: "Sign in again to continue.",
     notConfigured: "The assistant is not configured.",
+    rateLimited: "Too many requests. Try again later.",
   },
 };
 
@@ -301,6 +303,7 @@ const assistantUk: AssistantCopy = {
     permission: "Немає права користуватися асистентом.",
     unauthenticated: "Увійдіть знову, щоб продовжити.",
     notConfigured: "Асистент не налаштований.",
+    rateLimited: "Забагато запитів. Спробуйте пізніше.",
   },
 };
 

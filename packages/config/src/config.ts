@@ -145,6 +145,27 @@ const envObjectSchema = z.object({
    * second `@ai-sdk/*` package). Not a secret. Default Haiku 4.5.
    */
   AI_GATE_MODEL: z.string().min(1).default("claude-haiku-4-5"),
+  /**
+   * Staff-assistant HTTP turn bucket (`POST /assistant/chat`). `0` disables
+   * the per-user turn check (SHO-505). Default 20 turns / 60s / user.
+   */
+  AI_CHAT_TURNS_PER_MINUTE_PER_USER: z.coerce.number().int().min(0).default(20),
+  /**
+   * Kyiv-calendar daily USD ceiling per company for `/assistant/chat`.
+   * `0` disables the company check. Default 5.
+   */
+  AI_DAILY_BUDGET_USD_PER_COMPANY: z.coerce.number().min(0).default(5),
+  /**
+   * Kyiv-calendar daily USD ceiling across every company. `0` disables
+   * the global check. Default 100.
+   */
+  AI_DAILY_BUDGET_USD_GLOBAL: z.coerce.number().min(0).default(100),
+  /**
+   * Admission reservation and unknown-pricing accounting fallback
+   * (`estimateStaffAssistantTurnCostUsd` is `null`). Must be finite and
+   * greater than 0 — not a disable switch. Default 0.10.
+   */
+  AI_UNKNOWN_MODEL_TURN_USD: z.coerce.number().positive().default(0.1),
 });
 
 const envSchema = envObjectSchema.superRefine((parsed, ctx) => {
@@ -264,6 +285,17 @@ export interface ServerConfig {
     readonly anthropicApiKey: string | undefined;
     readonly model: string;
     readonly gateModel: string;
+    /** `0` disables the per-user `/assistant/chat` turn check. */
+    readonly chatTurnsPerMinutePerUser: number;
+    /** `0` disables the per-company Kyiv-day USD check. */
+    readonly dailyBudgetUsdPerCompany: number;
+    /** `0` disables the global Kyiv-day USD check. */
+    readonly dailyBudgetUsdGlobal: number;
+    /**
+     * Admission reservation and unknown-pricing fallback. Finite and
+     * greater than 0 — not a disable switch.
+     */
+    readonly unknownModelTurnUsd: number;
   };
 }
 
@@ -362,6 +394,10 @@ export function loadServerConfig(
       anthropicApiKey: parsed.ANTHROPIC_API_KEY,
       model: parsed.AI_MODEL,
       gateModel: parsed.AI_GATE_MODEL,
+      chatTurnsPerMinutePerUser: parsed.AI_CHAT_TURNS_PER_MINUTE_PER_USER,
+      dailyBudgetUsdPerCompany: parsed.AI_DAILY_BUDGET_USD_PER_COMPANY,
+      dailyBudgetUsdGlobal: parsed.AI_DAILY_BUDGET_USD_GLOBAL,
+      unknownModelTurnUsd: parsed.AI_UNKNOWN_MODEL_TURN_USD,
     },
   };
 }

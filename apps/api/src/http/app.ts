@@ -21,20 +21,29 @@ import {
   wireErrorInterceptors,
   type TransportInvocationContext,
 } from "@showzy/contract/server";
-import type {
-  ActionPipelineDeps,
-  ActionRegistry,
-  SessionPrincipal,
+import {
+  createInMemoryRateLimitStore,
+  type ActionPipelineDeps,
+  type ActionRegistry,
+  type RateLimitStore,
+  type SessionPrincipal,
 } from "@showzy/core";
 import type { ActionPrincipal } from "@showzy/core/contract";
 import { CoreInvariantError } from "@showzy/core/errors";
 import { Hono, type Context } from "hono";
 
 import {
+  createMemoryAiBudgetStore,
+  type AiBudgetStore,
+} from "../stores/budget.js";
+import {
   createMemoryChoiceStore,
   type StaffAssistantChoiceStore,
 } from "../stores/choice.js";
-import { createTrustedProxyMatcher, resolveClientIp } from "./client-ip.js";
+import {
+  DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+  type StaffAssistantBudgetLimits,
+} from "./assistant-budget-guard.js";
 import {
   ASSISTANT_CHAT_PATH,
   executeStaffAssistantChat,
@@ -45,6 +54,7 @@ import {
   executeStaffAssistantChoicePeek,
   executeStaffAssistantChoiceResume,
 } from "./assistant-choice.js";
+import { createTrustedProxyMatcher, resolveClientIp } from "./client-ip.js";
 import {
   DOCUMENT_SHARE_LANDING_ROUTE,
   executeDocumentShareLanding,
@@ -107,6 +117,15 @@ export interface CreateAppOptions {
    * Boot mounts Redis Lua. Tests inject the in-memory CAS store.
    */
   readonly choiceStore?: StaffAssistantChoiceStore;
+  /**
+   * Per-user turn limit + Kyiv-day USD budget on `POST /assistant/chat`
+   * (SHO-505). Boot mounts Redis. Tests inject memory stores.
+   */
+  readonly assistantBudget?: {
+    readonly rateLimitStore: RateLimitStore;
+    readonly budgetStore: AiBudgetStore;
+    readonly limits?: StaffAssistantBudgetLimits;
+  };
 }
 
 /**
@@ -362,6 +381,13 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
   });
 
   const choiceStore = options.choiceStore ?? createMemoryChoiceStore();
+  const assistantBudget = options.assistantBudget ?? {
+    rateLimitStore: createInMemoryRateLimitStore(),
+    budgetStore: createMemoryAiBudgetStore(),
+    limits: DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+  };
+  const budgetLimits =
+    assistantBudget.limits ?? DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS;
 
   app.post(ASSISTANT_CHAT_PATH, async (c) => {
     const response = await executeStaffAssistantChat({
@@ -372,6 +398,9 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
       pipeline: options.pipeline,
       getSession: (headers) => resolveSession(options.auth, headers),
       choiceStore,
+      rateLimitStore: assistantBudget.rateLimitStore,
+      budgetStore: assistantBudget.budgetStore,
+      budgetLimits,
       ...(options.assistant !== undefined
         ? { assistant: options.assistant }
         : {}),

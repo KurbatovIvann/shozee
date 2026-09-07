@@ -32,6 +32,7 @@ import {
   staffAssistantChoiceCardEnvelopeSchema,
   staffAssistantNeedsChoiceOutputSchema,
   successorChoiceId,
+  bindsMatch,
   type ChoiceCanonicalCreateInput,
   type ChoiceRecord,
 } from "./choice.js";
@@ -101,6 +102,25 @@ describe("choice transport (SHO-409)", () => {
 
   it("names Redis keys choice:{choiceId}", () => {
     expect(choiceRedisKey(choiceId)).toBe(`choice:${choiceId}`);
+  });
+
+  it("matches binds with exact actor, company, and conversation ids", () => {
+    const left = {
+      actorId: "actor-1",
+      companyId,
+      conversationId,
+    };
+    const right = {
+      actorId: "actor-1",
+      companyId,
+      conversationId,
+    };
+    expect(bindsMatch(left, right)).toBe(true);
+    expect(bindsMatch(left, { ...right, conversationId: choiceId })).toBe(
+      false,
+    );
+    expect(bindsMatch(left, { ...right, actorId: "other" })).toBe(false);
+    expect(bindsMatch(left, { ...right, companyId: choiceId })).toBe(false);
   });
 
   it("rejects extra client fields on the resume body", () => {

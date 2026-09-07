@@ -1,12 +1,37 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  kyivCalendarDate,
   mapOrdersListPeriod,
+  secondsUntilKyivMidnight,
   staffAssistantClockLines,
   STAFF_ASSISTANT_TIME_ZONE,
 } from "./kyiv-calendar.js";
 
 const WEDNESDAY_SEP_2 = new Date("2026-09-02T12:00:00.000Z");
+
+describe("kyivCalendarDate", () => {
+  it("formats the Europe/Kyiv calendar day as YYYY-MM-DD", () => {
+    expect(kyivCalendarDate(WEDNESDAY_SEP_2)).toBe("2026-09-02");
+    expect(kyivCalendarDate(new Date("2026-01-15T12:00:00.000Z"))).toBe(
+      "2026-01-15",
+    );
+  });
+});
+
+describe("secondsUntilKyivMidnight", () => {
+  it("counts whole seconds until the next Europe/Kyiv midnight", () => {
+    expect(secondsUntilKyivMidnight(WEDNESDAY_SEP_2)).toBe(32_400);
+    expect(secondsUntilKyivMidnight(new Date("2026-01-15T12:00:00.000Z"))).toBe(
+      36_000,
+    );
+  });
+
+  it("never returns less than 1", () => {
+    const justBefore = new Date("2026-09-02T20:59:59.600Z");
+    expect(secondsUntilKyivMidnight(justBefore)).toBe(1);
+  });
+});
 
 function kyivWall(iso: string): string {
   return new Intl.DateTimeFormat("en-GB", {

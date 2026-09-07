@@ -37,12 +37,14 @@ Auth policy parameters still live in `src/auth/` (fnd-T6).
   `apps/worker/src/observability.ts`. `flushProcessObservability` drains
   Sentry on shutdown.
 - `src/stores/redis.ts` — Redis secondary storage (`GETDEL`), confirmation
-  store, Lua token-bucket rate-limit store, Lua OTP send throttle, and Lua
-  INCR+EXPIRE Better Auth IP rate-limit consume (`customStorage.consume`).
+  store, Lua token-bucket rate-limit store, Lua OTP send throttle, Lua
+  INCR+EXPIRE Better Auth IP rate-limit consume (`customStorage.consume`),
+  and staff-assistant USD budget counters (SHO-505: Lua `tryAdd` reserve,
+  `INCRBYFLOAT` settle).
   Consume keys are HMAC-SHA256 of the Better Auth `${ip}|${path}` key
   (32 hex chars, no 24h rotation; `IP_HMAC_SECRET` from config). Tests that
   do not need Redis use the in-memory stores from `@showzy/core` and
-  `stores/memory.ts`.
+  `stores/memory.ts` / `stores/budget.ts`.
 - `src/auth/` — `buildAuthOptions` (fnd-T6). Every better-auth instance
   still goes through this factory.
 
