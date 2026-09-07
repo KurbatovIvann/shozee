@@ -3,9 +3,59 @@ import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { parseRunTurboArgv, runTurboCli } from "./run-turbo.mjs";
+import {
+  gitMergeBase,
+  gitObjectExists,
+  parseRunTurboArgv,
+  runTurboCli,
+} from "./run-turbo.mjs";
 
 const script = fileURLToPath(new URL("./run-turbo.mjs", import.meta.url));
+
+/**
+ * One comparison SHA that exists in this clone and equals production `scmBase`.
+ *
+ * `run-turbo` sets `TURBO_SCM_BASE` to `git merge-base HEAD <candidate>`, not
+ * the current `origin/main` tip (SHO-512). `rev-parse origin/main` can print a
+ * SHA whose object was never fetched, or a tip that moved past this branch
+ * point — either way the CLI's merge-base differs from that print.
+ *
+ * @returns {string}
+ */
+function existingPrComparisonSha() {
+  const originMain = spawnSync(
+    "git",
+    ["rev-parse", "--verify", "origin/main"],
+    {
+      encoding: "utf8",
+    },
+  );
+  /** @type {string[]} */
+  const candidates = [];
+  if (originMain.status === 0) {
+    const sha = originMain.stdout.trim();
+    if (sha.length > 0 && gitObjectExists(sha)) {
+      candidates.push(sha);
+    }
+  }
+  candidates.push("origin/main", "main");
+
+  for (const candidate of candidates) {
+    if (!gitObjectExists(candidate)) {
+      continue;
+    }
+    const mergeBase = gitMergeBase("HEAD", candidate);
+    if (mergeBase && gitObjectExists(mergeBase)) {
+      return mergeBase;
+    }
+  }
+
+  const head = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" });
+  assert.equal(head.status, 0, head.stderr);
+  const headSha = head.stdout.trim();
+  assert.ok(gitObjectExists(headSha), "HEAD commit must exist in this clone");
+  return headSha;
+}
 
 test("parseRunTurboArgv strips --print-only and keeps extra turbo args", () => {
   assert.deepEqual(parseRunTurboArgv(["typecheck", "--print-only"]), {
@@ -71,11 +121,7 @@ test("CLI print-only on push to main is full (no --affected)", () => {
 });
 
 test("CLI print-only on pull_request with a resolvable origin/main uses affected", () => {
-  const base = spawnSync("git", ["rev-parse", "origin/main"], {
-    encoding: "utf8",
-  });
-  assert.equal(base.status, 0, base.stderr);
-  const baseSha = base.stdout.trim();
+  const baseSha = existingPrComparisonSha();
   const result = spawnSync(process.execPath, [script, "lint", "--print-only"], {
     encoding: "utf8",
     env: {

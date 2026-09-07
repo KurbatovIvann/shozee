@@ -22,6 +22,7 @@ shared tree plus typed leftovers composed in those app files.
 | `./companies` | Onboarding / settings / legal / scope intersections (SHO-482) |
 | `./customers` | Wholesale mobile customers list + forms (SHO-476)             |
 | `./products`  | Wholesale mobile products list + form + detail (SHO-477)      |
+| `./pricing`   | Wholesale mobile price-lists list + editor (SHO-478)          |
 
 Do not add a package root barrel. Domain modules must not import this
 package (ESLint `copyClientOnly`).

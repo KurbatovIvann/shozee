@@ -11,6 +11,7 @@
     "./auth": "./src/auth.ts",
     "./customers": "./src/customers.ts",
     "./products": "./src/products.ts",
+    "./pricing": "./src/pricing.ts",
     "./orders": "./src/orders.ts",
     "./assistant": "./src/assistant.ts",
     "./panel": "./src/panel.ts",
