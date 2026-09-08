@@ -628,7 +628,7 @@ export async function executeStaffAssistantChat(
       let gateUsage = EMPTY_STAFF_ASSISTANT_TURN_USAGE;
 
       if (!skipGate && gateLanguageModel !== undefined) {
-        const lastUserText = userMessage?.text ?? "";
+        const lastUserText = userMessage.text;
         if (lastUserText.trim() !== "") {
           const classified = await classifyStaffAssistantTurn({
             model: gateLanguageModel,
@@ -670,37 +670,32 @@ export async function executeStaffAssistantChat(
           options.assistant?.model ??
           "unconfigured");
 
-      const appended =
-        userMessage === undefined
-          ? undefined
-          : await executeAction(options.pipeline, {
-              action: appendUserMessage,
-              input: {
-                conversationId: body.conversationId,
-                body: userMessage.text,
-              },
-              request: staffRequest({
-                requestId: options.requestId,
-                clientIp: options.clientIp,
-                aiTraceId,
-                idempotencyKey: attemptKey(
-                  "message",
-                  body.conversationId,
-                  userMessage.id,
-                ),
-              }),
-              principal: staffPrincipal,
-            });
+      const appended = await executeAction(options.pipeline, {
+        action: appendUserMessage,
+        input: {
+          conversationId: body.conversationId,
+          body: userMessage.text,
+        },
+        request: staffRequest({
+          requestId: options.requestId,
+          clientIp: options.clientIp,
+          aiTraceId,
+          idempotencyKey: attemptKey(
+            "message",
+            body.conversationId,
+            userMessage.id,
+          ),
+        }),
+        principal: staffPrincipal,
+      });
       const historyRows = persistedMessagesEndingWithAppend(
         modelHistory.messages,
-        appended === undefined
-          ? undefined
-          : {
-              id: appended.id,
-              role: "user",
-              text: appended.body,
-              toolRuns: [],
-            },
+        {
+          id: appended.id,
+          role: "user",
+          text: appended.body,
+          toolRuns: [],
+        },
       );
       const modelMessages = staffAssistantModelMessagesFromPersisted(
         modelHistoryToPersisted(historyRows),

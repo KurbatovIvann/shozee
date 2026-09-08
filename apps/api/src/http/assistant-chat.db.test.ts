@@ -67,7 +67,7 @@ import {
   executeAction,
   type ImplementedAction,
 } from "@showzy/core";
-import { CoreInvariantError, NotFoundError } from "@showzy/core/errors";
+import { CoreInvariantError } from "@showzy/core/errors";
 import {
   createCapturingLogger,
   createTestKit,
@@ -78,7 +78,6 @@ import {
   archiveCustomer,
   createCustomer,
   createGroup,
-  getCustomer,
 } from "@showzy/customers";
 import { auditLog, idempotencyKeys } from "@showzy/db";
 import { session, user } from "@showzy/db/schema/auth";

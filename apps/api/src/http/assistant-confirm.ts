@@ -485,28 +485,24 @@ export async function runPendingConfirmationResume(
     toolCallId: pending.toolCallId,
     output: clipped,
   };
-  try {
-    await persistConfirmationTurn({
-      pipeline: options.pipeline,
-      conversationId: conversation.id,
-      challengeId: pending.id,
-      requestId: options.requestId,
-      clientIp: options.clientIp,
-      principal: staffPrincipal,
-      body: speech.text,
-      actionName: pending.actionName,
-      toolCallId: pending.toolCallId,
-      resultIds: extractUuidResultIds(output),
-      outcome: "success",
-      modelTrace: clipped,
-      toolName,
-    });
-    await markCompleted(options.pendingStore, pending, bind, resumeResult);
-  } catch (error) {
-    // The domain write already committed. Leave the record claimed so a
-    // later POST can persist the success turn and complete.
-    throw error;
-  }
+  // Domain write already committed. If persist or complete throws, the
+  // record stays claimed so a later POST can finish.
+  await persistConfirmationTurn({
+    pipeline: options.pipeline,
+    conversationId: conversation.id,
+    challengeId: pending.id,
+    requestId: options.requestId,
+    clientIp: options.clientIp,
+    principal: staffPrincipal,
+    body: speech.text,
+    actionName: pending.actionName,
+    toolCallId: pending.toolCallId,
+    resultIds: extractUuidResultIds(output),
+    outcome: "success",
+    modelTrace: clipped,
+    toolName,
+  });
+  await markCompleted(options.pendingStore, pending, bind, resumeResult);
   return toHttpResult(resumeResult);
 }
 
