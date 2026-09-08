@@ -238,16 +238,16 @@ return {1, redis.call('GET', KEYS[1])}
  * conversation index is a parallel pending — refuse.
  */
 const PENDING_OPEN_LUA = `
-local ttlMs = tonumber(ARGV[2])
 local indexRaw = redis.call('GET', KEYS[2])
 if type(indexRaw) == 'string' and indexRaw ~= '' then
   return {0}
 end
-local nx = redis.call('SET', KEYS[1], ARGV[1], 'PX', ttlMs, 'NX')
-if nx ~= 'OK' then
+-- Redis 8 Lua SET NX returns a truthy status, not always the string OK.
+local nx = redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2], 'NX')
+if not nx then
   return {0}
 end
-redis.call('SET', KEYS[2], ARGV[3], 'PX', ttlMs)
+redis.call('SET', KEYS[2], ARGV[3], 'PX', ARGV[2])
 return {1}
 `;
 

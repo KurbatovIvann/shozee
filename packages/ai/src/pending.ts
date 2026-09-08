@@ -319,12 +319,7 @@ export function publicPendingFromRecord(
       actionName: record.actionName,
       envelope: choiceCardEnvelope({
         challengeId: record.id,
-        status:
-          record.status === "open"
-            ? "needs_choice"
-            : record.status === "claimed"
-              ? "claimed"
-              : "completed",
+        status: record.status === "open" ? "needs_choice" : "claimed",
         ...(record.envelope.reason !== undefined
           ? { reason: record.envelope.reason }
           : {}),

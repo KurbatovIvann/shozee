@@ -293,10 +293,7 @@ export function createMemoryPendingStore(options?: {
               record: claimed,
             });
           }
-          if (record.status === "claimed" || record.status === "completed") {
-            return Promise.resolve({ kind: "replay" as const, record });
-          }
-          return Promise.resolve({ kind: "expired" as const });
+          return Promise.resolve({ kind: "replay" as const, record });
         },
       );
     },

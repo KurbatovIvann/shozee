@@ -491,10 +491,10 @@ async function loadHistory(options: {
   });
 }
 
-async function resolveStagedExecutionId(options: {
+function resolveStagedExecutionId(options: {
   readonly record: PendingInteractionRecord;
   readonly history: Awaited<ReturnType<typeof loadHistory>>;
-}): Promise<string> {
+}): string {
   if (options.record.executionId !== undefined) {
     return options.record.executionId;
   }
@@ -1003,51 +1003,116 @@ export async function executeStaffAssistantHostChoiceResume(
       companyId: auth.companySelector,
       conversationId: conversation.id,
     };
-    return options.conversationLock.withLock(conversation.id, async () => {
-      const claimed = await options.pendingStore.claim({
-        id: parsed.data.choiceId,
-        kind: "choice",
-        bind,
-        optionId: parsed.data.optionId,
-      });
-      if (claimed.kind === "expired" || claimed.kind === "forbidden") {
-        return interactionResponse(expiredResult(), options.requestId);
-      }
-      if (claimed.kind === "conflict") {
-        return interactionResponse(
-          errorResult(
-            "CHOICE_OPTION_CONFLICT",
-            "This choice was already resolved with a different option.",
-          ),
-          options.requestId,
-        );
-      }
-      if (claimed.kind === "invalid_option") {
-        return interactionResponse(
-          errorResult("CHOICE_INVALID_OPTION", "That option is not available."),
-          options.requestId,
-        );
-      }
-      const record = claimed.record;
-      if (record.kind !== "choice") {
-        return interactionResponse(expiredResult(), options.requestId);
-      }
-      const actor = await executeAction(options.pipeline, {
-        action: getStaffActor,
-        input: {},
-        request: staffRequest({
-          requestId: options.requestId,
-          clientIp: options.clientIp,
-          aiTraceId: options.requestId,
-        }),
-        principal: auth.staffPrincipal,
-      });
-      const locale = record.locale ?? STAFF_ASSISTANT_DEFAULT_LOCALE;
-      if (claimed.kind === "replay" && record.status === "completed") {
-        const open = await options.pendingStore.peekOpen({
-          conversationId: conversation.id,
+    return await options.conversationLock.withLock(
+      conversation.id,
+      async () => {
+        const claimed = await options.pendingStore.claim({
+          id: parsed.data.choiceId,
+          kind: "choice",
           bind,
+          optionId: parsed.data.optionId,
         });
+        if (claimed.kind === "expired" || claimed.kind === "forbidden") {
+          return interactionResponse(expiredResult(), options.requestId);
+        }
+        if (claimed.kind === "conflict") {
+          return interactionResponse(
+            errorResult(
+              "CHOICE_OPTION_CONFLICT",
+              "This choice was already resolved with a different option.",
+            ),
+            options.requestId,
+          );
+        }
+        if (claimed.kind === "invalid_option") {
+          return interactionResponse(
+            errorResult(
+              "CHOICE_INVALID_OPTION",
+              "That option is not available.",
+            ),
+            options.requestId,
+          );
+        }
+        const record = claimed.record;
+        if (record.kind !== "choice") {
+          return interactionResponse(expiredResult(), options.requestId);
+        }
+        const actor = await executeAction(options.pipeline, {
+          action: getStaffActor,
+          input: {},
+          request: staffRequest({
+            requestId: options.requestId,
+            clientIp: options.clientIp,
+            aiTraceId: options.requestId,
+          }),
+          principal: auth.staffPrincipal,
+        });
+        const locale = record.locale ?? STAFF_ASSISTANT_DEFAULT_LOCALE;
+        if (claimed.kind === "replay" && record.status === "completed") {
+          const open = await options.pendingStore.peekOpen({
+            conversationId: conversation.id,
+            bind,
+          });
+          const history = await loadHistory({
+            pipeline: options.pipeline,
+            conversationId: conversation.id,
+            requestId: options.requestId,
+            clientIp: options.clientIp,
+            principal: auth.staffPrincipal,
+          });
+          if (open.kind === "found" && open.record.id !== record.id) {
+            const publicPending = publicPendingFromRecord(open.record) ?? null;
+            return interactionResponse(
+              okEnvelope({
+                speech: lastAssistantSpeech(history),
+                toolResults: historyToolResults(history),
+                pending: publicPending,
+              }),
+              options.requestId,
+            );
+          }
+          const state = phaseBState(history, record);
+          if (state === "done") {
+            return interactionResponse(
+              okEnvelope({
+                speech: lastAssistantSpeech(history),
+                toolResults: historyToolResults(history),
+                pending: null,
+              }),
+              options.requestId,
+            );
+          }
+          return interactionResponse(
+            await runPhaseB({
+              runtime: options,
+              conversationId: conversation.id,
+              locale,
+              bind,
+              staffPrincipal: auth.staffPrincipal,
+              actor,
+              pendingId: record.id,
+            }),
+            options.requestId,
+          );
+        }
+        const mappedId = resolveMappedVariantId(
+          record.optionMap,
+          parsed.data.optionId,
+        );
+        if (mappedId === undefined) {
+          return interactionResponse(
+            errorResult(
+              "CHOICE_INVALID_OPTION",
+              "That option is not available.",
+            ),
+            options.requestId,
+          );
+        }
+        const patched = applyChoiceOptionToCanonicalInput(
+          record.canonicalInput,
+          record.target,
+          mappedId,
+        );
         const history = await loadHistory({
           pipeline: options.pipeline,
           conversationId: conversation.id,
@@ -1055,126 +1120,115 @@ export async function executeStaffAssistantHostChoiceResume(
           clientIp: options.clientIp,
           principal: auth.staffPrincipal,
         });
-        if (open.kind === "found" && open.record.id !== record.id) {
-          const publicPending = publicPendingFromRecord(open.record) ?? null;
-          return interactionResponse(
-            okEnvelope({
-              speech: lastAssistantSpeech(history),
-              toolResults: historyToolResults(history),
-              pending: publicPending,
-            }),
-            options.requestId,
-          );
-        }
-        const state = phaseBState(history, record);
-        if (state === "done") {
-          return interactionResponse(
-            okEnvelope({
-              speech: lastAssistantSpeech(history),
-              toolResults: historyToolResults(history),
-              pending: null,
-            }),
-            options.requestId,
-          );
-        }
-        return interactionResponse(
-          await runPhaseB({
-            runtime: options,
-            conversationId: conversation.id,
-            locale,
-            bind,
-            staffPrincipal: auth.staffPrincipal,
-            actor,
-            pendingId: record.id,
-          }),
-          options.requestId,
-        );
-      }
-      const mappedId = resolveMappedVariantId(
-        record.optionMap,
-        parsed.data.optionId,
-      );
-      if (mappedId === undefined) {
-        return interactionResponse(
-          errorResult("CHOICE_INVALID_OPTION", "That option is not available."),
-          options.requestId,
-        );
-      }
-      const patched = applyChoiceOptionToCanonicalInput(
-        record.canonicalInput,
-        record.target,
-        mappedId,
-      );
-      const history = await loadHistory({
-        pipeline: options.pipeline,
-        conversationId: conversation.id,
-        requestId: options.requestId,
-        clientIp: options.clientIp,
-        principal: auth.staffPrincipal,
-      });
-      const executionId = await resolveStagedExecutionId({
-        record,
-        history,
-      });
-      try {
-        const output = await executePhaseA({
-          runtime: options,
+        const executionId = resolveStagedExecutionId({
           record,
-          input: patched,
-          staffPrincipal: auth.staffPrincipal,
-          executionId,
+          history,
         });
-        await finishPhaseA({
-          runtime: options,
-          conversationId: conversation.id,
-          staffPrincipal: auth.staffPrincipal,
-          executionId,
-          outcome: "success",
-          output,
-        });
-        return interactionResponse(
-          await afterPhaseASuccess({
+        try {
+          const output = await executePhaseA({
             runtime: options,
             record,
-            bind,
-            optionId: parsed.data.optionId,
+            input: patched,
             staffPrincipal: auth.staffPrincipal,
-            actor,
-            locale,
+            executionId,
+          });
+          await finishPhaseA({
+            runtime: options,
+            conversationId: conversation.id,
+            staffPrincipal: auth.staffPrincipal,
+            executionId,
+            outcome: "success",
             output,
-          }),
-          options.requestId,
-        );
-      } catch (error) {
-        if (error instanceof ConfirmationRequiredError) {
+          });
           return interactionResponse(
-            errorResult(error.code, error.clientMessage),
+            await afterPhaseASuccess({
+              runtime: options,
+              record,
+              bind,
+              optionId: parsed.data.optionId,
+              staffPrincipal: auth.staffPrincipal,
+              actor,
+              locale,
+              output,
+            }),
             options.requestId,
           );
-        }
-        const extras = catalogPickerConflictExtrasFromError(error);
-        if (extras !== undefined) {
-          const nextId = successorPendingChoiceId(record.id);
-          const nextChoice = choiceRecordFromPickerConflict({
-            choiceId: nextId,
-            bind,
-            canonicalInput: patched,
-            extras,
-            ...(record.locale !== undefined ? { locale: record.locale } : {}),
-          });
-          if (nextChoice !== undefined) {
-            const successorExecutionId = await stageSuccessorExecutionId({
+        } catch (error) {
+          if (error instanceof ConfirmationRequiredError) {
+            return interactionResponse(
+              errorResult(error.code, error.clientMessage),
+              options.requestId,
+            );
+          }
+          const extras = catalogPickerConflictExtrasFromError(error);
+          if (extras !== undefined) {
+            const nextId = successorPendingChoiceId(record.id);
+            const nextChoice = choiceRecordFromPickerConflict({
+              choiceId: nextId,
+              bind,
+              canonicalInput: patched,
+              extras,
+              ...(record.locale !== undefined ? { locale: record.locale } : {}),
+            });
+            if (nextChoice !== undefined) {
+              const successorExecutionId = await stageSuccessorExecutionId({
+                runtime: options,
+                conversationId: conversation.id,
+                staffPrincipal: auth.staffPrincipal,
+                actionName: record.actionName,
+                nextId,
+                toolInput: patched,
+              });
+              const next = pendingChoiceRecordFromChoiceRecord(nextChoice, {
+                actionName: record.actionName,
+                toolCallId: `choice:${nextId}`,
+                executionId: successorExecutionId,
+              });
+              await options.pendingStore.complete({
+                id: record.id,
+                kind: "choice",
+                bind,
+                optionId: parsed.data.optionId,
+              });
+              await options.pendingStore.open(next);
+              await finishPhaseA({
+                runtime: options,
+                conversationId: conversation.id,
+                staffPrincipal: auth.staffPrincipal,
+                executionId,
+                outcome: "choice_required",
+                output: presentChoiceStaffAssistantNeedsChoice({
+                  locale,
+                  record: nextChoice,
+                }),
+                challengeId: next.id,
+              });
+              const publicPending = publicPendingFromRecord(next) ?? null;
+              const needs = presentChoiceStaffAssistantNeedsChoice({
+                locale,
+                record: choiceRecordFromPendingChoice(next),
+              });
+              return interactionResponse(
+                okEnvelope({
+                  speech: needs.text,
+                  pending: publicPending,
+                }),
+                options.requestId,
+              );
+            }
+          }
+          if (error instanceof CoreError) {
+            await finishPhaseA({
               runtime: options,
               conversationId: conversation.id,
               staffPrincipal: auth.staffPrincipal,
-              actionName: record.actionName,
-              nextId,
-              toolInput: patched,
-            });
-            const next = pendingChoiceRecordFromChoiceRecord(nextChoice, {
-              actionName: record.actionName,
-              toolCallId: `choice:${nextId}`,
-              executionId: successorExecutionId,
+              executionId,
+              outcome: "error",
+              output: {
+                status: "error",
+                code: error.code,
+                message: error.clientMessage,
+              },
             });
             await options.pendingStore.complete({
               id: record.id,
@@ -1182,60 +1236,15 @@ export async function executeStaffAssistantHostChoiceResume(
               bind,
               optionId: parsed.data.optionId,
             });
-            await options.pendingStore.open(next);
-            await finishPhaseA({
-              runtime: options,
-              conversationId: conversation.id,
-              staffPrincipal: auth.staffPrincipal,
-              executionId,
-              outcome: "choice_required",
-              output: presentChoiceStaffAssistantNeedsChoice({
-                locale,
-                record: nextChoice,
-              }),
-              challengeId: next.id,
-            });
-            const publicPending = publicPendingFromRecord(next) ?? null;
-            const needs = presentChoiceStaffAssistantNeedsChoice({
-              locale,
-              record: choiceRecordFromPendingChoice(next),
-            });
             return interactionResponse(
-              okEnvelope({
-                speech: needs.text,
-                pending: publicPending,
-              }),
+              errorResult(error.code, error.clientMessage),
               options.requestId,
             );
           }
+          throw error;
         }
-        if (error instanceof CoreError) {
-          await finishPhaseA({
-            runtime: options,
-            conversationId: conversation.id,
-            staffPrincipal: auth.staffPrincipal,
-            executionId,
-            outcome: "error",
-            output: {
-              status: "error",
-              code: error.code,
-              message: error.clientMessage,
-            },
-          });
-          await options.pendingStore.complete({
-            id: record.id,
-            kind: "choice",
-            bind,
-            optionId: parsed.data.optionId,
-          });
-          return interactionResponse(
-            errorResult(error.code, error.clientMessage),
-            options.requestId,
-          );
-        }
-        throw error;
-      }
-    });
+      },
+    );
   } catch (error) {
     if (error instanceof CoreError) {
       options.pipeline.logger.error(
@@ -1305,45 +1314,75 @@ export async function executeStaffAssistantHostConfirm(
       companyId: auth.companySelector,
       conversationId: conversation.id,
     };
-    if (parsed.data.challengeId === undefined) {
-      return interactionResponse(expiredResult(), options.requestId);
-    }
-    return options.conversationLock.withLock(conversation.id, async () => {
-      const peeked = await options.pendingStore.peek({
-        id: parsed.data.challengeId,
-        kind: "confirmation",
-        bind,
-      });
-      if (peeked.kind === "expired" || peeked.kind === "forbidden") {
-        return interactionResponse(expiredResult(), options.requestId);
-      }
-      const claimed = await options.pendingStore.claim({
-        id: parsed.data.challengeId,
-        kind: "confirmation",
-        bind,
-      });
-      if (claimed.kind === "expired" || claimed.kind === "forbidden") {
-        return interactionResponse(expiredResult(), options.requestId);
-      }
-      if (claimed.kind === "conflict" || claimed.kind === "invalid_option") {
-        return interactionResponse(expiredResult(), options.requestId);
-      }
-      const record = claimed.record;
-      if (record.kind !== "confirmation") {
-        return interactionResponse(expiredResult(), options.requestId);
-      }
-      const actor = await executeAction(options.pipeline, {
-        action: getStaffActor,
-        input: {},
-        request: staffRequest({
-          requestId: options.requestId,
-          clientIp: options.clientIp,
-          aiTraceId: options.requestId,
-        }),
-        principal: auth.staffPrincipal,
-      });
-      const locale = record.locale ?? STAFF_ASSISTANT_DEFAULT_LOCALE;
-      if (claimed.kind === "replay" && record.status === "completed") {
+    return await options.conversationLock.withLock(
+      conversation.id,
+      async () => {
+        const peeked = await options.pendingStore.peek({
+          id: parsed.data.challengeId,
+          kind: "confirmation",
+          bind,
+        });
+        if (peeked.kind === "expired" || peeked.kind === "forbidden") {
+          return interactionResponse(expiredResult(), options.requestId);
+        }
+        const claimed = await options.pendingStore.claim({
+          id: parsed.data.challengeId,
+          kind: "confirmation",
+          bind,
+        });
+        if (claimed.kind === "expired" || claimed.kind === "forbidden") {
+          return interactionResponse(expiredResult(), options.requestId);
+        }
+        if (claimed.kind === "conflict" || claimed.kind === "invalid_option") {
+          return interactionResponse(expiredResult(), options.requestId);
+        }
+        const record = claimed.record;
+        if (record.kind !== "confirmation") {
+          return interactionResponse(expiredResult(), options.requestId);
+        }
+        const actor = await executeAction(options.pipeline, {
+          action: getStaffActor,
+          input: {},
+          request: staffRequest({
+            requestId: options.requestId,
+            clientIp: options.clientIp,
+            aiTraceId: options.requestId,
+          }),
+          principal: auth.staffPrincipal,
+        });
+        const locale = record.locale ?? STAFF_ASSISTANT_DEFAULT_LOCALE;
+        if (claimed.kind === "replay" && record.status === "completed") {
+          const history = await loadHistory({
+            pipeline: options.pipeline,
+            conversationId: conversation.id,
+            requestId: options.requestId,
+            clientIp: options.clientIp,
+            principal: auth.staffPrincipal,
+          });
+          const state = phaseBState(history, record);
+          if (state === "done") {
+            return interactionResponse(
+              okEnvelope({
+                speech: lastAssistantSpeech(history),
+                toolResults: historyToolResults(history),
+                pending: null,
+              }),
+              options.requestId,
+            );
+          }
+          return interactionResponse(
+            await runPhaseB({
+              runtime: options,
+              conversationId: conversation.id,
+              locale,
+              bind,
+              staffPrincipal: auth.staffPrincipal,
+              actor,
+              pendingId: record.id,
+            }),
+            options.requestId,
+          );
+        }
         const history = await loadHistory({
           pipeline: options.pipeline,
           conversationId: conversation.id,
@@ -1351,100 +1390,70 @@ export async function executeStaffAssistantHostConfirm(
           clientIp: options.clientIp,
           principal: auth.staffPrincipal,
         });
-        const state = phaseBState(history, record);
-        if (state === "done") {
-          return interactionResponse(
-            okEnvelope({
-              speech: lastAssistantSpeech(history),
-              toolResults: historyToolResults(history),
-              pending: null,
-            }),
-            options.requestId,
-          );
-        }
-        return interactionResponse(
-          await runPhaseB({
-            runtime: options,
-            conversationId: conversation.id,
-            locale,
-            bind,
-            staffPrincipal: auth.staffPrincipal,
-            actor,
-            pendingId: record.id,
-          }),
-          options.requestId,
-        );
-      }
-      const history = await loadHistory({
-        pipeline: options.pipeline,
-        conversationId: conversation.id,
-        requestId: options.requestId,
-        clientIp: options.clientIp,
-        principal: auth.staffPrincipal,
-      });
-      const executionId = await resolveStagedExecutionId({ record, history });
-      try {
-        const output = await executePhaseA({
-          runtime: options,
-          record,
-          input: record.canonicalInput,
-          confirmationChallengeId: record.id,
-          staffPrincipal: auth.staffPrincipal,
-          executionId,
-        });
-        await finishPhaseA({
-          runtime: options,
-          conversationId: conversation.id,
-          staffPrincipal: auth.staffPrincipal,
-          executionId,
-          outcome: "success",
-          output,
-        });
-        return interactionResponse(
-          await afterPhaseASuccess({
+        const executionId = resolveStagedExecutionId({ record, history });
+        try {
+          const output = await executePhaseA({
             runtime: options,
             record,
-            bind,
+            input: record.canonicalInput,
+            confirmationChallengeId: record.id,
             staffPrincipal: auth.staffPrincipal,
-            actor,
-            locale,
-            output,
-          }),
-          options.requestId,
-        );
-      } catch (error) {
-        if (error instanceof ConfirmationRequiredError) {
-          return interactionResponse(
-            errorResult(error.code, error.clientMessage),
-            options.requestId,
-          );
-        }
-        if (error instanceof CoreError) {
+            executionId,
+          });
           await finishPhaseA({
             runtime: options,
             conversationId: conversation.id,
             staffPrincipal: auth.staffPrincipal,
             executionId,
-            outcome: "error",
-            output: {
-              status: "error",
-              code: error.code,
-              message: error.clientMessage,
-            },
-          });
-          await options.pendingStore.complete({
-            id: record.id,
-            kind: "confirmation",
-            bind,
+            outcome: "success",
+            output,
           });
           return interactionResponse(
-            errorResult(error.code, error.clientMessage),
+            await afterPhaseASuccess({
+              runtime: options,
+              record,
+              bind,
+              staffPrincipal: auth.staffPrincipal,
+              actor,
+              locale,
+              output,
+            }),
             options.requestId,
           );
+        } catch (error) {
+          if (error instanceof ConfirmationRequiredError) {
+            return interactionResponse(
+              errorResult(error.code, error.clientMessage),
+              options.requestId,
+            );
+          }
+          if (error instanceof CoreError) {
+            await finishPhaseA({
+              runtime: options,
+              conversationId: conversation.id,
+              staffPrincipal: auth.staffPrincipal,
+              executionId,
+              outcome: "error",
+              output: {
+                status: "error",
+                code: error.code,
+                message: error.clientMessage,
+              },
+            });
+            await options.pendingStore.complete({
+              id: record.id,
+              kind: "confirmation",
+              bind,
+            });
+            return interactionResponse(
+              errorResult(error.code, error.clientMessage),
+              options.requestId,
+            );
+          }
+          throw error;
         }
-        throw error;
-      }
-    });
+      },
+    );
   } catch (error) {
     if (error instanceof CoreError) {
       options.pipeline.logger.error(
@@ -1482,20 +1491,23 @@ export async function executeStaffAssistantPendingAbandon(
       companyId: auth.companySelector,
       conversationId: conversation.id,
     };
-    return options.conversationLock.withLock(conversation.id, async () => {
-      const abandoned = await options.pendingStore.abandon({
-        id: parsed.data.pendingId,
-        bind,
-        expectedVersion: parsed.data.expectedVersion,
-      });
-      if (abandoned.kind === "expired" || abandoned.kind === "forbidden") {
-        return interactionResponse(expiredResult(), options.requestId);
-      }
-      return interactionResponse(
-        okEnvelope({ speech: "", pending: null }),
-        options.requestId,
-      );
-    });
+    return await options.conversationLock.withLock(
+      conversation.id,
+      async () => {
+        const abandoned = await options.pendingStore.abandon({
+          id: parsed.data.pendingId,
+          bind,
+          expectedVersion: parsed.data.expectedVersion,
+        });
+        if (abandoned.kind === "expired" || abandoned.kind === "forbidden") {
+          return interactionResponse(expiredResult(), options.requestId);
+        }
+        return interactionResponse(
+          okEnvelope({ speech: "", pending: null }),
+          options.requestId,
+        );
+      },
+    );
   } catch (error) {
     if (error instanceof CoreError) {
       options.pipeline.logger.error(
@@ -1581,144 +1593,148 @@ export async function executeStaffAssistantHostChat(
       conversationId: conversation.id,
     };
     const locale = parsed.data.locale ?? STAFF_ASSISTANT_DEFAULT_LOCALE;
-    return options.conversationLock.withLock(conversation.id, async () => {
-      const actor = await executeAction(options.pipeline, {
-        action: getStaffActor,
-        input: {},
-        request: staffRequest({
-          requestId: options.requestId,
-          clientIp: options.clientIp,
-          aiTraceId: options.requestId,
-        }),
-        principal: auth.staffPrincipal,
-      });
-      const appended = await executeAction(options.pipeline, {
-        action: appendUserMessage,
-        input: {
-          conversationId: conversation.id,
-          body: parsed.data.text,
-        },
-        request: staffRequest({
-          requestId: options.requestId,
-          clientIp: options.clientIp,
-          aiTraceId: options.requestId,
-          idempotencyKey: attemptKey(
-            "message",
-            conversation.id,
-            options.requestId,
-          ),
-        }),
-        principal: auth.staffPrincipal,
-      });
-      const history = await loadHistory({
-        pipeline: options.pipeline,
-        conversationId: conversation.id,
-        requestId: options.requestId,
-        clientIp: options.clientIp,
-        principal: auth.staffPrincipal,
-      });
-      const contracts = filterStaffAiTools(options.registry.contracts(), {
-        role: actor.role,
-        permissions: [...actor.permissions],
-      });
-      const open = await options.pendingStore.peekOpen({
-        conversationId: conversation.id,
-        bind,
-      });
-      const checkpoint = createHostCheckpoint({
-        pipeline: options.pipeline,
-        conversationId: conversation.id,
-        requestId: options.requestId,
-        clientIp: options.clientIp,
-        principal: auth.staffPrincipal,
-        beginKey: `begin:${appended.id}`,
-      });
-      const turn = await runStaffAssistantHostTurn({
-        model: options.model,
-        messages: staffAssistantModelMessagesFromPersisted(
-          modelHistoryToPersisted(history.messages),
-        ),
-        contracts,
-        execute: (actionName, input, toolOptions) => {
-          const action = requireImplementation(options.registry, actionName);
-          const executionId = toolOptions.executionId;
-          return executeAction(options.pipeline, {
-            action,
-            input,
-            request: staffRequest({
-              requestId: options.requestId,
-              clientIp: options.clientIp,
-              aiTraceId: options.requestId,
-              toolCallId: toolOptions.toolCallId,
-              ...(executionId !== undefined
-                ? {
-                    idempotencyKey: executionAttemptKey(
-                      conversation.id,
-                      executionId,
-                    ),
-                  }
-                : {}),
-            }),
-            principal: auth.staffPrincipal,
-          });
-        },
-        locale,
-        choiceBind: bind,
-        openPending: (record) => options.pendingStore.open(record),
-        checkPending: async ({ actionName }) => {
-          const current = await options.pendingStore.peekOpen({
+    return await options.conversationLock.withLock(
+      conversation.id,
+      async () => {
+        const actor = await executeAction(options.pipeline, {
+          action: getStaffActor,
+          input: {},
+          request: staffRequest({
+            requestId: options.requestId,
+            clientIp: options.clientIp,
+            aiTraceId: options.requestId,
+          }),
+          principal: auth.staffPrincipal,
+        });
+        const appended = await executeAction(options.pipeline, {
+          action: appendUserMessage,
+          input: {
             conversationId: conversation.id,
-            bind,
-          });
-          if (current.kind !== "found") {
-            return { allow: true };
-          }
-          const implementation = options.registry.getImplementation(actionName);
-          if (implementation?.contract.risk === "read") {
-            return { allow: true };
-          }
-          return refuseHostPendingOpen(locale);
-        },
-        checkpoint,
-        ...(open.kind === "found" && open.record.status === "open"
-          ? {
-              pendingReplace: {
-                actionName: open.record.actionName,
-                apply: (facade: unknown) =>
-                  applyHostPendingReplace({
-                    runtime: options,
-                    record: open.record,
-                    facade,
-                    bind,
-                    staffPrincipal: auth.staffPrincipal,
-                  }),
-              },
+            body: parsed.data.text,
+          },
+          request: staffRequest({
+            requestId: options.requestId,
+            clientIp: options.clientIp,
+            aiTraceId: options.requestId,
+            idempotencyKey: attemptKey(
+              "message",
+              conversation.id,
+              options.requestId,
+            ),
+          }),
+          principal: auth.staffPrincipal,
+        });
+        const history = await loadHistory({
+          pipeline: options.pipeline,
+          conversationId: conversation.id,
+          requestId: options.requestId,
+          clientIp: options.clientIp,
+          principal: auth.staffPrincipal,
+        });
+        const contracts = filterStaffAiTools(options.registry.contracts(), {
+          role: actor.role,
+          permissions: [...actor.permissions],
+        });
+        const open = await options.pendingStore.peekOpen({
+          conversationId: conversation.id,
+          bind,
+        });
+        const checkpoint = createHostCheckpoint({
+          pipeline: options.pipeline,
+          conversationId: conversation.id,
+          requestId: options.requestId,
+          clientIp: options.clientIp,
+          principal: auth.staffPrincipal,
+          beginKey: `begin:${appended.id}`,
+        });
+        const turn = await runStaffAssistantHostTurn({
+          model: options.model,
+          messages: staffAssistantModelMessagesFromPersisted(
+            modelHistoryToPersisted(history.messages),
+          ),
+          contracts,
+          execute: (actionName, input, toolOptions) => {
+            const action = requireImplementation(options.registry, actionName);
+            const executionId = toolOptions.executionId;
+            return executeAction(options.pipeline, {
+              action,
+              input,
+              request: staffRequest({
+                requestId: options.requestId,
+                clientIp: options.clientIp,
+                aiTraceId: options.requestId,
+                toolCallId: toolOptions.toolCallId,
+                ...(executionId !== undefined
+                  ? {
+                      idempotencyKey: executionAttemptKey(
+                        conversation.id,
+                        executionId,
+                      ),
+                    }
+                  : {}),
+              }),
+              principal: auth.staffPrincipal,
+            });
+          },
+          locale,
+          choiceBind: bind,
+          openPending: (record) => options.pendingStore.open(record),
+          checkPending: async ({ actionName }) => {
+            const current = await options.pendingStore.peekOpen({
+              conversationId: conversation.id,
+              bind,
+            });
+            if (current.kind !== "found") {
+              return { allow: true };
             }
-          : {}),
-      });
-      const after = await options.pendingStore.peekOpen({
-        conversationId: conversation.id,
-        bind,
-      });
-      const pending =
-        after.kind === "found"
-          ? (publicPendingFromRecord(after.record) ?? null)
-          : null;
-      const toolResults = turn.toolRuns.flatMap((run) => {
-        if (run.modelTrace === undefined || run.toolName === undefined) {
-          return [];
-        }
-        return [{ toolName: run.toolName, output: run.modelTrace }];
-      });
-      return interactionResponse(
-        okEnvelope({
-          speech: turn.speech.text,
-          toolResults,
-          pending,
-        }),
-        options.requestId,
-      );
-    });
+            const implementation =
+              options.registry.getImplementation(actionName);
+            if (implementation?.contract.risk === "read") {
+              return { allow: true };
+            }
+            return refuseHostPendingOpen(locale);
+          },
+          checkpoint,
+          ...(open.kind === "found" && open.record.status === "open"
+            ? {
+                pendingReplace: {
+                  actionName: open.record.actionName,
+                  apply: (facade: unknown) =>
+                    applyHostPendingReplace({
+                      runtime: options,
+                      record: open.record,
+                      facade,
+                      bind,
+                      staffPrincipal: auth.staffPrincipal,
+                    }),
+                },
+              }
+            : {}),
+        });
+        const after = await options.pendingStore.peekOpen({
+          conversationId: conversation.id,
+          bind,
+        });
+        const pending =
+          after.kind === "found"
+            ? (publicPendingFromRecord(after.record) ?? null)
+            : null;
+        const toolResults = turn.toolRuns.flatMap((run) => {
+          if (run.modelTrace === undefined || run.toolName === undefined) {
+            return [];
+          }
+          return [{ toolName: run.toolName, output: run.modelTrace }];
+        });
+        return interactionResponse(
+          okEnvelope({
+            speech: turn.speech.text,
+            toolResults,
+            pending,
+          }),
+          options.requestId,
+        );
+      },
+    );
   } catch (error) {
     if (error instanceof CoreError) {
       options.pipeline.logger.error(
@@ -1744,7 +1760,7 @@ export function createStaffAssistantHostApp(
   options: CreateStaffAssistantHostAppOptions,
 ): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
-  app.use("*", async (c, next) => {
+  app.use(async (c, next) => {
     c.set("requestId", resolveRequestId(c.req.header(REQUEST_ID_HEADER)));
     c.set(
       "clientIp",

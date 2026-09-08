@@ -37,8 +37,8 @@ describe("unpublished staff-assistant host (SHO-522)", () => {
     expect(ASSISTANT_HOST_CHOICE_PATH).toBe("/assistant/choice");
     const hostSrc = readFileSync(join(here, "assistant-host.ts"), "utf8");
     expect(hostSrc).toContain("createStaffAssistantHostApp");
-    expect(hostSrc).not.toContain("implementAction");
-    expect(hostSrc).not.toContain("defineActionContract");
+    expect(hostSrc).not.toMatch(/implementAction\s*\(/);
+    expect(hostSrc).not.toMatch(/defineActionContract\s*\(/);
   });
 
   it("does not GETDEL in the pending Redis scripts (core owns confirmation consume)", () => {

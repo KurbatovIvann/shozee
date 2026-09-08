@@ -256,14 +256,6 @@ export function hideConfirmationLocally(args: {
   return next;
 }
 
-/** @deprecated Local hide is not the card path. Use executeConfirmationAbandon. */
-export function executeConfirmationDismiss(args: {
-  readonly pending: PendingConfirmation | null;
-  readonly dismissed: ReadonlySet<string>;
-}): ReadonlySet<string> {
-  return hideConfirmationLocally(args);
-}
-
 export async function executeConfirmationAbandon(args: {
   readonly pending: PendingConfirmation | null;
   readonly conversationId: string | null;

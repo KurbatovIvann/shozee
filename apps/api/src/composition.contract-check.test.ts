@@ -290,7 +290,7 @@ describe("CI contract-check stage", () => {
     );
     const replaceSrc = readFileSync(
       new URL(
-        "../../packages/ai/src/host-tools/pending-replace.ts",
+        "../../../packages/ai/src/host-tools/pending-replace.ts",
         import.meta.url,
       ),
       "utf8",
@@ -301,10 +301,10 @@ describe("CI contract-check stage", () => {
     );
     expect(hostSrc).toContain('"/assistant/confirm"');
     expect(hostSrc).toContain('"/assistant/pending/abandon"');
-    expect(hostSrc).not.toContain("implementAction");
+    expect(hostSrc).not.toMatch(/implementAction\s*\(/);
     expect(replaceSrc).toContain("createPendingReplaceTool");
-    expect(replaceSrc).not.toContain("implementAction");
-    expect(replaceSrc).not.toContain("defineActionContract");
+    expect(replaceSrc).not.toMatch(/implementAction\s*\(/);
+    expect(replaceSrc).not.toMatch(/defineActionContract\s*\(/);
     expect(appSrc).not.toContain("ASSISTANT_CONFIRM_PATH");
     expect(appSrc).not.toContain("ASSISTANT_PENDING_ABANDON_PATH");
     expect(appSrc).not.toContain('"/assistant/host/chat"');

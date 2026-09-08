@@ -3,7 +3,10 @@
  */
 import { randomUUID } from "node:crypto";
 
-import { pendingChoiceRecordFromChoiceRecord } from "@showzy/ai";
+import {
+  pendingChoiceRecordFromChoiceRecord,
+  pendingRedisKey,
+} from "@showzy/ai";
 import { CoreInvariantError } from "@showzy/core/errors";
 import {
   RedisContainer,
@@ -349,21 +352,20 @@ describe("createRedisChoiceStore", () => {
 });
 
 describe("createRedisPendingStore", () => {
-  const conversationId = "11111111-1111-4111-8111-111111111111";
-  const companyId = "22222222-2222-4222-8222-222222222222";
-  const productId = "44444444-4444-4444-8444-444444444444";
-  const variantLemon = "55555555-5555-4555-8555-555555555555";
-  const variantVanilla = "66666666-6666-4666-8666-666666666666";
-  const customerId = "77777777-7777-4777-8777-777777777777";
-  const optionLemon = "88888888-8888-4888-8888-888888888888";
-  const optionVanilla = "99999999-9999-4999-8999-999999999999";
-  const pendingBind = {
-    actorId: "anna",
-    companyId,
-    conversationId,
-  };
-
   it("claim CAS, different option conflict, wrong bind forbidden", async () => {
+    const conversationId = randomUUID();
+    const companyId = randomUUID();
+    const productId = randomUUID();
+    const variantLemon = randomUUID();
+    const variantVanilla = randomUUID();
+    const customerId = randomUUID();
+    const optionLemon = randomUUID();
+    const optionVanilla = randomUUID();
+    const pendingBind = {
+      actorId: "anna",
+      companyId,
+      conversationId,
+    };
     const store = createRedisPendingStore(redis);
     const choiceId = randomUUID();
     const record = pendingChoiceRecordFromChoiceRecord(
@@ -406,6 +408,7 @@ describe("createRedisPendingStore", () => {
         executionId: "exec-1",
       },
     );
+    expect(await redis.get(pendingRedisKey("choice", choiceId))).toBeNull();
     expect(await store.open(record)).toBe(true);
     expect(await store.open(record)).toBe(false);
     const claimed = await store.claim({
@@ -415,6 +418,13 @@ describe("createRedisPendingStore", () => {
       optionId: optionLemon,
     });
     expect(claimed.kind).toBe("claimed");
+    const replay = await store.claim({
+      id: choiceId,
+      kind: "choice",
+      bind: pendingBind,
+      optionId: optionLemon,
+    });
+    expect(replay.kind).toBe("replay");
     const conflict = await store.claim({
       id: choiceId,
       kind: "choice",
@@ -429,5 +439,135 @@ describe("createRedisPendingStore", () => {
       optionId: optionLemon,
     });
     expect(forbidden.kind).toBe("forbidden");
+    const completed = await store.complete({
+      id: choiceId,
+      kind: "choice",
+      bind: pendingBind,
+      optionId: optionLemon,
+    });
+    expect(completed.kind).toBe("completed");
+    const completeReplay = await store.complete({
+      id: choiceId,
+      kind: "choice",
+      bind: pendingBind,
+      optionId: optionLemon,
+    });
+    expect(completeReplay.kind).toBe("replay");
+  });
+
+  it("abandon and replace are version-CAS", async () => {
+    const conversationId = randomUUID();
+    const companyId = randomUUID();
+    const productId = randomUUID();
+    const variantLemon = randomUUID();
+    const variantVanilla = randomUUID();
+    const customerId = randomUUID();
+    const optionLemon = randomUUID();
+    const optionVanilla = randomUUID();
+    const pendingBind = {
+      actorId: "anna",
+      companyId,
+      conversationId,
+    };
+    const store = createRedisPendingStore(redis);
+
+    function choiceRecord(choiceId: string) {
+      return pendingChoiceRecordFromChoiceRecord(
+        {
+          status: "open",
+          choiceId,
+          actorId: "anna",
+          companyId,
+          conversationId,
+          canonicalInput: {
+            customer: { by: "id", id: customerId },
+            items: [
+              {
+                product: { by: "id", id: productId },
+                variantSelection: { kind: "unspecified" },
+                quantity: { milli: "1000" },
+              },
+            ],
+          },
+          target: { lineIndex: 0, productId, productName: "Macarons" },
+          optionMap: {
+            [optionLemon]: variantLemon,
+            [optionVanilla]: variantVanilla,
+          },
+          envelope: {
+            status: "needs_choice",
+            challengeId: choiceId,
+            reason: "variant_required",
+            productName: "Macarons",
+            options: [
+              { id: optionLemon, label: "Lemon" },
+              { id: optionVanilla, label: "Vanilla" },
+            ],
+            optionsTruncated: false,
+          },
+        },
+        {
+          actionName: "orders.create",
+          toolCallId: "call-create",
+          executionId: "exec-1",
+        },
+      );
+    }
+
+    const abandonId = randomUUID();
+    expect(await store.open(choiceRecord(abandonId))).toBe(true);
+    expect(
+      await store.abandon({
+        id: abandonId,
+        bind: pendingBind,
+        expectedVersion: 9,
+      }),
+    ).toEqual({ kind: "expired" });
+    const abandoned = await store.abandon({
+      id: abandonId,
+      bind: pendingBind,
+      expectedVersion: 1,
+    });
+    expect(abandoned.kind).toBe("abandoned");
+    const abandonReplay = await store.abandon({
+      id: abandonId,
+      bind: pendingBind,
+      expectedVersion: 1,
+    });
+    expect(abandonReplay.kind).toBe("replay");
+
+    const originalId = randomUUID();
+    const nextId = randomUUID();
+    expect(await store.open(choiceRecord(originalId))).toBe(true);
+    expect(
+      await store.replace({
+        id: originalId,
+        bind: pendingBind,
+        expectedVersion: 9,
+        next: choiceRecord(nextId),
+      }),
+    ).toEqual({ kind: "expired" });
+    const replaced = await store.replace({
+      id: originalId,
+      bind: pendingBind,
+      expectedVersion: 1,
+      next: choiceRecord(nextId),
+    });
+    expect(replaced.kind).toBe("replaced");
+    expect(
+      await store.claim({
+        id: originalId,
+        kind: "choice",
+        bind: pendingBind,
+        optionId: optionLemon,
+      }),
+    ).toEqual({ kind: "expired" });
+    const nextClaim = await store.claim({
+      id: nextId,
+      kind: "choice",
+      bind: pendingBind,
+      optionId: optionLemon,
+    });
+    expect(nextClaim.kind).toBe("claimed");
   });
 });

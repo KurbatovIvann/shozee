@@ -201,7 +201,7 @@ export function partsFromResumeEnvelope(
       parts.push({
         type: "dynamic-tool",
         toolName: "orders.create",
-        toolCallId: `resume-surface:${surfaceIndex}`,
+        toolCallId: `resume-surface:${String(surfaceIndex)}`,
         state: "output-available",
         input: {},
         output: entity,

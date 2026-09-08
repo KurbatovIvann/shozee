@@ -212,9 +212,9 @@ describe("wrapHostSequentialExecute", () => {
     const execute = vi.fn(() => Promise.resolve({ orderId: customerId }));
     const state = emptyHostState();
     const wrapped = wrapHostSequentialExecute(execute, state, {
-      checkPending: async ({ actionName }) => {
+      checkPending: ({ actionName }) => {
         expect(actionName).toBe("orders.create");
-        return refuseHostPendingOpen("en");
+        return Promise.resolve(refuseHostPendingOpen("en"));
       },
     });
     const output = await wrapped(

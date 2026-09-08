@@ -7,7 +7,6 @@ import {
   confirmationResumeHeaders,
   executeConfirmationAbandon,
   executeConfirmationConfirm,
-  executeConfirmationDismiss,
   hideConfirmationLocally,
   pendingConfirmationFromMessages,
   shouldMarkConfirmationResolved,
@@ -87,7 +86,7 @@ describe("pendingConfirmationFromMessages", () => {
 
   it("hides a dismissed challenge and does not execute", () => {
     const pending = pendingConfirmationFromMessages(messages, new Set());
-    const dismissed = executeConfirmationDismiss({
+    const dismissed = hideConfirmationLocally({
       pending,
       dismissed: new Set(),
     });
@@ -162,7 +161,7 @@ describe("executeConfirmationConfirm", () => {
       }),
     );
     const pending = pendingConfirmationFromMessages(messages, new Set());
-    const dismissed = executeConfirmationDismiss({
+    const dismissed = hideConfirmationLocally({
       pending,
       dismissed: new Set(),
     });
@@ -193,7 +192,7 @@ describe("executeConfirmationConfirm", () => {
       dismissed: new Set<string>(),
     };
     gate.dismissed = new Set(
-      executeConfirmationDismiss({
+      hideConfirmationLocally({
         pending,
         dismissed: gate.dismissed,
       }),

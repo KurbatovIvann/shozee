@@ -19,13 +19,10 @@ describe("createMemoryConversationLock", () => {
         return "a";
       },
     );
-    const second = lock.withLock(
-      "11111111-1111-4111-8111-111111111111",
-      async () => {
-        order.push(3);
-        return "b";
-      },
-    );
+    const second = lock.withLock("11111111-1111-4111-8111-111111111111", () => {
+      order.push(3);
+      return Promise.resolve("b");
+    });
     await Promise.resolve();
     expect(order).toEqual([1]);
     releaseFirst();
@@ -49,13 +46,10 @@ describe("createMemoryConversationLock", () => {
         return 1;
       },
     );
-    const b = lock.withLock(
-      "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-      async () => {
-        started.push("b");
-        return 2;
-      },
-    );
+    const b = lock.withLock("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", () => {
+      started.push("b");
+      return Promise.resolve(2);
+    });
     await Promise.resolve();
     expect(started).toEqual(["a", "b"]);
     releaseA();

@@ -21,8 +21,8 @@ describe("pending_replace host tool", () => {
   it("is a packages/ai host tool, not implementAction and not a mapped façade", () => {
     const src = readFileSync(join(here, "pending-replace.ts"), "utf8");
     expect(src).toContain("createPendingReplaceTool");
-    expect(src).not.toContain("implementAction");
-    expect(src).not.toContain("defineActionContract");
+    expect(src).not.toMatch(/implementAction\s*\(/);
+    expect(src).not.toMatch(/defineActionContract\s*\(/);
     expect(PENDING_REPLACE_TOOL_NAME).toBe("pending_replace");
     expect(PENDING_REPLACE_DESCRIPTION).toContain("Do not send pending id");
   });

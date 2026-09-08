@@ -1,7 +1,7 @@
 /**
  * Host tool `pending_replace` (SHO-522 / ADR-0037).
  *
- * Not `implementAction`, not an ADR-0033 façade, not a second
+ * Not a domain action handler, not an ADR-0033 façade, not a second
  * `orders.create` execute. The host injects pending id + expected
  * version; the model schema must not include them.
  */

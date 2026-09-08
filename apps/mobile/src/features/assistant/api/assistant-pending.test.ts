@@ -63,12 +63,15 @@ describe("assistant pending HTTP (SHO-522)", () => {
       pending: { kind: "confirmation", id: challengeId, version: 1 },
     });
     expect(fetchMock).toHaveBeenCalledOnce();
-    const [url, init] = fetchMock.mock.calls[0] ?? [];
-    expect(url).toBe(
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
       assistantPendingUrl("https://api.example.com", conversationId),
     );
-    expect(init).toMatchObject({ method: "GET" });
-    expect(JSON.stringify(init)).not.toContain("canonicalInput");
+    expect(fetchMock.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({ method: "GET" }),
+    );
+    expect(JSON.stringify(fetchMock.mock.calls[0]?.[1])).not.toContain(
+      "canonicalInput",
+    );
   });
 
   it("POSTs /assistant/confirm with conversationId and challengeId only", async () => {
@@ -90,15 +93,21 @@ describe("assistant pending HTTP (SHO-522)", () => {
       cards: [],
       pending: null,
     });
-    const [url, init] = fetchMock.mock.calls[0] ?? [];
-    expect(url).toBe(assistantConfirmUrl("https://api.example.com"));
-    expect(init).toMatchObject({ method: "POST" });
-    expect(JSON.parse(String(init?.body))).toEqual({
-      conversationId,
-      challengeId,
-    });
-    expect(String(init?.body)).not.toContain("canonicalInput");
-    expect(String(url)).toBe("https://api.example.com/assistant/confirm");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      assistantConfirmUrl("https://api.example.com"),
+    );
+    expect(fetchMock.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ conversationId, challengeId }),
+      }),
+    );
+    expect(JSON.stringify(fetchMock.mock.calls[0]?.[1])).not.toContain(
+      "canonicalInput",
+    );
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+      "https://api.example.com/assistant/confirm",
+    );
   });
 
   it("POSTs /assistant/pending/abandon with version CAS fields", async () => {
@@ -116,13 +125,18 @@ describe("assistant pending HTTP (SHO-522)", () => {
       expectedVersion: 2,
     });
     expect(result.status).toBe("ok");
-    const [url, init] = fetchMock.mock.calls[0] ?? [];
-    expect(url).toBe(assistantPendingAbandonUrl("https://api.example.com"));
-    expect(JSON.parse(String(init?.body))).toEqual({
-      conversationId,
-      pendingId: challengeId,
-      expectedVersion: 2,
-    });
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      assistantPendingAbandonUrl("https://api.example.com"),
+    );
+    expect(fetchMock.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({
+        body: JSON.stringify({
+          conversationId,
+          pendingId: challengeId,
+          expectedVersion: 2,
+        }),
+      }),
+    );
   });
 
   it("treats GET failure as unavailable so hydrate can fall back", async () => {
