@@ -70,7 +70,7 @@ describe("createStaffAssistantTransport", () => {
     });
   });
 
-  it("forwards x-confirmation-challenge-id when leftover resume() headers are set", async () => {
+  it("forwards leftover x-confirmation-challenge-id without switching to a resume body", async () => {
     const transport = createStaffAssistantTransport({
       apiUrl: "https://api.example.com",
       getCookie: () => "better-auth.session_token=abc",
@@ -110,11 +110,9 @@ describe("createStaffAssistantTransport", () => {
       messageId?: string;
       messages?: unknown;
     };
-    expect(body).not.toHaveProperty("text");
-    expect(body).not.toHaveProperty("messageId");
-    expect(JSON.stringify(body.messages ?? [])).not.toContain(
-      "Delete the customer",
-    );
+    expect(body.text).toBe("Delete the customer");
+    expect(body.messageId).toBe("u1");
+    expect(body).not.toHaveProperty("messages");
   });
 
   it("sends text and a stable messageId without messages on a fresh turn", async () => {

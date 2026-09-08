@@ -117,8 +117,6 @@ server-authoritative canonical input. Resume is HTTP
 the stored action, persist, complete — with no model. Core still issues
 and consumes the confirmation challenge (hash + bindings). Dismiss is
 client-local. Canonical input and challenge ids are not logged at info.
-`x-confirmation-challenge-id` on `POST /assistant/chat` is a temporary
-adapter for old mobile builds.
 
 ## Tests
 

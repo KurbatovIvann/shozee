@@ -12,6 +12,7 @@ import {
   clipStaffAssistantToolResult,
   commitTurnSpeech,
   extractUuidResultIds,
+  presentConfirmationDoneSpeech,
   STAFF_ASSISTANT_CONFIRMATION_EXPIRED_COPY,
   toProviderToolName,
   type AssistantConfirmInteractionResult,
@@ -34,9 +35,12 @@ import {
   type SessionPrincipal,
 } from "@showzy/core";
 import {
+  ConcurrentRetryError,
   ConfirmationRequiredError,
   CoreError,
   CoreInvariantError,
+  RateLimitError,
+  TimeoutError,
   ValidationError,
 } from "@showzy/core/errors";
 import type { z } from "zod";
@@ -335,9 +339,17 @@ async function markCompleted(
   });
 }
 
+function isRetryableConfirmationResumeError(error: unknown): boolean {
+  return (
+    error instanceof ConcurrentRetryError ||
+    error instanceof RateLimitError ||
+    error instanceof TimeoutError
+  );
+}
+
 /**
- * Shared modelless executor for `POST /assistant/confirm` and the
- * `x-confirmation-challenge-id` adapter on `POST /assistant/chat`.
+ * Modelless executor for `POST /assistant/confirm`. Temporary pipeline
+ * errors leave the record claimed so a later POST can finish.
  */
 export async function runPendingConfirmationResume(
   options: PendingConfirmationResumeInput,
@@ -386,8 +398,44 @@ export async function runPendingConfirmationResume(
   const action = requireImplementation(options.registry, pending.actionName);
   const toolName = toProviderToolName(pending.actionName);
 
+  const persistTerminalFailure = async (
+    code: string,
+    protocolOverride: string,
+  ): Promise<AssistantConfirmInteractionResult> => {
+    const speech = commitTurnSpeech({
+      locale,
+      toolResults: [],
+      rawText: "",
+      runs: [{ outcome: "error" }],
+      protocolOverride,
+    });
+    await persistConfirmationTurn({
+      pipeline: options.pipeline,
+      conversationId: conversation.id,
+      challengeId: pending.id,
+      requestId: options.requestId,
+      clientIp: options.clientIp,
+      principal: staffPrincipal,
+      body: speech.text,
+      actionName: pending.actionName,
+      toolCallId: pending.toolCallId,
+      resultIds: [],
+      outcome: "error",
+      toolName,
+    });
+    const resumeResult: ConfirmationResumeResult = {
+      status: "error",
+      text: speech.text,
+      code,
+      message: speech.text,
+    };
+    await markCompleted(options.pendingStore, pending, bind, resumeResult);
+    return toHttpResult(resumeResult);
+  };
+
+  let output: unknown;
   try {
-    const output: unknown = await executeAction(options.pipeline, {
+    output = await executeAction(options.pipeline, {
       action,
       input: pending.canonicalInput,
       request: staffRequest({
@@ -400,19 +448,44 @@ export async function runPendingConfirmationResume(
       }),
       principal: staffPrincipal,
     });
-    const clipped = clipStaffAssistantToolResult(output);
-    const speech = commitTurnSpeech({
+  } catch (error) {
+    if (isRetryableConfirmationResumeError(error)) {
+      throw error;
+    }
+    if (error instanceof ConfirmationRequiredError) {
+      return persistTerminalFailure(error.code, expiredCopy(locale));
+    }
+    if (error instanceof CoreError) {
+      return persistTerminalFailure(error.code, error.clientMessage);
+    }
+    throw error;
+  }
+
+  const clipped = clipStaffAssistantToolResult(output);
+  const speech = commitTurnSpeech({
+    locale,
+    toolResults: [
+      {
+        toolName,
+        output: clipped,
+        toolCallId: pending.toolCallId,
+      },
+    ],
+    rawText: "",
+    runs: [{ outcome: "success" }],
+    protocolOverride: presentConfirmationDoneSpeech({
       locale,
-      toolResults: [
-        {
-          toolName,
-          output: clipped,
-          toolCallId: pending.toolCallId,
-        },
-      ],
-      rawText: "",
-      runs: [{ outcome: "success" }],
-    });
+      actionName: pending.actionName,
+    }),
+  });
+  const resumeResult: ConfirmationResumeResult = {
+    status: "completed",
+    text: speech.text,
+    actionName: pending.actionName,
+    toolCallId: pending.toolCallId,
+    output: clipped,
+  };
+  try {
     await persistConfirmationTurn({
       pipeline: options.pipeline,
       conversationId: conversation.id,
@@ -428,81 +501,13 @@ export async function runPendingConfirmationResume(
       modelTrace: clipped,
       toolName,
     });
-    const resumeResult: ConfirmationResumeResult = {
-      status: "completed",
-      text: speech.text,
-      actionName: pending.actionName,
-      toolCallId: pending.toolCallId,
-      output: clipped,
-    };
     await markCompleted(options.pendingStore, pending, bind, resumeResult);
-    return toHttpResult(resumeResult);
   } catch (error) {
-    if (error instanceof ConfirmationRequiredError) {
-      const text = expiredCopy(locale);
-      const speech = commitTurnSpeech({
-        locale,
-        toolResults: [],
-        rawText: "",
-        runs: [{ outcome: "error" }],
-        protocolOverride: text,
-      });
-      await persistConfirmationTurn({
-        pipeline: options.pipeline,
-        conversationId: conversation.id,
-        challengeId: pending.id,
-        requestId: options.requestId,
-        clientIp: options.clientIp,
-        principal: staffPrincipal,
-        body: speech.text,
-        actionName: pending.actionName,
-        toolCallId: pending.toolCallId,
-        resultIds: [],
-        outcome: "error",
-        toolName,
-      });
-      const resumeResult: ConfirmationResumeResult = {
-        status: "error",
-        text: speech.text,
-        code: error.code,
-        message: speech.text,
-      };
-      await markCompleted(options.pendingStore, pending, bind, resumeResult);
-      return toHttpResult(resumeResult);
-    }
-    if (error instanceof CoreError) {
-      const speech = commitTurnSpeech({
-        locale,
-        toolResults: [],
-        rawText: "",
-        runs: [{ outcome: "error" }],
-        protocolOverride: error.clientMessage,
-      });
-      await persistConfirmationTurn({
-        pipeline: options.pipeline,
-        conversationId: conversation.id,
-        challengeId: pending.id,
-        requestId: options.requestId,
-        clientIp: options.clientIp,
-        principal: staffPrincipal,
-        body: speech.text,
-        actionName: pending.actionName,
-        toolCallId: pending.toolCallId,
-        resultIds: [],
-        outcome: "error",
-        toolName,
-      });
-      const resumeResult: ConfirmationResumeResult = {
-        status: "error",
-        text: speech.text,
-        code: error.code,
-        message: speech.text,
-      };
-      await markCompleted(options.pendingStore, pending, bind, resumeResult);
-      return toHttpResult(resumeResult);
-    }
+    // The domain write already committed. Leave the record claimed so a
+    // later POST can persist the success turn and complete.
     throw error;
   }
+  return toHttpResult(resumeResult);
 }
 
 /**

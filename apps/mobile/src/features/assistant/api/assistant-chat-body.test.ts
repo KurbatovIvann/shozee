@@ -253,7 +253,7 @@ describe("prepareStaffAssistantChatRequest", () => {
 });
 
 describe("prepareStaffAssistantSendMessagesRequest", () => {
-  it("returns the request headers including the confirmation challenge", () => {
+  it("returns headers including leftover confirmation challenge as a user turn", () => {
     const headers = {
       cookie: "better-auth.session_token=abc",
       "x-company-id": "company-a",
@@ -291,34 +291,13 @@ describe("prepareStaffAssistantSendMessagesRequest", () => {
     expect(prepared.headers).toEqual(headers);
     expect(prepared.credentials).toBe("omit");
     expect(prepared.body).not.toHaveProperty("companyId");
-    expect(prepared.body).not.toHaveProperty("text");
-    expect(prepared.body).not.toHaveProperty("messageId");
-    expect(prepared.body.locale).toBe("uk");
-    expect(prepared.body.messages).toEqual([
-      {
-        id: "a1",
-        role: "assistant",
-        parts: [
-          {
-            type: "data-confirmation",
-            data: {
-              status: "confirmation_required",
-              challengeId,
-              summary: "Delete this archived customer.",
-              expiresAt: "2026-09-01T12:00:00.000Z",
-              actionName: "customers.deleteCustomer",
-              toolCallId: "call-delete",
-            },
-          },
-        ],
-      },
-    ]);
-    expect(JSON.stringify(prepared.body.messages)).not.toContain(
-      "Delete the customer",
-    );
-    expect(JSON.stringify(prepared.body.messages)).not.toContain(
-      "Confirmation required.",
-    );
+    expect(prepared.body).toMatchObject({
+      conversationId,
+      text: "Delete the customer",
+      messageId: "u1",
+      locale: "uk",
+    });
+    expect(prepared.body).not.toHaveProperty("messages");
   });
 });
 

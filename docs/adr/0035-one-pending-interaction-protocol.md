@@ -131,13 +131,12 @@ key drift) does not loop: the api marks the record failed, persists outcome
 
 ### 6. Compatibility
 
-`x-confirmation-challenge-id` on `POST /assistant/chat` stays as an
-**adapter** for mobile builds shipped before the new route: the mount
-resolves the record by header and runs the same modelless executor,
-ignoring client text for that request, and logs a deprecation counter. The
-model re-entry code path is deleted, not kept behind the header. The
-adapter is removed when the supported mobile minimum passes the build that
-calls `/assistant/confirm`.
+Owner decision 2026-09-08 (SHO-516 review): there is no legacy mobile
+window. Confirmation resume is `POST /assistant/confirm` only.
+`x-confirmation-challenge-id` on `POST /assistant/chat` is not an
+adapter; a leftover header is ignored and a user message is required.
+Form/oRPC confirms still send that header (contract mutation). Dismiss
+stays client-local.
 
 ### 7. Rule for future producers
 
@@ -189,8 +188,9 @@ Required by SHO-430; each is a test in SHO-516 unless marked otherwise.
   level, and hold the same class of data the choice record already holds
   (canonical action input, which may include a customer's name or phone);
   this ADR accepts that posture explicitly.
-- **Old-mobile window.** The header adapter (Decision §6) covers it; the
-  wire contract of the card and of `/assistant/choice` is unchanged.
+- **Old-mobile window.** None. Owner 2026-09-08: no legacy chat-header
+  adapter. The wire contract of the confirmation card and of
+  `/assistant/choice` is unchanged.
 - **Generic record outside the orders-specific choice schema.** Yes: a
   discriminated union. The `choice` variant keeps its typed
   `orders.create` input; the `confirmation` variant stores `unknown`
@@ -230,10 +230,11 @@ Required by SHO-430; each is a test in SHO-516 unless marked otherwise.
   minutes for one more kind (same posture as choice today); `apps/api`
   gains a route and the mobile confirmation card changes its call.
 - Migration: [SHO-516](https://linear.app/showzy-v2/issue/SHO-516)
-  implements this after [SHO-513](https://linear.app/showzy-v2/issue/SHO-513);
-  the header adapter is removed in a follow-up ticket when the mobile
-  minimum version passes. `stores/choice.ts` becomes the `choice` variant
-  of `stores/pending-interaction.ts` with its tests kept.
+  implements this after [SHO-513](https://linear.app/showzy-v2/issue/SHO-513).
+  The chat-header adapter was removed in the same PR by owner decision
+  2026-09-08 (no supported legacy mobile client). `stores/choice.ts` becomes
+  the `choice` variant of `stores/pending-interaction.ts` with its tests
+  kept.
 - Documentation: `packages/ai/AGENTS.md`, the `assistant` module
   `AGENTS.md`, and `docs/specs/security-operations.md` gain one paragraph
   each pointing here (in SHO-516). core.md §7 is unchanged.

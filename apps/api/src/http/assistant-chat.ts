@@ -11,7 +11,6 @@
 import {
   attemptKey,
   classifyStaffAssistantTurn,
-  createModellessAssistantTextStreamResponse,
   createStaffLanguageModel,
   EMPTY_STAFF_ASSISTANT_TURN_USAGE,
   estimateStaffAssistantTurnCostUsd,
@@ -28,11 +27,9 @@ import {
   staffAssistantUncachedInputTokens,
   staffAssistantWorkingSetAddendum,
   streamStaffAssistantChat,
-  STAFF_ASSISTANT_CONFIRMATION_EXPIRED_COPY,
   STAFF_ASSISTANT_DEFAULT_LOCALE,
   STAFF_ASSISTANT_THINKING_DISABLED,
   STAFF_ASSISTANT_TOOL_RUNS_MAX,
-  type AssistantConfirmInteractionResult,
   type LanguageModel,
   type StaffAssistantChatMessage,
   type StaffAssistantGateSkipReason,
@@ -52,10 +49,7 @@ import {
   recordAssistantTurn,
 } from "@showzy/assistant";
 import { getCompany } from "@showzy/companies";
-import {
-  COMPANY_SELECTOR_HEADER,
-  CONFIRMATION_CHALLENGE_HEADER,
-} from "@showzy/contract";
+import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
 import { toWireError } from "@showzy/contract/server";
 import {
   executeAction,
@@ -91,7 +85,6 @@ import {
   releaseStaffAssistantBudgetHold,
   type StaffAssistantBudgetLimits,
 } from "./assistant-budget-guard.js";
-import { runPendingConfirmationResume } from "./assistant-confirm.js";
 import { ASSISTANT_INVOCATION_CHANNEL } from "./assistant-invocation.js";
 import { REQUEST_ID_HEADER } from "./request-id.js";
 
@@ -165,11 +158,6 @@ export interface StaffAssistantChatOptions {
 function headerOrNull(headers: Headers, name: string): string | null {
   const value = headers.get(name);
   return value === null || value === "" ? null : value;
-}
-
-function optionalHeader(headers: Headers, name: string): string | undefined {
-  const value = headers.get(name);
-  return value === null || value === "" ? undefined : value;
 }
 
 function jsonResponse(
@@ -416,45 +404,6 @@ function pendingStoreForChat(
   return options.pendingStore ?? pendingStoreBacking(options.choiceStore);
 }
 
-function logLegacyConfirmationHeader(logger: Logger, requestId: string): void {
-  logger.info(
-    {
-      request_id: requestId,
-      event: "assistant.legacy_confirmation_header",
-    },
-    "staff assistant confirmation resume via legacy chat header",
-  );
-}
-
-function modellessConfirmationSse(
-  result: AssistantConfirmInteractionResult,
-  requestId: string,
-  locale: StaffAssistantLocale,
-): Response {
-  const headers = {
-    "cache-control": "private, no-store",
-    [REQUEST_ID_HEADER]: requestId,
-  };
-  if (result.status === "completed") {
-    return createModellessAssistantTextStreamResponse({
-      text: result.text,
-      headers,
-      toolCallId: result.toolCallId,
-      ...(result.output !== undefined ? { output: result.output } : {}),
-    });
-  }
-  if (result.status === "error") {
-    return createModellessAssistantTextStreamResponse({
-      text: result.message,
-      headers,
-    });
-  }
-  return createModellessAssistantTextStreamResponse({
-    text: STAFF_ASSISTANT_CONFIRMATION_EXPIRED_COPY[locale],
-    headers,
-  });
-}
-
 /**
  * History after `appendUserMessage` is assembled from
  * `assistant.getModelHistory` plus the just-appended user row. Dedupes
@@ -523,7 +472,6 @@ function staffRequest(options: {
   readonly aiTraceId: string;
   readonly toolCallId?: string;
   readonly idempotencyKey?: string;
-  readonly confirmationChallengeId?: string;
 }) {
   return {
     requestId: options.requestId,
@@ -536,9 +484,6 @@ function staffRequest(options: {
       : {}),
     ...(options.idempotencyKey !== undefined
       ? { idempotencyKey: options.idempotencyKey }
-      : {}),
-    ...(options.confirmationChallengeId !== undefined
-      ? { confirmationChallengeId: options.confirmationChallengeId }
       : {}),
   };
 }
@@ -560,10 +505,6 @@ export async function executeStaffAssistantChat(
   const companySelector = headerOrNull(
     options.request.headers,
     COMPANY_SELECTOR_HEADER,
-  );
-  const confirmationChallengeId = optionalHeader(
-    options.request.headers,
-    CONFIRMATION_CHALLENGE_HEADER,
   );
   const aiTraceId = options.requestId;
   const staffPrincipal = {
@@ -587,7 +528,7 @@ export async function executeStaffAssistantChat(
 
     const body = await parseChatBody(options.request);
     const userMessage = body.userMessage;
-    if (userMessage === undefined && confirmationChallengeId === undefined) {
+    if (userMessage === undefined) {
       throw new ValidationError([
         {
           code: "custom",
@@ -596,30 +537,6 @@ export async function executeStaffAssistantChat(
           input: undefined,
         },
       ]);
-    }
-
-    if (confirmationChallengeId !== undefined) {
-      logLegacyConfirmationHeader(options.pipeline.logger, options.requestId);
-      const pendingStore = pendingStoreForChat(options);
-      if (pendingStore === undefined) {
-        return modellessConfirmationSse(
-          { status: "expired" },
-          options.requestId,
-          body.locale,
-        );
-      }
-      const result = await runPendingConfirmationResume({
-        conversationId: body.conversationId,
-        challengeId: confirmationChallengeId,
-        requestId: options.requestId,
-        clientIp: options.clientIp,
-        registry: options.registry,
-        pipeline: options.pipeline,
-        pendingStore,
-        session,
-        companySelector,
-      });
-      return modellessConfirmationSse(result, options.requestId, body.locale);
     }
 
     const [conversation, modelHistory] = await Promise.all([

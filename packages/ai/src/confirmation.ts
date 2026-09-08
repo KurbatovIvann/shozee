@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { StaffAssistantLocale } from "./locale.js";
+import { staffAssistantLocale, type StaffAssistantLocale } from "./locale.js";
 
 export const STAFF_ASSISTANT_CONFIRMATION_STATUS =
   "confirmation_required" as const;
@@ -67,3 +67,55 @@ export const STAFF_ASSISTANT_CONFIRMATION_EXPIRED_COPY: Record<
   en: "Confirmation expired. Ask again.",
   uk: "Підтвердження прострочене. Запитай ще раз.",
 };
+
+/**
+ * Protocol speech after a modelless confirmation resume (SHO-516).
+ * Past-tense statements — no second model call, no Ви-imperatives.
+ */
+export const STAFF_ASSISTANT_CONFIRMATION_DONE_COPY = {
+  "customers.deleteCustomer": {
+    uk: "Клієнта видалено.",
+    en: "Customer deleted.",
+  },
+  "customers.deleteGroup": {
+    uk: "Групу видалено.",
+    en: "Group deleted.",
+  },
+  "customers.deleteCounterparty": {
+    uk: "Контрагента видалено.",
+    en: "Counterparty deleted.",
+  },
+  "pricing.deletePriceList": {
+    uk: "Прайс-лист видалено.",
+    en: "Price list deleted.",
+  },
+  "documents.requestSign": {
+    uk: "Запит на підпис підтверджено.",
+    en: "Signature request confirmed.",
+  },
+} as const;
+
+export const STAFF_ASSISTANT_CONFIRMATION_DONE_FALLBACK: Record<
+  StaffAssistantLocale,
+  string
+> = {
+  uk: "Підтверджено.",
+  en: "Confirmed.",
+};
+
+export function presentConfirmationDoneSpeech(options: {
+  readonly locale: string | undefined;
+  readonly actionName: string;
+}): string {
+  const locale = staffAssistantLocale(options.locale);
+  switch (options.actionName) {
+    case "customers.deleteCustomer":
+    case "customers.deleteGroup":
+    case "customers.deleteCounterparty":
+    case "pricing.deletePriceList":
+    case "documents.requestSign":
+      return STAFF_ASSISTANT_CONFIRMATION_DONE_COPY[options.actionName][locale];
+    default:
+      return STAFF_ASSISTANT_CONFIRMATION_DONE_FALLBACK[locale];
+  }
+}

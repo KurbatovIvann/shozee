@@ -113,6 +113,27 @@ describe("postAssistantConfirm", () => {
     expect(result.recoverability).toBe("terminal");
   });
 
+  it("treats RETRY_IN_PROGRESS 409 as retryable", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(
+        409,
+        {
+          code: "RETRY_IN_PROGRESS",
+          status: 409,
+          message:
+            "A previous attempt of this request is still in progress. Retry shortly.",
+          data: { retryAfterSec: 3 },
+        },
+        { "Retry-After": "3" },
+      ),
+    );
+    const result = await postAssistantConfirm(postArgs());
+    expect(result.code).toBe("RETRY_IN_PROGRESS");
+    expect(result.httpStatus).toBe(409);
+    expect(result.retryAfterSec).toBe(3);
+    expect(result.recoverability).toBe("retryable");
+  });
+
   it("keeps HTTP 503 retryable", async () => {
     fetchMock.mockResolvedValue(
       new Response("<html>unavailable</html>", {

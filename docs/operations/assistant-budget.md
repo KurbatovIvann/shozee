@@ -49,10 +49,10 @@ admitted turn may settle **above** its reservation; that overshoot is
 recorded in full. The next request is denied when the counter is at or
 over the cap.
 
-Chat confirmation resume (`x-confirmation-challenge-id` on
-`POST /assistant/chat`, and `POST /assistant/confirm`) does not call a
-model, costs `$0`, and does not write budget Redis — the same as
-`POST /assistant/choice`.
+`POST /assistant/confirm` does not call a model, costs `$0`, and does
+not write budget Redis — the same as `POST /assistant/choice`. A leftover
+`x-confirmation-challenge-id` on `POST /assistant/chat` is ignored and
+does not skip the gate or budget.
 
 `POST /assistant/choice` does not call a model, costs `$0`, and does
 not write Redis budget keys.

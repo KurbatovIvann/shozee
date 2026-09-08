@@ -2521,13 +2521,15 @@ describe("POST /assistant/choice (seeded store)", () => {
     expect(companyOrders).toHaveLength(0);
   });
 
-  it("keeps confirmation resume on the shared pending-interaction executor", () => {
+  it("keeps confirmation resume on the dedicated pending-interaction executor", () => {
     const chat = readFileSync(join(here, "assistant-chat.ts"), "utf8");
-    expect(chat).toContain("CONFIRMATION_CHALLENGE_HEADER");
-    expect(chat).toContain("runPendingConfirmationResume");
-    expect(chat).toContain("createModellessAssistantTextStreamResponse");
-    expect(chat).toContain("assistant.legacy_confirmation_header");
+    expect(chat).not.toContain("CONFIRMATION_CHALLENGE_HEADER");
+    expect(chat).not.toContain("runPendingConfirmationResume");
+    expect(chat).not.toContain("createModellessAssistantTextStreamResponse");
+    expect(chat).not.toContain("assistant.legacy_confirmation_header");
     expect(chat).not.toContain("executeStaffAssistantChoiceResume");
     expect(chat).not.toContain("PausedToolAttempt");
+    const confirm = readFileSync(join(here, "assistant-confirm.ts"), "utf8");
+    expect(confirm).toContain("runPendingConfirmationResume");
   });
 });

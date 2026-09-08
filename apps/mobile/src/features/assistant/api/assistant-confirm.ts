@@ -87,7 +87,15 @@ function retryAfterSecFrom(
 
 function httpFailureRecoverability(
   httpStatus: number,
+  code: string | undefined,
 ): ConfirmationConfirmRecoverability {
+  if (
+    code === "RETRY_IN_PROGRESS" ||
+    code === "RATE_LIMITED" ||
+    code === "TIMEOUT"
+  ) {
+    return "retryable";
+  }
   if (
     httpStatus === 408 ||
     httpStatus === 429 ||
@@ -119,7 +127,7 @@ function withRecoverability(
     result.recoverability ??
     (result.httpStatus === undefined
       ? "ambiguous"
-      : httpFailureRecoverability(result.httpStatus));
+      : httpFailureRecoverability(result.httpStatus, result.code));
   return { ...result, recoverability };
 }
 
@@ -246,7 +254,7 @@ export async function postAssistantConfirm(args: {
     if (!body.ok) {
       return malformedConfirmResult(
         response.status,
-        httpFailureRecoverability(response.status),
+        httpFailureRecoverability(response.status, undefined),
       );
     }
     return confirmResultFromWireError(response, body.value);

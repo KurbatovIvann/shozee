@@ -63,7 +63,7 @@ describe("POST /assistant/choice unit", () => {
     expect((src.match(/body: error\.clientMessage/g) ?? []).length).toBe(1);
     const chat = readFileSync(join(here, "assistant-chat.ts"), "utf8");
     expect(chat).toContain("classifyStaffAssistantTurn");
-    expect(chat).toContain("CONFIRMATION_CHALLENGE_HEADER");
+    expect(chat).not.toContain("CONFIRMATION_CHALLENGE_HEADER");
     const redis = readFileSync(join(here, "../stores/redis.ts"), "utf8");
     expect(redis).toContain('redis.call("GETDEL"');
     expect(redis).toContain("PENDING_CLAIM_LUA");

@@ -15,8 +15,8 @@ import {
   assistantConfirmInteractionResultSchema,
   attemptKey,
   isStaffAssistantConfirmationOutput,
+  STAFF_ASSISTANT_CONFIRMATION_DONE_COPY,
   STAFF_ASSISTANT_CONFIRMATION_EXPIRED_COPY,
-  STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK,
   toProviderToolName,
   type StaffAssistantConfirmationOutput,
 } from "@showzy/ai";
@@ -24,14 +24,10 @@ import {
   MockLanguageModelV3,
   mockToolCallStream,
   readUiMessageSsePayloads,
-  sseVisibleTextFromPayloads,
 } from "@showzy/ai/test";
 import { createConversation } from "@showzy/assistant";
-import {
-  COMPANY_SELECTOR_HEADER,
-  CONFIRMATION_CHALLENGE_HEADER,
-  contractModules,
-} from "@showzy/contract";
+import { COMPANY_SELECTOR_HEADER, contractModules } from "@showzy/contract";
+import * as ShowzyCore from "@showzy/core";
 import {
   createConfirmationHook,
   createInMemoryConfirmationStore,
@@ -39,7 +35,7 @@ import {
   executeAction,
   type ImplementedAction,
 } from "@showzy/core";
-import { NotFoundError } from "@showzy/core/errors";
+import { ConcurrentRetryError, NotFoundError } from "@showzy/core/errors";
 import {
   createTestKit,
   kitIdentities,
@@ -270,7 +266,6 @@ async function postChat(
     readonly token: string;
     readonly companyId: string;
     readonly body: unknown;
-    readonly challengeId?: string;
   },
 ): Promise<Response> {
   const headers = new Headers({
@@ -279,9 +274,6 @@ async function postChat(
     authorization: `Bearer ${options.token}`,
     [COMPANY_SELECTOR_HEADER]: options.companyId,
   });
-  if (options.challengeId !== undefined) {
-    headers.set(CONFIRMATION_CHALLENGE_HEADER, options.challengeId);
-  }
   return app.request(`http://localhost:3000${ASSISTANT_CHAT_PATH}`, {
     method: "POST",
     headers,
@@ -431,7 +423,8 @@ describe("POST /assistant/confirm", () => {
     );
     expect(body).toMatchObject({
       status: "completed",
-      text: STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK.uk,
+      text: STAFF_ASSISTANT_CONFIRMATION_DONE_COPY["customers.deleteCustomer"]
+        .uk,
       actionName: "customers.deleteCustomer",
       toolCallId: "call-delete",
       output: { id: seeded.customerId },
@@ -714,7 +707,8 @@ describe("POST /assistant/confirm", () => {
     expect(second.status).toBe(200);
     expect(await second.json()).toMatchObject({
       status: "completed",
-      text: STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK.uk,
+      text: STAFF_ASSISTANT_CONFIRMATION_DONE_COPY["customers.deleteCustomer"]
+        .uk,
       actionName: "customers.deleteCustomer",
       toolCallId: "call-delete",
       output: { id: seeded.customerId },
@@ -730,33 +724,166 @@ describe("POST /assistant/confirm", () => {
     expect(success).toHaveLength(1);
   });
 
-  it("legacy chat header uses the same modelless executor and ignores client text", async () => {
+  it("returns expired when the Redis record is missing", async () => {
+    const pendingStore = createMemoryPendingInteractionStore();
+    const app = confirmApp({ pendingStore });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await staffInvoke(createConversation, {
+      title: "Confirm missing record",
+    });
+    const response = await postConfirm(app, {
+      token,
+      companyId: kitIdentities.companies.a,
+      body: {
+        conversationId: conversation.id,
+        challengeId: randomUUID(),
+      },
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ status: "expired" });
+  });
+
+  it("resumes from the Redis record when the pause tool run is not persisted", async () => {
     const pendingStore = createMemoryPendingInteractionStore();
     const seeded = await seedPausedDelete({
       pendingStore,
-      title: "Confirm legacy header",
+      title: "Confirm before persist",
     });
-    const modelless = confirmApp({ pendingStore });
-    const resume = await postChat(modelless, {
+    await kit.db.runtime.db.delete(assistantToolRuns);
+    const response = await postConfirm(seeded.app, {
       token: seeded.token,
       companyId: kitIdentities.companies.a,
-      challengeId: seeded.confirmation.challengeId,
       body: {
         conversationId: seeded.conversationId,
-        text: "FORGED_CLIENT_TEXT_SHO516",
-        messageId: randomUUID(),
+        challengeId: seeded.confirmation.challengeId,
       },
     });
-    expect(resume.status).toBe(200);
-    const payloads = await readUiMessageSsePayloads(resume);
-    expect(sseVisibleTextFromPayloads(payloads)).toBe(
-      STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK.uk,
-    );
-    expect(JSON.stringify(payloads)).not.toContain("FORGED_CLIENT_TEXT_SHO516");
-    expect(seeded.model.doStreamCalls).toHaveLength(1);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      status: "completed",
+      text: STAFF_ASSISTANT_CONFIRMATION_DONE_COPY["customers.deleteCustomer"]
+        .uk,
+      actionName: "customers.deleteCustomer",
+    });
     await waitFor(async () => {
       const rows = await kit.db.runtime.db.select().from(companyCustomers);
       return !rows.some((row) => row.id === seeded.customerId);
-    }, "deleted customer via legacy header without a language model");
+    }, "deleted customer via Redis record after dropping tool-run rows");
+  });
+
+  it("returns retryable when executeAction throws ConcurrentRetryError", async () => {
+    const pendingStore = createMemoryPendingInteractionStore();
+    const seeded = await seedPausedDelete({
+      pendingStore,
+      title: "Confirm concurrent retry",
+    });
+    const realExecuteAction = ShowzyCore.executeAction;
+    const executeSpy = vi
+      .spyOn(ShowzyCore, "executeAction")
+      .mockImplementation(async (deps, invocation) => {
+        if (invocation.action.contract.name === "customers.deleteCustomer") {
+          throw new ConcurrentRetryError(3);
+        }
+        return realExecuteAction(deps, invocation);
+      });
+    try {
+      const response = await postConfirm(seeded.app, {
+        token: seeded.token,
+        companyId: kitIdentities.companies.a,
+        body: {
+          conversationId: seeded.conversationId,
+          challengeId: seeded.confirmation.challengeId,
+        },
+      });
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({
+        code: "RETRY_IN_PROGRESS",
+        status: 409,
+      });
+      const claimed = await pendingStore.get({
+        kind: "confirmation",
+        id: seeded.confirmation.challengeId,
+      });
+      expect(claimed?.status).toBe("claimed");
+      const stillThere = (
+        await kit.db.runtime.db.select().from(companyCustomers)
+      ).filter((row) => row.id === seeded.customerId);
+      expect(stillThere).toHaveLength(1);
+      const errorRuns = (
+        await kit.db.runtime.db.select().from(assistantToolRuns)
+      ).filter(
+        (row) =>
+          row.conversationId === seeded.conversationId &&
+          row.outcome === "error",
+      );
+      expect(errorRuns).toHaveLength(0);
+    } finally {
+      executeSpy.mockRestore();
+    }
+  });
+
+  it("leaves the record claimed when persist after a successful write is retryable", async () => {
+    const pendingStore = createMemoryPendingInteractionStore();
+    const seeded = await seedPausedDelete({
+      pendingStore,
+      title: "Confirm persist after success",
+    });
+    const realExecuteAction = ShowzyCore.executeAction;
+    const executeSpy = vi
+      .spyOn(ShowzyCore, "executeAction")
+      .mockImplementation(async (deps, invocation) => {
+        if (
+          invocation.action.contract.name === "assistant.recordAssistantTurn"
+        ) {
+          throw new ConcurrentRetryError(3);
+        }
+        return realExecuteAction(deps, invocation);
+      });
+    try {
+      const response = await postConfirm(seeded.app, {
+        token: seeded.token,
+        companyId: kitIdentities.companies.a,
+        body: {
+          conversationId: seeded.conversationId,
+          challengeId: seeded.confirmation.challengeId,
+        },
+      });
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({
+        code: "RETRY_IN_PROGRESS",
+        status: 409,
+      });
+      await waitFor(async () => {
+        const rows = await kit.db.runtime.db.select().from(companyCustomers);
+        return !rows.some((row) => row.id === seeded.customerId);
+      }, "deleted customer before persist failed");
+      const claimed = await pendingStore.get({
+        kind: "confirmation",
+        id: seeded.confirmation.challengeId,
+      });
+      expect(claimed?.status).toBe("claimed");
+    } finally {
+      executeSpy.mockRestore();
+    }
+
+    const replay = await postConfirm(seeded.app, {
+      token: seeded.token,
+      companyId: kitIdentities.companies.a,
+      body: {
+        conversationId: seeded.conversationId,
+        challengeId: seeded.confirmation.challengeId,
+      },
+    });
+    expect(replay.status).toBe(200);
+    expect(await replay.json()).toMatchObject({
+      status: "completed",
+      text: STAFF_ASSISTANT_CONFIRMATION_DONE_COPY["customers.deleteCustomer"]
+        .uk,
+    });
+    const completed = await pendingStore.get({
+      kind: "confirmation",
+      id: seeded.confirmation.challengeId,
+    });
+    expect(completed?.status).toBe("completed");
   });
 });

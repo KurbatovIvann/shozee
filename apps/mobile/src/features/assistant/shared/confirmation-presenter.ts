@@ -2,8 +2,6 @@
  * HITL card presenter for the staff assistant (SHO-516). Confirm POSTs
  * `/assistant/confirm`. Dismiss is local — it must not execute.
  */
-import { CONFIRMATION_CHALLENGE_HEADER } from "@showzy/contract";
-
 import { assistantCopy } from "../../../i18n/assistant";
 import type { AssistantCompanyEpochRef } from "./assistant-session";
 import {
@@ -118,16 +116,6 @@ export function confirmationCardState(args: {
     return { kind: "applying", confirmation: args.pending };
   }
   return { kind: "proposed", confirmation: args.pending };
-}
-
-/**
- * Kept for old mobile builds that still `resume()` the chat transport.
- * Current confirm does not send this header.
- */
-export function confirmationResumeHeaders(
-  challengeId: string,
-): Readonly<Record<string, string>> {
-  return { [CONFIRMATION_CHALLENGE_HEADER]: challengeId };
 }
 
 /**

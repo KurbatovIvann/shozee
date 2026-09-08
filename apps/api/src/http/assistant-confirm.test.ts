@@ -23,9 +23,10 @@ describe("POST /assistant/confirm unit", () => {
     expect(src).toContain("commitTurnSpeech");
     expect(src).toContain("runPendingConfirmationResume");
     const chat = readFileSync(join(here, "assistant-chat.ts"), "utf8");
-    expect(chat).toContain("runPendingConfirmationResume");
-    expect(chat).toContain("createModellessAssistantTextStreamResponse");
-    expect(chat).toContain("assistant.legacy_confirmation_header");
+    expect(chat).not.toContain("runPendingConfirmationResume");
+    expect(chat).not.toContain("createModellessAssistantTextStreamResponse");
+    expect(chat).not.toContain("assistant.legacy_confirmation_header");
+    expect(chat).not.toContain("CONFIRMATION_CHALLENGE_HEADER");
     expect(chat).not.toContain("PausedToolAttempt");
     expect(chat).not.toContain("resolvePausedToolAttempt");
     const redis = readFileSync(join(here, "../stores/redis.ts"), "utf8");

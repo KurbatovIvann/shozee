@@ -1,10 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { CONFIRMATION_CHALLENGE_HEADER } from "@showzy/contract";
 
 import {
   confirmationCardState,
   confirmationConfirmAppendParts,
-  confirmationResumeHeaders,
   executeConfirmationConfirm,
   executeConfirmationDismiss,
   pendingConfirmationFromMessages,
@@ -142,9 +140,6 @@ describe("executeConfirmationConfirm", () => {
     ).resolves.toEqual(completed);
     expect(postConfirm).toHaveBeenCalledOnce();
     expect(postConfirm).toHaveBeenCalledWith({ challengeId: challengeA });
-    expect(confirmationResumeHeaders(challengeA)).toEqual({
-      [CONFIRMATION_CHALLENGE_HEADER]: challengeA,
-    });
   });
 
   it("does not confirm when dismiss runs instead", async () => {
