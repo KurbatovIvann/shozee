@@ -239,6 +239,9 @@ function liveApp(options?: {
     hooks: {
       ...kit.pipeline.hooks,
       confirmation: createConfirmationHook({ store: confirmation.store }),
+      // HITL seed finishRun plus host checkpoints would exhaust the
+      // shared kit-wide staff bucket (120/min) across this file.
+      rateLimit: { enforce: () => Promise.resolve() },
     },
   };
   const app = createApp({
