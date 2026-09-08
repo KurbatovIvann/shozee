@@ -348,6 +348,18 @@ describe("staff orders schema slice", () => {
     expect(indexes.get("orders_company_id_order_number_uq")).toContain(
       "(company_id, order_number)",
     );
+    expect(indexes.get("orders_company_id_order_number_uq")).not.toContain(
+      "text_pattern_ops",
+    );
+    const numberPattern = indexes.get(
+      "orders_company_id_order_number_pattern_idx",
+    );
+    expect(numberPattern).toMatch(/USING btree/i);
+    expect(numberPattern).toContain("text_pattern_ops");
+    expect(numberPattern).toMatch(/company_id/);
+    expect(numberPattern).toMatch(/order_number/);
+    expect(numberPattern).not.toContain("UNIQUE");
+    expect(numberPattern).not.toMatch(/gin_trgm_ops|USING gin/i);
 
     const createdAt = indexes.get("orders_company_created_at_idx");
     expect(createdAt).toContain("(company_id");

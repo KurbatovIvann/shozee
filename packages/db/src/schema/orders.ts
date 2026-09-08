@@ -68,6 +68,14 @@ export const orders = pgTable(
       table.companyId,
       table.orderNumber,
     ),
+    // SHO-531: left-prefix LIKE 'canonical%' on order_number. Unique btree
+    // (company_id, order_number) uses en_US.utf8 and cannot put LIKE in
+    // Index Cond; text_pattern_ops can. Mechanical schema amendment — not
+    // a product fork (card: "text_pattern_ops if needed").
+    index("orders_company_id_order_number_pattern_idx").on(
+      table.companyId,
+      table.orderNumber.op("text_pattern_ops"),
+    ),
     index("orders_company_created_at_idx").on(
       table.companyId,
       table.createdAt.desc().nullsFirst(),
