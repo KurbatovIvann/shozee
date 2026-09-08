@@ -32,7 +32,7 @@ export const getConversationOutputSchema = conversationViewSchema.extend({
 
 export const getConversationContract = defineActionContract({
   name: "assistant.getConversation",
-  description: `${STAFF_CONVERSATION_AUTHOR_INVARIANT} Return one conversation the caller authored, including messages and tool-run refs (action name, toolCallId, challengeId, result ids, outcome). challengeId is the opaque interaction id for confirmation or choice; outcome may be success, error, confirmation_required, or choice_required. Optional limit returns the newest messages (max 200); omitted keeps the unbounded read. Company id is never input. Tool-run rows store ids and outcome only — never order or document status.`,
+  description: `${STAFF_CONVERSATION_AUTHOR_INVARIANT} Return one conversation the caller authored, including messages and tool-run refs (action name, toolCallId, challengeId, result ids, outcome). challengeId is the opaque interaction id for confirmation or choice; outcome may be success, error, confirmation_required, or choice_required. Open-turn empty-body assistant messages and started tool runs are omitted. Never returns tool_input or model_trace. Optional limit returns the newest messages (max 200); omitted keeps the unbounded read. Company id is never input. Tool-run rows store ids and outcome only — never order or document status.`,
   principal: "staff",
   transport: "client",
   input: getConversationInputSchema,

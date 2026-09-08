@@ -258,4 +258,19 @@ describe("CI contract-check stage", () => {
       "assistant.getModelHistory",
     );
   });
+
+  it("SHO-521: assistant.checkpointAssistantTurn is internal and not an AI tool", () => {
+    const contracts = buildContractCheckInput().registry.contracts();
+    const checkpoint = contracts.find(
+      (contract) => contract.name === "assistant.checkpointAssistantTurn",
+    );
+    expect(checkpoint).toBeDefined();
+    expect(checkpoint?.transport).toBe("internal");
+    expect(checkpoint?.aiExposure).toBe("internal");
+    expect(checkpoint?.risk).toBe("write");
+    expect(checkpoint?.principal).toBe("staff");
+    expect(staffExposedActionNames(contracts)).not.toContain(
+      "assistant.checkpointAssistantTurn",
+    );
+  });
 });

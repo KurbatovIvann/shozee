@@ -101,7 +101,11 @@ export {
   staffAssistantToolsetHash,
   STAFF_ASSISTANT_EMPTY_TOOLSET_HASH,
 } from "./toolset-hash.js";
-export { attemptKey, type StaffAssistantAttemptKind } from "./attempt-key.js";
+export {
+  attemptKey,
+  executionAttemptKey,
+  type StaffAssistantAttemptKind,
+} from "./attempt-key.js";
 export {
   applyChoiceOptionToCanonicalInput,
   assistantChoiceBodySchema,
@@ -219,6 +223,7 @@ export {
 } from "./messages.js";
 export {
   budgetStaffAssistantToolRuns,
+  staffAssistantToolCallInput,
   staffAssistantTraceDigest,
   staffAssistantToolSetKey,
   STAFF_ASSISTANT_HISTORY_TRACE_MAX,
@@ -240,12 +245,16 @@ export {
 export {
   allowHostPendingAlways,
   commitHostSpeech,
+  emptyHostExecuteState,
   lastUsableHostModelText,
   runStaffAssistantHostTurn,
   usableHostModelText,
   HOST_HITL_PAUSED_OUTPUT,
   HOST_HITL_PAUSED_STATUS,
   isHostHitlPausedOutput,
+  type StaffAssistantHostCheckpoint,
+  type StaffAssistantHostCheckpointFinishInput,
+  type StaffAssistantHostCheckpointStageInput,
   type StaffAssistantHostModelToolCall,
   type StaffAssistantHostPendingDecision,
   type StaffAssistantHostTurnOptions,

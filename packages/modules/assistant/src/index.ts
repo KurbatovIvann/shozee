@@ -1,4 +1,5 @@
 import { appendUserMessage } from "./actions/append-user-message.js";
+import { checkpointAssistantTurn } from "./actions/checkpoint-assistant-turn.js";
 import { createConversation } from "./actions/create-conversation.js";
 import { getConversation } from "./actions/get-conversation.js";
 import { getModelHistory } from "./actions/get-model-history.js";
@@ -7,6 +8,7 @@ import { listConversations } from "./actions/list-conversations.js";
 import { recordAssistantTurn } from "./actions/record-assistant-turn.js";
 
 export { appendUserMessage };
+export { checkpointAssistantTurn };
 export { createConversation };
 export { getConversation };
 export { getModelHistory };
@@ -20,6 +22,7 @@ export const assistantActions = [
   getConversation,
   appendUserMessage,
   recordAssistantTurn,
+  checkpointAssistantTurn,
   getStaffActor,
   getModelHistory,
 ] as const;

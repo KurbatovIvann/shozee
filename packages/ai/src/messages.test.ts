@@ -714,4 +714,67 @@ describe("staffAssistantModelMessagesFromPersisted tool traces", () => {
     expect(JSON.stringify(windowed)).not.toContain("user-0");
     expect(JSON.stringify(windowed)).not.toContain('"call_1"');
   });
+
+  it("reconstructs tool-call input from persisted toolInput façade args", () => {
+    const messages = staffAssistantModelMessagesFromPersisted([
+      { role: "user", body: "list" },
+      {
+        role: "assistant",
+        body: "Here.",
+        toolRuns: [
+          {
+            action: "orders.list",
+            toolCallId: "call_facade",
+            toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+            toolInput: { kind: "page", limit: 20 },
+            seq: 0,
+            modelTrace: { kind: "page.summary" },
+          },
+        ],
+      },
+    ]);
+    const assistant = messages.find((message) => message.role === "assistant");
+    expect(assistant?.content).toEqual(
+      expect.arrayContaining([
+        {
+          type: "tool-call",
+          toolCallId: "call_facade",
+          toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+          input: { kind: "page", limit: 20 },
+        },
+      ]),
+    );
+    expect(JSON.stringify(assistant?.content)).not.toContain('"input":{}');
+  });
+
+  it("pre-T2 rows without toolInput still reconstruct tool-call input as {}", () => {
+    const messages = staffAssistantModelMessagesFromPersisted([
+      { role: "user", body: "list" },
+      {
+        role: "assistant",
+        body: "Here.",
+        toolRuns: [
+          {
+            action: "orders.list",
+            toolCallId: "call_legacy",
+            toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+            toolInput: null,
+            seq: null,
+            modelTrace: { kind: "page.summary" },
+          },
+        ],
+      },
+    ]);
+    const assistant = messages.find((message) => message.role === "assistant");
+    expect(assistant?.content).toEqual(
+      expect.arrayContaining([
+        {
+          type: "tool-call",
+          toolCallId: "call_legacy",
+          toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+          input: {},
+        },
+      ]),
+    );
+  });
 });

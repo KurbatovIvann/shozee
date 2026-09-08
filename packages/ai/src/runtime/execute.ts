@@ -29,6 +29,7 @@ import {
   STAFF_ASSISTANT_TOOL_CALL_ID_MAX,
   STAFF_ASSISTANT_TOOL_RUNS_MAX,
   type StaffAssistantToolRun,
+  type StaffAssistantToolRunOutcome,
 } from "../staff-assistant-stream.js";
 import { STAFF_ASSISTANT_TOOL_ERROR_FALLBACK } from "../turn-speech.js";
 
@@ -59,9 +60,59 @@ export function allowHostPendingAlways(): Promise<StaffAssistantHostPendingDecis
   return Promise.resolve({ allow: true });
 }
 
+export interface StaffAssistantHostCheckpointStageInput {
+  readonly messageId: string;
+  readonly seq: number;
+  readonly actionName: string;
+  readonly toolName: string;
+  readonly toolCallId: string;
+  readonly toolInput: unknown;
+}
+
+export interface StaffAssistantHostCheckpointFinishInput {
+  readonly executionId: string;
+  readonly outcome: StaffAssistantToolRunOutcome;
+  readonly modelTrace?: unknown;
+  readonly resultIds: readonly string[];
+  readonly challengeId?: string;
+}
+
+export interface StaffAssistantHostCheckpoint {
+  begin(): Promise<{ readonly messageId: string }>;
+  stageRun(
+    input: StaffAssistantHostCheckpointStageInput,
+  ): Promise<{ readonly executionId: string }>;
+  finishRun(input: StaffAssistantHostCheckpointFinishInput): Promise<void>;
+  complete(input: {
+    readonly messageId: string;
+    readonly body: string;
+  }): Promise<void>;
+}
+
 export interface StaffAssistantHostExecuteState {
   paused: boolean;
   readonly runs: StaffAssistantToolRun[];
+  messageId?: string;
+  seq: number;
+  readonly facadeByToolCallId: Map<
+    string,
+    { readonly toolName: string; readonly toolInput: unknown }
+  >;
+  readonly executionIdByToolCallId: Map<string, string>;
+  readonly toolQueue: {
+    enqueue: <T>(work: () => Promise<T>) => Promise<T>;
+  };
+}
+
+export function emptyHostExecuteState(): StaffAssistantHostExecuteState {
+  return {
+    paused: false,
+    runs: [],
+    seq: 0,
+    facadeByToolCallId: new Map(),
+    executionIdByToolCallId: new Map(),
+    toolQueue: createSerialQueue(),
+  };
 }
 
 function clipToolCallId(toolCallId: string): string {
@@ -159,9 +210,14 @@ function wrapDomainExecute(
       };
     }
     try {
-      const output: unknown = await execute(actionName, input, {
-        toolCallId,
-      });
+      const executionId = state.executionIdByToolCallId.get(toolCallId);
+      const output: unknown = await execute(
+        actionName,
+        input,
+        executionId === undefined
+          ? { toolCallId }
+          : { toolCallId, executionId },
+      );
       const hitl = hitlFromReturnedOutput(output);
       if (hitl !== undefined) {
         state.runs.push({
@@ -265,6 +321,12 @@ export function wrapHostSequentialExecute(
     readonly openChoice?: (record: ChoiceRecord) => Promise<boolean>;
     readonly mintChoiceId?: () => string;
     readonly checkPending?: () => Promise<StaffAssistantHostPendingDecision>;
+    readonly checkpoint?: Pick<StaffAssistantHostCheckpoint, "stageRun">;
+    /**
+     * When false, the caller (clip wrapper) already owns `state.toolQueue`.
+     * Nested enqueue would deadlock. Default true for execute-only tests.
+     */
+    readonly enqueue?: boolean;
   },
 ): ActionToolExecute {
   const locale = hooks.locale ?? STAFF_ASSISTANT_DEFAULT_LOCALE;
@@ -277,20 +339,48 @@ export function wrapHostSequentialExecute(
       ? { mintChoiceId: hooks.mintChoiceId }
       : {}),
   });
-  const queue = createSerialQueue();
+  const run = async (
+    actionName: string,
+    input: unknown,
+    options: { readonly toolCallId: string; readonly executionId?: string },
+  ): Promise<unknown> => {
+    if (state.paused) {
+      return HOST_HITL_PAUSED_OUTPUT;
+    }
+    const pending = await checkPending();
+    if (!pending.allow) {
+      return {
+        status: "error",
+        code: "INTERNAL",
+        message: hostInternalToolErrorMessage(locale),
+      };
+    }
+    if (state.runs.length >= STAFF_ASSISTANT_TOOL_RUNS_MAX) {
+      return {
+        status: "error",
+        code: "INTERNAL",
+        message: hostInternalToolErrorMessage(locale),
+      };
+    }
+    const toolCallId = clipToolCallId(options.toolCallId);
+    if (hooks.checkpoint !== undefined && state.messageId !== undefined) {
+      const facade = state.facadeByToolCallId.get(toolCallId);
+      const staged = await hooks.checkpoint.stageRun({
+        messageId: state.messageId,
+        seq: state.seq,
+        actionName,
+        toolName: facade?.toolName ?? actionName,
+        toolCallId,
+        toolInput: facade?.toolInput ?? input,
+      });
+      state.seq += 1;
+      state.executionIdByToolCallId.set(toolCallId, staged.executionId);
+    }
+    return domain(actionName, input, options);
+  };
+  const enqueue = hooks.enqueue ?? true;
   return (actionName, input, options) =>
-    queue.enqueue(async () => {
-      if (state.paused) {
-        return HOST_HITL_PAUSED_OUTPUT;
-      }
-      const pending = await checkPending();
-      if (!pending.allow) {
-        return {
-          status: "error",
-          code: "INTERNAL",
-          message: hostInternalToolErrorMessage(locale),
-        };
-      }
-      return domain(actionName, input, options);
-    });
+    enqueue
+      ? state.toolQueue.enqueue(() => run(actionName, input, options))
+      : run(actionName, input, options);
 }

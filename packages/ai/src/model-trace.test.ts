@@ -6,6 +6,7 @@ import { STAFF_ASSISTANT_TOOL_RUNS_MAX } from "./staff-assistant-stream.js";
 import { staffAssistantModelMessagesFromPersisted } from "./messages.js";
 import {
   budgetStaffAssistantToolRuns,
+  staffAssistantToolCallInput,
   staffAssistantTraceDigest,
   STAFF_ASSISTANT_HISTORY_TRACE_MAX,
   STAFF_ASSISTANT_TRACE_DIGEST_MAX,
@@ -42,6 +43,16 @@ function toolTurn(
     toolRuns: [{ action, toolCallId, toolName, modelTrace }],
   };
 }
+
+describe("staffAssistantToolCallInput", () => {
+  it("returns persisted façade args and reconstructs {} for pre-T2 rows", () => {
+    expect(
+      staffAssistantToolCallInput({ toolInput: { kind: "page", limit: 20 } }),
+    ).toEqual({ kind: "page", limit: 20 });
+    expect(staffAssistantToolCallInput({ toolInput: null })).toEqual({});
+    expect(staffAssistantToolCallInput({ toolInput: undefined })).toEqual({});
+  });
+});
 
 describe("staffAssistantTraceDigest", () => {
   it("builds a one-line identity summary with the façade ToolSet key", () => {

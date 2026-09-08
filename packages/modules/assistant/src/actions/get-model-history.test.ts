@@ -26,6 +26,8 @@ describe("assistant.getModelHistory contract", () => {
     );
     expect(getModelHistoryContract.description).toContain("modelTrace");
     expect(getModelHistoryContract.description).toContain("toolName");
+    expect(getModelHistoryContract.description).toContain("toolInput");
+    expect(getModelHistoryContract.description).toContain("started");
     expect(getModelHistoryContract.timeout).toBe(5_000);
     expect(GET_MODEL_HISTORY_WINDOW).toBe(8);
   });
@@ -46,8 +48,12 @@ describe("assistant.getModelHistory contract", () => {
     ]);
     expect(Object.keys(modelHistoryToolRunSchema.shape).toSorted()).toEqual([
       "action",
+      "executionId",
       "modelTrace",
+      "outcome",
+      "seq",
       "toolCallId",
+      "toolInput",
       "toolName",
     ]);
     expect(

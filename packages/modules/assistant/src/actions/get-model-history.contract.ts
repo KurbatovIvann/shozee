@@ -9,6 +9,7 @@
 import { defineActionContract } from "@showzy/core/contract";
 import { z } from "zod";
 
+import { checkpointPersistedOutcomeSchema } from "./checkpoint-assistant-turn.contract.js";
 import {
   ACTION_NAME_MAX,
   messageRoleSchema,
@@ -26,6 +27,14 @@ export const modelHistoryToolRunSchema = z.object({
   toolCallId: z.string(),
   toolName: z.string().min(1).max(ACTION_NAME_MAX).nullable(),
   modelTrace: z.unknown().nullable(),
+  /**
+   * Façade/tool args. Null on pre-T2 rows; the history builder reconstructs
+   * `input: {}` when this is absent. Never exposed on getConversation.
+   */
+  toolInput: z.unknown().nullable(),
+  seq: z.number().int().nullable(),
+  executionId: z.string().nullable(),
+  outcome: checkpointPersistedOutcomeSchema,
 });
 
 export const modelHistoryMessageSchema = z.object({
@@ -46,7 +55,7 @@ export const getModelHistoryOutputSchema = z.object({
 
 export const getModelHistoryContract = defineActionContract({
   name: "assistant.getModelHistory",
-  description: `${STAFF_CONVERSATION_AUTHOR_INVARIANT} Return the newest 8 author-owned conversation messages as model-history rows: id, role, text, and per-run action / toolCallId / toolName / modelTrace (ADR-0034 prompt state — post-clip façade output, never a projection). toolName is the live ToolSet key used to reconstruct model history; action is the executeAction registry identity. Message id is the append-idempotency merge key for the HTTP mount (same as getConversation). Used only by the staff assistant HTTP mount to build ModelMessage tool-call and tool-result parts. Company id is never input. Internal — not mounted on HTTP and not an AI tool.`,
+  description: `${STAFF_CONVERSATION_AUTHOR_INVARIANT} Return the newest 8 author-owned conversation messages as model-history rows: id, role, text, and per-run action / toolCallId / toolName / modelTrace / toolInput / seq / executionId / outcome (ADR-0034 prompt state — post-clip façade output, never a projection). Includes started runs for crash recovery. toolInput is façade/tool args when present; pre-T2 rows without toolInput reconstruct as {}. Order runs by seq ascending, not created_at alone. toolName is the live ToolSet key used to reconstruct model history; action is the executeAction registry identity. executionId is the server-minted attempt identity. Message id is the append-idempotency merge key for the HTTP mount (same as getConversation). Used only by the staff assistant HTTP mount to build ModelMessage tool-call and tool-result parts. Company id is never input. Internal — not mounted on HTTP and not an AI tool.`,
   principal: "staff",
   transport: "internal",
   input: getModelHistoryInputSchema,

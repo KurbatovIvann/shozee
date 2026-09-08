@@ -27,6 +27,7 @@ import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { appendUserMessage } from "./append-user-message.js";
+import { checkpointAssistantTurn } from "./checkpoint-assistant-turn.js";
 import { createConversation } from "./create-conversation.js";
 import { getConversation } from "./get-conversation.js";
 import { getModelHistory } from "./get-model-history.js";
@@ -45,6 +46,8 @@ const fixtures = {
   recordIdempotent: randomUUID(),
   recordIds: randomUUID(),
   modelTrace: randomUUID(),
+  checkpoint: randomUUID(),
+  checkpointIdempotent: randomUUID(),
   employee: randomUUID(),
 };
 
@@ -190,6 +193,18 @@ beforeAll(async () => {
     userId: kitIdentities.users.anna,
     title: "Model trace",
   });
+  await insertConversation({
+    id: fixtures.checkpoint,
+    companyId: kitIdentities.companies.a,
+    userId: kitIdentities.users.anna,
+    title: "Checkpoint",
+  });
+  await insertConversation({
+    id: fixtures.checkpointIdempotent,
+    companyId: kitIdentities.companies.a,
+    userId: kitIdentities.users.anna,
+    title: "Checkpoint idempotent",
+  });
 
   await kit.db.runtime.db.insert(user).values([
     {
@@ -297,6 +312,11 @@ crossTenantSuite(
       },
     ),
     isolationCase(
+      checkpointAssistantTurn,
+      { input: { kind: "begin", conversationId: fixtures.convA } },
+      { input: { kind: "begin", conversationId: fixtures.convB } },
+    ),
+    isolationCase(
       getStaffActor,
       { input: {} },
       {
@@ -340,6 +360,18 @@ idempotencySuite(requireKit, [
       toolRuns: [],
     },
     readEffect: () => countMessages(fixtures.recordIdempotent),
+  },
+  {
+    action: checkpointAssistantTurn,
+    input: {
+      kind: "begin" as const,
+      conversationId: fixtures.checkpointIdempotent,
+    },
+    conflictingInput: {
+      kind: "begin" as const,
+      conversationId: fixtures.checkpoint,
+    },
+    readEffect: () => countMessages(fixtures.checkpointIdempotent),
   },
 ]);
 
@@ -449,7 +481,10 @@ describe("assistant staff conversation actions", () => {
       }),
     ]);
     expect(detail.toolRuns[0]).not.toHaveProperty("modelTrace");
-    expect(JSON.stringify(detail)).not.toMatch(/modelTrace|model_trace/);
+    expect(detail.toolRuns[0]).not.toHaveProperty("toolInput");
+    expect(JSON.stringify(detail)).not.toMatch(
+      /modelTrace|model_trace|toolInput|tool_input/,
+    );
     expect(detail).not.toHaveProperty("companyId");
     expect(JSON.stringify(detail.toolRuns)).not.toMatch(
       /confirmed|issued|paid|status/,
@@ -779,6 +814,13 @@ describe("assistant staff conversation actions", () => {
         denied,
       ),
     ).rejects.toBeInstanceOf(PermissionDeniedError);
+    await expect(
+      kit.invoke(
+        checkpointAssistantTurn,
+        { kind: "begin", conversationId: fixtures.convA },
+        denied,
+      ),
+    ).rejects.toBeInstanceOf(PermissionDeniedError);
     await expect(kit.invoke(getStaffActor, {}, denied)).rejects.toBeInstanceOf(
       PermissionDeniedError,
     );
@@ -835,6 +877,25 @@ describe("assistant staff conversation actions", () => {
             modelTrace: { pad: "x".repeat(MODEL_TRACE_JSON_MAX) },
           },
         ],
+      }),
+    ).rejects.toBeInstanceOf(ValidationError);
+    await expect(
+      kit.invoke(checkpointAssistantTurn, {
+        conversationId: fixtures.convA,
+        body: "Done.",
+        toolRuns: [],
+      }),
+    ).rejects.toBeInstanceOf(ValidationError);
+    await expect(
+      kit.invoke(checkpointAssistantTurn, {
+        kind: "stageRun",
+        conversationId: fixtures.convA,
+        messageId: fixtures.convA,
+        seq: 0,
+        actionName: "orders.list",
+        toolName: "orders_list_page",
+        toolCallId: "call_huge",
+        toolInput: { pad: "x".repeat(MODEL_TRACE_JSON_MAX) },
       }),
     ).rejects.toBeInstanceOf(ValidationError);
   });
@@ -1118,7 +1179,9 @@ describe("assistant staff conversation actions", () => {
       }),
     );
     expect(recorded.toolRuns[0]).not.toHaveProperty("modelTrace");
-    expect(JSON.stringify(clientView)).not.toMatch(/modelTrace|model_trace/);
+    expect(JSON.stringify(clientView)).not.toMatch(
+      /modelTrace|model_trace|toolInput|tool_input/,
+    );
     expect(clientView.toolRuns[0]).not.toHaveProperty("modelTrace");
     const lastAssistant = history.messages.findLast(
       (row) => row.role === "assistant",
@@ -1130,6 +1193,10 @@ describe("assistant staff conversation actions", () => {
         toolCallId: "call_trace",
         toolName: "orders_list_page",
         modelTrace: trace,
+        toolInput: null,
+        seq: null,
+        executionId: null,
+        outcome: "success",
       },
     ]);
   });
@@ -1189,18 +1256,30 @@ describe("assistant staff conversation actions", () => {
           toolCallId: "call_confirm",
           toolName: null,
           modelTrace: null,
+          toolInput: null,
+          seq: null,
+          executionId: null,
+          outcome: "confirmation_required",
         },
         {
           action: "orders.create",
           toolCallId: "call_choice_drop",
           toolName: null,
           modelTrace: null,
+          toolInput: null,
+          seq: null,
+          executionId: null,
+          outcome: "choice_required",
         },
         {
           action: "catalog.listProducts",
           toolCallId: "call_err_drop",
           toolName: null,
           modelTrace: null,
+          toolInput: null,
+          seq: null,
+          executionId: null,
+          outcome: "error",
         },
       ]),
     );
@@ -1260,6 +1339,10 @@ describe("assistant staff conversation actions", () => {
         toolCallId: "call_resumed",
         toolName: "customers_delete_customer",
         modelTrace: { deleted: true },
+        toolInput: null,
+        seq: null,
+        executionId: null,
+        outcome: "success",
       },
     ]);
   });
@@ -1306,6 +1389,10 @@ describe("assistant staff conversation actions", () => {
         toolCallId: "call_window_start",
         toolName: "orders_list_page",
         modelTrace: { kind: "page.summary", rows: [{ orderNumber: "1" }] },
+        toolInput: null,
+        seq: null,
+        executionId: null,
+        outcome: "success",
       },
     ]);
   });
@@ -1339,5 +1426,458 @@ describe("assistant staff conversation actions", () => {
       "user-4",
       "assistant-4",
     ]);
+  });
+
+  it("begin then two stage/finish then complete is one assistant message in seq order", async () => {
+    const conversation = await kit.invoke(createConversation, {
+      title: "Checkpoint one message",
+    });
+    await kit.invoke(appendUserMessage, {
+      conversationId: conversation.id,
+      body: "List then get",
+    });
+    const begun = await kit.invoke(checkpointAssistantTurn, {
+      kind: "begin",
+      conversationId: conversation.id,
+    });
+    const first = await kit.invoke(checkpointAssistantTurn, {
+      kind: "stageRun",
+      conversationId: conversation.id,
+      messageId: begun.messageId,
+      seq: 0,
+      actionName: "orders.list",
+      toolName: "orders_list_page",
+      toolCallId: "call_list",
+      toolInput: { limit: 20, query: "Леха" },
+    });
+    await kit.invoke(checkpointAssistantTurn, {
+      kind: "finishRun",
+      conversationId: conversation.id,
+      executionId: first.executionId ?? "",
+      outcome: "success",
+      resultIds: [orderId],
+      modelTrace: { kind: "page.summary", rows: [{ orderNumber: "12" }] },
+    });
+    const second = await kit.invoke(checkpointAssistantTurn, {
+      kind: "stageRun",
+      conversationId: conversation.id,
+      messageId: begun.messageId,
+      seq: 1,
+      actionName: "orders.get",
+      toolName: "orders_get",
+      toolCallId: "call_get",
+      toolInput: { id: orderId },
+    });
+    await kit.invoke(checkpointAssistantTurn, {
+      kind: "finishRun",
+      conversationId: conversation.id,
+      executionId: second.executionId ?? "",
+      outcome: "success",
+      resultIds: [orderId],
+      modelTrace: { orderNumber: "12" },
+    });
+    const completed = await kit.invoke(checkpointAssistantTurn, {
+      kind: "complete",
+      conversationId: conversation.id,
+      messageId: begun.messageId,
+      body: "Here they are.",
+    });
+    expect(completed.messageId).toBe(begun.messageId);
+
+    const messages = await kit.db.runtime.db
+      .select()
+      .from(assistantMessages)
+      .where(
+        and(
+          eq(assistantMessages.companyId, kitIdentities.companies.a),
+          eq(assistantMessages.conversationId, conversation.id),
+          eq(assistantMessages.role, "assistant"),
+        ),
+      );
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.id).toBe(begun.messageId);
+    expect(messages[0]?.body).toBe("Here they are.");
+
+    const history = await kit.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    const lastAssistant = history.messages.findLast(
+      (row) => row.role === "assistant",
+    );
+    expect(lastAssistant?.id).toBe(begun.messageId);
+    expect(lastAssistant?.toolRuns.map((run) => run.seq)).toEqual([0, 1]);
+    expect(lastAssistant?.toolRuns[0]?.toolInput).toEqual({
+      limit: 20,
+      query: "Леха",
+    });
+    expect(lastAssistant?.toolRuns[0]?.toolInput).not.toEqual({});
+    expect(lastAssistant?.toolRuns[1]?.toolInput).toEqual({ id: orderId });
+
+    const secondTurn = await kit.invoke(checkpointAssistantTurn, {
+      kind: "begin",
+      conversationId: conversation.id,
+    });
+    await kit.invoke(checkpointAssistantTurn, {
+      kind: "complete",
+      conversationId: conversation.id,
+      messageId: secondTurn.messageId,
+      body: "A new turn.",
+    });
+    expect(secondTurn.messageId).not.toBe(begun.messageId);
+    const assistants = await kit.db.runtime.db
+      .select()
+      .from(assistantMessages)
+      .where(
+        and(
+          eq(assistantMessages.companyId, kitIdentities.companies.a),
+          eq(assistantMessages.conversationId, conversation.id),
+          eq(assistantMessages.role, "assistant"),
+        ),
+      );
+    expect(assistants).toHaveLength(2);
+    expect(assistants.map((row) => row.id).toSorted()).toEqual(
+      [begun.messageId, secondTurn.messageId].toSorted(),
+    );
+  });
+
+  it("HTTP retry of stageRun loads the staged row and does not mint a second execution_id", async () => {
+    const conversation = await kit.invoke(createConversation, {
+      title: "Stage retry",
+    });
+    const begun = await kit.invoke(checkpointAssistantTurn, {
+      kind: "begin",
+      conversationId: conversation.id,
+    });
+    const staged = await kit.invoke(checkpointAssistantTurn, {
+      kind: "stageRun",
+      conversationId: conversation.id,
+      messageId: begun.messageId,
+      seq: 0,
+      actionName: "orders.list",
+      toolName: "orders_list_page",
+      toolCallId: "call_retry",
+      toolInput: { limit: 7 },
+    });
+    const retried = await kit.invoke(checkpointAssistantTurn, {
+      kind: "stageRun",
+      conversationId: conversation.id,
+      messageId: begun.messageId,
+      seq: 0,
+      actionName: "orders.list",
+      toolName: "orders_list_page",
+      toolCallId: "call_retry",
+      toolInput: { limit: 7 },
+    });
+    expect(retried.executionId).toBe(staged.executionId);
+    expect(retried.toolRunId).toBe(staged.toolRunId);
+    expect(await countToolRuns(conversation.id)).toBe(1);
+  });
+
+  it("omits started runs and empty-body messages from getConversation", async () => {
+    const conversation = await kit.invoke(createConversation, {
+      title: "Open checkpoint turn",
+    });
+    const begun = await kit.invoke(checkpointAssistantTurn, {
+      kind: "begin",
+      conversationId: conversation.id,
+    });
+    const staged = await kit.invoke(checkpointAssistantTurn, {
+      kind: "stageRun",
+      conversationId: conversation.id,
+      messageId: begun.messageId,
+      seq: 0,
+      actionName: "orders.list",
+      toolName: "orders_list_page",
+      toolCallId: "call_open",
+      toolInput: { limit: 5 },
+    });
+    const clientView = await kit.invoke(getConversation, {
+      conversationId: conversation.id,
+    });
+    expect(clientView.messages.map((message) => message.id)).not.toContain(
+      begun.messageId,
+    );
+    expect(clientView.toolRuns).toEqual([]);
+    expect(JSON.stringify(clientView)).not.toMatch(
+      /modelTrace|model_trace|toolInput|tool_input|executionId|execution_id/,
+    );
+    expect(clientView.toolRuns.every((run) => run.outcome !== "started")).toBe(
+      true,
+    );
+
+    const history = await kit.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    const open = history.messages.find((row) => row.id === begun.messageId);
+    expect(open?.text).toBe("");
+    expect(open?.toolRuns).toEqual([
+      {
+        action: "orders.list",
+        toolCallId: "call_open",
+        toolName: "orders_list_page",
+        modelTrace: null,
+        toolInput: { limit: 5 },
+        seq: 0,
+        executionId: staged.executionId,
+        outcome: "started",
+      },
+    ]);
+  });
+
+  it("persists error, choice, and confirmation traces on finishRun", async () => {
+    const conversation = await kit.invoke(createConversation, {
+      title: "Checkpoint traces",
+    });
+    const begun = await kit.invoke(checkpointAssistantTurn, {
+      kind: "begin",
+      conversationId: conversation.id,
+    });
+    const errorRun = await kit.invoke(checkpointAssistantTurn, {
+      kind: "stageRun",
+      conversationId: conversation.id,
+      messageId: begun.messageId,
+      seq: 0,
+      actionName: "catalog.listProducts",
+      toolName: "catalog_list_products",
+      toolCallId: "call_err",
+      toolInput: { query: "x" },
+    });
+    await kit.invoke(checkpointAssistantTurn, {
+      kind: "finishRun",
+      conversationId: conversation.id,
+      executionId: errorRun.executionId ?? "",
+      outcome: "error",
+      modelTrace: { status: "error", code: "VALIDATION" },
+    });
+    const choiceRun = await kit.invoke(checkpointAssistantTurn, {
+      kind: "stageRun",
+      conversationId: conversation.id,
+      messageId: begun.messageId,
+      seq: 1,
+      actionName: "orders.create",
+      toolName: "orders_create",
+      toolCallId: "call_choice",
+      toolInput: { customerQuery: "Леха" },
+    });
+    await kit.invoke(checkpointAssistantTurn, {
+      kind: "finishRun",
+      conversationId: conversation.id,
+      executionId: choiceRun.executionId ?? "",
+      outcome: "choice_required",
+      challengeId,
+      modelTrace: { status: "needs_choice", challengeId },
+    });
+    const confirmRun = await kit.invoke(checkpointAssistantTurn, {
+      kind: "stageRun",
+      conversationId: conversation.id,
+      messageId: begun.messageId,
+      seq: 2,
+      actionName: "customers.deleteCustomer",
+      toolName: "customers_deleteCustomer",
+      toolCallId: "call_confirm",
+      toolInput: { id: orderId },
+    });
+    await kit.invoke(checkpointAssistantTurn, {
+      kind: "finishRun",
+      conversationId: conversation.id,
+      executionId: confirmRun.executionId ?? "",
+      outcome: "confirmation_required",
+      challengeId,
+      modelTrace: { status: "confirmation_required", challengeId },
+    });
+    await kit.invoke(checkpointAssistantTurn, {
+      kind: "complete",
+      conversationId: conversation.id,
+      messageId: begun.messageId,
+      body: "Need a choice.",
+    });
+
+    const history = await kit.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    const lastAssistant = history.messages.findLast(
+      (row) => row.role === "assistant",
+    );
+    expect(lastAssistant?.toolRuns.map((run) => run.outcome)).toEqual([
+      "error",
+      "choice_required",
+      "confirmation_required",
+    ]);
+    expect(lastAssistant?.toolRuns.map((run) => run.modelTrace)).toEqual([
+      { status: "error", code: "VALIDATION" },
+      { status: "needs_choice", challengeId },
+      { status: "confirmation_required", challengeId },
+    ]);
+    const clientView = await kit.invoke(getConversation, {
+      conversationId: conversation.id,
+    });
+    expect(JSON.stringify(clientView)).not.toMatch(
+      /modelTrace|model_trace|toolInput|tool_input/,
+    );
+  });
+
+  it("pre-T2 rows without tool_input still read as null and reconstruct as {}", async () => {
+    const conversation = await kit.invoke(createConversation, {
+      title: "Pre-T2 fixture",
+    });
+    await kit.invoke(recordAssistantTurn, {
+      conversationId: conversation.id,
+      body: "Listed.",
+      toolRuns: [
+        {
+          actionName: "orders.list",
+          toolCallId: "call_legacy",
+          outcome: "success",
+          toolName: "orders_list_page",
+          modelTrace: { kind: "page.summary" },
+        },
+      ],
+    });
+    const history = await kit.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    const lastAssistant = history.messages.findLast(
+      (row) => row.role === "assistant",
+    );
+    expect(lastAssistant?.toolRuns[0]?.toolInput).toBeNull();
+    expect(lastAssistant?.toolRuns[0]?.executionId).toBeNull();
+    expect(lastAssistant?.toolRuns[0]?.seq).toBeNull();
+  });
+
+  it("recovers execution_id from the started row after a crash before finishRun", async () => {
+    const conversation = await kit.invoke(createConversation, {
+      title: "Crash recovery",
+    });
+    const begun = await kit.invoke(checkpointAssistantTurn, {
+      kind: "begin",
+      conversationId: conversation.id,
+    });
+    const staged = await kit.invoke(checkpointAssistantTurn, {
+      kind: "stageRun",
+      conversationId: conversation.id,
+      messageId: begun.messageId,
+      seq: 0,
+      actionName: "assistant.createConversation",
+      toolName: "assistant_createConversation",
+      toolCallId: "call_create",
+      toolInput: { title: "from staged tool" },
+    });
+    expect(staged.executionId).toEqual(expect.any(String));
+    const firstWrite = await kit.invoke(
+      createConversation,
+      { title: "from staged tool" },
+      {},
+      {
+        request: {
+          idempotencyKey: `tool:${conversation.id}:${staged.executionId ?? ""}`,
+        },
+      },
+    );
+    const conversationsAfterCommit = await countConversations(
+      kitIdentities.companies.a,
+    );
+
+    const history = await kit.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    const started = history.messages
+      .flatMap((message) => message.toolRuns)
+      .find((run) => run.outcome === "started");
+    expect(started).toBeDefined();
+    expect(started?.executionId).toEqual(expect.any(String));
+    expect(started?.toolInput).toEqual({ title: "from staged tool" });
+    const recoveredId = started?.executionId;
+    if (recoveredId === undefined || recoveredId === null) {
+      throw new Error("expected execution_id in started row");
+    }
+
+    const replay = await kit.invoke(
+      createConversation,
+      { title: "from staged tool" },
+      {},
+      {
+        request: {
+          idempotencyKey: `tool:${conversation.id}:${recoveredId}`,
+        },
+      },
+    );
+    expect(replay.id).toBe(firstWrite.id);
+    expect(await countConversations(kitIdentities.companies.a)).toBe(
+      conversationsAfterCommit,
+    );
+
+    await kit.invoke(checkpointAssistantTurn, {
+      kind: "finishRun",
+      conversationId: conversation.id,
+      executionId: recoveredId,
+      outcome: "success",
+      resultIds: [],
+      modelTrace: { id: firstWrite.id },
+    });
+    const finished = await kit.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    expect(
+      finished.messages.flatMap((message) => message.toolRuns)[0]?.outcome,
+    ).toBe("success");
+    expect(
+      finished.messages.flatMap((message) => message.toolRuns)[0]?.executionId,
+    ).toBe(recoveredId);
+  });
+
+  it("does not let another tenant read traces or finish another tenant's execution_id", async () => {
+    const begun = await kit.invoke(checkpointAssistantTurn, {
+      kind: "begin",
+      conversationId: fixtures.checkpoint,
+    });
+    const staged = await kit.invoke(checkpointAssistantTurn, {
+      kind: "stageRun",
+      conversationId: fixtures.checkpoint,
+      messageId: begun.messageId,
+      seq: 0,
+      actionName: "orders.list",
+      toolName: "orders_list_page",
+      toolCallId: "call_secret",
+      toolInput: { query: "secret-tenant-a" },
+    });
+    await expect(
+      kit.invoke(
+        getModelHistory,
+        { conversationId: fixtures.checkpoint },
+        {
+          companyId: kitIdentities.companies.b,
+          userId: kitIdentities.users.boris,
+        },
+      ),
+    ).rejects.toBeInstanceOf(NotFoundError);
+    await expect(
+      kit.invoke(
+        checkpointAssistantTurn,
+        {
+          kind: "finishRun",
+          conversationId: fixtures.checkpoint,
+          executionId: staged.executionId ?? "",
+          outcome: "success",
+          modelTrace: { leaked: true },
+        },
+        {
+          companyId: kitIdentities.companies.b,
+          userId: kitIdentities.users.boris,
+        },
+      ),
+    ).rejects.toBeInstanceOf(NotFoundError);
+    const stillStarted = (
+      await kit.db.runtime.db
+        .select()
+        .from(assistantToolRuns)
+        .where(
+          and(
+            eq(assistantToolRuns.companyId, kitIdentities.companies.a),
+            eq(assistantToolRuns.executionId, staged.executionId ?? ""),
+          ),
+        )
+    )[0];
+    expect(stillStarted?.outcome).toBe("started");
+    expect(stillStarted?.toolInput).toEqual({ query: "secret-tenant-a" });
   });
 });

@@ -20,6 +20,9 @@ describe("assistant conversation client view (ADR-0034)", () => {
     ]);
     expect(toolRunViewSchema.shape).not.toHaveProperty("modelTrace");
     expect(toolRunViewSchema.shape).not.toHaveProperty("toolName");
+    expect(toolRunViewSchema.shape).not.toHaveProperty("toolInput");
+    expect(toolRunViewSchema.shape).not.toHaveProperty("executionId");
+    expect(toolRunViewSchema.shape).not.toHaveProperty("seq");
     expect(Object.keys(getConversationOutputSchema.shape).toSorted()).toEqual(
       [
         "createdAt",
@@ -34,7 +37,7 @@ describe("assistant conversation client view (ADR-0034)", () => {
     expect(getConversationOutputSchema.shape).not.toHaveProperty("modelTrace");
     expect(messageViewSchema.shape).not.toHaveProperty("modelTrace");
     expect(JSON.stringify(getConversationOutputSchema)).not.toMatch(
-      /modelTrace|model_trace/,
+      /modelTrace|model_trace|toolInput|tool_input/,
     );
   });
 });

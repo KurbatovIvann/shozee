@@ -25,7 +25,10 @@ import {
 import { ORDERS_LIST_PAGE_ASSISTANT_DEFAULT_LIMIT } from "../tool-facades/orders-list.js";
 import { STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK } from "../turn-speech.js";
 import { HOST_HITL_PAUSED_STATUS } from "./execute.js";
-import { runStaffAssistantHostTurn } from "./loop.js";
+import {
+  runStaffAssistantHostTurn,
+  type StaffAssistantHostCheckpoint,
+} from "./loop.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -355,6 +358,79 @@ describe("runStaffAssistantHostTurn", () => {
     expect(turn.speech.source).toBe("model");
   });
 
+  it("checkpoints begin, stageRun, execute, finishRun, then complete in seq order", async () => {
+    const kinds: string[] = [];
+    const staged = new Map<number, string>();
+    const checkpoint: StaffAssistantHostCheckpoint = {
+      begin: async () => {
+        kinds.push("begin");
+        return { messageId: "msg-checkpoint" };
+      },
+      stageRun: async (input) => {
+        const executionId = `exec-${String(input.seq)}`;
+        staged.set(input.seq, executionId);
+        kinds.push(`stageRun:${String(input.seq)}`);
+        return { executionId };
+      },
+      finishRun: async (input) => {
+        kinds.push(`finishRun:${input.executionId}`);
+      },
+      complete: async () => {
+        kinds.push("complete");
+      },
+    };
+    const execute = vi.fn(async (actionName: string, _input, options) => {
+      kinds.push(`execute:${actionName}:${options.executionId ?? "missing"}`);
+      return { items: [], nextCursor: null };
+    });
+    const model = new MockLanguageModelV3({
+      doStream: [
+        mockToolCallsStream([
+          {
+            toolCallId: "call-list",
+            toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+            input: "{}",
+          },
+          {
+            toolCallId: "call-products",
+            toolName: CATALOG_LIST_PRODUCTS_TOOL_NAME,
+            input: "{}",
+          },
+        ]),
+        mockTextStream("Listed both."),
+      ],
+    });
+    const turn = await runStaffAssistantHostTurn({
+      model,
+      messages: [{ role: "user", content: "List orders and products" }],
+      contracts: [listOrders, listProducts],
+      execute,
+      checkpoint,
+    });
+    expect(kinds).toEqual([
+      "begin",
+      "stageRun:0",
+      "execute:orders.list:exec-0",
+      "finishRun:exec-0",
+      "stageRun:1",
+      "execute:catalog.listProducts:exec-1",
+      "finishRun:exec-1",
+      "complete",
+    ]);
+    expect(execute).toHaveBeenCalledWith(
+      "orders.list",
+      { kind: "page.summary", limit: ORDERS_LIST_PAGE_ASSISTANT_DEFAULT_LIMIT },
+      { toolCallId: "call-list", executionId: "exec-0" },
+    );
+    expect(execute).toHaveBeenCalledWith(
+      "catalog.listProducts",
+      expect.anything(),
+      { toolCallId: "call-products", executionId: "exec-1" },
+    );
+    expect(turn.speech.source).toBe("model");
+    expect(staged.get(0)).toBe("exec-0");
+  });
+
   it("stops further tools after confirmation_required and still commits narration", async () => {
     const execute = vi.fn((actionName: string) => {
       if (actionName === "customers.deleteCustomer") {
@@ -408,13 +484,13 @@ describe("runStaffAssistantHostTurn", () => {
       "call-list",
     );
     expect(turn.toolRuns).toEqual([
-      {
+      expect.objectContaining({
         actionName: "customers.deleteCustomer",
         toolCallId: "call-delete",
         challengeId,
         resultIds: [],
         outcome: "confirmation_required",
-      },
+      }),
     ]);
     expect(turn.speech).toEqual({
       source: "model",
@@ -561,13 +637,13 @@ describe("runStaffAssistantHostTurn", () => {
     });
     expect(execute).toHaveBeenCalledTimes(1);
     expect(turn.toolRuns).toEqual([
-      {
+      expect.objectContaining({
         actionName: "customers.deleteCustomer",
         toolCallId: "call-delete",
         challengeId,
         resultIds: [],
         outcome: "confirmation_required",
-      },
+      }),
     ]);
     expect(turn.toolRuns[0]?.outcome).not.toBe("success");
     expect(model.doStreamCalls.length).toBeGreaterThanOrEqual(2);

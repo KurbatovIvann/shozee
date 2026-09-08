@@ -28,6 +28,22 @@ export interface StaffAssistantPersistedToolRun {
    */
   readonly toolName?: string | null;
   readonly modelTrace: unknown;
+  /**
+   * Façade/tool args. Absent/null on pre-T2 rows; reconstruction uses
+   * `input: {}`.
+   */
+  readonly toolInput?: unknown;
+  readonly seq?: number | null;
+}
+
+/** Reconstruct tool-call input. Pre-T2 rows without `toolInput` are `{}`. */
+export function staffAssistantToolCallInput(
+  run: Pick<StaffAssistantPersistedToolRun, "toolInput">,
+): unknown {
+  if (run.toolInput === undefined || run.toolInput === null) {
+    return {};
+  }
+  return run.toolInput;
 }
 
 export interface StaffAssistantPersistedMessage {

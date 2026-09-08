@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { attemptKey } from "./attempt-key.js";
+import { attemptKey, executionAttemptKey } from "./attempt-key.js";
 
 const conversationId = "11111111-1111-4111-8111-111111111111";
 
@@ -17,6 +17,19 @@ describe("attemptKey", () => {
     );
     expect(attemptKey("choice", conversationId, "choice-1")).toBe(
       `choice:${conversationId}:choice-1`,
+    );
+  });
+
+  it("composes executionAttemptKey from the tool attempt kind and execution_id", () => {
+    const executionId = "exec-persisted-1";
+    expect(executionAttemptKey(conversationId, executionId)).toBe(
+      `tool:${conversationId}:${executionId}`,
+    );
+    expect(executionAttemptKey(conversationId, executionId)).toBe(
+      attemptKey("tool", conversationId, executionId),
+    );
+    expect(executionAttemptKey(conversationId, executionId)).not.toBe(
+      attemptKey("tool", conversationId, "call-a"),
     );
   });
 
