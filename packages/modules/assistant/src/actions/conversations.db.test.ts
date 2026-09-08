@@ -1002,6 +1002,91 @@ describe("assistant staff conversation actions", () => {
       "colleague getModelHistory of a foreign-company id",
     );
     expect(colleagueHistory).toEqual(foreignHistory);
+
+    const colleagueBegin = await invokeAsNotFound(
+      kit.invoke(
+        checkpointAssistantTurn,
+        { kind: "begin", conversationId: fixtures.convA },
+        colleague,
+      ),
+      "colleague checkpointAssistantTurn begin on another author's thread",
+    );
+    const foreignBegin = await invokeAsNotFound(
+      kit.invoke(
+        checkpointAssistantTurn,
+        { kind: "begin", conversationId: fixtures.convB },
+        colleague,
+      ),
+      "colleague checkpointAssistantTurn begin on a foreign-company thread",
+    );
+    expect(colleagueBegin).toEqual(foreignBegin);
+
+    const authorBegin = await kit.invoke(checkpointAssistantTurn, {
+      kind: "begin",
+      conversationId: fixtures.convA,
+    });
+    const authorStaged = await kit.invoke(checkpointAssistantTurn, {
+      kind: "stageRun",
+      conversationId: fixtures.convA,
+      messageId: authorBegin.messageId,
+      seq: 0,
+      actionName: "orders.list",
+      toolName: "orders_list_page",
+      toolCallId: "call_colleague_author",
+      toolInput: { limit: 1 },
+    });
+    const foreignAuthorBegin = await kit.invoke(
+      checkpointAssistantTurn,
+      { kind: "begin", conversationId: fixtures.convB },
+      {
+        companyId: kitIdentities.companies.b,
+        userId: kitIdentities.users.boris,
+      },
+    );
+    const foreignAuthorStaged = await kit.invoke(
+      checkpointAssistantTurn,
+      {
+        kind: "stageRun",
+        conversationId: fixtures.convB,
+        messageId: foreignAuthorBegin.messageId,
+        seq: 0,
+        actionName: "orders.list",
+        toolName: "orders_list_page",
+        toolCallId: "call_colleague_foreign",
+        toolInput: { limit: 1 },
+      },
+      {
+        companyId: kitIdentities.companies.b,
+        userId: kitIdentities.users.boris,
+      },
+    );
+    const colleagueFinish = await invokeAsNotFound(
+      kit.invoke(
+        checkpointAssistantTurn,
+        {
+          kind: "finishRun",
+          conversationId: fixtures.convA,
+          executionId: authorStaged.executionId ?? "",
+          outcome: "success",
+        },
+        colleague,
+      ),
+      "colleague checkpointAssistantTurn finishRun with the author's executionId",
+    );
+    const foreignFinish = await invokeAsNotFound(
+      kit.invoke(
+        checkpointAssistantTurn,
+        {
+          kind: "finishRun",
+          conversationId: fixtures.convB,
+          executionId: foreignAuthorStaged.executionId ?? "",
+          outcome: "success",
+        },
+        colleague,
+      ),
+      "colleague checkpointAssistantTurn finishRun with a foreign-company executionId",
+    );
+    expect(colleagueFinish).toEqual(foreignFinish);
   });
 
   it("listConversations for a colleague omits the author's rows and leaves the author's page intact", async () => {
@@ -1079,6 +1164,92 @@ describe("assistant staff conversation actions", () => {
       "owner getModelHistory of an employee's id",
     );
     expect(ownerHistory).toEqual(foreignGet);
+
+    const ownerBegin = await invokeAsNotFound(
+      kit.invoke(checkpointAssistantTurn, {
+        kind: "begin",
+        conversationId: fixtures.employee,
+      }),
+      "owner checkpointAssistantTurn begin on an employee's thread",
+    );
+    const foreignBegin = await invokeAsNotFound(
+      kit.invoke(checkpointAssistantTurn, {
+        kind: "begin",
+        conversationId: fixtures.convB,
+      }),
+      "owner checkpointAssistantTurn begin on a foreign-company thread",
+    );
+    expect(ownerBegin).toEqual(foreignBegin);
+
+    const employeeBegin = await kit.invoke(
+      checkpointAssistantTurn,
+      { kind: "begin", conversationId: fixtures.employee },
+      {
+        userId: clerks.employee,
+        companyId: kitIdentities.companies.a,
+      },
+    );
+    const employeeStaged = await kit.invoke(
+      checkpointAssistantTurn,
+      {
+        kind: "stageRun",
+        conversationId: fixtures.employee,
+        messageId: employeeBegin.messageId,
+        seq: 0,
+        actionName: "orders.list",
+        toolName: "orders_list_page",
+        toolCallId: "call_owner_employee",
+        toolInput: { limit: 1 },
+      },
+      {
+        userId: clerks.employee,
+        companyId: kitIdentities.companies.a,
+      },
+    );
+    const foreignAuthorBegin = await kit.invoke(
+      checkpointAssistantTurn,
+      { kind: "begin", conversationId: fixtures.convB },
+      {
+        companyId: kitIdentities.companies.b,
+        userId: kitIdentities.users.boris,
+      },
+    );
+    const foreignAuthorStaged = await kit.invoke(
+      checkpointAssistantTurn,
+      {
+        kind: "stageRun",
+        conversationId: fixtures.convB,
+        messageId: foreignAuthorBegin.messageId,
+        seq: 0,
+        actionName: "orders.list",
+        toolName: "orders_list_page",
+        toolCallId: "call_owner_foreign",
+        toolInput: { limit: 1 },
+      },
+      {
+        companyId: kitIdentities.companies.b,
+        userId: kitIdentities.users.boris,
+      },
+    );
+    const ownerFinish = await invokeAsNotFound(
+      kit.invoke(checkpointAssistantTurn, {
+        kind: "finishRun",
+        conversationId: fixtures.employee,
+        executionId: employeeStaged.executionId ?? "",
+        outcome: "success",
+      }),
+      "owner checkpointAssistantTurn finishRun with the employee's executionId",
+    );
+    const foreignFinish = await invokeAsNotFound(
+      kit.invoke(checkpointAssistantTurn, {
+        kind: "finishRun",
+        conversationId: fixtures.convB,
+        executionId: foreignAuthorStaged.executionId ?? "",
+        outcome: "success",
+      }),
+      "owner checkpointAssistantTurn finishRun with a foreign-company executionId",
+    );
+    expect(ownerFinish).toEqual(foreignFinish);
   });
 
   it("an employee still creates, lists, gets, appends, and records their own", async () => {
