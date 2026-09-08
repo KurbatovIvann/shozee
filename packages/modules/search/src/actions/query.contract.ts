@@ -3,7 +3,7 @@
  * - `timeout: 10000` covers sequential matcher fan-out (T8).
  * - `permissions: ["companies:view"]` opens search (T0 key; not `[]`,
  *   not a new `search:query` key). Type gates stay `staffHasPermission` (T8).
- * - `aiExposure: "internal"` until T9. `audit: false`. No cursor.
+ * - `aiExposure: "exposed"` (T9 / SHO-535). `audit: false`. No cursor.
  * - Empty / punctuation-only after normalize is an empty result, not error.
  */
 import { defineActionContract } from "@showzy/core/contract";
@@ -21,7 +21,7 @@ export const queryContract = defineActionContract({
   input: searchQueryInputSchema,
   output: searchQueryOutputSchema,
   permissions: ["companies:view"],
-  aiExposure: "internal",
+  aiExposure: "exposed",
   risk: "read",
   requiresConfirmation: false,
   idempotent: false,

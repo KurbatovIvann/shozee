@@ -20,9 +20,9 @@ describe("assistantJobLabel", () => {
     expect(label.includes("orders_list_counts")).toBe(false);
   });
 
-  it("maps dotted orders.get to the same label as orders_get", () => {
-    expect(assistantJobLabel("orders.get", uk)).toBe(uk.jobs.orders_get);
-    expect(assistantJobLabel("orders_get", en)).toBe(en.jobs.orders_get);
+  it("maps dotted search.query to the same label as search_query", () => {
+    expect(assistantJobLabel("search.query", uk)).toBe(uk.jobs.search_query);
+    expect(assistantJobLabel("search_query", en)).toBe(en.jobs.search_query);
   });
 
   it("falls back without echoing an unknown wire name", () => {

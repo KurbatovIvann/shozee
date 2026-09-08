@@ -1,4 +1,5 @@
 import {
+  CATALOG_LIST_PRODUCTS_TOOL_NAME,
   CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME,
   ORDERS_CREATE_TOOL_NAME,
   ORDERS_LIST_COUNTS_TOOL_NAME,
@@ -12,6 +13,7 @@ import { GATE_CLASSIFIES_SCENARIOS } from "./scenarios/gate-classifies.js";
 import { MODEL_SPEAKS_SCENARIOS } from "./scenarios/model-speaks.js";
 import { PLAIN_REPLY_SCENARIOS } from "./scenarios/plain-reply.js";
 import { PROOF_SCENARIOS } from "./scenarios/proof.js";
+import { SEARCH_RESULTS_SCENARIOS } from "./scenarios/search-results.js";
 import { collectEvalToolCalls } from "./trace.js";
 
 describe("PROOF_SCENARIOS", () => {
@@ -246,6 +248,27 @@ describe("GATE_CLASSIFIES_SCENARIOS", () => {
         ],
       }),
     ).toEqual({ ok: true });
+  });
+});
+
+describe("SEARCH_RESULTS_SCENARIOS", () => {
+  it("defines the SHO-535 simple-find corpus id", () => {
+    expect(SEARCH_RESULTS_SCENARIOS.map((scenario) => scenario.id)).toEqual([
+      "t10.search-results.find-katya-sambuka",
+    ]);
+    expect(SEARCH_RESULTS_SCENARIOS[0]?.turns[0]?.text).toBe(
+      "знайди Катю Самбуку",
+    );
+    expect(SEARCH_RESULTS_SCENARIOS[0]?.expectation.ordered?.[0]?.name).toBe(
+      "search_query",
+    );
+    expect(SEARCH_RESULTS_SCENARIOS[0]?.expectation.forbidden).toEqual([
+      CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME,
+      ORDERS_LIST_PAGE_TOOL_NAME,
+      ORDERS_LIST_COUNTS_TOOL_NAME,
+      CATALOG_LIST_PRODUCTS_TOOL_NAME,
+    ]);
+    expect(SEARCH_RESULTS_SCENARIOS[0]?.host).toBe("new");
   });
 });
 

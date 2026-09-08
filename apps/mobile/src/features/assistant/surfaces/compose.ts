@@ -41,6 +41,11 @@ import {
   ORDERS_LIST_COUNTS_TOOL,
   type AssistantOrdersListCardView,
 } from "./orders-list";
+import {
+  isSearchResultsResumeData,
+  localizeSearchResultsCard,
+  type AssistantSearchResultsCardView,
+} from "./search-results";
 
 const PRESENTATION_PART_TYPE = "data-presentation";
 const RESUME_CARD_PART_TYPE = "data-resumeCard";
@@ -49,7 +54,8 @@ export type AssistantSurface =
   | AssistantOrdersListCardView
   | AssistantOrdersAggregateCardView
   | AssistantOrderEntityCardView
-  | AssistantCustomersListCardView;
+  | AssistantCustomersListCardView
+  | AssistantSearchResultsCardView;
 
 export function assistantSurfaceKey(surface: AssistantSurface): string {
   switch (surface.kind) {
@@ -61,7 +67,11 @@ export function assistantSurfaceKey(surface: AssistantSurface): string {
       return surface.id;
     case "customers-list":
       return "customers-list";
+    case "search-results":
+      return "search-results";
   }
+  const unhandledSurfaceKind: never = surface;
+  return unhandledSurfaceKind;
 }
 
 function lastCountsInput(parts: readonly AssistantChatPart[]): unknown {
@@ -96,7 +106,14 @@ function surfacesFromResumeCards(
       continue;
     }
     const data = part.data;
-    if (!isRecord(data) || data.kind !== "order-entity") {
+    if (!isRecord(data)) {
+      continue;
+    }
+    if (isSearchResultsResumeData(data)) {
+      surfaces.push(localizeSurface(data, locale, parts));
+      continue;
+    }
+    if (data.kind !== "order-entity") {
       continue;
     }
     const orderId = data.orderId;
@@ -140,7 +157,11 @@ function localizeSurface(
       return localizeOrderEntityCard(data, ordersCopy(locale), locale);
     case "customers-list":
       return localizeCustomersListCard(data, locale);
+    case "search-results":
+      return localizeSearchResultsCard(data, locale);
   }
+  const unhandledSurfaceKind: never = data;
+  return unhandledSurfaceKind;
 }
 
 function composeSurfacesFromParts(

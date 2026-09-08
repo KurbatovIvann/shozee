@@ -80,7 +80,7 @@ describe("search.query contract", () => {
     expect(queryContract.risk).toBe("read");
     expect(queryContract.permissions).toEqual(["companies:view"]);
     expect(queryContract.permissions).not.toEqual([]);
-    expect(queryContract.aiExposure).toBe("internal");
+    expect(queryContract.aiExposure).toBe("exposed");
     expect(queryContract.audit).toBe(false);
     expect(queryContract.idempotent).toBe(false);
     expect(queryContract.emits).toEqual([]);

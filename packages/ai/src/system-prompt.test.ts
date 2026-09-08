@@ -3,6 +3,7 @@ import {
   ORDER_ENTITY_PROMPT_LINE,
   ORDERS_AGGREGATE_PROMPT_LINE,
   ORDERS_LIST_PROMPT_LINE,
+  SEARCH_RESULTS_PROMPT_LINE,
 } from "@showzy/validation/assistant-surfaces";
 import { describe, expect, it } from "vitest";
 
@@ -45,6 +46,7 @@ describe("staffAssistantSystemPrompt", () => {
     expect(staffAssistantSystemPrompt).toContain("pricing_list_price_lists");
     expect(staffAssistantSystemPrompt).toContain("orders_create");
     expect(staffAssistantSystemPrompt).toContain("customers_list_customers");
+    expect(staffAssistantSystemPrompt).toContain("search_query");
     expect(staffAssistantSystemPrompt).not.toContain(
       "Always-visible domain tools: orders.list",
     );
@@ -140,6 +142,7 @@ describe("staffAssistantSystemPrompt", () => {
     expect(staffAssistantSystemPrompt).toContain(ORDERS_AGGREGATE_PROMPT_LINE);
     expect(staffAssistantSystemPrompt).toContain(ORDER_ENTITY_PROMPT_LINE);
     expect(staffAssistantSystemPrompt).toContain(CUSTOMERS_LIST_PROMPT_LINE);
+    expect(staffAssistantSystemPrompt).toContain(SEARCH_RESULTS_PROMPT_LINE);
     expect(staffAssistantSystemPrompt).toContain(
       "Reply in one or two sentences about the result",
     );

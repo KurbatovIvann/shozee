@@ -1,5 +1,9 @@
 import { defineActionContract } from "@showzy/core/contract";
-import { ORDER_ENTITY_PROMPT_LINE } from "@showzy/validation/assistant-surfaces";
+import {
+  ORDER_ENTITY_PROMPT_LINE,
+  SEARCH_RESULTS_PROMPT_LINE,
+} from "@showzy/validation/assistant-surfaces";
+import { searchQueryInputSchema } from "@showzy/validation/search";
 import { asSchema } from "ai";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -283,7 +287,21 @@ describe("staffAssistantTools", () => {
       CATALOG_LIST_PRODUCTS_TOOL_NAME,
       PRICING_LIST_PRICE_LISTS_TOOL_NAME,
       CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME,
+      "search_query",
     ]);
+    expect(staffAssistantHotToolNames()).toContain("search_query");
+    expect(staffAssistantHotToolNames()).toEqual(
+      expect.arrayContaining([
+        ORDERS_LIST_PAGE_TOOL_NAME,
+        ORDERS_LIST_COUNTS_TOOL_NAME,
+        "orders_get",
+        ORDERS_CREATE_TOOL_NAME,
+        CATALOG_LIST_PRODUCTS_TOOL_NAME,
+        PRICING_LIST_PRICE_LISTS_TOOL_NAME,
+        CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME,
+      ]),
+    );
+    expect(toProviderToolName("search.query")).toBe("search_query");
     expect(staffAssistantHotToolNames()).not.toContain("orders_list");
     expect(staffAssistantHotToolNames()).not.toContain("catalog_listProducts");
     expect(staffAssistantHotToolNames()).not.toContain(
@@ -296,6 +314,40 @@ describe("staffAssistantTools", () => {
       CUSTOMERS_LIST_GROUPS_TOOL_NAME,
     );
     expect(staffAssistantHotToolNames()).not.toContain("customers_listGroups");
+  });
+
+  it("appends the search-results prompt line to search.query", () => {
+    const query = defineActionContract({
+      name: "search.query",
+      description:
+        "Search the staff member's active company for orders, customers, groups, counterparties, products, variants, price lists, and documents.",
+      principal: "staff",
+      transport: "client",
+      aiExposure: "exposed",
+      permissions: ["companies:view"],
+      risk: "read",
+      requiresConfirmation: false,
+      idempotent: false,
+      emits: [],
+      atomicCalls: [],
+      atomicCallers: [],
+      errors: ["VALIDATION"],
+      audit: false,
+      timeout: 10_000,
+      input: searchQueryInputSchema,
+      output: z.object({
+        groups: z.array(z.unknown()),
+        searchedTypes: z.array(z.string()),
+        queryNormalized: z.string(),
+      }),
+    });
+    const tools = staffAssistantTools([query], () => Promise.resolve({}));
+    expect(tools["search_query"]?.description).toContain(
+      SEARCH_RESULTS_PROMPT_LINE,
+    );
+    const raw = { ...z.toJSONSchema(searchQueryInputSchema) };
+    expect(raw["type"]).toBe("object");
+    expect(ensureAnthropicToolInputSchemaType(raw)).toEqual(raw);
   });
 
   it("appends the order entity prompt line to orders.get", () => {

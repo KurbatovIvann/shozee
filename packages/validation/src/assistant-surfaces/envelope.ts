@@ -21,6 +21,10 @@ import {
   ASSISTANT_SURFACE_REGISTRY,
   type AssistantSurfaceDescriptor,
 } from "./registry.js";
+import {
+  SEARCH_QUERY_ACTION_NAME,
+  SEARCH_QUERY_TOOL,
+} from "./search-results.js";
 
 export const staffAssistantPresentationEnvelopeSchema = z.object({
   surface: z.string().min(1),
@@ -88,6 +92,14 @@ function toolCallIdsForSurface(
       (name) => name === CUSTOMERS_LIST_CUSTOMERS_TOOL,
     );
     pushUniqueId(ids, page?.toolCallId);
+    return ids;
+  }
+  if (surface.kind === "search-results") {
+    const search = lastSuccessfulResult(
+      results,
+      (name) => name === SEARCH_QUERY_TOOL || name === SEARCH_QUERY_ACTION_NAME,
+    );
+    pushUniqueId(ids, search?.toolCallId);
     return ids;
   }
   const counts = lastSuccessfulResult(

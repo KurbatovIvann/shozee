@@ -9,6 +9,7 @@ import {
   type AssistantResultChip,
 } from "./assistant-result-chrome";
 import { AssistantResultFrame } from "./assistant-result-frame";
+import { AssistantSearchResultsBlock } from "./assistant-search-results-block";
 import { OrderEntityCard } from "./order-entity-card";
 import { OrdersAggregateResultCard } from "./orders-aggregate-result-card";
 
@@ -73,6 +74,10 @@ const AssistantSurfaceBlock = memo(function AssistantSurfaceBlock(props: {
       );
     case "order-entity":
       return <OrderEntityCard card={surface} onOpenHref={onOpenHref} />;
+    case "search-results":
+      return surface.emptyTitle !== null ? null : (
+        <AssistantSearchResultsBlock card={surface} onOpenHref={onOpenHref} />
+      );
   }
   const unhandledSurfaceKind: never = surface;
   return unhandledSurfaceKind;

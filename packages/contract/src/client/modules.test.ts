@@ -336,7 +336,7 @@ describe("client composition", () => {
     expect(contractRouter.pricing.setPriceListEntries).toBeDefined();
     expect(contractRouter.pricing.updatePriceList).toBeDefined();
     expect(contractRouter.search.query).toBeDefined();
-    expect(contractModules.search.query.aiExposure).toBe("internal");
+    expect(contractModules.search.query.aiExposure).toBe("exposed");
     expect(contractModules.search.query.permissions).toEqual([
       "companies:view",
     ]);

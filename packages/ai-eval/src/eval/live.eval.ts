@@ -18,12 +18,14 @@ import { GATE_CLASSIFIES_SCENARIOS } from "../scenarios/gate-classifies.js";
 import { MODEL_SPEAKS_SCENARIOS } from "../scenarios/model-speaks.js";
 import { PLAIN_REPLY_SCENARIOS } from "../scenarios/plain-reply.js";
 import { PROOF_SCENARIOS } from "../scenarios/proof.js";
+import { SEARCH_RESULTS_SCENARIOS } from "../scenarios/search-results.js";
 
 const EVAL_CORPUS_SCENARIOS = [
   ...PROOF_SCENARIOS,
   ...PLAIN_REPLY_SCENARIOS,
   ...MODEL_SPEAKS_SCENARIOS,
   ...GATE_CLASSIFIES_SCENARIOS,
+  ...SEARCH_RESULTS_SCENARIOS,
 ];
 
 const logger = createEvalLogger();

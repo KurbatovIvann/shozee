@@ -99,6 +99,7 @@ const STAFF_EXPOSED_ACTION_ALLOWLIST = [
   "pricing.setDefaultPriceList",
   "pricing.setPriceListEntries",
   "pricing.updatePriceList",
+  "search.query",
 ] as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -310,7 +311,7 @@ describe("CI contract-check stage", () => {
     expect(appSrc).not.toContain('"/assistant/host/chat"');
   });
 
-  it("SHO-527/SHO-534: search.query is staff/client/internal with companies:view; matcher callees are internal reads; fan-out and prefix edges", () => {
+  it("SHO-527/SHO-534/SHO-535: search.query is staff/client/exposed with companies:view; matcher callees are internal reads; fan-out and prefix edges", () => {
     const input = buildContractCheckInput();
     const contracts = input.registry.contracts();
     const byName = new Map(
@@ -321,11 +322,11 @@ describe("CI contract-check stage", () => {
     expect(query).toBeDefined();
     expect(query?.principal).toBe("staff");
     expect(query?.transport).toBe("client");
-    expect(query?.aiExposure).toBe("internal");
+    expect(query?.aiExposure).toBe("exposed");
     expect(query?.risk).toBe("read");
     expect(query?.permissions).toEqual(["companies:view"]);
     expect(query?.timeout).toBe(10_000);
-    expect(staffExposedActionNames(contracts)).not.toContain("search.query");
+    expect(staffExposedActionNames(contracts)).toContain("search.query");
 
     const matchers = [
       "customers.searchMatches",

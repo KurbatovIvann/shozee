@@ -39,10 +39,31 @@ export type SharedAssistantAggregateCopy = {
   readonly customerColumn: string;
 };
 
+export type SharedAssistantSearchResultsCopy = {
+  readonly emptyTitle: string;
+  readonly emptyDescription: string;
+  readonly truncated: string;
+  readonly clipped: string;
+  readonly groupEmpty: string;
+  readonly archived: string;
+  readonly handoffLabel: string;
+  readonly groups: {
+    readonly order: string;
+    readonly customer: string;
+    readonly customerGroup: string;
+    readonly counterparty: string;
+    readonly product: string;
+    readonly variant: string;
+    readonly priceList: string;
+    readonly document: string;
+  };
+};
+
 export type SharedAssistantCopy = {
   readonly ordersList: SharedAssistantOrdersListCopy;
   readonly customersList: SharedAssistantCustomersListCopy;
   readonly aggregate: SharedAssistantAggregateCopy;
+  readonly searchResults: SharedAssistantSearchResultsCopy;
 };
 
 export type AssistantJobsCopy = {
@@ -53,6 +74,7 @@ export type AssistantJobsCopy = {
   readonly catalog_list_products: string;
   readonly pricing_list_price_lists: string;
   readonly customers_listCustomers: string;
+  readonly search_query: string;
   readonly fallback: string;
 };
 
@@ -132,6 +154,25 @@ const en: SharedAssistantCopy = {
     statusColumn: "Status and product",
     customerColumn: "Customer and product",
   },
+  searchResults: {
+    emptyTitle: "Nothing found",
+    emptyDescription: "No records match this search.",
+    truncated: "More matches exist in this group.",
+    clipped: "The search result was clipped. Narrow the query.",
+    groupEmpty: "No matches in this group.",
+    archived: "Archived",
+    handoffLabel: "Search",
+    groups: {
+      order: "Orders",
+      customer: "Customers",
+      customerGroup: "Groups",
+      counterparty: "Counterparties",
+      product: "Products",
+      variant: "Variants",
+      priceList: "Price lists",
+      document: "Documents",
+    },
+  },
 };
 
 const uk: SharedAssistantCopy = {
@@ -156,6 +197,25 @@ const uk: SharedAssistantCopy = {
     productColumn: "Товар і варіант",
     statusColumn: "Статус і товар",
     customerColumn: "Замовник і товар",
+  },
+  searchResults: {
+    emptyTitle: "Нічого не знайдено",
+    emptyDescription: "За цим пошуком записів немає.",
+    truncated: "У цій групі є ще збіги.",
+    clipped: "Результат пошуку обрізано. Уточни запит.",
+    groupEmpty: "У цій групі збігів немає.",
+    archived: "В архіві",
+    handoffLabel: "Пошук",
+    groups: {
+      order: "Замовлення",
+      customer: "Клієнти",
+      customerGroup: "Групи",
+      counterparty: "Юрособи",
+      product: "Товари",
+      variant: "Варіанти",
+      priceList: "Прайс-листи",
+      document: "Документи",
+    },
   },
 };
 
@@ -195,6 +255,7 @@ const assistantEn: AssistantCopy = {
     catalog_list_products: "Searching the catalog",
     pricing_list_price_lists: "Looking up price lists",
     customers_listCustomers: "Looking up customers",
+    search_query: "Searching the company",
     fallback: "Working",
   },
   cards: {
@@ -269,6 +330,7 @@ const assistantUk: AssistantCopy = {
     catalog_list_products: "Шукаю в каталозі",
     pricing_list_price_lists: "Шукаю прайси",
     customers_listCustomers: "Шукаю клієнтів",
+    search_query: "Шукаю в компанії",
     fallback: "Працюю",
   },
   cards: {

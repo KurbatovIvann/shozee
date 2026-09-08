@@ -23,6 +23,12 @@ export type {
   AssistantResultMarksCarrier,
 } from "./marks";
 export {
+  parseSearchResultsSurface,
+  type AssistantSearchResultsCardView,
+  type AssistantSearchResultsGroupView,
+  type AssistantSearchResultsHitView,
+} from "./search-results";
+export {
   parseCustomersListSurface,
   ASSISTANT_CUSTOMERS_LIST_HREF,
   ASSISTANT_CUSTOMERS_LIST_ROW_MAX,

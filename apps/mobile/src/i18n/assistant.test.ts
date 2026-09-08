@@ -27,6 +27,8 @@ describe("assistant copy", () => {
     expect(uk.jobs.orders_list_page).not.toBe("orders_list_page");
     expect(uk.jobs.orders_list_counts).not.toBe("orders_list_counts");
     expect(uk.jobs.fallback).toBe("Працюю");
+    expect(uk.jobs.search_query).toBe("Шукаю в компанії");
+    expect(uk.jobs.search_query).not.toBe("search_query");
   });
 
   it("pins Ukrainian list-card copy without an active status chip", () => {

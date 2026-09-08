@@ -11,9 +11,11 @@ import {
   mockTextStream,
   mockToolCallStream,
 } from "@showzy/ai/test";
+import { defineActionContract } from "@showzy/core/contract";
 import { listCustomersContract } from "@showzy/customers/contract";
 import { listOrdersContract } from "@showzy/orders/contract";
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 import { matchEvalExpectation } from "./expectation.js";
 import { createEvalLogger } from "./log.js";
@@ -21,6 +23,7 @@ import { isRecord } from "./record.js";
 import { runStaffAssistantEvalTurn } from "./run-turn.js";
 import { MODEL_SPEAKS_SCENARIOS } from "./scenarios/model-speaks.js";
 import { PROOF_SCENARIOS } from "./scenarios/proof.js";
+import { SEARCH_RESULTS_SCENARIOS } from "./scenarios/search-results.js";
 
 const silentLogger = createEvalLogger({
   write() {
@@ -286,6 +289,71 @@ describe("runStaffAssistantEvalTurn", () => {
     expect(
       matchEvalExpectation(
         MODEL_SPEAKS_SCENARIOS[1]?.expectation ?? {},
+        result.trace,
+      ),
+    ).toEqual({ ok: true });
+  });
+
+  it("SHO-535: mock host records one search_query for a simple find", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new Error("network must not run"));
+    const searchQuery = defineActionContract({
+      name: "search.query",
+      description: "Search the staff member's active company.",
+      principal: "staff",
+      transport: "client",
+      aiExposure: "exposed",
+      permissions: ["companies:view"],
+      risk: "read",
+      requiresConfirmation: false,
+      idempotent: false,
+      emits: [],
+      atomicCalls: [],
+      atomicCallers: [],
+      errors: ["VALIDATION"],
+      audit: false,
+      timeout: 10_000,
+      input: z.object({ query: z.string() }),
+      output: z.object({
+        groups: z.array(z.unknown()),
+        searchedTypes: z.array(z.string()),
+        queryNormalized: z.string(),
+      }),
+    });
+    const execute = vi.fn(() =>
+      Promise.resolve({
+        groups: [],
+        searchedTypes: ["customer"],
+        queryNormalized: "katya sambuka",
+      }),
+    );
+    const result = await runStaffAssistantEvalTurn({
+      models: evalModels(
+        new MockLanguageModelV3({
+          doStream: [
+            mockToolCallStream(
+              "call-search",
+              "search_query",
+              JSON.stringify({ query: "Катя Самбука" }),
+            ),
+            mockSpokenStream("Знайшла Катю Самбуку."),
+          ],
+        }),
+      ),
+      messages: [{ role: "user", content: "знайди Катю Самбуку" }],
+      contracts: [searchQuery],
+      execute,
+      logger: silentLogger,
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+    expect(result.trace.toolCalls.map((call) => call.name)).toEqual([
+      "search_query",
+    ]);
+    expect(
+      matchEvalExpectation(
+        SEARCH_RESULTS_SCENARIOS[0]?.expectation ?? {},
         result.trace,
       ),
     ).toEqual({ ok: true });
