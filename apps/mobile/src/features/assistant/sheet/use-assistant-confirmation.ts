@@ -1,6 +1,8 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 
+import type { AssistantCompanyEpochRef } from "../shared/assistant-session";
 import {
+  commitHostConfirmResult,
   confirmationCardState,
   executeConfirmationAbandon,
   executeHostConfirmationConfirm,
@@ -11,10 +13,7 @@ import {
   type ConfirmationCardState,
   type PendingConfirmation,
 } from "../shared/confirmation-presenter";
-import {
-  partsFromResumeEnvelope,
-  type AssistantHostInteractionResult,
-} from "../shared/resume-envelope";
+import type { AssistantHostInteractionResult } from "../shared/resume-envelope";
 import type { ChoiceAppendPart } from "../shared/choice-presenter";
 
 export type AssistantChatStatus = "submitted" | "streaming" | "ready" | "error";
@@ -22,6 +21,7 @@ export type AssistantChatStatus = "submitted" | "streaming" | "ready" | "error";
 export function useAssistantConfirmation(args: {
   readonly messages: readonly AssistantChatMessage[];
   readonly sendBusy: boolean;
+  readonly companyEpochRef: AssistantCompanyEpochRef;
   readonly getConversationId: () => string | null;
   readonly peekPending: () => Promise<
     | {
@@ -103,6 +103,7 @@ export function useAssistantConfirmation(args: {
     if (current === null || resolvingRef.current !== null) {
       return;
     }
+    const epoch = args.companyEpochRef.current;
     setResolvingChallengeId(current.challengeId);
     void executeHostConfirmationConfirm({
       pending: current,
@@ -113,33 +114,31 @@ export function useAssistantConfirmation(args: {
       postConfirm: args.postConfirm,
     })
       .then((result) => {
-        if (result === "skipped") {
-          clearResolving();
+        const outcome = commitHostConfirmResult({
+          result,
+          previousChallengeId: current.challengeId,
+          companyEpochRef: args.companyEpochRef,
+          epoch,
+          resolvingRef,
+          appendParts: args.appendParts,
+          ignoreChallenge,
+        });
+        if (outcome === "stale") {
           return;
-        }
-        if (result.status === "ok") {
-          const parts = partsFromResumeEnvelope({
-            speech: result.speech,
-            cards: result.cards,
-            pending: result.pending,
-          });
-          if (parts.length > 0) {
-            args.appendParts(parts);
-          }
-          ignoreChallenge(current.challengeId);
-          clearResolving();
-          return;
-        }
-        if (shouldHidePendingCardAfterAbandon(result)) {
-          ignoreChallenge(current.challengeId);
         }
         clearResolving();
       })
       .catch(() => {
-        clearResolving();
+        if (
+          args.companyEpochRef.current === epoch &&
+          resolvingRef.current === current.challengeId
+        ) {
+          clearResolving();
+        }
       });
   }, [
     args.appendParts,
+    args.companyEpochRef,
     args.getConversationId,
     args.postConfirm,
     args.sendBusy,

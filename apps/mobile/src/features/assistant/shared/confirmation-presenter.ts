@@ -9,12 +9,18 @@
 import { CONFIRMATION_CHALLENGE_HEADER } from "@showzy/contract";
 
 import {
+  isCurrentAssistantChoiceSelect,
+  type AssistantCompanyEpochRef,
+} from "./assistant-session";
+import {
   confirmationFromChatPart,
   type StaffAssistantConfirmation,
 } from "./confirmation";
 import {
+  partsFromResumeEnvelope,
   shouldHidePendingCardAfterAbandon,
   type AssistantHostInteractionResult,
+  type ResumeAppendPart,
 } from "./resume-envelope";
 
 export type AssistantChatPart = {
@@ -267,6 +273,53 @@ export async function executeHostConfirmationConfirm(args: {
     conversationId: args.conversationId,
     challengeId: claimed.challengeId,
   });
+}
+
+export type CommitHostConfirmResult = "skipped" | "stale" | "applied";
+
+/**
+ * Apply a POST /assistant/confirm body onto the current tenant session.
+ * Drop append + ignore when the company epoch moved or `reset()` cleared
+ * the resolving lock — same gate as `commitChoiceSelectResult`.
+ */
+export function commitHostConfirmResult(args: {
+  readonly result: "skipped" | AssistantHostInteractionResult;
+  readonly previousChallengeId: string;
+  readonly companyEpochRef: AssistantCompanyEpochRef;
+  readonly epoch: number;
+  readonly resolvingRef: { readonly current: string | null };
+  readonly appendParts: (parts: readonly ResumeAppendPart[]) => void;
+  readonly ignoreChallenge: (challengeId: string) => void;
+}): CommitHostConfirmResult {
+  if (args.result === "skipped") {
+    return "skipped";
+  }
+  if (
+    !isCurrentAssistantChoiceSelect({
+      companyEpochRef: args.companyEpochRef,
+      epoch: args.epoch,
+      resolvingRef: args.resolvingRef,
+      challengeId: args.previousChallengeId,
+    })
+  ) {
+    return "stale";
+  }
+  if (args.result.status === "ok") {
+    const parts = partsFromResumeEnvelope({
+      speech: args.result.speech,
+      cards: args.result.cards,
+      pending: args.result.pending,
+    });
+    if (parts.length > 0) {
+      args.appendParts(parts);
+    }
+    args.ignoreChallenge(args.previousChallengeId);
+    return "applied";
+  }
+  if (shouldHidePendingCardAfterAbandon(args.result)) {
+    args.ignoreChallenge(args.previousChallengeId);
+  }
+  return "applied";
 }
 
 /**
