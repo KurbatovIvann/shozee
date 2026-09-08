@@ -90,7 +90,7 @@ describe("assistant.getModelHistory contract", () => {
       getModelHistoryInputSchema.safeParse({
         conversationId: "11111111-1111-4111-8111-111111111111",
         includeTurnKeys: [
-          `begin:resume:${"11111111-1111-4111-8111-111111111111"}`,
+          "begin:resume:11111111-1111-4111-8111-111111111111",
         ],
       }).success,
     ).toBe(true);
