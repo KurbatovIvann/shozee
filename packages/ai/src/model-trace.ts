@@ -34,6 +34,12 @@ export interface StaffAssistantPersistedToolRun {
    */
   readonly toolInput?: unknown;
   readonly seq?: number | null;
+  /**
+   * Checkpoint outcome. `started` rows keep a null trace until
+   * `finishRun` and must still reconstruct as a tool-call (SHO-539).
+   */
+  readonly outcome?: string;
+  readonly executionId?: string | null;
 }
 
 /** Reconstruct tool-call input. Pre-T2 rows without `toolInput` are `{}`. */
@@ -203,6 +209,8 @@ type BudgetedRun = {
   readonly kind: "full" | "digest" | "omit";
   readonly toolInput?: unknown;
   readonly seq?: number | null;
+  readonly outcome?: string;
+  readonly executionId?: string | null;
 };
 
 function budgetedChars(runs: readonly BudgetedRun[]): number {
@@ -258,6 +266,10 @@ export function budgetStaffAssistantToolRuns(
         toolName,
         ...(run.toolInput !== undefined ? { toolInput: run.toolInput } : {}),
         ...(run.seq !== undefined ? { seq: run.seq } : {}),
+        ...(run.outcome !== undefined ? { outcome: run.outcome } : {}),
+        ...(run.executionId !== undefined
+          ? { executionId: run.executionId }
+          : {}),
       };
       if (run.modelTrace === null || run.modelTrace === undefined) {
         return {
@@ -373,6 +385,10 @@ export function budgetStaffAssistantToolRuns(
         modelTrace: run.kind === "omit" ? null : run.modelTrace,
         ...(run.toolInput !== undefined ? { toolInput: run.toolInput } : {}),
         ...(run.seq !== undefined ? { seq: run.seq } : {}),
+        ...(run.outcome !== undefined ? { outcome: run.outcome } : {}),
+        ...(run.executionId !== undefined
+          ? { executionId: run.executionId }
+          : {}),
       })),
     };
   });

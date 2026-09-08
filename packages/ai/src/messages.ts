@@ -173,6 +173,8 @@ export type {
  * Model history from persisted conversation rows. Client `messages` are
  * never a history source (SHO-506). Tool-call/result parts come from
  * ADR-0034 `modelTrace` under the read-time token budget (SHO-510).
+ * In-flight `started` runs reconstruct a tool-call from `toolInput`
+ * even when `modelTrace` is still null (SHO-539).
  */
 export function staffAssistantModelMessagesFromPersisted(
   messages: readonly StaffAssistantPersistedMessage[],
@@ -195,16 +197,24 @@ function comparePersistedRunSeq(
   return leftSeq - rightSeq;
 }
 
+function runHasModelTrace(run: StaffAssistantPersistedToolRun): boolean {
+  return run.modelTrace !== null && run.modelTrace !== undefined;
+}
+
+function isReconstructableToolRun(
+  run: StaffAssistantPersistedToolRun,
+): boolean {
+  return runHasModelTrace(run) || run.outcome === "started";
+}
+
 function modelMessagesFromPersistedRow(
   message: StaffAssistantPersistedMessage,
 ): ModelMessage[] {
   const orderedRuns = [...(message.toolRuns ?? [])].sort(
     comparePersistedRunSeq,
   );
-  const tracedRuns = orderedRuns.filter(
-    (run) => run.modelTrace !== null && run.modelTrace !== undefined,
-  );
-  if (message.role === "user" || tracedRuns.length === 0) {
+  const reconstructableRuns = orderedRuns.filter(isReconstructableToolRun);
+  if (message.role === "user" || reconstructableRuns.length === 0) {
     const body =
       message.role === "assistant" && message.body === ""
         ? STAFF_ASSISTANT_EMPTY_ASSISTANT_HISTORY_PLACEHOLDER
@@ -215,17 +225,19 @@ function modelMessagesFromPersistedRow(
     message.body === ""
       ? []
       : ([{ type: "text" as const, text: message.body }] as const);
-  const toolCalls = tracedRuns.map((run) => ({
+  const toolCalls = reconstructableRuns.map((run) => ({
     type: "tool-call" as const,
     toolCallId: run.toolCallId,
     toolName: staffAssistantToolSetKey(run),
     input: staffAssistantToolCallInput(run),
   }));
-  const toolResults = tracedRuns.map((run) => ({
+  const toolResults = reconstructableRuns.map((run) => ({
     type: "tool-result" as const,
     toolCallId: run.toolCallId,
     toolName: staffAssistantToolSetKey(run),
-    output: staffAssistantToolResultOutput(run.modelTrace),
+    output: runHasModelTrace(run)
+      ? staffAssistantToolResultOutput(run.modelTrace)
+      : staffAssistantToolResultOutput({ status: "started" }),
   }));
   return [
     { role: "assistant", content: [...textParts, ...toolCalls] },

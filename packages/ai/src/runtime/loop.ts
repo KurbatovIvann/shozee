@@ -6,6 +6,7 @@
  * permitted tool set plus BM25.
  */
 import type { ActionContract } from "@showzy/core/contract";
+import { CoreInvariantError } from "@showzy/core/errors";
 import {
   streamText,
   type LanguageModel,
@@ -46,9 +47,11 @@ import {
   type StaffAssistantLocale,
 } from "../locale.js";
 import {
+  STAFF_ASSISTANT_EMPTY_ASSISTANT_HISTORY_PLACEHOLDER,
   staffAssistantHistoryStats,
   stripStaffAssistantToolParts,
 } from "../messages.js";
+import { staffAssistantToolResultOutput } from "../model-trace.js";
 import { anthropicStaffProvider } from "../provider/anthropic.js";
 import type { StaffProviderAdapter } from "../provider/types.js";
 import {
@@ -285,6 +288,206 @@ function attachClippedModelTraces(
   });
 }
 
+/**
+ * A persisted `started` tool-run to replay before the next model step.
+ * Identity is `executionId`, not a model-regenerated `toolCallId`.
+ */
+export interface StaffAssistantHostStartedRun {
+  readonly messageId: string;
+  readonly executionId: string;
+  readonly seq: number;
+  readonly actionName: string;
+  readonly toolName: string;
+  readonly toolCallId: string;
+  readonly toolInput: unknown;
+}
+
+function compareStartedRunSeq(
+  left: StaffAssistantHostStartedRun,
+  right: StaffAssistantHostStartedRun,
+): number {
+  return left.seq - right.seq;
+}
+
+async function recoverStartedToolRuns(options: {
+  readonly tools: ToolSet;
+  readonly state: StaffAssistantHostExecuteState;
+  readonly messageId: string | undefined;
+  readonly runs: readonly StaffAssistantHostStartedRun[];
+}): Promise<StaffAssistantHostStartedRun[]> {
+  if (options.messageId === undefined || options.runs.length === 0) {
+    return [];
+  }
+  const recoverable = options.runs
+    .filter((run) => run.messageId === options.messageId)
+    .slice()
+    .sort(compareStartedRunSeq);
+  if (recoverable.length === 0) {
+    return [];
+  }
+  for (const run of recoverable) {
+    options.state.executionIdByToolCallId.set(run.toolCallId, run.executionId);
+    options.state.facadeByToolCallId.set(run.toolCallId, {
+      toolName: run.toolName,
+      toolInput: run.toolInput,
+    });
+    const tool = options.tools[run.toolName];
+    const executeTool = tool?.execute;
+    if (executeTool === undefined) {
+      throw new CoreInvariantError(
+        `cannot recover staged tool "${run.toolName}"`,
+      );
+    }
+    await executeTool(run.toolInput, {
+      toolCallId: run.toolCallId,
+      messages: [],
+      context: undefined,
+    });
+  }
+  let maxSeq = recoverable[0]?.seq ?? 0;
+  for (const run of recoverable) {
+    if (run.seq > maxSeq) {
+      maxSeq = run.seq;
+    }
+  }
+  options.state.seq = maxSeq + 1;
+  return recoverable;
+}
+
+function assistantMessageWithStartedCalls(
+  message: ModelMessage,
+  recovered: readonly StaffAssistantHostStartedRun[],
+): ModelMessage {
+  if (message.role !== "assistant") {
+    return message;
+  }
+  const existingIds = new Set<string>();
+  if (Array.isArray(message.content)) {
+    for (const part of message.content) {
+      if (part.type === "tool-call") {
+        existingIds.add(part.toolCallId);
+      }
+    }
+  }
+  const missingCalls = recovered
+    .filter((run) => !existingIds.has(run.toolCallId))
+    .map((run) => ({
+      type: "tool-call" as const,
+      toolCallId: run.toolCallId,
+      toolName: run.toolName,
+      input: run.toolInput ?? {},
+    }));
+  if (missingCalls.length === 0 && Array.isArray(message.content)) {
+    return message;
+  }
+  if (typeof message.content === "string") {
+    const keepText =
+      message.content !== "" &&
+      message.content !== STAFF_ASSISTANT_EMPTY_ASSISTANT_HISTORY_PLACEHOLDER;
+    return {
+      ...message,
+      content: [
+        ...(keepText
+          ? ([{ type: "text" as const, text: message.content }] as const)
+          : []),
+        ...missingCalls,
+      ],
+    };
+  }
+  if (Array.isArray(message.content)) {
+    return { ...message, content: [...message.content, ...missingCalls] };
+  }
+  return message;
+}
+
+function mergeRecoveredToolResultsIntoHistory(
+  messages: readonly ModelMessage[],
+  recovered: readonly StaffAssistantHostStartedRun[],
+  presented: readonly StaffAssistantPresentedToolResult[],
+): ModelMessage[] {
+  if (recovered.length === 0) {
+    return [...messages];
+  }
+  const presentedByCallId = new Map<
+    string,
+    StaffAssistantPresentedToolResult
+  >();
+  for (const item of presented) {
+    if (item.toolCallId !== undefined && item.toolCallId.length > 0) {
+      presentedByCallId.set(item.toolCallId, item);
+    }
+  }
+  const replacements = new Map<
+    string,
+    {
+      readonly type: "tool-result";
+      readonly toolCallId: string;
+      readonly toolName: string;
+      readonly output: ReturnType<typeof staffAssistantToolResultOutput>;
+    }
+  >();
+  for (const run of recovered) {
+    const presentedRun = presentedByCallId.get(run.toolCallId);
+    if (presentedRun === undefined) {
+      continue;
+    }
+    replacements.set(run.toolCallId, {
+      type: "tool-result",
+      toolCallId: run.toolCallId,
+      toolName: run.toolName,
+      output: staffAssistantToolResultOutput(presentedRun.output),
+    });
+  }
+  if (replacements.size === 0) {
+    return [...messages];
+  }
+  const replacedIds = new Set<string>();
+  const next = messages.map((message) => {
+    if (message.role !== "tool" || !Array.isArray(message.content)) {
+      return message;
+    }
+    return {
+      ...message,
+      content: message.content.map((part) => {
+        if (part.type !== "tool-result") {
+          return part;
+        }
+        const replacement = replacements.get(part.toolCallId);
+        if (replacement === undefined) {
+          return part;
+        }
+        replacedIds.add(part.toolCallId);
+        return replacement;
+      }),
+    };
+  });
+  const missing = recovered.flatMap((run) => {
+    const replacement = replacements.get(run.toolCallId);
+    if (replacement === undefined || replacedIds.has(run.toolCallId)) {
+      return [];
+    }
+    return [replacement];
+  });
+  if (missing.length === 0) {
+    return next;
+  }
+  const last = next.at(-1);
+  if (last?.role === "tool" && Array.isArray(last.content)) {
+    return [
+      ...next.slice(0, -1),
+      { ...last, content: [...last.content, ...missing] },
+    ];
+  }
+  if (last?.role === "assistant") {
+    return [
+      ...next.slice(0, -1),
+      assistantMessageWithStartedCalls(last, recovered),
+      { role: "tool", content: missing },
+    ];
+  }
+  return next;
+}
+
 export interface StaffAssistantHostTurnOptions {
   readonly model: LanguageModel;
   readonly messages: ModelMessage[];
@@ -307,6 +510,12 @@ export interface StaffAssistantHostTurnOptions {
    * speech fallback instead of the empty-turn fallback.
    */
   readonly priorRuns?: readonly StaffAssistantTurnRun[];
+  /**
+   * In-flight `started` rows for this turn. The loop replays execute +
+   * `finishRun` from stored `executionId` + `toolInput` before the next
+   * model step — the model must not re-decide that call (SHO-539).
+   */
+  readonly recoverStartedRuns?: readonly StaffAssistantHostStartedRun[];
 }
 
 /**
@@ -363,14 +572,27 @@ export async function runStaffAssistantHostTurn(
     state,
     options.checkpoint,
   );
+  const recovered = await recoverStartedToolRuns({
+    tools,
+    state,
+    messageId: state.messageId,
+    runs: options.recoverStartedRuns ?? [],
+  });
   const toolsetHash = staffAssistantToolsetHash(
     Object.keys(tools),
     provider.id,
   );
-  const messages =
+  let messages =
     Object.keys(tools).length === 0
       ? stripStaffAssistantToolParts(options.messages, provider)
       : options.messages;
+  if (recovered.length > 0) {
+    messages = mergeRecoveredToolResultsIntoHistory(
+      messages,
+      recovered,
+      presentedToolResults,
+    );
+  }
   const history = staffAssistantHistoryStats(messages);
 
   const result = streamText({

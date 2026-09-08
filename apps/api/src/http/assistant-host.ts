@@ -49,6 +49,7 @@ import {
   type PendingInteractionRecord,
   type PublicPending,
   type StaffAssistantHostCheckpoint,
+  type StaffAssistantHostStartedRun,
   type StaffAssistantLocale,
   type StaffAssistantPersistedMessage,
 } from "@showzy/ai";
@@ -426,6 +427,7 @@ function modelHistoryToPersisted(
       readonly modelTrace: unknown;
       readonly toolInput: unknown;
       readonly seq: number | null;
+      readonly outcome: string;
     }>;
   }>,
 ): StaffAssistantPersistedMessage[] {
@@ -439,6 +441,7 @@ function modelHistoryToPersisted(
       ...(run.toolName !== null ? { toolName: run.toolName } : {}),
       ...(run.toolInput !== null ? { toolInput: run.toolInput } : {}),
       ...(run.seq !== null ? { seq: run.seq } : {}),
+      outcome: run.outcome,
     })),
   }));
 }
@@ -684,6 +687,29 @@ function isPendingHitlRun(
   );
 }
 
+function startedRunsForHostRecovery(
+  history: Awaited<ReturnType<typeof loadHistory>>,
+): StaffAssistantHostStartedRun[] {
+  const started: StaffAssistantHostStartedRun[] = [];
+  for (const message of history.messages) {
+    for (const run of message.toolRuns) {
+      if (run.outcome !== "started" || run.executionId === null) {
+        continue;
+      }
+      started.push({
+        messageId: message.id,
+        executionId: run.executionId,
+        seq: run.seq ?? 0,
+        actionName: run.action,
+        toolName: run.toolName ?? run.action.replace(".", "_"),
+        toolCallId: run.toolCallId,
+        toolInput: run.toolInput,
+      });
+    }
+  }
+  return started;
+}
+
 function phaseBState(
   history: Awaited<ReturnType<typeof loadHistory>>,
   pending: PendingInteractionRecord,
@@ -701,6 +727,13 @@ function phaseBState(
   if (
     laterAssistant.some((message) =>
       message.toolRuns.some((run) => run.outcome === "started"),
+    )
+  ) {
+    return "continue";
+  }
+  if (
+    laterAssistant.some(
+      (message) => message.text === "" && message.toolRuns.length === 0,
     )
   ) {
     return "continue";
@@ -790,6 +823,7 @@ async function runPhaseB(options: {
     beginKey: `begin:resume:${options.pendingId}`,
   });
   const priorRuns = priorRunsFromHistory(history);
+  const recoverStartedRuns = startedRunsForHostRecovery(history);
   const turn = await continueStaffAssistantHostTurn({
     model: requireHostModel(options.runtime.model),
     messages: staffAssistantModelMessagesFromPersisted(
@@ -831,6 +865,7 @@ async function runPhaseB(options: {
       toolRuns: conversation.toolRuns,
     }),
     ...(priorRuns.length > 0 ? { priorRuns } : {}),
+    ...(recoverStartedRuns.length > 0 ? { recoverStartedRuns } : {}),
     choiceBind: options.bind,
     openPending: (record) => options.runtime.pendingStore.open(record),
     checkPending: async ({ actionName }) => {
@@ -1927,6 +1962,7 @@ export async function executeStaffAssistantHostChat(
           principal: auth.staffPrincipal,
           beginKey: `begin:${appended.id}`,
         });
+        const recoverStartedRuns = startedRunsForHostRecovery(history);
         const turn = await runStaffAssistantHostTurn({
           model: requireHostModel(options.model),
           messages: staffAssistantModelMessagesFromPersisted(
@@ -1982,6 +2018,7 @@ export async function executeStaffAssistantHostChat(
             return refuseHostPendingOpen(locale);
           },
           checkpoint,
+          ...(recoverStartedRuns.length > 0 ? { recoverStartedRuns } : {}),
           ...(open.kind === "found" &&
           open.record.status === "open" &&
           isPendingReplaceActionName(open.record.actionName)

@@ -18,6 +18,7 @@ import {
   ORDERS_LIST_PAGE_TOOL_NAME,
   PENDING_REPLACE_TOOL_NAME,
   pendingChoiceRecordFromChoiceRecord,
+  staffAssistantModelMessagesFromPersisted,
   type PendingInteractionRecord,
 } from "@showzy/ai";
 import {
@@ -29,6 +30,7 @@ import {
   appendUserMessage,
   checkpointAssistantTurn,
   createConversation,
+  getModelHistory,
 } from "@showzy/assistant";
 import { archiveProduct, createProduct, restoreProduct } from "@showzy/catalog";
 import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
@@ -1542,6 +1544,16 @@ describe("unpublished staff assistant host HTTP", () => {
     if (continuationVariant === undefined) {
       throw new Error("continuation product missing variant");
     }
+    const continuationFacadeInput = {
+      customerId: continuationCustomer.id,
+      items: [
+        {
+          productId: continuationProduct.productId,
+          variantId: continuationVariant.variantId,
+          quantityMilli: "1000",
+        },
+      ],
+    };
     const continuationInput = {
       customer: { by: "id" as const, id: continuationCustomer.id },
       items: [
@@ -1576,7 +1588,7 @@ describe("unpublished staff assistant host HTTP", () => {
         actionName: "orders.create",
         toolName: ORDERS_CREATE_TOOL_NAME,
         toolCallId: "call-continue-create",
-        toolInput: continuationInput,
+        toolInput: continuationFacadeInput,
       },
       {
         idempotencyKey: attemptKey(
@@ -1593,26 +1605,49 @@ describe("unpublished staff assistant host HTTP", () => {
       idempotencyKey: executionAttemptKey(conversation.id, staged.executionId),
     });
     const afterCommit = await orderCount();
+    const crashedHistory = await h.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    const started = crashedHistory.messages
+      .flatMap((message) => message.toolRuns)
+      .find((run) => run.outcome === "started");
+    expect(started?.executionId).toBe(staged.executionId);
+    expect(started?.modelTrace).toBeNull();
+    expect(started?.toolInput).toEqual(continuationFacadeInput);
+    const reconstructed = staffAssistantModelMessagesFromPersisted(
+      crashedHistory.messages.map((message) => ({
+        role: message.role,
+        body: message.text,
+        toolRuns: message.toolRuns.map((run) => ({
+          action: run.action,
+          toolCallId: run.toolCallId,
+          modelTrace: run.modelTrace,
+          ...(run.toolName !== null ? { toolName: run.toolName } : {}),
+          ...(run.toolInput !== null ? { toolInput: run.toolInput } : {}),
+          ...(run.seq !== null ? { seq: run.seq } : {}),
+          outcome: run.outcome,
+        })),
+      })),
+    );
+    const lastAssistant = reconstructed.findLast(
+      (message) => message.role === "assistant",
+    );
+    expect(lastAssistant?.content).toEqual(
+      expect.arrayContaining([
+        {
+          type: "tool-call",
+          toolCallId: "call-continue-create",
+          toolName: ORDERS_CREATE_TOOL_NAME,
+          input: continuationFacadeInput,
+        },
+      ]),
+    );
+    expect(typeof lastAssistant?.content).not.toBe("string");
     const resumeApp = harness({
       pendingStore: h.pendingStore,
       model: new MockLanguageModelV3({
-        doStream: [
-          mockToolCallStream(
-            "call-continue-create",
-            ORDERS_CREATE_TOOL_NAME,
-            JSON.stringify({
-              customerId: continuationCustomer.id,
-              items: [
-                {
-                  productId: continuationProduct.productId,
-                  variantId: continuationVariant.variantId,
-                  quantityMilli: "1000",
-                },
-              ],
-            }),
-          ),
-          mockTextStream("Created the follow-up order."),
-        ],
+        doStream: () =>
+          Promise.resolve(mockTextStream("Created the follow-up order.")),
       }),
     });
     const resume = await hostRequest(resumeApp.app, {
@@ -1629,6 +1664,135 @@ describe("unpublished staff assistant host HTTP", () => {
       assistantHostInteractionResultSchema.parse(await resume.json()).status,
     ).toBe("ok");
     expect(await orderCount()).toBe(afterCommit);
+    const finishedHistory = await h.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    const finished = finishedHistory.messages
+      .flatMap((message) => message.toolRuns)
+      .find((run) => run.executionId === staged.executionId);
+    expect(finished?.outcome).toBe("success");
+  });
+
+  it("crash after Phase B begin with empty body continues Phase B", async () => {
+    const h = harness({
+      model: new MockLanguageModelV3({
+        doStream: () => {
+          throw new Error("Phase B begin is seeded without the model");
+        },
+      }),
+    });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Crash Phase B begin",
+    });
+    const customer = await h.invoke(createCustomer, {
+      name: "Begin Buyer",
+      phone: nextPhone(),
+    });
+    const product = await h.invoke(createProduct, {
+      name: "Begin Cake",
+      basePriceMinor: "1500",
+      variants: [{ name: "A" }, { name: "B" }],
+    });
+    const { record, optionByLabel } = await seedChoicePending(h, {
+      conversationId: conversation.id,
+      customerId: customer.id,
+      product,
+    });
+    const optionId = optionByLabel.get("A");
+    if (optionId === undefined || record.executionId === undefined) {
+      throw new Error("seeded choice missing option or executionId");
+    }
+    const bind = {
+      actorId: kitIdentities.users.anna,
+      companyId: kitIdentities.companies.a,
+      conversationId: conversation.id,
+    };
+    const claimed = await h.pendingStore.claim({
+      id: record.id,
+      kind: "choice",
+      bind,
+      optionId,
+    });
+    expect(claimed.kind).toBe("claimed");
+    const mappedId = record.optionMap[optionId];
+    if (mappedId === undefined) {
+      throw new Error("seeded choice missing mapped variant");
+    }
+    const patched = applyChoiceOptionToCanonicalInput(
+      record.canonicalInput,
+      record.target,
+      mappedId,
+    );
+    const created = await h.invoke(createOrder, patched, {
+      idempotencyKey: executionAttemptKey(conversation.id, record.executionId),
+    });
+    await h.invoke(
+      checkpointAssistantTurn,
+      {
+        kind: "finishRun",
+        conversationId: conversation.id,
+        executionId: record.executionId,
+        outcome: "success",
+        resultIds: [created.orderId],
+        modelTrace: created,
+      },
+      {
+        idempotencyKey: attemptKey(
+          "turn",
+          conversation.id,
+          `finish:${record.executionId}`,
+        ),
+      },
+    );
+    await h.pendingStore.complete({
+      id: record.id,
+      kind: "choice",
+      bind,
+      optionId,
+    });
+    const begun = await h.invoke(
+      checkpointAssistantTurn,
+      { kind: "begin", conversationId: conversation.id },
+      {
+        idempotencyKey: attemptKey(
+          "turn",
+          conversation.id,
+          `begin:resume:${record.id}`,
+        ),
+      },
+    );
+    const openHistory = await h.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    const open = openHistory.messages.find(
+      (message) => message.id === begun.messageId,
+    );
+    expect(open?.text).toBe("");
+    expect(open?.toolRuns).toEqual([]);
+    const resumeApp = harness({
+      pendingStore: h.pendingStore,
+      model: silentModel("Phase B continued."),
+    });
+    const resume = await hostRequest(resumeApp.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.id,
+        optionId,
+      },
+    });
+    const body = assistantHostInteractionResultSchema.parse(
+      await resume.json(),
+    );
+    expect(body).toEqual(
+      expect.objectContaining({
+        status: "ok",
+        speech: "Phase B continued.",
+      }),
+    );
   });
 
   it("claimed confirm wins over concurrent chat", async () => {

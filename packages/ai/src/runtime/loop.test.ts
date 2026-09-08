@@ -197,6 +197,7 @@ describe("runStaffAssistantHostTurn", () => {
     expect(src).not.toContain('from "../gate.js"');
     expect(src).toContain("commitHostSpeech");
     expect(src).toContain("priorRuns");
+    expect(src).toContain("recoverStartedRuns");
     expect(src).toContain("streamText");
     expect(src).not.toContain("staff-assistant-stream");
     const toolRun = readFileSync(join(here, "../tool-run.ts"), "utf8");
@@ -812,5 +813,96 @@ describe("runStaffAssistantHostTurn", () => {
       text: STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK.uk,
     });
     expect(turn.toolRuns).toEqual([]);
+  });
+
+  it("replays a started run from storage without asking the model to re-emit the tool", async () => {
+    const kinds: string[] = [];
+    const checkpoint: StaffAssistantHostCheckpoint = {
+      begin: () => {
+        kinds.push("begin");
+        return Promise.resolve({ messageId: "msg-recover" });
+      },
+      stageRun: () => {
+        throw new Error("stageRun must not mint on started-run recovery");
+      },
+      finishRun: (input) => {
+        kinds.push(`finishRun:${input.executionId}`);
+        return Promise.resolve();
+      },
+      complete: () => {
+        kinds.push("complete");
+        return Promise.resolve();
+      },
+    };
+    const execute = vi.fn(
+      (
+        _actionName: string,
+        _input: unknown,
+        options: { executionId?: string },
+      ) => {
+        kinds.push(`execute:${options.executionId ?? "missing"}`);
+        return Promise.resolve({ items: [], nextCursor: null });
+      },
+    );
+    const model = new MockLanguageModelV3({
+      doStream: () => Promise.resolve(mockTextStream("Listed from storage.")),
+    });
+    const turn = await runStaffAssistantHostTurn({
+      model,
+      messages: [
+        { role: "user", content: "list orders" },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "tool-call",
+              toolCallId: "call-list",
+              toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+              input: { limit: 7 },
+            },
+          ],
+        },
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "call-list",
+              toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+              output: { type: "json", value: { status: "started" } },
+            },
+          ],
+        },
+      ],
+      contracts: [listOrders],
+      execute,
+      checkpoint,
+      recoverStartedRuns: [
+        {
+          messageId: "msg-recover",
+          executionId: "stored-exec",
+          seq: 0,
+          actionName: "orders.list",
+          toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+          toolCallId: "call-list",
+          toolInput: { limit: 7 },
+        },
+      ],
+    });
+    expect(kinds).toEqual([
+      "begin",
+      "execute:stored-exec",
+      "finishRun:stored-exec",
+      "complete",
+    ]);
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledWith(
+      "orders.list",
+      { kind: "page.summary", limit: 7 },
+      { toolCallId: "call-list", executionId: "stored-exec" },
+    );
+    expect(turn.speech.source).toBe("model");
+    expect(turn.speech.text).toBe("Listed from storage.");
+    expect(turn.modelToolCalls).toEqual([]);
   });
 });

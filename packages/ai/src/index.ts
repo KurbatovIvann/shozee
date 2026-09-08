@@ -242,6 +242,7 @@ export {
   type StaffAssistantHostModelToolCall,
   type StaffAssistantHostPendingCheck,
   type StaffAssistantHostPendingDecision,
+  type StaffAssistantHostStartedRun,
   type StaffAssistantHostTurnOptions,
   type StaffAssistantHostTurnResult,
 } from "./runtime/loop.js";
