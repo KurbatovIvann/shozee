@@ -42,6 +42,7 @@ describe("live staff-assistant host (SHO-524)", () => {
     expect(ASSISTANT_HOST_CHOICE_PATH).toBe("/assistant/choice");
     const hostSrc = readFileSync(join(here, "assistant-host.ts"), "utf8");
     expect(hostSrc).toContain("createStaffAssistantHostApp");
+    expect(hostSrc).toContain("`finish:${input.executionId}:${input.outcome}`");
     expect(hostSrc).toContain("assistant-invocation.js");
     expect(hostSrc).not.toContain("assistant-chat.js");
     expect(hostSrc).not.toMatch(/implementAction\s*\(/);

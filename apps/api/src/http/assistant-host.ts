@@ -281,6 +281,31 @@ async function hostTurnContextAddendum(options: {
   });
 }
 
+function priorRunsFromHistory(
+  history: Awaited<ReturnType<typeof loadHistory>>,
+): Array<{
+  readonly outcome:
+    "success" | "error" | "confirmation_required" | "choice_required";
+}> {
+  const runs: Array<{
+    readonly outcome:
+      "success" | "error" | "confirmation_required" | "choice_required";
+  }> = [];
+  for (const message of history.messages) {
+    for (const run of message.toolRuns) {
+      if (
+        run.outcome === "success" ||
+        run.outcome === "error" ||
+        run.outcome === "confirmation_required" ||
+        run.outcome === "choice_required"
+      ) {
+        runs.push({ outcome: run.outcome });
+      }
+    }
+  }
+  return runs;
+}
+
 const RESOLVE_CUSTOMER_REFERENCE_ACTION =
   "customers.resolveCustomerReference" as const;
 const RESOLVE_LINE_REFERENCES_ACTION = "catalog.resolveLineReferences" as const;
@@ -564,7 +589,7 @@ function createHostCheckpoint(options: {
           idempotencyKey: attemptKey(
             "turn",
             options.conversationId,
-            `finish:${input.executionId}`,
+            `finish:${input.executionId}:${input.outcome}`,
           ),
         }),
         principal: base.principal,
@@ -764,6 +789,7 @@ async function runPhaseB(options: {
     principal: options.staffPrincipal,
     beginKey: `begin:resume:${options.pendingId}`,
   });
+  const priorRuns = priorRunsFromHistory(history);
   const turn = await continueStaffAssistantHostTurn({
     model: requireHostModel(options.runtime.model),
     messages: staffAssistantModelMessagesFromPersisted(
@@ -804,6 +830,7 @@ async function runPhaseB(options: {
       staffPrincipal: options.staffPrincipal,
       toolRuns: conversation.toolRuns,
     }),
+    ...(priorRuns.length > 0 ? { priorRuns } : {}),
     choiceBind: options.bind,
     openPending: (record) => options.runtime.pendingStore.open(record),
     checkPending: async ({ actionName }) => {
@@ -1102,7 +1129,7 @@ async function finishPhaseA(options: {
       idempotencyKey: attemptKey(
         "turn",
         options.conversationId,
-        `finish:${options.executionId}`,
+        `finish:${options.executionId}:${options.outcome}`,
       ),
     }),
     principal: options.staffPrincipal,
@@ -1372,16 +1399,13 @@ export async function executeStaffAssistantHostChoiceResume(
           record.target,
           mappedId,
         );
-        const history = await loadHistory({
-          pipeline: options.pipeline,
+        const executionId = await stagePhaseAExecutionId({
+          runtime: options,
           conversationId: conversation.id,
-          requestId: options.requestId,
-          clientIp: options.clientIp,
-          principal: auth.staffPrincipal,
-        });
-        const executionId = resolveStagedExecutionId({
-          record,
-          history,
+          staffPrincipal: auth.staffPrincipal,
+          actionName: record.actionName,
+          pendingId: record.id,
+          toolInput: patched,
         });
         try {
           const output = await executePhaseA({
@@ -1497,6 +1521,64 @@ export async function executeStaffAssistantHostChoiceResume(
   }
 }
 
+async function stagePhaseAExecutionId(options: {
+  readonly runtime: StaffAssistantHostRuntime;
+  readonly conversationId: string;
+  readonly staffPrincipal: {
+    readonly mode: "staff";
+    readonly session: SessionPrincipal;
+    readonly companySelector: string | null;
+  };
+  readonly actionName: string;
+  readonly pendingId: string;
+  readonly toolInput: unknown;
+}): Promise<string> {
+  return stageBoundExecutionId({
+    runtime: options.runtime,
+    conversationId: options.conversationId,
+    staffPrincipal: options.staffPrincipal,
+    actionName: options.actionName,
+    beginKey: `begin:phase-a:${options.pendingId}`,
+    toolCallId: `phase-a:${options.pendingId}`,
+    toolName: options.actionName.replace(".", "_"),
+    toolInput: options.toolInput,
+  });
+}
+
+async function stageBoundExecutionId(options: {
+  readonly runtime: StaffAssistantHostRuntime;
+  readonly conversationId: string;
+  readonly staffPrincipal: {
+    readonly mode: "staff";
+    readonly session: SessionPrincipal;
+    readonly companySelector: string | null;
+  };
+  readonly actionName: string;
+  readonly beginKey: string;
+  readonly toolCallId: string;
+  readonly toolName: string;
+  readonly toolInput: unknown;
+}): Promise<string> {
+  const checkpoint = createHostCheckpoint({
+    pipeline: options.runtime.pipeline,
+    conversationId: options.conversationId,
+    requestId: options.runtime.requestId,
+    clientIp: options.runtime.clientIp,
+    principal: options.staffPrincipal,
+    beginKey: options.beginKey,
+  });
+  const begun = await checkpoint.begin();
+  const staged = await checkpoint.stageRun({
+    messageId: begun.messageId,
+    seq: 0,
+    actionName: options.actionName,
+    toolName: options.toolName,
+    toolCallId: options.toolCallId,
+    toolInput: options.toolInput,
+  });
+  return staged.executionId;
+}
+
 async function stageSuccessorExecutionId(options: {
   readonly runtime: StaffAssistantHostRuntime;
   readonly conversationId: string;
@@ -1509,24 +1591,16 @@ async function stageSuccessorExecutionId(options: {
   readonly nextId: string;
   readonly toolInput: unknown;
 }): Promise<string> {
-  const checkpoint = createHostCheckpoint({
-    pipeline: options.runtime.pipeline,
+  return stageBoundExecutionId({
+    runtime: options.runtime,
     conversationId: options.conversationId,
-    requestId: options.runtime.requestId,
-    clientIp: options.runtime.clientIp,
-    principal: options.staffPrincipal,
-    beginKey: `begin:successor:${options.nextId}`,
-  });
-  const begun = await checkpoint.begin();
-  const staged = await checkpoint.stageRun({
-    messageId: begun.messageId,
-    seq: 0,
+    staffPrincipal: options.staffPrincipal,
     actionName: options.actionName,
-    toolName: `choice:${options.nextId}`,
+    beginKey: `begin:successor:${options.nextId}`,
     toolCallId: `choice:${options.nextId}`,
+    toolName: `choice:${options.nextId}`,
     toolInput: options.toolInput,
   });
-  return staged.executionId;
 }
 
 export async function executeStaffAssistantHostConfirm(

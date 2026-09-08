@@ -61,7 +61,10 @@ import {
 import { staffAssistantSystemMessages } from "../system-prompt.js";
 import { staffAssistantToolsetHash } from "../toolset-hash.js";
 import { staffAssistantTurnContextAddendum } from "../turn-context.js";
-import type { StaffAssistantPresentedToolResult } from "../turn-speech.js";
+import type {
+  StaffAssistantPresentedToolResult,
+  StaffAssistantTurnRun,
+} from "../turn-speech.js";
 import { staffAssistantTurnUsageFromTotal } from "../usage.js";
 
 import {
@@ -298,6 +301,12 @@ export interface StaffAssistantHostTurnOptions {
   readonly checkPending?: StaffAssistantHostPendingCheck;
   readonly checkpoint?: StaffAssistantHostCheckpoint;
   readonly pendingReplace?: PendingReplaceHostApply;
+  /**
+   * Tool runs already committed this job (Phase A write, prior
+   * `streamText`). Generation fail after write still uses the success
+   * speech fallback instead of the empty-turn fallback.
+   */
+  readonly priorRuns?: readonly StaffAssistantTurnRun[];
 }
 
 /**
@@ -409,7 +418,7 @@ export async function runStaffAssistantHostTurn(
   const speech = commitHostSpeech({
     locale,
     rawText: fromSteps ?? (steps.length === 0 ? rawText : ""),
-    runs: state.runs,
+    runs: [...(options.priorRuns ?? []), ...state.runs],
     toolOutputs: presentedToolResults.map((item) => item.output),
   });
 
