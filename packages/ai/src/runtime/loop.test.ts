@@ -12,6 +12,7 @@ import {
   ORDERS_CREATE_TOOL_NAME,
   ORDERS_LIST_PAGE_TOOL_NAME,
   toProviderToolName,
+  type ActionToolExecute,
 } from "../action-tool.js";
 import { STAFF_ASSISTANT_CONFIRMATION_COPY } from "../confirmation.js";
 import {
@@ -362,27 +363,30 @@ describe("runStaffAssistantHostTurn", () => {
     const kinds: string[] = [];
     const staged = new Map<number, string>();
     const checkpoint: StaffAssistantHostCheckpoint = {
-      begin: async () => {
+      begin: () => {
         kinds.push("begin");
-        return { messageId: "msg-checkpoint" };
+        return Promise.resolve({ messageId: "msg-checkpoint" });
       },
-      stageRun: async (input) => {
+      stageRun: (input) => {
         const executionId = `exec-${String(input.seq)}`;
         staged.set(input.seq, executionId);
         kinds.push(`stageRun:${String(input.seq)}`);
-        return { executionId };
+        return Promise.resolve({ executionId });
       },
-      finishRun: async (input) => {
+      finishRun: (input) => {
         kinds.push(`finishRun:${input.executionId}`);
+        return Promise.resolve();
       },
-      complete: async () => {
+      complete: () => {
         kinds.push("complete");
+        return Promise.resolve();
       },
     };
-    const execute = vi.fn(async (actionName: string, _input, options) => {
+    const execute: ActionToolExecute = (actionName, _input, options) => {
       kinds.push(`execute:${actionName}:${options.executionId ?? "missing"}`);
-      return { items: [], nextCursor: null };
-    });
+      return Promise.resolve({ items: [], nextCursor: null });
+    };
+    const executeSpy = vi.fn(execute);
     const model = new MockLanguageModelV3({
       doStream: [
         mockToolCallsStream([
@@ -404,7 +408,7 @@ describe("runStaffAssistantHostTurn", () => {
       model,
       messages: [{ role: "user", content: "List orders and products" }],
       contracts: [listOrders, listProducts],
-      execute,
+      execute: executeSpy,
       checkpoint,
     });
     expect(kinds).toEqual([
@@ -417,12 +421,12 @@ describe("runStaffAssistantHostTurn", () => {
       "finishRun:exec-1",
       "complete",
     ]);
-    expect(execute).toHaveBeenCalledWith(
+    expect(executeSpy).toHaveBeenCalledWith(
       "orders.list",
       { kind: "page.summary", limit: ORDERS_LIST_PAGE_ASSISTANT_DEFAULT_LIMIT },
       { toolCallId: "call-list", executionId: "exec-0" },
     );
-    expect(execute).toHaveBeenCalledWith(
+    expect(executeSpy).toHaveBeenCalledWith(
       "catalog.listProducts",
       expect.anything(),
       { toolCallId: "call-products", executionId: "exec-1" },

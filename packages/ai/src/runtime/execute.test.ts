@@ -1,6 +1,7 @@
 import { ConfirmationRequiredError } from "@showzy/core/errors";
 import { describe, expect, it, vi } from "vitest";
 
+import type { ActionToolExecute } from "../action-tool.js";
 import { STAFF_ASSISTANT_TOOL_ERROR_FALLBACK } from "../turn-speech.js";
 import {
   emptyHostExecuteState,
@@ -121,11 +122,11 @@ describe("wrapHostSequentialExecute", () => {
       readonly toolInput: unknown;
     }> = [];
     const checkpoint: StaffAssistantHostCheckpoint = {
-      begin: async () => ({ messageId: "msg-1" }),
-      stageRun: async (input) => {
+      begin: () => Promise.resolve({ messageId: "msg-1" }),
+      stageRun: (input) => {
         const existing = rows.find((row) => row.seq === input.seq);
         if (existing !== undefined) {
-          return { executionId: existing.executionId };
+          return Promise.resolve({ executionId: existing.executionId });
         }
         const executionId = `stored-${String(rows.length)}`;
         rows.push({
@@ -133,37 +134,36 @@ describe("wrapHostSequentialExecute", () => {
           executionId,
           toolInput: input.toolInput,
         });
-        return { executionId };
+        return Promise.resolve({ executionId });
       },
-      finishRun: async () => {
+      finishRun: () => {
         throw new Error("finishRun must be skipped in this crash window");
       },
-      complete: async () => {
+      complete: () => {
         throw new Error("complete is not part of the execute crash window");
       },
     };
     let writes = 0;
     const committed = new Map<string, string>();
-    const execute = vi.fn(
-      async (_actionName: string, _input: unknown, options) => {
-        const executionId = options.executionId;
-        if (executionId === undefined) {
-          throw new Error("execute must receive a persisted executionId");
-        }
-        const existing = committed.get(executionId);
-        if (existing !== undefined) {
-          return { id: existing };
-        }
-        writes += 1;
-        const id = `write-${String(writes)}`;
-        committed.set(executionId, id);
-        return { id };
-      },
-    );
+    const execute: ActionToolExecute = (_actionName, _input, options) => {
+      const executionId = options.executionId;
+      if (executionId === undefined) {
+        throw new Error("execute must receive a persisted executionId");
+      }
+      const existing = committed.get(executionId);
+      if (existing !== undefined) {
+        return Promise.resolve({ id: existing });
+      }
+      writes += 1;
+      const id = `write-${String(writes)}`;
+      committed.set(executionId, id);
+      return Promise.resolve({ id });
+    };
+    const executeSpy = vi.fn(execute);
 
     const firstState = emptyHostState();
     firstState.messageId = "msg-1";
-    const firstWrapped = wrapHostSequentialExecute(execute, firstState, {
+    const firstWrapped = wrapHostSequentialExecute(executeSpy, firstState, {
       checkpoint,
     });
     const first = await firstWrapped(
@@ -184,7 +184,7 @@ describe("wrapHostSequentialExecute", () => {
 
     const replayState = emptyHostState();
     replayState.messageId = "msg-1";
-    const replayWrapped = wrapHostSequentialExecute(execute, replayState, {
+    const replayWrapped = wrapHostSequentialExecute(executeSpy, replayState, {
       checkpoint,
     });
     const replay = await replayWrapped(
@@ -195,7 +195,7 @@ describe("wrapHostSequentialExecute", () => {
     expect(replay).toEqual({ id: "write-1" });
     expect(writes).toBe(1);
     expect(rows).toHaveLength(1);
-    expect(execute).toHaveBeenNthCalledWith(
+    expect(executeSpy).toHaveBeenNthCalledWith(
       2,
       "assistant.createConversation",
       { title: "from staged tool" },
