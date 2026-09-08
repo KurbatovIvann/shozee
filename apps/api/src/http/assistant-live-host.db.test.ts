@@ -2544,7 +2544,9 @@ describe("live staff assistant host HTTP (SHO-524)", () => {
         conversationId: conversation.id,
       });
       expect(
-        history.checkpointTurns.filter((turn) => turn.speech === "later speech"),
+        history.checkpointTurns.filter(
+          (turn) => turn.speech === "later speech",
+        ),
       ).toHaveLength(256);
       expect(
         history.checkpointTurns.find((turn) => turn.turnKey === resumeKey),
