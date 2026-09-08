@@ -6,11 +6,13 @@ vi.mock("expo/fetch", () => ({
   fetch: (...args: unknown[]) => fetchMock(...args) as Promise<Response>,
 }));
 
+import { assistantChatUrl } from "./assistant-chat-body";
 import {
   assistantConfirmUrl,
   assistantPendingAbandonUrl,
   assistantPendingUrl,
   getAssistantPending,
+  postAssistantChat,
   postAssistantConfirm,
   postAssistantPendingAbandon,
 } from "./assistant-pending";
@@ -144,5 +146,55 @@ describe("assistant pending HTTP (SHO-522)", () => {
     await expect(getAssistantPending(authArgs())).resolves.toEqual({
       kind: "unavailable",
     });
+  });
+});
+
+describe("assistant chat HTTP (SHO-524)", () => {
+  beforeEach(() => {
+    fetchMock.mockReset();
+  });
+
+  it("POSTs /assistant/chat with conversationId, text, and locale only", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, {
+        status: "ok",
+        speech: "Order created.",
+        cards: [],
+        pending: null,
+      }),
+    );
+    const result = await postAssistantChat({
+      ...authArgs(),
+      text: "замовлення Олі 2 макаруни",
+      locale: "uk",
+    });
+    expect(result).toEqual({
+      status: "ok",
+      speech: "Order created.",
+      cards: [],
+      pending: null,
+    });
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      assistantChatUrl("https://api.example.com"),
+    );
+    expect(fetchMock.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          conversationId,
+          text: "замовлення Олі 2 макаруни",
+          locale: "uk",
+        }),
+      }),
+    );
+    expect(JSON.stringify(fetchMock.mock.calls[0]?.[1])).not.toContain(
+      "companyId",
+    );
+    expect(JSON.stringify(fetchMock.mock.calls[0]?.[1])).not.toContain(
+      "messageId",
+    );
+    expect(JSON.stringify(fetchMock.mock.calls[0]?.[1])).not.toContain(
+      "canonicalInput",
+    );
   });
 });

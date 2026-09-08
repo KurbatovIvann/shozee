@@ -1,9 +1,9 @@
 /**
- * New staff-assistant host loop (ADR-0037 / SHO-520).
+ * Staff-assistant host loop (ADR-0037 / SHO-520 / SHO-524).
  *
- * One `streamText` call. Tests invoke this directly. Do not retarget
- * production `POST /assistant/chat`. Do not call the intent gate or
- * the live speaker. Always attach the permitted tool set plus BM25.
+ * One `streamText` call. Live `POST /assistant/chat` wraps this loop.
+ * Do not call the intent gate or a second speaker. Always attach the
+ * permitted tool set plus BM25.
  */
 import type { ActionContract } from "@showzy/core/contract";
 import {
@@ -57,11 +57,14 @@ import {
   STAFF_ASSISTANT_TOOL_RUNS_MAX,
   type StaffAssistantToolRun,
   type StaffAssistantTurnResult,
-} from "../staff-assistant-stream.js";
+} from "../tool-run.js";
 import { staffAssistantSystemMessages } from "../system-prompt.js";
 import { staffAssistantToolsetHash } from "../toolset-hash.js";
 import { staffAssistantTurnContextAddendum } from "../turn-context.js";
-import type { StaffAssistantPresentedToolResult } from "../turn-speech.js";
+import type {
+  StaffAssistantPresentedToolResult,
+  StaffAssistantTurnRun,
+} from "../turn-speech.js";
 import { staffAssistantTurnUsageFromTotal } from "../usage.js";
 
 import {
@@ -298,10 +301,17 @@ export interface StaffAssistantHostTurnOptions {
   readonly checkPending?: StaffAssistantHostPendingCheck;
   readonly checkpoint?: StaffAssistantHostCheckpoint;
   readonly pendingReplace?: PendingReplaceHostApply;
+  /**
+   * Tool runs already committed this job (Phase A write, prior
+   * `streamText`). Generation fail after write still uses the success
+   * speech fallback instead of the empty-turn fallback.
+   */
+  readonly priorRuns?: readonly StaffAssistantTurnRun[];
 }
 
 /**
- * One `streamText` host turn. Not mounted on live `/assistant/chat`.
+ * One `streamText` host turn. Live `POST /assistant/chat` wraps this
+ * loop (SHO-524); unpublished `/assistant/host/chat` stays off production.
  */
 export async function runStaffAssistantHostTurn(
   options: StaffAssistantHostTurnOptions,
@@ -408,7 +418,7 @@ export async function runStaffAssistantHostTurn(
   const speech = commitHostSpeech({
     locale,
     rawText: fromSteps ?? (steps.length === 0 ? rawText : ""),
-    runs: state.runs,
+    runs: [...(options.priorRuns ?? []), ...state.runs],
     toolOutputs: presentedToolResults.map((item) => item.output),
   });
 

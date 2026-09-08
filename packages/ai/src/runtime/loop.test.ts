@@ -196,13 +196,12 @@ describe("runStaffAssistantHostTurn", () => {
     expect(src).not.toContain("generateText");
     expect(src).not.toContain('from "../gate.js"');
     expect(src).toContain("commitHostSpeech");
+    expect(src).toContain("priorRuns");
     expect(src).toContain("streamText");
-    const stream = readFileSync(
-      join(here, "../staff-assistant-stream.ts"),
-      "utf8",
-    );
-    expect(stream).not.toContain("runStaffAssistantHostTurn");
-    expect(stream).not.toContain("runtime/loop");
+    expect(src).not.toContain("staff-assistant-stream");
+    const toolRun = readFileSync(join(here, "../tool-run.ts"), "utf8");
+    expect(toolRun).not.toContain("runStaffAssistantHostTurn");
+    expect(toolRun).not.toContain("runtime/loop");
   });
 
   it("persists usable model prose", async () => {
@@ -791,5 +790,27 @@ describe("runStaffAssistantHostTurn", () => {
       { toolCallId: "call-list" },
     );
     expect(turn.speech.text).toBe("Here is the list.");
+  });
+
+  it("uses priorRuns for success fallback when generation fails after a write", async () => {
+    const execute = vi.fn(() =>
+      Promise.resolve({ items: [], nextCursor: null }),
+    );
+    const model = new MockLanguageModelV3({
+      doStream: () => Promise.reject(new Error("generation failed")),
+    });
+    const turn = await runStaffAssistantHostTurn({
+      model,
+      messages: [{ role: "user", content: "Created already" }],
+      contracts: [listOrders],
+      execute,
+      priorRuns: [{ outcome: "success" }],
+    });
+    expect(execute).not.toHaveBeenCalled();
+    expect(turn.speech).toEqual({
+      source: "fallback",
+      text: STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK.uk,
+    });
+    expect(turn.toolRuns).toEqual([]);
   });
 });

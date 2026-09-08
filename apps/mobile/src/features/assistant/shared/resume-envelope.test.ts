@@ -108,6 +108,7 @@ describe("shared resume envelope (SHO-522)", () => {
     expect(parts[1]).toEqual({
       type: "data-choice",
       data: choicePending.envelope,
+      pendingVersion: 3,
     });
     expect(parts.some((part) => part.type === "dynamic-tool")).toBe(true);
     expect(entityFromResumeCards(envelope.cards)).toEqual({

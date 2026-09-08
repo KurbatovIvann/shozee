@@ -131,10 +131,13 @@ export type ResumeAppendPart =
   | {
       readonly type: "data-choice";
       readonly data: StaffAssistantChoiceCardEnvelope;
+      readonly pendingVersion?: number;
     }
   | {
       readonly type: "data-confirmation";
-      readonly data: StaffAssistantConfirmation;
+      readonly data: StaffAssistantConfirmation & {
+        readonly pendingVersion?: number;
+      };
     }
   | {
       readonly type: "data-resumeCard";
@@ -200,13 +203,33 @@ export function partsFromResumeEnvelope(
     parts.push({ type: "text", text: envelope.speech });
   }
   let surfaceIndex = 0;
+  const pending = envelope.pending;
   for (const card of envelope.cards) {
     if (card.kind === "choice") {
-      parts.push({ type: "data-choice", data: card.envelope });
+      const pendingVersion =
+        pending?.kind === "choice" && pending.id === card.envelope.challengeId
+          ? pending.version
+          : undefined;
+      parts.push({
+        type: "data-choice",
+        data: card.envelope,
+        ...(pendingVersion === undefined ? {} : { pendingVersion }),
+      });
       continue;
     }
     if (card.kind === "confirmation") {
-      parts.push({ type: "data-confirmation", data: card.envelope });
+      const pendingVersion =
+        pending?.kind === "confirmation" &&
+        pending.challengeId === card.envelope.challengeId
+          ? pending.version
+          : undefined;
+      parts.push({
+        type: "data-confirmation",
+        data: {
+          ...card.envelope,
+          ...(pendingVersion === undefined ? {} : { pendingVersion }),
+        },
+      });
       continue;
     }
     parts.push({ type: "data-resumeCard", data: card.data });

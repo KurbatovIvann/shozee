@@ -1,8 +1,9 @@
 /**
- * Unpublished staff-assistant host (SHO-522 / ADR-0037).
+ * Staff-assistant host (SHO-522 / SHO-524 / ADR-0037).
  *
- * New pending lifecycle, confirm/abandon/pending GET, and host chat.
- * Do not mount on production `createApp` / live `/assistant/chat` (T5).
+ * Live `createApp` mounts choice, confirm, pending peek, and abandon.
+ * `POST /assistant/host/chat` stays off production — live chat is
+ * `POST /assistant/chat` wrapping `executeStaffAssistantHostChat`.
  */
 import { randomUUID } from "node:crypto";
 
@@ -22,6 +23,7 @@ import {
   continueStaffAssistantHostTurn,
   executionAttemptKey,
   extractUuidResultIds,
+  StaffAssistantNotConfiguredError,
   filterStaffAiTools,
   isPendingReplaceActionName,
   mapPendingReplaceFacadeInput,
@@ -34,6 +36,8 @@ import {
   resolveMappedVariantId,
   runStaffAssistantHostTurn,
   staffAssistantModelMessagesFromPersisted,
+  staffAssistantTurnContextAddendum,
+  staffAssistantWorkingSetAddendum,
   STAFF_ASSISTANT_DEFAULT_LOCALE,
   successorPendingChoiceId,
   confirmationPendingRecord,
@@ -55,6 +59,7 @@ import {
   getModelHistory,
   getStaffActor,
 } from "@showzy/assistant";
+import { getCompany } from "@showzy/companies";
 import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
 import { toWireError } from "@showzy/contract/server";
 import {
@@ -69,6 +74,7 @@ import {
   ConfirmationRequiredError,
   CoreError,
   CoreInvariantError,
+  PermissionDeniedError,
   ValidationError,
 } from "@showzy/core/errors";
 import { assistantSurfacesFromToolResults } from "@showzy/validation/assistant-surfaces";
@@ -77,8 +83,7 @@ import type { z } from "zod";
 
 import type { ConversationLock } from "../stores/conversation-lock.js";
 import type { StaffAssistantPendingStore } from "../stores/pending.js";
-import type { AuthInstance } from "./app.js";
-import { ASSISTANT_INVOCATION_CHANNEL } from "./assistant-chat.js";
+import { ASSISTANT_INVOCATION_CHANNEL } from "./assistant-invocation.js";
 import { REQUEST_ID_HEADER, resolveRequestId } from "./request-id.js";
 
 export const ASSISTANT_HOST_CHAT_PATH = "/assistant/host/chat";
@@ -96,7 +101,11 @@ export interface StaffAssistantHostRuntime {
   readonly getSession: (headers: Headers) => Promise<SessionPrincipal | null>;
   readonly pendingStore: StaffAssistantPendingStore;
   readonly conversationLock: ConversationLock;
-  readonly model: LanguageModel;
+  /**
+   * Required for chat, choice resume, and confirm Phase B. Peek and
+   * abandon never call the model.
+   */
+  readonly model?: LanguageModel;
 }
 
 type AppEnv = {
@@ -139,6 +148,17 @@ function unauthenticatedResponse(requestId: string): Response {
 }
 
 function wireResponse(error: unknown, requestId: string): Response {
+  if (error instanceof StaffAssistantNotConfiguredError) {
+    return jsonResponse(
+      503,
+      {
+        code: error.code,
+        status: 503,
+        message: error.message,
+      },
+      requestId,
+    );
+  }
   const wire = toWireError(error);
   const body: Record<string, unknown> = {
     code: wire.code,
@@ -149,6 +169,13 @@ function wireResponse(error: unknown, requestId: string): Response {
     body.data = wire.data;
   }
   return jsonResponse(wire.status, body, requestId);
+}
+
+function requireHostModel(model: LanguageModel | undefined): LanguageModel {
+  if (model === undefined) {
+    throw new StaffAssistantNotConfiguredError();
+  }
+  return model;
 }
 
 function interactionResponse(
@@ -197,6 +224,86 @@ function staffRequest(options: {
       ? { confirmationChallengeId: options.confirmationChallengeId }
       : {}),
   };
+}
+
+/**
+ * Trade name for the uncached turn-context addendum. `companies.get`
+ * requires `companies:view`; a permission denial omits the name line
+ * without failing the chat turn (SHO-360 / SHO-537).
+ */
+export async function readStaffAssistantCompanyTradeName(
+  load: () => Promise<{ readonly name: string }>,
+): Promise<string | undefined> {
+  try {
+    const company = await load();
+    const name = company.name.trim();
+    return name === "" ? undefined : name;
+  } catch (error) {
+    if (error instanceof PermissionDeniedError) {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+async function hostTurnContextAddendum(options: {
+  readonly pipeline: ActionPipelineDeps;
+  readonly requestId: string;
+  readonly clientIp: string;
+  readonly staffPrincipal: {
+    readonly mode: "staff";
+    readonly session: SessionPrincipal;
+    readonly companySelector: string | null;
+  };
+  readonly toolRuns: ReadonlyArray<{
+    readonly actionName: string;
+    readonly resultIds: readonly string[];
+    readonly outcome: string;
+  }>;
+}): Promise<string> {
+  const companyName = await readStaffAssistantCompanyTradeName(() =>
+    executeAction(options.pipeline, {
+      action: getCompany,
+      input: {},
+      request: staffRequest({
+        requestId: options.requestId,
+        clientIp: options.clientIp,
+        aiTraceId: options.requestId,
+      }),
+      principal: options.staffPrincipal,
+    }),
+  );
+  const workingSetAddendum = staffAssistantWorkingSetAddendum(options.toolRuns);
+  return staffAssistantTurnContextAddendum({
+    now: new Date(),
+    ...(companyName !== undefined ? { companyName } : {}),
+    ...(workingSetAddendum !== undefined ? { workingSetAddendum } : {}),
+  });
+}
+
+function priorRunsFromHistory(
+  history: Awaited<ReturnType<typeof loadHistory>>,
+): Array<{
+  readonly outcome:
+    "success" | "error" | "confirmation_required" | "choice_required";
+}> {
+  const runs: Array<{
+    readonly outcome:
+      "success" | "error" | "confirmation_required" | "choice_required";
+  }> = [];
+  for (const message of history.messages) {
+    for (const run of message.toolRuns) {
+      if (
+        run.outcome === "success" ||
+        run.outcome === "error" ||
+        run.outcome === "confirmation_required" ||
+        run.outcome === "choice_required"
+      ) {
+        runs.push({ outcome: run.outcome });
+      }
+    }
+  }
+  return runs;
 }
 
 const RESOLVE_CUSTOMER_REFERENCE_ACTION =
@@ -482,7 +589,7 @@ function createHostCheckpoint(options: {
           idempotencyKey: attemptKey(
             "turn",
             options.conversationId,
-            `finish:${input.executionId}`,
+            `finish:${input.executionId}:${input.outcome}`,
           ),
         }),
         principal: base.principal,
@@ -656,6 +763,16 @@ async function runPhaseB(options: {
     clientIp: options.runtime.clientIp,
     principal: options.staffPrincipal,
   });
+  const conversation = await executeAction(options.runtime.pipeline, {
+    action: getConversation,
+    input: { conversationId: options.conversationId },
+    request: staffRequest({
+      requestId: options.runtime.requestId,
+      clientIp: options.runtime.clientIp,
+      aiTraceId: options.runtime.requestId,
+    }),
+    principal: options.staffPrincipal,
+  });
   const contracts = filterStaffAiTools(options.runtime.registry.contracts(), {
     role: options.actor.role,
     permissions: [...options.actor.permissions],
@@ -672,8 +789,9 @@ async function runPhaseB(options: {
     principal: options.staffPrincipal,
     beginKey: `begin:resume:${options.pendingId}`,
   });
+  const priorRuns = priorRunsFromHistory(history);
   const turn = await continueStaffAssistantHostTurn({
-    model: options.runtime.model,
+    model: requireHostModel(options.runtime.model),
     messages: staffAssistantModelMessagesFromPersisted(
       modelHistoryToPersisted(history.messages),
     ),
@@ -705,6 +823,14 @@ async function runPhaseB(options: {
       });
     },
     locale: options.locale,
+    turnContextAddendum: await hostTurnContextAddendum({
+      pipeline: options.runtime.pipeline,
+      requestId: options.runtime.requestId,
+      clientIp: options.runtime.clientIp,
+      staffPrincipal: options.staffPrincipal,
+      toolRuns: conversation.toolRuns,
+    }),
+    ...(priorRuns.length > 0 ? { priorRuns } : {}),
     choiceBind: options.bind,
     openPending: (record) => options.runtime.pendingStore.open(record),
     checkPending: async ({ actionName }) => {
@@ -1003,7 +1129,7 @@ async function finishPhaseA(options: {
       idempotencyKey: attemptKey(
         "turn",
         options.conversationId,
-        `finish:${options.executionId}`,
+        `finish:${options.executionId}:${options.outcome}`,
       ),
     }),
     principal: options.staffPrincipal,
@@ -1273,16 +1399,13 @@ export async function executeStaffAssistantHostChoiceResume(
           record.target,
           mappedId,
         );
-        const history = await loadHistory({
-          pipeline: options.pipeline,
+        const executionId = await stagePhaseAExecutionId({
+          runtime: options,
           conversationId: conversation.id,
-          requestId: options.requestId,
-          clientIp: options.clientIp,
-          principal: auth.staffPrincipal,
-        });
-        const executionId = resolveStagedExecutionId({
-          record,
-          history,
+          staffPrincipal: auth.staffPrincipal,
+          actionName: record.actionName,
+          pendingId: record.id,
+          toolInput: patched,
         });
         try {
           const output = await executePhaseA({
@@ -1398,6 +1521,64 @@ export async function executeStaffAssistantHostChoiceResume(
   }
 }
 
+async function stagePhaseAExecutionId(options: {
+  readonly runtime: StaffAssistantHostRuntime;
+  readonly conversationId: string;
+  readonly staffPrincipal: {
+    readonly mode: "staff";
+    readonly session: SessionPrincipal;
+    readonly companySelector: string | null;
+  };
+  readonly actionName: string;
+  readonly pendingId: string;
+  readonly toolInput: unknown;
+}): Promise<string> {
+  return stageBoundExecutionId({
+    runtime: options.runtime,
+    conversationId: options.conversationId,
+    staffPrincipal: options.staffPrincipal,
+    actionName: options.actionName,
+    beginKey: `begin:phase-a:${options.pendingId}`,
+    toolCallId: `phase-a:${options.pendingId}`,
+    toolName: options.actionName.replace(".", "_"),
+    toolInput: options.toolInput,
+  });
+}
+
+async function stageBoundExecutionId(options: {
+  readonly runtime: StaffAssistantHostRuntime;
+  readonly conversationId: string;
+  readonly staffPrincipal: {
+    readonly mode: "staff";
+    readonly session: SessionPrincipal;
+    readonly companySelector: string | null;
+  };
+  readonly actionName: string;
+  readonly beginKey: string;
+  readonly toolCallId: string;
+  readonly toolName: string;
+  readonly toolInput: unknown;
+}): Promise<string> {
+  const checkpoint = createHostCheckpoint({
+    pipeline: options.runtime.pipeline,
+    conversationId: options.conversationId,
+    requestId: options.runtime.requestId,
+    clientIp: options.runtime.clientIp,
+    principal: options.staffPrincipal,
+    beginKey: options.beginKey,
+  });
+  const begun = await checkpoint.begin();
+  const staged = await checkpoint.stageRun({
+    messageId: begun.messageId,
+    seq: 0,
+    actionName: options.actionName,
+    toolName: options.toolName,
+    toolCallId: options.toolCallId,
+    toolInput: options.toolInput,
+  });
+  return staged.executionId;
+}
+
 async function stageSuccessorExecutionId(options: {
   readonly runtime: StaffAssistantHostRuntime;
   readonly conversationId: string;
@@ -1410,24 +1591,16 @@ async function stageSuccessorExecutionId(options: {
   readonly nextId: string;
   readonly toolInput: unknown;
 }): Promise<string> {
-  const checkpoint = createHostCheckpoint({
-    pipeline: options.runtime.pipeline,
+  return stageBoundExecutionId({
+    runtime: options.runtime,
     conversationId: options.conversationId,
-    requestId: options.runtime.requestId,
-    clientIp: options.runtime.clientIp,
-    principal: options.staffPrincipal,
-    beginKey: `begin:successor:${options.nextId}`,
-  });
-  const begun = await checkpoint.begin();
-  const staged = await checkpoint.stageRun({
-    messageId: begun.messageId,
-    seq: 0,
+    staffPrincipal: options.staffPrincipal,
     actionName: options.actionName,
-    toolName: `choice:${options.nextId}`,
+    beginKey: `begin:successor:${options.nextId}`,
     toolCallId: `choice:${options.nextId}`,
+    toolName: `choice:${options.nextId}`,
     toolInput: options.toolInput,
   });
-  return staged.executionId;
 }
 
 export async function executeStaffAssistantHostConfirm(
@@ -1755,7 +1928,7 @@ export async function executeStaffAssistantHostChat(
           beginKey: `begin:${appended.id}`,
         });
         const turn = await runStaffAssistantHostTurn({
-          model: options.model,
+          model: requireHostModel(options.model),
           messages: staffAssistantModelMessagesFromPersisted(
             modelHistoryToPersisted(history.messages),
           ),
@@ -1784,6 +1957,13 @@ export async function executeStaffAssistantHostChat(
             });
           },
           locale,
+          turnContextAddendum: await hostTurnContextAddendum({
+            pipeline: options.pipeline,
+            requestId: options.requestId,
+            clientIp: options.clientIp,
+            staffPrincipal: auth.staffPrincipal,
+            toolRuns: conversation.toolRuns,
+          }),
           choiceBind: bind,
           openPending: (record) => options.pendingStore.open(record),
           checkPending: async ({ actionName }) => {
@@ -1856,7 +2036,13 @@ export async function executeStaffAssistantHostChat(
 }
 
 export interface CreateStaffAssistantHostAppOptions {
-  readonly auth: AuthInstance;
+  readonly auth: {
+    readonly api: {
+      readonly getSession: (args: {
+        headers: Headers;
+      }) => Promise<{ user: { id: string } } | null>;
+    };
+  };
   readonly registry: ActionRegistry;
   readonly pipeline: ActionPipelineDeps;
   readonly pendingStore: StaffAssistantPendingStore;

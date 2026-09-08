@@ -36,7 +36,7 @@ import {
   STAFF_ASSISTANT_TOOL_RUNS_MAX,
   type StaffAssistantToolRun,
   type StaffAssistantToolRunOutcome,
-} from "../staff-assistant-stream.js";
+} from "../tool-run.js";
 import { STAFF_ASSISTANT_TOOL_ERROR_FALLBACK } from "../turn-speech.js";
 
 export type StaffAssistantHostPendingDecision =

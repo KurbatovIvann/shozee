@@ -31,9 +31,10 @@ import { createActionPipeline } from "./pipeline.js";
 import {
   createRedisAiBudgetStore,
   createRedisAuthRateLimitStore,
-  createRedisChoiceStore,
   createRedisConfirmationStore,
+  createRedisConversationLock,
   createRedisOtpSendStore,
+  createRedisPendingStore,
   createRedisRateLimitStore,
   createRedisSecondaryStorage,
 } from "./stores/redis.js";
@@ -133,13 +134,13 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
     },
     assistant: {
       model: config.ai.model,
-      gateModel: config.ai.gateModel,
       provider: staffProvider,
       ...(config.ai.anthropicApiKey !== undefined
         ? { anthropicApiKey: config.ai.anthropicApiKey }
         : {}),
     },
-    choiceStore: createRedisChoiceStore(redis),
+    pendingStore: createRedisPendingStore(redis),
+    conversationLock: createRedisConversationLock(redis),
     assistantBudget: {
       rateLimitStore,
       budgetStore: createRedisAiBudgetStore(redis),

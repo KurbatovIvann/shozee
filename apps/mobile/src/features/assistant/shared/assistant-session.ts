@@ -187,9 +187,7 @@ export async function resumeOwnAssistantConversation(args: {
       pendingLookup = "unavailable";
     }
   }
-  if (pendingLookup === "ok" && openPending?.kind === "choice") {
-    choiceEnvelopes = new Map([[openPending.id, openPending.envelope]]);
-  } else if (pendingLookup !== "ok" && args.peekChoice !== undefined) {
+  if (pendingLookup !== "ok" && args.peekChoice !== undefined) {
     const peekChoice = args.peekChoice;
     const conversationIdForPeek = detail.id;
     choiceEnvelopes = await loadChoiceEnvelopes({

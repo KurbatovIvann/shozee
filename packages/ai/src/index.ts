@@ -43,23 +43,7 @@ export {
   STAFF_ASSISTANT_CLIP_SHRINK_ARRAY_MAX,
   type StaffAssistantClippedResult,
 } from "./clip-tool-result.js";
-export {
-  classifyStaffAssistantTurn,
-  STAFF_ASSISTANT_GATE_CONFIDENCE,
-  STAFF_ASSISTANT_GATE_MODES,
-  STAFF_ASSISTANT_GATE_SYSTEM,
-  staffAssistantGateOutputSchema,
-  staffAssistantGateToolPolicy,
-  type StaffAssistantGateConfidence,
-  type StaffAssistantGateMode,
-  type StaffAssistantGateResult,
-  type StaffAssistantGateToolPolicy,
-} from "./gate.js";
 export { STAFF_ASSISTANT_PRODUCT_GLOSSARY } from "./product-glossary.js";
-export {
-  staffAssistantShouldSkipIntentGate,
-  type StaffAssistantGateSkipReason,
-} from "./sticky-session.js";
 export { filterStaffAiTools } from "./filter-staff-tools.js";
 export { createStaffLanguageModel } from "./language-model.js";
 export type { LanguageModel } from "ai";
@@ -231,17 +215,15 @@ export {
   type StaffAssistantPersistedToolRun,
 } from "./model-trace.js";
 export {
-  createHoldCandidateReplyTextTransform,
   extractUuidResultIds,
-  streamStaffAssistantChat,
   STAFF_ASSISTANT_MAX_STEPS,
   STAFF_ASSISTANT_RESULT_IDS_MAX,
   STAFF_ASSISTANT_TOOL_CALL_ID_MAX,
   STAFF_ASSISTANT_TOOL_RUNS_MAX,
   type StaffAssistantToolRun,
+  type StaffAssistantToolRunOutcome,
   type StaffAssistantTurnResult,
-  type StaffAssistantUIMessage,
-} from "./staff-assistant-stream.js";
+} from "./tool-run.js";
 export {
   allowHostPendingAlways,
   commitHostSpeech,

@@ -6,20 +6,14 @@
  */
 import {
   bindsMatch,
-  CHOICE_TTL_MS,
-  choiceRedisKey,
   conversationPendingIndexPayload,
-  parseChoiceRecord,
   parseConversationPendingIndex,
   parsePendingRecord,
   pendingConversationIndexKey,
   pendingRecordBind,
   pendingRedisKey,
   pendingTtlMs,
-  recordBind,
-  serializeChoiceRecord,
   serializePendingRecord,
-  type ChoiceRecord,
   type PendingInteractionRecord,
 } from "@showzy/ai";
 import { randomUUID } from "node:crypto";
@@ -44,11 +38,6 @@ import {
   conversationLockRenewEveryMs,
   type ConversationLock,
 } from "./conversation-lock.js";
-import type {
-  ChoiceClaimDecision,
-  ChoiceCompleteDecision,
-  StaffAssistantChoiceStore,
-} from "./choice.js";
 import type {
   PendingAbandonDecision,
   PendingClaimDecision,
@@ -155,84 +144,6 @@ if ttl == nil or ttl < 1 then
   ttl = windowSec
 end
 return {0, ttl}
-`;
-
-/**
- * Atomic choice claim: exactly one transition out of `open`. Same optionId
- * after claim/complete replays; a different optionId is rejected. Never
- * GETDEL — confirmation keeps that primitive.
- */
-const CHOICE_CLAIM_LUA = `
-local optionId = ARGV[1]
-local actorId = ARGV[2]
-local companyId = ARGV[3]
-local conversationId = ARGV[4]
-local raw = redis.call('GET', KEYS[1])
-if type(raw) ~= 'string' or raw == '' then
-  return {0}
-end
-local ok, rec = pcall(cjson.decode, raw)
-if not ok or type(rec) ~= 'table' then
-  redis.call('DEL', KEYS[1])
-  return {0}
-end
-if rec.actorId ~= actorId or rec.companyId ~= companyId or rec.conversationId ~= conversationId then
-  return {-1}
-end
-if type(rec.optionMap) ~= 'table' or rec.optionMap[optionId] == nil then
-  return {-3}
-end
-local ttl = tonumber(redis.call('PTTL', KEYS[1]))
-if ttl == nil or ttl < 1 then
-  redis.call('DEL', KEYS[1])
-  return {0}
-end
-if rec.status == 'open' then
-  rec.status = 'claimed'
-  rec.claimedOptionId = optionId
-  redis.call('SET', KEYS[1], cjson.encode(rec), 'PX', ttl)
-  return {1, redis.call('GET', KEYS[1])}
-end
-if rec.claimedOptionId == optionId then
-  return {2, raw}
-end
-return {-2}
-`;
-
-const CHOICE_COMPLETE_LUA = `
-local optionId = ARGV[1]
-local actorId = ARGV[2]
-local companyId = ARGV[3]
-local conversationId = ARGV[4]
-local raw = redis.call('GET', KEYS[1])
-if type(raw) ~= 'string' or raw == '' then
-  return {0}
-end
-local ok, rec = pcall(cjson.decode, raw)
-if not ok or type(rec) ~= 'table' then
-  redis.call('DEL', KEYS[1])
-  return {0}
-end
-if rec.actorId ~= actorId or rec.companyId ~= companyId or rec.conversationId ~= conversationId then
-  return {-1}
-end
-local ttl = tonumber(redis.call('PTTL', KEYS[1]))
-if ttl == nil or ttl < 1 then
-  redis.call('DEL', KEYS[1])
-  return {0}
-end
-if rec.status == 'completed' then
-  if rec.claimedOptionId == optionId then
-    return {2, raw}
-  end
-  return {-2}
-end
-if rec.status ~= 'claimed' or rec.claimedOptionId ~= optionId then
-  return {-2}
-end
-rec.status = 'completed'
-redis.call('SET', KEYS[1], cjson.encode(rec), 'PX', ttl)
-return {1, redis.call('GET', KEYS[1])}
 `;
 
 /**
@@ -626,67 +537,6 @@ export function createRedisAiBudgetStore(
   };
 }
 
-export function createRedisChoiceStore(
-  redis: Pick<Redis, "eval" | "get" | "set">,
-  options?: { readonly ttlMs?: number },
-): StaffAssistantChoiceStore {
-  const ttlMs = options?.ttlMs ?? CHOICE_TTL_MS;
-
-  return {
-    async open(record) {
-      const result = await redis.set(
-        choiceRedisKey(record.choiceId),
-        serializeChoiceRecord({ ...record, status: "open" }),
-        "PX",
-        ttlMs,
-        "NX",
-      );
-      return result === "OK";
-    },
-
-    async claim(input) {
-      const result = await redis.eval(
-        CHOICE_CLAIM_LUA,
-        1,
-        choiceRedisKey(input.choiceId),
-        input.optionId,
-        input.bind.actorId,
-        input.bind.companyId,
-        input.bind.conversationId,
-      );
-      return parseChoiceClaimResult(result);
-    },
-
-    async peek(input) {
-      const raw = await redis.get(choiceRedisKey(input.choiceId));
-      if (typeof raw !== "string" || raw === "") {
-        return { kind: "expired" };
-      }
-      const record = parseChoiceRecord(raw);
-      if (record === undefined) {
-        return { kind: "expired" };
-      }
-      if (!bindsMatch(recordBind(record), input.bind)) {
-        return { kind: "forbidden" };
-      }
-      return { kind: "found", record };
-    },
-
-    async complete(input) {
-      const result = await redis.eval(
-        CHOICE_COMPLETE_LUA,
-        1,
-        choiceRedisKey(input.choiceId),
-        input.optionId,
-        input.bind.actorId,
-        input.bind.companyId,
-        input.bind.conversationId,
-      );
-      return parseChoiceCompleteResult(result);
-    },
-  };
-}
-
 export function createRedisConversationLock(
   redis: ConversationLockRedis,
   options?: {
@@ -900,82 +750,6 @@ export function createRedisPendingStore(
       return parsePendingReplaceResult(result, superseded, opened);
     },
   };
-}
-
-function parseChoiceScriptRecord(result: unknown): ChoiceRecord | undefined {
-  if (!Array.isArray(result) || typeof result[1] !== "string") {
-    return undefined;
-  }
-  return parseChoiceRecord(result[1]);
-}
-
-function parseChoiceClaimResult(result: unknown): ChoiceClaimDecision {
-  if (!Array.isArray(result) || result.length === 0) {
-    throw new RedisStoreError(
-      "choice-claim Redis script returned an unexpected value",
-    );
-  }
-  const code = Number(result[0]);
-  if (code === 0) {
-    return { kind: "expired" };
-  }
-  if (code === -1) {
-    return { kind: "forbidden" };
-  }
-  if (code === -2) {
-    return { kind: "conflict" };
-  }
-  if (code === -3) {
-    return { kind: "invalid_option" };
-  }
-  const record = parseChoiceScriptRecord(result);
-  if (record === undefined) {
-    throw new RedisStoreError(
-      "choice-claim Redis script returned an unreadable record",
-    );
-  }
-  if (code === 1) {
-    return { kind: "claimed", record };
-  }
-  if (code === 2) {
-    return { kind: "replay", record };
-  }
-  throw new RedisStoreError(
-    "choice-claim Redis script returned an unexpected code",
-  );
-}
-
-function parseChoiceCompleteResult(result: unknown): ChoiceCompleteDecision {
-  if (!Array.isArray(result) || result.length === 0) {
-    throw new RedisStoreError(
-      "choice-complete Redis script returned an unexpected value",
-    );
-  }
-  const code = Number(result[0]);
-  if (code === 0) {
-    return { kind: "expired" };
-  }
-  if (code === -1) {
-    return { kind: "forbidden" };
-  }
-  if (code === -2) {
-    return { kind: "conflict" };
-  }
-  const record = parseChoiceScriptRecord(result);
-  if (record === undefined) {
-    throw new RedisStoreError(
-      "choice-complete Redis script returned an unreadable record",
-    );
-  }
-  if (code === 1) {
-    return { kind: "completed", record };
-  }
-  if (code === 2) {
-    return { kind: "replay", record };
-  }
-  throw new RedisStoreError(
-    "choice-complete Redis script returned an unexpected code",
-  );
 }
 
 function parsePendingScriptRecord(

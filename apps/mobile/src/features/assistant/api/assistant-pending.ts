@@ -1,7 +1,8 @@
 /**
- * Authenticated pending GET, confirm, and abandon (SHO-522). Cookie +
+ * Authenticated staff assistant HTTP (SHO-522 / SHO-524). Cookie +
  * `x-company-id` are headers — never action input. Bodies never include
  * canonical input, challenge hashes, or pending secrets from the model.
+ * Chat is JSON `{ conversationId, text, locale? }` on `POST /assistant/chat`.
  */
 import { fetch as expoFetch } from "expo/fetch";
 import { isWireError } from "@showzy/contract";
@@ -16,6 +17,10 @@ import {
   type AssistantHostInteractionResult,
   type AssistantPendingPeekResult,
 } from "../shared/resume-envelope";
+import {
+  assistantChatUrl,
+  staffAssistantChatBody,
+} from "./assistant-chat-body";
 import { staffAssistantChatHeaders } from "./assistant-chat-headers";
 
 const coreWireErrorBodySchema = z.object({
@@ -149,6 +154,54 @@ export async function getAssistantPending(args: {
     return { kind: "unavailable" };
   }
   return { kind: "ok", pending: parsed.data.pending };
+}
+
+export async function postAssistantChat(args: {
+  readonly apiUrl: string;
+  readonly getCookie: () => string | null;
+  readonly getCompanyId: () => string | null;
+  readonly conversationId: string;
+  readonly text: string;
+  readonly locale?: "uk" | "en";
+}): Promise<AssistantHostInteractionResult> {
+  let response: Response;
+  try {
+    response = await expoFetch(assistantChatUrl(args.apiUrl), {
+      method: "POST",
+      credentials: "omit",
+      headers: {
+        "content-type": "application/json",
+        ...staffAssistantChatHeaders({
+          cookie: args.getCookie(),
+          companyId: args.getCompanyId(),
+        }),
+      },
+      body: JSON.stringify(
+        staffAssistantChatBody({
+          conversationId: args.conversationId,
+          text: args.text,
+          ...(args.locale === undefined ? {} : { locale: args.locale }),
+        }),
+      ),
+    });
+  } catch {
+    return {
+      status: "error",
+      code: "NETWORK",
+      message: "Chat request failed.",
+    };
+  }
+  const body = await readJsonBody(response);
+  if (!response.ok) {
+    if (!body.ok) {
+      return malformedError(response.status);
+    }
+    return resultFromWireError(response, body.value);
+  }
+  if (!body.ok) {
+    return malformedError(response.status);
+  }
+  return interactionFromBody(body.value, response.status);
 }
 
 export async function postAssistantConfirm(args: {

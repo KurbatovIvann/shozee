@@ -3,7 +3,7 @@ import { pino } from "pino";
 import { describe, expect, it } from "vitest";
 
 import { createApp, HEALTH_PATH, HTTP_INVOCATION_CHANNEL } from "./app.js";
-import { ASSISTANT_CHAT_PATH } from "./assistant-chat.js";
+import { ASSISTANT_CHAT_PATH } from "./assistant-invocation.js";
 import { PKI_PROXY_PATH } from "./pki-proxy.js";
 import { REQUEST_ID_HEADER } from "./request-id.js";
 
@@ -95,11 +95,46 @@ describe("createApp HTTP shell", () => {
     });
   });
 
-  it("GET /assistant/choice/:choiceId without a session is 401 UNAUTHENTICATED", async () => {
+  it("GET /assistant/pending without a session is 401 UNAUTHENTICATED", async () => {
     const app = silentApp();
     const response = await app.request(
-      `/assistant/choice/${UUID}?conversationId=${UUID}`,
+      `/assistant/pending?conversationId=${UUID}`,
     );
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({
+      code: "UNAUTHENTICATED",
+      status: 401,
+    });
+  });
+
+  it("POST /assistant/confirm without a session is 401 UNAUTHENTICATED", async () => {
+    const app = silentApp();
+    const response = await app.request("/assistant/confirm", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        conversationId: UUID,
+        challengeId: UUID,
+      }),
+    });
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({
+      code: "UNAUTHENTICATED",
+      status: 401,
+    });
+  });
+
+  it("POST /assistant/pending/abandon without a session is 401 UNAUTHENTICATED", async () => {
+    const app = silentApp();
+    const response = await app.request("/assistant/pending/abandon", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        conversationId: UUID,
+        pendingId: UUID,
+        expectedVersion: 1,
+      }),
+    });
     expect(response.status).toBe(401);
     expect(await response.json()).toMatchObject({
       code: "UNAUTHENTICATED",

@@ -218,14 +218,26 @@ describe("readStaffAssistantCompanyTradeName", () => {
   });
 });
 
-describe("live assistant chat mount (SHO-520)", () => {
-  it("keeps POST /assistant/chat on streamStaffAssistantChat", () => {
+describe("live assistant chat mount (SHO-524)", () => {
+  it("wraps the host loop and budget; header confirm skips the turn limit", () => {
     const chat = readFileSync(join(here, "assistant-chat.ts"), "utf8");
-    expect(chat).toContain("streamStaffAssistantChat");
-    expect(chat).toContain("classifyStaffAssistantTurn");
+    expect(chat).toContain("executeStaffAssistantHostChat");
+    expect(chat).toContain("executeStaffAssistantHostConfirm");
+    expect(chat).toContain("CONFIRMATION_CHALLENGE_HEADER");
+    expect(chat).toContain("skipTurnLimit: headerConfirm");
+    expect(chat).toContain("estimatedCostUsd: null");
+    expect(chat).not.toContain("streamStaffAssistantChat");
+    expect(chat).not.toContain("classifyStaffAssistantTurn");
     expect(chat).not.toContain("runStaffAssistantHostTurn");
     const app = readFileSync(join(here, "app.ts"), "utf8");
     expect(app).toContain("executeStaffAssistantChat");
+    expect(app).not.toContain("ASSISTANT_HOST_CHAT_PATH");
     expect(app).not.toContain("runStaffAssistantHostTurn");
+    const invocation = readFileSync(
+      join(here, "assistant-invocation.ts"),
+      "utf8",
+    );
+    expect(invocation).toContain('"/assistant/chat"');
+    expect(invocation).toContain('"ai"');
   });
 });

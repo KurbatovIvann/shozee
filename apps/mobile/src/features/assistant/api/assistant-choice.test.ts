@@ -12,12 +12,7 @@ vi.mock("expo/fetch", () => ({
   fetch: (...args: unknown[]) => fetchMock(...args) as Promise<Response>,
 }));
 
-import {
-  assistantChoicePeekUrl,
-  assistantChoiceUrl,
-  peekAssistantChoice,
-  postAssistantChoice,
-} from "./assistant-choice";
+import { assistantChoiceUrl, postAssistantChoice } from "./assistant-choice";
 
 const conversationId = "11111111-1111-4111-8111-111111111111";
 const choiceId = "33333333-3333-4333-8333-333333333333";
@@ -44,16 +39,6 @@ function postArgs() {
     conversationId,
     choiceId,
     optionId,
-  };
-}
-
-function peekArgs() {
-  return {
-    apiUrl: "https://api.example.com",
-    getCookie: () => cookie,
-    getCompanyId: () => "company-a",
-    conversationId,
-    choiceId,
   };
 }
 
@@ -334,85 +319,6 @@ describe("postAssistantChoice", () => {
     expect(result.recoverability).toBe("ambiguous");
     expect(JSON.stringify(result)).not.toContain(challengeId);
     expect(JSON.stringify(result)).not.toContain("secret-confirmation");
-    expect(JSON.stringify(result)).not.toContain("SECRET_SESSION_COOKIE");
-  });
-});
-
-describe("peekAssistantChoice", () => {
-  beforeEach(() => {
-    fetchMock.mockReset();
-  });
-
-  it("returns a live envelope on 200", async () => {
-    const envelope = {
-      status: "needs_choice",
-      challengeId: choiceId,
-      reason: "variant_required",
-      productName: "Macarons",
-      options: [{ id: optionId, label: "Lemon" }],
-      optionsTruncated: false,
-    };
-    fetchMock.mockResolvedValue(jsonResponse(200, envelope));
-    const result = await peekAssistantChoice(peekArgs());
-    expect(result).toEqual({ kind: "envelope", envelope });
-    expect(fetchMock).toHaveBeenCalledWith(
-      assistantChoicePeekUrl(
-        "https://api.example.com",
-        choiceId,
-        conversationId,
-      ),
-      expect.objectContaining({ method: "GET" }),
-    );
-  });
-
-  it("returns expired only for a real expired peek body", async () => {
-    fetchMock.mockResolvedValue(jsonResponse(200, { status: "expired" }));
-    const result = await peekAssistantChoice(peekArgs());
-    expect(result).toEqual({
-      kind: "envelope",
-      envelope: {
-        status: "expired",
-        challengeId: choiceId,
-        options: [],
-        optionsTruncated: false,
-      },
-    });
-  });
-
-  it("does not mark a 500 peek as expired", async () => {
-    fetchMock.mockResolvedValue(
-      jsonResponse(500, {
-        code: "INTERNAL",
-        status: 500,
-        message: "Internal error.",
-      }),
-    );
-    const result = await peekAssistantChoice(peekArgs());
-    expect(result).toEqual({
-      kind: "unavailable",
-      recoverability: "retryable",
-      httpStatus: 500,
-      code: "INTERNAL",
-    });
-    expect(result.kind).not.toBe("envelope");
-  });
-
-  it("does not mark a malformed peek body as expired", async () => {
-    fetchMock.mockResolvedValue(jsonResponse(200, { status: 500, foo: true }));
-    const result = await peekAssistantChoice(peekArgs());
-    expect(result).toEqual({
-      kind: "unavailable",
-      recoverability: "ambiguous",
-    });
-  });
-
-  it("does not mark a rejected peek as expired", async () => {
-    fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
-    const result = await peekAssistantChoice(peekArgs());
-    expect(result).toEqual({
-      kind: "unavailable",
-      recoverability: "retryable",
-    });
     expect(JSON.stringify(result)).not.toContain("SECRET_SESSION_COOKIE");
   });
 });

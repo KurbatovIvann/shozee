@@ -1,24 +1,49 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import {
   confirmationCardState,
-  executeConfirmationConfirm,
-  executeConfirmationDismiss,
+  executeConfirmationAbandon,
+  executeHostConfirmationConfirm,
+  hideConfirmationLocally,
   pendingConfirmationFromMessages,
-  shouldMarkConfirmationResolved,
+  shouldHidePendingCardAfterAbandon,
   type AssistantChatMessage,
   type ConfirmationCardState,
   type PendingConfirmation,
 } from "../shared/confirmation-presenter";
+import {
+  partsFromResumeEnvelope,
+  type AssistantHostInteractionResult,
+} from "../shared/resume-envelope";
+import type { ChoiceAppendPart } from "../shared/choice-presenter";
 
 export type AssistantChatStatus = "submitted" | "streaming" | "ready" | "error";
 
 export function useAssistantConfirmation(args: {
   readonly messages: readonly AssistantChatMessage[];
-  readonly status: AssistantChatStatus;
-  readonly error: unknown;
   readonly sendBusy: boolean;
-  readonly resume: (headers: Readonly<Record<string, string>>) => Promise<void>;
+  readonly getConversationId: () => string | null;
+  readonly peekPending: () => Promise<
+    | {
+        readonly kind: "ok";
+        readonly pending: {
+          readonly id: string;
+          readonly version: number;
+          readonly kind: "choice" | "confirmation";
+        } | null;
+      }
+    | { readonly kind: "unavailable" }
+  >;
+  readonly postConfirm: (input: {
+    readonly conversationId: string;
+    readonly challengeId: string;
+  }) => Promise<AssistantHostInteractionResult>;
+  readonly postAbandon: (input: {
+    readonly conversationId: string;
+    readonly pendingId: string;
+    readonly expectedVersion: number;
+  }) => Promise<AssistantHostInteractionResult>;
+  readonly appendParts: (parts: readonly ChoiceAppendPart[]) => void;
 }): {
   readonly pending: PendingConfirmation | null;
   readonly ignoredChallengeIds: ReadonlySet<string>;
@@ -44,6 +69,18 @@ export function useAssistantConfirmation(args: {
     setResolvingChallengeId(null);
   }, []);
 
+  const ignoreChallenge = useCallback((challengeId: string) => {
+    const next = new Set(dismissedRef.current);
+    next.add(challengeId);
+    dismissedRef.current = next;
+    setDismissed(next);
+    setResolved((current) => {
+      const resolvedNext = new Set(current);
+      resolvedNext.add(challengeId);
+      return resolvedNext;
+    });
+  }, []);
+
   const ignored = useMemo(() => {
     const next = new Set(dismissed);
     for (const challengeId of resolved) {
@@ -61,76 +98,75 @@ export function useAssistantConfirmation(args: {
     resolvingChallengeId,
   });
 
-  const previousStatus = useRef(args.status);
-  useEffect(() => {
-    if (args.status === "error") {
-      clearResolving();
-    }
-  }, [args.status, clearResolving]);
-
-  useEffect(() => {
-    const previous = previousStatus.current;
-    previousStatus.current = args.status;
-    const wasBusy = previous === "submitted" || previous === "streaming";
-    if (args.status !== "ready" || !wasBusy || resolvingChallengeId === null) {
-      return;
-    }
-    if (
-      shouldMarkConfirmationResolved({
-        resolvingChallengeId,
-        pending,
-        hasError: args.error !== undefined && args.error !== null,
-        messages: args.messages,
-      })
-    ) {
-      const challengeId = resolvingChallengeId;
-      setResolved((current) => {
-        const next = new Set(current);
-        next.add(challengeId);
-        return next;
-      });
-    }
-    clearResolving();
-  }, [
-    args.error,
-    args.messages,
-    args.status,
-    clearResolving,
-    pending,
-    resolvingChallengeId,
-  ]);
-
   const confirm = useCallback(() => {
     const current = pendingRef.current;
     if (current === null || resolvingRef.current !== null) {
       return;
     }
     setResolvingChallengeId(current.challengeId);
-    void executeConfirmationConfirm({
+    void executeHostConfirmationConfirm({
       pending: current,
       sendBusy: args.sendBusy,
       dismissedChallengeIds: dismissedRef.current,
       resolvingRef,
-      resume: args.resume,
+      conversationId: args.getConversationId(),
+      postConfirm: args.postConfirm,
     })
       .then((result) => {
         if (result === "skipped") {
           clearResolving();
+          return;
         }
+        if (result.status === "ok") {
+          const parts = partsFromResumeEnvelope({
+            speech: result.speech,
+            cards: result.cards,
+            pending: result.pending,
+          });
+          if (parts.length > 0) {
+            args.appendParts(parts);
+          }
+          ignoreChallenge(current.challengeId);
+          clearResolving();
+          return;
+        }
+        if (shouldHidePendingCardAfterAbandon(result)) {
+          ignoreChallenge(current.challengeId);
+        }
+        clearResolving();
       })
       .catch(() => {
         clearResolving();
       });
-  }, [args.resume, args.sendBusy, clearResolving]);
+  }, [
+    args.appendParts,
+    args.getConversationId,
+    args.postConfirm,
+    args.sendBusy,
+    clearResolving,
+    ignoreChallenge,
+  ]);
 
   const dismiss = useCallback(() => {
-    const next = executeConfirmationDismiss({
-      pending: pendingRef.current,
-      dismissed: dismissedRef.current,
+    const current = pendingRef.current;
+    void executeConfirmationAbandon({
+      pending: current,
+      conversationId: args.getConversationId(),
+      pendingVersion: current?.pendingVersion,
+      peekPending: args.peekPending,
+      postAbandon: args.postAbandon,
+    }).then((result) => {
+      if (!shouldHidePendingCardAfterAbandon(result)) {
+        return;
+      }
+      const next = hideConfirmationLocally({
+        pending: pendingRef.current,
+        dismissed: dismissedRef.current,
+      });
+      dismissedRef.current = next;
+      setDismissed(next);
     });
-    dismissedRef.current = next;
-    setDismissed(next);
-  }, []);
+  }, [args.getConversationId, args.peekPending, args.postAbandon]);
 
   const reset = useCallback(() => {
     const empty = new Set<string>();

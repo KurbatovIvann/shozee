@@ -3,11 +3,9 @@
  * newest-updated conversation from a company-wide list, then rebuild
  * history from `getConversation`. List/counts runs stay prose-only.
  * Entity cards hydrate via live `orders.get` on top-level `resultIds`.
- * Pending choice hydrates via T8a peek (SHO-418 / SHO-426): `needs_choice`
- * restores the picker; `claimed` restores a recovery card; `expired`
- * shows expired copy; `completed` does not restore a ChoiceCard. A
- * temporary or malformed peek is omitted so reload can recover — it is
- * not a false expiry. Do not restore list cards.
+ * Open HITL hydrates via `GET /assistant/pending` (SHO-524). Choice
+ * envelopes from a live peek remain a fallback when pending lookup is
+ * unavailable. Do not restore list cards.
  *
  * `userId` is compared to the session here — never sent as list/get
  * input. Company id is never action input.
@@ -24,6 +22,7 @@ import {
 } from "./choice";
 import type { StaffAssistantConfirmation } from "./confirmation";
 import {
+  choiceEnvelopeFromPublicPending,
   confirmationFromPublicPending,
   type PublicPending,
 } from "./resume-envelope";
@@ -85,6 +84,7 @@ export type HydratedAssistantToolPart = {
 export type HydratedAssistantChoicePart = {
   readonly type: "data-choice";
   readonly data: StaffAssistantChoiceCardEnvelope;
+  readonly pendingVersion?: number;
 };
 
 export type HydratedAssistantConfirmationPart = {
@@ -93,50 +93,6 @@ export type HydratedAssistantConfirmationPart = {
     readonly pendingVersion?: number;
   };
 };
-
-export function applyOpenPendingToHydratedMessages(args: {
-  readonly messages: readonly HydratedAssistantUiMessage[];
-  readonly pending: PublicPending | null;
-}): readonly HydratedAssistantUiMessage[] {
-  const pending = args.pending;
-  if (pending === null) {
-    return args.messages;
-  }
-  if (pending.kind !== "confirmation") {
-    return args.messages;
-  }
-  const confirmation = {
-    ...confirmationFromPublicPending(pending),
-    pendingVersion: pending.version,
-  };
-  const messages = args.messages.slice();
-  let targetIndex = -1;
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    if (messages[index]?.role === "assistant") {
-      targetIndex = index;
-      break;
-    }
-  }
-  if (targetIndex < 0) {
-    return [
-      ...messages,
-      {
-        id: `pending:${pending.id}`,
-        role: "assistant",
-        parts: [{ type: "data-confirmation", data: confirmation }],
-      },
-    ];
-  }
-  const target = messages[targetIndex];
-  if (target === undefined) {
-    return messages;
-  }
-  messages[targetIndex] = {
-    ...target,
-    parts: [...target.parts, { type: "data-confirmation", data: confirmation }],
-  };
-  return messages;
-}
 
 export type HydratedAssistantUiPart =
   | { readonly type: "text"; readonly text: string }
@@ -149,6 +105,69 @@ export type HydratedAssistantUiMessage = {
   readonly role: "user" | "assistant";
   readonly parts: readonly HydratedAssistantUiPart[];
 };
+
+function lastAssistantIndex(
+  messages: readonly HydratedAssistantUiMessage[],
+): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === "assistant") {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function appendPendingPart(
+  messages: readonly HydratedAssistantUiMessage[],
+  pendingId: string,
+  part: HydratedAssistantUiPart,
+): readonly HydratedAssistantUiMessage[] {
+  const next = messages.slice();
+  const targetIndex = lastAssistantIndex(next);
+  if (targetIndex < 0) {
+    return [
+      ...next,
+      {
+        id: `pending:${pendingId}`,
+        role: "assistant",
+        parts: [part],
+      },
+    ];
+  }
+  const target = next[targetIndex];
+  if (target === undefined) {
+    return next;
+  }
+  next[targetIndex] = {
+    ...target,
+    parts: [...target.parts, part],
+  };
+  return next;
+}
+
+export function applyOpenPendingToHydratedMessages(args: {
+  readonly messages: readonly HydratedAssistantUiMessage[];
+  readonly pending: PublicPending | null;
+}): readonly HydratedAssistantUiMessage[] {
+  const pending = args.pending;
+  if (pending === null) {
+    return args.messages;
+  }
+  if (pending.kind === "choice") {
+    return appendPendingPart(args.messages, pending.id, {
+      type: "data-choice",
+      data: choiceEnvelopeFromPublicPending(pending),
+      pendingVersion: pending.version,
+    });
+  }
+  return appendPendingPart(args.messages, pending.id, {
+    type: "data-confirmation",
+    data: {
+      ...confirmationFromPublicPending(pending),
+      pendingVersion: pending.version,
+    },
+  });
+}
 
 export type AssistantResumeResult =
   | { readonly kind: "empty" }

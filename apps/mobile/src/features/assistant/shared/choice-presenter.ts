@@ -645,22 +645,26 @@ export function commitChoiceSelectResult(args: {
   return "applied";
 }
 
+function pendingVersionFromUnknown(value: unknown): number | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  if (!("pendingVersion" in value)) {
+    return undefined;
+  }
+  const version = value.pendingVersion;
+  if (typeof version === "number" && Number.isInteger(version) && version > 0) {
+    return version;
+  }
+  return undefined;
+}
+
 function pendingVersionFromChoicePart(
   part: AssistantChoicePart,
 ): number | undefined {
-  const nested = part.data;
-  if (
-    typeof nested === "object" &&
-    nested !== null &&
-    !Array.isArray(nested) &&
-    "pendingVersion" in nested &&
-    typeof nested.pendingVersion === "number" &&
-    Number.isInteger(nested.pendingVersion) &&
-    nested.pendingVersion > 0
-  ) {
-    return nested.pendingVersion;
-  }
-  return undefined;
+  return (
+    pendingVersionFromUnknown(part.data) ?? pendingVersionFromUnknown(part)
+  );
 }
 
 export function hideChoiceLocally(args: {

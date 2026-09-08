@@ -235,11 +235,10 @@ function modelMessagesFromPersistedRow(
 
 /**
  * Anthropic rejects `tool_use` / `tool_result` blocks on a request that
- * defines no tools, and the intent gate attaches none on a chitchat turn
- * (`gatePolicy.kind === "none"`). Flatten reconstructed tool parts back to
- * text-only history so «дякую» after a tool turn is not a 400. Applied by
- * `streamStaffAssistantChat` whenever the ToolSet is empty — the caller
- * never has to know the model history carries tool parts.
+ * defines no tools. Flatten reconstructed tool parts back to text-only
+ * history when the ToolSet is empty so a follow-up after a tool turn is
+ * not a 400. The live host always attaches tools; this helper remains
+ * for callers that pass an empty set.
  */
 export function stripStaffAssistantToolParts(
   messages: readonly ModelMessage[],

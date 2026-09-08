@@ -1,11 +1,10 @@
 # `@showzy/ai-eval` — staff assistant eval harness (SHO-412)
 
-Dev-only leaf. Proof / plain-reply / gate corpora drive
-`streamStaffAssistantChat` against a real Anthropic model (hand-run) or
-`MockLanguageModelV3` (CI self-tests). `MODEL_SPEAKS` drives the T1
-`runStaffAssistantHostTurn` so markdown tables keep `speechSource: "model"`
-(ADR-0037). Do not retarget production `POST /assistant/chat`. Tool
-execution is `executeAction` over the existing Testcontainers Postgres kit.
+Dev-only leaf. Proof / plain-reply / MODEL_SPEAKS corpora drive
+`runStaffAssistantHostTurn` against a real Anthropic model (hand-run) or
+`MockLanguageModelV3` (CI self-tests). Markdown tables keep
+`speechSource: "model"` (ADR-0037). Tool execution is `executeAction`
+over the existing Testcontainers Postgres kit.
 
 ## Commands
 
