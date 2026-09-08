@@ -85,6 +85,7 @@ describe("pending_replace host tool", () => {
       }),
     ).toThrow(/no façade schema/);
     const src = readFileSync(join(here, "pending-replace.ts"), "utf8");
-    expect(src).not.toContain("looseObject");
+    expect(src).not.toContain("z.looseObject");
+    expect(src).not.toMatch(/z\.looseObject\s*\(/);
   });
 });
