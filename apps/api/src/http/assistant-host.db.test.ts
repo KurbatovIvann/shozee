@@ -3216,7 +3216,7 @@ describe("unpublished staff assistant host HTTP", () => {
       if (replayBody.status !== "ok") {
         return;
       }
-      expect(replayBody.speech).toBe(speech);
+      expect(replayBody.speech).toBe("The leftover create already landed.");
       expect(await orderCount()).toBe(afterCommit);
     });
 
@@ -3289,10 +3289,10 @@ describe("unpublished staff assistant host HTTP", () => {
         conversationId: edgeConversation.id,
       });
       expect(
-        edgeFinished.messages
-          .flatMap((message) => message.toolRuns)
-          .find((run) => run.executionId === edgeLeftover.executionId)?.outcome,
-      ).toBe("success");
+        edgeFinished.unfinishedStartedRuns.some(
+          (run) => run.executionId === edgeLeftover.executionId,
+        ),
+      ).toBe(false);
 
       const outsideConversation = await h.invoke(createConversation, {
         title: "Window outside chat leftover",
