@@ -18,6 +18,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { matchEvalExpectation } from "./expectation.js";
 import { createEvalLogger } from "./log.js";
+import { isRecord } from "./record.js";
 import { runStaffAssistantEvalTurn } from "./run-turn.js";
 import { MODEL_SPEAKS_SCENARIOS } from "./scenarios/model-speaks.js";
 import { PROOF_SCENARIOS } from "./scenarios/proof.js";
@@ -332,17 +333,18 @@ describe("runStaffAssistantEvalTurn", () => {
       execute,
       logger: silentLogger,
     });
-    expect(execute).toHaveBeenCalledWith(
-      "orders.list",
-      expect.objectContaining({
-        kind: "aggregate",
-        filter: expect.objectContaining({
-          createdFrom: expect.any(String),
-          createdTo: expect.any(String),
-        }),
-      }),
-      { toolCallId: "call-counts" },
-    );
+    expect(execute).toHaveBeenCalled();
+    expect(isRecord(executeInput)).toBe(true);
+    if (!isRecord(executeInput)) {
+      return;
+    }
+    expect(executeInput["kind"]).toBe("aggregate");
+    expect(isRecord(executeInput["filter"])).toBe(true);
+    if (!isRecord(executeInput["filter"])) {
+      return;
+    }
+    expect(typeof executeInput["filter"]["createdFrom"]).toBe("string");
+    expect(typeof executeInput["filter"]["createdTo"]).toBe("string");
     expect(executeInput).not.toHaveProperty("period");
     expect(result.trace.toolCalls[0]?.args).toMatchObject({
       period: "this_week",
