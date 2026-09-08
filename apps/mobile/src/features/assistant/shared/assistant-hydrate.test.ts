@@ -1068,8 +1068,9 @@ describe("assistant hydrate source", () => {
     expect(hook).toContain("resumeOwnAssistantConversation");
     expect(hook).toContain("auth.session?.userId");
     expect(hook).toContain('result.kind === "unavailable"');
-    expect(hook).toContain("getAssistantPending");
-    expect(hook).toContain("postAssistantConfirm");
+    expect(hook).not.toContain("getAssistantPending");
+    expect(hook).not.toContain("postAssistantConfirm");
+    expect(hook).not.toContain("postAssistantPendingAbandon");
     expect(hook).not.toContain("ensureAssistantConversation");
     expect(hook).not.toContain("userId:");
     expect(hook).not.toContain("companyId:");

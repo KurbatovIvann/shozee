@@ -1,8 +1,11 @@
 /**
  * HITL card presenter for the staff assistant (SHO-323 / SHO-522).
- * Confirm POSTs `/assistant/confirm`. Dismiss POSTs abandon. Local hide
- * without abandon is not the card path. Legacy challenge headers stay
- * until T5.
+ *
+ * Live sheet (until T5): confirm is `sendMessage` +
+ * `x-confirmation-challenge-id`. Host presenters (unpublished
+ * `createStaffAssistantHostApp`) POST `/assistant/confirm` and abandon
+ * via injected ports. Local hide without abandon is not the host card
+ * path.
  */
 import { CONFIRMATION_CHALLENGE_HEADER } from "@showzy/contract";
 
@@ -10,7 +13,10 @@ import {
   confirmationFromChatPart,
   type StaffAssistantConfirmation,
 } from "./confirmation";
-import type { AssistantHostInteractionResult } from "./resume-envelope";
+import {
+  shouldHidePendingCardAfterAbandon,
+  type AssistantHostInteractionResult,
+} from "./resume-envelope";
 
 export type AssistantChatPart = {
   readonly type: string;
@@ -211,10 +217,34 @@ export function claimConfirmationConfirm(args: {
 }
 
 /**
- * Confirm POSTs `/assistant/confirm` with conversation + challenge ids.
- * Never sendMessage. Never attach `x-confirmation-challenge-id`.
+ * Live confirm until T5: resume the chat with the challenge header.
+ * Never POST unpublished `/assistant/confirm` from the production sheet.
  */
 export async function executeConfirmationConfirm(args: {
+  readonly pending: PendingConfirmation | null;
+  readonly sendBusy: boolean;
+  readonly dismissedChallengeIds: ReadonlySet<string>;
+  readonly resolvingRef: { current: string | null };
+  readonly resume: (headers: Readonly<Record<string, string>>) => Promise<void>;
+}): Promise<"resumed" | "skipped"> {
+  const claimed = claimConfirmationConfirm({
+    pending: args.pending,
+    sendBusy: args.sendBusy,
+    dismissedChallengeIds: args.dismissedChallengeIds,
+    resolvingRef: args.resolvingRef,
+  });
+  if (claimed === null) {
+    return "skipped";
+  }
+  await args.resume(confirmationResumeHeaders(claimed.challengeId));
+  return "resumed";
+}
+
+/**
+ * Unpublished-host confirm: POST `/assistant/confirm` with conversation
+ * + challenge ids. Injected ports only — not the live sheet.
+ */
+export async function executeHostConfirmationConfirm(args: {
   readonly pending: PendingConfirmation | null;
   readonly sendBusy: boolean;
   readonly dismissedChallengeIds: ReadonlySet<string>;
@@ -241,8 +271,18 @@ export async function executeConfirmationConfirm(args: {
 }
 
 /**
- * Local hide only — not the confirmation card path. Card dismiss must
- * call `executeConfirmationAbandon`.
+ * Live confirmation dismiss until T5. Host card dismiss must call
+ * `executeConfirmationAbandon` instead.
+ */
+export function executeConfirmationDismiss(args: {
+  readonly pending: PendingConfirmation | null;
+  readonly dismissed: ReadonlySet<string>;
+}): ReadonlySet<string> {
+  return hideConfirmationLocally(args);
+}
+
+/**
+ * Local hide only — not the unpublished-host confirmation card path.
  */
 export function hideConfirmationLocally(args: {
   readonly pending: PendingConfirmation | null;
@@ -283,8 +323,14 @@ export async function executeConfirmationAbandon(args: {
   let version = args.pendingVersion ?? args.pending.pendingVersion;
   if (version === undefined) {
     const peeked = await args.peekPending();
+    if (peeked.kind === "unavailable") {
+      return {
+        status: "error",
+        code: "UNAVAILABLE",
+        message: "Pending lookup is not available.",
+      };
+    }
     if (
-      peeked.kind !== "ok" ||
       peeked.pending === null ||
       peeked.pending.id !== args.pending.challengeId
     ) {
@@ -298,3 +344,5 @@ export async function executeConfirmationAbandon(args: {
     expectedVersion: version,
   });
 }
+
+export { shouldHidePendingCardAfterAbandon };

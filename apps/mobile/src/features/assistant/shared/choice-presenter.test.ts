@@ -19,11 +19,14 @@ import {
   choiceSelectShouldIgnoreChallenge,
   classifyChoiceSelect,
   commitChoiceSelectResult,
+  executeChoiceAbandon,
   executeChoiceSelect,
+  hideChoiceLocally,
   pendingChoiceFromMessages,
   presentChoiceSelectErrorText,
   type AssistantChoiceMessage,
 } from "./choice-presenter";
+import { shouldHidePendingCardAfterAbandon } from "./resume-envelope";
 
 const choiceId = "33333333-3333-4333-8333-333333333333";
 const lemonId = "88888888-8888-4888-8888-888888888888";
@@ -1464,5 +1467,37 @@ describe("same-option recovery after an uncertain POST (SHO-452)", () => {
         previous: null,
       }),
     ).toBeNull();
+  });
+});
+
+describe("executeChoiceAbandon", () => {
+  const conversationId = "11111111-1111-4111-8111-111111111111";
+
+  it("peek unavailable keeps the picker and does not hide", async () => {
+    const postAbandon = vi.fn(() =>
+      Promise.resolve({
+        status: "ok" as const,
+        speech: "",
+        cards: [],
+        pending: null,
+      }),
+    );
+    const pending = pendingChoiceFromMessages(messages, new Set());
+    const result = await executeChoiceAbandon({
+      pending,
+      conversationId,
+      pendingVersion: undefined,
+      peekPending: () => Promise.resolve({ kind: "unavailable" }),
+      postAbandon,
+    });
+    expect(result).toMatchObject({ status: "error", code: "UNAVAILABLE" });
+    expect(postAbandon).not.toHaveBeenCalled();
+    expect(shouldHidePendingCardAfterAbandon(result)).toBe(false);
+    const dismissed = shouldHidePendingCardAfterAbandon(result)
+      ? hideChoiceLocally({ pending, dismissed: new Set() })
+      : new Set<string>();
+    expect(pendingChoiceFromMessages(messages, dismissed)?.challengeId).toBe(
+      choiceId,
+    );
   });
 });

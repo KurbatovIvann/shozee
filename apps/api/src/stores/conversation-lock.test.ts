@@ -1,6 +1,22 @@
 import { describe, expect, it } from "vitest";
 
-import { createMemoryConversationLock } from "./conversation-lock.js";
+import {
+  CONVERSATION_LOCK_TTL_MS,
+  CONVERSATION_LOCK_WAIT_MS,
+  conversationLockRenewEveryMs,
+  createMemoryConversationLock,
+} from "./conversation-lock.js";
+
+describe("conversation lock defaults", () => {
+  it("waits at least the Fluid host duration ceiling and renews inside the lease", () => {
+    expect(CONVERSATION_LOCK_WAIT_MS).toBe(800_000);
+    expect(CONVERSATION_LOCK_WAIT_MS).toBeGreaterThan(CONVERSATION_LOCK_TTL_MS);
+    expect(conversationLockRenewEveryMs(CONVERSATION_LOCK_TTL_MS)).toBe(20_000);
+    expect(conversationLockRenewEveryMs(CONVERSATION_LOCK_TTL_MS)).toBeLessThan(
+      CONVERSATION_LOCK_TTL_MS,
+    );
+  });
+});
 
 describe("createMemoryConversationLock", () => {
   it("serializes overlapping work on the same conversation", async () => {

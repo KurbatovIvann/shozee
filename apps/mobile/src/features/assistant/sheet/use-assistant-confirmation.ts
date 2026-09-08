@@ -1,23 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
-  executeConfirmationAbandon,
-  executeConfirmationConfirm,
-  hideConfirmationLocally,
-  pendingConfirmationFromMessages,
   confirmationCardState,
+  executeConfirmationConfirm,
+  executeConfirmationDismiss,
+  pendingConfirmationFromMessages,
   shouldMarkConfirmationResolved,
   type AssistantChatMessage,
   type ConfirmationCardState,
   type PendingConfirmation,
 } from "../shared/confirmation-presenter";
-import {
-  partsFromResumeEnvelope,
-  pendingHostMetaFromPublic,
-  type AssistantHostInteractionResult,
-  type AssistantPendingHostMeta,
-  type ResumeAppendPart,
-} from "../shared/resume-envelope";
 
 export type AssistantChatStatus = "submitted" | "streaming" | "ready" | "error";
 
@@ -26,25 +18,7 @@ export function useAssistantConfirmation(args: {
   readonly status: AssistantChatStatus;
   readonly error: unknown;
   readonly sendBusy: boolean;
-  readonly conversationId: string | null;
-  readonly pendingMetaRef: { current: AssistantPendingHostMeta | null };
-  readonly postConfirm: (input: {
-    readonly conversationId: string;
-    readonly challengeId: string;
-  }) => Promise<AssistantHostInteractionResult>;
-  readonly peekPending: () => Promise<
-    | {
-        readonly kind: "ok";
-        readonly pending: AssistantPendingHostMeta | null;
-      }
-    | { readonly kind: "unavailable" }
-  >;
-  readonly postAbandon: (input: {
-    readonly conversationId: string;
-    readonly pendingId: string;
-    readonly expectedVersion: number;
-  }) => Promise<AssistantHostInteractionResult>;
-  readonly appendParts: (parts: readonly ResumeAppendPart[]) => void;
+  readonly resume: (headers: Readonly<Record<string, string>>) => Promise<void>;
 }): {
   readonly pending: PendingConfirmation | null;
   readonly ignoredChallengeIds: ReadonlySet<string>;
@@ -137,74 +111,26 @@ export function useAssistantConfirmation(args: {
       sendBusy: args.sendBusy,
       dismissedChallengeIds: dismissedRef.current,
       resolvingRef,
-      conversationId: args.conversationId,
-      postConfirm: args.postConfirm,
+      resume: args.resume,
     })
       .then((result) => {
         if (result === "skipped") {
           clearResolving();
-          return;
         }
-        if (result.status === "ok") {
-          args.pendingMetaRef.current = pendingHostMetaFromPublic(
-            result.pending,
-          );
-          const parts = partsFromResumeEnvelope({
-            speech: result.speech,
-            cards: result.cards,
-            pending: result.pending,
-          });
-          if (parts.length > 0) {
-            args.appendParts(parts);
-          }
-          setResolved((currentResolved) => {
-            const next = new Set(currentResolved);
-            next.add(current.challengeId);
-            return next;
-          });
-        }
-        clearResolving();
       })
       .catch(() => {
         clearResolving();
       });
-  }, [
-    args.appendParts,
-    args.conversationId,
-    args.pendingMetaRef,
-    args.postConfirm,
-    args.sendBusy,
-    clearResolving,
-  ]);
+  }, [args.resume, args.sendBusy, clearResolving]);
 
   const dismiss = useCallback(() => {
-    const current = pendingRef.current;
-    void executeConfirmationAbandon({
-      pending: current,
-      conversationId: args.conversationId,
-      pendingVersion: args.pendingMetaRef.current?.version,
-      peekPending: args.peekPending,
-      postAbandon: args.postAbandon,
-    }).then((result) => {
-      if (result === "skipped") {
-        return;
-      }
-      if (result.status === "ok" || result.status === "expired") {
-        args.pendingMetaRef.current = null;
-        const next = hideConfirmationLocally({
-          pending: current,
-          dismissed: dismissedRef.current,
-        });
-        dismissedRef.current = next;
-        setDismissed(next);
-      }
+    const next = executeConfirmationDismiss({
+      pending: pendingRef.current,
+      dismissed: dismissedRef.current,
     });
-  }, [
-    args.conversationId,
-    args.peekPending,
-    args.pendingMetaRef,
-    args.postAbandon,
-  ]);
+    dismissedRef.current = next;
+    setDismissed(next);
+  }, []);
 
   const reset = useCallback(() => {
     const empty = new Set<string>();

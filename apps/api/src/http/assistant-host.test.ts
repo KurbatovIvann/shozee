@@ -51,5 +51,7 @@ describe("unpublished staff-assistant host (SHO-522)", () => {
     expect(pendingOpen).toContain("PENDING_ABANDON_LUA");
     expect(pendingOpen).not.toContain("GETDEL");
     expect(PENDING_REPLACE_TOOL_NAME).toBe("pending_replace");
+    expect(redisSrc).toContain("CONVERSATION_LOCK_RENEW_LUA");
+    expect(redisSrc).toContain("redisSetNxSucceeded");
   });
 });

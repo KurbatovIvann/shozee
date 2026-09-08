@@ -702,8 +702,14 @@ export async function executeChoiceAbandon(args: {
   let version = args.pendingVersion ?? args.pending.pendingVersion;
   if (version === undefined) {
     const peeked = await args.peekPending();
+    if (peeked.kind === "unavailable") {
+      return {
+        status: "error",
+        code: "UNAVAILABLE",
+        message: "Pending lookup is not available.",
+      };
+    }
     if (
-      peeked.kind !== "ok" ||
       peeked.pending === null ||
       peeked.pending.id !== args.pending.challengeId
     ) {

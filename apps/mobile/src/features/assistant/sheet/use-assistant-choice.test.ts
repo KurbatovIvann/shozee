@@ -59,16 +59,6 @@ function Probe(props: ProbeProps) {
     companyEpochRef: props.companyEpochRef,
     postChoice: props.postChoice,
     appendParts: props.appendParts,
-    conversationId: "11111111-1111-4111-8111-111111111111",
-    pendingMetaRef: { current: null },
-    peekPending: () => Promise.resolve({ kind: "unavailable" }),
-    postAbandon: () =>
-      Promise.resolve({
-        status: "ok",
-        speech: "",
-        cards: [],
-        pending: null,
-      }),
   });
   return null;
 }

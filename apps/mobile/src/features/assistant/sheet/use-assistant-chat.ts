@@ -13,11 +13,6 @@ import {
   postAssistantChoice,
 } from "../api/assistant-choice";
 import {
-  getAssistantPending,
-  postAssistantConfirm,
-  postAssistantPendingAbandon,
-} from "../api/assistant-pending";
-import {
   createStaffAssistantTransport,
   type StaffAssistantUiMessage,
 } from "../api/assistant-chat-transport";
@@ -32,14 +27,11 @@ import {
   queryFailureToAssistantKind,
   type AssistantChatErrorKind,
 } from "../shared/chat-error";
-import type { ChoiceSelectResult } from "../shared/choice-presenter";
+import type {
+  ChoiceAppendPart,
+  ChoiceSelectResult,
+} from "../shared/choice-presenter";
 import type { AssistantChatMessage } from "../shared/confirmation-presenter";
-import {
-  pendingHostMetaFromPublic,
-  type AssistantHostInteractionResult,
-  type AssistantPendingHostMeta,
-  type ResumeAppendPart,
-} from "../shared/resume-envelope";
 import type { AssistantChatStatus } from "./use-assistant-confirmation";
 
 function resolveApiUrl(): string | null {
@@ -70,29 +62,11 @@ export function useAssistantChat(): {
     current: () => void;
   };
   readonly companyEpochRef: AssistantCompanyEpochRef;
-  readonly conversationId: string | null;
-  readonly pendingMetaRef: { current: AssistantPendingHostMeta | null };
   readonly postChoice: (input: {
     readonly choiceId: string;
     readonly optionId: string;
   }) => Promise<ChoiceSelectResult>;
-  readonly postConfirm: (input: {
-    readonly conversationId: string;
-    readonly challengeId: string;
-  }) => Promise<AssistantHostInteractionResult>;
-  readonly postAbandon: (input: {
-    readonly conversationId: string;
-    readonly pendingId: string;
-    readonly expectedVersion: number;
-  }) => Promise<AssistantHostInteractionResult>;
-  readonly peekPending: () => Promise<
-    | {
-        readonly kind: "ok";
-        readonly pending: AssistantPendingHostMeta | null;
-      }
-    | { readonly kind: "unavailable" }
-  >;
-  readonly appendAssistantParts: (parts: readonly ResumeAppendPart[]) => void;
+  readonly appendAssistantParts: (parts: readonly ChoiceAppendPart[]) => void;
 } {
   const auth = useAuthSession();
   const apiClient = useApiClient();
@@ -112,7 +86,6 @@ export function useAssistantChat(): {
   const companyIdRef = useRef(activeCompanyId);
   companyIdRef.current = activeCompanyId;
   const conversationIdRef = useRef<string | null>(null);
-  const pendingMetaRef = useRef<AssistantPendingHostMeta | null>(null);
   const previousCompanyIdRef = useRef(activeCompanyId);
   const companyEpochRef = useRef(0);
 
@@ -160,7 +133,7 @@ export function useAssistantChat(): {
   );
 
   const appendAssistantParts = useCallback(
-    (parts: readonly ResumeAppendPart[]) => {
+    (parts: readonly ChoiceAppendPart[]) => {
       setMessages((current) => [
         ...current,
         {
@@ -194,75 +167,6 @@ export function useAssistantChat(): {
     [apiUrl],
   );
 
-  const postConfirm = useCallback(
-    (input: {
-      readonly conversationId: string;
-      readonly challengeId: string;
-    }) => {
-      if (apiUrl === null) {
-        return Promise.resolve({
-          status: "error" as const,
-          code: "NOT_READY",
-          message: "Confirm is not available.",
-        });
-      }
-      return postAssistantConfirm({
-        apiUrl,
-        getCookie: () => cookieRef.current(),
-        getCompanyId: () => companyIdRef.current,
-        conversationId: input.conversationId,
-        challengeId: input.challengeId,
-      });
-    },
-    [apiUrl],
-  );
-
-  const postAbandon = useCallback(
-    (input: {
-      readonly conversationId: string;
-      readonly pendingId: string;
-      readonly expectedVersion: number;
-    }) => {
-      if (apiUrl === null) {
-        return Promise.resolve({
-          status: "error" as const,
-          code: "NOT_READY",
-          message: "Abandon is not available.",
-        });
-      }
-      return postAssistantPendingAbandon({
-        apiUrl,
-        getCookie: () => cookieRef.current(),
-        getCompanyId: () => companyIdRef.current,
-        conversationId: input.conversationId,
-        pendingId: input.pendingId,
-        expectedVersion: input.expectedVersion,
-      });
-    },
-    [apiUrl],
-  );
-
-  const peekPendingMeta = useCallback(() => {
-    const conversationId = conversationIdRef.current;
-    if (conversationId === null || apiUrl === null) {
-      return Promise.resolve({ kind: "unavailable" as const });
-    }
-    return getAssistantPending({
-      apiUrl,
-      getCookie: () => cookieRef.current(),
-      getCompanyId: () => companyIdRef.current,
-      conversationId,
-    }).then((result) => {
-      if (result.kind !== "ok") {
-        return { kind: "unavailable" as const };
-      }
-      return {
-        kind: "ok" as const,
-        pending: pendingHostMetaFromPublic(result.pending),
-      };
-    });
-  }, [apiUrl]);
-
   useEffect(() => {
     const previous = previousCompanyIdRef.current;
     previousCompanyIdRef.current = activeCompanyId;
@@ -278,7 +182,6 @@ export function useAssistantChat(): {
           choiceResetRef.current();
         },
       });
-      pendingMetaRef.current = null;
     }
     if (
       activeCompanyId === null ||
@@ -323,17 +226,6 @@ export function useAssistantChat(): {
         }
         return peeked.envelope;
       },
-      peekPending: async ({ conversationId }) => {
-        if (apiUrl === null) {
-          return { kind: "unavailable" };
-        }
-        return getAssistantPending({
-          apiUrl,
-          getCookie: () => cookieRef.current(),
-          getCompanyId: () => companyIdRef.current,
-          conversationId,
-        });
-      },
     })
       .then((result) => {
         if (cancelled || companyEpochRef.current !== epoch) {
@@ -347,7 +239,6 @@ export function useAssistantChat(): {
           return;
         }
         conversationIdRef.current = result.conversationId;
-        pendingMetaRef.current = pendingHostMetaFromPublic(result.pending);
         setMessagesRef.current(
           result.messages.map((message) => ({
             id: message.id,
@@ -419,12 +310,7 @@ export function useAssistantChat(): {
     confirmationResetRef,
     choiceResetRef,
     companyEpochRef,
-    conversationId: conversationIdRef.current,
-    pendingMetaRef,
     postChoice,
-    postConfirm,
-    postAbandon,
-    peekPending: peekPendingMeta,
     appendAssistantParts,
   };
 }

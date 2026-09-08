@@ -268,7 +268,7 @@ function wrapDomainExecute(
         );
         if (hooks.openPending !== undefined && hooks.choiceBind !== undefined) {
           const stagedId = state.executionIdByToolCallId.get(toolCallId);
-          await hooks.openPending(
+          const opened = await hooks.openPending(
             confirmationPendingRecord({
               challengeId: confirmation.challengeId,
               bind: hooks.choiceBind,
@@ -281,6 +281,19 @@ function wrapDomainExecute(
               ...(stagedId !== undefined ? { executionId: stagedId } : {}),
             }),
           );
+          if (!opened) {
+            state.runs.push({
+              actionName,
+              toolCallId,
+              resultIds: [],
+              outcome: "error",
+            });
+            return {
+              status: "error",
+              code: "INTERNAL",
+              message: hostInternalToolErrorMessage(hooks.locale),
+            };
+          }
         }
         state.runs.push({
           actionName,

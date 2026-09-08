@@ -9,6 +9,7 @@ import { PENDING_REPLACE_TOOL_NAME } from "../pending.js";
 import {
   createPendingReplaceTool,
   mapPendingReplaceFacadeInput,
+  pendingReplaceFacadeSchema,
   pendingReplaceSchemaMentionsHostSecrets,
   PENDING_REPLACE_DESCRIPTION,
 } from "./pending-replace.js";
@@ -72,5 +73,16 @@ describe("pending_replace host tool", () => {
         },
       ],
     });
+  });
+
+  it("refuses an unknown actionName with no named façade schema", () => {
+    expect(() => pendingReplaceFacadeSchema("catalog.archiveProduct")).toThrow(
+      /no façade schema/,
+    );
+    expect(() =>
+      mapPendingReplaceFacadeInput("catalog.archiveProduct", { id: customerId }),
+    ).toThrow(/no façade schema/);
+    const src = readFileSync(join(here, "pending-replace.ts"), "utf8");
+    expect(src).not.toContain("looseObject");
   });
 });

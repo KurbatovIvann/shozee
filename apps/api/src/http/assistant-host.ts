@@ -23,6 +23,7 @@ import {
   executionAttemptKey,
   extractUuidResultIds,
   filterStaffAiTools,
+  isPendingReplaceActionName,
   mapPendingReplaceFacadeInput,
   PENDING_REPLACE_TOOL_NAME,
   pendingChoiceRecordFromChoiceRecord,
@@ -678,7 +679,9 @@ async function runPhaseB(options: {
       return refuseHostPendingOpen(options.locale);
     },
     checkpoint,
-    ...(open.kind === "found" && open.record.status === "open"
+    ...(open.kind === "found" &&
+    open.record.status === "open" &&
+    isPendingReplaceActionName(open.record.actionName)
       ? {
           pendingReplace: {
             actionName: open.record.actionName,
@@ -802,19 +805,61 @@ async function applyHostPendingReplace(options: {
     });
   } else {
     const canonical = choiceCanonicalCreateInputSchema.parse(mapped);
+    const action = requireImplementation(
+      options.runtime.registry,
+      options.record.actionName,
+    );
+    let extras = undefined as
+      | ReturnType<typeof catalogPickerConflictExtrasFromError>
+      | undefined;
+    try {
+      await executeAction(options.runtime.pipeline, {
+        action,
+        input: canonical,
+        request: staffRequest({
+          requestId: options.runtime.requestId,
+          clientIp: options.runtime.clientIp,
+          aiTraceId: options.runtime.requestId,
+          toolCallId: options.record.toolCallId,
+          idempotencyKey: executionAttemptKey(
+            options.bind.conversationId,
+            staged.executionId,
+          ),
+        }),
+        principal: options.staffPrincipal,
+      });
+    } catch (error) {
+      extras = catalogPickerConflictExtrasFromError(error);
+      if (extras === undefined) {
+        throw error;
+      }
+    }
+    if (extras === undefined) {
+      throw new CoreInvariantError(
+        "pending_replace choice probe must not execute the handler",
+      );
+    }
     const nextId = randomUUID();
-    next = {
-      ...options.record,
-      id: nextId,
-      version: options.record.version + 1,
-      status: "open",
+    const rebuilt = choiceRecordFromPickerConflict({
+      choiceId: nextId,
+      bind: options.bind,
       canonicalInput: canonical,
+      extras,
+      ...(options.record.locale !== undefined
+        ? { locale: options.record.locale }
+        : {}),
+    });
+    if (rebuilt === undefined) {
+      throw new CoreInvariantError(
+        "pending_replace choice probe produced no picker",
+      );
+    }
+    next = pendingChoiceRecordFromChoiceRecord(rebuilt, {
+      actionName: options.record.actionName,
+      toolCallId: options.record.toolCallId,
+      version: options.record.version + 1,
       executionId: staged.executionId,
-      envelope: {
-        ...options.record.envelope,
-        challengeId: nextId,
-      },
-    };
+    });
   }
   const replaced = await options.runtime.pendingStore.replace({
     id: options.record.id,
@@ -1695,7 +1740,9 @@ export async function executeStaffAssistantHostChat(
             return refuseHostPendingOpen(locale);
           },
           checkpoint,
-          ...(open.kind === "found" && open.record.status === "open"
+          ...(open.kind === "found" &&
+          open.record.status === "open" &&
+          isPendingReplaceActionName(open.record.actionName)
             ? {
                 pendingReplace: {
                   actionName: open.record.actionName,

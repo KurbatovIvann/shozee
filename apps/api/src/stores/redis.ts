@@ -39,7 +39,9 @@ import {
 } from "./budget.js";
 import {
   CONVERSATION_LOCK_TTL_MS,
+  CONVERSATION_LOCK_WAIT_MS,
   conversationLockRedisKey as conversationLockKey,
+  conversationLockRenewEveryMs,
   type ConversationLock,
 } from "./conversation-lock.js";
 import type {
@@ -433,6 +435,42 @@ end
 return 0
 `;
 
+const CONVERSATION_LOCK_RENEW_LUA = `
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('PEXPIRE', KEYS[1], ARGV[2])
+end
+return 0
+`;
+
+/**
+ * ioredis historically returns the string OK. Redis 8 Lua SET NX is
+ * truthy (boolean/integer), not always the string OK — match PENDING_OPEN_LUA.
+ */
+export function redisSetNxSucceeded(result: unknown): boolean {
+  return result === "OK" || result === true || result === 1;
+}
+
+type ConversationLockRedis = {
+  set(
+    key: string,
+    value: string,
+    px: "PX",
+    ttlMs: number,
+    nx: "NX",
+  ): Promise<unknown>;
+  eval(
+    script: string,
+    numKeys: number,
+    ...args: Array<string | number>
+  ): Promise<unknown>;
+};
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 export function createRedisSecondaryStorage(redis: Redis): SecondaryStorage {
   return {
     get(key) {
@@ -650,32 +688,52 @@ export function createRedisChoiceStore(
 }
 
 export function createRedisConversationLock(
-  redis: Pick<Redis, "set" | "eval">,
-  options?: { readonly ttlMs?: number },
+  redis: ConversationLockRedis,
+  options?: {
+    readonly ttlMs?: number;
+    readonly waitMs?: number;
+    readonly renewEveryMs?: number;
+    readonly retryDelayMs?: number;
+  },
 ): ConversationLock {
   const ttlMs = options?.ttlMs ?? CONVERSATION_LOCK_TTL_MS;
+  const waitMs = options?.waitMs ?? CONVERSATION_LOCK_WAIT_MS;
+  const renewEveryMs =
+    options?.renewEveryMs ?? conversationLockRenewEveryMs(ttlMs);
+  const retryDelayMs = options?.retryDelayMs ?? 15;
   return {
     async withLock(conversationId, work) {
       const token = randomUUID();
       const key = conversationLockKey(conversationId);
-      const deadline = Date.now() + 10_000;
+      const deadline = Date.now() + waitMs;
       let acquired = false;
-      while (Date.now() < deadline) {
-        const ok = await redis.set(key, token, "PX", ttlMs, "NX");
-        if (ok === "OK") {
+      while (true) {
+        const result = await redis.set(key, token, "PX", ttlMs, "NX");
+        if (redisSetNxSucceeded(result)) {
           acquired = true;
           break;
         }
-        await new Promise((resolve) => {
-          setTimeout(resolve, 15);
-        });
+        if (Date.now() >= deadline) {
+          break;
+        }
+        await sleep(retryDelayMs);
       }
       if (!acquired) {
         throw new RedisStoreError("conversation lock timed out");
       }
+      const renew = setInterval(() => {
+        void redis.eval(
+          CONVERSATION_LOCK_RENEW_LUA,
+          1,
+          key,
+          token,
+          String(ttlMs),
+        );
+      }, renewEveryMs);
       try {
         return await work();
       } finally {
+        clearInterval(renew);
         await redis.eval(CONVERSATION_LOCK_RELEASE_LUA, 1, key, token);
       }
     },

@@ -4,6 +4,10 @@
  * Not a domain action handler, not an ADR-0033 façade, not a second
  * `orders.create` execute. The host injects pending id + expected
  * version; the model schema must not include them.
+ *
+ * Fail closed unless `actionName` has a named façade schema — the
+ * pause-capable exposed writes this host can open (choice or
+ * confirmation). No `looseObject` passthrough.
  */
 import { CoreInvariantError } from "@showzy/core/errors";
 import { tool, type Tool } from "ai";
@@ -18,41 +22,57 @@ import {
 
 export { PENDING_REPLACE_TOOL_NAME };
 
-const deleteCustomerReplaceSchema = z.strictObject({
+const idReplaceSchema = z.strictObject({
   id: z.uuid(),
 });
+
+const requestSignReplaceSchema = z.strictObject({
+  documentId: z.uuid(),
+});
+
+const PENDING_REPLACE_FACADE_SCHEMAS = {
+  [ORDERS_CREATE_ACTION_NAME]: ordersCreateInputSchema,
+  "customers.deleteCustomer": idReplaceSchema,
+  "customers.deleteGroup": idReplaceSchema,
+  "customers.deleteCounterparty": idReplaceSchema,
+  "pricing.deletePriceList": idReplaceSchema,
+  "documents.requestSign": requestSignReplaceSchema,
+} as const;
+
+type PendingReplaceActionName = keyof typeof PENDING_REPLACE_FACADE_SCHEMAS;
+
+export const PENDING_REPLACE_ACTION_NAMES = Object.freeze(
+  Object.keys(PENDING_REPLACE_FACADE_SCHEMAS),
+);
+
+export function isPendingReplaceActionName(
+  actionName: string,
+): actionName is PendingReplaceActionName {
+  return Object.hasOwn(PENDING_REPLACE_FACADE_SCHEMAS, actionName);
+}
 
 export const PENDING_REPLACE_DESCRIPTION =
   "Amend the current open pending write (quantity, customer, or other args of THIS job). Do not send pending id or version. Do not call a second create/delete while a pending card is open. Independent new writes are refused — finish, abandon, or replace this pending first.";
 
 export function pendingReplaceFacadeSchema(actionName: string): z.ZodType {
-  if (actionName === ORDERS_CREATE_ACTION_NAME) {
-    return ordersCreateInputSchema;
+  if (!isPendingReplaceActionName(actionName)) {
+    throw new CoreInvariantError(
+      `pending_replace has no façade schema for ${actionName}`,
+    );
   }
-  if (actionName === "customers.deleteCustomer") {
-    return deleteCustomerReplaceSchema;
-  }
-  return z.looseObject({});
+  return PENDING_REPLACE_FACADE_SCHEMAS[actionName];
 }
 
 export function mapPendingReplaceFacadeInput(
   actionName: string,
   facadeInput: unknown,
 ): unknown {
+  const schema = pendingReplaceFacadeSchema(actionName);
+  const parsed = schema.parse(facadeInput);
   if (actionName === ORDERS_CREATE_ACTION_NAME) {
     return mapOrdersCreateInput(ordersCreateInputSchema.parse(facadeInput));
   }
-  if (actionName === "customers.deleteCustomer") {
-    return deleteCustomerReplaceSchema.parse(facadeInput);
-  }
-  if (
-    typeof facadeInput === "object" &&
-    facadeInput !== null &&
-    !Array.isArray(facadeInput)
-  ) {
-    return facadeInput;
-  }
-  throw new CoreInvariantError("pending_replace input must be an object");
+  return parsed;
 }
 
 export interface PendingReplaceHostApply {

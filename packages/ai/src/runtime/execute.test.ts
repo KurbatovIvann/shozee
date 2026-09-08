@@ -280,4 +280,44 @@ describe("wrapHostSequentialExecute", () => {
       }),
     ]);
   });
+
+  it("returns a structured error when openPending is false", async () => {
+    const execute = vi.fn(() =>
+      Promise.reject(
+        new ConfirmationRequiredError({
+          challengeId,
+          summary: "Delete this archived customer.",
+          expiresAt: "2026-09-01T12:00:00.000Z",
+        }),
+      ),
+    );
+    const state = emptyHostState();
+    const wrapped = wrapHostSequentialExecute(execute, state, {
+      choiceBind: {
+        actorId: "anna",
+        companyId: "22222222-2222-4222-8222-222222222222",
+        conversationId: "11111111-1111-4111-8111-111111111111",
+      },
+      openPending: () => Promise.resolve(false),
+    });
+    const output = await wrapped(
+      "customers.deleteCustomer",
+      { id: customerId },
+      { toolCallId: "call-delete" },
+    );
+    expect(output).toMatchObject({
+      status: "error",
+      code: "INTERNAL",
+    });
+    expect(output).not.toMatchObject({
+      status: "confirmation_required",
+    });
+    expect(state.paused).toBe(false);
+    expect(state.runs).toEqual([
+      expect.objectContaining({
+        actionName: "customers.deleteCustomer",
+        outcome: "error",
+      }),
+    ]);
+  });
 });

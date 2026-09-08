@@ -98,6 +98,20 @@ export type AssistantHostInteractionResult = z.output<
   typeof assistantHostInteractionResultSchema
 >;
 
+/**
+ * Card hide after abandon is only a successful host transition: `ok`,
+ * or a real server `expired` (CAS miss on a mounted host). Peek
+ * unavailable and HTTP `error` keep the card.
+ */
+export function shouldHidePendingCardAfterAbandon(
+  result: "skipped" | AssistantHostInteractionResult,
+): boolean {
+  return (
+    result !== "skipped" &&
+    (result.status === "ok" || result.status === "expired")
+  );
+}
+
 export const assistantPendingPeekResultSchema = z.strictObject({
   pending: publicPendingSchema.nullable(),
 });

@@ -314,9 +314,11 @@ export {
 } from "./pending.js";
 export {
   createPendingReplaceTool,
+  isPendingReplaceActionName,
   mapPendingReplaceFacadeInput,
   pendingReplaceFacadeSchema,
   pendingReplaceSchemaMentionsHostSecrets,
+  PENDING_REPLACE_ACTION_NAMES,
   PENDING_REPLACE_DESCRIPTION,
   type PendingReplaceHostApply,
 } from "./host-tools/pending-replace.js";

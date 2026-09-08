@@ -16,15 +16,19 @@ import { Redis } from "ioredis";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { hmacBetterAuthConsumeKey } from "./auth-ip-hmac.js";
+import { conversationLockRedisKey } from "./conversation-lock.js";
 import {
   createRedisAiBudgetStore,
   createRedisAuthRateLimitStore,
   createRedisChoiceStore,
   createRedisConfirmationStore,
+  createRedisConversationLock,
   createRedisOtpSendStore,
   createRedisPendingStore,
   createRedisRateLimitStore,
   createRedisSecondaryStorage,
+  RedisStoreError,
+  redisSetNxSucceeded,
 } from "./redis.js";
 
 function fakeClock(startMs = 1_000_000): {
@@ -569,5 +573,147 @@ describe("createRedisPendingStore", () => {
       optionId: optionLemon,
     });
     expect(nextClaim.kind).toBe("claimed");
+  });
+});
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+describe("createRedisConversationLock", () => {
+  it("treats Redis 8 SET NX truthy status as success, matching PENDING_OPEN_LUA", async () => {
+    expect(redisSetNxSucceeded("OK")).toBe(true);
+    expect(redisSetNxSucceeded(true)).toBe(true);
+    expect(redisSetNxSucceeded(1)).toBe(true);
+    expect(redisSetNxSucceeded(null)).toBe(false);
+    expect(redisSetNxSucceeded(undefined)).toBe(false);
+    expect(redisSetNxSucceeded("QUEUED")).toBe(false);
+
+    const nx = await redis.set(
+      `lock:setnx:${randomUUID()}`,
+      "token",
+      "PX",
+      1_000,
+      "NX",
+    );
+    expect(redisSetNxSucceeded(nx)).toBe(true);
+
+    let setCalls = 0;
+    const stub = {
+      set: () => {
+        setCalls += 1;
+        return Promise.resolve(true);
+      },
+      eval: () => Promise.resolve(1),
+    };
+    const lock = createRedisConversationLock(stub, {
+      ttlMs: 1_000,
+      waitMs: 0,
+      renewEveryMs: 10_000,
+    });
+    await expect(
+      lock.withLock(randomUUID(), () => Promise.resolve("held")),
+    ).resolves.toBe("held");
+    expect(setCalls).toBe(1);
+
+    const integerStub = {
+      set: () => Promise.resolve(1),
+      eval: () => Promise.resolve(1),
+    };
+    await expect(
+      createRedisConversationLock(integerStub, {
+        ttlMs: 1_000,
+        waitMs: 0,
+        renewEveryMs: 10_000,
+      }).withLock(randomUUID(), () => Promise.resolve("held")),
+    ).resolves.toBe("held");
+  });
+
+  it("serializes overlapping work so only one holder is inside", async () => {
+    const lock = createRedisConversationLock(redis, {
+      ttlMs: 5_000,
+      waitMs: 2_000,
+      renewEveryMs: 1_000,
+      retryDelayMs: 10,
+    });
+    const conversationId = randomUUID();
+    let inside = 0;
+    let maxInside = 0;
+    const hold = async (label: string) => {
+      return lock.withLock(conversationId, async () => {
+        inside += 1;
+        maxInside = Math.max(maxInside, inside);
+        await sleep(80);
+        inside -= 1;
+        return label;
+      });
+    };
+    const [first, second] = await Promise.all([hold("a"), hold("b")]);
+    expect([first, second].sort()).toEqual(["a", "b"]);
+    expect(maxInside).toBe(1);
+  });
+
+  it("renews the lease so work outliving ttlMs keeps the mutex", async () => {
+    const lock = createRedisConversationLock(redis, {
+      ttlMs: 250,
+      waitMs: 200,
+      renewEveryMs: 60,
+      retryDelayMs: 10,
+    });
+    const conversationId = randomUUID();
+    const key = conversationLockRedisKey(conversationId);
+    let otherAcquired = false;
+    const held = lock.withLock(conversationId, async () => {
+      await sleep(400);
+      const remaining = await redis.pttl(key);
+      expect(remaining).toBeGreaterThan(0);
+      const other = createRedisConversationLock(redis, {
+        ttlMs: 250,
+        waitMs: 0,
+        renewEveryMs: 60,
+      });
+      await expect(
+        other.withLock(conversationId, async () => {
+          otherAcquired = true;
+          return "stolen";
+        }),
+      ).rejects.toBeInstanceOf(RedisStoreError);
+      return "ok";
+    });
+    expect(await held).toBe("ok");
+    expect(otherAcquired).toBe(false);
+  });
+
+  it("waiter acquires after the holder releases", async () => {
+    const lock = createRedisConversationLock(redis, {
+      ttlMs: 5_000,
+      waitMs: 2_000,
+      renewEveryMs: 1_000,
+      retryDelayMs: 10,
+    });
+    const conversationId = randomUUID();
+    const order: string[] = [];
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const first = lock.withLock(conversationId, async () => {
+      order.push("holder");
+      await firstGate;
+      return "a";
+    });
+    await sleep(30);
+    const second = lock.withLock(conversationId, async () => {
+      order.push("waiter");
+      return "b";
+    });
+    await sleep(40);
+    expect(order).toEqual(["holder"]);
+    releaseFirst();
+    expect(await first).toBe("a");
+    expect(await second).toBe("b");
+    expect(order).toEqual(["holder", "waiter"]);
   });
 });

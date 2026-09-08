@@ -66,7 +66,10 @@ import {
   createMemoryAuthRateLimitStore,
   createMemorySecondaryStorage,
 } from "../stores/memory.js";
-import { createMemoryConversationLock } from "../stores/conversation-lock.js";
+import {
+  createMemoryConversationLock,
+  type ConversationLock,
+} from "../stores/conversation-lock.js";
 import {
   createMemoryPendingStore,
   type StaffAssistantPendingStore,
@@ -208,12 +211,50 @@ type Harness = {
   ) => Promise<z.output<TOutput>>;
 };
 
+function countingConversationLock(inner: ConversationLock): {
+  readonly lock: ConversationLock;
+  readonly maxConcurrent: () => number;
+} {
+  let current = 0;
+  let max = 0;
+  return {
+    lock: {
+      withLock(conversationId, work) {
+        return inner.withLock(conversationId, async () => {
+          current += 1;
+          max = Math.max(max, current);
+          try {
+            return await work();
+          } finally {
+            current -= 1;
+          }
+        });
+      },
+    },
+    maxConcurrent: () => max,
+  };
+}
+
+function pendingBindFor(conversationId: string): {
+  readonly actorId: string;
+  readonly companyId: string;
+  readonly conversationId: string;
+} {
+  return {
+    actorId: kitIdentities.users.anna,
+    companyId: kitIdentities.companies.a,
+    conversationId,
+  };
+}
+
 function harness(options?: {
   readonly model?: MockLanguageModelV3;
   readonly pendingStore?: StaffAssistantPendingStore;
+  readonly conversationLock?: ConversationLock;
+  readonly confirmation?: ReturnType<typeof countingConfirmationStore>;
 }): Harness {
   const pendingStore = options?.pendingStore ?? createMemoryPendingStore();
-  const confirmation = countingConfirmationStore();
+  const confirmation = options?.confirmation ?? countingConfirmationStore();
   const pipeline = {
     ...kit.pipeline,
     hooks: {
@@ -226,7 +267,8 @@ function harness(options?: {
     registry,
     pipeline,
     pendingStore,
-    conversationLock: createMemoryConversationLock(),
+    conversationLock:
+      options?.conversationLock ?? createMemoryConversationLock(),
     model: options?.model ?? silentModel(),
     getPeerAddress: () => REAL_CLIENT,
   });
@@ -663,17 +705,11 @@ describe("unpublished staff assistant host HTTP", () => {
   });
 
   it("pending_replace supersedes the old confirmation; stale tap is expired", async () => {
+    const confirmation = countingConfirmationStore();
+    const pendingStore = createMemoryPendingStore();
     const h = harness({
-      model: new MockLanguageModelV3({
-        doStream: [
-          mockToolCallStream(
-            "call-replace",
-            PENDING_REPLACE_TOOL_NAME,
-            JSON.stringify({ id: "00000000-0000-4000-8000-000000000000" }),
-          ),
-          mockTextStream("Updated this delete."),
-        ],
-      }),
+      pendingStore,
+      confirmation,
     });
     const token = await insertBearer(kit, kitIdentities.users.anna);
     const conversation = await h.invoke(createConversation, {
@@ -701,7 +737,8 @@ describe("unpublished staff assistant host HTTP", () => {
           mockTextStream("Quantity unchanged; this is the new delete."),
         ],
       }),
-      pendingStore: h.pendingStore,
+      pendingStore,
+      confirmation,
     });
     const replaceChat = await hostRequest(replaceHarness.app, {
       method: "POST",
@@ -722,6 +759,8 @@ describe("unpublished staff assistant host HTTP", () => {
     }
     expect(replaced.pending?.kind).toBe("confirmation");
     expect(replaced.pending?.id).not.toBe(seeded.challengeId);
+    const successorId = replaced.pending?.id;
+    expect(successorId).toEqual(expect.any(String));
     const stale = await hostRequest(h.app, {
       method: "POST",
       path: ASSISTANT_CONFIRM_PATH,
@@ -735,6 +774,145 @@ describe("unpublished staff assistant host HTTP", () => {
       assistantHostInteractionResultSchema.parse(await stale.json()),
     ).toEqual({ status: "expired" });
     expect(await customerRow(seeded.customerId)).toBeDefined();
+    expect(await customerRow(other.id)).toBeDefined();
+
+    const confirmHarness = harness({
+      model: listThenSpeakModel(),
+      pendingStore,
+      confirmation,
+    });
+    const consumesBefore = confirmHarness.consumeCount();
+    const successor = await hostRequest(confirmHarness.app, {
+      method: "POST",
+      path: ASSISTANT_CONFIRM_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        challengeId: successorId,
+      },
+    });
+    const successorBody = assistantHostInteractionResultSchema.parse(
+      await successor.json(),
+    );
+    expect(successorBody.status).toBe("ok");
+    expect(await customerRow(other.id)).toBeUndefined();
+    expect(await customerRow(seeded.customerId)).toBeDefined();
+    expect(confirmHarness.consumeCount()).toBeGreaterThan(consumesBefore);
+    const replay = await hostRequest(confirmHarness.app, {
+      method: "POST",
+      path: ASSISTANT_CONFIRM_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        challengeId: successorId,
+      },
+    });
+    expect(
+      assistantHostInteractionResultSchema.parse(await replay.json()).status,
+    ).toBe("ok");
+    expect(await customerRow(other.id)).toBeUndefined();
+  });
+
+  it("pending_replace rebuilds the choice picker for a qty change; stale tap is expired", async () => {
+    const h = harness();
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Replace choice qty",
+    });
+    await h.invoke(
+      appendUserMessage,
+      { conversationId: conversation.id, body: "Create the cake order" },
+      { idempotencyKey: attemptKey("message", conversation.id, randomUUID()) },
+    );
+    const customer = await h.invoke(createCustomer, {
+      name: "Qty Buyer",
+      phone: nextPhone(),
+    });
+    const product = await h.invoke(createProduct, {
+      name: "Qty Cake",
+      basePriceMinor: "1500",
+      variants: [{ name: "A" }, { name: "B" }],
+    });
+    const { record, optionByLabel } = await seedChoicePending(h, {
+      conversationId: conversation.id,
+      customerId: customer.id,
+      product,
+    });
+    const beforeOrders = await orderCount();
+    const staleOptionId = optionByLabel.get("A");
+    expect(staleOptionId).toEqual(expect.any(String));
+    const replaceHarness = harness({
+      model: new MockLanguageModelV3({
+        doStream: [
+          mockToolCallStream(
+            "call-replace",
+            PENDING_REPLACE_TOOL_NAME,
+            JSON.stringify({
+              customerId: customer.id,
+              items: [
+                {
+                  productId: product.productId,
+                  quantityMilli: "3000",
+                },
+              ],
+            }),
+          ),
+          mockTextStream("Quantity is now three."),
+        ],
+      }),
+      pendingStore: h.pendingStore,
+    });
+    const replaceChat = await hostRequest(replaceHarness.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHAT_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        text: "Make it three of this cake instead",
+        locale: "en",
+      },
+    });
+    const replaced = assistantHostInteractionResultSchema.parse(
+      await replaceChat.json(),
+    );
+    expect(replaced.status).toBe("ok");
+    if (replaced.status !== "ok") {
+      return;
+    }
+    expect(replaced.pending?.kind).toBe("choice");
+    expect(replaced.pending?.id).not.toBe(record.id);
+    expect(replaced.pending?.version).toBe(record.version + 1);
+    const peeked = await h.pendingStore.peekOpen({
+      conversationId: conversation.id,
+      bind: pendingBindFor(conversation.id),
+    });
+    expect(peeked.kind).toBe("found");
+    if (peeked.kind !== "found" || peeked.record.kind !== "choice") {
+      throw new Error("expected rebuilt choice pending");
+    }
+    expect(peeked.record.canonicalInput.items[0]?.quantity.milli).toBe("3000");
+    expect(peeked.record.executionId).not.toBe(record.executionId);
+    expect(peeked.record.version).toBe(record.version + 1);
+    expect(Object.keys(peeked.record.optionMap).sort()).not.toEqual(
+      Object.keys(record.optionMap).sort(),
+    );
+    expect(peeked.record.target).toMatchObject({
+      productId: product.productId,
+    });
+    const stale = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.id,
+        optionId: staleOptionId,
+      },
+    });
+    expect(
+      assistantHostInteractionResultSchema.parse(await stale.json()),
+    ).toEqual({ status: "expired" });
+    expect(await orderCount()).toBe(beforeOrders);
   });
 
   it("confirm executes once, consumes the core challenge, and may return list cards", async () => {
@@ -1099,8 +1277,10 @@ describe("unpublished staff assistant host HTTP", () => {
   });
 
   it("claimed confirm wins over concurrent chat", async () => {
+    const counted = countingConversationLock(createMemoryConversationLock());
     const h = harness({
       model: silentModel("The confirmation is still open."),
+      conversationLock: counted.lock,
     });
     const token = await insertBearer(kit, kitIdentities.users.anna);
     const conversation = await h.invoke(createConversation, {
@@ -1139,9 +1319,16 @@ describe("unpublished staff assistant host HTTP", () => {
     const chatBody = assistantHostInteractionResultSchema.parse(
       await chat.json(),
     );
-    expect(confirmBody.status).toBe("ok");
-    expect(chatBody.status).toBe("ok");
+    expect(counted.maxConcurrent()).toBe(1);
+    expect([confirmBody.status, chatBody.status]).toEqual(["ok", "ok"]);
     expect(await customerRow(seeded.customerId)).toBeUndefined();
+    const peek = await hostRequest(h.app, {
+      method: "GET",
+      path: `${ASSISTANT_PENDING_PATH}?conversationId=${conversation.id}`,
+      token,
+    });
+    const peeked = assistantPendingPeekResultSchema.parse(await peek.json());
+    expect(peeked.pending).toBeNull();
   });
 
   it("choice Phase B can call orders_list_* after create", async () => {
