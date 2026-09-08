@@ -305,6 +305,26 @@ describe("role permission defaults seed", () => {
       ),
     ).toBe(false);
     expect(
+      stored.some(
+        (row) => row.role === "admin" && row.permission === "companies:view",
+      ),
+    ).toBe(true);
+    expect(
+      stored.some(
+        (row) => row.role === "manager" && row.permission === "companies:view",
+      ),
+    ).toBe(true);
+    expect(
+      stored.some(
+        (row) => row.role === "employee" && row.permission === "companies:view",
+      ),
+    ).toBe(true);
+    expect(
+      stored.some(
+        (row) => row.role === "owner" && row.permission === "companies:view",
+      ),
+    ).toBe(false);
+    expect(
       new Set(stored.map((row) => `${row.role}:${row.permission}`)),
     ).toEqual(
       new Set(

@@ -1,5 +1,6 @@
 /**
- * Staff internal seller facts (SHO-230 / feature SHO-227) so
+ * Staff internal seller facts (SHO-230 / feature SHO-227; SHO-537
+ * aligns the permission with `companies.get`) so
  * `documents.createFromOrder` can snapshot numbering prefix + legal
  * without `settings:payments`. Mechanical choices copied from
  * `companies.get` / `catalog.getProductOrderFacts`:
@@ -24,12 +25,12 @@ export const getSellerFactsOutputSchema = companyViewSchema;
 export const getSellerFactsContract = defineActionContract({
   name: "companies.getSellerFacts",
   description:
-    "Return the staff member's active company identity (id, trade name, slug, numbering prefix) and seller legal requisites for document snapshots. Legal is null when the company has no legal-info row yet. Company id is never input; missing and foreign membership fail with the same permission denial and do not leak another company's legal row. Requires documents:view, not settings:payments.",
+    "Return the staff member's active company identity (id, trade name, slug, numbering prefix) and seller legal requisites for document snapshots. Legal is null when the company has no legal-info row yet. Company id is never input; missing companies:view, missing membership, and foreign membership fail with the same permission denial and do not leak another company's legal row. Requires companies:view, not settings:payments.",
   principal: "staff",
   transport: "internal",
   input: getSellerFactsInputSchema,
   output: getSellerFactsOutputSchema,
-  permissions: ["documents:view"],
+  permissions: ["companies:view"],
   aiExposure: "internal",
   risk: "read",
   requiresConfirmation: false,

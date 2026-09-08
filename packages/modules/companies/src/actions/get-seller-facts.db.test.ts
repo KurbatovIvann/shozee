@@ -25,6 +25,7 @@ const clerks = {
   manager: randomUUID(),
   employee: randomUUID(),
   denied: randomUUID(),
+  viewWithoutDocuments: randomUUID(),
 };
 
 const fixtures = {
@@ -42,9 +43,9 @@ beforeAll(async () => {
   kit = await createTestKit();
 
   await kit.db.runtime.db.insert(rolePermissionDefaults).values([
-    { role: "admin", permission: "documents:view" },
-    { role: "manager", permission: "documents:view" },
-    { role: "employee", permission: "documents:view" },
+    { role: "admin", permission: "companies:view" },
+    { role: "manager", permission: "companies:view" },
+    { role: "employee", permission: "companies:view" },
   ]);
 
   await kit.db.runtime.db.insert(companies).values({
@@ -96,6 +97,11 @@ beforeAll(async () => {
       name: "Denied employee",
       email: "denied@companies-seller-facts.test",
     },
+    {
+      id: clerks.viewWithoutDocuments,
+      name: "View without documents",
+      email: "view-no-docs@companies-seller-facts.test",
+    },
   ]);
   await kit.db.runtime.db.insert(companyMembers).values([
     {
@@ -113,6 +119,12 @@ beforeAll(async () => {
     {
       companyId: kitIdentities.companies.a,
       userId: clerks.denied,
+      role: "employee",
+      permissions: { granted: [], denied: ["companies:view"] },
+    },
+    {
+      companyId: fixtures.companyWithLegal,
+      userId: clerks.viewWithoutDocuments,
       role: "employee",
       permissions: { granted: [], denied: ["documents:view"] },
     },
@@ -180,7 +192,7 @@ describe("companies.getSellerFacts", () => {
     expect(JSON.stringify(result)).not.toContain(foreignIban);
   });
 
-  it("allows manager and employee with documents:view without settings:payments", async () => {
+  it("allows manager and employee with companies:view without settings:payments", async () => {
     await expect(
       kit.invoke(
         getSellerFacts,
@@ -205,7 +217,29 @@ describe("companies.getSellerFacts", () => {
     });
   });
 
-  it("denies staff whose membership lacks documents:view", async () => {
+  it("returns legal including IBAN to an employee with companies:view and documents:view denied", async () => {
+    const result = await kit.invoke(
+      getSellerFacts,
+      {},
+      {
+        userId: clerks.viewWithoutDocuments,
+        companyId: fixtures.companyWithLegal,
+      },
+    );
+    expect(result).toMatchObject({
+      id: fixtures.companyWithLegal,
+      prefix: "LG",
+      legal: {
+        companyType: "tov",
+        legalName: "ТОВ Альфа",
+        edrpou: sampleEdrpou,
+        iban: fixtureIban,
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain(foreignIban);
+  });
+
+  it("denies staff whose membership lacks companies:view", async () => {
     await expect(
       kit.invoke(
         getSellerFacts,

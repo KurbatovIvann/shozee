@@ -141,6 +141,7 @@ const clerks = {
   noCustomers: randomUUID(),
   employee: randomUUID(),
   noDocuments: randomUUID(),
+  noCompaniesView: randomUUID(),
 };
 
 let kit: TestKit;
@@ -538,6 +539,7 @@ beforeAll(async () => {
     { role: "employee", permission: "pricing:view" },
     { role: "employee", permission: "customers:view" },
     { role: "employee", permission: "documents:view" },
+    { role: "employee", permission: "companies:view" },
   ]);
 
   await kit.db.runtime.db.insert(priceLists).values([
@@ -957,6 +959,11 @@ beforeAll(async () => {
       name: "No documents view",
       email: "nodocuments@orders-kit.test",
     },
+    {
+      id: clerks.noCompaniesView,
+      name: "No companies view",
+      email: "nocompaniesview@orders-kit.test",
+    },
   ]);
   await kit.db.runtime.db.insert(companyMembers).values([
     {
@@ -1006,6 +1013,12 @@ beforeAll(async () => {
       userId: clerks.noDocuments,
       role: "employee",
       permissions: { granted: [], denied: ["documents:view"] },
+    },
+    {
+      companyId: fixtures.numberingA,
+      userId: clerks.noCompaniesView,
+      role: "employee",
+      permissions: { granted: [], denied: ["companies:view"] },
     },
   ]);
 });
@@ -1440,14 +1453,27 @@ describe("orders.create / confirm / get", () => {
     expect(created.orderNumber).not.toBe("1");
   });
 
-  it("denies create numbering when the staff caller lacks documents:view", async () => {
+  it("lets an employee with companies:view create a numbered order without documents:view", async () => {
+    const created = await kit.invoke(
+      createOrder,
+      createById(fixtures.numberingCustomerA, [
+        { productId: fixtures.numberingProductA, quantityMilli: "1000" },
+      ]),
+      { userId: clerks.noDocuments, companyId: fixtures.numberingA },
+    );
+    expect(created.orderNumber.startsWith("N4-")).toBe(true);
+    expect(created.orderNumber).toMatch(/^N4-[0-9A-Z]+$/);
+    expect(created.orderNumber).not.toBe("1");
+  });
+
+  it("denies create numbering when the staff caller lacks companies:view", async () => {
     await expect(
       kit.invoke(
         createOrder,
         createById(fixtures.numberingCustomerA, [
           { productId: fixtures.numberingProductA, quantityMilli: "1000" },
         ]),
-        { userId: clerks.noDocuments, companyId: fixtures.numberingA },
+        { userId: clerks.noCompaniesView, companyId: fixtures.numberingA },
       ),
     ).rejects.toBeInstanceOf(PermissionDeniedError);
   });

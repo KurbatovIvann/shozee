@@ -332,4 +332,14 @@ describe("company_legal_info schema slice", () => {
     expect(keys.has("employee:settings:payments")).toBe(false);
     expect(keys.has("owner:settings:payments")).toBe(false);
   });
+
+  it("seeds companies:view for admin, manager, and employee, not owner", () => {
+    const keys = new Set(
+      rolePermissionDefaultRows.map((row) => `${row.role}:${row.permission}`),
+    );
+    expect(keys.has("admin:companies:view")).toBe(true);
+    expect(keys.has("manager:companies:view")).toBe(true);
+    expect(keys.has("employee:companies:view")).toBe(true);
+    expect(keys.has("owner:companies:view")).toBe(false);
+  });
 });

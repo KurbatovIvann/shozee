@@ -201,7 +201,7 @@ describe("readStaffAssistantCompanyTradeName", () => {
     ).resolves.toBe("Качани");
   });
 
-  it("omits the name on documents:view permission denial", async () => {
+  it("omits the name on companies:view permission denial", async () => {
     await expect(
       readStaffAssistantCompanyTradeName(() => {
         throw new PermissionDeniedError();
