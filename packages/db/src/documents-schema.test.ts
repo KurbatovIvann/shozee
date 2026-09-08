@@ -503,6 +503,18 @@ describe("documents schema slice", () => {
     expect(
       indexes.get("documents_company_type_document_number_uq"),
     ).not.toMatch(/WHERE/i);
+    expect(
+      indexes.get("documents_company_type_document_number_uq"),
+    ).not.toContain("text_pattern_ops");
+    const numberPattern = indexes.get(
+      "documents_company_id_document_number_pattern_idx",
+    );
+    expect(numberPattern).toMatch(/USING btree/i);
+    expect(numberPattern).toContain("text_pattern_ops");
+    expect(numberPattern).toMatch(/company_id/);
+    expect(numberPattern).toMatch(/document_number/);
+    expect(numberPattern).not.toContain("UNIQUE");
+    expect(numberPattern).not.toMatch(/gin_trgm_ops|USING gin/i);
 
     const live = indexes.get("documents_company_order_type_live_uq");
     expect(live).toContain("UNIQUE");

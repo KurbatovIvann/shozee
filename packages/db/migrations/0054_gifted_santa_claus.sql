@@ -1,0 +1,1 @@
+CREATE INDEX "documents_company_id_document_number_pattern_idx" ON "documents" USING btree ("company_id","document_number" text_pattern_ops);

@@ -76,6 +76,14 @@ export const documents = pgTable(
       table.type,
       table.documentNumber,
     ),
+    // SHO-533: left-prefix LIKE 'canonical%' on document_number. Unique
+    // btree (company_id, type, document_number) does not put LIKE in
+    // Index Cond; text_pattern_ops can. Mechanical schema amendment —
+    // not a product fork (card: "EXPLAIN + text_pattern_ops if needed").
+    index("documents_company_id_document_number_pattern_idx").on(
+      table.companyId,
+      table.documentNumber.op("text_pattern_ops"),
+    ),
     uniqueIndex("documents_company_order_type_live_uq")
       .on(table.companyId, table.orderId, table.type)
       .where(sql`${table.status} <> 'cancelled'`),

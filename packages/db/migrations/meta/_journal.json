@@ -379,6 +379,13 @@
       "when": 1788891100576,
       "tag": "0053_outstanding_tyger_tiger",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1788892319484,
+      "tag": "0054_gifted_santa_claus",
+      "breakpoints": true
     }
   ]
 }
