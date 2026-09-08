@@ -497,7 +497,7 @@ function recoveredCallResultPair(
       { role: "assistant", content: [] },
       recovered.filter((run) => missingIds.has(run.toolCallId)),
     ),
-    tool: { role: "tool", content: missing },
+    tool: { role: "tool", content: [...missing] },
   };
 }
 
@@ -575,7 +575,7 @@ function mergeRecoveredToolResultsIntoHistory(
     return [
       ...next.slice(0, -1),
       assistantMessageWithStartedCalls(last, recovered),
-      { role: "tool", content: missing },
+      { role: "tool", content: [...missing] },
     ];
   }
   const pair = recoveredCallResultPair(recovered, missing);
