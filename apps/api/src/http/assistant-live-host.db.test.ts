@@ -470,9 +470,13 @@ function surfaceCard(
   cards: OkResumeEnvelope["cards"],
   surface: string,
 ): Extract<OkResumeEnvelope["cards"][number], { kind: "surface" }> | undefined {
-  return cards.find(
-    (card) => card.kind === "surface" && card.surface === surface,
+  const card = cards.find(
+    (item) => item.kind === "surface" && item.surface === surface,
   );
+  if (card === undefined || card.kind !== "surface") {
+    return undefined;
+  }
+  return card;
 }
 
 function orderIdFromEntityCard(cards: OkResumeEnvelope["cards"]): string {
@@ -481,16 +485,12 @@ function orderIdFromEntityCard(cards: OkResumeEnvelope["cards"]): string {
   if (card === undefined) {
     throw new Error("expected order-entity surface card");
   }
-  expect(card.data).toEqual(
-    expect.objectContaining({
-      kind: "order-entity",
-      orderId: expect.any(String),
-    }),
-  );
   if (
     typeof card.data !== "object" ||
     card.data === null ||
+    !("kind" in card.data) ||
     !("orderId" in card.data) ||
+    card.data.kind !== "order-entity" ||
     typeof card.data.orderId !== "string"
   ) {
     throw new Error("order-entity card missing orderId");
