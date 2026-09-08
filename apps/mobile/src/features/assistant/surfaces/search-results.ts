@@ -8,6 +8,7 @@ import { sharedAssistantCopy } from "@showzy/copy/assistant";
 import {
   parseSearchResultsSurface as parseSearchResultsData,
   ASSISTANT_SEARCH_RESULTS_GROUP_HIT_MAX,
+  isRecord,
   type AssistantSearchEntityType,
   type AssistantSearchGroupData,
   type AssistantSearchHitData,
@@ -153,6 +154,34 @@ function localizeGroup(
     ),
     hits,
   };
+}
+
+/**
+ * Live host `cards[]` already carry composed `AssistantSearchResultsData`
+ * (`entityType`, not tool-output `type`). Conversation reload stays
+ * unrestorable (`hydratable: false`); this only type-guards envelope data.
+ */
+export function isSearchResultsResumeData(
+  data: unknown,
+): data is AssistantSearchResultsData {
+  if (!isRecord(data) || data.kind !== "search-results") {
+    return false;
+  }
+  if (typeof data.queryNormalized !== "string") {
+    return false;
+  }
+  if (!isRecord(data.destination) || data.destination.kind !== "terminal") {
+    return false;
+  }
+  if (!Array.isArray(data.groups)) {
+    return false;
+  }
+  for (const group of data.groups) {
+    if (!isRecord(group) || !Array.isArray(group.hits)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 export function localizeSearchResultsCard(

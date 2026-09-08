@@ -7,6 +7,7 @@ import {
   ASSISTANT_ORDERS_LIST_SCREEN_HREF,
   CUSTOMERS_LIST_CUSTOMERS_TOOL,
   SEARCH_QUERY_TOOL,
+  assistantSurfacesFromToolResults,
   parseCustomersListSurface as parseCustomersListData,
   parseOrdersListSurface as parseOrdersListData,
 } from "@showzy/validation/assistant-surfaces";
@@ -53,6 +54,7 @@ import {
   type AssistantSurface,
 } from "../surfaces";
 import { isToolErrorOutput } from "./confirmation-presenter";
+import { partsFromResumeEnvelope } from "./resume-envelope";
 
 function listOf(
   surfaces: readonly AssistantSurface[],
@@ -2110,6 +2112,91 @@ describe("search-results grouped surface (SHO-535)", () => {
     expect(hrefByType.get("priceList")).toBe(
       priceListEditorHref(PRICE_LIST_ID),
     );
+    expect(hrefByType.get("document")).toBe(documentsHref());
+    expect(hrefByType.get("document")).not.toContain(DOCUMENT_ID);
+  });
+
+  it("localizes live host search-results resume cards without tool-search_query", () => {
+    function surfacesFromHostOutput(output: Record<string, unknown>) {
+      const composed = assistantSurfacesFromToolResults([
+        { toolName: SEARCH_QUERY_TOOL, output },
+      ]);
+      const search = composed.find(
+        (surface) => surface.kind === "search-results",
+      );
+      if (search === undefined) {
+        throw new Error("expected composed search-results");
+      }
+      const parts = partsFromResumeEnvelope({
+        speech: "Ось результати.",
+        cards: [
+          {
+            kind: "surface",
+            surface: "search-results",
+            data: search,
+          },
+        ],
+        pending: null,
+      });
+      expect(parts.some((part) => part.type === "data-resumeCard")).toBe(true);
+      expect(
+        parts.some(
+          (part) =>
+            part.type === `tool-${SEARCH_QUERY_TOOL}` ||
+            ("toolName" in part && part.toolName === SEARCH_QUERY_TOOL),
+        ),
+      ).toBe(false);
+      return searchResultsOf(assistantSurfacesFromParts(parts, "uk"));
+    }
+
+    const empty = surfacesFromHostOutput(searchOutput([]));
+    expect(empty?.kind).toBe("search-results");
+    expect(empty?.destination).toEqual({ kind: "terminal" });
+    expect(empty?.emptyTitle).toBe(assistantChromeUk.searchResults.emptyTitle);
+    expect(empty?.emptyDescription).toBe(
+      assistantChromeUk.searchResults.emptyDescription,
+    );
+    expect(empty?.groups).toEqual([]);
+
+    const truncated = surfacesFromHostOutput(
+      searchOutput([{ type: "order", truncated: true, hits: [] }]),
+    );
+    expect(truncated?.emptyTitle).toBeNull();
+    expect(truncated?.groups).toHaveLength(1);
+    expect(truncated?.groups[0]?.entityType).toBe("order");
+    expect(truncated?.groups[0]?.truncatedLabel).toBe(
+      assistantChromeUk.searchResults.truncated,
+    );
+    expect(truncated?.groups[0]?.emptyLabel).toBe(
+      assistantChromeUk.searchResults.groupEmpty,
+    );
+
+    const variant = surfacesFromHostOutput(
+      searchOutput([
+        {
+          type: "variant",
+          truncated: false,
+          hits: [
+            searchHit(VARIANT_ID, {
+              label: "M / vanilla",
+              productId: PRODUCT_ID,
+              sublabel: "do-not-parse-me",
+            }),
+          ],
+        },
+        {
+          type: "document",
+          truncated: false,
+          hits: [searchHit(DOCUMENT_ID, { label: "INV-1" })],
+        },
+      ]),
+    );
+    const hrefByType = new Map(
+      variant?.groups.map((group) => [group.entityType, group.hits[0]?.href]),
+    );
+    expect(hrefByType.get("variant")).toBe(`/products/${PRODUCT_ID}`);
+    expect(hrefByType.get("variant")).toBe(productPhotoHref(PRODUCT_ID));
+    expect(hrefByType.get("variant")).not.toContain("do-not-parse-me");
     expect(hrefByType.get("document")).toBe(documentsHref());
     expect(hrefByType.get("document")).not.toContain(DOCUMENT_ID);
   });

@@ -42,6 +42,7 @@ import {
   type AssistantOrdersListCardView,
 } from "./orders-list";
 import {
+  isSearchResultsResumeData,
   localizeSearchResultsCard,
   type AssistantSearchResultsCardView,
 } from "./search-results";
@@ -105,7 +106,14 @@ function surfacesFromResumeCards(
       continue;
     }
     const data = part.data;
-    if (!isRecord(data) || data.kind !== "order-entity") {
+    if (!isRecord(data)) {
+      continue;
+    }
+    if (isSearchResultsResumeData(data)) {
+      surfaces.push(localizeSurface(data, locale, parts));
+      continue;
+    }
+    if (data.kind !== "order-entity") {
       continue;
     }
     const orderId = data.orderId;
