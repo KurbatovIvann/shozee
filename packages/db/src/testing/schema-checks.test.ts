@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -221,5 +222,27 @@ describe("migration drift guard", () => {
     expect(
       await commandFailure(execFileAsync("node", command, { cwd: repository })),
     ).toContain("generated drift detected");
+  });
+});
+
+describe("staff name FTS source (SHO-528)", () => {
+  it("does not add schema/search.ts", () => {
+    expect(
+      existsSync(path.resolve(import.meta.dirname, "../schema/search.ts")),
+    ).toBe(false);
+  });
+
+  it("keeps the tsvector customType name-only and without unaccent", async () => {
+    const source = await readFile(
+      path.resolve(import.meta.dirname, "../schema/tsvector.ts"),
+      "utf8",
+    );
+    expect(source).toContain("customType");
+    expect(source).toContain('return "tsvector"');
+    expect(source).toContain("setweight");
+    expect(source).toContain("to_tsvector");
+    expect(source).toContain("simple");
+    expect(source).not.toMatch(/unaccent\s*\(/);
+    expect(source).not.toContain("SECURITY DEFINER");
   });
 });

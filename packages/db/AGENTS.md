@@ -15,6 +15,10 @@ actions/services running under the core pipeline.
 - `src/schema/<module>.ts` — added by that module's schema task. A module PR
   may touch only its own schema file (+ generated migrations); a module's
   code imports only `@showzy/db/schema/<module>`.
+- `src/schema/tsvector.ts` — `tsvector` `customType` and the name-only
+  generated FTS helper (SHO-528). Staff matcher GIN/trgm live on owning
+  domain tables. Do **not** add `schema/search.ts` or projection grants
+  here.
 
 ## Changing the schema
 

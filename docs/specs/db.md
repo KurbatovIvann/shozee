@@ -95,6 +95,18 @@ packages/db/
   (ADR-0025).
 - **Extensions**: pg_trgm and unaccent only (blueprint §3). V1 pg_cron jobs
   move to BullMQ workers; vector/pg_partman remain dropped.
+- **Staff matcher indexes (SHO-526 / db-T4):** generated `tsvector` columns
+  (FTS config `simple`, `setweight` A on the owner `name` only, no
+  `unaccent()`) plus GIN on that vector and GIN `gin_trgm_ops` on the name
+  live on the **owning** domain tables (`products`, `product_variants`,
+  `company_customers`, `counterparties`, `price_lists`,
+  `customer_groups`). They serve tenant-scoped staff `*.searchMatches` /
+  `search.query` (ADR-0033). They are **not** ADR-0020 public/consumer
+  discovery projections, **not** `schema/search.ts`, and **not** read-model
+  grants. Identifiers (phone, email, ЄДРПОУ, order/document numbers) and
+  `orders.customer_name_snapshot` must not get a tsvector. The public
+  discovery wording below still applies to the later feature that will own
+  `schema/search.ts`.
 - **Global published-read / discovery access paths (ADR-0018, ADR-0020):**
   Public and authenticated consumer discovery must not rely on full-table
   scans of domain `companies` / catalog product tables across tenants.
@@ -355,6 +367,7 @@ Idempotent (`ON CONFLICT DO NOTHING`) seeds, runnable repeatedly.
 
 | Date | Change | Why | Reported by |
 | --- | --- | --- | --- |
+| 2026-09-08 | §3: GIN/trgm + generated `tsvector` on owner name columns for staff matchers are not ADR-0020 discovery / `schema/search.ts` grants | SHO-528 / SHO-526 global company search T1 | db-T4 (SHO-528) |
 | 2026-08-28 | §3: `customer_legal_profiles` is an account-scoped tenancy exception (no `company_id`); §7: user-delete contact-preserve trigger | SHO-170 / ADR-0028 legal requisites; SET NULL + contact CHECK coexistence | customers-T2 (SHO-170) |
 | 2026-08-20 | §3: later modules reuse the PG15 column-scoped SET NULL custom-migration pattern | SHO-91 orders customer FK cannot null `company_id` | orders-T1 (SHO-91) |
 | 2026-08-19 | §4: recorded `event_deliveries.event_id → domain_events.id ON DELETE RESTRICT`; generated-auth `$onUpdate` / camelCase index exception; §8: kit does not export foundation row factories; §9: local-dev fixture seed deferred to fnd-T29+ | Same-PR patch: tests prove the FK, auth trigger exception, and seed layout (fnd-G1 A12) | scaffold (fnd-G1 A12) |

@@ -301,6 +301,14 @@ describe("catalog status and product_media schema slice", () => {
     expect(nameTrgm).toMatch(/USING gin/i);
     expect(nameTrgm).toContain("gin_trgm_ops");
     expect(nameTrgm).toMatch(/\bname\b/);
+    const variantTrgm = indexDefs.get("product_variants_name_trgm_idx");
+    expect(variantTrgm).toMatch(/USING gin/i);
+    expect(variantTrgm).toContain("gin_trgm_ops");
+    expect(indexDefs.get("products_name_fts_gin_idx")).toMatch(/USING gin/i);
+    expect(indexDefs.get("products_name_fts_gin_idx")).toContain("name_fts");
+    expect(indexDefs.get("product_variants_name_fts_gin_idx")).toContain(
+      "name_fts",
+    );
   });
 
   it("declares composite same-tenant FKs with cascade on product and restrict on file", async () => {

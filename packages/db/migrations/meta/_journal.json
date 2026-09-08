@@ -365,6 +365,13 @@
       "when": 1788861258474,
       "tag": "0051_unusual_warstar",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1788877248507,
+      "tag": "0052_right_blink",
+      "breakpoints": true
     }
   ]
 }

@@ -28,6 +28,7 @@ import {
   tenantRowUnique,
   timestampColumns,
 } from "./tenant-columns.js";
+import { nameFtsColumn } from "./tsvector.js";
 
 /**
  * Customer segmentation groups carrying the level-3 price-list assignment.
@@ -46,12 +47,18 @@ export const customerGroups = pgTable(
     priceListId: uuid("price_list_id"),
     ...timestampColumns(),
     ...recordProvenanceColumns(),
+    nameFts: nameFtsColumn(),
   },
   (table) => [
     tenantRowUnique("customer_groups_company_id_id_uq", table),
     unique("customer_groups_company_slug_uq").on(table.companyId, table.slug),
     check("customer_groups_sort_order_check", sql`${table.sortOrder} >= 0`),
     index("customer_groups_price_list_idx").on(table.priceListId),
+    index("customer_groups_name_trgm_idx").using(
+      "gin",
+      table.name.op("gin_trgm_ops"),
+    ),
+    index("customer_groups_name_fts_gin_idx").using("gin", table.nameFts),
     // Getter defers the customers ↔ pricing import cycle (ADR-0025).
     // ON DELETE SET NULL is scoped to price_list_id in 0011 (db.md §7).
     foreignKey({
@@ -90,6 +97,7 @@ export const companyCustomers = pgTable(
     priceListId: uuid("price_list_id"),
     ...timestampColumns(),
     ...recordProvenanceColumns(),
+    nameFts: nameFtsColumn(),
   },
   (table) => [
     tenantRowUnique("company_customers_company_id_id_uq", table),
@@ -115,13 +123,14 @@ export const companyCustomers = pgTable(
     index("company_customers_company_email_unlinked_idx")
       .on(table.companyId, table.email)
       .where(sql`${table.userId} IS NULL`),
-    // SHO-396 / SHO-398: GIN trigram on name accelerates `%stem%` ILIKE.
-    // pg_trgm is already installed (0007). company_id stays on the
-    // existing btree indexes; the matcher ANDs tenant scope in SQL.
+    // SHO-396 / SHO-398 / SHO-528: GIN trigram on name for `%stem%` ILIKE
+    // and word_similarity. pg_trgm is already installed (0007). company_id
+    // stays on the existing btree indexes; the matcher ANDs tenant scope.
     index("company_customers_name_trgm_idx").using(
       "gin",
       table.name.op("gin_trgm_ops"),
     ),
+    index("company_customers_name_fts_gin_idx").using("gin", table.nameFts),
     foreignKey({
       name: "company_customers_customer_groups_company_fk",
       columns: [table.companyId, table.groupId],
@@ -176,6 +185,7 @@ export const counterparties = pgTable(
     notes: text("notes"),
     ...timestampColumns(),
     ...recordProvenanceColumns(),
+    nameFts: nameFtsColumn(),
   },
   (table) => [
     tenantRowUnique("counterparties_company_id_id_uq", table),
@@ -191,6 +201,11 @@ export const counterparties = pgTable(
       table.companyId,
       table.customerId,
     ),
+    index("counterparties_name_trgm_idx").using(
+      "gin",
+      table.name.op("gin_trgm_ops"),
+    ),
+    index("counterparties_name_fts_gin_idx").using("gin", table.nameFts),
     foreignKey({
       name: "counterparties_company_customers_company_fk",
       columns: [table.companyId, table.customerId],

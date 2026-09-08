@@ -39,3 +39,8 @@ export * from "./schema/foundation.js";
 export * from "./schema/invites.js";
 export * from "./schema/orders.js";
 export * from "./schema/pricing.js";
+export {
+  nameFtsColumn,
+  nameFtsGeneratedSql,
+  tsvector,
+} from "./schema/tsvector.js";

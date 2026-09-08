@@ -168,6 +168,7 @@ describe("customers CRM schema slice", () => {
       "created_via",
       "vouched_by",
       "vouched_at",
+      "name_fts",
     ]);
 
     const customers = await admin.query<{
@@ -197,6 +198,7 @@ describe("customers CRM schema slice", () => {
       "created_via",
       "vouched_by",
       "vouched_at",
+      "name_fts",
     ]);
     const status = customers.rows.find((row) => row.column_name === "status");
     expect(status?.data_type).toBe("text");
@@ -256,6 +258,7 @@ describe("customers CRM schema slice", () => {
       "created_via",
       "vouched_by",
       "vouched_at",
+      "name_fts",
     ]);
     expect(faces.rows.map((row) => row.column_name)).not.toContain("user_id");
     expect(faces.rows.map((row) => row.column_name)).not.toContain("group_id");
@@ -380,6 +383,24 @@ describe("customers CRM schema slice", () => {
     expect(nameTrgm).toMatch(/USING gin/i);
     expect(nameTrgm).toContain("gin_trgm_ops");
     expect(nameTrgm).toMatch(/\bname\b/);
+    expect(indexDefs.get("company_customers_name_fts_gin_idx")).toMatch(
+      /USING gin/i,
+    );
+    expect(indexDefs.get("company_customers_name_fts_gin_idx")).toContain(
+      "name_fts",
+    );
+    const groupTrgm = indexDefs.get("customer_groups_name_trgm_idx");
+    expect(groupTrgm).toMatch(/USING gin/i);
+    expect(groupTrgm).toContain("gin_trgm_ops");
+    expect(indexDefs.get("customer_groups_name_fts_gin_idx")).toContain(
+      "name_fts",
+    );
+    const faceTrgm = indexDefs.get("counterparties_name_trgm_idx");
+    expect(faceTrgm).toMatch(/USING gin/i);
+    expect(faceTrgm).toContain("gin_trgm_ops");
+    expect(indexDefs.get("counterparties_name_fts_gin_idx")).toContain(
+      "name_fts",
+    );
     expect(indexDefs.get("counterparties_company_id_id_uq")).toContain(
       "UNIQUE",
     );
