@@ -1070,6 +1070,7 @@ describe("assistant hydrate source", () => {
     expect(hook).toContain('result.kind === "unavailable"');
     expect(hook).toContain("getAssistantPending");
     expect(hook).toContain("postAssistantChat");
+    expect(hook).toContain("commitAssistantHostResult");
     expect(hook).toContain("postAssistantConfirm");
     expect(hook).toContain("postAssistantPendingAbandon");
     expect(hook).not.toContain("createStaffAssistantTransport");

@@ -17,6 +17,8 @@ import {
 } from "../api/assistant-pending";
 import { bindCreateConversationMutate } from "../api/create-conversation";
 import {
+  commitAssistantHostResult,
+  isCurrentAssistantEpoch,
   resetAssistantTenantSession,
   resumeOwnAssistantConversation,
   sendEnsuredAssistantMessage,
@@ -281,6 +283,8 @@ export function useAssistantChat(): {
           choiceResetRef.current();
         },
       });
+      setStatus("ready");
+      setError(undefined);
     }
     if (
       activeCompanyId === null ||
@@ -394,12 +398,18 @@ export function useAssistantChat(): {
               text: payload.text,
               locale: detectLocale(),
             });
-            applyHostResult(result);
+            commitAssistantHostResult({
+              companyEpochRef,
+              epoch,
+              apply: () => {
+                applyHostResult(result);
+              },
+            });
           },
           text,
         });
       } catch {
-        if (companyEpochRef.current === epoch) {
+        if (isCurrentAssistantEpoch(companyEpochRef, epoch)) {
           setInput(text);
           setStatus("ready");
         }

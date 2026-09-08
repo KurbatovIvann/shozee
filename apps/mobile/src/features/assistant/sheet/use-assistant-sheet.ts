@@ -28,6 +28,7 @@ export function useAssistantSheet(): AssistantSheetViewModel & {
   const confirmation = useAssistantConfirmation({
     messages: chat.messages,
     sendBusy: chat.sendBusy,
+    companyEpochRef: chat.companyEpochRef,
     getConversationId: chat.getConversationId,
     peekPending: chat.peekPending,
     postConfirm: chat.postConfirm,

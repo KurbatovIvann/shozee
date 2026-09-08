@@ -91,7 +91,27 @@ export async function sendEnsuredAssistantMessage(args: {
     return "dropped";
   }
   await args.sendMessage({ text: args.text });
-  return "sent";
+  return isCurrentAssistantEpoch(args.companyEpochRef, epoch)
+    ? "sent"
+    : "dropped";
+}
+
+export type CommitAssistantHostResult = "stale" | "applied";
+
+/**
+ * Apply a POST /assistant/chat envelope only while the company epoch
+ * still matches the send. Same epoch used by hydrate and choice.
+ */
+export function commitAssistantHostResult(args: {
+  readonly companyEpochRef: AssistantCompanyEpochRef;
+  readonly epoch: number;
+  readonly apply: () => void;
+}): CommitAssistantHostResult {
+  if (!isCurrentAssistantEpoch(args.companyEpochRef, args.epoch)) {
+    return "stale";
+  }
+  args.apply();
+  return "applied";
 }
 
 export function resetAssistantTenantSession(args: {

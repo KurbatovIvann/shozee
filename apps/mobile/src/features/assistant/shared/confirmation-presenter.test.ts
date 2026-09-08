@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { CONFIRMATION_CHALLENGE_HEADER } from "@showzy/contract";
 
 import {
+  commitHostConfirmResult,
   confirmationCardState,
   confirmationResumeHeaders,
   executeConfirmationAbandon,
@@ -225,6 +226,186 @@ describe("executeConfirmationConfirm", () => {
     expect(new Set([first, second])).toEqual(new Set(["resumed", "skipped"]));
     expect(resume).toHaveBeenCalledOnce();
     expect(resolvingRef.current).toBe(challengeA);
+  });
+});
+
+describe("commitHostConfirmResult", () => {
+  const okResult = {
+    status: "ok" as const,
+    speech: "Deleted the customer.",
+    cards: [
+      {
+        kind: "confirmation" as const,
+        envelope: confirmationA,
+      },
+    ],
+    pending: null,
+  };
+
+  it("appends speech and cards when the session is still current", () => {
+    const appendParts = vi.fn();
+    const ignoreChallenge = vi.fn();
+    expect(
+      commitHostConfirmResult({
+        result: okResult,
+        previousChallengeId: challengeA,
+        companyEpochRef: { current: 0 },
+        epoch: 0,
+        resolvingRef: { current: challengeA },
+        appendParts,
+        ignoreChallenge,
+      }),
+    ).toBe("applied");
+    expect(appendParts).toHaveBeenCalledOnce();
+    expect(appendParts).toHaveBeenCalledWith([
+      { type: "text", text: "Deleted the customer." },
+      { type: "data-confirmation", data: confirmationA },
+    ]);
+    expect(ignoreChallenge).toHaveBeenCalledWith(challengeA);
+  });
+
+  it("does not append a prior tenant result after epoch increment while POST is in flight", async () => {
+    const pending = pendingConfirmationFromMessages(messages, new Set());
+    let resolvePost: ((value: typeof okResult) => void) | undefined;
+    const postConfirm = vi.fn(
+      () =>
+        new Promise<typeof okResult>((resolve) => {
+          resolvePost = resolve;
+        }),
+    );
+    const companyEpochRef = { current: 0 };
+    const epoch = companyEpochRef.current;
+    const resolvingRef = { current: null as string | null };
+    const inFlight = executeHostConfirmationConfirm({
+      pending,
+      sendBusy: false,
+      dismissedChallengeIds: new Set(),
+      resolvingRef,
+      conversationId,
+      postConfirm,
+    });
+    expect(resolvingRef.current).toBe(challengeA);
+    companyEpochRef.current += 1;
+    resolvePost?.(okResult);
+    const result = await inFlight;
+    const appendParts = vi.fn();
+    const ignoreChallenge = vi.fn();
+    expect(
+      commitHostConfirmResult({
+        result,
+        previousChallengeId: challengeA,
+        companyEpochRef,
+        epoch,
+        resolvingRef,
+        appendParts,
+        ignoreChallenge,
+      }),
+    ).toBe("stale");
+    expect(appendParts).not.toHaveBeenCalled();
+    expect(ignoreChallenge).not.toHaveBeenCalled();
+  });
+
+  it("does not append a prior tenant result after reset while POST is in flight", async () => {
+    const pending = pendingConfirmationFromMessages(messages, new Set());
+    let resolvePost: ((value: typeof okResult) => void) | undefined;
+    const postConfirm = vi.fn(
+      () =>
+        new Promise<typeof okResult>((resolve) => {
+          resolvePost = resolve;
+        }),
+    );
+    const companyEpochRef = { current: 0 };
+    const epoch = companyEpochRef.current;
+    const resolvingRef = { current: null as string | null };
+    const inFlight = executeHostConfirmationConfirm({
+      pending,
+      sendBusy: false,
+      dismissedChallengeIds: new Set(),
+      resolvingRef,
+      conversationId,
+      postConfirm,
+    });
+    expect(resolvingRef.current).toBe(challengeA);
+    resolvingRef.current = null;
+    resolvePost?.(okResult);
+    const result = await inFlight;
+    const appendParts = vi.fn();
+    const ignoreChallenge = vi.fn();
+    expect(
+      commitHostConfirmResult({
+        result,
+        previousChallengeId: challengeA,
+        companyEpochRef,
+        epoch,
+        resolvingRef,
+        appendParts,
+        ignoreChallenge,
+      }),
+    ).toBe("stale");
+    expect(appendParts).not.toHaveBeenCalled();
+    expect(ignoreChallenge).not.toHaveBeenCalled();
+  });
+
+  it("drops expired ignore after company switch", () => {
+    const appendParts = vi.fn();
+    const ignoreChallenge = vi.fn();
+    const companyEpochRef = { current: 0 };
+    const epoch = companyEpochRef.current;
+    companyEpochRef.current += 1;
+    expect(
+      commitHostConfirmResult({
+        result: { status: "expired" },
+        previousChallengeId: challengeA,
+        companyEpochRef,
+        epoch,
+        resolvingRef: { current: challengeA },
+        appendParts,
+        ignoreChallenge,
+      }),
+    ).toBe("stale");
+    expect(appendParts).not.toHaveBeenCalled();
+    expect(ignoreChallenge).not.toHaveBeenCalled();
+  });
+
+  it("does not append error text onto the successor company", () => {
+    const appendParts = vi.fn();
+    const ignoreChallenge = vi.fn();
+    const companyEpochRef = { current: 1 };
+    expect(
+      commitHostConfirmResult({
+        result: {
+          status: "error",
+          code: "INTERNAL",
+          message: "Confirm failed.",
+        },
+        previousChallengeId: challengeA,
+        companyEpochRef,
+        epoch: 0,
+        resolvingRef: { current: challengeA },
+        appendParts,
+        ignoreChallenge,
+      }),
+    ).toBe("stale");
+    expect(appendParts).not.toHaveBeenCalled();
+    expect(ignoreChallenge).not.toHaveBeenCalled();
+  });
+
+  it("returns skipped without appending", () => {
+    const appendParts = vi.fn();
+    const ignoreChallenge = vi.fn();
+    expect(
+      commitHostConfirmResult({
+        result: "skipped",
+        previousChallengeId: challengeA,
+        companyEpochRef: { current: 0 },
+        epoch: 0,
+        resolvingRef: { current: challengeA },
+        appendParts,
+        ignoreChallenge,
+      }),
+    ).toBe("skipped");
+    expect(appendParts).not.toHaveBeenCalled();
+    expect(ignoreChallenge).not.toHaveBeenCalled();
   });
 });
 
@@ -542,12 +723,17 @@ describe("hide-without-abandon is not the host card path", () => {
     );
     expect(presenter).toContain("executeConfirmationAbandon");
     expect(presenter).toContain("executeHostConfirmationConfirm");
+    expect(presenter).toContain("commitHostConfirmResult");
+    expect(presenter).toContain("isCurrentAssistantChoiceSelect");
     expect(presenter).toContain("args.resume(");
     expect(hook).toContain("executeHostConfirmationConfirm");
     expect(hook).toContain("executeConfirmationAbandon");
+    expect(hook).toContain("commitHostConfirmResult");
+    expect(hook).toContain("companyEpochRef");
     expect(hook).toContain("postConfirm");
     expect(hook).not.toContain("executeConfirmationConfirm");
     expect(hook).not.toContain("args.resume");
+    expect(hook).not.toContain("partsFromResumeEnvelope");
     expect(card).toContain("onDismiss");
     expect(card).not.toContain("hideConfirmationLocally");
   });
@@ -572,17 +758,21 @@ describe("live sheet calls host HTTP (SHO-524)", () => {
       "utf8",
     );
     expect(chat).toContain("postAssistantChat");
+    expect(chat).toContain("commitAssistantHostResult");
     expect(chat).toContain("postAssistantConfirm");
     expect(chat).toContain("postAssistantPendingAbandon");
     expect(chat).toContain("getAssistantPending");
     expect(chat).not.toContain("createStaffAssistantTransport");
     expect(chat).not.toContain("peekAssistantChoice");
     expect(confirmation).toContain("executeHostConfirmationConfirm");
+    expect(confirmation).toContain("commitHostConfirmResult");
+    expect(confirmation).toContain("companyEpochRef");
     expect(confirmation).toContain("executeConfirmationAbandon");
     expect(confirmation).not.toContain("executeConfirmationConfirm(");
     expect(choice).toContain("executeChoiceAbandon");
     expect(sheet).toContain("choice.dismiss");
     expect(sheet).toContain("confirmation.dismiss");
     expect(sheet).toContain("dismissPendingCard");
+    expect(sheet).toContain("companyEpochRef: chat.companyEpochRef");
   });
 });
