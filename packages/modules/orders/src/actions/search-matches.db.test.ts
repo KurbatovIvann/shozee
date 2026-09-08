@@ -211,7 +211,10 @@ beforeAll(async () => {
       companyId: kitIdentities.companies.a,
       userId: clerks.noDocuments,
       role: "employee",
-      permissions: { granted: [], denied: ["documents:view"] },
+      permissions: {
+        granted: ["orders:view", "companies:view"],
+        denied: ["documents:view"],
+      },
     },
   ]);
 
