@@ -229,7 +229,7 @@ describe("runStaffAssistantHostTurn", () => {
       {
         toolCallId: "call-list",
         toolName: ORDERS_LIST_PAGE_TOOL_NAME,
-        input: {},
+        input: { limit: ORDERS_LIST_PAGE_ASSISTANT_DEFAULT_LIMIT },
       },
     ]);
   });

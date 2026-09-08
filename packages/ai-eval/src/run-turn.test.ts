@@ -302,13 +302,15 @@ describe("runStaffAssistantEvalTurn", () => {
   });
 
   it("MODEL_SPEAKS host records façade counts args so this_week matches", async () => {
-    const execute = vi.fn(() =>
-      Promise.resolve({
+    let executeInput: unknown;
+    const execute = vi.fn((_actionName: string, input: unknown) => {
+      executeInput = input;
+      return Promise.resolve({
         kind: "aggregate",
         orderCount: 4,
         buckets: [],
-      }),
-    );
+      });
+    });
     const result = await runStaffAssistantEvalTurn({
       host: "new",
       models: {
@@ -341,7 +343,7 @@ describe("runStaffAssistantEvalTurn", () => {
       }),
       { toolCallId: "call-counts" },
     );
-    expect(execute.mock.calls[0]?.[1]).not.toHaveProperty("period");
+    expect(executeInput).not.toHaveProperty("period");
     expect(result.trace.toolCalls[0]?.args).toMatchObject({
       period: "this_week",
     });
