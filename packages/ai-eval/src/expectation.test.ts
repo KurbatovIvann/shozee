@@ -12,6 +12,7 @@ import {
   matchEvalExpectation,
 } from "./expectation.js";
 import { PROOF_SCENARIOS } from "./scenarios/proof.js";
+import { SEARCH_RESULTS_SCENARIOS } from "./scenarios/search-results.js";
 
 const CUSTOMER_ID = "11111111-1111-4111-8111-111111111111";
 
@@ -376,5 +377,64 @@ describe("matchEvalExpectation", () => {
     expect(
       matchEvalExpectation({ textExcludes: ["|"] }, tableTrace),
     ).toMatchObject({ ok: false });
+  });
+
+  it("SHO-535: simple find is one search_query, not customers_list then orders_list", () => {
+    const scenario = SEARCH_RESULTS_SCENARIOS.find(
+      (entry) => entry.id === "t10.search-results.find-katya-sambuka",
+    );
+    expect(scenario).toBeDefined();
+    expect(
+      matchEvalExpectation(scenario?.expectation ?? {}, {
+        text: "Знайшла Катю Самбуку.",
+        speechSource: "model",
+        toolCalls: [
+          {
+            toolCallId: "c1",
+            name: "search_query",
+            args: { query: "Катя Самбука" },
+          },
+        ],
+      }),
+    ).toEqual({ ok: true });
+    expect(
+      matchEvalExpectation(scenario?.expectation ?? {}, {
+        text: "Ось Катя і її замовлення.",
+        speechSource: "model",
+        toolCalls: [
+          {
+            toolCallId: "c1",
+            name: CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME,
+            args: { search: "Катя Самбука" },
+          },
+          {
+            toolCallId: "c2",
+            name: ORDERS_LIST_PAGE_TOOL_NAME,
+            args: {},
+          },
+        ],
+      }),
+    ).toMatchObject({
+      ok: false,
+      reason: "forbidden tool customers_list_customers",
+    });
+  });
+
+  it("SHO-535: unpaid-order filters may use orders_list_page", () => {
+    expect(
+      matchEvalExpectation(
+        { ordered: [{ name: ORDERS_LIST_PAGE_TOOL_NAME }] },
+        {
+          text: "Останнє неоплачене замовлення Каті.",
+          toolCalls: [
+            {
+              toolCallId: "c1",
+              name: ORDERS_LIST_PAGE_TOOL_NAME,
+              args: {},
+            },
+          ],
+        },
+      ),
+    ).toEqual({ ok: true });
   });
 });

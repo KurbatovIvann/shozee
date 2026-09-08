@@ -7,12 +7,16 @@ import {
   ASSISTANT_CUSTOMERS_LIST_SCREEN_HREF,
   ASSISTANT_ORDERS_LIST_ROW_MAX,
   ASSISTANT_ORDERS_LIST_SCREEN_HREF,
+  ASSISTANT_SEARCH_RESULTS_GROUP_HIT_MAX,
+  ASSISTANT_SEARCH_RESULTS_HIT_MAX,
   ASSISTANT_SURFACE_REGISTRY,
   ASSISTANT_TOOL_CLIPPED_STATUS,
   ASSISTANT_TOOL_NON_RESULT_STATUSES,
   CUSTOMERS_LIST_CUSTOMERS_TOOL,
   ORDERS_LIST_COUNTS_TOOL,
   ORDERS_LIST_PAGE_TOOL,
+  SEARCH_QUERY_TOOL,
+  SEARCH_RESULTS_PROMPT_LINE,
   UNLINKED_CUSTOMER_NAME_SNAPSHOT,
   assistantAggregateBreakdown,
   assistantAggregateSummary,
@@ -25,6 +29,7 @@ import {
   parseOrderEntitySurfaces,
   parseOrdersAggregateSurface,
   parseOrdersListSurface,
+  parseSearchResultsSurface,
   resolveAssistantSurfaceDestination,
   staffAssistantPresentationEnvelopeSchema,
   staffAssistantPresentationEnvelopesFromToolResults,
@@ -35,6 +40,7 @@ import {
   type AssistantCustomersListData,
   type AssistantOrdersAggregateData,
   type AssistantOrdersListData,
+  type AssistantSearchResultsData,
   type AssistantSurfaceData,
   type AssistantSurfaceDescriptor,
   type AssistantSurfaceDestination,
@@ -124,6 +130,17 @@ function customersOf(
   return null;
 }
 
+function searchResultsOf(
+  surfaces: readonly AssistantSurfaceData[],
+): AssistantSearchResultsData | null {
+  for (const surface of surfaces) {
+    if (surface.kind === "search-results") {
+      return surface;
+    }
+  }
+  return null;
+}
+
 function aggregateOf(
   surfaces: readonly AssistantSurfaceData[],
 ): AssistantOrdersAggregateData | null {
@@ -173,6 +190,7 @@ describe("ASSISTANT_SURFACE_REGISTRY integrity", () => {
       "orders-aggregate",
       "order-entity",
       "customers-list",
+      "search-results",
     ]);
     expect(new Set(kinds).size).toBe(kinds.length);
     for (const entry of ASSISTANT_SURFACE_REGISTRY) {
@@ -200,6 +218,7 @@ describe("ASSISTANT_SURFACE_REGISTRY integrity", () => {
       { kind: "screen" },
       { kind: "screen" },
       { kind: "screen" },
+      { kind: "terminal" },
     ]);
 
     type Extends<A, B> = A extends B ? true : false;
@@ -622,6 +641,7 @@ describe("hydration flags", () => {
     expect([...unrestorableAssistantActionNames()].sort()).toEqual([
       "customers.listCustomers",
       "orders.list",
+      "search.query",
     ]);
     const list = ASSISTANT_SURFACE_REGISTRY.find(
       (entry) => entry.kind === "orders-list",
@@ -635,11 +655,20 @@ describe("hydration flags", () => {
     const customers = ASSISTANT_SURFACE_REGISTRY.find(
       (entry) => entry.kind === "customers-list",
     );
+    const search = ASSISTANT_SURFACE_REGISTRY.find(
+      (entry) => entry.kind === "search-results",
+    );
     expect(list?.hydratable).toBe(false);
     expect(aggregate?.hydratable).toBe(false);
     expect(entity?.hydratable).toBe(true);
     expect(customers?.hydratable).toBe(false);
     expect(customers?.destination).toEqual({ kind: "screen" });
+    expect(search?.hydratable).toBe(false);
+    expect(search?.destination).toEqual({ kind: "terminal" });
+    expect(search?.actionNames).toEqual(["search.query"]);
+    expect(search?.toolNames).toEqual(
+      expect.arrayContaining(["search_query", "search.query"]),
+    );
   });
 
   it("recognises every unrestorable action name in a fixture registry (SHO-461)", () => {
@@ -726,6 +755,21 @@ describe("staffAssistantPresentationEnvelope (SHO-458)", () => {
         ],
         kinds: ["order-entity"],
         toolCallIds: [["call-get"]],
+      },
+      {
+        results: [
+          result(
+            "search_query",
+            {
+              groups: [],
+              searchedTypes: ["customer"],
+              queryNormalized: "katya",
+            },
+            "call-search",
+          ),
+        ],
+        kinds: ["search-results"],
+        toolCallIds: [["call-search"]],
       },
     ];
     for (const fixture of fixtures) {
@@ -1087,5 +1131,179 @@ describe("aggregate layouts (SHO-473)", () => {
 describe("UNLINKED_CUSTOMER_NAME_SNAPSHOT", () => {
   it("is the protocol sentinel, not a localized label", () => {
     expect(UNLINKED_CUSTOMER_NAME_SNAPSHOT).toBe("unlinked");
+  });
+});
+
+const PRODUCT_ID = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+const VARIANT_ID = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+const DOCUMENT_ID = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+
+function searchHit(
+  id: string,
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    id,
+    label: "Катя Самбука",
+    sublabel: "SKU-1",
+    status: "active",
+    matchedOn: "name",
+    exact: true,
+    ...extra,
+  };
+}
+
+function searchOutput(
+  groups: unknown[],
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    groups,
+    searchedTypes: ["customer", "order", "variant", "document"],
+    queryNormalized: "katya",
+    ...extra,
+  };
+}
+
+describe("search-results surface (SHO-535)", () => {
+  it("binds search.query / search_query, stays unrestorable, and keeps English promptLine", () => {
+    const entry = ASSISTANT_SURFACE_REGISTRY.find(
+      (surface) => surface.kind === "search-results",
+    );
+    expect(entry?.actionNames).toEqual(["search.query"]);
+    expect(entry?.toolNames).toEqual(["search_query", "search.query"]);
+    expect(entry?.hydratable).toBe(false);
+    expect(entry?.destination).toEqual({ kind: "terminal" });
+    expect(entry?.promptLine).toBe(SEARCH_RESULTS_PROMPT_LINE);
+    expect(entry?.promptLine).toContain("search_query");
+    expect(entry?.promptLine).toContain("exact means a full match");
+    expect(entry?.promptLine).toContain("customerNameSnapshot");
+    expect(entry?.promptLine).toContain("one search_query");
+    expect(/[А-Яа-яІіЇїЄєҐґ]/.test(entry?.promptLine ?? "")).toBe(false);
+    expect(ASSISTANT_SEARCH_RESULTS_GROUP_HIT_MAX).toBe(10);
+    expect(ASSISTANT_SEARCH_RESULTS_HIT_MAX).toBe(40);
+  });
+
+  it("parses empty groups from search_query without dropping the surface", () => {
+    const surface = parseSearchResultsSurface([
+      result(
+        SEARCH_QUERY_TOOL,
+        searchOutput([], { searchedTypes: ["order"], queryNormalized: "q" }),
+        "call-search",
+      ),
+    ]);
+    expect(surface?.kind).toBe("search-results");
+    expect(surface?.groups).toEqual([]);
+    expect(surface?.truncated).toBe(false);
+    expect(surface?.clipped).toBe(false);
+    expect(surface?.destination).toEqual({ kind: "terminal" });
+    expect(surface?.queryNormalized).toBe("q");
+    expect(surface?.searchedTypes).toEqual(["order"]);
+  });
+
+  it("keeps a truncated empty order group visible", () => {
+    const surface = parseSearchResultsSurface([
+      result(
+        SEARCH_QUERY_TOOL,
+        searchOutput([{ type: "order", truncated: true, hits: [] }]),
+      ),
+    ]);
+    expect(surface?.groups).toEqual([
+      { entityType: "order", truncated: true, hits: [] },
+    ]);
+    expect(surface?.truncated).toBe(true);
+  });
+
+  it("parses mixed types and drops variant hits without productId", () => {
+    const surface = parseSearchResultsSurface([
+      result(
+        SEARCH_QUERY_TOOL,
+        searchOutput([
+          {
+            type: "customer",
+            truncated: false,
+            hits: [searchHit(CUSTOMER_A, { matchedOn: "name" })],
+          },
+          {
+            type: "order",
+            truncated: true,
+            hits: [
+              searchHit(ORDER_A, {
+                label: "#1049",
+                matchedOn: "customerNameSnapshot",
+                exact: false,
+              }),
+            ],
+          },
+          {
+            type: "variant",
+            truncated: false,
+            hits: [
+              searchHit(VARIANT_ID, { productId: PRODUCT_ID, label: "M" }),
+              searchHit("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa99", {
+                label: "no-parent",
+              }),
+            ],
+          },
+          {
+            type: "document",
+            truncated: false,
+            hits: [searchHit(DOCUMENT_ID, { label: "INV-1" })],
+          },
+        ]),
+        "call-search",
+      ),
+    ]);
+    expect(surface?.kind).toBe("search-results");
+    expect(surface?.truncated).toBe(true);
+    expect(surface?.groups.map((group) => group.entityType)).toEqual([
+      "customer",
+      "order",
+      "variant",
+      "document",
+    ]);
+    expect(surface?.groups[2]?.hits).toEqual([
+      {
+        id: VARIANT_ID,
+        label: "M",
+        sublabel: "SKU-1",
+        status: "active",
+        matchedOn: "name",
+        exact: true,
+        productId: PRODUCT_ID,
+      },
+    ]);
+    expect(surface?.groups[1]?.hits[0]?.matchedOn).toBe("customerNameSnapshot");
+    expect(surface?.groups[3]?.hits[0]?.id).toBe(DOCUMENT_ID);
+  });
+
+  it("emits search-results from compose and names the envelope toolCallId", () => {
+    const results = [
+      result(
+        SEARCH_QUERY_TOOL,
+        searchOutput([
+          {
+            type: "customer",
+            truncated: false,
+            hits: [searchHit(CUSTOMER_A)],
+          },
+        ]),
+        "call-search",
+      ),
+    ];
+    const surfaces = assistantSurfacesFromToolResults(results);
+    expect(searchResultsOf(surfaces)?.kind).toBe("search-results");
+    expect(
+      surfaces.filter((surface) => surface.kind === "order-entity"),
+    ).toEqual([]);
+    expect(staffAssistantPresentationEnvelopesFromToolResults(results)).toEqual(
+      [
+        {
+          surface: "search-results",
+          version: 1,
+          toolCallIds: ["call-search"],
+        },
+      ],
+    );
   });
 });

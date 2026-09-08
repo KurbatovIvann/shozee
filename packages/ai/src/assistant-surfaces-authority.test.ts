@@ -1,10 +1,17 @@
 import {
   ASSISTANT_CUSTOMERS_LIST_ROW_MAX,
   ASSISTANT_ORDERS_LIST_ROW_MAX,
+  ASSISTANT_SEARCH_RESULTS_GROUP_HIT_MAX,
+  ASSISTANT_SEARCH_RESULTS_HIT_MAX,
   ORDER_ENTITY_SURFACE_TOOLS,
   ORDERS_CREATE_TOOLS,
   ORDERS_GET_TOOLS,
+  SEARCH_RESULTS_SURFACE_TOOLS,
 } from "@showzy/validation/assistant-surfaces";
+import {
+  GLOBAL_HIT_CAP,
+  SEARCH_LIMIT_PER_TYPE_MAX,
+} from "@showzy/validation/search";
 import { describe, expect, it } from "vitest";
 
 import { toProviderToolName } from "./action-tool.js";
@@ -43,5 +50,16 @@ describe("assistant surface literals vs authorities (SHO-462)", () => {
     expect(ORDERS_CREATE_TOOLS.has(toProviderToolName("orders.create"))).toBe(
       true,
     );
+  });
+
+  it("keeps search-results tools and caps aligned with search.query (SHO-535)", () => {
+    expect(SEARCH_RESULTS_SURFACE_TOOLS).toContain(
+      toProviderToolName("search.query"),
+    );
+    expect(SEARCH_RESULTS_SURFACE_TOOLS).toContain("search.query");
+    expect(ASSISTANT_SEARCH_RESULTS_GROUP_HIT_MAX).toBe(
+      SEARCH_LIMIT_PER_TYPE_MAX,
+    );
+    expect(ASSISTANT_SEARCH_RESULTS_HIT_MAX).toBe(GLOBAL_HIT_CAP);
   });
 });

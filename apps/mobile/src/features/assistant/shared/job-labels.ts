@@ -12,6 +12,7 @@ export const ASSISTANT_JOB_NAMES = [
   "catalog_list_products",
   "pricing_list_price_lists",
   "customers_listCustomers",
+  "search_query",
 ] as const;
 
 export type AssistantJobName = (typeof ASSISTANT_JOB_NAMES)[number];

@@ -46,6 +46,7 @@ export {
   PROOF_PRODUCT_PRICE_MINOR,
   PROOF_SCENARIOS,
 } from "./scenarios/proof.js";
+export { SEARCH_RESULTS_SCENARIOS } from "./scenarios/search-results.js";
 export {
   collectEvalToolCalls,
   collectEvalToolCallsFromResponse,

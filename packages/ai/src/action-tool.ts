@@ -1,6 +1,9 @@
 import type { ActionContract } from "@showzy/core/contract";
 import { CoreInvariantError } from "@showzy/core/errors";
-import { ORDER_ENTITY_PROMPT_LINE } from "@showzy/validation/assistant-surfaces";
+import {
+  ORDER_ENTITY_PROMPT_LINE,
+  SEARCH_RESULTS_PROMPT_LINE,
+} from "@showzy/validation/assistant-surfaces";
 import { jsonSchema, tool, type Tool, type ToolSet } from "ai";
 
 import { anthropicStaffProvider } from "./provider/anthropic.js";
@@ -55,10 +58,12 @@ export const STAFF_ASSISTANT_HOT_ACTION_NAMES = [
   CATALOG_LIST_PRODUCTS_ACTION_NAME,
   PRICING_LIST_PRICE_LISTS_ACTION_NAME,
   CUSTOMERS_LIST_CUSTOMERS_ACTION_NAME,
+  "search.query",
 ] as const;
 
 const HOT_ACTION_DESCRIPTION_SUFFIXES: Readonly<Record<string, string>> = {
   "orders.get": ORDER_ENTITY_PROMPT_LINE,
+  "search.query": SEARCH_RESULTS_PROMPT_LINE,
 };
 
 const HOT_ACTION_NAME_SET = new Set<string>(STAFF_ASSISTANT_HOT_ACTION_NAMES);

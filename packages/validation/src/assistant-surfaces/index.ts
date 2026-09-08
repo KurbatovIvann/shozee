@@ -104,6 +104,21 @@ export {
   type AssistantOrdersListRowData,
 } from "./orders-list.js";
 export {
+  ASSISTANT_SEARCH_RESULTS_GROUP_HIT_MAX,
+  ASSISTANT_SEARCH_RESULTS_HIT_MAX,
+  SEARCH_QUERY_ACTION_NAME,
+  SEARCH_QUERY_TOOL,
+  SEARCH_RESULTS_DESTINATION,
+  SEARCH_RESULTS_ENTITY_TYPES,
+  SEARCH_RESULTS_PROMPT_LINE,
+  SEARCH_RESULTS_SURFACE_TOOLS,
+  parseSearchResultsSurface,
+  type AssistantSearchEntityType,
+  type AssistantSearchGroupData,
+  type AssistantSearchHitData,
+  type AssistantSearchResultsData,
+} from "./search-results.js";
+export {
   ASSISTANT_SURFACE_REGISTRY,
   hydratableAssistantActionNames,
   unrestorableAssistantActionNames,
