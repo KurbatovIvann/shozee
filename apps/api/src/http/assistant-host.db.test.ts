@@ -961,6 +961,9 @@ describe("unpublished staff assistant host HTTP", () => {
     });
     expect(claimed.kind).toBe("claimed");
     const mappedId = record.optionMap[optionId];
+    if (mappedId === undefined) {
+      throw new Error("seeded choice missing mapped variant");
+    }
     const patched = applyChoiceOptionToCanonicalInput(
       record.canonicalInput,
       record.target,
