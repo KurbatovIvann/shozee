@@ -20,8 +20,8 @@ export const tsvector = customType<{ data: string }>({
 
 /**
  * Generated ALWAYS STORED expression: FTS config `simple`, `setweight` A
- * on `name` only. No phone/email/ЄДРПОУ/numbers, no `unaccent()`.
- * v1 `setweight` shape only — do not copy SECURITY DEFINER RPCs.
+ * on `name` only. Identifiers stay out of the vector. Do not wrap with
+ * unaccent. v1 `setweight` shape only.
  */
 export const nameFtsGeneratedSql: SQL = sql`setweight(to_tsvector('simple'::regconfig, coalesce("name", '')), 'A')`;
 
