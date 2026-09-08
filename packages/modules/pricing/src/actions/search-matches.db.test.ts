@@ -155,19 +155,27 @@ describe("pricing.searchMatches", () => {
       expect.arrayContaining([fixtures.mak, fixtures.choco, fixtures.vanilla]),
     );
     expect(hitIds(priceListGroup(prefix))).not.toContain(fixtures.foreignChoco);
-    const exactMak = priceListGroup(prefix)?.hits.find(
+    const prefixMak = priceListGroup(prefix)?.hits.find(
       (hit) => hit.id === fixtures.mak,
     );
-    expect(exactMak).toEqual(
+    expect(prefixMak).toEqual(
       expect.objectContaining({
         id: fixtures.mak,
         label: "Макаронс",
         matchedOn: "name",
-        exact: true,
+        exact: false,
         status: "active",
       }),
     );
-    expect(exactMak).not.toHaveProperty("productId");
+    expect(prefixMak).not.toHaveProperty("productId");
+
+    const fullName = await kit.invoke(searchMatches, { query: "Макаронс" });
+    const exactMak = priceListGroup(fullName)?.hits.find(
+      (hit) => hit.id === fixtures.mak,
+    );
+    expect(exactMak?.exact).toBe(true);
+    expect(exactMak?.matchedOn).toBe("name");
+    expect(hitIds(priceListGroup(fullName))[0]).toBe(fixtures.mak);
 
     const tokenAnd = await kit.invoke(searchMatches, {
       query: tokenAndCase.query,
@@ -293,7 +301,7 @@ type SearchMatchesResult = {
 };
 
 function priceListGroup(result: SearchMatchesResult) {
-  return result.groups.find((group) => group.type === "priceList");
+  return result.groups[0];
 }
 
 function hitIds(group: { hits: readonly SearchHit[] } | undefined): string[] {
