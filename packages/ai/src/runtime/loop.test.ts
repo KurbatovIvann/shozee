@@ -160,37 +160,63 @@ const createOrder = defineActionContract({
 const customerId = "11111111-1111-4111-8111-111111111111";
 const challengeId = "22222222-2222-4222-8222-222222222222";
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function toolCallIdsInContent(content: unknown): string[] {
+  if (!Array.isArray(content)) {
+    return [];
+  }
+  return content.flatMap((part) => {
+    if (!isRecord(part) || part["type"] !== "tool-call") {
+      return [];
+    }
+    const toolCallId = part["toolCallId"];
+    return typeof toolCallId === "string" ? [toolCallId] : [];
+  });
+}
+
+function toolResultIdsInContent(content: unknown): string[] {
+  if (!Array.isArray(content)) {
+    return [];
+  }
+  return content.flatMap((part) => {
+    if (!isRecord(part) || part["type"] !== "tool-result") {
+      return [];
+    }
+    const toolCallId = part["toolCallId"];
+    return typeof toolCallId === "string" ? [toolCallId] : [];
+  });
+}
+
 function assistantToolCallIdsByMessage(prompt: unknown): string[][] {
   if (!Array.isArray(prompt)) {
     return [];
   }
   const groups: string[][] = [];
   for (const message of prompt) {
-    if (
-      typeof message !== "object" ||
-      message === null ||
-      !("role" in message) ||
-      message.role !== "assistant"
-    ) {
+    if (!isRecord(message) || message["role"] !== "assistant") {
       continue;
     }
-    const content = "content" in message ? message.content : undefined;
-    if (!Array.isArray(content)) {
+    const ids = toolCallIdsInContent(message["content"]);
+    if (ids.length > 0) {
+      groups.push(ids);
+    }
+  }
+  return groups;
+}
+
+function toolResultIdsByMessage(prompt: unknown): string[][] {
+  if (!Array.isArray(prompt)) {
+    return [];
+  }
+  const groups: string[][] = [];
+  for (const message of prompt) {
+    if (!isRecord(message) || message["role"] !== "tool") {
       continue;
     }
-    const ids = content.flatMap((part) => {
-      if (
-        typeof part !== "object" ||
-        part === null ||
-        !("type" in part) ||
-        part.type !== "tool-call" ||
-        !("toolCallId" in part) ||
-        typeof part.toolCallId !== "string"
-      ) {
-        return [];
-      }
-      return [part.toolCallId];
-    });
+    const ids = toolResultIdsInContent(message["content"]);
     if (ids.length > 0) {
       groups.push(ids);
     }
@@ -1239,28 +1265,18 @@ describe("runStaffAssistantHostTurn", () => {
           ids.includes("call-later-list") && ids.includes("call-outside"),
       ),
     ).toBe(false);
+    const toolResultGroups = toolResultIdsByMessage(prompt);
+    expect(toolResultGroups).toContainEqual(["call-later-list"]);
+    expect(toolResultGroups).toContainEqual(["call-outside"]);
+    expect(
+      toolResultGroups.some(
+        (ids) =>
+          ids.includes("call-later-list") && ids.includes("call-outside"),
+      ),
+    ).toBe(false);
     const serialized = JSON.stringify(prompt ?? []);
     expect(serialized).toContain("call-outside");
     expect(serialized).not.toContain("call-reissue-list");
-    const laterTool = Array.isArray(prompt)
-      ? prompt.find(
-          (message) =>
-            typeof message === "object" &&
-            message !== null &&
-            "role" in message &&
-            message.role === "tool" &&
-            "content" in message &&
-            Array.isArray(message.content) &&
-            message.content.some(
-              (part) =>
-                typeof part === "object" &&
-                part !== null &&
-                "toolCallId" in part &&
-                part.toolCallId === "call-later-list",
-            ),
-        )
-      : undefined;
-    expect(JSON.stringify(laterTool ?? {})).not.toContain("call-outside");
     expect(turn.speech.text).toBe("Recovered beside a later read.");
     expect(turn.modelToolCalls).toEqual([]);
   });
