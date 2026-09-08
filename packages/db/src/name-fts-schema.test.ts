@@ -19,9 +19,13 @@ import {
 
 import { projectionGrants } from "./capabilities.js";
 import type { DbClient } from "./client.js";
-import { products } from "./schema/catalog.js";
+import { productVariants, products } from "./schema/catalog.js";
 import { companies } from "./schema/companies.js";
-import { companyCustomers, customerGroups } from "./schema/customers.js";
+import {
+  companyCustomers,
+  counterparties,
+  customerGroups,
+} from "./schema/customers.js";
 import { priceLists } from "./schema/pricing.js";
 import { tsvector } from "./schema/tsvector.js";
 import { createTestDatabase, type TestDatabase } from "./testing/harness.js";
@@ -123,6 +127,7 @@ describe("staff name FTS schema (SHO-528)", () => {
       expect(expression).toMatch(/setweight/i);
       expect(expression).toMatch(/to_tsvector/i);
       expect(expression).toMatch(/simple/i);
+      expect(expression).toContain("'A'");
       expect(expression).toMatch(/\bname\b/);
       expect(expression).not.toMatch(/unaccent/i);
       expect(expression).not.toMatch(/phone/i);
@@ -259,7 +264,13 @@ describe("staff name FTS schema (SHO-528)", () => {
       (typeof products.$inferSelect)["nameFts"]
     >().toEqualTypeOf<string>();
     expectTypeOf<
+      (typeof productVariants.$inferSelect)["nameFts"]
+    >().toEqualTypeOf<string>();
+    expectTypeOf<
       (typeof companyCustomers.$inferSelect)["nameFts"]
+    >().toEqualTypeOf<string>();
+    expectTypeOf<
+      (typeof counterparties.$inferSelect)["nameFts"]
     >().toEqualTypeOf<string>();
     expectTypeOf<
       (typeof customerGroups.$inferSelect)["nameFts"]
@@ -268,5 +279,20 @@ describe("staff name FTS schema (SHO-528)", () => {
       (typeof priceLists.$inferSelect)["nameFts"]
     >().toEqualTypeOf<string>();
     expectTypeOf<typeof products.$inferInsert>().not.toHaveProperty("nameFts");
+    expectTypeOf<typeof productVariants.$inferInsert>().not.toHaveProperty(
+      "nameFts",
+    );
+    expectTypeOf<typeof companyCustomers.$inferInsert>().not.toHaveProperty(
+      "nameFts",
+    );
+    expectTypeOf<typeof counterparties.$inferInsert>().not.toHaveProperty(
+      "nameFts",
+    );
+    expectTypeOf<typeof customerGroups.$inferInsert>().not.toHaveProperty(
+      "nameFts",
+    );
+    expectTypeOf<typeof priceLists.$inferInsert>().not.toHaveProperty(
+      "nameFts",
+    );
   });
 });

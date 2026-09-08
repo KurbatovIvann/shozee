@@ -246,6 +246,7 @@ describe("staff name FTS source (SHO-528)", () => {
     expect(generatedSql).toContain("setweight");
     expect(generatedSql).toContain("to_tsvector");
     expect(generatedSql).toContain("simple");
+    expect(generatedSql).toContain(", 'A')");
     expect(generatedSql).not.toMatch(/unaccent/i);
   });
 });
