@@ -202,7 +202,7 @@ function ordersCreateUnlessRecoveredModel(options: {
 }): MockLanguageModelV3 {
   return new MockLanguageModelV3({
     doStream: (call) => {
-      const serialized = JSON.stringify(call.prompt ?? []);
+      const serialized = JSON.stringify(call.prompt);
       if (serialized.includes(options.recoveredToolCallId)) {
         return Promise.resolve(mockTextStream(options.speech));
       }

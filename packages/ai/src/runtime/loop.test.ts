@@ -1033,7 +1033,7 @@ describe("runStaffAssistantHostTurn", () => {
     );
     const model = new MockLanguageModelV3({
       doStream: (options) => {
-        const serialized = JSON.stringify(options.prompt ?? []);
+        const serialized = JSON.stringify(options.prompt);
         if (serialized.includes("call-outside")) {
           return Promise.resolve(
             mockTextStream("Recovered outside the window."),
