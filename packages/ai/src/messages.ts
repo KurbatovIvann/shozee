@@ -4,10 +4,12 @@ import { z } from "zod";
 import { confirmationFromChatPart } from "./confirmation.js";
 import {
   budgetStaffAssistantToolRuns,
+  staffAssistantToolCallInput,
   staffAssistantToolResultChars,
   staffAssistantToolResultOutput,
   staffAssistantToolSetKey,
   type StaffAssistantPersistedMessage,
+  type StaffAssistantPersistedToolRun,
 } from "./model-trace.js";
 import { staffAssistantLocaleSchema } from "./locale.js";
 import { anthropicStaffProvider } from "./provider/anthropic.js";
@@ -184,10 +186,22 @@ export function staffAssistantModelMessagesFromPersisted(
   return applyStaffAssistantHistoryWindow(expanded, provider);
 }
 
+function comparePersistedRunSeq(
+  left: StaffAssistantPersistedToolRun,
+  right: StaffAssistantPersistedToolRun,
+): number {
+  const leftSeq = left.seq ?? Number.MAX_SAFE_INTEGER;
+  const rightSeq = right.seq ?? Number.MAX_SAFE_INTEGER;
+  return leftSeq - rightSeq;
+}
+
 function modelMessagesFromPersistedRow(
   message: StaffAssistantPersistedMessage,
 ): ModelMessage[] {
-  const tracedRuns = (message.toolRuns ?? []).filter(
+  const orderedRuns = [...(message.toolRuns ?? [])].sort(
+    comparePersistedRunSeq,
+  );
+  const tracedRuns = orderedRuns.filter(
     (run) => run.modelTrace !== null && run.modelTrace !== undefined,
   );
   if (message.role === "user" || tracedRuns.length === 0) {
@@ -205,7 +219,7 @@ function modelMessagesFromPersistedRow(
     type: "tool-call" as const,
     toolCallId: run.toolCallId,
     toolName: staffAssistantToolSetKey(run),
-    input: {},
+    input: staffAssistantToolCallInput(run),
   }));
   const toolResults = tracedRuns.map((run) => ({
     type: "tool-result" as const,

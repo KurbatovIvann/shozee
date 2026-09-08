@@ -2,9 +2,10 @@
  * Staff assistant persistence (SHO-320 / feature SHO-318). Owned by the
  * assistant module (ADR-0014). Conversations, user/assistant text, and
  * tool-run traces (action names, tool-call ids, challenge ids, result
- * ids, outcome, bounded `model_trace` prompt state). Deliberately absent:
- * FKs to orders/documents, order or document status snapshots, prompts in
- * audit/logs, SSE/session columns.
+ * ids, outcome, bounded `model_trace` prompt state, bounded `tool_input`
+ * façade args, `execution_id` attempt identity, `seq` call order).
+ * Deliberately absent: FKs to orders/documents, order or document status
+ * snapshots, prompts in audit/logs, SSE/session columns.
  *
  * ON DELETE: `user_id → user` is RESTRICT (files/chat staff-user
  * convention). Composite FKs to conversations are CASCADE so deleting a
@@ -17,9 +18,11 @@ import {
   check,
   foreignKey,
   index,
+  integer,
   jsonb,
   pgTable,
   text,
+  unique,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -98,19 +101,25 @@ export const assistantMessages = pgTable(
 /**
  * One tool invocation inside a conversation. `result_ids` is a uuid array
  * of produced resource ids (traces, not projections). Outcome is the
- * closed HITL/tool set (success, error, confirmation_required,
+ * closed HITL/tool set (started, success, error, confirmation_required,
  * choice_required). `challenge_id` is the opaque interaction id for
  * confirmation or choice. Never order/document status.
  * `model_trace` is ADR-0034 prompt state: the post-clip façade output the
- * model already saw. Nullable; no client renders it; CHECK
- * `length(model_trace::text) <= 22000`. `tool_name` is the live ToolSet
- * key (`orders_list_page`) for reconstruction; `action_name` stays the
- * executeAction registry identity. `message_id` is the assistant turn that
- * produced the run — recorded in the same transaction as that message, so
- * model-history assembly joins on it instead of inferring the turn from
- * `created_at` (SHO-510 review: `now()` is transaction time, and a
- * confirmation resume writes two assistant messages with no user message
- * between them).
+ * model already saw (success, error, choice_required,
+ * confirmation_required; typically null on `started`). Nullable; no
+ * client renders it; CHECK `length(model_trace::text) <= 22000`.
+ * `tool_input` is the façade/tool args for this call (same CHECK class).
+ * Nullable on pre-T2 rows; history reconstructs `input: {}` when absent.
+ * `execution_id` is the server-minted attempt identity (unique per
+ * tenant). Nullable on old rows; required when `outcome = started`.
+ * `seq` is call order on the turn; nullable on old rows; required on
+ * `started`. UNIQUE `(company_id, message_id, seq)` is the stageRun
+ * idempotency key (HTTP retries must not mint a second started row at
+ * the same seq). Pre-T2 rows keep `seq` null and do not collide.
+ * `tool_name` is the live ToolSet key (`orders_list_page`) for
+ * reconstruction; `action_name` stays the executeAction registry identity.
+ * `message_id` is the assistant turn that produced the run. Do not infer
+ * order from `created_at` alone — use `seq` ascending.
  */
 export const assistantToolRuns = pgTable(
   "assistant_tool_runs",
@@ -129,10 +138,22 @@ export const assistantToolRuns = pgTable(
     outcome: text("outcome").notNull(),
     modelTrace: jsonb("model_trace"),
     toolName: text("tool_name"),
+    toolInput: jsonb("tool_input"),
+    executionId: text("execution_id"),
+    seq: integer("seq"),
     ...timestampColumns(),
   },
   (table) => [
     tenantRowUnique("assistant_tool_runs_company_id_id_uq", table),
+    unique("assistant_tool_runs_company_execution_id_uq").on(
+      table.companyId,
+      table.executionId,
+    ),
+    unique("assistant_tool_runs_company_message_seq_uq").on(
+      table.companyId,
+      table.messageId,
+      table.seq,
+    ),
     index("assistant_tool_runs_company_conversation_idx").on(
       table.companyId,
       table.conversationId,
@@ -156,11 +177,19 @@ export const assistantToolRuns = pgTable(
     }).onDelete("cascade"),
     check(
       "assistant_tool_runs_outcome_check",
-      sql`${table.outcome} IN ('success', 'error', 'confirmation_required', 'choice_required')`,
+      sql`${table.outcome} IN ('started', 'success', 'error', 'confirmation_required', 'choice_required')`,
     ),
     check(
       "assistant_tool_runs_model_trace_length_check",
       sql`length(${table.modelTrace}::text) <= 22000`,
+    ),
+    check(
+      "assistant_tool_runs_tool_input_length_check",
+      sql`length(${table.toolInput}::text) <= 22000`,
+    ),
+    check(
+      "assistant_tool_runs_started_identity_check",
+      sql`${table.outcome} <> 'started' OR (${table.executionId} IS NOT NULL AND ${table.seq} IS NOT NULL)`,
     ),
   ],
 );

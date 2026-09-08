@@ -1,10 +1,13 @@
 import { ConfirmationRequiredError } from "@showzy/core/errors";
 import { describe, expect, it, vi } from "vitest";
 
+import type { ActionToolExecute } from "../action-tool.js";
 import { STAFF_ASSISTANT_TOOL_ERROR_FALLBACK } from "../turn-speech.js";
 import {
+  emptyHostExecuteState,
   HOST_HITL_PAUSED_OUTPUT,
   wrapHostSequentialExecute,
+  type StaffAssistantHostCheckpoint,
   type StaffAssistantHostExecuteState,
 } from "./execute.js";
 
@@ -12,7 +15,7 @@ const customerId = "11111111-1111-4111-8111-111111111111";
 const challengeId = "22222222-2222-4222-8222-222222222222";
 
 function emptyHostState(): StaffAssistantHostExecuteState {
-  return { paused: false, runs: [] };
+  return emptyHostExecuteState();
 }
 
 describe("wrapHostSequentialExecute", () => {
@@ -110,5 +113,93 @@ describe("wrapHostSequentialExecute", () => {
     expect(state.runs[0]?.challengeId).toBe(challengeId);
     expect(state.runs[0]?.outcome).not.toBe("success");
     expect(state.paused).toBe(true);
+  });
+
+  it("recovers executionId from staged storage after execute and before finishRun", async () => {
+    const rows: Array<{
+      readonly seq: number;
+      readonly executionId: string;
+      readonly toolInput: unknown;
+    }> = [];
+    const checkpoint: StaffAssistantHostCheckpoint = {
+      begin: () => Promise.resolve({ messageId: "msg-1" }),
+      stageRun: (input) => {
+        const existing = rows.find((row) => row.seq === input.seq);
+        if (existing !== undefined) {
+          return Promise.resolve({ executionId: existing.executionId });
+        }
+        const executionId = `stored-${String(rows.length)}`;
+        rows.push({
+          seq: input.seq,
+          executionId,
+          toolInput: input.toolInput,
+        });
+        return Promise.resolve({ executionId });
+      },
+      finishRun: () => {
+        throw new Error("finishRun must be skipped in this crash window");
+      },
+      complete: () => {
+        throw new Error("complete is not part of the execute crash window");
+      },
+    };
+    let writes = 0;
+    const committed = new Map<string, string>();
+    const execute: ActionToolExecute = (_actionName, _input, options) => {
+      const executionId = options.executionId;
+      if (executionId === undefined) {
+        throw new Error("execute must receive a persisted executionId");
+      }
+      const existing = committed.get(executionId);
+      if (existing !== undefined) {
+        return Promise.resolve({ id: existing });
+      }
+      writes += 1;
+      const id = `write-${String(writes)}`;
+      committed.set(executionId, id);
+      return Promise.resolve({ id });
+    };
+    const executeSpy = vi.fn(execute);
+
+    const firstState = emptyHostState();
+    firstState.messageId = "msg-1";
+    const firstWrapped = wrapHostSequentialExecute(executeSpy, firstState, {
+      checkpoint,
+    });
+    const first = await firstWrapped(
+      "assistant.createConversation",
+      { title: "from staged tool" },
+      { toolCallId: "call-create" },
+    );
+    expect(first).toEqual({ id: "write-1" });
+    expect(writes).toBe(1);
+    expect(rows).toHaveLength(1);
+
+    const recovered = rows[0];
+    if (recovered === undefined) {
+      throw new Error("expected execution_id in the staged store");
+    }
+    expect(recovered.executionId).toBe("stored-0");
+    expect(recovered.toolInput).toEqual({ title: "from staged tool" });
+
+    const replayState = emptyHostState();
+    replayState.messageId = "msg-1";
+    const replayWrapped = wrapHostSequentialExecute(executeSpy, replayState, {
+      checkpoint,
+    });
+    const replay = await replayWrapped(
+      "assistant.createConversation",
+      { title: "from staged tool" },
+      { toolCallId: "call-create" },
+    );
+    expect(replay).toEqual({ id: "write-1" });
+    expect(writes).toBe(1);
+    expect(rows).toHaveLength(1);
+    expect(executeSpy).toHaveBeenNthCalledWith(
+      2,
+      "assistant.createConversation",
+      { title: "from staged tool" },
+      { toolCallId: "call-create", executionId: recovered.executionId },
+    );
   });
 });

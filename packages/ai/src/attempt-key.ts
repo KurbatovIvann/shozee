@@ -15,3 +15,15 @@ export function attemptKey(
 ): string {
   return `${kind}:${conversationId}:${id}`;
 }
+
+/**
+ * Compose the existing tool-attempt key with a server-minted
+ * `execution_id`. Do not use a model-regenerated `toolCallId` as the
+ * retry key.
+ */
+export function executionAttemptKey(
+  conversationId: string,
+  executionId: string,
+): string {
+  return attemptKey("tool", conversationId, executionId);
+}

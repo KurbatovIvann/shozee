@@ -234,6 +234,9 @@ describe("assistant schema slice", () => {
       "model_trace",
       "tool_name",
       "message_id",
+      "tool_input",
+      "execution_id",
+      "seq",
     ]);
 
     const resultIds = result.rows.find(
@@ -299,6 +302,15 @@ describe("assistant schema slice", () => {
     expectTypeOf<
       (typeof assistantToolRuns.$inferSelect)["toolName"]
     >().toEqualTypeOf<string | null>();
+    expectTypeOf<
+      (typeof assistantToolRuns.$inferSelect)["toolInput"]
+    >().toEqualTypeOf<unknown>();
+    expectTypeOf<
+      (typeof assistantToolRuns.$inferSelect)["executionId"]
+    >().toEqualTypeOf<string | null>();
+    expectTypeOf<
+      (typeof assistantToolRuns.$inferSelect)["seq"]
+    >().toEqualTypeOf<number | null>();
   });
 
   it("declares UNIQUE (company_id, id) and the conversation list index", async () => {
@@ -332,6 +344,76 @@ describe("assistant schema slice", () => {
     expect(
       indexes.get("assistant_tool_runs_company_conversation_idx"),
     ).toContain("(company_id, conversation_id)");
+    expect(
+      indexes.get("assistant_tool_runs_company_execution_id_uq"),
+    ).toContain("UNIQUE");
+    expect(
+      indexes.get("assistant_tool_runs_company_execution_id_uq"),
+    ).toContain("(company_id, execution_id)");
+    expect(indexes.get("assistant_tool_runs_company_message_seq_uq")).toContain(
+      "UNIQUE",
+    );
+    expect(indexes.get("assistant_tool_runs_company_message_seq_uq")).toContain(
+      "(company_id, message_id, seq)",
+    );
+  });
+
+  it("rejects a second tool run with the same company, message, and seq", async () => {
+    const company = await insertCompany();
+    const userId = await insertUser();
+    const conversation = await insertConversation({
+      companyId: company.id,
+      userId,
+    });
+    const message = await insertMessage({
+      companyId: company.id,
+      conversationId: conversation.id,
+      role: "assistant",
+      body: "",
+    });
+    const first = await insertToolRun({
+      companyId: company.id,
+      conversationId: conversation.id,
+      messageId: message.id,
+      actionName: "orders.list",
+      toolCallId: "call_seq_first",
+      toolName: "orders_list_page",
+      toolInput: { limit: 20 },
+      executionId: randomUUID(),
+      seq: 0,
+      outcome: "started",
+    });
+    expect(first.seq).toBe(0);
+
+    await expectSqlState(
+      insertToolRun({
+        companyId: company.id,
+        conversationId: conversation.id,
+        messageId: message.id,
+        actionName: "orders.list",
+        toolCallId: "call_seq_second",
+        toolName: "orders_list_page",
+        toolInput: { limit: 5 },
+        executionId: randomUUID(),
+        seq: 0,
+        outcome: "started",
+      }),
+      "23505",
+    );
+
+    const nextSeq = await insertToolRun({
+      companyId: company.id,
+      conversationId: conversation.id,
+      messageId: message.id,
+      actionName: "orders.get",
+      toolCallId: "call_seq_next",
+      toolName: "orders_get",
+      toolInput: { id: randomUUID() },
+      executionId: randomUUID(),
+      seq: 1,
+      outcome: "started",
+    });
+    expect(nextSeq.seq).toBe(1);
   });
 
   it("declares tenant, staff-user, and composite conversation foreign keys", async () => {
@@ -412,6 +494,9 @@ describe("assistant schema slice", () => {
     expect(defs.get("assistant_tool_runs_outcome_check")).toContain(
       "'choice_required'",
     );
+    expect(defs.get("assistant_tool_runs_outcome_check")).toContain(
+      "'started'",
+    );
     expect(defs.get("assistant_tool_runs_outcome_check")).not.toContain(
       "'confirmed'",
     );
@@ -420,6 +505,15 @@ describe("assistant schema slice", () => {
     );
     expect(defs.get("assistant_tool_runs_model_trace_length_check")).toMatch(
       /length\(.*model_trace.*::text\)/i,
+    );
+    expect(defs.get("assistant_tool_runs_tool_input_length_check")).toContain(
+      "22000",
+    );
+    expect(defs.get("assistant_tool_runs_tool_input_length_check")).toMatch(
+      /length\(.*tool_input.*::text\)/i,
+    );
+    expect(defs.get("assistant_tool_runs_started_identity_check")).toMatch(
+      /execution_id/i,
     );
   });
 
@@ -666,6 +760,97 @@ describe("assistant schema slice", () => {
       rows: [{ orderNumber: "12" }],
     });
     expect(traced.toolName).toBe("orders_list_page");
+
+    const emptyBody = await insertMessage({
+      companyId: company.id,
+      conversationId: conversation.id,
+      role: "assistant",
+      body: "",
+    });
+    expect(emptyBody.body).toBe("");
+
+    const started = await insertToolRun({
+      companyId: company.id,
+      conversationId: conversation.id,
+      messageId: emptyBody.id,
+      actionName: "orders.list",
+      toolCallId: "call_started",
+      toolName: "orders_list_page",
+      toolInput: { limit: 20 },
+      executionId: randomUUID(),
+      seq: 0,
+      outcome: "started",
+    });
+    expect(started.outcome).toBe("started");
+    expect(started.toolInput).toEqual({ limit: 20 });
+    expect(started.executionId).toEqual(expect.any(String));
+    expect(started.seq).toBe(0);
+
+    await expectSqlState(
+      insertToolRun({
+        companyId: company.id,
+        conversationId: conversation.id,
+        messageId: emptyBody.id,
+        actionName: "orders.list",
+        toolCallId: "call_started_same_seq",
+        toolName: "orders_list_page",
+        toolInput: { limit: 2 },
+        executionId: randomUUID(),
+        seq: 0,
+        outcome: "started",
+      }),
+      "23505",
+    );
+
+    await expectSqlState(
+      insertToolRun({
+        companyId: company.id,
+        conversationId: conversation.id,
+        actionName: "orders.list",
+        toolCallId: "call_started_dup",
+        toolName: "orders_list_page",
+        toolInput: { limit: 1 },
+        executionId: started.executionId ?? randomUUID(),
+        seq: 1,
+        outcome: "started",
+      }),
+      "23505",
+    );
+
+    await expectSqlState(
+      insertToolRun({
+        companyId: company.id,
+        conversationId: conversation.id,
+        actionName: "orders.list",
+        toolCallId: "call_started_no_id",
+        outcome: "started",
+      }),
+      "23514",
+    );
+
+    await expectSqlState(
+      insertToolRun({
+        companyId: company.id,
+        conversationId: conversation.id,
+        actionName: "orders.list",
+        toolCallId: "call_input_stringify_ok",
+        outcome: "success",
+        toolInput: { pad: "x".repeat(21_990) },
+      }),
+      "23514",
+    );
+
+    await expectSqlState(
+      insertToolRun({
+        companyId: company.id,
+        conversationId: conversation.id,
+        actionName: "orders.list",
+        toolCallId: "call_input_huge",
+        outcome: "success",
+        toolInput: { pad: "x".repeat(22_000) },
+      }),
+      "23514",
+    );
 
     const postgresLimit = await insertToolRun({
       companyId: company.id,

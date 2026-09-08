@@ -12,6 +12,7 @@ import {
   ORDERS_CREATE_TOOL_NAME,
   ORDERS_LIST_PAGE_TOOL_NAME,
   toProviderToolName,
+  type ActionToolExecute,
 } from "../action-tool.js";
 import { STAFF_ASSISTANT_CONFIRMATION_COPY } from "../confirmation.js";
 import {
@@ -25,7 +26,10 @@ import {
 import { ORDERS_LIST_PAGE_ASSISTANT_DEFAULT_LIMIT } from "../tool-facades/orders-list.js";
 import { STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK } from "../turn-speech.js";
 import { HOST_HITL_PAUSED_STATUS } from "./execute.js";
-import { runStaffAssistantHostTurn } from "./loop.js";
+import {
+  runStaffAssistantHostTurn,
+  type StaffAssistantHostCheckpoint,
+} from "./loop.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -355,6 +359,82 @@ describe("runStaffAssistantHostTurn", () => {
     expect(turn.speech.source).toBe("model");
   });
 
+  it("checkpoints begin, stageRun, execute, finishRun, then complete in seq order", async () => {
+    const kinds: string[] = [];
+    const staged = new Map<number, string>();
+    const checkpoint: StaffAssistantHostCheckpoint = {
+      begin: () => {
+        kinds.push("begin");
+        return Promise.resolve({ messageId: "msg-checkpoint" });
+      },
+      stageRun: (input) => {
+        const executionId = `exec-${String(input.seq)}`;
+        staged.set(input.seq, executionId);
+        kinds.push(`stageRun:${String(input.seq)}`);
+        return Promise.resolve({ executionId });
+      },
+      finishRun: (input) => {
+        kinds.push(`finishRun:${input.executionId}`);
+        return Promise.resolve();
+      },
+      complete: () => {
+        kinds.push("complete");
+        return Promise.resolve();
+      },
+    };
+    const execute: ActionToolExecute = (actionName, _input, options) => {
+      kinds.push(`execute:${actionName}:${options.executionId ?? "missing"}`);
+      return Promise.resolve({ items: [], nextCursor: null });
+    };
+    const executeSpy = vi.fn(execute);
+    const model = new MockLanguageModelV3({
+      doStream: [
+        mockToolCallsStream([
+          {
+            toolCallId: "call-list",
+            toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+            input: "{}",
+          },
+          {
+            toolCallId: "call-products",
+            toolName: CATALOG_LIST_PRODUCTS_TOOL_NAME,
+            input: "{}",
+          },
+        ]),
+        mockTextStream("Listed both."),
+      ],
+    });
+    const turn = await runStaffAssistantHostTurn({
+      model,
+      messages: [{ role: "user", content: "List orders and products" }],
+      contracts: [listOrders, listProducts],
+      execute: executeSpy,
+      checkpoint,
+    });
+    expect(kinds).toEqual([
+      "begin",
+      "stageRun:0",
+      "execute:orders.list:exec-0",
+      "finishRun:exec-0",
+      "stageRun:1",
+      "execute:catalog.listProducts:exec-1",
+      "finishRun:exec-1",
+      "complete",
+    ]);
+    expect(executeSpy).toHaveBeenCalledWith(
+      "orders.list",
+      { kind: "page.summary", limit: ORDERS_LIST_PAGE_ASSISTANT_DEFAULT_LIMIT },
+      { toolCallId: "call-list", executionId: "exec-0" },
+    );
+    expect(executeSpy).toHaveBeenCalledWith(
+      "catalog.listProducts",
+      expect.anything(),
+      { toolCallId: "call-products", executionId: "exec-1" },
+    );
+    expect(turn.speech.source).toBe("model");
+    expect(staged.get(0)).toBe("exec-0");
+  });
+
   it("stops further tools after confirmation_required and still commits narration", async () => {
     const execute = vi.fn((actionName: string) => {
       if (actionName === "customers.deleteCustomer") {
@@ -408,13 +488,13 @@ describe("runStaffAssistantHostTurn", () => {
       "call-list",
     );
     expect(turn.toolRuns).toEqual([
-      {
+      expect.objectContaining({
         actionName: "customers.deleteCustomer",
         toolCallId: "call-delete",
         challengeId,
         resultIds: [],
         outcome: "confirmation_required",
-      },
+      }),
     ]);
     expect(turn.speech).toEqual({
       source: "model",
@@ -561,13 +641,13 @@ describe("runStaffAssistantHostTurn", () => {
     });
     expect(execute).toHaveBeenCalledTimes(1);
     expect(turn.toolRuns).toEqual([
-      {
+      expect.objectContaining({
         actionName: "customers.deleteCustomer",
         toolCallId: "call-delete",
         challengeId,
         resultIds: [],
         outcome: "confirmation_required",
-      },
+      }),
     ]);
     expect(turn.toolRuns[0]?.outcome).not.toBe("success");
     expect(model.doStreamCalls.length).toBeGreaterThanOrEqual(2);

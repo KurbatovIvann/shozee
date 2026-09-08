@@ -99,6 +99,9 @@ Until T5 there are two hosts:
   tables. Do not use `presentOrderCreatedSpeech` or catalog domain-error
   copy as the winner. `commitHostSpeech` does not call `commitTurnSpeech`.
   The new loop must not call the gate. `source` stays in-memory.
+  Optional `checkpoint` is `begin` → `stageRun` (mint `executionId`) →
+  execute with that id → `finishRun` → `complete` (SHO-521). Do not use
+  a model `toolCallId` as the retry key.
 
 Do not delete a **surface** (registry / cards). Do not add a second
 model call to summarize the card. Do not re-introduce a JSON spoken

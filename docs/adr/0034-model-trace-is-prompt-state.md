@@ -60,9 +60,12 @@ Rules that make it prompt state rather than a projection:
    not fit in 8 000 chars; that turn keeps as many of its newest runs as
    the cap allows and loses the rest. Guaranteeing every run of such a turn
    would mean a per-run budget, which is not worth the machinery.
-4. **Only successful outcomes.** No trace for `confirmation_required`,
-   `needs_choice`, or error runs; committed protocol speech already
-   records those (`commitTurnSpeech`, ADR-0036).
+4. **Prompt-state traces, not only success.** Store `model_trace` for
+   `success`, `error`, `choice_required`, and `confirmation_required`
+   (clipped). `started` rows typically have a null trace until
+   `finishRun`. No client renders it; cards still resolve `result_ids`.
+   Committed speech is a separate bubble (ADR-0036 / ADR-0037) and is
+   not a substitute for the trace.
 5. **Same lifecycle as the conversation.** It lives and dies with
    `assistant_tool_runs`; no separate retention, export, or backfill.
 
@@ -103,13 +106,13 @@ bounded model-prompt caches that no client renders are prompt state (ADR-0034)".
   guarantee. The harness ([SHO-412](https://linear.app/showzy-v2/issue/SHO-412))
   must report the measured delta in the T4 PR; if cache savings do not
   appear, say so — bounded context may still justify the change.
-- Guard tests: `model_trace` never appears in the client conversation view;
-  `getModelHistory` is not on oRPC and not an AI tool; oversized trace is
-  rejected by the CHECK.
+- Guard tests: `model_trace` and `tool_input` never appear in the client
+  conversation view; `getModelHistory` is not on oRPC and not an AI tool;
+  oversized trace or tool input is rejected by the CHECK. Pre-T2 rows
+  without `tool_input` reconstruct as `input: {}`.
 - `docs/module-ownership.md` gets a one-line amendment for `assistant` in
   the T4 PR. No other module may add a prompt-state column without its own
   ADR; this decision is scoped to `assistant_tool_runs`.
-- ADR-0037 records that `model_trace` also stores `error` /
-  `choice_required` / `confirmation_required` / `started`, and that
-  `assistant.checkpointAssistantTurn` lands in T2. Rule 4 above stays
-  until that ticket.
+- SHO-521 `assistant.checkpointAssistantTurn` `finishRun` writes those
+  traces. `started` rows typically have a null trace until finish.
+  Rule 4 is in force.

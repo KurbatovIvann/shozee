@@ -91,7 +91,10 @@ export {
 export type ActionToolExecute = (
   actionName: string,
   input: unknown,
-  options: { readonly toolCallId: string },
+  options: {
+    readonly toolCallId: string;
+    readonly executionId?: string;
+  },
 ) => Promise<unknown>;
 
 type FacadeToolsFactory = (

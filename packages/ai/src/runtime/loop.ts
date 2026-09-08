@@ -20,7 +20,6 @@ import {
   type ActionToolExecute,
 } from "../action-tool.js";
 import {
-  isStaffAssistantNeedsChoiceOutput,
   toolOutputRequestsChoice,
   type ChoiceBind,
   type ChoiceRecord,
@@ -54,15 +53,15 @@ import {
 import { staffAssistantSystemMessages } from "../system-prompt.js";
 import { staffAssistantToolsetHash } from "../toolset-hash.js";
 import { staffAssistantTurnContextAddendum } from "../turn-context.js";
-import {
-  isStaffAssistantTypedToolError,
-  type StaffAssistantPresentedToolResult,
-} from "../turn-speech.js";
+import type { StaffAssistantPresentedToolResult } from "../turn-speech.js";
 import { staffAssistantTurnUsageFromTotal } from "../usage.js";
 
 import {
+  emptyHostExecuteState,
   isHostHitlPausedOutput,
   wrapHostSequentialExecute,
+  type StaffAssistantHostCheckpoint,
+  type StaffAssistantHostExecuteState,
   type StaffAssistantHostPendingDecision,
 } from "./execute.js";
 import {
@@ -71,9 +70,15 @@ import {
   usableHostModelText,
 } from "./speech.js";
 
-export type { StaffAssistantHostPendingDecision } from "./execute.js";
+export type {
+  StaffAssistantHostCheckpoint,
+  StaffAssistantHostCheckpointFinishInput,
+  StaffAssistantHostCheckpointStageInput,
+  StaffAssistantHostPendingDecision,
+} from "./execute.js";
 export {
   allowHostPendingAlways,
+  emptyHostExecuteState,
   HOST_HITL_PAUSED_OUTPUT,
   HOST_HITL_PAUSED_STATUS,
   isHostHitlPausedOutput,
@@ -118,6 +123,8 @@ function clipToolExecutes(
   tools: ToolSet,
   clipBytes: ClipByteMeter,
   presented: StaffAssistantPresentedToolResult[],
+  state: StaffAssistantHostExecuteState,
+  checkpoint?: StaffAssistantHostCheckpoint,
 ): void {
   for (const name of Object.keys(tools)) {
     if (name === STAFF_ASSISTANT_TOOL_SEARCH_NAME) {
@@ -130,32 +137,56 @@ function clipToolExecutes(
     const inner = aiTool.execute;
     tools[name] = {
       ...aiTool,
-      execute: async (input, options) => {
-        const output: unknown = await inner(input, options);
-        if (isHostHitlPausedOutput(output)) {
-          return output;
-        }
-        const returned = meterToolResult(
-          clipBytes,
-          output,
-          clipStaffAssistantToolResult(output),
-        );
-        const toolCallId =
-          typeof options.toolCallId === "string" &&
-          options.toolCallId.length > 0
-            ? options.toolCallId
-            : undefined;
-        if (toolCallId === undefined) {
-          presented.push({ toolName: name, output: returned });
-        } else {
-          presented.push({
-            toolName: name,
-            output: returned,
-            toolCallId,
-          });
-        }
-        return returned;
-      },
+      execute: (input, options) =>
+        state.toolQueue.enqueue(async () => {
+          const toolCallId =
+            typeof options.toolCallId === "string" &&
+            options.toolCallId.length > 0
+              ? clipToolCallId(options.toolCallId)
+              : undefined;
+          if (toolCallId !== undefined) {
+            state.facadeByToolCallId.set(toolCallId, {
+              toolName: name,
+              toolInput: input,
+            });
+          }
+          const output: unknown = await inner(input, options);
+          if (isHostHitlPausedOutput(output)) {
+            return output;
+          }
+          const returned = meterToolResult(
+            clipBytes,
+            output,
+            clipStaffAssistantToolResult(output),
+          );
+          if (toolCallId === undefined) {
+            presented.push({ toolName: name, output: returned });
+          } else {
+            presented.push({
+              toolName: name,
+              output: returned,
+              toolCallId,
+            });
+          }
+          if (checkpoint !== undefined && toolCallId !== undefined) {
+            const executionId = state.executionIdByToolCallId.get(toolCallId);
+            const run = state.runs.find(
+              (item) => item.toolCallId === toolCallId,
+            );
+            if (executionId !== undefined && run !== undefined) {
+              await checkpoint.finishRun({
+                executionId,
+                outcome: run.outcome,
+                modelTrace: returned,
+                resultIds: run.resultIds,
+                ...(run.challengeId !== undefined
+                  ? { challengeId: run.challengeId }
+                  : {}),
+              });
+            }
+          }
+          return returned;
+        }),
     };
   }
 }
@@ -226,21 +257,11 @@ function attachClippedModelTraces(
     }
   }
   return runs.map((run) => {
-    if (run.outcome !== "success") {
-      return run;
-    }
     const presentedRun = traces.get(run.toolCallId);
     if (presentedRun === undefined) {
       return run;
     }
     const modelTrace = presentedRun.output;
-    if (
-      isStaffAssistantConfirmationOutput(modelTrace) ||
-      isStaffAssistantNeedsChoiceOutput(modelTrace) ||
-      isStaffAssistantTypedToolError(modelTrace)
-    ) {
-      return run;
-    }
     if (
       staffAssistantPostgresJsonbTextChars(modelTrace) >
       STAFF_ASSISTANT_CLIP_JSON_MAX
@@ -264,6 +285,7 @@ export interface StaffAssistantHostTurnOptions {
   readonly mintChoiceId?: () => string;
   readonly provider?: StaffProviderAdapter;
   readonly checkPending?: () => Promise<StaffAssistantHostPendingDecision>;
+  readonly checkpoint?: StaffAssistantHostCheckpoint;
 }
 
 /**
@@ -272,7 +294,11 @@ export interface StaffAssistantHostTurnOptions {
 export async function runStaffAssistantHostTurn(
   options: StaffAssistantHostTurnOptions,
 ): Promise<StaffAssistantHostTurnResult> {
-  const state = { paused: false, runs: [] as StaffAssistantToolRun[] };
+  const state = emptyHostExecuteState();
+  if (options.checkpoint !== undefined) {
+    const begun = await options.checkpoint.begin();
+    state.messageId = begun.messageId;
+  }
   const presentedToolResults: StaffAssistantPresentedToolResult[] = [];
   const clipBytes: ClipByteMeter = { in: 0, out: 0 };
   const locale = options.locale ?? STAFF_ASSISTANT_DEFAULT_LOCALE;
@@ -293,10 +319,20 @@ export async function runStaffAssistantHostTurn(
       ...(options.checkPending !== undefined
         ? { checkPending: options.checkPending }
         : {}),
+      enqueue: false,
+      ...(options.checkpoint !== undefined
+        ? { checkpoint: options.checkpoint }
+        : {}),
     }),
     provider,
   );
-  clipToolExecutes(tools, clipBytes, presentedToolResults);
+  clipToolExecutes(
+    tools,
+    clipBytes,
+    presentedToolResults,
+    state,
+    options.checkpoint,
+  );
   const toolsetHash = staffAssistantToolsetHash(
     Object.keys(tools),
     provider.id,
@@ -355,6 +391,13 @@ export async function runStaffAssistantHostTurn(
     runs: state.runs,
     toolOutputs: presentedToolResults.map((item) => item.output),
   });
+
+  if (options.checkpoint !== undefined && state.messageId !== undefined) {
+    await options.checkpoint.complete({
+      messageId: state.messageId,
+      body: speech.text,
+    });
+  }
 
   return {
     speech,

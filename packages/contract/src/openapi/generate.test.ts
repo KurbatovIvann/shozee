@@ -133,6 +133,7 @@ describe("OpenAPI generation", () => {
     expect(json).not.toContain("recordAssistantTurn");
     expect(json).not.toContain("getStaffActor");
     expect(json).not.toContain("getModelHistory");
+    expect(json).not.toContain("checkpointAssistantTurn");
   });
 
   it("fails when the committed artifact does not match generation", async () => {

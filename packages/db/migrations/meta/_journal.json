@@ -358,6 +358,13 @@
       "when": 1788806929856,
       "tag": "0050_panoramic_prodigy",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1788861258474,
+      "tag": "0051_unusual_warstar",
+      "breakpoints": true
     }
   ]
 }

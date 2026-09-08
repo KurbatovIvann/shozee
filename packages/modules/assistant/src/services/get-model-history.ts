@@ -1,11 +1,13 @@
 import type { ActionCtx } from "@showzy/core";
+import { CoreInvariantError } from "@showzy/core/errors";
 import {
   assistantMessages,
   assistantToolRuns,
 } from "@showzy/db/schema/assistant";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import type { z } from "zod";
 
+import { checkpointPersistedOutcomeSchema } from "../actions/checkpoint-assistant-turn.contract.js";
 import {
   GET_MODEL_HISTORY_WINDOW,
   type getModelHistoryOutputSchema,
@@ -15,6 +17,7 @@ import { loadOwnConversation } from "./load-conversation.js";
 
 type StaffCtx = Extract<ActionCtx, { principal: "staff" }>;
 type ModelHistory = z.output<typeof getModelHistoryOutputSchema>;
+type ModelHistoryToolRun = ModelHistory["messages"][number]["toolRuns"][number];
 
 const modelHistoryToolRunColumns = {
   messageId: assistantToolRuns.messageId,
@@ -23,6 +26,9 @@ const modelHistoryToolRunColumns = {
   toolName: assistantToolRuns.toolName,
   outcome: assistantToolRuns.outcome,
   modelTrace: assistantToolRuns.modelTrace,
+  toolInput: assistantToolRuns.toolInput,
+  seq: assistantToolRuns.seq,
+  executionId: assistantToolRuns.executionId,
 };
 
 type ModelHistoryToolRunRow = {
@@ -32,7 +38,20 @@ type ModelHistoryToolRunRow = {
   readonly toolName: string | null;
   readonly outcome: string;
   readonly modelTrace: unknown;
+  readonly toolInput: unknown;
+  readonly seq: number | null;
+  readonly executionId: string | null;
 };
+
+function toHistoryOutcome(outcome: string): ModelHistoryToolRun["outcome"] {
+  const parsed = checkpointPersistedOutcomeSchema.safeParse(outcome);
+  if (!parsed.success) {
+    throw new CoreInvariantError(
+      `assistant.getModelHistory stored illegal outcome "${outcome}"`,
+    );
+  }
+  return parsed.data;
+}
 
 function toolRunsByMessage(
   toolRuns: readonly ModelHistoryToolRunRow[],
@@ -47,10 +66,11 @@ function toolRunsByMessage(
       action: run.actionName,
       toolCallId: run.toolCallId,
       toolName: run.toolName,
-      modelTrace:
-        run.outcome === "success" && run.modelTrace !== null
-          ? run.modelTrace
-          : null,
+      modelTrace: run.modelTrace ?? null,
+      toolInput: run.toolInput ?? null,
+      seq: run.seq,
+      executionId: run.executionId,
+      outcome: toHistoryOutcome(run.outcome),
     });
     byMessage.set(run.messageId, runs);
   }
@@ -84,6 +104,7 @@ export async function getStaffModelHistory(env: {
   // Runs carry the assistant message that recorded them, so the read is the
   // window's own rows: no `created_at` inference, and `model_trace` (up to
   // 22 000 chars per run) is never fetched for turns outside the window.
+  // Call order is `seq` ascending; pre-T2 rows have null seq and sort last.
   const windowIds = messageRows.map((row) => row.id);
   const toolRunRows =
     windowIds.length === 0
@@ -97,7 +118,11 @@ export async function getStaffModelHistory(env: {
               inArray(assistantToolRuns.messageId, windowIds),
             ),
           )
-          .orderBy(asc(assistantToolRuns.createdAt), asc(assistantToolRuns.id));
+          .orderBy(
+            sql`${assistantToolRuns.seq} ASC NULLS LAST`,
+            asc(assistantToolRuns.createdAt),
+            asc(assistantToolRuns.id),
+          );
 
   const byMessage = toolRunsByMessage(toolRunRows);
 

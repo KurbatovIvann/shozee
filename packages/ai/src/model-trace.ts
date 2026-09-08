@@ -28,6 +28,22 @@ export interface StaffAssistantPersistedToolRun {
    */
   readonly toolName?: string | null;
   readonly modelTrace: unknown;
+  /**
+   * Façade/tool args. Absent/null on pre-T2 rows; reconstruction uses
+   * `input: {}`.
+   */
+  readonly toolInput?: unknown;
+  readonly seq?: number | null;
+}
+
+/** Reconstruct tool-call input. Pre-T2 rows without `toolInput` are `{}`. */
+export function staffAssistantToolCallInput(
+  run: Pick<StaffAssistantPersistedToolRun, "toolInput">,
+): unknown {
+  if (run.toolInput === undefined || run.toolInput === null) {
+    return {};
+  }
+  return run.toolInput;
 }
 
 export interface StaffAssistantPersistedMessage {
@@ -185,6 +201,8 @@ type BudgetedRun = {
   readonly storedTrace: unknown;
   readonly modelTrace: unknown;
   readonly kind: "full" | "digest" | "omit";
+  readonly toolInput?: unknown;
+  readonly seq?: number | null;
 };
 
 function budgetedChars(runs: readonly BudgetedRun[]): number {
@@ -234,11 +252,16 @@ export function budgetStaffAssistantToolRuns(
         typeof run.toolName === "string" && run.toolName.length > 0
           ? run.toolName
           : null;
+      const identity = {
+        action: run.action,
+        toolCallId: run.toolCallId,
+        toolName,
+        ...(run.toolInput !== undefined ? { toolInput: run.toolInput } : {}),
+        ...(run.seq !== undefined ? { seq: run.seq } : {}),
+      };
       if (run.modelTrace === null || run.modelTrace === undefined) {
         return {
-          action: run.action,
-          toolCallId: run.toolCallId,
-          toolName,
+          ...identity,
           storedTrace: null,
           modelTrace: null,
           kind: "omit" as const,
@@ -246,9 +269,7 @@ export function budgetStaffAssistantToolRuns(
       }
       if (tier === "digest") {
         return {
-          action: run.action,
-          toolCallId: run.toolCallId,
-          toolName,
+          ...identity,
           storedTrace: run.modelTrace,
           modelTrace: staffAssistantTraceDigest(
             staffAssistantToolSetKey(run),
@@ -258,9 +279,7 @@ export function budgetStaffAssistantToolRuns(
         };
       }
       return {
-        action: run.action,
-        toolCallId: run.toolCallId,
-        toolName,
+        ...identity,
         storedTrace: run.modelTrace,
         modelTrace: run.modelTrace,
         kind: "full" as const,
@@ -352,6 +371,8 @@ export function budgetStaffAssistantToolRuns(
         toolCallId: run.toolCallId,
         ...(run.toolName !== null ? { toolName: run.toolName } : {}),
         modelTrace: run.kind === "omit" ? null : run.modelTrace,
+        ...(run.toolInput !== undefined ? { toolInput: run.toolInput } : {}),
+        ...(run.seq !== undefined ? { seq: run.seq } : {}),
       })),
     };
   });

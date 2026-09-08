@@ -3,7 +3,7 @@ import {
   assistantMessages,
   assistantToolRuns,
 } from "@showzy/db/schema/assistant";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import type { z } from "zod";
 
 import type { getConversationOutputSchema } from "../actions/get-conversation.contract.js";
@@ -36,7 +36,7 @@ export async function getStaffConversation(env: {
     eq(assistantMessages.conversationId, env.conversationId),
   );
 
-  const [messages, toolRuns] = await Promise.all([
+  const [messageRows, toolRunRows] = await Promise.all([
     env.limit === undefined
       ? env.ctx.db
           .select(messageColumns)
@@ -62,12 +62,18 @@ export async function getStaffConversation(env: {
           eq(assistantToolRuns.conversationId, env.conversationId),
         ),
       )
-      .orderBy(asc(assistantToolRuns.createdAt), asc(assistantToolRuns.id)),
+      .orderBy(
+        sql`${assistantToolRuns.seq} ASC NULLS LAST`,
+        asc(assistantToolRuns.createdAt),
+        asc(assistantToolRuns.id),
+      ),
   ]);
 
   return {
     ...toConversationView(conversation),
-    messages: messages.map(toMessageView),
-    toolRuns: toolRuns.map(toToolRunView),
+    messages: messageRows.filter((row) => row.body !== "").map(toMessageView),
+    toolRuns: toolRunRows
+      .filter((row) => row.outcome !== "started")
+      .map(toToolRunView),
   };
 }
