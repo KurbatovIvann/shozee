@@ -103,6 +103,7 @@ describe("MODEL_SPEAKS_SCENARIOS", () => {
       MODEL_SPEAKS_SCENARIOS[2]?.expectation.textIncludesToolValues,
     ).toEqual(["customerName"]);
     for (const scenario of MODEL_SPEAKS_SCENARIOS) {
+      expect(scenario.host).toBe("new");
       expect(scenario.expectation.speechSource).toBe("model");
       expect(scenario.expectation.textExcludes).toEqual(
         expect.arrayContaining(['{"spoken"', '"spoken":', "```"]),

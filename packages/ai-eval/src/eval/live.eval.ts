@@ -79,6 +79,7 @@ describe("staff assistant corpus eval (live, SHO-412 / SHO-507 / SHO-511 / SHO-5
             execute: activeSandbox.execute,
             logger,
             companyName: activeSandbox.companyName,
+            ...(scenario.host !== undefined ? { host: scenario.host } : {}),
           });
           messages.push({ role: "assistant", content: last.trace.text });
         }
