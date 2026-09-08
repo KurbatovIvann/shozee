@@ -1988,7 +1988,8 @@ describe("live staff assistant host HTTP (SHO-524)", () => {
           },
         ),
       );
-      expect(replay.speech).toBe("The leftover create already landed.");
+      expect(replay.speech).toBe(speech);
+      expect(replay.speech).not.toBe("The leftover create already landed.");
       expect(await orderCount()).toBe(afterCommit);
     });
 

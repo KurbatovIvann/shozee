@@ -3248,7 +3248,8 @@ describe("unpublished staff assistant host HTTP", () => {
       if (replayBody.status !== "ok") {
         return;
       }
-      expect(replayBody.speech).toBe("The leftover create already landed.");
+      expect(replayBody.speech).toBe(speech);
+      expect(replayBody.speech).not.toBe("The leftover create already landed.");
       expect(await orderCount()).toBe(afterCommit);
     });
 
