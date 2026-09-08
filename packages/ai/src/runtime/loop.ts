@@ -466,6 +466,41 @@ function assistantMessageWithStartedCalls(
   return message;
 }
 
+type RecoveredToolResultPart = {
+  readonly type: "tool-result";
+  readonly toolCallId: string;
+  readonly toolName: string;
+  readonly output: ReturnType<typeof staffAssistantToolResultOutput>;
+};
+
+function trailingUserMessageCount(messages: readonly ModelMessage[]): number {
+  let count = 0;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role !== "user") {
+      break;
+    }
+    count += 1;
+  }
+  return count;
+}
+
+function recoveredCallResultPair(
+  recovered: readonly StaffAssistantHostStartedRun[],
+  missing: readonly RecoveredToolResultPart[],
+): {
+  readonly assistant: ModelMessage;
+  readonly tool: ModelMessage;
+} {
+  const missingIds = new Set(missing.map((part) => part.toolCallId));
+  return {
+    assistant: assistantMessageWithStartedCalls(
+      { role: "assistant", content: [] },
+      recovered.filter((run) => missingIds.has(run.toolCallId)),
+    ),
+    tool: { role: "tool", content: missing },
+  };
+}
+
 function mergeRecoveredToolResultsIntoHistory(
   messages: readonly ModelMessage[],
   recovered: readonly StaffAssistantHostStartedRun[],
@@ -483,15 +518,7 @@ function mergeRecoveredToolResultsIntoHistory(
       presentedByCallId.set(item.toolCallId, item);
     }
   }
-  const replacements = new Map<
-    string,
-    {
-      readonly type: "tool-result";
-      readonly toolCallId: string;
-      readonly toolName: string;
-      readonly output: ReturnType<typeof staffAssistantToolResultOutput>;
-    }
-  >();
+  const replacements = new Map<string, RecoveredToolResultPart>();
   for (const run of recovered) {
     const presentedRun = presentedByCallId.get(run.toolCallId);
     if (presentedRun === undefined) {
@@ -551,7 +578,17 @@ function mergeRecoveredToolResultsIntoHistory(
       { role: "tool", content: missing },
     ];
   }
-  return next;
+  const pair = recoveredCallResultPair(recovered, missing);
+  const trailingUsers = trailingUserMessageCount(next);
+  if (trailingUsers === 0) {
+    return [...next, pair.assistant, pair.tool];
+  }
+  return [
+    ...next.slice(0, -trailingUsers),
+    pair.assistant,
+    pair.tool,
+    ...next.slice(-trailingUsers),
+  ];
 }
 
 export interface StaffAssistantHostTurnOptions {

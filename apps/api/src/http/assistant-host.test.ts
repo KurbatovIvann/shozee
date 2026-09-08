@@ -67,6 +67,7 @@ describe("live staff-assistant host (SHO-524)", () => {
     expect(hostSrc).toContain("hostModelMessages");
     expect(hostSrc).toContain("recoverStartedExecutionIds");
     expect(hostSrc).toContain("unfinishedStartedRuns");
+    expect(hostSrc).toContain("includeTurnKeys");
     expect(hostSrc).not.toContain("isChatTurnAssistantMessage");
   });
 

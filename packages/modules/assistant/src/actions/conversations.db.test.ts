@@ -30,6 +30,7 @@ import { appendUserMessage } from "./append-user-message.js";
 import { checkpointAssistantTurn } from "./checkpoint-assistant-turn.js";
 import { createConversation } from "./create-conversation.js";
 import { getConversation } from "./get-conversation.js";
+import { GET_MODEL_HISTORY_CHECKPOINT_TURNS_MAX } from "./get-model-history.contract.js";
 import { getModelHistory } from "./get-model-history.js";
 import { getStaffActor } from "./get-staff-actor.js";
 import { listConversations } from "./list-conversations.js";
@@ -1697,6 +1698,56 @@ describe("assistant staff conversation actions", () => {
     expect(open?.turnKey).toBeNull();
   });
 
+  it("pins a completed resume turnKey clipped from the newest checkpointTurns", async () => {
+    const conversation = await kit.invoke(createConversation, {
+      title: "Clipped completed resume",
+    });
+    const pendingId = randomUUID();
+    const resumeKey = `begin:resume:${pendingId}`;
+    const begun = await kit.invoke(
+      checkpointAssistantTurn,
+      beginInput(conversation.id, resumeKey),
+    );
+    await kit.invoke(checkpointAssistantTurn, {
+      kind: "complete",
+      conversationId: conversation.id,
+      messageId: begun.messageId,
+      body: "The order is ready.",
+    });
+    const newer = new Date(Date.now() + 60_000);
+    await kit.db.runtime.db.insert(assistantMessages).values(
+      Array.from({ length: GET_MODEL_HISTORY_CHECKPOINT_TURNS_MAX }, () => ({
+        companyId: kitIdentities.companies.a,
+        conversationId: conversation.id,
+        role: "assistant" as const,
+        body: "later speech",
+        turnKey: `begin:${randomUUID()}`,
+        createdAt: newer,
+        updatedAt: newer,
+      })),
+    );
+    const clipped = await kit.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    expect(clipped.checkpointTurns).toHaveLength(
+      GET_MODEL_HISTORY_CHECKPOINT_TURNS_MAX,
+    );
+    expect(
+      clipped.checkpointTurns.some((turn) => turn.turnKey === resumeKey),
+    ).toBe(false);
+    const pinned = await kit.invoke(getModelHistory, {
+      conversationId: conversation.id,
+      includeTurnKeys: [resumeKey],
+    });
+    expect(
+      pinned.checkpointTurns.find((turn) => turn.turnKey === resumeKey),
+    ).toEqual({
+      messageId: begun.messageId,
+      turnKey: resumeKey,
+      hasSpeech: true,
+    });
+  });
+
   it("begin then two stage/finish then complete is one assistant message in seq order", async () => {
     const conversation = await kit.invoke(createConversation, {
       title: "Checkpoint one message",
@@ -1719,7 +1770,7 @@ describe("assistant staff conversation actions", () => {
       toolCallId: "call_list",
       toolInput: { limit: 20, query: "Леха" },
     });
-    await kit.invoke(checkpointAssistantTurn, {
+    const finishedFirst = await kit.invoke(checkpointAssistantTurn, {
       kind: "finishRun",
       conversationId: conversation.id,
       executionId: first.executionId ?? "",
@@ -1727,6 +1778,7 @@ describe("assistant staff conversation actions", () => {
       resultIds: [orderId],
       modelTrace: { kind: "page.summary", rows: [{ orderNumber: "12" }] },
     });
+    expect(finishedFirst.turnKey).toBe(begun.turnKey);
     const second = await kit.invoke(checkpointAssistantTurn, {
       kind: "stageRun",
       conversationId: conversation.id,

@@ -201,6 +201,7 @@ describe("runStaffAssistantHostTurn", () => {
     expect(src).toContain("recoverStartedRuns");
     expect(src).toContain("recoverStartedRunsScope");
     expect(src).toContain("resumeTurn");
+    expect(src).toContain("trailingUserMessageCount");
     expect(src).toContain("isHostSeededHitlToolCallId");
     expect(src).toContain("streamText");
     expect(src).not.toContain("staff-assistant-stream");
@@ -998,6 +999,95 @@ describe("runStaffAssistantHostTurn", () => {
       { toolCallId: "call-list", executionId: "stored-exec" },
     );
     expect(turn.speech.text).toBe("Recovered on the next turn.");
+    expect(turn.modelToolCalls).toEqual([]);
+  });
+
+  it("inserts recovered tool-call and tool-result before trailing user messages", async () => {
+    const kinds: string[] = [];
+    const checkpoint: StaffAssistantHostCheckpoint = {
+      begin: () => {
+        kinds.push("begin");
+        return Promise.resolve({ messageId: "msg-new" });
+      },
+      stageRun: () => {
+        throw new Error("stageRun must not mint on outside-window recovery");
+      },
+      finishRun: (input) => {
+        kinds.push(`finishRun:${input.executionId}`);
+        return Promise.resolve();
+      },
+      complete: () => {
+        kinds.push("complete");
+        return Promise.resolve();
+      },
+    };
+    const execute = vi.fn(
+      (
+        _actionName: string,
+        _input: unknown,
+        options: { executionId?: string },
+      ) => {
+        kinds.push(`execute:${options.executionId ?? "missing"}`);
+        return Promise.resolve({ items: [], nextCursor: null });
+      },
+    );
+    const model = new MockLanguageModelV3({
+      doStream: (options) => {
+        const serialized = JSON.stringify(options.prompt ?? []);
+        if (serialized.includes("call-outside")) {
+          return Promise.resolve(
+            mockTextStream("Recovered outside the window."),
+          );
+        }
+        return Promise.resolve(
+          mockToolCallStream(
+            "call-reissue-list",
+            ORDERS_LIST_PAGE_TOOL_NAME,
+            '{"limit":7}',
+          ),
+        );
+      },
+    });
+    const turn = await runStaffAssistantHostTurn({
+      model,
+      messages: [
+        { role: "user", content: "pad one" },
+        { role: "user", content: "pad two" },
+        { role: "user", content: "did the list finish?" },
+      ],
+      contracts: [listOrders],
+      execute,
+      checkpoint,
+      recoverStartedRuns: [
+        {
+          messageId: "msg-old",
+          executionId: "stored-exec",
+          seq: 0,
+          actionName: "orders.list",
+          toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+          toolCallId: "call-outside",
+          toolInput: { limit: 7 },
+        },
+      ],
+    });
+    expect(kinds).toEqual([
+      "begin",
+      "execute:stored-exec",
+      "finishRun:stored-exec",
+      "complete",
+    ]);
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledWith(
+      "orders.list",
+      { kind: "page.summary", limit: 7 },
+      { toolCallId: "call-outside", executionId: "stored-exec" },
+    );
+    const prompt = JSON.stringify(model.doStreamCalls[0]?.prompt ?? []);
+    expect(prompt).toContain("call-outside");
+    expect(prompt.indexOf("call-outside")).toBeLessThan(
+      prompt.lastIndexOf("did the list finish?"),
+    );
+    expect(turn.speech.text).toBe("Recovered outside the window.");
     expect(turn.modelToolCalls).toEqual([]);
   });
 

@@ -32,6 +32,9 @@ export const GET_MODEL_HISTORY_UNFINISHED_STARTED_MAX = 64;
 /** Bounded sibling list of assistant rows that have a turnKey. */
 export const GET_MODEL_HISTORY_CHECKPOINT_TURNS_MAX = 256;
 
+/** Exact turnKeys the host pins so Phase B lookup is not the newest-256 clip. */
+export const GET_MODEL_HISTORY_INCLUDE_TURN_KEYS_MAX = 8;
+
 export const modelHistoryToolRunSchema = z.object({
   action: z.string(),
   toolCallId: z.string(),
@@ -78,6 +81,10 @@ export const modelHistoryCheckpointTurnSchema = z.object({
 
 export const getModelHistoryInputSchema = z.strictObject({
   conversationId: z.uuid(),
+  includeTurnKeys: z
+    .array(checkpointTurnKeySchema)
+    .max(GET_MODEL_HISTORY_INCLUDE_TURN_KEYS_MAX)
+    .optional(),
 });
 
 export const getModelHistoryOutputSchema = z.object({
@@ -88,12 +95,15 @@ export const getModelHistoryOutputSchema = z.object({
     .max(GET_MODEL_HISTORY_UNFINISHED_STARTED_MAX),
   checkpointTurns: z
     .array(modelHistoryCheckpointTurnSchema)
-    .max(GET_MODEL_HISTORY_CHECKPOINT_TURNS_MAX),
+    .max(
+      GET_MODEL_HISTORY_CHECKPOINT_TURNS_MAX +
+        GET_MODEL_HISTORY_INCLUDE_TURN_KEYS_MAX,
+    ),
 });
 
 export const getModelHistoryContract = defineActionContract({
   name: "assistant.getModelHistory",
-  description: `${STAFF_CONVERSATION_AUTHOR_INVARIANT} Return the newest 8 author-owned conversation messages as model-history rows: id, role, text, turnKey (host begin identity; null on user rows and pre-SHO-539 assistant rows), and per-run action / toolCallId / toolName / modelTrace / toolInput / seq / executionId / outcome (ADR-0034 prompt state — post-clip façade output, never a projection). Includes started runs on those 8 messages. Also returns unfinishedStartedRuns (conversation-scoped started rows, including messages outside the 8-message prompt window) and checkpointTurns (assistant rows with a non-null turnKey plus hasSpeech) so crash recovery and Phase B state do not depend on the prompt clip. Recovery must not auto-execute started rows whose turnKey is null. toolInput is façade/tool args when present; pre-T2 rows without toolInput reconstruct as {}. Order runs by seq ascending, not created_at alone. toolName is the live ToolSet key used to reconstruct model history; action is the executeAction registry identity. executionId is the server-minted attempt identity. Message id is the append-idempotency merge key for the HTTP mount (same as getConversation). Used only by the staff assistant HTTP mount to build ModelMessage tool-call and tool-result parts. Company id is never input. Internal — not mounted on HTTP and not an AI tool.`,
+  description: `${STAFF_CONVERSATION_AUTHOR_INVARIANT} Return the newest 8 author-owned conversation messages as model-history rows: id, role, text, turnKey (host begin identity; null on user rows and pre-SHO-539 assistant rows), and per-run action / toolCallId / toolName / modelTrace / toolInput / seq / executionId / outcome (ADR-0034 prompt state — post-clip façade output, never a projection). Includes started runs on those 8 messages. Also returns unfinishedStartedRuns (conversation-scoped started rows, including messages outside the 8-message prompt window) and checkpointTurns (newest assistant rows with a non-null turnKey plus hasSpeech, capped) so crash recovery and Phase B state do not depend on the prompt clip. Optional includeTurnKeys pins exact begin identities (Phase B begin:resume:\${pendingId}) so a completed resume clipped from the 256 newest checkpointTurns is still returned and is not treated as missing. Recovery must not auto-execute started rows whose turnKey is null. toolInput is façade/tool args when present; pre-T2 rows without toolInput reconstruct as {}. Order runs by seq ascending, not created_at alone. toolName is the live ToolSet key used to reconstruct model history; action is the executeAction registry identity. executionId is the server-minted attempt identity. Message id is the append-idempotency merge key for the HTTP mount (same as getConversation). Used only by the staff assistant HTTP mount to build ModelMessage tool-call and tool-result parts. Company id is never input. Internal — not mounted on HTTP and not an AI tool.`,
   principal: "staff",
   transport: "internal",
   input: getModelHistoryInputSchema,

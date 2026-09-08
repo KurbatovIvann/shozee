@@ -54,7 +54,10 @@ import {
 } from "@showzy/customers";
 import { createOrder } from "@showzy/orders";
 import { session } from "@showzy/db/schema/auth";
-import { assistantMessages } from "@showzy/db/schema/assistant";
+import {
+  assistantMessages,
+  assistantToolRuns,
+} from "@showzy/db/schema/assistant";
 import { companyCustomers } from "@showzy/db/schema/customers";
 import { orders } from "@showzy/db/schema/orders";
 import { betterAuth } from "better-auth";
@@ -188,6 +191,29 @@ function countingConfirmationStore(): {
 function silentModel(text = "Okay."): MockLanguageModelV3 {
   return new MockLanguageModelV3({
     doStream: () => Promise.resolve(mockTextStream(text)),
+  });
+}
+
+function ordersCreateUnlessRecoveredModel(options: {
+  readonly recoveredToolCallId: string;
+  readonly facadeInput: unknown;
+  readonly speech: string;
+  readonly reissueToolCallId?: string;
+}): MockLanguageModelV3 {
+  return new MockLanguageModelV3({
+    doStream: (call) => {
+      const serialized = JSON.stringify(call.prompt ?? []);
+      if (serialized.includes(options.recoveredToolCallId)) {
+        return Promise.resolve(mockTextStream(options.speech));
+      }
+      return Promise.resolve(
+        mockToolCallStream(
+          options.reissueToolCallId ?? "call-reissue-create",
+          ORDERS_CREATE_TOOL_NAME,
+          JSON.stringify(options.facadeInput),
+        ),
+      );
+    },
   });
 }
 
@@ -407,6 +433,12 @@ function pickerCreateModel(
 async function orderCount(): Promise<number> {
   return (await kit.db.runtime.db.select({ id: orders.id }).from(orders))
     .length;
+}
+
+async function conversationToolRuns(conversationId: string) {
+  return (await kit.db.runtime.db.select().from(assistantToolRuns)).filter(
+    (row) => row.conversationId === conversationId,
+  );
 }
 
 async function customerRow(
@@ -2075,11 +2107,16 @@ describe("live staff assistant host HTTP (SHO-524)", () => {
         }),
       ]);
       const afterOutsideCommit = await orderCount();
+      const reissue = ordersCreateUnlessRecoveredModel({
+        recoveredToolCallId: "call-outside-chat",
+        facadeInput: outsideCake.facadeInput,
+        speech: "The outside create already landed.",
+      });
       await parseOk(
         await liveRequest(
           liveApp({
             pendingStore,
-            model: silentModel("The outside create already landed."),
+            model: reissue,
           }).app,
           {
             method: "POST",
@@ -2094,6 +2131,9 @@ describe("live staff assistant host HTTP (SHO-524)", () => {
         ),
       );
       expect(await orderCount()).toBe(afterOutsideCommit);
+      const prompt = JSON.stringify(reissue.doStreamCalls[0]?.prompt ?? []);
+      expect(prompt).toContain("call-outside-chat");
+      expect(prompt).not.toContain("call-reissue-create");
       const outsideFinished = await h.invoke(getModelHistory, {
         conversationId: outsideConversation.id,
       });
@@ -2102,6 +2142,142 @@ describe("live staff assistant host HTTP (SHO-524)", () => {
           (run) => run.executionId === outsideLeftover.executionId,
         ),
       ).toBe(false);
+      const leftoverRuns = await conversationToolRuns(outsideConversation.id);
+      expect(
+        leftoverRuns.find(
+          (run) => run.executionId === outsideLeftover.executionId,
+        )?.outcome,
+      ).toBe("success");
+      expect(
+        leftoverRuns
+          .filter((run) => run.toolName === ORDERS_CREATE_TOOL_NAME)
+          .map((run) => run.executionId)
+          .toSorted(),
+      ).toEqual([outsideLeftover.executionId]);
+    });
+
+    it("recovers a Phase B leftover after eight discussion chats without a new execution_id", async () => {
+      const pendingStore = createMemoryPendingStore();
+      const token = await insertBearer(kit, kitIdentities.users.anna);
+      const seedHarness = liveApp({ pendingStore, model: silentModel() });
+      const conversation = await seedHarness.invoke(createConversation, {
+        title: "Live Phase B leftover after discussion",
+      });
+      const cake = await cakeCreateInputs(
+        seedHarness,
+        "Live discussion leftover",
+      );
+      const choiceCustomer = await seedHarness.invoke(createCustomer, {
+        name: "Live Discussion Buyer",
+        phone: nextPhone(),
+      });
+      const choiceProduct = await seedHarness.invoke(createProduct, {
+        name: "Live Discussion Cake",
+        basePriceMinor: "1500",
+        variants: [{ name: "A" }, { name: "B" }],
+      });
+      const { record } = await seedChoicePending(seedHarness, {
+        conversationId: conversation.id,
+        customerId: choiceCustomer.id,
+        product: choiceProduct,
+      });
+      const optionId = record.envelope.options[0]?.id;
+      if (optionId === undefined) {
+        throw new Error("seeded choice missing option");
+      }
+      const bind = pendingBindFor(conversation.id);
+      expect(
+        (
+          await pendingStore.claim({
+            id: record.id,
+            kind: "choice",
+            bind,
+            optionId,
+          })
+        ).kind,
+      ).toBe("claimed");
+      expect(
+        (
+          await pendingStore.complete({
+            id: record.id,
+            kind: "choice",
+            bind,
+            optionId,
+          })
+        ).kind,
+      ).toBe("completed");
+      const leftover = await stageNamedStartedRun(seedHarness, {
+        conversationId: conversation.id,
+        beginKey: `begin:resume:${record.id}`,
+        actionName: "orders.create",
+        toolName: ORDERS_CREATE_TOOL_NAME,
+        toolCallId: "call-resume-discussion",
+        toolInput: cake.facadeInput,
+      });
+      await seedHarness.invoke(createOrder, cake.canonicalInput, {
+        idempotencyKey: executionAttemptKey(
+          conversation.id,
+          leftover.executionId,
+        ),
+      });
+      const afterCommit = await orderCount();
+      const discussion = liveApp({
+        pendingStore,
+        model: silentModel("Discussing the leftover."),
+      });
+      for (let index = 0; index < 8; index += 1) {
+        await parseOk(
+          await liveRequest(discussion.app, {
+            method: "POST",
+            path: ASSISTANT_CHAT_PATH,
+            token,
+            body: {
+              conversationId: conversation.id,
+              text: `Discussion ${String(index)}`,
+              locale: "en",
+            },
+          }),
+        );
+      }
+      expect(await orderCount()).toBe(afterCommit);
+      const padded = await seedHarness.invoke(getModelHistory, {
+        conversationId: conversation.id,
+      });
+      expect(padded.messages).toHaveLength(8);
+      expect(
+        padded.messages.some((message) => message.id === leftover.messageId),
+      ).toBe(false);
+      expect(
+        padded.unfinishedStartedRuns.some(
+          (run) => run.executionId === leftover.executionId,
+        ),
+      ).toBe(true);
+      const reissue = ordersCreateUnlessRecoveredModel({
+        recoveredToolCallId: "call-resume-discussion",
+        facadeInput: cake.facadeInput,
+        speech: "Named the leftover flavour.",
+      });
+      await parseOk(
+        await liveRequest(liveApp({ pendingStore, model: reissue }).app, {
+          method: "POST",
+          path: ASSISTANT_HOST_CHOICE_PATH,
+          token,
+          body: {
+            conversationId: conversation.id,
+            choiceId: record.id,
+            optionId,
+          },
+        }),
+      );
+      expect(await orderCount()).toBe(afterCommit);
+      const prompt = JSON.stringify(reissue.doStreamCalls[0]?.prompt ?? []);
+      expect(prompt).toContain("call-resume-discussion");
+      expect(prompt).not.toContain("call-reissue-create");
+      const leftoverRuns = await conversationToolRuns(conversation.id);
+      expect(
+        leftoverRuns.find((run) => run.executionId === leftover.executionId)
+          ?.outcome,
+      ).toBe("success");
     });
 
     it("refuses a re-issued orders_create while an excluded resume leftover stays started", async () => {

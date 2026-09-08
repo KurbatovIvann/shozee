@@ -643,10 +643,17 @@ async function loadHistory(options: {
     readonly session: SessionPrincipal;
     readonly companySelector: string | null;
   };
+  readonly includeTurnKeys?: readonly string[];
 }) {
   return executeAction(options.pipeline, {
     action: getModelHistory,
-    input: { conversationId: options.conversationId },
+    input: {
+      conversationId: options.conversationId,
+      ...(options.includeTurnKeys !== undefined &&
+      options.includeTurnKeys.length > 0
+        ? { includeTurnKeys: [...options.includeTurnKeys] }
+        : {}),
+    },
     request: staffRequest({
       requestId: options.requestId,
       clientIp: options.clientIp,
@@ -858,6 +865,7 @@ async function runPhaseB(options: {
     requestId: options.runtime.requestId,
     clientIp: options.runtime.clientIp,
     principal: options.staffPrincipal,
+    includeTurnKeys: [resumeTurnKey(options.pending.id)],
   });
   const conversation = await executeAction(options.runtime.pipeline, {
     action: getConversation,
@@ -1368,6 +1376,7 @@ async function replayCompletedPending(options: {
     requestId: options.runtime.requestId,
     clientIp: options.runtime.clientIp,
     principal: options.staffPrincipal,
+    includeTurnKeys: [resumeTurnKey(options.record.id)],
   });
   if (open.kind === "found" && open.record.id !== options.record.id) {
     return okEnvelope({

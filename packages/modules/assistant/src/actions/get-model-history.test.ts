@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { STAFF_CONVERSATION_AUTHOR_INVARIANT } from "./conversation-view.contract.js";
 import {
+  GET_MODEL_HISTORY_INCLUDE_TURN_KEYS_MAX,
   GET_MODEL_HISTORY_WINDOW,
   getModelHistoryContract,
   getModelHistoryInputSchema,
@@ -33,11 +34,13 @@ describe("assistant.getModelHistory contract", () => {
     );
     expect(getModelHistoryContract.timeout).toBe(5_000);
     expect(GET_MODEL_HISTORY_WINDOW).toBe(8);
+    expect(getModelHistoryContract.description).toContain("includeTurnKeys");
   });
 
-  it("takes conversationId only and rejects companyId", () => {
+  it("takes conversationId and optional includeTurnKeys and rejects companyId", () => {
     expect(Object.keys(getModelHistoryInputSchema.shape).toSorted()).toEqual([
       "conversationId",
+      "includeTurnKeys",
     ]);
     expect(Object.keys(getModelHistoryOutputSchema.shape).toSorted()).toEqual([
       "checkpointTurns",
@@ -81,6 +84,23 @@ describe("assistant.getModelHistory contract", () => {
       getModelHistoryInputSchema.safeParse({
         conversationId: "11111111-1111-4111-8111-111111111111",
         userId: "22222222-2222-4222-8222-222222222222",
+      }).success,
+    ).toBe(false);
+    expect(
+      getModelHistoryInputSchema.safeParse({
+        conversationId: "11111111-1111-4111-8111-111111111111",
+        includeTurnKeys: [
+          `begin:resume:${"11111111-1111-4111-8111-111111111111"}`,
+        ],
+      }).success,
+    ).toBe(true);
+    expect(
+      getModelHistoryInputSchema.safeParse({
+        conversationId: "11111111-1111-4111-8111-111111111111",
+        includeTurnKeys: Array.from(
+          { length: GET_MODEL_HISTORY_INCLUDE_TURN_KEYS_MAX + 1 },
+          (_, index) => `begin:${String(index).padStart(8, "0")}`,
+        ),
       }).success,
     ).toBe(false);
   });

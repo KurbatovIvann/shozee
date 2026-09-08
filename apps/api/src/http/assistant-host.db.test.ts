@@ -56,7 +56,10 @@ import {
 } from "@showzy/customers";
 import { createOrder } from "@showzy/orders";
 import { session } from "@showzy/db/schema/auth";
-import { assistantMessages } from "@showzy/db/schema/assistant";
+import {
+  assistantMessages,
+  assistantToolRuns,
+} from "@showzy/db/schema/assistant";
 import { companyCustomers } from "@showzy/db/schema/customers";
 import { orders } from "@showzy/db/schema/orders";
 import { betterAuth } from "better-auth";
@@ -189,6 +192,29 @@ function countingConfirmationStore(): {
 function silentModel(text = "Okay."): MockLanguageModelV3 {
   return new MockLanguageModelV3({
     doStream: () => Promise.resolve(mockTextStream(text)),
+  });
+}
+
+function ordersCreateUnlessRecoveredModel(options: {
+  readonly recoveredToolCallId: string;
+  readonly facadeInput: unknown;
+  readonly speech: string;
+  readonly reissueToolCallId?: string;
+}): MockLanguageModelV3 {
+  return new MockLanguageModelV3({
+    doStream: (call) => {
+      const serialized = JSON.stringify(call.prompt ?? []);
+      if (serialized.includes(options.recoveredToolCallId)) {
+        return Promise.resolve(mockTextStream(options.speech));
+      }
+      return Promise.resolve(
+        mockToolCallStream(
+          options.reissueToolCallId ?? "call-reissue-create",
+          ORDERS_CREATE_TOOL_NAME,
+          JSON.stringify(options.facadeInput),
+        ),
+      );
+    },
   });
 }
 
@@ -724,6 +750,12 @@ async function customerRow(
 async function orderCount(): Promise<number> {
   return (await kit.db.runtime.db.select({ id: orders.id }).from(orders))
     .length;
+}
+
+async function conversationToolRuns(conversationId: string) {
+  return (await kit.db.runtime.db.select().from(assistantToolRuns)).filter(
+    (row) => row.conversationId === conversationId,
+  );
 }
 
 describe("unpublished staff assistant host HTTP", () => {
@@ -3343,10 +3375,15 @@ describe("unpublished staff assistant host HTTP", () => {
         }),
       ]);
       const afterOutsideCommit = await orderCount();
+      const reissue = ordersCreateUnlessRecoveredModel({
+        recoveredToolCallId: "call-outside-chat",
+        facadeInput: outsideCake.facadeInput,
+        speech: "The outside create already landed.",
+      });
       const outsideChat = await hostRequest(
         harness({
           pendingStore: h.pendingStore,
-          model: silentModel("The outside create already landed."),
+          model: reissue,
         }).app,
         {
           method: "POST",
@@ -3364,6 +3401,9 @@ describe("unpublished staff assistant host HTTP", () => {
           .status,
       ).toBe("ok");
       expect(await orderCount()).toBe(afterOutsideCommit);
+      const prompt = JSON.stringify(reissue.doStreamCalls[0]?.prompt ?? []);
+      expect(prompt).toContain("call-outside-chat");
+      expect(prompt).not.toContain("call-reissue-create");
       const outsideFinished = await h.invoke(getModelHistory, {
         conversationId: outsideConversation.id,
       });
@@ -3372,6 +3412,18 @@ describe("unpublished staff assistant host HTTP", () => {
           (run) => run.executionId === outsideLeftover.executionId,
         ),
       ).toBe(false);
+      const leftoverRuns = await conversationToolRuns(outsideConversation.id);
+      expect(
+        leftoverRuns.find(
+          (run) => run.executionId === outsideLeftover.executionId,
+        )?.outcome,
+      ).toBe("success");
+      expect(
+        leftoverRuns
+          .filter((run) => run.toolName === ORDERS_CREATE_TOOL_NAME)
+          .map((run) => run.executionId)
+          .toSorted(),
+      ).toEqual([outsideLeftover.executionId]);
       expect(
         outsideFinished.checkpointTurns.some(
           (turn) =>
@@ -3379,6 +3431,237 @@ describe("unpublished staff assistant host HTTP", () => {
             turn.turnKey === `begin:${outsideUser.id}`,
         ),
       ).toBe(true);
+    });
+
+    it("recovers a Phase B leftover after eight discussion chats without a new execution_id", async () => {
+      const pendingStore = createMemoryPendingStore();
+      const token = await insertBearer(kit, kitIdentities.users.anna);
+      const seedHarness = harness({ pendingStore, model: silentModel() });
+      const conversation = await seedHarness.invoke(createConversation, {
+        title: "Phase B leftover after discussion",
+      });
+      const cake = await cakeCreateInputs(seedHarness, "Discussion leftover");
+      const choiceCustomer = await seedHarness.invoke(createCustomer, {
+        name: "Discussion Buyer",
+        phone: nextPhone(),
+      });
+      const choiceProduct = await seedHarness.invoke(createProduct, {
+        name: "Discussion Cake",
+        basePriceMinor: "1500",
+        variants: [{ name: "A" }, { name: "B" }],
+      });
+      const { record, optionByLabel } = await seedChoicePending(seedHarness, {
+        conversationId: conversation.id,
+        customerId: choiceCustomer.id,
+        product: choiceProduct,
+      });
+      const optionId = optionByLabel.get("A");
+      if (optionId === undefined) {
+        throw new Error("seeded choice missing option A");
+      }
+      const bind = pendingBindFor(conversation.id);
+      expect(
+        (
+          await pendingStore.claim({
+            id: record.id,
+            kind: "choice",
+            bind,
+            optionId,
+          })
+        ).kind,
+      ).toBe("claimed");
+      expect(
+        (
+          await pendingStore.complete({
+            id: record.id,
+            kind: "choice",
+            bind,
+            optionId,
+          })
+        ).kind,
+      ).toBe("completed");
+      const leftover = await stageNamedStartedRun(seedHarness, {
+        conversationId: conversation.id,
+        beginKey: `begin:resume:${record.id}`,
+        actionName: "orders.create",
+        toolName: ORDERS_CREATE_TOOL_NAME,
+        toolCallId: "call-resume-discussion",
+        toolInput: cake.facadeInput,
+      });
+      await seedHarness.invoke(createOrder, cake.canonicalInput, {
+        idempotencyKey: executionAttemptKey(
+          conversation.id,
+          leftover.executionId,
+        ),
+      });
+      const afterCommit = await orderCount();
+      const discussion = harness({
+        pendingStore,
+        model: silentModel("Discussing the leftover."),
+      });
+      for (let index = 0; index < 8; index += 1) {
+        const chat = await hostRequest(discussion.app, {
+          method: "POST",
+          path: ASSISTANT_HOST_CHAT_PATH,
+          token,
+          body: {
+            conversationId: conversation.id,
+            text: `Discussion ${String(index)}`,
+            locale: "en",
+          },
+        });
+        expect(
+          assistantHostInteractionResultSchema.parse(await chat.json()).status,
+        ).toBe("ok");
+      }
+      expect(await orderCount()).toBe(afterCommit);
+      const padded = await seedHarness.invoke(getModelHistory, {
+        conversationId: conversation.id,
+      });
+      expect(padded.messages).toHaveLength(8);
+      expect(
+        padded.messages.some((message) => message.id === leftover.messageId),
+      ).toBe(false);
+      expect(
+        padded.unfinishedStartedRuns.some(
+          (run) => run.executionId === leftover.executionId,
+        ),
+      ).toBe(true);
+      const reissue = ordersCreateUnlessRecoveredModel({
+        recoveredToolCallId: "call-resume-discussion",
+        facadeInput: cake.facadeInput,
+        speech: "Named the leftover flavour.",
+      });
+      const resume = await hostRequest(
+        harness({ pendingStore, model: reissue }).app,
+        {
+          method: "POST",
+          path: ASSISTANT_HOST_CHOICE_PATH,
+          token,
+          body: {
+            conversationId: conversation.id,
+            choiceId: record.id,
+            optionId,
+          },
+        },
+      );
+      expect(
+        assistantHostInteractionResultSchema.parse(await resume.json()).status,
+      ).toBe("ok");
+      expect(await orderCount()).toBe(afterCommit);
+      const prompt = JSON.stringify(reissue.doStreamCalls[0]?.prompt ?? []);
+      expect(prompt).toContain("call-resume-discussion");
+      expect(prompt).not.toContain("call-reissue-create");
+      const finished = await seedHarness.invoke(getModelHistory, {
+        conversationId: conversation.id,
+      });
+      expect(
+        finished.unfinishedStartedRuns.some(
+          (run) => run.executionId === leftover.executionId,
+        ),
+      ).toBe(false);
+      const leftoverRuns = await conversationToolRuns(conversation.id);
+      expect(
+        leftoverRuns.find((run) => run.executionId === leftover.executionId)
+          ?.outcome,
+      ).toBe("success");
+      expect(
+        leftoverRuns.filter(
+          (run) =>
+            run.toolName === ORDERS_CREATE_TOOL_NAME &&
+            run.outcome === "success",
+        ),
+      ).toEqual([
+        expect.objectContaining({ executionId: leftover.executionId }),
+      ]);
+    });
+
+    it("does not reopen completed Phase B when the resume turn is clipped from checkpointTurns", async () => {
+      const speech = "The order is ready.";
+      const h = harness({ model: silentModel(speech) });
+      const token = await insertBearer(kit, kitIdentities.users.anna);
+      const conversation = await h.invoke(createConversation, {
+        title: "Clipped completed resume",
+      });
+      const customer = await h.invoke(createCustomer, {
+        name: "Clipped Resume Buyer",
+        phone: nextPhone(),
+      });
+      const product = await h.invoke(createProduct, {
+        name: "Clipped Resume Cake",
+        basePriceMinor: "1500",
+        variants: [{ name: "A" }, { name: "B" }],
+      });
+      const { record, optionByLabel } = await seedChoicePending(h, {
+        conversationId: conversation.id,
+        customerId: customer.id,
+        product,
+      });
+      const optionId = optionByLabel.get("A");
+      const first = await hostRequest(h.app, {
+        method: "POST",
+        path: ASSISTANT_HOST_CHOICE_PATH,
+        token,
+        body: {
+          conversationId: conversation.id,
+          choiceId: record.id,
+          optionId,
+        },
+      });
+      expect(
+        assistantHostInteractionResultSchema.parse(await first.json()),
+      ).toEqual(expect.objectContaining({ status: "ok", speech }));
+      const afterPhaseB = await orderCount();
+      const resumeKey = `begin:resume:${record.id}`;
+      const newer = new Date(Date.now() + 60_000);
+      await kit.db.runtime.db.insert(assistantMessages).values(
+        Array.from({ length: 256 }, () => ({
+          companyId: kitIdentities.companies.a,
+          conversationId: conversation.id,
+          role: "assistant" as const,
+          body: "later speech",
+          turnKey: `begin:${randomUUID()}`,
+          createdAt: newer,
+          updatedAt: newer,
+        })),
+      );
+      const clipped = await h.invoke(getModelHistory, {
+        conversationId: conversation.id,
+      });
+      expect(
+        clipped.checkpointTurns.some((turn) => turn.turnKey === resumeKey),
+      ).toBe(false);
+      const replay = await hostRequest(
+        harness({
+          pendingStore: h.pendingStore,
+          model: new MockLanguageModelV3({
+            doStream: () => {
+              throw new Error(
+                "clipped completed Phase B must not reopen as needed",
+              );
+            },
+          }),
+        }).app,
+        {
+          method: "POST",
+          path: ASSISTANT_HOST_CHOICE_PATH,
+          token,
+          body: {
+            conversationId: conversation.id,
+            choiceId: record.id,
+            optionId,
+          },
+        },
+      );
+      const replayBody = assistantHostInteractionResultSchema.parse(
+        await replay.json(),
+      );
+      expect(replayBody.status).toBe("ok");
+      if (replayBody.status !== "ok") {
+        return;
+      }
+      expect(replayBody.speech).toBe(speech);
+      expect(await orderCount()).toBe(afterPhaseB);
     });
 
     it("refuses a re-issued orders_create while an excluded resume leftover stays started", async () => {

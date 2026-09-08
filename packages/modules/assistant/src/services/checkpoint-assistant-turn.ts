@@ -326,7 +326,16 @@ async function finishRun(env: {
     },
     "assistant.checkpointAssistantTurn finished tool run",
   );
-  return toolRunOutput(env.input.conversationId, updated);
+  const message = await loadOwnAssistantMessage({
+    db: env.db,
+    companyId: env.ctx.companyId,
+    conversationId: env.input.conversationId,
+    messageId: updated.messageId,
+  });
+  return {
+    ...toolRunOutput(env.input.conversationId, updated),
+    turnKey: message.turnKey,
+  };
 }
 
 async function completeTurn(env: {
