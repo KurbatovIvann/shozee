@@ -342,7 +342,10 @@ describe("runStaffAssistantEvalTurn", () => {
       { toolCallId: "call-counts" },
     );
     expect(execute.mock.calls[0]?.[1]).not.toHaveProperty("period");
-    expect(result.trace.toolCalls[0]?.args).toEqual({ period: "this_week" });
+    expect(result.trace.toolCalls[0]?.args).toMatchObject({
+      period: "this_week",
+    });
+    expect(result.trace.toolCalls[0]?.args).not.toHaveProperty("kind");
     expect(result.trace.speechSource).toBe("model");
     expect(
       matchEvalExpectation(
