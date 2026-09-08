@@ -305,6 +305,28 @@ describe("orders.searchMatches", () => {
     }
   });
 
+  it("reports matchedOn from the predicate that matched, through LIKE metacharacters", async () => {
+    // `sanitizeLikeLiteral` strips `_`, `%` and `\`, so this query means the
+    // full canonical number. The LIKE pattern went through that strip while
+    // the equality test and the TypeScript reconstruction did not, so the
+    // row came back non-exact with a `matchedOn` nobody had derived.
+    const canonical = `${COMPANY_A_PREFIX}-${FULL_TOKEN}`;
+    for (const query of [`${FULL_TOKEN}_`, `${canonical}%`]) {
+      const listed = await kit.invoke(searchMatches, { query });
+      const hit = orderGroup(listed)?.hits.find(
+        (row) => row.id === fixtures.fullNumber,
+      );
+      expect(hit).toEqual(
+        expect.objectContaining({
+          id: fixtures.fullNumber,
+          label: canonical,
+          matchedOn: "number",
+          exact: true,
+        }),
+      );
+    }
+  });
+
   it("marks customerIds-only hits as matchedOn customer and never exact", async () => {
     const listed = await kit.invoke(searchMatches, {
       query: "Qqxlookup",
