@@ -350,6 +350,70 @@ describe("assistant schema slice", () => {
     expect(
       indexes.get("assistant_tool_runs_company_execution_id_uq"),
     ).toContain("(company_id, execution_id)");
+    expect(indexes.get("assistant_tool_runs_company_message_seq_uq")).toContain(
+      "UNIQUE",
+    );
+    expect(indexes.get("assistant_tool_runs_company_message_seq_uq")).toContain(
+      "(company_id, message_id, seq)",
+    );
+  });
+
+  it("rejects a second tool run with the same company, message, and seq", async () => {
+    const company = await insertCompany();
+    const userId = await insertUser();
+    const conversation = await insertConversation({
+      companyId: company.id,
+      userId,
+    });
+    const message = await insertMessage({
+      companyId: company.id,
+      conversationId: conversation.id,
+      role: "assistant",
+      body: "",
+    });
+    const first = await insertToolRun({
+      companyId: company.id,
+      conversationId: conversation.id,
+      messageId: message.id,
+      actionName: "orders.list",
+      toolCallId: "call_seq_first",
+      toolName: "orders_list_page",
+      toolInput: { limit: 20 },
+      executionId: randomUUID(),
+      seq: 0,
+      outcome: "started",
+    });
+    expect(first.seq).toBe(0);
+
+    await expectSqlState(
+      insertToolRun({
+        companyId: company.id,
+        conversationId: conversation.id,
+        messageId: message.id,
+        actionName: "orders.list",
+        toolCallId: "call_seq_second",
+        toolName: "orders_list_page",
+        toolInput: { limit: 5 },
+        executionId: randomUUID(),
+        seq: 0,
+        outcome: "started",
+      }),
+      "23505",
+    );
+
+    const nextSeq = await insertToolRun({
+      companyId: company.id,
+      conversationId: conversation.id,
+      messageId: message.id,
+      actionName: "orders.get",
+      toolCallId: "call_seq_next",
+      toolName: "orders_get",
+      toolInput: { id: randomUUID() },
+      executionId: randomUUID(),
+      seq: 1,
+      outcome: "started",
+    });
+    expect(nextSeq.seq).toBe(1);
   });
 
   it("declares tenant, staff-user, and composite conversation foreign keys", async () => {
@@ -721,6 +785,22 @@ describe("assistant schema slice", () => {
     expect(started.toolInput).toEqual({ limit: 20 });
     expect(started.executionId).toEqual(expect.any(String));
     expect(started.seq).toBe(0);
+
+    await expectSqlState(
+      insertToolRun({
+        companyId: company.id,
+        conversationId: conversation.id,
+        messageId: emptyBody.id,
+        actionName: "orders.list",
+        toolCallId: "call_started_same_seq",
+        toolName: "orders_list_page",
+        toolInput: { limit: 2 },
+        executionId: randomUUID(),
+        seq: 0,
+        outcome: "started",
+      }),
+      "23505",
+    );
 
     await expectSqlState(
       insertToolRun({

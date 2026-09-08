@@ -448,6 +448,15 @@
             "company_id",
             "execution_id"
           ]
+        },
+        "assistant_tool_runs_company_message_seq_uq": {
+          "name": "assistant_tool_runs_company_message_seq_uq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "company_id",
+            "message_id",
+            "seq"
+          ]
         }
       },
       "policies": {},

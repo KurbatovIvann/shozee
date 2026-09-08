@@ -113,7 +113,10 @@ export const assistantMessages = pgTable(
  * `execution_id` is the server-minted attempt identity (unique per
  * tenant). Nullable on old rows; required when `outcome = started`.
  * `seq` is call order on the turn; nullable on old rows; required on
- * `started`. `tool_name` is the live ToolSet key (`orders_list_page`) for
+ * `started`. UNIQUE `(company_id, message_id, seq)` is the stageRun
+ * idempotency key (HTTP retries must not mint a second started row at
+ * the same seq). Pre-T2 rows keep `seq` null and do not collide.
+ * `tool_name` is the live ToolSet key (`orders_list_page`) for
  * reconstruction; `action_name` stays the executeAction registry identity.
  * `message_id` is the assistant turn that produced the run. Do not infer
  * order from `created_at` alone — use `seq` ascending.
@@ -145,6 +148,11 @@ export const assistantToolRuns = pgTable(
     unique("assistant_tool_runs_company_execution_id_uq").on(
       table.companyId,
       table.executionId,
+    ),
+    unique("assistant_tool_runs_company_message_seq_uq").on(
+      table.companyId,
+      table.messageId,
+      table.seq,
     ),
     index("assistant_tool_runs_company_conversation_idx").on(
       table.companyId,
