@@ -1116,6 +1116,60 @@ async function afterPhaseASuccess(options: {
   });
 }
 
+async function replayCompletedPending(options: {
+  readonly runtime: StaffAssistantHostRuntime;
+  readonly conversationId: string;
+  readonly locale: StaffAssistantLocale;
+  readonly bind: {
+    readonly actorId: string;
+    readonly companyId: string;
+    readonly conversationId: string;
+  };
+  readonly staffPrincipal: {
+    readonly mode: "staff";
+    readonly session: SessionPrincipal;
+    readonly companySelector: string | null;
+  };
+  readonly actor: StaffMembership;
+  readonly record: PendingInteractionRecord;
+}): Promise<AssistantHostInteractionResult> {
+  const open = await options.runtime.pendingStore.peekOpen({
+    conversationId: options.conversationId,
+    bind: options.bind,
+  });
+  const history = await loadHistory({
+    pipeline: options.runtime.pipeline,
+    conversationId: options.conversationId,
+    requestId: options.runtime.requestId,
+    clientIp: options.runtime.clientIp,
+    principal: options.staffPrincipal,
+  });
+  if (open.kind === "found" && open.record.id !== options.record.id) {
+    return okEnvelope({
+      speech: lastAssistantSpeech(history),
+      toolResults: historyToolResults(history),
+      pending: publicPendingFromRecord(open.record) ?? null,
+    });
+  }
+  const state = phaseBState(history, options.record);
+  if (state === "done") {
+    return okEnvelope({
+      speech: lastAssistantSpeech(history),
+      toolResults: historyToolResults(history),
+      pending: null,
+    });
+  }
+  return runPhaseB({
+    runtime: options.runtime,
+    conversationId: options.conversationId,
+    locale: options.locale,
+    bind: options.bind,
+    staffPrincipal: options.staffPrincipal,
+    actor: options.actor,
+    pendingId: options.record.id,
+  });
+}
+
 export async function executeStaffAssistantHostChoiceResume(
   options: StaffAssistantHostRuntime,
 ): Promise<Response> {
@@ -1188,48 +1242,15 @@ export async function executeStaffAssistantHostChoiceResume(
         });
         const locale = record.locale ?? STAFF_ASSISTANT_DEFAULT_LOCALE;
         if (claimed.kind === "replay" && record.status === "completed") {
-          const open = await options.pendingStore.peekOpen({
-            conversationId: conversation.id,
-            bind,
-          });
-          const history = await loadHistory({
-            pipeline: options.pipeline,
-            conversationId: conversation.id,
-            requestId: options.requestId,
-            clientIp: options.clientIp,
-            principal: auth.staffPrincipal,
-          });
-          if (open.kind === "found" && open.record.id !== record.id) {
-            const publicPending = publicPendingFromRecord(open.record) ?? null;
-            return interactionResponse(
-              okEnvelope({
-                speech: lastAssistantSpeech(history),
-                toolResults: historyToolResults(history),
-                pending: publicPending,
-              }),
-              options.requestId,
-            );
-          }
-          const state = phaseBState(history, record);
-          if (state === "done") {
-            return interactionResponse(
-              okEnvelope({
-                speech: lastAssistantSpeech(history),
-                toolResults: historyToolResults(history),
-                pending: null,
-              }),
-              options.requestId,
-            );
-          }
           return interactionResponse(
-            await runPhaseB({
+            await replayCompletedPending({
               runtime: options,
               conversationId: conversation.id,
               locale,
               bind,
               staffPrincipal: auth.staffPrincipal,
               actor,
-              pendingId: record.id,
+              record,
             }),
             options.requestId,
           );
@@ -1473,33 +1494,15 @@ export async function executeStaffAssistantHostConfirm(
         });
         const locale = record.locale ?? STAFF_ASSISTANT_DEFAULT_LOCALE;
         if (claimed.kind === "replay" && record.status === "completed") {
-          const history = await loadHistory({
-            pipeline: options.pipeline,
-            conversationId: conversation.id,
-            requestId: options.requestId,
-            clientIp: options.clientIp,
-            principal: auth.staffPrincipal,
-          });
-          const state = phaseBState(history, record);
-          if (state === "done") {
-            return interactionResponse(
-              okEnvelope({
-                speech: lastAssistantSpeech(history),
-                toolResults: historyToolResults(history),
-                pending: null,
-              }),
-              options.requestId,
-            );
-          }
           return interactionResponse(
-            await runPhaseB({
+            await replayCompletedPending({
               runtime: options,
               conversationId: conversation.id,
               locale,
               bind,
               staffPrincipal: auth.staffPrincipal,
               actor,
-              pendingId: record.id,
+              record,
             }),
             options.requestId,
           );

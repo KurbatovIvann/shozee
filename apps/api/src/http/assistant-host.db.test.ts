@@ -1219,6 +1219,100 @@ describe("unpublished staff assistant host HTTP", () => {
     expect(await customerRow(seeded.customerId)).toBeUndefined();
   });
 
+  it("stale confirm replay while a newer pending is open returns that pending, not Phase B done with pending null", async () => {
+    const pendingStore = createMemoryPendingStore();
+    const confirmation = countingConfirmationStore();
+    const h = harness({
+      model: listThenSpeakModel(),
+      pendingStore,
+      confirmation,
+    });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Stale confirm vs newer pending",
+    });
+    const seeded = await seedConfirmationPending(h, conversation.id);
+    const first = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_CONFIRM_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        challengeId: seeded.challengeId,
+      },
+    });
+    expect(first.status).toBe(200);
+    const firstBody = assistantHostInteractionResultSchema.parse(
+      await first.json(),
+    );
+    expect(firstBody.status).toBe("ok");
+    if (firstBody.status !== "ok") {
+      return;
+    }
+    expect(firstBody.pending).toBeNull();
+    expect(await customerRow(seeded.customerId)).toBeUndefined();
+    const consumesAfterConfirm = h.consumeCount();
+    const customer = await h.invoke(createCustomer, {
+      name: "Newer Choice Buyer",
+      phone: nextPhone(),
+    });
+    const product = await h.invoke(createProduct, {
+      name: "Newer Choice Cake",
+      basePriceMinor: "1500",
+      variants: [{ name: "A" }, { name: "B" }],
+    });
+    const { record: newer } = await seedChoicePending(h, {
+      conversationId: conversation.id,
+      customerId: customer.id,
+      product,
+    });
+    const beforeOrders = await orderCount();
+    const staleHarness = harness({
+      model: new MockLanguageModelV3({
+        doStream: () => {
+          throw new Error(
+            "Phase B must not run on a stale completed confirm while a newer pending is open",
+          );
+        },
+      }),
+      pendingStore,
+      confirmation,
+    });
+    const stale = await hostRequest(staleHarness.app, {
+      method: "POST",
+      path: ASSISTANT_CONFIRM_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        challengeId: seeded.challengeId,
+      },
+    });
+    expect(stale.status).toBe(200);
+    const staleBody = assistantHostInteractionResultSchema.parse(
+      await stale.json(),
+    );
+    expect(staleBody.status).toBe("ok");
+    if (staleBody.status !== "ok") {
+      return;
+    }
+    expect(staleBody.pending).not.toBeNull();
+    expect(staleBody.pending?.id).toBe(newer.id);
+    expect(staleBody.pending?.id).not.toBe(seeded.challengeId);
+    expect(await customerRow(seeded.customerId)).toBeUndefined();
+    expect(await orderCount()).toBe(beforeOrders);
+    expect(h.consumeCount()).toBe(consumesAfterConfirm);
+    const peeked = await pendingStore.peekOpen({
+      conversationId: conversation.id,
+      bind: pendingBindFor(conversation.id),
+    });
+    expect(peeked.kind).toBe("found");
+    if (peeked.kind !== "found") {
+      return;
+    }
+    expect(peeked.record.id).toBe(newer.id);
+    expect(peeked.record.status).toBe("open");
+  });
+
   it("wrong conversation bind returns expired and does not consume the challenge", async () => {
     const h = harness({ model: silentModel() });
     const token = await insertBearer(kit, kitIdentities.users.anna);
