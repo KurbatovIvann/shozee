@@ -80,7 +80,9 @@ describe("pending_replace host tool", () => {
       /no façade schema/,
     );
     expect(() =>
-      mapPendingReplaceFacadeInput("catalog.archiveProduct", { id: customerId }),
+      mapPendingReplaceFacadeInput("catalog.archiveProduct", {
+        id: customerId,
+      }),
     ).toThrow(/no façade schema/);
     const src = readFileSync(join(here, "pending-replace.ts"), "utf8");
     expect(src).not.toContain("looseObject");

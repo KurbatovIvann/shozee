@@ -675,9 +675,9 @@ describe("createRedisConversationLock", () => {
         renewEveryMs: 60,
       });
       await expect(
-        other.withLock(conversationId, async () => {
+        other.withLock(conversationId, () => {
           otherAcquired = true;
-          return "stolen";
+          return Promise.resolve("stolen");
         }),
       ).rejects.toBeInstanceOf(RedisStoreError);
       return "ok";
@@ -705,9 +705,9 @@ describe("createRedisConversationLock", () => {
       return "a";
     });
     await sleep(30);
-    const second = lock.withLock(conversationId, async () => {
+    const second = lock.withLock(conversationId, () => {
       order.push("waiter");
-      return "b";
+      return Promise.resolve("b");
     });
     await sleep(40);
     expect(order).toEqual(["holder"]);

@@ -890,7 +890,9 @@ describe("unpublished staff assistant host HTTP", () => {
     if (peeked.kind !== "found" || peeked.record.kind !== "choice") {
       throw new Error("expected rebuilt choice pending");
     }
-    expect(peeked.record.canonicalInput.items[0]?.quantity.milli).toBe("3000");
+    expect(peeked.record.canonicalInput.items[0]?.quantity).toEqual({
+      milli: "3000",
+    });
     expect(peeked.record.executionId).not.toBe(record.executionId);
     expect(peeked.record.version).toBe(record.version + 1);
     expect(Object.keys(peeked.record.optionMap).sort()).not.toEqual(

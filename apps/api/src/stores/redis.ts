@@ -707,16 +707,16 @@ export function createRedisConversationLock(
       const key = conversationLockKey(conversationId);
       const deadline = Date.now() + waitMs;
       let acquired = false;
-      while (true) {
+      let timedOut = false;
+      while (!acquired && !timedOut) {
         const result = await redis.set(key, token, "PX", ttlMs, "NX");
         if (redisSetNxSucceeded(result)) {
           acquired = true;
-          break;
+        } else if (Date.now() >= deadline) {
+          timedOut = true;
+        } else {
+          await sleep(retryDelayMs);
         }
-        if (Date.now() >= deadline) {
-          break;
-        }
-        await sleep(retryDelayMs);
       }
       if (!acquired) {
         throw new RedisStoreError("conversation lock timed out");

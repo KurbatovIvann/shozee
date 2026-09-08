@@ -810,8 +810,7 @@ async function applyHostPendingReplace(options: {
       options.record.actionName,
     );
     let extras = undefined as
-      | ReturnType<typeof catalogPickerConflictExtrasFromError>
-      | undefined;
+      ReturnType<typeof catalogPickerConflictExtrasFromError> | undefined;
     try {
       await executeAction(options.runtime.pipeline, {
         action,
