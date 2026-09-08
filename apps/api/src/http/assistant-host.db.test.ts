@@ -30,7 +30,7 @@ import {
   checkpointAssistantTurn,
   createConversation,
 } from "@showzy/assistant";
-import { createProduct } from "@showzy/catalog";
+import { archiveProduct, createProduct, restoreProduct } from "@showzy/catalog";
 import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
 import {
   createConfirmationHook,
@@ -49,6 +49,7 @@ import {
   archiveCustomer,
   createCustomer,
   deleteCustomer,
+  restoreCustomer,
 } from "@showzy/customers";
 import { createOrder } from "@showzy/orders";
 import { session } from "@showzy/db/schema/auth";
@@ -915,6 +916,264 @@ describe("unpublished staff assistant host HTTP", () => {
       assistantHostInteractionResultSchema.parse(await stale.json()),
     ).toEqual({ status: "expired" });
     expect(await orderCount()).toBe(beforeOrders);
+  });
+
+  it("pending_replace with a unique variantId does not create an order", async () => {
+    const h = harness();
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Replace unique variant",
+    });
+    await h.invoke(
+      appendUserMessage,
+      { conversationId: conversation.id, body: "Create the cake order" },
+      { idempotencyKey: attemptKey("message", conversation.id, randomUUID()) },
+    );
+    const customer = await h.invoke(createCustomer, {
+      name: "Unique Variant Buyer",
+      phone: nextPhone(),
+    });
+    const product = await h.invoke(createProduct, {
+      name: "Unique Variant Cake",
+      basePriceMinor: "1500",
+      variants: [{ name: "A" }, { name: "B" }],
+    });
+    const uniqueVariant = product.variants.find(
+      (variant) => variant.name === "A",
+    );
+    expect(uniqueVariant?.variantId).toEqual(expect.any(String));
+    if (uniqueVariant === undefined) {
+      throw new Error("expected variant A");
+    }
+    const { record } = await seedChoicePending(h, {
+      conversationId: conversation.id,
+      customerId: customer.id,
+      product,
+    });
+    const beforeOrders = await orderCount();
+    const replaceHarness = harness({
+      model: new MockLanguageModelV3({
+        doStream: [
+          mockToolCallStream(
+            "call-replace",
+            PENDING_REPLACE_TOOL_NAME,
+            JSON.stringify({
+              customerId: customer.id,
+              items: [
+                {
+                  productId: product.productId,
+                  variantId: uniqueVariant.variantId,
+                  quantityMilli: "2000",
+                },
+              ],
+            }),
+          ),
+          mockTextStream("Picking the unique variant."),
+        ],
+      }),
+      pendingStore: h.pendingStore,
+    });
+    const replaceChat = await hostRequest(replaceHarness.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHAT_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        text: "Use variant A, two of them",
+        locale: "en",
+      },
+    });
+    const replaced = assistantHostInteractionResultSchema.parse(
+      await replaceChat.json(),
+    );
+    expect(replaced.status).toBe("ok");
+    if (replaced.status !== "ok") {
+      return;
+    }
+    expect(replaced.pending?.id).toBe(record.id);
+    expect(replaced.pending?.version).toBe(record.version);
+    const peeked = await h.pendingStore.peekOpen({
+      conversationId: conversation.id,
+      bind: pendingBindFor(conversation.id),
+    });
+    expect(peeked.kind).toBe("found");
+    if (peeked.kind !== "found" || peeked.record.kind !== "choice") {
+      throw new Error("expected original choice pending still open");
+    }
+    expect(peeked.record.status).toBe("open");
+    expect(peeked.record.id).toBe(record.id);
+    expect(peeked.record.executionId).toBe(record.executionId);
+    expect(await orderCount()).toBe(beforeOrders);
+  });
+
+  it("Phase A CoreError on confirm does not complete pending; retry is not ok with null pending", async () => {
+    const h = harness({ model: silentModel() });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Confirm Phase A error",
+    });
+    const seeded = await seedConfirmationPending(h, conversation.id);
+    await h.invoke(restoreCustomer, { id: seeded.customerId });
+    const first = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_CONFIRM_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        challengeId: seeded.challengeId,
+      },
+    });
+    const firstBody = assistantHostInteractionResultSchema.parse(
+      await first.json(),
+    );
+    expect(firstBody.status).toBe("error");
+    if (firstBody.status !== "error") {
+      return;
+    }
+    expect(firstBody.code).toBe("VALIDATION");
+    const peeked = await h.pendingStore.peekOpen({
+      conversationId: conversation.id,
+      bind: pendingBindFor(conversation.id),
+    });
+    expect(peeked.kind).toBe("found");
+    if (peeked.kind !== "found") {
+      throw new Error("expected pending still blocking after Phase A error");
+    }
+    expect(peeked.record.status).not.toBe("completed");
+    expect(peeked.record.id).toBe(seeded.challengeId);
+    expect(await customerRow(seeded.customerId)).toBeDefined();
+    const retry = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_CONFIRM_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        challengeId: seeded.challengeId,
+      },
+    });
+    const retryBody = assistantHostInteractionResultSchema.parse(
+      await retry.json(),
+    );
+    expect(retryBody.status).not.toBe("ok");
+    if (retryBody.status === "ok") {
+      expect(retryBody.pending).not.toBeNull();
+    }
+    const peekedRetry = await h.pendingStore.peekOpen({
+      conversationId: conversation.id,
+      bind: pendingBindFor(conversation.id),
+    });
+    expect(peekedRetry.kind).toBe("found");
+    expect(await customerRow(seeded.customerId)).toBeDefined();
+  });
+
+  it("Phase A CoreError on choice does not complete pending; retry re-executes once after restore", async () => {
+    const h = harness({ model: silentModel() });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Choice Phase A error",
+    });
+    const customer = await h.invoke(createCustomer, {
+      name: "Phase A Error Buyer",
+      phone: nextPhone(),
+    });
+    const product = await h.invoke(createProduct, {
+      name: "Phase A Error Cake",
+      basePriceMinor: "1500",
+      variants: [{ name: "A" }, { name: "B" }],
+    });
+    const { record, optionByLabel } = await seedChoicePending(h, {
+      conversationId: conversation.id,
+      customerId: customer.id,
+      product,
+    });
+    const optionId = optionByLabel.get("A");
+    if (optionId === undefined) {
+      throw new Error("expected option A");
+    }
+    await h.invoke(archiveProduct, { productId: product.productId });
+    const beforeOrders = await orderCount();
+    const first = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.id,
+        optionId,
+      },
+    });
+    const firstBody = assistantHostInteractionResultSchema.parse(
+      await first.json(),
+    );
+    expect(firstBody.status).toBe("error");
+    if (firstBody.status !== "error") {
+      return;
+    }
+    expect(firstBody.code).not.toBeUndefined();
+    const peeked = await h.pendingStore.peekOpen({
+      conversationId: conversation.id,
+      bind: pendingBindFor(conversation.id),
+    });
+    expect(peeked.kind).toBe("found");
+    if (peeked.kind !== "found") {
+      throw new Error("expected pending still blocking after Phase A error");
+    }
+    expect(peeked.record.status).not.toBe("completed");
+    expect(peeked.record.id).toBe(record.id);
+    expect(await orderCount()).toBe(beforeOrders);
+    const blockedRetry = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.id,
+        optionId,
+      },
+    });
+    const blockedBody = assistantHostInteractionResultSchema.parse(
+      await blockedRetry.json(),
+    );
+    expect(blockedBody.status).not.toBe("ok");
+    if (blockedBody.status === "ok") {
+      expect(blockedBody.pending).not.toBeNull();
+    }
+    expect(await orderCount()).toBe(beforeOrders);
+    await h.invoke(restoreProduct, { productId: product.productId });
+    const recovered = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.id,
+        optionId,
+      },
+    });
+    const recoveredBody = assistantHostInteractionResultSchema.parse(
+      await recovered.json(),
+    );
+    expect(recoveredBody.status).toBe("ok");
+    if (recoveredBody.status !== "ok") {
+      return;
+    }
+    expect(recoveredBody.pending).toBeNull();
+    expect(await orderCount()).toBe(beforeOrders + 1);
+    const replay = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.id,
+        optionId,
+      },
+    });
+    const replayBody = assistantHostInteractionResultSchema.parse(
+      await replay.json(),
+    );
+    expect(replayBody.status).toBe("ok");
+    expect(await orderCount()).toBe(beforeOrders + 1);
   });
 
   it("confirm executes once, consumes the core challenge, and may return list cards", async () => {

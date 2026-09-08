@@ -39,6 +39,11 @@ describe("unpublished staff-assistant host (SHO-522)", () => {
     expect(hostSrc).toContain("createStaffAssistantHostApp");
     expect(hostSrc).not.toMatch(/implementAction\s*\(/);
     expect(hostSrc).not.toMatch(/defineActionContract\s*\(/);
+    expect(hostSrc).toContain("catalog.resolveLineReferences");
+    expect(hostSrc).toContain("customers.resolveCustomerReference");
+    expect(hostSrc).not.toContain(
+      "pending_replace choice probe must not execute the handler",
+    );
   });
 
   it("does not GETDEL in the pending Redis scripts (core owns confirmation consume)", () => {

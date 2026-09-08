@@ -25,6 +25,7 @@ import {
   filterStaffAiTools,
   isPendingReplaceActionName,
   mapPendingReplaceFacadeInput,
+  ORDERS_CREATE_ACTION_NAME,
   PENDING_REPLACE_TOOL_NAME,
   pendingChoiceRecordFromChoiceRecord,
   presentChoiceStaffAssistantNeedsChoice,
@@ -38,6 +39,8 @@ import {
   confirmationPendingRecord,
   type AssistantHostInteractionResult,
   type AssistantResumeCard,
+  type CatalogPickerConflictExtras,
+  type ChoiceCanonicalCreateInput,
   type LanguageModel,
   type PendingInteractionRecord,
   type PublicPending,
@@ -194,6 +197,47 @@ function staffRequest(options: {
       ? { confirmationChallengeId: options.confirmationChallengeId }
       : {}),
   };
+}
+
+const RESOLVE_CUSTOMER_REFERENCE_ACTION =
+  "customers.resolveCustomerReference" as const;
+const RESOLVE_LINE_REFERENCES_ACTION = "catalog.resolveLineReferences" as const;
+
+const CHOICE_PENDING_REPLACE_UNIQUE_REFUSE = {
+  status: "error" as const,
+  code: "VALIDATION",
+  message:
+    "This pending still needs a picker. Arguments that resolve uniquely cannot replace it; tap the card or abandon first.",
+};
+
+function catalogLineFromChoiceItem(
+  item: ChoiceCanonicalCreateInput["items"][number],
+): {
+  readonly product: ChoiceCanonicalCreateInput["items"][number]["product"];
+  readonly variantSelection?:
+    | NonNullable<
+        ChoiceCanonicalCreateInput["items"][number]["variantSelection"]
+      >
+    | {
+        readonly kind: "reference";
+        readonly ref: NonNullable<
+          ChoiceCanonicalCreateInput["items"][number]["variant"]
+        >;
+      };
+} {
+  if (item.variantSelection !== undefined) {
+    return {
+      product: item.product,
+      variantSelection: item.variantSelection,
+    };
+  }
+  if (item.variant !== undefined) {
+    return {
+      product: item.product,
+      variantSelection: { kind: "reference", ref: item.variant },
+    };
+  }
+  return { product: item.product };
 }
 
 function requireImplementation(
@@ -718,6 +762,94 @@ async function runPhaseB(options: {
   });
 }
 
+async function stagePendingReplaceExecution(options: {
+  readonly runtime: StaffAssistantHostRuntime;
+  readonly record: PendingInteractionRecord;
+  readonly facade: unknown;
+  readonly bind: {
+    readonly actorId: string;
+    readonly companyId: string;
+    readonly conversationId: string;
+  };
+  readonly staffPrincipal: {
+    readonly mode: "staff";
+    readonly session: SessionPrincipal;
+    readonly companySelector: string | null;
+  };
+}): Promise<string> {
+  const checkpoint = createHostCheckpoint({
+    pipeline: options.runtime.pipeline,
+    conversationId: options.bind.conversationId,
+    requestId: options.runtime.requestId,
+    clientIp: options.runtime.clientIp,
+    principal: options.staffPrincipal,
+    beginKey: `begin:replace:${options.record.id}:${String(options.record.version)}`,
+  });
+  const begun = await checkpoint.begin();
+  const staged = await checkpoint.stageRun({
+    messageId: begun.messageId,
+    seq: 0,
+    actionName: options.record.actionName,
+    toolName: PENDING_REPLACE_TOOL_NAME,
+    toolCallId: `replace:${options.record.id}`,
+    toolInput: options.facade,
+  });
+  return staged.executionId;
+}
+
+async function harvestChoiceReplacePickerExtras(options: {
+  readonly runtime: StaffAssistantHostRuntime;
+  readonly canonical: ChoiceCanonicalCreateInput;
+  readonly staffPrincipal: {
+    readonly mode: "staff";
+    readonly session: SessionPrincipal;
+    readonly companySelector: string | null;
+  };
+}): Promise<CatalogPickerConflictExtras | undefined> {
+  const request = staffRequest({
+    requestId: options.runtime.requestId,
+    clientIp: options.runtime.clientIp,
+    aiTraceId: options.runtime.requestId,
+  });
+  try {
+    await executeAction(options.runtime.pipeline, {
+      action: requireImplementation(
+        options.runtime.registry,
+        RESOLVE_CUSTOMER_REFERENCE_ACTION,
+      ),
+      input: options.canonical.customer,
+      request,
+      principal: options.staffPrincipal,
+    });
+  } catch (error) {
+    const extras = catalogPickerConflictExtrasFromError(error);
+    if (extras !== undefined) {
+      return extras;
+    }
+    throw error;
+  }
+  try {
+    await executeAction(options.runtime.pipeline, {
+      action: requireImplementation(
+        options.runtime.registry,
+        RESOLVE_LINE_REFERENCES_ACTION,
+      ),
+      input: {
+        lines: options.canonical.items.map(catalogLineFromChoiceItem),
+      },
+      request,
+      principal: options.staffPrincipal,
+    });
+  } catch (error) {
+    const extras = catalogPickerConflictExtrasFromError(error);
+    if (extras !== undefined) {
+      return extras;
+    }
+    throw error;
+  }
+  return undefined;
+}
+
 async function applyHostPendingReplace(options: {
   readonly runtime: StaffAssistantHostRuntime;
   readonly record: PendingInteractionRecord;
@@ -737,25 +869,9 @@ async function applyHostPendingReplace(options: {
     options.record.actionName,
     options.facade,
   );
-  const checkpoint = createHostCheckpoint({
-    pipeline: options.runtime.pipeline,
-    conversationId: options.bind.conversationId,
-    requestId: options.runtime.requestId,
-    clientIp: options.runtime.clientIp,
-    principal: options.staffPrincipal,
-    beginKey: `begin:replace:${options.record.id}:${String(options.record.version)}`,
-  });
-  const begun = await checkpoint.begin();
-  const staged = await checkpoint.stageRun({
-    messageId: begun.messageId,
-    seq: 0,
-    actionName: options.record.actionName,
-    toolName: PENDING_REPLACE_TOOL_NAME,
-    toolCallId: `replace:${options.record.id}`,
-    toolInput: options.facade,
-  });
   let next: PendingInteractionRecord;
   if (options.record.kind === "confirmation") {
+    const stagedExecutionId = await stagePendingReplaceExecution(options);
     const action = requireImplementation(
       options.runtime.registry,
       options.record.actionName,
@@ -772,7 +888,7 @@ async function applyHostPendingReplace(options: {
           toolCallId: options.record.toolCallId,
           idempotencyKey: executionAttemptKey(
             options.bind.conversationId,
-            staged.executionId,
+            stagedExecutionId,
           ),
         }),
         principal: options.staffPrincipal,
@@ -797,46 +913,24 @@ async function applyHostPendingReplace(options: {
       canonicalInput: mapped,
       summary: required.challenge.summary,
       challengeExpiresAt: required.challenge.expiresAt,
-      executionId: staged.executionId,
+      executionId: stagedExecutionId,
       version: options.record.version + 1,
       ...(options.record.locale !== undefined
         ? { locale: options.record.locale }
         : {}),
     });
   } else {
-    const canonical = choiceCanonicalCreateInputSchema.parse(mapped);
-    const action = requireImplementation(
-      options.runtime.registry,
-      options.record.actionName,
-    );
-    let extras = undefined as
-      ReturnType<typeof catalogPickerConflictExtrasFromError> | undefined;
-    try {
-      await executeAction(options.runtime.pipeline, {
-        action,
-        input: canonical,
-        request: staffRequest({
-          requestId: options.runtime.requestId,
-          clientIp: options.runtime.clientIp,
-          aiTraceId: options.runtime.requestId,
-          toolCallId: options.record.toolCallId,
-          idempotencyKey: executionAttemptKey(
-            options.bind.conversationId,
-            staged.executionId,
-          ),
-        }),
-        principal: options.staffPrincipal,
-      });
-    } catch (error) {
-      extras = catalogPickerConflictExtrasFromError(error);
-      if (extras === undefined) {
-        throw error;
-      }
+    if (options.record.actionName !== ORDERS_CREATE_ACTION_NAME) {
+      return CHOICE_PENDING_REPLACE_UNIQUE_REFUSE;
     }
+    const canonical = choiceCanonicalCreateInputSchema.parse(mapped);
+    const extras = await harvestChoiceReplacePickerExtras({
+      runtime: options.runtime,
+      canonical,
+      staffPrincipal: options.staffPrincipal,
+    });
     if (extras === undefined) {
-      throw new CoreInvariantError(
-        "pending_replace choice probe must not execute the handler",
-      );
+      return CHOICE_PENDING_REPLACE_UNIQUE_REFUSE;
     }
     const nextId = randomUUID();
     const rebuilt = choiceRecordFromPickerConflict({
@@ -853,11 +947,12 @@ async function applyHostPendingReplace(options: {
         "pending_replace choice probe produced no picker",
       );
     }
+    const stagedExecutionId = await stagePendingReplaceExecution(options);
     next = pendingChoiceRecordFromChoiceRecord(rebuilt, {
       actionName: options.record.actionName,
       toolCallId: options.record.toolCallId,
       version: options.record.version + 1,
-      executionId: staged.executionId,
+      executionId: stagedExecutionId,
     });
   }
   const replaced = await options.runtime.pendingStore.replace({
@@ -1262,24 +1357,6 @@ export async function executeStaffAssistantHostChoiceResume(
             }
           }
           if (error instanceof CoreError) {
-            await finishPhaseA({
-              runtime: options,
-              conversationId: conversation.id,
-              staffPrincipal: auth.staffPrincipal,
-              executionId,
-              outcome: "error",
-              output: {
-                status: "error",
-                code: error.code,
-                message: error.clientMessage,
-              },
-            });
-            await options.pendingStore.complete({
-              id: record.id,
-              kind: "choice",
-              bind,
-              optionId: parsed.data.optionId,
-            });
             return interactionResponse(
               errorResult(error.code, error.clientMessage),
               options.requestId,
@@ -1472,23 +1549,6 @@ export async function executeStaffAssistantHostConfirm(
             );
           }
           if (error instanceof CoreError) {
-            await finishPhaseA({
-              runtime: options,
-              conversationId: conversation.id,
-              staffPrincipal: auth.staffPrincipal,
-              executionId,
-              outcome: "error",
-              output: {
-                status: "error",
-                code: error.code,
-                message: error.clientMessage,
-              },
-            });
-            await options.pendingStore.complete({
-              id: record.id,
-              kind: "confirmation",
-              bind,
-            });
             return interactionResponse(
               errorResult(error.code, error.clientMessage),
               options.requestId,
