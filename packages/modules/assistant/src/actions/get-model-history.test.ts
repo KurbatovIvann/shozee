@@ -27,7 +27,10 @@ describe("assistant.getModelHistory contract", () => {
     expect(getModelHistoryContract.description).toContain("modelTrace");
     expect(getModelHistoryContract.description).toContain("toolName");
     expect(getModelHistoryContract.description).toContain("toolInput");
-    expect(getModelHistoryContract.description).toContain("started");
+    expect(getModelHistoryContract.description).toContain("turnKey");
+    expect(getModelHistoryContract.description).toContain(
+      "unfinishedStartedRuns",
+    );
     expect(getModelHistoryContract.timeout).toBe(5_000);
     expect(GET_MODEL_HISTORY_WINDOW).toBe(8);
   });
@@ -37,14 +40,17 @@ describe("assistant.getModelHistory contract", () => {
       "conversationId",
     ]);
     expect(Object.keys(getModelHistoryOutputSchema.shape).toSorted()).toEqual([
+      "checkpointTurns",
       "conversationId",
       "messages",
+      "unfinishedStartedRuns",
     ]);
     expect(Object.keys(modelHistoryMessageSchema.shape).toSorted()).toEqual([
       "id",
       "role",
       "text",
       "toolRuns",
+      "turnKey",
     ]);
     expect(Object.keys(modelHistoryToolRunSchema.shape).toSorted()).toEqual([
       "action",

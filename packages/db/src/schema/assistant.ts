@@ -3,7 +3,8 @@
  * assistant module (ADR-0014). Conversations, user/assistant text, and
  * tool-run traces (action names, tool-call ids, challenge ids, result
  * ids, outcome, bounded `model_trace` prompt state, bounded `tool_input`
- * façade args, `execution_id` attempt identity, `seq` call order).
+ * façade args, `execution_id` attempt identity, `seq` call order,
+ * assistant `turn_key` begin identity).
  * Deliberately absent: FKs to orders/documents, order or document status
  * snapshots, prompts in audit/logs, SSE/session columns.
  *
@@ -66,6 +67,13 @@ export const assistantConversations = pgTable(
  * User/assistant text for a conversation. Role is forced by later write
  * actions; the CHECK is the closed set. Tool results live on
  * `assistant_tool_runs`, not here.
+ * `turn_key` is the host begin identity on assistant rows (chat
+ * `begin:${userMessageId}`, Phase B `begin:resume:${pendingId}`, Phase A
+ * `begin:phase-a:${pendingId}`, replace/successor keys). Nullable on
+ * pre-SHO-539 rows; recovery must not auto-execute `started` runs whose
+ * message `turn_key` is null. Immutable after begin — complete does not
+ * update it. UNIQUE `(company_id, conversation_id, turn_key)` allows
+ * multiple NULLs (PostgreSQL NULL DISTINCT).
  */
 export const assistantMessages = pgTable(
   "assistant_messages",
@@ -75,10 +83,16 @@ export const assistantMessages = pgTable(
     conversationId: uuid("conversation_id").notNull(),
     role: text("role").notNull(),
     body: text("body").notNull(),
+    turnKey: text("turn_key"),
     ...timestampColumns(),
   },
   (table) => [
     tenantRowUnique("assistant_messages_company_id_id_uq", table),
+    unique("assistant_messages_company_conversation_turn_key_uq").on(
+      table.companyId,
+      table.conversationId,
+      table.turnKey,
+    ),
     index("assistant_messages_company_conversation_idx").on(
       table.companyId,
       table.conversationId,

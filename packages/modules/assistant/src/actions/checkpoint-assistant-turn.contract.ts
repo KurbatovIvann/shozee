@@ -53,9 +53,17 @@ const boundedJsonbField =
     }
   };
 
+export const ASSISTANT_TURN_KEY_MAX = 128;
+
+export const checkpointTurnKeySchema = z
+  .string()
+  .min(1)
+  .max(ASSISTANT_TURN_KEY_MAX);
+
 export const checkpointBeginInputSchema = z.strictObject({
   kind: z.literal("begin"),
   conversationId: z.uuid(),
+  turnKey: checkpointTurnKeySchema,
 });
 
 export const checkpointStageRunInputSchema = z
@@ -108,6 +116,7 @@ export const checkpointAssistantTurnInputSchema = z.discriminatedUnion("kind", [
 export const checkpointAssistantTurnOutputSchema = z.object({
   conversationId: z.uuid(),
   messageId: z.uuid(),
+  turnKey: checkpointTurnKeySchema.nullable(),
   executionId: z.string().nullable(),
   toolRunId: z.uuid().nullable(),
   seq: z.number().int().nullable(),
@@ -116,7 +125,7 @@ export const checkpointAssistantTurnOutputSchema = z.object({
 
 export const checkpointAssistantTurnContract = defineActionContract({
   name: "assistant.checkpointAssistantTurn",
-  description: `${STAFF_CONVERSATION_AUTHOR_INVARIANT} Checkpoint an assistant turn on a conversation the caller authored. kind begin inserts one assistant message (body may be empty until complete) and returns messageId — the only message this turn completes into. kind stageRun inserts a tool-run with outcome started, seq, façade toolInput, actionName, toolName, toolCallId, and a server-minted executionId unique per tenant (attempt identity before execute). kind finishRun updates that same executionId row to success, error, choice_required, or confirmation_required and stores bounded modelTrace (ADR-0034 prompt state; PostgreSQL jsonb::text length at most 22000), result ids, and optional challengeId — it does not insert a second tool-run or assistant replica. kind complete writes the final speech on that same messageId. Do not send a recordAssistantTurn payload. Company id is never input. Internal — not mounted on HTTP and not an AI tool. Re-submitting the identical payload with the same idempotency key returns the already-recorded checkpoint and does not mint a second executionId or assistant replica.`,
+  description: `${STAFF_CONVERSATION_AUTHOR_INVARIANT} Checkpoint an assistant turn on a conversation the caller authored. kind begin takes turnKey (the host begin identity: chat begin:\${userMessageId}, Phase B begin:resume:\${pendingId}, Phase A begin:phase-a:\${pendingId}, replace/successor keys), inserts or returns the one assistant message for that turnKey (body may be empty until complete), stores turnKey immutable on that row, and returns messageId plus turnKey — the only message this turn completes into. complete writes speech on that same messageId and must not change turnKey. kind stageRun inserts a tool-run with outcome started, seq, façade toolInput, actionName, toolName, toolCallId, and a server-minted executionId unique per tenant (attempt identity before execute). kind finishRun updates that same executionId row to success, error, choice_required, or confirmation_required and stores bounded modelTrace (ADR-0034 prompt state; PostgreSQL jsonb::text length at most 22000), result ids, and optional challengeId — it does not insert a second tool-run or assistant replica. Do not send a recordAssistantTurn payload. Company id is never input. Internal — not mounted on HTTP and not an AI tool. Re-submitting the identical payload with the same idempotency key returns the already-recorded checkpoint and does not mint a second executionId or assistant replica. Re-submitting begin with the same turnKey returns the existing message.`,
   principal: "staff",
   transport: "internal",
   input: checkpointAssistantTurnInputSchema,

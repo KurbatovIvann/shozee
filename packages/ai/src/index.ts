@@ -206,6 +206,18 @@ export {
   type StaffUserMessageAttempt,
 } from "./messages.js";
 export {
+  chatTurnKey,
+  isChatTurnKey,
+  isResumeTurnKey,
+  phaseATurnKey,
+  resumeTurnKey,
+  ASSISTANT_CHAT_TURN_KEY_PREFIX,
+  ASSISTANT_PHASE_A_TURN_KEY_PREFIX,
+  ASSISTANT_REPLACE_TURN_KEY_PREFIX,
+  ASSISTANT_RESUME_TURN_KEY_PREFIX,
+  ASSISTANT_SUCCESSOR_TURN_KEY_PREFIX,
+} from "./turn-key.js";
+export {
   budgetStaffAssistantToolRuns,
   staffAssistantToolCallInput,
   staffAssistantTraceDigest,

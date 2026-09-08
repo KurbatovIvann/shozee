@@ -28,6 +28,7 @@ const assistantMessageColumns = {
   conversationId: assistantMessages.conversationId,
   role: assistantMessages.role,
   body: assistantMessages.body,
+  turnKey: assistantMessages.turnKey,
 };
 
 const checkpointToolRunColumns = {
@@ -43,6 +44,7 @@ type AssistantMessageRow = {
   readonly conversationId: string;
   readonly role: string;
   readonly body: string;
+  readonly turnKey: string | null;
 };
 
 type CheckpointToolRunRow = {
@@ -56,10 +58,12 @@ type CheckpointToolRunRow = {
 function emptyCheckpoint(
   conversationId: string,
   messageId: string,
+  turnKey: string | null,
 ): CheckpointOutput {
   return {
     conversationId,
     messageId,
+    turnKey,
     executionId: null,
     toolRunId: null,
     seq: null,
@@ -94,6 +98,7 @@ function toolRunOutput(
   return {
     conversationId,
     messageId: row.messageId,
+    turnKey: null,
     executionId: row.executionId,
     toolRunId: row.id,
     seq: row.seq,
@@ -131,7 +136,33 @@ async function beginTurn(env: {
   readonly ctx: StaffCtx;
   readonly db: WritableStaffDb;
   readonly conversationId: string;
+  readonly turnKey: string;
 }): Promise<CheckpointOutput> {
+  const existing = (
+    await env.db
+      .select(assistantMessageColumns)
+      .from(assistantMessages)
+      .where(
+        and(
+          eq(assistantMessages.companyId, env.ctx.companyId),
+          eq(assistantMessages.conversationId, env.conversationId),
+          eq(assistantMessages.turnKey, env.turnKey),
+          eq(assistantMessages.role, "assistant"),
+        ),
+      )
+      .limit(1)
+  )[0];
+  if (existing !== undefined) {
+    env.ctx.log.info(
+      {
+        conversation_id: env.conversationId,
+        message_id: existing.id,
+        checkpoint_kind: "begin",
+      },
+      "assistant.checkpointAssistantTurn loaded assistant turn",
+    );
+    return emptyCheckpoint(env.conversationId, existing.id, existing.turnKey);
+  }
   const messageId = randomUUID();
   const inserted = (
     await env.db
@@ -142,6 +173,7 @@ async function beginTurn(env: {
         conversationId: env.conversationId,
         role: "assistant",
         body: "",
+        turnKey: env.turnKey,
       })
       .returning(assistantMessageColumns)
   )[0];
@@ -163,7 +195,7 @@ async function beginTurn(env: {
     },
     "assistant.checkpointAssistantTurn began assistant turn",
   );
-  return emptyCheckpoint(env.conversationId, inserted.id);
+  return emptyCheckpoint(env.conversationId, inserted.id, inserted.turnKey);
 }
 
 async function stageRun(env: {
@@ -171,7 +203,7 @@ async function stageRun(env: {
   readonly db: WritableStaffDb;
   readonly input: Extract<CheckpointInput, { kind: "stageRun" }>;
 }): Promise<CheckpointOutput> {
-  await loadOwnAssistantMessage({
+  const message = await loadOwnAssistantMessage({
     db: env.db,
     companyId: env.ctx.companyId,
     conversationId: env.input.conversationId,
@@ -202,7 +234,10 @@ async function stageRun(env: {
       },
       "assistant.checkpointAssistantTurn loaded staged tool run",
     );
-    return toolRunOutput(env.input.conversationId, existing);
+    return {
+      ...toolRunOutput(env.input.conversationId, existing),
+      turnKey: message.turnKey,
+    };
   }
   const executionId = randomUUID();
   const inserted = (
@@ -243,7 +278,10 @@ async function stageRun(env: {
     },
     "assistant.checkpointAssistantTurn staged tool run",
   );
-  return toolRunOutput(env.input.conversationId, inserted);
+  return {
+    ...toolRunOutput(env.input.conversationId, inserted),
+    turnKey: message.turnKey,
+  };
 }
 
 async function finishRun(env: {
@@ -332,7 +370,11 @@ async function completeTurn(env: {
     },
     "assistant.checkpointAssistantTurn completed assistant turn",
   );
-  return emptyCheckpoint(env.input.conversationId, updated.id);
+  return emptyCheckpoint(
+    env.input.conversationId,
+    updated.id,
+    updated.turnKey,
+  );
 }
 
 export async function checkpointStaffAssistantTurn(env: {
@@ -355,6 +397,7 @@ export async function checkpointStaffAssistantTurn(env: {
         ctx,
         db,
         conversationId: input.conversationId,
+        turnKey: input.turnKey,
       });
     case "stageRun":
       return stageRun({ ctx, db, input });

@@ -174,18 +174,30 @@ export type {
  * never a history source (SHO-506). Tool-call/result parts come from
  * ADR-0034 `modelTrace` under the read-time token budget (SHO-510).
  * In-flight `started` runs reconstruct a tool-call from `toolInput`
- * even when `modelTrace` is still null (SHO-539).
+ * even when `modelTrace` is still null (SHO-539). When
+ * `recoverStartedExecutionIds` is passed, started rows outside that
+ * allowlist omit both the tool-call and the `{ status: "started" }`
+ * tool-result. Finished traces stay.
  */
 export function staffAssistantModelMessagesFromPersisted(
   messages: readonly StaffAssistantPersistedMessage[],
-  provider: StaffProviderAdapter = anthropicStaffProvider,
+  provider?: StaffProviderAdapter,
+  options?: {
+    readonly recoverStartedExecutionIds?: ReadonlySet<string>;
+  },
 ): ModelMessage[] {
   const budgeted = budgetStaffAssistantToolRuns(messages);
   const expanded: ModelMessage[] = [];
+  const resolvedProvider = provider ?? anthropicStaffProvider;
   for (const message of budgeted) {
-    expanded.push(...modelMessagesFromPersistedRow(message));
+    expanded.push(
+      ...modelMessagesFromPersistedRow(
+        message,
+        options?.recoverStartedExecutionIds,
+      ),
+    );
   }
-  return applyStaffAssistantHistoryWindow(expanded, provider);
+  return applyStaffAssistantHistoryWindow(expanded, resolvedProvider);
 }
 
 function comparePersistedRunSeq(
@@ -203,17 +215,31 @@ function runHasModelTrace(run: StaffAssistantPersistedToolRun): boolean {
 
 function isReconstructableToolRun(
   run: StaffAssistantPersistedToolRun,
+  recoverStartedExecutionIds?: ReadonlySet<string>,
 ): boolean {
-  return runHasModelTrace(run) || run.outcome === "started";
+  if (run.outcome === "started") {
+    if (recoverStartedExecutionIds === undefined) {
+      return true;
+    }
+    return (
+      run.executionId !== undefined &&
+      run.executionId !== null &&
+      recoverStartedExecutionIds.has(run.executionId)
+    );
+  }
+  return runHasModelTrace(run);
 }
 
 function modelMessagesFromPersistedRow(
   message: StaffAssistantPersistedMessage,
+  recoverStartedExecutionIds?: ReadonlySet<string>,
 ): ModelMessage[] {
   const orderedRuns = [...(message.toolRuns ?? [])].sort(
     comparePersistedRunSeq,
   );
-  const reconstructableRuns = orderedRuns.filter(isReconstructableToolRun);
+  const reconstructableRuns = orderedRuns.filter((run) =>
+    isReconstructableToolRun(run, recoverStartedExecutionIds),
+  );
   if (message.role === "user" || reconstructableRuns.length === 0) {
     const body =
       message.role === "assistant" && message.body === ""

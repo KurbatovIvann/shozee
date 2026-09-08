@@ -26,6 +26,7 @@ import {
   mockToolCallStream,
 } from "@showzy/ai/test";
 import {
+  appendUserMessage,
   checkpointAssistantTurn,
   createConversation,
   getModelHistory,
@@ -51,7 +52,9 @@ import {
   createCustomer,
   deleteCustomer,
 } from "@showzy/customers";
+import { createOrder } from "@showzy/orders";
 import { session } from "@showzy/db/schema/auth";
+import { assistantMessages } from "@showzy/db/schema/assistant";
 import { companyCustomers } from "@showzy/db/schema/customers";
 import { orders } from "@showzy/db/schema/orders";
 import { betterAuth } from "better-auth";
@@ -418,15 +421,12 @@ async function stageExecution(
   actionName: string,
   toolInput: unknown,
 ): Promise<string> {
+  const beginKey = `begin:seed:${randomUUID()}`;
   const begun = await h.invoke(
     checkpointAssistantTurn,
-    { kind: "begin", conversationId },
+    { kind: "begin", conversationId, turnKey: beginKey },
     {
-      idempotencyKey: attemptKey(
-        "turn",
-        conversationId,
-        `begin:seed:${randomUUID()}`,
-      ),
+      idempotencyKey: attemptKey("turn", conversationId, beginKey),
     },
   );
   const staged = await h.invoke(
@@ -453,6 +453,139 @@ async function stageExecution(
     throw new Error("stageRun returned no executionId");
   }
   return staged.executionId;
+}
+
+async function stageNamedStartedRun(
+  h: Harness,
+  options: {
+    readonly conversationId: string;
+    readonly beginKey: string;
+    readonly actionName: string;
+    readonly toolName: string;
+    readonly toolCallId: string;
+    readonly toolInput: unknown;
+  },
+): Promise<{ readonly messageId: string; readonly executionId: string }> {
+  const begun = await h.invoke(
+    checkpointAssistantTurn,
+    {
+      kind: "begin",
+      conversationId: options.conversationId,
+      turnKey: options.beginKey,
+    },
+    {
+      idempotencyKey: attemptKey(
+        "turn",
+        options.conversationId,
+        options.beginKey,
+      ),
+    },
+  );
+  const staged = await h.invoke(
+    checkpointAssistantTurn,
+    {
+      kind: "stageRun",
+      conversationId: options.conversationId,
+      messageId: begun.messageId,
+      seq: 0,
+      actionName: options.actionName,
+      toolName: options.toolName,
+      toolCallId: options.toolCallId,
+      toolInput: options.toolInput,
+    },
+    {
+      idempotencyKey: attemptKey(
+        "turn",
+        options.conversationId,
+        `stage:${begun.messageId}:0`,
+      ),
+    },
+  );
+  if (staged.executionId === null) {
+    throw new Error("stageRun returned no executionId");
+  }
+  return { messageId: begun.messageId, executionId: staged.executionId };
+}
+
+async function cakeCreateInputs(
+  h: Harness,
+  label: string,
+): Promise<{
+  readonly facadeInput: {
+    readonly customerId: string;
+    readonly items: readonly {
+      readonly productId: string;
+      readonly variantId: string;
+      readonly quantityMilli: string;
+    }[];
+  };
+  readonly canonicalInput: {
+    readonly customer: { readonly by: "id"; readonly id: string };
+    readonly items: readonly {
+      readonly product: { readonly by: "id"; readonly id: string };
+      readonly variantSelection: {
+        readonly kind: "reference";
+        readonly ref: { readonly by: "id"; readonly id: string };
+      };
+      readonly quantity: { readonly milli: string };
+    }[];
+  };
+}> {
+  const customer = await h.invoke(createCustomer, {
+    name: `${label} Buyer`,
+    phone: nextPhone(),
+  });
+  const product = await h.invoke(createProduct, {
+    name: `${label} Cake`,
+    basePriceMinor: "1800",
+    variants: [{ name: "Solo" }],
+  });
+  const variant = product.variants[0];
+  if (variant === undefined) {
+    throw new Error(`${label} product missing variant`);
+  }
+  return {
+    facadeInput: {
+      customerId: customer.id,
+      items: [
+        {
+          productId: product.productId,
+          variantId: variant.variantId,
+          quantityMilli: "1000",
+        },
+      ],
+    },
+    canonicalInput: {
+      customer: { by: "id", id: customer.id },
+      items: [
+        {
+          product: { by: "id", id: product.productId },
+          variantSelection: {
+            kind: "reference",
+            ref: { by: "id", id: variant.variantId },
+          },
+          quantity: { milli: "1000" },
+        },
+      ],
+    },
+  };
+}
+
+async function padUserMessages(
+  h: Harness,
+  conversationId: string,
+  count: number,
+): Promise<void> {
+  for (let index = 0; index < count; index += 1) {
+    await h.invoke(
+      appendUserMessage,
+      {
+        conversationId,
+        body: `pad-user-${String(index)}`,
+      },
+      { idempotencyKey: attemptKey("message", conversationId, randomUUID()) },
+    );
+  }
 }
 
 async function finishSeededHitlRun(
@@ -586,6 +719,7 @@ async function seedConfirmationPending(
 ): Promise<{
   readonly customerId: string;
   readonly challengeId: string;
+  readonly executionId: string;
 }> {
   const customer = await h.invoke(createCustomer, {
     name: "Live Delete Target",
@@ -639,6 +773,7 @@ async function seedConfirmationPending(
   return {
     customerId: customer.id,
     challengeId: unconfirmed.challenge.challengeId,
+    executionId,
   };
 }
 
@@ -1360,11 +1495,18 @@ describe("live staff assistant host HTTP (SHO-524)", () => {
     if (leftoverVariant === undefined) {
       throw new Error("leftover product missing variant");
     }
-    const leftoverExecutionId = await stageExecution(
-      h,
-      conversation.id,
-      "orders.create",
-      {
+    const userMessage = await h.invoke(
+      appendUserMessage,
+      { conversationId: conversation.id, body: "Create the leftover cake" },
+      { idempotencyKey: attemptKey("message", conversation.id, randomUUID()) },
+    );
+    const leftover = await stageNamedStartedRun(h, {
+      conversationId: conversation.id,
+      beginKey: `begin:${userMessage.id}`,
+      actionName: "orders.create",
+      toolName: ORDERS_CREATE_TOOL_NAME,
+      toolCallId: "call-leftover-create",
+      toolInput: {
         customerId: leftoverCustomer.id,
         items: [
           {
@@ -1374,7 +1516,7 @@ describe("live staff assistant host HTTP (SHO-524)", () => {
           },
         ],
       },
-    );
+    });
     const beforeChoice = await orderCount();
     const choiceCustomer = await h.invoke(createCustomer, {
       name: "Choice Buyer",
@@ -1413,8 +1555,717 @@ describe("live staff assistant host HTTP (SHO-524)", () => {
     });
     const leftoverRun = history.messages
       .flatMap((message) => message.toolRuns)
-      .find((run) => run.executionId === leftoverExecutionId);
+      .find((run) => run.executionId === leftover.executionId);
     expect(leftoverRun?.outcome).toBe("started");
+  });
+
+  describe("SHO-539 turnKey recovery membership", () => {
+    it("does not recover a user-preceded Phase B leftover after HITL and a dangling user", async () => {
+      const pendingStore = createMemoryPendingStore();
+      const h = liveApp({
+        pendingStore,
+        model: silentModel("Discussing the leftover."),
+      });
+      const token = await insertBearer(kit, kitIdentities.users.anna);
+      const conversation = await h.invoke(createConversation, {
+        title: "Live HITL dangling user Phase B leftover",
+      });
+      const choiceCustomer = await h.invoke(createCustomer, {
+        name: "Live HITL Buyer",
+        phone: nextPhone(),
+      });
+      const choiceProduct = await h.invoke(createProduct, {
+        name: "Live HITL Cake",
+        basePriceMinor: "1500",
+        variants: [{ name: "A" }, { name: "B" }],
+      });
+      const { record } = await seedChoicePending(h, {
+        conversationId: conversation.id,
+        customerId: choiceCustomer.id,
+        product: choiceProduct,
+      });
+      const optionId = record.envelope.options[0]?.id;
+      if (optionId === undefined) {
+        throw new Error("seeded choice missing option");
+      }
+      const bind = pendingBindFor(conversation.id);
+      expect(
+        (
+          await pendingStore.claim({
+            id: record.id,
+            kind: "choice",
+            bind,
+            optionId,
+          })
+        ).kind,
+      ).toBe("claimed");
+      expect(
+        (
+          await pendingStore.complete({
+            id: record.id,
+            kind: "choice",
+            bind,
+            optionId,
+          })
+        ).kind,
+      ).toBe("completed");
+      await h.invoke(
+        appendUserMessage,
+        {
+          conversationId: conversation.id,
+          body: "what about this picker?",
+        },
+        { idempotencyKey: attemptKey("message", conversation.id, randomUUID()) },
+      );
+      const cake = await cakeCreateInputs(h, "Live dangling Phase B");
+      const leftover = await stageNamedStartedRun(h, {
+        conversationId: conversation.id,
+        beginKey: `begin:resume:${record.id}`,
+        actionName: "orders.create",
+        toolName: ORDERS_CREATE_TOOL_NAME,
+        toolCallId: "call-resume-dangling",
+        toolInput: cake.facadeInput,
+      });
+      const beforeChat = await orderCount();
+      await parseOk(
+        await liveRequest(h.app, {
+          method: "POST",
+          path: ASSISTANT_CHAT_PATH,
+          token,
+          body: {
+            conversationId: conversation.id,
+            text: "Just asking about the picker",
+            locale: "en",
+          },
+        }),
+      );
+      expect(await orderCount()).toBe(beforeChat);
+      const history = await h.invoke(getModelHistory, {
+        conversationId: conversation.id,
+      });
+      expect(
+        history.unfinishedStartedRuns.some(
+          (run) => run.executionId === leftover.executionId,
+        ),
+      ).toBe(true);
+    });
+
+    it("does not recover a Phase B leftover after confirm when the HITL run is already success", async () => {
+      const pendingStore = createMemoryPendingStore();
+      const h = liveApp({
+        pendingStore,
+        model: silentModel("The confirmation already landed."),
+      });
+      const token = await insertBearer(kit, kitIdentities.users.anna);
+      const conversation = await h.invoke(createConversation, {
+        title: "Live confirm then Phase B leftover",
+      });
+      const seeded = await seedConfirmationPending(h, conversation.id);
+      const bind = pendingBindFor(conversation.id);
+      expect(
+        (
+          await pendingStore.claim({
+            id: seeded.challengeId,
+            kind: "confirmation",
+            bind,
+          })
+        ).kind,
+      ).toBe("claimed");
+      await h.invoke(
+        deleteCustomer,
+        { id: seeded.customerId },
+        {
+          idempotencyKey: executionAttemptKey(
+            conversation.id,
+            seeded.executionId,
+          ),
+          confirmationChallengeId: seeded.challengeId,
+        },
+      );
+      await h.invoke(
+        checkpointAssistantTurn,
+        {
+          kind: "finishRun",
+          conversationId: conversation.id,
+          executionId: seeded.executionId,
+          outcome: "success",
+          resultIds: [seeded.customerId],
+          modelTrace: { id: seeded.customerId },
+        },
+        {
+          idempotencyKey: attemptKey(
+            "turn",
+            conversation.id,
+            `finish:${seeded.executionId}:success`,
+          ),
+        },
+      );
+      expect(
+        (
+          await pendingStore.complete({
+            id: seeded.challengeId,
+            kind: "confirmation",
+            bind,
+          })
+        ).kind,
+      ).toBe("completed");
+      expect(await customerRow(seeded.customerId)).toBeUndefined();
+      await h.invoke(
+        appendUserMessage,
+        { conversationId: conversation.id, body: "did that delete finish?" },
+        { idempotencyKey: attemptKey("message", conversation.id, randomUUID()) },
+      );
+      const cake = await cakeCreateInputs(h, "Live confirm leftover");
+      const leftover = await stageNamedStartedRun(h, {
+        conversationId: conversation.id,
+        beginKey: `begin:resume:${seeded.challengeId}`,
+        actionName: "orders.create",
+        toolName: ORDERS_CREATE_TOOL_NAME,
+        toolCallId: "call-confirm-resume-leftover",
+        toolInput: cake.facadeInput,
+      });
+      const beforeChat = await orderCount();
+      await parseOk(
+        await liveRequest(h.app, {
+          method: "POST",
+          path: ASSISTANT_CHAT_PATH,
+          token,
+          body: {
+            conversationId: conversation.id,
+            text: "what happened to the delete?",
+            locale: "en",
+          },
+        }),
+      );
+      expect(await orderCount()).toBe(beforeChat);
+      expect(await customerRow(seeded.customerId)).toBeUndefined();
+      const history = await h.invoke(getModelHistory, {
+        conversationId: conversation.id,
+      });
+      expect(
+        history.unfinishedStartedRuns.find(
+          (run) => run.executionId === leftover.executionId,
+        )?.turnKey,
+      ).toBe(`begin:resume:${seeded.challengeId}`);
+    });
+
+    it("discussion speech during an open picker does not execute a leftover resume started", async () => {
+      const pendingStore = createMemoryPendingStore();
+      const h = liveApp({
+        pendingStore,
+        model: silentModel("The picker is still open."),
+      });
+      const token = await insertBearer(kit, kitIdentities.users.anna);
+      const conversation = await h.invoke(createConversation, {
+        title: "Live discuss pending picker",
+      });
+      const customer = await h.invoke(createCustomer, {
+        name: "Live Discuss Buyer",
+        phone: nextPhone(),
+      });
+      const product = await h.invoke(createProduct, {
+        name: "Live Discuss Cake",
+        basePriceMinor: "1500",
+        variants: [{ name: "A" }, { name: "B" }],
+      });
+      const { record } = await seedChoicePending(h, {
+        conversationId: conversation.id,
+        customerId: customer.id,
+        product,
+      });
+      const cake = await cakeCreateInputs(h, "Live open-picker leftover");
+      const leftover = await stageNamedStartedRun(h, {
+        conversationId: conversation.id,
+        beginKey: `begin:resume:${record.id}`,
+        actionName: "orders.create",
+        toolName: ORDERS_CREATE_TOOL_NAME,
+        toolCallId: "call-open-picker-resume",
+        toolInput: cake.facadeInput,
+      });
+      const beforeChat = await orderCount();
+      const chatBody = await parseOk(
+        await liveRequest(h.app, {
+          method: "POST",
+          path: ASSISTANT_CHAT_PATH,
+          token,
+          body: {
+            conversationId: conversation.id,
+            text: "what does this picker mean?",
+            locale: "en",
+          },
+        }),
+      );
+      expect(chatBody.pending?.id).toBe(record.id);
+      expect(await orderCount()).toBe(beforeChat);
+      const history = await h.invoke(getModelHistory, {
+        conversationId: conversation.id,
+      });
+      expect(
+        history.messages
+          .flatMap((message) => message.toolRuns)
+          .find((run) => run.executionId === leftover.executionId)?.outcome,
+      ).toBe("started");
+      await parseOk(
+        await liveRequest(
+          liveApp({
+            pendingStore,
+            model: silentModel("Named the chosen flavour."),
+          }).app,
+          {
+            method: "POST",
+            path: ASSISTANT_HOST_CHOICE_PATH,
+            token,
+            body: {
+              conversationId: conversation.id,
+              choiceId: record.id,
+              optionId: record.envelope.options[0]?.id,
+            },
+          },
+        ),
+      );
+      expect(await orderCount()).toBe(beforeChat + 2);
+      const afterChoice = await h.invoke(getModelHistory, {
+        conversationId: conversation.id,
+      });
+      expect(
+        afterChoice.messages
+          .flatMap((message) => message.toolRuns)
+          .find((run) => run.executionId === leftover.executionId)?.outcome,
+      ).toBe("success");
+    });
+
+    it("recovers a later unfinished chat-turn after completed Phase B; choice replay stays done", async () => {
+      const speech = "The order is ready.";
+      const pendingStore = createMemoryPendingStore();
+      const h = liveApp({ pendingStore, model: silentModel(speech) });
+      const token = await insertBearer(kit, kitIdentities.users.anna);
+      const conversation = await h.invoke(createConversation, {
+        title: "Live completed Phase B then chat leftover",
+      });
+      const customer = await h.invoke(createCustomer, {
+        name: "Live Phase B then chat Buyer",
+        phone: nextPhone(),
+      });
+      const product = await h.invoke(createProduct, {
+        name: "Live Phase B then chat Cake",
+        basePriceMinor: "1500",
+        variants: [{ name: "A" }, { name: "B" }],
+      });
+      const { record } = await seedChoicePending(h, {
+        conversationId: conversation.id,
+        customerId: customer.id,
+        product,
+      });
+      const optionId = record.envelope.options[0]?.id;
+      const first = await parseOk(
+        await liveRequest(h.app, {
+          method: "POST",
+          path: ASSISTANT_HOST_CHOICE_PATH,
+          token,
+          body: {
+            conversationId: conversation.id,
+            choiceId: record.id,
+            optionId,
+          },
+        }),
+      );
+      expect(first.speech).toBe(speech);
+      const afterPhaseB = await orderCount();
+      const cake = await cakeCreateInputs(h, "Live later chat leftover");
+      const userMessage = await h.invoke(
+        appendUserMessage,
+        {
+          conversationId: conversation.id,
+          body: "Create another leftover cake",
+        },
+        { idempotencyKey: attemptKey("message", conversation.id, randomUUID()) },
+      );
+      const leftover = await stageNamedStartedRun(h, {
+        conversationId: conversation.id,
+        beginKey: `begin:${userMessage.id}`,
+        actionName: "orders.create",
+        toolName: ORDERS_CREATE_TOOL_NAME,
+        toolCallId: "call-later-chat-create",
+        toolInput: cake.facadeInput,
+      });
+      await h.invoke(createOrder, cake.canonicalInput, {
+        idempotencyKey: executionAttemptKey(
+          conversation.id,
+          leftover.executionId,
+        ),
+      });
+      const afterCommit = await orderCount();
+      expect(afterCommit).toBe(afterPhaseB + 1);
+      await parseOk(
+        await liveRequest(
+          liveApp({
+            pendingStore,
+            model: silentModel("The leftover create already landed."),
+          }).app,
+          {
+            method: "POST",
+            path: ASSISTANT_CHAT_PATH,
+            token,
+            body: {
+              conversationId: conversation.id,
+              text: "Did the leftover go through?",
+              locale: "en",
+            },
+          },
+        ),
+      );
+      expect(await orderCount()).toBe(afterCommit);
+      const afterChat = await h.invoke(getModelHistory, {
+        conversationId: conversation.id,
+      });
+      expect(
+        afterChat.messages
+          .flatMap((message) => message.toolRuns)
+          .find((run) => run.executionId === leftover.executionId)?.outcome,
+      ).toBe("success");
+      const replay = await parseOk(
+        await liveRequest(
+          liveApp({
+            pendingStore,
+            model: new MockLanguageModelV3({
+              doStream: () => {
+                throw new Error(
+                  "completed Phase B must not resume after a recovered chat leftover",
+                );
+              },
+            }),
+          }).app,
+          {
+            method: "POST",
+            path: ASSISTANT_HOST_CHOICE_PATH,
+            token,
+            body: {
+              conversationId: conversation.id,
+              choiceId: record.id,
+              optionId,
+            },
+          },
+        ),
+      );
+      expect(replay.speech).toBe(speech);
+      expect(await orderCount()).toBe(afterCommit);
+    });
+
+    it("recovers a chat-turn started on the edge of and outside the 8-message window", async () => {
+      const pendingStore = createMemoryPendingStore();
+      const h = liveApp({
+        pendingStore,
+        model: silentModel("The earlier create already landed."),
+      });
+      const token = await insertBearer(kit, kitIdentities.users.anna);
+      const edgeConversation = await h.invoke(createConversation, {
+        title: "Live window edge chat leftover",
+      });
+      const edgeCake = await cakeCreateInputs(h, "Live window edge");
+      const edgeUser = await h.invoke(
+        appendUserMessage,
+        { conversationId: edgeConversation.id, body: "Create the edge cake" },
+        {
+          idempotencyKey: attemptKey(
+            "message",
+            edgeConversation.id,
+            randomUUID(),
+          ),
+        },
+      );
+      const edgeLeftover = await stageNamedStartedRun(h, {
+        conversationId: edgeConversation.id,
+        beginKey: `begin:${edgeUser.id}`,
+        actionName: "orders.create",
+        toolName: ORDERS_CREATE_TOOL_NAME,
+        toolCallId: "call-edge-chat",
+        toolInput: edgeCake.facadeInput,
+      });
+      await h.invoke(createOrder, edgeCake.canonicalInput, {
+        idempotencyKey: executionAttemptKey(
+          edgeConversation.id,
+          edgeLeftover.executionId,
+        ),
+      });
+      await padUserMessages(h, edgeConversation.id, 6);
+      const edgeHistory = await h.invoke(getModelHistory, {
+        conversationId: edgeConversation.id,
+      });
+      expect(edgeHistory.messages).toHaveLength(8);
+      expect(
+        edgeHistory.messages.some(
+          (message) => message.id === edgeLeftover.messageId,
+        ),
+      ).toBe(true);
+      expect(
+        edgeHistory.unfinishedStartedRuns.some(
+          (run) => run.executionId === edgeLeftover.executionId,
+        ),
+      ).toBe(true);
+      const afterEdgeCommit = await orderCount();
+      await parseOk(
+        await liveRequest(h.app, {
+          method: "POST",
+          path: ASSISTANT_CHAT_PATH,
+          token,
+          body: {
+            conversationId: edgeConversation.id,
+            text: "Did the edge create land?",
+            locale: "en",
+          },
+        }),
+      );
+      expect(await orderCount()).toBe(afterEdgeCommit);
+
+      const outsideConversation = await h.invoke(createConversation, {
+        title: "Live window outside chat leftover",
+      });
+      const outsideCake = await cakeCreateInputs(h, "Live window outside");
+      const outsideUser = await h.invoke(
+        appendUserMessage,
+        {
+          conversationId: outsideConversation.id,
+          body: "Create the outside cake",
+        },
+        {
+          idempotencyKey: attemptKey(
+            "message",
+            outsideConversation.id,
+            randomUUID(),
+          ),
+        },
+      );
+      const outsideLeftover = await stageNamedStartedRun(h, {
+        conversationId: outsideConversation.id,
+        beginKey: `begin:${outsideUser.id}`,
+        actionName: "orders.create",
+        toolName: ORDERS_CREATE_TOOL_NAME,
+        toolCallId: "call-outside-chat",
+        toolInput: outsideCake.facadeInput,
+      });
+      await h.invoke(createOrder, outsideCake.canonicalInput, {
+        idempotencyKey: executionAttemptKey(
+          outsideConversation.id,
+          outsideLeftover.executionId,
+        ),
+      });
+      await padUserMessages(h, outsideConversation.id, 8);
+      const outsideHistory = await h.invoke(getModelHistory, {
+        conversationId: outsideConversation.id,
+      });
+      expect(outsideHistory.messages).toHaveLength(8);
+      expect(
+        outsideHistory.messages.some(
+          (message) => message.id === outsideLeftover.messageId,
+        ),
+      ).toBe(false);
+      expect(outsideHistory.unfinishedStartedRuns).toEqual([
+        expect.objectContaining({
+          executionId: outsideLeftover.executionId,
+          turnKey: `begin:${outsideUser.id}`,
+        }),
+      ]);
+      const afterOutsideCommit = await orderCount();
+      await parseOk(
+        await liveRequest(
+          liveApp({
+            pendingStore,
+            model: silentModel("The outside create already landed."),
+          }).app,
+          {
+            method: "POST",
+            path: ASSISTANT_CHAT_PATH,
+            token,
+            body: {
+              conversationId: outsideConversation.id,
+              text: "Did the outside create land?",
+              locale: "en",
+            },
+          },
+        ),
+      );
+      expect(await orderCount()).toBe(afterOutsideCommit);
+      const outsideFinished = await h.invoke(getModelHistory, {
+        conversationId: outsideConversation.id,
+      });
+      expect(
+        outsideFinished.unfinishedStartedRuns.some(
+          (run) => run.executionId === outsideLeftover.executionId,
+        ),
+      ).toBe(false);
+    });
+
+    it("refuses a re-issued orders_create while an excluded resume leftover stays started", async () => {
+      const pendingStore = createMemoryPendingStore();
+      const token = await insertBearer(kit, kitIdentities.users.anna);
+      const seedHarness = liveApp({ pendingStore, model: silentModel() });
+      const conversation = await seedHarness.invoke(createConversation, {
+        title: "Live excluded resume plus reissue",
+      });
+      const cake = await cakeCreateInputs(seedHarness, "Live reissue leftover");
+      const choiceCustomer = await seedHarness.invoke(createCustomer, {
+        name: "Live Reissue Buyer",
+        phone: nextPhone(),
+      });
+      const choiceProduct = await seedHarness.invoke(createProduct, {
+        name: "Live Reissue Cake",
+        basePriceMinor: "1500",
+        variants: [{ name: "A" }, { name: "B" }],
+      });
+      const { record } = await seedChoicePending(seedHarness, {
+        conversationId: conversation.id,
+        customerId: choiceCustomer.id,
+        product: choiceProduct,
+      });
+      const optionId = record.envelope.options[0]?.id;
+      if (optionId === undefined) {
+        throw new Error("seeded choice missing option");
+      }
+      const bind = pendingBindFor(conversation.id);
+      expect(
+        (
+          await pendingStore.claim({
+            id: record.id,
+            kind: "choice",
+            bind,
+            optionId,
+          })
+        ).kind,
+      ).toBe("claimed");
+      expect(
+        (
+          await pendingStore.complete({
+            id: record.id,
+            kind: "choice",
+            bind,
+            optionId,
+          })
+        ).kind,
+      ).toBe("completed");
+      const leftover = await stageNamedStartedRun(seedHarness, {
+        conversationId: conversation.id,
+        beginKey: `begin:resume:${record.id}`,
+        actionName: "orders.create",
+        toolName: ORDERS_CREATE_TOOL_NAME,
+        toolCallId: "call-excluded-resume",
+        toolInput: cake.facadeInput,
+      });
+      const beforeChat = await orderCount();
+      const beforeRuns = await seedHarness.invoke(getModelHistory, {
+        conversationId: conversation.id,
+      });
+      const beforeStartedIds = beforeRuns.unfinishedStartedRuns
+        .map((run) => run.executionId)
+        .toSorted();
+      const reissue = new MockLanguageModelV3({
+        doStream: [
+          mockToolCallStream(
+            "call-reissue-create",
+            ORDERS_CREATE_TOOL_NAME,
+            JSON.stringify(cake.facadeInput),
+          ),
+          mockTextStream("Trying another create."),
+        ],
+      });
+      await parseOk(
+        await liveRequest(liveApp({ pendingStore, model: reissue }).app, {
+          method: "POST",
+          path: ASSISTANT_CHAT_PATH,
+          token,
+          body: {
+            conversationId: conversation.id,
+            text: "create another order",
+            locale: "en",
+          },
+        }),
+      );
+      expect(await orderCount()).toBe(beforeChat);
+      const prompt = JSON.stringify(reissue.doStreamCalls[0]?.prompt ?? []);
+      expect(prompt).not.toContain("call-excluded-resume");
+      expect(prompt).not.toContain('"status":"started"');
+      const after = await seedHarness.invoke(getModelHistory, {
+        conversationId: conversation.id,
+      });
+      expect(
+        after.unfinishedStartedRuns.find(
+          (run) => run.executionId === leftover.executionId,
+        )?.turnKey,
+      ).toBe(`begin:resume:${record.id}`);
+      expect(
+        after.unfinishedStartedRuns.map((run) => run.executionId).toSorted(),
+      ).toEqual(beforeStartedIds);
+    });
+
+    it("does not auto-execute a started run whose message turnKey is null", async () => {
+      const h = liveApp({
+        model: silentModel("No legacy write from this chat."),
+      });
+      const token = await insertBearer(kit, kitIdentities.users.anna);
+      const conversation = await h.invoke(createConversation, {
+        title: "Live null turnKey fail closed",
+      });
+      const cake = await cakeCreateInputs(h, "Live null turnKey");
+      const inserted = (
+        await kit.db.runtime.db
+          .insert(assistantMessages)
+          .values({
+            companyId: kitIdentities.companies.a,
+            conversationId: conversation.id,
+            role: "assistant",
+            body: "",
+          })
+          .returning({ id: assistantMessages.id })
+      )[0];
+      if (inserted === undefined) {
+        throw new Error("null turnKey insert returned no row");
+      }
+      const staged = await h.invoke(
+        checkpointAssistantTurn,
+        {
+          kind: "stageRun",
+          conversationId: conversation.id,
+          messageId: inserted.id,
+          seq: 0,
+          actionName: "orders.create",
+          toolName: ORDERS_CREATE_TOOL_NAME,
+          toolCallId: "call-null-turn-key",
+          toolInput: cake.facadeInput,
+        },
+        {
+          idempotencyKey: attemptKey(
+            "turn",
+            conversation.id,
+            `stage:${inserted.id}:0`,
+          ),
+        },
+      );
+      if (staged.executionId === null) {
+        throw new Error("null turnKey stageRun returned no executionId");
+      }
+      const beforeChat = await orderCount();
+      await parseOk(
+        await liveRequest(h.app, {
+          method: "POST",
+          path: ASSISTANT_CHAT_PATH,
+          token,
+          body: {
+            conversationId: conversation.id,
+            text: "Just saying hi",
+            locale: "en",
+          },
+        }),
+      );
+      expect(await orderCount()).toBe(beforeChat);
+      const history = await h.invoke(getModelHistory, {
+        conversationId: conversation.id,
+      });
+      expect(
+        history.unfinishedStartedRuns.some(
+          (run) =>
+            run.executionId === staged.executionId && run.turnKey === null,
+        ),
+      ).toBe(true);
+    });
   });
 
   it("live customers.deleteCustomer confirms on POST /assistant/confirm; Так does not", async () => {

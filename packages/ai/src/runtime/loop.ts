@@ -577,11 +577,11 @@ export interface StaffAssistantHostTurnOptions {
    */
   readonly priorRuns?: readonly StaffAssistantTurnRun[];
   /**
-   * In-flight `started` rows. Chat (`conversation`, default) replays
-   * unfinished chat-turn rows even when `begin()` minted a new assistant
-   * message. Phase B continue (`resumeTurn`) replays only rows whose
-   * `messageId` is this resume `begin()` — leftover chat crashes stay
-   * untouched. Host-seeded HITL / Phase A ids are not recovered here.
+   * In-flight `started` rows the **host already allowlisted by turnKey**.
+   * Chat (`conversation`, default) replays unfinished chat-turn rows
+   * even when `begin()` minted a new assistant message. Phase B
+   * continue (`resumeTurn`) also filters to this resume `begin()`
+   * messageId. Host-seeded HITL / Phase A ids are not recovered here.
    */
   readonly recoverStartedRuns?: readonly StaffAssistantHostStartedRun[];
   readonly recoverStartedRunsScope?: StaffAssistantHostRecoverStartedRunsScope;

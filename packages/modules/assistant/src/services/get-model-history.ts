@@ -4,11 +4,13 @@ import {
   assistantMessages,
   assistantToolRuns,
 } from "@showzy/db/schema/assistant";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import type { z } from "zod";
 
 import { checkpointPersistedOutcomeSchema } from "../actions/checkpoint-assistant-turn.contract.js";
 import {
+  GET_MODEL_HISTORY_CHECKPOINT_TURNS_MAX,
+  GET_MODEL_HISTORY_UNFINISHED_STARTED_MAX,
   GET_MODEL_HISTORY_WINDOW,
   type getModelHistoryOutputSchema,
 } from "../actions/get-model-history.contract.js";
@@ -18,6 +20,11 @@ import { loadOwnConversation } from "./load-conversation.js";
 type StaffCtx = Extract<ActionCtx, { principal: "staff" }>;
 type ModelHistory = z.output<typeof getModelHistoryOutputSchema>;
 type ModelHistoryToolRun = ModelHistory["messages"][number]["toolRuns"][number];
+
+const historyMessageColumns = {
+  ...messageColumns,
+  turnKey: assistantMessages.turnKey,
+};
 
 const modelHistoryToolRunColumns = {
   messageId: assistantToolRuns.messageId,
@@ -29,6 +36,17 @@ const modelHistoryToolRunColumns = {
   toolInput: assistantToolRuns.toolInput,
   seq: assistantToolRuns.seq,
   executionId: assistantToolRuns.executionId,
+};
+
+const unfinishedStartedColumns = {
+  messageId: assistantToolRuns.messageId,
+  actionName: assistantToolRuns.actionName,
+  toolCallId: assistantToolRuns.toolCallId,
+  toolName: assistantToolRuns.toolName,
+  toolInput: assistantToolRuns.toolInput,
+  seq: assistantToolRuns.seq,
+  executionId: assistantToolRuns.executionId,
+  turnKey: assistantMessages.turnKey,
 };
 
 type ModelHistoryToolRunRow = {
@@ -94,7 +112,7 @@ export async function getStaffModelHistory(env: {
   );
 
   const messageRows = await env.ctx.db
-    .select(messageColumns)
+    .select(historyMessageColumns)
     .from(assistantMessages)
     .where(messageFilter)
     .orderBy(desc(assistantMessages.createdAt), desc(assistantMessages.id))
@@ -126,6 +144,66 @@ export async function getStaffModelHistory(env: {
 
   const byMessage = toolRunsByMessage(toolRunRows);
 
+  const checkpointTurnRows = await env.ctx.db
+    .select({
+      messageId: assistantMessages.id,
+      turnKey: assistantMessages.turnKey,
+      body: assistantMessages.body,
+    })
+    .from(assistantMessages)
+    .where(
+      and(
+        eq(assistantMessages.companyId, env.ctx.companyId),
+        eq(assistantMessages.conversationId, env.conversationId),
+        eq(assistantMessages.role, "assistant"),
+        isNotNull(assistantMessages.turnKey),
+      ),
+    )
+    .orderBy(desc(assistantMessages.createdAt), desc(assistantMessages.id))
+    .limit(GET_MODEL_HISTORY_CHECKPOINT_TURNS_MAX)
+    .then((rows) => rows.slice().reverse());
+
+  const unfinishedRows = await env.ctx.db
+    .select(unfinishedStartedColumns)
+    .from(assistantToolRuns)
+    .innerJoin(
+      assistantMessages,
+      and(
+        eq(assistantMessages.companyId, assistantToolRuns.companyId),
+        eq(assistantMessages.id, assistantToolRuns.messageId),
+      ),
+    )
+    .where(
+      and(
+        eq(assistantToolRuns.companyId, env.ctx.companyId),
+        eq(assistantToolRuns.conversationId, env.conversationId),
+        eq(assistantToolRuns.outcome, "started"),
+      ),
+    )
+    .orderBy(
+      sql`${assistantToolRuns.seq} ASC NULLS LAST`,
+      asc(assistantToolRuns.createdAt),
+      asc(assistantToolRuns.id),
+    )
+    .limit(GET_MODEL_HISTORY_UNFINISHED_STARTED_MAX);
+
+  const unfinishedStartedRuns: ModelHistory["unfinishedStartedRuns"] = [];
+  for (const run of unfinishedRows) {
+    if (run.executionId === null || run.seq === null) {
+      continue;
+    }
+    unfinishedStartedRuns.push({
+      messageId: run.messageId,
+      turnKey: run.turnKey,
+      executionId: run.executionId,
+      seq: run.seq,
+      action: run.actionName,
+      toolName: run.toolName,
+      toolCallId: run.toolCallId,
+      toolInput: run.toolInput ?? null,
+    });
+  }
+
   return {
     conversationId: env.conversationId,
     messages: messageRows.map((row) => {
@@ -134,8 +212,22 @@ export async function getStaffModelHistory(env: {
         id: view.id,
         role: view.role,
         text: view.body,
+        turnKey: row.turnKey,
         toolRuns: byMessage.get(view.id) ?? [],
       };
+    }),
+    unfinishedStartedRuns,
+    checkpointTurns: checkpointTurnRows.flatMap((row) => {
+      if (row.turnKey === null) {
+        return [];
+      }
+      return [
+        {
+          messageId: row.messageId,
+          turnKey: row.turnKey,
+          hasSpeech: row.body !== "",
+        },
+      ];
     }),
   };
 }

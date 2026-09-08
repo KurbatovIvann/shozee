@@ -61,7 +61,13 @@ describe("live staff-assistant host (SHO-524)", () => {
     expect(hostSrc).toContain("run.toolName === null");
     expect(hostSrc).toContain("startedRunsForResumeTurnRecovery");
     expect(hostSrc).toContain("startedRunsForChatRecovery");
-    expect(hostSrc).toContain("isChatTurnAssistantMessage");
+    expect(hostSrc).toContain("isChatTurnKey");
+    expect(hostSrc).toContain("isResumeTurnKey");
+    expect(hostSrc).toContain("hasUnfinishedResumeTurn");
+    expect(hostSrc).toContain("hostModelMessages");
+    expect(hostSrc).toContain("recoverStartedExecutionIds");
+    expect(hostSrc).toContain("unfinishedStartedRuns");
+    expect(hostSrc).not.toContain("isChatTurnAssistantMessage");
   });
 
   it("does not GETDEL in the pending Redis scripts (core owns confirmation consume)", () => {

@@ -690,6 +690,58 @@ describe("staffAssistantModelMessagesFromPersisted tool traces", () => {
     expect(typeof messages[1]?.content).not.toBe("string");
   });
 
+  it("omits started tool-calls and started results that are not on the recover allowlist", () => {
+    const toolInput = {
+      customerId: "11111111-1111-4111-8111-111111111111",
+      items: [
+        {
+          productId: "22222222-2222-4222-8222-222222222222",
+          quantityMilli: "1000",
+        },
+      ],
+    };
+    const rows = [
+      { role: "user" as const, body: "continue" },
+      {
+        role: "assistant" as const,
+        body: "Named the order.",
+        toolRuns: [
+          {
+            action: "orders.create",
+            toolCallId: "call_excluded",
+            toolName: ORDERS_CREATE_TOOL_NAME,
+            toolInput,
+            seq: 0,
+            modelTrace: null,
+            outcome: "started" as const,
+            executionId: "exec-excluded",
+          },
+          {
+            action: "orders.list",
+            toolCallId: "call_done",
+            toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+            toolInput: { limit: 5 },
+            seq: 1,
+            modelTrace: { kind: "page.summary", rows: [] },
+            outcome: "success" as const,
+            executionId: "exec-done",
+          },
+        ],
+      },
+    ];
+    const excluded = staffAssistantModelMessagesFromPersisted(rows, undefined, {
+      recoverStartedExecutionIds: new Set(),
+    });
+    expect(JSON.stringify(excluded)).not.toContain("call_excluded");
+    expect(JSON.stringify(excluded)).not.toContain('"status":"started"');
+    expect(JSON.stringify(excluded)).toContain("call_done");
+    const allowed = staffAssistantModelMessagesFromPersisted(rows, undefined, {
+      recoverStartedExecutionIds: new Set(["exec-excluded"]),
+    });
+    expect(JSON.stringify(allowed)).toContain("call_excluded");
+    expect(JSON.stringify(allowed)).toContain('"status":"started"');
+  });
+
   it("stays text-only when every modelTrace is null", () => {
     const messages = staffAssistantModelMessagesFromPersisted([
       { role: "user", body: "confirm" },

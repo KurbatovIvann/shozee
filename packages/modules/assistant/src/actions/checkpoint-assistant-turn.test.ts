@@ -13,6 +13,7 @@ import {
 const conversationId = "11111111-1111-4111-8111-111111111111";
 const messageId = "22222222-2222-4222-8222-222222222222";
 const executionId = "33333333-3333-4333-8333-333333333333";
+const turnKey = `begin:${conversationId}`;
 
 describe("assistant.checkpointAssistantTurn contract", () => {
   it("is a staff internal write with assistant:use, idempotent audit, and AI-internal", () => {
@@ -49,8 +50,9 @@ describe("assistant.checkpointAssistantTurn contract", () => {
       checkpointAssistantTurnInputSchema.parse({
         kind: "begin",
         conversationId,
+        turnKey,
       }),
-    ).toEqual({ kind: "begin", conversationId });
+    ).toEqual({ kind: "begin", conversationId, turnKey });
     expect(
       checkpointAssistantTurnInputSchema.parse({
         kind: "stageRun",
@@ -121,8 +123,13 @@ describe("assistant.checkpointAssistantTurn contract", () => {
       checkpointAssistantTurnInputSchema.safeParse({
         kind: "begin",
         conversationId,
-        body: "Done.",
-        toolRuns: [],
+      }).success,
+    ).toBe(false);
+    expect(
+      checkpointAssistantTurnInputSchema.safeParse({
+        kind: "begin",
+        conversationId,
+        turnKey: "",
       }).success,
     ).toBe(false);
     expect(

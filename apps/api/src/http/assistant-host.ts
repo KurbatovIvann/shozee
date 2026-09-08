@@ -17,6 +17,7 @@ import {
   assistantPendingPeekQuerySchema,
   attemptKey,
   catalogPickerConflictExtrasFromError,
+  chatTurnKey,
   choiceCanonicalCreateInputSchema,
   choiceRecordFromPendingChoice,
   choiceRecordFromPickerConflict,
@@ -28,7 +29,9 @@ import {
   HOST_CHOICE_SEED_TOOL_CALL_ID_PREFIX,
   HOST_PHASE_A_TOOL_CALL_ID_PREFIX,
   isHostSeededHitlToolCallId,
+  isChatTurnKey,
   isPendingReplaceActionName,
+  isResumeTurnKey,
   mapPendingReplaceFacadeInput,
   ORDERS_CREATE_ACTION_NAME,
   PENDING_REPLACE_TOOL_NAME,
@@ -37,6 +40,7 @@ import {
   publicPendingFromRecord,
   refuseHostPendingOpen,
   resolveMappedVariantId,
+  resumeTurnKey,
   runStaffAssistantHostTurn,
   staffAssistantModelMessagesFromPersisted,
   staffAssistantTurnContextAddendum,
@@ -430,6 +434,7 @@ function modelHistoryToPersisted(
       readonly modelTrace: unknown;
       readonly toolInput: unknown;
       readonly seq: number | null;
+      readonly executionId: string | null;
       readonly outcome: string;
     }>;
   }>,
@@ -444,6 +449,7 @@ function modelHistoryToPersisted(
       ...(run.toolName !== null ? { toolName: run.toolName } : {}),
       ...(run.toolInput !== null ? { toolInput: run.toolInput } : {}),
       ...(run.seq !== null ? { seq: run.seq } : {}),
+      ...(run.executionId !== null ? { executionId: run.executionId } : {}),
       outcome: run.outcome,
     })),
   }));
@@ -525,6 +531,7 @@ function createHostCheckpoint(options: {
         input: {
           kind: "begin",
           conversationId: options.conversationId,
+          turnKey: options.beginKey,
         },
         request: staffRequest({
           requestId: options.requestId,
@@ -665,103 +672,94 @@ function resolveStagedExecutionId(options: {
   if (started?.executionId !== undefined && started.executionId !== null) {
     return started.executionId;
   }
+  const unfinished = options.history.unfinishedStartedRuns.find(
+    (run) => run.action === options.record.actionName,
+  );
+  if (unfinished !== undefined) {
+    return unfinished.executionId;
+  }
   throw new CoreInvariantError("pending resume missing staged execution_id");
 }
 
-function isPendingHitlRun(
-  run: Awaited<
-    ReturnType<typeof loadHistory>
-  >["messages"][number]["toolRuns"][number],
-  pending: PendingInteractionRecord,
-): boolean {
-  if (
-    pending.executionId !== undefined &&
-    run.executionId === pending.executionId
-  ) {
-    return true;
-  }
-  if (run.toolCallId === pending.toolCallId) {
-    return true;
-  }
-  return (
-    (run.outcome === "confirmation_required" ||
-      run.outcome === "choice_required") &&
-    run.action === pending.actionName
-  );
+function toHostStartedRun(run: {
+  readonly messageId: string;
+  readonly executionId: string;
+  readonly seq: number;
+  readonly action: string;
+  readonly toolName: string;
+  readonly toolCallId: string;
+  readonly toolInput: unknown;
+}): StaffAssistantHostStartedRun {
+  return {
+    messageId: run.messageId,
+    executionId: run.executionId,
+    seq: run.seq,
+    actionName: run.action,
+    toolName: run.toolName,
+    toolCallId: run.toolCallId,
+    toolInput: run.toolInput,
+  };
 }
 
-function startedRunsForHostRecovery(
+function startedRunsMatchingTurnKey(
   history: Awaited<ReturnType<typeof loadHistory>>,
+  allow: (turnKey: string | null) => boolean,
 ): StaffAssistantHostStartedRun[] {
   const started: StaffAssistantHostStartedRun[] = [];
-  for (const message of history.messages) {
-    for (const run of message.toolRuns) {
-      if (run.outcome !== "started" || run.executionId === null) {
-        continue;
-      }
-      if (isHostSeededHitlToolCallId(run.toolCallId)) {
-        continue;
-      }
-      if (run.toolName === null) {
-        continue;
-      }
-      started.push({
-        messageId: message.id,
-        executionId: run.executionId,
-        seq: run.seq ?? 0,
-        actionName: run.action,
-        toolName: run.toolName,
-        toolCallId: run.toolCallId,
-        toolInput: run.toolInput,
-      });
+  for (const run of history.unfinishedStartedRuns) {
+    if (!allow(run.turnKey)) {
+      continue;
     }
+    if (isHostSeededHitlToolCallId(run.toolCallId)) {
+      continue;
+    }
+    if (run.toolName === null) {
+      continue;
+    }
+    started.push(toHostStartedRun({ ...run, toolName: run.toolName }));
   }
   return started;
-}
-
-/**
- * Chat-turn leftovers sit on an assistant immediately after a user
- * append. Phase B / confirm / choice resume assistants follow HITL
- * (`begin:resume:${pendingId}`), not a user message.
- */
-function isChatTurnAssistantMessage(
-  history: Awaited<ReturnType<typeof loadHistory>>,
-  messageId: string,
-): boolean {
-  const index = history.messages.findIndex(
-    (message) => message.id === messageId,
-  );
-  if (index <= 0) {
-    return false;
-  }
-  const current = history.messages[index];
-  const previous = history.messages[index - 1];
-  return current?.role === "assistant" && previous?.role === "user";
 }
 
 function startedRunsForChatRecovery(
   history: Awaited<ReturnType<typeof loadHistory>>,
 ): StaffAssistantHostStartedRun[] {
-  return startedRunsForHostRecovery(history).filter((run) =>
-    isChatTurnAssistantMessage(history, run.messageId),
-  );
+  return startedRunsMatchingTurnKey(history, isChatTurnKey);
 }
 
 function startedRunsForResumeTurnRecovery(
   history: Awaited<ReturnType<typeof loadHistory>>,
   pending: PendingInteractionRecord,
 ): StaffAssistantHostStartedRun[] {
-  const hitlIndex = history.messages.findLastIndex((message) =>
-    message.toolRuns.some((run) => isPendingHitlRun(run, pending)),
+  const key = resumeTurnKey(pending.id);
+  return startedRunsMatchingTurnKey(history, (turnKey) => turnKey === key);
+}
+
+function hostModelMessages(
+  history: Awaited<ReturnType<typeof loadHistory>>,
+  recoverStartedRuns: readonly StaffAssistantHostStartedRun[],
+) {
+  return staffAssistantModelMessagesFromPersisted(
+    modelHistoryToPersisted(history.messages),
+    undefined,
+    {
+      recoverStartedExecutionIds: new Set(
+        recoverStartedRuns.map((run) => run.executionId),
+      ),
+    },
   );
-  if (hitlIndex === -1) {
-    return [];
+}
+
+function hasUnfinishedResumeTurn(
+  history: Awaited<ReturnType<typeof loadHistory>>,
+): boolean {
+  if (
+    history.unfinishedStartedRuns.some((run) => isResumeTurnKey(run.turnKey))
+  ) {
+    return true;
   }
-  const resumeMessageIds = new Set(
-    history.messages.slice(hitlIndex + 1).map((message) => message.id),
-  );
-  return startedRunsForHostRecovery(history).filter((run) =>
-    resumeMessageIds.has(run.messageId),
+  return history.checkpointTurns.some(
+    (turn) => isResumeTurnKey(turn.turnKey) && !turn.hasSpeech,
   );
 }
 
@@ -769,35 +767,18 @@ function phaseBState(
   history: Awaited<ReturnType<typeof loadHistory>>,
   pending: PendingInteractionRecord,
 ): "needed" | "continue" | "done" {
-  const hitlIndex = history.messages.findLastIndex((message) =>
-    message.toolRuns.some((run) => isPendingHitlRun(run, pending)),
-  );
-  const later = hitlIndex === -1 ? [] : history.messages.slice(hitlIndex + 1);
-  const laterAssistant = later.filter(
-    (message) => message.role === "assistant",
-  );
-  if (laterAssistant.length === 0) {
+  const key = resumeTurnKey(pending.id);
+  const turn = history.checkpointTurns.find((row) => row.turnKey === key);
+  if (turn === undefined) {
     return "needed";
   }
-  if (
-    laterAssistant.some(
-      (message) =>
-        message.toolRuns.some((run) => run.outcome === "started") &&
-        !isChatTurnAssistantMessage(history, message.id),
-    )
-  ) {
+  const hasStarted = history.unfinishedStartedRuns.some(
+    (run) => run.turnKey === key,
+  );
+  if (hasStarted || !turn.hasSpeech) {
     return "continue";
   }
-  // Completed Phase B speech already exists. A later empty chat begin
-  // or leftover user-preceded `started` must not reopen the resume
-  // loop — `begin:resume:${pendingId}` is idempotent onto the original
-  // message and `complete` would overwrite that speech.
-  if (laterAssistant.some((message) => message.text !== "")) {
-    return "done";
-  }
-  // Empty open begin (no tool-runs), or empty body with only finished
-  // runs: still need speech. Recovery replays started rows only.
-  return "continue";
+  return "done";
 }
 
 function lastAssistantSpeech(
@@ -902,7 +883,7 @@ async function runPhaseB(options: {
     requestId: options.runtime.requestId,
     clientIp: options.runtime.clientIp,
     principal: options.staffPrincipal,
-    beginKey: `begin:resume:${options.pending.id}`,
+    beginKey: resumeTurnKey(options.pending.id),
   });
   const priorRuns = priorRunsFromHistory(history);
   const recoverStartedRuns = startedRunsForResumeTurnRecovery(
@@ -911,9 +892,7 @@ async function runPhaseB(options: {
   );
   const turn = await continueStaffAssistantHostTurn({
     model: requireHostModel(options.runtime.model),
-    messages: staffAssistantModelMessagesFromPersisted(
-      modelHistoryToPersisted(history.messages),
-    ),
+    messages: hostModelMessages(history, recoverStartedRuns),
     contracts,
     execute: (actionName, input, toolOptions) => {
       const action = requireImplementation(
@@ -2045,14 +2024,13 @@ export async function executeStaffAssistantHostChat(
           requestId: options.requestId,
           clientIp: options.clientIp,
           principal: auth.staffPrincipal,
-          beginKey: `begin:${appended.id}`,
+          beginKey: chatTurnKey(appended.id),
         });
         const recoverStartedRuns = startedRunsForChatRecovery(history);
+        const unfinishedResume = hasUnfinishedResumeTurn(history);
         const turn = await runStaffAssistantHostTurn({
           model: requireHostModel(options.model),
-          messages: staffAssistantModelMessagesFromPersisted(
-            modelHistoryToPersisted(history.messages),
-          ),
+          messages: hostModelMessages(history, recoverStartedRuns),
           contracts,
           execute: (actionName, input, toolOptions) => {
             const action = requireImplementation(options.registry, actionName);
@@ -2088,19 +2066,19 @@ export async function executeStaffAssistantHostChat(
           choiceBind: bind,
           openPending: (record) => options.pendingStore.open(record),
           checkPending: async ({ actionName }) => {
-            const current = await options.pendingStore.peekOpen({
-              conversationId: conversation.id,
-              bind,
-            });
-            if (current.kind !== "found") {
-              return { allow: true };
-            }
             const implementation =
               options.registry.getImplementation(actionName);
             if (implementation?.contract.risk === "read") {
               return { allow: true };
             }
-            return refuseHostPendingOpen(locale);
+            const current = await options.pendingStore.peekOpen({
+              conversationId: conversation.id,
+              bind,
+            });
+            if (current.kind === "found" || unfinishedResume) {
+              return refuseHostPendingOpen(locale);
+            }
+            return { allow: true };
           },
           checkpoint,
           ...(recoverStartedRuns.length > 0 ? { recoverStartedRuns } : {}),
