@@ -33,7 +33,6 @@ const fixtures = {
   mak: randomUUID(),
   choco: randomUUID(),
   vanilla: randomUUID(),
-  olena: randomUUID(),
   foreignPhone: randomUUID(),
   foreignChoco: randomUUID(),
   groupMak: randomUUID(),
@@ -107,12 +106,6 @@ beforeAll(async () => {
       companyId: kitIdentities.companies.a,
       name: SEARCH_GOLDEN_VANILLA_NEGATIVE_NAME,
       email: `vanilla-${fixtures.vanilla}@kit.test`,
-    },
-    {
-      id: fixtures.olena,
-      companyId: kitIdentities.companies.a,
-      name: "Олена",
-      email: `olena-${fixtures.olena}@kit.test`,
     },
     {
       id: fixtures.foreignPhone,
