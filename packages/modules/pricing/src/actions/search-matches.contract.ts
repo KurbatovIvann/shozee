@@ -1,5 +1,6 @@
 /**
- * Internal price-list search matcher (SHO-527 / SHO-532). Handler SQL is T6.
+ * Internal price-list search matcher (SHO-527 / SHO-532). Matcher SQL is
+ * SHO-532 (T6): name-only FTS + trgm on `price_lists.name`.
  */
 import { defineActionContract } from "@showzy/core/contract";
 import {
