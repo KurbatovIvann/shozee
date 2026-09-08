@@ -148,6 +148,30 @@ describe("assistant.checkpointAssistantTurn contract", () => {
       }).success,
     ).toBe(false);
     expect(
+      checkpointAssistantTurnInputSchema.parse({
+        kind: "stageRun",
+        conversationId,
+        messageId,
+        seq: TOOL_RUNS_MAX - 1,
+        actionName: "orders.list",
+        toolName: "orders_list_page",
+        toolCallId: "call_seq_last",
+        toolInput: {},
+      }).seq,
+    ).toBe(TOOL_RUNS_MAX - 1);
+    expect(
+      checkpointAssistantTurnInputSchema.safeParse({
+        kind: "stageRun",
+        conversationId,
+        messageId,
+        seq: TOOL_RUNS_MAX,
+        actionName: "orders.list",
+        toolName: "orders_list_page",
+        toolCallId: "call_seq",
+        toolInput: {},
+      }).success,
+    ).toBe(false);
+    expect(
       checkpointAssistantTurnInputSchema.safeParse({
         kind: "stageRun",
         conversationId,
@@ -155,7 +179,7 @@ describe("assistant.checkpointAssistantTurn contract", () => {
         seq: TOOL_RUNS_MAX + 1,
         actionName: "orders.list",
         toolName: "orders_list_page",
-        toolCallId: "call_seq",
+        toolCallId: "call_seq_over",
         toolInput: {},
       }).success,
     ).toBe(false);

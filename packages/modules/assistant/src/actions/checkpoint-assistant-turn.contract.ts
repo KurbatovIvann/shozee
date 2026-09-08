@@ -63,7 +63,11 @@ export const checkpointStageRunInputSchema = z
     kind: z.literal("stageRun"),
     conversationId: z.uuid(),
     messageId: z.uuid(),
-    seq: z.number().int().min(0).max(TOOL_RUNS_MAX),
+    seq: z
+      .number()
+      .int()
+      .min(0)
+      .max(TOOL_RUNS_MAX - 1),
     actionName: actionNameSchema,
     toolName: z.string().min(1).max(ACTION_NAME_MAX),
     toolCallId: toolCallIdSchema,
