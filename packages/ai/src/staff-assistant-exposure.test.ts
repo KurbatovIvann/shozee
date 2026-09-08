@@ -36,6 +36,7 @@ const HOT_TOOL_NAMES = [
   CATALOG_LIST_PRODUCTS_TOOL_NAME,
   PRICING_LIST_PRICE_LISTS_TOOL_NAME,
   CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME,
+  "search_query",
 ] as const;
 
 describe("SHO-509 staff assistant exposure", () => {
@@ -63,11 +64,33 @@ describe("SHO-509 staff assistant exposure", () => {
     expect(names).not.toContain("catalog_setProductImages");
     expect(names).not.toContain(toProviderToolName("catalog.setProductImages"));
     expect(names.filter((name) => name.startsWith("files_"))).toEqual([]);
-    expect(names).toEqual(expect.arrayContaining([...HOT_TOOL_NAMES]));
+    expect(names).toEqual(
+      expect.arrayContaining([
+        ORDERS_LIST_PAGE_TOOL_NAME,
+        ORDERS_LIST_COUNTS_TOOL_NAME,
+        "orders_get",
+        ORDERS_CREATE_TOOL_NAME,
+        CATALOG_LIST_PRODUCTS_TOOL_NAME,
+        PRICING_LIST_PRICE_LISTS_TOOL_NAME,
+        CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME,
+      ]),
+    );
   });
 
-  it("keeps the advertised hot tool set unchanged", () => {
+  it("keeps existing hot tools and adds search_query", () => {
     expect(staffAssistantHotToolNames()).toEqual([...HOT_TOOL_NAMES]);
+    expect(staffAssistantHotToolNames()).toContain("search_query");
+    expect(staffAssistantHotToolNames()).toEqual(
+      expect.arrayContaining([
+        ORDERS_LIST_PAGE_TOOL_NAME,
+        ORDERS_LIST_COUNTS_TOOL_NAME,
+        "orders_get",
+        ORDERS_CREATE_TOOL_NAME,
+        CATALOG_LIST_PRODUCTS_TOOL_NAME,
+        PRICING_LIST_PRICE_LISTS_TOOL_NAME,
+        CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME,
+      ]),
+    );
     expect(staffAssistantHotToolNames()).not.toContain(
       "catalog_setProductImages",
     );

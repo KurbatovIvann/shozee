@@ -1,6 +1,6 @@
 {
-  "id": "17e9df4a-38fb-434d-8779-f3f2500292d8",
-  "prevId": "d4918028-40f5-4d49-9b1e-b192a9e9d4c6",
+  "id": "178bfaef-4662-48cc-881a-c03504488f05",
+  "prevId": "17e9df4a-38fb-434d-8779-f3f2500292d8",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -149,6 +149,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "turn_key": {
+          "name": "turn_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -225,6 +231,15 @@
           "columns": [
             "company_id",
             "id"
+          ]
+        },
+        "assistant_messages_company_conversation_turn_key_uq": {
+          "name": "assistant_messages_company_conversation_turn_key_uq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "company_id",
+            "conversation_id",
+            "turn_key"
           ]
         }
       },

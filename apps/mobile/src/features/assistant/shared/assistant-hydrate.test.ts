@@ -366,6 +366,40 @@ describe("hydratedUiMessagesFromConversation", () => {
     expect(JSON.stringify(messages)).not.toContain("customers_list_customers");
   });
 
+  it("does not restore a search-results card on resume (hydratable: false)", () => {
+    const messages = hydratedUiMessagesFromConversation({
+      messages: [
+        message({
+          id: MSG_USER,
+          role: "user",
+          body: "Знайди Катю Самбуку",
+          createdAt: "2026-09-03T10:00:00.000Z",
+        }),
+        message({
+          id: MSG_ASSISTANT,
+          role: "assistant",
+          body: "Ось Катя.",
+          createdAt: "2026-09-03T10:00:01.000Z",
+        }),
+      ],
+      toolRuns: [
+        toolRun({
+          id: RUN_LIST,
+          actionName: "search.query",
+          toolCallId: "call-search-query",
+          resultIds: [],
+          createdAt: "2026-09-03T10:00:01.000Z",
+        }),
+      ],
+      ordersById: new Map(),
+    });
+    expect(messages[1]?.parts).toEqual([{ type: "text", text: "Ось Катя." }]);
+    expect(assistantSurfacesFromParts(messages[1]?.parts ?? [], "uk")).toEqual(
+      [],
+    );
+    expect(JSON.stringify(messages)).not.toContain("search_query");
+  });
+
   it("hydrates thin entity cards via live orders.get snapshots", () => {
     const getOutput = orderSnapshot(ORDER_A, "in_progress");
     const createOutput = orderSnapshot(ORDER_B, "new", {
@@ -1070,6 +1104,7 @@ describe("assistant hydrate source", () => {
     expect(hook).toContain('result.kind === "unavailable"');
     expect(hook).toContain("getAssistantPending");
     expect(hook).toContain("postAssistantChat");
+    expect(hook).toContain("commitAssistantHostResult");
     expect(hook).toContain("postAssistantConfirm");
     expect(hook).toContain("postAssistantPendingAbandon");
     expect(hook).not.toContain("createStaffAssistantTransport");
@@ -1089,6 +1124,7 @@ describe("hydration registry derivation (SHO-456)", () => {
     expect([...UNRESTORABLE_LIST_ACTIONS].sort()).toEqual([
       "customers.listCustomers",
       "orders.list",
+      "search.query",
     ]);
     expect(
       isHydratableOrderEntityRun({

@@ -33,6 +33,7 @@ describe("shared assistant copy", () => {
     expect("periodToday" in shared.ordersList).toBe(false);
     expect("openOrder" in shared.customersList).toBe(false);
     expect("customerMatchTruncated" in shared.customersList).toBe(false);
+    expect("openOrder" in shared.searchResults).toBe(false);
     expect("periodToday" in shared.aggregate).toBe(false);
     expect("orderCount" in shared.aggregate).toBe(false);
     expect("aggregateEmptyTitle" in shared.aggregate).toBe(false);
@@ -51,6 +52,18 @@ describe("shared assistant copy", () => {
     expect(uk.productColumn).toBe("Товар і варіант");
     expect(uk.statusColumn).toBe("Статус і товар");
     expect(uk.customerColumn).toBe("Замовник і товар");
+  });
+
+  it("pins search-results chrome without folding openOrder onto it", () => {
+    const uk = sharedAssistantCopy("uk").searchResults;
+    const en = sharedAssistantCopy("en").searchResults;
+    expect(uk.emptyTitle).toBe("Нічого не знайдено");
+    expect(en.emptyTitle).toBe("Nothing found");
+    expect(uk.truncated).toBe("У цій групі є ще збіги.");
+    expect(uk.groupEmpty).toBe("У цій групі збігів немає.");
+    expect(uk.groups.variant).toBe("Варіанти");
+    expect(en.groups.variant).toBe("Variants");
+    expect("openOrder" in uk).toBe(false);
   });
 });
 

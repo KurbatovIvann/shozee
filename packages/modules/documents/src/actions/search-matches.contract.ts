@@ -1,7 +1,8 @@
 /**
  * Internal document-number search matcher (SHO-527 / SHO-533). Prefix via
  * `ctx.call(companies.get)` — composition edge declared in apps/api.
- * Does not reuse the order-number canonicalize. Handler SQL is T7.
+ * Does not reuse the order-number canonicalize. Identifier-layer SQL is
+ * SHO-533 (T7).
  */
 import { defineActionContract } from "@showzy/core/contract";
 import {

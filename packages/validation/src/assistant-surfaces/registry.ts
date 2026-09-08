@@ -8,6 +8,7 @@
  * column descriptor (per-surface row cap, not one shared constant).
  * `customers-list` is the second list. Do not copy `orders-list.ts` and
  * swap the columns — a later list is a new descriptor, not a new card.
+ * `search-results` is grouped hits (SHO-535), not a third list.
  *
  * Aggregate surfaces share one block with two declared layouts
  * (`summary` | `breakdown`). `orders-aggregate` parses onto `summary`.
@@ -43,6 +44,13 @@ import {
   ORDERS_LIST_SURFACE_TOOLS,
   parseOrdersListSurface,
 } from "./orders-list.js";
+import {
+  SEARCH_QUERY_ACTION_NAME,
+  SEARCH_RESULTS_DESTINATION,
+  SEARCH_RESULTS_PROMPT_LINE,
+  SEARCH_RESULTS_SURFACE_TOOLS,
+  parseSearchResultsSurface,
+} from "./search-results.js";
 
 export type AssistantSurfaceParse = (
   results: readonly AssistantSurfaceToolResult[],
@@ -103,6 +111,16 @@ export const ASSISTANT_SURFACE_REGISTRY: readonly AssistantSurfaceDescriptor[] =
       promptLine: CUSTOMERS_LIST_PROMPT_LINE,
       destination: CUSTOMERS_LIST_DESTINATION,
       parse: parseCustomersListSurface,
+    },
+    {
+      kind: "search-results",
+      version: 1,
+      toolNames: SEARCH_RESULTS_SURFACE_TOOLS,
+      actionNames: [SEARCH_QUERY_ACTION_NAME],
+      hydratable: false,
+      promptLine: SEARCH_RESULTS_PROMPT_LINE,
+      destination: SEARCH_RESULTS_DESTINATION,
+      parse: parseSearchResultsSurface,
     },
   ];
 

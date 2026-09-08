@@ -34,6 +34,10 @@ const ENTITY = readFileSync(
   new URL("../sheet/order-entity-card.tsx", import.meta.url),
   "utf8",
 );
+const SEARCH = readFileSync(
+  new URL("../sheet/assistant-search-results-block.tsx", import.meta.url),
+  "utf8",
+);
 const CONFIRMATION = readFileSync(
   new URL("../sheet/confirmation-card.tsx", import.meta.url),
   "utf8",
@@ -47,6 +51,7 @@ const CARD_VIEWS = [
   "order-entity",
   "orders-aggregate",
   "orders-list",
+  "search-results",
 ].map((name) =>
   readFileSync(new URL(`../surfaces/${name}.ts`, import.meta.url), "utf8"),
 );
@@ -75,6 +80,8 @@ describe("AssistantResultFrame notice card (SHO-469)", () => {
     expect(SURFACE).toContain("AssistantSurfaceBlock");
     expect(SURFACE).toContain("AssistantCollectionBlock");
     expect(SURFACE).toContain('case "customers-list"');
+    expect(SURFACE).toContain('case "search-results"');
+    expect(SURFACE).toContain("AssistantSearchResultsBlock");
     expect(SURFACE).toContain("switch (surface.kind)");
     expect(SURFACE).toContain("OrdersAggregateResultCard");
     expect(AGGREGATE).toContain("AssistantAggregateBlock");
@@ -82,7 +89,7 @@ describe("AssistantResultFrame notice card (SHO-469)", () => {
 
   it("fails the build on an unhandled surface kind instead of an empty frame (SHO-498)", () => {
     // The block switch is what decides whether a card appears at all. A
-    // fifth registered kind must not compile into a silent empty frame:
+    // A newly registered kind must not compile into a silent empty frame:
     // the declared return type refuses `undefined`, and the `never`
     // assignment after the switch names the kind tsc could not place.
     expect(SURFACE).toContain("}): ReactElement | null {");
@@ -114,11 +121,15 @@ describe("AssistantResultFrame notice card (SHO-469)", () => {
     expect(AGGREGATE).toContain("AssistantAggregateBlock");
     expect(importsNamed(ENTITY, "Card")).toBe(false);
     expect(importsNamed(CONFIRMATION, "Card")).toBe(false);
+    expect(importsNamed(SEARCH, "Card")).toBe(false);
     expect(importsNamed(FRAME, "Card")).toBe(true);
     expect(COLLECTION).not.toContain("<Button");
     expect(AGGREGATE).not.toContain("<Button");
+    expect(SEARCH).not.toContain("<Button");
     expect(COLLECTION).not.toContain("emptyTitle");
     expect(ENTITY).not.toContain("emptyTitle");
+    expect(SEARCH).not.toContain("emptyTitle");
+    expect(SEARCH).toContain("AssistantCollectionResultRow");
   });
 });
 

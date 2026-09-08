@@ -6,6 +6,8 @@ import {
   ASSISTANT_CUSTOMERS_LIST_SCREEN_HREF,
   ASSISTANT_ORDERS_LIST_SCREEN_HREF,
   CUSTOMERS_LIST_CUSTOMERS_TOOL,
+  SEARCH_QUERY_TOOL,
+  assistantSurfacesFromToolResults,
   parseCustomersListSurface as parseCustomersListData,
   parseOrdersListSurface as parseOrdersListData,
 } from "@showzy/validation/assistant-surfaces";
@@ -14,10 +16,20 @@ import { formatMoneyMinor } from "../../../format/money";
 import { assistantCopy } from "../../../i18n/assistant";
 import { customersCopy } from "../../../i18n/customers";
 import { ordersCopy } from "../../../i18n/orders";
-import { customerEditorHref } from "../../customers/shared/customer-hrefs";
+import {
+  productEditorHref,
+  productPhotoHref,
+} from "../../catalog/products/shared/product-hrefs";
+import {
+  counterpartyEditorHref,
+  customerEditorHref,
+  groupEditorHref,
+} from "../../customers/shared/customer-hrefs";
+import { documentsHref } from "../../documents/shared/document-hrefs";
 import { itemCountLabel } from "../../orders/shared/item-count";
 import { formatOrderCreatedAt } from "../../orders/shared/order-created-at";
 import { orderDetailHref } from "../../orders/shared/order-hrefs";
+import { priceListEditorHref } from "../../pricing/shared/price-list-hrefs";
 import { localizeCustomersListCard } from "../surfaces/customers-list";
 import { assistantSurfaceToolResultsFromParts } from "../surfaces/helpers";
 import { localizeOrdersListCard } from "../surfaces/orders-list";
@@ -38,9 +50,11 @@ import {
   type AssistantOrderEntityCardView,
   type AssistantOrdersAggregateCardView,
   type AssistantOrdersListCardView,
+  type AssistantSearchResultsCardView,
   type AssistantSurface,
 } from "../surfaces";
 import { isToolErrorOutput } from "./confirmation-presenter";
+import { partsFromResumeEnvelope } from "./resume-envelope";
 
 function listOf(
   surfaces: readonly AssistantSurface[],
@@ -78,6 +92,17 @@ function customersOf(
 ): AssistantCustomersListCardView | null {
   for (const surface of surfaces) {
     if (surface.kind === "customers-list") {
+      return surface;
+    }
+  }
+  return null;
+}
+
+function searchResultsOf(
+  surfaces: readonly AssistantSurface[],
+): AssistantSearchResultsCardView | null {
+  for (const surface of surfaces) {
+    if (surface.kind === "search-results") {
       return surface;
     }
   }
@@ -1440,7 +1465,7 @@ describe("assistantSurfacesFromParts aggregate (SHO-370 / SHO-395)", () => {
 });
 
 describe("assistant result-card surface registry", () => {
-  it("registers orders kinds plus customers-list with English prompt lines", () => {
+  it("registers orders kinds plus customers-list and search-results with English prompt lines", () => {
     expect(
       ASSISTANT_RESULT_SURFACE_REGISTRY.map((entry) => entry.kind),
     ).toEqual([
@@ -1448,13 +1473,18 @@ describe("assistant result-card surface registry", () => {
       "orders-aggregate",
       "order-entity",
       "customers-list",
+      "search-results",
     ]);
     for (const entry of ASSISTANT_RESULT_SURFACE_REGISTRY) {
       expect(entry.promptLine.length).toBeGreaterThan(20);
       expect(entry.promptLine.includes("**")).toBe(false);
       expect(/[А-Яа-яІіЇїЄєҐґ]/.test(entry.promptLine)).toBe(false);
       expect(entry.toolNames.length).toBeGreaterThan(0);
-      expect(entry.destination.kind).toBe("screen");
+      if (entry.kind === "search-results") {
+        expect(entry.destination.kind).toBe("terminal");
+      } else {
+        expect(entry.destination.kind).toBe("screen");
+      }
     }
     expect(
       ASSISTANT_RESULT_SURFACE_REGISTRY.map((entry) => entry.destination),
@@ -1463,11 +1493,20 @@ describe("assistant result-card surface registry", () => {
       { kind: "screen" },
       { kind: "screen" },
       { kind: "screen" },
+      { kind: "terminal" },
     ]);
     const customers = ASSISTANT_RESULT_SURFACE_REGISTRY.find(
       (entry) => entry.kind === "customers-list",
     );
+    const search = ASSISTANT_RESULT_SURFACE_REGISTRY.find(
+      (entry) => entry.kind === "search-results",
+    );
     expect(customers?.hydratable).toBe(false);
+    expect(search?.hydratable).toBe(false);
+    expect(search?.actionNames).toEqual(["search.query"]);
+    expect(search?.toolNames).toEqual(
+      expect.arrayContaining(["search_query", "search.query"]),
+    );
   });
 
   it("keeps list, aggregate, and entity card destinations on today's order-hrefs", () => {
@@ -1591,6 +1630,10 @@ describe("assistant result-card surface registry", () => {
       new URL("../surfaces/customers-list.ts", import.meta.url),
       "utf8",
     );
+    const searchParse = readFileSync(
+      new URL("../surfaces/search-results.ts", import.meta.url),
+      "utf8",
+    );
     const aggregateParse = readFileSync(
       new URL("../surfaces/orders-aggregate.ts", import.meta.url),
       "utf8",
@@ -1643,6 +1686,8 @@ describe("assistant result-card surface registry", () => {
     expect(surfaceCard).toContain('case "orders-list"');
     expect(surfaceCard).toContain("AssistantCollectionBlock");
     expect(surfaceCard).toContain('case "customers-list"');
+    expect(surfaceCard).toContain('case "search-results"');
+    expect(surfaceCard).toContain("AssistantSearchResultsBlock");
     expect(surfaceCard).toContain("OrdersAggregateResultCard");
     expect(surfaceCard).toContain("onOpenHref={onOpenHref}");
     expect(surfaceCard).toContain("OrderEntityCard");
@@ -1669,8 +1714,10 @@ describe("assistant result-card surface registry", () => {
     expect(hook.includes("order-row")).toBe(false);
     expect(listParse.includes('from "@showzy/ai"')).toBe(false);
     expect(customersParse.includes('from "@showzy/ai"')).toBe(false);
+    expect(searchParse.includes('from "@showzy/ai"')).toBe(false);
     expect(listParse).toContain("@showzy/copy/assistant");
     expect(customersParse).toContain("@showzy/copy/assistant");
+    expect(searchParse).toContain("@showzy/copy/assistant");
     expect(aggregateParse.includes('from "@showzy/ai"')).toBe(false);
     expect(entityParse.includes('from "@showzy/ai"')).toBe(false);
     expect(compose.includes('from "@showzy/ai"')).toBe(false);
@@ -1683,6 +1730,7 @@ describe("assistant result-card surface registry", () => {
     expect(aggregateParse).toContain("../../orders/shared/order-created-at");
     expect(listParse).not.toContain("extractUuidResultIds");
     expect(customersParse).not.toContain("extractUuidResultIds");
+    expect(searchParse).not.toContain("extractUuidResultIds");
     expect(aggregateParse).not.toContain("extractUuidResultIds");
     expect(entityParse).not.toContain("extractUuidResultIds");
     expect(compose).not.toContain("extractUuidResultIds");
@@ -1891,6 +1939,280 @@ describe("customers-list collection surface (SHO-472)", () => {
     expect(surfaceCard).not.toContain("customers-list-result-card");
     expect(surfaceCard).toContain("AssistantCollectionBlock");
     expect(collectionBlock).toContain("AssistantCollectionBlock");
+  });
+});
+
+const GROUP_ID = "11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const COUNTERPARTY_ID = "22222222-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const PRODUCT_ID = "33333333-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const VARIANT_ID = "44444444-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const PRICE_LIST_ID = "55555555-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const DOCUMENT_ID = "66666666-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+
+function searchHit(
+  id: string,
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    id,
+    label: "Катя Самбука",
+    sublabel: "SKU-1",
+    status: "active",
+    matchedOn: "name",
+    exact: true,
+    ...extra,
+  };
+}
+
+function searchOutput(
+  groups: unknown[],
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    groups,
+    searchedTypes: ["customer", "order"],
+    queryNormalized: "katya",
+    ...extra,
+  };
+}
+
+describe("search-results grouped surface (SHO-535)", () => {
+  it("shows empty chrome when groups are empty", () => {
+    const surfaces = assistantSurfacesFromParts(
+      [
+        {
+          type: `tool-${SEARCH_QUERY_TOOL}` as const,
+          toolCallId: "call-search",
+          state: "output-available",
+          output: searchOutput([]),
+        },
+      ],
+      "uk",
+    );
+    const card = searchResultsOf(surfaces);
+    expect(card?.kind).toBe("search-results");
+    expect(card?.destination).toEqual({ kind: "terminal" });
+    expect(card?.emptyTitle).toBe(assistantChromeUk.searchResults.emptyTitle);
+    expect(card?.emptyDescription).toBe(
+      assistantChromeUk.searchResults.emptyDescription,
+    );
+    expect(card?.groups).toEqual([]);
+    expect(card?.ctaHref).toBeNull();
+  });
+
+  it("keeps truncated empty groups visible in chrome", () => {
+    const card = searchResultsOf(
+      assistantSurfacesFromParts(
+        [
+          {
+            type: `tool-${SEARCH_QUERY_TOOL}` as const,
+            toolCallId: "call-search",
+            state: "output-available",
+            output: searchOutput([
+              { type: "order", truncated: true, hits: [] },
+            ]),
+          },
+        ],
+        "uk",
+      ),
+    );
+    expect(card?.emptyTitle).toBeNull();
+    expect(card?.groups).toHaveLength(1);
+    expect(card?.groups[0]?.entityType).toBe("order");
+    expect(card?.groups[0]?.heading).toBe(
+      assistantChromeUk.searchResults.groups.order,
+    );
+    expect(card?.groups[0]?.truncatedLabel).toBe(
+      assistantChromeUk.searchResults.truncated,
+    );
+    expect(card?.groups[0]?.emptyLabel).toBe(
+      assistantChromeUk.searchResults.groupEmpty,
+    );
+    expect(card?.footnotes).toContain(
+      assistantChromeUk.searchResults.truncated,
+    );
+  });
+
+  it("opens typed hrefs, including variant productId and documents list", () => {
+    const card = searchResultsOf(
+      assistantSurfacesFromParts(
+        [
+          {
+            type: `tool-${SEARCH_QUERY_TOOL}` as const,
+            toolCallId: "call-search",
+            state: "output-available",
+            output: searchOutput([
+              {
+                type: "order",
+                truncated: false,
+                hits: [searchHit(ORDER_A, { label: "#1049" })],
+              },
+              {
+                type: "customer",
+                truncated: false,
+                hits: [searchHit(CLIENT_A)],
+              },
+              {
+                type: "customerGroup",
+                truncated: false,
+                hits: [searchHit(GROUP_ID, { label: "VIP" })],
+              },
+              {
+                type: "counterparty",
+                truncated: false,
+                hits: [searchHit(COUNTERPARTY_ID, { label: "ТОВ" })],
+              },
+              {
+                type: "product",
+                truncated: false,
+                hits: [searchHit(PRODUCT_ID, { label: "Napoleon" })],
+              },
+              {
+                type: "variant",
+                truncated: false,
+                hits: [
+                  searchHit(VARIANT_ID, {
+                    label: "M / vanilla",
+                    productId: PRODUCT_ID,
+                    sublabel: "do-not-parse-me",
+                  }),
+                ],
+              },
+              {
+                type: "priceList",
+                truncated: false,
+                hits: [searchHit(PRICE_LIST_ID, { label: "Retail" })],
+              },
+              {
+                type: "document",
+                truncated: false,
+                hits: [searchHit(DOCUMENT_ID, { label: "INV-1" })],
+              },
+            ]),
+          },
+        ],
+        "uk",
+      ),
+    );
+    const hrefByType = new Map(
+      card?.groups.map((group) => [group.entityType, group.hits[0]?.href]),
+    );
+    expect(hrefByType.get("order")).toBe(orderDetailHref(ORDER_A));
+    expect(hrefByType.get("customer")).toBe(customerEditorHref(CLIENT_A));
+    expect(hrefByType.get("customerGroup")).toBe(groupEditorHref(GROUP_ID));
+    expect(hrefByType.get("counterparty")).toBe(
+      counterpartyEditorHref(COUNTERPARTY_ID),
+    );
+    expect(hrefByType.get("product")).toBe(productPhotoHref(PRODUCT_ID));
+    expect(hrefByType.get("product")).not.toBe(productEditorHref(PRODUCT_ID));
+    expect(hrefByType.get("variant")).toBe(productPhotoHref(PRODUCT_ID));
+    expect(hrefByType.get("variant")).not.toBe(productEditorHref(PRODUCT_ID));
+    expect(hrefByType.get("variant")).not.toContain("do-not-parse-me");
+    expect(hrefByType.get("variant")).not.toContain("/edit");
+    expect(hrefByType.get("priceList")).toBe(
+      priceListEditorHref(PRICE_LIST_ID),
+    );
+    expect(hrefByType.get("document")).toBe(documentsHref());
+    expect(hrefByType.get("document")).not.toContain(DOCUMENT_ID);
+  });
+
+  it("localizes live host search-results resume cards without tool-search_query", () => {
+    function surfacesFromHostOutput(output: Record<string, unknown>) {
+      const composed = assistantSurfacesFromToolResults([
+        { toolName: SEARCH_QUERY_TOOL, output },
+      ]);
+      const search = composed.find(
+        (surface) => surface.kind === "search-results",
+      );
+      if (search === undefined) {
+        throw new Error("expected composed search-results");
+      }
+      const parts = partsFromResumeEnvelope({
+        speech: "Ось результати.",
+        cards: [
+          {
+            kind: "surface",
+            surface: "search-results",
+            data: search,
+          },
+        ],
+        pending: null,
+      });
+      expect(parts.map((part) => part.type)).toEqual([
+        "text",
+        "data-resumeCard",
+      ]);
+      return searchResultsOf(assistantSurfacesFromParts(parts, "uk"));
+    }
+
+    const empty = surfacesFromHostOutput(searchOutput([]));
+    expect(empty?.kind).toBe("search-results");
+    expect(empty?.destination).toEqual({ kind: "terminal" });
+    expect(empty?.emptyTitle).toBe(assistantChromeUk.searchResults.emptyTitle);
+    expect(empty?.emptyDescription).toBe(
+      assistantChromeUk.searchResults.emptyDescription,
+    );
+    expect(empty?.groups).toEqual([]);
+
+    const truncated = surfacesFromHostOutput(
+      searchOutput([{ type: "order", truncated: true, hits: [] }]),
+    );
+    expect(truncated?.emptyTitle).toBeNull();
+    expect(truncated?.groups).toHaveLength(1);
+    expect(truncated?.groups[0]?.entityType).toBe("order");
+    expect(truncated?.groups[0]?.truncatedLabel).toBe(
+      assistantChromeUk.searchResults.truncated,
+    );
+    expect(truncated?.groups[0]?.emptyLabel).toBe(
+      assistantChromeUk.searchResults.groupEmpty,
+    );
+
+    const variant = surfacesFromHostOutput(
+      searchOutput([
+        {
+          type: "variant",
+          truncated: false,
+          hits: [
+            searchHit(VARIANT_ID, {
+              label: "M / vanilla",
+              productId: PRODUCT_ID,
+              sublabel: "do-not-parse-me",
+            }),
+          ],
+        },
+        {
+          type: "document",
+          truncated: false,
+          hits: [searchHit(DOCUMENT_ID, { label: "INV-1" })],
+        },
+      ]),
+    );
+    const hrefByType = new Map(
+      variant?.groups.map((group) => [group.entityType, group.hits[0]?.href]),
+    );
+    expect(hrefByType.get("variant")).toBe(`/products/${PRODUCT_ID}`);
+    expect(hrefByType.get("variant")).toBe(productPhotoHref(PRODUCT_ID));
+    expect(hrefByType.get("variant")).not.toContain("do-not-parse-me");
+    expect(hrefByType.get("document")).toBe(documentsHref());
+    expect(hrefByType.get("document")).not.toContain(DOCUMENT_ID);
+  });
+
+  it("does not invent a search-results-result-card or a second collection block", () => {
+    const surfaceCard = readFileSync(
+      new URL("../sheet/assistant-surface-card.tsx", import.meta.url),
+      "utf8",
+    );
+    const searchBlock = readFileSync(
+      new URL("../sheet/assistant-search-results-block.tsx", import.meta.url),
+      "utf8",
+    );
+    expect(surfaceCard).toContain("AssistantSearchResultsBlock");
+    expect(surfaceCard).not.toContain("search-results-result-card");
+    expect(surfaceCard.match(/<AssistantCollectionBlock/g)?.length).toBe(1);
+    expect(searchBlock).toContain("AssistantCollectionResultRow");
+    expect(searchBlock).not.toContain("<Button");
+    expect(searchBlock).not.toMatch(/import\s*\{[^}]*\bCard\b/);
+    expect(searchBlock).not.toContain("<Card");
   });
 });
 

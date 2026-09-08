@@ -11,6 +11,7 @@ import {
   ORDERS_LIST_COUNTS_TOOL,
   ORDERS_LIST_PAGE_TOOL,
   ORDERS_LIST_PROMPT_LINE,
+  SEARCH_RESULTS_PROMPT_LINE,
   assistantSurfacesFromToolResults,
   type AssistantSurfaceData,
   type AssistantSurfaceToolResult,
@@ -38,6 +39,7 @@ After orders_list_page (chips from same-turn orders_list_counts), the UI already
 After orders_list_counts with no page on the same turn, the UI already shows the orders aggregate card with period, totals, and a status breakdown. Reply with a short product-language summary of the totals. Do not restate the totals the card already shows unless asked. Do not dump a markdown table of buckets. Do not call orders_list_counts or orders.list again for the card.
 After orders.get or orders.create, the UI already shows an order entity card. Reply with a short product-language summary. Do not dump tool JSON.
 After customers_list_customers, the UI already shows the customers list card. Reply with a short product-language summary. Do not dump a markdown table of the rows.
+${SEARCH_RESULTS_PROMPT_LINE}
 </presentation>`;
 
 const PRESENTER_OWNED_COPY = [
@@ -64,6 +66,7 @@ const PROMPT_LINE_CONSTANTS = [
   "ORDERS_AGGREGATE_PROMPT_LINE",
   "ORDER_ENTITY_PROMPT_LINE",
   "CUSTOMERS_LIST_PROMPT_LINE",
+  "SEARCH_RESULTS_PROMPT_LINE",
 ] as const;
 
 const SKIP_DIR = new Set([
@@ -140,6 +143,7 @@ describe("staff assistant presentation cache prefix (SHO-457 / SHO-523)", () => 
         ORDERS_AGGREGATE_PROMPT_LINE,
         ORDER_ENTITY_PROMPT_LINE,
         CUSTOMERS_LIST_PROMPT_LINE,
+        SEARCH_RESULTS_PROMPT_LINE,
       ],
     );
   });

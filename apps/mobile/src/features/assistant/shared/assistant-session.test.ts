@@ -1,6 +1,8 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  commitAssistantHostResult,
   ensureAssistantConversation,
   isCurrentAssistantChoiceSelect,
   resetAssistantTenantSession,
@@ -185,6 +187,115 @@ describe("sendEnsuredAssistantMessage", () => {
     await expect(sendPromise).resolves.toBe("dropped");
     expect(conversationIdRef.current).toBeNull();
     expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("returns dropped when the POST finishes after a company switch", async () => {
+    const conversationIdRef = { current: conversationA };
+    const companyEpochRef = { current: 0 };
+    let finishPost: (() => void) | undefined;
+    const sendMessage = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishPost = resolve;
+        }),
+    );
+
+    const sendPromise = sendEnsuredAssistantMessage({
+      conversationIdRef,
+      companyEpochRef,
+      create: () => Promise.resolve({ id: conversationB }),
+      sendMessage,
+      text: "hello from A",
+    });
+
+    await vi.waitFor(() => {
+      expect(sendMessage).toHaveBeenCalledOnce();
+    });
+    companyEpochRef.current += 1;
+    resetAssistantTenantSession({
+      conversationIdRef,
+      setMessages: () => undefined,
+      resetConfirmation: () => undefined,
+      resetChoice: () => undefined,
+    });
+    finishPost?.();
+
+    await expect(sendPromise).resolves.toBe("dropped");
+    expect(conversationIdRef.current).toBeNull();
+  });
+});
+
+describe("commitAssistantHostResult", () => {
+  it("drops a late chat envelope after company switch and does not apply speech or cards", () => {
+    const companyEpochRef = { current: 0 };
+    const epoch = companyEpochRef.current;
+    const sheet: string[] = [];
+    companyEpochRef.current += 1;
+    sheet.push("b-hydrated");
+    const apply = vi.fn(() => {
+      sheet.push("a-speech");
+      sheet.push("a-card");
+    });
+    expect(
+      commitAssistantHostResult({
+        companyEpochRef,
+        epoch,
+        apply,
+      }),
+    ).toBe("stale");
+    expect(apply).not.toHaveBeenCalled();
+    expect(sheet).toEqual(["b-hydrated"]);
+  });
+
+  it("applies a same-company late chat envelope", () => {
+    const companyEpochRef = { current: 3 };
+    const apply = vi.fn();
+    expect(
+      commitAssistantHostResult({
+        companyEpochRef,
+        epoch: 3,
+        apply,
+      }),
+    ).toBe("applied");
+    expect(apply).toHaveBeenCalledOnce();
+  });
+
+  it("does not overwrite hydrate started by the switch", () => {
+    const companyEpochRef = { current: 0 };
+    const epochA = companyEpochRef.current;
+    const messages: string[] = ["user-a"];
+    companyEpochRef.current += 1;
+    resetAssistantTenantSession({
+      conversationIdRef: { current: conversationA },
+      setMessages: () => {
+        messages.length = 0;
+      },
+      resetConfirmation: () => undefined,
+      resetChoice: () => undefined,
+    });
+    messages.push("b-hydrated");
+    expect(
+      commitAssistantHostResult({
+        companyEpochRef,
+        epoch: epochA,
+        apply: () => {
+          messages.push("a-envelope");
+        },
+      }),
+    ).toBe("stale");
+    expect(messages).toEqual(["b-hydrated"]);
+  });
+
+  it("gates POST /assistant/chat apply in the live chat hook", () => {
+    const hook = readFileSync(
+      new URL("../sheet/use-assistant-chat.ts", import.meta.url),
+      "utf8",
+    );
+    expect(hook).toContain("postAssistantChat");
+    expect(hook).toContain("commitAssistantHostResult");
+    expect(hook).toContain("applyHostResult(result)");
+    expect(hook).toContain("companyEpochRef");
+    expect(hook).toContain("epoch");
   });
 });
 

@@ -8,6 +8,7 @@
  * column descriptor (per-surface row cap, not one shared constant).
  * `customers-list` is the second list. Do not copy `orders-list.ts` and
  * swap the columns — a later list is a new descriptor, not a new card.
+ * `search-results` is grouped hits (SHO-535), not a third list.
  *
  * Aggregate surfaces share one block with two declared layouts
  * (`summary` | `breakdown`). `orders-aggregate` localizes onto `summary`.

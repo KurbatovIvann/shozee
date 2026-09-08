@@ -130,4 +130,15 @@ describe("@showzy/validation/assistant-surfaces guards", () => {
     expect(clip).toContain("@showzy/validation/assistant-surfaces");
     expect(clip).toContain("ASSISTANT_TOOL_CLIPPED_STATUS");
   });
+
+  it("compose invokes parseSearchResultsSurface (SHO-535)", () => {
+    const compose = readFileSync(join(surfacesDir, "compose.ts"), "utf8");
+    const registry = readFileSync(join(surfacesDir, "registry.ts"), "utf8");
+    expect(compose).toContain("parseSearchResultsSurface");
+    expect(compose).toContain(
+      "const searchResults = parseSearchResultsSurface(results);",
+    );
+    expect(registry).toContain('kind: "search-results"');
+    expect(registry).toContain("SEARCH_QUERY_ACTION_NAME");
+  });
 });

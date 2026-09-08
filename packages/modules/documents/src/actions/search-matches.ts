@@ -1,14 +1,26 @@
 import { getCompany } from "@showzy/companies";
 import { implementAction } from "@showzy/core";
-import { CoreInvariantError } from "@showzy/core/errors";
+import { prepareSearchQuery } from "@showzy/validation/search";
 
+import {
+  emptySearchMatchesResult,
+  runDocumentsSearchMatches,
+} from "../services/search-matches.js";
 import { searchMatchesContract } from "./search-matches.contract.js";
 
 export const searchMatches = implementAction(searchMatchesContract, {
-  handler: async (_input, ctx) => {
-    await ctx.call(getCompany, {});
-    throw new CoreInvariantError(
-      "documents.searchMatches handler is implemented in SHO-533 (T7)",
-    );
+  handler: async (input, ctx) => {
+    const prepared = prepareSearchQuery(input.query);
+    if (prepared.empty) {
+      return emptySearchMatchesResult();
+    }
+    const company = await ctx.call(getCompany, {});
+    return runDocumentsSearchMatches({
+      db: ctx.db,
+      companyId: ctx.companyId,
+      prefix: company.prefix,
+      query: input.query,
+      limitPerType: input.limitPerType,
+    });
   },
 });
