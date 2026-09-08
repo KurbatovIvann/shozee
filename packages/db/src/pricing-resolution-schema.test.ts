@@ -233,6 +233,7 @@ describe("price resolution schema slice", () => {
       "created_via",
       "vouched_by",
       "vouched_at",
+      "name_fts",
     ]);
     expect(columns.get("product_variants")).toEqual([
       "id",
@@ -247,6 +248,7 @@ describe("price resolution schema slice", () => {
       "created_via",
       "vouched_by",
       "vouched_at",
+      "name_fts",
     ]);
     expect(columns.get("customer_groups")).toEqual([
       "id",
@@ -261,6 +263,7 @@ describe("price resolution schema slice", () => {
       "created_via",
       "vouched_by",
       "vouched_at",
+      "name_fts",
     ]);
     expect(columns.get("company_customers")).toEqual([
       "id",
@@ -278,6 +281,7 @@ describe("price resolution schema slice", () => {
       "created_via",
       "vouched_by",
       "vouched_at",
+      "name_fts",
     ]);
     expect(columns.get("price_lists")).toEqual([
       "id",
@@ -290,6 +294,7 @@ describe("price resolution schema slice", () => {
       "created_via",
       "vouched_by",
       "vouched_at",
+      "name_fts",
     ]);
     expect(columns.get("price_list_entries")).toEqual([
       "id",
@@ -638,6 +643,10 @@ describe("price resolution schema slice", () => {
     expect(customerVariantUq).toContain("WHERE (variant_id IS NOT NULL)");
 
     expect(indexes.has("price_lists_company_idx")).toBe(false);
+    expect(indexes.get("price_lists_name_trgm_idx")).toMatch(/USING gin/i);
+    expect(indexes.get("price_lists_name_trgm_idx")).toContain("gin_trgm_ops");
+    expect(indexes.get("price_lists_name_fts_gin_idx")).toMatch(/USING gin/i);
+    expect(indexes.get("price_lists_name_fts_gin_idx")).toContain("name_fts");
     expect(indexes.has("price_list_entries_company_idx")).toBe(false);
     expect(indexes.get("price_list_entries_price_list_idx")).toContain(
       "(price_list_id)",

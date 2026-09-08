@@ -26,6 +26,7 @@ import {
   tenantRowUnique,
   timestampColumns,
 } from "./tenant-columns.js";
+import { nameFtsColumn } from "./tsvector.js";
 
 /** Products carry the display name and the level-5 base price. */
 export const products = pgTable(
@@ -39,6 +40,9 @@ export const products = pgTable(
     status: text("status").notNull().default("active"),
     ...timestampColumns(),
     ...recordProvenanceColumns(),
+    // SHO-528: generated name FTS for staff matchers (simple, weight A).
+    // Not an ADR-0020 discovery projection; not schema/search.ts.
+    nameFts: nameFtsColumn(),
   },
   (table) => [
     tenantRowUnique("products_company_id_id_uq", table),
@@ -48,10 +52,11 @@ export const products = pgTable(
       table.id.desc().nullsFirst(),
     ),
     index("products_company_status_idx").on(table.companyId, table.status),
-    // SHO-396 / SHO-400: GIN trigram on name accelerates `%stem%` ILIKE.
-    // pg_trgm is already installed (0007). company_id stays on the
-    // existing btree indexes; the matcher ANDs tenant scope in SQL.
+    // SHO-396 / SHO-400 / SHO-528: GIN trigram on name for `%stem%` ILIKE
+    // and word_similarity. pg_trgm is already installed (0007). company_id
+    // stays on the existing btree indexes; the matcher ANDs tenant scope.
     index("products_name_trgm_idx").using("gin", table.name.op("gin_trgm_ops")),
+    index("products_name_fts_gin_idx").using("gin", table.nameFts),
     check("products_base_price_minor_check", sql`${table.basePriceMinor} >= 0`),
     check(
       "products_status_check",
@@ -80,10 +85,16 @@ export const productVariants = pgTable(
     status: text("status").notNull().default("active"),
     ...timestampColumns(),
     ...recordProvenanceColumns(),
+    nameFts: nameFtsColumn(),
   },
   (table) => [
     tenantRowUnique("product_variants_company_id_id_uq", table),
     index("product_variants_product_idx").on(table.productId),
+    index("product_variants_name_trgm_idx").using(
+      "gin",
+      table.name.op("gin_trgm_ops"),
+    ),
+    index("product_variants_name_fts_gin_idx").using("gin", table.nameFts),
     foreignKey({
       name: "product_variants_products_company_fk",
       columns: [table.companyId, table.productId],

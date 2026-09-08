@@ -28,6 +28,7 @@ import {
   tenantRowUnique,
   timestampColumns,
 } from "./tenant-columns.js";
+import { nameFtsColumn } from "./tsvector.js";
 
 /**
  * Named price tiers (SHO-171 adds `name`). At most one default list per
@@ -44,12 +45,18 @@ export const priceLists = pgTable(
     isDefault: boolean("is_default").notNull().default(false),
     ...timestampColumns(),
     ...recordProvenanceColumns(),
+    nameFts: nameFtsColumn(),
   },
   (table) => [
     tenantRowUnique("price_lists_company_id_id_uq", table),
     uniqueIndex("price_lists_company_default_uq")
       .on(table.companyId)
       .where(sql`${table.isDefault} = true`),
+    index("price_lists_name_trgm_idx").using(
+      "gin",
+      table.name.op("gin_trgm_ops"),
+    ),
+    index("price_lists_name_fts_gin_idx").using("gin", table.nameFts),
     check(
       "price_lists_name_length_check",
       sql`char_length(${table.name}) BETWEEN 1 AND 120`,
