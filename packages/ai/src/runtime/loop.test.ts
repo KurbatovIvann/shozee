@@ -397,6 +397,16 @@ describe("runStaffAssistantHostTurn", () => {
       { id: customerId },
       { toolCallId: "call-delete" },
     );
+    expect(turn.modelToolCalls).toEqual([
+      {
+        toolCallId: "call-delete",
+        toolName: toProviderToolName("customers.deleteCustomer"),
+        input: { id: customerId },
+      },
+    ]);
+    expect(turn.modelToolCalls.map((call) => call.toolCallId)).not.toContain(
+      "call-list",
+    );
     expect(turn.toolRuns).toEqual([
       {
         actionName: "customers.deleteCustomer",

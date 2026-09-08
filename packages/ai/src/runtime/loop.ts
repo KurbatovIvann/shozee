@@ -189,7 +189,16 @@ function hostModelToolCallsFromSteps(
 ): StaffAssistantHostModelToolCall[] {
   const calls: StaffAssistantHostModelToolCall[] = [];
   for (const step of steps) {
+    const pausedToolCallIds = new Set<string>();
+    for (const result of step.toolResults) {
+      if (isHostHitlPausedOutput(result.output)) {
+        pausedToolCallIds.add(result.toolCallId);
+      }
+    }
     for (const call of step.toolCalls) {
+      if (pausedToolCallIds.has(call.toolCallId)) {
+        continue;
+      }
       calls.push({
         toolCallId: call.toolCallId,
         toolName: call.toolName,
