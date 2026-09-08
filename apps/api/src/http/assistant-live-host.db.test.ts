@@ -1385,14 +1385,14 @@ describe("live staff assistant host HTTP (SHO-524)", () => {
       basePriceMinor: "1500",
       variants: [{ name: "A" }, { name: "B" }],
     });
-    const { record, optionByLabel } = await seedChoicePending(h, {
+    const { record } = await seedChoicePending(h, {
       conversationId: conversation.id,
       customerId: choiceCustomer.id,
       product: choiceProduct,
     });
-    const optionId = optionByLabel.get("A");
+    const optionId = record.envelope.options[0]?.id;
     if (optionId === undefined) {
-      throw new Error("seeded choice missing option A");
+      throw new Error("seeded choice missing option");
     }
     const body = await parseOk(
       await liveRequest(h.app, {
