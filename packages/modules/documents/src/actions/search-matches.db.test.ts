@@ -34,7 +34,8 @@ const COMPANY_B_PREFIX = "MB";
 const SEQ_BOTH = 1n;
 const SEQ_CANCELLED = 2n;
 const SEQ_PREFIX_SIBLING = 10n;
-const SEQ_TRUNCATION_START = 400n;
+const SEQ_EXACT_WINDOW = 999999n;
+const SEQ_WINDOW_SIBLING_START = 9999990n;
 
 const fixtures = {
   invoice1: randomUUID(),
@@ -48,11 +49,6 @@ const fixtures = {
   order10: randomUUID(),
   orderForeign: randomUUID(),
 };
-
-const truncation = Array.from({ length: 7 }, () => ({
-  id: randomUUID(),
-  orderId: randomUUID(),
-}));
 
 const clerks = {
   noView: randomUUID(),
@@ -235,31 +231,6 @@ beforeAll(async () => {
     sequence: SEQ_BOTH,
     prefix: COMPANY_B_PREFIX,
   });
-
-  await kit.db.runtime.db.insert(orders).values(
-    truncation.map((row, index) => ({
-      id: row.orderId,
-      companyId: kitIdentities.companies.a,
-      orderNumber: `T-TR${String(index).padStart(2, "0")}`,
-      customerId: null,
-      customerNameSnapshot: "Fixture customer",
-      status: "new" as const,
-      totalNetMinor: 100n,
-      totalTaxMinor: 0n,
-      totalGrossMinor: 100n,
-      currency: "UAH" as const,
-    })),
-  );
-  for (const [index, row] of truncation.entries()) {
-    await insertDocument({
-      id: row.id,
-      companyId: kitIdentities.companies.a,
-      orderId: row.orderId,
-      type: "payment_invoice",
-      sequence: SEQ_TRUNCATION_START + BigInt(index),
-      prefix: COMPANY_A_PREFIX,
-    });
-  }
 
   const explainSeed = Array.from({ length: 40 }, (_, index) => ({
     orderId: randomUUID(),
@@ -541,26 +512,67 @@ describe("documents.searchMatches", () => {
     expect(hit?.exact).toBe(true);
   });
 
-  it("truncates at limitPerType using the exact-then-rank-then-id SQL window", async () => {
-    const prefixQuery = formatDocumentNumber(
+  it("truncates at limitPerType and keeps an exact number first in the SQL window", async () => {
+    const canonical = formatDocumentNumber(
       COMPANY_A_PREFIX,
       "payment_invoice",
-      SEQ_TRUNCATION_START,
-    ).slice(0, -1);
-    expect(prefixQuery).toBe("KA-РХ-00040");
+      SEQ_EXACT_WINDOW,
+    );
+    expect(canonical).toBe("KA-РХ-999999");
+    expect(
+      formatDocumentNumber(
+        COMPANY_A_PREFIX,
+        "payment_invoice",
+        SEQ_WINDOW_SIBLING_START,
+      ),
+    ).toBe("KA-РХ-9999990");
+    const exactId = randomUUID();
+    const weakIds: string[] = [];
+    for (let index = 0; index < 6; index += 1) {
+      const id = randomUUID();
+      const orderId = randomUUID();
+      weakIds.push(id);
+      await insertOrder({
+        id: orderId,
+        companyId: kitIdentities.companies.a,
+        orderNumber: `T-WIN${String(index).padStart(2, "0")}`,
+      });
+      await insertDocument({
+        id,
+        companyId: kitIdentities.companies.a,
+        orderId,
+        type: "payment_invoice",
+        sequence: SEQ_WINDOW_SIBLING_START + BigInt(index),
+        prefix: COMPANY_A_PREFIX,
+      });
+    }
+    const exactOrderId = randomUUID();
+    await insertOrder({
+      id: exactOrderId,
+      companyId: kitIdentities.companies.a,
+      orderNumber: "T-WINX",
+    });
+    await insertDocument({
+      id: exactId,
+      companyId: kitIdentities.companies.a,
+      orderId: exactOrderId,
+      type: "payment_invoice",
+      sequence: SEQ_EXACT_WINDOW,
+      prefix: COMPANY_A_PREFIX,
+    });
 
     const listed = await kit.invoke(searchMatches, {
-      query: prefixQuery,
+      query: canonical,
       limitPerType: 5,
     });
     expect(documentGroup(listed)?.truncated).toBe(true);
     expect(hitIds(documentGroup(listed))).toHaveLength(5);
-    for (const hit of documentGroup(listed)?.hits ?? []) {
-      expect(hit.exact).toBe(false);
-      expect(hit.matchedOn).toBe("number");
-    }
-    const expectedIds = [...truncation.map((row) => row.id)].toSorted();
-    expect(hitIds(documentGroup(listed))).toEqual(expectedIds.slice(0, 5));
+    expect(hitIds(documentGroup(listed))[0]).toBe(exactId);
+    expect(documentGroup(listed)?.hits[0]?.exact).toBe(true);
+    expect(documentGroup(listed)?.hits[0]?.matchedOn).toBe("number");
+    expect(weakIds).toEqual(
+      expect.arrayContaining(hitIds(documentGroup(listed)).slice(1)),
+    );
   });
 
   it("rejects oversize query, extras, and companyId in input", async () => {
