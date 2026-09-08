@@ -1139,10 +1139,9 @@ describe("unpublished staff assistant host HTTP", () => {
         optionId,
       },
     });
-    const foreignBody = assistantHostInteractionResultSchema.parse(
-      await foreign.json(),
-    );
-    expect(foreignBody.status).not.toBe("ok");
+    expect(foreign.status).not.toBe(200);
+    const foreignBody: unknown = await foreign.json();
+    expect(foreignBody).not.toMatchObject({ status: "ok" });
     expect(await orderCount()).toBe(beforeOrders);
     const pausedRows = (await conversationToolRuns(conversation.id)).filter(
       (row) => row.actionName === "orders.create",
@@ -1292,9 +1291,9 @@ describe("unpublished staff assistant host HTTP", () => {
       ],
     });
     expect(resolved[0]?.toolInput).not.toEqual(peeked.record.canonicalInput);
-    expect(
-      createRows.filter((row) => row.outcome === "success"),
-    ).toHaveLength(1);
+    expect(createRows.filter((row) => row.outcome === "success")).toHaveLength(
+      1,
+    );
   });
 
   it("refuses a second orders.create while Katia picker is open (same actionName is not replace)", async () => {

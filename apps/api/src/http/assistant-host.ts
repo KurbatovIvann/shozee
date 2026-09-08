@@ -1262,6 +1262,7 @@ async function executePhaseA(options: {
     readonly companySelector: string | null;
   };
   readonly executionId: string;
+  readonly idempotencyKey?: string;
 }): Promise<unknown> {
   const action = requireImplementation(
     options.runtime.registry,
@@ -1275,10 +1276,9 @@ async function executePhaseA(options: {
       clientIp: options.runtime.clientIp,
       aiTraceId: options.runtime.requestId,
       toolCallId: options.record.toolCallId,
-      idempotencyKey: executionAttemptKey(
-        options.record.conversationId,
-        options.executionId,
-      ),
+      idempotencyKey:
+        options.idempotencyKey ??
+        executionAttemptKey(options.record.conversationId, options.executionId),
       ...(options.confirmationChallengeId !== undefined
         ? { confirmationChallengeId: options.confirmationChallengeId }
         : {}),
@@ -1526,6 +1526,8 @@ export async function executeStaffAssistantHostChoiceResume(
         // SHO-543: finish the paused (or replace-staged) execution_id.
         // Do not begin a Phase A replica. Canonical patched input stays
         // on the pending record / executeAction input, not tool_input.
+        // Domain execute cannot reuse tool:${executionId}: the pause
+        // already bound that key to unpatched input (live picker).
         const executionId = resolveStagedExecutionId({ record, history });
         try {
           const output = await executePhaseA({
@@ -1534,6 +1536,7 @@ export async function executeStaffAssistantHostChoiceResume(
             input: patched,
             staffPrincipal: auth.staffPrincipal,
             executionId,
+            idempotencyKey: attemptKey("choice", conversation.id, record.id),
           });
           await finishPhaseA({
             runtime: options,
@@ -1594,18 +1597,6 @@ export async function executeStaffAssistantHostChoiceResume(
                 optionId: parsed.data.optionId,
               });
               await options.pendingStore.open(next);
-              await finishPhaseA({
-                runtime: options,
-                conversationId: conversation.id,
-                staffPrincipal: auth.staffPrincipal,
-                executionId,
-                outcome: "choice_required",
-                output: presentChoiceStaffAssistantNeedsChoice({
-                  locale,
-                  record: nextChoice,
-                }),
-                challengeId: next.id,
-              });
               const publicPending = publicPendingFromRecord(next) ?? null;
               const needs = presentChoiceStaffAssistantNeedsChoice({
                 locale,
