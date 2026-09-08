@@ -416,3 +416,52 @@ describe("peekAssistantChoice", () => {
     expect(JSON.stringify(result)).not.toContain("SECRET_SESSION_COOKIE");
   });
 });
+
+describe("postAssistantChoice shared resume envelope (SHO-522)", () => {
+  beforeEach(() => {
+    fetchMock.mockReset();
+  });
+
+  it("decodes { speech, cards, pending } like confirmation", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, {
+        status: "ok",
+        speech: "Pick a flavour.",
+        cards: [
+          {
+            kind: "choice",
+            envelope: {
+              status: "needs_choice",
+              challengeId: choiceId,
+              reason: "variant_required",
+              productName: "Macarons",
+              options: [{ id: optionId, label: "Lemon" }],
+              optionsTruncated: false,
+            },
+          },
+        ],
+        pending: {
+          kind: "choice",
+          id: choiceId,
+          version: 1,
+          status: "open",
+          actionName: "orders.create",
+          envelope: {
+            status: "needs_choice",
+            challengeId: choiceId,
+            reason: "variant_required",
+            productName: "Macarons",
+            options: [{ id: optionId, label: "Lemon" }],
+            optionsTruncated: false,
+          },
+        },
+      }),
+    );
+    const result = await postAssistantChoice(postArgs());
+    expect(result.status).toBe("needs_choice");
+    expect(result.text).toBe("Pick a flavour.");
+    expect(result.challengeId).toBe(choiceId);
+    expect(result.envelope?.pending?.kind).toBe("choice");
+    expect(JSON.stringify(result)).not.toContain("canonicalInput");
+  });
+});

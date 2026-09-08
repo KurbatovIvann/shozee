@@ -1,11 +1,14 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { CONFIRMATION_CHALLENGE_HEADER } from "@showzy/contract";
 
 import {
   confirmationCardState,
   confirmationResumeHeaders,
+  executeConfirmationAbandon,
   executeConfirmationConfirm,
   executeConfirmationDismiss,
+  hideConfirmationLocally,
   pendingConfirmationFromMessages,
   shouldMarkConfirmationResolved,
   type AssistantChatMessage,
@@ -117,7 +120,15 @@ describe("pendingConfirmationFromMessages", () => {
 });
 
 describe("executeConfirmationConfirm", () => {
-  it("calls challenge resume with the confirmation header", async () => {
+  it("POSTs /assistant/confirm and does not resume with the challenge header", async () => {
+    const postConfirm = vi.fn(() =>
+      Promise.resolve({
+        status: "ok" as const,
+        speech: "Deleted.",
+        cards: [],
+        pending: null,
+      }),
+    );
     const resume = vi.fn(() => Promise.resolve());
     const pending = pendingConfirmationFromMessages(messages, new Set());
     await expect(
@@ -126,20 +137,30 @@ describe("executeConfirmationConfirm", () => {
         sendBusy: false,
         dismissedChallengeIds: new Set(),
         resolvingRef: { current: null },
-        resume,
+        conversationId: "11111111-1111-4111-8111-111111111111",
+        postConfirm,
       }),
-    ).resolves.toBe("resumed");
-    expect(resume).toHaveBeenCalledOnce();
-    expect(resume).toHaveBeenCalledWith({
-      [CONFIRMATION_CHALLENGE_HEADER]: challengeA,
+    ).resolves.toMatchObject({ status: "ok", speech: "Deleted." });
+    expect(postConfirm).toHaveBeenCalledOnce();
+    expect(postConfirm).toHaveBeenCalledWith({
+      conversationId: "11111111-1111-4111-8111-111111111111",
+      challengeId: challengeA,
     });
+    expect(resume).not.toHaveBeenCalled();
     expect(confirmationResumeHeaders(challengeA)).toEqual({
       [CONFIRMATION_CHALLENGE_HEADER]: challengeA,
     });
   });
 
-  it("does not resume when dismiss runs instead", async () => {
-    const resume = vi.fn(() => Promise.resolve());
+  it("does not confirm when dismiss runs instead", async () => {
+    const postConfirm = vi.fn(() =>
+      Promise.resolve({
+        status: "ok" as const,
+        speech: "",
+        cards: [],
+        pending: null,
+      }),
+    );
     const pending = pendingConfirmationFromMessages(messages, new Set());
     const dismissed = executeConfirmationDismiss({
       pending,
@@ -151,14 +172,22 @@ describe("executeConfirmationConfirm", () => {
         sendBusy: false,
         dismissedChallengeIds: dismissed,
         resolvingRef: { current: null },
-        resume,
+        conversationId: "11111111-1111-4111-8111-111111111111",
+        postConfirm,
       }),
     ).resolves.toBe("skipped");
-    expect(resume).not.toHaveBeenCalled();
+    expect(postConfirm).not.toHaveBeenCalled();
   });
 
-  it("does not resume when dismiss then confirm share the live dismissed set", async () => {
-    const resume = vi.fn(() => Promise.resolve());
+  it("does not confirm when dismiss then confirm share the live dismissed set", async () => {
+    const postConfirm = vi.fn(() =>
+      Promise.resolve({
+        status: "ok" as const,
+        speech: "",
+        cards: [],
+        pending: null,
+      }),
+    );
     const pending = pendingConfirmationFromMessages(messages, new Set());
     const gate = {
       dismissed: new Set<string>(),
@@ -175,14 +204,22 @@ describe("executeConfirmationConfirm", () => {
         sendBusy: false,
         dismissedChallengeIds: gate.dismissed,
         resolvingRef: { current: null },
-        resume,
+        conversationId: "11111111-1111-4111-8111-111111111111",
+        postConfirm,
       }),
     ).resolves.toBe("skipped");
-    expect(resume).not.toHaveBeenCalled();
+    expect(postConfirm).not.toHaveBeenCalled();
   });
 
-  it("resumes later challenge B with its header after A is resolved", async () => {
-    const resume = vi.fn(() => Promise.resolve());
+  it("confirms later challenge B after A is resolved", async () => {
+    const postConfirm = vi.fn(() =>
+      Promise.resolve({
+        status: "ok" as const,
+        speech: "Signed.",
+        cards: [],
+        pending: null,
+      }),
+    );
     const pending = pendingConfirmationFromMessages(
       mergedResumeMessages,
       new Set([challengeA]),
@@ -193,16 +230,25 @@ describe("executeConfirmationConfirm", () => {
         sendBusy: false,
         dismissedChallengeIds: new Set([challengeA]),
         resolvingRef: { current: null },
-        resume,
+        conversationId: "11111111-1111-4111-8111-111111111111",
+        postConfirm,
       }),
-    ).resolves.toBe("resumed");
-    expect(resume).toHaveBeenCalledWith({
-      [CONFIRMATION_CHALLENGE_HEADER]: challengeB,
+    ).resolves.toMatchObject({ status: "ok" });
+    expect(postConfirm).toHaveBeenCalledWith({
+      conversationId: "11111111-1111-4111-8111-111111111111",
+      challengeId: challengeB,
     });
   });
 
-  it("two confirm() calls before busy resume once", async () => {
-    const resume = vi.fn(() => Promise.resolve());
+  it("two confirm() calls before busy confirm once", async () => {
+    const postConfirm = vi.fn(() =>
+      Promise.resolve({
+        status: "ok" as const,
+        speech: "Deleted.",
+        cards: [],
+        pending: null,
+      }),
+    );
     const pending = pendingConfirmationFromMessages(messages, new Set());
     const resolvingRef = { current: null as string | null };
     const args = {
@@ -210,14 +256,20 @@ describe("executeConfirmationConfirm", () => {
       sendBusy: false,
       dismissedChallengeIds: new Set<string>(),
       resolvingRef,
-      resume,
+      conversationId: "11111111-1111-4111-8111-111111111111",
+      postConfirm,
     };
     const [first, second] = await Promise.all([
       executeConfirmationConfirm(args),
       executeConfirmationConfirm(args),
     ]);
-    expect(new Set([first, second])).toEqual(new Set(["resumed", "skipped"]));
-    expect(resume).toHaveBeenCalledOnce();
+    expect(
+      new Set([
+        first === "skipped" ? "skipped" : "ok",
+        second === "skipped" ? "skipped" : "ok",
+      ]),
+    ).toEqual(new Set(["ok", "skipped"]));
+    expect(postConfirm).toHaveBeenCalledOnce();
     expect(resolvingRef.current).toBe(challengeA);
   });
 });
@@ -339,5 +391,98 @@ describe("shouldMarkConfirmationResolved", () => {
         messages,
       }),
     ).toBe(false);
+  });
+});
+
+describe("executeConfirmationAbandon", () => {
+  it("POSTs abandon with pendingId and expectedVersion", async () => {
+    const postAbandon = vi.fn(() =>
+      Promise.resolve({
+        status: "ok" as const,
+        speech: "",
+        cards: [],
+        pending: null,
+      }),
+    );
+    const pending = pendingConfirmationFromMessages(messages, new Set());
+    await expect(
+      executeConfirmationAbandon({
+        pending,
+        conversationId: "11111111-1111-4111-8111-111111111111",
+        pendingVersion: 1,
+        peekPending: () => Promise.resolve({ kind: "unavailable" }),
+        postAbandon,
+      }),
+    ).resolves.toMatchObject({ status: "ok" });
+    expect(postAbandon).toHaveBeenCalledWith({
+      conversationId: "11111111-1111-4111-8111-111111111111",
+      pendingId: challengeA,
+      expectedVersion: 1,
+    });
+  });
+
+  it("peeks GET pending for version when the live card has none", async () => {
+    const postAbandon = vi.fn(() =>
+      Promise.resolve({
+        status: "ok" as const,
+        speech: "",
+        cards: [],
+        pending: null,
+      }),
+    );
+    const pending = pendingConfirmationFromMessages(messages, new Set());
+    await expect(
+      executeConfirmationAbandon({
+        pending,
+        conversationId: "11111111-1111-4111-8111-111111111111",
+        pendingVersion: undefined,
+        peekPending: () =>
+          Promise.resolve({
+            kind: "ok",
+            pending: {
+              id: challengeA,
+              version: 4,
+              kind: "confirmation",
+            },
+          }),
+        postAbandon,
+      }),
+    ).resolves.toMatchObject({ status: "ok" });
+    expect(postAbandon).toHaveBeenCalledWith({
+      conversationId: "11111111-1111-4111-8111-111111111111",
+      pendingId: challengeA,
+      expectedVersion: 4,
+    });
+  });
+});
+
+describe("hide-without-abandon is not the card path", () => {
+  it("keeps local hide as a helper, not the confirmation HTTP", () => {
+    const pending = pendingConfirmationFromMessages(messages, new Set());
+    const hidden = hideConfirmationLocally({
+      pending,
+      dismissed: new Set(),
+    });
+    expect(hidden.has(challengeA)).toBe(true);
+    const presenter = readFileSync(
+      new URL("./confirmation-presenter.ts", import.meta.url),
+      "utf8",
+    );
+    const hook = readFileSync(
+      new URL("../sheet/use-assistant-confirmation.ts", import.meta.url),
+      "utf8",
+    );
+    const card = readFileSync(
+      new URL("../sheet/confirmation-card.tsx", import.meta.url),
+      "utf8",
+    );
+    expect(presenter).toContain("executeConfirmationAbandon");
+    expect(presenter).toContain("postConfirm");
+    expect(presenter).not.toContain("args.resume(");
+    expect(hook).toContain("executeConfirmationAbandon");
+    expect(hook).toContain("postConfirm");
+    expect(hook).not.toContain("chat.resume");
+    expect(card).toContain("onDismiss");
+    expect(card).not.toContain("hideConfirmationLocally");
   });
 });

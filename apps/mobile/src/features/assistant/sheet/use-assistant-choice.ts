@@ -6,7 +6,9 @@ import {
   choiceCardState,
   choiceSelectRememberedAttempt,
   commitChoiceSelectResult,
+  executeChoiceAbandon,
   executeChoiceSelect,
+  hideChoiceLocally,
   pendingChoiceFromMessages,
   type AssistantChoiceMessage,
   type ChoiceAppendPart,
@@ -15,6 +17,10 @@ import {
   type ChoiceSelectResult,
   type PendingChoice,
 } from "../shared/choice-presenter";
+import type {
+  AssistantHostInteractionResult,
+  AssistantPendingHostMeta,
+} from "../shared/resume-envelope";
 
 export function useAssistantChoice(args: {
   readonly messages: readonly AssistantChoiceMessage[];
@@ -25,12 +31,27 @@ export function useAssistantChoice(args: {
     readonly optionId: string;
   }) => Promise<ChoiceSelectResult>;
   readonly appendParts: (parts: readonly ChoiceAppendPart[]) => void;
+  readonly conversationId: string | null;
+  readonly pendingMetaRef: { current: AssistantPendingHostMeta | null };
+  readonly peekPending: () => Promise<
+    | {
+        readonly kind: "ok";
+        readonly pending: AssistantPendingHostMeta | null;
+      }
+    | { readonly kind: "unavailable" }
+  >;
+  readonly postAbandon: (input: {
+    readonly conversationId: string;
+    readonly pendingId: string;
+    readonly expectedVersion: number;
+  }) => Promise<AssistantHostInteractionResult>;
 }): {
   readonly pending: PendingChoice | null;
   readonly ignoredChallengeIds: ReadonlySet<string>;
   readonly card: ChoiceCardState;
   readonly attempted: ChoiceAttemptedOption | null;
   readonly select: (optionId: string) => void;
+  readonly dismiss: () => void;
   readonly reset: () => void;
 } {
   const [ignored, setIgnored] = useState<ReadonlySet<string>>(() => new Set());
@@ -83,6 +104,16 @@ export function useAssistantChoice(args: {
         postChoice: args.postChoice,
       })
         .then((result) => {
+          if (result !== "skipped" && result.envelope !== undefined) {
+            args.pendingMetaRef.current =
+              result.envelope.pending === null
+                ? null
+                : {
+                    id: result.envelope.pending.id,
+                    version: result.envelope.pending.version,
+                    kind: result.envelope.pending.kind,
+                  };
+          }
           const outcome = commitChoiceSelectResult({
             result,
             previousChoiceId: current.challengeId,
@@ -131,10 +162,40 @@ export function useAssistantChoice(args: {
       args.appendParts,
       args.companyEpochRef,
       args.locale,
+      args.pendingMetaRef,
       args.postChoice,
       clearResolving,
     ],
   );
+
+  const dismiss = useCallback(() => {
+    const current = pendingRef.current;
+    void executeChoiceAbandon({
+      pending: current,
+      conversationId: args.conversationId,
+      pendingVersion: args.pendingMetaRef.current?.version,
+      peekPending: args.peekPending,
+      postAbandon: args.postAbandon,
+    }).then((result) => {
+      if (result === "skipped") {
+        return;
+      }
+      if (result.status === "ok" || result.status === "expired") {
+        args.pendingMetaRef.current = null;
+        const next = hideChoiceLocally({
+          pending: current,
+          dismissed: ignoredRef.current,
+        });
+        ignoredRef.current = next;
+        setIgnored(next);
+      }
+    });
+  }, [
+    args.conversationId,
+    args.peekPending,
+    args.pendingMetaRef,
+    args.postAbandon,
+  ]);
 
   const reset = useCallback(() => {
     const empty = new Set<string>();
@@ -155,6 +216,7 @@ export function useAssistantChoice(args: {
     card,
     attempted,
     select,
+    dismiss,
     reset,
   };
 }

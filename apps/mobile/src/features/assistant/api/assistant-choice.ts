@@ -20,6 +20,12 @@ import {
   type ChoiceSelectRecoverability,
   type ChoiceSelectResult,
 } from "../shared/choice-presenter";
+import {
+  assistantHostInteractionResultSchema,
+  entityFromResumeCards,
+  type AssistantHostInteractionResult,
+  type AssistantResumeEnvelope,
+} from "../shared/resume-envelope";
 import { staffAssistantChatHeaders } from "./assistant-chat-headers";
 
 export const ASSISTANT_CHOICE_PATH = "/assistant/choice";
@@ -254,6 +260,69 @@ function selectResultFromInteraction(
   }
 }
 
+function resumeEnvelopeFromOk(
+  result: Extract<AssistantHostInteractionResult, { status: "ok" }>,
+): AssistantResumeEnvelope {
+  return {
+    speech: result.speech,
+    cards: result.cards,
+    pending: result.pending,
+  };
+}
+
+function selectResultFromHostInteraction(
+  result: AssistantHostInteractionResult,
+  httpStatus: number,
+): Omit<ChoiceSelectResult, "recoverability"> {
+  if (result.status === "expired") {
+    return { status: "expired", httpStatus };
+  }
+  if (result.status === "error") {
+    return {
+      status: "error",
+      code: result.code,
+      message: result.message,
+      httpStatus,
+    };
+  }
+  const envelope = resumeEnvelopeFromOk(result);
+  const pending = result.pending;
+  if (pending?.kind === "choice") {
+    const card = pending.envelope;
+    return {
+      status: "needs_choice",
+      text: result.speech,
+      challengeId: card.challengeId,
+      ...(card.reason === undefined ? {} : { reason: card.reason }),
+      ...(card.choiceKind === undefined ? {} : { choiceKind: card.choiceKind }),
+      ...(card.productName === undefined
+        ? {}
+        : { productName: card.productName }),
+      options: card.options,
+      optionsTruncated: card.optionsTruncated,
+      httpStatus,
+      envelope,
+    };
+  }
+  const entity = entityFromResumeCards(result.cards);
+  if (entity !== undefined && result.speech.length > 0) {
+    return {
+      status: "completed",
+      text: result.speech,
+      entity,
+      httpStatus,
+      envelope,
+    };
+  }
+  return {
+    status: "ok",
+    text: result.speech,
+    ...(entity === undefined ? {} : { entity }),
+    httpStatus,
+    envelope,
+  };
+}
+
 export async function postAssistantChoice(args: {
   readonly apiUrl: string;
   readonly getCookie: () => string | null;
@@ -298,11 +367,17 @@ export async function postAssistantChoice(args: {
     return malformedSelectResult(response.status, "ambiguous");
   }
   const parsed = choiceInteractionResultSchema.safeParse(body.value);
-  if (!parsed.success) {
+  if (parsed.success) {
+    return withRecoverability(
+      selectResultFromInteraction(parsed.data, response.status),
+    );
+  }
+  const hostParsed = assistantHostInteractionResultSchema.safeParse(body.value);
+  if (!hostParsed.success) {
     return malformedSelectResult(response.status, "ambiguous");
   }
   return withRecoverability(
-    selectResultFromInteraction(parsed.data, response.status),
+    selectResultFromHostInteraction(hostParsed.data, response.status),
   );
 }
 

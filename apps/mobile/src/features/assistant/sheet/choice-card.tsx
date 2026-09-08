@@ -19,10 +19,12 @@ export function ChoiceCard(props: {
   readonly claimedLabel: string;
   readonly retryLabel: string;
   readonly selectingLabel: string;
+  readonly dismissLabel: string;
   readonly applying: boolean;
   readonly choice: StaffAssistantChoiceCardEnvelope;
   readonly attempted: ChoiceAttemptedOption | null;
   readonly onSelect: (optionId: string) => void;
+  readonly onDismiss: () => void;
 }) {
   const retryOptionId = choiceCardRetryOptionId({
     choice: props.choice,
@@ -80,6 +82,14 @@ export function ChoiceCard(props: {
             onPress={() => {
               props.onSelect(retryOptionId);
             }}
+          />
+        ) : null}
+        {pickerTappable ? (
+          <Button
+            variant="secondary"
+            fullWidth
+            label={props.dismissLabel}
+            onPress={props.onDismiss}
           />
         ) : null}
       </View>

@@ -1,0 +1,1806 @@
+/**
+ * Unpublished staff-assistant host (SHO-522 / ADR-0037).
+ *
+ * New pending lifecycle, confirm/abandon/pending GET, and host chat.
+ * Do not mount on production `createApp` / live `/assistant/chat` (T5).
+ */
+import { randomUUID } from "node:crypto";
+
+import {
+  applyChoiceOptionToCanonicalInput,
+  assistantAbandonBodySchema,
+  assistantConfirmBodySchema,
+  assistantChoiceBodySchema,
+  assistantHostChatBodySchema,
+  assistantHostInteractionResultSchema,
+  assistantPendingPeekQuerySchema,
+  attemptKey,
+  catalogPickerConflictExtrasFromError,
+  choiceCanonicalCreateInputSchema,
+  choiceRecordFromPendingChoice,
+  choiceRecordFromPickerConflict,
+  continueStaffAssistantHostTurn,
+  executionAttemptKey,
+  extractUuidResultIds,
+  filterStaffAiTools,
+  mapPendingReplaceFacadeInput,
+  PENDING_REPLACE_TOOL_NAME,
+  pendingChoiceRecordFromChoiceRecord,
+  presentChoiceStaffAssistantNeedsChoice,
+  publicPendingFromRecord,
+  refuseHostPendingOpen,
+  resolveMappedVariantId,
+  runStaffAssistantHostTurn,
+  staffAssistantModelMessagesFromPersisted,
+  STAFF_ASSISTANT_DEFAULT_LOCALE,
+  successorPendingChoiceId,
+  confirmationPendingRecord,
+  type AssistantHostInteractionResult,
+  type AssistantResumeCard,
+  type LanguageModel,
+  type PendingInteractionRecord,
+  type PublicPending,
+  type StaffAssistantHostCheckpoint,
+  type StaffAssistantLocale,
+  type StaffAssistantPersistedMessage,
+} from "@showzy/ai";
+import {
+  appendUserMessage,
+  checkpointAssistantTurn,
+  getConversation,
+  getModelHistory,
+  getStaffActor,
+} from "@showzy/assistant";
+import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
+import { toWireError } from "@showzy/contract/server";
+import {
+  executeAction,
+  type ActionPipelineDeps,
+  type ActionRegistry,
+  type ImplementedAction,
+  type SessionPrincipal,
+  type StaffMembership,
+} from "@showzy/core";
+import {
+  ConfirmationRequiredError,
+  CoreError,
+  CoreInvariantError,
+  ValidationError,
+} from "@showzy/core/errors";
+import { assistantSurfacesFromToolResults } from "@showzy/validation/assistant-surfaces";
+import { Hono, type Context } from "hono";
+import type { z } from "zod";
+
+import type { ConversationLock } from "../stores/conversation-lock.js";
+import type { StaffAssistantPendingStore } from "../stores/pending.js";
+import type { AuthInstance } from "./app.js";
+import { ASSISTANT_INVOCATION_CHANNEL } from "./assistant-chat.js";
+import { REQUEST_ID_HEADER, resolveRequestId } from "./request-id.js";
+
+export const ASSISTANT_HOST_CHAT_PATH = "/assistant/host/chat";
+export const ASSISTANT_CONFIRM_PATH = "/assistant/confirm";
+export const ASSISTANT_PENDING_PATH = "/assistant/pending";
+export const ASSISTANT_PENDING_ABANDON_PATH = "/assistant/pending/abandon";
+export const ASSISTANT_HOST_CHOICE_PATH = "/assistant/choice";
+
+export interface StaffAssistantHostRuntime {
+  readonly request: Request;
+  readonly requestId: string;
+  readonly clientIp: string;
+  readonly registry: ActionRegistry;
+  readonly pipeline: ActionPipelineDeps;
+  readonly getSession: (headers: Headers) => Promise<SessionPrincipal | null>;
+  readonly pendingStore: StaffAssistantPendingStore;
+  readonly conversationLock: ConversationLock;
+  readonly model: LanguageModel;
+}
+
+type AppEnv = {
+  Variables: {
+    requestId: string;
+    clientIp: string;
+  };
+};
+
+function headerOrNull(headers: Headers, name: string): string | null {
+  const value = headers.get(name);
+  return value === null || value === "" ? null : value;
+}
+
+function jsonResponse(
+  status: number,
+  body: Record<string, unknown>,
+  requestId: string,
+): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      "content-type": "application/json",
+      "cache-control": "private, no-store",
+      [REQUEST_ID_HEADER]: requestId,
+    },
+  });
+}
+
+function unauthenticatedResponse(requestId: string): Response {
+  return jsonResponse(
+    401,
+    {
+      code: "UNAUTHENTICATED",
+      status: 401,
+      message: "Authentication required.",
+    },
+    requestId,
+  );
+}
+
+function wireResponse(error: unknown, requestId: string): Response {
+  const wire = toWireError(error);
+  const body: Record<string, unknown> = {
+    code: wire.code,
+    status: wire.status,
+    message: wire.message,
+  };
+  if (wire.data !== undefined) {
+    body.data = wire.data;
+  }
+  return jsonResponse(wire.status, body, requestId);
+}
+
+function interactionResponse(
+  result: AssistantHostInteractionResult,
+  requestId: string,
+): Response {
+  return jsonResponse(
+    200,
+    assistantHostInteractionResultSchema.parse(result),
+    requestId,
+  );
+}
+
+function expiredResult(): AssistantHostInteractionResult {
+  return { status: "expired" };
+}
+
+function errorResult(
+  code: string,
+  message: string,
+): AssistantHostInteractionResult {
+  return { status: "error", code, message };
+}
+
+function staffRequest(options: {
+  readonly requestId: string;
+  readonly clientIp: string;
+  readonly aiTraceId: string;
+  readonly toolCallId?: string;
+  readonly idempotencyKey?: string;
+  readonly confirmationChallengeId?: string;
+}) {
+  return {
+    requestId: options.requestId,
+    correlationId: options.requestId,
+    channel: ASSISTANT_INVOCATION_CHANNEL,
+    clientIp: options.clientIp,
+    aiTraceId: options.aiTraceId,
+    ...(options.toolCallId !== undefined
+      ? { toolCallId: options.toolCallId }
+      : {}),
+    ...(options.idempotencyKey !== undefined
+      ? { idempotencyKey: options.idempotencyKey }
+      : {}),
+    ...(options.confirmationChallengeId !== undefined
+      ? { confirmationChallengeId: options.confirmationChallengeId }
+      : {}),
+  };
+}
+
+function requireImplementation(
+  registry: ActionRegistry,
+  name: string,
+): ImplementedAction<z.ZodType, z.ZodType, unknown> {
+  const implementation = registry.getImplementation(name);
+  if (implementation === undefined) {
+    throw new CoreInvariantError(
+      `staff assistant tool "${name}" is not registered`,
+    );
+  }
+  // Registry erases callback generics; pipeline validation still runs.
+  return implementation as ImplementedAction<z.ZodType, z.ZodType, unknown>;
+}
+
+function requireCompanyId(companySelector: string | null): string {
+  if (companySelector === null) {
+    throw new CoreInvariantError(
+      "staff assistant host missing verified company selector",
+    );
+  }
+  return companySelector;
+}
+
+async function parseJson(request: Request): Promise<unknown> {
+  try {
+    return await request.json();
+  } catch {
+    throw new ValidationError([
+      {
+        code: "custom",
+        path: [],
+        message: "Request body must be JSON.",
+        input: undefined,
+      },
+    ]);
+  }
+}
+
+async function resolveStaffConversation(options: {
+  readonly pipeline: ActionPipelineDeps;
+  readonly requestId: string;
+  readonly clientIp: string;
+  readonly conversationId: string;
+  readonly staffPrincipal: {
+    readonly mode: "staff";
+    readonly session: SessionPrincipal;
+    readonly companySelector: string | null;
+  };
+}) {
+  const baseRequest = staffRequest({
+    requestId: options.requestId,
+    clientIp: options.clientIp,
+    aiTraceId: options.requestId,
+  });
+  await executeAction(options.pipeline, {
+    action: getStaffActor,
+    input: {},
+    request: baseRequest,
+    principal: options.staffPrincipal,
+  });
+  return executeAction(options.pipeline, {
+    action: getConversation,
+    input: { conversationId: options.conversationId },
+    request: baseRequest,
+    principal: options.staffPrincipal,
+  });
+}
+
+function modelHistoryToPersisted(
+  messages: ReadonlyArray<{
+    readonly role: "user" | "assistant";
+    readonly text: string;
+    readonly toolRuns: ReadonlyArray<{
+      readonly action: string;
+      readonly toolCallId: string;
+      readonly toolName: string | null;
+      readonly modelTrace: unknown;
+      readonly toolInput: unknown;
+      readonly seq: number | null;
+    }>;
+  }>,
+): StaffAssistantPersistedMessage[] {
+  return messages.map((message) => ({
+    role: message.role,
+    body: message.text,
+    toolRuns: message.toolRuns.map((run) => ({
+      action: run.action,
+      toolCallId: run.toolCallId,
+      modelTrace: run.modelTrace,
+      ...(run.toolName !== null ? { toolName: run.toolName } : {}),
+      ...(run.toolInput !== null ? { toolInput: run.toolInput } : {}),
+      ...(run.seq !== null ? { seq: run.seq } : {}),
+    })),
+  }));
+}
+
+function resumeCards(options: {
+  readonly toolResults: ReadonlyArray<{
+    readonly toolName: string;
+    readonly output: unknown;
+  }>;
+  readonly pending: PublicPending | null;
+}): AssistantResumeCard[] {
+  const cards: AssistantResumeCard[] = [];
+  for (const surface of assistantSurfacesFromToolResults(options.toolResults)) {
+    cards.push({
+      kind: "surface",
+      surface: surface.kind,
+      data: surface,
+    });
+  }
+  if (options.pending?.kind === "choice") {
+    cards.push({ kind: "choice", envelope: options.pending.envelope });
+  }
+  if (options.pending?.kind === "confirmation") {
+    cards.push({
+      kind: "confirmation",
+      envelope: {
+        status: "confirmation_required",
+        challengeId: options.pending.challengeId,
+        summary: options.pending.summary,
+        expiresAt: options.pending.expiresAt,
+        actionName: options.pending.actionName,
+        toolCallId: options.pending.toolCallId,
+      },
+    });
+  }
+  return cards;
+}
+
+function okEnvelope(options: {
+  readonly speech: string;
+  readonly toolResults?: ReadonlyArray<{
+    readonly toolName: string;
+    readonly output: unknown;
+  }>;
+  readonly pending: PublicPending | null;
+}): AssistantHostInteractionResult {
+  return {
+    status: "ok",
+    speech: options.speech,
+    cards: resumeCards({
+      toolResults: options.toolResults ?? [],
+      pending: options.pending,
+    }),
+    pending: options.pending,
+  };
+}
+
+function createHostCheckpoint(options: {
+  readonly pipeline: ActionPipelineDeps;
+  readonly conversationId: string;
+  readonly requestId: string;
+  readonly clientIp: string;
+  readonly principal: {
+    readonly mode: "staff";
+    readonly session: SessionPrincipal;
+    readonly companySelector: string | null;
+  };
+  readonly beginKey: string;
+}): StaffAssistantHostCheckpoint {
+  const base = {
+    pipeline: options.pipeline,
+    principal: options.principal,
+  };
+  return {
+    async begin() {
+      const result = await executeAction(base.pipeline, {
+        action: checkpointAssistantTurn,
+        input: {
+          kind: "begin",
+          conversationId: options.conversationId,
+        },
+        request: staffRequest({
+          requestId: options.requestId,
+          clientIp: options.clientIp,
+          aiTraceId: options.requestId,
+          idempotencyKey: attemptKey(
+            "turn",
+            options.conversationId,
+            options.beginKey,
+          ),
+        }),
+        principal: base.principal,
+      });
+      return { messageId: result.messageId };
+    },
+    async stageRun(input) {
+      const result = await executeAction(base.pipeline, {
+        action: checkpointAssistantTurn,
+        input: {
+          kind: "stageRun",
+          conversationId: options.conversationId,
+          messageId: input.messageId,
+          seq: input.seq,
+          actionName: input.actionName,
+          toolName: input.toolName,
+          toolCallId: input.toolCallId,
+          toolInput: input.toolInput,
+        },
+        request: staffRequest({
+          requestId: options.requestId,
+          clientIp: options.clientIp,
+          aiTraceId: options.requestId,
+          idempotencyKey: attemptKey(
+            "turn",
+            options.conversationId,
+            `stage:${input.messageId}:${String(input.seq)}`,
+          ),
+        }),
+        principal: base.principal,
+      });
+      if (result.executionId === null) {
+        throw new CoreInvariantError(
+          "checkpoint stageRun returned no executionId",
+        );
+      }
+      return { executionId: result.executionId };
+    },
+    async finishRun(input) {
+      await executeAction(base.pipeline, {
+        action: checkpointAssistantTurn,
+        input: {
+          kind: "finishRun",
+          conversationId: options.conversationId,
+          executionId: input.executionId,
+          outcome: input.outcome,
+          resultIds: [...input.resultIds],
+          ...(input.modelTrace !== undefined
+            ? { modelTrace: input.modelTrace }
+            : {}),
+          ...(input.challengeId !== undefined
+            ? { challengeId: input.challengeId }
+            : {}),
+        },
+        request: staffRequest({
+          requestId: options.requestId,
+          clientIp: options.clientIp,
+          aiTraceId: options.requestId,
+          idempotencyKey: attemptKey(
+            "turn",
+            options.conversationId,
+            `finish:${input.executionId}`,
+          ),
+        }),
+        principal: base.principal,
+      });
+    },
+    async complete(input) {
+      await executeAction(base.pipeline, {
+        action: checkpointAssistantTurn,
+        input: {
+          kind: "complete",
+          conversationId: options.conversationId,
+          messageId: input.messageId,
+          body: input.body,
+        },
+        request: staffRequest({
+          requestId: options.requestId,
+          clientIp: options.clientIp,
+          aiTraceId: options.requestId,
+          idempotencyKey: attemptKey(
+            "turn",
+            options.conversationId,
+            `complete:${input.messageId}`,
+          ),
+        }),
+        principal: base.principal,
+      });
+    },
+  };
+}
+
+async function loadHistory(options: {
+  readonly pipeline: ActionPipelineDeps;
+  readonly conversationId: string;
+  readonly requestId: string;
+  readonly clientIp: string;
+  readonly principal: {
+    readonly mode: "staff";
+    readonly session: SessionPrincipal;
+    readonly companySelector: string | null;
+  };
+}) {
+  return executeAction(options.pipeline, {
+    action: getModelHistory,
+    input: { conversationId: options.conversationId },
+    request: staffRequest({
+      requestId: options.requestId,
+      clientIp: options.clientIp,
+      aiTraceId: options.requestId,
+    }),
+    principal: options.principal,
+  });
+}
+
+async function resolveStagedExecutionId(options: {
+  readonly record: PendingInteractionRecord;
+  readonly history: Awaited<ReturnType<typeof loadHistory>>;
+}): Promise<string> {
+  if (options.record.executionId !== undefined) {
+    return options.record.executionId;
+  }
+  const started = options.history.messages
+    .flatMap((message) => message.toolRuns)
+    .find(
+      (run) =>
+        run.outcome === "started" && run.action === options.record.actionName,
+    );
+  if (started?.executionId !== undefined && started.executionId !== null) {
+    return started.executionId;
+  }
+  throw new CoreInvariantError("pending resume missing staged execution_id");
+}
+
+function isPendingHitlRun(
+  run: Awaited<
+    ReturnType<typeof loadHistory>
+  >["messages"][number]["toolRuns"][number],
+  pending: PendingInteractionRecord,
+): boolean {
+  if (
+    pending.executionId !== undefined &&
+    run.executionId === pending.executionId
+  ) {
+    return true;
+  }
+  if (run.toolCallId === pending.toolCallId) {
+    return true;
+  }
+  return (
+    (run.outcome === "confirmation_required" ||
+      run.outcome === "choice_required") &&
+    run.action === pending.actionName
+  );
+}
+
+function phaseBState(
+  history: Awaited<ReturnType<typeof loadHistory>>,
+  pending: PendingInteractionRecord,
+): "needed" | "continue" | "done" {
+  const hitlIndex = history.messages.findLastIndex((message) =>
+    message.toolRuns.some((run) => isPendingHitlRun(run, pending)),
+  );
+  const later = hitlIndex === -1 ? [] : history.messages.slice(hitlIndex + 1);
+  const laterAssistant = later.filter(
+    (message) => message.role === "assistant",
+  );
+  if (laterAssistant.length === 0) {
+    return "needed";
+  }
+  if (
+    laterAssistant.some((message) =>
+      message.toolRuns.some((run) => run.outcome === "started"),
+    )
+  ) {
+    return "continue";
+  }
+  return "done";
+}
+
+function lastAssistantSpeech(
+  history: Awaited<ReturnType<typeof loadHistory>>,
+): string {
+  const last = history.messages.findLast(
+    (message) => message.role === "assistant",
+  );
+  return last?.text ?? "";
+}
+
+function historyToolResults(
+  history: Awaited<ReturnType<typeof loadHistory>>,
+): { readonly toolName: string; readonly output: unknown }[] {
+  const last = history.messages.findLast(
+    (message) => message.role === "assistant",
+  );
+  if (last === undefined) {
+    return [];
+  }
+  const results: { readonly toolName: string; readonly output: unknown }[] = [];
+  for (const run of last.toolRuns) {
+    if (run.modelTrace === null || run.modelTrace === undefined) {
+      continue;
+    }
+    results.push({
+      toolName: run.toolName ?? run.action.replace(".", "_"),
+      output: run.modelTrace,
+    });
+  }
+  return results;
+}
+
+async function runPhaseB(options: {
+  readonly runtime: StaffAssistantHostRuntime;
+  readonly conversationId: string;
+  readonly locale: StaffAssistantLocale;
+  readonly bind: {
+    readonly actorId: string;
+    readonly companyId: string;
+    readonly conversationId: string;
+  };
+  readonly staffPrincipal: {
+    readonly mode: "staff";
+    readonly session: SessionPrincipal;
+    readonly companySelector: string | null;
+  };
+  readonly actor: StaffMembership;
+  readonly pendingId: string;
+}): Promise<AssistantHostInteractionResult> {
+  const history = await loadHistory({
+    pipeline: options.runtime.pipeline,
+    conversationId: options.conversationId,
+    requestId: options.runtime.requestId,
+    clientIp: options.runtime.clientIp,
+    principal: options.staffPrincipal,
+  });
+  const contracts = filterStaffAiTools(options.runtime.registry.contracts(), {
+    role: options.actor.role,
+    permissions: [...options.actor.permissions],
+  });
+  const open = await options.runtime.pendingStore.peekOpen({
+    conversationId: options.conversationId,
+    bind: options.bind,
+  });
+  const checkpoint = createHostCheckpoint({
+    pipeline: options.runtime.pipeline,
+    conversationId: options.conversationId,
+    requestId: options.runtime.requestId,
+    clientIp: options.runtime.clientIp,
+    principal: options.staffPrincipal,
+    beginKey: `begin:resume:${options.pendingId}`,
+  });
+  const turn = await continueStaffAssistantHostTurn({
+    model: options.runtime.model,
+    messages: staffAssistantModelMessagesFromPersisted(
+      modelHistoryToPersisted(history.messages),
+    ),
+    contracts,
+    execute: (actionName, input, toolOptions) => {
+      const action = requireImplementation(
+        options.runtime.registry,
+        actionName,
+      );
+      const executionId = toolOptions.executionId;
+      return executeAction(options.runtime.pipeline, {
+        action,
+        input,
+        request: staffRequest({
+          requestId: options.runtime.requestId,
+          clientIp: options.runtime.clientIp,
+          aiTraceId: options.runtime.requestId,
+          toolCallId: toolOptions.toolCallId,
+          ...(executionId !== undefined
+            ? {
+                idempotencyKey: executionAttemptKey(
+                  options.conversationId,
+                  executionId,
+                ),
+              }
+            : {}),
+        }),
+        principal: options.staffPrincipal,
+      });
+    },
+    locale: options.locale,
+    choiceBind: options.bind,
+    openPending: (record) => options.runtime.pendingStore.open(record),
+    checkPending: async ({ actionName }) => {
+      const current = await options.runtime.pendingStore.peekOpen({
+        conversationId: options.conversationId,
+        bind: options.bind,
+      });
+      if (current.kind !== "found") {
+        return { allow: true };
+      }
+      const implementation =
+        options.runtime.registry.getImplementation(actionName);
+      if (implementation?.contract.risk === "read") {
+        return { allow: true };
+      }
+      return refuseHostPendingOpen(options.locale);
+    },
+    checkpoint,
+    ...(open.kind === "found" && open.record.status === "open"
+      ? {
+          pendingReplace: {
+            actionName: open.record.actionName,
+            apply: (facade: unknown) =>
+              applyHostPendingReplace({
+                runtime: options.runtime,
+                record: open.record,
+                facade,
+                bind: options.bind,
+                staffPrincipal: options.staffPrincipal,
+              }),
+          },
+        }
+      : {}),
+  });
+  const after = await options.runtime.pendingStore.peekOpen({
+    conversationId: options.conversationId,
+    bind: options.bind,
+  });
+  const pending =
+    after.kind === "found"
+      ? (publicPendingFromRecord(after.record) ?? null)
+      : null;
+  const toolResults = turn.toolRuns.flatMap((run) => {
+    if (run.modelTrace === undefined || run.toolName === undefined) {
+      return [];
+    }
+    return [{ toolName: run.toolName, output: run.modelTrace }];
+  });
+  return okEnvelope({
+    speech: turn.speech.text,
+    toolResults,
+    pending,
+  });
+}
+
+async function applyHostPendingReplace(options: {
+  readonly runtime: StaffAssistantHostRuntime;
+  readonly record: PendingInteractionRecord;
+  readonly facade: unknown;
+  readonly bind: {
+    readonly actorId: string;
+    readonly companyId: string;
+    readonly conversationId: string;
+  };
+  readonly staffPrincipal: {
+    readonly mode: "staff";
+    readonly session: SessionPrincipal;
+    readonly companySelector: string | null;
+  };
+}): Promise<unknown> {
+  const mapped = mapPendingReplaceFacadeInput(
+    options.record.actionName,
+    options.facade,
+  );
+  const checkpoint = createHostCheckpoint({
+    pipeline: options.runtime.pipeline,
+    conversationId: options.bind.conversationId,
+    requestId: options.runtime.requestId,
+    clientIp: options.runtime.clientIp,
+    principal: options.staffPrincipal,
+    beginKey: `begin:replace:${options.record.id}:${String(options.record.version)}`,
+  });
+  const begun = await checkpoint.begin();
+  const staged = await checkpoint.stageRun({
+    messageId: begun.messageId,
+    seq: 0,
+    actionName: options.record.actionName,
+    toolName: PENDING_REPLACE_TOOL_NAME,
+    toolCallId: `replace:${options.record.id}`,
+    toolInput: options.facade,
+  });
+  let next: PendingInteractionRecord;
+  if (options.record.kind === "confirmation") {
+    const action = requireImplementation(
+      options.runtime.registry,
+      options.record.actionName,
+    );
+    let required: ConfirmationRequiredError | undefined;
+    try {
+      await executeAction(options.runtime.pipeline, {
+        action,
+        input: mapped,
+        request: staffRequest({
+          requestId: options.runtime.requestId,
+          clientIp: options.runtime.clientIp,
+          aiTraceId: options.runtime.requestId,
+          toolCallId: options.record.toolCallId,
+          idempotencyKey: executionAttemptKey(
+            options.bind.conversationId,
+            staged.executionId,
+          ),
+        }),
+        principal: options.staffPrincipal,
+      });
+    } catch (error) {
+      if (error instanceof ConfirmationRequiredError) {
+        required = error;
+      } else {
+        throw error;
+      }
+    }
+    if (required === undefined) {
+      throw new CoreInvariantError(
+        "pending_replace confirmation probe must not execute the handler",
+      );
+    }
+    next = confirmationPendingRecord({
+      challengeId: required.challenge.challengeId,
+      bind: options.bind,
+      actionName: options.record.actionName,
+      toolCallId: options.record.toolCallId,
+      canonicalInput: mapped,
+      summary: required.challenge.summary,
+      challengeExpiresAt: required.challenge.expiresAt,
+      executionId: staged.executionId,
+      version: options.record.version + 1,
+      ...(options.record.locale !== undefined
+        ? { locale: options.record.locale }
+        : {}),
+    });
+  } else {
+    const canonical = choiceCanonicalCreateInputSchema.parse(mapped);
+    const nextId = randomUUID();
+    next = {
+      ...options.record,
+      id: nextId,
+      version: options.record.version + 1,
+      status: "open",
+      canonicalInput: canonical,
+      executionId: staged.executionId,
+      envelope: {
+        ...options.record.envelope,
+        challengeId: nextId,
+      },
+    };
+  }
+  const replaced = await options.runtime.pendingStore.replace({
+    id: options.record.id,
+    bind: options.bind,
+    expectedVersion: options.record.version,
+    next,
+  });
+  if (replaced.kind !== "replaced") {
+    return { status: "expired" as const };
+  }
+  return {
+    status: "replaced" as const,
+    pending: publicPendingFromRecord(replaced.record) ?? null,
+  };
+}
+
+async function finishPhaseA(options: {
+  readonly runtime: StaffAssistantHostRuntime;
+  readonly conversationId: string;
+  readonly staffPrincipal: {
+    readonly mode: "staff";
+    readonly session: SessionPrincipal;
+    readonly companySelector: string | null;
+  };
+  readonly executionId: string;
+  readonly outcome: "success" | "error" | "choice_required";
+  readonly output: unknown;
+  readonly challengeId?: string;
+}): Promise<void> {
+  await executeAction(options.runtime.pipeline, {
+    action: checkpointAssistantTurn,
+    input: {
+      kind: "finishRun",
+      conversationId: options.conversationId,
+      executionId: options.executionId,
+      outcome: options.outcome,
+      resultIds: extractUuidResultIds(options.output),
+      modelTrace: options.output,
+      ...(options.challengeId !== undefined
+        ? { challengeId: options.challengeId }
+        : {}),
+    },
+    request: staffRequest({
+      requestId: options.runtime.requestId,
+      clientIp: options.runtime.clientIp,
+      aiTraceId: options.runtime.requestId,
+      idempotencyKey: attemptKey(
+        "turn",
+        options.conversationId,
+        `finish:${options.executionId}`,
+      ),
+    }),
+    principal: options.staffPrincipal,
+  });
+}
+
+async function executePhaseA(options: {
+  readonly runtime: StaffAssistantHostRuntime;
+  readonly record: PendingInteractionRecord;
+  readonly input: unknown;
+  readonly confirmationChallengeId?: string;
+  readonly staffPrincipal: {
+    readonly mode: "staff";
+    readonly session: SessionPrincipal;
+    readonly companySelector: string | null;
+  };
+  readonly executionId: string;
+}): Promise<unknown> {
+  const action = requireImplementation(
+    options.runtime.registry,
+    options.record.actionName,
+  );
+  return executeAction(options.runtime.pipeline, {
+    action,
+    input: options.input,
+    request: staffRequest({
+      requestId: options.runtime.requestId,
+      clientIp: options.runtime.clientIp,
+      aiTraceId: options.runtime.requestId,
+      toolCallId: options.record.toolCallId,
+      idempotencyKey: executionAttemptKey(
+        options.record.conversationId,
+        options.executionId,
+      ),
+      ...(options.confirmationChallengeId !== undefined
+        ? { confirmationChallengeId: options.confirmationChallengeId }
+        : {}),
+    }),
+    principal: options.staffPrincipal,
+  });
+}
+
+async function authenticateHost(options: StaffAssistantHostRuntime): Promise<
+  | { readonly ok: false; readonly response: Response }
+  | {
+      readonly ok: true;
+      readonly session: SessionPrincipal;
+      readonly companySelector: string;
+      readonly staffPrincipal: {
+        readonly mode: "staff";
+        readonly session: SessionPrincipal;
+        readonly companySelector: string | null;
+      };
+    }
+> {
+  const session = await options.getSession(options.request.headers);
+  if (session === null) {
+    return {
+      ok: false,
+      response: unauthenticatedResponse(options.requestId),
+    };
+  }
+  const companySelector = requireCompanyId(
+    headerOrNull(options.request.headers, COMPANY_SELECTOR_HEADER),
+  );
+  return {
+    ok: true,
+    session,
+    companySelector,
+    staffPrincipal: {
+      mode: "staff",
+      session,
+      companySelector,
+    },
+  };
+}
+
+async function afterPhaseASuccess(options: {
+  readonly runtime: StaffAssistantHostRuntime;
+  readonly record: PendingInteractionRecord;
+  readonly bind: {
+    readonly actorId: string;
+    readonly companyId: string;
+    readonly conversationId: string;
+  };
+  readonly optionId?: string;
+  readonly staffPrincipal: {
+    readonly mode: "staff";
+    readonly session: SessionPrincipal;
+    readonly companySelector: string | null;
+  };
+  readonly actor: StaffMembership;
+  readonly locale: StaffAssistantLocale;
+  readonly output: unknown;
+}): Promise<AssistantHostInteractionResult> {
+  await options.runtime.pendingStore.complete({
+    id: options.record.id,
+    kind: options.record.kind,
+    bind: options.bind,
+    ...(options.optionId !== undefined ? { optionId: options.optionId } : {}),
+  });
+  return runPhaseB({
+    runtime: options.runtime,
+    conversationId: options.record.conversationId,
+    locale: options.locale,
+    bind: options.bind,
+    staffPrincipal: options.staffPrincipal,
+    actor: options.actor,
+    pendingId: options.record.id,
+  });
+}
+
+export async function executeStaffAssistantHostChoiceResume(
+  options: StaffAssistantHostRuntime,
+): Promise<Response> {
+  const auth = await authenticateHost(options);
+  if (!auth.ok) {
+    return auth.response;
+  }
+  try {
+    const parsed = assistantChoiceBodySchema.safeParse(
+      await parseJson(options.request),
+    );
+    if (!parsed.success) {
+      throw new ValidationError(parsed.error.issues);
+    }
+    const conversation = await resolveStaffConversation({
+      pipeline: options.pipeline,
+      requestId: options.requestId,
+      clientIp: options.clientIp,
+      conversationId: parsed.data.conversationId,
+      staffPrincipal: auth.staffPrincipal,
+    });
+    const bind = {
+      actorId: auth.session.userId,
+      companyId: auth.companySelector,
+      conversationId: conversation.id,
+    };
+    return options.conversationLock.withLock(conversation.id, async () => {
+      const claimed = await options.pendingStore.claim({
+        id: parsed.data.choiceId,
+        kind: "choice",
+        bind,
+        optionId: parsed.data.optionId,
+      });
+      if (claimed.kind === "expired" || claimed.kind === "forbidden") {
+        return interactionResponse(expiredResult(), options.requestId);
+      }
+      if (claimed.kind === "conflict") {
+        return interactionResponse(
+          errorResult(
+            "CHOICE_OPTION_CONFLICT",
+            "This choice was already resolved with a different option.",
+          ),
+          options.requestId,
+        );
+      }
+      if (claimed.kind === "invalid_option") {
+        return interactionResponse(
+          errorResult("CHOICE_INVALID_OPTION", "That option is not available."),
+          options.requestId,
+        );
+      }
+      const record = claimed.record;
+      if (record.kind !== "choice") {
+        return interactionResponse(expiredResult(), options.requestId);
+      }
+      const actor = await executeAction(options.pipeline, {
+        action: getStaffActor,
+        input: {},
+        request: staffRequest({
+          requestId: options.requestId,
+          clientIp: options.clientIp,
+          aiTraceId: options.requestId,
+        }),
+        principal: auth.staffPrincipal,
+      });
+      const locale = record.locale ?? STAFF_ASSISTANT_DEFAULT_LOCALE;
+      if (claimed.kind === "replay" && record.status === "completed") {
+        const open = await options.pendingStore.peekOpen({
+          conversationId: conversation.id,
+          bind,
+        });
+        const history = await loadHistory({
+          pipeline: options.pipeline,
+          conversationId: conversation.id,
+          requestId: options.requestId,
+          clientIp: options.clientIp,
+          principal: auth.staffPrincipal,
+        });
+        if (open.kind === "found" && open.record.id !== record.id) {
+          const publicPending = publicPendingFromRecord(open.record) ?? null;
+          return interactionResponse(
+            okEnvelope({
+              speech: lastAssistantSpeech(history),
+              toolResults: historyToolResults(history),
+              pending: publicPending,
+            }),
+            options.requestId,
+          );
+        }
+        const state = phaseBState(history, record);
+        if (state === "done") {
+          return interactionResponse(
+            okEnvelope({
+              speech: lastAssistantSpeech(history),
+              toolResults: historyToolResults(history),
+              pending: null,
+            }),
+            options.requestId,
+          );
+        }
+        return interactionResponse(
+          await runPhaseB({
+            runtime: options,
+            conversationId: conversation.id,
+            locale,
+            bind,
+            staffPrincipal: auth.staffPrincipal,
+            actor,
+            pendingId: record.id,
+          }),
+          options.requestId,
+        );
+      }
+      const mappedId = resolveMappedVariantId(
+        record.optionMap,
+        parsed.data.optionId,
+      );
+      if (mappedId === undefined) {
+        return interactionResponse(
+          errorResult("CHOICE_INVALID_OPTION", "That option is not available."),
+          options.requestId,
+        );
+      }
+      const patched = applyChoiceOptionToCanonicalInput(
+        record.canonicalInput,
+        record.target,
+        mappedId,
+      );
+      const history = await loadHistory({
+        pipeline: options.pipeline,
+        conversationId: conversation.id,
+        requestId: options.requestId,
+        clientIp: options.clientIp,
+        principal: auth.staffPrincipal,
+      });
+      const executionId = await resolveStagedExecutionId({
+        record,
+        history,
+      });
+      try {
+        const output = await executePhaseA({
+          runtime: options,
+          record,
+          input: patched,
+          staffPrincipal: auth.staffPrincipal,
+          executionId,
+        });
+        await finishPhaseA({
+          runtime: options,
+          conversationId: conversation.id,
+          staffPrincipal: auth.staffPrincipal,
+          executionId,
+          outcome: "success",
+          output,
+        });
+        return interactionResponse(
+          await afterPhaseASuccess({
+            runtime: options,
+            record,
+            bind,
+            optionId: parsed.data.optionId,
+            staffPrincipal: auth.staffPrincipal,
+            actor,
+            locale,
+            output,
+          }),
+          options.requestId,
+        );
+      } catch (error) {
+        if (error instanceof ConfirmationRequiredError) {
+          return interactionResponse(
+            errorResult(error.code, error.clientMessage),
+            options.requestId,
+          );
+        }
+        const extras = catalogPickerConflictExtrasFromError(error);
+        if (extras !== undefined) {
+          const nextId = successorPendingChoiceId(record.id);
+          const nextChoice = choiceRecordFromPickerConflict({
+            choiceId: nextId,
+            bind,
+            canonicalInput: patched,
+            extras,
+            ...(record.locale !== undefined ? { locale: record.locale } : {}),
+          });
+          if (nextChoice !== undefined) {
+            const successorExecutionId = await stageSuccessorExecutionId({
+              runtime: options,
+              conversationId: conversation.id,
+              staffPrincipal: auth.staffPrincipal,
+              actionName: record.actionName,
+              nextId,
+              toolInput: patched,
+            });
+            const next = pendingChoiceRecordFromChoiceRecord(nextChoice, {
+              actionName: record.actionName,
+              toolCallId: `choice:${nextId}`,
+              executionId: successorExecutionId,
+            });
+            await options.pendingStore.complete({
+              id: record.id,
+              kind: "choice",
+              bind,
+              optionId: parsed.data.optionId,
+            });
+            await options.pendingStore.open(next);
+            await finishPhaseA({
+              runtime: options,
+              conversationId: conversation.id,
+              staffPrincipal: auth.staffPrincipal,
+              executionId,
+              outcome: "choice_required",
+              output: presentChoiceStaffAssistantNeedsChoice({
+                locale,
+                record: nextChoice,
+              }),
+              challengeId: next.id,
+            });
+            const publicPending = publicPendingFromRecord(next) ?? null;
+            const needs = presentChoiceStaffAssistantNeedsChoice({
+              locale,
+              record: choiceRecordFromPendingChoice(next),
+            });
+            return interactionResponse(
+              okEnvelope({
+                speech: needs.text,
+                pending: publicPending,
+              }),
+              options.requestId,
+            );
+          }
+        }
+        if (error instanceof CoreError) {
+          await finishPhaseA({
+            runtime: options,
+            conversationId: conversation.id,
+            staffPrincipal: auth.staffPrincipal,
+            executionId,
+            outcome: "error",
+            output: {
+              status: "error",
+              code: error.code,
+              message: error.clientMessage,
+            },
+          });
+          await options.pendingStore.complete({
+            id: record.id,
+            kind: "choice",
+            bind,
+            optionId: parsed.data.optionId,
+          });
+          return interactionResponse(
+            errorResult(error.code, error.clientMessage),
+            options.requestId,
+          );
+        }
+        throw error;
+      }
+    });
+  } catch (error) {
+    if (error instanceof CoreError) {
+      options.pipeline.logger.error(
+        { request_id: options.requestId, code: error.code },
+        "staff assistant host choice resume failed",
+      );
+    }
+    return wireResponse(error, options.requestId);
+  }
+}
+
+async function stageSuccessorExecutionId(options: {
+  readonly runtime: StaffAssistantHostRuntime;
+  readonly conversationId: string;
+  readonly staffPrincipal: {
+    readonly mode: "staff";
+    readonly session: SessionPrincipal;
+    readonly companySelector: string | null;
+  };
+  readonly actionName: string;
+  readonly nextId: string;
+  readonly toolInput: unknown;
+}): Promise<string> {
+  const checkpoint = createHostCheckpoint({
+    pipeline: options.runtime.pipeline,
+    conversationId: options.conversationId,
+    requestId: options.runtime.requestId,
+    clientIp: options.runtime.clientIp,
+    principal: options.staffPrincipal,
+    beginKey: `begin:successor:${options.nextId}`,
+  });
+  const begun = await checkpoint.begin();
+  const staged = await checkpoint.stageRun({
+    messageId: begun.messageId,
+    seq: 0,
+    actionName: options.actionName,
+    toolName: `choice:${options.nextId}`,
+    toolCallId: `choice:${options.nextId}`,
+    toolInput: options.toolInput,
+  });
+  return staged.executionId;
+}
+
+export async function executeStaffAssistantHostConfirm(
+  options: StaffAssistantHostRuntime,
+): Promise<Response> {
+  const auth = await authenticateHost(options);
+  if (!auth.ok) {
+    return auth.response;
+  }
+  try {
+    const parsed = assistantConfirmBodySchema.safeParse(
+      await parseJson(options.request),
+    );
+    if (!parsed.success) {
+      throw new ValidationError(parsed.error.issues);
+    }
+    const conversation = await resolveStaffConversation({
+      pipeline: options.pipeline,
+      requestId: options.requestId,
+      clientIp: options.clientIp,
+      conversationId: parsed.data.conversationId,
+      staffPrincipal: auth.staffPrincipal,
+    });
+    const bind = {
+      actorId: auth.session.userId,
+      companyId: auth.companySelector,
+      conversationId: conversation.id,
+    };
+    if (parsed.data.challengeId === undefined) {
+      return interactionResponse(expiredResult(), options.requestId);
+    }
+    return options.conversationLock.withLock(conversation.id, async () => {
+      const peeked = await options.pendingStore.peek({
+        id: parsed.data.challengeId,
+        kind: "confirmation",
+        bind,
+      });
+      if (peeked.kind === "expired" || peeked.kind === "forbidden") {
+        return interactionResponse(expiredResult(), options.requestId);
+      }
+      const claimed = await options.pendingStore.claim({
+        id: parsed.data.challengeId,
+        kind: "confirmation",
+        bind,
+      });
+      if (claimed.kind === "expired" || claimed.kind === "forbidden") {
+        return interactionResponse(expiredResult(), options.requestId);
+      }
+      if (claimed.kind === "conflict" || claimed.kind === "invalid_option") {
+        return interactionResponse(expiredResult(), options.requestId);
+      }
+      const record = claimed.record;
+      if (record.kind !== "confirmation") {
+        return interactionResponse(expiredResult(), options.requestId);
+      }
+      const actor = await executeAction(options.pipeline, {
+        action: getStaffActor,
+        input: {},
+        request: staffRequest({
+          requestId: options.requestId,
+          clientIp: options.clientIp,
+          aiTraceId: options.requestId,
+        }),
+        principal: auth.staffPrincipal,
+      });
+      const locale = record.locale ?? STAFF_ASSISTANT_DEFAULT_LOCALE;
+      if (claimed.kind === "replay" && record.status === "completed") {
+        const history = await loadHistory({
+          pipeline: options.pipeline,
+          conversationId: conversation.id,
+          requestId: options.requestId,
+          clientIp: options.clientIp,
+          principal: auth.staffPrincipal,
+        });
+        const state = phaseBState(history, record);
+        if (state === "done") {
+          return interactionResponse(
+            okEnvelope({
+              speech: lastAssistantSpeech(history),
+              toolResults: historyToolResults(history),
+              pending: null,
+            }),
+            options.requestId,
+          );
+        }
+        return interactionResponse(
+          await runPhaseB({
+            runtime: options,
+            conversationId: conversation.id,
+            locale,
+            bind,
+            staffPrincipal: auth.staffPrincipal,
+            actor,
+            pendingId: record.id,
+          }),
+          options.requestId,
+        );
+      }
+      const history = await loadHistory({
+        pipeline: options.pipeline,
+        conversationId: conversation.id,
+        requestId: options.requestId,
+        clientIp: options.clientIp,
+        principal: auth.staffPrincipal,
+      });
+      const executionId = await resolveStagedExecutionId({ record, history });
+      try {
+        const output = await executePhaseA({
+          runtime: options,
+          record,
+          input: record.canonicalInput,
+          confirmationChallengeId: record.id,
+          staffPrincipal: auth.staffPrincipal,
+          executionId,
+        });
+        await finishPhaseA({
+          runtime: options,
+          conversationId: conversation.id,
+          staffPrincipal: auth.staffPrincipal,
+          executionId,
+          outcome: "success",
+          output,
+        });
+        return interactionResponse(
+          await afterPhaseASuccess({
+            runtime: options,
+            record,
+            bind,
+            staffPrincipal: auth.staffPrincipal,
+            actor,
+            locale,
+            output,
+          }),
+          options.requestId,
+        );
+      } catch (error) {
+        if (error instanceof ConfirmationRequiredError) {
+          return interactionResponse(
+            errorResult(error.code, error.clientMessage),
+            options.requestId,
+          );
+        }
+        if (error instanceof CoreError) {
+          await finishPhaseA({
+            runtime: options,
+            conversationId: conversation.id,
+            staffPrincipal: auth.staffPrincipal,
+            executionId,
+            outcome: "error",
+            output: {
+              status: "error",
+              code: error.code,
+              message: error.clientMessage,
+            },
+          });
+          await options.pendingStore.complete({
+            id: record.id,
+            kind: "confirmation",
+            bind,
+          });
+          return interactionResponse(
+            errorResult(error.code, error.clientMessage),
+            options.requestId,
+          );
+        }
+        throw error;
+      }
+    });
+  } catch (error) {
+    if (error instanceof CoreError) {
+      options.pipeline.logger.error(
+        { request_id: options.requestId, code: error.code },
+        "staff assistant host confirm failed",
+      );
+    }
+    return wireResponse(error, options.requestId);
+  }
+}
+
+export async function executeStaffAssistantPendingAbandon(
+  options: StaffAssistantHostRuntime,
+): Promise<Response> {
+  const auth = await authenticateHost(options);
+  if (!auth.ok) {
+    return auth.response;
+  }
+  try {
+    const parsed = assistantAbandonBodySchema.safeParse(
+      await parseJson(options.request),
+    );
+    if (!parsed.success) {
+      throw new ValidationError(parsed.error.issues);
+    }
+    const conversation = await resolveStaffConversation({
+      pipeline: options.pipeline,
+      requestId: options.requestId,
+      clientIp: options.clientIp,
+      conversationId: parsed.data.conversationId,
+      staffPrincipal: auth.staffPrincipal,
+    });
+    const bind = {
+      actorId: auth.session.userId,
+      companyId: auth.companySelector,
+      conversationId: conversation.id,
+    };
+    return options.conversationLock.withLock(conversation.id, async () => {
+      const abandoned = await options.pendingStore.abandon({
+        id: parsed.data.pendingId,
+        bind,
+        expectedVersion: parsed.data.expectedVersion,
+      });
+      if (abandoned.kind === "expired" || abandoned.kind === "forbidden") {
+        return interactionResponse(expiredResult(), options.requestId);
+      }
+      return interactionResponse(
+        okEnvelope({ speech: "", pending: null }),
+        options.requestId,
+      );
+    });
+  } catch (error) {
+    if (error instanceof CoreError) {
+      options.pipeline.logger.error(
+        { request_id: options.requestId, code: error.code },
+        "staff assistant pending abandon failed",
+      );
+    }
+    return wireResponse(error, options.requestId);
+  }
+}
+
+export async function executeStaffAssistantPendingPeek(
+  options: StaffAssistantHostRuntime,
+): Promise<Response> {
+  const auth = await authenticateHost(options);
+  if (!auth.ok) {
+    return auth.response;
+  }
+  try {
+    const url = new URL(options.request.url);
+    const parsed = assistantPendingPeekQuerySchema.safeParse({
+      conversationId: url.searchParams.get("conversationId"),
+    });
+    if (!parsed.success) {
+      throw new ValidationError(parsed.error.issues);
+    }
+    const conversation = await resolveStaffConversation({
+      pipeline: options.pipeline,
+      requestId: options.requestId,
+      clientIp: options.clientIp,
+      conversationId: parsed.data.conversationId,
+      staffPrincipal: auth.staffPrincipal,
+    });
+    const bind = {
+      actorId: auth.session.userId,
+      companyId: auth.companySelector,
+      conversationId: conversation.id,
+    };
+    const peeked = await options.pendingStore.peekOpen({
+      conversationId: conversation.id,
+      bind,
+    });
+    const pending =
+      peeked.kind === "found"
+        ? (publicPendingFromRecord(peeked.record) ?? null)
+        : null;
+    return jsonResponse(200, { pending }, options.requestId);
+  } catch (error) {
+    if (error instanceof CoreError) {
+      options.pipeline.logger.error(
+        { request_id: options.requestId, code: error.code },
+        "staff assistant pending peek failed",
+      );
+    }
+    return wireResponse(error, options.requestId);
+  }
+}
+
+export async function executeStaffAssistantHostChat(
+  options: StaffAssistantHostRuntime,
+): Promise<Response> {
+  const auth = await authenticateHost(options);
+  if (!auth.ok) {
+    return auth.response;
+  }
+  try {
+    const parsed = assistantHostChatBodySchema.safeParse(
+      await parseJson(options.request),
+    );
+    if (!parsed.success) {
+      throw new ValidationError(parsed.error.issues);
+    }
+    const conversation = await resolveStaffConversation({
+      pipeline: options.pipeline,
+      requestId: options.requestId,
+      clientIp: options.clientIp,
+      conversationId: parsed.data.conversationId,
+      staffPrincipal: auth.staffPrincipal,
+    });
+    const bind = {
+      actorId: auth.session.userId,
+      companyId: auth.companySelector,
+      conversationId: conversation.id,
+    };
+    const locale = parsed.data.locale ?? STAFF_ASSISTANT_DEFAULT_LOCALE;
+    return options.conversationLock.withLock(conversation.id, async () => {
+      const actor = await executeAction(options.pipeline, {
+        action: getStaffActor,
+        input: {},
+        request: staffRequest({
+          requestId: options.requestId,
+          clientIp: options.clientIp,
+          aiTraceId: options.requestId,
+        }),
+        principal: auth.staffPrincipal,
+      });
+      const appended = await executeAction(options.pipeline, {
+        action: appendUserMessage,
+        input: {
+          conversationId: conversation.id,
+          body: parsed.data.text,
+        },
+        request: staffRequest({
+          requestId: options.requestId,
+          clientIp: options.clientIp,
+          aiTraceId: options.requestId,
+          idempotencyKey: attemptKey(
+            "message",
+            conversation.id,
+            options.requestId,
+          ),
+        }),
+        principal: auth.staffPrincipal,
+      });
+      const history = await loadHistory({
+        pipeline: options.pipeline,
+        conversationId: conversation.id,
+        requestId: options.requestId,
+        clientIp: options.clientIp,
+        principal: auth.staffPrincipal,
+      });
+      const contracts = filterStaffAiTools(options.registry.contracts(), {
+        role: actor.role,
+        permissions: [...actor.permissions],
+      });
+      const open = await options.pendingStore.peekOpen({
+        conversationId: conversation.id,
+        bind,
+      });
+      const checkpoint = createHostCheckpoint({
+        pipeline: options.pipeline,
+        conversationId: conversation.id,
+        requestId: options.requestId,
+        clientIp: options.clientIp,
+        principal: auth.staffPrincipal,
+        beginKey: `begin:${appended.id}`,
+      });
+      const turn = await runStaffAssistantHostTurn({
+        model: options.model,
+        messages: staffAssistantModelMessagesFromPersisted(
+          modelHistoryToPersisted(history.messages),
+        ),
+        contracts,
+        execute: (actionName, input, toolOptions) => {
+          const action = requireImplementation(options.registry, actionName);
+          const executionId = toolOptions.executionId;
+          return executeAction(options.pipeline, {
+            action,
+            input,
+            request: staffRequest({
+              requestId: options.requestId,
+              clientIp: options.clientIp,
+              aiTraceId: options.requestId,
+              toolCallId: toolOptions.toolCallId,
+              ...(executionId !== undefined
+                ? {
+                    idempotencyKey: executionAttemptKey(
+                      conversation.id,
+                      executionId,
+                    ),
+                  }
+                : {}),
+            }),
+            principal: auth.staffPrincipal,
+          });
+        },
+        locale,
+        choiceBind: bind,
+        openPending: (record) => options.pendingStore.open(record),
+        checkPending: async ({ actionName }) => {
+          const current = await options.pendingStore.peekOpen({
+            conversationId: conversation.id,
+            bind,
+          });
+          if (current.kind !== "found") {
+            return { allow: true };
+          }
+          const implementation = options.registry.getImplementation(actionName);
+          if (implementation?.contract.risk === "read") {
+            return { allow: true };
+          }
+          return refuseHostPendingOpen(locale);
+        },
+        checkpoint,
+        ...(open.kind === "found" && open.record.status === "open"
+          ? {
+              pendingReplace: {
+                actionName: open.record.actionName,
+                apply: (facade: unknown) =>
+                  applyHostPendingReplace({
+                    runtime: options,
+                    record: open.record,
+                    facade,
+                    bind,
+                    staffPrincipal: auth.staffPrincipal,
+                  }),
+              },
+            }
+          : {}),
+      });
+      const after = await options.pendingStore.peekOpen({
+        conversationId: conversation.id,
+        bind,
+      });
+      const pending =
+        after.kind === "found"
+          ? (publicPendingFromRecord(after.record) ?? null)
+          : null;
+      const toolResults = turn.toolRuns.flatMap((run) => {
+        if (run.modelTrace === undefined || run.toolName === undefined) {
+          return [];
+        }
+        return [{ toolName: run.toolName, output: run.modelTrace }];
+      });
+      return interactionResponse(
+        okEnvelope({
+          speech: turn.speech.text,
+          toolResults,
+          pending,
+        }),
+        options.requestId,
+      );
+    });
+  } catch (error) {
+    if (error instanceof CoreError) {
+      options.pipeline.logger.error(
+        { request_id: options.requestId, code: error.code },
+        "staff assistant host chat failed",
+      );
+    }
+    return wireResponse(error, options.requestId);
+  }
+}
+
+export interface CreateStaffAssistantHostAppOptions {
+  readonly auth: AuthInstance;
+  readonly registry: ActionRegistry;
+  readonly pipeline: ActionPipelineDeps;
+  readonly pendingStore: StaffAssistantPendingStore;
+  readonly conversationLock: ConversationLock;
+  readonly model: LanguageModel;
+  readonly getPeerAddress?: (c: Context<AppEnv>) => string;
+}
+
+export function createStaffAssistantHostApp(
+  options: CreateStaffAssistantHostAppOptions,
+): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
+  app.use("*", async (c, next) => {
+    c.set("requestId", resolveRequestId(c.req.header(REQUEST_ID_HEADER)));
+    c.set(
+      "clientIp",
+      options.getPeerAddress === undefined
+        ? "127.0.0.1"
+        : options.getPeerAddress(c),
+    );
+    await next();
+  });
+  const runtime = (
+    c: Context<AppEnv>,
+  ): Omit<StaffAssistantHostRuntime, "request"> => ({
+    requestId: c.get("requestId"),
+    clientIp: c.get("clientIp"),
+    registry: options.registry,
+    pipeline: options.pipeline,
+    getSession: async (headers) => {
+      const session = await options.auth.api.getSession({ headers });
+      if (session === null) {
+        return null;
+      }
+      return { userId: session.user.id };
+    },
+    pendingStore: options.pendingStore,
+    conversationLock: options.conversationLock,
+    model: options.model,
+  });
+  app.post(ASSISTANT_HOST_CHAT_PATH, async (c) => {
+    return executeStaffAssistantHostChat({
+      ...runtime(c),
+      request: c.req.raw,
+    });
+  });
+  app.post(ASSISTANT_HOST_CHOICE_PATH, async (c) => {
+    return executeStaffAssistantHostChoiceResume({
+      ...runtime(c),
+      request: c.req.raw,
+    });
+  });
+  app.post(ASSISTANT_CONFIRM_PATH, async (c) => {
+    return executeStaffAssistantHostConfirm({
+      ...runtime(c),
+      request: c.req.raw,
+    });
+  });
+  app.post(ASSISTANT_PENDING_ABANDON_PATH, async (c) => {
+    return executeStaffAssistantPendingAbandon({
+      ...runtime(c),
+      request: c.req.raw,
+    });
+  });
+  app.get(ASSISTANT_PENDING_PATH, async (c) => {
+    return executeStaffAssistantPendingPeek({
+      ...runtime(c),
+      request: c.req.raw,
+    });
+  });
+  return app;
+}

@@ -151,6 +151,8 @@ describe("choice truncated copy", () => {
     expect(card).toContain("choiceCardOfferedOptions");
     expect(card).toContain("attempted");
     expect(card).toContain("retryLabel");
+    expect(card).toContain("dismissLabel");
+    expect(card).toContain("onDismiss");
     expect(card).not.toContain("props.choice.options.map");
     expect(card).not.toContain("completed");
   });

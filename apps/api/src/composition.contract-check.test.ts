@@ -17,6 +17,7 @@ import type { ActionContract } from "@showzy/core/contract";
 import type { RecordCreatedVia as DbRecordCreatedVia } from "@showzy/db/schema/tenant-columns";
 import { ASSISTANT_SURFACE_REGISTRY } from "@showzy/validation/assistant-surfaces";
 import type { RecordCreatedVia as ValidationRecordCreatedVia } from "@showzy/validation/record-verification";
+import { readFileSync } from "node:fs";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import { z } from "zod";
 
@@ -272,5 +273,40 @@ describe("CI contract-check stage", () => {
     expect(staffExposedActionNames(contracts)).not.toContain(
       "assistant.checkpointAssistantTurn",
     );
+  });
+
+  it("SHO-522: confirm, abandon, and pending GET are HTTP, not registry actions", () => {
+    const contracts = buildContractCheckInput().registry.contracts();
+    const names = contracts.map((contract) => contract.name);
+    expect(names).not.toContain("assistant.confirm");
+    expect(names).not.toContain("assistant.abandon");
+    expect(names).not.toContain("assistant.pending");
+    expect(names).not.toContain("assistant.peekPending");
+    expect(staffExposedActionNames(contracts)).not.toContain("pending_replace");
+    expect(STAFF_EXPOSED_ACTION_ALLOWLIST).not.toContain("pending_replace");
+    const hostSrc = readFileSync(
+      new URL("./http/assistant-host.ts", import.meta.url),
+      "utf8",
+    );
+    const replaceSrc = readFileSync(
+      new URL(
+        "../../packages/ai/src/host-tools/pending-replace.ts",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const appSrc = readFileSync(
+      new URL("./http/app.ts", import.meta.url),
+      "utf8",
+    );
+    expect(hostSrc).toContain('"/assistant/confirm"');
+    expect(hostSrc).toContain('"/assistant/pending/abandon"');
+    expect(hostSrc).not.toContain("implementAction");
+    expect(replaceSrc).toContain("createPendingReplaceTool");
+    expect(replaceSrc).not.toContain("implementAction");
+    expect(replaceSrc).not.toContain("defineActionContract");
+    expect(appSrc).not.toContain("ASSISTANT_CONFIRM_PATH");
+    expect(appSrc).not.toContain("ASSISTANT_PENDING_ABANDON_PATH");
+    expect(appSrc).not.toContain('"/assistant/host/chat"');
   });
 });

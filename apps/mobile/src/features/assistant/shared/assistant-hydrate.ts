@@ -22,6 +22,11 @@ import {
   isRestorableChoiceStatus,
   type StaffAssistantChoiceCardEnvelope,
 } from "./choice";
+import type { StaffAssistantConfirmation } from "./confirmation";
+import {
+  confirmationFromPublicPending,
+  type PublicPending,
+} from "./resume-envelope";
 
 export const ASSISTANT_LIST_CONVERSATIONS_PAGE_MAX = 50;
 
@@ -82,10 +87,62 @@ export type HydratedAssistantChoicePart = {
   readonly data: StaffAssistantChoiceCardEnvelope;
 };
 
+export type HydratedAssistantConfirmationPart = {
+  readonly type: "data-confirmation";
+  readonly data: StaffAssistantConfirmation & {
+    readonly pendingVersion?: number;
+  };
+};
+
+export function applyOpenPendingToHydratedMessages(args: {
+  readonly messages: readonly HydratedAssistantUiMessage[];
+  readonly pending: PublicPending | null;
+}): readonly HydratedAssistantUiMessage[] {
+  const pending = args.pending;
+  if (pending === null) {
+    return args.messages;
+  }
+  if (pending.kind !== "confirmation") {
+    return args.messages;
+  }
+  const confirmation = {
+    ...confirmationFromPublicPending(pending),
+    pendingVersion: pending.version,
+  };
+  const messages = args.messages.slice();
+  let targetIndex = -1;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === "assistant") {
+      targetIndex = index;
+      break;
+    }
+  }
+  if (targetIndex < 0) {
+    return [
+      ...messages,
+      {
+        id: `pending:${pending.id}`,
+        role: "assistant",
+        parts: [{ type: "data-confirmation", data: confirmation }],
+      },
+    ];
+  }
+  const target = messages[targetIndex];
+  if (target === undefined) {
+    return messages;
+  }
+  messages[targetIndex] = {
+    ...target,
+    parts: [...target.parts, { type: "data-confirmation", data: confirmation }],
+  };
+  return messages;
+}
+
 export type HydratedAssistantUiPart =
   | { readonly type: "text"; readonly text: string }
   | HydratedAssistantToolPart
-  | HydratedAssistantChoicePart;
+  | HydratedAssistantChoicePart
+  | HydratedAssistantConfirmationPart;
 
 export type HydratedAssistantUiMessage = {
   readonly id: string;
@@ -104,6 +161,7 @@ export type AssistantResumeResult =
       readonly kind: "resumed";
       readonly conversationId: string;
       readonly messages: readonly HydratedAssistantUiMessage[];
+      readonly pending: PublicPending | null;
     };
 
 export function firstOwnConversationId(

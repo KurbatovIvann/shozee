@@ -1,0 +1,1144 @@
+/**
+ * SHO-522 unpublished host: pending lifecycle, confirm/choice Phase A+B,
+ * abandon, GET pending. Not mounted on createApp. No live LLM.
+ */
+import { randomBytes, randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import {
+  assistantHostInteractionResultSchema,
+  assistantPendingPeekResultSchema,
+  attemptKey,
+  confirmationPendingRecord,
+  executionAttemptKey,
+  ORDERS_CREATE_TOOL_NAME,
+  ORDERS_LIST_PAGE_TOOL_NAME,
+  PENDING_REPLACE_TOOL_NAME,
+  pendingChoiceRecordFromChoiceRecord,
+  type PendingInteractionRecord,
+} from "@showzy/ai";
+import {
+  MockLanguageModelV3,
+  mockTextStream,
+  mockToolCallStream,
+} from "@showzy/ai/test";
+import {
+  appendUserMessage,
+  checkpointAssistantTurn,
+  createConversation,
+} from "@showzy/assistant";
+import { createProduct } from "@showzy/catalog";
+import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
+import {
+  createConfirmationHook,
+  createInMemoryConfirmationStore,
+  executeAction,
+  type ConfirmationStore,
+  type ImplementedAction,
+} from "@showzy/core";
+import { ConfirmationRequiredError } from "@showzy/core/errors";
+import {
+  createTestKit,
+  kitIdentities,
+  type TestKit,
+} from "@showzy/core/testing";
+import {
+  archiveCustomer,
+  createCustomer,
+  deleteCustomer,
+} from "@showzy/customers";
+import { session } from "@showzy/db/schema/auth";
+import { companyCustomers } from "@showzy/db/schema/customers";
+import { orders } from "@showzy/db/schema/orders";
+import { betterAuth } from "better-auth";
+import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { z } from "zod";
+
+import { buildAuthOptions } from "../auth/options.js";
+import { createAtomicOtpSendStore } from "../auth/otp-send-guard.js";
+import { createActionRegistry } from "../composition.js";
+import {
+  createMemoryAuthRateLimitStore,
+  createMemorySecondaryStorage,
+} from "../stores/memory.js";
+import { createMemoryConversationLock } from "../stores/conversation-lock.js";
+import {
+  createMemoryPendingStore,
+  type StaffAssistantPendingStore,
+} from "../stores/pending.js";
+import { type AuthInstance } from "./app.js";
+import { ASSISTANT_INVOCATION_CHANNEL } from "./assistant-chat.js";
+import {
+  ASSISTANT_CONFIRM_PATH,
+  ASSISTANT_HOST_CHAT_PATH,
+  ASSISTANT_HOST_CHOICE_PATH,
+  ASSISTANT_PENDING_ABANDON_PATH,
+  ASSISTANT_PENDING_PATH,
+  createStaffAssistantHostApp,
+} from "./assistant-host.js";
+import { REQUEST_ID_HEADER } from "./request-id.js";
+
+const REAL_CLIENT = "203.0.113.51";
+const here = dirname(fileURLToPath(import.meta.url));
+
+function toAuthInstance(auth: {
+  handler: AuthInstance["handler"];
+  api: {
+    getSession: (args: {
+      headers: Headers;
+    }) => Promise<{ user: { id: string } } | null | undefined>;
+  };
+}): AuthInstance {
+  return {
+    handler: (request) => auth.handler(request),
+    api: {
+      async getSession({ headers }) {
+        const result = await auth.api.getSession({ headers });
+        if (result === null || result === undefined) {
+          return null;
+        }
+        return { user: { id: result.user.id } };
+      },
+    },
+  };
+}
+
+async function insertBearer(kit: TestKit, userId: string): Promise<string> {
+  const token = randomBytes(32).toString("hex");
+  const now = new Date();
+  await kit.db.runtime.db.insert(session).values({
+    id: randomUUID(),
+    token,
+    userId,
+    expiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+    createdAt: now,
+    updatedAt: now,
+  });
+  return token;
+}
+
+let kit: TestKit;
+let auth: AuthInstance;
+let registry: ReturnType<typeof createActionRegistry>;
+let phoneSeq = 0;
+
+beforeAll(async () => {
+  kit = await createTestKit();
+  const secondary = createMemorySecondaryStorage();
+  const better = betterAuth(
+    buildAuthOptions({
+      database: drizzleAdapter(kit.db.runtime.db, { provider: "pg" }),
+      baseUrl: "http://localhost:3000",
+      webOrigins: [],
+      secret: "test-only-secret-0123456789abcdef-0000",
+      sendPhoneOtp: () => Promise.resolve(),
+      sendEmailOtp: () => Promise.resolve(),
+      otpSendStore: createAtomicOtpSendStore(secondary),
+      authRateLimitStore: createMemoryAuthRateLimitStore({
+        ipHmacSecret: "test-ip-hmac-secret",
+      }),
+      secondaryStorage: secondary,
+    }),
+  );
+  auth = toAuthInstance(better);
+  registry = createActionRegistry();
+});
+
+afterAll(async () => {
+  await kit.db.close();
+});
+
+function nextPhone(): string {
+  phoneSeq += 1;
+  return `+3806795${String(phoneSeq).padStart(5, "0")}`;
+}
+
+function countingConfirmationStore(): {
+  readonly store: ConfirmationStore;
+  readonly consumeCount: () => number;
+} {
+  const inner = createInMemoryConfirmationStore();
+  let consumes = 0;
+  return {
+    store: {
+      set(key, value, ttlMs) {
+        return inner.set(key, value, ttlMs);
+      },
+      getAndDelete(key) {
+        consumes += 1;
+        return inner.getAndDelete(key);
+      },
+    },
+    consumeCount: () => consumes,
+  };
+}
+
+function silentModel(text = "Okay."): MockLanguageModelV3 {
+  return new MockLanguageModelV3({
+    doStream: () => Promise.resolve(mockTextStream(text)),
+  });
+}
+
+function listThenSpeakModel(): MockLanguageModelV3 {
+  return new MockLanguageModelV3({
+    doStream: [
+      mockToolCallStream("call-list", ORDERS_LIST_PAGE_TOOL_NAME, "{}"),
+      mockTextStream("Here is the list."),
+    ],
+  });
+}
+
+type Harness = {
+  readonly app: ReturnType<typeof createStaffAssistantHostApp>;
+  readonly pendingStore: StaffAssistantPendingStore;
+  readonly consumeCount: () => number;
+  invoke: <TInput extends z.ZodType, TOutput extends z.ZodType, TTarget>(
+    action: ImplementedAction<TInput, TOutput, TTarget>,
+    input: unknown,
+    request?: {
+      readonly idempotencyKey?: string;
+      readonly confirmationChallengeId?: string;
+    },
+    actor?: { readonly userId: string; readonly companyId: string },
+  ) => Promise<z.output<TOutput>>;
+};
+
+function harness(options?: {
+  readonly model?: MockLanguageModelV3;
+  readonly pendingStore?: StaffAssistantPendingStore;
+}): Harness {
+  const pendingStore = options?.pendingStore ?? createMemoryPendingStore();
+  const confirmation = countingConfirmationStore();
+  const pipeline = {
+    ...kit.pipeline,
+    hooks: {
+      ...kit.pipeline.hooks,
+      confirmation: createConfirmationHook({ store: confirmation.store }),
+    },
+  };
+  const app = createStaffAssistantHostApp({
+    auth,
+    registry,
+    pipeline,
+    pendingStore,
+    conversationLock: createMemoryConversationLock(),
+    model: options?.model ?? silentModel(),
+    getPeerAddress: () => REAL_CLIENT,
+  });
+  return {
+    app,
+    pendingStore,
+    consumeCount: confirmation.consumeCount,
+    invoke(action, input, request, actor) {
+      const userId = actor?.userId ?? kitIdentities.users.anna;
+      const companyId = actor?.companyId ?? kitIdentities.companies.a;
+      return executeAction(pipeline, {
+        action,
+        input,
+        request: {
+          requestId: randomUUID(),
+          correlationId: randomUUID(),
+          channel: ASSISTANT_INVOCATION_CHANNEL,
+          clientIp: REAL_CLIENT,
+          idempotencyKey: request?.idempotencyKey ?? randomUUID(),
+          ...(request?.confirmationChallengeId !== undefined
+            ? { confirmationChallengeId: request.confirmationChallengeId }
+            : {}),
+        },
+        principal: {
+          mode: "staff",
+          session: { userId },
+          companySelector: companyId,
+        },
+      });
+    },
+  };
+}
+
+async function hostRequest(
+  app: ReturnType<typeof createStaffAssistantHostApp>,
+  options: {
+    readonly method: "GET" | "POST";
+    readonly path: string;
+    readonly token: string;
+    readonly companyId?: string;
+    readonly body?: unknown;
+    readonly requestId?: string;
+  },
+): Promise<Response> {
+  const headers = new Headers({
+    origin: "http://localhost:3000",
+    authorization: `Bearer ${options.token}`,
+    [COMPANY_SELECTOR_HEADER]: options.companyId ?? kitIdentities.companies.a,
+  });
+  if (options.body !== undefined) {
+    headers.set("content-type", "application/json");
+  }
+  if (options.requestId !== undefined) {
+    headers.set(REQUEST_ID_HEADER, options.requestId);
+  }
+  return app.request(options.path, {
+    method: options.method,
+    headers,
+    ...(options.body !== undefined
+      ? { body: JSON.stringify(options.body) }
+      : {}),
+  });
+}
+
+async function stageExecution(
+  h: Harness,
+  conversationId: string,
+  actionName: string,
+  toolInput: unknown,
+): Promise<string> {
+  const begun = await h.invoke(
+    checkpointAssistantTurn,
+    { kind: "begin", conversationId },
+    {
+      idempotencyKey: attemptKey(
+        "turn",
+        conversationId,
+        `begin:seed:${randomUUID()}`,
+      ),
+    },
+  );
+  const staged = await h.invoke(
+    checkpointAssistantTurn,
+    {
+      kind: "stageRun",
+      conversationId,
+      messageId: begun.messageId,
+      seq: 0,
+      actionName,
+      toolName: actionName.replace(".", "_"),
+      toolCallId: `seed:${randomUUID()}`,
+      toolInput,
+    },
+    {
+      idempotencyKey: attemptKey(
+        "turn",
+        conversationId,
+        `stage:${begun.messageId}:0`,
+      ),
+    },
+  );
+  if (staged.executionId === null) {
+    throw new Error("stageRun returned no executionId");
+  }
+  return staged.executionId;
+}
+
+async function seedChoicePending(
+  h: Harness,
+  options: {
+    readonly conversationId: string;
+    readonly customerId: string;
+    readonly product: {
+      readonly productId: string;
+      readonly name: string;
+      readonly variants: readonly {
+        readonly variantId: string;
+        readonly name: string;
+      }[];
+    };
+    readonly extraProductId?: string;
+  },
+): Promise<{
+  readonly record: Extract<PendingInteractionRecord, { kind: "choice" }>;
+  readonly optionByLabel: Map<string, string>;
+}> {
+  const choiceId = randomUUID();
+  const optionByLabel = new Map<string, string>();
+  const optionMap: Record<string, string> = {};
+  const envelopeOptions = options.product.variants.map((variant) => {
+    const optionId = randomUUID();
+    optionByLabel.set(variant.name, optionId);
+    optionMap[optionId] = variant.variantId;
+    return { id: optionId, label: variant.name };
+  });
+  const items: Array<{
+    product: { by: "id"; id: string };
+    variantSelection: { kind: "unspecified" };
+    quantity: { milli: string };
+  }> = [
+    {
+      product: { by: "id", id: options.product.productId },
+      variantSelection: { kind: "unspecified" },
+      quantity: { milli: "1000" },
+    },
+  ];
+  if (options.extraProductId !== undefined) {
+    items.push({
+      product: { by: "id", id: options.extraProductId },
+      variantSelection: { kind: "unspecified" },
+      quantity: { milli: "1000" },
+    });
+  }
+  const canonicalInput = {
+    customer: { by: "id" as const, id: options.customerId },
+    items,
+  };
+  const executionId = await stageExecution(
+    h,
+    options.conversationId,
+    "orders.create",
+    canonicalInput,
+  );
+  const record = pendingChoiceRecordFromChoiceRecord(
+    {
+      status: "open",
+      choiceId,
+      actorId: kitIdentities.users.anna,
+      companyId: kitIdentities.companies.a,
+      conversationId: options.conversationId,
+      canonicalInput,
+      target: {
+        lineIndex: 0,
+        productId: options.product.productId,
+        productName: options.product.name,
+      },
+      optionMap,
+      envelope: {
+        status: "needs_choice",
+        challengeId: choiceId,
+        reason: "variant_required",
+        productName: options.product.name,
+        options: envelopeOptions,
+        optionsTruncated: false,
+      },
+      locale: "en",
+    },
+    {
+      actionName: "orders.create",
+      toolCallId: `choice:${choiceId}`,
+      executionId,
+    },
+  );
+  expect(await h.pendingStore.open(record)).toBe(true);
+  return { record, optionByLabel };
+}
+
+async function seedConfirmationPending(
+  h: Harness,
+  conversationId: string,
+): Promise<{
+  readonly customerId: string;
+  readonly challengeId: string;
+  readonly executionId: string;
+  readonly summary: string;
+}> {
+  const customer = await h.invoke(createCustomer, {
+    name: "Archived Delete Target",
+    phone: nextPhone(),
+  });
+  await h.invoke(archiveCustomer, { id: customer.id });
+  const canonicalInput = { id: customer.id };
+  const executionId = await stageExecution(
+    h,
+    conversationId,
+    "customers.deleteCustomer",
+    canonicalInput,
+  );
+  const unconfirmed = await h
+    .invoke(deleteCustomer, canonicalInput, {
+      idempotencyKey: executionAttemptKey(conversationId, executionId),
+    })
+    .then(
+      () => {
+        throw new Error("expected ConfirmationRequiredError");
+      },
+      (error: unknown) => error,
+    );
+  expect(unconfirmed).toBeInstanceOf(ConfirmationRequiredError);
+  if (!(unconfirmed instanceof ConfirmationRequiredError)) {
+    throw new Error("expected ConfirmationRequiredError");
+  }
+  const record = confirmationPendingRecord({
+    challengeId: unconfirmed.challenge.challengeId,
+    bind: {
+      actorId: kitIdentities.users.anna,
+      companyId: kitIdentities.companies.a,
+      conversationId,
+    },
+    actionName: "customers.deleteCustomer",
+    toolCallId: `call-delete:${customer.id}`,
+    canonicalInput,
+    summary: unconfirmed.challenge.summary,
+    challengeExpiresAt: unconfirmed.challenge.expiresAt,
+    executionId,
+    locale: "en",
+  });
+  expect(await h.pendingStore.open(record)).toBe(true);
+  return {
+    customerId: customer.id,
+    challengeId: unconfirmed.challenge.challengeId,
+    executionId,
+    summary: unconfirmed.challenge.summary,
+  };
+}
+
+async function customerRow(
+  customerId: string,
+): Promise<{ readonly id: string } | undefined> {
+  const rows = (await kit.db.runtime.db.select().from(companyCustomers)).filter(
+    (row) => row.id === customerId,
+  );
+  return rows[0];
+}
+
+async function orderCount(): Promise<number> {
+  return (await kit.db.runtime.db.select({ id: orders.id }).from(orders))
+    .length;
+}
+
+describe("unpublished staff assistant host HTTP", () => {
+  it("replays the same choice option, conflicts on a different option, and expires a wrong bind", async () => {
+    const h = harness({ model: listThenSpeakModel() });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Choice CAS",
+    });
+    const customer = await h.invoke(createCustomer, {
+      name: "Katia",
+      phone: nextPhone(),
+    });
+    const product = await h.invoke(createProduct, {
+      name: "Macarons Katia",
+      basePriceMinor: "1500",
+      variants: [{ name: "Lemon" }, { name: "Vanilla" }],
+    });
+    const { record, optionByLabel } = await seedChoicePending(h, {
+      conversationId: conversation.id,
+      customerId: customer.id,
+      product,
+    });
+    const lemon = optionByLabel.get("Lemon");
+    const vanilla = optionByLabel.get("Vanilla");
+    expect(lemon).toBeDefined();
+    const first = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.id,
+        optionId: lemon,
+      },
+    });
+    expect(first.status).toBe(200);
+    const firstBody = assistantHostInteractionResultSchema.parse(
+      await first.json(),
+    );
+    expect(firstBody.status).toBe("ok");
+    if (firstBody.status !== "ok") {
+      return;
+    }
+    expect(firstBody.pending).toBeNull();
+    const replay = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.id,
+        optionId: lemon,
+      },
+    });
+    const replayBody = assistantHostInteractionResultSchema.parse(
+      await replay.json(),
+    );
+    expect(replayBody.status).toBe("ok");
+    const conflict = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.id,
+        optionId: vanilla,
+      },
+    });
+    const conflictBody = assistantHostInteractionResultSchema.parse(
+      await conflict.json(),
+    );
+    expect(conflictBody).toMatchObject({
+      status: "error",
+      code: "CHOICE_OPTION_CONFLICT",
+    });
+    const otherConversation = await h.invoke(createConversation, {
+      title: "Other thread",
+    });
+    const wrongBind = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token,
+      body: {
+        conversationId: otherConversation.id,
+        choiceId: record.id,
+        optionId: lemon,
+      },
+    });
+    expect(
+      assistantHostInteractionResultSchema.parse(await wrongBind.json()),
+    ).toEqual({ status: "expired" });
+  });
+
+  it("refuses a second orders.create while Katia picker is open (same actionName is not replace)", async () => {
+    const h = harness({
+      model: new MockLanguageModelV3({
+        doStream: [
+          mockToolCallStream(
+            "call-create",
+            ORDERS_CREATE_TOOL_NAME,
+            JSON.stringify({
+              customerId: kitIdentities.users.anna,
+              items: [
+                {
+                  productId: kitIdentities.users.anna,
+                  quantityMilli: "1000",
+                },
+              ],
+            }),
+          ),
+          mockTextStream("Finish the current picker first."),
+        ],
+      }),
+    });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Katia then Olena",
+    });
+    await h.invoke(
+      appendUserMessage,
+      { conversationId: conversation.id, body: "Create for Katia" },
+      { idempotencyKey: attemptKey("message", conversation.id, randomUUID()) },
+    );
+    const customer = await h.invoke(createCustomer, {
+      name: "Katia",
+      phone: nextPhone(),
+    });
+    const product = await h.invoke(createProduct, {
+      name: "Macarons refuse",
+      basePriceMinor: "1500",
+      variants: [{ name: "Lemon" }, { name: "Vanilla" }],
+    });
+    const { record } = await seedChoicePending(h, {
+      conversationId: conversation.id,
+      customerId: customer.id,
+      product,
+    });
+    const before = await orderCount();
+    const chat = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHAT_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        text: "ще одне замовлення іншому клієнту",
+        locale: "uk",
+      },
+    });
+    expect(chat.status).toBe(200);
+    const body = assistantHostInteractionResultSchema.parse(await chat.json());
+    expect(body.status).toBe("ok");
+    if (body.status !== "ok") {
+      return;
+    }
+    expect(body.pending?.id).toBe(record.id);
+    expect(body.pending?.actionName).toBe("orders.create");
+    expect(await orderCount()).toBe(before);
+    const peek = await hostRequest(h.app, {
+      method: "GET",
+      path: `${ASSISTANT_PENDING_PATH}?conversationId=${conversation.id}`,
+      token,
+    });
+    const peeked = assistantPendingPeekResultSchema.parse(await peek.json());
+    expect(peeked.pending?.id).toBe(record.id);
+  });
+
+  it("pending_replace supersedes the old confirmation; stale tap is expired", async () => {
+    const h = harness({
+      model: new MockLanguageModelV3({
+        doStream: [
+          mockToolCallStream(
+            "call-replace",
+            PENDING_REPLACE_TOOL_NAME,
+            JSON.stringify({ id: "00000000-0000-4000-8000-000000000000" }),
+          ),
+          mockTextStream("Updated this delete."),
+        ],
+      }),
+    });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Replace confirm",
+    });
+    await h.invoke(
+      appendUserMessage,
+      { conversationId: conversation.id, body: "Delete the customer" },
+      { idempotencyKey: attemptKey("message", conversation.id, randomUUID()) },
+    );
+    const seeded = await seedConfirmationPending(h, conversation.id);
+    const other = await h.invoke(createCustomer, {
+      name: "Replacement target",
+      phone: nextPhone(),
+    });
+    await h.invoke(archiveCustomer, { id: other.id });
+    const replaceHarness = harness({
+      model: new MockLanguageModelV3({
+        doStream: [
+          mockToolCallStream(
+            "call-replace",
+            PENDING_REPLACE_TOOL_NAME,
+            JSON.stringify({ id: other.id }),
+          ),
+          mockTextStream("Quantity unchanged; this is the new delete."),
+        ],
+      }),
+      pendingStore: h.pendingStore,
+    });
+    const replaceChat = await hostRequest(replaceHarness.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHAT_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        text: "Actually delete the other archived customer",
+        locale: "en",
+      },
+    });
+    const replaced = assistantHostInteractionResultSchema.parse(
+      await replaceChat.json(),
+    );
+    expect(replaced.status).toBe("ok");
+    if (replaced.status !== "ok") {
+      return;
+    }
+    expect(replaced.pending?.kind).toBe("confirmation");
+    expect(replaced.pending?.id).not.toBe(seeded.challengeId);
+    const stale = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_CONFIRM_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        challengeId: seeded.challengeId,
+      },
+    });
+    expect(
+      assistantHostInteractionResultSchema.parse(await stale.json()),
+    ).toEqual({ status: "expired" });
+    expect(await customerRow(seeded.customerId)).toBeDefined();
+  });
+
+  it("confirm executes once, consumes the core challenge, and may return list cards", async () => {
+    const h = harness({ model: listThenSpeakModel() });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Confirm once",
+    });
+    const seeded = await seedConfirmationPending(h, conversation.id);
+    const consumesBefore = h.consumeCount();
+    const first = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_CONFIRM_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        challengeId: seeded.challengeId,
+      },
+    });
+    expect(first.status).toBe(200);
+    const body = assistantHostInteractionResultSchema.parse(await first.json());
+    expect(body.status).toBe("ok");
+    if (body.status !== "ok") {
+      return;
+    }
+    expect(body.pending).toBeNull();
+    expect(body.cards.some((card) => card.kind === "surface")).toBe(true);
+    expect(await customerRow(seeded.customerId)).toBeUndefined();
+    expect(h.consumeCount()).toBeGreaterThan(consumesBefore);
+    const replay = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_CONFIRM_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        challengeId: seeded.challengeId,
+      },
+    });
+    const replayBody = assistantHostInteractionResultSchema.parse(
+      await replay.json(),
+    );
+    expect(replayBody.status).toBe("ok");
+    expect(await customerRow(seeded.customerId)).toBeUndefined();
+  });
+
+  it("wrong conversation bind returns expired and does not consume the challenge", async () => {
+    const h = harness({ model: silentModel() });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Confirm bind",
+    });
+    const other = await h.invoke(createConversation, {
+      title: "Other confirm bind",
+    });
+    const seeded = await seedConfirmationPending(h, conversation.id);
+    const consumesBefore = h.consumeCount();
+    const wrong = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_CONFIRM_PATH,
+      token,
+      body: {
+        conversationId: other.id,
+        challengeId: seeded.challengeId,
+      },
+    });
+    expect(
+      assistantHostInteractionResultSchema.parse(await wrong.json()),
+    ).toEqual({ status: "expired" });
+    expect(h.consumeCount()).toBe(consumesBefore);
+    expect(await customerRow(seeded.customerId)).toBeDefined();
+    const ok = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_CONFIRM_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        challengeId: seeded.challengeId,
+      },
+    });
+    expect(
+      assistantHostInteractionResultSchema.parse(await ok.json()).status,
+    ).toBe("ok");
+    expect(await customerRow(seeded.customerId)).toBeUndefined();
+  });
+
+  it("tampered canonical input fails the hash, does not execute, and does not enter the loop", async () => {
+    const inner = createMemoryPendingStore();
+    const decoy = randomUUID();
+    const wrapped: StaffAssistantPendingStore = {
+      open: (record) => inner.open(record),
+      claim: async (input) => {
+        const claimed = await inner.claim(input);
+        if (
+          (claimed.kind === "claimed" || claimed.kind === "replay") &&
+          claimed.record.kind === "confirmation"
+        ) {
+          return {
+            ...claimed,
+            record: {
+              ...claimed.record,
+              canonicalInput: { id: decoy },
+            },
+          };
+        }
+        return claimed;
+      },
+      peek: (input) => inner.peek(input),
+      peekOpen: (input) => inner.peekOpen(input),
+      complete: (input) => inner.complete(input),
+      abandon: (input) => inner.abandon(input),
+      replace: (input) => inner.replace(input),
+    };
+    const h = harness({
+      pendingStore: wrapped,
+      model: new MockLanguageModelV3({
+        doStream: () => {
+          throw new Error("Phase B must not run after a hash failure");
+        },
+      }),
+    });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Tamper",
+    });
+    const seeded = await seedConfirmationPending(h, conversation.id);
+    await kit.db.runtime.db.insert(companyCustomers).values({
+      id: decoy,
+      companyId: kitIdentities.companies.a,
+      name: "Decoy",
+      phone: nextPhone(),
+      status: "archived",
+    });
+    const response = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_CONFIRM_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        challengeId: seeded.challengeId,
+      },
+    });
+    const body = assistantHostInteractionResultSchema.parse(
+      await response.json(),
+    );
+    expect(body.status).toBe("error");
+    expect(await customerRow(seeded.customerId)).toBeDefined();
+    expect(await customerRow(decoy)).toBeDefined();
+  });
+
+  it("recovers execution_id after domain commit before finishRun without a double write", async () => {
+    const h = harness({ model: silentModel() });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Crash finishRun",
+    });
+    const seeded = await seedConfirmationPending(h, conversation.id);
+    await h.invoke(
+      deleteCustomer,
+      { id: seeded.customerId },
+      {
+        idempotencyKey: executionAttemptKey(
+          conversation.id,
+          seeded.executionId,
+        ),
+        confirmationChallengeId: seeded.challengeId,
+      },
+    );
+    expect(await customerRow(seeded.customerId)).toBeUndefined();
+    const resume = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_CONFIRM_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        challengeId: seeded.challengeId,
+      },
+    });
+    expect(
+      assistantHostInteractionResultSchema.parse(await resume.json()).status,
+    ).toBe("ok");
+    expect(await customerRow(seeded.customerId)).toBeUndefined();
+  });
+
+  it("choice Phase B can call orders_list_* after create", async () => {
+    const h = harness({ model: listThenSpeakModel() });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "List after create",
+    });
+    await h.invoke(
+      appendUserMessage,
+      {
+        conversationId: conversation.id,
+        body: "Create then list my orders",
+      },
+      { idempotencyKey: attemptKey("message", conversation.id, randomUUID()) },
+    );
+    const customer = await h.invoke(createCustomer, {
+      name: "List Buyer",
+      phone: nextPhone(),
+    });
+    const product = await h.invoke(createProduct, {
+      name: "List Cake",
+      basePriceMinor: "1500",
+      variants: [{ name: "A" }, { name: "B" }],
+    });
+    const { record, optionByLabel } = await seedChoicePending(h, {
+      conversationId: conversation.id,
+      customerId: customer.id,
+      product,
+    });
+    const optionId = optionByLabel.get("A");
+    const response = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.id,
+        optionId,
+      },
+    });
+    const body = assistantHostInteractionResultSchema.parse(
+      await response.json(),
+    );
+    expect(body.status).toBe("ok");
+    if (body.status !== "ok") {
+      return;
+    }
+    expect(body.speech).toBe("Here is the list.");
+    expect(
+      body.cards.some(
+        (card) => card.kind === "surface" && card.surface.includes("order"),
+      ),
+    ).toBe(true);
+  });
+
+  it("why-confirm chat keeps pending; abandon then allows a new create", async () => {
+    const h = harness({
+      model: silentModel("The confirmation is still open."),
+    });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Why confirm",
+    });
+    await h.invoke(
+      appendUserMessage,
+      { conversationId: conversation.id, body: "Delete please" },
+      { idempotencyKey: attemptKey("message", conversation.id, randomUUID()) },
+    );
+    const seeded = await seedConfirmationPending(h, conversation.id);
+    const why = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHAT_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        text: "why confirm?",
+        locale: "en",
+      },
+    });
+    const whyBody = assistantHostInteractionResultSchema.parse(
+      await why.json(),
+    );
+    expect(whyBody.status).toBe("ok");
+    if (whyBody.status !== "ok") {
+      return;
+    }
+    expect(whyBody.pending?.id).toBe(seeded.challengeId);
+    expect(await customerRow(seeded.customerId)).toBeDefined();
+    const tak = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHAT_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        text: "Так",
+        locale: "uk",
+      },
+    });
+    const takBody = assistantHostInteractionResultSchema.parse(
+      await tak.json(),
+    );
+    expect(takBody.status).toBe("ok");
+    if (takBody.status !== "ok") {
+      return;
+    }
+    expect(takBody.pending?.id).toBe(seeded.challengeId);
+    const abandoned = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_PENDING_ABANDON_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        pendingId: seeded.challengeId,
+        expectedVersion: 1,
+      },
+    });
+    const abandonedBody = assistantHostInteractionResultSchema.parse(
+      await abandoned.json(),
+    );
+    expect(abandonedBody.status).toBe("ok");
+    if (abandonedBody.status !== "ok") {
+      return;
+    }
+    expect(abandonedBody.pending).toBeNull();
+    const peek = await hostRequest(h.app, {
+      method: "GET",
+      path: `${ASSISTANT_PENDING_PATH}?conversationId=${conversation.id}`,
+      token,
+    });
+    expect(
+      assistantPendingPeekResultSchema.parse(await peek.json()).pending,
+    ).toBeNull();
+    const createChat = harness({
+      pendingStore: h.pendingStore,
+      model: new MockLanguageModelV3({
+        doStream: [
+          mockToolCallStream(
+            "call-create",
+            ORDERS_CREATE_TOOL_NAME,
+            JSON.stringify({
+              customerId: kitIdentities.users.anna,
+              items: [
+                {
+                  productId: kitIdentities.users.anna,
+                  quantityMilli: "1000",
+                },
+              ],
+            }),
+          ),
+          mockTextStream("Trying a new create."),
+        ],
+      }),
+    });
+    const after = await hostRequest(createChat.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHAT_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        text: "create another order",
+        locale: "en",
+      },
+    });
+    expect(after.status).toBe(200);
+  });
+
+  it("opens a successor picker on the shared envelope without treating it as order-created-only", async () => {
+    const h = harness({ model: silentModel() });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Successor",
+    });
+    const customer = await h.invoke(createCustomer, {
+      name: "Seq Buyer",
+      phone: nextPhone(),
+    });
+    const first = await h.invoke(createProduct, {
+      name: "Macarons Seq",
+      basePriceMinor: "1500",
+      variants: [{ name: "Lemon" }, { name: "Vanilla" }],
+    });
+    const second = await h.invoke(createProduct, {
+      name: "Eclairs Seq",
+      basePriceMinor: "1500",
+      variants: [{ name: "Coffee" }, { name: "Chocolate" }],
+    });
+    const { record, optionByLabel } = await seedChoicePending(h, {
+      conversationId: conversation.id,
+      customerId: customer.id,
+      product: first,
+      extraProductId: second.productId,
+    });
+    const lemon = optionByLabel.get("Lemon");
+    const response = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.id,
+        optionId: lemon,
+      },
+    });
+    const body = assistantHostInteractionResultSchema.parse(
+      await response.json(),
+    );
+    expect(body.status).toBe("ok");
+    if (body.status !== "ok") {
+      return;
+    }
+    expect(body.pending?.kind).toBe("choice");
+    expect(body.pending?.id).not.toBe(record.id);
+    expect(body.cards.some((card) => card.kind === "choice")).toBe(true);
+  });
+
+  it("pending Lua and host source never GETDEL confirmation keys", () => {
+    const redisSrc = readFileSync(join(here, "../stores/redis.ts"), "utf8");
+    const pendingBlock = redisSrc.slice(
+      redisSrc.indexOf("const PENDING_OPEN_LUA"),
+      redisSrc.indexOf("export function createRedisSecondaryStorage"),
+    );
+    expect(pendingBlock).not.toContain("GETDEL");
+    expect(readFileSync(join(here, "assistant-host.ts"), "utf8")).not.toContain(
+      "getAndDelete",
+    );
+  });
+});

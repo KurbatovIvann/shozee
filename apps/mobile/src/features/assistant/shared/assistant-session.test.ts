@@ -817,4 +817,119 @@ describe("resumeOwnAssistantConversation", () => {
       data: live,
     });
   });
+
+  it("hydrates an open confirmation from GET /assistant/pending", async () => {
+    const challengeId = "22222222-2222-4222-8222-222222222222";
+    const pending = {
+      kind: "confirmation" as const,
+      id: challengeId,
+      version: 2,
+      status: "open" as const,
+      actionName: "customers.deleteCustomer",
+      challengeId,
+      summary: "Delete this archived customer.",
+      expiresAt: "2026-09-08T12:00:00.000Z",
+      toolCallId: "call-delete",
+    };
+    const result = await resumeOwnAssistantConversation({
+      companyEpochRef: { current: 0 },
+      epoch: 0,
+      sessionUserId: sessionUser,
+      listConversations: () =>
+        Promise.resolve({
+          items: [{ id: conversationA, userId: sessionUser }],
+          nextCursor: null,
+        }),
+      getConversation: () => Promise.resolve(ownDetail(conversationA)),
+      getOrder: (id) =>
+        Promise.resolve({
+          orderId: id,
+          orderNumber: "1049",
+          status: "confirmed",
+          totalGrossMinor: "1000",
+          currency: "UAH",
+        }),
+      peekPending: () => Promise.resolve({ kind: "ok", pending }),
+    });
+    expect(result.kind).toBe("resumed");
+    if (result.kind !== "resumed") {
+      return;
+    }
+    expect(result.pending).toEqual(pending);
+    expect(
+      result.messages[1]?.parts.some(
+        (part) =>
+          part.type === "data-confirmation" &&
+          "data" in part &&
+          part.data.challengeId === challengeId,
+      ),
+    ).toBe(true);
+  });
+
+  it("hydrates an open choice from GET /assistant/pending without peekChoice", async () => {
+    const choiceId = "44444444-4444-4444-8444-444444444444";
+    const envelope = {
+      status: "needs_choice" as const,
+      challengeId: choiceId,
+      reason: "variant_required" as const,
+      productName: "Macarons",
+      options: [{ id: "77777777-7777-4777-8777-777777777777", label: "Lemon" }],
+      optionsTruncated: false,
+    };
+    const result = await resumeOwnAssistantConversation({
+      companyEpochRef: { current: 0 },
+      epoch: 0,
+      sessionUserId: sessionUser,
+      listConversations: () =>
+        Promise.resolve({
+          items: [{ id: conversationA, userId: sessionUser }],
+          nextCursor: null,
+        }),
+      getConversation: () =>
+        Promise.resolve({
+          id: conversationA,
+          userId: sessionUser,
+          messages: [
+            {
+              id: messageAssistantId,
+              role: "assistant",
+              body: "Select a variant.",
+              createdAt: "2026-09-03T10:00:01.000Z",
+            },
+          ],
+          toolRuns: [
+            {
+              id: "88888888-8888-4888-8888-888888888888",
+              actionName: "orders.create",
+              toolCallId: "call-create",
+              challengeId: choiceId,
+              resultIds: [],
+              outcome: "choice_required",
+              createdAt: "2026-09-03T10:00:01.000Z",
+            },
+          ],
+        }),
+      getOrder: vi.fn(),
+      peekPending: () =>
+        Promise.resolve({
+          kind: "ok",
+          pending: {
+            kind: "choice",
+            id: choiceId,
+            version: 1,
+            status: "open",
+            actionName: "orders.create",
+            envelope,
+          },
+        }),
+    });
+    expect(result.kind).toBe("resumed");
+    if (result.kind !== "resumed") {
+      return;
+    }
+    expect(result.messages[0]?.parts[1]).toEqual({
+      type: "data-choice",
+      data: envelope,
+    });
+  });
 });

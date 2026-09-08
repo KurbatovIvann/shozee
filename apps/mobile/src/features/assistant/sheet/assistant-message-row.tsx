@@ -95,10 +95,12 @@ export const AssistantMessageRow = memo(function AssistantMessageRow(props: {
             claimedLabel={props.choiceClaimedLabel}
             retryLabel={props.choiceRetryLabel}
             selectingLabel={props.choiceSelectingLabel}
+            dismissLabel={props.dismissLabel}
             applying={props.choiceApplying}
             choice={choice}
             attempted={props.choiceAttempted}
             onSelect={props.onSelectChoice}
+            onDismiss={props.onDismiss}
           />
         </AssistantTurnResult>
       ) : null}

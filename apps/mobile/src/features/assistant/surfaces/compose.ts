@@ -43,6 +43,7 @@ import {
 } from "./orders-list";
 
 const PRESENTATION_PART_TYPE = "data-presentation";
+const RESUME_CARD_PART_TYPE = "data-resumeCard";
 
 export type AssistantSurface =
   | AssistantOrdersListCardView
@@ -79,6 +80,50 @@ function lastCountsInput(parts: readonly AssistantChatPart[]): unknown {
     found = part.input;
   }
   return found;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function surfacesFromResumeCards(
+  parts: readonly AssistantChatPart[],
+  locale: Locale,
+): readonly AssistantSurface[] {
+  const surfaces: AssistantSurface[] = [];
+  for (const part of parts) {
+    if (part.type !== RESUME_CARD_PART_TYPE) {
+      continue;
+    }
+    const data = part.data;
+    if (!isRecord(data) || data.kind !== "order-entity") {
+      continue;
+    }
+    const orderId = data.orderId;
+    const orderNumber = data.orderNumber;
+    if (typeof orderId !== "string" || typeof orderNumber !== "string") {
+      continue;
+    }
+    surfaces.push(
+      localizeOrderEntityCard(
+        {
+          kind: "order-entity",
+          destination: { kind: "screen", href: `/orders/${orderId}` },
+          orderId,
+          orderNumber,
+          customerNameSnapshot:
+            typeof data.customerNameSnapshot === "string"
+              ? data.customerNameSnapshot
+              : null,
+          status: typeof data.status === "string" ? data.status : null,
+          total: null,
+        },
+        ordersCopy(locale),
+        locale,
+      ),
+    );
+  }
+  return surfaces;
 }
 
 function localizeSurface(
@@ -211,9 +256,17 @@ export function assistantSurfacesFromParts(
   parts: readonly AssistantChatPart[],
   locale: Locale,
 ): readonly AssistantSurface[] {
+  const resume = surfacesFromResumeCards(parts, locale);
   const named = namedPresentationEnvelopes(parts);
-  if (named !== null) {
-    return surfacesFromNamedEnvelopes(named, parts, locale);
+  const composed =
+    named !== null
+      ? surfacesFromNamedEnvelopes(named, parts, locale)
+      : composeSurfacesFromParts(parts, locale);
+  if (resume.length === 0) {
+    return composed;
   }
-  return composeSurfacesFromParts(parts, locale);
+  if (composed.length === 0) {
+    return resume;
+  }
+  return [...resume, ...composed];
 }

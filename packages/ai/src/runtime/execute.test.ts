@@ -4,8 +4,13 @@ import { describe, expect, it, vi } from "vitest";
 import type { ActionToolExecute } from "../action-tool.js";
 import { STAFF_ASSISTANT_TOOL_ERROR_FALLBACK } from "../turn-speech.js";
 import {
+  PENDING_OPEN_CODE,
+  type PendingInteractionRecord,
+} from "../pending.js";
+import {
   emptyHostExecuteState,
   HOST_HITL_PAUSED_OUTPUT,
+  refuseHostPendingOpen,
   wrapHostSequentialExecute,
   type StaffAssistantHostCheckpoint,
   type StaffAssistantHostExecuteState,
@@ -201,5 +206,78 @@ describe("wrapHostSequentialExecute", () => {
       { title: "from staged tool" },
       { toolCallId: "call-create", executionId: recovered.executionId },
     );
+  });
+
+  it("refuses an independent write, including the same actionName, while pending is open", async () => {
+    const execute = vi.fn(() => Promise.resolve({ orderId: customerId }));
+    const state = emptyHostState();
+    const wrapped = wrapHostSequentialExecute(execute, state, {
+      checkPending: async ({ actionName }) => {
+        expect(actionName).toBe("orders.create");
+        return refuseHostPendingOpen("en");
+      },
+    });
+    const output = await wrapped(
+      "orders.create",
+      { customer: { by: "id", id: customerId } },
+      { toolCallId: "call-create" },
+    );
+    expect(execute).not.toHaveBeenCalled();
+    expect(output).toMatchObject({
+      status: "error",
+      code: PENDING_OPEN_CODE,
+    });
+  });
+
+  it("allows reads while pending is open", async () => {
+    const execute = vi.fn(() =>
+      Promise.resolve({ items: [], nextCursor: null }),
+    );
+    const state = emptyHostState();
+    const wrapped = wrapHostSequentialExecute(execute, state, {
+      checkPending: () => Promise.resolve({ allow: true }),
+    });
+    await wrapped("orders.list", {}, { toolCallId: "call-list" });
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it("writes a confirmation pending record from wrapExecute via openPending", async () => {
+    const opened: PendingInteractionRecord[] = [];
+    const execute = vi.fn(() =>
+      Promise.reject(
+        new ConfirmationRequiredError({
+          challengeId,
+          summary: "Delete this archived customer.",
+          expiresAt: "2026-09-01T12:00:00.000Z",
+        }),
+      ),
+    );
+    const state = emptyHostState();
+    state.executionIdByToolCallId.set("call-delete", "exec-staged");
+    const wrapped = wrapHostSequentialExecute(execute, state, {
+      choiceBind: {
+        actorId: "anna",
+        companyId: "22222222-2222-4222-8222-222222222222",
+        conversationId: "11111111-1111-4111-8111-111111111111",
+      },
+      openPending: (record) => {
+        opened.push(record);
+        return Promise.resolve(true);
+      },
+    });
+    await wrapped(
+      "customers.deleteCustomer",
+      { id: customerId },
+      { toolCallId: "call-delete" },
+    );
+    expect(opened).toEqual([
+      expect.objectContaining({
+        kind: "confirmation",
+        id: challengeId,
+        actionName: "customers.deleteCustomer",
+        executionId: "exec-staged",
+        canonicalInput: { id: customerId },
+      }),
+    ]);
   });
 });

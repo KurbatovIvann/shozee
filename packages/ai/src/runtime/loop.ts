@@ -24,11 +24,19 @@ import {
   type ChoiceBind,
   type ChoiceRecord,
 } from "../choice.js";
+import { isStaffAssistantConfirmationOutput } from "../confirmation.js";
 import {
   clipStaffAssistantToolResult,
   STAFF_ASSISTANT_CLIP_JSON_MAX,
 } from "../clip-tool-result.js";
-import { isStaffAssistantConfirmationOutput } from "../confirmation.js";
+import {
+  createPendingReplaceTool,
+  type PendingReplaceHostApply,
+} from "../host-tools/pending-replace.js";
+import {
+  PENDING_REPLACE_TOOL_NAME,
+  type PendingInteractionRecord,
+} from "../pending.js";
 import {
   staffAssistantJsonChars,
   staffAssistantPostgresJsonbTextChars,
@@ -62,7 +70,7 @@ import {
   wrapHostSequentialExecute,
   type StaffAssistantHostCheckpoint,
   type StaffAssistantHostExecuteState,
-  type StaffAssistantHostPendingDecision,
+  type StaffAssistantHostPendingCheck,
 } from "./execute.js";
 import {
   commitHostSpeech,
@@ -74,11 +82,13 @@ export type {
   StaffAssistantHostCheckpoint,
   StaffAssistantHostCheckpointFinishInput,
   StaffAssistantHostCheckpointStageInput,
+  StaffAssistantHostPendingCheck,
   StaffAssistantHostPendingDecision,
 } from "./execute.js";
 export {
   allowHostPendingAlways,
   emptyHostExecuteState,
+  refuseHostPendingOpen,
   HOST_HITL_PAUSED_OUTPUT,
   HOST_HITL_PAUSED_STATUS,
   isHostHitlPausedOutput,
@@ -282,10 +292,12 @@ export interface StaffAssistantHostTurnOptions {
   readonly locale?: StaffAssistantLocale;
   readonly choiceBind?: ChoiceBind;
   readonly openChoice?: (record: ChoiceRecord) => Promise<boolean>;
+  readonly openPending?: (record: PendingInteractionRecord) => Promise<boolean>;
   readonly mintChoiceId?: () => string;
   readonly provider?: StaffProviderAdapter;
-  readonly checkPending?: () => Promise<StaffAssistantHostPendingDecision>;
+  readonly checkPending?: StaffAssistantHostPendingCheck;
   readonly checkpoint?: StaffAssistantHostCheckpoint;
+  readonly pendingReplace?: PendingReplaceHostApply;
 }
 
 /**
@@ -313,6 +325,9 @@ export async function runStaffAssistantHostTurn(
       ...(options.openChoice !== undefined
         ? { openChoice: options.openChoice }
         : {}),
+      ...(options.openPending !== undefined
+        ? { openPending: options.openPending }
+        : {}),
       ...(options.mintChoiceId !== undefined
         ? { mintChoiceId: options.mintChoiceId }
         : {}),
@@ -326,6 +341,11 @@ export async function runStaffAssistantHostTurn(
     }),
     provider,
   );
+  if (options.pendingReplace !== undefined) {
+    tools[PENDING_REPLACE_TOOL_NAME] = createPendingReplaceTool(
+      options.pendingReplace,
+    );
+  }
   clipToolExecutes(
     tools,
     clipBytes,
@@ -417,4 +437,15 @@ export async function runStaffAssistantHostTurn(
     historyChars: history.chars,
     historyTraceChars: history.traceChars,
   };
+}
+
+/**
+ * Phase B resume: same `streamText` host turn from persisted history.
+ * Callers must pass `getModelHistory` messages — do not append a second
+ * copy of the original user text.
+ */
+export async function continueStaffAssistantHostTurn(
+  options: StaffAssistantHostTurnOptions,
+): Promise<StaffAssistantHostTurnResult> {
+  return runStaffAssistantHostTurn(options);
 }
