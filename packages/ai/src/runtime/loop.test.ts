@@ -28,6 +28,7 @@ import { ORDERS_LIST_PAGE_ASSISTANT_DEFAULT_LIMIT } from "../tool-facades/orders
 import { STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK } from "../turn-speech.js";
 import { HOST_HITL_PAUSED_STATUS } from "./execute.js";
 import {
+  continueStaffAssistantHostTurn,
   refuseHostPendingOpen,
   runStaffAssistantHostTurn,
   type StaffAssistantHostCheckpoint,
@@ -198,6 +199,8 @@ describe("runStaffAssistantHostTurn", () => {
     expect(src).toContain("commitHostSpeech");
     expect(src).toContain("priorRuns");
     expect(src).toContain("recoverStartedRuns");
+    expect(src).toContain("recoverStartedRunsScope");
+    expect(src).toContain("resumeTurn");
     expect(src).toContain("isHostSeededHitlToolCallId");
     expect(src).toContain("streamText");
     expect(src).not.toContain("staff-assistant-stream");
@@ -776,7 +779,6 @@ describe("runStaffAssistantHostTurn", () => {
         mockTextStream("Here is the list."),
       ],
     });
-    const { continueStaffAssistantHostTurn } = await import("./loop.js");
     const turn = await continueStaffAssistantHostTurn({
       model,
       messages: [
@@ -1058,6 +1060,130 @@ describe("runStaffAssistantHostTurn", () => {
     expect(kinds).toEqual(["begin", "complete"]);
     expect(execute).not.toHaveBeenCalled();
     expect(turn.speech.text).toBe("Chat continues.");
+    expect(turn.modelToolCalls).toEqual([]);
+  });
+
+  it("continueStaffAssistantHostTurn recovers only started runs on the resume begin message", async () => {
+    const kinds: string[] = [];
+    const checkpoint: StaffAssistantHostCheckpoint = {
+      begin: () => {
+        kinds.push("begin");
+        return Promise.resolve({ messageId: "msg-resume" });
+      },
+      stageRun: () => {
+        throw new Error(
+          "stageRun must not mint on Phase B started-run recovery",
+        );
+      },
+      finishRun: (input) => {
+        kinds.push(`finishRun:${input.executionId}`);
+        return Promise.resolve();
+      },
+      complete: () => {
+        kinds.push("complete");
+        return Promise.resolve();
+      },
+    };
+    const execute = vi.fn(
+      (
+        _actionName: string,
+        _input: unknown,
+        options: { executionId?: string },
+      ) => {
+        kinds.push(`execute:${options.executionId ?? "missing"}`);
+        return Promise.resolve({ items: [], nextCursor: null });
+      },
+    );
+    const model = new MockLanguageModelV3({
+      doStream: () =>
+        Promise.resolve(mockTextStream("Resumed this Phase B turn.")),
+    });
+    const turn = await continueStaffAssistantHostTurn({
+      model,
+      messages: [
+        { role: "user", content: "list leftover then resume" },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "tool-call",
+              toolCallId: "call-leftover",
+              toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+              input: { limit: 3 },
+            },
+          ],
+        },
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "call-leftover",
+              toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+              output: { type: "json", value: { status: "started" } },
+            },
+          ],
+        },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "tool-call",
+              toolCallId: "call-resume",
+              toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+              input: { limit: 7 },
+            },
+          ],
+        },
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "call-resume",
+              toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+              output: { type: "json", value: { status: "started" } },
+            },
+          ],
+        },
+      ],
+      contracts: [listOrders],
+      execute,
+      checkpoint,
+      recoverStartedRuns: [
+        {
+          messageId: "msg-old",
+          executionId: "leftover-exec",
+          seq: 0,
+          actionName: "orders.list",
+          toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+          toolCallId: "call-leftover",
+          toolInput: { limit: 3 },
+        },
+        {
+          messageId: "msg-resume",
+          executionId: "resume-exec",
+          seq: 0,
+          actionName: "orders.list",
+          toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+          toolCallId: "call-resume",
+          toolInput: { limit: 7 },
+        },
+      ],
+    });
+    expect(kinds).toEqual([
+      "begin",
+      "execute:resume-exec",
+      "finishRun:resume-exec",
+      "complete",
+    ]);
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledWith(
+      "orders.list",
+      { kind: "page.summary", limit: 7 },
+      { toolCallId: "call-resume", executionId: "resume-exec" },
+    );
+    expect(turn.speech.text).toBe("Resumed this Phase B turn.");
     expect(turn.modelToolCalls).toEqual([]);
   });
 });

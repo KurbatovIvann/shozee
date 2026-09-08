@@ -719,6 +719,24 @@ function startedRunsForHostRecovery(
   return started;
 }
 
+function startedRunsForResumeTurnRecovery(
+  history: Awaited<ReturnType<typeof loadHistory>>,
+  pending: PendingInteractionRecord,
+): StaffAssistantHostStartedRun[] {
+  const hitlIndex = history.messages.findLastIndex((message) =>
+    message.toolRuns.some((run) => isPendingHitlRun(run, pending)),
+  );
+  if (hitlIndex === -1) {
+    return [];
+  }
+  const resumeMessageIds = new Set(
+    history.messages.slice(hitlIndex + 1).map((message) => message.id),
+  );
+  return startedRunsForHostRecovery(history).filter((run) =>
+    resumeMessageIds.has(run.messageId),
+  );
+}
+
 function phaseBState(
   history: Awaited<ReturnType<typeof loadHistory>>,
   pending: PendingInteractionRecord,
@@ -821,7 +839,7 @@ async function runPhaseB(options: {
     readonly companySelector: string | null;
   };
   readonly actor: StaffMembership;
-  readonly pendingId: string;
+  readonly pending: PendingInteractionRecord;
 }): Promise<AssistantHostInteractionResult> {
   const history = await loadHistory({
     pipeline: options.runtime.pipeline,
@@ -854,10 +872,13 @@ async function runPhaseB(options: {
     requestId: options.runtime.requestId,
     clientIp: options.runtime.clientIp,
     principal: options.staffPrincipal,
-    beginKey: `begin:resume:${options.pendingId}`,
+    beginKey: `begin:resume:${options.pending.id}`,
   });
   const priorRuns = priorRunsFromHistory(history);
-  const recoverStartedRuns = startedRunsForHostRecovery(history);
+  const recoverStartedRuns = startedRunsForResumeTurnRecovery(
+    history,
+    options.pending,
+  );
   const turn = await continueStaffAssistantHostTurn({
     model: requireHostModel(options.runtime.model),
     messages: staffAssistantModelMessagesFromPersisted(
@@ -1307,7 +1328,7 @@ async function afterPhaseASuccess(options: {
     bind: options.bind,
     staffPrincipal: options.staffPrincipal,
     actor: options.actor,
-    pendingId: options.record.id,
+    pending: options.record,
   });
 }
 
@@ -1361,7 +1382,7 @@ async function replayCompletedPending(options: {
     bind: options.bind,
     staffPrincipal: options.staffPrincipal,
     actor: options.actor,
-    pendingId: options.record.id,
+    pending: options.record,
   });
 }
 

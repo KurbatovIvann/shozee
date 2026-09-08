@@ -59,6 +59,7 @@ describe("live staff-assistant host (SHO-524)", () => {
     expect(hostSrc).not.toContain("staffAssistantGateToolPolicy");
     expect(hostSrc).not.toContain('run.action.replace(".", "_")');
     expect(hostSrc).toContain("run.toolName === null");
+    expect(hostSrc).toContain("startedRunsForResumeTurnRecovery");
   });
 
   it("does not GETDEL in the pending Redis scripts (core owns confirmation consume)", () => {

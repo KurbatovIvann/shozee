@@ -245,6 +245,7 @@ export {
   type StaffAssistantHostModelToolCall,
   type StaffAssistantHostPendingCheck,
   type StaffAssistantHostPendingDecision,
+  type StaffAssistantHostRecoverStartedRunsScope,
   type StaffAssistantHostStartedRun,
   type StaffAssistantHostTurnOptions,
   type StaffAssistantHostTurnResult,

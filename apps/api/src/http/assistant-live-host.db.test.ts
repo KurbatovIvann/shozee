@@ -25,7 +25,11 @@ import {
   mockTextStream,
   mockToolCallStream,
 } from "@showzy/ai/test";
-import { checkpointAssistantTurn, createConversation } from "@showzy/assistant";
+import {
+  checkpointAssistantTurn,
+  createConversation,
+  getModelHistory,
+} from "@showzy/assistant";
 import { archiveProduct, createProduct } from "@showzy/catalog";
 import { COMPANY_SELECTOR_HEADER, contractModules } from "@showzy/contract";
 import {
@@ -1331,6 +1335,86 @@ describe("live staff assistant host HTTP (SHO-524)", () => {
         (card) => card.kind === "surface" && card.surface.includes("order"),
       ),
     ).toBe(true);
+  });
+
+  it("Phase B choice resume does not execute a leftover chat-turn started create", async () => {
+    const pendingStore = createMemoryPendingStore();
+    const h = liveApp({
+      pendingStore,
+      model: silentModel("Named the chosen flavour."),
+    });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Live leftover chat create vs Phase B",
+    });
+    const leftoverCustomer = await h.invoke(createCustomer, {
+      name: "Leftover Buyer",
+      phone: nextPhone(),
+    });
+    const leftoverProduct = await h.invoke(createProduct, {
+      name: "Leftover Cake",
+      basePriceMinor: "1800",
+      variants: [{ name: "Solo" }],
+    });
+    const leftoverVariant = leftoverProduct.variants[0];
+    if (leftoverVariant === undefined) {
+      throw new Error("leftover product missing variant");
+    }
+    const leftoverExecutionId = await stageExecution(
+      h,
+      conversation.id,
+      "orders.create",
+      {
+        customerId: leftoverCustomer.id,
+        items: [
+          {
+            productId: leftoverProduct.productId,
+            variantId: leftoverVariant.variantId,
+            quantityMilli: "1000",
+          },
+        ],
+      },
+    );
+    const beforeChoice = await orderCount();
+    const choiceCustomer = await h.invoke(createCustomer, {
+      name: "Choice Buyer",
+      phone: nextPhone(),
+    });
+    const choiceProduct = await h.invoke(createProduct, {
+      name: "Choice Cake",
+      basePriceMinor: "1500",
+      variants: [{ name: "A" }, { name: "B" }],
+    });
+    const { record, optionByLabel } = await seedChoicePending(h, {
+      conversationId: conversation.id,
+      customerId: choiceCustomer.id,
+      product: choiceProduct,
+    });
+    const optionId = optionByLabel.get("A");
+    if (optionId === undefined) {
+      throw new Error("seeded choice missing option A");
+    }
+    const body = await parseOk(
+      await liveRequest(h.app, {
+        method: "POST",
+        path: ASSISTANT_HOST_CHOICE_PATH,
+        token,
+        body: {
+          conversationId: conversation.id,
+          choiceId: record.id,
+          optionId,
+        },
+      }),
+    );
+    expect(body.status).toBe("ok");
+    expect(await orderCount()).toBe(beforeChoice + 1);
+    const history = await h.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    const leftoverRun = history.messages
+      .flatMap((message) => message.toolRuns)
+      .find((run) => run.executionId === leftoverExecutionId);
+    expect(leftoverRun?.outcome).toBe("started");
   });
 
   it("live customers.deleteCustomer confirms on POST /assistant/confirm; Так does not", async () => {

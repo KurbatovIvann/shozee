@@ -2406,6 +2406,91 @@ describe("unpublished staff assistant host HTTP", () => {
     );
   });
 
+  it("Phase B choice resume does not execute a leftover chat-turn started create", async () => {
+    const h = harness({
+      model: silentModel("Named the chosen flavour."),
+    });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Leftover chat create vs Phase B",
+    });
+    const leftoverCustomer = await h.invoke(createCustomer, {
+      name: "Leftover Buyer",
+      phone: nextPhone(),
+    });
+    const leftoverProduct = await h.invoke(createProduct, {
+      name: "Leftover Cake",
+      basePriceMinor: "1800",
+      variants: [{ name: "Solo" }],
+    });
+    const leftoverVariant = leftoverProduct.variants[0];
+    if (leftoverVariant === undefined) {
+      throw new Error("leftover product missing variant");
+    }
+    const userMessage = await h.invoke(
+      appendUserMessage,
+      { conversationId: conversation.id, body: "Create the leftover cake" },
+      { idempotencyKey: attemptKey("message", conversation.id, randomUUID()) },
+    );
+    const leftover = await stageNamedStartedRun(h, {
+      conversationId: conversation.id,
+      beginKey: `begin:${userMessage.id}`,
+      actionName: "orders.create",
+      toolName: ORDERS_CREATE_TOOL_NAME,
+      toolCallId: "call-leftover-create",
+      toolInput: {
+        customerId: leftoverCustomer.id,
+        items: [
+          {
+            productId: leftoverProduct.productId,
+            variantId: leftoverVariant.variantId,
+            quantityMilli: "1000",
+          },
+        ],
+      },
+    });
+    const beforeChoice = await orderCount();
+    const choiceCustomer = await h.invoke(createCustomer, {
+      name: "Choice Buyer",
+      phone: nextPhone(),
+    });
+    const choiceProduct = await h.invoke(createProduct, {
+      name: "Choice Cake",
+      basePriceMinor: "1500",
+      variants: [{ name: "A" }, { name: "B" }],
+    });
+    const { record, optionByLabel } = await seedChoicePending(h, {
+      conversationId: conversation.id,
+      customerId: choiceCustomer.id,
+      product: choiceProduct,
+    });
+    const optionId = optionByLabel.get("A");
+    if (optionId === undefined) {
+      throw new Error("seeded choice missing option A");
+    }
+    const resume = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.id,
+        optionId,
+      },
+    });
+    expect(
+      assistantHostInteractionResultSchema.parse(await resume.json()).status,
+    ).toBe("ok");
+    expect(await orderCount()).toBe(beforeChoice + 1);
+    const history = await h.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    const leftoverRun = history.messages
+      .flatMap((message) => message.toolRuns)
+      .find((run) => run.executionId === leftover.executionId);
+    expect(leftoverRun?.outcome).toBe("started");
+  });
+
   it("claimed confirm wins over concurrent chat", async () => {
     const counted = countingConversationLock(createMemoryConversationLock());
     const h = harness({

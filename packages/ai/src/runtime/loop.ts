@@ -329,17 +329,29 @@ function compareStartedRunSeq(
 }
 
 /**
- * Chat-turn `started` rows, including those whose assistant message is
- * not the current `begin()` id. A new user line mints a new assistant
- * replica; crash recovery still replays the stored `executionId`.
- * Host-seeded HITL / Phase A ids stay on their own resume path.
+ * Chat HTTP recovery replays unfinished chat-turn `started` rows across
+ * a new `begin()` message. Phase B / choice / confirm resume only
+ * replays rows on **this** resume `begin()` message.
  */
+export type StaffAssistantHostRecoverStartedRunsScope =
+  "conversation" | "resumeTurn";
+
 function chatRecoverableStartedRuns(
   runs: readonly StaffAssistantHostStartedRun[],
+  options: {
+    readonly scope: StaffAssistantHostRecoverStartedRunsScope;
+    readonly messageId: string;
+  },
 ): StaffAssistantHostStartedRun[] {
-  const chatTurn = runs.filter(
-    (run) => !isHostSeededHitlToolCallId(run.toolCallId),
-  );
+  const chatTurn = runs.filter((run) => {
+    if (isHostSeededHitlToolCallId(run.toolCallId)) {
+      return false;
+    }
+    if (options.scope === "resumeTurn") {
+      return run.messageId === options.messageId;
+    }
+    return true;
+  });
   const messageOrder: string[] = [];
   const byMessage = new Map<string, StaffAssistantHostStartedRun[]>();
   for (const run of chatTurn) {
@@ -365,11 +377,15 @@ async function recoverStartedToolRuns(options: {
   readonly state: StaffAssistantHostExecuteState;
   readonly messageId: string | undefined;
   readonly runs: readonly StaffAssistantHostStartedRun[];
+  readonly scope: StaffAssistantHostRecoverStartedRunsScope;
 }): Promise<StaffAssistantHostStartedRun[]> {
   if (options.messageId === undefined || options.runs.length === 0) {
     return [];
   }
-  const recoverable = chatRecoverableStartedRuns(options.runs);
+  const recoverable = chatRecoverableStartedRuns(options.runs, {
+    scope: options.scope,
+    messageId: options.messageId,
+  });
   if (recoverable.length === 0) {
     return [];
   }
@@ -561,13 +577,14 @@ export interface StaffAssistantHostTurnOptions {
    */
   readonly priorRuns?: readonly StaffAssistantTurnRun[];
   /**
-   * In-flight `started` rows for this conversation. The loop replays
-   * execute + `finishRun` from stored `executionId` + `toolInput` even
-   * when `begin()` minted a new assistant message — the model must not
-   * re-decide that call (SHO-539). Host-seeded HITL / Phase A ids are
-   * not recovered here.
+   * In-flight `started` rows. Chat (`conversation`, default) replays
+   * unfinished chat-turn rows even when `begin()` minted a new assistant
+   * message. Phase B continue (`resumeTurn`) replays only rows whose
+   * `messageId` is this resume `begin()` — leftover chat crashes stay
+   * untouched. Host-seeded HITL / Phase A ids are not recovered here.
    */
   readonly recoverStartedRuns?: readonly StaffAssistantHostStartedRun[];
+  readonly recoverStartedRunsScope?: StaffAssistantHostRecoverStartedRunsScope;
 }
 
 /**
@@ -629,6 +646,7 @@ export async function runStaffAssistantHostTurn(
     state,
     messageId: state.messageId,
     runs: options.recoverStartedRuns ?? [],
+    scope: options.recoverStartedRunsScope ?? "conversation",
   });
   const toolsetHash = staffAssistantToolsetHash(
     Object.keys(tools),
@@ -726,10 +744,14 @@ export async function runStaffAssistantHostTurn(
 /**
  * Phase B resume: same `streamText` host turn from persisted history.
  * Callers must pass `getModelHistory` messages — do not append a second
- * copy of the original user text.
+ * copy of the original user text. Started-run recovery is this resume
+ * `begin()` only (not conversation-wide leftover chat crashes).
  */
 export async function continueStaffAssistantHostTurn(
   options: StaffAssistantHostTurnOptions,
 ): Promise<StaffAssistantHostTurnResult> {
-  return runStaffAssistantHostTurn(options);
+  return runStaffAssistantHostTurn({
+    ...options,
+    recoverStartedRunsScope: "resumeTurn",
+  });
 }
