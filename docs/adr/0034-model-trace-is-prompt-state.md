@@ -109,3 +109,7 @@ bounded model-prompt caches that no client renders are prompt state (ADR-0034)".
 - `docs/module-ownership.md` gets a one-line amendment for `assistant` in
   the T4 PR. No other module may add a prompt-state column without its own
   ADR; this decision is scoped to `assistant_tool_runs`.
+- ADR-0037 records that `model_trace` also stores `error` /
+  `choice_required` / `confirmation_required` / `started`, and that
+  `assistant.checkpointAssistantTurn` lands in T2. Rule 4 above stays
+  until that ticket.

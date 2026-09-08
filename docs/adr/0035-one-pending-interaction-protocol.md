@@ -1,6 +1,7 @@
 # ADR-0035: One pending-interaction protocol; confirmation resumes without a model call
 
-- **Status**: Accepted
+- **Status**: Accepted (superseded in part by
+  [ADR-0037](0037-assistant-host-is-one-tool-loop.md))
 - **Date**: 2026-09-07
 - **Deciders**: Ivan Kurbatov (+ proposing agent: Shozik audit,
   Linear [SHO-430](https://linear.app/showzy-v2/issue/SHO-430) /
@@ -240,3 +241,10 @@ Required by SHO-430; each is a test in SHO-516 unless marked otherwise.
 - Related ADRs: ADR-0008 (same actions for UI and AI) is preserved — both
   channels still consume the same core challenge; ADR-0034 supplies the
   model's memory of the confirmed result.
+- **Superseded in part by ADR-0037** (SHO-519 / SHO-520): keep this
+  store (one pending record, discriminated `kind`, CAS, bind isolation,
+  core hash+GETDEL both required). Drop “zero model after execute” as
+  the end of the job. After the server runs stored canonical input, the
+  same `streamText` loop continues from persisted messages. Replace is
+  an explicit version-CAS of this pending, not a matching `actionName`.
+  Abandon is named HTTP. Live `/assistant/chat` switches in T5.
