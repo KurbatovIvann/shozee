@@ -98,7 +98,11 @@ Until T5 there are two hosts:
   rejects leftover `{ … }` JSON only — not `**`, and not markdown
   tables. Do not use `presentOrderCreatedSpeech` or catalog domain-error
   copy as the winner. `commitHostSpeech` does not call `commitTurnSpeech`.
-  The new loop must not call the gate. `source` stays in-memory.
+  The new loop must not call the gate. It default-attaches the permitted
+  tool set plus BM25 (`staffAssistantTools`); “давай ще один” still has
+  tools. The system prompt is identity, language, HITL/safety, and card
+  style — not a module how-to dump and not a speech-rewrite instruction
+  for tables or `**`. `source` stays in-memory.
   Optional `checkpoint` is `begin` → `stageRun` (mint `executionId`) →
   execute with that id → `finishRun` → `complete` (SHO-521). Do not use
   a model `toolCallId` as the retry key.
@@ -107,12 +111,20 @@ Do not delete a **surface** (registry / cards). Do not add a second
 model call to summarize the card. Do not re-introduce a JSON spoken
 envelope, a presenter that serializes rows, or live≠persisted replies.
 
-## Gate (SHO-513)
+## Gate (SHO-513 / SHO-523)
 
-The gate classifies `{ mode: chitchat | capability | job, confidence }`
-only. High-confidence chitchat attaches no tools; job, capability, and
-fail-open (low confidence / error) attach the full permitted set plus
-BM25. It does not force a tool. Call one terminal tool per job; do not
+The live `/assistant/chat` host still classifies
+`{ mode: chitchat | capability | job, confidence }` until T5.
+High-confidence chitchat attaches no tools; job, capability, and
+fail-open (low confidence / error) attach the full catalog plus BM25.
+
+The **new** host (`runStaffAssistantHostTurn` / unpublished
+`createStaffAssistantHostApp`) does not construct or call that
+classifier. It always attaches the permitted tool set plus BM25. Do not
+replace the gate with another classifier. Keep `gate.ts` while the old
+host imports it.
+
+It does not force a tool. Call one terminal tool per job; do not
 narrate instead of calling.
 
 ## Tests

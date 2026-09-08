@@ -60,7 +60,19 @@ export type CustomersListCustomersFacadeInput = z.output<
   typeof customersListCustomersInputSchema
 >;
 
-const CUSTOMERS_LIST_CUSTOMERS_DESCRIPTION = `Compact CRM customer page in the active company: id, name, phone, email, status, groupId, priceListId, and nextCursor. Default status is active; pass archived or all to include archived rows. Optional case-insensitive search on name, phone, or email. Optional groupId UUID — a missing or foreign group yields an empty page. Optional cursor pages forward. Page size defaults to ${String(CUSTOMERS_LIST_CUSTOMERS_ASSISTANT_LIMIT)} (cap ${String(CUSTOMERS_LIST_CUSTOMERS_ASSISTANT_LIMIT)}) so every visible row matches nextCursor. Does not return notes, linked-account ids, counterparty counts, or timestamps. Find a customer by name, phone, or email with this tool. Do not call customers.getCustomer in a loop to recover notes. Create uses customers.createCustomer.`;
+export const CUSTOMERS_ASSIGN_PRICE_LIST_DESCRIPTION_SUFFIX =
+  "Assign a price list to a group or customer with priceListId on this write. Resolve the list by name with pricing_list_price_lists first.";
+
+export const CUSTOMERS_DEFERRED_TOOL_DESCRIPTION_SUFFIXES: Readonly<
+  Record<string, string>
+> = {
+  "customers.createCustomer": CUSTOMERS_ASSIGN_PRICE_LIST_DESCRIPTION_SUFFIX,
+  "customers.updateCustomer": CUSTOMERS_ASSIGN_PRICE_LIST_DESCRIPTION_SUFFIX,
+  "customers.createGroup": CUSTOMERS_ASSIGN_PRICE_LIST_DESCRIPTION_SUFFIX,
+  "customers.updateGroup": CUSTOMERS_ASSIGN_PRICE_LIST_DESCRIPTION_SUFFIX,
+};
+
+const CUSTOMERS_LIST_CUSTOMERS_DESCRIPTION = `Compact CRM customer page in the active company: id, name, phone, email, status, groupId, priceListId, and nextCursor. Default status is active; pass archived or all to include archived rows. Optional case-insensitive search on name, phone, or email. Put people and product names in nominative (Катя Самбука, Наполеон) — not the inflected form from the staff sentence (Каті Самбуки, наполеона). Pass only the name or query, not the whole utterance («замовлення для …»). One empty page is not "does not exist": retry with nominative and/or the last-name or product-name stem before telling the staff member nobody or nothing matches. Optional groupId UUID — a missing or foreign group yields an empty page. Optional cursor pages forward. Page size defaults to ${String(CUSTOMERS_LIST_CUSTOMERS_ASSISTANT_LIMIT)} (cap ${String(CUSTOMERS_LIST_CUSTOMERS_ASSISTANT_LIMIT)}) so every visible row matches nextCursor. Does not return notes, linked-account ids, counterparty counts, or timestamps. Find a customer by name, phone, or email with this tool. Do not call customers.getCustomer in a loop to recover notes. Create uses customers.createCustomer.`;
 
 export function mapCustomersListCustomersInput(
   input: CustomersListCustomersFacadeInput,

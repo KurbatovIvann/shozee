@@ -564,6 +564,41 @@ describe("staffAssistantTools", () => {
     expect(setJson["oneOf"]).toBeUndefined();
   });
 
+  it("appends price-list assign how-to to existing customers writes", () => {
+    const createCustomer = defineActionContract({
+      name: "customers.createCustomer",
+      description:
+        "Create a CRM customer in the staff member's active company.",
+      principal: "staff",
+      transport: "client",
+      aiExposure: "exposed",
+      permissions: ["customers:create"],
+      risk: "write",
+      requiresConfirmation: false,
+      idempotent: true,
+      emits: [],
+      atomicCalls: [],
+      atomicCallers: [],
+      errors: ["VALIDATION"],
+      audit: true,
+      timeout: 10_000,
+      input: z.strictObject({
+        name: z.string().min(1),
+        priceListId: z.uuid().optional(),
+      }),
+      output: z.object({ id: z.uuid() }),
+    });
+    const tools = staffAssistantTools([createCustomer], () =>
+      Promise.resolve({ id: customerId }),
+    );
+    const name = toProviderToolName("customers.createCustomer");
+    expect(tools[name]?.description).toContain("priceListId");
+    expect(tools[name]?.description).toContain("pricing_list_price_lists");
+    expect(tools[name]?.providerOptions).toEqual(
+      STAFF_ASSISTANT_DEFER_PROVIDER_OPTIONS,
+    );
+  });
+
   it("advertises orders_create as a named object and still dispatches to orders.create", async () => {
     const createOrder = defineActionContract({
       name: "orders.create",

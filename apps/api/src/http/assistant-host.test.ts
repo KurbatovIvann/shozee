@@ -44,6 +44,11 @@ describe("unpublished staff-assistant host (SHO-522)", () => {
     expect(hostSrc).not.toContain(
       "pending_replace choice probe must not execute the handler",
     );
+    expect(hostSrc).not.toContain("classifyStaffAssistantTurn");
+    expect(hostSrc).not.toContain("staffAssistantShouldSkipIntentGate");
+    expect(hostSrc).not.toContain("gateLanguageModel");
+    expect(hostSrc).not.toContain("resolveGateLanguageModel");
+    expect(hostSrc).not.toContain("staffAssistantGateToolPolicy");
   });
 
   it("does not GETDEL in the pending Redis scripts (core owns confirmation consume)", () => {

@@ -31,8 +31,8 @@ const ORDER_A = "11111111-1111-4111-8111-111111111111";
 const ORDER_B = "22222222-2222-4222-8222-222222222222";
 
 /** `<presentation>` block including every registered promptLine. */
-const PRE_CHANGE_PRESENTATION_BLOCK = `<presentation>
-Reply in one or two sentences about the result, in the user's language. The UI already shows the rows on a card — do not repeat counts the card already shows unless asked. Never a table, markdown grid, or long bullet dump. Do not emit card JSON, view-models, kind discriminators, or row arrays. Do not name those surfaces "cards" to the staff member. No **, |, headings, or code fences.
+const HOST_PRESENTATION_BLOCK = `<presentation>
+Reply in one or two sentences about the result, in the user's language. The UI already shows the rows on a card — do not repeat counts the card already shows unless asked. Cards exist: do not dump a table instead of a card. Markdown tables and emphasis are style, not a speech-rewrite instruction. Do not emit card JSON, view-models, kind discriminators, or row arrays. Do not name those surfaces "cards" to the staff member.
 
 After orders_list_page (chips from same-turn orders_list_counts), the UI already shows the orders list card. Reply with a short product-language summary. Do not restate the rows the card already shows unless asked. Do not dump a markdown table of the rows.
 After orders_list_counts with no page on the same turn, the UI already shows the orders aggregate card with period, totals, and a status breakdown. Reply with a short product-language summary of the totals. Do not restate the totals the card already shows unless asked. Do not dump a markdown table of buckets. Do not call orders_list_counts or orders.list again for the card.
@@ -129,10 +129,10 @@ function aggregateOf(
   return null;
 }
 
-describe("staff assistant presentation cache prefix (SHO-457)", () => {
-  it("keeps the <presentation> block byte-identical to the pre-change string", () => {
+describe("staff assistant presentation cache prefix (SHO-457 / SHO-523)", () => {
+  it("keeps the <presentation> block as style, not a speech-rewrite instruction", () => {
     expect(presentationBlock(staffAssistantSystemPrompt)).toBe(
-      PRE_CHANGE_PRESENTATION_BLOCK,
+      HOST_PRESENTATION_BLOCK,
     );
     expect(ASSISTANT_SURFACE_REGISTRY.map((entry) => entry.promptLine)).toEqual(
       [

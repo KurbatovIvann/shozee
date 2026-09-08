@@ -26,6 +26,13 @@ describe("pending_replace host tool", () => {
     expect(src).not.toMatch(/defineActionContract\s*\(/);
     expect(PENDING_REPLACE_TOOL_NAME).toBe("pending_replace");
     expect(PENDING_REPLACE_DESCRIPTION).toContain("Do not send pending id");
+    expect(PENDING_REPLACE_DESCRIPTION).toContain(
+      "Chat text, including «Так», is not confirmation",
+    );
+    expect(PENDING_REPLACE_DESCRIPTION).toContain(
+      "even another create with the same actionName — is not replace",
+    );
+    expect(PENDING_REPLACE_DESCRIPTION).toContain("versioned replace");
   });
 
   it("schema is façade args only — no pendingId, version, challengeId, or optionId", () => {

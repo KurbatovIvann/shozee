@@ -14,6 +14,7 @@ import {
   STAFF_ASSISTANT_CLIP_JSON_MAX,
 } from "../clip-tool-result.js";
 import {
+  CUSTOMERS_ASSIGN_PRICE_LIST_DESCRIPTION_SUFFIX,
   CUSTOMERS_LIST_CUSTOMERS_ACTION_NAME,
   CUSTOMERS_LIST_CUSTOMERS_ASSISTANT_LIMIT,
   CUSTOMERS_LIST_CUSTOMERS_CURSOR_MAX,
@@ -233,6 +234,30 @@ describe("customersListCustomersFacadeTools", () => {
     expect(json["oneOf"]).toBeUndefined();
     expect(json["properties"]).toHaveProperty("search");
     expect(json["properties"]).not.toHaveProperty("query");
+  });
+
+  it("tells the model to find by nominative name and not loop getCustomer", () => {
+    const tools = customersListCustomersFacadeTools(listCustomers, () =>
+      Promise.resolve({ items: [], nextCursor: null }),
+    );
+    expect(tools[CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME]?.description).toContain(
+      "Find a customer by name, phone, or email",
+    );
+    expect(tools[CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME]?.description).toContain(
+      "Do not call customers.getCustomer in a loop",
+    );
+    expect(tools[CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME]?.description).toContain(
+      "Put people and product names in nominative",
+    );
+    expect(tools[CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME]?.description).toContain(
+      "customers.createCustomer",
+    );
+    expect(CUSTOMERS_ASSIGN_PRICE_LIST_DESCRIPTION_SUFFIX).toContain(
+      "priceListId",
+    );
+    expect(CUSTOMERS_ASSIGN_PRICE_LIST_DESCRIPTION_SUFFIX).toContain(
+      "pricing_list_price_lists",
+    );
   });
 
   it("duplicates list caps and rejects overlong search, cursor, or limit above the named cap", () => {
