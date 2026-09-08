@@ -11,6 +11,7 @@ import type {
   PendingChoice,
 } from "../shared/choice-presenter";
 import { assistantSurfaceKey, type AssistantSurface } from "../surfaces";
+import { AssistantMarkdownView } from "./assistant-markdown-view";
 import { AssistantSurfaceCard } from "./assistant-surface-card";
 import { AssistantWaitLine } from "./assistant-wait-line";
 import { ChoiceCard } from "./choice-card";
@@ -58,9 +59,16 @@ export const AssistantMessageRow = memo(function AssistantMessageRow(props: {
         />
       ) : null}
       {!props.waiting && props.text.length > 0 ? (
-        <Text style={isUser ? styles.userBubble : styles.assistantBubble}>
-          {props.text}
-        </Text>
+        isUser ? (
+          <Text style={styles.userBubble}>{props.text}</Text>
+        ) : (
+          <View style={styles.assistantBubble}>
+            <AssistantMarkdownView
+              text={props.text}
+              onOpenHref={props.onOpenHref}
+            />
+          </View>
+        )
       ) : null}
       {!props.waiting
         ? props.surfaces.map((surface) => (
@@ -136,15 +144,12 @@ const styles = StyleSheet.create((theme) => ({
   },
   assistantBubble: {
     maxWidth: "100%",
-    color: theme.colors.foreground,
     backgroundColor: theme.colors.card,
     overflow: "hidden",
     borderRadius: theme.radii.lg,
     borderBottomLeftRadius: theme.radii.sm,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm + theme.spacing["2xs"],
-    fontSize: theme.typography.sm.fontSize,
-    lineHeight: theme.typography.sm.lineHeight,
     ...theme.shadows.sm,
   },
 }));
