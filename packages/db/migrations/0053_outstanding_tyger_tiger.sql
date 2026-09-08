@@ -1,0 +1,1 @@
+CREATE INDEX "orders_company_id_order_number_pattern_idx" ON "orders" USING btree ("company_id","order_number" text_pattern_ops);
