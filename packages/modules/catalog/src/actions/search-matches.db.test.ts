@@ -405,16 +405,25 @@ type SearchMatchesResult = {
   >;
 };
 
-function groupOf(result: SearchMatchesResult, type: "product" | "variant") {
-  return result.groups.find((group) => group.type === type);
+type ProductGroup = Extract<
+  SearchMatchesResult["groups"][number],
+  { type: "product" }
+>;
+type VariantGroup = Extract<
+  SearchMatchesResult["groups"][number],
+  { type: "variant" }
+>;
+
+function productGroup(result: SearchMatchesResult): ProductGroup | undefined {
+  return result.groups.find(
+    (group): group is ProductGroup => group.type === "product",
+  );
 }
 
-function productGroup(result: SearchMatchesResult) {
-  return groupOf(result, "product");
-}
-
-function variantGroup(result: SearchMatchesResult) {
-  return groupOf(result, "variant");
+function variantGroup(result: SearchMatchesResult): VariantGroup | undefined {
+  return result.groups.find(
+    (group): group is VariantGroup => group.type === "variant",
+  );
 }
 
 function hitIds(
