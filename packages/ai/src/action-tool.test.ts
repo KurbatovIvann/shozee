@@ -567,7 +567,8 @@ describe("staffAssistantTools", () => {
   it("appends price-list assign how-to to existing customers writes", () => {
     const createCustomer = defineActionContract({
       name: "customers.createCustomer",
-      description: "Create a CRM customer in the staff member's active company.",
+      description:
+        "Create a CRM customer in the staff member's active company.",
       principal: "staff",
       transport: "client",
       aiExposure: "exposed",
@@ -587,9 +588,8 @@ describe("staffAssistantTools", () => {
       }),
       output: z.object({ id: z.uuid() }),
     });
-    const tools = staffAssistantTools(
-      [createCustomer],
-      () => Promise.resolve({ id: customerId }),
+    const tools = staffAssistantTools([createCustomer], () =>
+      Promise.resolve({ id: customerId }),
     );
     const name = toProviderToolName("customers.createCustomer");
     expect(tools[name]?.description).toContain("priceListId");

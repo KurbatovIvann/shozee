@@ -244,10 +244,10 @@ describe("customersListCustomersFacadeTools", () => {
       "Find a customer by name, phone, or email",
     );
     expect(tools[CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME]?.description).toContain(
-      "do not call customers.getCustomer in a loop",
+      "Do not call customers.getCustomer in a loop",
     );
     expect(tools[CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME]?.description).toContain(
-      "put people and product names in nominative",
+      "Put people and product names in nominative",
     );
     expect(tools[CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME]?.description).toContain(
       "customers.createCustomer",

@@ -174,7 +174,7 @@ describe("catalogListProductsFacadeTools", () => {
       Promise.resolve({ items: [], nextCursor: null }),
     );
     expect(tools[CATALOG_LIST_PRODUCTS_TOOL_NAME]?.description).toContain(
-      "put people and product names in nominative",
+      "Put people and product names in nominative",
     );
     expect(tools[CATALOG_LIST_PRODUCTS_TOOL_NAME]?.description).toContain(
       "Катя Самбука",

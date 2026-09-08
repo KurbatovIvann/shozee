@@ -657,7 +657,7 @@ describe("ordersListFacadeTools", () => {
       ORDERS_AGGREGATE_PROMPT_LINE,
     );
     expect(tools[ORDERS_LIST_PAGE_TOOL_NAME]?.description).toContain(
-      "put people and product names in nominative",
+      "Put people and product names in nominative",
     );
     expect(tools[ORDERS_LIST_COUNTS_TOOL_NAME]?.description).toContain(
       "Катя Самбука",

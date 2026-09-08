@@ -90,7 +90,9 @@ describe("staffAssistantSystemPrompt", () => {
     expect(staffAssistantSystemPrompt).not.toContain(
       "put people and product names in nominative",
     );
-    expect(staffAssistantSystemPrompt).not.toContain("resolveCustomerReference");
+    expect(staffAssistantSystemPrompt).not.toContain(
+      "resolveCustomerReference",
+    );
     expect(staffAssistantSystemPrompt).not.toContain("nameSearchStems");
   });
 
