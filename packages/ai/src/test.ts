@@ -126,18 +126,39 @@ export function mockToolCallStream(
   toolName: string,
   input: string,
 ) {
+  return mockToolCallsStream([{ toolCallId, toolName, input }]);
+}
+
+/** Several tool calls in one model step (sequential execute on the new host). */
+export function mockToolCallsStream(
+  calls: readonly {
+    readonly toolCallId: string;
+    readonly toolName: string;
+    readonly input: string;
+  }[],
+) {
   return {
     stream: convertArrayToReadableStream([
       { type: "stream-start" as const, warnings: [] },
-      { type: "tool-input-start" as const, id: toolCallId, toolName },
-      { type: "tool-input-delta" as const, id: toolCallId, delta: input },
-      { type: "tool-input-end" as const, id: toolCallId },
-      {
-        type: "tool-call" as const,
-        toolCallId,
-        toolName,
-        input,
-      },
+      ...calls.flatMap((call) => [
+        {
+          type: "tool-input-start" as const,
+          id: call.toolCallId,
+          toolName: call.toolName,
+        },
+        {
+          type: "tool-input-delta" as const,
+          id: call.toolCallId,
+          delta: call.input,
+        },
+        { type: "tool-input-end" as const, id: call.toolCallId },
+        {
+          type: "tool-call" as const,
+          toolCallId: call.toolCallId,
+          toolName: call.toolName,
+          input: call.input,
+        },
+      ]),
       {
         type: "finish" as const,
         finishReason: { unified: "tool-calls" as const, raw: undefined },

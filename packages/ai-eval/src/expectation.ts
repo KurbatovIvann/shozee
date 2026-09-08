@@ -1,3 +1,4 @@
+import type { SpeechSource } from "@showzy/ai";
 import { isRecord } from "./record.js";
 import type { EvalToolCall } from "./trace.js";
 
@@ -9,6 +10,8 @@ const WRITE_SUCCESS_CLAIM =
 export interface EvalTurnTrace {
   readonly text: string;
   readonly toolCalls: readonly EvalToolCall[];
+  /** In-memory speech tag (ADR-0037). Optional until T5 live switch. */
+  readonly speechSource?: SpeechSource;
 }
 
 export interface EvalToolCallExpectation {
@@ -58,6 +61,12 @@ export interface EvalExpectation {
    * without this (or a successful write) is not enough.
    */
   readonly requireChoice?: boolean;
+  /**
+   * New host: model prose is the bubble. Fallback only when leftover JSON
+   * makes text unusable. Markdown tables must not force this away from
+   * `model`.
+   */
+  readonly speechSource?: SpeechSource;
 }
 
 export interface EvalMatchFailure {
@@ -469,6 +478,13 @@ export function matchEvalExpectation(
     const choice = matchRequireChoice(trace);
     if (!choice.ok) {
       return choice;
+    }
+  }
+  if (expectation.speechSource !== undefined) {
+    if (trace.speechSource !== expectation.speechSource) {
+      return fail(
+        `expected speech.source ${expectation.speechSource}, got ${trace.speechSource ?? "undefined"}`,
+      );
     }
   }
   return matchFailedWriteSuccessClaim(trace);

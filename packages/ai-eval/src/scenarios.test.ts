@@ -7,6 +7,7 @@ import {
 } from "@showzy/ai";
 import { describe, expect, it } from "vitest";
 
+import { matchEvalExpectation } from "./expectation.js";
 import { GATE_CLASSIFIES_SCENARIOS } from "./scenarios/gate-classifies.js";
 import { MODEL_SPEAKS_SCENARIOS } from "./scenarios/model-speaks.js";
 import { PLAIN_REPLY_SCENARIOS } from "./scenarios/plain-reply.js";
@@ -102,26 +103,44 @@ describe("MODEL_SPEAKS_SCENARIOS", () => {
       MODEL_SPEAKS_SCENARIOS[2]?.expectation.textIncludesToolValues,
     ).toEqual(["customerName"]);
     for (const scenario of MODEL_SPEAKS_SCENARIOS) {
+      expect(scenario.expectation.speechSource).toBe("model");
       expect(scenario.expectation.textExcludes).toEqual(
-        expect.arrayContaining([
-          '{"spoken"',
-          '"spoken":',
-          "```",
-          "|",
-          "Останні замовлення",
-          "Latest orders",
-          "Клієнти",
-          "Customers",
-          "Знайшов",
-          "Found",
-        ]),
+        expect.arrayContaining(['{"spoken"', '"spoken":', "```"]),
       );
+      expect(scenario.expectation.textExcludes).not.toContain("|");
+      expect(scenario.expectation.textExcludes).not.toContain(
+        "Останні замовлення",
+      );
+      expect(scenario.expectation.textExcludes).not.toContain("Latest orders");
+      expect(scenario.expectation.textExcludes).not.toContain("Клієнти");
+      expect(scenario.expectation.textExcludes).not.toContain("Customers");
+      expect(scenario.expectation.textExcludes).not.toContain("Знайшов");
+      expect(scenario.expectation.textExcludes).not.toContain("Found");
       expect(scenario.expectation.textExcludes).not.toContain(" замовлень");
       expect(scenario.expectation.textExcludes).not.toContain(" orders");
       expect(scenario.expectation.textExcludes).not.toContain(
         "{{count}} order",
       );
     }
+  });
+
+  it("does not treat a markdown table as forbidden speech", () => {
+    const scenario = MODEL_SPEAKS_SCENARIOS[0];
+    expect(scenario).toBeDefined();
+    expect(
+      matchEvalExpectation(scenario?.expectation ?? {}, {
+        text: "| order | total |\n| **#12** | 10 |",
+        speechSource: "model",
+        toolCalls: [
+          {
+            toolCallId: "c1",
+            name: ORDERS_LIST_PAGE_TOOL_NAME,
+            args: {},
+            result: { rows: [{ orderNumber: "12" }] },
+          },
+        ],
+      }),
+    ).toEqual({ ok: true });
   });
 });
 
