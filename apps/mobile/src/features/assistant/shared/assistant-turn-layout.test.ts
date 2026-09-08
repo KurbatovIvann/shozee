@@ -60,9 +60,12 @@ describe("assistant turn layout composition", () => {
     expect(ROW).toContain('maxWidth: "100%"');
     expect(ROW).not.toMatch(/assistantBubble[\s\S]{0,400}numberOfLines/);
     const textIndex = ROW.indexOf("{props.text}");
+    const markdownIndex = ROW.indexOf("<AssistantMarkdownView");
     const cardIndex = ROW.indexOf("<AssistantSurfaceCard");
     expect(textIndex).toBeGreaterThan(0);
-    expect(cardIndex).toBeGreaterThan(textIndex);
+    expect(markdownIndex).toBeGreaterThan(textIndex);
+    expect(cardIndex).toBeGreaterThan(markdownIndex);
+    expect(ROW).toContain("AssistantMarkdownView");
   });
 
   it("applies the extracted column and stretch styles to every result Card", () => {
