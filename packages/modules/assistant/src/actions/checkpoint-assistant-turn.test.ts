@@ -157,8 +157,11 @@ describe("assistant.checkpointAssistantTurn contract", () => {
         toolName: "orders_list_page",
         toolCallId: "call_seq_last",
         toolInput: {},
-      }).seq,
-    ).toBe(TOOL_RUNS_MAX - 1);
+      }),
+    ).toMatchObject({
+      kind: "stageRun",
+      seq: TOOL_RUNS_MAX - 1,
+    });
     expect(
       checkpointAssistantTurnInputSchema.safeParse({
         kind: "stageRun",
