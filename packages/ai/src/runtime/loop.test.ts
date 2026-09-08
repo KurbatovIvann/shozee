@@ -160,6 +160,44 @@ const createOrder = defineActionContract({
 const customerId = "11111111-1111-4111-8111-111111111111";
 const challengeId = "22222222-2222-4222-8222-222222222222";
 
+function assistantToolCallIdsByMessage(prompt: unknown): string[][] {
+  if (!Array.isArray(prompt)) {
+    return [];
+  }
+  const groups: string[][] = [];
+  for (const message of prompt) {
+    if (
+      typeof message !== "object" ||
+      message === null ||
+      !("role" in message) ||
+      message.role !== "assistant"
+    ) {
+      continue;
+    }
+    const content = "content" in message ? message.content : undefined;
+    if (!Array.isArray(content)) {
+      continue;
+    }
+    const ids = content.flatMap((part) => {
+      if (
+        typeof part !== "object" ||
+        part === null ||
+        !("type" in part) ||
+        part.type !== "tool-call" ||
+        !("toolCallId" in part) ||
+        typeof part.toolCallId !== "string"
+      ) {
+        return [];
+      }
+      return [part.toolCallId];
+    });
+    if (ids.length > 0) {
+      groups.push(ids);
+    }
+  }
+  return groups;
+}
+
 class DuckTypedPickerConflict extends ConflictError {
   readonly reason: "variant_required";
   readonly target: {
@@ -1088,6 +1126,112 @@ describe("runStaffAssistantHostTurn", () => {
       prompt.lastIndexOf("did the list finish?"),
     );
     expect(turn.speech.text).toBe("Recovered outside the window.");
+    expect(turn.modelToolCalls).toEqual([]);
+  });
+
+  it("inserts a dedicated recovered pair when the last message is an unrelated assistant-with-tools", async () => {
+    const kinds: string[] = [];
+    const checkpoint: StaffAssistantHostCheckpoint = {
+      begin: () => {
+        kinds.push("begin");
+        return Promise.resolve({ messageId: "msg-new" });
+      },
+      stageRun: () => {
+        throw new Error("stageRun must not mint on dedicated-pair recovery");
+      },
+      finishRun: (input) => {
+        kinds.push(`finishRun:${input.executionId}`);
+        return Promise.resolve();
+      },
+      complete: () => {
+        kinds.push("complete");
+        return Promise.resolve();
+      },
+    };
+    const execute = vi.fn(
+      (
+        _actionName: string,
+        _input: unknown,
+        options: { executionId?: string },
+      ) => {
+        kinds.push(`execute:${options.executionId ?? "missing"}`);
+        return Promise.resolve({ items: [], nextCursor: null });
+      },
+    );
+    const model = new MockLanguageModelV3({
+      doStream: (options) => {
+        const serialized = JSON.stringify(options.prompt);
+        if (serialized.includes("call-outside")) {
+          return Promise.resolve(
+            mockTextStream("Recovered beside a later read."),
+          );
+        }
+        return Promise.resolve(
+          mockToolCallStream(
+            "call-reissue-list",
+            ORDERS_LIST_PAGE_TOOL_NAME,
+            '{"limit":7}',
+          ),
+        );
+      },
+    });
+    const turn = await runStaffAssistantHostTurn({
+      model,
+      messages: [
+        { role: "user", content: "list the later discussion" },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "tool-call",
+              toolCallId: "call-later-list",
+              toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+              input: { limit: 3 },
+            },
+          ],
+        },
+      ],
+      contracts: [listOrders],
+      execute,
+      checkpoint,
+      recoverStartedRuns: [
+        {
+          messageId: "msg-old",
+          executionId: "stored-exec",
+          seq: 0,
+          actionName: "orders.list",
+          toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+          toolCallId: "call-outside",
+          toolInput: { limit: 7 },
+        },
+      ],
+    });
+    expect(kinds).toEqual([
+      "begin",
+      "execute:stored-exec",
+      "finishRun:stored-exec",
+      "complete",
+    ]);
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledWith(
+      "orders.list",
+      { kind: "page.summary", limit: 7 },
+      { toolCallId: "call-outside", executionId: "stored-exec" },
+    );
+    const prompt = model.doStreamCalls[0]?.prompt;
+    const assistantCallGroups = assistantToolCallIdsByMessage(prompt);
+    expect(assistantCallGroups).toContainEqual(["call-later-list"]);
+    expect(assistantCallGroups).toContainEqual(["call-outside"]);
+    expect(
+      assistantCallGroups.some(
+        (ids) =>
+          ids.includes("call-later-list") && ids.includes("call-outside"),
+      ),
+    ).toBe(false);
+    const serialized = JSON.stringify(prompt ?? []);
+    expect(serialized).toContain("call-outside");
+    expect(serialized).not.toContain("call-reissue-list");
+    expect(turn.speech.text).toBe("Recovered beside a later read.");
     expect(turn.modelToolCalls).toEqual([]);
   });
 

@@ -564,20 +564,6 @@ function mergeRecoveredToolResultsIntoHistory(
   if (missing.length === 0) {
     return next;
   }
-  const last = next.at(-1);
-  if (last?.role === "tool" && Array.isArray(last.content)) {
-    return [
-      ...next.slice(0, -1),
-      { ...last, content: [...last.content, ...missing] },
-    ];
-  }
-  if (last?.role === "assistant") {
-    return [
-      ...next.slice(0, -1),
-      assistantMessageWithStartedCalls(last, recovered),
-      { role: "tool", content: [...missing] },
-    ];
-  }
   const pair = recoveredCallResultPair(recovered, missing);
   const trailingUsers = trailingUserMessageCount(next);
   if (trailingUsers === 0) {
