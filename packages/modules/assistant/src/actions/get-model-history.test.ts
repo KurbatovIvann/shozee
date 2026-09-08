@@ -3,10 +3,12 @@ import { describe, expect, it } from "vitest";
 import { STAFF_CONVERSATION_AUTHOR_INVARIANT } from "./conversation-view.contract.js";
 import {
   GET_MODEL_HISTORY_INCLUDE_TURN_KEYS_MAX,
+  GET_MODEL_HISTORY_UNFINISHED_RESUME_BEGINS_MAX,
   GET_MODEL_HISTORY_WINDOW,
   getModelHistoryContract,
   getModelHistoryInputSchema,
   getModelHistoryOutputSchema,
+  modelHistoryCheckpointTurnSchema,
   modelHistoryMessageSchema,
   modelHistoryToolRunSchema,
 } from "./get-model-history.contract.js";
@@ -35,6 +37,8 @@ describe("assistant.getModelHistory contract", () => {
     expect(getModelHistoryContract.timeout).toBe(5_000);
     expect(GET_MODEL_HISTORY_WINDOW).toBe(8);
     expect(getModelHistoryContract.description).toContain("includeTurnKeys");
+    expect(getModelHistoryContract.description).toContain("speech");
+    expect(getModelHistoryContract.description).toContain("begin:resume:");
   });
 
   it("takes conversationId and optional includeTurnKeys and rejects companyId", () => {
@@ -65,6 +69,10 @@ describe("assistant.getModelHistory contract", () => {
       "toolInput",
       "toolName",
     ]);
+    expect(
+      Object.keys(modelHistoryCheckpointTurnSchema.shape).toSorted(),
+    ).toEqual(["hasSpeech", "messageId", "speech", "turnKey"]);
+    expect(GET_MODEL_HISTORY_UNFINISHED_RESUME_BEGINS_MAX).toBe(64);
     expect(
       getModelHistoryInputSchema.safeParse({ conversationId: "not-a-uuid" })
         .success,

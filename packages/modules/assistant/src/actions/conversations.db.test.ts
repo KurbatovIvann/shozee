@@ -1646,6 +1646,7 @@ describe("assistant staff conversation actions", () => {
         messageId: begun.messageId,
         turnKey: begun.turnKey,
         hasSpeech: false,
+        speech: "",
       },
     ]);
   });
@@ -1745,6 +1746,45 @@ describe("assistant staff conversation actions", () => {
       messageId: begun.messageId,
       turnKey: resumeKey,
       hasSpeech: true,
+      speech: "The order is ready.",
+    });
+  });
+
+  it("pins an unfinished empty resume begin clipped from the newest checkpointTurns", async () => {
+    const conversation = await kit.invoke(createConversation, {
+      title: "Clipped empty resume begin",
+    });
+    const pendingId = randomUUID();
+    const resumeKey = `begin:resume:${pendingId}`;
+    const begun = await kit.invoke(
+      checkpointAssistantTurn,
+      beginInput(conversation.id, resumeKey),
+    );
+    const newer = new Date(Date.now() + 60_000);
+    await kit.db.runtime.db.insert(assistantMessages).values(
+      Array.from({ length: GET_MODEL_HISTORY_CHECKPOINT_TURNS_MAX }, () => ({
+        companyId: kitIdentities.companies.a,
+        conversationId: conversation.id,
+        role: "assistant" as const,
+        body: "later speech",
+        turnKey: `begin:${randomUUID()}`,
+        createdAt: newer,
+        updatedAt: newer,
+      })),
+    );
+    const history = await kit.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    expect(
+      history.checkpointTurns.filter((turn) => turn.speech === "later speech"),
+    ).toHaveLength(GET_MODEL_HISTORY_CHECKPOINT_TURNS_MAX);
+    expect(
+      history.checkpointTurns.find((turn) => turn.turnKey === resumeKey),
+    ).toEqual({
+      messageId: begun.messageId,
+      turnKey: resumeKey,
+      hasSpeech: false,
+      speech: "",
     });
   });
 
@@ -1835,6 +1875,7 @@ describe("assistant staff conversation actions", () => {
         messageId: begun.messageId,
         turnKey: begun.turnKey,
         hasSpeech: true,
+        speech: "Here they are.",
       },
     ]);
     const sameBegin = await kit.invoke(
@@ -1964,6 +2005,7 @@ describe("assistant staff conversation actions", () => {
         messageId: begun.messageId,
         turnKey: begun.turnKey,
         hasSpeech: false,
+        speech: "",
       },
     ]);
     expect(open?.toolRuns).toEqual([

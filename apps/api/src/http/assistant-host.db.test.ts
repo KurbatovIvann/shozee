@@ -3657,15 +3657,147 @@ describe("unpublished staff assistant host HTTP", () => {
         await replay.json(),
       );
       expect(replayBody.status).toBe("ok");
+      if (replayBody.status !== "ok") {
+        return;
+      }
+      expect(replayBody.speech).toBe(speech);
+      expect(replayBody.speech).not.toBe("later speech");
       expect(await orderCount()).toBe(afterPhaseB);
       const pinned = await h.invoke(getModelHistory, {
         conversationId: conversation.id,
         includeTurnKeys: [resumeKey],
       });
       expect(
-        pinned.checkpointTurns.find((turn) => turn.turnKey === resumeKey)
+        pinned.checkpointTurns.find((turn) => turn.turnKey === resumeKey),
+      ).toEqual(
+        expect.objectContaining({
+          turnKey: resumeKey,
+          hasSpeech: true,
+          speech,
+        }),
+      );
+    });
+
+    it("refuses a chat write when an empty Phase B begin is clipped from checkpointTurns", async () => {
+      const pendingStore = createMemoryPendingStore();
+      const token = await insertBearer(kit, kitIdentities.users.anna);
+      const seedHarness = harness({ pendingStore, model: silentModel() });
+      const conversation = await seedHarness.invoke(createConversation, {
+        title: "Clipped empty Phase B begin",
+      });
+      const cake = await cakeCreateInputs(seedHarness, "Clipped empty begin");
+      const choiceCustomer = await seedHarness.invoke(createCustomer, {
+        name: "Clipped Empty Begin Buyer",
+        phone: nextPhone(),
+      });
+      const choiceProduct = await seedHarness.invoke(createProduct, {
+        name: "Clipped Empty Begin Cake",
+        basePriceMinor: "1500",
+        variants: [{ name: "A" }, { name: "B" }],
+      });
+      const { record, optionByLabel } = await seedChoicePending(seedHarness, {
+        conversationId: conversation.id,
+        customerId: choiceCustomer.id,
+        product: choiceProduct,
+      });
+      const optionId = optionByLabel.get("A");
+      if (optionId === undefined) {
+        throw new Error("seeded choice missing option A");
+      }
+      const bind = pendingBindFor(conversation.id);
+      expect(
+        (
+          await pendingStore.claim({
+            id: record.id,
+            kind: "choice",
+            bind,
+            optionId,
+          })
+        ).kind,
+      ).toBe("claimed");
+      expect(
+        (
+          await pendingStore.complete({
+            id: record.id,
+            kind: "choice",
+            bind,
+            optionId,
+          })
+        ).kind,
+      ).toBe("completed");
+      const resumeKey = `begin:resume:${record.id}`;
+      const begun = await seedHarness.invoke(
+        checkpointAssistantTurn,
+        {
+          kind: "begin",
+          conversationId: conversation.id,
+          turnKey: resumeKey,
+        },
+        {
+          idempotencyKey: attemptKey("turn", conversation.id, resumeKey),
+        },
+      );
+      const newer = new Date(Date.now() + 60_000);
+      await kit.db.runtime.db.insert(assistantMessages).values(
+        Array.from({ length: 256 }, () => ({
+          companyId: kitIdentities.companies.a,
+          conversationId: conversation.id,
+          role: "assistant" as const,
+          body: "later speech",
+          turnKey: `begin:${randomUUID()}`,
+          createdAt: newer,
+          updatedAt: newer,
+        })),
+      );
+      const history = await seedHarness.invoke(getModelHistory, {
+        conversationId: conversation.id,
+      });
+      expect(
+        history.checkpointTurns.filter((turn) => turn.speech === "later speech"),
+      ).toHaveLength(256);
+      expect(
+        history.checkpointTurns.find((turn) => turn.turnKey === resumeKey),
+      ).toEqual({
+        messageId: begun.messageId,
+        turnKey: resumeKey,
+        hasSpeech: false,
+        speech: "",
+      });
+      const beforeChat = await orderCount();
+      const reissue = new MockLanguageModelV3({
+        doStream: [
+          mockToolCallStream(
+            "call-reissue-create",
+            ORDERS_CREATE_TOOL_NAME,
+            JSON.stringify(cake.facadeInput),
+          ),
+          mockTextStream("Trying another create."),
+        ],
+      });
+      const chat = await hostRequest(
+        harness({ pendingStore, model: reissue }).app,
+        {
+          method: "POST",
+          path: ASSISTANT_HOST_CHAT_PATH,
+          token,
+          body: {
+            conversationId: conversation.id,
+            text: "create another order",
+            locale: "en",
+          },
+        },
+      );
+      expect(
+        assistantHostInteractionResultSchema.parse(await chat.json()).status,
+      ).toBe("ok");
+      expect(await orderCount()).toBe(beforeChat);
+      const after = await seedHarness.invoke(getModelHistory, {
+        conversationId: conversation.id,
+      });
+      expect(
+        after.checkpointTurns.find((turn) => turn.turnKey === resumeKey)
           ?.hasSpeech,
-      ).toBe(true);
+      ).toBe(false);
     });
 
     it("refuses a re-issued orders_create while an excluded resume leftover stays started", async () => {

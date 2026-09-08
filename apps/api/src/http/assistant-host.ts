@@ -790,7 +790,16 @@ function phaseBState(
 
 function lastAssistantSpeech(
   history: Awaited<ReturnType<typeof loadHistory>>,
+  pinnedTurnKey?: string,
 ): string {
+  if (pinnedTurnKey !== undefined) {
+    const pinned = history.checkpointTurns.find(
+      (turn) => turn.turnKey === pinnedTurnKey,
+    );
+    if (pinned !== undefined && pinned.speech !== "") {
+      return pinned.speech;
+    }
+  }
   const last = history.messages.findLast(
     (message) => message.role === "assistant" && message.text !== "",
   );
@@ -1370,17 +1379,18 @@ async function replayCompletedPending(options: {
     conversationId: options.conversationId,
     bind: options.bind,
   });
+  const resumeKey = resumeTurnKey(options.record.id);
   const history = await loadHistory({
     pipeline: options.runtime.pipeline,
     conversationId: options.conversationId,
     requestId: options.runtime.requestId,
     clientIp: options.runtime.clientIp,
     principal: options.staffPrincipal,
-    includeTurnKeys: [resumeTurnKey(options.record.id)],
+    includeTurnKeys: [resumeKey],
   });
   if (open.kind === "found" && open.record.id !== options.record.id) {
     return okEnvelope({
-      speech: lastAssistantSpeech(history),
+      speech: lastAssistantSpeech(history, resumeKey),
       toolResults: historyToolResults(history),
       pending: publicPendingFromRecord(open.record) ?? null,
     });
@@ -1388,7 +1398,7 @@ async function replayCompletedPending(options: {
   const state = phaseBState(history, options.record);
   if (state === "done") {
     return okEnvelope({
-      speech: lastAssistantSpeech(history),
+      speech: lastAssistantSpeech(history, resumeKey),
       toolResults: historyToolResults(history),
       pending: null,
     });

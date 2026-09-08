@@ -2381,6 +2381,205 @@ describe("live staff assistant host HTTP (SHO-524)", () => {
       ).toEqual(beforeStartedIds);
     });
 
+    it("does not reopen completed Phase B when the resume turn is clipped from checkpointTurns", async () => {
+      const speech = "The order is ready.";
+      const pendingStore = createMemoryPendingStore();
+      const h = liveApp({ pendingStore, model: silentModel(speech) });
+      const token = await insertBearer(kit, kitIdentities.users.anna);
+      const conversation = await h.invoke(createConversation, {
+        title: "Live clipped completed resume",
+      });
+      const customer = await h.invoke(createCustomer, {
+        name: "Live Clipped Resume Buyer",
+        phone: nextPhone(),
+      });
+      const product = await h.invoke(createProduct, {
+        name: "Live Clipped Resume Cake",
+        basePriceMinor: "1500",
+        variants: [{ name: "A" }, { name: "B" }],
+      });
+      const { record } = await seedChoicePending(h, {
+        conversationId: conversation.id,
+        customerId: customer.id,
+        product,
+      });
+      const optionId = record.envelope.options[0]?.id;
+      const first = await parseOk(
+        await liveRequest(h.app, {
+          method: "POST",
+          path: ASSISTANT_HOST_CHOICE_PATH,
+          token,
+          body: {
+            conversationId: conversation.id,
+            choiceId: record.id,
+            optionId,
+          },
+        }),
+      );
+      expect(first.speech).toBe(speech);
+      const afterPhaseB = await orderCount();
+      const resumeKey = `begin:resume:${record.id}`;
+      const newer = new Date(Date.now() + 60_000);
+      await kit.db.runtime.db.insert(assistantMessages).values(
+        Array.from({ length: 256 }, () => ({
+          companyId: kitIdentities.companies.a,
+          conversationId: conversation.id,
+          role: "assistant" as const,
+          body: "later speech",
+          turnKey: `begin:${randomUUID()}`,
+          createdAt: newer,
+          updatedAt: newer,
+        })),
+      );
+      const clipped = await h.invoke(getModelHistory, {
+        conversationId: conversation.id,
+      });
+      expect(
+        clipped.checkpointTurns.some((turn) => turn.turnKey === resumeKey),
+      ).toBe(false);
+      const replay = await parseOk(
+        await liveRequest(
+          liveApp({
+            pendingStore,
+            model: new MockLanguageModelV3({
+              doStream: () => {
+                throw new Error(
+                  "clipped completed Phase B must not reopen as needed",
+                );
+              },
+            }),
+          }).app,
+          {
+            method: "POST",
+            path: ASSISTANT_HOST_CHOICE_PATH,
+            token,
+            body: {
+              conversationId: conversation.id,
+              choiceId: record.id,
+              optionId,
+            },
+          },
+        ),
+      );
+      expect(replay.speech).toBe(speech);
+      expect(replay.speech).not.toBe("later speech");
+      expect(await orderCount()).toBe(afterPhaseB);
+    });
+
+    it("refuses a chat write when an empty Phase B begin is clipped from checkpointTurns", async () => {
+      const pendingStore = createMemoryPendingStore();
+      const token = await insertBearer(kit, kitIdentities.users.anna);
+      const seedHarness = liveApp({ pendingStore, model: silentModel() });
+      const conversation = await seedHarness.invoke(createConversation, {
+        title: "Live clipped empty Phase B begin",
+      });
+      const cake = await cakeCreateInputs(
+        seedHarness,
+        "Live clipped empty begin",
+      );
+      const choiceCustomer = await seedHarness.invoke(createCustomer, {
+        name: "Live Clipped Empty Begin Buyer",
+        phone: nextPhone(),
+      });
+      const choiceProduct = await seedHarness.invoke(createProduct, {
+        name: "Live Clipped Empty Begin Cake",
+        basePriceMinor: "1500",
+        variants: [{ name: "A" }, { name: "B" }],
+      });
+      const { record } = await seedChoicePending(seedHarness, {
+        conversationId: conversation.id,
+        customerId: choiceCustomer.id,
+        product: choiceProduct,
+      });
+      const optionId = record.envelope.options[0]?.id;
+      if (optionId === undefined) {
+        throw new Error("seeded choice missing option");
+      }
+      const bind = pendingBindFor(conversation.id);
+      expect(
+        (
+          await pendingStore.claim({
+            id: record.id,
+            kind: "choice",
+            bind,
+            optionId,
+          })
+        ).kind,
+      ).toBe("claimed");
+      expect(
+        (
+          await pendingStore.complete({
+            id: record.id,
+            kind: "choice",
+            bind,
+            optionId,
+          })
+        ).kind,
+      ).toBe("completed");
+      const resumeKey = `begin:resume:${record.id}`;
+      const begun = await seedHarness.invoke(
+        checkpointAssistantTurn,
+        {
+          kind: "begin",
+          conversationId: conversation.id,
+          turnKey: resumeKey,
+        },
+        {
+          idempotencyKey: attemptKey("turn", conversation.id, resumeKey),
+        },
+      );
+      const newer = new Date(Date.now() + 60_000);
+      await kit.db.runtime.db.insert(assistantMessages).values(
+        Array.from({ length: 256 }, () => ({
+          companyId: kitIdentities.companies.a,
+          conversationId: conversation.id,
+          role: "assistant" as const,
+          body: "later speech",
+          turnKey: `begin:${randomUUID()}`,
+          createdAt: newer,
+          updatedAt: newer,
+        })),
+      );
+      const history = await seedHarness.invoke(getModelHistory, {
+        conversationId: conversation.id,
+      });
+      expect(
+        history.checkpointTurns.filter((turn) => turn.speech === "later speech"),
+      ).toHaveLength(256);
+      expect(
+        history.checkpointTurns.find((turn) => turn.turnKey === resumeKey),
+      ).toEqual({
+        messageId: begun.messageId,
+        turnKey: resumeKey,
+        hasSpeech: false,
+        speech: "",
+      });
+      const beforeChat = await orderCount();
+      const reissue = new MockLanguageModelV3({
+        doStream: [
+          mockToolCallStream(
+            "call-reissue-create",
+            ORDERS_CREATE_TOOL_NAME,
+            JSON.stringify(cake.facadeInput),
+          ),
+          mockTextStream("Trying another create."),
+        ],
+      });
+      await parseOk(
+        await liveRequest(liveApp({ pendingStore, model: reissue }).app, {
+          method: "POST",
+          path: ASSISTANT_CHAT_PATH,
+          token,
+          body: {
+            conversationId: conversation.id,
+            text: "create another order",
+            locale: "en",
+          },
+        }),
+      );
+      expect(await orderCount()).toBe(beforeChat);
+    });
+
     it("does not auto-execute a started run whose message turnKey is null", async () => {
       const h = liveApp({
         model: silentModel("No legacy write from this chat."),

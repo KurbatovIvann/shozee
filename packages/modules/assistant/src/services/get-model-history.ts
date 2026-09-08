@@ -4,13 +4,14 @@ import {
   assistantMessages,
   assistantToolRuns,
 } from "@showzy/db/schema/assistant";
-import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, like, sql } from "drizzle-orm";
 import type { z } from "zod";
 
 import { checkpointPersistedOutcomeSchema } from "../actions/checkpoint-assistant-turn.contract.js";
 import {
   GET_MODEL_HISTORY_CHECKPOINT_TURNS_MAX,
   GET_MODEL_HISTORY_INCLUDE_TURN_KEYS_MAX,
+  GET_MODEL_HISTORY_UNFINISHED_RESUME_BEGINS_MAX,
   GET_MODEL_HISTORY_UNFINISHED_STARTED_MAX,
   GET_MODEL_HISTORY_WINDOW,
   type getModelHistoryOutputSchema,
@@ -112,9 +113,46 @@ function toCheckpointTurns(
         messageId: row.messageId,
         turnKey: row.turnKey,
         hasSpeech: row.body !== "",
+        speech: row.body,
       },
     ];
   });
+}
+
+const checkpointTurnColumns = {
+  messageId: assistantMessages.id,
+  turnKey: assistantMessages.turnKey,
+  body: assistantMessages.body,
+};
+
+/** Duplicated from `@showzy/ai` so this module does not import it. */
+const RESUME_TURN_KEY_LIKE = "begin:resume:%";
+
+async function pinCheckpointTurns(options: {
+  readonly ctx: StaffCtx;
+  readonly conversationId: string;
+  readonly checkpointTurns: ModelHistory["checkpointTurns"];
+  readonly keys: readonly string[];
+}): Promise<void> {
+  const have = new Set(options.checkpointTurns.map((turn) => turn.turnKey));
+  const missingKeys = [...new Set(options.keys)].filter(
+    (key) => !have.has(key),
+  );
+  if (missingKeys.length === 0) {
+    return;
+  }
+  const pinnedRows = await options.ctx.db
+    .select(checkpointTurnColumns)
+    .from(assistantMessages)
+    .where(
+      and(
+        eq(assistantMessages.companyId, options.ctx.companyId),
+        eq(assistantMessages.conversationId, options.conversationId),
+        eq(assistantMessages.role, "assistant"),
+        inArray(assistantMessages.turnKey, missingKeys),
+      ),
+    );
+  options.checkpointTurns.push(...toCheckpointTurns(pinnedRows));
 }
 
 export async function getStaffModelHistory(env: {
@@ -168,11 +206,7 @@ export async function getStaffModelHistory(env: {
   const byMessage = toolRunsByMessage(toolRunRows);
 
   const checkpointTurnRows = await env.ctx.db
-    .select({
-      messageId: assistantMessages.id,
-      turnKey: assistantMessages.turnKey,
-      body: assistantMessages.body,
-    })
+    .select(checkpointTurnColumns)
     .from(assistantMessages)
     .where(
       and(
@@ -228,32 +262,38 @@ export async function getStaffModelHistory(env: {
   }
 
   const checkpointTurns = [...toCheckpointTurns(checkpointTurnRows)];
-  const pinnedKeys = [...new Set(env.includeTurnKeys ?? [])].slice(
-    0,
-    GET_MODEL_HISTORY_INCLUDE_TURN_KEYS_MAX,
-  );
-  if (pinnedKeys.length > 0) {
-    const have = new Set(checkpointTurns.map((turn) => turn.turnKey));
-    const missingKeys = pinnedKeys.filter((key) => !have.has(key));
-    if (missingKeys.length > 0) {
-      const pinnedRows = await env.ctx.db
-        .select({
-          messageId: assistantMessages.id,
-          turnKey: assistantMessages.turnKey,
-          body: assistantMessages.body,
-        })
-        .from(assistantMessages)
-        .where(
-          and(
-            eq(assistantMessages.companyId, env.ctx.companyId),
-            eq(assistantMessages.conversationId, env.conversationId),
-            eq(assistantMessages.role, "assistant"),
-            inArray(assistantMessages.turnKey, missingKeys),
-          ),
-        );
-      checkpointTurns.push(...toCheckpointTurns(pinnedRows));
+  const have = new Set(checkpointTurns.map((turn) => turn.turnKey));
+  const unfinishedResumeBeginRows = await env.ctx.db
+    .select(checkpointTurnColumns)
+    .from(assistantMessages)
+    .where(
+      and(
+        eq(assistantMessages.companyId, env.ctx.companyId),
+        eq(assistantMessages.conversationId, env.conversationId),
+        eq(assistantMessages.role, "assistant"),
+        isNotNull(assistantMessages.turnKey),
+        like(assistantMessages.turnKey, RESUME_TURN_KEY_LIKE),
+        eq(assistantMessages.body, ""),
+      ),
+    )
+    .orderBy(desc(assistantMessages.createdAt), desc(assistantMessages.id))
+    .limit(GET_MODEL_HISTORY_UNFINISHED_RESUME_BEGINS_MAX);
+  for (const row of unfinishedResumeBeginRows) {
+    if (row.turnKey === null || have.has(row.turnKey)) {
+      continue;
     }
+    checkpointTurns.push(...toCheckpointTurns([row]));
+    have.add(row.turnKey);
   }
+  await pinCheckpointTurns({
+    ctx: env.ctx,
+    conversationId: env.conversationId,
+    checkpointTurns,
+    keys: [...new Set(env.includeTurnKeys ?? [])].slice(
+      0,
+      GET_MODEL_HISTORY_INCLUDE_TURN_KEYS_MAX,
+    ),
+  });
 
   return {
     conversationId: env.conversationId,
