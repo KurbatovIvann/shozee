@@ -340,4 +340,41 @@ describe("matchEvalExpectation", () => {
       ),
     ).toEqual({ ok: true });
   });
+
+  it("asserts speech.source, not markdown-table diction", () => {
+    const tableTrace = {
+      text: "| order | total |\n| **#12** | 10 |",
+      speechSource: "model" as const,
+      toolCalls: [
+        {
+          toolCallId: "c1",
+          name: ORDERS_LIST_PAGE_TOOL_NAME,
+          args: {},
+          result: { rows: [{ orderNumber: "12" }] },
+        },
+      ],
+    };
+    expect(
+      matchEvalExpectation(
+        {
+          speechSource: "model",
+          ordered: [{ name: ORDERS_LIST_PAGE_TOOL_NAME }],
+          textIncludesToolValues: ["orderNumber"],
+        },
+        tableTrace,
+      ),
+    ).toEqual({ ok: true });
+    expect(
+      matchEvalExpectation(
+        { speechSource: "model" },
+        { ...tableTrace, speechSource: "fallback" },
+      ),
+    ).toMatchObject({
+      ok: false,
+      reason: "expected speech.source model, got fallback",
+    });
+    expect(
+      matchEvalExpectation({ textExcludes: ["|"] }, tableTrace),
+    ).toMatchObject({ ok: false });
+  });
 });

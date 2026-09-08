@@ -65,6 +65,30 @@ describe("PLAIN_REPLY_SCENARIOS", () => {
     expect(PLAIN_REPLY_SCENARIOS[0]?.expectation.textExcludes).toContain(
       '{"spoken"',
     );
+    for (const scenario of PLAIN_REPLY_SCENARIOS) {
+      expect(scenario.host).toBe("live");
+      expect(scenario.expectation.speechSource).toBe("model");
+      expect(scenario.expectation.textExcludes).not.toContain("|");
+    }
+  });
+
+  it("does not treat a markdown table as forbidden speech", () => {
+    const scenario = PLAIN_REPLY_SCENARIOS[0];
+    expect(scenario).toBeDefined();
+    expect(
+      matchEvalExpectation(scenario?.expectation ?? {}, {
+        text: "| order | total |\n| **#12** | 10 |",
+        speechSource: "model",
+        toolCalls: [
+          {
+            toolCallId: "c1",
+            name: ORDERS_LIST_PAGE_TOOL_NAME,
+            args: {},
+            result: { rows: [{ orderNumber: "12" }] },
+          },
+        ],
+      }),
+    ).toEqual({ ok: true });
   });
 });
 
@@ -187,6 +211,41 @@ describe("GATE_CLASSIFIES_SCENARIOS", () => {
       GATE_CLASSIFIES_SCENARIOS[3]?.expectation.ordered?.[0]
         ?.requireResultStatus,
     ).toBe("needs_choice");
+    for (const scenario of GATE_CLASSIFIES_SCENARIOS) {
+      expect(scenario.host).toBe("live");
+      expect(scenario.expectation.textExcludes).not.toContain("|");
+    }
+    expect(GATE_CLASSIFIES_SCENARIOS[0]?.expectation.speechSource).toBe(
+      "model",
+    );
+    expect(GATE_CLASSIFIES_SCENARIOS[1]?.expectation.speechSource).toBe(
+      "model",
+    );
+    expect(GATE_CLASSIFIES_SCENARIOS[2]?.expectation.speechSource).toBe(
+      "model",
+    );
+    expect(
+      GATE_CLASSIFIES_SCENARIOS[3]?.expectation.speechSource,
+    ).toBeUndefined();
+  });
+
+  it("does not treat a markdown table as a speech substitute failure", () => {
+    const scenario = GATE_CLASSIFIES_SCENARIOS[1];
+    expect(scenario).toBeDefined();
+    expect(
+      matchEvalExpectation(scenario?.expectation ?? {}, {
+        text: "| # | total |\n| **12** | 10 |",
+        speechSource: "model",
+        toolCalls: [
+          {
+            toolCallId: "c1",
+            name: ORDERS_LIST_PAGE_TOOL_NAME,
+            args: {},
+            result: { rows: [{ orderNumber: "12" }] },
+          },
+        ],
+      }),
+    ).toEqual({ ok: true });
   });
 });
 
