@@ -1,6 +1,6 @@
 /**
  * Internal catalog search matcher (SHO-527 / SHO-530). Variant hits
- * require `productId`. Handler SQL is T4.
+ * require `productId`. Matcher SQL is SHO-530 (T4).
  */
 import { defineActionContract } from "@showzy/core/contract";
 import {
