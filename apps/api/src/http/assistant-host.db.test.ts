@@ -1176,6 +1176,132 @@ describe("unpublished staff assistant host HTTP", () => {
     expect(await orderCount()).toBe(before + 1);
   });
 
+  it("delayed choice replay keeps the Phase A order card and ignores a later same-action success (SHO-544)", async () => {
+    const h = harness({ model: silentModel("Замовлення створено") });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "T9 delayed replay same order card",
+    });
+    const customer = await h.invoke(createCustomer, {
+      name: "T9 Delayed Buyer",
+      phone: nextPhone(),
+    });
+    const product = await h.invoke(createProduct, {
+      name: "T9 Delayed Cake",
+      basePriceMinor: "1500",
+      variants: [{ name: "A" }, { name: "B" }],
+    });
+    const { record, optionByLabel } = await seedChoicePending(h, {
+      conversationId: conversation.id,
+      customerId: customer.id,
+      product,
+    });
+    const optionId = optionByLabel.get("A");
+    if (optionId === undefined || record.executionId === undefined) {
+      throw new Error("seeded choice missing option or executionId");
+    }
+    const first = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.id,
+        optionId,
+      },
+    });
+    const body = assistantHostInteractionResultSchema.parse(await first.json());
+    expect(body.status).toBe("ok");
+    if (body.status !== "ok") {
+      return;
+    }
+    const orderId = orderIdFromEntityCard(body.cards);
+    const later = await cakeCreateInputs(h, "T9 Later Create");
+    const laterRun = await stageNamedStartedRun(h, {
+      conversationId: conversation.id,
+      beginKey: `begin:${randomUUID()}`,
+      actionName: "orders.create",
+      toolName: ORDERS_CREATE_TOOL_NAME,
+      toolCallId: "call-later-create",
+      toolInput: later.facadeInput,
+    });
+    const laterCreated = await h.invoke(createOrder, later.canonicalInput, {
+      idempotencyKey: executionAttemptKey(
+        conversation.id,
+        laterRun.executionId,
+      ),
+    });
+    await h.invoke(
+      checkpointAssistantTurn,
+      {
+        kind: "finishRun",
+        conversationId: conversation.id,
+        executionId: laterRun.executionId,
+        outcome: "success",
+        resultIds: [laterCreated.orderId],
+        modelTrace: laterCreated,
+      },
+      {
+        idempotencyKey: attemptKey(
+          "turn",
+          conversation.id,
+          `finish:${laterRun.executionId}:success`,
+        ),
+      },
+    );
+    await padUserMessages(h, conversation.id, 8);
+    const clipped = await h.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    expect(clipped.messages).toHaveLength(8);
+    expect(
+      clipped.messages
+        .flatMap((message) => message.toolRuns)
+        .some((run) => run.executionId === record.executionId),
+    ).toBe(false);
+    expect(
+      clipped.messages
+        .flatMap((message) => message.toolRuns)
+        .some((run) => run.executionId === laterRun.executionId),
+    ).toBe(false);
+    const replay = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.id,
+        optionId,
+      },
+    });
+    const replayBody = assistantHostInteractionResultSchema.parse(
+      await replay.json(),
+    );
+    expect(replayBody.status).toBe("ok");
+    if (replayBody.status !== "ok") {
+      return;
+    }
+    expect(replayBody.pending).toBeNull();
+    expectKnownResumeCardKinds(replayBody.cards);
+    const replayOrderIds = replayBody.cards.flatMap((card) => {
+      if (
+        card.kind !== "surface" ||
+        typeof card.data !== "object" ||
+        card.data === null ||
+        !("kind" in card.data) ||
+        card.data.kind !== "order-entity" ||
+        !("orderId" in card.data) ||
+        typeof card.data.orderId !== "string"
+      ) {
+        return [];
+      }
+      return [card.data.orderId];
+    });
+    expect(replayOrderIds).not.toContain(laterCreated.orderId);
+    expect(orderIdFromEntityCard(replayBody.cards)).toBe(orderId);
+    expect(replayOrderIds).toEqual([orderId]);
+  });
+
   it("Phase B generation failure after committed create still returns the order card (SHO-544)", async () => {
     const h = harness({ model: failingGenerationModel() });
     const token = await insertBearer(kit, kitIdentities.users.anna);
@@ -1301,6 +1427,64 @@ describe("unpublished staff assistant host HTTP", () => {
     expect(replayBody.pending).toBeNull();
     expectKnownResumeCardKinds(replayBody.cards);
     expect(await customerRow(seeded.customerId)).toBeUndefined();
+  });
+
+  it("Phase B generation failure after committed delete still returns HTTP ok without a second delete (SHO-544)", async () => {
+    const h = harness({ model: failingGenerationModel() });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "T9 confirm generation fail",
+    });
+    const seeded = await seedConfirmationPending(h, conversation.id);
+    const first = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_CONFIRM_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        challengeId: seeded.challengeId,
+      },
+    });
+    const body = assistantHostInteractionResultSchema.parse(await first.json());
+    expect(body.status).toBe("ok");
+    if (body.status !== "ok") {
+      return;
+    }
+    expect(body.speech).toBe(STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK.en);
+    expect(body.pending).toBeNull();
+    expectKnownResumeCardKinds(body.cards);
+    expect(body.cards.some((card) => card.kind === "confirmation")).toBe(false);
+    expect(await customerRow(seeded.customerId)).toBeUndefined();
+    const deleteRows = (await conversationToolRuns(conversation.id)).filter(
+      (row) => row.actionName === "customers.deleteCustomer",
+    );
+    expect(deleteRows).toHaveLength(1);
+    expect(deleteRows[0]?.executionId).toBe(seeded.executionId);
+    expect(deleteRows[0]?.outcome).toBe("success");
+    const replay = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_CONFIRM_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        challengeId: seeded.challengeId,
+      },
+    });
+    const replayBody = assistantHostInteractionResultSchema.parse(
+      await replay.json(),
+    );
+    expect(replayBody.status).toBe("ok");
+    if (replayBody.status !== "ok") {
+      return;
+    }
+    expect(replayBody.pending).toBeNull();
+    expectKnownResumeCardKinds(replayBody.cards);
+    expect(await customerRow(seeded.customerId)).toBeUndefined();
+    expect(
+      (await conversationToolRuns(conversation.id)).filter(
+        (row) => row.actionName === "customers.deleteCustomer",
+      ),
+    ).toHaveLength(1);
   });
 
   it("confirm resume still finishRun the staged execution_id (SHO-543)", async () => {

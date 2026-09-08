@@ -1849,6 +1849,62 @@ describe("live staff assistant host HTTP (SHO-524)", () => {
     expect(await customerRow(seeded.customerId)).toBeUndefined();
   });
 
+  it("live Phase B generation failure after committed delete still returns HTTP ok without a second delete (SHO-544)", async () => {
+    const pendingStore = createMemoryPendingStore();
+    const h = liveApp({
+      pendingStore,
+      model: failingGenerationModel(),
+    });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Live T9 confirm generation fail",
+    });
+    const seeded = await seedConfirmationPending(h, conversation.id);
+    const resumed = await parseOk(
+      await liveRequest(h.app, {
+        method: "POST",
+        path: ASSISTANT_CONFIRM_PATH,
+        token,
+        body: {
+          conversationId: conversation.id,
+          challengeId: seeded.challengeId,
+        },
+      }),
+    );
+    expect(resumed.speech).toBe(STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK.uk);
+    expect(resumed.pending).toBeNull();
+    expectKnownResumeCardKinds(resumed.cards);
+    expect(resumed.cards.some((card) => card.kind === "confirmation")).toBe(
+      false,
+    );
+    expect(await customerRow(seeded.customerId)).toBeUndefined();
+    const deleteRows = (await conversationToolRuns(conversation.id)).filter(
+      (row) => row.actionName === "customers.deleteCustomer",
+    );
+    expect(deleteRows).toHaveLength(1);
+    expect(deleteRows[0]?.executionId).toBe(seeded.executionId);
+    expect(deleteRows[0]?.outcome).toBe("success");
+    const replay = await parseOk(
+      await liveRequest(h.app, {
+        method: "POST",
+        path: ASSISTANT_CONFIRM_PATH,
+        token,
+        body: {
+          conversationId: conversation.id,
+          challengeId: seeded.challengeId,
+        },
+      }),
+    );
+    expect(replay.pending).toBeNull();
+    expectKnownResumeCardKinds(replay.cards);
+    expect(await customerRow(seeded.customerId)).toBeUndefined();
+    expect(
+      (await conversationToolRuns(conversation.id)).filter(
+        (row) => row.actionName === "customers.deleteCustomer",
+      ),
+    ).toHaveLength(1);
+  });
+
   it("Phase B choice resume does not execute a leftover chat-turn started create", async () => {
     const pendingStore = createMemoryPendingStore();
     const h = liveApp({

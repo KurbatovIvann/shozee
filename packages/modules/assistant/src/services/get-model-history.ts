@@ -22,6 +22,14 @@ import { loadOwnConversation } from "./load-conversation.js";
 type StaffCtx = Extract<ActionCtx, { principal: "staff" }>;
 type ModelHistory = z.output<typeof getModelHistoryOutputSchema>;
 type ModelHistoryToolRun = ModelHistory["messages"][number]["toolRuns"][number];
+type HistoryMessageRow = {
+  readonly id: string;
+  readonly conversationId: string;
+  readonly role: string;
+  readonly body: string;
+  readonly createdAt: Date;
+  readonly turnKey: string | null;
+};
 
 const historyMessageColumns = {
   ...messageColumns,
@@ -155,6 +163,96 @@ async function pinCheckpointTurns(options: {
   options.checkpointTurns.push(...toCheckpointTurns(pinnedRows));
 }
 
+async function loadToolRunsForMessages(
+  ctx: StaffCtx,
+  messageIds: readonly string[],
+): Promise<ModelHistoryToolRunRow[]> {
+  if (messageIds.length === 0) {
+    return [];
+  }
+  return ctx.db
+    .select(modelHistoryToolRunColumns)
+    .from(assistantToolRuns)
+    .where(
+      and(
+        eq(assistantToolRuns.companyId, ctx.companyId),
+        inArray(assistantToolRuns.messageId, [...messageIds]),
+      ),
+    )
+    .orderBy(
+      sql`${assistantToolRuns.seq} ASC NULLS LAST`,
+      asc(assistantToolRuns.createdAt),
+      asc(assistantToolRuns.id),
+    );
+}
+
+function compareHistoryMessageRows(
+  left: HistoryMessageRow,
+  right: HistoryMessageRow,
+): number {
+  const byTime = left.createdAt.getTime() - right.createdAt.getTime();
+  if (byTime !== 0) {
+    return byTime;
+  }
+  if (left.id < right.id) {
+    return -1;
+  }
+  if (left.id > right.id) {
+    return 1;
+  }
+  return 0;
+}
+
+async function pinHistoryMessages(options: {
+  readonly ctx: StaffCtx;
+  readonly conversationId: string;
+  readonly messageRows: HistoryMessageRow[];
+  readonly byMessage: Map<string, ModelHistory["messages"][number]["toolRuns"]>;
+  readonly keys: readonly string[];
+}): Promise<void> {
+  const have = new Set(
+    options.messageRows.flatMap((row) =>
+      row.turnKey === null ? [] : [row.turnKey],
+    ),
+  );
+  const missingKeys = [...new Set(options.keys)].filter(
+    (key) => !have.has(key),
+  );
+  if (missingKeys.length === 0) {
+    return;
+  }
+  const pinnedRows = await options.ctx.db
+    .select(historyMessageColumns)
+    .from(assistantMessages)
+    .where(
+      and(
+        eq(assistantMessages.companyId, options.ctx.companyId),
+        eq(assistantMessages.conversationId, options.conversationId),
+        inArray(assistantMessages.turnKey, missingKeys),
+      ),
+    );
+  if (pinnedRows.length === 0) {
+    return;
+  }
+  const haveIds = new Set(options.messageRows.map((row) => row.id));
+  for (const row of pinnedRows) {
+    if (!haveIds.has(row.id)) {
+      options.messageRows.push(row);
+      haveIds.add(row.id);
+    }
+  }
+  options.messageRows.sort(compareHistoryMessageRows);
+  const extra = toolRunsByMessage(
+    await loadToolRunsForMessages(
+      options.ctx,
+      pinnedRows.map((row) => row.id),
+    ),
+  );
+  for (const [messageId, runs] of extra) {
+    options.byMessage.set(messageId, runs);
+  }
+}
+
 export async function getStaffModelHistory(env: {
   readonly ctx: StaffCtx;
   readonly conversationId: string;
@@ -172,7 +270,7 @@ export async function getStaffModelHistory(env: {
     eq(assistantMessages.conversationId, env.conversationId),
   );
 
-  const messageRows = await env.ctx.db
+  const messageRows: HistoryMessageRow[] = await env.ctx.db
     .select(historyMessageColumns)
     .from(assistantMessages)
     .where(messageFilter)
@@ -182,28 +280,15 @@ export async function getStaffModelHistory(env: {
 
   // Runs carry the assistant message that recorded them, so the read is the
   // window's own rows: no `created_at` inference, and `model_trace` (up to
-  // 22 000 chars per run) is never fetched for turns outside the window.
-  // Call order is `seq` ascending; pre-T2 rows have null seq and sort last.
-  const windowIds = messageRows.map((row) => row.id);
-  const toolRunRows =
-    windowIds.length === 0
-      ? []
-      : await env.ctx.db
-          .select(modelHistoryToolRunColumns)
-          .from(assistantToolRuns)
-          .where(
-            and(
-              eq(assistantToolRuns.companyId, env.ctx.companyId),
-              inArray(assistantToolRuns.messageId, windowIds),
-            ),
-          )
-          .orderBy(
-            sql`${assistantToolRuns.seq} ASC NULLS LAST`,
-            asc(assistantToolRuns.createdAt),
-            asc(assistantToolRuns.id),
-          );
-
-  const byMessage = toolRunsByMessage(toolRunRows);
+  // 22 000 chars per run) is never fetched for turns outside the window
+  // except exact includeTurnKeys pins (bounded, T6 membership). Call order
+  // is `seq` ascending; pre-T2 rows have null seq and sort last.
+  const byMessage = toolRunsByMessage(
+    await loadToolRunsForMessages(
+      env.ctx,
+      messageRows.map((row) => row.id),
+    ),
+  );
 
   const checkpointTurnRows = await env.ctx.db
     .select(checkpointTurnColumns)
@@ -285,14 +370,22 @@ export async function getStaffModelHistory(env: {
     checkpointTurns.push(...toCheckpointTurns([row]));
     have.add(row.turnKey);
   }
+  const pinKeys = [...new Set(env.includeTurnKeys ?? [])].slice(
+    0,
+    GET_MODEL_HISTORY_INCLUDE_TURN_KEYS_MAX,
+  );
   await pinCheckpointTurns({
     ctx: env.ctx,
     conversationId: env.conversationId,
     checkpointTurns,
-    keys: [...new Set(env.includeTurnKeys ?? [])].slice(
-      0,
-      GET_MODEL_HISTORY_INCLUDE_TURN_KEYS_MAX,
-    ),
+    keys: pinKeys,
+  });
+  await pinHistoryMessages({
+    ctx: env.ctx,
+    conversationId: env.conversationId,
+    messageRows,
+    byMessage,
+    keys: pinKeys,
   });
 
   return {

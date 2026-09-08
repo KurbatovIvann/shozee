@@ -39,6 +39,9 @@ describe("assistant.getModelHistory contract", () => {
     expect(getModelHistoryContract.description).toContain("includeTurnKeys");
     expect(getModelHistoryContract.description).toContain("speech");
     expect(getModelHistoryContract.description).toContain("begin:resume:");
+    expect(getModelHistoryContract.description).toContain(
+      "outside the newest-8 prompt window",
+    );
   });
 
   it("takes conversationId and optional includeTurnKeys and rejects companyId", () => {
