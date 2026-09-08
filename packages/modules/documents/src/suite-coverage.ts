@@ -16,6 +16,7 @@ export const documentsSuiteCoverage = {
     "documents.list",
     "documents.lockIssuedForSigning",
     "documents.requestSign",
+    "documents.searchMatches",
     "documents.share",
   ],
   publicProjection: [],

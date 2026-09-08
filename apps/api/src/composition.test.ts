@@ -18,6 +18,7 @@ import { filesSuiteCoverage } from "@showzy/files/suite-coverage";
 import { invitesSuiteCoverage } from "@showzy/invites/suite-coverage";
 import { ordersSuiteCoverage } from "@showzy/orders/suite-coverage";
 import { pricingSuiteCoverage } from "@showzy/pricing/suite-coverage";
+import { searchSuiteCoverage } from "@showzy/search/suite-coverage";
 import { implementAction, runContractCheck } from "@showzy/core";
 import { defineActionContract } from "@showzy/core/contract";
 import { projectionGrants } from "@showzy/db";
@@ -110,6 +111,7 @@ describe("composition root identity", () => {
         invitesSuiteCoverage,
         ordersSuiteCoverage,
         pricingSuiteCoverage,
+        searchSuiteCoverage,
       ]),
     );
   });

@@ -109,6 +109,7 @@ import {
   setPriceListEntriesContract,
   updatePriceListContract,
 } from "@showzy/pricing/contract";
+import { queryContract } from "@showzy/search/contract";
 
 import {
   buildContractRouter,
@@ -217,6 +218,9 @@ export const contractModules = {
     setDefaultPriceList: setDefaultPriceListContract,
     setPriceListEntries: setPriceListEntriesContract,
     updatePriceList: updatePriceListContract,
+  },
+  search: {
+    query: queryContract,
   },
 } satisfies ContractModuleMap;
 

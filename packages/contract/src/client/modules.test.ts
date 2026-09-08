@@ -98,12 +98,13 @@ import {
   setPriceListEntriesContract,
   updatePriceListContract,
 } from "@showzy/pricing/contract";
+import { queryContract } from "@showzy/search/contract";
 
 import { deriveAiToolSources } from "./ai-manifest.js";
 import { contractModules, contractRouter } from "./modules.js";
 
 describe("client composition", () => {
-  it("exposes client catalog, chat, companies, customers, documents, docGeneration, docSigning, files, invites, orders, pricing, and assistant actions and no internal facts actions", () => {
+  it("exposes client catalog, chat, companies, customers, documents, docGeneration, docSigning, files, invites, orders, pricing, assistant, and search actions and no internal facts actions", () => {
     expect(contractModules).toEqual({
       assistant: {
         createConversation: createConversationContract,
@@ -206,6 +207,9 @@ describe("client composition", () => {
         setDefaultPriceList: setDefaultPriceListContract,
         setPriceListEntries: setPriceListEntriesContract,
         updatePriceList: updatePriceListContract,
+      },
+      search: {
+        query: queryContract,
       },
     });
     expect(contractRouter.catalog.createProduct).toBeDefined();
@@ -331,6 +335,16 @@ describe("client composition", () => {
     expect(contractRouter.pricing.setDefaultPriceList).toBeDefined();
     expect(contractRouter.pricing.setPriceListEntries).toBeDefined();
     expect(contractRouter.pricing.updatePriceList).toBeDefined();
+    expect(contractRouter.search.query).toBeDefined();
+    expect(contractModules.search.query.aiExposure).toBe("internal");
+    expect(contractModules.search.query.permissions).toEqual([
+      "companies:view",
+    ]);
+    expect(contractModules.customers).not.toHaveProperty("searchMatches");
+    expect(contractModules.catalog).not.toHaveProperty("searchMatches");
+    expect(contractModules.orders).not.toHaveProperty("searchMatches");
+    expect(contractModules.pricing).not.toHaveProperty("searchMatches");
+    expect(contractModules.documents).not.toHaveProperty("searchMatches");
     expect(contractRouter.assistant.createConversation).toBeDefined();
     expect(contractRouter.assistant.listConversations).toBeDefined();
     expect(contractRouter.assistant.getConversation).toBeDefined();

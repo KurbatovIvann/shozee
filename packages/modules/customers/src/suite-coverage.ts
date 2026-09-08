@@ -20,6 +20,7 @@ export const customersSuiteCoverage = {
     "customers.listMatchingIds",
     "customers.resolveCustomerReference",
     "customers.restoreCustomer",
+    "customers.searchMatches",
     "customers.updateCounterparty",
     "customers.updateCustomer",
     "customers.updateGroup",

@@ -1,0 +1,29 @@
+{
+  "name": "@showzy/search",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Search module: staff tenant-private search.query orchestrator (zero tables). This package exports actions only.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./contract": "./src/index.contract.ts",
+    "./suite-coverage": "./src/suite-coverage.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:unit": "vitest run"
+  },
+  "dependencies": {
+    "@showzy/core": "workspace:*",
+    "@showzy/validation": "workspace:*"
+  },
+  "devDependencies": {
+    "@showzy/tooling": "workspace:*",
+    "@types/node": "^22.20.1",
+    "eslint": "^10.8.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10"
+  }
+}

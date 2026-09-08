@@ -11,6 +11,7 @@ export const pricingSuiteCoverage = {
     "pricing.listPriceLists",
     "pricing.removePriceListEntries",
     "pricing.resolveProductPrices",
+    "pricing.searchMatches",
     "pricing.setDefaultPriceList",
     "pricing.setPriceListEntries",
     "pricing.updatePriceList",

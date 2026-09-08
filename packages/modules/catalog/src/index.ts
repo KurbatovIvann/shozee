@@ -9,6 +9,7 @@ import { listProducts } from "./actions/list-products.js";
 import { resolveLineReferences } from "./actions/resolve-line-references.js";
 import { restoreProduct } from "./actions/restore-product.js";
 import { restoreVariant } from "./actions/restore-variant.js";
+import { searchMatches } from "./actions/search-matches.js";
 import { setProductImages } from "./actions/set-product-images.js";
 import { updateProduct } from "./actions/update-product.js";
 import { updateVariant } from "./actions/update-variant.js";
@@ -26,6 +27,7 @@ export { resolveLineReferences };
 export { ReferenceResolutionConflictError };
 export { restoreProduct };
 export { restoreVariant };
+export { searchMatches };
 export { setProductImages };
 export { updateProduct };
 export { updateVariant };
@@ -44,5 +46,6 @@ export const catalogActions = [
   restoreProduct,
   archiveVariant,
   restoreVariant,
+  searchMatches,
   setProductImages,
 ] as const;

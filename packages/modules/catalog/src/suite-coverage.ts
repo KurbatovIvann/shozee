@@ -13,6 +13,7 @@ export const catalogSuiteCoverage = {
     "catalog.resolveLineReferences",
     "catalog.restoreProduct",
     "catalog.restoreVariant",
+    "catalog.searchMatches",
     "catalog.setProductImages",
     "catalog.updateProduct",
     "catalog.updateVariant",

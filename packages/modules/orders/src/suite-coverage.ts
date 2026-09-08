@@ -9,6 +9,7 @@ export const ordersSuiteCoverage = {
     "orders.cancel",
     "orders.get",
     "orders.list",
+    "orders.searchMatches",
   ],
   publicProjection: [],
   consumerIsolation: [],
