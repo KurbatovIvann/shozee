@@ -345,6 +345,9 @@ describe("ordersCreateFacadeTools", () => {
       "Do not send EntityRef",
     );
     expect(tools[ORDERS_CREATE_TOOL_NAME]?.description).toContain(
+      "Do not refuse because EntityRef is missing",
+    );
+    expect(tools[ORDERS_CREATE_TOOL_NAME]?.description).toContain(
       "Creating a customer, group, or price list is a separate write",
     );
     expect(tools[ORDERS_CREATE_TOOL_NAME]?.description).toContain(

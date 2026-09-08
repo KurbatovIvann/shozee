@@ -612,6 +612,12 @@ describe("ordersListFacadeTools", () => {
       "Do not page orders_list_page and sum in the model",
     );
     expect(tools[ORDERS_LIST_COUNTS_TOOL_NAME]?.description).toContain(
+      "Do not refuse those jobs as analytics",
+    );
+    expect(tools[ORDERS_LIST_COUNTS_TOOL_NAME]?.description).toContain(
+      "Analytics / Reports",
+    );
+    expect(tools[ORDERS_LIST_COUNTS_TOOL_NAME]?.description).toContain(
       "statusBuckets",
     );
     expect(tools[ORDERS_LIST_COUNTS_TOOL_NAME]?.description).toContain(
@@ -649,6 +655,12 @@ describe("ordersListFacadeTools", () => {
     );
     expect(tools[ORDERS_LIST_COUNTS_TOOL_NAME]?.description).toContain(
       ORDERS_AGGREGATE_PROMPT_LINE,
+    );
+    expect(tools[ORDERS_LIST_PAGE_TOOL_NAME]?.description).toContain(
+      "put people and product names in nominative",
+    );
+    expect(tools[ORDERS_LIST_COUNTS_TOOL_NAME]?.description).toContain(
+      "Катя Самбука",
     );
   });
 

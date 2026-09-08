@@ -3,7 +3,7 @@
  *
  * One `streamText` call. Tests invoke this directly. Do not retarget
  * production `POST /assistant/chat`. Do not call the intent gate or
- * the live speaker.
+ * the live speaker. Always attach the permitted tool set plus BM25.
  */
 import type { ActionContract } from "@showzy/core/contract";
 import {

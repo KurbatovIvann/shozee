@@ -11,6 +11,7 @@ import {
   CATALOG_LIST_PRODUCTS_TOOL_NAME,
   ORDERS_CREATE_TOOL_NAME,
   ORDERS_LIST_PAGE_TOOL_NAME,
+  STAFF_ASSISTANT_TOOL_SEARCH_NAME,
   toProviderToolName,
   type ActionToolExecute,
 } from "../action-tool.js";
@@ -657,14 +658,16 @@ describe("runStaffAssistantHostTurn", () => {
     expect(narrationStep).not.toContain('"INTERNAL"');
   });
 
-  it("does not call generateText (gate) during a host turn", async () => {
+  it("does not construct or call the gate model during a host turn", async () => {
     const loopSrc = readFileSync(join(here, "loop.ts"), "utf8");
     const executeSrc = readFileSync(join(here, "execute.ts"), "utf8");
     const speechSrc = readFileSync(join(here, "speech.ts"), "utf8");
     for (const src of [loopSrc, executeSrc, speechSrc]) {
       expect(src).not.toContain("generateText");
       expect(src).not.toContain("classifyStaffAssistantTurn");
+      expect(src).not.toContain("staffAssistantShouldSkipIntentGate");
       expect(src).not.toContain('from "../gate.js"');
+      expect(src).not.toContain('from "../sticky-session.js"');
     }
     const model = new MockLanguageModelV3({
       doStream: [mockTextStream("Hello.")],
@@ -676,6 +679,32 @@ describe("runStaffAssistantHostTurn", () => {
       execute: () => Promise.resolve({ items: [], nextCursor: null }),
     });
     expect(turn.speech.source).toBe("model");
+    expect(turn.toolsAttached).toBe(true);
+    expect(model.doGenerateCalls).toHaveLength(0);
+  });
+
+  it("default-attaches the permitted tools on a job-like follow-up", async () => {
+    const model = new MockLanguageModelV3({
+      doStream: [mockTextStream("Sure, another order.")],
+    });
+    const turn = await runStaffAssistantHostTurn({
+      model,
+      messages: [
+        { role: "user", content: "створи замовлення на макаронси" },
+        { role: "assistant", content: "Need a customer first." },
+        { role: "user", content: "давай ще один" },
+      ],
+      contracts: [listOrders, createOrder],
+      execute: () => Promise.resolve({ items: [], nextCursor: null }),
+    });
+    expect(turn.toolsAttached).toBe(true);
+    expect(model.doGenerateCalls).toHaveLength(0);
+    const toolNames = (model.doStreamCalls[0]?.tools ?? []).map(
+      (tool) => tool.name,
+    );
+    expect(toolNames).toContain(STAFF_ASSISTANT_TOOL_SEARCH_NAME);
+    expect(toolNames).toContain(ORDERS_CREATE_TOOL_NAME);
+    expect(toolNames).toContain(ORDERS_LIST_PAGE_TOOL_NAME);
   });
 
   it("injects pending_replace when the host provides apply, without domain execute", async () => {

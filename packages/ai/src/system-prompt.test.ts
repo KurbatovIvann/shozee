@@ -55,77 +55,42 @@ describe("staffAssistantSystemPrompt", () => {
     expect(staffAssistantSystemPrompt).not.toContain("customers_list_groups");
   });
 
-  it("sends period order counts and gross to orders_list_counts instead of analytics tabs", () => {
-    expect(staffAssistantSystemPrompt).toContain(
-      "Period order counts and gross use orders_list_counts with period (today, this_week, this_month) or createdFrom / createdTo ISO",
-    );
-    expect(staffAssistantSystemPrompt).toContain(
-      "Do not refuse those jobs as analytics",
-    );
-    expect(staffAssistantSystemPrompt).toContain("Analytics / Reports");
-    expect(staffAssistantSystemPrompt).toContain(
-      "prefer period on the order list tools",
-    );
-  });
-
-  it("sends find-by-name, fill, and assign to existing pricing and customers tools", () => {
-    expect(staffAssistantSystemPrompt).toContain(
-      "Resolving a price list by name uses pricing_list_price_lists",
-    );
-    expect(staffAssistantSystemPrompt).toContain(
-      "filling markup is pricing.setPriceListEntries after catalog_list_products prices",
-    );
-    expect(staffAssistantSystemPrompt).toContain(
-      "assigning a list to a group or customer uses priceListId on the existing customers writes",
-    );
-  });
-
-  it("sends unique-name order create to orders_create instead of a missing-tool refusal", () => {
-    expect(staffAssistantSystemPrompt).toContain(
-      "Creating an order uses orders_create",
-    );
-    expect(staffAssistantSystemPrompt).toContain(
-      "Do not refuse because EntityRef is missing",
-    );
-    expect(staffAssistantSystemPrompt).toContain(
-      "Do not create a customer, group, or price list in that same write",
-    );
+  it("does not dump orders / customers / pricing how-to that lives on façades", () => {
     expect(staffAssistantSystemPrompt).toContain(
       "Call one terminal tool per job. Do not narrate instead of calling.",
     );
-  });
-
-  it("sends find-customer to customers_list_customers instead of getCustomer loops", () => {
     expect(staffAssistantSystemPrompt).toContain(
-      "Find a customer by name/phone/email with customers_list_customers",
+      "prefer period on the order list tools",
     );
-    expect(staffAssistantSystemPrompt).toContain(
-      "do not call customers.getCustomer in a loop to recover notes",
-    );
-    expect(staffAssistantSystemPrompt).toContain(
-      "create uses existing customers.createCustomer",
-    );
-  });
-
-  it("tells the model to pass nominative names, not the whole utterance, and retry an empty page", () => {
-    expect(staffAssistantSystemPrompt).toContain(
-      "put people and product names in nominative (Катя Самбука, Наполеон)",
-    );
-    expect(staffAssistantSystemPrompt).toContain(
-      "not the inflected form from the staff sentence (Каті Самбуки, наполеона)",
-    );
-    expect(staffAssistantSystemPrompt).toContain(
-      "Pass only the name or query, not the whole utterance («замовлення для …»)",
-    );
-    expect(staffAssistantSystemPrompt).toContain(
-      'One empty page is not "does not exist": retry with nominative',
-    );
-    expect(staffAssistantSystemPrompt).toContain(
-      "last-name or product-name stem",
+    expect(staffAssistantSystemPrompt).not.toContain("Analytics / Reports");
+    expect(staffAssistantSystemPrompt).not.toContain(
+      "Period order counts and gross use orders_list_counts",
     );
     expect(staffAssistantSystemPrompt).not.toContain(
-      "resolveCustomerReference",
+      "Resolving a price list by name uses pricing_list_price_lists",
     );
+    expect(staffAssistantSystemPrompt).not.toContain(
+      "filling markup is pricing.setPriceListEntries",
+    );
+    expect(staffAssistantSystemPrompt).not.toContain(
+      "assigning a list to a group or customer uses priceListId",
+    );
+    expect(staffAssistantSystemPrompt).not.toContain(
+      "Creating an order uses orders_create",
+    );
+    expect(staffAssistantSystemPrompt).not.toContain(
+      "Do not refuse because EntityRef is missing",
+    );
+    expect(staffAssistantSystemPrompt).not.toContain(
+      "Find a customer by name/phone/email with customers_list_customers",
+    );
+    expect(staffAssistantSystemPrompt).not.toContain(
+      "do not call customers.getCustomer in a loop",
+    );
+    expect(staffAssistantSystemPrompt).not.toContain(
+      "put people and product names in nominative",
+    );
+    expect(staffAssistantSystemPrompt).not.toContain("resolveCustomerReference");
     expect(staffAssistantSystemPrompt).not.toContain("nameSearchStems");
   });
 
@@ -145,6 +110,18 @@ describe("staffAssistantSystemPrompt", () => {
     expect(staffAssistantSystemPrompt).toContain("do not guess");
     expect(staffAssistantSystemPrompt).toContain("Do not auto-confirm");
     expect(staffAssistantSystemPrompt).toContain("human step");
+    expect(staffAssistantSystemPrompt).toContain(
+      "Chat text, including «Так», is not confirmation",
+    );
+    expect(staffAssistantSystemPrompt).toContain(
+      "A second job — even the same actionName — is not replace",
+    );
+    expect(staffAssistantSystemPrompt).toContain(
+      "versioned replace of this pending",
+    );
+    expect(staffAssistantSystemPrompt).toContain(
+      "The host tool pending_replace is how to amend this request",
+    );
   });
 
   it("stays in the company and does not print internal wire keys", () => {
@@ -172,6 +149,13 @@ describe("staffAssistantSystemPrompt", () => {
       'Do not name those surfaces "cards" to the staff member',
     );
     expect(staffAssistantSystemPrompt).toContain(
+      "Cards exist: do not dump a table instead of a card",
+    );
+    expect(staffAssistantSystemPrompt).toContain(
+      "Markdown tables and emphasis are style, not a speech-rewrite instruction",
+    );
+    expect(staffAssistantSystemPrompt).not.toContain("Never a table");
+    expect(staffAssistantSystemPrompt).not.toContain(
       "No **, |, headings, or code fences",
     );
     expect(staffAssistantSystemPrompt).not.toContain("reply with card JSON");

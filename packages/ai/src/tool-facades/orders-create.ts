@@ -136,7 +136,7 @@ export type OrdersCreateMappedInput = {
   readonly comment?: string;
 };
 
-const ORDERS_CREATE_DESCRIPTION = `Create a staff-intake order in the active company. Pass exactly one of customerId or customerQuery (unique name, phone, or email). Each line: exactly one of productId or productQuery, optional variantId or variantQuery (not both), and exactly one of quantityMilli or quantityDecimal (scale 3, for example 1.5). Optional comment. Do not send EntityRef { by, id } / { by, value } unions. Ambiguous names return CONFLICT — do not guess. Creating a customer, group, or price list is a separate write; this tool only creates the order. ${ORDER_ENTITY_PROMPT_LINE}`;
+const ORDERS_CREATE_DESCRIPTION = `Create a staff-intake order in the active company. Pass exactly one of customerId or customerQuery (unique name, phone, or email). Each line: exactly one of productId or productQuery, optional variantId or variantQuery (not both), and exactly one of quantityMilli or quantityDecimal (scale 3, for example 1.5). Optional comment. Do not send EntityRef { by, id } / { by, value } unions. Do not refuse because EntityRef is missing. Ambiguous names return CONFLICT — do not guess. Creating a customer, group, or price list is a separate write; this tool only creates the order. ${ORDER_ENTITY_PROMPT_LINE}`;
 
 function mapRequiredEntityRef(
   id: string | undefined,

@@ -169,6 +169,18 @@ describe("catalogListProductsFacadeTools", () => {
     expect(json["oneOf"]).toBeUndefined();
   });
 
+  it("tells the model to pass nominative product names and retry an empty page", () => {
+    const tools = catalogListProductsFacadeTools(listProducts, () =>
+      Promise.resolve({ items: [], nextCursor: null }),
+    );
+    expect(tools[CATALOG_LIST_PRODUCTS_TOOL_NAME]?.description).toContain(
+      "put people and product names in nominative",
+    );
+    expect(tools[CATALOG_LIST_PRODUCTS_TOOL_NAME]?.description).toContain(
+      "Катя Самбука",
+    );
+  });
+
   it("duplicates list caps and rejects overlong query, cursor, or limit", () => {
     expect(CATALOG_LIST_PRODUCTS_DEFAULT_LIMIT).toBe(20);
     expect(CATALOG_LIST_PRODUCTS_MAX_LIMIT).toBe(50);

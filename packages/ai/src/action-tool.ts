@@ -11,6 +11,7 @@ import {
   catalogListProductsFacadeTools,
 } from "./tool-facades/catalog-list-products.js";
 import {
+  CUSTOMERS_DEFERRED_TOOL_DESCRIPTION_SUFFIXES,
   CUSTOMERS_LIST_CUSTOMERS_ACTION_NAME,
   CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME,
   customersListCustomersFacadeTools,
@@ -324,6 +325,7 @@ function insertActionTool(
   }
   const descriptionSuffix =
     PRICING_DEFERRED_TOOL_DESCRIPTION_SUFFIXES[contract.name] ??
+    CUSTOMERS_DEFERRED_TOOL_DESCRIPTION_SUFFIXES[contract.name] ??
     HOT_ACTION_DESCRIPTION_SUFFIXES[contract.name];
   tools[providerName] = actionContractToTool(
     contract,
