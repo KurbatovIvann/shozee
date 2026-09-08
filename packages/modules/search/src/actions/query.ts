@@ -1,13 +1,12 @@
 import { implementAction } from "@showzy/core";
-import { CoreInvariantError } from "@showzy/core/errors";
 
+import { executeSearchQuery } from "../services/query.js";
 import { queryContract } from "./query.contract.js";
 
 export const query = implementAction(queryContract, {
-  handler: () =>
-    Promise.reject(
-      new CoreInvariantError(
-        "search.query handler is implemented in SHO-534 (T8)",
-      ),
-    ),
+  handler: (input, ctx) =>
+    executeSearchQuery(input, {
+      membership: ctx.membership,
+      call: ctx.call,
+    }),
 });

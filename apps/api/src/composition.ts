@@ -147,6 +147,26 @@ const callEdges: readonly DeclaredCallEdge[] = [
     callee: "companies.get",
   },
   {
+    caller: "search.query",
+    callee: "customers.searchMatches",
+  },
+  {
+    caller: "search.query",
+    callee: "catalog.searchMatches",
+  },
+  {
+    caller: "search.query",
+    callee: "orders.searchMatches",
+  },
+  {
+    caller: "search.query",
+    callee: "pricing.searchMatches",
+  },
+  {
+    caller: "search.query",
+    callee: "documents.searchMatches",
+  },
+  {
     caller: "pricing.resolveProductPrices",
     callee: "catalog.getProductPricingFacts",
   },
