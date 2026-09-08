@@ -370,11 +370,7 @@ async function completeTurn(env: {
     },
     "assistant.checkpointAssistantTurn completed assistant turn",
   );
-  return emptyCheckpoint(
-    env.input.conversationId,
-    updated.id,
-    updated.turnKey,
-  );
+  return emptyCheckpoint(env.input.conversationId, updated.id, updated.turnKey);
 }
 
 export async function checkpointStaffAssistantTurn(env: {

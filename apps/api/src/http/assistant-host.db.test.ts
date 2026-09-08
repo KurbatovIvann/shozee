@@ -2056,11 +2056,7 @@ describe("unpublished staff assistant host HTTP", () => {
         turnKey: laterBeginKey,
       },
       {
-        idempotencyKey: attemptKey(
-          "turn",
-          conversation.id,
-          laterBeginKey,
-        ),
+        idempotencyKey: attemptKey("turn", conversation.id, laterBeginKey),
       },
     );
     const crashed = await h.invoke(getModelHistory, {
@@ -2865,7 +2861,9 @@ describe("unpublished staff assistant host HTTP", () => {
           conversationId: conversation.id,
           body: "what about this picker?",
         },
-        { idempotencyKey: attemptKey("message", conversation.id, randomUUID()) },
+        {
+          idempotencyKey: attemptKey("message", conversation.id, randomUUID()),
+        },
       );
       const cake = await cakeCreateInputs(h, "Dangling Phase B");
       const leftover = await stageNamedStartedRun(h, {
@@ -2966,7 +2964,9 @@ describe("unpublished staff assistant host HTTP", () => {
       await h.invoke(
         appendUserMessage,
         { conversationId: conversation.id, body: "did that delete finish?" },
-        { idempotencyKey: attemptKey("message", conversation.id, randomUUID()) },
+        {
+          idempotencyKey: attemptKey("message", conversation.id, randomUUID()),
+        },
       );
       const cake = await cakeCreateInputs(h, "Confirm leftover");
       const leftover = await stageNamedStartedRun(h, {
@@ -3140,7 +3140,9 @@ describe("unpublished staff assistant host HTTP", () => {
           conversationId: conversation.id,
           body: "Create another leftover cake",
         },
-        { idempotencyKey: attemptKey("message", conversation.id, randomUUID()) },
+        {
+          idempotencyKey: attemptKey("message", conversation.id, randomUUID()),
+        },
       );
       const leftover = await stageNamedStartedRun(h, {
         conversationId: conversation.id,

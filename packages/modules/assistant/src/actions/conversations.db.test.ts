@@ -66,10 +66,7 @@ const stamps = {
 const orderId = randomUUID();
 const challengeId = randomUUID();
 
-function beginInput(
-  conversationId: string,
-  turnKey = `begin:${randomUUID()}`,
-) {
+function beginInput(conversationId: string, turnKey = `begin:${randomUUID()}`) {
   return { kind: "begin" as const, conversationId, turnKey };
 }
 
@@ -826,11 +823,7 @@ describe("assistant staff conversation actions", () => {
       ),
     ).rejects.toBeInstanceOf(PermissionDeniedError);
     await expect(
-      kit.invoke(
-        checkpointAssistantTurn,
-        beginInput(fixtures.convA),
-        denied,
-      ),
+      kit.invoke(checkpointAssistantTurn, beginInput(fixtures.convA), denied),
     ).rejects.toBeInstanceOf(PermissionDeniedError);
     await expect(kit.invoke(getStaffActor, {}, denied)).rejects.toBeInstanceOf(
       PermissionDeniedError,
@@ -1712,8 +1705,10 @@ describe("assistant staff conversation actions", () => {
       conversationId: conversation.id,
       body: "List then get",
     });
-    const begun = await kit.invoke(checkpointAssistantTurn,
-      beginInput(conversation.id));
+    const begun = await kit.invoke(
+      checkpointAssistantTurn,
+      beginInput(conversation.id),
+    );
     const first = await kit.invoke(checkpointAssistantTurn, {
       kind: "stageRun",
       conversationId: conversation.id,
@@ -1804,8 +1799,10 @@ describe("assistant staff conversation actions", () => {
     expect(lastAssistant?.toolRuns[0]?.toolInput).not.toEqual({});
     expect(lastAssistant?.toolRuns[1]?.toolInput).toEqual({ id: orderId });
 
-    const secondTurn = await kit.invoke(checkpointAssistantTurn,
-      beginInput(conversation.id));
+    const secondTurn = await kit.invoke(
+      checkpointAssistantTurn,
+      beginInput(conversation.id),
+    );
     await kit.invoke(checkpointAssistantTurn, {
       kind: "complete",
       conversationId: conversation.id,
@@ -1833,8 +1830,10 @@ describe("assistant staff conversation actions", () => {
     const conversation = await kit.invoke(createConversation, {
       title: "Stage retry",
     });
-    const begun = await kit.invoke(checkpointAssistantTurn,
-      beginInput(conversation.id));
+    const begun = await kit.invoke(
+      checkpointAssistantTurn,
+      beginInput(conversation.id),
+    );
     const staged = await kit.invoke(checkpointAssistantTurn, {
       kind: "stageRun",
       conversationId: conversation.id,
@@ -1864,8 +1863,10 @@ describe("assistant staff conversation actions", () => {
     const conversation = await kit.invoke(createConversation, {
       title: "Open checkpoint turn",
     });
-    const begun = await kit.invoke(checkpointAssistantTurn,
-      beginInput(conversation.id));
+    const begun = await kit.invoke(
+      checkpointAssistantTurn,
+      beginInput(conversation.id),
+    );
     const staged = await kit.invoke(checkpointAssistantTurn, {
       kind: "stageRun",
       conversationId: conversation.id,
@@ -1931,8 +1932,10 @@ describe("assistant staff conversation actions", () => {
     const conversation = await kit.invoke(createConversation, {
       title: "Checkpoint traces",
     });
-    const begun = await kit.invoke(checkpointAssistantTurn,
-      beginInput(conversation.id));
+    const begun = await kit.invoke(
+      checkpointAssistantTurn,
+      beginInput(conversation.id),
+    );
     const errorRun = await kit.invoke(checkpointAssistantTurn, {
       kind: "stageRun",
       conversationId: conversation.id,
@@ -2050,8 +2053,10 @@ describe("assistant staff conversation actions", () => {
     const conversation = await kit.invoke(createConversation, {
       title: "Crash recovery",
     });
-    const begun = await kit.invoke(checkpointAssistantTurn,
-      beginInput(conversation.id));
+    const begun = await kit.invoke(
+      checkpointAssistantTurn,
+      beginInput(conversation.id),
+    );
     const staged = await kit.invoke(checkpointAssistantTurn, {
       kind: "stageRun",
       conversationId: conversation.id,

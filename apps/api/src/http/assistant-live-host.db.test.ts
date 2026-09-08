@@ -1615,7 +1615,9 @@ describe("live staff assistant host HTTP (SHO-524)", () => {
           conversationId: conversation.id,
           body: "what about this picker?",
         },
-        { idempotencyKey: attemptKey("message", conversation.id, randomUUID()) },
+        {
+          idempotencyKey: attemptKey("message", conversation.id, randomUUID()),
+        },
       );
       const cake = await cakeCreateInputs(h, "Live dangling Phase B");
       const leftover = await stageNamedStartedRun(h, {
@@ -1713,7 +1715,9 @@ describe("live staff assistant host HTTP (SHO-524)", () => {
       await h.invoke(
         appendUserMessage,
         { conversationId: conversation.id, body: "did that delete finish?" },
-        { idempotencyKey: attemptKey("message", conversation.id, randomUUID()) },
+        {
+          idempotencyKey: attemptKey("message", conversation.id, randomUUID()),
+        },
       );
       const cake = await cakeCreateInputs(h, "Live confirm leftover");
       const leftover = await stageNamedStartedRun(h, {
@@ -1878,7 +1882,9 @@ describe("live staff assistant host HTTP (SHO-524)", () => {
           conversationId: conversation.id,
           body: "Create another leftover cake",
         },
-        { idempotencyKey: attemptKey("message", conversation.id, randomUUID()) },
+        {
+          idempotencyKey: attemptKey("message", conversation.id, randomUUID()),
+        },
       );
       const leftover = await stageNamedStartedRun(h, {
         conversationId: conversation.id,
