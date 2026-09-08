@@ -589,6 +589,7 @@ async function seedChoicePending(
 ): Promise<{
   readonly record: Extract<PendingInteractionRecord, { kind: "choice" }>;
   readonly optionByLabel: Map<string, string>;
+  readonly facadeInput: ReturnType<typeof ordersCreateFacadeInput>;
 }> {
   const choiceId = randomUUID();
   const optionByLabel = new Map<string, string>();
@@ -621,11 +622,16 @@ async function seedChoicePending(
     customer: { by: "id" as const, id: options.customerId },
     items,
   };
+  const productIds = [
+    options.product.productId,
+    ...(options.extraProductId !== undefined ? [options.extraProductId] : []),
+  ];
+  const facadeInput = ordersCreateFacadeInput(options.customerId, productIds);
   const executionId = await stageExecution(
     h,
     options.conversationId,
     "orders.create",
-    canonicalInput,
+    facadeInput,
   );
   const record = pendingChoiceRecordFromChoiceRecord(
     {
@@ -665,7 +671,7 @@ async function seedChoicePending(
     challengeId: choiceId,
     modelTrace: record.envelope,
   });
-  return { record, optionByLabel };
+  return { record, optionByLabel, facadeInput };
 }
 
 async function seedConfirmationPending(
@@ -755,6 +761,57 @@ async function orderCount(): Promise<number> {
 async function conversationToolRuns(conversationId: string) {
   return (await kit.db.runtime.db.select().from(assistantToolRuns)).filter(
     (row) => row.conversationId === conversationId,
+  );
+}
+
+function ordersCreateFacadeInput(
+  customerId: string,
+  productIds: readonly string[],
+): {
+  readonly customerId: string;
+  readonly items: ReadonlyArray<{
+    readonly productId: string;
+    readonly quantityMilli: "1000";
+  }>;
+} {
+  return {
+    customerId,
+    items: productIds.map((productId) => ({
+      productId,
+      quantityMilli: "1000",
+    })),
+  };
+}
+
+function modelMessagesFromHistory(history: {
+  readonly messages: ReadonlyArray<{
+    readonly role: "user" | "assistant";
+    readonly text: string;
+    readonly toolRuns: ReadonlyArray<{
+      readonly action: string;
+      readonly toolCallId: string;
+      readonly toolName: string | null;
+      readonly modelTrace: unknown;
+      readonly toolInput: unknown;
+      readonly seq: number | null;
+      readonly outcome: string;
+    }>;
+  }>;
+}) {
+  return staffAssistantModelMessagesFromPersisted(
+    history.messages.map((message) => ({
+      role: message.role,
+      body: message.text,
+      toolRuns: message.toolRuns.map((run) => ({
+        action: run.action,
+        toolCallId: run.toolCallId,
+        modelTrace: run.modelTrace,
+        ...(run.toolName !== null ? { toolName: run.toolName } : {}),
+        ...(run.toolInput !== null ? { toolInput: run.toolInput } : {}),
+        ...(run.seq !== null ? { seq: run.seq } : {}),
+        outcome: run.outcome,
+      })),
+    })),
   );
 }
 
@@ -848,6 +905,396 @@ describe("unpublished staff assistant host HTTP", () => {
     expect(
       assistantHostInteractionResultSchema.parse(await wrongBind.json()),
     ).toEqual({ status: "expired" });
+  });
+
+  it("choice resume finishRun the paused execution_id and keeps façade tool_input (SHO-543)", async () => {
+    const h = harness({ model: listThenSpeakModel() });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Choice resume same execution_id",
+    });
+    const customer = await h.invoke(createCustomer, {
+      name: "T8 Choice Buyer",
+      phone: nextPhone(),
+    });
+    const product = await h.invoke(createProduct, {
+      name: "T8 Choice Cake",
+      basePriceMinor: "1500",
+      variants: [{ name: "A" }, { name: "B" }],
+    });
+    const { record, optionByLabel, facadeInput } = await seedChoicePending(h, {
+      conversationId: conversation.id,
+      customerId: customer.id,
+      product,
+    });
+    const optionId = optionByLabel.get("A");
+    if (optionId === undefined || record.executionId === undefined) {
+      throw new Error("seeded choice missing option or executionId");
+    }
+    const pausedRows = (await conversationToolRuns(conversation.id)).filter(
+      (row) => row.actionName === "orders.create",
+    );
+    expect(pausedRows).toHaveLength(1);
+    expect(pausedRows[0]?.executionId).toBe(record.executionId);
+    expect(pausedRows[0]?.outcome).toBe("choice_required");
+    expect(pausedRows[0]?.seq).toBe(0);
+    expect(pausedRows[0]?.toolInput).toEqual(facadeInput);
+    const first = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.id,
+        optionId,
+      },
+    });
+    const firstBody = assistantHostInteractionResultSchema.parse(
+      await first.json(),
+    );
+    expect(firstBody.status).toBe("ok");
+    if (firstBody.status !== "ok") {
+      return;
+    }
+    expect(firstBody.pending).toBeNull();
+    const afterRows = (await conversationToolRuns(conversation.id)).filter(
+      (row) => row.actionName === "orders.create",
+    );
+    expect(afterRows).toHaveLength(1);
+    expect(afterRows[0]?.executionId).toBe(record.executionId);
+    expect(afterRows[0]?.outcome).toBe("success");
+    expect(afterRows[0]?.seq).toBe(pausedRows[0]?.seq);
+    expect(afterRows[0]?.toolInput).toEqual(facadeInput);
+    expect(afterRows[0]?.toolInput).not.toEqual(record.canonicalInput);
+    expect(afterRows.some((row) => row.outcome === "choice_required")).toBe(
+      false,
+    );
+    expect(
+      afterRows.some((row) =>
+        row.toolCallId.startsWith(HOST_PHASE_A_TOOL_CALL_ID_PREFIX),
+      ),
+    ).toBe(false);
+    const history = await h.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    const pausedHistoryRuns = history.messages
+      .flatMap((message) =>
+        message.toolRuns.map((run) => ({
+          messageId: message.id,
+          run,
+        })),
+      )
+      .filter((entry) => entry.run.executionId === record.executionId);
+    expect(pausedHistoryRuns).toHaveLength(1);
+    expect(pausedHistoryRuns[0]?.run.outcome).toBe("success");
+    expect(pausedHistoryRuns[0]?.run.seq).toBe(0);
+    expect(pausedHistoryRuns[0]?.run.toolInput).toEqual(facadeInput);
+    const reconstructed = modelMessagesFromHistory(history);
+    const pauseMessage = reconstructed.find((message) => {
+      if (message.role !== "assistant" || !Array.isArray(message.content)) {
+        return false;
+      }
+      return message.content.some(
+        (part) =>
+          part.type === "tool-call" &&
+          part.toolCallId === pausedHistoryRuns[0]?.run.toolCallId,
+      );
+    });
+    expect(pauseMessage?.role).toBe("assistant");
+    if (pauseMessage === undefined || pauseMessage.role !== "assistant") {
+      throw new Error("expected reconstructed pause tool-call");
+    }
+    const pauseCalls = Array.isArray(pauseMessage.content)
+      ? pauseMessage.content.filter(
+          (part) =>
+            part.type === "tool-call" &&
+            part.toolCallId === pausedHistoryRuns[0]?.run.toolCallId,
+        )
+      : [];
+    expect(pauseCalls).toHaveLength(1);
+    expect(pauseCalls[0]).toMatchObject({
+      type: "tool-call",
+      input: facadeInput,
+    });
+    const pauseResults = reconstructed.flatMap((message) => {
+      if (message.role !== "tool" || !Array.isArray(message.content)) {
+        return [];
+      }
+      return message.content.filter(
+        (part) =>
+          part.type === "tool-result" &&
+          part.toolCallId === pausedHistoryRuns[0]?.run.toolCallId,
+      );
+    });
+    expect(pauseResults).toHaveLength(1);
+    const replay = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.id,
+        optionId,
+      },
+    });
+    expect(
+      assistantHostInteractionResultSchema.parse(await replay.json()).status,
+    ).toBe("ok");
+    const replayRows = (await conversationToolRuns(conversation.id)).filter(
+      (row) => row.actionName === "orders.create",
+    );
+    expect(replayRows).toHaveLength(1);
+    expect(replayRows[0]?.executionId).toBe(record.executionId);
+    expect(replayRows[0]?.outcome).toBe("success");
+  });
+
+  it("confirm resume still finishRun the staged execution_id (SHO-543)", async () => {
+    const h = harness({ model: listThenSpeakModel() });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Confirm staged execution_id",
+    });
+    const seeded = await seedConfirmationPending(h, conversation.id);
+    const pausedRows = (await conversationToolRuns(conversation.id)).filter(
+      (row) => row.actionName === "customers.deleteCustomer",
+    );
+    expect(pausedRows).toHaveLength(1);
+    expect(pausedRows[0]?.executionId).toBe(seeded.executionId);
+    expect(pausedRows[0]?.outcome).toBe("confirmation_required");
+    const first = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_CONFIRM_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        challengeId: seeded.challengeId,
+      },
+    });
+    expect(
+      assistantHostInteractionResultSchema.parse(await first.json()).status,
+    ).toBe("ok");
+    const afterRows = (await conversationToolRuns(conversation.id)).filter(
+      (row) => row.actionName === "customers.deleteCustomer",
+    );
+    expect(afterRows).toHaveLength(1);
+    expect(afterRows[0]?.executionId).toBe(seeded.executionId);
+    expect(afterRows[0]?.outcome).toBe("success");
+    expect(afterRows[0]?.toolInput).toEqual({ id: seeded.customerId });
+    expect(
+      afterRows.some((row) => row.outcome === "confirmation_required"),
+    ).toBe(false);
+    const replay = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_CONFIRM_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        challengeId: seeded.challengeId,
+      },
+    });
+    expect(
+      assistantHostInteractionResultSchema.parse(await replay.json()).status,
+    ).toBe("ok");
+    const replayRows = (await conversationToolRuns(conversation.id)).filter(
+      (row) => row.actionName === "customers.deleteCustomer",
+    );
+    expect(replayRows).toHaveLength(1);
+    expect(replayRows[0]?.executionId).toBe(seeded.executionId);
+  });
+
+  it("choice resume does not finish another tenant's paused tool-run (SHO-543)", async () => {
+    const h = harness({ model: listThenSpeakModel() });
+    const anna = await insertBearer(kit, kitIdentities.users.anna);
+    const boris = await insertBearer(kit, kitIdentities.users.boris);
+    const conversation = await h.invoke(createConversation, {
+      title: "Choice cross-tenant",
+    });
+    const customer = await h.invoke(createCustomer, {
+      name: "Tenant A Buyer",
+      phone: nextPhone(),
+    });
+    const product = await h.invoke(createProduct, {
+      name: "Tenant A Cake",
+      basePriceMinor: "1500",
+      variants: [{ name: "A" }, { name: "B" }],
+    });
+    const { record, optionByLabel } = await seedChoicePending(h, {
+      conversationId: conversation.id,
+      customerId: customer.id,
+      product,
+    });
+    const optionId = optionByLabel.get("A");
+    if (optionId === undefined || record.executionId === undefined) {
+      throw new Error("seeded choice missing option or executionId");
+    }
+    const beforeOrders = await orderCount();
+    const foreign = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token: boris,
+      companyId: kitIdentities.companies.b,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.id,
+        optionId,
+      },
+    });
+    const foreignBody = assistantHostInteractionResultSchema.parse(
+      await foreign.json(),
+    );
+    expect(foreignBody.status).not.toBe("ok");
+    expect(await orderCount()).toBe(beforeOrders);
+    const pausedRows = (await conversationToolRuns(conversation.id)).filter(
+      (row) => row.actionName === "orders.create",
+    );
+    expect(pausedRows).toHaveLength(1);
+    expect(pausedRows[0]?.executionId).toBe(record.executionId);
+    expect(pausedRows[0]?.outcome).toBe("choice_required");
+    const own = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token: anna,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.id,
+        optionId,
+      },
+    });
+    expect(
+      assistantHostInteractionResultSchema.parse(await own.json()).status,
+    ).toBe("ok");
+    const afterRows = (await conversationToolRuns(conversation.id)).filter(
+      (row) => row.actionName === "orders.create",
+    );
+    expect(afterRows).toHaveLength(1);
+    expect(afterRows[0]?.executionId).toBe(record.executionId);
+    expect(afterRows[0]?.outcome).toBe("success");
+  });
+
+  it("choice tap after replace finishRun the replace-staged id, not a Phase A replica (SHO-543)", async () => {
+    const h = harness({ model: listThenSpeakModel() });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Replace then choice tap",
+    });
+    await h.invoke(
+      appendUserMessage,
+      { conversationId: conversation.id, body: "Create the cake order" },
+      { idempotencyKey: attemptKey("message", conversation.id, randomUUID()) },
+    );
+    const customer = await h.invoke(createCustomer, {
+      name: "Replace Tap Buyer",
+      phone: nextPhone(),
+    });
+    const product = await h.invoke(createProduct, {
+      name: "Replace Tap Cake",
+      basePriceMinor: "1500",
+      variants: [{ name: "A" }, { name: "B" }],
+    });
+    const { record } = await seedChoicePending(h, {
+      conversationId: conversation.id,
+      customerId: customer.id,
+      product,
+    });
+    const originalExecutionId = record.executionId;
+    if (originalExecutionId === undefined) {
+      throw new Error("seeded choice missing executionId");
+    }
+    const replaceHarness = harness({
+      model: new MockLanguageModelV3({
+        doStream: [
+          mockToolCallStream(
+            "call-replace",
+            PENDING_REPLACE_TOOL_NAME,
+            JSON.stringify({
+              customerId: customer.id,
+              items: [
+                {
+                  productId: product.productId,
+                  quantityMilli: "3000",
+                },
+              ],
+            }),
+          ),
+          mockTextStream("Quantity is now three."),
+        ],
+      }),
+      pendingStore: h.pendingStore,
+    });
+    const replaceChat = await hostRequest(replaceHarness.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHAT_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        text: "Make it three of this cake instead",
+        locale: "en",
+      },
+    });
+    const replaced = assistantHostInteractionResultSchema.parse(
+      await replaceChat.json(),
+    );
+    expect(replaced.status).toBe("ok");
+    if (replaced.status !== "ok") {
+      return;
+    }
+    expect(replaced.pending?.kind).toBe("choice");
+    const peeked = await h.pendingStore.peekOpen({
+      conversationId: conversation.id,
+      bind: pendingBindFor(conversation.id),
+    });
+    expect(peeked.kind).toBe("found");
+    if (peeked.kind !== "found" || peeked.record.kind !== "choice") {
+      throw new Error("expected rebuilt choice pending");
+    }
+    expect(peeked.record.executionId).not.toBe(originalExecutionId);
+    const optionId = peeked.record.envelope.options[0]?.id;
+    if (optionId === undefined || peeked.record.executionId === undefined) {
+      throw new Error("replaced choice missing option or executionId");
+    }
+    const tap = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        choiceId: peeked.record.id,
+        optionId,
+      },
+    });
+    expect(
+      assistantHostInteractionResultSchema.parse(await tap.json()).status,
+    ).toBe("ok");
+    const createRows = (await conversationToolRuns(conversation.id)).filter(
+      (row) => row.actionName === "orders.create",
+    );
+    expect(
+      createRows.filter((row) =>
+        row.toolCallId.startsWith(HOST_PHASE_A_TOOL_CALL_ID_PREFIX),
+      ),
+    ).toHaveLength(0);
+    const original = createRows.find(
+      (row) => row.executionId === originalExecutionId,
+    );
+    expect(original?.outcome).toBe("choice_required");
+    const resolved = createRows.filter(
+      (row) => row.executionId === peeked.record.executionId,
+    );
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0]?.outcome).toBe("success");
+    expect(resolved[0]?.toolInput).toEqual({
+      customerId: customer.id,
+      items: [
+        {
+          productId: product.productId,
+          quantityMilli: "3000",
+        },
+      ],
+    });
+    expect(resolved[0]?.toolInput).not.toEqual(peeked.record.canonicalInput);
+    expect(
+      createRows.filter((row) => row.outcome === "success"),
+    ).toHaveLength(1);
   });
 
   it("refuses a second orders.create while Katia picker is open (same actionName is not replace)", async () => {

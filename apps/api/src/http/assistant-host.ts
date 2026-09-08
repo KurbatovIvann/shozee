@@ -27,7 +27,6 @@ import {
   StaffAssistantNotConfiguredError,
   filterStaffAiTools,
   HOST_CHOICE_SEED_TOOL_CALL_ID_PREFIX,
-  HOST_PHASE_A_TOOL_CALL_ID_PREFIX,
   isHostSeededHitlToolCallId,
   isChatTurnKey,
   isPendingReplaceActionName,
@@ -1517,14 +1516,17 @@ export async function executeStaffAssistantHostChoiceResume(
           record.target,
           mappedId,
         );
-        const executionId = await stagePhaseAExecutionId({
-          runtime: options,
+        const history = await loadHistory({
+          pipeline: options.pipeline,
           conversationId: conversation.id,
-          staffPrincipal: auth.staffPrincipal,
-          actionName: record.actionName,
-          pendingId: record.id,
-          toolInput: patched,
+          requestId: options.requestId,
+          clientIp: options.clientIp,
+          principal: auth.staffPrincipal,
         });
+        // SHO-543: finish the paused (or replace-staged) execution_id.
+        // Do not begin a Phase A replica. Canonical patched input stays
+        // on the pending record / executeAction input, not tool_input.
+        const executionId = resolveStagedExecutionId({ record, history });
         try {
           const output = await executePhaseA({
             runtime: options,
@@ -1637,30 +1639,6 @@ export async function executeStaffAssistantHostChoiceResume(
     }
     return wireResponse(error, options.requestId);
   }
-}
-
-async function stagePhaseAExecutionId(options: {
-  readonly runtime: StaffAssistantHostRuntime;
-  readonly conversationId: string;
-  readonly staffPrincipal: {
-    readonly mode: "staff";
-    readonly session: SessionPrincipal;
-    readonly companySelector: string | null;
-  };
-  readonly actionName: string;
-  readonly pendingId: string;
-  readonly toolInput: unknown;
-}): Promise<string> {
-  return stageBoundExecutionId({
-    runtime: options.runtime,
-    conversationId: options.conversationId,
-    staffPrincipal: options.staffPrincipal,
-    actionName: options.actionName,
-    beginKey: `begin:phase-a:${options.pendingId}`,
-    toolCallId: `${HOST_PHASE_A_TOOL_CALL_ID_PREFIX}${options.pendingId}`,
-    toolName: options.actionName.replace(".", "_"),
-    toolInput: options.toolInput,
-  });
 }
 
 async function stageBoundExecutionId(options: {

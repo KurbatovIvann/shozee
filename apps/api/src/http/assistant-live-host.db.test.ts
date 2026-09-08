@@ -701,11 +701,22 @@ async function seedChoicePending(
     customer: { by: "id" as const, id: options.customerId },
     items,
   };
+  const productIds = [
+    options.product.productId,
+    ...(options.extraProductId !== undefined ? [options.extraProductId] : []),
+  ];
+  const facadeInput = {
+    customerId: options.customerId,
+    items: productIds.map((productId) => ({
+      productId,
+      quantityMilli: "1000",
+    })),
+  };
   const executionId = await stageExecution(
     h,
     options.conversationId,
     "orders.create",
-    canonicalInput,
+    facadeInput,
   );
   const record = pendingChoiceRecordFromChoiceRecord(
     {
@@ -1479,6 +1490,16 @@ describe("live staff assistant host HTTP (SHO-524)", () => {
     if (opened.pending?.kind !== "choice") {
       return;
     }
+    const pausedCreates = (await conversationToolRuns(conversation.id)).filter(
+      (row) => row.actionName === "orders.create",
+    );
+    expect(pausedCreates).toHaveLength(1);
+    expect(pausedCreates[0]?.outcome).toBe("choice_required");
+    expect(pausedCreates[0]?.executionId).toEqual(expect.any(String));
+    expect(pausedCreates[0]?.toolInput).toEqual({
+      customerId: customer.id,
+      items: [{ productId: product.productId, quantityMilli: "1000" }],
+    });
     const optionId = opened.pending.envelope.options[0]?.id;
     const resumed = await parseOk(
       await liveRequest(
@@ -1505,6 +1526,48 @@ describe("live staff assistant host HTTP (SHO-524)", () => {
         (card) => card.kind === "surface" && card.surface.includes("order"),
       ),
     ).toBe(true);
+    const afterCreates = (await conversationToolRuns(conversation.id)).filter(
+      (row) => row.actionName === "orders.create",
+    );
+    expect(afterCreates).toHaveLength(1);
+    expect(afterCreates[0]?.executionId).toBe(pausedCreates[0]?.executionId);
+    expect(afterCreates[0]?.outcome).toBe("success");
+    expect(afterCreates[0]?.seq).toBe(pausedCreates[0]?.seq);
+    expect(afterCreates[0]?.toolInput).toEqual(pausedCreates[0]?.toolInput);
+    expect(afterCreates[0]?.toolInput).not.toMatchObject({
+      customer: { by: "id" },
+    });
+    expect(afterCreates.some((row) => row.outcome === "choice_required")).toBe(
+      false,
+    );
+    expect(
+      afterCreates.some((row) => row.toolCallId.startsWith("phase-a:")),
+    ).toBe(false);
+    const replay = await parseOk(
+      await liveRequest(
+        liveApp({
+          pendingStore,
+          model: listThenSpeakModel(),
+        }).app,
+        {
+          method: "POST",
+          path: ASSISTANT_HOST_CHOICE_PATH,
+          token,
+          body: {
+            conversationId: conversation.id,
+            choiceId: opened.pending.id,
+            optionId,
+          },
+        },
+      ),
+    );
+    expect(replay.pending).toBeNull();
+    const replayCreates = (await conversationToolRuns(conversation.id)).filter(
+      (row) => row.actionName === "orders.create",
+    );
+    expect(replayCreates).toHaveLength(1);
+    expect(replayCreates[0]?.executionId).toBe(pausedCreates[0]?.executionId);
+    expect(replayCreates[0]?.outcome).toBe("success");
   });
 
   it("Phase B choice resume does not execute a leftover chat-turn started create", async () => {
@@ -2700,6 +2763,13 @@ describe("live staff assistant host HTTP (SHO-524)", () => {
     if (paused.pending?.kind !== "confirmation") {
       return;
     }
+    const pausedDeletes = (await conversationToolRuns(conversation.id)).filter(
+      (row) => row.actionName === "customers.deleteCustomer",
+    );
+    expect(pausedDeletes).toHaveLength(1);
+    expect(pausedDeletes[0]?.outcome).toBe("confirmation_required");
+    expect(pausedDeletes[0]?.executionId).toEqual(expect.any(String));
+    expect(pausedDeletes[0]?.toolInput).toEqual({ id: customer.id });
     const discuss = liveApp({
       pendingStore,
       confirmation,
@@ -2754,5 +2824,15 @@ describe("live staff assistant host HTTP (SHO-524)", () => {
     );
     expect(replay.pending).toBeNull();
     expect(await customerRow(customer.id)).toBeUndefined();
+    const afterDeletes = (await conversationToolRuns(conversation.id)).filter(
+      (row) => row.actionName === "customers.deleteCustomer",
+    );
+    expect(afterDeletes).toHaveLength(1);
+    expect(afterDeletes[0]?.executionId).toBe(pausedDeletes[0]?.executionId);
+    expect(afterDeletes[0]?.outcome).toBe("success");
+    expect(afterDeletes[0]?.toolInput).toEqual({ id: customer.id });
+    expect(
+      afterDeletes.some((row) => row.outcome === "confirmation_required"),
+    ).toBe(false);
   });
 });
