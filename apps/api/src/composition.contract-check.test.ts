@@ -305,8 +305,8 @@ describe("CI contract-check stage", () => {
     expect(replaceSrc).toContain("createPendingReplaceTool");
     expect(replaceSrc).not.toMatch(/implementAction\s*\(/);
     expect(replaceSrc).not.toMatch(/defineActionContract\s*\(/);
-    expect(appSrc).not.toContain("ASSISTANT_CONFIRM_PATH");
-    expect(appSrc).not.toContain("ASSISTANT_PENDING_ABANDON_PATH");
+    expect(appSrc).toContain("ASSISTANT_CONFIRM_PATH");
+    expect(appSrc).toContain("ASSISTANT_PENDING_ABANDON_PATH");
     expect(appSrc).not.toContain('"/assistant/host/chat"');
   });
 

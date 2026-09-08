@@ -16,17 +16,22 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-describe("unpublished staff-assistant host (SHO-522)", () => {
-  it("is not mounted on production createApp", () => {
+describe("live staff-assistant host (SHO-524)", () => {
+  it("does not mount unpublished /assistant/host/chat on production createApp", () => {
     const appSrc = readFileSync(join(here, "app.ts"), "utf8");
-    expect(appSrc).not.toContain("ASSISTANT_CONFIRM_PATH");
     expect(appSrc).not.toContain("ASSISTANT_HOST_CHAT_PATH");
-    expect(appSrc).not.toContain("ASSISTANT_PENDING_ABANDON_PATH");
-    expect(appSrc).not.toContain('"/assistant/confirm"');
-    expect(appSrc).not.toContain('"/assistant/pending/abandon"');
     expect(appSrc).not.toContain('"/assistant/host/chat"');
     expect(appSrc).toContain("ASSISTANT_CHAT_PATH");
-    expect(appSrc).toContain("ASSISTANT_CHOICE_PATH");
+    expect(appSrc).toContain("ASSISTANT_CONFIRM_PATH");
+    expect(appSrc).toContain("ASSISTANT_PENDING_ABANDON_PATH");
+    expect(appSrc).toContain("ASSISTANT_PENDING_PATH");
+    expect(appSrc).toContain("ASSISTANT_HOST_CHOICE_PATH");
+    expect(appSrc).not.toContain("createMemoryChoiceStore");
+    expect(appSrc).not.toContain("choiceStore");
+    const bootSrc = readFileSync(join(here, "../boot.ts"), "utf8");
+    expect(bootSrc).toContain("createRedisPendingStore");
+    expect(bootSrc).toContain("createRedisConversationLock");
+    expect(bootSrc).not.toContain("createRedisChoiceStore");
   });
 
   it("exposes confirm, abandon, pending GET, and host chat as HTTP paths", () => {
@@ -37,6 +42,8 @@ describe("unpublished staff-assistant host (SHO-522)", () => {
     expect(ASSISTANT_HOST_CHOICE_PATH).toBe("/assistant/choice");
     const hostSrc = readFileSync(join(here, "assistant-host.ts"), "utf8");
     expect(hostSrc).toContain("createStaffAssistantHostApp");
+    expect(hostSrc).toContain("assistant-invocation.js");
+    expect(hostSrc).not.toContain("assistant-chat.js");
     expect(hostSrc).not.toMatch(/implementAction\s*\(/);
     expect(hostSrc).not.toMatch(/defineActionContract\s*\(/);
     expect(hostSrc).toContain("catalog.resolveLineReferences");

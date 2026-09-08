@@ -1,7 +1,7 @@
 /**
  * The Hono HTTP app (ADR-0003, contract.md §3): request-id, trusted-proxy
  * IP, better-auth, oRPC at `/rpc`, OpenAPI REST aliases at `/api/v1`,
- * document-share landing, PKI proxy, staff AI SSE at `/assistant/chat`,
+ * document-share landing, PKI proxy, staff AI JSON at `/assistant/chat`,
  * and a liveness endpoint. Business logic does not live here — every
  * action runs `executeAction` through the contract server router or the
  * dedicated AI mount. `POST /pki/proxy` is HTTP, not an action.
@@ -37,23 +37,34 @@ import {
   type AiBudgetStore,
 } from "../stores/budget.js";
 import {
-  createMemoryChoiceStore,
-  type StaffAssistantChoiceStore,
-} from "../stores/choice.js";
+  createMemoryConversationLock,
+  type ConversationLock,
+} from "../stores/conversation-lock.js";
+import {
+  createMemoryPendingStore,
+  type StaffAssistantPendingStore,
+} from "../stores/pending.js";
 import {
   DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
   type StaffAssistantBudgetLimits,
 } from "./assistant-budget-guard.js";
 import {
-  ASSISTANT_CHAT_PATH,
   executeStaffAssistantChat,
+  optionalStaffAssistantLanguageModel,
   type StaffAssistantRuntime,
 } from "./assistant-chat.js";
 import {
-  ASSISTANT_CHOICE_PATH,
-  executeStaffAssistantChoicePeek,
-  executeStaffAssistantChoiceResume,
-} from "./assistant-choice.js";
+  ASSISTANT_CONFIRM_PATH,
+  ASSISTANT_HOST_CHOICE_PATH,
+  ASSISTANT_PENDING_ABANDON_PATH,
+  ASSISTANT_PENDING_PATH,
+  executeStaffAssistantHostChoiceResume,
+  executeStaffAssistantHostConfirm,
+  executeStaffAssistantPendingAbandon,
+  executeStaffAssistantPendingPeek,
+  type StaffAssistantHostRuntime,
+} from "./assistant-host.js";
+import { ASSISTANT_CHAT_PATH } from "./assistant-invocation.js";
 import { createTrustedProxyMatcher, resolveClientIp } from "./client-ip.js";
 import {
   DOCUMENT_SHARE_LANDING_ROUTE,
@@ -110,13 +121,18 @@ export interface CreateAppOptions {
   readonly getPeerAddress: (c: Context<AppEnv>) => string;
   /** SSRF-gated OCSP/TSA proxy (SHO-255). Not an action. */
   readonly pkiProxy: PkiProxyRuntime;
-  /** Staff AI SSE (`POST /assistant/chat`). Optional so unit tests of the HTTP shell still boot. */
+  /** Staff AI JSON (`POST /assistant/chat`). Optional so unit tests of the HTTP shell still boot. */
   readonly assistant?: StaffAssistantRuntime;
   /**
-   * Choice HITL store (`POST /assistant/choice`, `GET /assistant/choice/:id`).
+   * Pending HITL store (`POST /assistant/choice`, confirm, abandon, peek).
    * Boot mounts Redis Lua. Tests inject the in-memory CAS store.
    */
-  readonly choiceStore?: StaffAssistantChoiceStore;
+  readonly pendingStore?: StaffAssistantPendingStore;
+  /**
+   * Conversation mutex shared by chat, replace, abandon, and resume.
+   * Boot mounts Redis SET NX. Tests inject the in-memory lock.
+   */
+  readonly conversationLock?: ConversationLock;
   /**
    * Per-user turn limit + Kyiv-day USD budget on `POST /assistant/chat`
    * (SHO-505). Boot mounts Redis. Tests inject memory stores.
@@ -380,7 +396,9 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     return c.html(result.html, result.status);
   });
 
-  const choiceStore = options.choiceStore ?? createMemoryChoiceStore();
+  const pendingStore = options.pendingStore ?? createMemoryPendingStore();
+  const conversationLock =
+    options.conversationLock ?? createMemoryConversationLock();
   const assistantBudget = options.assistantBudget ?? {
     rateLimitStore: createInMemoryRateLimitStore(),
     budgetStore: createMemoryAiBudgetStore(),
@@ -388,6 +406,22 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
   };
   const budgetLimits =
     assistantBudget.limits ?? DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS;
+  const hostModel = optionalStaffAssistantLanguageModel(options.assistant);
+
+  function hostRuntime(
+    c: Context<AppEnv>,
+  ): Omit<StaffAssistantHostRuntime, "request"> {
+    return {
+      requestId: c.get("requestId"),
+      clientIp: c.get("clientIp"),
+      registry: options.registry,
+      pipeline: options.pipeline,
+      getSession: (headers) => resolveSession(options.auth, headers),
+      pendingStore,
+      conversationLock,
+      ...(hostModel !== undefined ? { model: hostModel } : {}),
+    };
+  }
 
   app.post(ASSISTANT_CHAT_PATH, async (c) => {
     const response = await executeStaffAssistantChat({
@@ -397,7 +431,8 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
       registry: options.registry,
       pipeline: options.pipeline,
       getSession: (headers) => resolveSession(options.auth, headers),
-      choiceStore,
+      pendingStore,
+      conversationLock,
       rateLimitStore: assistantBudget.rateLimitStore,
       budgetStore: assistantBudget.budgetStore,
       budgetLimits,
@@ -408,29 +443,34 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     return withRequestId(response, c.get("requestId"));
   });
 
-  app.post(ASSISTANT_CHOICE_PATH, async (c) => {
-    const response = await executeStaffAssistantChoiceResume({
+  app.post(ASSISTANT_HOST_CHOICE_PATH, async (c) => {
+    const response = await executeStaffAssistantHostChoiceResume({
+      ...hostRuntime(c),
       request: c.req.raw,
-      requestId: c.get("requestId"),
-      clientIp: c.get("clientIp"),
-      registry: options.registry,
-      pipeline: options.pipeline,
-      getSession: (headers) => resolveSession(options.auth, headers),
-      choiceStore,
     });
     return withRequestId(response, c.get("requestId"));
   });
 
-  app.get(`${ASSISTANT_CHOICE_PATH}/:choiceId`, async (c) => {
-    const response = await executeStaffAssistantChoicePeek({
+  app.post(ASSISTANT_CONFIRM_PATH, async (c) => {
+    const response = await executeStaffAssistantHostConfirm({
+      ...hostRuntime(c),
       request: c.req.raw,
-      requestId: c.get("requestId"),
-      clientIp: c.get("clientIp"),
-      registry: options.registry,
-      pipeline: options.pipeline,
-      getSession: (headers) => resolveSession(options.auth, headers),
-      choiceStore,
-      choiceId: c.req.param("choiceId"),
+    });
+    return withRequestId(response, c.get("requestId"));
+  });
+
+  app.post(ASSISTANT_PENDING_ABANDON_PATH, async (c) => {
+    const response = await executeStaffAssistantPendingAbandon({
+      ...hostRuntime(c),
+      request: c.req.raw,
+    });
+    return withRequestId(response, c.get("requestId"));
+  });
+
+  app.get(ASSISTANT_PENDING_PATH, async (c) => {
+    const response = await executeStaffAssistantPendingPeek({
+      ...hostRuntime(c),
+      request: c.req.raw,
     });
     return withRequestId(response, c.get("requestId"));
   });

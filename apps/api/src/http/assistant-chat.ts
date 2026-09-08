@@ -1,58 +1,26 @@
 /**
- * Staff AI SSE mount (SHO-322 / feature SHO-318, ADR-0003, ADR-0032).
+ * Live staff AI mount (SHO-524 / ADR-0037).
  *
  * `POST /assistant/chat` is a dedicated Hono route — not `/rpc`. Session
  * cookie + `x-company-id` match other staff HTTP. Membership is verified
  * by `executeAction` (`assistant.getStaffActor`), never by the selector.
- * Tool `execute` calls `executeAction` with `channel: "ai"`; the adapter
- * never fetches `/rpc`. Missing Anthropic config fails typed after auth;
- * the process still boots.
+ * Tool `execute` calls `executeAction` with `channel: "ai"`. Missing
+ * Anthropic config fails typed after auth; the process still boots.
+ *
+ * The handler wraps the T1–T4 host plus the USD/turn budget. Chat body
+ * is `{ conversationId, text, locale? }`. Legacy
+ * `x-confirmation-challenge-id` calls the host confirm executor and
+ * ignores client text.
  */
 import {
-  attemptKey,
-  classifyStaffAssistantTurn,
+  assistantConfirmBodySchema,
   createStaffLanguageModel,
-  EMPTY_STAFF_ASSISTANT_TURN_USAGE,
-  estimateStaffAssistantTurnCostUsd,
-  filterStaffAiTools,
-  pausedToolAttemptForChallenge,
-  pausedToolAttemptFromToolRuns,
-  resolvePausedToolAttempt,
-  resolveStaffAssistantChatUserMessage,
   StaffAssistantNotConfiguredError,
-  staffAssistantCacheHitRatio,
-  staffAssistantChatBodySchema,
-  staffAssistantCostLogFields,
-  staffAssistantGateToolPolicy,
-  staffAssistantModelMessagesFromPersisted,
-  staffAssistantShouldSkipIntentGate,
-  staffAssistantTurnContextAddendum,
-  staffAssistantUncachedInputTokens,
-  staffAssistantWorkingSetAddendum,
-  streamStaffAssistantChat,
-  STAFF_ASSISTANT_DEFAULT_LOCALE,
-  STAFF_ASSISTANT_THINKING_DISABLED,
-  STAFF_ASSISTANT_TOOL_RUNS_MAX,
   type LanguageModel,
-  type PausedToolAttempt,
-  type StaffAssistantChatMessage,
-  type StaffAssistantGateSkipReason,
-  type StaffAssistantGateToolPolicy,
-  type StaffAssistantLocale,
-  type StaffAssistantTurnResult,
   type StaffAssistantTurnUsage,
   type StaffProviderAdapter,
-  type StaffUserMessageAttempt,
-  type StaffAssistantPersistedMessage,
 } from "@showzy/ai";
-import {
-  appendUserMessage,
-  getConversation,
-  getModelHistory,
-  getStaffActor,
-  recordAssistantTurn,
-} from "@showzy/assistant";
-import { getCompany } from "@showzy/companies";
+import { getStaffActor } from "@showzy/assistant";
 import {
   COMPANY_SELECTOR_HEADER,
   CONFIRMATION_CHALLENGE_HEADER,
@@ -62,7 +30,6 @@ import {
   executeAction,
   type ActionPipelineDeps,
   type ActionRegistry,
-  type ImplementedAction,
   type RateLimitStore,
   type SessionPrincipal,
 } from "@showzy/core";
@@ -74,13 +41,19 @@ import {
   ValidationError,
 } from "@showzy/core/errors";
 import type { Logger } from "pino";
-import type { z } from "zod";
 
 import {
   canonicalizeAiBudgetCompanyId,
   type AiBudgetStore,
 } from "../stores/budget.js";
-import type { StaffAssistantChoiceStore } from "../stores/choice.js";
+import {
+  createMemoryConversationLock,
+  type ConversationLock,
+} from "../stores/conversation-lock.js";
+import {
+  createMemoryPendingStore,
+  type StaffAssistantPendingStore,
+} from "../stores/pending.js";
 import {
   DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
   enforceStaffAssistantBudget,
@@ -88,11 +61,18 @@ import {
   releaseStaffAssistantBudgetHold,
   type StaffAssistantBudgetLimits,
 } from "./assistant-budget-guard.js";
+import {
+  executeStaffAssistantHostChat,
+  executeStaffAssistantHostConfirm,
+  type StaffAssistantHostRuntime,
+} from "./assistant-host.js";
+import { ASSISTANT_INVOCATION_CHANNEL } from "./assistant-invocation.js";
 import { REQUEST_ID_HEADER } from "./request-id.js";
 
-export const ASSISTANT_CHAT_PATH = "/assistant/chat";
-
-export const ASSISTANT_INVOCATION_CHANNEL = "ai" as const;
+export {
+  ASSISTANT_CHAT_PATH,
+  ASSISTANT_INVOCATION_CHANNEL,
+} from "./assistant-invocation.js";
 
 /**
  * Trade name for the uncached turn-context addendum. `companies.get`
@@ -124,8 +104,9 @@ export interface StaffAssistantRuntime {
   readonly languageModel?: LanguageModel;
   readonly gateLanguageModel?: LanguageModel;
   /**
-   * Tests inject a cost estimate (including `null` for an unpriced model).
-   * Production uses `estimateStaffAssistantTurnCostUsd`.
+   * Ignored on the live host wrap (SHO-524 settles the unknown-model
+   * USD ceiling). Kept so existing budget tests still typecheck until
+   * they retarget.
    */
   readonly estimateTurnCostUsd?: (options: {
     readonly reply: StaffAssistantTurnUsage;
@@ -143,13 +124,8 @@ export interface StaffAssistantChatOptions {
   readonly pipeline: ActionPipelineDeps;
   readonly getSession: (headers: Headers) => Promise<SessionPrincipal | null>;
   readonly assistant?: StaffAssistantRuntime;
-  /**
-   * Choice HITL resume (SHO-401 T8) calls this executor with
-   * `choiceResume: true`. `POST /assistant/chat` omits it. Not a client
-   * header — confirmation resume stays `x-confirmation-challenge-id`.
-   */
-  readonly choiceResume?: boolean;
-  readonly choiceStore?: StaffAssistantChoiceStore;
+  readonly pendingStore?: StaffAssistantPendingStore;
+  readonly conversationLock?: ConversationLock;
   readonly rateLimitStore?: RateLimitStore;
   readonly budgetStore?: AiBudgetStore;
   readonly budgetLimits?: StaffAssistantBudgetLimits;
@@ -216,88 +192,6 @@ function wireResponse(error: unknown, requestId: string): Response {
   return jsonResponse(wire.status, body, requestId);
 }
 
-function logTurnUsage(options: {
-  readonly logger: Logger;
-  readonly requestId: string;
-  readonly conversationId: string;
-  readonly companyId: string | null;
-  readonly actorId: string;
-  readonly model: string;
-  readonly gateModel?: string;
-  readonly gateSkip?: StaffAssistantGateSkipReason;
-  readonly gateUsage: StaffAssistantTurnUsage;
-  readonly toolsAttached: boolean;
-  readonly usage: StaffAssistantTurnUsage;
-  readonly modelSteps: number;
-  readonly toolNames: readonly string[];
-  readonly historyMessageCount: number;
-  readonly historyChars: number;
-  readonly historyTraceChars: number;
-  readonly toolResultBytesIn: number;
-  readonly toolResultBytesOut: number;
-  readonly toolsetHash: string;
-  readonly estimatedCostUsd: number | null;
-}): void {
-  options.logger.info(
-    {
-      request_id: options.requestId,
-      conversation_id: options.conversationId,
-      company_id: options.companyId,
-      actor_id: options.actorId,
-      model: options.model,
-      ...(options.gateModel !== undefined
-        ? { gate_model: options.gateModel }
-        : {}),
-      thinking: STAFF_ASSISTANT_THINKING_DISABLED,
-      tools_attached: options.toolsAttached,
-      ...(options.gateSkip !== undefined
-        ? { gate_skip: options.gateSkip }
-        : {}),
-      gate_input_tokens: options.gateUsage.inputTokens,
-      gate_output_tokens: options.gateUsage.outputTokens,
-      model_steps: options.modelSteps,
-      tool_count: options.toolNames.length,
-      tool_names: [...options.toolNames],
-      input_tokens: options.usage.inputTokens,
-      output_tokens: options.usage.outputTokens,
-      cache_read_tokens: options.usage.cacheReadTokens,
-      cache_write_tokens: options.usage.cacheWriteTokens,
-      uncached_input_tokens: staffAssistantUncachedInputTokens(options.usage),
-      cache_hit_ratio: staffAssistantCacheHitRatio(options.usage),
-      history_message_count: options.historyMessageCount,
-      history_chars: options.historyChars,
-      history_trace_chars: options.historyTraceChars,
-      tool_result_bytes_in: options.toolResultBytesIn,
-      tool_result_bytes_out: options.toolResultBytesOut,
-      toolset_hash: options.toolsetHash,
-      ...staffAssistantCostLogFields(options.estimatedCostUsd),
-    },
-    "staff assistant turn usage",
-  );
-}
-
-function logTurnGate(options: {
-  readonly logger: Logger;
-  readonly requestId: string;
-  readonly gateModel: string;
-  readonly mode?: string;
-  readonly confidence?: string;
-  readonly skip?: StaffAssistantGateSkipReason;
-}): void {
-  options.logger.info(
-    {
-      request_id: options.requestId,
-      gate_model: options.gateModel,
-      ...(options.mode !== undefined ? { gate_mode: options.mode } : {}),
-      ...(options.confidence !== undefined
-        ? { gate_confidence: options.confidence }
-        : {}),
-      ...(options.skip !== undefined ? { gate_skip: options.skip } : {}),
-    },
-    "staff assistant turn gate",
-  );
-}
-
 function failureCode(error: unknown): string {
   if (error instanceof StaffAssistantNotConfiguredError) {
     return error.code;
@@ -340,9 +234,9 @@ function tryCreateProviderModel(
   }
 }
 
-function resolveLanguageModel(
+export function optionalStaffAssistantLanguageModel(
   assistant: StaffAssistantRuntime | undefined,
-): LanguageModel {
+): LanguageModel | undefined {
   if (assistant?.languageModel !== undefined) {
     return assistant.languageModel;
   }
@@ -360,100 +254,26 @@ function resolveLanguageModel(
       model: assistant.model,
     });
   }
-  throw new StaffAssistantNotConfiguredError();
-}
-
-function resolveGateLanguageModel(
-  assistant: StaffAssistantRuntime | undefined,
-): LanguageModel | undefined {
-  if (assistant?.gateLanguageModel !== undefined) {
-    return assistant.gateLanguageModel;
-  }
-  const fromProvider = tryCreateProviderModel(assistant?.provider, "gate");
-  if (fromProvider !== undefined) {
-    return fromProvider;
-  }
-  if (
-    assistant !== undefined &&
-    assistant.anthropicApiKey !== undefined &&
-    assistant.anthropicApiKey !== ""
-  ) {
-    return createStaffLanguageModel({
-      apiKey: assistant.anthropicApiKey,
-      model: assistant.gateModel ?? assistant.model,
-    });
-  }
   return undefined;
 }
 
-function requireImplementation(
-  registry: ActionRegistry,
-  name: string,
-): ImplementedAction<z.ZodType, z.ZodType, unknown> {
-  const implementation = registry.getImplementation(name);
-  if (implementation === undefined) {
-    throw new CoreInvariantError(
-      `staff assistant tool "${name}" is not registered`,
-    );
+function resolveLanguageModel(
+  assistant: StaffAssistantRuntime | undefined,
+): LanguageModel {
+  const model = optionalStaffAssistantLanguageModel(assistant);
+  if (model === undefined) {
+    throw new StaffAssistantNotConfiguredError();
   }
-  // The registry erases callback generics so a stored implementation
-  // cannot be invoked without pipeline validation (fnd-T9). The
-  // pipeline is exactly what runs here, and every registry entry is an
-  // `implementAction` output, so restoring the erased shape is sound.
-  return implementation as ImplementedAction<z.ZodType, z.ZodType, unknown>;
+  return model;
 }
 
-function confirmationResumeIssue(message: string): ValidationError {
-  return new ValidationError([
-    {
-      code: "custom",
-      path: ["messages"],
-      message,
-      input: undefined,
-    },
-  ]);
+function isJsonRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/**
- * History after `appendUserMessage` is assembled from
- * `assistant.getModelHistory` plus the just-appended user row. Dedupes
- * the same message id so an idempotent retry does not double the user
- * turn (SHO-506). Client `messages` are never a history source
- * (SHO-506 / SHO-510).
- */
-function persistedMessagesEndingWithAppend<T extends { readonly id: string }>(
-  loaded: readonly T[],
-  appended: T | undefined,
-): T[] {
-  if (appended === undefined) {
-    return [...loaded];
-  }
-  return [...loaded.filter((message) => message.id !== appended.id), appended];
-}
-
-function modelHistoryToPersisted(
-  messages: ReadonlyArray<{
-    readonly role: "user" | "assistant";
-    readonly text: string;
-    readonly toolRuns: StaffAssistantPersistedMessage["toolRuns"];
-  }>,
-): StaffAssistantPersistedMessage[] {
-  return messages.map((message) => ({
-    role: message.role,
-    body: message.text,
-    ...(message.toolRuns !== undefined ? { toolRuns: message.toolRuns } : {}),
-  }));
-}
-
-async function parseChatBody(request: Request): Promise<{
-  conversationId: string;
-  protocolMessages: StaffAssistantChatMessage[];
-  userMessage: StaffUserMessageAttempt | undefined;
-  locale: StaffAssistantLocale;
-}> {
-  let raw: unknown;
+async function parseJsonBody(request: Request): Promise<unknown> {
   try {
-    raw = await request.json();
+    return await request.json();
   } catch {
     throw new ValidationError([
       {
@@ -464,41 +284,44 @@ async function parseChatBody(request: Request): Promise<{
       },
     ]);
   }
-  const parsed = staffAssistantChatBodySchema.safeParse(raw);
-  if (!parsed.success) {
-    throw new ValidationError(parsed.error.issues);
+}
+
+function conversationIdFromBody(raw: unknown): string {
+  if (!isJsonRecord(raw) || typeof raw["conversationId"] !== "string") {
+    throw new ValidationError([
+      {
+        code: "custom",
+        path: ["conversationId"],
+        message: "conversationId is required.",
+        input: undefined,
+      },
+    ]);
   }
-  return {
-    conversationId: parsed.data.conversationId,
-    protocolMessages: parsed.data.messages ?? [],
-    userMessage: resolveStaffAssistantChatUserMessage(parsed.data),
-    locale: parsed.data.locale ?? STAFF_ASSISTANT_DEFAULT_LOCALE,
-  };
+  return raw["conversationId"];
+}
+
+function requestWithJsonBody(request: Request, body: unknown): Request {
+  const headers = new Headers(request.headers);
+  headers.delete("content-length");
+  headers.set("content-type", "application/json");
+  return new Request(request.url, {
+    method: request.method,
+    headers,
+    body: JSON.stringify(body),
+    signal: request.signal,
+  });
 }
 
 function staffRequest(options: {
   readonly requestId: string;
   readonly clientIp: string;
-  readonly aiTraceId: string;
-  readonly toolCallId?: string;
-  readonly idempotencyKey?: string;
-  readonly confirmationChallengeId?: string;
 }) {
   return {
     requestId: options.requestId,
     correlationId: options.requestId,
     channel: ASSISTANT_INVOCATION_CHANNEL,
     clientIp: options.clientIp,
-    aiTraceId: options.aiTraceId,
-    ...(options.toolCallId !== undefined
-      ? { toolCallId: options.toolCallId }
-      : {}),
-    ...(options.idempotencyKey !== undefined
-      ? { idempotencyKey: options.idempotencyKey }
-      : {}),
-    ...(options.confirmationChallengeId !== undefined
-      ? { confirmationChallengeId: options.confirmationChallengeId }
-      : {}),
+    aiTraceId: options.requestId,
   };
 }
 
@@ -506,7 +329,8 @@ function staffRequest(options: {
  * Handle `POST /assistant/chat`. Auth denial happens before model
  * construction so a missing Anthropic key cannot mask 401. The language
  * model is resolved before the budget/turn guard so a 503 does not
- * consume a turn slot.
+ * consume a turn slot. Header confirm skips the turn limit and settles
+ * the unknown-model USD ceiling.
  */
 export async function executeStaffAssistantChat(
   options: StaffAssistantChatOptions,
@@ -524,103 +348,28 @@ export async function executeStaffAssistantChat(
     options.request.headers,
     CONFIRMATION_CHALLENGE_HEADER,
   );
-  const aiTraceId = options.requestId;
   const staffPrincipal = {
     mode: "staff" as const,
     session,
     companySelector,
   };
-  const baseRequest = staffRequest({
-    requestId: options.requestId,
-    clientIp: options.clientIp,
-    aiTraceId,
-  });
+  const pendingStore = options.pendingStore ?? createMemoryPendingStore();
+  const conversationLock =
+    options.conversationLock ?? createMemoryConversationLock();
 
   try {
-    const actor = await executeAction(options.pipeline, {
+    await executeAction(options.pipeline, {
       action: getStaffActor,
       input: {},
-      request: baseRequest,
+      request: staffRequest({
+        requestId: options.requestId,
+        clientIp: options.clientIp,
+      }),
       principal: staffPrincipal,
     });
 
-    const body = await parseChatBody(options.request);
-    const userMessage = body.userMessage;
-    if (userMessage === undefined && confirmationChallengeId === undefined) {
-      throw new ValidationError([
-        {
-          code: "custom",
-          path: ["text"],
-          message: "A user message is required.",
-          input: undefined,
-        },
-      ]);
-    }
-
-    const [conversation, modelHistory] = await Promise.all([
-      executeAction(options.pipeline, {
-        action: getConversation,
-        input: {
-          conversationId: body.conversationId,
-          // Same cap as GET_CONVERSATION_MESSAGES_MAX on getConversation input.
-          limit: 200,
-        },
-        request: baseRequest,
-        principal: staffPrincipal,
-      }),
-      executeAction(options.pipeline, {
-        action: getModelHistory,
-        input: { conversationId: body.conversationId },
-        request: baseRequest,
-        principal: staffPrincipal,
-      }),
-    ]);
-    const workingSetAddendum = staffAssistantWorkingSetAddendum(
-      conversation.toolRuns,
-    );
-    const companyName = await readStaffAssistantCompanyTradeName(() =>
-      executeAction(options.pipeline, {
-        action: getCompany,
-        input: {},
-        request: baseRequest,
-        principal: staffPrincipal,
-      }),
-    );
-    const turnContextAddendum = staffAssistantTurnContextAddendum({
-      now: new Date(),
-      ...(companyName !== undefined ? { companyName } : {}),
-      ...(workingSetAddendum !== undefined ? { workingSetAddendum } : {}),
-    });
-
-    let pausedAttempt: PausedToolAttempt | undefined;
-    if (confirmationChallengeId !== undefined) {
-      const clientAttempt = pausedToolAttemptForChallenge(
-        body.protocolMessages,
-        confirmationChallengeId,
-      );
-      const persistedAttempt = pausedToolAttemptFromToolRuns(
-        conversation.toolRuns,
-        confirmationChallengeId,
-      );
-      const resolved = resolvePausedToolAttempt(
-        persistedAttempt,
-        clientAttempt,
-      );
-      if (resolved.status === "missing") {
-        throw confirmationResumeIssue(
-          "A paused tool attempt is required to resume confirmation.",
-        );
-      }
-      if (resolved.status === "mismatch") {
-        throw confirmationResumeIssue(
-          "Confirmation context does not match the paused tool attempt.",
-        );
-      }
-      pausedAttempt = resolved.attempt;
-    }
-
-    const confirmationResume = confirmationChallengeId !== undefined;
-    const choiceResume = options.choiceResume === true;
+    const rawBody = await parseJsonBody(options.request);
+    const model = resolveLanguageModel(options.assistant);
     if (companySelector === null) {
       throw new CoreInvariantError(
         "staff assistant budget guard requires a verified company selector",
@@ -629,14 +378,13 @@ export async function executeStaffAssistantChat(
     const budgetCompanyId = canonicalizeAiBudgetCompanyId(companySelector);
     const budgetLimits =
       options.budgetLimits ?? DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS;
-    const model = resolveLanguageModel(options.assistant);
-    const gateLanguageModel = resolveGateLanguageModel(options.assistant);
+    const headerConfirm = confirmationChallengeId !== undefined;
     const budgetHold = await enforceStaffAssistantBudget({
       logger: options.pipeline.logger,
       requestId: options.requestId,
       userId: session.userId,
       companyId: budgetCompanyId,
-      skipTurnLimit: confirmationResume || choiceResume,
+      skipTurnLimit: headerConfirm,
       ...(options.rateLimitStore === undefined
         ? {}
         : { rateLimitStore: options.rateLimitStore }),
@@ -646,294 +394,65 @@ export async function executeStaffAssistantChat(
       limits: budgetLimits,
     });
     let budgetSettled = false;
-    let budgetReleased = false;
-    const releaseUnusedBudgetHold = async (): Promise<void> => {
-      if (budgetSettled || budgetReleased) {
-        return;
-      }
-      budgetReleased = true;
-      await releaseStaffAssistantBudgetHold({
-        logger: options.pipeline.logger,
-        requestId: options.requestId,
-        companyId: budgetCompanyId,
-        hold: budgetHold,
-        ...(options.budgetStore === undefined
-          ? {}
-          : { budgetStore: options.budgetStore }),
-      });
+    const hostRuntime: Omit<StaffAssistantHostRuntime, "request"> = {
+      requestId: options.requestId,
+      clientIp: options.clientIp,
+      registry: options.registry,
+      pipeline: options.pipeline,
+      getSession: options.getSession,
+      pendingStore,
+      conversationLock,
+      model,
     };
-    let streamStarted = false;
     try {
-      const skipGate = staffAssistantShouldSkipIntentGate({
-        confirmationResume,
-        choiceResume,
-      });
-      let gatePolicy: StaffAssistantGateToolPolicy = { kind: "all" };
-      let gateRan = false;
-      let gateSkip: StaffAssistantGateSkipReason | undefined;
-      let gateUsage = EMPTY_STAFF_ASSISTANT_TURN_USAGE;
-
-      if (!skipGate && gateLanguageModel !== undefined) {
-        const lastUserText = userMessage?.text ?? "";
-        if (lastUserText.trim() !== "") {
-          const classified = await classifyStaffAssistantTurn({
-            model: gateLanguageModel,
-            lastUserText,
-            abortSignal: options.request.signal,
-            ...(options.assistant?.provider !== undefined
-              ? { provider: options.assistant.provider }
-              : {}),
-          });
-          gatePolicy = staffAssistantGateToolPolicy(classified);
-          gateUsage = classified.usage;
-          gateRan = true;
-          logTurnGate({
-            logger: options.pipeline.logger,
-            requestId: options.requestId,
-            gateModel: options.assistant?.gateModel ?? "unconfigured",
-            mode: classified.mode,
-            confidence: classified.confidence,
-          });
+      let hostRequest: Request;
+      if (headerConfirm) {
+        const parsedConfirm = assistantConfirmBodySchema.safeParse({
+          conversationId: conversationIdFromBody(rawBody),
+          challengeId: confirmationChallengeId,
+        });
+        if (!parsedConfirm.success) {
+          throw new ValidationError(parsedConfirm.error.issues);
         }
-      } else if (skipGate) {
-        gateSkip = confirmationResume ? "confirmation_resume" : "choice_resume";
-        logTurnGate({
+        hostRequest = requestWithJsonBody(options.request, parsedConfirm.data);
+      } else {
+        hostRequest = requestWithJsonBody(options.request, rawBody);
+      }
+      const response = headerConfirm
+        ? await executeStaffAssistantHostConfirm({
+            ...hostRuntime,
+            request: hostRequest,
+          })
+        : await executeStaffAssistantHostChat({
+            ...hostRuntime,
+            request: hostRequest,
+          });
+      if (response.ok) {
+        await recordStaffAssistantBudgetSpend({
           logger: options.pipeline.logger,
           requestId: options.requestId,
-          gateModel: options.assistant?.gateModel ?? "unconfigured",
-          skip: gateSkip,
+          companyId: budgetCompanyId,
+          estimatedCostUsd: null,
+          hold: budgetHold,
+          ...(options.budgetStore === undefined
+            ? {}
+            : { budgetStore: options.budgetStore }),
+          limits: budgetLimits,
         });
+        budgetSettled = true;
       }
-
-      const attachTools = gatePolicy.kind !== "none";
-      const replyModel =
-        !attachTools && gateLanguageModel !== undefined
-          ? gateLanguageModel
-          : model;
-      const replyModelId = attachTools
-        ? (options.assistant?.model ?? "unconfigured")
-        : (options.assistant?.gateModel ??
-          options.assistant?.model ??
-          "unconfigured");
-
-      const appended =
-        userMessage === undefined
-          ? undefined
-          : await executeAction(options.pipeline, {
-              action: appendUserMessage,
-              input: {
-                conversationId: body.conversationId,
-                body: userMessage.text,
-              },
-              request: staffRequest({
-                requestId: options.requestId,
-                clientIp: options.clientIp,
-                aiTraceId,
-                idempotencyKey: attemptKey(
-                  "message",
-                  body.conversationId,
-                  userMessage.id,
-                ),
-              }),
-              principal: staffPrincipal,
-            });
-      const historyRows = persistedMessagesEndingWithAppend(
-        modelHistory.messages,
-        appended === undefined
-          ? undefined
-          : {
-              id: appended.id,
-              role: "user",
-              text: appended.body,
-              toolRuns: [],
-            },
-      );
-      const modelMessages = staffAssistantModelMessagesFromPersisted(
-        modelHistoryToPersisted(historyRows),
-        options.assistant?.provider,
-      );
-      if (modelMessages.length === 0) {
-        throw new ValidationError([
-          {
-            code: "custom",
-            path: ["text"],
-            message: "A user message is required.",
-            input: undefined,
-          },
-        ]);
-      }
-
-      const contracts = filterStaffAiTools(options.registry.contracts(), {
-        role: actor.role,
-        permissions: actor.permissions,
-      });
-      const streamContracts = attachTools ? contracts : [];
-
-      let confirmationClaimed = false;
-      function claimPausedAttempt(
-        actionName: string,
-        requiresConfirmation: boolean,
-      ): PausedToolAttempt | undefined {
-        if (
-          confirmationClaimed ||
-          confirmationChallengeId === undefined ||
-          pausedAttempt === undefined ||
-          !requiresConfirmation ||
-          actionName !== pausedAttempt.actionName
-        ) {
-          return undefined;
-        }
-        confirmationClaimed = true;
-        return pausedAttempt;
-      }
-
-      const { response } = streamStaffAssistantChat({
-        model: replyModel,
-        messages: modelMessages,
-        contracts: streamContracts,
-        abortSignal: options.request.signal,
-        turnContextAddendum,
-        locale: body.locale,
-        ...(options.assistant?.provider !== undefined
-          ? { provider: options.assistant.provider }
-          : {}),
-        responseHeaders: {
-          "cache-control": "private, no-store",
-          [REQUEST_ID_HEADER]: options.requestId,
-        },
-        choiceBind: {
-          actorId: session.userId,
-          companyId: companySelector,
-          conversationId: body.conversationId,
-        },
-        ...(options.choiceStore === undefined
-          ? {}
-          : (() => {
-              const choiceStore = options.choiceStore;
-              return {
-                openChoice: (
-                  record: Parameters<StaffAssistantChoiceStore["open"]>[0],
-                ) => choiceStore.open(record),
-              };
-            })()),
-        execute: (actionName, input, toolOptions) => {
-          const action = requireImplementation(options.registry, actionName);
-          const resumedAttempt = claimPausedAttempt(
-            action.contract.name,
-            action.contract.requiresConfirmation,
-          );
-          const logicalToolCallId =
-            resumedAttempt?.toolCallId ?? toolOptions.toolCallId;
-          const idempotencyKey = action.contract.idempotent
-            ? attemptKey("tool", body.conversationId, logicalToolCallId)
-            : undefined;
-          return executeAction(options.pipeline, {
-            action,
-            input,
-            request: staffRequest({
-              requestId: options.requestId,
-              clientIp: options.clientIp,
-              aiTraceId,
-              toolCallId: toolOptions.toolCallId,
-              ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
-              ...(resumedAttempt !== undefined &&
-              confirmationChallengeId !== undefined
-                ? { confirmationChallengeId }
-                : {}),
-            }),
-            principal: staffPrincipal,
-          });
-        },
-        onTurn: async (turn) => {
-          const estimatedCostUsd =
-            options.assistant?.estimateTurnCostUsd !== undefined
-              ? options.assistant.estimateTurnCostUsd({
-                  reply: turn.usage,
-                  replyModelId,
-                  gate: gateUsage,
-                  gateModelId:
-                    options.assistant.gateModel ?? options.assistant.model,
-                })
-              : estimateStaffAssistantTurnCostUsd({
-                  reply: turn.usage,
-                  replyModelId,
-                  gate: gateUsage,
-                  gateModelId:
-                    options.assistant?.gateModel ??
-                    options.assistant?.model ??
-                    "unconfigured",
-                  ...(options.assistant?.provider !== undefined
-                    ? { provider: options.assistant.provider }
-                    : {}),
-                });
-          logTurnUsage({
-            logger: options.pipeline.logger,
-            requestId: options.requestId,
-            conversationId: body.conversationId,
-            companyId: companySelector,
-            actorId: session.userId,
-            model: replyModelId,
-            ...(gateRan && options.assistant?.gateModel !== undefined
-              ? { gateModel: options.assistant.gateModel }
-              : {}),
-            ...(gateSkip !== undefined
-              ? {
-                  gateModel:
-                    options.assistant?.gateModel ??
-                    options.assistant?.model ??
-                    "unconfigured",
-                  gateSkip,
-                }
-              : {}),
-            gateUsage,
-            toolsAttached: turn.toolsAttached,
-            usage: turn.usage,
-            modelSteps: turn.modelSteps,
-            toolNames: turn.toolRuns
-              .slice(0, STAFF_ASSISTANT_TOOL_RUNS_MAX)
-              .map((run) => run.actionName),
-            historyMessageCount: turn.historyMessageCount,
-            historyChars: turn.historyChars,
-            historyTraceChars: turn.historyTraceChars,
-            toolResultBytesIn: turn.toolResultBytesIn,
-            toolResultBytesOut: turn.toolResultBytesOut,
-            toolsetHash: turn.toolsetHash,
-            estimatedCostUsd,
-          });
-          await recordStaffAssistantBudgetSpend({
-            logger: options.pipeline.logger,
-            requestId: options.requestId,
-            companyId: budgetCompanyId,
-            estimatedCostUsd,
-            hold: budgetHold,
-            ...(options.budgetStore === undefined
-              ? {}
-              : { budgetStore: options.budgetStore }),
-            limits: budgetLimits,
-          });
-          budgetSettled = true;
-          try {
-            await persistAssistantTurn({
-              pipeline: options.pipeline,
-              conversationId: body.conversationId,
-              requestId: options.requestId,
-              clientIp: options.clientIp,
-              aiTraceId,
-              principal: staffPrincipal,
-              turn,
-            });
-          } catch (error: unknown) {
-            logFailure(options.pipeline.logger, options.requestId, error);
-            throw error;
-          }
-        },
-        onAbandoned: releaseUnusedBudgetHold,
-      });
-      streamStarted = true;
       return response;
     } finally {
-      if (!streamStarted) {
-        await releaseUnusedBudgetHold();
+      if (!budgetSettled) {
+        await releaseStaffAssistantBudgetHold({
+          logger: options.pipeline.logger,
+          requestId: options.requestId,
+          companyId: budgetCompanyId,
+          hold: budgetHold,
+          ...(options.budgetStore === undefined
+            ? {}
+            : { budgetStore: options.budgetStore }),
+        });
       }
     }
   } catch (error) {
@@ -942,52 +461,4 @@ export async function executeStaffAssistantChat(
     }
     return wireResponse(error, options.requestId);
   }
-}
-
-async function persistAssistantTurn(options: {
-  readonly pipeline: ActionPipelineDeps;
-  readonly conversationId: string;
-  readonly requestId: string;
-  readonly clientIp: string;
-  readonly aiTraceId: string;
-  readonly principal: {
-    readonly mode: "staff";
-    readonly session: SessionPrincipal;
-    readonly companySelector: string | null;
-  };
-  readonly turn: StaffAssistantTurnResult;
-}): Promise<void> {
-  await executeAction(options.pipeline, {
-    action: recordAssistantTurn,
-    input: {
-      conversationId: options.conversationId,
-      body: options.turn.text,
-      toolRuns: options.turn.toolRuns.map((run) => ({
-        actionName: run.actionName,
-        toolCallId: run.toolCallId,
-        ...(run.challengeId !== undefined
-          ? { challengeId: run.challengeId }
-          : {}),
-        resultIds: [...run.resultIds],
-        outcome: run.outcome,
-        ...(typeof run.toolName === "string" && run.toolName.length > 0
-          ? { toolName: run.toolName }
-          : {}),
-        ...(run.outcome === "success" && run.modelTrace !== undefined
-          ? { modelTrace: run.modelTrace }
-          : {}),
-      })),
-    },
-    request: staffRequest({
-      requestId: options.requestId,
-      clientIp: options.clientIp,
-      aiTraceId: options.aiTraceId,
-      idempotencyKey: attemptKey(
-        "turn",
-        options.conversationId,
-        options.requestId,
-      ),
-    }),
-    principal: options.principal,
-  });
 }

@@ -1,8 +1,9 @@
 /**
- * Unpublished staff-assistant host (SHO-522 / ADR-0037).
+ * Staff-assistant host (SHO-522 / SHO-524 / ADR-0037).
  *
- * New pending lifecycle, confirm/abandon/pending GET, and host chat.
- * Do not mount on production `createApp` / live `/assistant/chat` (T5).
+ * Live `createApp` mounts choice, confirm, pending peek, and abandon.
+ * `POST /assistant/host/chat` stays off production — live chat is
+ * `POST /assistant/chat` wrapping `executeStaffAssistantHostChat`.
  */
 import { randomUUID } from "node:crypto";
 
@@ -22,6 +23,7 @@ import {
   continueStaffAssistantHostTurn,
   executionAttemptKey,
   extractUuidResultIds,
+  StaffAssistantNotConfiguredError,
   filterStaffAiTools,
   isPendingReplaceActionName,
   mapPendingReplaceFacadeInput,
@@ -77,8 +79,7 @@ import type { z } from "zod";
 
 import type { ConversationLock } from "../stores/conversation-lock.js";
 import type { StaffAssistantPendingStore } from "../stores/pending.js";
-import type { AuthInstance } from "./app.js";
-import { ASSISTANT_INVOCATION_CHANNEL } from "./assistant-chat.js";
+import { ASSISTANT_INVOCATION_CHANNEL } from "./assistant-invocation.js";
 import { REQUEST_ID_HEADER, resolveRequestId } from "./request-id.js";
 
 export const ASSISTANT_HOST_CHAT_PATH = "/assistant/host/chat";
@@ -96,7 +97,11 @@ export interface StaffAssistantHostRuntime {
   readonly getSession: (headers: Headers) => Promise<SessionPrincipal | null>;
   readonly pendingStore: StaffAssistantPendingStore;
   readonly conversationLock: ConversationLock;
-  readonly model: LanguageModel;
+  /**
+   * Required for chat, choice resume, and confirm Phase B. Peek and
+   * abandon never call the model.
+   */
+  readonly model?: LanguageModel;
 }
 
 type AppEnv = {
@@ -139,6 +144,17 @@ function unauthenticatedResponse(requestId: string): Response {
 }
 
 function wireResponse(error: unknown, requestId: string): Response {
+  if (error instanceof StaffAssistantNotConfiguredError) {
+    return jsonResponse(
+      503,
+      {
+        code: error.code,
+        status: 503,
+        message: error.message,
+      },
+      requestId,
+    );
+  }
   const wire = toWireError(error);
   const body: Record<string, unknown> = {
     code: wire.code,
@@ -149,6 +165,13 @@ function wireResponse(error: unknown, requestId: string): Response {
     body.data = wire.data;
   }
   return jsonResponse(wire.status, body, requestId);
+}
+
+function requireHostModel(model: LanguageModel | undefined): LanguageModel {
+  if (model === undefined) {
+    throw new StaffAssistantNotConfiguredError();
+  }
+  return model;
 }
 
 function interactionResponse(
@@ -673,7 +696,7 @@ async function runPhaseB(options: {
     beginKey: `begin:resume:${options.pendingId}`,
   });
   const turn = await continueStaffAssistantHostTurn({
-    model: options.runtime.model,
+    model: requireHostModel(options.runtime.model),
     messages: staffAssistantModelMessagesFromPersisted(
       modelHistoryToPersisted(history.messages),
     ),
@@ -1755,7 +1778,7 @@ export async function executeStaffAssistantHostChat(
           beginKey: `begin:${appended.id}`,
         });
         const turn = await runStaffAssistantHostTurn({
-          model: options.model,
+          model: requireHostModel(options.model),
           messages: staffAssistantModelMessagesFromPersisted(
             modelHistoryToPersisted(history.messages),
           ),
@@ -1856,7 +1879,13 @@ export async function executeStaffAssistantHostChat(
 }
 
 export interface CreateStaffAssistantHostAppOptions {
-  readonly auth: AuthInstance;
+  readonly auth: {
+    readonly api: {
+      readonly getSession: (args: {
+        headers: Headers;
+      }) => Promise<{ user: { id: string } } | null>;
+    };
+  };
   readonly registry: ActionRegistry;
   readonly pipeline: ActionPipelineDeps;
   readonly pendingStore: StaffAssistantPendingStore;

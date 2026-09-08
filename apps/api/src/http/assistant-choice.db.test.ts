@@ -166,7 +166,6 @@ function choiceApp(store = createMemoryChoiceStore()) {
         rateLimitStore: createInMemoryRateLimitStore(),
         ipHmacSecret: "test-pki-proxy-ip-hmac-secret!!",
       },
-      choiceStore: store,
     }),
   };
 }

@@ -62,7 +62,8 @@ describe("POST /assistant/choice unit", () => {
     expect(src).toContain("body: needsChoice.text");
     expect((src.match(/body: error\.clientMessage/g) ?? []).length).toBe(1);
     const chat = readFileSync(join(here, "assistant-chat.ts"), "utf8");
-    expect(chat).toContain("classifyStaffAssistantTurn");
+    expect(chat).not.toContain("classifyStaffAssistantTurn");
+    expect(chat).toContain("executeStaffAssistantHostChat");
     expect(chat).toContain("CONFIRMATION_CHALLENGE_HEADER");
     const redis = readFileSync(join(here, "../stores/redis.ts"), "utf8");
     expect(redis).toContain('redis.call("GETDEL"');
@@ -150,6 +151,7 @@ describe("POST /assistant/choice unit", () => {
     expect(chat).not.toContain("choiceCardEnvelope");
     expect(chat).not.toContain("openSuccessorChoice");
     expect(chat).not.toContain("ReferenceResolutionConflictError");
-    expect(chat).toContain("openChoice:");
+    expect(chat).not.toContain("openChoice:");
+    expect(chat).toContain("executeStaffAssistantHostChat");
   });
 });

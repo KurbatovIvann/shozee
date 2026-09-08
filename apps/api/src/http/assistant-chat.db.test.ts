@@ -361,11 +361,7 @@ afterAll(async () => {
   await kit.db.close();
 });
 
-function chatApp(
-  model?: LanguageModel,
-  gateLanguageModel?: LanguageModel,
-  choiceStore?: ReturnType<typeof createMemoryChoiceStore>,
-) {
+function chatApp(model?: LanguageModel, gateLanguageModel?: LanguageModel) {
   return createApp({
     auth,
     registry,
@@ -377,7 +373,6 @@ function chatApp(
       rateLimitStore: createInMemoryRateLimitStore(),
       ipHmacSecret: "test-pki-proxy-ip-hmac-secret!!",
     },
-    ...(choiceStore !== undefined ? { choiceStore } : {}),
     assistant: {
       model: "mock",
       gateModel: "mock-gate",
@@ -3015,7 +3010,6 @@ describe("POST /assistant/chat intent gate", () => {
         languageModel: streamModel,
         gateLanguageModel: gateModel,
       },
-      choiceResume: true,
     });
     expect(response.status).toBe(200);
     await readUiMessageSsePayloads(response);
@@ -3289,7 +3283,7 @@ describe("SHO-418 orders_create choice activation", () => {
         mockSpokenStream("MODEL_SHOULD_NOT_PERSIST"),
       ],
     });
-    const app = chatApp(streamModel, undefined, store);
+    const app = chatApp(streamModel);
     const token = await insertBearer(kit, kitIdentities.users.anna);
     const conversation = await staffInvoke(createConversation, {
       title: "T8b six",
@@ -3356,7 +3350,7 @@ describe("SHO-418 orders_create choice activation", () => {
         mockSpokenStream("Order created."),
       ],
     });
-    const app = chatApp(streamModel, undefined, store);
+    const app = chatApp(streamModel);
     const token = await insertBearer(kit, kitIdentities.users.anna);
     const conversation = await staffInvoke(createConversation, {
       title: "T8b lemon",
@@ -3377,7 +3371,6 @@ describe("SHO-418 orders_create choice activation", () => {
   });
 
   it("no_active_variants is an unavailable error, not a ChoiceCard", async () => {
-    const store = createMemoryChoiceStore();
     const customer = await staffInvoke(createCustomer, {
       name: "T8b Archived Buyer",
       phone: "+380671110043",
@@ -3403,7 +3396,7 @@ describe("SHO-418 orders_create choice activation", () => {
         mockSpokenStream("should not present a card"),
       ],
     });
-    const app = chatApp(streamModel, undefined, store);
+    const app = chatApp(streamModel);
     const token = await insertBearer(kit, kitIdentities.users.anna);
     const conversation = await staffInvoke(createConversation, {
       title: "T8b archived",
@@ -3475,8 +3468,7 @@ describe("SHO-418 orders_create choice activation", () => {
           ),
         ],
       });
-      const store = createMemoryChoiceStore();
-      const app = chatApp(streamModel, undefined, store);
+      const app = chatApp(streamModel);
       const token = await insertBearer(kit, kitIdentities.users.anna);
       const conversation = await staffInvoke(createConversation, {
         title: fixture.name,
@@ -3501,7 +3493,6 @@ describe("SHO-418 orders_create choice activation", () => {
   });
 
   it("two unresolved lines produce sequential choices and create only after both taps without an LLM", async () => {
-    const store = createMemoryChoiceStore();
     const customer = await staffInvoke(createCustomer, {
       name: "T8b Seq Buyer",
       phone: "+380671110046",
@@ -3523,7 +3514,7 @@ describe("SHO-418 orders_create choice activation", () => {
         ),
       ],
     });
-    const app = chatApp(streamModel, undefined, store);
+    const app = chatApp(streamModel);
     const token = await insertBearer(kit, kitIdentities.users.anna);
     const conversation = await staffInvoke(createConversation, {
       title: "T8b sequential",
@@ -3699,7 +3690,7 @@ describe("SHO-442 protocol archived / no_active_variants chat turns", () => {
           mockSpokenStream(spoken),
         ],
       });
-      const app = chatApp(streamModel, undefined, createMemoryChoiceStore());
+      const app = chatApp(streamModel);
       const token = await insertBearer(kit, kitIdentities.users.anna);
       const conversation = await staffInvoke(createConversation, {
         title: `T442 unique ${locale}`,
@@ -3761,7 +3752,7 @@ describe("SHO-442 protocol archived / no_active_variants chat turns", () => {
           mockSpokenStream(spoken),
         ],
       });
-      const app = chatApp(streamModel, undefined, createMemoryChoiceStore());
+      const app = chatApp(streamModel);
       const token = await insertBearer(kit, kitIdentities.users.anna);
       const conversation = await staffInvoke(createConversation, {
         title: `T442 twins ${locale}`,
@@ -3833,7 +3824,7 @@ describe("SHO-442 protocol archived / no_active_variants chat turns", () => {
           mockSpokenStream(spoken),
         ],
       });
-      const app = chatApp(streamModel, undefined, createMemoryChoiceStore());
+      const app = chatApp(streamModel);
       const token = await insertBearer(kit, kitIdentities.users.anna);
       const conversation = await staffInvoke(createConversation, {
         title: `T442 variants ${locale}`,
