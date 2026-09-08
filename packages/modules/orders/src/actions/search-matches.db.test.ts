@@ -416,13 +416,42 @@ describe("orders.searchMatches", () => {
     expect(hit?.exact).toBe(true);
   });
 
-  it("truncates at limitPerType after the SQL window (exact first)", async () => {
+  it("truncates at limitPerType and keeps an exact number first in the SQL window", async () => {
+    const exactToken = "WIN01";
+    const canonical = `${COMPANY_A_PREFIX}-${exactToken}`;
+    const exactId = randomUUID();
+    const weakIds: string[] = [];
+    for (const suffix of ["A", "B", "C", "D", "E", "F"]) {
+      const id = randomUUID();
+      weakIds.push(id);
+      await insertOrder({
+        id,
+        companyId: kitIdentities.companies.a,
+        orderNumber: `${canonical}${suffix}`,
+        customerId: null,
+        customerNameSnapshot: UNLINKED_CUSTOMER_NAME_SNAPSHOT,
+      });
+    }
+    await insertOrder({
+      id: exactId,
+      companyId: kitIdentities.companies.a,
+      orderNumber: canonical,
+      customerId: null,
+      customerNameSnapshot: UNLINKED_CUSTOMER_NAME_SNAPSHOT,
+    });
+
     const listed = await kit.invoke(searchMatches, {
-      query: PREFIX_TOKEN,
-      limitPerType: 1,
+      query: canonical,
+      limitPerType: 5,
     });
     expect(orderGroup(listed)?.truncated).toBe(true);
-    expect(hitIds(orderGroup(listed))).toHaveLength(1);
+    expect(hitIds(orderGroup(listed))).toHaveLength(5);
+    expect(hitIds(orderGroup(listed))[0]).toBe(exactId);
+    expect(orderGroup(listed)?.hits[0]?.exact).toBe(true);
+    expect(orderGroup(listed)?.hits[0]?.matchedOn).toBe("number");
+    expect(weakIds).toEqual(
+      expect.arrayContaining(hitIds(orderGroup(listed)).slice(1)),
+    );
   });
 
   it("rejects oversize query, oversize customerIds, extras, and companyId in input", async () => {
@@ -481,8 +510,13 @@ describe("orders.searchMatches", () => {
         compiled.params,
       );
       const plan = explained.rows.map((row) => row["QUERY PLAN"]).join("\n");
+      const indexCond = plan
+        .split("\n")
+        .filter((line) => /Index Cond:/i.test(line))
+        .join("\n");
       expect(plan).toMatch(/Index (Only )?Scan|Bitmap Index Scan/);
-      expect(plan).toMatch(/order_number/);
+      expect(indexCond).toMatch(/order_number/);
+      expect(indexCond).toMatch(/~~|~>=~|~<~/);
       expect(plan).not.toMatch(/\bSeq Scan\b/);
     } finally {
       await kit.db.admin.query("ROLLBACK");

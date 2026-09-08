@@ -187,9 +187,8 @@ function exactBoostSql(
 }
 
 /**
- * Mirrors preferred-hit rank: exact wins, then T2 matchedOn order.
- * `customer` related matches stay at 0 so they never outrank a number
- * prefix in the SQL window.
+ * Selected as `row.rank` and fed to `sortHits` via `toRank`. Mirrors T2
+ * matchedOn order after exact: number prefix outranks related `customer`.
  */
 function rankSql(args: {
   readonly numberExact: SQL | undefined;
@@ -228,7 +227,7 @@ function toOrderHit(
     label: clip(row.orderNumber, SEARCH_LABEL_MAX),
     matchedOn: preferred.matchedOn,
     exact: preferred.exact,
-    rank: hitRank(preferred),
+    rank: toRank(row.rank),
     ...statusFields(row.status),
     ...sublabelFields(row.customerNameSnapshot),
   };
@@ -296,19 +295,6 @@ function preferredHit(
     return { matchedOn: "number", exact: false };
   }
   return present.reduce(pickPreferredSearchHit, first);
-}
-
-function hitRank(preferred: {
-  readonly matchedOn: SearchMatchedOn;
-  readonly exact: boolean;
-}): number {
-  if (preferred.matchedOn === "number") {
-    return preferred.exact ? 3 : 2;
-  }
-  if (preferred.matchedOn === "customerNameSnapshot") {
-    return preferred.exact ? 1 : 0.5;
-  }
-  return 0;
 }
 
 function statusFields(status: string): { status?: string } {
@@ -382,6 +368,17 @@ function optionalClip(
   }
   const clipped = clip(value, max);
   return clipped.length === 0 ? undefined : clipped;
+}
+
+function toRank(value: unknown): number {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : 0;
+  }
+  if (typeof value === "string" && value.length > 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
 }
 
 function uniqueIds(ids: readonly string[] | undefined): string[] {
