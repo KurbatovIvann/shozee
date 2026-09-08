@@ -69,24 +69,36 @@ export function assembleSearchGroups(
   }
 
   let remaining = GLOBAL_HIT_CAP;
-  const keepCount = new Map<SearchEntityType, number>();
+  const keptIndexes = new Map<SearchEntityType, Set<number>>();
   const droppedByCap = new Set<SearchEntityType>();
 
+  /**
+   * Exact hits claim the global budget first (type-enum order), then the
+   * second pass spends what is left. Selection is by **index**, not by a
+   * count sliced off the front: a matcher that returns its hits in some
+   * other order still keeps its exact rows instead of losing them to the
+   * non-exact ones that happened to sort earlier.
+   */
   const takeHits = (wantExact: boolean): void => {
     for (const type of SEARCH_ENTITY_TYPES) {
       const group = byType.get(type);
       if (group === undefined) {
         continue;
       }
-      for (const hit of group.hits) {
-        if (hit.exact !== wantExact) {
+      for (let index = 0; index < group.hits.length; index += 1) {
+        if (group.hits[index]?.exact !== wantExact) {
           continue;
         }
         if (remaining <= 0) {
           droppedByCap.add(type);
           continue;
         }
-        keepCount.set(type, (keepCount.get(type) ?? 0) + 1);
+        let indexes = keptIndexes.get(type);
+        if (indexes === undefined) {
+          indexes = new Set<number>();
+          keptIndexes.set(type, indexes);
+        }
+        indexes.add(index);
         remaining -= 1;
       }
     }
@@ -100,29 +112,41 @@ export function assembleSearchGroups(
     if (group === undefined) {
       continue;
     }
-    const keep = keepCount.get(type) ?? 0;
+    const indexes = keptIndexes.get(type) ?? new Set<number>();
     const truncated =
       group.truncated ||
       droppedByCap.has(type) ||
       (type === "order" && orderLookupTruncated);
-    if (keep === 0 && !truncated) {
+    if (indexes.size === 0 && !truncated) {
       continue;
     }
     if (group.type === "variant") {
       assembled.push({
         type: "variant",
         truncated,
-        hits: group.hits.slice(0, keep),
+        hits: keepHitsAt(group.hits, indexes),
       });
       continue;
     }
     assembled.push({
       ...group,
-      hits: group.hits.slice(0, keep),
+      hits: keepHitsAt(group.hits, indexes),
       truncated,
     });
   }
   return assembled;
+}
+
+/** Kept hits stay in the matcher's own order (exact → rank → id). */
+function keepHitsAt<T>(hits: readonly T[], indexes: ReadonlySet<number>): T[] {
+  const kept: T[] = [];
+  for (let index = 0; index < hits.length; index += 1) {
+    const hit = hits[index];
+    if (hit !== undefined && indexes.has(index)) {
+      kept.push(hit);
+    }
+  }
+  return kept;
 }
 
 export async function executeSearchQuery(

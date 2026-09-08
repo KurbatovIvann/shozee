@@ -384,6 +384,35 @@ describe("assembleSearchGroups", () => {
     ]);
   });
 
+  it("keeps a group's exact hits under the global cap even when they do not sort first", () => {
+    // Every T3–T7 matcher sorts exact-first today, but the global cap must
+    // not silently depend on that: a group whose exact row sits last still
+    // keeps it, and the non-exact rows are what the cap drops.
+    const orderIndex = SEARCH_ENTITY_TYPES.indexOf("order");
+    const unsorted: SearchGroup = {
+      type: "order",
+      truncated: false,
+      hits: [
+        hit(uuidAt(orderIndex, 90), false, "order-rest-0"),
+        hit(uuidAt(orderIndex, 91), false, "order-rest-1"),
+        hit(uuidAt(orderIndex, 92), true, "order-exact-late"),
+      ],
+    };
+    const assembled = assembleSearchGroups(
+      [unsorted, group("customer", 38, 0)],
+      false,
+    );
+    const orders = assembled.find((entry) => entry.type === "order");
+    expect(orders?.hits.map((row) => row.label)).toEqual([
+      "order-rest-0",
+      "order-exact-late",
+    ]);
+    expect(orders?.truncated).toBe(true);
+    expect(assembled.flatMap((entry) => entry.hits)).toHaveLength(
+      GLOBAL_HIT_CAP,
+    );
+  });
+
   it("passes variant productId through", () => {
     const variant = group("variant", 1, 0);
     const assembled = assembleSearchGroups([variant], false);
