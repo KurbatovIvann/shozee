@@ -21,7 +21,7 @@ Auth policy parameters still live in `src/auth/` (fnd-T6).
 - `src/http/app.ts` — `createApp(composition)`: request-id, trusted-proxy
   IP, better-auth at `/api/auth`, oRPC at `/rpc`, OpenAPI REST at `/api/v1`,
   `GET /health`, `GET /d/:token`, `POST /pki/proxy` (HTTP, not an action),
-  `POST /assistant/chat` (staff AI SSE, `channel: "ai"`). Dependencies are
+  `POST /assistant/chat` (JSON host wrap + budget, `channel: "ai"`). Dependencies are
   injected; tests never read `process.env`.
 - `src/http/assistant-chat.ts` — staff AI mount. Session required;
   membership via `executeAction` (`assistant.getStaffActor`). Tools run

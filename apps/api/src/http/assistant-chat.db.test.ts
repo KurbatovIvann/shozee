@@ -7,6 +7,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 
 import {
   kyivCalendarDate,
+  ORDERS_LIST_PAGE_TOOL_NAME,
   secondsUntilKyivMidnight,
   STAFF_ASSISTANT_MODEL_HISTORY_MAX,
   toProviderToolName,
@@ -47,6 +48,7 @@ import { auditLog } from "@showzy/db";
 import { assistantMessages } from "@showzy/db/schema/assistant";
 import { session, user } from "@showzy/db/schema/auth";
 import { companyMembers } from "@showzy/db/schema/companies";
+import { companyCustomers } from "@showzy/db/schema/customers";
 import {
   RedisContainer,
   type StartedRedisContainer,
@@ -215,6 +217,15 @@ beforeAll(async () => {
 afterAll(async () => {
   await kit.db.close();
 });
+
+async function customerRow(
+  customerId: string,
+): Promise<{ readonly id: string } | undefined> {
+  const rows = (await kit.db.runtime.db.select().from(companyCustomers)).filter(
+    (row) => row.id === customerId,
+  );
+  return rows[0];
+}
 
 function chatApp(model?: LanguageModel) {
   return createApp({
@@ -989,11 +1000,7 @@ describe("POST /assistant/chat budget guard (SHO-505)", () => {
           toProviderToolName("customers.deleteCustomer"),
           deleteInput,
         ),
-        mockToolCallStream(
-          "call-delete-resume",
-          toProviderToolName("customers.deleteCustomer"),
-          deleteInput,
-        ),
+        mockToolCallStream("call-list", ORDERS_LIST_PAGE_TOOL_NAME, "{}"),
         mockTextStream("The customer was deleted."),
       ],
     });
@@ -1026,6 +1033,7 @@ describe("POST /assistant/chat budget guard (SHO-505)", () => {
         aiCompanyBudgetKey(kitIdentities.companies.a, kyivDate),
       ),
     ).toBeCloseTo(0.1);
+    expect(await customerRow(customer.id)).toBeDefined();
 
     const blocked = await postChat(app, {
       token,
@@ -1042,6 +1050,13 @@ describe("POST /assistant/chat budget guard (SHO-505)", () => {
     });
     expect(resume.status).toBe(200);
     await resume.json();
+    expect(await customerRow(customer.id)).toBeUndefined();
+    const messages = (
+      await kit.db.runtime.db.select().from(assistantMessages)
+    ).filter((row) => row.conversationId === conversation.id);
+    expect(
+      messages.some((row) => row.role === "user" && row.body === "так"),
+    ).toBe(false);
     expect(
       await budgetStore.read(
         aiCompanyBudgetKey(kitIdentities.companies.a, kyivDate),

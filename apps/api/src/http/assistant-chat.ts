@@ -76,7 +76,6 @@ export { readStaffAssistantCompanyTradeName } from "./assistant-host.js";
 
 export interface StaffAssistantRuntime {
   readonly model: string;
-  readonly gateModel?: string;
   readonly anthropicApiKey?: string;
   /** Constructed once in `apps/api` composition from config (SHO-508). */
   readonly provider?: StaffProviderAdapter;
@@ -187,13 +186,12 @@ function logFailure(logger: Logger, requestId: string, error: unknown): void {
 
 function tryCreateProviderModel(
   provider: StaffProviderAdapter | undefined,
-  kind: "reply" | "gate",
 ): LanguageModel | undefined {
   if (provider === undefined) {
     return undefined;
   }
   try {
-    return provider.createModel(kind);
+    return provider.createModel("reply");
   } catch (error) {
     if (error instanceof StaffAssistantNotConfiguredError) {
       return undefined;
@@ -208,7 +206,7 @@ export function optionalStaffAssistantLanguageModel(
   if (assistant?.languageModel !== undefined) {
     return assistant.languageModel;
   }
-  const fromProvider = tryCreateProviderModel(assistant?.provider, "reply");
+  const fromProvider = tryCreateProviderModel(assistant?.provider);
   if (fromProvider !== undefined) {
     return fromProvider;
   }
