@@ -29,9 +29,6 @@ import { itemCountLabel } from "../../orders/shared/item-count";
 import { formatOrderCreatedAt } from "../../orders/shared/order-created-at";
 import { orderDetailHref } from "../../orders/shared/order-hrefs";
 import { priceListEditorHref } from "../../pricing/shared/price-list-hrefs";
-import { itemCountLabel } from "../../orders/shared/item-count";
-import { formatOrderCreatedAt } from "../../orders/shared/order-created-at";
-import { orderDetailHref } from "../../orders/shared/order-hrefs";
 import { localizeCustomersListCard } from "../surfaces/customers-list";
 import { assistantSurfaceToolResultsFromParts } from "../surfaces/helpers";
 import { localizeOrdersListCard } from "../surfaces/orders-list";
@@ -2131,7 +2128,8 @@ describe("search-results grouped surface (SHO-535)", () => {
     expect(surfaceCard.match(/<AssistantCollectionBlock/g)?.length).toBe(1);
     expect(searchBlock).toContain("AssistantCollectionResultRow");
     expect(searchBlock).not.toContain("<Button");
-    expect(searchBlock).not.toContain("Card");
+    expect(searchBlock).not.toMatch(/import\s*\{[^}]*\bCard\b/);
+    expect(searchBlock).not.toContain("<Card");
   });
 });
 

@@ -387,7 +387,6 @@ describe("matchEvalExpectation", () => {
     expect(
       matchEvalExpectation(scenario?.expectation ?? {}, {
         text: "Знайшла Катю Самбуку.",
-        speechSource: "model",
         toolCalls: [
           {
             toolCallId: "c1",
@@ -400,7 +399,6 @@ describe("matchEvalExpectation", () => {
     expect(
       matchEvalExpectation(scenario?.expectation ?? {}, {
         text: "Ось Катя і її замовлення.",
-        speechSource: "model",
         toolCalls: [
           {
             toolCallId: "c1",

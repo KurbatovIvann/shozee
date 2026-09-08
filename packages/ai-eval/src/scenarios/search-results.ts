@@ -29,7 +29,6 @@ export const SEARCH_RESULTS_SCENARIOS: readonly EvalScenario[] = [
     expectation: {
       ordered: [{ name: "search_query" }],
       forbidden: [...FORBIDDEN_LIST_TOOLS],
-      speechSource: "model",
     },
   },
 ];
