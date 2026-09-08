@@ -144,8 +144,7 @@ export interface StaffAssistantChatOptions {
   /**
    * Choice HITL resume (SHO-401 T8) calls this executor with
    * `choiceResume: true`. `POST /assistant/chat` omits it. Confirmation
-   * resume is `POST /assistant/confirm` or the legacy
-   * `x-confirmation-challenge-id` adapter (SHO-516).
+   * resume is `POST /assistant/confirm` only (SHO-516).
    */
   readonly choiceResume?: boolean;
   readonly choiceStore?: StaffAssistantChoiceStore;
