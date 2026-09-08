@@ -20,7 +20,7 @@ import {
   type SearchHit,
   type SearchVariantHit,
 } from "@showzy/validation/search";
-import { and, eq, or, sql } from "drizzle-orm";
+import { or, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { searchMatches } from "./search-matches.js";
@@ -389,20 +389,23 @@ describe("catalog.searchMatches", () => {
 
   it("matches names through index-servable operators, not a scan", async () => {
     // The pre-fix predicate was `word_similarity(token, name) >= 0.25` — a
-    // function call in a filter, which `gin_trgm_ops` cannot serve, and
-    // OR-ing it with the FTS branch cost that index too. Both branches
-    // must now be reachable by an index.
+    // function call in a filter, which `gin_trgm_ops` cannot serve at any
+    // table size, and OR-ing it with the FTS branch blocked a BitmapOr so
+    // `name_fts` went unused too. What this pins is that both branches can
+    // now be *answered* from an index.
+    //
+    // The tenant conjunct is deliberately left out. On a fixture this small
+    // the planner satisfies `company_id = X` from its own index and drops
+    // the name predicate into a Filter — which it is free to do, and which
+    // would hide the difference this test exists to catch.
     const token = "мак";
     const compiled = kit.db.runtime.db
       .select({ id: products.id })
       .from(products)
       .where(
-        and(
-          eq(products.companyId, kitIdentities.companies.a),
-          or(
-            sql`${products.nameFts} @@ to_tsquery('simple', ${`${token}:*`})`,
-            sql`${token} <% ${products.name}`,
-          ),
+        or(
+          sql`${products.nameFts} @@ to_tsquery('simple', ${`${token}:*`})`,
+          sql`${token} <% ${products.name}`,
         ),
       )
       .toSQL();
@@ -415,7 +418,7 @@ describe("catalog.searchMatches", () => {
         compiled.params,
       );
       const plan = explained.rows.map((row) => row["QUERY PLAN"]).join("\n");
-      expect(plan).toMatch(/Bitmap Index Scan/);
+      expect(plan).toMatch(/BitmapOr/);
       expect(plan).toMatch(/products_name_fts_gin_idx/);
       expect(plan).toMatch(/products_name_trgm_idx/);
       expect(plan).not.toMatch(/\bSeq Scan\b/);
