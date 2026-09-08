@@ -1894,6 +1894,347 @@ describe("unpublished staff assistant host HTTP", () => {
         speech: "Phase B continued.",
       }),
     );
+    const finishedHistory = await h.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    const completed = finishedHistory.messages.find(
+      (message) => message.id === begun.messageId,
+    );
+    expect(completed?.text).toBe("Phase B continued.");
+    expect(
+      finishedHistory.messages.filter((message) => message.role === "assistant")
+        .length,
+    ).toBe(
+      openHistory.messages.filter((message) => message.role === "assistant")
+        .length,
+    );
+  });
+
+  it("choice replay is done when Phase B speech exists and a later begin is empty", async () => {
+    const speech = "The order is ready.";
+    const h = harness({ model: silentModel(speech) });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Later empty begin",
+    });
+    const customer = await h.invoke(createCustomer, {
+      name: "Later Begin Buyer",
+      phone: nextPhone(),
+    });
+    const product = await h.invoke(createProduct, {
+      name: "Later Begin Cake",
+      basePriceMinor: "1500",
+      variants: [{ name: "A" }, { name: "B" }],
+    });
+    const { record, optionByLabel } = await seedChoicePending(h, {
+      conversationId: conversation.id,
+      customerId: customer.id,
+      product,
+    });
+    const optionId = optionByLabel.get("A");
+    const first = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.id,
+        optionId,
+      },
+    });
+    const firstBody = assistantHostInteractionResultSchema.parse(
+      await first.json(),
+    );
+    expect(firstBody).toEqual(
+      expect.objectContaining({ status: "ok", speech }),
+    );
+    const afterPhaseB = await orderCount();
+    const phaseBHistory = await h.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    const phaseB = phaseBHistory.messages.findLast(
+      (message) => message.role === "assistant" && message.text === speech,
+    );
+    expect(phaseB).toBeDefined();
+    await h.invoke(
+      checkpointAssistantTurn,
+      { kind: "begin", conversationId: conversation.id },
+      {
+        idempotencyKey: attemptKey(
+          "turn",
+          conversation.id,
+          `begin:${randomUUID()}`,
+        ),
+      },
+    );
+    const crashed = await h.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    const laterEmpty = crashed.messages.findLast(
+      (message) => message.role === "assistant",
+    );
+    expect(laterEmpty?.text).toBe("");
+    expect(laterEmpty?.id).not.toBe(phaseB?.id);
+    const replayApp = harness({
+      pendingStore: h.pendingStore,
+      model: new MockLanguageModelV3({
+        doStream: () => {
+          throw new Error(
+            "completed Phase B must not resume after a later empty begin",
+          );
+        },
+      }),
+    });
+    const replay = await hostRequest(replayApp.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.id,
+        optionId,
+      },
+    });
+    const replayBody = assistantHostInteractionResultSchema.parse(
+      await replay.json(),
+    );
+    expect(replayBody.status).toBe("ok");
+    if (replayBody.status !== "ok") {
+      return;
+    }
+    expect(replayBody.speech).toBe(speech);
+    expect(await orderCount()).toBe(afterPhaseB);
+    const finalHistory = await h.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    expect(
+      finalHistory.messages.find((message) => message.id === phaseB?.id)?.text,
+    ).toBe(speech);
+  });
+
+  it("empty Phase B body with finished tool-runs still continues speech without a second write", async () => {
+    const h = harness({
+      model: new MockLanguageModelV3({
+        doStream: () => {
+          throw new Error("Phase B tools are seeded without the model");
+        },
+      }),
+    });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Empty body finished runs",
+    });
+    const customer = await h.invoke(createCustomer, {
+      name: "Finished-run Buyer",
+      phone: nextPhone(),
+    });
+    const product = await h.invoke(createProduct, {
+      name: "Finished-run Cake",
+      basePriceMinor: "1500",
+      variants: [{ name: "A" }, { name: "B" }],
+    });
+    const { record, optionByLabel } = await seedChoicePending(h, {
+      conversationId: conversation.id,
+      customerId: customer.id,
+      product,
+    });
+    const optionId = optionByLabel.get("A");
+    if (optionId === undefined || record.executionId === undefined) {
+      throw new Error("seeded choice missing option or executionId");
+    }
+    const bind = {
+      actorId: kitIdentities.users.anna,
+      companyId: kitIdentities.companies.a,
+      conversationId: conversation.id,
+    };
+    const claimed = await h.pendingStore.claim({
+      id: record.id,
+      kind: "choice",
+      bind,
+      optionId,
+    });
+    expect(claimed.kind).toBe("claimed");
+    const mappedId = record.optionMap[optionId];
+    if (mappedId === undefined) {
+      throw new Error("seeded choice missing mapped variant");
+    }
+    const patched = applyChoiceOptionToCanonicalInput(
+      record.canonicalInput,
+      record.target,
+      mappedId,
+    );
+    const created = await h.invoke(createOrder, patched, {
+      idempotencyKey: executionAttemptKey(conversation.id, record.executionId),
+    });
+    await h.invoke(
+      checkpointAssistantTurn,
+      {
+        kind: "finishRun",
+        conversationId: conversation.id,
+        executionId: record.executionId,
+        outcome: "success",
+        resultIds: [created.orderId],
+        modelTrace: created,
+      },
+      {
+        idempotencyKey: attemptKey(
+          "turn",
+          conversation.id,
+          `finish:${record.executionId}`,
+        ),
+      },
+    );
+    await h.pendingStore.complete({
+      id: record.id,
+      kind: "choice",
+      bind,
+      optionId,
+    });
+    const continuationCustomer = await h.invoke(createCustomer, {
+      name: "Finished-run Follow-up",
+      phone: nextPhone(),
+    });
+    const continuationProduct = await h.invoke(createProduct, {
+      name: "Finished-run Follow-up Cake",
+      basePriceMinor: "1800",
+      variants: [{ name: "X" }],
+    });
+    const continuationVariant = continuationProduct.variants[0];
+    if (continuationVariant === undefined) {
+      throw new Error("continuation product missing variant");
+    }
+    const continuationFacadeInput = {
+      customerId: continuationCustomer.id,
+      items: [
+        {
+          productId: continuationProduct.productId,
+          variantId: continuationVariant.variantId,
+          quantityMilli: "1000",
+        },
+      ],
+    };
+    const continuationInput = {
+      customer: { by: "id" as const, id: continuationCustomer.id },
+      items: [
+        {
+          product: { by: "id" as const, id: continuationProduct.productId },
+          variantSelection: {
+            kind: "reference" as const,
+            ref: { by: "id" as const, id: continuationVariant.variantId },
+          },
+          quantity: { milli: "1000" },
+        },
+      ],
+    };
+    const begun = await h.invoke(
+      checkpointAssistantTurn,
+      { kind: "begin", conversationId: conversation.id },
+      {
+        idempotencyKey: attemptKey(
+          "turn",
+          conversation.id,
+          `begin:resume:${record.id}`,
+        ),
+      },
+    );
+    const staged = await h.invoke(
+      checkpointAssistantTurn,
+      {
+        kind: "stageRun",
+        conversationId: conversation.id,
+        messageId: begun.messageId,
+        seq: 0,
+        actionName: "orders.create",
+        toolName: ORDERS_CREATE_TOOL_NAME,
+        toolCallId: "call-finished-create",
+        toolInput: continuationFacadeInput,
+      },
+      {
+        idempotencyKey: attemptKey(
+          "turn",
+          conversation.id,
+          `stage:${begun.messageId}:0`,
+        ),
+      },
+    );
+    if (staged.executionId === null) {
+      throw new Error("Phase B stageRun returned no executionId");
+    }
+    const continuationCreated = await h.invoke(createOrder, continuationInput, {
+      idempotencyKey: executionAttemptKey(conversation.id, staged.executionId),
+    });
+    await h.invoke(
+      checkpointAssistantTurn,
+      {
+        kind: "finishRun",
+        conversationId: conversation.id,
+        executionId: staged.executionId,
+        outcome: "success",
+        resultIds: [continuationCreated.orderId],
+        modelTrace: continuationCreated,
+      },
+      {
+        idempotencyKey: attemptKey(
+          "turn",
+          conversation.id,
+          `finish:${staged.executionId}:success`,
+        ),
+      },
+    );
+    const afterCommit = await orderCount();
+    const openHistory = await h.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    const open = openHistory.messages.find(
+      (message) => message.id === begun.messageId,
+    );
+    expect(open?.text).toBe("");
+    expect(open?.toolRuns.some((run) => run.outcome === "started")).toBe(false);
+    expect(
+      open?.toolRuns.some((run) => run.executionId === staged.executionId),
+    ).toBe(true);
+    const resumeApp = harness({
+      pendingStore: h.pendingStore,
+      model: silentModel("Named the follow-up order."),
+    });
+    const resume = await hostRequest(resumeApp.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.id,
+        optionId,
+      },
+    });
+    const body = assistantHostInteractionResultSchema.parse(
+      await resume.json(),
+    );
+    expect(body).toEqual(
+      expect.objectContaining({
+        status: "ok",
+        speech: "Named the follow-up order.",
+      }),
+    );
+    expect(await orderCount()).toBe(afterCommit);
+    const finishedHistory = await h.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    const completed = finishedHistory.messages.find(
+      (message) => message.id === begun.messageId,
+    );
+    expect(completed?.text).toBe("Named the follow-up order.");
+    const finished = finishedHistory.messages
+      .flatMap((message) => message.toolRuns)
+      .find((run) => run.executionId === staged.executionId);
+    expect(finished?.outcome).toBe("success");
+    expect(
+      finishedHistory.messages.filter((message) => message.role === "assistant")
+        .length,
+    ).toBe(
+      openHistory.messages.filter((message) => message.role === "assistant")
+        .length,
+    );
   });
 
   it("crash after domain commit then a new chat turn finishes the stored execution_id without a second order", async () => {

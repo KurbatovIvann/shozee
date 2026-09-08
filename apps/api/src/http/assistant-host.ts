@@ -702,12 +702,15 @@ function startedRunsForHostRecovery(
       if (isHostSeededHitlToolCallId(run.toolCallId)) {
         continue;
       }
+      if (run.toolName === null) {
+        continue;
+      }
       started.push({
         messageId: message.id,
         executionId: run.executionId,
         seq: run.seq ?? 0,
         actionName: run.action,
-        toolName: run.toolName ?? run.action.replace(".", "_"),
+        toolName: run.toolName,
         toolCallId: run.toolCallId,
         toolInput: run.toolInput,
       });
@@ -737,21 +740,23 @@ function phaseBState(
   ) {
     return "continue";
   }
-  if (
-    laterAssistant.some(
-      (message) => message.text === "" && message.toolRuns.length === 0,
-    )
-  ) {
-    return "continue";
+  // Completed Phase B speech already exists. A later empty chat begin
+  // must not reopen the resume loop — `begin:resume:${pendingId}` is
+  // idempotent onto the original message and `complete` would overwrite
+  // that speech.
+  if (laterAssistant.some((message) => message.text !== "")) {
+    return "done";
   }
-  return "done";
+  // Empty open begin (no tool-runs), or empty body with only finished
+  // runs: still need speech. Recovery replays started rows only.
+  return "continue";
 }
 
 function lastAssistantSpeech(
   history: Awaited<ReturnType<typeof loadHistory>>,
 ): string {
   const last = history.messages.findLast(
-    (message) => message.role === "assistant",
+    (message) => message.role === "assistant" && message.text !== "",
   );
   return last?.text ?? "";
 }
@@ -760,7 +765,14 @@ function historyToolResults(
   history: Awaited<ReturnType<typeof loadHistory>>,
 ): { readonly toolName: string; readonly output: unknown }[] {
   const last = history.messages.findLast(
-    (message) => message.role === "assistant",
+    (message) =>
+      message.role === "assistant" &&
+      message.toolRuns.some(
+        (run) =>
+          run.modelTrace !== null &&
+          run.modelTrace !== undefined &&
+          run.toolName !== null,
+      ),
   );
   if (last === undefined) {
     return [];
@@ -770,12 +782,28 @@ function historyToolResults(
     if (run.modelTrace === null || run.modelTrace === undefined) {
       continue;
     }
+    if (run.toolName === null) {
+      continue;
+    }
+    if (isStartedToolTrace(run.modelTrace)) {
+      continue;
+    }
     results.push({
-      toolName: run.toolName ?? run.action.replace(".", "_"),
+      toolName: run.toolName,
       output: run.modelTrace,
     });
   }
   return results;
+}
+
+function isStartedToolTrace(output: unknown): boolean {
+  return (
+    typeof output === "object" &&
+    output !== null &&
+    !Array.isArray(output) &&
+    "status" in output &&
+    output.status === "started"
+  );
 }
 
 async function runPhaseB(options: {
