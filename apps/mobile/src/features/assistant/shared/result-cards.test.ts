@@ -2138,14 +2138,10 @@ describe("search-results grouped surface (SHO-535)", () => {
         ],
         pending: null,
       });
-      expect(parts.some((part) => part.type === "data-resumeCard")).toBe(true);
-      expect(
-        parts.some(
-          (part) =>
-            part.type === `tool-${SEARCH_QUERY_TOOL}` ||
-            ("toolName" in part && part.toolName === SEARCH_QUERY_TOOL),
-        ),
-      ).toBe(false);
+      expect(parts.map((part) => part.type)).toEqual([
+        "text",
+        "data-resumeCard",
+      ]);
       return searchResultsOf(assistantSurfacesFromParts(parts, "uk"));
     }
 
