@@ -453,19 +453,22 @@ describe("documents.searchMatches", () => {
   });
 
   it("matches left-prefix on a canonical full number and is never exact", async () => {
-    const listed = await kit.invoke(searchMatches, { query: "РХ-00001" });
+    const listed = await kit.invoke(searchMatches, { query: "РХ-0000" });
     const ids = hitIds(documentGroup(listed));
     expect(ids).toEqual(
-      expect.arrayContaining([fixtures.invoice1, fixtures.invoice10]),
+      expect.arrayContaining([
+        fixtures.invoice1,
+        fixtures.invoiceCancelled,
+        fixtures.invoice10,
+      ]),
     );
+    expect(ids).toHaveLength(3);
     expect(ids).not.toContain(fixtures.delivery1);
     expect(ids).not.toContain(fixtures.foreignInvoice1);
     for (const hit of documentGroup(listed)?.hits ?? []) {
-      if (hit.id === fixtures.invoice1 || hit.id === fixtures.invoice10) {
-        expect(hit.matchedOn).toBe("number");
-        expect(hit.exact).toBe(false);
-        expect(hit.sublabel).toBe(PAYMENT_INVOICE_TYPE_CODE);
-      }
+      expect(hit.matchedOn).toBe("number");
+      expect(hit.exact).toBe(false);
+      expect(hit.sublabel).toBe(PAYMENT_INVOICE_TYPE_CODE);
     }
   });
 
