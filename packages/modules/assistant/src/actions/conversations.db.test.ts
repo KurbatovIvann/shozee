@@ -1601,9 +1601,7 @@ describe("assistant staff conversation actions", () => {
     expect(JSON.stringify(clientView)).not.toMatch(
       /modelTrace|model_trace|toolInput|tool_input|executionId|execution_id/,
     );
-    expect(clientView.toolRuns.every((run) => run.outcome !== "started")).toBe(
-      true,
-    );
+    expect(JSON.stringify(clientView.toolRuns)).not.toContain("started");
 
     const history = await kit.invoke(getModelHistory, {
       conversationId: conversation.id,
