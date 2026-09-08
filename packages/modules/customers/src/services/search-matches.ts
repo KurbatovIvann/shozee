@@ -6,6 +6,9 @@
  *
  * `orderCustomerLookup` is a separate cap-20 customer-id list. Display
  * `limitPerType` must not shrink those ids.
+ *
+ * SQL `ORDER BY` + `LIMIT n+1` must match `sortHits`: exact, then rank
+ * desc, then id asc. Identifier prefix match is not `exact`.
  */
 import type { ActionCtx } from "@showzy/core";
 import {
@@ -15,6 +18,7 @@ import {
 } from "@showzy/db/schema/customers";
 import {
   ORDER_CUSTOMER_LOOKUP_MAX,
+  SEARCH_APOSTROPHE_CANON,
   SEARCH_CUSTOMER_TYPES,
   SEARCH_LABEL_MAX,
   SEARCH_STATUS_MAX,
@@ -160,7 +164,13 @@ async function fetchCustomerRows(args: {
     companyCustomers.nameFts,
     args.prepared.tokens,
   );
-  const identifier = combineOr(definedSql([phoneMatch, emailMatch]));
+  const exact = combineOr(
+    definedSql([
+      exactPhoneSql(companyCustomers.phone, args.prepared.queryNormalized),
+      emailMatch,
+      exactNameSql(companyCustomers.name, args.prepared.queryNormalized),
+    ]),
+  );
   const rows = await args.db
     .select({
       id: companyCustomers.id,
@@ -173,7 +183,7 @@ async function fetchCustomerRows(args: {
     .from(companyCustomers)
     .where(scoped)
     .orderBy(
-      sql`${identifierBoostSql(identifier)} DESC`,
+      sql`${exactBoostSql(exact)} DESC`,
       sql`${rank} DESC`,
       sql`${companyCustomers.id} ASC`,
     )
@@ -204,6 +214,10 @@ async function fetchGroupRows(args: {
     customerGroups.nameFts,
     args.prepared.tokens,
   );
+  const exact = exactNameSql(
+    customerGroups.name,
+    args.prepared.queryNormalized,
+  );
   return args.db
     .select({
       id: customerGroups.id,
@@ -212,7 +226,11 @@ async function fetchGroupRows(args: {
     })
     .from(customerGroups)
     .where(scoped)
-    .orderBy(sql`${rank} DESC`, sql`${customerGroups.id} ASC`)
+    .orderBy(
+      sql`${exactBoostSql(exact)} DESC`,
+      sql`${rank} DESC`,
+      sql`${customerGroups.id} ASC`,
+    )
     .limit(args.limitPerType + 1);
 }
 
@@ -256,8 +274,13 @@ async function fetchCounterpartyRows(args: {
     counterparties.nameFts,
     args.prepared.tokens,
   );
-  const identifier = combineOr(
-    definedSql([phoneMatch, emailMatch, edrpouMatch]),
+  const exact = combineOr(
+    definedSql([
+      exactPhoneSql(counterparties.phone, args.prepared.queryNormalized),
+      emailMatch,
+      edrpouMatch,
+      exactNameSql(counterparties.name, args.prepared.queryNormalized),
+    ]),
   );
   return args.db
     .select({
@@ -271,7 +294,7 @@ async function fetchCounterpartyRows(args: {
     .from(counterparties)
     .where(scoped)
     .orderBy(
-      sql`${identifierBoostSql(identifier)} DESC`,
+      sql`${exactBoostSql(exact)} DESC`,
       sql`${rank} DESC`,
       sql`${counterparties.id} ASC`,
     )
@@ -418,11 +441,30 @@ function canonicalPhoneSql(phone: SQLWrapper): SQL {
   return sql`(CASE WHEN ${digits} LIKE '0%' THEN '380' || substr(${digits}, 2) ELSE ${digits} END)`;
 }
 
-function identifierBoostSql(identifierMatch: SQL | undefined): SQL {
-  if (identifierMatch === undefined) {
+function exactPhoneSql(
+  phone: SQLWrapper,
+  queryNormalized: string,
+): SQL | undefined {
+  const canonical = canonicalizePhoneDigits(queryNormalized);
+  if (canonical === undefined) {
+    return undefined;
+  }
+  return sql`${canonicalPhoneSql(phone)} = ${canonical}`;
+}
+
+/** Mirrors `nameCandidate` exact: collapsed NFC name, apostrophe-fold, lower. */
+function exactNameSql(name: SQLWrapper, queryNormalized: string): SQL {
+  const foldedQuery = foldSearchNameToken(queryNormalized);
+  const collapsed = sql`btrim(regexp_replace(normalize(${name}, NFC), '[[:space:]]+', ' ', 'g'))`;
+  const foldedName = sql`replace(replace(lower(${collapsed}), ${"\u2019"}, ${SEARCH_APOSTROPHE_CANON}), ${"\u02BC"}, ${SEARCH_APOSTROPHE_CANON})`;
+  return sql`${foldedName} = ${foldedQuery}`;
+}
+
+function exactBoostSql(exactMatch: SQL | undefined): SQL {
+  if (exactMatch === undefined) {
     return sql`0`;
   }
-  return sql`(CASE WHEN ${identifierMatch} THEN 1 ELSE 0 END)`;
+  return sql`(CASE WHEN ${exactMatch} THEN 1 ELSE 0 END)`;
 }
 
 function prefixTsQuery(token: string): string | undefined {

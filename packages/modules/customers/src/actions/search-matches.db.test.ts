@@ -412,6 +412,40 @@ describe("customers.searchMatches", () => {
     );
   });
 
+  it("includes an exact customer in lookup when more than 21 weak name matches fill the SQL window", async () => {
+    const token = "38098221";
+    const exactId = randomUUID();
+    const weakCount = ORDER_CUSTOMER_LOOKUP_MAX + 2;
+    const weakIds = Array.from({ length: weakCount }, () => randomUUID());
+    await kit.db.runtime.db.insert(companyCustomers).values([
+      {
+        id: exactId,
+        companyId: kitIdentities.companies.a,
+        name: token,
+        email: `sql-window-exact-${exactId}@kit.test`,
+      },
+      ...weakIds.map((id, index) => ({
+        id,
+        companyId: kitIdentities.companies.a,
+        name: `${token} Weak ${String(index).padStart(2, "0")}`,
+        phone: `+${token}${String(index).padStart(4, "0")}`,
+        email: `sql-window-weak-${String(index)}-${id}@kit.test`,
+      })),
+    ]);
+
+    const listed = await kit.invoke(searchMatches, {
+      query: token,
+      limitPerType: 5,
+    });
+
+    expect(listed.orderCustomerLookup.truncated).toBe(true);
+    expect(listed.orderCustomerLookup.ids).toHaveLength(
+      ORDER_CUSTOMER_LOOKUP_MAX,
+    );
+    expect(listed.orderCustomerLookup.ids).toContain(exactId);
+    expect(listed.orderCustomerLookup.ids[0]).toBe(exactId);
+  });
+
   it("still fills orderCustomerLookup when display types omit customer", async () => {
     const listed = await kit.invoke(searchMatches, {
       query: "мак",
