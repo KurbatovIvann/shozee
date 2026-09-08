@@ -18,6 +18,12 @@ import {
   staffAssistantChoiceCardEnvelopeSchema,
   type StaffAssistantChoiceCardEnvelope,
 } from "./choice";
+import {
+  partsFromResumeEnvelope,
+  type AssistantHostInteractionResult,
+  type AssistantResumeEnvelope,
+  type ResumeAppendPart,
+} from "./resume-envelope";
 
 export type AssistantChoicePart = {
   readonly type: string;
@@ -38,6 +44,7 @@ export type AssistantChoiceMessage = {
 
 export type PendingChoice = StaffAssistantChoiceCardEnvelope & {
   readonly messageId: string;
+  readonly pendingVersion?: number;
 };
 
 export type ChoiceCardState =
@@ -75,6 +82,7 @@ export type ChoiceSelectResult = {
   readonly httpStatus?: number | undefined;
   readonly retryAfterSec?: number | undefined;
   readonly recoverability?: ChoiceSelectRecoverability | undefined;
+  readonly envelope?: AssistantResumeEnvelope | undefined;
 };
 
 const orderIdSchema = z.uuid();
@@ -162,6 +170,9 @@ function interactionErrorIsValid(result: ChoiceSelectResult): boolean {
 export function deriveChoiceSelectRecoverability(
   result: ChoiceSelectResult,
 ): ChoiceSelectRecoverability {
+  if (result.status === "ok") {
+    return "terminal";
+  }
   if (result.status === "completed") {
     return completedSelectIsValid(result) ? "terminal" : "ambiguous";
   }
@@ -207,23 +218,7 @@ export function choiceSelectAllowsSameOptionRetry(
   return recoverability === "retryable" || recoverability === "ambiguous";
 }
 
-export type ChoiceAppendPart =
-  | { readonly type: "text"; readonly text: string }
-  | {
-      readonly type: "data-choice";
-      readonly data: StaffAssistantChoiceCardEnvelope;
-    }
-  | {
-      readonly type: "dynamic-tool";
-      readonly toolName: "orders.create";
-      readonly toolCallId: string;
-      readonly state: "output-available";
-      readonly input: Record<string, never>;
-      readonly output: {
-        readonly orderId: string;
-        readonly orderNumber: string;
-      };
-    };
+export type ChoiceAppendPart = ResumeAppendPart;
 
 function choiceEnvelopeIsRestorable(
   status: StaffAssistantChoiceCardEnvelope["status"],
@@ -263,7 +258,12 @@ export function pendingChoiceFromMessages(
       ) {
         continue;
       }
-      latest = { ...choice, messageId: message.id };
+      const pendingVersion = pendingVersionFromChoicePart(part);
+      latest = {
+        ...choice,
+        messageId: message.id,
+        ...(pendingVersion === undefined ? {} : { pendingVersion }),
+      };
     }
   }
   return latest;
@@ -526,6 +526,9 @@ export function choiceSelectAppendParts(args: {
   readonly previousChoiceId: string;
   readonly locale: "uk" | "en";
 }): readonly ChoiceAppendPart[] {
+  if (args.result.envelope !== undefined) {
+    return partsFromResumeEnvelope(args.result.envelope);
+  }
   if (args.result.status === "completed") {
     if (!completedSelectIsValid(args.result)) {
       return [];
@@ -640,4 +643,83 @@ export function commitChoiceSelectResult(args: {
     args.ignoreChallenge(args.previousChoiceId);
   }
   return "applied";
+}
+
+function pendingVersionFromChoicePart(
+  part: AssistantChoicePart,
+): number | undefined {
+  const nested = part.data;
+  if (
+    typeof nested === "object" &&
+    nested !== null &&
+    !Array.isArray(nested) &&
+    "pendingVersion" in nested &&
+    typeof nested.pendingVersion === "number" &&
+    Number.isInteger(nested.pendingVersion) &&
+    nested.pendingVersion > 0
+  ) {
+    return nested.pendingVersion;
+  }
+  return undefined;
+}
+
+export function hideChoiceLocally(args: {
+  readonly pending: PendingChoice | null;
+  readonly dismissed: ReadonlySet<string>;
+}): ReadonlySet<string> {
+  if (args.pending === null) {
+    return args.dismissed;
+  }
+  const next = new Set(args.dismissed);
+  next.add(args.pending.challengeId);
+  return next;
+}
+
+export async function executeChoiceAbandon(args: {
+  readonly pending: PendingChoice | null;
+  readonly conversationId: string | null;
+  readonly pendingVersion: number | undefined;
+  readonly peekPending: () => Promise<
+    | {
+        readonly kind: "ok";
+        readonly pending: {
+          readonly id: string;
+          readonly version: number;
+          readonly kind: "choice" | "confirmation";
+        } | null;
+      }
+    | { readonly kind: "unavailable" }
+  >;
+  readonly postAbandon: (input: {
+    readonly conversationId: string;
+    readonly pendingId: string;
+    readonly expectedVersion: number;
+  }) => Promise<AssistantHostInteractionResult>;
+}): Promise<"skipped" | AssistantHostInteractionResult> {
+  if (args.pending === null || args.conversationId === null) {
+    return "skipped";
+  }
+  let version = args.pendingVersion ?? args.pending.pendingVersion;
+  if (version === undefined) {
+    const peeked = await args.peekPending();
+    if (peeked.kind === "unavailable") {
+      return {
+        status: "error",
+        code: "UNAVAILABLE",
+        message: "Pending lookup is not available.",
+      };
+    }
+    if (
+      peeked.pending === null ||
+      peeked.pending.id !== args.pending.challengeId
+    ) {
+      return { status: "expired" };
+    }
+    version = peeked.pending.version;
+  }
+  return args.postAbandon({
+    conversationId: args.conversationId,
+    pendingId: args.pending.challengeId,
+    expectedVersion: version,
+  });
 }

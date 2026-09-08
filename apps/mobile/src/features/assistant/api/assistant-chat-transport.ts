@@ -25,6 +25,7 @@ export type StaffAssistantUiMessage = UIMessage<
       toolCallId: string;
     };
     choice: StaffAssistantChoiceCardEnvelope;
+    resumeCard: unknown;
   }
 >;
 

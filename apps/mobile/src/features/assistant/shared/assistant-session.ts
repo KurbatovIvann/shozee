@@ -5,6 +5,7 @@
  */
 
 import {
+  applyOpenPendingToHydratedMessages,
   choiceIdsFromToolRuns,
   entityResultIdsFromToolRuns,
   findOwnConversationId,
@@ -17,6 +18,7 @@ import {
   type AssistantResumeResult,
 } from "./assistant-hydrate";
 import type { StaffAssistantChoiceCardEnvelope } from "./choice";
+import type { PublicPending } from "./resume-envelope";
 
 export type AssistantCompanyEpochRef = { current: number };
 export type AssistantConversationIdRef = { current: string | null };
@@ -124,6 +126,12 @@ export async function resumeOwnAssistantConversation(args: {
     readonly conversationId: string;
     readonly choiceId: string;
   }) => Promise<StaffAssistantChoiceCardEnvelope | undefined>;
+  readonly peekPending?: (input: {
+    readonly conversationId: string;
+  }) => Promise<
+    | { readonly kind: "ok"; readonly pending: PublicPending | null }
+    | { readonly kind: "unavailable" }
+  >;
 }): Promise<AssistantResumeResult> {
   if (!isCurrentAssistantEpoch(args.companyEpochRef, args.epoch)) {
     return { kind: "dropped" };
@@ -163,7 +171,25 @@ export async function resumeOwnAssistantConversation(args: {
   }
   let choiceEnvelopes:
     ReadonlyMap<string, StaffAssistantChoiceCardEnvelope> | undefined;
-  if (args.peekChoice !== undefined) {
+  let openPending: PublicPending | null = null;
+  let pendingLookup: "ok" | "unavailable" | "skipped" = "skipped";
+  if (args.peekPending !== undefined) {
+    const peekedPending = await args.peekPending({
+      conversationId: detail.id,
+    });
+    if (!isCurrentAssistantEpoch(args.companyEpochRef, args.epoch)) {
+      return { kind: "dropped" };
+    }
+    if (peekedPending.kind === "ok") {
+      pendingLookup = "ok";
+      openPending = peekedPending.pending;
+    } else {
+      pendingLookup = "unavailable";
+    }
+  }
+  if (pendingLookup === "ok" && openPending?.kind === "choice") {
+    choiceEnvelopes = new Map([[openPending.id, openPending.envelope]]);
+  } else if (pendingLookup !== "ok" && args.peekChoice !== undefined) {
     const peekChoice = args.peekChoice;
     const conversationIdForPeek = detail.id;
     choiceEnvelopes = await loadChoiceEnvelopes({
@@ -178,14 +204,23 @@ export async function resumeOwnAssistantConversation(args: {
       return { kind: "dropped" };
     }
   }
+  const hydrated = hydratedUiMessagesFromConversation({
+    messages: detail.messages,
+    toolRuns: detail.toolRuns,
+    ordersById,
+    ...(choiceEnvelopes !== undefined ? { choiceEnvelopes } : {}),
+  });
+  const messages =
+    pendingLookup === "ok"
+      ? applyOpenPendingToHydratedMessages({
+          messages: hydrated,
+          pending: openPending,
+        })
+      : hydrated;
   return {
     kind: "resumed",
     conversationId: detail.id,
-    messages: hydratedUiMessagesFromConversation({
-      messages: detail.messages,
-      toolRuns: detail.toolRuns,
-      ordersById,
-      ...(choiceEnvelopes !== undefined ? { choiceEnvelopes } : {}),
-    }),
+    messages,
+    pending: pendingLookup === "ok" ? openPending : null,
   };
 }

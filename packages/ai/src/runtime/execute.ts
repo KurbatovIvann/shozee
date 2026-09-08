@@ -21,6 +21,12 @@ import {
   type StaffAssistantConfirmationOutput,
 } from "../confirmation.js";
 import {
+  confirmationPendingRecord,
+  pendingChoiceRecordFromChoiceRecord,
+  pendingOpenRefuseOutput,
+  type PendingInteractionRecord,
+} from "../pending.js";
+import {
   STAFF_ASSISTANT_DEFAULT_LOCALE,
   type StaffAssistantLocale,
 } from "../locale.js";
@@ -34,7 +40,12 @@ import {
 import { STAFF_ASSISTANT_TOOL_ERROR_FALLBACK } from "../turn-speech.js";
 
 export type StaffAssistantHostPendingDecision =
-  { readonly allow: true } | { readonly allow: false };
+  | { readonly allow: true }
+  | { readonly allow: false; readonly output?: unknown };
+
+export type StaffAssistantHostPendingCheck = (input: {
+  readonly actionName: string;
+}) => Promise<StaffAssistantHostPendingDecision>;
 
 export const HOST_HITL_PAUSED_STATUS = "hitl_paused" as const;
 
@@ -58,6 +69,12 @@ export function isHostHitlPausedOutput(
 
 export function allowHostPendingAlways(): Promise<StaffAssistantHostPendingDecision> {
   return Promise.resolve({ allow: true });
+}
+
+export function refuseHostPendingOpen(
+  locale?: "uk" | "en",
+): StaffAssistantHostPendingDecision {
+  return { allow: false, output: pendingOpenRefuseOutput(locale) };
 }
 
 export interface StaffAssistantHostCheckpointStageInput {
@@ -197,6 +214,9 @@ function wrapDomainExecute(
     readonly locale: StaffAssistantLocale;
     readonly choiceBind?: ChoiceBind;
     readonly openChoice?: (record: ChoiceRecord) => Promise<boolean>;
+    readonly openPending?: (
+      record: PendingInteractionRecord,
+    ) => Promise<boolean>;
     readonly mintChoiceId?: () => string;
   },
 ): ActionToolExecute {
@@ -246,6 +266,35 @@ function wrapDomainExecute(
           actionName,
           toolCallId,
         );
+        if (hooks.openPending !== undefined && hooks.choiceBind !== undefined) {
+          const stagedId = state.executionIdByToolCallId.get(toolCallId);
+          const opened = await hooks.openPending(
+            confirmationPendingRecord({
+              challengeId: confirmation.challengeId,
+              bind: hooks.choiceBind,
+              actionName,
+              toolCallId,
+              canonicalInput: input,
+              summary: confirmation.summary,
+              challengeExpiresAt: confirmation.expiresAt,
+              locale: hooks.locale,
+              ...(stagedId !== undefined ? { executionId: stagedId } : {}),
+            }),
+          );
+          if (!opened) {
+            state.runs.push({
+              actionName,
+              toolCallId,
+              resultIds: [],
+              outcome: "error",
+            });
+            return {
+              status: "error",
+              code: "INTERNAL",
+              message: hostInternalToolErrorMessage(hooks.locale),
+            };
+          }
+        }
         state.runs.push({
           actionName,
           toolCallId,
@@ -256,14 +305,28 @@ function wrapDomainExecute(
         state.paused = true;
         return confirmation;
       }
+      const openPending = hooks.openPending;
+      const openChoiceForPending =
+        openPending !== undefined && hooks.choiceBind !== undefined
+          ? async (record: ChoiceRecord) => {
+              const stagedId = state.executionIdByToolCallId.get(toolCallId);
+              return openPending(
+                pendingChoiceRecordFromChoiceRecord(record, {
+                  actionName,
+                  toolCallId,
+                  ...(stagedId !== undefined ? { executionId: stagedId } : {}),
+                }),
+              );
+            }
+          : hooks.openChoice;
       const needsChoice = await needsChoiceFromOrdersCreateConflict({
         actionName,
         input,
         error,
         locale: hooks.locale,
         ...(hooks.choiceBind !== undefined ? { bind: hooks.choiceBind } : {}),
-        ...(hooks.openChoice !== undefined
-          ? { openChoice: hooks.openChoice }
+        ...(openChoiceForPending !== undefined
+          ? { openChoice: openChoiceForPending }
           : {}),
         ...(hooks.mintChoiceId !== undefined
           ? { mintChoiceId: hooks.mintChoiceId }
@@ -319,8 +382,11 @@ export function wrapHostSequentialExecute(
     readonly locale?: StaffAssistantLocale;
     readonly choiceBind?: ChoiceBind;
     readonly openChoice?: (record: ChoiceRecord) => Promise<boolean>;
+    readonly openPending?: (
+      record: PendingInteractionRecord,
+    ) => Promise<boolean>;
     readonly mintChoiceId?: () => string;
-    readonly checkPending?: () => Promise<StaffAssistantHostPendingDecision>;
+    readonly checkPending?: StaffAssistantHostPendingCheck;
     readonly checkpoint?: Pick<StaffAssistantHostCheckpoint, "stageRun">;
     /**
      * When false, the caller (clip wrapper) already owns `state.toolQueue`.
@@ -335,6 +401,9 @@ export function wrapHostSequentialExecute(
     locale,
     ...(hooks.choiceBind !== undefined ? { choiceBind: hooks.choiceBind } : {}),
     ...(hooks.openChoice !== undefined ? { openChoice: hooks.openChoice } : {}),
+    ...(hooks.openPending !== undefined
+      ? { openPending: hooks.openPending }
+      : {}),
     ...(hooks.mintChoiceId !== undefined
       ? { mintChoiceId: hooks.mintChoiceId }
       : {}),
@@ -347,8 +416,11 @@ export function wrapHostSequentialExecute(
     if (state.paused) {
       return HOST_HITL_PAUSED_OUTPUT;
     }
-    const pending = await checkPending();
+    const pending = await checkPending({ actionName });
     if (!pending.allow) {
+      if (pending.output !== undefined) {
+        return pending.output;
+      }
       return {
         status: "error",
         code: "INTERNAL",

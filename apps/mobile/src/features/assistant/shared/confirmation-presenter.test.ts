@@ -1,18 +1,24 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { CONFIRMATION_CHALLENGE_HEADER } from "@showzy/contract";
 
 import {
   confirmationCardState,
   confirmationResumeHeaders,
+  executeConfirmationAbandon,
   executeConfirmationConfirm,
   executeConfirmationDismiss,
+  executeHostConfirmationConfirm,
+  hideConfirmationLocally,
   pendingConfirmationFromMessages,
+  shouldHidePendingCardAfterAbandon,
   shouldMarkConfirmationResolved,
   type AssistantChatMessage,
 } from "./confirmation-presenter";
 
 const challengeA = "22222222-2222-4222-8222-222222222222";
 const challengeB = "33333333-3333-4333-8333-333333333333";
+const conversationId = "11111111-1111-4111-8111-111111111111";
 
 const confirmationA = {
   status: "confirmation_required" as const,
@@ -181,7 +187,7 @@ describe("executeConfirmationConfirm", () => {
     expect(resume).not.toHaveBeenCalled();
   });
 
-  it("resumes later challenge B with its header after A is resolved", async () => {
+  it("confirms later challenge B after A is resolved", async () => {
     const resume = vi.fn(() => Promise.resolve());
     const pending = pendingConfirmationFromMessages(
       mergedResumeMessages,
@@ -201,7 +207,7 @@ describe("executeConfirmationConfirm", () => {
     });
   });
 
-  it("two confirm() calls before busy resume once", async () => {
+  it("two confirm() calls before busy confirm once", async () => {
     const resume = vi.fn(() => Promise.resolve());
     const pending = pendingConfirmationFromMessages(messages, new Set());
     const resolvingRef = { current: null as string | null };
@@ -219,6 +225,34 @@ describe("executeConfirmationConfirm", () => {
     expect(new Set([first, second])).toEqual(new Set(["resumed", "skipped"]));
     expect(resume).toHaveBeenCalledOnce();
     expect(resolvingRef.current).toBe(challengeA);
+  });
+});
+
+describe("executeHostConfirmationConfirm", () => {
+  it("POSTs /assistant/confirm through the injected port", async () => {
+    const postConfirm = vi.fn(() =>
+      Promise.resolve({
+        status: "ok" as const,
+        speech: "Deleted.",
+        cards: [],
+        pending: null,
+      }),
+    );
+    const pending = pendingConfirmationFromMessages(messages, new Set());
+    await expect(
+      executeHostConfirmationConfirm({
+        pending,
+        sendBusy: false,
+        dismissedChallengeIds: new Set(),
+        resolvingRef: { current: null },
+        conversationId,
+        postConfirm,
+      }),
+    ).resolves.toMatchObject({ status: "ok", speech: "Deleted." });
+    expect(postConfirm).toHaveBeenCalledWith({
+      conversationId,
+      challengeId: challengeA,
+    });
   });
 });
 
@@ -339,5 +373,213 @@ describe("shouldMarkConfirmationResolved", () => {
         messages,
       }),
     ).toBe(false);
+  });
+});
+
+describe("executeConfirmationAbandon", () => {
+  it("POSTs abandon with pendingId and expectedVersion", async () => {
+    const postAbandon = vi.fn(() =>
+      Promise.resolve({
+        status: "ok" as const,
+        speech: "",
+        cards: [],
+        pending: null,
+      }),
+    );
+    const pending = pendingConfirmationFromMessages(messages, new Set());
+    await expect(
+      executeConfirmationAbandon({
+        pending,
+        conversationId,
+        pendingVersion: 1,
+        peekPending: () => Promise.resolve({ kind: "unavailable" }),
+        postAbandon,
+      }),
+    ).resolves.toMatchObject({ status: "ok" });
+    expect(postAbandon).toHaveBeenCalledWith({
+      conversationId,
+      pendingId: challengeA,
+      expectedVersion: 1,
+    });
+  });
+
+  it("peeks GET pending for version when the live card has none", async () => {
+    const postAbandon = vi.fn(() =>
+      Promise.resolve({
+        status: "ok" as const,
+        speech: "",
+        cards: [],
+        pending: null,
+      }),
+    );
+    const pending = pendingConfirmationFromMessages(messages, new Set());
+    await expect(
+      executeConfirmationAbandon({
+        pending,
+        conversationId,
+        pendingVersion: undefined,
+        peekPending: () =>
+          Promise.resolve({
+            kind: "ok",
+            pending: {
+              id: challengeA,
+              version: 4,
+              kind: "confirmation",
+            },
+          }),
+        postAbandon,
+      }),
+    ).resolves.toMatchObject({ status: "ok" });
+    expect(postAbandon).toHaveBeenCalledWith({
+      conversationId,
+      pendingId: challengeA,
+      expectedVersion: 4,
+    });
+  });
+
+  it("peek unavailable keeps the card and does not hide", async () => {
+    const postAbandon = vi.fn(() =>
+      Promise.resolve({
+        status: "ok" as const,
+        speech: "",
+        cards: [],
+        pending: null,
+      }),
+    );
+    const pending = pendingConfirmationFromMessages(messages, new Set());
+    const result = await executeConfirmationAbandon({
+      pending,
+      conversationId,
+      pendingVersion: undefined,
+      peekPending: () => Promise.resolve({ kind: "unavailable" }),
+      postAbandon,
+    });
+    expect(result).toMatchObject({ status: "error", code: "UNAVAILABLE" });
+    expect(postAbandon).not.toHaveBeenCalled();
+    expect(shouldHidePendingCardAfterAbandon(result)).toBe(false);
+    const dismissed = shouldHidePendingCardAfterAbandon(result)
+      ? hideConfirmationLocally({ pending, dismissed: new Set() })
+      : new Set<string>();
+    expect(dismissed.size).toBe(0);
+    expect(pendingConfirmationFromMessages(messages, dismissed)).toEqual({
+      ...confirmationA,
+      messageId: "a1",
+    });
+    expect(
+      confirmationCardState({
+        pending: pendingConfirmationFromMessages(messages, dismissed),
+        resolvingChallengeId: null,
+      }).kind,
+    ).toBe("proposed");
+  });
+
+  it("abandon HTTP error keeps the card", async () => {
+    const pending = pendingConfirmationFromMessages(messages, new Set());
+    const result = await executeConfirmationAbandon({
+      pending,
+      conversationId,
+      pendingVersion: 1,
+      peekPending: () => Promise.resolve({ kind: "unavailable" }),
+      postAbandon: () =>
+        Promise.resolve({
+          status: "error",
+          code: "INTERNAL",
+          message: "Abandon failed.",
+        }),
+    });
+    expect(shouldHidePendingCardAfterAbandon(result)).toBe(false);
+    expect(pendingConfirmationFromMessages(messages, new Set())).not.toBeNull();
+  });
+});
+
+describe("hide-without-abandon is not the host card path", () => {
+  it("only hides after ok or a real server expired, not peek unavailable", async () => {
+    const pending = pendingConfirmationFromMessages(messages, new Set());
+    const peekUnavailable = await executeConfirmationAbandon({
+      pending,
+      conversationId,
+      pendingVersion: undefined,
+      peekPending: () => Promise.resolve({ kind: "unavailable" }),
+      postAbandon: () =>
+        Promise.resolve({
+          status: "ok",
+          speech: "",
+          cards: [],
+          pending: null,
+        }),
+    });
+    expect(shouldHidePendingCardAfterAbandon(peekUnavailable)).toBe(false);
+    const expired = await executeConfirmationAbandon({
+      pending,
+      conversationId,
+      pendingVersion: undefined,
+      peekPending: () =>
+        Promise.resolve({
+          kind: "ok",
+          pending: null,
+        }),
+      postAbandon: () =>
+        Promise.resolve({
+          status: "ok",
+          speech: "",
+          cards: [],
+          pending: null,
+        }),
+    });
+    expect(expired).toEqual({ status: "expired" });
+    expect(shouldHidePendingCardAfterAbandon(expired)).toBe(true);
+    const presenter = readFileSync(
+      new URL("./confirmation-presenter.ts", import.meta.url),
+      "utf8",
+    );
+    const hook = readFileSync(
+      new URL("../sheet/use-assistant-confirmation.ts", import.meta.url),
+      "utf8",
+    );
+    const card = readFileSync(
+      new URL("../sheet/confirmation-card.tsx", import.meta.url),
+      "utf8",
+    );
+    expect(presenter).toContain("executeConfirmationAbandon");
+    expect(presenter).toContain("executeHostConfirmationConfirm");
+    expect(presenter).toContain("args.resume(");
+    expect(hook).toContain("executeConfirmationConfirm");
+    expect(hook).toContain("args.resume");
+    expect(hook).not.toContain("postConfirm");
+    expect(hook).not.toContain("executeConfirmationAbandon");
+    expect(card).toContain("onDismiss");
+    expect(card).not.toContain("hideConfirmationLocally");
+  });
+});
+
+describe("live sheet does not call unpublished host HTTP", () => {
+  it("does not POST confirm/abandon or GET pending from production hooks", () => {
+    const sheet = readFileSync(
+      new URL("../sheet/use-assistant-sheet.ts", import.meta.url),
+      "utf8",
+    );
+    const chat = readFileSync(
+      new URL("../sheet/use-assistant-chat.ts", import.meta.url),
+      "utf8",
+    );
+    const confirmation = readFileSync(
+      new URL("../sheet/use-assistant-confirmation.ts", import.meta.url),
+      "utf8",
+    );
+    const choice = readFileSync(
+      new URL("../sheet/use-assistant-choice.ts", import.meta.url),
+      "utf8",
+    );
+    for (const source of [sheet, chat, confirmation, choice]) {
+      expect(source).not.toContain("postAssistantConfirm");
+      expect(source).not.toContain("postAssistantPendingAbandon");
+      expect(source).not.toContain("getAssistantPending");
+      expect(source).not.toContain("/assistant/confirm");
+      expect(source).not.toContain("/assistant/pending/abandon");
+      expect(source).not.toContain("/assistant/pending");
+    }
+    expect(chat).toContain("createStaffAssistantTransport");
+    expect(chat).toContain("postAssistantChoice");
+    expect(confirmation).toContain("resume");
   });
 });

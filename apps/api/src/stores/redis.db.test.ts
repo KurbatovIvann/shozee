@@ -3,6 +3,10 @@
  */
 import { randomUUID } from "node:crypto";
 
+import {
+  pendingChoiceRecordFromChoiceRecord,
+  pendingRedisKey,
+} from "@showzy/ai";
 import { CoreInvariantError } from "@showzy/core/errors";
 import {
   RedisContainer,
@@ -12,14 +16,19 @@ import { Redis } from "ioredis";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { hmacBetterAuthConsumeKey } from "./auth-ip-hmac.js";
+import { conversationLockRedisKey } from "./conversation-lock.js";
 import {
   createRedisAiBudgetStore,
   createRedisAuthRateLimitStore,
   createRedisChoiceStore,
   createRedisConfirmationStore,
+  createRedisConversationLock,
   createRedisOtpSendStore,
+  createRedisPendingStore,
   createRedisRateLimitStore,
   createRedisSecondaryStorage,
+  RedisStoreError,
+  redisSetNxSucceeded,
 } from "./redis.js";
 
 function fakeClock(startMs = 1_000_000): {
@@ -343,5 +352,368 @@ describe("createRedisChoiceStore", () => {
     expect(
       await store.claim({ choiceId, bind, optionId: optionLemon }),
     ).toEqual({ kind: "expired" });
+  });
+});
+
+describe("createRedisPendingStore", () => {
+  it("claim CAS, different option conflict, wrong bind forbidden", async () => {
+    const conversationId = randomUUID();
+    const companyId = randomUUID();
+    const productId = randomUUID();
+    const variantLemon = randomUUID();
+    const variantVanilla = randomUUID();
+    const customerId = randomUUID();
+    const optionLemon = randomUUID();
+    const optionVanilla = randomUUID();
+    const pendingBind = {
+      actorId: "anna",
+      companyId,
+      conversationId,
+    };
+    const store = createRedisPendingStore(redis);
+    const choiceId = randomUUID();
+    const record = pendingChoiceRecordFromChoiceRecord(
+      {
+        status: "open",
+        choiceId,
+        actorId: "anna",
+        companyId,
+        conversationId,
+        canonicalInput: {
+          customer: { by: "id", id: customerId },
+          items: [
+            {
+              product: { by: "id", id: productId },
+              variantSelection: { kind: "unspecified" },
+              quantity: { milli: "1000" },
+            },
+          ],
+        },
+        target: { lineIndex: 0, productId, productName: "Macarons" },
+        optionMap: {
+          [optionLemon]: variantLemon,
+          [optionVanilla]: variantVanilla,
+        },
+        envelope: {
+          status: "needs_choice",
+          challengeId: choiceId,
+          reason: "variant_required",
+          productName: "Macarons",
+          options: [
+            { id: optionLemon, label: "Lemon" },
+            { id: optionVanilla, label: "Vanilla" },
+          ],
+          optionsTruncated: false,
+        },
+      },
+      {
+        actionName: "orders.create",
+        toolCallId: "call-create",
+        executionId: "exec-1",
+      },
+    );
+    expect(await redis.get(pendingRedisKey("choice", choiceId))).toBeNull();
+    expect(await store.open(record)).toBe(true);
+    expect(await store.open(record)).toBe(false);
+    const claimed = await store.claim({
+      id: choiceId,
+      kind: "choice",
+      bind: pendingBind,
+      optionId: optionLemon,
+    });
+    expect(claimed.kind).toBe("claimed");
+    const replay = await store.claim({
+      id: choiceId,
+      kind: "choice",
+      bind: pendingBind,
+      optionId: optionLemon,
+    });
+    expect(replay.kind).toBe("replay");
+    const conflict = await store.claim({
+      id: choiceId,
+      kind: "choice",
+      bind: pendingBind,
+      optionId: optionVanilla,
+    });
+    expect(conflict.kind).toBe("conflict");
+    const forbidden = await store.claim({
+      id: choiceId,
+      kind: "choice",
+      bind: { ...pendingBind, actorId: "oleg" },
+      optionId: optionLemon,
+    });
+    expect(forbidden.kind).toBe("forbidden");
+    const completed = await store.complete({
+      id: choiceId,
+      kind: "choice",
+      bind: pendingBind,
+      optionId: optionLemon,
+    });
+    expect(completed.kind).toBe("completed");
+    const completeReplay = await store.complete({
+      id: choiceId,
+      kind: "choice",
+      bind: pendingBind,
+      optionId: optionLemon,
+    });
+    expect(completeReplay.kind).toBe("replay");
+  });
+
+  it("abandon and replace are version-CAS", async () => {
+    const conversationId = randomUUID();
+    const companyId = randomUUID();
+    const productId = randomUUID();
+    const variantLemon = randomUUID();
+    const variantVanilla = randomUUID();
+    const customerId = randomUUID();
+    const optionLemon = randomUUID();
+    const optionVanilla = randomUUID();
+    const pendingBind = {
+      actorId: "anna",
+      companyId,
+      conversationId,
+    };
+    const store = createRedisPendingStore(redis);
+
+    function choiceRecord(choiceId: string) {
+      return pendingChoiceRecordFromChoiceRecord(
+        {
+          status: "open",
+          choiceId,
+          actorId: "anna",
+          companyId,
+          conversationId,
+          canonicalInput: {
+            customer: { by: "id", id: customerId },
+            items: [
+              {
+                product: { by: "id", id: productId },
+                variantSelection: { kind: "unspecified" },
+                quantity: { milli: "1000" },
+              },
+            ],
+          },
+          target: { lineIndex: 0, productId, productName: "Macarons" },
+          optionMap: {
+            [optionLemon]: variantLemon,
+            [optionVanilla]: variantVanilla,
+          },
+          envelope: {
+            status: "needs_choice",
+            challengeId: choiceId,
+            reason: "variant_required",
+            productName: "Macarons",
+            options: [
+              { id: optionLemon, label: "Lemon" },
+              { id: optionVanilla, label: "Vanilla" },
+            ],
+            optionsTruncated: false,
+          },
+        },
+        {
+          actionName: "orders.create",
+          toolCallId: "call-create",
+          executionId: "exec-1",
+        },
+      );
+    }
+
+    const abandonId = randomUUID();
+    expect(await store.open(choiceRecord(abandonId))).toBe(true);
+    expect(
+      await store.abandon({
+        id: abandonId,
+        bind: pendingBind,
+        expectedVersion: 9,
+      }),
+    ).toEqual({ kind: "expired" });
+    const abandoned = await store.abandon({
+      id: abandonId,
+      bind: pendingBind,
+      expectedVersion: 1,
+    });
+    expect(abandoned.kind).toBe("abandoned");
+    const abandonReplay = await store.abandon({
+      id: abandonId,
+      bind: pendingBind,
+      expectedVersion: 1,
+    });
+    expect(abandonReplay.kind).toBe("replay");
+
+    const originalId = randomUUID();
+    const nextId = randomUUID();
+    expect(await store.open(choiceRecord(originalId))).toBe(true);
+    expect(
+      await store.replace({
+        id: originalId,
+        bind: pendingBind,
+        expectedVersion: 9,
+        next: choiceRecord(nextId),
+      }),
+    ).toEqual({ kind: "expired" });
+    const replaced = await store.replace({
+      id: originalId,
+      bind: pendingBind,
+      expectedVersion: 1,
+      next: choiceRecord(nextId),
+    });
+    expect(replaced.kind).toBe("replaced");
+    expect(
+      await store.claim({
+        id: originalId,
+        kind: "choice",
+        bind: pendingBind,
+        optionId: optionLemon,
+      }),
+    ).toEqual({ kind: "expired" });
+    const nextClaim = await store.claim({
+      id: nextId,
+      kind: "choice",
+      bind: pendingBind,
+      optionId: optionLemon,
+    });
+    expect(nextClaim.kind).toBe("claimed");
+  });
+});
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+describe("createRedisConversationLock", () => {
+  it("treats Redis 8 SET NX truthy status as success, matching PENDING_OPEN_LUA", async () => {
+    expect(redisSetNxSucceeded("OK")).toBe(true);
+    expect(redisSetNxSucceeded(true)).toBe(true);
+    expect(redisSetNxSucceeded(1)).toBe(true);
+    expect(redisSetNxSucceeded(null)).toBe(false);
+    expect(redisSetNxSucceeded(undefined)).toBe(false);
+    expect(redisSetNxSucceeded("QUEUED")).toBe(false);
+
+    const nx = await redis.set(
+      `lock:setnx:${randomUUID()}`,
+      "token",
+      "PX",
+      1_000,
+      "NX",
+    );
+    expect(redisSetNxSucceeded(nx)).toBe(true);
+
+    let setCalls = 0;
+    const stub = {
+      set: () => {
+        setCalls += 1;
+        return Promise.resolve(true);
+      },
+      eval: () => Promise.resolve(1),
+    };
+    const lock = createRedisConversationLock(stub, {
+      ttlMs: 1_000,
+      waitMs: 0,
+      renewEveryMs: 10_000,
+    });
+    await expect(
+      lock.withLock(randomUUID(), () => Promise.resolve("held")),
+    ).resolves.toBe("held");
+    expect(setCalls).toBe(1);
+
+    const integerStub = {
+      set: () => Promise.resolve(1),
+      eval: () => Promise.resolve(1),
+    };
+    await expect(
+      createRedisConversationLock(integerStub, {
+        ttlMs: 1_000,
+        waitMs: 0,
+        renewEveryMs: 10_000,
+      }).withLock(randomUUID(), () => Promise.resolve("held")),
+    ).resolves.toBe("held");
+  });
+
+  it("serializes overlapping work so only one holder is inside", async () => {
+    const lock = createRedisConversationLock(redis, {
+      ttlMs: 5_000,
+      waitMs: 2_000,
+      renewEveryMs: 1_000,
+      retryDelayMs: 10,
+    });
+    const conversationId = randomUUID();
+    let inside = 0;
+    let maxInside = 0;
+    const hold = async (label: string) => {
+      return lock.withLock(conversationId, async () => {
+        inside += 1;
+        maxInside = Math.max(maxInside, inside);
+        await sleep(80);
+        inside -= 1;
+        return label;
+      });
+    };
+    const [first, second] = await Promise.all([hold("a"), hold("b")]);
+    expect([first, second].sort()).toEqual(["a", "b"]);
+    expect(maxInside).toBe(1);
+  });
+
+  it("renews the lease so work outliving ttlMs keeps the mutex", async () => {
+    const lock = createRedisConversationLock(redis, {
+      ttlMs: 250,
+      waitMs: 200,
+      renewEveryMs: 60,
+      retryDelayMs: 10,
+    });
+    const conversationId = randomUUID();
+    const key = conversationLockRedisKey(conversationId);
+    let otherAcquired = false;
+    const held = lock.withLock(conversationId, async () => {
+      await sleep(400);
+      const remaining = await redis.pttl(key);
+      expect(remaining).toBeGreaterThan(0);
+      const other = createRedisConversationLock(redis, {
+        ttlMs: 250,
+        waitMs: 0,
+        renewEveryMs: 60,
+      });
+      await expect(
+        other.withLock(conversationId, () => {
+          otherAcquired = true;
+          return Promise.resolve("stolen");
+        }),
+      ).rejects.toBeInstanceOf(RedisStoreError);
+      return "ok";
+    });
+    expect(await held).toBe("ok");
+    expect(otherAcquired).toBe(false);
+  });
+
+  it("waiter acquires after the holder releases", async () => {
+    const lock = createRedisConversationLock(redis, {
+      ttlMs: 5_000,
+      waitMs: 2_000,
+      renewEveryMs: 1_000,
+      retryDelayMs: 10,
+    });
+    const conversationId = randomUUID();
+    const order: string[] = [];
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const first = lock.withLock(conversationId, async () => {
+      order.push("holder");
+      await firstGate;
+      return "a";
+    });
+    await sleep(30);
+    const second = lock.withLock(conversationId, () => {
+      order.push("waiter");
+      return Promise.resolve("b");
+    });
+    await sleep(40);
+    expect(order).toEqual(["holder"]);
+    releaseFirst();
+    expect(await first).toBe("a");
+    expect(await second).toBe("b");
+    expect(order).toEqual(["holder", "waiter"]);
   });
 });

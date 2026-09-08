@@ -27,6 +27,7 @@ import { ORDERS_LIST_PAGE_ASSISTANT_DEFAULT_LIMIT } from "../tool-facades/orders
 import { STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK } from "../turn-speech.js";
 import { HOST_HITL_PAUSED_STATUS } from "./execute.js";
 import {
+  refuseHostPendingOpen,
   runStaffAssistantHostTurn,
   type StaffAssistantHostCheckpoint,
 } from "./loop.js";
@@ -675,5 +676,91 @@ describe("runStaffAssistantHostTurn", () => {
       execute: () => Promise.resolve({ items: [], nextCursor: null }),
     });
     expect(turn.speech.source).toBe("model");
+  });
+
+  it("injects pending_replace when the host provides apply, without domain execute", async () => {
+    const execute = vi.fn(() => Promise.resolve({ orderId: customerId }));
+    const apply = vi.fn(() => Promise.resolve({ status: "replaced" as const }));
+    const model = new MockLanguageModelV3({
+      doStream: [
+        mockToolCallStream(
+          "call-replace",
+          "pending_replace",
+          JSON.stringify({
+            customerId,
+            items: [{ productId: customerId, quantityMilli: "1000" }],
+          }),
+        ),
+        mockTextStream("Updated this order."),
+      ],
+    });
+    const turn = await runStaffAssistantHostTurn({
+      model,
+      messages: [{ role: "user", content: "Make it two boxes" }],
+      contracts: [createOrder],
+      execute,
+      pendingReplace: { actionName: "orders.create", apply },
+    });
+    expect(execute).not.toHaveBeenCalled();
+    expect(apply).toHaveBeenCalledTimes(1);
+    expect(turn.speech.source).toBe("model");
+  });
+
+  it("refuses a second orders.create while pending is open (same actionName is not replace)", async () => {
+    const execute = vi.fn(() => Promise.resolve({ orderId: customerId }));
+    const model = new MockLanguageModelV3({
+      doStream: [
+        mockToolCallStream(
+          "call-create",
+          ORDERS_CREATE_TOOL_NAME,
+          JSON.stringify({
+            customerId,
+            items: [{ productId: customerId, quantityMilli: "1000" }],
+          }),
+        ),
+        mockTextStream("Finish the current picker first."),
+      ],
+    });
+    const turn = await runStaffAssistantHostTurn({
+      model,
+      messages: [{ role: "user", content: "Also create one for Olena" }],
+      contracts: [createOrder],
+      execute,
+      checkPending: ({ actionName }) => {
+        expect(actionName).toBe("orders.create");
+        return Promise.resolve(refuseHostPendingOpen("en"));
+      },
+    });
+    expect(execute).not.toHaveBeenCalled();
+    expect(turn.speech.source).toBe("model");
+    expect(JSON.stringify(model.doStreamCalls[1])).toContain("PENDING_OPEN");
+  });
+
+  it("continueStaffAssistantHostTurn runs from the provided persisted history only", async () => {
+    const execute = vi.fn(() =>
+      Promise.resolve({ items: [], nextCursor: null }),
+    );
+    const model = new MockLanguageModelV3({
+      doStream: [
+        mockToolCallStream("call-list", ORDERS_LIST_PAGE_TOOL_NAME, "{}"),
+        mockTextStream("Here is the list."),
+      ],
+    });
+    const { continueStaffAssistantHostTurn } = await import("./loop.js");
+    const turn = await continueStaffAssistantHostTurn({
+      model,
+      messages: [
+        { role: "user", content: "Create then list" },
+        { role: "assistant", content: "Created the order." },
+      ],
+      contracts: [listOrders],
+      execute,
+    });
+    expect(execute).toHaveBeenCalledWith(
+      "orders.list",
+      { kind: "page.summary", limit: ORDERS_LIST_PAGE_ASSISTANT_DEFAULT_LIMIT },
+      { toolCallId: "call-list" },
+    );
+    expect(turn.speech.text).toBe("Here is the list.");
   });
 });

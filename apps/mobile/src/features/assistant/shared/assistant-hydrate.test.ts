@@ -15,6 +15,7 @@ import {
   type AssistantSurface,
 } from "../surfaces";
 import {
+  applyOpenPendingToHydratedMessages,
   associateToolRunsWithAssistantMessages,
   entityResultIdsFromToolRuns,
   findOwnConversationId,
@@ -1067,6 +1068,9 @@ describe("assistant hydrate source", () => {
     expect(hook).toContain("resumeOwnAssistantConversation");
     expect(hook).toContain("auth.session?.userId");
     expect(hook).toContain('result.kind === "unavailable"');
+    expect(hook).not.toContain("getAssistantPending");
+    expect(hook).not.toContain("postAssistantConfirm");
+    expect(hook).not.toContain("postAssistantPendingAbandon");
     expect(hook).not.toContain("ensureAssistantConversation");
     expect(hook).not.toContain("userId:");
     expect(hook).not.toContain("companyId:");
@@ -1184,5 +1188,39 @@ describe("hydration registry derivation (SHO-456)", () => {
     expect(isUnrestorableListRun(getRun, unrestorable)).toBe(false);
     expect(isHydratableOrderEntityRun(getRun)).toBe(true);
     expect(isHydratableOrderEntityRun(customersListRun)).toBe(false);
+  });
+});
+
+describe("applyOpenPendingToHydratedMessages (SHO-522)", () => {
+  it("injects a confirmation card from GET pending", () => {
+    const challengeId = "22222222-2222-4222-8222-222222222222";
+    const messages = applyOpenPendingToHydratedMessages({
+      messages: [
+        {
+          id: MSG_ASSISTANT,
+          role: "assistant",
+          parts: [{ type: "text", text: "Confirm delete." }],
+        },
+      ],
+      pending: {
+        kind: "confirmation",
+        id: challengeId,
+        version: 2,
+        status: "open",
+        actionName: "customers.deleteCustomer",
+        challengeId,
+        summary: "Delete this archived customer.",
+        expiresAt: "2026-09-08T12:00:00.000Z",
+        toolCallId: "call-delete",
+      },
+    });
+    expect(messages[0]?.parts[1]).toMatchObject({
+      type: "data-confirmation",
+      data: {
+        challengeId,
+        pendingVersion: 2,
+        summary: "Delete this archived customer.",
+      },
+    });
   });
 });
