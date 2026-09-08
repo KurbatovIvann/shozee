@@ -240,8 +240,12 @@ export {
 export {
   allowHostPendingAlways,
   commitHostSpeech,
+  lastUsableHostModelText,
   runStaffAssistantHostTurn,
   usableHostModelText,
+  HOST_HITL_PAUSED_OUTPUT,
+  HOST_HITL_PAUSED_STATUS,
+  isHostHitlPausedOutput,
   type StaffAssistantHostPendingDecision,
   type StaffAssistantHostTurnOptions,
 } from "./runtime/loop.js";

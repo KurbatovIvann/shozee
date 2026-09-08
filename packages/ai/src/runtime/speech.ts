@@ -8,7 +8,6 @@
  */
 import { staffAssistantLocale, type StaffAssistantLocale } from "../locale.js";
 import {
-  lastStaffAssistantTypedToolErrorMessage,
   STAFF_ASSISTANT_EMPTY_SPEECH_FALLBACK,
   STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK,
   STAFF_ASSISTANT_TOOL_ERROR_FALLBACK,
@@ -37,16 +36,28 @@ export function usableHostModelText(rawText: string): string | undefined {
   return trimmed;
 }
 
+/**
+ * Last usable step text. Concatenated `result.text` can start with leftover
+ * `{…}` JSON from an earlier tool step and would discard later narration.
+ */
+export function lastUsableHostModelText(
+  stepTexts: readonly string[],
+): string | undefined {
+  let last: string | undefined;
+  for (const text of stepTexts) {
+    const usable = usableHostModelText(text);
+    if (usable !== undefined) {
+      last = usable;
+    }
+  }
+  return last;
+}
+
 function speechFallbackFromRuns(
   runs: readonly StaffAssistantTurnRun[],
-  toolErrorMessage: string | undefined,
   locale: StaffAssistantLocale,
 ): string {
   if (runs.some((run) => run.outcome === "error")) {
-    const fallback = toolErrorMessage?.trim();
-    if (fallback !== undefined && fallback !== "") {
-      return fallback;
-    }
     return STAFF_ASSISTANT_TOOL_ERROR_FALLBACK[locale];
   }
   if (
@@ -64,7 +75,9 @@ function speechFallbackFromRuns(
 
 /**
  * Commit the visible/persisted line for the new host.
- * Priority: usable model prose; else locale-keyed generic fallback.
+ * Priority: usable model prose; else one locale-keyed generic fallback.
+ * `toolOutputs` is accepted so callers can pass presented results; typed
+ * domain-error copy is not the bubble (ADR-0037 §4).
  */
 export function commitHostSpeech(options: {
   readonly locale: string | undefined;
@@ -79,11 +92,8 @@ export function commitHostSpeech(options: {
   if (usable !== undefined) {
     return { source: "model", text: usable };
   }
-  const toolErrorMessage = lastStaffAssistantTypedToolErrorMessage(
-    options.toolOutputs ?? [],
-  );
   return {
     source: "fallback",
-    text: speechFallbackFromRuns(options.runs, toolErrorMessage, locale),
+    text: speechFallbackFromRuns(options.runs, locale),
   };
 }

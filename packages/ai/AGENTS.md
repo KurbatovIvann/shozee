@@ -88,6 +88,10 @@ Until T5 there are two hosts:
   Priority: HITL / typed domain-error protocol copy; else usable model
   prose; else locale-keyed fallback. Guardrail rejects empty text,
   leftover `{ … }` JSON, and markdown dumps. `source` is in-memory.
+  `streamStaffAssistantChat` holds candidate `text-*` until that commit
+  so a tripped guardrail is never briefly shown. Tool progress, result
+  surfaces, and HITL events keep streaming immediately. Do **not** apply
+  hold-candidate to the test-only host.
 - **New** `runStaffAssistantHostTurn` (`src/runtime/`, ADR-0037) —
   tests invoke this loop directly. Do **not** retarget
   `POST /assistant/chat`. Usable model prose is the bubble. Guardrail

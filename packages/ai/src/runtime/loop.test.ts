@@ -18,11 +18,13 @@ import {
   MockLanguageModelV3,
   mockSpokenStream,
   mockTextStream,
+  mockToolCallAndSpokenStream,
   mockToolCallStream,
   mockToolCallsStream,
 } from "../test.js";
 import { ORDERS_LIST_PAGE_ASSISTANT_DEFAULT_LIMIT } from "../tool-facades/orders-list.js";
 import { STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK } from "../turn-speech.js";
+import { HOST_HITL_PAUSED_STATUS } from "./execute.js";
 import { runStaffAssistantHostTurn } from "./loop.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -402,6 +404,46 @@ describe("runStaffAssistantHostTurn", () => {
       text: "Please confirm deleting this customer.",
     });
     expect(turn.text).not.toBe(STAFF_ASSISTANT_CONFIRMATION_COPY.uk);
+    expect(model.doStreamCalls.length).toBeGreaterThanOrEqual(2);
+    const narrationStep = JSON.stringify(model.doStreamCalls[1]);
+    expect(narrationStep).toContain(HOST_HITL_PAUSED_STATUS);
+    expect(narrationStep).not.toContain('"INTERNAL"');
+  });
+
+  it("commits HITL narration from a later step when the tool step is leftover JSON", async () => {
+    const execute = vi.fn((actionName: string) => {
+      if (actionName === "customers.deleteCustomer") {
+        return Promise.reject(
+          new ConfirmationRequiredError({
+            challengeId,
+            summary: "Delete this archived customer.",
+            expiresAt: "2026-09-01T12:00:00.000Z",
+          }),
+        );
+      }
+      return Promise.resolve({ items: [], nextCursor: null });
+    });
+    const narration = "Please confirm deleting this customer.";
+    const model = new MockLanguageModelV3({
+      doStream: [
+        mockToolCallAndSpokenStream(
+          "call-delete",
+          toProviderToolName("customers.deleteCustomer"),
+          JSON.stringify({ id: customerId }),
+          "ignored leftover spoken",
+        ),
+        mockTextStream(narration),
+      ],
+    });
+    const turn = await runStaffAssistantHostTurn({
+      model,
+      messages: [{ role: "user", content: "Delete the customer" }],
+      contracts: [deleteCustomer],
+      execute,
+    });
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(turn.speech).toEqual({ source: "model", text: narration });
+    expect(turn.text).toBe(narration);
   });
 
   it("stops further tools after needs_choice and still commits narration", async () => {
@@ -461,6 +503,60 @@ describe("runStaffAssistantHostTurn", () => {
       source: "model",
       text: "Pick a variant for Macarons.",
     });
+  });
+
+  it("records a returned confirmation_required payload, not success", async () => {
+    const execute = vi.fn((actionName: string) => {
+      if (actionName === "customers.deleteCustomer") {
+        return Promise.resolve({
+          status: "confirmation_required" as const,
+          challengeId,
+          summary: "Delete this archived customer.",
+          expiresAt: "2026-09-01T12:00:00.000Z",
+          actionName: "customers.deleteCustomer",
+          toolCallId: "call-delete",
+        });
+      }
+      return Promise.resolve({ items: [], nextCursor: null });
+    });
+    const model = new MockLanguageModelV3({
+      doStream: [
+        mockToolCallsStream([
+          {
+            toolCallId: "call-delete",
+            toolName: toProviderToolName("customers.deleteCustomer"),
+            input: JSON.stringify({ id: customerId }),
+          },
+          {
+            toolCallId: "call-list",
+            toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+            input: "{}",
+          },
+        ]),
+        mockTextStream("Please confirm deleting this customer."),
+      ],
+    });
+    const turn = await runStaffAssistantHostTurn({
+      model,
+      messages: [{ role: "user", content: "Delete the customer then list" }],
+      contracts: [deleteCustomer, listOrders],
+      execute,
+    });
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(turn.toolRuns).toEqual([
+      {
+        actionName: "customers.deleteCustomer",
+        toolCallId: "call-delete",
+        challengeId,
+        resultIds: [],
+        outcome: "confirmation_required",
+      },
+    ]);
+    expect(turn.toolRuns[0]?.outcome).not.toBe("success");
+    expect(model.doStreamCalls.length).toBeGreaterThanOrEqual(2);
+    const narrationStep = JSON.stringify(model.doStreamCalls[1]);
+    expect(narrationStep).toContain(HOST_HITL_PAUSED_STATUS);
+    expect(narrationStep).not.toContain('"INTERNAL"');
   });
 
   it("does not call generateText (gate) during a host turn", async () => {

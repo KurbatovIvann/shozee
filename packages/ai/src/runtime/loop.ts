@@ -61,14 +61,28 @@ import {
 import { staffAssistantTurnUsageFromTotal } from "../usage.js";
 
 import {
+  isHostHitlPausedOutput,
   wrapHostSequentialExecute,
   type StaffAssistantHostPendingDecision,
 } from "./execute.js";
-import { commitHostSpeech, usableHostModelText } from "./speech.js";
+import {
+  commitHostSpeech,
+  lastUsableHostModelText,
+  usableHostModelText,
+} from "./speech.js";
 
 export type { StaffAssistantHostPendingDecision } from "./execute.js";
-export { allowHostPendingAlways } from "./execute.js";
-export { commitHostSpeech, usableHostModelText } from "./speech.js";
+export {
+  allowHostPendingAlways,
+  HOST_HITL_PAUSED_OUTPUT,
+  HOST_HITL_PAUSED_STATUS,
+  isHostHitlPausedOutput,
+} from "./execute.js";
+export {
+  commitHostSpeech,
+  lastUsableHostModelText,
+  usableHostModelText,
+} from "./speech.js";
 
 interface ClipByteMeter {
   in: number;
@@ -107,6 +121,9 @@ function clipToolExecutes(
       ...aiTool,
       execute: async (input, options) => {
         const output: unknown = await inner(input, options);
+        if (isHostHitlPausedOutput(output)) {
+          return output;
+        }
         const returned = meterToolResult(
           clipBytes,
           output,
@@ -196,17 +213,6 @@ function attachClippedModelTraces(
     }
     return { ...run, toolName: presentedRun.toolName, modelTrace };
   });
-}
-
-async function hostModelStepCount(
-  steps: PromiseLike<unknown>,
-): Promise<number> {
-  try {
-    const value = await steps;
-    return Array.isArray(value) ? value.length : 0;
-  } catch {
-    return 0;
-  }
 }
 
 export interface StaffAssistantHostTurnOptions {
@@ -299,9 +305,17 @@ export async function runStaffAssistantHostTurn(
     rawText = "";
   }
 
+  let steps: Array<StepResult<ToolSet>>;
+  try {
+    steps = await result.steps;
+  } catch {
+    steps = [];
+  }
+
+  const fromSteps = lastUsableHostModelText(steps.map((step) => step.text));
   const speech = commitHostSpeech({
     locale,
-    rawText,
+    rawText: fromSteps ?? (steps.length === 0 ? rawText : ""),
     runs: state.runs,
     toolOutputs: presentedToolResults.map((item) => item.output),
   });
@@ -315,7 +329,7 @@ export async function runStaffAssistantHostTurn(
     ),
     usage: await staffAssistantTurnUsageFromTotal(result.usage),
     toolsAttached: Object.keys(tools).length > 0,
-    modelSteps: await hostModelStepCount(result.steps),
+    modelSteps: steps.length,
     toolResultBytesIn: clipBytes.in,
     toolResultBytesOut: clipBytes.out,
     toolsetHash,

@@ -1,0 +1,114 @@
+import { ConfirmationRequiredError } from "@showzy/core/errors";
+import { describe, expect, it, vi } from "vitest";
+
+import { STAFF_ASSISTANT_TOOL_ERROR_FALLBACK } from "../turn-speech.js";
+import {
+  HOST_HITL_PAUSED_OUTPUT,
+  wrapHostSequentialExecute,
+  type StaffAssistantHostExecuteState,
+} from "./execute.js";
+
+const customerId = "11111111-1111-4111-8111-111111111111";
+const challengeId = "22222222-2222-4222-8222-222222222222";
+
+function emptyHostState(): StaffAssistantHostExecuteState {
+  return { paused: false, runs: [] };
+}
+
+describe("wrapHostSequentialExecute", () => {
+  it("returns a hitl_paused sentinel for siblings, not INTERNAL", async () => {
+    const execute = vi.fn((actionName: string) => {
+      if (actionName === "customers.deleteCustomer") {
+        return Promise.reject(
+          new ConfirmationRequiredError({
+            challengeId,
+            summary: "Delete this archived customer.",
+            expiresAt: "2026-09-01T12:00:00.000Z",
+          }),
+        );
+      }
+      return Promise.resolve({ items: [], nextCursor: null });
+    });
+    const state = emptyHostState();
+    const wrapped = wrapHostSequentialExecute(execute, state, {});
+    await wrapped(
+      "customers.deleteCustomer",
+      { id: customerId },
+      {
+        toolCallId: "call-delete",
+      },
+    );
+    const sibling = await wrapped(
+      "orders.list",
+      {},
+      { toolCallId: "call-list" },
+    );
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(sibling).toEqual(HOST_HITL_PAUSED_OUTPUT);
+    expect(sibling).not.toMatchObject({
+      status: "error",
+      code: "INTERNAL",
+    });
+    expect(JSON.stringify(sibling)).not.toContain(
+      STAFF_ASSISTANT_TOOL_ERROR_FALLBACK.en,
+    );
+    expect(JSON.stringify(sibling)).not.toContain(
+      STAFF_ASSISTANT_TOOL_ERROR_FALLBACK.uk,
+    );
+  });
+
+  it("records a returned confirmation_required payload as that outcome, not success", async () => {
+    const execute = vi.fn(() =>
+      Promise.resolve({
+        status: "confirmation_required" as const,
+        challengeId,
+        summary: "Delete this archived customer.",
+        expiresAt: "2026-09-01T12:00:00.000Z",
+        actionName: "customers.deleteCustomer",
+        toolCallId: "call-delete",
+      }),
+    );
+    const state = emptyHostState();
+    const wrapped = wrapHostSequentialExecute(execute, state, {});
+    const output = await wrapped(
+      "customers.deleteCustomer",
+      { id: customerId },
+      { toolCallId: "call-delete" },
+    );
+    expect(output).toMatchObject({
+      status: "confirmation_required",
+      challengeId,
+    });
+    expect(state.runs).toEqual([
+      {
+        actionName: "customers.deleteCustomer",
+        toolCallId: "call-delete",
+        challengeId,
+        resultIds: [],
+        outcome: "confirmation_required",
+      },
+    ]);
+    expect(state.paused).toBe(true);
+    expect(state.runs[0]?.outcome).not.toBe("success");
+  });
+
+  it("records a returned needs_choice payload as choice_required, not success", async () => {
+    const execute = vi.fn(() =>
+      Promise.resolve({
+        status: "needs_choice" as const,
+        challengeId,
+        reason: "variant_required" as const,
+        productName: "Macarons",
+        options: [{ id: customerId, label: "Lemon" }],
+        optionsTruncated: false,
+      }),
+    );
+    const state = emptyHostState();
+    const wrapped = wrapHostSequentialExecute(execute, state, {});
+    await wrapped("orders.create", {}, { toolCallId: "call-create" });
+    expect(state.runs[0]?.outcome).toBe("choice_required");
+    expect(state.runs[0]?.challengeId).toBe(challengeId);
+    expect(state.runs[0]?.outcome).not.toBe("success");
+    expect(state.paused).toBe(true);
+  });
+});

@@ -9,6 +9,8 @@ import { ConfirmationRequiredError, CoreError } from "@showzy/core/errors";
 
 import type { ActionToolExecute } from "../action-tool.js";
 import {
+  STAFF_ASSISTANT_NEEDS_CHOICE_STATUS,
+  isStaffAssistantNeedsChoiceOutput,
   needsChoiceFromOrdersCreateConflict,
   staffAssistantTypedDomainErrorOutput,
   type ChoiceBind,
@@ -32,6 +34,26 @@ import { STAFF_ASSISTANT_TOOL_ERROR_FALLBACK } from "../turn-speech.js";
 
 export type StaffAssistantHostPendingDecision =
   { readonly allow: true } | { readonly allow: false };
+
+export const HOST_HITL_PAUSED_STATUS = "hitl_paused" as const;
+
+export const HOST_HITL_PAUSED_OUTPUT = {
+  status: HOST_HITL_PAUSED_STATUS,
+} as const;
+
+export type HostHitlPausedOutput = typeof HOST_HITL_PAUSED_OUTPUT;
+
+export function isHostHitlPausedOutput(
+  value: unknown,
+): value is HostHitlPausedOutput {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    "status" in value &&
+    value.status === HOST_HITL_PAUSED_STATUS
+  );
+}
 
 export function allowHostPendingAlways(): Promise<StaffAssistantHostPendingDecision> {
   return Promise.resolve({ allow: true });
@@ -81,6 +103,42 @@ function createSerialQueue(): {
   };
 }
 
+function hitlFromReturnedOutput(output: unknown):
+  | {
+      readonly outcome: "confirmation_required" | "choice_required";
+      readonly challengeId?: string;
+    }
+  | undefined {
+  if (isStaffAssistantConfirmationOutput(output)) {
+    return {
+      outcome: "confirmation_required",
+      challengeId: output.challengeId,
+    };
+  }
+  if (isStaffAssistantNeedsChoiceOutput(output)) {
+    return {
+      outcome: "choice_required",
+      challengeId: output.challengeId,
+    };
+  }
+  if (
+    typeof output === "object" &&
+    output !== null &&
+    "status" in output &&
+    output.status === STAFF_ASSISTANT_NEEDS_CHOICE_STATUS
+  ) {
+    const challengeId =
+      "challengeId" in output && typeof output.challengeId === "string"
+        ? output.challengeId
+        : undefined;
+    if (challengeId === undefined) {
+      return { outcome: "choice_required" };
+    }
+    return { outcome: "choice_required", challengeId };
+  }
+  return undefined;
+}
+
 function wrapDomainExecute(
   execute: ActionToolExecute,
   state: StaffAssistantHostExecuteState,
@@ -104,21 +162,26 @@ function wrapDomainExecute(
       const output: unknown = await execute(actionName, input, {
         toolCallId,
       });
+      const hitl = hitlFromReturnedOutput(output);
+      if (hitl !== undefined) {
+        state.runs.push({
+          actionName,
+          toolCallId,
+          resultIds: [],
+          outcome: hitl.outcome,
+          ...(hitl.challengeId !== undefined
+            ? { challengeId: hitl.challengeId }
+            : {}),
+        });
+        state.paused = true;
+        return output;
+      }
       state.runs.push({
         actionName,
         toolCallId,
         resultIds: extractUuidResultIds(output),
         outcome: "success",
       });
-      if (
-        isStaffAssistantConfirmationOutput(output) ||
-        (typeof output === "object" &&
-          output !== null &&
-          "status" in output &&
-          output.status === "needs_choice")
-      ) {
-        state.paused = true;
-      }
       return output;
     } catch (error) {
       if (error instanceof ConfirmationRequiredError) {
@@ -218,11 +281,7 @@ export function wrapHostSequentialExecute(
   return (actionName, input, options) =>
     queue.enqueue(async () => {
       if (state.paused) {
-        return {
-          status: "error",
-          code: "INTERNAL",
-          message: hostInternalToolErrorMessage(locale),
-        };
+        return HOST_HITL_PAUSED_OUTPUT;
       }
       const pending = await checkPending();
       if (!pending.allow) {

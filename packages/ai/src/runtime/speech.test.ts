@@ -6,8 +6,13 @@ import { presentCatalogDomainError } from "../domain-error.js";
 import {
   STAFF_ASSISTANT_EMPTY_SPEECH_FALLBACK,
   STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK,
+  STAFF_ASSISTANT_TOOL_ERROR_FALLBACK,
 } from "../turn-speech.js";
-import { commitHostSpeech, usableHostModelText } from "./speech.js";
+import {
+  commitHostSpeech,
+  lastUsableHostModelText,
+  usableHostModelText,
+} from "./speech.js";
 
 describe("usableHostModelText", () => {
   it("keeps plain prose, emphasis, and markdown tables", () => {
@@ -22,6 +27,15 @@ describe("usableHostModelText", () => {
     expect(
       usableHostModelText('{"spoken":"Four orders this week."}'),
     ).toBeUndefined();
+  });
+
+  it("picks the last usable step text after leftover JSON", () => {
+    expect(
+      lastUsableHostModelText([
+        '{"spoken":"ignored leftover"}',
+        "Please confirm deleting this customer.",
+      ]),
+    ).toBe("Please confirm deleting this customer.");
   });
 });
 
@@ -116,6 +130,23 @@ describe("commitHostSpeech", () => {
         runs: [{ outcome: "error" }],
       }).text,
     ).not.toBe(archived);
+    expect(
+      commitHostSpeech({
+        locale: "uk",
+        rawText: '{"spoken":"That product is archived."}',
+        runs: [{ outcome: "error" }],
+        toolOutputs: [
+          {
+            status: "error",
+            code: "CONFLICT",
+            message: archived,
+          },
+        ],
+      }),
+    ).toEqual({
+      source: "fallback",
+      text: STAFF_ASSISTANT_TOOL_ERROR_FALLBACK.uk,
+    });
   });
 
   it("uses empty fallback when there is no model text and no runs", () => {
