@@ -8,6 +8,7 @@ export {
   createOrderInputSchema,
 } from "./actions/create.contract.js";
 export { getOrderContract } from "./actions/get.contract.js";
+export { searchMatchesContract } from "./actions/search-matches.contract.js";
 export {
   LIST_ORDERS_CURSOR_MAX,
   LIST_ORDERS_CUSTOMER_IDS_MAX,

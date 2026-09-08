@@ -24,6 +24,7 @@ export {
 export { listMatchingIdsContract } from "./actions/list-matching-ids.contract.js";
 export { resolveCustomerReferenceContract } from "./actions/resolve-customer-reference.contract.js";
 export { restoreCustomerContract } from "./actions/restore-customer.contract.js";
+export { searchMatchesContract } from "./actions/search-matches.contract.js";
 export { updateCounterpartyContract } from "./actions/update-counterparty.contract.js";
 export { updateCustomerContract } from "./actions/update-customer.contract.js";
 export { updateGroupContract } from "./actions/update-group.contract.js";

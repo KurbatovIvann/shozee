@@ -15,6 +15,7 @@ export {
 export { resolveLineReferencesContract } from "./actions/resolve-line-references.contract.js";
 export { restoreProductContract } from "./actions/restore-product.contract.js";
 export { restoreVariantContract } from "./actions/restore-variant.contract.js";
+export { searchMatchesContract } from "./actions/search-matches.contract.js";
 export { setProductImagesContract } from "./actions/set-product-images.contract.js";
 export { updateProductContract } from "./actions/update-product.contract.js";
 export { updateVariantContract } from "./actions/update-variant.contract.js";

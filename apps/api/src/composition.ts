@@ -61,6 +61,8 @@ import {
 import { ordersSuiteCoverage } from "@showzy/orders/suite-coverage";
 import { pricingActions } from "@showzy/pricing";
 import { pricingSuiteCoverage } from "@showzy/pricing/suite-coverage";
+import { searchActions } from "@showzy/search";
+import { searchSuiteCoverage } from "@showzy/search/suite-coverage";
 import {
   ActionRegistry,
   emptySuiteCoverage,
@@ -97,6 +99,7 @@ const moduleSuiteCoverage: readonly SuiteCoverageManifest[] = [
   invitesSuiteCoverage,
   ordersSuiteCoverage,
   pricingSuiteCoverage,
+  searchSuiteCoverage,
 ];
 
 const events: readonly EventDefinitionRef[] = [
@@ -134,6 +137,14 @@ const callEdges: readonly DeclaredCallEdge[] = [
   {
     caller: "orders.list",
     callee: "customers.listMatchingIds",
+  },
+  {
+    caller: "orders.searchMatches",
+    callee: "companies.get",
+  },
+  {
+    caller: "documents.searchMatches",
+    callee: "companies.get",
   },
   {
     caller: "pricing.resolveProductPrices",
@@ -361,6 +372,7 @@ export function createActionRegistry(): ActionRegistry {
   registerActions(registry, docSigningActions);
   registerActions(registry, ordersActions);
   registerActions(registry, pricingActions);
+  registerActions(registry, searchActions);
   return registry;
 }
 

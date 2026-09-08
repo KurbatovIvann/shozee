@@ -13,6 +13,7 @@ export {
 } from "./actions/list-price-lists.contract.js";
 export { removePriceListEntriesContract } from "./actions/remove-price-list-entries.contract.js";
 export { resolveProductPricesContract } from "./actions/resolve-product-prices.contract.js";
+export { searchMatchesContract } from "./actions/search-matches.contract.js";
 export { setDefaultPriceListContract } from "./actions/set-default-price-list.contract.js";
 export { setPriceListEntriesContract } from "./actions/set-price-list-entries.contract.js";
 export { updatePriceListContract } from "./actions/update-price-list.contract.js";

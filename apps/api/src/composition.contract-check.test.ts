@@ -309,4 +309,57 @@ describe("CI contract-check stage", () => {
     expect(appSrc).not.toContain("ASSISTANT_PENDING_ABANDON_PATH");
     expect(appSrc).not.toContain('"/assistant/host/chat"');
   });
+
+  it("SHO-527: search.query is staff/client/internal with companies:view; matchers are internal reads; prefix edges go to companies.get", () => {
+    const input = buildContractCheckInput();
+    const contracts = input.registry.contracts();
+    const byName = new Map(
+      contracts.map((contract) => [contract.name, contract]),
+    );
+
+    const query = byName.get("search.query");
+    expect(query).toBeDefined();
+    expect(query?.principal).toBe("staff");
+    expect(query?.transport).toBe("client");
+    expect(query?.aiExposure).toBe("internal");
+    expect(query?.risk).toBe("read");
+    expect(query?.permissions).toEqual(["companies:view"]);
+    expect(query?.timeout).toBe(10_000);
+    expect(staffExposedActionNames(contracts)).not.toContain("search.query");
+
+    const matchers = [
+      "customers.searchMatches",
+      "catalog.searchMatches",
+      "orders.searchMatches",
+      "pricing.searchMatches",
+      "documents.searchMatches",
+    ] as const;
+    const permissionByMatcher = {
+      "customers.searchMatches": ["customers:view"],
+      "catalog.searchMatches": ["products:view"],
+      "orders.searchMatches": ["orders:view"],
+      "pricing.searchMatches": ["pricing:view"],
+      "documents.searchMatches": ["documents:view"],
+    } as const;
+    for (const name of matchers) {
+      const matcher = byName.get(name);
+      expect(matcher).toBeDefined();
+      expect(matcher?.principal).toBe("staff");
+      expect(matcher?.transport).toBe("internal");
+      expect(matcher?.aiExposure).toBe("internal");
+      expect(matcher?.risk).toBe("read");
+      expect(matcher?.permissions).toEqual(permissionByMatcher[name]);
+    }
+
+    expect(input.callEdges).toContainEqual({
+      caller: "orders.searchMatches",
+      callee: "companies.get",
+    });
+    expect(input.callEdges).toContainEqual({
+      caller: "documents.searchMatches",
+      callee: "companies.get",
+    });
+    expect(byName.get("companies.get")?.transport).toBe("client");
+    expect(byName.get("companies.get")?.aiExposure).toBe("exposed");
+  });
 });

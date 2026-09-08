@@ -4,6 +4,7 @@ import { confirmOrder } from "./actions/confirm.js";
 import { createOrder } from "./actions/create.js";
 import { getOrder } from "./actions/get.js";
 import { listOrders } from "./actions/list.js";
+import { searchMatches } from "./actions/search-matches.js";
 import { startOrder } from "./actions/start.js";
 
 export { cancelOrder };
@@ -12,6 +13,7 @@ export { confirmOrder };
 export { createOrder };
 export { getOrder };
 export { listOrders };
+export { searchMatches };
 export { startOrder };
 export { ordersCanceled } from "./events/canceled.js";
 export { ordersCompleted } from "./events/completed.js";
@@ -27,4 +29,5 @@ export const ordersActions = [
   cancelOrder,
   getOrder,
   listOrders,
+  searchMatches,
 ] as const;
