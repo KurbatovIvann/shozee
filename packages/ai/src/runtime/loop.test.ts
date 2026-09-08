@@ -225,6 +225,13 @@ describe("runStaffAssistantHostTurn", () => {
       text: "You have no orders.",
     });
     expect(turn.text).toBe("You have no orders.");
+    expect(turn.modelToolCalls).toEqual([
+      {
+        toolCallId: "call-list",
+        toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+        input: {},
+      },
+    ]);
   });
 
   it("falls back when leftover JSON makes text unusable", async () => {

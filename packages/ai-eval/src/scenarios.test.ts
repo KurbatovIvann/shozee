@@ -90,6 +90,9 @@ describe("MODEL_SPEAKS_SCENARIOS", () => {
     expect(MODEL_SPEAKS_SCENARIOS[1]?.expectation.ordered?.[0]?.name).toBe(
       ORDERS_LIST_COUNTS_TOOL_NAME,
     );
+    expect(MODEL_SPEAKS_SCENARIOS[1]?.expectation.ordered?.[0]?.args).toEqual({
+      period: "this_week",
+    });
     expect(MODEL_SPEAKS_SCENARIOS[2]?.expectation.ordered?.[0]?.name).toBe(
       CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME,
     );

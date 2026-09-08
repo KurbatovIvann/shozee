@@ -9,7 +9,7 @@ import {
   streamStaffAssistantChat,
   type ActionToolExecute,
   type LanguageModel,
-  type StaffAssistantToolRun,
+  type StaffAssistantHostModelToolCall,
   type StaffAssistantTurnUsage,
 } from "@showzy/ai";
 import type { ActionContract } from "@showzy/core/contract";
@@ -19,6 +19,7 @@ import type { EvalTurnTrace } from "./expectation.js";
 import { logEvalInfo, type EvalLogger } from "./log.js";
 import type { EvalAssistantHost } from "./scenario.js";
 import {
+  collectEvalToolCalls,
   collectEvalToolCallsFromResponse,
   type EvalToolCall,
 } from "./trace.js";
@@ -57,31 +58,27 @@ function lastUserText(messages: readonly ModelMessage[]): string {
 function capturingExecute(
   execute: ActionToolExecute,
   executeResults: Map<string, unknown>,
-  executeInputs?: Map<string, unknown>,
 ): ActionToolExecute {
   return async (actionName, input, toolOptions) => {
     const result = await execute(actionName, input, toolOptions);
     executeResults.set(toolOptions.toolCallId, result);
-    executeInputs?.set(toolOptions.toolCallId, input);
     return result;
   };
 }
 
-function evalToolCallsFromHostRuns(
-  runs: readonly StaffAssistantToolRun[],
-  executeResults: ReadonlyMap<string, unknown>,
-  executeInputs: ReadonlyMap<string, unknown>,
-): EvalToolCall[] {
-  return runs.map((run) => {
-    const result = executeResults.get(run.toolCallId);
-    const args = executeInputs.get(run.toolCallId);
-    return {
-      toolCallId: run.toolCallId,
-      name: run.toolName ?? run.actionName,
-      args,
-      ...(result !== undefined ? { result } : {}),
-    };
-  });
+/**
+ * Same payload shape as live SSE `collectEvalToolCalls`: façade / provider
+ * `input` from streamText step tool calls, not canonical execute input.
+ */
+function evalPayloadsFromHostModelToolCalls(
+  calls: readonly StaffAssistantHostModelToolCall[],
+): unknown[] {
+  return calls.map((call) => ({
+    type: "tool-call",
+    toolCallId: call.toolCallId,
+    toolName: call.toolName,
+    input: call.input,
+  }));
 }
 
 function finishEvalTurn(options: {
@@ -144,12 +141,11 @@ async function runNewHostEvalTurn(options: {
   readonly companyName?: string;
 }): Promise<EvalTurnResult> {
   const executeResults = new Map<string, unknown>();
-  const executeInputs = new Map<string, unknown>();
   const turn = await runStaffAssistantHostTurn({
     model: options.models.languageModel,
     messages: [...options.messages],
     contracts: options.contracts,
-    execute: capturingExecute(options.execute, executeResults, executeInputs),
+    execute: capturingExecute(options.execute, executeResults),
     turnContextAddendum: staffAssistantTurnContextAddendum({
       now: new Date(),
       ...(options.companyName !== undefined
@@ -160,10 +156,9 @@ async function runNewHostEvalTurn(options: {
   return finishEvalTurn({
     logger: options.logger,
     text: turn.text,
-    toolCalls: evalToolCallsFromHostRuns(
-      turn.toolRuns,
+    toolCalls: collectEvalToolCalls(
+      evalPayloadsFromHostModelToolCalls(turn.modelToolCalls),
       executeResults,
-      executeInputs,
     ),
     speechSource: turn.speech.source,
     usage: turn.usage,

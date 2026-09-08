@@ -300,4 +300,55 @@ describe("runStaffAssistantEvalTurn", () => {
     expect(result.trace.text).toBe(STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK.uk);
     expect(result.trace.text).not.toBe("12");
   });
+
+  it("MODEL_SPEAKS host records façade counts args so this_week matches", async () => {
+    const execute = vi.fn(() =>
+      Promise.resolve({
+        kind: "aggregate",
+        orderCount: 4,
+        buckets: [],
+      }),
+    );
+    const result = await runStaffAssistantEvalTurn({
+      host: "new",
+      models: {
+        languageModel: new MockLanguageModelV3({
+          doStream: [
+            mockToolCallStream(
+              "call-counts",
+              ORDERS_LIST_COUNTS_TOOL_NAME,
+              JSON.stringify({ period: "this_week" }),
+            ),
+            mockTextStream("4"),
+          ],
+        }),
+        replyModelId: "mock-sonnet",
+        gateModelId: "mock-haiku",
+      },
+      messages: [{ role: "user", content: "скільки замовлень цього тижня" }],
+      contracts: [listOrdersContract],
+      execute,
+      logger: silentLogger,
+    });
+    expect(execute).toHaveBeenCalledWith(
+      "orders.list",
+      expect.objectContaining({
+        kind: "aggregate",
+        filter: expect.objectContaining({
+          createdFrom: expect.any(String),
+          createdTo: expect.any(String),
+        }),
+      }),
+      { toolCallId: "call-counts" },
+    );
+    expect(execute.mock.calls[0]?.[1]).not.toHaveProperty("period");
+    expect(result.trace.toolCalls[0]?.args).toEqual({ period: "this_week" });
+    expect(result.trace.speechSource).toBe("model");
+    expect(
+      matchEvalExpectation(
+        MODEL_SPEAKS_SCENARIOS[1]?.expectation ?? {},
+        result.trace,
+      ),
+    ).toEqual({ ok: true });
+  });
 });

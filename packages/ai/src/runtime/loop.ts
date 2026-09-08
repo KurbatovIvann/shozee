@@ -84,6 +84,17 @@ export {
   usableHostModelText,
 } from "./speech.js";
 
+/** streamText step tool call as the model sent it (façade / provider input). */
+export interface StaffAssistantHostModelToolCall {
+  readonly toolCallId: string;
+  readonly toolName: string;
+  readonly input: unknown;
+}
+
+export interface StaffAssistantHostTurnResult extends StaffAssistantTurnResult {
+  readonly modelToolCalls: readonly StaffAssistantHostModelToolCall[];
+}
+
 interface ClipByteMeter {
   in: number;
   out: number;
@@ -173,6 +184,22 @@ function hostShouldStopAfterHitl(steps: Array<StepResult<ToolSet>>): boolean {
   return usableHostModelText(last.text) !== undefined;
 }
 
+function hostModelToolCallsFromSteps(
+  steps: readonly StepResult<ToolSet>[],
+): StaffAssistantHostModelToolCall[] {
+  const calls: StaffAssistantHostModelToolCall[] = [];
+  for (const step of steps) {
+    for (const call of step.toolCalls) {
+      calls.push({
+        toolCallId: call.toolCallId,
+        toolName: call.toolName,
+        input: call.input,
+      });
+    }
+  }
+  return calls;
+}
+
 function attachClippedModelTraces(
   runs: readonly StaffAssistantToolRun[],
   presented: readonly StaffAssistantPresentedToolResult[],
@@ -235,7 +262,7 @@ export interface StaffAssistantHostTurnOptions {
  */
 export async function runStaffAssistantHostTurn(
   options: StaffAssistantHostTurnOptions,
-): Promise<StaffAssistantTurnResult> {
+): Promise<StaffAssistantHostTurnResult> {
   const state = { paused: false, runs: [] as StaffAssistantToolRun[] };
   const presentedToolResults: StaffAssistantPresentedToolResult[] = [];
   const clipBytes: ClipByteMeter = { in: 0, out: 0 };
@@ -327,6 +354,7 @@ export async function runStaffAssistantHostTurn(
       state.runs.slice(0, STAFF_ASSISTANT_TOOL_RUNS_MAX),
       presentedToolResults,
     ),
+    modelToolCalls: hostModelToolCallsFromSteps(steps),
     usage: await staffAssistantTurnUsageFromTotal(result.usage),
     toolsAttached: Object.keys(tools).length > 0,
     modelSteps: steps.length,
