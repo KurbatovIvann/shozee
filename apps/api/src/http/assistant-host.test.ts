@@ -61,6 +61,10 @@ describe("live staff-assistant host (SHO-524)", () => {
     expect(hostSrc).toContain("run.toolName === null");
     expect(hostSrc).toContain("startedRunsForResumeTurnRecovery");
     expect(hostSrc).toContain("startedRunsForChatRecovery");
+    expect(hostSrc).toContain("resolveStagedExecutionId");
+    expect(hostSrc).not.toContain("stagePhaseAExecutionId");
+    expect(hostSrc).not.toContain("begin:phase-a:");
+    expect(hostSrc).toContain('attemptKey("choice"');
     expect(hostSrc).toContain("isChatTurnKey");
     expect(hostSrc).toContain("isResumeTurnKey");
     expect(hostSrc).toContain("hasUnfinishedResumeTurn");
