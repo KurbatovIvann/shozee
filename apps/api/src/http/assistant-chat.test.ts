@@ -98,6 +98,8 @@ describe("staff AI tool manifest (SHO-322)", () => {
     }
     expect(names).toContain(ORDERS_LIST_PAGE_TOOL_NAME);
     expect(names).toContain(ORDERS_LIST_COUNTS_TOOL_NAME);
+    expect(names).toContain("search_query");
+    expect(names).not.toContain("search.query");
     expect(names).not.toContain(toProviderToolName("orders.list"));
     expect(names).not.toContain("orders.list");
     expect(names).toContain(CATALOG_LIST_PRODUCTS_TOOL_NAME);
@@ -180,6 +182,8 @@ describe("staff AI tool manifest (SHO-322)", () => {
     expect(names).toContain(CATALOG_LIST_PRODUCTS_TOOL_NAME);
     expect(names).toContain(PRICING_LIST_PRICE_LISTS_TOOL_NAME);
     expect(names).toContain(CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME);
+    expect(names).toContain("search_query");
+    expect(names).not.toContain("search.query");
     expect(staffAssistantHotToolNames()).toEqual([
       ORDERS_LIST_PAGE_TOOL_NAME,
       ORDERS_LIST_COUNTS_TOOL_NAME,
@@ -188,6 +192,7 @@ describe("staff AI tool manifest (SHO-322)", () => {
       CATALOG_LIST_PRODUCTS_TOOL_NAME,
       PRICING_LIST_PRICE_LISTS_TOOL_NAME,
       CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME,
+      "search_query",
     ]);
   });
 });
