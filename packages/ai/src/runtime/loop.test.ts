@@ -198,6 +198,7 @@ describe("runStaffAssistantHostTurn", () => {
     expect(src).toContain("commitHostSpeech");
     expect(src).toContain("priorRuns");
     expect(src).toContain("recoverStartedRuns");
+    expect(src).toContain("isHostSeededHitlToolCallId");
     expect(src).toContain("streamText");
     expect(src).not.toContain("staff-assistant-stream");
     const toolRun = readFileSync(join(here, "../tool-run.ts"), "utf8");
@@ -903,6 +904,160 @@ describe("runStaffAssistantHostTurn", () => {
     );
     expect(turn.speech.source).toBe("model");
     expect(turn.speech.text).toBe("Listed from storage.");
+    expect(turn.modelToolCalls).toEqual([]);
+  });
+
+  it("replays a started run when begin() mints a new assistant messageId", async () => {
+    const kinds: string[] = [];
+    const checkpoint: StaffAssistantHostCheckpoint = {
+      begin: () => {
+        kinds.push("begin");
+        return Promise.resolve({ messageId: "msg-new" });
+      },
+      stageRun: () => {
+        throw new Error("stageRun must not mint on started-run recovery");
+      },
+      finishRun: (input) => {
+        kinds.push(`finishRun:${input.executionId}`);
+        return Promise.resolve();
+      },
+      complete: () => {
+        kinds.push("complete");
+        return Promise.resolve();
+      },
+    };
+    const execute = vi.fn(
+      (
+        _actionName: string,
+        _input: unknown,
+        options: { executionId?: string },
+      ) => {
+        kinds.push(`execute:${options.executionId ?? "missing"}`);
+        return Promise.resolve({ items: [], nextCursor: null });
+      },
+    );
+    const model = new MockLanguageModelV3({
+      doStream: () =>
+        Promise.resolve(mockTextStream("Recovered on the next turn.")),
+    });
+    const turn = await runStaffAssistantHostTurn({
+      model,
+      messages: [
+        { role: "user", content: "list orders" },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "tool-call",
+              toolCallId: "call-list",
+              toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+              input: { limit: 7 },
+            },
+          ],
+        },
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "call-list",
+              toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+              output: { type: "json", value: { status: "started" } },
+            },
+          ],
+        },
+        { role: "user", content: "did that finish?" },
+      ],
+      contracts: [listOrders],
+      execute,
+      checkpoint,
+      recoverStartedRuns: [
+        {
+          messageId: "msg-old",
+          executionId: "stored-exec",
+          seq: 0,
+          actionName: "orders.list",
+          toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+          toolCallId: "call-list",
+          toolInput: { limit: 7 },
+        },
+      ],
+    });
+    expect(kinds).toEqual([
+      "begin",
+      "execute:stored-exec",
+      "finishRun:stored-exec",
+      "complete",
+    ]);
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledWith(
+      "orders.list",
+      { kind: "page.summary", limit: 7 },
+      { toolCallId: "call-list", executionId: "stored-exec" },
+    );
+    expect(turn.speech.text).toBe("Recovered on the next turn.");
+    expect(turn.modelToolCalls).toEqual([]);
+  });
+
+  it("does not recover host-seeded HITL or Phase A started rows on another message", async () => {
+    const kinds: string[] = [];
+    const checkpoint: StaffAssistantHostCheckpoint = {
+      begin: () => {
+        kinds.push("begin");
+        return Promise.resolve({ messageId: "msg-chat" });
+      },
+      stageRun: () => {
+        throw new Error("stageRun must not mint on HITL seed skip");
+      },
+      finishRun: () => {
+        throw new Error("finishRun must not run for HITL seed skip");
+      },
+      complete: () => {
+        kinds.push("complete");
+        return Promise.resolve();
+      },
+    };
+    const execute = vi.fn(() => {
+      throw new Error(
+        "Phase A / choice seed must not execute on chat recovery",
+      );
+    });
+    const model = new MockLanguageModelV3({
+      doStream: () => Promise.resolve(mockTextStream("Chat continues.")),
+    });
+    const turn = await runStaffAssistantHostTurn({
+      model,
+      messages: [{ role: "user", content: "hello" }],
+      contracts: [deleteCustomer, createOrder],
+      execute,
+      checkpoint,
+      recoverStartedRuns: [
+        {
+          messageId: "msg-phase-a",
+          executionId: "phase-a-exec",
+          seq: 0,
+          actionName: "customers.deleteCustomer",
+          toolName: toProviderToolName("customers.deleteCustomer"),
+          toolCallId: "phase-a:pending-1",
+          toolInput: { id: customerId },
+        },
+        {
+          messageId: "msg-choice",
+          executionId: "choice-exec",
+          seq: 0,
+          actionName: "orders.create",
+          toolName: ORDERS_CREATE_TOOL_NAME,
+          toolCallId: "choice:pending-2",
+          toolInput: {
+            customerId,
+            items: [{ productId: customerId, quantityMilli: "1000" }],
+          },
+        },
+      ],
+    });
+    expect(kinds).toEqual(["begin", "complete"]);
+    expect(execute).not.toHaveBeenCalled();
+    expect(turn.speech.text).toBe("Chat continues.");
     expect(turn.modelToolCalls).toEqual([]);
   });
 });

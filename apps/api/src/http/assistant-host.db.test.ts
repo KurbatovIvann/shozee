@@ -14,6 +14,7 @@ import {
   attemptKey,
   confirmationPendingRecord,
   executionAttemptKey,
+  HOST_PHASE_A_TOOL_CALL_ID_PREFIX,
   ORDERS_CREATE_TOOL_NAME,
   ORDERS_LIST_PAGE_TOOL_NAME,
   PENDING_REPLACE_TOOL_NAME,
@@ -377,6 +378,54 @@ async function stageExecution(
     throw new Error("stageRun returned no executionId");
   }
   return staged.executionId;
+}
+
+async function stageNamedStartedRun(
+  h: Harness,
+  options: {
+    readonly conversationId: string;
+    readonly beginKey: string;
+    readonly actionName: string;
+    readonly toolName: string;
+    readonly toolCallId: string;
+    readonly toolInput: unknown;
+  },
+): Promise<{ readonly messageId: string; readonly executionId: string }> {
+  const begun = await h.invoke(
+    checkpointAssistantTurn,
+    { kind: "begin", conversationId: options.conversationId },
+    {
+      idempotencyKey: attemptKey(
+        "turn",
+        options.conversationId,
+        options.beginKey,
+      ),
+    },
+  );
+  const staged = await h.invoke(
+    checkpointAssistantTurn,
+    {
+      kind: "stageRun",
+      conversationId: options.conversationId,
+      messageId: begun.messageId,
+      seq: 0,
+      actionName: options.actionName,
+      toolName: options.toolName,
+      toolCallId: options.toolCallId,
+      toolInput: options.toolInput,
+    },
+    {
+      idempotencyKey: attemptKey(
+        "turn",
+        options.conversationId,
+        `stage:${begun.messageId}:0`,
+      ),
+    },
+  );
+  if (staged.executionId === null) {
+    throw new Error("stageRun returned no executionId");
+  }
+  return { messageId: begun.messageId, executionId: staged.executionId };
 }
 
 async function seedChoicePending(
@@ -1792,6 +1841,175 @@ describe("unpublished staff assistant host HTTP", () => {
         status: "ok",
         speech: "Phase B continued.",
       }),
+    );
+  });
+
+  it("crash after domain commit then a new chat turn finishes the stored execution_id without a second order", async () => {
+    const h = harness({
+      model: silentModel("The earlier create already landed."),
+    });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Crash then new chat",
+    });
+    const customer = await h.invoke(createCustomer, {
+      name: "Next Turn Buyer",
+      phone: nextPhone(),
+    });
+    const product = await h.invoke(createProduct, {
+      name: "Next Turn Cake",
+      basePriceMinor: "1800",
+      variants: [{ name: "X" }],
+    });
+    const variant = product.variants[0];
+    if (variant === undefined) {
+      throw new Error("unique-variant product missing variant");
+    }
+    const userMessage = await h.invoke(
+      appendUserMessage,
+      { conversationId: conversation.id, body: "Create the cake order" },
+      { idempotencyKey: attemptKey("message", conversation.id, randomUUID()) },
+    );
+    const facadeInput = {
+      customerId: customer.id,
+      items: [
+        {
+          productId: product.productId,
+          variantId: variant.variantId,
+          quantityMilli: "1000",
+        },
+      ],
+    };
+    const canonicalInput = {
+      customer: { by: "id" as const, id: customer.id },
+      items: [
+        {
+          product: { by: "id" as const, id: product.productId },
+          variantSelection: {
+            kind: "reference" as const,
+            ref: { by: "id" as const, id: variant.variantId },
+          },
+          quantity: { milli: "1000" },
+        },
+      ],
+    };
+    const staged = await stageNamedStartedRun(h, {
+      conversationId: conversation.id,
+      beginKey: `begin:${userMessage.id}`,
+      actionName: "orders.create",
+      toolName: ORDERS_CREATE_TOOL_NAME,
+      toolCallId: "call-create-crash",
+      toolInput: facadeInput,
+    });
+    await h.invoke(createOrder, canonicalInput, {
+      idempotencyKey: executionAttemptKey(conversation.id, staged.executionId),
+    });
+    const afterCommit = await orderCount();
+    const crashedHistory = await h.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    const started = crashedHistory.messages
+      .flatMap((message) => message.toolRuns)
+      .find((run) => run.executionId === staged.executionId);
+    const startedMessage = crashedHistory.messages.find((message) =>
+      message.toolRuns.some((run) => run.executionId === staged.executionId),
+    );
+    expect(startedMessage?.id).toBe(staged.messageId);
+    expect(started?.outcome).toBe("started");
+    expect(started?.modelTrace).toBeNull();
+    const resume = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHAT_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        text: "Did the order go through?",
+        locale: "en",
+      },
+    });
+    expect(
+      assistantHostInteractionResultSchema.parse(await resume.json()).status,
+    ).toBe("ok");
+    expect(await orderCount()).toBe(afterCommit);
+    const finishedHistory = await h.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    const createRuns = finishedHistory.messages
+      .flatMap((message) => message.toolRuns)
+      .filter((run) => run.action === "orders.create");
+    expect(createRuns).toHaveLength(1);
+    expect(createRuns[0]?.executionId).toBe(staged.executionId);
+    expect(createRuns[0]?.outcome).toBe("success");
+    const latestAssistant = finishedHistory.messages.findLast(
+      (message) => message.role === "assistant",
+    );
+    expect(latestAssistant?.id).not.toBe(staged.messageId);
+  });
+
+  it("chat recovery does not execute Phase A started rows on another message", async () => {
+    const h = harness({
+      model: silentModel("No pending write from this chat."),
+    });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Skip Phase A on chat",
+    });
+    const customer = await h.invoke(createCustomer, {
+      name: "Phase A Skip Buyer",
+      phone: nextPhone(),
+    });
+    const product = await h.invoke(createProduct, {
+      name: "Phase A Skip Cake",
+      basePriceMinor: "1500",
+      variants: [{ name: "Solo" }],
+    });
+    const variant = product.variants[0];
+    if (variant === undefined) {
+      throw new Error("unique-variant product missing variant");
+    }
+    const pendingId = randomUUID();
+    const facadeInput = {
+      customerId: customer.id,
+      items: [
+        {
+          productId: product.productId,
+          variantId: variant.variantId,
+          quantityMilli: "1000",
+        },
+      ],
+    };
+    const staged = await stageNamedStartedRun(h, {
+      conversationId: conversation.id,
+      beginKey: `begin:phase-a:${pendingId}`,
+      actionName: "orders.create",
+      toolName: ORDERS_CREATE_TOOL_NAME,
+      toolCallId: `${HOST_PHASE_A_TOOL_CALL_ID_PREFIX}${pendingId}`,
+      toolInput: facadeInput,
+    });
+    const beforeChat = await orderCount();
+    const chat = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHAT_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        text: "Just saying hi",
+        locale: "en",
+      },
+    });
+    expect(
+      assistantHostInteractionResultSchema.parse(await chat.json()).status,
+    ).toBe("ok");
+    expect(await orderCount()).toBe(beforeChat);
+    const history = await h.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    const phaseA = history.messages
+      .flatMap((message) => message.toolRuns)
+      .find((run) => run.executionId === staged.executionId);
+    expect(phaseA?.outcome).toBe("started");
+    expect(phaseA?.toolCallId).toBe(
+      `${HOST_PHASE_A_TOOL_CALL_ID_PREFIX}${pendingId}`,
     );
   });
 

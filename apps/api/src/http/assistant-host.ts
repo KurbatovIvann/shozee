@@ -25,6 +25,9 @@ import {
   extractUuidResultIds,
   StaffAssistantNotConfiguredError,
   filterStaffAiTools,
+  HOST_CHOICE_SEED_TOOL_CALL_ID_PREFIX,
+  HOST_PHASE_A_TOOL_CALL_ID_PREFIX,
+  isHostSeededHitlToolCallId,
   isPendingReplaceActionName,
   mapPendingReplaceFacadeInput,
   ORDERS_CREATE_ACTION_NAME,
@@ -694,6 +697,9 @@ function startedRunsForHostRecovery(
   for (const message of history.messages) {
     for (const run of message.toolRuns) {
       if (run.outcome !== "started" || run.executionId === null) {
+        continue;
+      }
+      if (isHostSeededHitlToolCallId(run.toolCallId)) {
         continue;
       }
       started.push({
@@ -1499,7 +1505,7 @@ export async function executeStaffAssistantHostChoiceResume(
               });
               const next = pendingChoiceRecordFromChoiceRecord(nextChoice, {
                 actionName: record.actionName,
-                toolCallId: `choice:${nextId}`,
+                toolCallId: `${HOST_CHOICE_SEED_TOOL_CALL_ID_PREFIX}${nextId}`,
                 executionId: successorExecutionId,
               });
               await options.pendingStore.complete({
@@ -1574,7 +1580,7 @@ async function stagePhaseAExecutionId(options: {
     staffPrincipal: options.staffPrincipal,
     actionName: options.actionName,
     beginKey: `begin:phase-a:${options.pendingId}`,
-    toolCallId: `phase-a:${options.pendingId}`,
+    toolCallId: `${HOST_PHASE_A_TOOL_CALL_ID_PREFIX}${options.pendingId}`,
     toolName: options.actionName.replace(".", "_"),
     toolInput: options.toolInput,
   });
@@ -1632,8 +1638,8 @@ async function stageSuccessorExecutionId(options: {
     staffPrincipal: options.staffPrincipal,
     actionName: options.actionName,
     beginKey: `begin:successor:${options.nextId}`,
-    toolCallId: `choice:${options.nextId}`,
-    toolName: `choice:${options.nextId}`,
+    toolCallId: `${HOST_CHOICE_SEED_TOOL_CALL_ID_PREFIX}${options.nextId}`,
+    toolName: `${HOST_CHOICE_SEED_TOOL_CALL_ID_PREFIX}${options.nextId}`,
     toolInput: options.toolInput,
   });
 }

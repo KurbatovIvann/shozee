@@ -302,11 +302,62 @@ export interface StaffAssistantHostStartedRun {
   readonly toolInput: unknown;
 }
 
+/**
+ * Host-minted Phase A attempt (`begin:phase-a:${pendingId}`). Chat
+ * recovery must not execute these rows on a later assistant message.
+ */
+export const HOST_PHASE_A_TOOL_CALL_ID_PREFIX = "phase-a:" as const;
+
+/**
+ * Host-minted choice / successor HITL seed (`begin:successor:` /
+ * `choice:${pendingId}`). Same exclusion as Phase A.
+ */
+export const HOST_CHOICE_SEED_TOOL_CALL_ID_PREFIX = "choice:" as const;
+
+export function isHostSeededHitlToolCallId(toolCallId: string): boolean {
+  return (
+    toolCallId.startsWith(HOST_PHASE_A_TOOL_CALL_ID_PREFIX) ||
+    toolCallId.startsWith(HOST_CHOICE_SEED_TOOL_CALL_ID_PREFIX)
+  );
+}
+
 function compareStartedRunSeq(
   left: StaffAssistantHostStartedRun,
   right: StaffAssistantHostStartedRun,
 ): number {
   return left.seq - right.seq;
+}
+
+/**
+ * Chat-turn `started` rows, including those whose assistant message is
+ * not the current `begin()` id. A new user line mints a new assistant
+ * replica; crash recovery still replays the stored `executionId`.
+ * Host-seeded HITL / Phase A ids stay on their own resume path.
+ */
+function chatRecoverableStartedRuns(
+  runs: readonly StaffAssistantHostStartedRun[],
+): StaffAssistantHostStartedRun[] {
+  const chatTurn = runs.filter(
+    (run) => !isHostSeededHitlToolCallId(run.toolCallId),
+  );
+  const messageOrder: string[] = [];
+  const byMessage = new Map<string, StaffAssistantHostStartedRun[]>();
+  for (const run of chatTurn) {
+    const existing = byMessage.get(run.messageId);
+    if (existing === undefined) {
+      messageOrder.push(run.messageId);
+      byMessage.set(run.messageId, [run]);
+    } else {
+      existing.push(run);
+    }
+  }
+  return messageOrder.flatMap((messageId) => {
+    const group = byMessage.get(messageId);
+    if (group === undefined) {
+      return [];
+    }
+    return group.slice().sort(compareStartedRunSeq);
+  });
 }
 
 async function recoverStartedToolRuns(options: {
@@ -318,10 +369,7 @@ async function recoverStartedToolRuns(options: {
   if (options.messageId === undefined || options.runs.length === 0) {
     return [];
   }
-  const recoverable = options.runs
-    .filter((run) => run.messageId === options.messageId)
-    .slice()
-    .sort(compareStartedRunSeq);
+  const recoverable = chatRecoverableStartedRuns(options.runs);
   if (recoverable.length === 0) {
     return [];
   }
@@ -344,13 +392,15 @@ async function recoverStartedToolRuns(options: {
       context: undefined,
     });
   }
-  let maxSeq = recoverable[0]?.seq ?? 0;
+  let maxSeqOnCurrent = -1;
   for (const run of recoverable) {
-    if (run.seq > maxSeq) {
-      maxSeq = run.seq;
+    if (run.messageId === options.messageId && run.seq > maxSeqOnCurrent) {
+      maxSeqOnCurrent = run.seq;
     }
   }
-  options.state.seq = maxSeq + 1;
+  if (maxSeqOnCurrent >= 0) {
+    options.state.seq = maxSeqOnCurrent + 1;
+  }
   return recoverable;
 }
 
@@ -511,9 +561,11 @@ export interface StaffAssistantHostTurnOptions {
    */
   readonly priorRuns?: readonly StaffAssistantTurnRun[];
   /**
-   * In-flight `started` rows for this turn. The loop replays execute +
-   * `finishRun` from stored `executionId` + `toolInput` before the next
-   * model step — the model must not re-decide that call (SHO-539).
+   * In-flight `started` rows for this conversation. The loop replays
+   * execute + `finishRun` from stored `executionId` + `toolInput` even
+   * when `begin()` minted a new assistant message — the model must not
+   * re-decide that call (SHO-539). Host-seeded HITL / Phase A ids are
+   * not recovered here.
    */
   readonly recoverStartedRuns?: readonly StaffAssistantHostStartedRun[];
 }
