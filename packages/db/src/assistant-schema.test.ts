@@ -219,6 +219,7 @@ describe("assistant schema slice", () => {
       "body",
       "created_at",
       "updated_at",
+      "turn_key",
     ]);
     expect(byTable.get("assistant_tool_runs")).toEqual([
       "id",
@@ -254,6 +255,14 @@ describe("assistant schema slice", () => {
         row.column_name === "title",
     );
     expect(title?.is_nullable).toBe("YES");
+
+    const turnKey = result.rows.find(
+      (row) =>
+        row.table_name === "assistant_messages" &&
+        row.column_name === "turn_key",
+    );
+    expect(turnKey?.data_type).toBe("text");
+    expect(turnKey?.is_nullable).toBe("YES");
 
     const challengeId = result.rows.find(
       (row) =>
@@ -311,6 +320,9 @@ describe("assistant schema slice", () => {
     expectTypeOf<
       (typeof assistantToolRuns.$inferSelect)["seq"]
     >().toEqualTypeOf<number | null>();
+    expectTypeOf<
+      (typeof assistantMessages.$inferSelect)["turnKey"]
+    >().toEqualTypeOf<string | null>();
   });
 
   it("declares UNIQUE (company_id, id) and the conversation list index", async () => {
@@ -356,6 +368,12 @@ describe("assistant schema slice", () => {
     expect(indexes.get("assistant_tool_runs_company_message_seq_uq")).toContain(
       "(company_id, message_id, seq)",
     );
+    expect(
+      indexes.get("assistant_messages_company_conversation_turn_key_uq"),
+    ).toContain("UNIQUE");
+    expect(
+      indexes.get("assistant_messages_company_conversation_turn_key_uq"),
+    ).toContain("(company_id, conversation_id, turn_key)");
   });
 
   it("rejects a second tool run with the same company, message, and seq", async () => {
@@ -414,6 +432,78 @@ describe("assistant schema slice", () => {
       outcome: "started",
     });
     expect(nextSeq.seq).toBe(1);
+  });
+
+  it("stores nullable turn_key, rejects a duplicate in the same conversation, and isolates tenants", async () => {
+    const companyA = await insertCompany();
+    const companyB = await insertCompany();
+    const userId = await insertUser();
+    const conversationA = await insertConversation({
+      companyId: companyA.id,
+      userId,
+    });
+    const conversationA2 = await insertConversation({
+      companyId: companyA.id,
+      userId,
+    });
+    const conversationB = await insertConversation({
+      companyId: companyB.id,
+      userId,
+    });
+    const turnKey = `begin:${randomUUID()}`;
+    const first = await insertMessage({
+      companyId: companyA.id,
+      conversationId: conversationA.id,
+      role: "assistant",
+      body: "",
+      turnKey,
+    });
+    expect(first.turnKey).toBe(turnKey);
+
+    const legacy = await insertMessage({
+      companyId: companyA.id,
+      conversationId: conversationA.id,
+      role: "assistant",
+      body: "old row",
+    });
+    expect(legacy.turnKey).toBeNull();
+    const anotherNull = await insertMessage({
+      companyId: companyA.id,
+      conversationId: conversationA.id,
+      role: "user",
+      body: "also null",
+    });
+    expect(anotherNull.turnKey).toBeNull();
+
+    await expectSqlState(
+      insertMessage({
+        companyId: companyA.id,
+        conversationId: conversationA.id,
+        role: "assistant",
+        body: "",
+        turnKey,
+      }),
+      "23505",
+    );
+
+    const otherConversation = await insertMessage({
+      companyId: companyA.id,
+      conversationId: conversationA2.id,
+      role: "assistant",
+      body: "",
+      turnKey,
+    });
+    expect(otherConversation.turnKey).toBe(turnKey);
+
+    const otherTenant = await insertMessage({
+      companyId: companyB.id,
+      conversationId: conversationB.id,
+      role: "assistant",
+      body: "",
+      turnKey,
+    });
+    expect(otherTenant.turnKey).toBe(turnKey);
+    expect(otherTenant.companyId).toBe(companyB.id);
   });
 
   it("declares tenant, staff-user, and composite conversation foreign keys", async () => {

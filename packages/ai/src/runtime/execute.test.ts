@@ -208,6 +208,38 @@ describe("wrapHostSequentialExecute", () => {
     );
   });
 
+  it("does not mint a new executionId when the staged id is already on state", async () => {
+    const checkpoint: StaffAssistantHostCheckpoint = {
+      begin: () => Promise.resolve({ messageId: "msg-1" }),
+      stageRun: () => {
+        throw new Error("stageRun must not mint on recovery");
+      },
+      finishRun: () => Promise.resolve(),
+      complete: () => Promise.resolve(),
+    };
+    const execute = vi.fn(
+      (
+        _actionName: string,
+        _input: unknown,
+        options: { readonly toolCallId: string; readonly executionId?: string },
+      ) => {
+        expect(options.executionId).toBe("stored-exec");
+        return Promise.resolve({ id: "write-1" });
+      },
+    );
+    const state = emptyHostState();
+    state.messageId = "msg-1";
+    state.executionIdByToolCallId.set("call-create", "stored-exec");
+    const wrapped = wrapHostSequentialExecute(execute, state, { checkpoint });
+    const output = await wrapped(
+      "assistant.createConversation",
+      { title: "from staged tool" },
+      { toolCallId: "call-create" },
+    );
+    expect(output).toEqual({ id: "write-1" });
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
   it("refuses an independent write, including the same actionName, while pending is open", async () => {
     const execute = vi.fn(() => Promise.resolve({ orderId: customerId }));
     const state = emptyHostState();

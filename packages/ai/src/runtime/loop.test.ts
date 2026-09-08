@@ -28,6 +28,7 @@ import { ORDERS_LIST_PAGE_ASSISTANT_DEFAULT_LIMIT } from "../tool-facades/orders
 import { STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK } from "../turn-speech.js";
 import { HOST_HITL_PAUSED_STATUS } from "./execute.js";
 import {
+  continueStaffAssistantHostTurn,
   refuseHostPendingOpen,
   runStaffAssistantHostTurn,
   type StaffAssistantHostCheckpoint,
@@ -159,6 +160,70 @@ const createOrder = defineActionContract({
 const customerId = "11111111-1111-4111-8111-111111111111";
 const challengeId = "22222222-2222-4222-8222-222222222222";
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function toolCallIdsInContent(content: unknown): string[] {
+  if (!Array.isArray(content)) {
+    return [];
+  }
+  return content.flatMap((part) => {
+    if (!isRecord(part) || part["type"] !== "tool-call") {
+      return [];
+    }
+    const toolCallId = part["toolCallId"];
+    return typeof toolCallId === "string" ? [toolCallId] : [];
+  });
+}
+
+function toolResultIdsInContent(content: unknown): string[] {
+  if (!Array.isArray(content)) {
+    return [];
+  }
+  return content.flatMap((part) => {
+    if (!isRecord(part) || part["type"] !== "tool-result") {
+      return [];
+    }
+    const toolCallId = part["toolCallId"];
+    return typeof toolCallId === "string" ? [toolCallId] : [];
+  });
+}
+
+function assistantToolCallIdsByMessage(prompt: unknown): string[][] {
+  if (!Array.isArray(prompt)) {
+    return [];
+  }
+  const groups: string[][] = [];
+  for (const message of prompt) {
+    if (!isRecord(message) || message["role"] !== "assistant") {
+      continue;
+    }
+    const ids = toolCallIdsInContent(message["content"]);
+    if (ids.length > 0) {
+      groups.push(ids);
+    }
+  }
+  return groups;
+}
+
+function toolResultIdsByMessage(prompt: unknown): string[][] {
+  if (!Array.isArray(prompt)) {
+    return [];
+  }
+  const groups: string[][] = [];
+  for (const message of prompt) {
+    if (!isRecord(message) || message["role"] !== "tool") {
+      continue;
+    }
+    const ids = toolResultIdsInContent(message["content"]);
+    if (ids.length > 0) {
+      groups.push(ids);
+    }
+  }
+  return groups;
+}
+
 class DuckTypedPickerConflict extends ConflictError {
   readonly reason: "variant_required";
   readonly target: {
@@ -197,6 +262,11 @@ describe("runStaffAssistantHostTurn", () => {
     expect(src).not.toContain('from "../gate.js"');
     expect(src).toContain("commitHostSpeech");
     expect(src).toContain("priorRuns");
+    expect(src).toContain("recoverStartedRuns");
+    expect(src).toContain("recoverStartedRunsScope");
+    expect(src).toContain("resumeTurn");
+    expect(src).toContain("trailingUserMessageCount");
+    expect(src).toContain("isHostSeededHitlToolCallId");
     expect(src).toContain("streamText");
     expect(src).not.toContain("staff-assistant-stream");
     const toolRun = readFileSync(join(here, "../tool-run.ts"), "utf8");
@@ -774,7 +844,6 @@ describe("runStaffAssistantHostTurn", () => {
         mockTextStream("Here is the list."),
       ],
     });
-    const { continueStaffAssistantHostTurn } = await import("./loop.js");
     const turn = await continueStaffAssistantHostTurn({
       model,
       messages: [
@@ -812,5 +881,589 @@ describe("runStaffAssistantHostTurn", () => {
       text: STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK.uk,
     });
     expect(turn.toolRuns).toEqual([]);
+  });
+
+  it("replays a started run from storage without asking the model to re-emit the tool", async () => {
+    const kinds: string[] = [];
+    const checkpoint: StaffAssistantHostCheckpoint = {
+      begin: () => {
+        kinds.push("begin");
+        return Promise.resolve({ messageId: "msg-recover" });
+      },
+      stageRun: () => {
+        throw new Error("stageRun must not mint on started-run recovery");
+      },
+      finishRun: (input) => {
+        kinds.push(`finishRun:${input.executionId}`);
+        return Promise.resolve();
+      },
+      complete: () => {
+        kinds.push("complete");
+        return Promise.resolve();
+      },
+    };
+    const execute = vi.fn(
+      (
+        _actionName: string,
+        _input: unknown,
+        options: { executionId?: string },
+      ) => {
+        kinds.push(`execute:${options.executionId ?? "missing"}`);
+        return Promise.resolve({ items: [], nextCursor: null });
+      },
+    );
+    const model = new MockLanguageModelV3({
+      doStream: () => Promise.resolve(mockTextStream("Listed from storage.")),
+    });
+    const turn = await runStaffAssistantHostTurn({
+      model,
+      messages: [
+        { role: "user", content: "list orders" },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "tool-call",
+              toolCallId: "call-list",
+              toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+              input: { limit: 7 },
+            },
+          ],
+        },
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "call-list",
+              toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+              output: { type: "json", value: { status: "started" } },
+            },
+          ],
+        },
+      ],
+      contracts: [listOrders],
+      execute,
+      checkpoint,
+      recoverStartedRuns: [
+        {
+          messageId: "msg-recover",
+          executionId: "stored-exec",
+          seq: 0,
+          actionName: "orders.list",
+          toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+          toolCallId: "call-list",
+          toolInput: { limit: 7 },
+        },
+      ],
+    });
+    expect(kinds).toEqual([
+      "begin",
+      "execute:stored-exec",
+      "finishRun:stored-exec",
+      "complete",
+    ]);
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledWith(
+      "orders.list",
+      { kind: "page.summary", limit: 7 },
+      { toolCallId: "call-list", executionId: "stored-exec" },
+    );
+    expect(turn.speech.source).toBe("model");
+    expect(turn.speech.text).toBe("Listed from storage.");
+    expect(turn.modelToolCalls).toEqual([]);
+  });
+
+  it("replays a started run when begin() mints a new assistant messageId", async () => {
+    const kinds: string[] = [];
+    const checkpoint: StaffAssistantHostCheckpoint = {
+      begin: () => {
+        kinds.push("begin");
+        return Promise.resolve({ messageId: "msg-new" });
+      },
+      stageRun: () => {
+        throw new Error("stageRun must not mint on started-run recovery");
+      },
+      finishRun: (input) => {
+        kinds.push(`finishRun:${input.executionId}`);
+        return Promise.resolve();
+      },
+      complete: () => {
+        kinds.push("complete");
+        return Promise.resolve();
+      },
+    };
+    const execute = vi.fn(
+      (
+        _actionName: string,
+        _input: unknown,
+        options: { executionId?: string },
+      ) => {
+        kinds.push(`execute:${options.executionId ?? "missing"}`);
+        return Promise.resolve({ items: [], nextCursor: null });
+      },
+    );
+    const model = new MockLanguageModelV3({
+      doStream: () =>
+        Promise.resolve(mockTextStream("Recovered on the next turn.")),
+    });
+    const turn = await runStaffAssistantHostTurn({
+      model,
+      messages: [
+        { role: "user", content: "list orders" },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "tool-call",
+              toolCallId: "call-list",
+              toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+              input: { limit: 7 },
+            },
+          ],
+        },
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "call-list",
+              toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+              output: { type: "json", value: { status: "started" } },
+            },
+          ],
+        },
+        { role: "user", content: "did that finish?" },
+      ],
+      contracts: [listOrders],
+      execute,
+      checkpoint,
+      recoverStartedRuns: [
+        {
+          messageId: "msg-old",
+          executionId: "stored-exec",
+          seq: 0,
+          actionName: "orders.list",
+          toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+          toolCallId: "call-list",
+          toolInput: { limit: 7 },
+        },
+      ],
+    });
+    expect(kinds).toEqual([
+      "begin",
+      "execute:stored-exec",
+      "finishRun:stored-exec",
+      "complete",
+    ]);
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledWith(
+      "orders.list",
+      { kind: "page.summary", limit: 7 },
+      { toolCallId: "call-list", executionId: "stored-exec" },
+    );
+    expect(turn.speech.text).toBe("Recovered on the next turn.");
+    expect(turn.modelToolCalls).toEqual([]);
+  });
+
+  it("inserts recovered tool-call and tool-result before trailing user messages", async () => {
+    const kinds: string[] = [];
+    const checkpoint: StaffAssistantHostCheckpoint = {
+      begin: () => {
+        kinds.push("begin");
+        return Promise.resolve({ messageId: "msg-new" });
+      },
+      stageRun: () => {
+        throw new Error("stageRun must not mint on outside-window recovery");
+      },
+      finishRun: (input) => {
+        kinds.push(`finishRun:${input.executionId}`);
+        return Promise.resolve();
+      },
+      complete: () => {
+        kinds.push("complete");
+        return Promise.resolve();
+      },
+    };
+    const execute = vi.fn(
+      (
+        _actionName: string,
+        _input: unknown,
+        options: { executionId?: string },
+      ) => {
+        kinds.push(`execute:${options.executionId ?? "missing"}`);
+        return Promise.resolve({ items: [], nextCursor: null });
+      },
+    );
+    const model = new MockLanguageModelV3({
+      doStream: (options) => {
+        const serialized = JSON.stringify(options.prompt);
+        if (serialized.includes("call-outside")) {
+          return Promise.resolve(
+            mockTextStream("Recovered outside the window."),
+          );
+        }
+        return Promise.resolve(
+          mockToolCallStream(
+            "call-reissue-list",
+            ORDERS_LIST_PAGE_TOOL_NAME,
+            '{"limit":7}',
+          ),
+        );
+      },
+    });
+    const turn = await runStaffAssistantHostTurn({
+      model,
+      messages: [
+        { role: "user", content: "pad one" },
+        { role: "user", content: "pad two" },
+        { role: "user", content: "did the list finish?" },
+      ],
+      contracts: [listOrders],
+      execute,
+      checkpoint,
+      recoverStartedRuns: [
+        {
+          messageId: "msg-old",
+          executionId: "stored-exec",
+          seq: 0,
+          actionName: "orders.list",
+          toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+          toolCallId: "call-outside",
+          toolInput: { limit: 7 },
+        },
+      ],
+    });
+    expect(kinds).toEqual([
+      "begin",
+      "execute:stored-exec",
+      "finishRun:stored-exec",
+      "complete",
+    ]);
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledWith(
+      "orders.list",
+      { kind: "page.summary", limit: 7 },
+      { toolCallId: "call-outside", executionId: "stored-exec" },
+    );
+    const prompt = JSON.stringify(model.doStreamCalls[0]?.prompt ?? []);
+    expect(prompt).toContain("call-outside");
+    expect(prompt.indexOf("call-outside")).toBeLessThan(
+      prompt.lastIndexOf("did the list finish?"),
+    );
+    expect(turn.speech.text).toBe("Recovered outside the window.");
+    expect(turn.modelToolCalls).toEqual([]);
+  });
+
+  it("inserts a dedicated recovered pair when leftover is missing and the last assistant is an unrelated assistant-with-tools", async () => {
+    const kinds: string[] = [];
+    const checkpoint: StaffAssistantHostCheckpoint = {
+      begin: () => {
+        kinds.push("begin");
+        return Promise.resolve({ messageId: "msg-new" });
+      },
+      stageRun: () => {
+        throw new Error("stageRun must not mint on dedicated-pair recovery");
+      },
+      finishRun: (input) => {
+        kinds.push(`finishRun:${input.executionId}`);
+        return Promise.resolve();
+      },
+      complete: () => {
+        kinds.push("complete");
+        return Promise.resolve();
+      },
+    };
+    const execute = vi.fn(
+      (
+        _actionName: string,
+        _input: unknown,
+        options: { executionId?: string },
+      ) => {
+        kinds.push(`execute:${options.executionId ?? "missing"}`);
+        return Promise.resolve({ items: [], nextCursor: null });
+      },
+    );
+    const model = new MockLanguageModelV3({
+      doStream: (options) => {
+        const serialized = JSON.stringify(options.prompt);
+        if (serialized.includes("call-outside")) {
+          return Promise.resolve(
+            mockTextStream("Recovered beside a later read."),
+          );
+        }
+        return Promise.resolve(
+          mockToolCallStream(
+            "call-reissue-list",
+            ORDERS_LIST_PAGE_TOOL_NAME,
+            '{"limit":7}',
+          ),
+        );
+      },
+    });
+    const turn = await runStaffAssistantHostTurn({
+      model,
+      messages: [
+        { role: "user", content: "list the later discussion" },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "tool-call",
+              toolCallId: "call-later-list",
+              toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+              input: { limit: 3 },
+            },
+          ],
+        },
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "call-later-list",
+              toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+              output: { type: "json", value: { items: [] } },
+            },
+          ],
+        },
+      ],
+      contracts: [listOrders],
+      execute,
+      checkpoint,
+      recoverStartedRuns: [
+        {
+          messageId: "msg-old",
+          executionId: "stored-exec",
+          seq: 0,
+          actionName: "orders.list",
+          toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+          toolCallId: "call-outside",
+          toolInput: { limit: 7 },
+        },
+      ],
+    });
+    expect(kinds).toEqual([
+      "begin",
+      "execute:stored-exec",
+      "finishRun:stored-exec",
+      "complete",
+    ]);
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledWith(
+      "orders.list",
+      { kind: "page.summary", limit: 7 },
+      { toolCallId: "call-outside", executionId: "stored-exec" },
+    );
+    const prompt = model.doStreamCalls[0]?.prompt;
+    const assistantCallGroups = assistantToolCallIdsByMessage(prompt);
+    expect(assistantCallGroups).toContainEqual(["call-later-list"]);
+    expect(assistantCallGroups).toContainEqual(["call-outside"]);
+    expect(
+      assistantCallGroups.some(
+        (ids) =>
+          ids.includes("call-later-list") && ids.includes("call-outside"),
+      ),
+    ).toBe(false);
+    const toolResultGroups = toolResultIdsByMessage(prompt);
+    expect(toolResultGroups).toContainEqual(["call-later-list"]);
+    expect(toolResultGroups).toContainEqual(["call-outside"]);
+    expect(
+      toolResultGroups.some(
+        (ids) =>
+          ids.includes("call-later-list") && ids.includes("call-outside"),
+      ),
+    ).toBe(false);
+    const serialized = JSON.stringify(prompt ?? []);
+    expect(serialized).toContain("call-outside");
+    expect(serialized).not.toContain("call-reissue-list");
+    expect(turn.speech.text).toBe("Recovered beside a later read.");
+    expect(turn.modelToolCalls).toEqual([]);
+  });
+
+  it("does not recover host-seeded HITL or Phase A started rows on another message", async () => {
+    const kinds: string[] = [];
+    const checkpoint: StaffAssistantHostCheckpoint = {
+      begin: () => {
+        kinds.push("begin");
+        return Promise.resolve({ messageId: "msg-chat" });
+      },
+      stageRun: () => {
+        throw new Error("stageRun must not mint on HITL seed skip");
+      },
+      finishRun: () => {
+        throw new Error("finishRun must not run for HITL seed skip");
+      },
+      complete: () => {
+        kinds.push("complete");
+        return Promise.resolve();
+      },
+    };
+    const execute = vi.fn(() => {
+      throw new Error(
+        "Phase A / choice seed must not execute on chat recovery",
+      );
+    });
+    const model = new MockLanguageModelV3({
+      doStream: () => Promise.resolve(mockTextStream("Chat continues.")),
+    });
+    const turn = await runStaffAssistantHostTurn({
+      model,
+      messages: [{ role: "user", content: "hello" }],
+      contracts: [deleteCustomer, createOrder],
+      execute,
+      checkpoint,
+      recoverStartedRuns: [
+        {
+          messageId: "msg-phase-a",
+          executionId: "phase-a-exec",
+          seq: 0,
+          actionName: "customers.deleteCustomer",
+          toolName: toProviderToolName("customers.deleteCustomer"),
+          toolCallId: "phase-a:pending-1",
+          toolInput: { id: customerId },
+        },
+        {
+          messageId: "msg-choice",
+          executionId: "choice-exec",
+          seq: 0,
+          actionName: "orders.create",
+          toolName: ORDERS_CREATE_TOOL_NAME,
+          toolCallId: "choice:pending-2",
+          toolInput: {
+            customerId,
+            items: [{ productId: customerId, quantityMilli: "1000" }],
+          },
+        },
+      ],
+    });
+    expect(kinds).toEqual(["begin", "complete"]);
+    expect(execute).not.toHaveBeenCalled();
+    expect(turn.speech.text).toBe("Chat continues.");
+    expect(turn.modelToolCalls).toEqual([]);
+  });
+
+  it("continueStaffAssistantHostTurn recovers only started runs on the resume begin message", async () => {
+    const kinds: string[] = [];
+    const checkpoint: StaffAssistantHostCheckpoint = {
+      begin: () => {
+        kinds.push("begin");
+        return Promise.resolve({ messageId: "msg-resume" });
+      },
+      stageRun: () => {
+        throw new Error(
+          "stageRun must not mint on Phase B started-run recovery",
+        );
+      },
+      finishRun: (input) => {
+        kinds.push(`finishRun:${input.executionId}`);
+        return Promise.resolve();
+      },
+      complete: () => {
+        kinds.push("complete");
+        return Promise.resolve();
+      },
+    };
+    const execute = vi.fn(
+      (
+        _actionName: string,
+        _input: unknown,
+        options: { executionId?: string },
+      ) => {
+        kinds.push(`execute:${options.executionId ?? "missing"}`);
+        return Promise.resolve({ items: [], nextCursor: null });
+      },
+    );
+    const model = new MockLanguageModelV3({
+      doStream: () =>
+        Promise.resolve(mockTextStream("Resumed this Phase B turn.")),
+    });
+    const turn = await continueStaffAssistantHostTurn({
+      model,
+      messages: [
+        { role: "user", content: "list leftover then resume" },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "tool-call",
+              toolCallId: "call-leftover",
+              toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+              input: { limit: 3 },
+            },
+          ],
+        },
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "call-leftover",
+              toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+              output: { type: "json", value: { status: "started" } },
+            },
+          ],
+        },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "tool-call",
+              toolCallId: "call-resume",
+              toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+              input: { limit: 7 },
+            },
+          ],
+        },
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "call-resume",
+              toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+              output: { type: "json", value: { status: "started" } },
+            },
+          ],
+        },
+      ],
+      contracts: [listOrders],
+      execute,
+      checkpoint,
+      recoverStartedRuns: [
+        {
+          messageId: "msg-old",
+          executionId: "leftover-exec",
+          seq: 0,
+          actionName: "orders.list",
+          toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+          toolCallId: "call-leftover",
+          toolInput: { limit: 3 },
+        },
+        {
+          messageId: "msg-resume",
+          executionId: "resume-exec",
+          seq: 0,
+          actionName: "orders.list",
+          toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+          toolCallId: "call-resume",
+          toolInput: { limit: 7 },
+        },
+      ],
+    });
+    expect(kinds).toEqual([
+      "begin",
+      "execute:resume-exec",
+      "finishRun:resume-exec",
+      "complete",
+    ]);
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledWith(
+      "orders.list",
+      { kind: "page.summary", limit: 7 },
+      { toolCallId: "call-resume", executionId: "resume-exec" },
+    );
+    expect(turn.speech.text).toBe("Resumed this Phase B turn.");
+    expect(turn.modelToolCalls).toEqual([]);
   });
 });

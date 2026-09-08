@@ -17,6 +17,7 @@ import {
   assistantPendingPeekQuerySchema,
   attemptKey,
   catalogPickerConflictExtrasFromError,
+  chatTurnKey,
   choiceCanonicalCreateInputSchema,
   choiceRecordFromPendingChoice,
   choiceRecordFromPickerConflict,
@@ -25,7 +26,12 @@ import {
   extractUuidResultIds,
   StaffAssistantNotConfiguredError,
   filterStaffAiTools,
+  HOST_CHOICE_SEED_TOOL_CALL_ID_PREFIX,
+  HOST_PHASE_A_TOOL_CALL_ID_PREFIX,
+  isHostSeededHitlToolCallId,
+  isChatTurnKey,
   isPendingReplaceActionName,
+  isResumeTurnKey,
   mapPendingReplaceFacadeInput,
   ORDERS_CREATE_ACTION_NAME,
   PENDING_REPLACE_TOOL_NAME,
@@ -34,6 +40,7 @@ import {
   publicPendingFromRecord,
   refuseHostPendingOpen,
   resolveMappedVariantId,
+  resumeTurnKey,
   runStaffAssistantHostTurn,
   staffAssistantModelMessagesFromPersisted,
   staffAssistantTurnContextAddendum,
@@ -49,6 +56,7 @@ import {
   type PendingInteractionRecord,
   type PublicPending,
   type StaffAssistantHostCheckpoint,
+  type StaffAssistantHostStartedRun,
   type StaffAssistantLocale,
   type StaffAssistantPersistedMessage,
 } from "@showzy/ai";
@@ -426,6 +434,8 @@ function modelHistoryToPersisted(
       readonly modelTrace: unknown;
       readonly toolInput: unknown;
       readonly seq: number | null;
+      readonly executionId: string | null;
+      readonly outcome: string;
     }>;
   }>,
 ): StaffAssistantPersistedMessage[] {
@@ -439,6 +449,8 @@ function modelHistoryToPersisted(
       ...(run.toolName !== null ? { toolName: run.toolName } : {}),
       ...(run.toolInput !== null ? { toolInput: run.toolInput } : {}),
       ...(run.seq !== null ? { seq: run.seq } : {}),
+      ...(run.executionId !== null ? { executionId: run.executionId } : {}),
+      outcome: run.outcome,
     })),
   }));
 }
@@ -519,6 +531,7 @@ function createHostCheckpoint(options: {
         input: {
           kind: "begin",
           conversationId: options.conversationId,
+          turnKey: options.beginKey,
         },
         request: staffRequest({
           requestId: options.requestId,
@@ -630,10 +643,17 @@ async function loadHistory(options: {
     readonly session: SessionPrincipal;
     readonly companySelector: string | null;
   };
+  readonly includeTurnKeys?: readonly string[];
 }) {
   return executeAction(options.pipeline, {
     action: getModelHistory,
-    input: { conversationId: options.conversationId },
+    input: {
+      conversationId: options.conversationId,
+      ...(options.includeTurnKeys !== undefined &&
+      options.includeTurnKeys.length > 0
+        ? { includeTurnKeys: [...options.includeTurnKeys] }
+        : {}),
+    },
     request: staffRequest({
       requestId: options.requestId,
       clientIp: options.clientIp,
@@ -659,28 +679,94 @@ function resolveStagedExecutionId(options: {
   if (started?.executionId !== undefined && started.executionId !== null) {
     return started.executionId;
   }
+  const unfinished = options.history.unfinishedStartedRuns.find(
+    (run) => run.action === options.record.actionName,
+  );
+  if (unfinished !== undefined) {
+    return unfinished.executionId;
+  }
   throw new CoreInvariantError("pending resume missing staged execution_id");
 }
 
-function isPendingHitlRun(
-  run: Awaited<
-    ReturnType<typeof loadHistory>
-  >["messages"][number]["toolRuns"][number],
+function toHostStartedRun(run: {
+  readonly messageId: string;
+  readonly executionId: string;
+  readonly seq: number;
+  readonly action: string;
+  readonly toolName: string;
+  readonly toolCallId: string;
+  readonly toolInput: unknown;
+}): StaffAssistantHostStartedRun {
+  return {
+    messageId: run.messageId,
+    executionId: run.executionId,
+    seq: run.seq,
+    actionName: run.action,
+    toolName: run.toolName,
+    toolCallId: run.toolCallId,
+    toolInput: run.toolInput,
+  };
+}
+
+function startedRunsMatchingTurnKey(
+  history: Awaited<ReturnType<typeof loadHistory>>,
+  allow: (turnKey: string | null) => boolean,
+): StaffAssistantHostStartedRun[] {
+  const started: StaffAssistantHostStartedRun[] = [];
+  for (const run of history.unfinishedStartedRuns) {
+    if (!allow(run.turnKey)) {
+      continue;
+    }
+    if (isHostSeededHitlToolCallId(run.toolCallId)) {
+      continue;
+    }
+    if (run.toolName === null) {
+      continue;
+    }
+    started.push(toHostStartedRun({ ...run, toolName: run.toolName }));
+  }
+  return started;
+}
+
+function startedRunsForChatRecovery(
+  history: Awaited<ReturnType<typeof loadHistory>>,
+): StaffAssistantHostStartedRun[] {
+  return startedRunsMatchingTurnKey(history, isChatTurnKey);
+}
+
+function startedRunsForResumeTurnRecovery(
+  history: Awaited<ReturnType<typeof loadHistory>>,
   pending: PendingInteractionRecord,
+): StaffAssistantHostStartedRun[] {
+  const key = resumeTurnKey(pending.id);
+  return startedRunsMatchingTurnKey(history, (turnKey) => turnKey === key);
+}
+
+function hostModelMessages(
+  history: Awaited<ReturnType<typeof loadHistory>>,
+  recoverStartedRuns: readonly StaffAssistantHostStartedRun[],
+) {
+  return staffAssistantModelMessagesFromPersisted(
+    modelHistoryToPersisted(history.messages),
+    undefined,
+    {
+      recoverStartedExecutionIds: new Set(
+        recoverStartedRuns.map((run) => run.executionId),
+      ),
+    },
+  );
+}
+
+function hasUnfinishedResumeTurn(
+  history: Awaited<ReturnType<typeof loadHistory>>,
 ): boolean {
   if (
-    pending.executionId !== undefined &&
-    run.executionId === pending.executionId
+    history.unfinishedStartedRuns.some((run) => isResumeTurnKey(run.turnKey))
   ) {
     return true;
   }
-  if (run.toolCallId === pending.toolCallId) {
-    return true;
-  }
-  return (
-    (run.outcome === "confirmation_required" ||
-      run.outcome === "choice_required") &&
-    run.action === pending.actionName
+  return history.checkpointTurns.some(
+    (turn) => isResumeTurnKey(turn.turnKey) && !turn.hasSpeech,
   );
 }
 
@@ -688,21 +774,15 @@ function phaseBState(
   history: Awaited<ReturnType<typeof loadHistory>>,
   pending: PendingInteractionRecord,
 ): "needed" | "continue" | "done" {
-  const hitlIndex = history.messages.findLastIndex((message) =>
-    message.toolRuns.some((run) => isPendingHitlRun(run, pending)),
-  );
-  const later = hitlIndex === -1 ? [] : history.messages.slice(hitlIndex + 1);
-  const laterAssistant = later.filter(
-    (message) => message.role === "assistant",
-  );
-  if (laterAssistant.length === 0) {
+  const key = resumeTurnKey(pending.id);
+  const turn = history.checkpointTurns.find((row) => row.turnKey === key);
+  if (turn === undefined) {
     return "needed";
   }
-  if (
-    laterAssistant.some((message) =>
-      message.toolRuns.some((run) => run.outcome === "started"),
-    )
-  ) {
+  const hasStarted = history.unfinishedStartedRuns.some(
+    (run) => run.turnKey === key,
+  );
+  if (hasStarted || !turn.hasSpeech) {
     return "continue";
   }
   return "done";
@@ -710,9 +790,18 @@ function phaseBState(
 
 function lastAssistantSpeech(
   history: Awaited<ReturnType<typeof loadHistory>>,
+  pinnedTurnKey?: string,
 ): string {
+  if (pinnedTurnKey !== undefined) {
+    const pinned = history.checkpointTurns.find(
+      (turn) => turn.turnKey === pinnedTurnKey,
+    );
+    if (pinned !== undefined && pinned.speech !== "") {
+      return pinned.speech;
+    }
+  }
   const last = history.messages.findLast(
-    (message) => message.role === "assistant",
+    (message) => message.role === "assistant" && message.text !== "",
   );
   return last?.text ?? "";
 }
@@ -721,7 +810,14 @@ function historyToolResults(
   history: Awaited<ReturnType<typeof loadHistory>>,
 ): { readonly toolName: string; readonly output: unknown }[] {
   const last = history.messages.findLast(
-    (message) => message.role === "assistant",
+    (message) =>
+      message.role === "assistant" &&
+      message.toolRuns.some(
+        (run) =>
+          run.modelTrace !== null &&
+          run.modelTrace !== undefined &&
+          run.toolName !== null,
+      ),
   );
   if (last === undefined) {
     return [];
@@ -731,12 +827,28 @@ function historyToolResults(
     if (run.modelTrace === null || run.modelTrace === undefined) {
       continue;
     }
+    if (run.toolName === null) {
+      continue;
+    }
+    if (isStartedToolTrace(run.modelTrace)) {
+      continue;
+    }
     results.push({
-      toolName: run.toolName ?? run.action.replace(".", "_"),
+      toolName: run.toolName,
       output: run.modelTrace,
     });
   }
   return results;
+}
+
+function isStartedToolTrace(output: unknown): boolean {
+  return (
+    typeof output === "object" &&
+    output !== null &&
+    !Array.isArray(output) &&
+    "status" in output &&
+    output.status === "started"
+  );
 }
 
 async function runPhaseB(options: {
@@ -754,7 +866,7 @@ async function runPhaseB(options: {
     readonly companySelector: string | null;
   };
   readonly actor: StaffMembership;
-  readonly pendingId: string;
+  readonly pending: PendingInteractionRecord;
 }): Promise<AssistantHostInteractionResult> {
   const history = await loadHistory({
     pipeline: options.runtime.pipeline,
@@ -762,6 +874,7 @@ async function runPhaseB(options: {
     requestId: options.runtime.requestId,
     clientIp: options.runtime.clientIp,
     principal: options.staffPrincipal,
+    includeTurnKeys: [resumeTurnKey(options.pending.id)],
   });
   const conversation = await executeAction(options.runtime.pipeline, {
     action: getConversation,
@@ -787,14 +900,16 @@ async function runPhaseB(options: {
     requestId: options.runtime.requestId,
     clientIp: options.runtime.clientIp,
     principal: options.staffPrincipal,
-    beginKey: `begin:resume:${options.pendingId}`,
+    beginKey: resumeTurnKey(options.pending.id),
   });
   const priorRuns = priorRunsFromHistory(history);
+  const recoverStartedRuns = startedRunsForResumeTurnRecovery(
+    history,
+    options.pending,
+  );
   const turn = await continueStaffAssistantHostTurn({
     model: requireHostModel(options.runtime.model),
-    messages: staffAssistantModelMessagesFromPersisted(
-      modelHistoryToPersisted(history.messages),
-    ),
+    messages: hostModelMessages(history, recoverStartedRuns),
     contracts,
     execute: (actionName, input, toolOptions) => {
       const action = requireImplementation(
@@ -831,6 +946,7 @@ async function runPhaseB(options: {
       toolRuns: conversation.toolRuns,
     }),
     ...(priorRuns.length > 0 ? { priorRuns } : {}),
+    ...(recoverStartedRuns.length > 0 ? { recoverStartedRuns } : {}),
     choiceBind: options.bind,
     openPending: (record) => options.runtime.pendingStore.open(record),
     checkPending: async ({ actionName }) => {
@@ -1238,7 +1354,7 @@ async function afterPhaseASuccess(options: {
     bind: options.bind,
     staffPrincipal: options.staffPrincipal,
     actor: options.actor,
-    pendingId: options.record.id,
+    pending: options.record,
   });
 }
 
@@ -1263,16 +1379,18 @@ async function replayCompletedPending(options: {
     conversationId: options.conversationId,
     bind: options.bind,
   });
+  const resumeKey = resumeTurnKey(options.record.id);
   const history = await loadHistory({
     pipeline: options.runtime.pipeline,
     conversationId: options.conversationId,
     requestId: options.runtime.requestId,
     clientIp: options.runtime.clientIp,
     principal: options.staffPrincipal,
+    includeTurnKeys: [resumeKey],
   });
   if (open.kind === "found" && open.record.id !== options.record.id) {
     return okEnvelope({
-      speech: lastAssistantSpeech(history),
+      speech: lastAssistantSpeech(history, resumeKey),
       toolResults: historyToolResults(history),
       pending: publicPendingFromRecord(open.record) ?? null,
     });
@@ -1280,7 +1398,7 @@ async function replayCompletedPending(options: {
   const state = phaseBState(history, options.record);
   if (state === "done") {
     return okEnvelope({
-      speech: lastAssistantSpeech(history),
+      speech: lastAssistantSpeech(history, resumeKey),
       toolResults: historyToolResults(history),
       pending: null,
     });
@@ -1292,7 +1410,7 @@ async function replayCompletedPending(options: {
     bind: options.bind,
     staffPrincipal: options.staffPrincipal,
     actor: options.actor,
-    pendingId: options.record.id,
+    pending: options.record,
   });
 }
 
@@ -1464,7 +1582,7 @@ export async function executeStaffAssistantHostChoiceResume(
               });
               const next = pendingChoiceRecordFromChoiceRecord(nextChoice, {
                 actionName: record.actionName,
-                toolCallId: `choice:${nextId}`,
+                toolCallId: `${HOST_CHOICE_SEED_TOOL_CALL_ID_PREFIX}${nextId}`,
                 executionId: successorExecutionId,
               });
               await options.pendingStore.complete({
@@ -1539,7 +1657,7 @@ async function stagePhaseAExecutionId(options: {
     staffPrincipal: options.staffPrincipal,
     actionName: options.actionName,
     beginKey: `begin:phase-a:${options.pendingId}`,
-    toolCallId: `phase-a:${options.pendingId}`,
+    toolCallId: `${HOST_PHASE_A_TOOL_CALL_ID_PREFIX}${options.pendingId}`,
     toolName: options.actionName.replace(".", "_"),
     toolInput: options.toolInput,
   });
@@ -1597,8 +1715,8 @@ async function stageSuccessorExecutionId(options: {
     staffPrincipal: options.staffPrincipal,
     actionName: options.actionName,
     beginKey: `begin:successor:${options.nextId}`,
-    toolCallId: `choice:${options.nextId}`,
-    toolName: `choice:${options.nextId}`,
+    toolCallId: `${HOST_CHOICE_SEED_TOOL_CALL_ID_PREFIX}${options.nextId}`,
+    toolName: `${HOST_CHOICE_SEED_TOOL_CALL_ID_PREFIX}${options.nextId}`,
     toolInput: options.toolInput,
   });
 }
@@ -1925,13 +2043,13 @@ export async function executeStaffAssistantHostChat(
           requestId: options.requestId,
           clientIp: options.clientIp,
           principal: auth.staffPrincipal,
-          beginKey: `begin:${appended.id}`,
+          beginKey: chatTurnKey(appended.id),
         });
+        const recoverStartedRuns = startedRunsForChatRecovery(history);
+        const unfinishedResume = hasUnfinishedResumeTurn(history);
         const turn = await runStaffAssistantHostTurn({
           model: requireHostModel(options.model),
-          messages: staffAssistantModelMessagesFromPersisted(
-            modelHistoryToPersisted(history.messages),
-          ),
+          messages: hostModelMessages(history, recoverStartedRuns),
           contracts,
           execute: (actionName, input, toolOptions) => {
             const action = requireImplementation(options.registry, actionName);
@@ -1967,21 +2085,22 @@ export async function executeStaffAssistantHostChat(
           choiceBind: bind,
           openPending: (record) => options.pendingStore.open(record),
           checkPending: async ({ actionName }) => {
-            const current = await options.pendingStore.peekOpen({
-              conversationId: conversation.id,
-              bind,
-            });
-            if (current.kind !== "found") {
-              return { allow: true };
-            }
             const implementation =
               options.registry.getImplementation(actionName);
             if (implementation?.contract.risk === "read") {
               return { allow: true };
             }
-            return refuseHostPendingOpen(locale);
+            const current = await options.pendingStore.peekOpen({
+              conversationId: conversation.id,
+              bind,
+            });
+            if (current.kind === "found" || unfinishedResume) {
+              return refuseHostPendingOpen(locale);
+            }
+            return { allow: true };
           },
           checkpoint,
+          ...(recoverStartedRuns.length > 0 ? { recoverStartedRuns } : {}),
           ...(open.kind === "found" &&
           open.record.status === "open" &&
           isPendingReplaceActionName(open.record.actionName)

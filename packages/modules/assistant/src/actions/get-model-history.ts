@@ -7,6 +7,9 @@ export const getModelHistory = implementAction(getModelHistoryContract, {
     return getStaffModelHistory({
       ctx,
       conversationId: input.conversationId,
+      ...(input.includeTurnKeys !== undefined
+        ? { includeTurnKeys: input.includeTurnKeys }
+        : {}),
     });
   },
 });

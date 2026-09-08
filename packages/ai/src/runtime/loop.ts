@@ -6,6 +6,7 @@
  * permitted tool set plus BM25.
  */
 import type { ActionContract } from "@showzy/core/contract";
+import { CoreInvariantError } from "@showzy/core/errors";
 import {
   streamText,
   type LanguageModel,
@@ -46,9 +47,11 @@ import {
   type StaffAssistantLocale,
 } from "../locale.js";
 import {
+  STAFF_ASSISTANT_EMPTY_ASSISTANT_HISTORY_PLACEHOLDER,
   staffAssistantHistoryStats,
   stripStaffAssistantToolParts,
 } from "../messages.js";
+import { staffAssistantToolResultOutput } from "../model-trace.js";
 import { anthropicStaffProvider } from "../provider/anthropic.js";
 import type { StaffProviderAdapter } from "../provider/types.js";
 import {
@@ -285,6 +288,295 @@ function attachClippedModelTraces(
   });
 }
 
+/**
+ * A persisted `started` tool-run to replay before the next model step.
+ * Identity is `executionId`, not a model-regenerated `toolCallId`.
+ */
+export interface StaffAssistantHostStartedRun {
+  readonly messageId: string;
+  readonly executionId: string;
+  readonly seq: number;
+  readonly actionName: string;
+  readonly toolName: string;
+  readonly toolCallId: string;
+  readonly toolInput: unknown;
+}
+
+/**
+ * Host-minted Phase A attempt (`begin:phase-a:${pendingId}`). Chat
+ * recovery must not execute these rows on a later assistant message.
+ */
+export const HOST_PHASE_A_TOOL_CALL_ID_PREFIX = "phase-a:" as const;
+
+/**
+ * Host-minted choice / successor HITL seed (`begin:successor:` /
+ * `choice:${pendingId}`). Same exclusion as Phase A.
+ */
+export const HOST_CHOICE_SEED_TOOL_CALL_ID_PREFIX = "choice:" as const;
+
+export function isHostSeededHitlToolCallId(toolCallId: string): boolean {
+  return (
+    toolCallId.startsWith(HOST_PHASE_A_TOOL_CALL_ID_PREFIX) ||
+    toolCallId.startsWith(HOST_CHOICE_SEED_TOOL_CALL_ID_PREFIX)
+  );
+}
+
+function compareStartedRunSeq(
+  left: StaffAssistantHostStartedRun,
+  right: StaffAssistantHostStartedRun,
+): number {
+  return left.seq - right.seq;
+}
+
+/**
+ * Chat HTTP recovery replays unfinished chat-turn `started` rows across
+ * a new `begin()` message. Phase B / choice / confirm resume only
+ * replays rows on **this** resume `begin()` message.
+ */
+export type StaffAssistantHostRecoverStartedRunsScope =
+  "conversation" | "resumeTurn";
+
+function chatRecoverableStartedRuns(
+  runs: readonly StaffAssistantHostStartedRun[],
+  options: {
+    readonly scope: StaffAssistantHostRecoverStartedRunsScope;
+    readonly messageId: string;
+  },
+): StaffAssistantHostStartedRun[] {
+  const chatTurn = runs.filter((run) => {
+    if (isHostSeededHitlToolCallId(run.toolCallId)) {
+      return false;
+    }
+    if (options.scope === "resumeTurn") {
+      return run.messageId === options.messageId;
+    }
+    return true;
+  });
+  const messageOrder: string[] = [];
+  const byMessage = new Map<string, StaffAssistantHostStartedRun[]>();
+  for (const run of chatTurn) {
+    const existing = byMessage.get(run.messageId);
+    if (existing === undefined) {
+      messageOrder.push(run.messageId);
+      byMessage.set(run.messageId, [run]);
+    } else {
+      existing.push(run);
+    }
+  }
+  return messageOrder.flatMap((messageId) => {
+    const group = byMessage.get(messageId);
+    if (group === undefined) {
+      return [];
+    }
+    return group.slice().sort(compareStartedRunSeq);
+  });
+}
+
+async function recoverStartedToolRuns(options: {
+  readonly tools: ToolSet;
+  readonly state: StaffAssistantHostExecuteState;
+  readonly messageId: string | undefined;
+  readonly runs: readonly StaffAssistantHostStartedRun[];
+  readonly scope: StaffAssistantHostRecoverStartedRunsScope;
+}): Promise<StaffAssistantHostStartedRun[]> {
+  if (options.messageId === undefined || options.runs.length === 0) {
+    return [];
+  }
+  const recoverable = chatRecoverableStartedRuns(options.runs, {
+    scope: options.scope,
+    messageId: options.messageId,
+  });
+  if (recoverable.length === 0) {
+    return [];
+  }
+  for (const run of recoverable) {
+    options.state.executionIdByToolCallId.set(run.toolCallId, run.executionId);
+    options.state.facadeByToolCallId.set(run.toolCallId, {
+      toolName: run.toolName,
+      toolInput: run.toolInput,
+    });
+    const tool = options.tools[run.toolName];
+    const executeTool = tool?.execute;
+    if (executeTool === undefined) {
+      throw new CoreInvariantError(
+        `cannot recover staged tool "${run.toolName}"`,
+      );
+    }
+    await executeTool(run.toolInput, {
+      toolCallId: run.toolCallId,
+      messages: [],
+      context: undefined,
+    });
+  }
+  let maxSeqOnCurrent = -1;
+  for (const run of recoverable) {
+    if (run.messageId === options.messageId && run.seq > maxSeqOnCurrent) {
+      maxSeqOnCurrent = run.seq;
+    }
+  }
+  if (maxSeqOnCurrent >= 0) {
+    options.state.seq = maxSeqOnCurrent + 1;
+  }
+  return recoverable;
+}
+
+function assistantMessageWithStartedCalls(
+  message: ModelMessage,
+  recovered: readonly StaffAssistantHostStartedRun[],
+): ModelMessage {
+  if (message.role !== "assistant") {
+    return message;
+  }
+  const existingIds = new Set<string>();
+  if (Array.isArray(message.content)) {
+    for (const part of message.content) {
+      if (part.type === "tool-call") {
+        existingIds.add(part.toolCallId);
+      }
+    }
+  }
+  const missingCalls = recovered
+    .filter((run) => !existingIds.has(run.toolCallId))
+    .map((run) => ({
+      type: "tool-call" as const,
+      toolCallId: run.toolCallId,
+      toolName: run.toolName,
+      input: run.toolInput ?? {},
+    }));
+  if (missingCalls.length === 0 && Array.isArray(message.content)) {
+    return message;
+  }
+  if (typeof message.content === "string") {
+    const keepText =
+      message.content !== "" &&
+      message.content !== STAFF_ASSISTANT_EMPTY_ASSISTANT_HISTORY_PLACEHOLDER;
+    return {
+      ...message,
+      content: [
+        ...(keepText
+          ? ([{ type: "text" as const, text: message.content }] as const)
+          : []),
+        ...missingCalls,
+      ],
+    };
+  }
+  if (Array.isArray(message.content)) {
+    return { ...message, content: [...message.content, ...missingCalls] };
+  }
+  return message;
+}
+
+type RecoveredToolResultPart = {
+  readonly type: "tool-result";
+  readonly toolCallId: string;
+  readonly toolName: string;
+  readonly output: ReturnType<typeof staffAssistantToolResultOutput>;
+};
+
+function trailingUserMessageCount(messages: readonly ModelMessage[]): number {
+  let count = 0;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role !== "user") {
+      break;
+    }
+    count += 1;
+  }
+  return count;
+}
+
+function recoveredCallResultPair(
+  recovered: readonly StaffAssistantHostStartedRun[],
+  missing: readonly RecoveredToolResultPart[],
+): {
+  readonly assistant: ModelMessage;
+  readonly tool: ModelMessage;
+} {
+  const missingIds = new Set(missing.map((part) => part.toolCallId));
+  return {
+    assistant: assistantMessageWithStartedCalls(
+      { role: "assistant", content: [] },
+      recovered.filter((run) => missingIds.has(run.toolCallId)),
+    ),
+    tool: { role: "tool", content: [...missing] },
+  };
+}
+
+function mergeRecoveredToolResultsIntoHistory(
+  messages: readonly ModelMessage[],
+  recovered: readonly StaffAssistantHostStartedRun[],
+  presented: readonly StaffAssistantPresentedToolResult[],
+): ModelMessage[] {
+  if (recovered.length === 0) {
+    return [...messages];
+  }
+  const presentedByCallId = new Map<
+    string,
+    StaffAssistantPresentedToolResult
+  >();
+  for (const item of presented) {
+    if (item.toolCallId !== undefined && item.toolCallId.length > 0) {
+      presentedByCallId.set(item.toolCallId, item);
+    }
+  }
+  const replacements = new Map<string, RecoveredToolResultPart>();
+  for (const run of recovered) {
+    const presentedRun = presentedByCallId.get(run.toolCallId);
+    if (presentedRun === undefined) {
+      continue;
+    }
+    replacements.set(run.toolCallId, {
+      type: "tool-result",
+      toolCallId: run.toolCallId,
+      toolName: run.toolName,
+      output: staffAssistantToolResultOutput(presentedRun.output),
+    });
+  }
+  if (replacements.size === 0) {
+    return [...messages];
+  }
+  const replacedIds = new Set<string>();
+  const next = messages.map((message) => {
+    if (message.role !== "tool" || !Array.isArray(message.content)) {
+      return message;
+    }
+    return {
+      ...message,
+      content: message.content.map((part) => {
+        if (part.type !== "tool-result") {
+          return part;
+        }
+        const replacement = replacements.get(part.toolCallId);
+        if (replacement === undefined) {
+          return part;
+        }
+        replacedIds.add(part.toolCallId);
+        return replacement;
+      }),
+    };
+  });
+  const missing = recovered.flatMap((run) => {
+    const replacement = replacements.get(run.toolCallId);
+    if (replacement === undefined || replacedIds.has(run.toolCallId)) {
+      return [];
+    }
+    return [replacement];
+  });
+  if (missing.length === 0) {
+    return next;
+  }
+  const pair = recoveredCallResultPair(recovered, missing);
+  const trailingUsers = trailingUserMessageCount(next);
+  if (trailingUsers === 0) {
+    return [...next, pair.assistant, pair.tool];
+  }
+  return [
+    ...next.slice(0, -trailingUsers),
+    pair.assistant,
+    pair.tool,
+    ...next.slice(-trailingUsers),
+  ];
+}
+
 export interface StaffAssistantHostTurnOptions {
   readonly model: LanguageModel;
   readonly messages: ModelMessage[];
@@ -307,6 +599,15 @@ export interface StaffAssistantHostTurnOptions {
    * speech fallback instead of the empty-turn fallback.
    */
   readonly priorRuns?: readonly StaffAssistantTurnRun[];
+  /**
+   * In-flight `started` rows the **host already allowlisted by turnKey**.
+   * Chat (`conversation`, default) replays unfinished chat-turn rows
+   * even when `begin()` minted a new assistant message. Phase B
+   * continue (`resumeTurn`) also filters to this resume `begin()`
+   * messageId. Host-seeded HITL / Phase A ids are not recovered here.
+   */
+  readonly recoverStartedRuns?: readonly StaffAssistantHostStartedRun[];
+  readonly recoverStartedRunsScope?: StaffAssistantHostRecoverStartedRunsScope;
 }
 
 /**
@@ -363,14 +664,28 @@ export async function runStaffAssistantHostTurn(
     state,
     options.checkpoint,
   );
+  const recovered = await recoverStartedToolRuns({
+    tools,
+    state,
+    messageId: state.messageId,
+    runs: options.recoverStartedRuns ?? [],
+    scope: options.recoverStartedRunsScope ?? "conversation",
+  });
   const toolsetHash = staffAssistantToolsetHash(
     Object.keys(tools),
     provider.id,
   );
-  const messages =
+  let messages =
     Object.keys(tools).length === 0
       ? stripStaffAssistantToolParts(options.messages, provider)
       : options.messages;
+  if (recovered.length > 0) {
+    messages = mergeRecoveredToolResultsIntoHistory(
+      messages,
+      recovered,
+      presentedToolResults,
+    );
+  }
   const history = staffAssistantHistoryStats(messages);
 
   const result = streamText({
@@ -452,10 +767,14 @@ export async function runStaffAssistantHostTurn(
 /**
  * Phase B resume: same `streamText` host turn from persisted history.
  * Callers must pass `getModelHistory` messages — do not append a second
- * copy of the original user text.
+ * copy of the original user text. Started-run recovery is this resume
+ * `begin()` only (not conversation-wide leftover chat crashes).
  */
 export async function continueStaffAssistantHostTurn(
   options: StaffAssistantHostTurnOptions,
 ): Promise<StaffAssistantHostTurnResult> {
-  return runStaffAssistantHostTurn(options);
+  return runStaffAssistantHostTurn({
+    ...options,
+    recoverStartedRunsScope: "resumeTurn",
+  });
 }

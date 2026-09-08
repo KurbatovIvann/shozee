@@ -30,6 +30,7 @@ import { appendUserMessage } from "./append-user-message.js";
 import { checkpointAssistantTurn } from "./checkpoint-assistant-turn.js";
 import { createConversation } from "./create-conversation.js";
 import { getConversation } from "./get-conversation.js";
+import { GET_MODEL_HISTORY_CHECKPOINT_TURNS_MAX } from "./get-model-history.contract.js";
 import { getModelHistory } from "./get-model-history.js";
 import { getStaffActor } from "./get-staff-actor.js";
 import { listConversations } from "./list-conversations.js";
@@ -65,6 +66,10 @@ const stamps = {
 
 const orderId = randomUUID();
 const challengeId = randomUUID();
+
+function beginInput(conversationId: string, turnKey = `begin:${randomUUID()}`) {
+  return { kind: "begin" as const, conversationId, turnKey };
+}
 
 let kit: TestKit;
 
@@ -313,8 +318,12 @@ crossTenantSuite(
     ),
     isolationCase(
       checkpointAssistantTurn,
-      { input: { kind: "begin", conversationId: fixtures.convA } },
-      { input: { kind: "begin", conversationId: fixtures.convB } },
+      {
+        input: beginInput(fixtures.convA, `begin:${fixtures.convA}`),
+      },
+      {
+        input: beginInput(fixtures.convB, `begin:${fixtures.convB}`),
+      },
     ),
     isolationCase(
       getStaffActor,
@@ -363,14 +372,14 @@ idempotencySuite(requireKit, [
   },
   {
     action: checkpointAssistantTurn,
-    input: {
-      kind: "begin" as const,
-      conversationId: fixtures.checkpointIdempotent,
-    },
-    conflictingInput: {
-      kind: "begin" as const,
-      conversationId: fixtures.checkpoint,
-    },
+    input: beginInput(
+      fixtures.checkpointIdempotent,
+      `begin:${fixtures.checkpointIdempotent}`,
+    ),
+    conflictingInput: beginInput(
+      fixtures.checkpoint,
+      `begin:${fixtures.checkpoint}`,
+    ),
     readEffect: () => countMessages(fixtures.checkpointIdempotent),
   },
 ]);
@@ -815,11 +824,7 @@ describe("assistant staff conversation actions", () => {
       ),
     ).rejects.toBeInstanceOf(PermissionDeniedError);
     await expect(
-      kit.invoke(
-        checkpointAssistantTurn,
-        { kind: "begin", conversationId: fixtures.convA },
-        denied,
-      ),
+      kit.invoke(checkpointAssistantTurn, beginInput(fixtures.convA), denied),
     ).rejects.toBeInstanceOf(PermissionDeniedError);
     await expect(kit.invoke(getStaffActor, {}, denied)).rejects.toBeInstanceOf(
       PermissionDeniedError,
@@ -1006,7 +1011,7 @@ describe("assistant staff conversation actions", () => {
     const colleagueBegin = await invokeAsNotFound(
       kit.invoke(
         checkpointAssistantTurn,
-        { kind: "begin", conversationId: fixtures.convA },
+        beginInput(fixtures.convA),
         colleague,
       ),
       "colleague checkpointAssistantTurn begin on another author's thread",
@@ -1014,17 +1019,17 @@ describe("assistant staff conversation actions", () => {
     const foreignBegin = await invokeAsNotFound(
       kit.invoke(
         checkpointAssistantTurn,
-        { kind: "begin", conversationId: fixtures.convB },
+        beginInput(fixtures.convB),
         colleague,
       ),
       "colleague checkpointAssistantTurn begin on a foreign-company thread",
     );
     expect(colleagueBegin).toEqual(foreignBegin);
 
-    const authorBegin = await kit.invoke(checkpointAssistantTurn, {
-      kind: "begin",
-      conversationId: fixtures.convA,
-    });
+    const authorBegin = await kit.invoke(
+      checkpointAssistantTurn,
+      beginInput(fixtures.convA),
+    );
     const authorStaged = await kit.invoke(checkpointAssistantTurn, {
       kind: "stageRun",
       conversationId: fixtures.convA,
@@ -1037,7 +1042,7 @@ describe("assistant staff conversation actions", () => {
     });
     const foreignAuthorBegin = await kit.invoke(
       checkpointAssistantTurn,
-      { kind: "begin", conversationId: fixtures.convB },
+      beginInput(fixtures.convB),
       {
         companyId: kitIdentities.companies.b,
         userId: kitIdentities.users.boris,
@@ -1166,24 +1171,18 @@ describe("assistant staff conversation actions", () => {
     expect(ownerHistory).toEqual(foreignGet);
 
     const ownerBegin = await invokeAsNotFound(
-      kit.invoke(checkpointAssistantTurn, {
-        kind: "begin",
-        conversationId: fixtures.employee,
-      }),
+      kit.invoke(checkpointAssistantTurn, beginInput(fixtures.employee)),
       "owner checkpointAssistantTurn begin on an employee's thread",
     );
     const foreignBegin = await invokeAsNotFound(
-      kit.invoke(checkpointAssistantTurn, {
-        kind: "begin",
-        conversationId: fixtures.convB,
-      }),
+      kit.invoke(checkpointAssistantTurn, beginInput(fixtures.convB)),
       "owner checkpointAssistantTurn begin on a foreign-company thread",
     );
     expect(ownerBegin).toEqual(foreignBegin);
 
     const employeeBegin = await kit.invoke(
       checkpointAssistantTurn,
-      { kind: "begin", conversationId: fixtures.employee },
+      beginInput(fixtures.employee),
       {
         userId: clerks.employee,
         companyId: kitIdentities.companies.a,
@@ -1208,7 +1207,7 @@ describe("assistant staff conversation actions", () => {
     );
     const foreignAuthorBegin = await kit.invoke(
       checkpointAssistantTurn,
-      { kind: "begin", conversationId: fixtures.convB },
+      beginInput(fixtures.convB),
       {
         companyId: kitIdentities.companies.b,
         userId: kitIdentities.users.boris,
@@ -1599,6 +1598,196 @@ describe("assistant staff conversation actions", () => {
     ]);
   });
 
+  it("lists unfinished started runs outside the 8-message prompt window", async () => {
+    const conversation = await kit.invoke(createConversation, {
+      title: "Unfinished outside window",
+    });
+    const begun = await kit.invoke(
+      checkpointAssistantTurn,
+      beginInput(conversation.id),
+    );
+    const staged = await kit.invoke(checkpointAssistantTurn, {
+      kind: "stageRun",
+      conversationId: conversation.id,
+      messageId: begun.messageId,
+      seq: 0,
+      actionName: "orders.list",
+      toolName: "orders_list_page",
+      toolCallId: "call_old_started",
+      toolInput: { limit: 3 },
+    });
+    for (let index = 0; index < 8; index += 1) {
+      await kit.invoke(appendUserMessage, {
+        conversationId: conversation.id,
+        body: `pad-user-${String(index)}`,
+      });
+    }
+    const history = await kit.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    expect(history.messages).toHaveLength(8);
+    expect(
+      history.messages.some((message) => message.id === begun.messageId),
+    ).toBe(false);
+    expect(history.unfinishedStartedRuns).toEqual([
+      {
+        messageId: begun.messageId,
+        turnKey: begun.turnKey,
+        executionId: staged.executionId,
+        seq: 0,
+        action: "orders.list",
+        toolName: "orders_list_page",
+        toolCallId: "call_old_started",
+        toolInput: { limit: 3 },
+      },
+    ]);
+    expect(history.checkpointTurns).toEqual([
+      {
+        messageId: begun.messageId,
+        turnKey: begun.turnKey,
+        hasSpeech: false,
+        speech: "",
+      },
+    ]);
+  });
+
+  it("lists unfinished started runs whose message turnKey is null", async () => {
+    const conversation = await kit.invoke(createConversation, {
+      title: "Legacy null turnKey",
+    });
+    const inserted = (
+      await kit.db.runtime.db
+        .insert(assistantMessages)
+        .values({
+          companyId: kitIdentities.companies.a,
+          conversationId: conversation.id,
+          role: "assistant",
+          body: "",
+        })
+        .returning({ id: assistantMessages.id })
+    )[0];
+    if (inserted === undefined) {
+      throw new Error("legacy assistant insert returned no row");
+    }
+    const staged = await kit.invoke(checkpointAssistantTurn, {
+      kind: "stageRun",
+      conversationId: conversation.id,
+      messageId: inserted.id,
+      seq: 0,
+      actionName: "orders.create",
+      toolName: "orders_create",
+      toolCallId: "call_legacy_null",
+      toolInput: { customerId: orderId },
+    });
+    const history = await kit.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    expect(history.unfinishedStartedRuns).toEqual([
+      {
+        messageId: inserted.id,
+        turnKey: null,
+        executionId: staged.executionId,
+        seq: 0,
+        action: "orders.create",
+        toolName: "orders_create",
+        toolCallId: "call_legacy_null",
+        toolInput: { customerId: orderId },
+      },
+    ]);
+    expect(history.checkpointTurns).toEqual([]);
+    const open = history.messages.find((row) => row.id === inserted.id);
+    expect(open?.turnKey).toBeNull();
+  });
+
+  it("pins a completed resume turnKey clipped from the newest checkpointTurns", async () => {
+    const conversation = await kit.invoke(createConversation, {
+      title: "Clipped completed resume",
+    });
+    const pendingId = randomUUID();
+    const resumeKey = `begin:resume:${pendingId}`;
+    const begun = await kit.invoke(
+      checkpointAssistantTurn,
+      beginInput(conversation.id, resumeKey),
+    );
+    await kit.invoke(checkpointAssistantTurn, {
+      kind: "complete",
+      conversationId: conversation.id,
+      messageId: begun.messageId,
+      body: "The order is ready.",
+    });
+    const newer = new Date(Date.now() + 60_000);
+    await kit.db.runtime.db.insert(assistantMessages).values(
+      Array.from({ length: GET_MODEL_HISTORY_CHECKPOINT_TURNS_MAX }, () => ({
+        companyId: kitIdentities.companies.a,
+        conversationId: conversation.id,
+        role: "assistant" as const,
+        body: "later speech",
+        turnKey: `begin:${randomUUID()}`,
+        createdAt: newer,
+        updatedAt: newer,
+      })),
+    );
+    const clipped = await kit.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    expect(clipped.checkpointTurns).toHaveLength(
+      GET_MODEL_HISTORY_CHECKPOINT_TURNS_MAX,
+    );
+    expect(
+      clipped.checkpointTurns.some((turn) => turn.turnKey === resumeKey),
+    ).toBe(false);
+    const pinned = await kit.invoke(getModelHistory, {
+      conversationId: conversation.id,
+      includeTurnKeys: [resumeKey],
+    });
+    expect(
+      pinned.checkpointTurns.find((turn) => turn.turnKey === resumeKey),
+    ).toEqual({
+      messageId: begun.messageId,
+      turnKey: resumeKey,
+      hasSpeech: true,
+      speech: "The order is ready.",
+    });
+  });
+
+  it("pins an unfinished empty resume begin clipped from the newest checkpointTurns", async () => {
+    const conversation = await kit.invoke(createConversation, {
+      title: "Clipped empty resume begin",
+    });
+    const pendingId = randomUUID();
+    const resumeKey = `begin:resume:${pendingId}`;
+    const begun = await kit.invoke(
+      checkpointAssistantTurn,
+      beginInput(conversation.id, resumeKey),
+    );
+    const newer = new Date(Date.now() + 60_000);
+    await kit.db.runtime.db.insert(assistantMessages).values(
+      Array.from({ length: GET_MODEL_HISTORY_CHECKPOINT_TURNS_MAX }, () => ({
+        companyId: kitIdentities.companies.a,
+        conversationId: conversation.id,
+        role: "assistant" as const,
+        body: "later speech",
+        turnKey: `begin:${randomUUID()}`,
+        createdAt: newer,
+        updatedAt: newer,
+      })),
+    );
+    const history = await kit.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    expect(
+      history.checkpointTurns.filter((turn) => turn.speech === "later speech"),
+    ).toHaveLength(GET_MODEL_HISTORY_CHECKPOINT_TURNS_MAX);
+    expect(
+      history.checkpointTurns.find((turn) => turn.turnKey === resumeKey),
+    ).toEqual({
+      messageId: begun.messageId,
+      turnKey: resumeKey,
+      hasSpeech: false,
+      speech: "",
+    });
+  });
+
   it("begin then two stage/finish then complete is one assistant message in seq order", async () => {
     const conversation = await kit.invoke(createConversation, {
       title: "Checkpoint one message",
@@ -1607,10 +1796,10 @@ describe("assistant staff conversation actions", () => {
       conversationId: conversation.id,
       body: "List then get",
     });
-    const begun = await kit.invoke(checkpointAssistantTurn, {
-      kind: "begin",
-      conversationId: conversation.id,
-    });
+    const begun = await kit.invoke(
+      checkpointAssistantTurn,
+      beginInput(conversation.id),
+    );
     const first = await kit.invoke(checkpointAssistantTurn, {
       kind: "stageRun",
       conversationId: conversation.id,
@@ -1621,7 +1810,7 @@ describe("assistant staff conversation actions", () => {
       toolCallId: "call_list",
       toolInput: { limit: 20, query: "Леха" },
     });
-    await kit.invoke(checkpointAssistantTurn, {
+    const finishedFirst = await kit.invoke(checkpointAssistantTurn, {
       kind: "finishRun",
       conversationId: conversation.id,
       executionId: first.executionId ?? "",
@@ -1629,6 +1818,7 @@ describe("assistant staff conversation actions", () => {
       resultIds: [orderId],
       modelTrace: { kind: "page.summary", rows: [{ orderNumber: "12" }] },
     });
+    expect(finishedFirst.turnKey).toBe(begun.turnKey);
     const second = await kit.invoke(checkpointAssistantTurn, {
       kind: "stageRun",
       conversationId: conversation.id,
@@ -1654,6 +1844,8 @@ describe("assistant staff conversation actions", () => {
       body: "Here they are.",
     });
     expect(completed.messageId).toBe(begun.messageId);
+    expect(begun.turnKey).toEqual(expect.stringMatching(/^begin:/));
+    expect(completed.turnKey).toBe(begun.turnKey);
 
     const messages = await kit.db.runtime.db
       .select()
@@ -1668,6 +1860,7 @@ describe("assistant staff conversation actions", () => {
     expect(messages).toHaveLength(1);
     expect(messages[0]?.id).toBe(begun.messageId);
     expect(messages[0]?.body).toBe("Here they are.");
+    expect(messages[0]?.turnKey).toBe(begun.turnKey);
 
     const history = await kit.invoke(getModelHistory, {
       conversationId: conversation.id,
@@ -1676,6 +1869,21 @@ describe("assistant staff conversation actions", () => {
       (row) => row.role === "assistant",
     );
     expect(lastAssistant?.id).toBe(begun.messageId);
+    expect(lastAssistant?.turnKey).toBe(begun.turnKey);
+    expect(history.checkpointTurns).toEqual([
+      {
+        messageId: begun.messageId,
+        turnKey: begun.turnKey,
+        hasSpeech: true,
+        speech: "Here they are.",
+      },
+    ]);
+    const sameBegin = await kit.invoke(
+      checkpointAssistantTurn,
+      beginInput(conversation.id, begun.turnKey ?? ""),
+    );
+    expect(sameBegin.messageId).toBe(begun.messageId);
+    expect(sameBegin.turnKey).toBe(begun.turnKey);
     expect(lastAssistant?.toolRuns.map((run) => run.seq)).toEqual([0, 1]);
     expect(lastAssistant?.toolRuns[0]?.toolInput).toEqual({
       limit: 20,
@@ -1684,10 +1892,10 @@ describe("assistant staff conversation actions", () => {
     expect(lastAssistant?.toolRuns[0]?.toolInput).not.toEqual({});
     expect(lastAssistant?.toolRuns[1]?.toolInput).toEqual({ id: orderId });
 
-    const secondTurn = await kit.invoke(checkpointAssistantTurn, {
-      kind: "begin",
-      conversationId: conversation.id,
-    });
+    const secondTurn = await kit.invoke(
+      checkpointAssistantTurn,
+      beginInput(conversation.id),
+    );
     await kit.invoke(checkpointAssistantTurn, {
       kind: "complete",
       conversationId: conversation.id,
@@ -1715,10 +1923,10 @@ describe("assistant staff conversation actions", () => {
     const conversation = await kit.invoke(createConversation, {
       title: "Stage retry",
     });
-    const begun = await kit.invoke(checkpointAssistantTurn, {
-      kind: "begin",
-      conversationId: conversation.id,
-    });
+    const begun = await kit.invoke(
+      checkpointAssistantTurn,
+      beginInput(conversation.id),
+    );
     const staged = await kit.invoke(checkpointAssistantTurn, {
       kind: "stageRun",
       conversationId: conversation.id,
@@ -1748,10 +1956,10 @@ describe("assistant staff conversation actions", () => {
     const conversation = await kit.invoke(createConversation, {
       title: "Open checkpoint turn",
     });
-    const begun = await kit.invoke(checkpointAssistantTurn, {
-      kind: "begin",
-      conversationId: conversation.id,
-    });
+    const begun = await kit.invoke(
+      checkpointAssistantTurn,
+      beginInput(conversation.id),
+    );
     const staged = await kit.invoke(checkpointAssistantTurn, {
       kind: "stageRun",
       conversationId: conversation.id,
@@ -1770,7 +1978,7 @@ describe("assistant staff conversation actions", () => {
     );
     expect(clientView.toolRuns).toEqual([]);
     expect(JSON.stringify(clientView)).not.toMatch(
-      /modelTrace|model_trace|toolInput|tool_input|executionId|execution_id/,
+      /modelTrace|model_trace|toolInput|tool_input|executionId|execution_id|turnKey|turn_key/,
     );
     expect(JSON.stringify(clientView.toolRuns)).not.toContain("started");
 
@@ -1779,6 +1987,27 @@ describe("assistant staff conversation actions", () => {
     });
     const open = history.messages.find((row) => row.id === begun.messageId);
     expect(open?.text).toBe("");
+    expect(open?.turnKey).toBe(begun.turnKey);
+    expect(history.unfinishedStartedRuns).toEqual([
+      {
+        messageId: begun.messageId,
+        turnKey: begun.turnKey,
+        executionId: staged.executionId,
+        seq: 0,
+        action: "orders.list",
+        toolName: "orders_list_page",
+        toolCallId: "call_open",
+        toolInput: { limit: 5 },
+      },
+    ]);
+    expect(history.checkpointTurns).toEqual([
+      {
+        messageId: begun.messageId,
+        turnKey: begun.turnKey,
+        hasSpeech: false,
+        speech: "",
+      },
+    ]);
     expect(open?.toolRuns).toEqual([
       {
         action: "orders.list",
@@ -1797,10 +2026,10 @@ describe("assistant staff conversation actions", () => {
     const conversation = await kit.invoke(createConversation, {
       title: "Checkpoint traces",
     });
-    const begun = await kit.invoke(checkpointAssistantTurn, {
-      kind: "begin",
-      conversationId: conversation.id,
-    });
+    const begun = await kit.invoke(
+      checkpointAssistantTurn,
+      beginInput(conversation.id),
+    );
     const errorRun = await kit.invoke(checkpointAssistantTurn, {
       kind: "stageRun",
       conversationId: conversation.id,
@@ -1911,16 +2140,17 @@ describe("assistant staff conversation actions", () => {
     expect(lastAssistant?.toolRuns[0]?.toolInput).toBeNull();
     expect(lastAssistant?.toolRuns[0]?.executionId).toBeNull();
     expect(lastAssistant?.toolRuns[0]?.seq).toBeNull();
+    expect(lastAssistant?.turnKey).toBeNull();
   });
 
   it("recovers execution_id from the started row after a crash before finishRun", async () => {
     const conversation = await kit.invoke(createConversation, {
       title: "Crash recovery",
     });
-    const begun = await kit.invoke(checkpointAssistantTurn, {
-      kind: "begin",
-      conversationId: conversation.id,
-    });
+    const begun = await kit.invoke(
+      checkpointAssistantTurn,
+      beginInput(conversation.id),
+    );
     const staged = await kit.invoke(checkpointAssistantTurn, {
       kind: "stageRun",
       conversationId: conversation.id,
@@ -1995,10 +2225,10 @@ describe("assistant staff conversation actions", () => {
   });
 
   it("does not let another tenant read traces or finish another tenant's execution_id", async () => {
-    const begun = await kit.invoke(checkpointAssistantTurn, {
-      kind: "begin",
-      conversationId: fixtures.checkpoint,
-    });
+    const begun = await kit.invoke(
+      checkpointAssistantTurn,
+      beginInput(fixtures.checkpoint),
+    );
     const staged = await kit.invoke(checkpointAssistantTurn, {
       kind: "stageRun",
       conversationId: fixtures.checkpoint,
@@ -2019,6 +2249,15 @@ describe("assistant staff conversation actions", () => {
         },
       ),
     ).rejects.toBeInstanceOf(NotFoundError);
+    const own = await kit.invoke(getModelHistory, {
+      conversationId: fixtures.checkpoint,
+    });
+    expect(
+      own.messages.some((message) => message.turnKey === begun.turnKey),
+    ).toBe(true);
+    expect(
+      own.unfinishedStartedRuns.some((run) => run.turnKey === begun.turnKey),
+    ).toBe(true);
     await expect(
       kit.invoke(
         checkpointAssistantTurn,

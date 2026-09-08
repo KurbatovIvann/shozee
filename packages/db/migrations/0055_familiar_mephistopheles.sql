@@ -1,0 +1,2 @@
+ALTER TABLE "assistant_messages" ADD COLUMN "turn_key" text;--> statement-breakpoint
+ALTER TABLE "assistant_messages" ADD CONSTRAINT "assistant_messages_company_conversation_turn_key_uq" UNIQUE("company_id","conversation_id","turn_key");

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { ORDERS_LIST_PAGE_TOOL_NAME } from "./action-tool.js";
+import {
+  ORDERS_CREATE_TOOL_NAME,
+  ORDERS_LIST_PAGE_TOOL_NAME,
+} from "./action-tool.js";
 import { STAFF_ASSISTANT_HISTORY_CACHE_PROVIDER_OPTIONS } from "./provider/anthropic.js";
 import {
   applyStaffAssistantHistoryWindow,
@@ -631,6 +634,112 @@ describe("staffAssistantModelMessagesFromPersisted tool traces", () => {
     expect(messages.at(-2)).toMatchObject({
       providerOptions: STAFF_ASSISTANT_HISTORY_CACHE_PROVIDER_OPTIONS,
     });
+  });
+
+  it("reconstructs started runs without modelTrace as tool-calls from toolInput", () => {
+    const toolInput = {
+      customerId: "11111111-1111-4111-8111-111111111111",
+      items: [
+        {
+          productId: "22222222-2222-4222-8222-222222222222",
+          variantId: "33333333-3333-4333-8333-333333333333",
+          quantityMilli: "1000",
+        },
+      ],
+    };
+    const messages = staffAssistantModelMessagesFromPersisted([
+      { role: "user", body: "створи замовлення" },
+      {
+        role: "assistant",
+        body: "",
+        toolRuns: [
+          {
+            action: "orders.create",
+            toolCallId: "call_started",
+            toolName: ORDERS_CREATE_TOOL_NAME,
+            toolInput,
+            seq: 0,
+            modelTrace: null,
+            outcome: "started",
+            executionId: "exec-started",
+          },
+        ],
+      },
+    ]);
+    expect(messages.map((message) => message.role)).toEqual([
+      "user",
+      "assistant",
+      "tool",
+    ]);
+    expect(messages[1]?.content).toEqual([
+      {
+        type: "tool-call",
+        toolCallId: "call_started",
+        toolName: ORDERS_CREATE_TOOL_NAME,
+        input: toolInput,
+      },
+    ]);
+    expect(messages[2]?.content).toEqual([
+      {
+        type: "tool-result",
+        toolCallId: "call_started",
+        toolName: ORDERS_CREATE_TOOL_NAME,
+        output: { type: "json", value: { status: "started" } },
+      },
+    ]);
+    expect(typeof messages[1]?.content).not.toBe("string");
+  });
+
+  it("omits started tool-calls and started results that are not on the recover allowlist", () => {
+    const toolInput = {
+      customerId: "11111111-1111-4111-8111-111111111111",
+      items: [
+        {
+          productId: "22222222-2222-4222-8222-222222222222",
+          quantityMilli: "1000",
+        },
+      ],
+    };
+    const rows = [
+      { role: "user" as const, body: "continue" },
+      {
+        role: "assistant" as const,
+        body: "Named the order.",
+        toolRuns: [
+          {
+            action: "orders.create",
+            toolCallId: "call_excluded",
+            toolName: ORDERS_CREATE_TOOL_NAME,
+            toolInput,
+            seq: 0,
+            modelTrace: null,
+            outcome: "started" as const,
+            executionId: "exec-excluded",
+          },
+          {
+            action: "orders.list",
+            toolCallId: "call_done",
+            toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+            toolInput: { limit: 5 },
+            seq: 1,
+            modelTrace: { kind: "page.summary", rows: [] },
+            outcome: "success" as const,
+            executionId: "exec-done",
+          },
+        ],
+      },
+    ];
+    const excluded = staffAssistantModelMessagesFromPersisted(rows, undefined, {
+      recoverStartedExecutionIds: new Set(),
+    });
+    expect(JSON.stringify(excluded)).not.toContain("call_excluded");
+    expect(JSON.stringify(excluded)).not.toContain('"status":"started"');
+    expect(JSON.stringify(excluded)).toContain("call_done");
+    const allowed = staffAssistantModelMessagesFromPersisted(rows, undefined, {
+      recoverStartedExecutionIds: new Set(["exec-excluded"]),
+    });
+    expect(JSON.stringify(allowed)).toContain("call_excluded");
+    expect(JSON.stringify(allowed)).toContain('"status":"started"');
   });
 
   it("stays text-only when every modelTrace is null", () => {

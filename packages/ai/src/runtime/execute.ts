@@ -436,17 +436,20 @@ export function wrapHostSequentialExecute(
     }
     const toolCallId = clipToolCallId(options.toolCallId);
     if (hooks.checkpoint !== undefined && state.messageId !== undefined) {
-      const facade = state.facadeByToolCallId.get(toolCallId);
-      const staged = await hooks.checkpoint.stageRun({
-        messageId: state.messageId,
-        seq: state.seq,
-        actionName,
-        toolName: facade?.toolName ?? actionName,
-        toolCallId,
-        toolInput: facade?.toolInput ?? input,
-      });
-      state.seq += 1;
-      state.executionIdByToolCallId.set(toolCallId, staged.executionId);
+      const existingExecutionId = state.executionIdByToolCallId.get(toolCallId);
+      if (existingExecutionId === undefined) {
+        const facade = state.facadeByToolCallId.get(toolCallId);
+        const staged = await hooks.checkpoint.stageRun({
+          messageId: state.messageId,
+          seq: state.seq,
+          actionName,
+          toolName: facade?.toolName ?? actionName,
+          toolCallId,
+          toolInput: facade?.toolInput ?? input,
+        });
+        state.seq += 1;
+        state.executionIdByToolCallId.set(toolCallId, staged.executionId);
+      }
     }
     return domain(actionName, input, options);
   };
