@@ -805,39 +805,124 @@ function lastAssistantSpeech(
   return last?.text ?? "";
 }
 
-function historyToolResults(
-  history: Awaited<ReturnType<typeof loadHistory>>,
-): { readonly toolName: string; readonly output: unknown }[] {
-  const last = history.messages.findLast(
-    (message) =>
-      message.role === "assistant" &&
-      message.toolRuns.some(
-        (run) =>
-          run.modelTrace !== null &&
-          run.modelTrace !== undefined &&
-          run.toolName !== null,
-      ),
-  );
-  if (last === undefined) {
-    return [];
+type ResumeToolResult = {
+  readonly toolName: string;
+  readonly output: unknown;
+};
+
+function resumeToolResultFromStoredRun(run: {
+  readonly toolName: string | null;
+  readonly action: string;
+  readonly modelTrace: unknown;
+}): ResumeToolResult | null {
+  if (run.modelTrace === null || run.modelTrace === undefined) {
+    return null;
   }
-  const results: { readonly toolName: string; readonly output: unknown }[] = [];
-  for (const run of last.toolRuns) {
-    if (run.modelTrace === null || run.modelTrace === undefined) {
+  if (isStartedToolTrace(run.modelTrace)) {
+    return null;
+  }
+  const toolName = run.toolName ?? run.action;
+  if (toolName === "") {
+    return null;
+  }
+  return { toolName, output: run.modelTrace };
+}
+
+function findPhaseAStoredRun(
+  history: Awaited<ReturnType<typeof loadHistory>>,
+  pending: PendingInteractionRecord,
+) {
+  const runs = history.messages.flatMap((message) => message.toolRuns);
+  if (pending.executionId !== undefined) {
+    const matched = runs.find((run) => run.executionId === pending.executionId);
+    if (matched !== undefined) {
+      return matched;
+    }
+  }
+  const resumeKey = resumeTurnKey(pending.id);
+  return (
+    history.messages
+      .filter((message) => message.turnKey !== resumeKey)
+      .flatMap((message) => message.toolRuns)
+      .findLast(
+        (run) => run.action === pending.actionName && run.outcome === "success",
+      ) ?? null
+  );
+}
+
+function phaseAResumeToolResult(options: {
+  readonly pending: PendingInteractionRecord;
+  readonly history: Awaited<ReturnType<typeof loadHistory>>;
+  readonly output?: unknown;
+}): ResumeToolResult | null {
+  const stored = findPhaseAStoredRun(options.history, options.pending);
+  if (options.output !== undefined) {
+    if (isStartedToolTrace(options.output)) {
+      return null;
+    }
+    return {
+      toolName: stored?.toolName ?? options.pending.actionName,
+      output: options.output,
+    };
+  }
+  if (stored === null || stored.outcome !== "success") {
+    return null;
+  }
+  return resumeToolResultFromStoredRun(stored);
+}
+
+function phaseBResumeToolResultsFromHistory(
+  history: Awaited<ReturnType<typeof loadHistory>>,
+  pending: PendingInteractionRecord,
+): ResumeToolResult[] {
+  const resumeKey = resumeTurnKey(pending.id);
+  const results: ResumeToolResult[] = [];
+  for (const message of history.messages) {
+    if (message.turnKey !== resumeKey) {
       continue;
     }
-    if (run.toolName === null) {
-      continue;
+    for (const run of message.toolRuns) {
+      const result = resumeToolResultFromStoredRun(run);
+      if (result !== null) {
+        results.push(result);
+      }
     }
-    if (isStartedToolTrace(run.modelTrace)) {
-      continue;
-    }
-    results.push({
-      toolName: run.toolName,
-      output: run.modelTrace,
-    });
   }
   return results;
+}
+
+function phaseBResumeToolResultsFromTurn(
+  toolRuns: ReadonlyArray<{
+    readonly modelTrace?: unknown;
+    readonly toolName?: string;
+  }>,
+): ResumeToolResult[] {
+  return toolRuns.flatMap((run) => {
+    if (run.modelTrace === undefined || run.toolName === undefined) {
+      return [];
+    }
+    if (isStartedToolTrace(run.modelTrace)) {
+      return [];
+    }
+    return [{ toolName: run.toolName, output: run.modelTrace }];
+  });
+}
+
+function mergeResumeToolResults(
+  phaseA: ResumeToolResult | null,
+  phaseB: readonly ResumeToolResult[],
+): ResumeToolResult[] {
+  return phaseA === null ? [...phaseB] : [phaseA, ...phaseB];
+}
+
+function resumeToolResultsFromHistory(
+  history: Awaited<ReturnType<typeof loadHistory>>,
+  pending: PendingInteractionRecord,
+): ResumeToolResult[] {
+  return mergeResumeToolResults(
+    phaseAResumeToolResult({ pending, history }),
+    phaseBResumeToolResultsFromHistory(history, pending),
+  );
 }
 
 function isStartedToolTrace(output: unknown): boolean {
@@ -866,6 +951,7 @@ async function runPhaseB(options: {
   };
   readonly actor: StaffMembership;
   readonly pending: PendingInteractionRecord;
+  readonly phaseAOutput?: unknown;
 }): Promise<AssistantHostInteractionResult> {
   const history = await loadHistory({
     pipeline: options.runtime.pipeline,
@@ -990,12 +1076,16 @@ async function runPhaseB(options: {
     after.kind === "found"
       ? (publicPendingFromRecord(after.record) ?? null)
       : null;
-  const toolResults = turn.toolRuns.flatMap((run) => {
-    if (run.modelTrace === undefined || run.toolName === undefined) {
-      return [];
-    }
-    return [{ toolName: run.toolName, output: run.modelTrace }];
-  });
+  const toolResults = mergeResumeToolResults(
+    phaseAResumeToolResult({
+      pending: options.pending,
+      history,
+      ...(options.phaseAOutput !== undefined
+        ? { output: options.phaseAOutput }
+        : {}),
+    }),
+    phaseBResumeToolResultsFromTurn(turn.toolRuns),
+  );
   return okEnvelope({
     speech: turn.speech.text,
     toolResults,
@@ -1346,6 +1436,8 @@ async function afterPhaseASuccess(options: {
     bind: options.bind,
     ...(options.optionId !== undefined ? { optionId: options.optionId } : {}),
   });
+  // SHO-544: pass the committed Phase A write so resume cards include
+  // the existing surface even when Phase B is speech-only or fails.
   return runPhaseB({
     runtime: options.runtime,
     conversationId: options.record.conversationId,
@@ -1354,6 +1446,7 @@ async function afterPhaseASuccess(options: {
     staffPrincipal: options.staffPrincipal,
     actor: options.actor,
     pending: options.record,
+    phaseAOutput: options.output,
   });
 }
 
@@ -1390,7 +1483,7 @@ async function replayCompletedPending(options: {
   if (open.kind === "found" && open.record.id !== options.record.id) {
     return okEnvelope({
       speech: lastAssistantSpeech(history, resumeKey),
-      toolResults: historyToolResults(history),
+      toolResults: resumeToolResultsFromHistory(history, options.record),
       pending: publicPendingFromRecord(open.record) ?? null,
     });
   }
@@ -1398,7 +1491,7 @@ async function replayCompletedPending(options: {
   if (state === "done") {
     return okEnvelope({
       speech: lastAssistantSpeech(history, resumeKey),
-      toolResults: historyToolResults(history),
+      toolResults: resumeToolResultsFromHistory(history, options.record),
       pending: null,
     });
   }
