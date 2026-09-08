@@ -10,11 +10,7 @@ import { fetch as expoFetch } from "expo/fetch";
 import { isWireError } from "@showzy/contract";
 import { z } from "zod";
 
-import {
-  CHOICE_OPTIONS_MAX,
-  envelopeFromChoicePeek,
-  type StaffAssistantChoiceCardEnvelope,
-} from "../shared/choice";
+import { CHOICE_OPTIONS_MAX } from "../shared/choice";
 import {
   deriveChoiceSelectRecoverability,
   type ChoiceSelectRecoverability,
@@ -78,33 +74,12 @@ const coreWireErrorBodySchema = z.object({
   data: z.unknown().optional(),
 });
 
-export type AssistantChoicePeekResult =
-  | {
-      readonly kind: "envelope";
-      readonly envelope: StaffAssistantChoiceCardEnvelope;
-    }
-  | {
-      readonly kind: "unavailable";
-      readonly recoverability: "retryable" | "ambiguous";
-      readonly httpStatus?: number;
-      readonly code?: string;
-    };
-
 function assistantOrigin(apiOrigin: string): string {
   return apiOrigin.replace(/\/+$/, "");
 }
 
 export function assistantChoiceUrl(apiOrigin: string): string {
   return `${assistantOrigin(apiOrigin)}${ASSISTANT_CHOICE_PATH}`;
-}
-
-export function assistantChoicePeekUrl(
-  apiOrigin: string,
-  choiceId: string,
-  conversationId: string,
-): string {
-  const base = assistantChoiceUrl(apiOrigin);
-  return `${base}/${choiceId}?conversationId=${encodeURIComponent(conversationId)}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -379,50 +354,4 @@ export async function postAssistantChoice(args: {
   return withRecoverability(
     selectResultFromHostInteraction(hostParsed.data, response.status),
   );
-}
-
-export async function peekAssistantChoice(args: {
-  readonly apiUrl: string;
-  readonly getCookie: () => string | null;
-  readonly getCompanyId: () => string | null;
-  readonly conversationId: string;
-  readonly choiceId: string;
-}): Promise<AssistantChoicePeekResult> {
-  let response: Response;
-  try {
-    response = await expoFetch(
-      assistantChoicePeekUrl(args.apiUrl, args.choiceId, args.conversationId),
-      {
-        method: "GET",
-        credentials: "omit",
-        headers: staffAssistantChatHeaders({
-          cookie: args.getCookie(),
-          companyId: args.getCompanyId(),
-        }),
-      },
-    );
-  } catch {
-    return { kind: "unavailable", recoverability: "retryable" };
-  }
-
-  const body = await readJsonBody(response);
-  if (!response.ok) {
-    const raw = body.ok ? body.value : undefined;
-    const code =
-      isRecord(raw) && typeof raw.code === "string" ? raw.code : undefined;
-    return {
-      kind: "unavailable",
-      recoverability: httpFailureRecoverability(response.status),
-      httpStatus: response.status,
-      ...(code === undefined ? {} : { code }),
-    };
-  }
-  if (!body.ok) {
-    return { kind: "unavailable", recoverability: "ambiguous" };
-  }
-  const envelope = envelopeFromChoicePeek(args.choiceId, body.value);
-  if (envelope === undefined) {
-    return { kind: "unavailable", recoverability: "ambiguous" };
-  }
-  return { kind: "envelope", envelope };
 }

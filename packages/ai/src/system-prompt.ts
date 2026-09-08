@@ -1,9 +1,8 @@
 /**
  * Staff-panel assistant system prompt (SHO-318, ADR-0032, SHO-523).
  *
- * Slim identity / language / HITL / style for the new host loop. Module
- * how-to lives on façade and `pending_replace` descriptions. Live
- * `streamStaffAssistantChat` still consumes this string until T5.
+ * Slim identity / language / HITL / style for the host loop. Module
+ * how-to lives on façade and `pending_replace` descriptions.
  *
  * The model is a channel, not a principal. Confirmation is core.md §7
  * (human step); this string must never be written to audit or process logs.

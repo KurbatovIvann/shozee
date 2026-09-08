@@ -8,7 +8,6 @@ import {
 import {
   MockLanguageModelV3,
   mockSpokenStream,
-  mockStaffAssistantGateGenerate,
   mockTextStream,
   mockToolCallStream,
 } from "@showzy/ai/test";
@@ -31,6 +30,14 @@ const silentLogger = createEvalLogger({
 
 const CUSTOMER_ID = "11111111-1111-4111-8111-111111111111";
 
+function evalModels(model: MockLanguageModelV3) {
+  return {
+    languageModel: model,
+    replyModelId: "mock-sonnet",
+    gateModelId: "mock-haiku",
+  };
+}
+
 describe("runStaffAssistantEvalTurn", () => {
   it("captures a counts façade call from a mock model without hitting the network", async () => {
     const fetchSpy = vi
@@ -40,8 +47,8 @@ describe("runStaffAssistantEvalTurn", () => {
       Promise.resolve({ kind: "aggregate", total: 1, buckets: [] }),
     );
     const result = await runStaffAssistantEvalTurn({
-      models: {
-        languageModel: new MockLanguageModelV3({
+      models: evalModels(
+        new MockLanguageModelV3({
           doStream: [
             mockToolCallStream(
               "call-counts",
@@ -51,15 +58,7 @@ describe("runStaffAssistantEvalTurn", () => {
             mockSpokenStream("1"),
           ],
         }),
-        gateLanguageModel: new MockLanguageModelV3({
-          doGenerate: mockStaffAssistantGateGenerate({
-            mode: "job",
-            confidence: "high",
-          }),
-        }),
-        replyModelId: "mock-sonnet",
-        gateModelId: "mock-haiku",
-      },
+      ),
       messages: [{ role: "user", content: "скільки замовлень сьогодні" }],
       contracts: [listOrdersContract],
       execute,
@@ -88,8 +87,8 @@ describe("runStaffAssistantEvalTurn", () => {
       return Promise.resolve({ items: [], nextCursor: null });
     });
     const result = await runStaffAssistantEvalTurn({
-      models: {
-        languageModel: new MockLanguageModelV3({
+      models: evalModels(
+        new MockLanguageModelV3({
           doStream: [
             mockToolCallStream(
               "call-cust",
@@ -104,15 +103,7 @@ describe("runStaffAssistantEvalTurn", () => {
             mockSpokenStream("1"),
           ],
         }),
-        gateLanguageModel: new MockLanguageModelV3({
-          doGenerate: mockStaffAssistantGateGenerate({
-            mode: "job",
-            confidence: "high",
-          }),
-        }),
-        replyModelId: "mock-sonnet",
-        gateModelId: "mock-haiku",
-      },
+      ),
       messages: [{ role: "user", content: "покажи замовлення Каті Самбуки" }],
       contracts: [listCustomersContract, listOrdersContract],
       execute,
@@ -126,22 +117,14 @@ describe("runStaffAssistantEvalTurn", () => {
     ).toEqual({ ok: true });
   });
 
-  it("attaches no tools on chitchat weather", async () => {
+  it("does not execute tools when the mock only speaks", async () => {
     const execute = vi.fn(() => Promise.resolve({}));
     const result = await runStaffAssistantEvalTurn({
-      models: {
-        languageModel: new MockLanguageModelV3({
-          doStream: [mockSpokenStream("I only help with this company.")],
+      models: evalModels(
+        new MockLanguageModelV3({
+          doStream: [mockTextStream("I only help with this company.")],
         }),
-        gateLanguageModel: new MockLanguageModelV3({
-          doGenerate: mockStaffAssistantGateGenerate({
-            mode: "chitchat",
-            confidence: "high",
-          }),
-        }),
-        replyModelId: "mock-sonnet",
-        gateModelId: "mock-haiku",
-      },
+      ),
       messages: [{ role: "user", content: "яка погода" }],
       contracts: [listOrdersContract],
       execute,
@@ -160,8 +143,8 @@ describe("runStaffAssistantEvalTurn", () => {
   it("keeps tool_search in the trace for a capability turn", async () => {
     const execute = vi.fn(() => Promise.resolve({}));
     const result = await runStaffAssistantEvalTurn({
-      models: {
-        languageModel: new MockLanguageModelV3({
+      models: evalModels(
+        new MockLanguageModelV3({
           doStream: [
             mockToolCallStream(
               "call-search",
@@ -171,15 +154,7 @@ describe("runStaffAssistantEvalTurn", () => {
             mockSpokenStream("I can help with orders."),
           ],
         }),
-        gateLanguageModel: new MockLanguageModelV3({
-          doGenerate: mockStaffAssistantGateGenerate({
-            mode: "capability",
-            confidence: "high",
-          }),
-        }),
-        replyModelId: "mock-sonnet",
-        gateModelId: "mock-haiku",
-      },
+      ),
       messages: [{ role: "user", content: "чим можеш допомогти" }],
       contracts: [listOrdersContract],
       execute,
@@ -196,7 +171,7 @@ describe("runStaffAssistantEvalTurn", () => {
     ).toEqual({ ok: true });
   });
 
-  it("MODEL_SPEAKS host keeps a markdown table as model speech", async () => {
+  it("keeps a markdown table as model speech", async () => {
     const table = "| order | total |\n| **#12** | 10 |";
     const execute = vi.fn(() =>
       Promise.resolve({
@@ -205,16 +180,9 @@ describe("runStaffAssistantEvalTurn", () => {
         nextCursor: null,
       }),
     );
-    const gateLanguageModel = new MockLanguageModelV3({
-      doGenerate: mockStaffAssistantGateGenerate({
-        mode: "job",
-        confidence: "high",
-      }),
-    });
-    const newHost = await runStaffAssistantEvalTurn({
-      host: "new",
-      models: {
-        languageModel: new MockLanguageModelV3({
+    const result = await runStaffAssistantEvalTurn({
+      models: evalModels(
+        new MockLanguageModelV3({
           doStream: [
             mockToolCallStream(
               "call-page",
@@ -224,55 +192,23 @@ describe("runStaffAssistantEvalTurn", () => {
             mockTextStream(table),
           ],
         }),
-        gateLanguageModel,
-        replyModelId: "mock-sonnet",
-        gateModelId: "mock-haiku",
-      },
+      ),
       messages: [{ role: "user", content: "останні 3 замовлення" }],
       contracts: [listOrdersContract],
       execute,
       logger: silentLogger,
     });
-    expect(gateLanguageModel.doGenerateCalls).toHaveLength(0);
-    expect(newHost.trace.speechSource).toBe("model");
-    expect(newHost.trace.text).toBe(table);
+    expect(result.trace.speechSource).toBe("model");
+    expect(result.trace.text).toBe(table);
     expect(
       matchEvalExpectation(
         MODEL_SPEAKS_SCENARIOS[0]?.expectation ?? {},
-        newHost.trace,
+        result.trace,
       ),
     ).toEqual({ ok: true });
-
-    const live = await runStaffAssistantEvalTurn({
-      models: {
-        languageModel: new MockLanguageModelV3({
-          doStream: [
-            mockToolCallStream(
-              "call-page-live",
-              ORDERS_LIST_PAGE_TOOL_NAME,
-              JSON.stringify({ limit: 3 }),
-            ),
-            mockTextStream(table),
-          ],
-        }),
-        gateLanguageModel: new MockLanguageModelV3({
-          doGenerate: mockStaffAssistantGateGenerate({
-            mode: "job",
-            confidence: "high",
-          }),
-        }),
-        replyModelId: "mock-sonnet",
-        gateModelId: "mock-haiku",
-      },
-      messages: [{ role: "user", content: "останні 3 замовлення" }],
-      contracts: [listOrdersContract],
-      execute,
-      logger: silentLogger,
-    });
-    expect(live.trace.speechSource).not.toBe("model");
   });
 
-  it("MODEL_SPEAKS host still falls back on leftover JSON", async () => {
+  it("still falls back on leftover JSON", async () => {
     const execute = vi.fn(() =>
       Promise.resolve({
         kind: "page.summary",
@@ -281,17 +217,14 @@ describe("runStaffAssistantEvalTurn", () => {
       }),
     );
     const result = await runStaffAssistantEvalTurn({
-      host: "new",
-      models: {
-        languageModel: new MockLanguageModelV3({
+      models: evalModels(
+        new MockLanguageModelV3({
           doStream: [
             mockToolCallStream("call-page", ORDERS_LIST_PAGE_TOOL_NAME, "{}"),
             mockSpokenStream("12"),
           ],
         }),
-        replyModelId: "mock-sonnet",
-        gateModelId: "mock-haiku",
-      },
+      ),
       messages: [{ role: "user", content: "останні 3 замовлення" }],
       contracts: [listOrdersContract],
       execute,
@@ -302,7 +235,7 @@ describe("runStaffAssistantEvalTurn", () => {
     expect(result.trace.text).not.toBe("12");
   });
 
-  it("MODEL_SPEAKS host records façade counts args so this_week matches", async () => {
+  it("records façade counts args so this_week matches", async () => {
     let executeInput: unknown;
     const execute = vi.fn((_actionName: string, input: unknown) => {
       executeInput = input;
@@ -313,9 +246,8 @@ describe("runStaffAssistantEvalTurn", () => {
       });
     });
     const result = await runStaffAssistantEvalTurn({
-      host: "new",
-      models: {
-        languageModel: new MockLanguageModelV3({
+      models: evalModels(
+        new MockLanguageModelV3({
           doStream: [
             mockToolCallStream(
               "call-counts",
@@ -325,9 +257,7 @@ describe("runStaffAssistantEvalTurn", () => {
             mockTextStream("4"),
           ],
         }),
-        replyModelId: "mock-sonnet",
-        gateModelId: "mock-haiku",
-      },
+      ),
       messages: [{ role: "user", content: "скільки замовлень цього тижня" }],
       contracts: [listOrdersContract],
       execute,

@@ -17,7 +17,6 @@ import {
   createStaffLanguageModel,
   StaffAssistantNotConfiguredError,
   type LanguageModel,
-  type StaffAssistantTurnUsage,
   type StaffProviderAdapter,
 } from "@showzy/ai";
 import { getStaffActor } from "@showzy/assistant";
@@ -36,7 +35,6 @@ import {
 import {
   CoreError,
   CoreInvariantError,
-  PermissionDeniedError,
   RateLimitError,
   ValidationError,
 } from "@showzy/core/errors";
@@ -74,25 +72,7 @@ export {
   ASSISTANT_INVOCATION_CHANNEL,
 } from "./assistant-invocation.js";
 
-/**
- * Trade name for the uncached turn-context addendum. `companies.get`
- * requires `companies:view`; a permission denial omits the name line
- * without failing the chat turn (SHO-360 / SHO-537).
- */
-export async function readStaffAssistantCompanyTradeName(
-  load: () => Promise<{ readonly name: string }>,
-): Promise<string | undefined> {
-  try {
-    const company = await load();
-    const name = company.name.trim();
-    return name === "" ? undefined : name;
-  } catch (error) {
-    if (error instanceof PermissionDeniedError) {
-      return undefined;
-    }
-    throw error;
-  }
-}
+export { readStaffAssistantCompanyTradeName } from "./assistant-host.js";
 
 export interface StaffAssistantRuntime {
   readonly model: string;
@@ -102,18 +82,6 @@ export interface StaffAssistantRuntime {
   readonly provider?: StaffProviderAdapter;
   /** Tests inject MockLanguageModelV3 — never a live LLM in CI. */
   readonly languageModel?: LanguageModel;
-  readonly gateLanguageModel?: LanguageModel;
-  /**
-   * Ignored on the live host wrap (SHO-524 settles the unknown-model
-   * USD ceiling). Kept so existing budget tests still typecheck until
-   * they retarget.
-   */
-  readonly estimateTurnCostUsd?: (options: {
-    readonly reply: StaffAssistantTurnUsage;
-    readonly replyModelId: string;
-    readonly gate: StaffAssistantTurnUsage;
-    readonly gateModelId: string;
-  }) => number | null;
 }
 
 export interface StaffAssistantChatOptions {

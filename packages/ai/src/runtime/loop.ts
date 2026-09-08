@@ -1,9 +1,9 @@
 /**
- * New staff-assistant host loop (ADR-0037 / SHO-520).
+ * Staff-assistant host loop (ADR-0037 / SHO-520 / SHO-524).
  *
- * One `streamText` call. Tests invoke this directly. Do not retarget
- * production `POST /assistant/chat`. Do not call the intent gate or
- * the live speaker. Always attach the permitted tool set plus BM25.
+ * One `streamText` call. Live `POST /assistant/chat` wraps this loop.
+ * Do not call the intent gate or a second speaker. Always attach the
+ * permitted tool set plus BM25.
  */
 import type { ActionContract } from "@showzy/core/contract";
 import {
@@ -57,7 +57,7 @@ import {
   STAFF_ASSISTANT_TOOL_RUNS_MAX,
   type StaffAssistantToolRun,
   type StaffAssistantTurnResult,
-} from "../staff-assistant-stream.js";
+} from "../tool-run.js";
 import { staffAssistantSystemMessages } from "../system-prompt.js";
 import { staffAssistantToolsetHash } from "../toolset-hash.js";
 import { staffAssistantTurnContextAddendum } from "../turn-context.js";
@@ -301,7 +301,8 @@ export interface StaffAssistantHostTurnOptions {
 }
 
 /**
- * One `streamText` host turn. Not mounted on live `/assistant/chat`.
+ * One `streamText` host turn. Live `POST /assistant/chat` wraps this
+ * loop (SHO-524); unpublished `/assistant/host/chat` stays off production.
  */
 export async function runStaffAssistantHostTurn(
   options: StaffAssistantHostTurnOptions,

@@ -9,7 +9,7 @@ import {
 } from "./clip-tool-result.js";
 import { STAFF_ASSISTANT_CONFIRMATION_STATUS } from "./confirmation.js";
 import { STAFF_ASSISTANT_NEEDS_CHOICE_STATUS } from "./choice.js";
-import { extractUuidResultIds } from "./staff-assistant-stream.js";
+import { extractUuidResultIds } from "./tool-run.js";
 
 const customerId = "11111111-1111-4111-8111-111111111111";
 const orderId = "44444444-4444-4444-8444-444444444444";

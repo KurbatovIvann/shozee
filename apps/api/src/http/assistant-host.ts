@@ -36,6 +36,8 @@ import {
   resolveMappedVariantId,
   runStaffAssistantHostTurn,
   staffAssistantModelMessagesFromPersisted,
+  staffAssistantTurnContextAddendum,
+  staffAssistantWorkingSetAddendum,
   STAFF_ASSISTANT_DEFAULT_LOCALE,
   successorPendingChoiceId,
   confirmationPendingRecord,
@@ -57,6 +59,7 @@ import {
   getModelHistory,
   getStaffActor,
 } from "@showzy/assistant";
+import { getCompany } from "@showzy/companies";
 import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
 import { toWireError } from "@showzy/contract/server";
 import {
@@ -71,6 +74,7 @@ import {
   ConfirmationRequiredError,
   CoreError,
   CoreInvariantError,
+  PermissionDeniedError,
   ValidationError,
 } from "@showzy/core/errors";
 import { assistantSurfacesFromToolResults } from "@showzy/validation/assistant-surfaces";
@@ -220,6 +224,61 @@ function staffRequest(options: {
       ? { confirmationChallengeId: options.confirmationChallengeId }
       : {}),
   };
+}
+
+/**
+ * Trade name for the uncached turn-context addendum. `companies.get`
+ * requires `companies:view`; a permission denial omits the name line
+ * without failing the chat turn (SHO-360 / SHO-537).
+ */
+export async function readStaffAssistantCompanyTradeName(
+  load: () => Promise<{ readonly name: string }>,
+): Promise<string | undefined> {
+  try {
+    const company = await load();
+    const name = company.name.trim();
+    return name === "" ? undefined : name;
+  } catch (error) {
+    if (error instanceof PermissionDeniedError) {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+async function hostTurnContextAddendum(options: {
+  readonly pipeline: ActionPipelineDeps;
+  readonly requestId: string;
+  readonly clientIp: string;
+  readonly staffPrincipal: {
+    readonly mode: "staff";
+    readonly session: SessionPrincipal;
+    readonly companySelector: string | null;
+  };
+  readonly toolRuns: ReadonlyArray<{
+    readonly actionName: string;
+    readonly resultIds: readonly string[];
+    readonly outcome: string;
+  }>;
+}): Promise<string> {
+  const companyName = await readStaffAssistantCompanyTradeName(() =>
+    executeAction(options.pipeline, {
+      action: getCompany,
+      input: {},
+      request: staffRequest({
+        requestId: options.requestId,
+        clientIp: options.clientIp,
+        aiTraceId: options.requestId,
+      }),
+      principal: options.staffPrincipal,
+    }),
+  );
+  const workingSetAddendum = staffAssistantWorkingSetAddendum(options.toolRuns);
+  return staffAssistantTurnContextAddendum({
+    now: new Date(),
+    ...(companyName !== undefined ? { companyName } : {}),
+    ...(workingSetAddendum !== undefined ? { workingSetAddendum } : {}),
+  });
 }
 
 const RESOLVE_CUSTOMER_REFERENCE_ACTION =
@@ -679,6 +738,16 @@ async function runPhaseB(options: {
     clientIp: options.runtime.clientIp,
     principal: options.staffPrincipal,
   });
+  const conversation = await executeAction(options.runtime.pipeline, {
+    action: getConversation,
+    input: { conversationId: options.conversationId },
+    request: staffRequest({
+      requestId: options.runtime.requestId,
+      clientIp: options.runtime.clientIp,
+      aiTraceId: options.runtime.requestId,
+    }),
+    principal: options.staffPrincipal,
+  });
   const contracts = filterStaffAiTools(options.runtime.registry.contracts(), {
     role: options.actor.role,
     permissions: [...options.actor.permissions],
@@ -728,6 +797,13 @@ async function runPhaseB(options: {
       });
     },
     locale: options.locale,
+    turnContextAddendum: await hostTurnContextAddendum({
+      pipeline: options.runtime.pipeline,
+      requestId: options.runtime.requestId,
+      clientIp: options.runtime.clientIp,
+      staffPrincipal: options.staffPrincipal,
+      toolRuns: conversation.toolRuns,
+    }),
     choiceBind: options.bind,
     openPending: (record) => options.runtime.pendingStore.open(record),
     checkPending: async ({ actionName }) => {
@@ -1807,6 +1883,13 @@ export async function executeStaffAssistantHostChat(
             });
           },
           locale,
+          turnContextAddendum: await hostTurnContextAddendum({
+            pipeline: options.pipeline,
+            requestId: options.requestId,
+            clientIp: options.clientIp,
+            staffPrincipal: auth.staffPrincipal,
+            toolRuns: conversation.toolRuns,
+          }),
           choiceBind: bind,
           openPending: (record) => options.pendingStore.open(record),
           checkPending: async ({ actionName }) => {

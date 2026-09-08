@@ -11,31 +11,6 @@ export const MOCK_LANGUAGE_MODEL_USAGE = {
   outputTokens: { total: 1, text: 1, reasoning: 0 },
 };
 
-export function mockGenerateObjectResult(text: string) {
-  return {
-    content: [{ type: "text" as const, text }],
-    finishReason: { unified: "stop" as const, raw: undefined },
-    usage: MOCK_LANGUAGE_MODEL_USAGE,
-    warnings: [],
-  };
-}
-
-export function mockStaffAssistantGateGenerate(output: {
-  readonly mode: "chitchat" | "capability" | "job";
-  readonly confidence: "high" | "low";
-}) {
-  return mockGenerateObjectResult(JSON.stringify(output));
-}
-
-/** Maps the former boolean gate onto T3 shapes (full catalog vs chitchat). */
-export function mockOperationalGateGenerate(operational: boolean) {
-  return mockStaffAssistantGateGenerate(
-    operational
-      ? { mode: "job", confidence: "high" }
-      : { mode: "chitchat", confidence: "high" },
-  );
-}
-
 export function mockTextStream(text: string) {
   return {
     stream: convertArrayToReadableStream([
@@ -166,47 +141,4 @@ export function mockToolCallsStream(
       },
     ]),
   };
-}
-
-export async function readUiMessageSsePayloads(
-  response: Response,
-): Promise<unknown[]> {
-  const text = await response.text();
-  const payloads: unknown[] = [];
-  for (const block of text.split("\n\n")) {
-    const line = block.split("\n").find((entry) => entry.startsWith("data: "));
-    if (line === undefined) {
-      continue;
-    }
-    const data = line.slice("data: ".length);
-    if (data === "[DONE]") {
-      continue;
-    }
-    payloads.push(JSON.parse(data) as unknown);
-  }
-  return payloads;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/** Concatenate UI-message `text-delta` payloads (live bubble text). */
-export function sseVisibleTextFromPayloads(
-  payloads: readonly unknown[],
-): string {
-  const chunks: string[] = [];
-  for (const payload of payloads) {
-    if (!isRecord(payload) || payload["type"] !== "text-delta") {
-      continue;
-    }
-    if (typeof payload["delta"] === "string") {
-      chunks.push(payload["delta"]);
-      continue;
-    }
-    if (typeof payload["text"] === "string") {
-      chunks.push(payload["text"]);
-    }
-  }
-  return chunks.join("");
 }

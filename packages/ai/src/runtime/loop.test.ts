@@ -197,12 +197,10 @@ describe("runStaffAssistantHostTurn", () => {
     expect(src).not.toContain('from "../gate.js"');
     expect(src).toContain("commitHostSpeech");
     expect(src).toContain("streamText");
-    const stream = readFileSync(
-      join(here, "../staff-assistant-stream.ts"),
-      "utf8",
-    );
-    expect(stream).not.toContain("runStaffAssistantHostTurn");
-    expect(stream).not.toContain("runtime/loop");
+    expect(src).not.toContain("staff-assistant-stream");
+    const toolRun = readFileSync(join(here, "../tool-run.ts"), "utf8");
+    expect(toolRun).not.toContain("runStaffAssistantHostTurn");
+    expect(toolRun).not.toContain("runtime/loop");
   });
 
   it("persists usable model prose", async () => {

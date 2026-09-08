@@ -10,12 +10,8 @@ import {
   STAFF_ASSISTANT_TOOL_SEARCH_NAME,
 } from "../action-tool.js";
 import { StaffAssistantNotConfiguredError } from "../errors.js";
-import { streamStaffAssistantChat } from "../staff-assistant-stream.js";
-import {
-  MockLanguageModelV3,
-  mockTextStream,
-  readUiMessageSsePayloads,
-} from "../test.js";
+import { runStaffAssistantHostTurn } from "../runtime/loop.js";
+import { MockLanguageModelV3, mockTextStream } from "../test.js";
 import { STAFF_ASSISTANT_EMPTY_TOOLSET_HASH } from "../toolset-hash.js";
 import type { StaffProviderAdapter } from "./types.js";
 
@@ -114,22 +110,19 @@ describe("fake StaffProviderAdapter (SHO-508)", () => {
     }
   });
 
-  it("still runs streamStaffAssistantChat against MockLanguageModelV3", async () => {
+  it("still runs runStaffAssistantHostTurn against MockLanguageModelV3", async () => {
     const provider = fakeStaffProvider();
     const model = new MockLanguageModelV3({
       doStream: [mockTextStream("ok")],
     });
-    const { response, completion } = streamStaffAssistantChat({
+    const turn = await runStaffAssistantHostTurn({
       model,
       messages: [{ role: "user", content: "Hello" }],
       contracts: [listOrders, deleteCustomer],
       execute: () => Promise.resolve({ items: [], nextCursor: null }),
       provider,
     });
-    const payloads = await readUiMessageSsePayloads(response);
-    const turn = await completion;
     expect(turn.text).toBe("ok");
-    expect(JSON.stringify(payloads)).toContain("ok");
     expect(turn.toolsAttached).toBe(true);
     expect(turn.toolsetHash).not.toBe(STAFF_ASSISTANT_EMPTY_TOOLSET_HASH);
     expect(model.doStreamCalls.length).toBeGreaterThan(0);

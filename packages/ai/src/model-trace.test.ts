@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { ORDERS_LIST_PAGE_TOOL_NAME } from "./action-tool.js";
 import { STAFF_ASSISTANT_CLIP_SHRINK_ARRAY_MAX } from "./clip-tool-result.js";
-import { STAFF_ASSISTANT_TOOL_RUNS_MAX } from "./staff-assistant-stream.js";
+import { STAFF_ASSISTANT_TOOL_RUNS_MAX } from "./tool-run.js";
 import { staffAssistantModelMessagesFromPersisted } from "./messages.js";
 import {
   budgetStaffAssistantToolRuns,

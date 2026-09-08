@@ -30,11 +30,10 @@ const logger = createEvalLogger();
 /** `eval-cli.mjs` injects `--runs`; this is not `ANTHROPIC_API_KEY`. */
 const runs = evalRunsFromInjectedFlag(process.env.SHOWZY_EVAL_RUNS);
 
-describe("staff assistant corpus eval (live, SHO-412 / SHO-507 / SHO-511 / SHO-513 / SHO-518)", () => {
+describe("staff assistant corpus eval (live, SHO-412 / SHO-507 / SHO-511 / SHO-518 / SHO-524)", () => {
   let sandbox: EvalSandbox | undefined;
   let config!: ServerConfig;
   let languageModel!: ReturnType<typeof createStaffLanguageModel>;
-  let gateLanguageModel!: ReturnType<typeof createStaffLanguageModel>;
 
   beforeAll(async () => {
     config = loadServerConfig();
@@ -42,10 +41,6 @@ describe("staff assistant corpus eval (live, SHO-412 / SHO-507 / SHO-511 / SHO-5
     languageModel = createStaffLanguageModel({
       apiKey,
       model: config.ai.model,
-    });
-    gateLanguageModel = createStaffLanguageModel({
-      apiKey,
-      model: config.ai.gateModel,
     });
     sandbox = await createEvalSandbox();
   }, 180_000);
@@ -70,7 +65,6 @@ describe("staff assistant corpus eval (live, SHO-412 / SHO-507 / SHO-511 / SHO-5
           last = await runStaffAssistantEvalTurn({
             models: {
               languageModel,
-              gateLanguageModel,
               replyModelId: config.ai.model,
               gateModelId: config.ai.gateModel,
             },

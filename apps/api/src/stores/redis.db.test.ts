@@ -20,7 +20,6 @@ import { conversationLockRedisKey } from "./conversation-lock.js";
 import {
   createRedisAiBudgetStore,
   createRedisAuthRateLimitStore,
-  createRedisChoiceStore,
   createRedisConfirmationStore,
   createRedisConversationLock,
   createRedisOtpSendStore,
@@ -243,115 +242,6 @@ describe("createRedisAuthRateLimitStore", () => {
     expect(() =>
       createRedisAuthRateLimitStore(redis, { ipHmacSecret: "" }),
     ).toThrow(CoreInvariantError);
-  });
-});
-
-describe("createRedisChoiceStore", () => {
-  const conversationId = "11111111-1111-4111-8111-111111111111";
-  const companyId = "22222222-2222-4222-8222-222222222222";
-  const productId = "44444444-4444-4444-8444-444444444444";
-  const variantLemon = "55555555-5555-4555-8555-555555555555";
-  const variantVanilla = "66666666-6666-4666-8666-666666666666";
-  const customerId = "77777777-7777-4777-8777-777777777777";
-  const optionLemon = "88888888-8888-4888-8888-888888888888";
-  const optionVanilla = "99999999-9999-4999-8999-999999999999";
-  const bind = {
-    actorId: "anna",
-    companyId,
-    conversationId,
-  };
-
-  function openRecord(choiceId: string) {
-    return {
-      status: "open" as const,
-      choiceId,
-      actorId: "anna",
-      companyId,
-      conversationId,
-      canonicalInput: {
-        customer: { by: "id" as const, id: customerId },
-        items: [
-          {
-            product: { by: "id" as const, id: productId },
-            variantSelection: { kind: "unspecified" as const },
-            quantity: { milli: "1000" },
-          },
-        ],
-      },
-      target: { lineIndex: 0, productId, productName: "Macarons" },
-      optionMap: {
-        [optionLemon]: variantLemon,
-        [optionVanilla]: variantVanilla,
-      },
-      envelope: {
-        status: "needs_choice" as const,
-        challengeId: choiceId,
-        reason: "variant_required" as const,
-        productName: "Macarons",
-        options: [
-          { id: optionLemon, label: "Lemon" },
-          { id: optionVanilla, label: "Vanilla" },
-        ],
-        optionsTruncated: false,
-      },
-    };
-  }
-
-  it("lets exactly one concurrent claim win via Lua", async () => {
-    const store = createRedisChoiceStore(redis);
-    const choiceId = randomUUID();
-    expect(await store.open(openRecord(choiceId))).toBe(true);
-    const decisions = await Promise.all(
-      Array.from({ length: 8 }, (_, index) =>
-        store.claim({
-          choiceId,
-          bind,
-          optionId: index % 2 === 0 ? optionLemon : optionVanilla,
-        }),
-      ),
-    );
-    const claimed = decisions.filter((decision) => decision.kind === "claimed");
-    const replay = decisions.filter((decision) => decision.kind === "replay");
-    const conflict = decisions.filter(
-      (decision) => decision.kind === "conflict",
-    );
-    expect(claimed).toHaveLength(1);
-    expect(claimed.length + replay.length + conflict.length).toBe(8);
-    expect(replay.length + conflict.length).toBe(7);
-  });
-
-  it("peeks with GET so a second peek and a later claim still work", async () => {
-    const store = createRedisChoiceStore(redis);
-    const choiceId = randomUUID();
-    await store.open(openRecord(choiceId));
-    const first = await store.peek({ choiceId, bind });
-    const second = await store.peek({ choiceId, bind });
-    expect(first.kind).toBe("found");
-    expect(second.kind).toBe("found");
-    const claimed = await store.claim({
-      choiceId,
-      bind,
-      optionId: optionLemon,
-    });
-    expect(claimed.kind).toBe("claimed");
-  });
-
-  it("expires without a write", async () => {
-    const store = createRedisChoiceStore(redis, { ttlMs: 50 });
-    const choiceId = randomUUID();
-    await store.open(openRecord(choiceId));
-    const deadline = Date.now() + 2_000;
-    while (
-      Date.now() < deadline &&
-      (await redis.pttl(`choice:${choiceId}`)) !== -2
-    ) {
-      await new Promise((resolve) => {
-        setTimeout(resolve, 25);
-      });
-    }
-    expect(
-      await store.claim({ choiceId, bind, optionId: optionLemon }),
-    ).toEqual({ kind: "expired" });
   });
 });
 

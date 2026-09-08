@@ -6,7 +6,7 @@ export interface EvalUserTurn {
 
 export type EvalFixtureKind = "proof";
 
-/** Live HTTP stream vs T1 test-only host (ADR-0037). Do not retarget POST /assistant/chat. */
+/** Live host is `runStaffAssistantHostTurn` (ADR-0037 / SHO-524). */
 export type EvalAssistantHost = "live" | "new";
 
 export interface EvalScenario {
@@ -15,6 +15,6 @@ export interface EvalScenario {
   readonly fixture: EvalFixtureKind;
   readonly turns: readonly EvalUserTurn[];
   readonly expectation: EvalExpectation;
-  /** MODEL_SPEAKS uses the new host; other corpora stay on the live stream. */
+  /** Both values drive `runStaffAssistantHostTurn` (SHO-524). */
   readonly host?: EvalAssistantHost;
 }
