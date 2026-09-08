@@ -930,6 +930,7 @@ describe("resumeOwnAssistantConversation", () => {
     expect(result.messages[0]?.parts[1]).toEqual({
       type: "data-choice",
       data: envelope,
+      pendingVersion: 1,
     });
   });
 });

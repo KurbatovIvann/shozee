@@ -543,17 +543,18 @@ describe("hide-without-abandon is not the host card path", () => {
     expect(presenter).toContain("executeConfirmationAbandon");
     expect(presenter).toContain("executeHostConfirmationConfirm");
     expect(presenter).toContain("args.resume(");
-    expect(hook).toContain("executeConfirmationConfirm");
-    expect(hook).toContain("args.resume");
-    expect(hook).not.toContain("postConfirm");
-    expect(hook).not.toContain("executeConfirmationAbandon");
+    expect(hook).toContain("executeHostConfirmationConfirm");
+    expect(hook).toContain("executeConfirmationAbandon");
+    expect(hook).toContain("postConfirm");
+    expect(hook).not.toContain("executeConfirmationConfirm");
+    expect(hook).not.toContain("args.resume");
     expect(card).toContain("onDismiss");
     expect(card).not.toContain("hideConfirmationLocally");
   });
 });
 
-describe("live sheet does not call unpublished host HTTP", () => {
-  it("does not POST confirm/abandon or GET pending from production hooks", () => {
+describe("live sheet calls host HTTP (SHO-524)", () => {
+  it("POSTs confirm/abandon and GETs pending from production hooks", () => {
     const sheet = readFileSync(
       new URL("../sheet/use-assistant-sheet.ts", import.meta.url),
       "utf8",
@@ -570,16 +571,18 @@ describe("live sheet does not call unpublished host HTTP", () => {
       new URL("../sheet/use-assistant-choice.ts", import.meta.url),
       "utf8",
     );
-    for (const source of [sheet, chat, confirmation, choice]) {
-      expect(source).not.toContain("postAssistantConfirm");
-      expect(source).not.toContain("postAssistantPendingAbandon");
-      expect(source).not.toContain("getAssistantPending");
-      expect(source).not.toContain("/assistant/confirm");
-      expect(source).not.toContain("/assistant/pending/abandon");
-      expect(source).not.toContain("/assistant/pending");
-    }
-    expect(chat).toContain("createStaffAssistantTransport");
-    expect(chat).toContain("postAssistantChoice");
-    expect(confirmation).toContain("resume");
+    expect(chat).toContain("postAssistantChat");
+    expect(chat).toContain("postAssistantConfirm");
+    expect(chat).toContain("postAssistantPendingAbandon");
+    expect(chat).toContain("getAssistantPending");
+    expect(chat).not.toContain("createStaffAssistantTransport");
+    expect(chat).not.toContain("peekAssistantChoice");
+    expect(confirmation).toContain("executeHostConfirmationConfirm");
+    expect(confirmation).toContain("executeConfirmationAbandon");
+    expect(confirmation).not.toContain("executeConfirmationConfirm(");
+    expect(choice).toContain("executeChoiceAbandon");
+    expect(sheet).toContain("choice.dismiss");
+    expect(sheet).toContain("confirmation.dismiss");
+    expect(sheet).toContain("dismissPendingCard");
   });
 });

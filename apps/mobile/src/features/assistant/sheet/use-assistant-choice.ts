@@ -6,7 +6,9 @@ import {
   choiceCardState,
   choiceSelectRememberedAttempt,
   commitChoiceSelectResult,
+  executeChoiceAbandon,
   executeChoiceSelect,
+  hideChoiceLocally,
   pendingChoiceFromMessages,
   type AssistantChoiceMessage,
   type ChoiceAppendPart,
@@ -15,6 +17,10 @@ import {
   type ChoiceSelectResult,
   type PendingChoice,
 } from "../shared/choice-presenter";
+import {
+  shouldHidePendingCardAfterAbandon,
+  type AssistantHostInteractionResult,
+} from "../shared/resume-envelope";
 
 export function useAssistantChoice(args: {
   readonly messages: readonly AssistantChoiceMessage[];
@@ -25,12 +31,30 @@ export function useAssistantChoice(args: {
     readonly optionId: string;
   }) => Promise<ChoiceSelectResult>;
   readonly appendParts: (parts: readonly ChoiceAppendPart[]) => void;
+  readonly getConversationId: () => string | null;
+  readonly peekPending: () => Promise<
+    | {
+        readonly kind: "ok";
+        readonly pending: {
+          readonly id: string;
+          readonly version: number;
+          readonly kind: "choice" | "confirmation";
+        } | null;
+      }
+    | { readonly kind: "unavailable" }
+  >;
+  readonly postAbandon: (input: {
+    readonly conversationId: string;
+    readonly pendingId: string;
+    readonly expectedVersion: number;
+  }) => Promise<AssistantHostInteractionResult>;
 }): {
   readonly pending: PendingChoice | null;
   readonly ignoredChallengeIds: ReadonlySet<string>;
   readonly card: ChoiceCardState;
   readonly attempted: ChoiceAttemptedOption | null;
   readonly select: (optionId: string) => void;
+  readonly dismiss: () => void;
   readonly reset: () => void;
 } {
   const [ignored, setIgnored] = useState<ReadonlySet<string>>(() => new Set());
@@ -136,6 +160,27 @@ export function useAssistantChoice(args: {
     ],
   );
 
+  const dismiss = useCallback(() => {
+    const current = pendingRef.current;
+    void executeChoiceAbandon({
+      pending: current,
+      conversationId: args.getConversationId(),
+      pendingVersion: current?.pendingVersion,
+      peekPending: args.peekPending,
+      postAbandon: args.postAbandon,
+    }).then((result) => {
+      if (!shouldHidePendingCardAfterAbandon(result)) {
+        return;
+      }
+      const next = hideChoiceLocally({
+        pending: pendingRef.current,
+        dismissed: ignoredRef.current,
+      });
+      ignoredRef.current = next;
+      setIgnored(next);
+    });
+  }, [args.getConversationId, args.peekPending, args.postAbandon]);
+
   const reset = useCallback(() => {
     const empty = new Set<string>();
     ignoredRef.current = empty;
@@ -155,6 +200,7 @@ export function useAssistantChoice(args: {
     card,
     attempted,
     select,
+    dismiss,
     reset,
   };
 }

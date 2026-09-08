@@ -1068,9 +1068,12 @@ describe("assistant hydrate source", () => {
     expect(hook).toContain("resumeOwnAssistantConversation");
     expect(hook).toContain("auth.session?.userId");
     expect(hook).toContain('result.kind === "unavailable"');
-    expect(hook).not.toContain("getAssistantPending");
-    expect(hook).not.toContain("postAssistantConfirm");
-    expect(hook).not.toContain("postAssistantPendingAbandon");
+    expect(hook).toContain("getAssistantPending");
+    expect(hook).toContain("postAssistantChat");
+    expect(hook).toContain("postAssistantConfirm");
+    expect(hook).toContain("postAssistantPendingAbandon");
+    expect(hook).not.toContain("createStaffAssistantTransport");
+    expect(hook).not.toContain("peekAssistantChoice");
     expect(hook).not.toContain("ensureAssistantConversation");
     expect(hook).not.toContain("userId:");
     expect(hook).not.toContain("companyId:");
@@ -1221,6 +1224,40 @@ describe("applyOpenPendingToHydratedMessages (SHO-522)", () => {
         pendingVersion: 2,
         summary: "Delete this archived customer.",
       },
+    });
+  });
+
+  it("injects a choice card with pendingVersion from GET pending", () => {
+    const choiceId = "44444444-4444-4444-8444-444444444444";
+    const envelope = {
+      status: "needs_choice" as const,
+      challengeId: choiceId,
+      reason: "variant_required" as const,
+      productName: "Macarons",
+      options: [{ id: OPTION_LEMON, label: "Lemon" }],
+      optionsTruncated: false,
+    };
+    const messages = applyOpenPendingToHydratedMessages({
+      messages: [
+        {
+          id: MSG_ASSISTANT,
+          role: "assistant",
+          parts: [{ type: "text", text: "Select a variant." }],
+        },
+      ],
+      pending: {
+        kind: "choice",
+        id: choiceId,
+        version: 3,
+        status: "open",
+        actionName: "orders.create",
+        envelope,
+      },
+    });
+    expect(messages[0]?.parts[1]).toEqual({
+      type: "data-choice",
+      data: envelope,
+      pendingVersion: 3,
     });
   });
 });

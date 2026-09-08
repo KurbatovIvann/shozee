@@ -1,4 +1,3 @@
-import { useChat } from "@ai-sdk/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useApiClient } from "../../../api/api-provider";
@@ -7,15 +6,15 @@ import { describeQueryFailure } from "../../../api/errors";
 import { useActiveCompany } from "../../../api/query-provider";
 import { useBoundContractMutation } from "../../../api/use-bound-contract-mutation";
 import { useAuthSession } from "../../../auth/session-provider";
+import { detectLocale } from "../../../i18n/locale";
 import { clipAssistantInput } from "../api/assistant-chat-body";
+import { postAssistantChoice } from "../api/assistant-choice";
 import {
-  peekAssistantChoice,
-  postAssistantChoice,
-} from "../api/assistant-choice";
-import {
-  createStaffAssistantTransport,
-  type StaffAssistantUiMessage,
-} from "../api/assistant-chat-transport";
+  getAssistantPending,
+  postAssistantChat,
+  postAssistantConfirm,
+  postAssistantPendingAbandon,
+} from "../api/assistant-pending";
 import { bindCreateConversationMutate } from "../api/create-conversation";
 import {
   resetAssistantTenantSession,
@@ -32,6 +31,10 @@ import type {
   ChoiceSelectResult,
 } from "../shared/choice-presenter";
 import type { AssistantChatMessage } from "../shared/confirmation-presenter";
+import {
+  partsFromResumeEnvelope,
+  type AssistantHostInteractionResult,
+} from "../shared/resume-envelope";
 import type { AssistantChatStatus } from "./use-assistant-confirmation";
 
 function resolveApiUrl(): string | null {
@@ -42,6 +45,17 @@ function resolveApiUrl(): string | null {
   }
 }
 
+function errorFromHostResult(
+  result: Extract<AssistantHostInteractionResult, { status: "error" }>,
+): Error {
+  return new Error(
+    JSON.stringify({
+      code: result.code,
+      message: result.message,
+    }),
+  );
+}
+
 export function useAssistantChat(): {
   readonly ready: boolean;
   readonly messages: readonly AssistantChatMessage[];
@@ -50,7 +64,6 @@ export function useAssistantChat(): {
   readonly input: string;
   readonly changeInput: (value: string) => void;
   readonly send: () => void;
-  readonly resume: (headers: Readonly<Record<string, string>>) => Promise<void>;
   readonly sendBusy: boolean;
   readonly thinking: boolean;
   readonly canSend: boolean;
@@ -62,6 +75,27 @@ export function useAssistantChat(): {
     current: () => void;
   };
   readonly companyEpochRef: AssistantCompanyEpochRef;
+  readonly getConversationId: () => string | null;
+  readonly peekPending: () => Promise<
+    | {
+        readonly kind: "ok";
+        readonly pending: {
+          readonly id: string;
+          readonly version: number;
+          readonly kind: "choice" | "confirmation";
+        } | null;
+      }
+    | { readonly kind: "unavailable" }
+  >;
+  readonly postConfirm: (input: {
+    readonly conversationId: string;
+    readonly challengeId: string;
+  }) => Promise<AssistantHostInteractionResult>;
+  readonly postAbandon: (input: {
+    readonly conversationId: string;
+    readonly pendingId: string;
+    readonly expectedVersion: number;
+  }) => Promise<AssistantHostInteractionResult>;
   readonly postChoice: (input: {
     readonly choiceId: string;
     readonly optionId: string;
@@ -80,6 +114,9 @@ export function useAssistantChat(): {
     return;
   });
   const [hydrateBusy, setHydrateBusy] = useState(false);
+  const [messages, setMessages] = useState<AssistantChatMessage[]>([]);
+  const [status, setStatus] = useState<AssistantChatStatus>("ready");
+  const [error, setError] = useState<unknown>(undefined);
 
   const cookieRef = useRef(auth.getCookie);
   cookieRef.current = auth.getCookie;
@@ -95,42 +132,11 @@ export function useAssistantChat(): {
     bindCreateConversationMutate,
   );
 
-  const transport = useMemo(
-    () =>
-      createStaffAssistantTransport({
-        apiUrl: apiUrl ?? "http://127.0.0.1",
-        getCookie: () => cookieRef.current(),
-        getCompanyId: () => companyIdRef.current,
-        getConversationId: () => conversationIdRef.current,
-      }),
-    [apiUrl],
-  );
+  const getConversationId = useCallback(() => conversationIdRef.current, []);
 
-  const { messages, sendMessage, setMessages, status, error, clearError } =
-    useChat<StaffAssistantUiMessage>({
-      id: activeCompanyId ?? "assistant-none",
-      transport,
-    });
-
-  const presenterMessages = useMemo((): AssistantChatMessage[] => {
-    return messages.map((message) => ({
-      id: message.id,
-      role: message.role,
-      parts: message.parts,
-    }));
-  }, [messages]);
-
-  const setMessagesRef = useRef(setMessages);
-  setMessagesRef.current = setMessages;
-
-  const busy = status === "submitted" || status === "streaming";
-  const sendBusy = busy || createConversation.isPending || hydrateBusy;
-
-  const resume = useCallback(
-    (headers: Readonly<Record<string, string>>) =>
-      sendMessage(undefined, { headers: { ...headers } }),
-    [sendMessage],
-  );
+  const clearError = useCallback(() => {
+    setError(undefined);
+  }, []);
 
   const appendAssistantParts = useCallback(
     (parts: readonly ChoiceAppendPart[]) => {
@@ -143,7 +149,100 @@ export function useAssistantChat(): {
         },
       ]);
     },
-    [setMessages],
+    [],
+  );
+
+  const applyHostResult = useCallback(
+    (result: AssistantHostInteractionResult) => {
+      if (result.status === "ok") {
+        const parts = partsFromResumeEnvelope({
+          speech: result.speech,
+          cards: result.cards,
+          pending: result.pending,
+        });
+        if (parts.length > 0) {
+          appendAssistantParts(parts);
+        }
+        setStatus("ready");
+        return;
+      }
+      if (result.status === "expired") {
+        setError(
+          new Error(
+            JSON.stringify({
+              code: "NOT_FOUND",
+              message: "Turn expired.",
+            }),
+          ),
+        );
+        setStatus("error");
+        return;
+      }
+      setError(errorFromHostResult(result));
+      setStatus("error");
+    },
+    [appendAssistantParts],
+  );
+
+  const peekPending = useCallback(async () => {
+    const conversationId = conversationIdRef.current;
+    if (conversationId === null || apiUrl === null) {
+      return { kind: "unavailable" as const };
+    }
+    return getAssistantPending({
+      apiUrl,
+      getCookie: () => cookieRef.current(),
+      getCompanyId: () => companyIdRef.current,
+      conversationId,
+    });
+  }, [apiUrl]);
+
+  const postConfirm = useCallback(
+    (input: {
+      readonly conversationId: string;
+      readonly challengeId: string;
+    }) => {
+      if (apiUrl === null) {
+        return Promise.resolve({
+          status: "error" as const,
+          code: "NETWORK",
+          message: "Confirm request failed.",
+        });
+      }
+      return postAssistantConfirm({
+        apiUrl,
+        getCookie: () => cookieRef.current(),
+        getCompanyId: () => companyIdRef.current,
+        conversationId: input.conversationId,
+        challengeId: input.challengeId,
+      });
+    },
+    [apiUrl],
+  );
+
+  const postAbandon = useCallback(
+    (input: {
+      readonly conversationId: string;
+      readonly pendingId: string;
+      readonly expectedVersion: number;
+    }) => {
+      if (apiUrl === null) {
+        return Promise.resolve({
+          status: "error" as const,
+          code: "NETWORK",
+          message: "Abandon request failed.",
+        });
+      }
+      return postAssistantPendingAbandon({
+        apiUrl,
+        getCookie: () => cookieRef.current(),
+        getCompanyId: () => companyIdRef.current,
+        conversationId: input.conversationId,
+        pendingId: input.pendingId,
+        expectedVersion: input.expectedVersion,
+      });
+    },
+    [apiUrl],
   );
 
   const postChoice = useCallback(
@@ -210,21 +309,16 @@ export function useAssistantChat(): {
           return null;
         }
       },
-      peekChoice: async ({ conversationId, choiceId }) => {
+      peekPending: async ({ conversationId }) => {
         if (apiUrl === null) {
-          return undefined;
+          return { kind: "unavailable" };
         }
-        const peeked = await peekAssistantChoice({
+        return getAssistantPending({
           apiUrl,
           getCookie: () => cookieRef.current(),
           getCompanyId: () => companyIdRef.current,
           conversationId,
-          choiceId,
         });
-        if (peeked.kind !== "envelope") {
-          return undefined;
-        }
-        return peeked.envelope;
       },
     })
       .then((result) => {
@@ -239,7 +333,7 @@ export function useAssistantChat(): {
           return;
         }
         conversationIdRef.current = result.conversationId;
-        setMessagesRef.current(
+        setMessages(
           result.messages.map((message) => ({
             id: message.id,
             role: message.role,
@@ -256,7 +350,13 @@ export function useAssistantChat(): {
     return () => {
       cancelled = true;
     };
-  }, [activeCompanyId, apiClient, apiUrl, sessionUserId, setMessages]);
+  }, [activeCompanyId, apiClient, apiUrl, sessionUserId]);
+
+  const sendBusy =
+    status === "submitted" ||
+    status === "streaming" ||
+    createConversation.isPending ||
+    hydrateBusy;
 
   const send = useCallback(() => {
     const text = clipAssistantInput(input);
@@ -272,16 +372,47 @@ export function useAssistantChat(): {
           conversationIdRef,
           companyEpochRef,
           create: () => createConversation.submit({}),
-          sendMessage: (payload) => sendMessage(payload),
+          sendMessage: async (payload) => {
+            const conversationId = conversationIdRef.current;
+            if (conversationId === null || apiUrl === null) {
+              return;
+            }
+            setMessages((current) => [
+              ...current,
+              {
+                id: crypto.randomUUID(),
+                role: "user",
+                parts: [{ type: "text", text: payload.text }],
+              },
+            ]);
+            setStatus("submitted");
+            const result = await postAssistantChat({
+              apiUrl,
+              getCookie: () => cookieRef.current(),
+              getCompanyId: () => companyIdRef.current,
+              conversationId,
+              text: payload.text,
+              locale: detectLocale(),
+            });
+            applyHostResult(result);
+          },
           text,
         });
       } catch {
         if (companyEpochRef.current === epoch) {
           setInput(text);
+          setStatus("ready");
         }
       }
     })();
-  }, [clearError, createConversation, input, sendBusy, sendMessage]);
+  }, [
+    apiUrl,
+    applyHostResult,
+    clearError,
+    createConversation,
+    input,
+    sendBusy,
+  ]);
 
   const createErrorKind = createConversation.isError
     ? queryFailureToAssistantKind(
@@ -291,15 +422,14 @@ export function useAssistantChat(): {
 
   return {
     ready: apiClient !== null && activeCompanyId !== null && apiUrl !== null,
-    messages: presenterMessages,
+    messages,
     status,
     error,
     input,
     changeInput: setInput,
     send,
-    resume,
     sendBusy,
-    thinking: busy || hydrateBusy,
+    thinking: sendBusy || hydrateBusy,
     canSend:
       clipAssistantInput(input).length > 0 &&
       !sendBusy &&
@@ -310,6 +440,10 @@ export function useAssistantChat(): {
     confirmationResetRef,
     choiceResetRef,
     companyEpochRef,
+    getConversationId,
+    peekPending,
+    postConfirm,
+    postAbandon,
     postChoice,
     appendAssistantParts,
   };

@@ -1,11 +1,10 @@
 /**
  * HITL card presenter for the staff assistant (SHO-323 / SHO-522).
  *
- * Live sheet (until T5): confirm is `sendMessage` +
- * `x-confirmation-challenge-id`. Host presenters (unpublished
- * `createStaffAssistantHostApp`) POST `/assistant/confirm` and abandon
- * via injected ports. Local hide without abandon is not the host card
- * path.
+ * Live sheet (SHO-524): confirm POSTs `/assistant/confirm`; dismiss
+ * POSTs `/assistant/pending/abandon`. Hide the card only after
+ * `shouldHidePendingCardAfterAbandon`. Local hide without abandon is
+ * not the host card path.
  */
 import { CONFIRMATION_CHALLENGE_HEADER } from "@showzy/contract";
 
@@ -217,8 +216,8 @@ export function claimConfirmationConfirm(args: {
 }
 
 /**
- * Live confirm until T5: resume the chat with the challenge header.
- * Never POST unpublished `/assistant/confirm` from the production sheet.
+ * Header-resume confirm (legacy). Live sheet uses
+ * `executeHostConfirmationConfirm`.
  */
 export async function executeConfirmationConfirm(args: {
   readonly pending: PendingConfirmation | null;
@@ -241,8 +240,8 @@ export async function executeConfirmationConfirm(args: {
 }
 
 /**
- * Unpublished-host confirm: POST `/assistant/confirm` with conversation
- * + challenge ids. Injected ports only — not the live sheet.
+ * Live confirm: POST `/assistant/confirm` with conversation + challenge
+ * ids. Injected ports — never canonical input from the client.
  */
 export async function executeHostConfirmationConfirm(args: {
   readonly pending: PendingConfirmation | null;
@@ -271,7 +270,7 @@ export async function executeHostConfirmationConfirm(args: {
 }
 
 /**
- * Live confirmation dismiss until T5. Host card dismiss must call
+ * Local hide only. Host card dismiss must call
  * `executeConfirmationAbandon` instead.
  */
 export function executeConfirmationDismiss(args: {

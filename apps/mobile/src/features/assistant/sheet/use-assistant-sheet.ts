@@ -27,10 +27,12 @@ export function useAssistantSheet(): AssistantSheetViewModel & {
   const chat = useAssistantChat();
   const confirmation = useAssistantConfirmation({
     messages: chat.messages,
-    status: chat.status,
-    error: chat.error,
     sendBusy: chat.sendBusy,
-    resume: chat.resume,
+    getConversationId: chat.getConversationId,
+    peekPending: chat.peekPending,
+    postConfirm: chat.postConfirm,
+    postAbandon: chat.postAbandon,
+    appendParts: chat.appendAssistantParts,
   });
   chat.confirmationResetRef.current = confirmation.reset;
   const choice = useAssistantChoice({
@@ -39,8 +41,19 @@ export function useAssistantSheet(): AssistantSheetViewModel & {
     companyEpochRef: chat.companyEpochRef,
     postChoice: chat.postChoice,
     appendParts: chat.appendAssistantParts,
+    getConversationId: chat.getConversationId,
+    peekPending: chat.peekPending,
+    postAbandon: chat.postAbandon,
   });
   chat.choiceResetRef.current = choice.reset;
+
+  const dismissPendingCard = useCallback(() => {
+    if (choice.card.kind !== "hidden") {
+      choice.dismiss();
+      return;
+    }
+    confirmation.dismiss();
+  }, [choice, confirmation]);
 
   const openHref = useCallback(
     (href: string) => {
@@ -89,7 +102,7 @@ export function useAssistantSheet(): AssistantSheetViewModel & {
     changeInput: chat.changeInput,
     send: chat.send,
     confirm: confirmation.confirm,
-    dismiss: confirmation.dismiss,
+    dismiss: dismissPendingCard,
     selectChoice: choice.select,
     openHref,
     busy: chat.sendBusy,

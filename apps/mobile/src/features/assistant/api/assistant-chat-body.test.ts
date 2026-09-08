@@ -4,321 +4,54 @@ import {
   AssistantConversationMissingError,
   assistantChatUrl,
   clipAssistantInput,
-  prepareStaffAssistantChatRequest,
-  prepareStaffAssistantSendMessagesRequest,
-  staffChatWireMessages,
+  staffAssistantChatBody,
   STAFF_ASSISTANT_CHAT_MESSAGE_TEXT_MAX,
-  STAFF_ASSISTANT_CHAT_MESSAGES_MAX,
 } from "./assistant-chat-body";
 
 const conversationId = "11111111-1111-4111-8111-111111111111";
-const challengeId = "22222222-2222-4222-8222-222222222222";
 
 describe("assistantChatUrl", () => {
-  it("joins the SSE mount path without a trailing slash", () => {
+  it("joins the live chat path without a trailing slash", () => {
     expect(assistantChatUrl("https://api.example.com/")).toBe(
       "https://api.example.com/assistant/chat",
     );
   });
 });
 
-describe("staffChatWireMessages", () => {
-  it("keeps message ids and echoes data-confirmation parts", () => {
-    expect(
-      staffChatWireMessages([
-        {
-          id: "u1",
-          role: "user",
-          parts: [{ type: "text", text: "Delete the customer" }],
-        },
-        {
-          id: "a1",
-          role: "assistant",
-          parts: [
-            { type: "text", text: "Confirmation required." },
-            {
-              type: "data-confirmation",
-              data: {
-                status: "confirmation_required",
-                challengeId,
-                summary: "Delete this archived customer.",
-                expiresAt: "2026-09-01T12:00:00.000Z",
-                actionName: "customers.deleteCustomer",
-                toolCallId: "call-delete",
-              },
-            },
-          ],
-        },
-      ]),
-    ).toEqual([
-      {
-        id: "u1",
-        role: "user",
-        parts: [{ type: "text", text: "Delete the customer" }],
-      },
-      {
-        id: "a1",
-        role: "assistant",
-        parts: [
-          { type: "text", text: "Confirmation required." },
-          {
-            type: "data-confirmation",
-            data: {
-              status: "confirmation_required",
-              challengeId,
-              summary: "Delete this archived customer.",
-              expiresAt: "2026-09-01T12:00:00.000Z",
-              actionName: "customers.deleteCustomer",
-              toolCallId: "call-delete",
-            },
-          },
-        ],
-      },
-    ]);
-  });
-
-  it("keeps valid data-choice envelopes and drops canonical extras", () => {
-    const choiceId = "33333333-3333-4333-8333-333333333333";
-    const optionId = "88888888-8888-4888-8888-888888888888";
-    const envelope = {
-      status: "needs_choice" as const,
-      challengeId: choiceId,
-      reason: "variant_required" as const,
-      productName: "Macarons",
-      options: [{ id: optionId, label: "Lemon" }],
-      optionsTruncated: false,
-    };
-    expect(
-      staffChatWireMessages([
-        {
-          id: "a1",
-          role: "assistant",
-          parts: [
-            { type: "text", text: "Select a variant." },
-            {
-              type: "data-choice",
-              data: {
-                ...envelope,
-                canonicalInput: {
-                  customer: { by: "id", id: choiceId },
-                  items: [],
-                },
-                target: {
-                  lineIndex: 0,
-                  productId: choiceId,
-                  productName: "Macarons",
-                },
-                optionMap: { [optionId]: choiceId },
-              },
-            },
-          ],
-        },
-      ]),
-    ).toEqual([
-      {
-        id: "a1",
-        role: "assistant",
-        parts: [
-          { type: "text", text: "Select a variant." },
-          { type: "data-choice", data: envelope },
-        ],
-      },
-    ]);
-  });
-
-  it("windows history to the SSE mount message cap", () => {
-    const messages = Array.from(
-      { length: STAFF_ASSISTANT_CHAT_MESSAGES_MAX + 1 },
-      (_, index) => ({
-        id: `m${String(index)}`,
-        role: index % 2 === 0 ? ("user" as const) : ("assistant" as const),
-        parts: [{ type: "text" as const, text: `turn-${String(index)}` }],
-      }),
-    );
-    const wired = staffChatWireMessages(messages);
-    expect(wired).toHaveLength(STAFF_ASSISTANT_CHAT_MESSAGES_MAX);
-    expect(wired[0]?.id).toBe("m1");
-    expect(wired.at(-1)?.id).toBe(
-      `m${String(STAFF_ASSISTANT_CHAT_MESSAGES_MAX)}`,
-    );
-  });
-
-  it("drops data-presentation so the envelope is not echoed to the model", () => {
-    expect(
-      staffChatWireMessages([
-        {
-          id: "a1",
-          role: "assistant",
-          parts: [
-            { type: "text", text: "Немає замовлень." },
-            {
-              type: "data-presentation",
-              data: {
-                surface: "orders-list",
-                version: 1,
-                toolCallIds: ["call-list"],
-              },
-            },
-          ],
-        },
-      ]),
-    ).toEqual([
-      {
-        id: "a1",
-        role: "assistant",
-        parts: [{ type: "text", text: "Немає замовлень." }],
-      },
-    ]);
-  });
-});
-
-describe("prepareStaffAssistantChatRequest", () => {
-  it("builds the fresh body with text and messageId, without messages or companyId", () => {
-    const prepared = prepareStaffAssistantChatRequest({
-      conversationId,
-      messages: [
-        {
-          id: "u1",
-          role: "user",
-          parts: [{ type: "text", text: "List orders" }],
-        },
-      ],
-    });
-    expect(prepared.body).toEqual({
+describe("staffAssistantChatBody", () => {
+  it("builds conversationId, text, and locale without companyId", () => {
+    const body = staffAssistantChatBody({
       conversationId,
       text: "List orders",
-      messageId: "u1",
       locale: "uk",
     });
-    expect(prepared.body).not.toHaveProperty("messages");
-    expect(prepared.body).not.toHaveProperty("companyId");
-    expect(JSON.stringify(prepared.body)).not.toContain("companyId");
-  });
-
-  it("reuses the same messageId on retry and mints a new one for a new send", () => {
-    const retryMessages = [
-      {
-        id: "attempt-1",
-        role: "user" as const,
-        parts: [{ type: "text" as const, text: "так" }],
-      },
-    ];
-    const first = prepareStaffAssistantChatRequest({
+    expect(body).toEqual({
       conversationId,
-      messages: retryMessages,
+      text: "List orders",
+      locale: "uk",
     });
-    const retry = prepareStaffAssistantChatRequest({
-      conversationId,
-      messages: retryMessages,
-    });
-    expect(first.body.messageId).toBe("attempt-1");
-    expect(retry.body.messageId).toBe("attempt-1");
-    const nextSend = prepareStaffAssistantChatRequest({
-      conversationId,
-      messages: [
-        {
-          id: "attempt-2",
-          role: "user",
-          parts: [{ type: "text", text: "так" }],
-        },
-      ],
-    });
-    expect(nextSend.body.messageId).toBe("attempt-2");
-    expect(nextSend.body.text).toBe("так");
+    expect(JSON.stringify(body)).not.toContain("companyId");
+    expect(body).not.toHaveProperty("messageId");
+    expect(body).not.toHaveProperty("messages");
   });
 
   it("sends an explicit English locale", () => {
-    const prepared = prepareStaffAssistantChatRequest({
-      conversationId,
-      locale: "en",
-      messages: [
-        {
-          id: "u1",
-          role: "user",
-          parts: [{ type: "text", text: "List orders" }],
-        },
-      ],
-    });
-    expect(prepared.body.locale).toBe("en");
+    expect(
+      staffAssistantChatBody({
+        conversationId,
+        text: "List orders",
+        locale: "en",
+      }).locale,
+    ).toBe("en");
   });
 
   it("throws when the conversation is missing", () => {
     expect(() =>
-      prepareStaffAssistantChatRequest({
+      staffAssistantChatBody({
         conversationId: null,
-        messages: [],
+        text: "List orders",
       }),
     ).toThrow(AssistantConversationMissingError);
-  });
-});
-
-describe("prepareStaffAssistantSendMessagesRequest", () => {
-  it("returns the request headers including the confirmation challenge", () => {
-    const headers = {
-      cookie: "better-auth.session_token=abc",
-      "x-company-id": "company-a",
-      "x-confirmation-challenge-id": challengeId,
-    };
-    const prepared = prepareStaffAssistantSendMessagesRequest({
-      conversationId,
-      messages: [
-        {
-          id: "u1",
-          role: "user",
-          parts: [{ type: "text", text: "Delete the customer" }],
-        },
-        {
-          id: "a1",
-          role: "assistant",
-          parts: [
-            { type: "text", text: "Confirmation required." },
-            {
-              type: "data-confirmation",
-              data: {
-                status: "confirmation_required",
-                challengeId,
-                summary: "Delete this archived customer.",
-                expiresAt: "2026-09-01T12:00:00.000Z",
-                actionName: "customers.deleteCustomer",
-                toolCallId: "call-delete",
-              },
-            },
-          ],
-        },
-      ],
-      headers,
-    });
-    expect(prepared.headers).toEqual(headers);
-    expect(prepared.credentials).toBe("omit");
-    expect(prepared.body).not.toHaveProperty("companyId");
-    expect(prepared.body).not.toHaveProperty("text");
-    expect(prepared.body).not.toHaveProperty("messageId");
-    expect(prepared.body.locale).toBe("uk");
-    expect(prepared.body.messages).toEqual([
-      {
-        id: "a1",
-        role: "assistant",
-        parts: [
-          {
-            type: "data-confirmation",
-            data: {
-              status: "confirmation_required",
-              challengeId,
-              summary: "Delete this archived customer.",
-              expiresAt: "2026-09-01T12:00:00.000Z",
-              actionName: "customers.deleteCustomer",
-              toolCallId: "call-delete",
-            },
-          },
-        ],
-      },
-    ]);
-    expect(JSON.stringify(prepared.body.messages)).not.toContain(
-      "Delete the customer",
-    );
-    expect(JSON.stringify(prepared.body.messages)).not.toContain(
-      "Confirmation required.",
-    );
   });
 });
 

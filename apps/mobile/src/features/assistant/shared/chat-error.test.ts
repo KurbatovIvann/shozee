@@ -39,6 +39,16 @@ describe("assistantChatErrorKind", () => {
     ).toBe("The assistant is not configured.");
   });
 
+  it("maps NETWORK JSON onto network copy", () => {
+    const error = new Error(
+      JSON.stringify({
+        code: "NETWORK",
+        message: "Chat request failed.",
+      }),
+    );
+    expect(assistantChatErrorKind(error)).toBe("network");
+  });
+
   it("maps TypeError and failed-fetch transport throws to network", () => {
     expect(assistantChatErrorKind(new TypeError("Failed to fetch"))).toBe(
       "network",

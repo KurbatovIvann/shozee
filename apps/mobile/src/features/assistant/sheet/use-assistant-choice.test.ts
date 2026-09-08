@@ -9,8 +9,10 @@ import {
   type ChoiceAppendPart,
   type ChoiceSelectResult,
 } from "../shared/choice-presenter";
+import type { AssistantHostInteractionResult } from "../shared/resume-envelope";
 import { useAssistantChoice } from "./use-assistant-choice";
 
+const conversationId = "11111111-1111-4111-8111-111111111111";
 const choiceId = "33333333-3333-4333-8333-333333333333";
 const lemonId = "88888888-8888-4888-8888-888888888888";
 const vanillaId = "99999999-9999-4999-8999-999999999999";
@@ -50,6 +52,23 @@ type ProbeProps = {
   }) => Promise<ChoiceSelectResult>;
   readonly appendParts: (parts: readonly ChoiceAppendPart[]) => void;
   readonly companyEpochRef: { current: number };
+  readonly getConversationId: () => string | null;
+  readonly peekPending: () => Promise<
+    | {
+        readonly kind: "ok";
+        readonly pending: {
+          readonly id: string;
+          readonly version: number;
+          readonly kind: "choice" | "confirmation";
+        } | null;
+      }
+    | { readonly kind: "unavailable" }
+  >;
+  readonly postAbandon: (input: {
+    readonly conversationId: string;
+    readonly pendingId: string;
+    readonly expectedVersion: number;
+  }) => Promise<AssistantHostInteractionResult>;
 };
 
 function Probe(props: ProbeProps) {
@@ -59,6 +78,9 @@ function Probe(props: ProbeProps) {
     companyEpochRef: props.companyEpochRef,
     postChoice: props.postChoice,
     appendParts: props.appendParts,
+    getConversationId: props.getConversationId,
+    peekPending: props.peekPending,
+    postAbandon: props.postAbandon,
   });
   return null;
 }
@@ -73,6 +95,9 @@ async function flush(): Promise<void> {
 function mount(env: {
   readonly postChoice: ProbeProps["postChoice"];
   readonly appendParts?: ProbeProps["appendParts"];
+  readonly getConversationId?: ProbeProps["getConversationId"];
+  readonly peekPending?: ProbeProps["peekPending"];
+  readonly postAbandon?: ProbeProps["postAbandon"];
 }): {
   latest: () => HookLatest;
   unmount: () => void;
@@ -89,6 +114,19 @@ function mount(env: {
         postChoice: env.postChoice,
         appendParts: env.appendParts ?? (() => undefined),
         companyEpochRef,
+        getConversationId: env.getConversationId ?? (() => conversationId),
+        peekPending:
+          env.peekPending ??
+          (() => Promise.resolve({ kind: "unavailable" as const })),
+        postAbandon:
+          env.postAbandon ??
+          (() =>
+            Promise.resolve({
+              status: "ok" as const,
+              speech: "",
+              cards: [],
+              pending: null,
+            })),
       }),
     );
   });
@@ -283,6 +321,76 @@ describe("useAssistantChoice attempted-option recovery (SHO-452)", () => {
       choiceId,
       optionId: lemonId,
     });
+    mounted.unmount();
+  });
+});
+
+describe("useAssistantChoice dismiss (SHO-524)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("POSTs abandon and hides only after ok", async () => {
+    const postAbandon = vi.fn(() =>
+      Promise.resolve({
+        status: "ok" as const,
+        speech: "",
+        cards: [],
+        pending: null,
+      }),
+    );
+    const mounted = mount({
+      postChoice: () =>
+        Promise.resolve({
+          status: "error",
+          httpStatus: 503,
+          recoverability: "retryable",
+        }),
+      peekPending: () =>
+        Promise.resolve({
+          kind: "ok" as const,
+          pending: {
+            id: choiceId,
+            version: 1,
+            kind: "choice" as const,
+          },
+        }),
+      postAbandon,
+    });
+    expect(mounted.latest().card.kind).toBe("proposed");
+    act(() => {
+      mounted.latest().dismiss();
+    });
+    await flush();
+    expect(postAbandon).toHaveBeenCalledWith({
+      conversationId,
+      pendingId: choiceId,
+      expectedVersion: 1,
+    });
+    expect(mounted.latest().ignoredChallengeIds.has(choiceId)).toBe(true);
+    expect(mounted.latest().card.kind).toBe("hidden");
+    mounted.unmount();
+  });
+
+  it("keeps the picker when abandon peek is unavailable", async () => {
+    const postAbandon = vi.fn();
+    const mounted = mount({
+      postChoice: () =>
+        Promise.resolve({
+          status: "error",
+          httpStatus: 503,
+          recoverability: "retryable",
+        }),
+      peekPending: () => Promise.resolve({ kind: "unavailable" }),
+      postAbandon,
+    });
+    act(() => {
+      mounted.latest().dismiss();
+    });
+    await flush();
+    expect(postAbandon).not.toHaveBeenCalled();
+    expect(mounted.latest().card.kind).toBe("proposed");
+    expect(mounted.latest().ignoredChallengeIds.has(choiceId)).toBe(false);
     mounted.unmount();
   });
 });
