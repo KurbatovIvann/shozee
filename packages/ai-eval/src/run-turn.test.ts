@@ -1,12 +1,15 @@
 import {
   CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME,
   ORDERS_LIST_COUNTS_TOOL_NAME,
+  ORDERS_LIST_PAGE_TOOL_NAME,
+  STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK,
   STAFF_ASSISTANT_TOOL_SEARCH_NAME,
 } from "@showzy/ai";
 import {
   MockLanguageModelV3,
   mockSpokenStream,
   mockStaffAssistantGateGenerate,
+  mockTextStream,
   mockToolCallStream,
 } from "@showzy/ai/test";
 import { listCustomersContract } from "@showzy/customers/contract";
@@ -15,7 +18,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import { matchEvalExpectation } from "./expectation.js";
 import { createEvalLogger } from "./log.js";
+import { isRecord } from "./record.js";
 import { runStaffAssistantEvalTurn } from "./run-turn.js";
+import { MODEL_SPEAKS_SCENARIOS } from "./scenarios/model-speaks.js";
 import { PROOF_SCENARIOS } from "./scenarios/proof.js";
 
 const silentLogger = createEvalLogger({
@@ -188,6 +193,171 @@ describe("runStaffAssistantEvalTurn", () => {
     );
     expect(
       matchEvalExpectation(scenario?.expectation ?? {}, result.trace),
+    ).toEqual({ ok: true });
+  });
+
+  it("MODEL_SPEAKS host keeps a markdown table as model speech", async () => {
+    const table = "| order | total |\n| **#12** | 10 |";
+    const execute = vi.fn(() =>
+      Promise.resolve({
+        kind: "page.summary",
+        rows: [{ orderNumber: "12" }],
+        nextCursor: null,
+      }),
+    );
+    const gateLanguageModel = new MockLanguageModelV3({
+      doGenerate: mockStaffAssistantGateGenerate({
+        mode: "job",
+        confidence: "high",
+      }),
+    });
+    const newHost = await runStaffAssistantEvalTurn({
+      host: "new",
+      models: {
+        languageModel: new MockLanguageModelV3({
+          doStream: [
+            mockToolCallStream(
+              "call-page",
+              ORDERS_LIST_PAGE_TOOL_NAME,
+              JSON.stringify({ limit: 3 }),
+            ),
+            mockTextStream(table),
+          ],
+        }),
+        gateLanguageModel,
+        replyModelId: "mock-sonnet",
+        gateModelId: "mock-haiku",
+      },
+      messages: [{ role: "user", content: "останні 3 замовлення" }],
+      contracts: [listOrdersContract],
+      execute,
+      logger: silentLogger,
+    });
+    expect(gateLanguageModel.doGenerateCalls).toHaveLength(0);
+    expect(newHost.trace.speechSource).toBe("model");
+    expect(newHost.trace.text).toBe(table);
+    expect(
+      matchEvalExpectation(
+        MODEL_SPEAKS_SCENARIOS[0]?.expectation ?? {},
+        newHost.trace,
+      ),
+    ).toEqual({ ok: true });
+
+    const live = await runStaffAssistantEvalTurn({
+      models: {
+        languageModel: new MockLanguageModelV3({
+          doStream: [
+            mockToolCallStream(
+              "call-page-live",
+              ORDERS_LIST_PAGE_TOOL_NAME,
+              JSON.stringify({ limit: 3 }),
+            ),
+            mockTextStream(table),
+          ],
+        }),
+        gateLanguageModel: new MockLanguageModelV3({
+          doGenerate: mockStaffAssistantGateGenerate({
+            mode: "job",
+            confidence: "high",
+          }),
+        }),
+        replyModelId: "mock-sonnet",
+        gateModelId: "mock-haiku",
+      },
+      messages: [{ role: "user", content: "останні 3 замовлення" }],
+      contracts: [listOrdersContract],
+      execute,
+      logger: silentLogger,
+    });
+    expect(live.trace.speechSource).not.toBe("model");
+  });
+
+  it("MODEL_SPEAKS host still falls back on leftover JSON", async () => {
+    const execute = vi.fn(() =>
+      Promise.resolve({
+        kind: "page.summary",
+        rows: [{ orderNumber: "12" }],
+        nextCursor: null,
+      }),
+    );
+    const result = await runStaffAssistantEvalTurn({
+      host: "new",
+      models: {
+        languageModel: new MockLanguageModelV3({
+          doStream: [
+            mockToolCallStream("call-page", ORDERS_LIST_PAGE_TOOL_NAME, "{}"),
+            mockSpokenStream("12"),
+          ],
+        }),
+        replyModelId: "mock-sonnet",
+        gateModelId: "mock-haiku",
+      },
+      messages: [{ role: "user", content: "останні 3 замовлення" }],
+      contracts: [listOrdersContract],
+      execute,
+      logger: silentLogger,
+    });
+    expect(result.trace.speechSource).toBe("fallback");
+    expect(result.trace.text).toBe(STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK.uk);
+    expect(result.trace.text).not.toBe("12");
+  });
+
+  it("MODEL_SPEAKS host records façade counts args so this_week matches", async () => {
+    let executeInput: unknown;
+    const execute = vi.fn((_actionName: string, input: unknown) => {
+      executeInput = input;
+      return Promise.resolve({
+        kind: "aggregate",
+        orderCount: 4,
+        buckets: [],
+      });
+    });
+    const result = await runStaffAssistantEvalTurn({
+      host: "new",
+      models: {
+        languageModel: new MockLanguageModelV3({
+          doStream: [
+            mockToolCallStream(
+              "call-counts",
+              ORDERS_LIST_COUNTS_TOOL_NAME,
+              JSON.stringify({ period: "this_week" }),
+            ),
+            mockTextStream("4"),
+          ],
+        }),
+        replyModelId: "mock-sonnet",
+        gateModelId: "mock-haiku",
+      },
+      messages: [{ role: "user", content: "скільки замовлень цього тижня" }],
+      contracts: [listOrdersContract],
+      execute,
+      logger: silentLogger,
+    });
+    expect(execute).toHaveBeenCalled();
+    expect(isRecord(executeInput)).toBe(true);
+    if (!isRecord(executeInput)) {
+      return;
+    }
+    expect(executeInput["kind"]).toBe("aggregate");
+    expect(isRecord(executeInput["filter"])).toBe(true);
+    if (!isRecord(executeInput["filter"])) {
+      return;
+    }
+    expect(typeof executeInput["filter"]["createdFrom"]).toBe("string");
+    expect(typeof executeInput["filter"]["createdTo"]).toBe("string");
+    expect(executeInput).not.toHaveProperty("period");
+    expect(result.trace.toolCalls[0]?.args).toMatchObject({
+      period: "this_week",
+    });
+    expect(result.trace.toolCalls[0]?.args).not.toHaveProperty("kind");
+    expect(result.trace.toolCalls[0]?.args).not.toHaveProperty("createdFrom");
+    expect(result.trace.toolCalls[0]?.args).not.toHaveProperty("createdTo");
+    expect(result.trace.speechSource).toBe("model");
+    expect(
+      matchEvalExpectation(
+        MODEL_SPEAKS_SCENARIOS[1]?.expectation ?? {},
+        result.trace,
+      ),
     ).toEqual({ ok: true });
   });
 });

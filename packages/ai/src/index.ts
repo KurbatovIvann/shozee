@@ -238,6 +238,20 @@ export {
   type StaffAssistantUIMessage,
 } from "./staff-assistant-stream.js";
 export {
+  allowHostPendingAlways,
+  commitHostSpeech,
+  lastUsableHostModelText,
+  runStaffAssistantHostTurn,
+  usableHostModelText,
+  HOST_HITL_PAUSED_OUTPUT,
+  HOST_HITL_PAUSED_STATUS,
+  isHostHitlPausedOutput,
+  type StaffAssistantHostModelToolCall,
+  type StaffAssistantHostPendingDecision,
+  type StaffAssistantHostTurnOptions,
+  type StaffAssistantHostTurnResult,
+} from "./runtime/loop.js";
+export {
   CUSTOMERS_LIST_PROMPT_LINE,
   ORDER_ENTITY_PROMPT_LINE,
   ORDERS_AGGREGATE_PROMPT_LINE,

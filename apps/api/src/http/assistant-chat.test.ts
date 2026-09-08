@@ -1,3 +1,7 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import {
   CATALOG_LIST_PRODUCTS_TOOL_NAME,
   CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME,
@@ -20,6 +24,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createActionRegistry } from "../composition.js";
 import { readStaffAssistantCompanyTradeName } from "./assistant-chat.js";
 
+const here = dirname(fileURLToPath(import.meta.url));
 const registry = createActionRegistry();
 const contracts = registry.contracts();
 
@@ -209,5 +214,17 @@ describe("readStaffAssistantCompanyTradeName", () => {
         throw new Error("companies.get failed");
       }),
     ).rejects.toThrow("companies.get failed");
+  });
+});
+
+describe("live assistant chat mount (SHO-520)", () => {
+  it("keeps POST /assistant/chat on streamStaffAssistantChat", () => {
+    const chat = readFileSync(join(here, "assistant-chat.ts"), "utf8");
+    expect(chat).toContain("streamStaffAssistantChat");
+    expect(chat).toContain("classifyStaffAssistantTurn");
+    expect(chat).not.toContain("runStaffAssistantHostTurn");
+    const app = readFileSync(join(here, "app.ts"), "utf8");
+    expect(app).toContain("executeStaffAssistantChat");
+    expect(app).not.toContain("runStaffAssistantHostTurn");
   });
 });

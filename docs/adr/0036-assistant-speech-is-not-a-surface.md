@@ -1,6 +1,7 @@
 # ADR-0036: Assistant speech is not a surface
 
-- **Status**: Accepted
+- **Status**: Accepted (speech priority superseded in part by
+  [ADR-0037](0037-assistant-host-is-one-tool-loop.md))
 - **Date**: 2026-09-08
 - **Deciders**: Ivan Kurbatov (human) (+ proposing agent)
 
@@ -30,16 +31,25 @@ A staff-assistant turn is three parts: **speech** (`text-*` and
 registry), and **pending** (HITL envelope). Speech never duplicates a
 surface.
 
-`commitTurnSpeech` is the only writer of the visible/persisted line. It
-returns `{ source: "model" | "protocol" | "fallback", text }`. `source`
-is in-memory (`StaffAssistantTurnResult.speech`) for tests and logs; it
-is not a database column.
+`commitTurnSpeech` is the writer of the **live** visible/persisted line
+until T5. The new host (ADR-0037) commits through `commitHostSpeech`
+in `packages/ai/src/runtime/speech.ts` — tests invoke that loop
+directly; production chat does not until T5. Both return
+`{ source, text }`. `source` is in-memory
+(`StaffAssistantTurnResult.speech` / host turn result) for tests and
+logs; it is not a database column.
 
-Priority: HITL / typed domain-error protocol copy; else usable model
-prose; else one locale-keyed generic fallback. A rule-based output
-guardrail rejects empty text, leftover `{ … }` JSON, and markdown dumps.
-No JSON spoken envelope, no extracting `spoken` from model JSON, no
-second model call to summarize a card.
+Priority **on the new host** (ADR-0037): usable model prose; else one
+locale-keyed generic fallback. A rule-based output guardrail rejects
+empty text and leftover `{ … }` JSON only — not emphasis `**`, and not
+markdown tables. Do not use HITL / typed domain-error /
+`presentOrderCreatedSpeech` copy as the winner over model text.
+`source` stays in-memory. No JSON spoken envelope, no extracting
+`spoken` from model JSON, no second model call to summarize a card.
+
+The **live** `commitTurnSpeech` path still uses protocol-first priority
+(HITL / typed domain-error copy; else usable model prose, with markdown
+dumps rejected) until T5 switches `/assistant/chat`.
 
 `presenter.ts` and `spoken-reply.ts` are removed. Protocol copy lives on
 the protocol modules (`choice.ts`, `confirmation.ts`, domain-error copy).
@@ -60,3 +70,6 @@ the protocol modules (`choice.ts`, `confirmation.ts`, domain-error copy).
 - ADR-0034 rule 4 and ADR-0035 “presenter text” wording mean committed
   speech, not surface-to-text.
 - New surfaces add a card descriptor, not a speech template.
+- ADR-0037 inverts speech priority on the new host and drops markdown
+  dumps from the guardrail. Live `/assistant/chat` still calls
+  `commitTurnSpeech` until T5.

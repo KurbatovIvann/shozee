@@ -31,6 +31,7 @@ export {
   type EvalTurnResult,
 } from "./run-turn.js";
 export {
+  type EvalAssistantHost,
   type EvalFixtureKind,
   type EvalScenario,
   type EvalUserTurn,

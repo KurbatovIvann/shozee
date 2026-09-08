@@ -71,7 +71,7 @@ Zod 4 discriminated unions omit top-level `type`. Anthropic requires
 Object façades already emit `type: "object"` and must not rely on that
 patch.
 
-## Speech (ADR-0036)
+## Speech (ADR-0036 / ADR-0037)
 
 A turn is three parts: **speech** (`text-*` and
 `assistant_messages.body`), **surface** (generic card from the registry),
@@ -82,19 +82,23 @@ The model streams **plain text**. Do not add `Output.object`,
 JSON to extract `spoken`, invent a delimiter protocol, or make a second
 model call to clean the reply.
 
-`commitTurnSpeech` is the only writer of the visible/persisted line. It
-returns `{ source: "model" | "protocol" | "fallback", text }`. `source`
-is in-memory (`StaffAssistantTurnResult.speech`); it is not a database
-column. `StaffAssistantTurnResult.text` is `speech.text` so persist and
-`onTurn` stay one string. Live emit and persist use that string.
+Until T5 there are two hosts:
 
-Priority: HITL / typed domain-error protocol copy; else usable model
-prose; else one locale-keyed generic fallback. A rule-based guardrail
-rejects empty text, leftover `{ … }` JSON, and markdown dumps.
-
-`streamStaffAssistantChat` holds candidate `text-*` until that commit
-so a tripped guardrail is never briefly shown. Tool progress, result
-surfaces, and HITL events keep streaming immediately.
+- **Live** `streamStaffAssistantChat` — `commitTurnSpeech` is the writer.
+  Priority: HITL / typed domain-error protocol copy; else usable model
+  prose; else locale-keyed fallback. Guardrail rejects empty text,
+  leftover `{ … }` JSON, and markdown dumps. `source` is in-memory.
+  `streamStaffAssistantChat` holds candidate `text-*` until that commit
+  so a tripped guardrail is never briefly shown. Tool progress, result
+  surfaces, and HITL events keep streaming immediately. Do **not** apply
+  hold-candidate to the test-only host.
+- **New** `runStaffAssistantHostTurn` (`src/runtime/`, ADR-0037) —
+  tests invoke this loop directly. Do **not** retarget
+  `POST /assistant/chat`. Usable model prose is the bubble. Guardrail
+  rejects leftover `{ … }` JSON only — not `**`, and not markdown
+  tables. Do not use `presentOrderCreatedSpeech` or catalog domain-error
+  copy as the winner. `commitHostSpeech` does not call `commitTurnSpeech`.
+  The new loop must not call the gate. `source` stays in-memory.
 
 Do not delete a **surface** (registry / cards). Do not add a second
 model call to summarize the card. Do not re-introduce a JSON spoken
