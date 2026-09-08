@@ -264,6 +264,9 @@ function harness(options?: {
     hooks: {
       ...kit.pipeline.hooks,
       confirmation: createConfirmationHook({ store: confirmation.store }),
+      // HITL seed finishRun plus host checkpoints would exhaust the
+      // shared kit-wide staff bucket (120/min) across this file.
+      rateLimit: { enforce: () => Promise.resolve() },
     },
   };
   const app = createStaffAssistantHostApp({
@@ -428,6 +431,37 @@ async function stageNamedStartedRun(
   return { messageId: begun.messageId, executionId: staged.executionId };
 }
 
+async function finishSeededHitlRun(
+  h: Harness,
+  options: {
+    readonly conversationId: string;
+    readonly executionId: string;
+    readonly outcome: "choice_required" | "confirmation_required";
+    readonly challengeId: string;
+    readonly modelTrace: unknown;
+  },
+): Promise<void> {
+  await h.invoke(
+    checkpointAssistantTurn,
+    {
+      kind: "finishRun",
+      conversationId: options.conversationId,
+      executionId: options.executionId,
+      outcome: options.outcome,
+      resultIds: [],
+      modelTrace: options.modelTrace,
+      challengeId: options.challengeId,
+    },
+    {
+      idempotencyKey: attemptKey(
+        "turn",
+        options.conversationId,
+        `finish:${options.executionId}:${options.outcome}`,
+      ),
+    },
+  );
+}
+
 async function seedChoicePending(
   h: Harness,
   options: {
@@ -515,6 +549,13 @@ async function seedChoicePending(
     },
   );
   expect(await h.pendingStore.open(record)).toBe(true);
+  await finishSeededHitlRun(h, {
+    conversationId: options.conversationId,
+    executionId,
+    outcome: "choice_required",
+    challengeId: choiceId,
+    modelTrace: record.envelope,
+  });
   return { record, optionByLabel };
 }
 
@@ -569,6 +610,17 @@ async function seedConfirmationPending(
     locale: "en",
   });
   expect(await h.pendingStore.open(record)).toBe(true);
+  await finishSeededHitlRun(h, {
+    conversationId,
+    executionId,
+    outcome: "confirmation_required",
+    challengeId: unconfirmed.challenge.challengeId,
+    modelTrace: {
+      status: "confirmation_required",
+      challengeId: unconfirmed.challenge.challengeId,
+      summary: unconfirmed.challenge.summary,
+    },
+  });
   return {
     customerId: customer.id,
     challengeId: unconfirmed.challenge.challengeId,
