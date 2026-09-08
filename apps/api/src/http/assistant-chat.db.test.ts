@@ -591,7 +591,7 @@ describe("POST /assistant/chat authorization", () => {
     expect(prompt).not.toContain(kitIdentities.companies.a);
   });
 
-  it("omits the trade name on documents:view denial and still returns the clock", async () => {
+  it("includes the trade name when companies:view is granted and documents:view is denied", async () => {
     const clerkId = randomUUID();
     await kit.db.runtime.db.insert(user).values({
       id: clerkId,
@@ -602,7 +602,54 @@ describe("POST /assistant/chat authorization", () => {
       companyId: kitIdentities.companies.a,
       userId: clerkId,
       role: "employee",
-      permissions: { granted: ["assistant:use"], denied: ["documents:view"] },
+      permissions: {
+        granted: ["assistant:use", "companies:view"],
+        denied: ["documents:view"],
+      },
+    });
+    const model = new MockLanguageModelV3({
+      doStream: [mockTextStream("Hello with a company name.")],
+    });
+    const app = chatApp(model);
+    const token = await insertBearer(kit, clerkId);
+    const conversation = await staffInvoke(
+      createConversation,
+      { title: "No documents:view" },
+      { userId: clerkId, companyId: kitIdentities.companies.a },
+    );
+    const response = await postChat(app, {
+      token,
+      companyId: kitIdentities.companies.a,
+      body: userChatBody(conversation.id, "Hello"),
+    });
+    expect(response.status).toBe(200);
+    await readUiMessageSsePayloads(response);
+    expect(model.doStreamCalls).toHaveLength(1);
+    const prompt = JSON.stringify(model.doStreamCalls[0]?.prompt ?? []);
+    expect(prompt).toContain("Europe/Kyiv");
+    expect(prompt).toContain("week starts on Monday");
+    expect(prompt).toContain("Money is UAH.");
+    expect(prompt).toContain("This company is called");
+    expect(prompt).toContain("Konditerska Anna");
+    expect(prompt).not.toContain(kitIdentities.companies.a);
+    expect(prompt).not.toContain("konditerska-anna");
+  });
+
+  it("omits the trade name on companies:view denial and still returns the clock", async () => {
+    const clerkId = randomUUID();
+    await kit.db.runtime.db.insert(user).values({
+      id: clerkId,
+      name: "No Companies View Clerk",
+      email: `no-companies-view-${clerkId}@assistant-kit.test`,
+    });
+    await kit.db.runtime.db.insert(companyMembers).values({
+      companyId: kitIdentities.companies.a,
+      userId: clerkId,
+      role: "employee",
+      permissions: {
+        granted: ["assistant:use"],
+        denied: ["companies:view"],
+      },
     });
     const model = new MockLanguageModelV3({
       doStream: [mockTextStream("Hello without a company name.")],
@@ -611,7 +658,7 @@ describe("POST /assistant/chat authorization", () => {
     const token = await insertBearer(kit, clerkId);
     const conversation = await staffInvoke(
       createConversation,
-      { title: "No documents:view" },
+      { title: "No companies:view" },
       { userId: clerkId, companyId: kitIdentities.companies.a },
     );
     const response = await postChat(app, {

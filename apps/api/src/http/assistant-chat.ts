@@ -96,8 +96,8 @@ export const ASSISTANT_INVOCATION_CHANNEL = "ai" as const;
 
 /**
  * Trade name for the uncached turn-context addendum. `companies.get`
- * requires `documents:view`; a permission denial omits the name line
- * without failing the chat turn (SHO-360).
+ * requires `companies:view`; a permission denial omits the name line
+ * without failing the chat turn (SHO-360 / SHO-537).
  */
 export async function readStaffAssistantCompanyTradeName(
   load: () => Promise<{ readonly name: string }>,

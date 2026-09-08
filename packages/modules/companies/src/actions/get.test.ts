@@ -4,13 +4,14 @@ import { companyViewSchema } from "./company-view.contract.js";
 import { getCompanyContract, getCompanyInputSchema } from "./get.contract.js";
 
 describe("companies.get contract", () => {
-  it("is a staff client read with documents:view, not settings:payments", () => {
+  it("is a staff client read with companies:view, not settings:payments", () => {
     expect(getCompanyContract.name).toBe("companies.get");
     expect(getCompanyContract.principal).toBe("staff");
     expect(getCompanyContract.transport).toBe("client");
     expect(getCompanyContract.risk).toBe("read");
-    expect(getCompanyContract.permissions).toEqual(["documents:view"]);
+    expect(getCompanyContract.permissions).toEqual(["companies:view"]);
     expect(getCompanyContract.permissions).not.toContain("settings:payments");
+    expect(getCompanyContract.permissions).not.toContain("documents:view");
     expect(getCompanyContract.aiExposure).toBe("exposed");
     expect(getCompanyContract.requiresConfirmation).toBe(false);
     expect(getCompanyContract.audit).toBe(false);

@@ -7,15 +7,16 @@ import {
 } from "./get-seller-facts.contract.js";
 
 describe("companies.getSellerFacts contract", () => {
-  it("is a staff internal read with documents:view, not settings:payments", () => {
+  it("is a staff internal read with companies:view, not settings:payments", () => {
     expect(getSellerFactsContract.name).toBe("companies.getSellerFacts");
     expect(getSellerFactsContract.principal).toBe("staff");
     expect(getSellerFactsContract.transport).toBe("internal");
     expect(getSellerFactsContract.risk).toBe("read");
-    expect(getSellerFactsContract.permissions).toEqual(["documents:view"]);
+    expect(getSellerFactsContract.permissions).toEqual(["companies:view"]);
     expect(getSellerFactsContract.permissions).not.toContain(
       "settings:payments",
     );
+    expect(getSellerFactsContract.permissions).not.toContain("documents:view");
     expect(getSellerFactsContract.aiExposure).toBe("internal");
     expect(getSellerFactsContract.requiresConfirmation).toBe(false);
     expect(getSellerFactsContract.audit).toBe(false);
