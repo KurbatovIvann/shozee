@@ -1129,7 +1129,7 @@ describe("runStaffAssistantHostTurn", () => {
     expect(turn.modelToolCalls).toEqual([]);
   });
 
-  it("inserts a dedicated recovered pair when the last message is an unrelated assistant-with-tools", async () => {
+  it("inserts a dedicated recovered pair when leftover is missing and the last assistant is an unrelated assistant-with-tools", async () => {
     const kinds: string[] = [];
     const checkpoint: StaffAssistantHostCheckpoint = {
       begin: () => {
@@ -1190,6 +1190,17 @@ describe("runStaffAssistantHostTurn", () => {
             },
           ],
         },
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "call-later-list",
+              toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+              output: { type: "json", value: { items: [] } },
+            },
+          ],
+        },
       ],
       contracts: [listOrders],
       execute,
@@ -1231,6 +1242,25 @@ describe("runStaffAssistantHostTurn", () => {
     const serialized = JSON.stringify(prompt ?? []);
     expect(serialized).toContain("call-outside");
     expect(serialized).not.toContain("call-reissue-list");
+    const laterTool = Array.isArray(prompt)
+      ? prompt.find(
+          (message) =>
+            typeof message === "object" &&
+            message !== null &&
+            "role" in message &&
+            message.role === "tool" &&
+            "content" in message &&
+            Array.isArray(message.content) &&
+            message.content.some(
+              (part) =>
+                typeof part === "object" &&
+                part !== null &&
+                "toolCallId" in part &&
+                part.toolCallId === "call-later-list",
+            ),
+        )
+      : undefined;
+    expect(JSON.stringify(laterTool ?? {})).not.toContain("call-outside");
     expect(turn.speech.text).toBe("Recovered beside a later read.");
     expect(turn.modelToolCalls).toEqual([]);
   });
