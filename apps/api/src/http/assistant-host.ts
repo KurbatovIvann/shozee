@@ -719,6 +719,34 @@ function startedRunsForHostRecovery(
   return started;
 }
 
+/**
+ * Chat-turn leftovers sit on an assistant immediately after a user
+ * append. Phase B / confirm / choice resume assistants follow HITL
+ * (`begin:resume:${pendingId}`), not a user message.
+ */
+function isChatTurnAssistantMessage(
+  history: Awaited<ReturnType<typeof loadHistory>>,
+  messageId: string,
+): boolean {
+  const index = history.messages.findIndex(
+    (message) => message.id === messageId,
+  );
+  if (index <= 0) {
+    return false;
+  }
+  const current = history.messages[index];
+  const previous = history.messages[index - 1];
+  return current?.role === "assistant" && previous?.role === "user";
+}
+
+function startedRunsForChatRecovery(
+  history: Awaited<ReturnType<typeof loadHistory>>,
+): StaffAssistantHostStartedRun[] {
+  return startedRunsForHostRecovery(history).filter((run) =>
+    isChatTurnAssistantMessage(history, run.messageId),
+  );
+}
+
 function startedRunsForResumeTurnRecovery(
   history: Awaited<ReturnType<typeof loadHistory>>,
   pending: PendingInteractionRecord,
@@ -752,16 +780,18 @@ function phaseBState(
     return "needed";
   }
   if (
-    laterAssistant.some((message) =>
-      message.toolRuns.some((run) => run.outcome === "started"),
+    laterAssistant.some(
+      (message) =>
+        message.toolRuns.some((run) => run.outcome === "started") &&
+        !isChatTurnAssistantMessage(history, message.id),
     )
   ) {
     return "continue";
   }
   // Completed Phase B speech already exists. A later empty chat begin
-  // must not reopen the resume loop — `begin:resume:${pendingId}` is
-  // idempotent onto the original message and `complete` would overwrite
-  // that speech.
+  // or leftover user-preceded `started` must not reopen the resume
+  // loop — `begin:resume:${pendingId}` is idempotent onto the original
+  // message and `complete` would overwrite that speech.
   if (laterAssistant.some((message) => message.text !== "")) {
     return "done";
   }
@@ -2017,7 +2047,7 @@ export async function executeStaffAssistantHostChat(
           principal: auth.staffPrincipal,
           beginKey: `begin:${appended.id}`,
         });
-        const recoverStartedRuns = startedRunsForHostRecovery(history);
+        const recoverStartedRuns = startedRunsForChatRecovery(history);
         const turn = await runStaffAssistantHostTurn({
           model: requireHostModel(options.model),
           messages: staffAssistantModelMessagesFromPersisted(

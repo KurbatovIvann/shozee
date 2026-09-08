@@ -2012,6 +2012,129 @@ describe("unpublished staff assistant host HTTP", () => {
     ).toBe(speech);
   });
 
+  it("choice replay is done when Phase B speech exists and a later chat leftover is started", async () => {
+    const speech = "The order is ready.";
+    const h = harness({ model: silentModel(speech) });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Later chat leftover started",
+    });
+    const customer = await h.invoke(createCustomer, {
+      name: "Later Leftover Buyer",
+      phone: nextPhone(),
+    });
+    const product = await h.invoke(createProduct, {
+      name: "Later Leftover Cake",
+      basePriceMinor: "1500",
+      variants: [{ name: "A" }, { name: "B" }],
+    });
+    const { record, optionByLabel } = await seedChoicePending(h, {
+      conversationId: conversation.id,
+      customerId: customer.id,
+      product,
+    });
+    const optionId = optionByLabel.get("A");
+    const first = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.id,
+        optionId,
+      },
+    });
+    const firstBody = assistantHostInteractionResultSchema.parse(
+      await first.json(),
+    );
+    expect(firstBody).toEqual(
+      expect.objectContaining({ status: "ok", speech }),
+    );
+    const afterPhaseB = await orderCount();
+    const phaseBHistory = await h.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    const phaseB = phaseBHistory.messages.findLast(
+      (message) => message.role === "assistant" && message.text === speech,
+    );
+    expect(phaseB).toBeDefined();
+    const leftoverCustomer = await h.invoke(createCustomer, {
+      name: "Chat Leftover Buyer",
+      phone: nextPhone(),
+    });
+    const leftoverProduct = await h.invoke(createProduct, {
+      name: "Chat Leftover Cake",
+      basePriceMinor: "1800",
+      variants: [{ name: "Solo" }],
+    });
+    const leftoverVariant = leftoverProduct.variants[0];
+    if (leftoverVariant === undefined) {
+      throw new Error("leftover product missing variant");
+    }
+    const userMessage = await h.invoke(
+      appendUserMessage,
+      { conversationId: conversation.id, body: "Create another leftover cake" },
+      { idempotencyKey: attemptKey("message", conversation.id, randomUUID()) },
+    );
+    const leftover = await stageNamedStartedRun(h, {
+      conversationId: conversation.id,
+      beginKey: `begin:${userMessage.id}`,
+      actionName: "orders.create",
+      toolName: ORDERS_CREATE_TOOL_NAME,
+      toolCallId: "call-leftover-after-speech",
+      toolInput: {
+        customerId: leftoverCustomer.id,
+        items: [
+          {
+            productId: leftoverProduct.productId,
+            variantId: leftoverVariant.variantId,
+            quantityMilli: "1000",
+          },
+        ],
+      },
+    });
+    const replayApp = harness({
+      pendingStore: h.pendingStore,
+      model: new MockLanguageModelV3({
+        doStream: () => {
+          throw new Error(
+            "completed Phase B must not resume after a later chat leftover started",
+          );
+        },
+      }),
+    });
+    const replay = await hostRequest(replayApp.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.id,
+        optionId,
+      },
+    });
+    const replayBody = assistantHostInteractionResultSchema.parse(
+      await replay.json(),
+    );
+    expect(replayBody.status).toBe("ok");
+    if (replayBody.status !== "ok") {
+      return;
+    }
+    expect(replayBody.speech).toBe(speech);
+    expect(await orderCount()).toBe(afterPhaseB);
+    const finalHistory = await h.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    expect(
+      finalHistory.messages.find((message) => message.id === phaseB?.id)?.text,
+    ).toBe(speech);
+    const leftoverRun = finalHistory.messages
+      .flatMap((message) => message.toolRuns)
+      .find((run) => run.executionId === leftover.executionId);
+    expect(leftoverRun?.outcome).toBe("started");
+    expect(leftoverRun?.toolCallId).toBe("call-leftover-after-speech");
+  });
+
   it("empty Phase B body with finished tool-runs still continues speech without a second write", async () => {
     const h = harness({
       model: new MockLanguageModelV3({
@@ -2489,6 +2612,103 @@ describe("unpublished staff assistant host HTTP", () => {
       .flatMap((message) => message.toolRuns)
       .find((run) => run.executionId === leftover.executionId);
     expect(leftoverRun?.outcome).toBe("started");
+  });
+
+  it("chat recovery does not execute a leftover Phase B started create", async () => {
+    const h = harness({
+      model: silentModel("No pending write from this chat."),
+    });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Skip Phase B leftover on chat",
+    });
+    const choiceCustomer = await h.invoke(createCustomer, {
+      name: "Choice Buyer",
+      phone: nextPhone(),
+    });
+    const choiceProduct = await h.invoke(createProduct, {
+      name: "Choice Cake",
+      basePriceMinor: "1500",
+      variants: [{ name: "A" }, { name: "B" }],
+    });
+    const { record, optionByLabel } = await seedChoicePending(h, {
+      conversationId: conversation.id,
+      customerId: choiceCustomer.id,
+      product: choiceProduct,
+    });
+    const optionId = optionByLabel.get("A");
+    if (optionId === undefined) {
+      throw new Error("seeded choice missing option A");
+    }
+    const bind = pendingBindFor(conversation.id);
+    const claimed = await h.pendingStore.claim({
+      id: record.id,
+      kind: "choice",
+      bind,
+      optionId,
+    });
+    expect(claimed.kind).toBe("claimed");
+    const completed = await h.pendingStore.complete({
+      id: record.id,
+      kind: "choice",
+      bind,
+      optionId,
+    });
+    expect(completed.kind).toBe("completed");
+    const leftoverCustomer = await h.invoke(createCustomer, {
+      name: "Phase B Leftover Buyer",
+      phone: nextPhone(),
+    });
+    const leftoverProduct = await h.invoke(createProduct, {
+      name: "Phase B Leftover Cake",
+      basePriceMinor: "1800",
+      variants: [{ name: "Solo" }],
+    });
+    const leftoverVariant = leftoverProduct.variants[0];
+    if (leftoverVariant === undefined) {
+      throw new Error("leftover product missing variant");
+    }
+    const leftover = await stageNamedStartedRun(h, {
+      conversationId: conversation.id,
+      beginKey: `begin:resume:${record.id}`,
+      actionName: "orders.create",
+      toolName: ORDERS_CREATE_TOOL_NAME,
+      toolCallId: "call-continue-create",
+      toolInput: {
+        customerId: leftoverCustomer.id,
+        items: [
+          {
+            productId: leftoverProduct.productId,
+            variantId: leftoverVariant.variantId,
+            quantityMilli: "1000",
+          },
+        ],
+      },
+    });
+    const beforeChat = await orderCount();
+    const chat = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHAT_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        text: "Just saying hi",
+        locale: "en",
+      },
+    });
+    const chatBody = assistantHostInteractionResultSchema.parse(
+      await chat.json(),
+    );
+    expect(chatBody.status).toBe("ok");
+    expect(await orderCount()).toBe(beforeChat);
+    const history = await h.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    const leftoverRun = history.messages
+      .flatMap((message) => message.toolRuns)
+      .find((run) => run.executionId === leftover.executionId);
+    expect(leftoverRun?.outcome).toBe("started");
+    expect(leftoverRun?.toolCallId).toBe("call-continue-create");
   });
 
   it("claimed confirm wins over concurrent chat", async () => {

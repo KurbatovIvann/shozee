@@ -60,6 +60,8 @@ describe("live staff-assistant host (SHO-524)", () => {
     expect(hostSrc).not.toContain('run.action.replace(".", "_")');
     expect(hostSrc).toContain("run.toolName === null");
     expect(hostSrc).toContain("startedRunsForResumeTurnRecovery");
+    expect(hostSrc).toContain("startedRunsForChatRecovery");
+    expect(hostSrc).toContain("isChatTurnAssistantMessage");
   });
 
   it("does not GETDEL in the pending Redis scripts (core owns confirmation consume)", () => {
