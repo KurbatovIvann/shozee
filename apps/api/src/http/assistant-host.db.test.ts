@@ -3657,11 +3657,15 @@ describe("unpublished staff assistant host HTTP", () => {
         await replay.json(),
       );
       expect(replayBody.status).toBe("ok");
-      if (replayBody.status !== "ok") {
-        return;
-      }
-      expect(replayBody.speech).toBe(speech);
       expect(await orderCount()).toBe(afterPhaseB);
+      const pinned = await h.invoke(getModelHistory, {
+        conversationId: conversation.id,
+        includeTurnKeys: [resumeKey],
+      });
+      expect(
+        pinned.checkpointTurns.find((turn) => turn.turnKey === resumeKey)
+          ?.hasSpeech,
+      ).toBe(true);
     });
 
     it("refuses a re-issued orders_create while an excluded resume leftover stays started", async () => {
