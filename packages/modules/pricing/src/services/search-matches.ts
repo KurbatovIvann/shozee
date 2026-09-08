@@ -26,9 +26,6 @@ import { and, eq, or, sql, type SQL, type SQLWrapper } from "drizzle-orm";
 type StaffDb = Extract<ActionCtx, { principal: "staff" }>["db"];
 type PreparedTokens = Extract<PreparedSearchQuery, { empty: false }>;
 
-/** v1 `word_similarity` threshold; SHO-526 names 0.25. */
-export const SEARCH_NAME_TRGM_THRESHOLD = 0.25;
-
 const TSQUERY_LEXEME = /[^\p{L}\p{N}]+/gu;
 
 type InternalHit = SearchHit & {
@@ -138,7 +135,7 @@ function nameTokenSql(
   nameFts: SQLWrapper,
   token: string,
 ): SQL | undefined {
-  const trgm = sql`word_similarity(${token}, ${name}) >= ${SEARCH_NAME_TRGM_THRESHOLD}`;
+  const trgm = sql`${token} <% ${name}`;
   const tsquery = prefixTsQuery(token);
   if (tsquery === undefined) {
     return trgm;

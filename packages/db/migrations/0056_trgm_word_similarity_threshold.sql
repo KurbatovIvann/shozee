@@ -1,0 +1,28 @@
+-- Cluster default for the pg_trgm word-similarity operator (SHO-526
+-- review fix). Raw SQL is approved here for the same reason as 0007:
+-- Drizzle cannot express role settings, and this migration is the source
+-- of truth for Testcontainers and production (docs/specs/db.md §6 roles,
+-- §7 approved raw-SQL exceptions).
+--
+-- The staff name matchers filter with the indexable operator
+-- `token <% name`, which is the only trigram form a `gin_trgm_ops` index
+-- can serve; the equivalent `word_similarity(token, name) >= 0.25` call
+-- is a function in a predicate and forces a scan. `<%` takes its
+-- threshold from this GUC (Postgres default 0.6), so the feature's 0.25
+-- has to live here rather than in the query.
+--
+-- `ALTER ROLE ALL SET` writes the cluster-wide default (roleid 0,
+-- databaseid 0). Three reasons it is that form and not a narrower one:
+-- a per-database setting is NOT copied by `CREATE DATABASE … TEMPLATE`,
+-- which is how the test harness clones the migrated template; a setting
+-- on `showzy_app` would not apply either, because role settings bind to
+-- the authenticated login role and are not inherited through IN ROLE;
+-- and environments attach their own LOGIN users outside this repo, so no
+-- single role name is known here.
+--
+-- Takes effect for sessions opened after this runs — deploys that keep a
+-- warm pool need the usual rolling restart to pick it up. Requires a
+-- superuser migration role, the same expectation 0007 documents for
+-- CREATE EXTENSION. `pg_trgm.similarity_threshold` (the `%` operator) is
+-- deliberately left alone.
+ALTER ROLE ALL SET pg_trgm.word_similarity_threshold = 0.25;
