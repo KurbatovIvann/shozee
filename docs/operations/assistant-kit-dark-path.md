@@ -19,6 +19,25 @@ Boot mounts it only when a provider is also configured — there is nothing to
 exercise without one. With the flag off, `createApp` never sees the option and
 the routes do not exist.
 
+Boot says which of those happened, so it is never a guess:
+
+```
+{"msg":"assistant-kit path","enabled":true,"mounted":true,
+ "paths":["POST /assistant/kit/chat","POST /assistant/kit/choice","GET /assistant/kit/messages"]}
+```
+
+`enabled:true, mounted:false` means the flag is on but no language model was
+configured.
+
+## Nothing calls these routes on its own
+
+The mobile app still talks to `/assistant/chat`. Turning the flag on does not
+change what the phone does, and it never will until the client is pointed here.
+Until then the only way this path runs is if you call it.
+
+That is the point of the flag: the two runtimes sit side by side on the same
+data, and the old one keeps serving.
+
 ## The three routes
 
 | Method | Path | Body / query |
@@ -29,6 +48,38 @@ the routes do not exist.
 
 Same auth as the live assistant: staff session cookie plus `x-company-id`.
 `commandId` and `conversationId` are uuids the client makes up.
+
+### Calling it
+
+Take the session cookie from a logged-in browser (DevTools → Application →
+Cookies) or from the app, and the company id from any `x-company-id` header the
+app already sends.
+
+```bash
+export KIT=http://localhost:3000
+export COOKIE='better-auth.session_token=PASTE_HERE'
+export COMPANY='879e8662-6a94-4a4f-8cd9-43a1ce72c4ef'
+export CONV=$(uuidgen)
+```
+
+A turn:
+
+```bash
+curl -sS "$KIT/assistant/kit/chat" -H "cookie: $COOKIE" -H "x-company-id: $COMPANY" -H 'content-type: application/json' -d "{\"commandId\":\"$(uuidgen)\",\"conversationId\":\"$CONV\",\"text\":\"покажи замовлення цього місяця\"}" | jq
+```
+
+Answering a question it asked (take `interactionId` and `revision` from the
+`pause` in the previous response, and `optionId` from `pause.prompt.options`):
+
+```bash
+curl -sS "$KIT/assistant/kit/choice" -H "cookie: $COOKIE" -H "x-company-id: $COMPANY" -H 'content-type: application/json' -d "{\"commandId\":\"$(uuidgen)\",\"conversationId\":\"$CONV\",\"interactionId\":\"PASTE\",\"revision\":1,\"answer\":{\"optionId\":\"PASTE\"}}" | jq
+```
+
+What a reload would render:
+
+```bash
+curl -sS "$KIT/assistant/kit/messages?conversationId=$CONV" -H "cookie: $COOKIE" -H "x-company-id: $COMPANY" | jq
+```
 
 ## The scenario worth running
 

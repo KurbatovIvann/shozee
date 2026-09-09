@@ -130,12 +130,33 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
       ? { anthropicApiKey: config.ai.anthropicApiKey }
       : {}),
   };
-  // Off unless AI_ASSISTANT_KIT=1, and silently off with no model configured:
-  // the parallel path is for exercising the protocol on real data, and it has
+  // Off unless AI_ASSISTANT_KIT=1, and off with no model configured: the
+  // parallel path is for exercising the protocol on real data, and it has
   // nothing to exercise without a provider.
+  //
+  // Logged either way. A path that can be off for two different reasons and
+  // says nothing is a path you cannot tell is running.
   const assistantKitModel = config.ai.assistantKitEnabled
     ? optionalStaffAssistantLanguageModel(assistantConfig)
     : undefined;
+  logger.info(
+    {
+      enabled: config.ai.assistantKitEnabled,
+      mounted: assistantKitModel !== undefined,
+      paths:
+        assistantKitModel === undefined
+          ? []
+          : [
+              "POST /assistant/kit/chat",
+              "POST /assistant/kit/choice",
+              "GET /assistant/kit/messages",
+            ],
+      ...(config.ai.assistantKitEnabled && assistantKitModel === undefined
+        ? { reason: "no language model configured" }
+        : {}),
+    },
+    "assistant-kit path",
+  );
 
   const app = createApp({
     auth,
