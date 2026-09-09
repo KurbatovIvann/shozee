@@ -50,6 +50,7 @@ import {
   executeAction,
   type ConfirmationStore,
   type ImplementedAction,
+  type RateLimitHook,
 } from "@showzy/core";
 import { ConfirmationRequiredError } from "@showzy/core/errors";
 import {
@@ -353,7 +354,7 @@ function harness(options?: {
           });
           return Promise.resolve();
         },
-      },
+      } satisfies RateLimitHook,
     },
   };
   const app = createStaffAssistantHostApp({

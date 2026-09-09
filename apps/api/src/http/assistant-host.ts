@@ -1325,7 +1325,7 @@ function isHostOrdersCreateConfirmationAllowed(
 ): boolean {
   return (
     record.actionName === ORDERS_CREATE_ACTION_NAME &&
-    action.contract.requiresConfirmation === false &&
+    !action.contract.requiresConfirmation &&
     confirmationApprovalOf(record)?.source === "host"
   );
 }
@@ -1337,7 +1337,7 @@ function isHostOrdersCreatePendingReplace(
   if (record.actionName !== ORDERS_CREATE_ACTION_NAME) {
     return false;
   }
-  if (action.contract.requiresConfirmation !== false) {
+  if (action.contract.requiresConfirmation) {
     return false;
   }
   if (record.kind === "choice") {
@@ -1576,7 +1576,7 @@ async function applyHostPendingReplace(options: {
     }
   } else if (
     options.record.kind === "confirmation" &&
-    action.contract.requiresConfirmation === true &&
+    action.contract.requiresConfirmation &&
     confirmationApprovalOf(options.record)?.source === "core"
   ) {
     const stagedExecutionId = await stagePendingReplaceExecution(options);
@@ -2183,7 +2183,7 @@ export async function executeStaffAssistantHostConfirm(
           ) {
             return interactionResponse(expiredResult(), options.requestId);
           }
-        } else if (peekedAction.contract.requiresConfirmation !== true) {
+        } else if (!peekedAction.contract.requiresConfirmation) {
           return interactionResponse(expiredResult(), options.requestId);
         }
         const claimed = await options.pendingStore.claim({
@@ -2216,7 +2216,7 @@ export async function executeStaffAssistantHostConfirm(
           if (!isHostOrdersCreateConfirmationAllowed(record, action)) {
             return interactionResponse(expiredResult(), options.requestId);
           }
-        } else if (action.contract.requiresConfirmation !== true) {
+        } else if (!action.contract.requiresConfirmation) {
           return interactionResponse(expiredResult(), options.requestId);
         }
         const actor = await executeAction(options.pipeline, {
