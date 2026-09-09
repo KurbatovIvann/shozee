@@ -2505,6 +2505,15 @@ describe("unpublished staff assistant host HTTP", () => {
       product,
     });
     const beforeOrders = await orderCount();
+    const replaceCreateActions: string[] = [];
+    const noteReplaceCreate = (env: {
+      readonly actionName: string;
+      readonly confirmationChallengeId?: string;
+    }) => {
+      if (env.actionName === "orders.create") {
+        replaceCreateActions.push(env.actionName);
+      }
+    };
     const firstReplace = await hostRequest(
       harness({
         model: uniqueReplaceModel({
@@ -2515,6 +2524,7 @@ describe("unpublished staff assistant host HTTP", () => {
         }),
         pendingStore,
         confirmation,
+        onExecuteRequest: noteReplaceCreate,
       }).app,
       {
         method: "POST",
@@ -2541,6 +2551,7 @@ describe("unpublished staff assistant host HTTP", () => {
     const firstId = firstBody.pending?.id;
     expect(firstId).not.toBe(record.id);
     expect(await orderCount()).toBe(beforeOrders);
+    expect(replaceCreateActions).toEqual([]);
     const secondReplace = await hostRequest(
       harness({
         model: uniqueReplaceModel({
@@ -2552,6 +2563,7 @@ describe("unpublished staff assistant host HTTP", () => {
         }),
         pendingStore,
         confirmation,
+        onExecuteRequest: noteReplaceCreate,
       }).app,
       {
         method: "POST",
@@ -2603,6 +2615,8 @@ describe("unpublished staff assistant host HTTP", () => {
     expect(peeked.record.summary).toContain("B");
     expect(peeked.record.summary).toMatch(/\b3\b/);
     expect(await orderCount()).toBe(beforeOrders);
+    expect(replaceCreateActions).toEqual([]);
+    expect(confirmation.consumeCount()).toBe(0);
     const staleFirst = await hostRequest(h.app, {
       method: "POST",
       path: ASSISTANT_CONFIRM_PATH,
