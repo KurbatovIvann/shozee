@@ -291,3 +291,41 @@ export function assistantSurfacesFromParts(
   }
   return [...resume, ...composed];
 }
+
+/**
+ * One stored card payload → one localized surface, or `null`.
+ *
+ * The stored-document path needs no composition: the server already ran the
+ * shared compose and wrote what it chose, so this is a straight localize. That
+ * is the point of the card part — one derivation instead of three.
+ *
+ * `null` covers a card this build cannot render: a `type` outside the registry
+ * (a newer server, an older phone) or a payload that does not match its kind (a
+ * document written before a shape changed). Both are omissions, never a crash
+ * and never a partial card.
+ *
+ * Known gap: an `orders-aggregate` loses its period label and group-by overlay
+ * here. Those come from the counts tool's *input*, which the stored payload does
+ * not carry. Closing it is a change to what the server writes, not to this
+ * function.
+ */
+export function localizeAssistantCardPayload(
+  type: string,
+  payload: unknown,
+  locale: Locale,
+): AssistantSurface | null {
+  if (!isRecord(payload) || payload["kind"] !== type) {
+    return null;
+  }
+  const known = ASSISTANT_SURFACE_REGISTRY.some(
+    (descriptor) => descriptor.kind === type,
+  );
+  if (!known) {
+    return null;
+  }
+  try {
+    return localizeSurface(payload as AssistantSurfaceData, locale, []);
+  } catch {
+    return null;
+  }
+}

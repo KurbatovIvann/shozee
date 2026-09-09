@@ -4,9 +4,14 @@
  *
  * This is the half `@showzy/assistant-kit` deliberately does not have. The
  * package owns the mechanism — claim once, refuse a stale revision, replay the
- * continuation — and knows nothing about pickers, confirmations, option caps
- * or entity ids. All of that lives here, where it can change without touching
- * a line of the protocol.
+ * continuation — and knows nothing about pickers, confirmations, option caps or
+ * entity ids.
+ *
+ * Of that product knowledge, the part a client also needs — the prompt shapes
+ * and the picker cap — is declared in `@showzy/validation/assistant-chat` and
+ * imported below, so a question has one definition rather than one per renderer.
+ * What stays here is what a client must never see: deadlines, secrets, and how
+ * an answer resolves into a real call.
  */
 import {
   createInteractions,
@@ -14,14 +19,11 @@ import {
   resolved,
   unresolvable,
 } from "@showzy/assistant-kit";
+import {
+  assistantChoicePromptSchema,
+  assistantConfirmationPromptSchema,
+} from "@showzy/validation/assistant-chat";
 import { z } from "zod";
-
-/**
- * Cap on a picker. Chosen for this product's UI, not by the protocol: a
- * six-flavour product needs more than five, and a list past twenty stops being
- * a choice.
- */
-export const CHOICE_OPTIONS_MAX = 20;
 
 /** Deliberately longer than a confirmation: "which one" waits better than
  * "are you sure". */
@@ -69,26 +71,6 @@ export interface ConfirmationSecret {
   readonly challengeId?: string;
 }
 
-export const choicePromptSchema = z.strictObject({
-  subject: z.string().min(1).max(200),
-  options: z
-    .array(
-      z.strictObject({
-        optionId: z.string().min(1).max(128),
-        label: z.string().min(1).max(400),
-        detail: z.string().min(1).max(400).optional(),
-      }),
-    )
-    .min(1)
-    .max(CHOICE_OPTIONS_MAX),
-  /** True when the real list was longer than the cap above. */
-  optionsTruncated: z.boolean(),
-});
-
-export const confirmationPromptSchema = z.strictObject({
-  summary: z.string().min(1).max(2000),
-});
-
 export interface ChoiceResolution {
   readonly entityId: string;
   readonly toolName: string;
@@ -104,7 +86,7 @@ export interface ConfirmationResolution {
 
 export const choice = defineInteraction<ChoiceSecret>()({
   ttlMs: CHOICE_TTL_MS,
-  prompt: choicePromptSchema,
+  prompt: assistantChoicePromptSchema,
   answer: z.strictObject({ optionId: z.string().min(1).max(128) }),
   resolve: ({ answer, secret }) => {
     const entityId = secret.byOption[answer.optionId];
@@ -123,7 +105,7 @@ export const choice = defineInteraction<ChoiceSecret>()({
 
 export const confirmation = defineInteraction<ConfirmationSecret>()({
   ttlMs: CONFIRMATION_TTL_MS,
-  prompt: confirmationPromptSchema,
+  prompt: assistantConfirmationPromptSchema,
   answer: z.strictObject({ approved: z.boolean() }),
   resolve: ({ answer, secret }) =>
     answer.approved

@@ -1,6 +1,7 @@
 export {
   assistantSurfaceKey,
   assistantSurfacesFromParts,
+  localizeAssistantCardPayload,
   type AssistantSurface,
 } from "./compose";
 export {
