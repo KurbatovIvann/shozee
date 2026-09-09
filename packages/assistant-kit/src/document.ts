@@ -57,6 +57,12 @@ export type DocumentMessage = z.output<typeof documentMessageSchema>;
 
 export const chatDocumentSchema = z.strictObject({
   conversationId: z.uuid(),
+  /**
+   * Whose document this is. Stamped on the first write and matched on every
+   * read: without it a conversation id alone would be enough to read someone
+   * else's chat, since an id is not a secret.
+   */
+  bind: z.string().min(1),
   messages: z.array(documentMessageSchema),
   /** Present only while an interaction is open. Read from the pause store. */
   openPause: publicPauseSchema.nullable(),

@@ -119,16 +119,29 @@ function resolveThrough(
   return resolve({ answer, secret });
 }
 
-function emptyDocument(conversationId: string): ChatDocument {
-  return { conversationId, messages: [], openPause: null };
+function emptyDocument(scope: PauseScope): ChatDocument {
+  return {
+    conversationId: scope.conversationId,
+    bind: scope.bind,
+    messages: [],
+    openPause: null,
+  };
 }
 
-function storedDocument(raw: unknown, conversationId: string): ChatDocument {
-  // Validated, then returned as stored — a re-serialisation would make a
-  // reload a second derivation of the document rather than the same one.
-  return chatDocumentSchema.safeParse(raw).success
-    ? (raw as ChatDocument)
-    : emptyDocument(conversationId);
+/**
+ * Validated, then returned as stored — a re-serialisation would make a reload a
+ * second derivation of the document rather than the same one.
+ *
+ * A document owned by someone else reads as an empty one, which is also what a
+ * conversation that does not exist looks like. A conversation id is not a
+ * secret, so the two must be indistinguishable.
+ */
+function storedDocument(raw: unknown, scope: PauseScope): ChatDocument {
+  if (!chatDocumentSchema.safeParse(raw).success) {
+    return emptyDocument(scope);
+  }
+  const document = raw as ChatDocument;
+  return document.bind === scope.bind ? document : emptyDocument(scope);
 }
 
 export function createAssistantKit<T extends AnyTypes>(
@@ -368,7 +381,7 @@ export function createAssistantKit<T extends AnyTypes>(
       async read(scope) {
         const stored = storedDocument(
           await deps.documents.read(scope.conversationId),
-          scope.conversationId,
+          scope,
         );
         const existing = await readRecord(scope);
         const openPause =
@@ -378,11 +391,13 @@ export function createAssistantKit<T extends AnyTypes>(
         return { ...stored, openPause };
       },
 
-      async write(conversationId, write: DocumentWrite) {
-        const current = storedDocument(
-          await deps.documents.read(conversationId),
-          conversationId,
-        );
+      async write(scope, write: DocumentWrite) {
+        const raw = await deps.documents.read(scope.conversationId);
+        const parsed = chatDocumentSchema.safeParse(raw);
+        if (parsed.success && (raw as ChatDocument).bind !== scope.bind) {
+          return { kind: "wrong_owner" };
+        }
+        const current = storedDocument(raw, scope);
         const messages = [...current.messages];
         const index = messages.findIndex(
           (message) => message.messageId === write.messageId,
@@ -422,11 +437,13 @@ export function createAssistantKit<T extends AnyTypes>(
           messages[index] = next;
         }
 
-        await deps.documents.write(conversationId, {
+        await deps.documents.write(scope.conversationId, {
           ...current,
-          conversationId,
+          conversationId: scope.conversationId,
+          bind: scope.bind,
           messages,
         });
+        return { kind: "written" };
       },
     },
   };

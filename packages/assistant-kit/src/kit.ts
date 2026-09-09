@@ -107,7 +107,15 @@ export interface AssistantKit<T extends AnyTypes> {
 
   readonly document: {
     read(scope: PauseScope): Promise<ChatDocument>;
-    write(conversationId: string, write: DocumentWrite): Promise<void>;
+    /**
+     * Scoped like the read. A write whose `bind` does not match the stored
+     * document is refused — `wrong_owner` — rather than silently appending to
+     * someone else's conversation.
+     */
+    write(
+      scope: PauseScope,
+      write: DocumentWrite,
+    ): Promise<{ readonly kind: "written" | "wrong_owner" }>;
   };
 }
 

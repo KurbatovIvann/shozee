@@ -74,7 +74,11 @@ function pausingTools(tools: ToolSet, state: TurnState): ToolSet {
             return outcome.result;
           }
           if (outcome.kind === "error") {
-            return { status: "error", code: outcome.code, message: outcome.message };
+            return {
+              status: "error",
+              code: outcome.code,
+              message: outcome.message,
+            };
           }
           state.paused = {
             outcome,
@@ -137,12 +141,15 @@ async function runLoop<T extends AnyTypes>(
     if (parts.length === 0) {
       return;
     }
-    await options.kit.document.write(options.conversationId, {
-      kind: "append",
-      messageId: options.messageId,
-      role: "assistant",
-      parts,
-    });
+    await options.kit.document.write(
+      { conversationId: options.conversationId, bind: options.bind },
+      {
+        kind: "append",
+        messageId: options.messageId,
+        role: "assistant",
+        parts,
+      },
+    );
   }
 
   await append(commitFirst);
@@ -259,8 +266,10 @@ export function runHostTurn<T extends AnyTypes>(
   return runLoop(options, []);
 }
 
-export interface ContinueHostTurnOptions<T extends AnyTypes>
-  extends Omit<HostTurnOptions<T>, "messages"> {
+export interface ContinueHostTurnOptions<T extends AnyTypes> extends Omit<
+  HostTurnOptions<T>,
+  "messages"
+> {
   readonly claimed: Extract<ClaimResult, { kind: "claimed" }>;
   /**
    * What the paused tool would have returned had the person answered inline.

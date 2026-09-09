@@ -38,7 +38,7 @@ describe("a reload returns what the live turn wrote", () => {
     const kit = newKit();
     const parts = [TEXT, card(1, 3)];
 
-    await kit.document.write(CONVERSATION, {
+    await kit.document.write(SCOPE, {
       kind: "append",
       messageId: MESSAGE,
       role: "assistant",
@@ -56,13 +56,13 @@ describe("a card updates in place", () => {
   it("replaces by cardId instead of appending a second card", async () => {
     const kit = newKit();
 
-    await kit.document.write(CONVERSATION, {
+    await kit.document.write(SCOPE, {
       kind: "append",
       messageId: MESSAGE,
       role: "assistant",
       parts: [card(1, 3)],
     });
-    await kit.document.write(CONVERSATION, {
+    await kit.document.write(SCOPE, {
       kind: "replace_card",
       messageId: MESSAGE,
       part: card(2, 9),
@@ -88,13 +88,13 @@ describe("partial text is never presented as the answer", () => {
       status: "streaming",
     };
 
-    await kit.document.write(CONVERSATION, {
+    await kit.document.write(SCOPE, {
       kind: "append",
       messageId: MESSAGE,
       role: "assistant",
       parts: [streaming],
     });
-    await kit.document.write(CONVERSATION, {
+    await kit.document.write(SCOPE, {
       kind: "append",
       messageId: MESSAGE,
       role: "assistant",
@@ -113,7 +113,7 @@ describe("partial text is never presented as the answer", () => {
     const kit = newKit();
     const failed: DocumentPart = { kind: "text", text: "", status: "error" };
 
-    await kit.document.write(CONVERSATION, {
+    await kit.document.write(SCOPE, {
       kind: "append",
       messageId: MESSAGE,
       role: "assistant",
@@ -127,5 +127,52 @@ describe("partial text is never presented as the answer", () => {
     expect(parts.filter((part) => part.kind === "text").at(-1)?.status).toBe(
       "error",
     );
+  });
+});
+
+describe("a document belongs to one owner", () => {
+  const OTHER = { conversationId: CONVERSATION, bind: "owner-2:scope-2" };
+
+  it("reads as empty for anyone else — the same as a conversation that does not exist", async () => {
+    const kit = newKit();
+    await kit.document.write(SCOPE, {
+      kind: "append",
+      messageId: MESSAGE,
+      role: "assistant",
+      parts: [TEXT],
+    });
+
+    const foreign = await kit.document.read(OTHER);
+    const fresh = await kit.document.read({
+      conversationId: "99999999-9999-4999-8999-999999999999",
+      bind: BIND,
+    });
+
+    expect(foreign.messages).toEqual([]);
+    expect(foreign.messages).toEqual(fresh.messages);
+    // A conversation id is not a secret, so the two must be indistinguishable.
+    expect(JSON.stringify(foreign.messages)).toBe(JSON.stringify(fresh.messages));
+  });
+
+  it("refuses a write from anyone else instead of appending to it", async () => {
+    const kit = newKit();
+    await kit.document.write(SCOPE, {
+      kind: "append",
+      messageId: MESSAGE,
+      role: "assistant",
+      parts: [TEXT],
+    });
+
+    const refused = await kit.document.write(OTHER, {
+      kind: "append",
+      messageId: "88888888-8888-4888-8888-888888888888",
+      role: "assistant",
+      parts: [{ kind: "text", text: "not yours", status: "complete" }],
+    });
+
+    expect(refused.kind).toBe("wrong_owner");
+    const owner = await kit.document.read(SCOPE);
+    expect(owner.messages).toHaveLength(1);
+    expect(JSON.stringify(owner)).not.toContain("not yours");
   });
 });

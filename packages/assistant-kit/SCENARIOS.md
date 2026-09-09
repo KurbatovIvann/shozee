@@ -116,3 +116,26 @@ Three checks became possible only after the vocabulary moved out:
 | 24 | K | Two kinds with different ttls expire at different times, with no ttl configured on the deployment. |
 | 25 | K | A pause whose kind is no longer registered → `unknown_kind` on claim. A pause can outlive the deploy that removed its kind; a caller treats it as gone. |
 | 26 | L | A tool asking to pause on an unregistered kind → the turn is `pause_rejected` and no pause is stored. |
+
+## The route level, completed
+
+Three routes now, one factory, all on injected auth / stores / history /
+provider. No database, no live model.
+
+| # | Given / When / Then |
+| --- | --- |
+| 27 | `POST chat` runs a turn, stores the person's words **before** the model runs, and saves the provider history it produced. A failed generation still shows what was asked. |
+| 28 | `POST chat` with an extra `messages` key is a 400. A client never supplies the model transcript. |
+| 29 | `POST chat` while a question is unanswered → 409 `interaction_open` with the current pause. A visible limitation instead of a draft that silently disappears. |
+| 30 | `POST chat` for a conversation owned by someone else → 410, indistinguishable from one that does not exist. |
+| 31 | `GET messages` returns exactly the parts the live turn returned, byte for byte, plus the open pause from the pause store. |
+| 32 | `GET messages` for another tenant returns an **empty document**, equal to what a conversation that does not exist returns. |
+| 33 | Full trip over HTTP: chat pauses → choice resolves → reload shows the interaction part and exactly one card, with no open pause left. |
+
+## A hole the route level found in the package
+
+`document.read` scoped only the *pause* by owner; the messages came back to
+anyone who knew the conversation id — and an id is not a secret. A document now
+carries the `bind` it was created under: a read by anyone else returns an empty
+document, and a write by anyone else is refused as `wrong_owner` rather than
+appended. `document.write` takes a scope, like the read.
