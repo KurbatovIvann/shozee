@@ -26,10 +26,17 @@ export const PENDING_CONVERSATION_INDEX_PREFIX =
   "pending:conversation:" as const;
 
 /**
- * Confirmation record TTL: core's 5 minutes plus a short grace so the
+ * Displayed confirmation approval window (card `expiresAt`). Five minutes.
+ * Do not import core's `CONFIRMATION_TTL_MS`.
+ */
+export const PENDING_CONFIRMATION_DISPLAY_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Confirmation Redis TTL: displayed 5 minutes plus a short grace so the
  * api can answer expired instead of missing. Do not import core.
  */
-export const PENDING_CONFIRMATION_TTL_MS = 5 * 60 * 1000 + 15_000;
+export const PENDING_CONFIRMATION_TTL_MS =
+  PENDING_CONFIRMATION_DISPLAY_TTL_MS + 15_000;
 
 export const PENDING_KINDS = ["choice", "confirmation"] as const;
 export type PendingKind = (typeof PENDING_KINDS)[number];
@@ -126,6 +133,30 @@ export const pendingChoiceRecordSchema = z.strictObject({
 
 export type PendingChoiceRecord = z.output<typeof pendingChoiceRecordSchema>;
 
+/**
+ * Who issued the HITL lock. `id` is always the pending interaction id
+ * (HTTP `/assistant/confirm` still sends it as `challengeId`).
+ * `source: "core"` carries the real core challenge; `source: "host"` is
+ * Redis bind+claim + displayed expiry only (unique `orders.create` after
+ * `pending_replace` when `requiresConfirmation` is false).
+ */
+export const pendingConfirmationApprovalSchema = z.discriminatedUnion(
+  "source",
+  [
+    z.strictObject({
+      source: z.literal("host"),
+    }),
+    z.strictObject({
+      source: z.literal("core"),
+      challengeId: z.uuid(),
+    }),
+  ],
+);
+
+export type PendingConfirmationApproval = z.output<
+  typeof pendingConfirmationApprovalSchema
+>;
+
 export const pendingConfirmationRecordSchema = z.strictObject({
   kind: z.literal("confirmation"),
   id: z.uuid(),
@@ -133,6 +164,7 @@ export const pendingConfirmationRecordSchema = z.strictObject({
   canonicalInput: z.unknown(),
   summary: z.string().min(1),
   challengeExpiresAt: z.string().min(1),
+  approval: pendingConfirmationApprovalSchema,
 });
 
 export type PendingConfirmationRecord = z.output<
@@ -167,6 +199,7 @@ export const publicPendingConfirmationSchema = z.strictObject({
   summary: z.string().min(1),
   expiresAt: z.string().min(1),
   toolCallId: z.string().min(1),
+  approval: pendingConfirmationApprovalSchema,
 });
 
 export const publicPendingSchema = z.discriminatedUnion("kind", [
@@ -347,7 +380,20 @@ export function publicPendingFromRecord(
     summary: record.summary,
     expiresAt: record.challengeExpiresAt,
     toolCallId: record.toolCallId,
+    approval: record.approval,
   });
+}
+
+/**
+ * Displayed approval window. Fail closed when `challengeExpiresAt` is
+ * unreadable. Redis may still hold the key for the +15s grace.
+ */
+export function isPendingConfirmationDisplayExpired(
+  record: { readonly challengeExpiresAt: string },
+  nowMs: number = Date.now(),
+): boolean {
+  const expiresAtMs = Date.parse(record.challengeExpiresAt);
+  return !Number.isFinite(expiresAtMs) || nowMs >= expiresAtMs;
 }
 
 export function pendingChoiceRecordFromChoiceRecord(
@@ -427,6 +473,7 @@ export function pendingOpenRefuseOutput(locale: "uk" | "en" | undefined): {
 
 export function confirmationPendingRecord(input: {
   readonly challengeId: string;
+  readonly approval: PendingConfirmationApproval;
   readonly bind: PendingBind;
   readonly actionName: string;
   readonly toolCallId: string;
@@ -450,6 +497,7 @@ export function confirmationPendingRecord(input: {
     canonicalInput: input.canonicalInput,
     summary: input.summary,
     challengeExpiresAt: input.challengeExpiresAt,
+    approval: input.approval,
     ...(input.executionId !== undefined
       ? { executionId: input.executionId }
       : {}),

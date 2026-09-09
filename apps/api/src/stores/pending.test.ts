@@ -75,6 +75,7 @@ function openConfirm(
 ): PendingConfirmationRecord {
   return confirmationPendingRecord({
     challengeId,
+    approval: { source: "core", challengeId },
     bind,
     actionName: "customers.deleteCustomer",
     toolCallId: "call-delete",

@@ -852,6 +852,10 @@ async function seedConfirmationPending(
   }
   const record = confirmationPendingRecord({
     challengeId: unconfirmed.challenge.challengeId,
+    approval: {
+      source: "core",
+      challengeId: unconfirmed.challenge.challengeId,
+    },
     bind: pendingBindFor(conversationId),
     actionName: "customers.deleteCustomer",
     toolCallId: `call-delete:${customer.id}`,
@@ -1116,6 +1120,142 @@ describe("live staff assistant host HTTP (SHO-524)", () => {
       assistantHostInteractionResultSchema.parse(await stale.json()),
     ).toEqual({ status: "expired" });
     expect(await orderCount()).toBe(before);
+  });
+
+  it("pending_replace with a unique variantId persists confirmation and does not create an order", async () => {
+    const pendingStore = createMemoryPendingStore();
+    const h = liveApp({ pendingStore });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Live unique replace",
+    });
+    const customer = await h.invoke(createCustomer, {
+      name: "Unique Live Buyer",
+      phone: nextPhone(),
+    });
+    const product = await h.invoke(createProduct, {
+      name: "Unique Live Cake",
+      basePriceMinor: "1500",
+      variants: [{ name: "A" }, { name: "B" }],
+    });
+    const uniqueVariant = product.variants.find(
+      (variant) => variant.name === "A",
+    );
+    expect(uniqueVariant?.variantId).toEqual(expect.any(String));
+    if (uniqueVariant === undefined) {
+      throw new Error("expected variant A");
+    }
+    const { record } = await seedChoicePending(h, {
+      conversationId: conversation.id,
+      customerId: customer.id,
+      product,
+    });
+    const staleOptionId = record.envelope.options[0]?.id;
+    expect(staleOptionId).toEqual(expect.any(String));
+    const before = await orderCount();
+    const replaced = await parseOk(
+      await liveRequest(
+        liveApp({
+          pendingStore,
+          model: new MockLanguageModelV3({
+            doStream: [
+              mockToolCallStream(
+                "call-replace",
+                PENDING_REPLACE_TOOL_NAME,
+                JSON.stringify({
+                  customerId: customer.id,
+                  items: [
+                    {
+                      productId: product.productId,
+                      variantId: uniqueVariant.variantId,
+                      quantityMilli: "2000",
+                    },
+                  ],
+                }),
+              ),
+              mockTextStream("Quantity is two of variant A."),
+            ],
+          }),
+        }).app,
+        {
+          method: "POST",
+          path: ASSISTANT_CHAT_PATH,
+          token,
+          body: {
+            conversationId: conversation.id,
+            text: "візьми варіант A, кількість 2",
+            locale: "uk",
+          },
+        },
+      ),
+    );
+    expect(replaced.pending?.kind).toBe("confirmation");
+    expect(replaced.pending?.id).not.toBe(record.id);
+    expect(replaced.pending?.version).toBe(record.version + 1);
+    const successorId = replaced.pending?.id;
+    expect(successorId).toEqual(expect.any(String));
+    const peeked = await pendingStore.peekOpen({
+      conversationId: conversation.id,
+      bind: pendingBindFor(conversation.id),
+    });
+    expect(peeked.kind).toBe("found");
+    if (peeked.kind !== "found" || peeked.record.kind !== "confirmation") {
+      throw new Error("expected confirmation pending after unique replace");
+    }
+    expect(peeked.record.canonicalInput).toMatchObject({
+      items: [
+        {
+          variantSelection: {
+            kind: "reference",
+            ref: { by: "id", id: uniqueVariant.variantId },
+          },
+          quantity: { milli: "2000" },
+        },
+      ],
+    });
+    expect(peeked.record.approval).toEqual({ source: "host" });
+    expect(replaced.pending).toMatchObject({
+      kind: "confirmation",
+      approval: { source: "host" },
+    });
+    expect(peeked.record.summary).toContain("Unique Live Buyer");
+    expect(peeked.record.summary).toContain("Unique Live Cake");
+    expect(peeked.record.summary).toContain("A");
+    expect(peeked.record.summary).toMatch(/\b2\b/);
+    expect(peeked.record.summary).not.toBe("Confirmation required.");
+    const stale = await liveRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.id,
+        optionId: staleOptionId,
+      },
+    });
+    expect(
+      assistantHostInteractionResultSchema.parse(await stale.json()),
+    ).toEqual({ status: "expired" });
+    expect(await orderCount()).toBe(before);
+    const confirmed = await parseOk(
+      await liveRequest(
+        liveApp({
+          pendingStore,
+          model: listThenSpeakModel(),
+        }).app,
+        {
+          method: "POST",
+          path: ASSISTANT_CONFIRM_PATH,
+          token,
+          body: {
+            conversationId: conversation.id,
+            challengeId: successorId,
+          },
+        },
+      ),
+    );
+    expect(confirmed.pending).toBeNull();
+    expect(await orderCount()).toBe(before + 1);
   });
 
   it("ще одне замовлення іншому клієнту does not overwrite the open pending", async () => {

@@ -12,12 +12,15 @@ import {
   assistantHostInteractionResultSchema,
   assistantPendingPeekResultSchema,
   attemptKey,
+  choiceCanonicalCreateInputSchema,
   confirmationPendingRecord,
   executionAttemptKey,
   HOST_PHASE_A_TOOL_CALL_ID_PREFIX,
   ORDERS_CREATE_TOOL_NAME,
   ORDERS_LIST_PAGE_TOOL_NAME,
+  PENDING_CONFIRMATION_DISPLAY_TTL_MS,
   PENDING_REPLACE_TOOL_NAME,
+  parsePendingRecord,
   pendingChoiceRecordFromChoiceRecord,
   STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK,
   staffAssistantModelMessagesFromPersisted,
@@ -47,6 +50,7 @@ import {
   executeAction,
   type ConfirmationStore,
   type ImplementedAction,
+  type RateLimitHook,
 } from "@showzy/core";
 import { ConfirmationRequiredError } from "@showzy/core/errors";
 import {
@@ -60,7 +64,7 @@ import {
   deleteCustomer,
   restoreCustomer,
 } from "@showzy/customers";
-import { createOrder } from "@showzy/orders";
+import { createOrder, getOrder } from "@showzy/orders";
 import { session } from "@showzy/db/schema/auth";
 import {
   assistantMessages,
@@ -231,6 +235,34 @@ function ordersCreateUnlessRecoveredModel(options: {
   });
 }
 
+function uniqueReplaceModel(options: {
+  readonly customerId: string;
+  readonly productId: string;
+  readonly variantId: string;
+  readonly quantityMilli: string;
+  readonly speech?: string;
+}): MockLanguageModelV3 {
+  return new MockLanguageModelV3({
+    doStream: [
+      mockToolCallStream(
+        "call-replace",
+        PENDING_REPLACE_TOOL_NAME,
+        JSON.stringify({
+          customerId: options.customerId,
+          items: [
+            {
+              productId: options.productId,
+              variantId: options.variantId,
+              quantityMilli: options.quantityMilli,
+            },
+          ],
+        }),
+      ),
+      mockTextStream(options.speech ?? "Picking the unique variant."),
+    ],
+  });
+}
+
 function listThenSpeakModel(): MockLanguageModelV3 {
   return new MockLanguageModelV3({
     doStream: [
@@ -296,6 +328,10 @@ function harness(options?: {
   readonly pendingStore?: StaffAssistantPendingStore;
   readonly conversationLock?: ConversationLock;
   readonly confirmation?: ReturnType<typeof countingConfirmationStore>;
+  readonly onExecuteRequest?: (env: {
+    readonly actionName: string;
+    readonly confirmationChallengeId?: string;
+  }) => void;
 }): Harness {
   const pendingStore = options?.pendingStore ?? createMemoryPendingStore();
   const confirmation = options?.confirmation ?? countingConfirmationStore();
@@ -306,7 +342,19 @@ function harness(options?: {
       confirmation: createConfirmationHook({ store: confirmation.store }),
       // HITL seed finishRun plus host checkpoints would exhaust the
       // shared kit-wide staff bucket (120/min) across this file.
-      rateLimit: { enforce: () => Promise.resolve() },
+      rateLimit: {
+        enforce: (env) => {
+          options?.onExecuteRequest?.({
+            actionName: env.contract.name,
+            ...(env.request.confirmationChallengeId !== undefined
+              ? {
+                  confirmationChallengeId: env.request.confirmationChallengeId,
+                }
+              : {}),
+          });
+          return Promise.resolve();
+        },
+      } satisfies RateLimitHook,
     },
   };
   const app = createStaffAssistantHostApp({
@@ -781,6 +829,10 @@ async function seedConfirmationPending(
   }
   const record = confirmationPendingRecord({
     challengeId: unconfirmed.challenge.challengeId,
+    approval: {
+      source: "core",
+      challengeId: unconfirmed.challenge.challengeId,
+    },
     bind: {
       actorId: kitIdentities.users.anna,
       companyId: kitIdentities.companies.a,
@@ -812,6 +864,88 @@ async function seedConfirmationPending(
     executionId,
     summary: unconfirmed.challenge.summary,
   };
+}
+
+async function seedHostOrdersCreateConfirmation(
+  h: Harness,
+  options: {
+    readonly conversationId: string;
+    readonly customerId: string;
+    readonly product: {
+      readonly productId: string;
+      readonly name: string;
+      readonly variants: readonly {
+        readonly variantId: string;
+        readonly name: string;
+      }[];
+    };
+    readonly variantId: string;
+    readonly quantityMilli?: string;
+    readonly challengeExpiresAt?: string;
+    readonly summary?: string;
+  },
+): Promise<{
+  readonly record: Extract<PendingInteractionRecord, { kind: "confirmation" }>;
+}> {
+  const quantityMilli = options.quantityMilli ?? "2000";
+  const canonicalInput = {
+    customer: { by: "id" as const, id: options.customerId },
+    items: [
+      {
+        product: { by: "id" as const, id: options.product.productId },
+        variantSelection: {
+          kind: "reference" as const,
+          ref: { by: "id" as const, id: options.variantId },
+        },
+        quantity: { milli: quantityMilli },
+      },
+    ],
+  };
+  const pendingId = randomUUID();
+  const executionId = await stageExecution(
+    h,
+    options.conversationId,
+    "orders.create",
+    {
+      customerId: options.customerId,
+      items: [
+        {
+          productId: options.product.productId,
+          variantId: options.variantId,
+          quantityMilli,
+        },
+      ],
+    },
+  );
+  const record = confirmationPendingRecord({
+    challengeId: pendingId,
+    approval: { source: "host" },
+    bind: pendingBindFor(options.conversationId),
+    actionName: "orders.create",
+    toolCallId: `call-create:${pendingId}`,
+    canonicalInput,
+    summary:
+      options.summary ??
+      `Create ${quantityMilli === "2000" ? "2" : quantityMilli} × ${options.product.name} for host.`,
+    challengeExpiresAt:
+      options.challengeExpiresAt ??
+      new Date(Date.now() + PENDING_CONFIRMATION_DISPLAY_TTL_MS).toISOString(),
+    executionId,
+    locale: "en",
+  });
+  expect(await h.pendingStore.open(record)).toBe(true);
+  await finishSeededHitlRun(h, {
+    conversationId: options.conversationId,
+    executionId,
+    outcome: "confirmation_required",
+    challengeId: pendingId,
+    modelTrace: {
+      status: "confirmation_required",
+      challengeId: pendingId,
+      summary: record.summary,
+    },
+  });
+  return { record };
 }
 
 async function customerRow(
@@ -2171,11 +2305,13 @@ describe("unpublished staff assistant host HTTP", () => {
     if (uniqueVariant === undefined) {
       throw new Error("expected variant A");
     }
-    const { record } = await seedChoicePending(h, {
+    const { record, optionByLabel } = await seedChoicePending(h, {
       conversationId: conversation.id,
       customerId: customer.id,
       product,
     });
+    const staleOptionId = optionByLabel.get("A");
+    expect(staleOptionId).toEqual(expect.any(String));
     const beforeOrders = await orderCount();
     const replaceHarness = harness({
       model: new MockLanguageModelV3({
@@ -2216,20 +2352,912 @@ describe("unpublished staff assistant host HTTP", () => {
     if (replaced.status !== "ok") {
       return;
     }
-    expect(replaced.pending?.id).toBe(record.id);
-    expect(replaced.pending?.version).toBe(record.version);
+    expect(replaced.pending?.kind).toBe("confirmation");
+    expect(replaced.pending?.id).not.toBe(record.id);
+    expect(replaced.pending?.version).toBe(record.version + 1);
+    const successorId = replaced.pending?.id;
+    expect(successorId).toEqual(expect.any(String));
     const peeked = await h.pendingStore.peekOpen({
       conversationId: conversation.id,
       bind: pendingBindFor(conversation.id),
     });
     expect(peeked.kind).toBe("found");
-    if (peeked.kind !== "found" || peeked.record.kind !== "choice") {
-      throw new Error("expected original choice pending still open");
+    if (peeked.kind !== "found" || peeked.record.kind !== "confirmation") {
+      throw new Error("expected confirmation pending after unique replace");
     }
     expect(peeked.record.status).toBe("open");
-    expect(peeked.record.id).toBe(record.id);
-    expect(peeked.record.executionId).toBe(record.executionId);
+    expect(peeked.record.version).toBe(record.version + 1);
+    expect(peeked.record.executionId).not.toBe(record.executionId);
+    expect(peeked.record.canonicalInput).toMatchObject({
+      customer: { by: "id", id: customer.id },
+      items: [
+        {
+          product: { by: "id", id: product.productId },
+          variantSelection: {
+            kind: "reference",
+            ref: { by: "id", id: uniqueVariant.variantId },
+          },
+          quantity: { milli: "2000" },
+        },
+      ],
+    });
+    expect(peeked.record.approval).toEqual({ source: "host" });
+    expect(replaced.pending).toMatchObject({
+      kind: "confirmation",
+      approval: { source: "host" },
+    });
+    expect(peeked.record.summary).toContain("Unique Variant Buyer");
+    expect(peeked.record.summary).toContain("Unique Variant Cake");
+    expect(peeked.record.summary).toContain("A");
+    expect(peeked.record.summary).toMatch(/\b2\b/);
+    expect(peeked.record.summary).not.toBe("Confirmation required.");
+    const displayedExpiryMs = Date.parse(peeked.record.challengeExpiresAt);
+    expect(Number.isFinite(displayedExpiryMs)).toBe(true);
+    expect(displayedExpiryMs).toBeGreaterThan(Date.now() + 4 * 60 * 1000);
+    expect(displayedExpiryMs).toBeLessThanOrEqual(
+      Date.now() + PENDING_CONFIRMATION_DISPLAY_TTL_MS + 2_000,
+    );
     expect(await orderCount()).toBe(beforeOrders);
+
+    const stale = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.id,
+        optionId: staleOptionId,
+      },
+    });
+    expect(
+      assistantHostInteractionResultSchema.parse(await stale.json()),
+    ).toEqual({ status: "expired" });
+    expect(await orderCount()).toBe(beforeOrders);
+
+    const createChallengeIds: string[] = [];
+    const confirmHarness = harness({
+      model: listThenSpeakModel(),
+      pendingStore: h.pendingStore,
+      onExecuteRequest: (env) => {
+        if (env.actionName === "orders.create") {
+          createChallengeIds.push(env.confirmationChallengeId ?? "");
+        }
+      },
+    });
+    const confirm = await hostRequest(confirmHarness.app, {
+      method: "POST",
+      path: ASSISTANT_CONFIRM_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        challengeId: successorId,
+      },
+    });
+    const confirmBody = assistantHostInteractionResultSchema.parse(
+      await confirm.json(),
+    );
+    expect(confirmBody.status).toBe("ok");
+    if (confirmBody.status !== "ok") {
+      return;
+    }
+    expect(confirmBody.pending).toBeNull();
+    expect(await orderCount()).toBe(beforeOrders + 1);
+    const createRows = (await conversationToolRuns(conversation.id)).filter(
+      (row) => row.actionName === "orders.create" && row.outcome === "success",
+    );
+    expect(createRows).toHaveLength(1);
+    const orderId = createRows[0]?.resultIds[0];
+    expect(typeof orderId).toBe("string");
+    if (typeof orderId !== "string") {
+      throw new Error("expected orders.create result id");
+    }
+    const created = await h.invoke(getOrder, { orderId });
+    expect(created.items).toHaveLength(1);
+    expect(created.items[0]?.variantId).toBe(uniqueVariant.variantId);
+    expect(created.items[0]?.quantityMilli).toBe("2000");
+    expect(createChallengeIds.length).toBeGreaterThan(0);
+    expect(createChallengeIds.every((value) => value === "")).toBe(true);
+    const replay = await hostRequest(confirmHarness.app, {
+      method: "POST",
+      path: ASSISTANT_CONFIRM_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        challengeId: successorId,
+      },
+    });
+    expect(
+      assistantHostInteractionResultSchema.parse(await replay.json()).status,
+    ).toBe("ok");
+    expect(await orderCount()).toBe(beforeOrders + 1);
+  });
+
+  it("choice then unique confirmation then unique replace keeps latest args and confirms once", async () => {
+    const confirmation = countingConfirmationStore();
+    const pendingStore = createMemoryPendingStore();
+    const h = harness({ pendingStore, confirmation });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Unique replace then unique replace",
+    });
+    await h.invoke(
+      appendUserMessage,
+      { conversationId: conversation.id, body: "Create the cake order" },
+      { idempotencyKey: attemptKey("message", conversation.id, randomUUID()) },
+    );
+    const customer = await h.invoke(createCustomer, {
+      name: "Latest Args Buyer",
+      phone: nextPhone(),
+    });
+    const product = await h.invoke(createProduct, {
+      name: "Latest Args Cake",
+      basePriceMinor: "1500",
+      variants: [{ name: "A" }, { name: "B" }],
+    });
+    const variantA = product.variants.find((variant) => variant.name === "A");
+    const variantB = product.variants.find((variant) => variant.name === "B");
+    if (variantA === undefined || variantB === undefined) {
+      throw new Error("expected variants A and B");
+    }
+    const { record } = await seedChoicePending(h, {
+      conversationId: conversation.id,
+      customerId: customer.id,
+      product,
+    });
+    const beforeOrders = await orderCount();
+    const replaceCreateActions: string[] = [];
+    const noteReplaceCreate = (env: {
+      readonly actionName: string;
+      readonly confirmationChallengeId?: string;
+    }) => {
+      if (env.actionName === "orders.create") {
+        replaceCreateActions.push(env.actionName);
+      }
+    };
+    const firstReplace = await hostRequest(
+      harness({
+        model: uniqueReplaceModel({
+          customerId: customer.id,
+          productId: product.productId,
+          variantId: variantA.variantId,
+          quantityMilli: "2000",
+        }),
+        pendingStore,
+        confirmation,
+        onExecuteRequest: noteReplaceCreate,
+      }).app,
+      {
+        method: "POST",
+        path: ASSISTANT_HOST_CHAT_PATH,
+        token,
+        body: {
+          conversationId: conversation.id,
+          text: "Use variant A, two of them",
+          locale: "en",
+        },
+      },
+    );
+    const firstBody = assistantHostInteractionResultSchema.parse(
+      await firstReplace.json(),
+    );
+    expect(firstBody.status).toBe("ok");
+    if (firstBody.status !== "ok") {
+      return;
+    }
+    expect(firstBody.pending?.kind).toBe("confirmation");
+    expect(firstBody.pending).toMatchObject({
+      approval: { source: "host" },
+    });
+    const firstId = firstBody.pending?.id;
+    expect(firstId).not.toBe(record.id);
+    expect(await orderCount()).toBe(beforeOrders);
+    expect(replaceCreateActions).toEqual([]);
+    const secondReplace = await hostRequest(
+      harness({
+        model: uniqueReplaceModel({
+          customerId: customer.id,
+          productId: product.productId,
+          variantId: variantB.variantId,
+          quantityMilli: "3000",
+          speech: "Switching to variant B, three.",
+        }),
+        pendingStore,
+        confirmation,
+        onExecuteRequest: noteReplaceCreate,
+      }).app,
+      {
+        method: "POST",
+        path: ASSISTANT_HOST_CHAT_PATH,
+        token,
+        body: {
+          conversationId: conversation.id,
+          text: "Use variant B, three of them",
+          locale: "en",
+        },
+      },
+    );
+    const secondBody = assistantHostInteractionResultSchema.parse(
+      await secondReplace.json(),
+    );
+    expect(secondBody.status).toBe("ok");
+    if (secondBody.status !== "ok") {
+      return;
+    }
+    expect(secondBody.pending?.kind).toBe("confirmation");
+    expect(secondBody.pending?.id).not.toBe(firstId);
+    expect(secondBody.pending?.version).toBe(record.version + 2);
+    expect(secondBody.pending).toMatchObject({
+      approval: { source: "host" },
+    });
+    const latestId = secondBody.pending?.id;
+    const peeked = await pendingStore.peekOpen({
+      conversationId: conversation.id,
+      bind: pendingBindFor(conversation.id),
+    });
+    expect(peeked.kind).toBe("found");
+    if (peeked.kind !== "found" || peeked.record.kind !== "confirmation") {
+      throw new Error("expected host confirmation after second unique replace");
+    }
+    expect(peeked.record.approval).toEqual({ source: "host" });
+    expect(peeked.record.canonicalInput).toMatchObject({
+      items: [
+        {
+          variantSelection: {
+            kind: "reference",
+            ref: { by: "id", id: variantB.variantId },
+          },
+          quantity: { milli: "3000" },
+        },
+      ],
+    });
+    expect(peeked.record.summary).toContain("Latest Args Buyer");
+    expect(peeked.record.summary).toContain("Latest Args Cake");
+    expect(peeked.record.summary).toContain("B");
+    expect(peeked.record.summary).toMatch(/\b3\b/);
+    expect(await orderCount()).toBe(beforeOrders);
+    expect(replaceCreateActions).toEqual([]);
+    expect(confirmation.consumeCount()).toBe(0);
+    const staleFirst = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_CONFIRM_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        challengeId: firstId,
+      },
+    });
+    expect(
+      assistantHostInteractionResultSchema.parse(await staleFirst.json()),
+    ).toEqual({ status: "expired" });
+    expect(await orderCount()).toBe(beforeOrders);
+    const createChallengeIds: string[] = [];
+    const consumesBefore = confirmation.consumeCount();
+    const confirm = await hostRequest(
+      harness({
+        model: listThenSpeakModel(),
+        pendingStore,
+        confirmation,
+        onExecuteRequest: (env) => {
+          if (env.actionName === "orders.create") {
+            createChallengeIds.push(env.confirmationChallengeId ?? "");
+          }
+        },
+      }).app,
+      {
+        method: "POST",
+        path: ASSISTANT_CONFIRM_PATH,
+        token,
+        body: {
+          conversationId: conversation.id,
+          challengeId: latestId,
+        },
+      },
+    );
+    const confirmBody = assistantHostInteractionResultSchema.parse(
+      await confirm.json(),
+    );
+    expect(confirmBody.status).toBe("ok");
+    expect(await orderCount()).toBe(beforeOrders + 1);
+    expect(confirmation.consumeCount()).toBe(consumesBefore);
+    expect(createChallengeIds.length).toBeGreaterThan(0);
+    expect(createChallengeIds.every((value) => value === "")).toBe(true);
+    const createRows = (await conversationToolRuns(conversation.id)).filter(
+      (row) => row.actionName === "orders.create" && row.outcome === "success",
+    );
+    expect(createRows).toHaveLength(1);
+    const orderId = createRows[0]?.resultIds[0];
+    if (typeof orderId !== "string") {
+      throw new Error("expected orders.create result id");
+    }
+    const created = await h.invoke(getOrder, { orderId });
+    expect(created.items[0]?.variantId).toBe(variantB.variantId);
+    expect(created.items[0]?.quantityMilli).toBe("3000");
+  });
+
+  it("host confirmation ambiguous replace rebuilds a picker and does not create an order", async () => {
+    const h = harness();
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Host confirm then ambiguous replace",
+    });
+    await h.invoke(
+      appendUserMessage,
+      { conversationId: conversation.id, body: "Create the cake order" },
+      { idempotencyKey: attemptKey("message", conversation.id, randomUUID()) },
+    );
+    const customer = await h.invoke(createCustomer, {
+      name: "Ambiguous Host Buyer",
+      phone: nextPhone(),
+    });
+    const product = await h.invoke(createProduct, {
+      name: "Ambiguous Host Cake",
+      basePriceMinor: "1500",
+      variants: [{ name: "A" }, { name: "B" }],
+    });
+    const uniqueVariant = product.variants.find(
+      (variant) => variant.name === "A",
+    );
+    if (uniqueVariant === undefined) {
+      throw new Error("expected variant A");
+    }
+    const { record } = await seedChoicePending(h, {
+      conversationId: conversation.id,
+      customerId: customer.id,
+      product,
+    });
+    const beforeOrders = await orderCount();
+    const unique = await hostRequest(
+      harness({
+        model: uniqueReplaceModel({
+          customerId: customer.id,
+          productId: product.productId,
+          variantId: uniqueVariant.variantId,
+          quantityMilli: "2000",
+        }),
+        pendingStore: h.pendingStore,
+      }).app,
+      {
+        method: "POST",
+        path: ASSISTANT_HOST_CHAT_PATH,
+        token,
+        body: {
+          conversationId: conversation.id,
+          text: "Use variant A, two",
+          locale: "en",
+        },
+      },
+    );
+    const uniqueBody = assistantHostInteractionResultSchema.parse(
+      await unique.json(),
+    );
+    expect(uniqueBody.status).toBe("ok");
+    if (uniqueBody.status !== "ok") {
+      return;
+    }
+    expect(uniqueBody.pending?.kind).toBe("confirmation");
+    const hostId = uniqueBody.pending?.id;
+    const ambiguous = await hostRequest(
+      harness({
+        model: new MockLanguageModelV3({
+          doStream: [
+            mockToolCallStream(
+              "call-replace",
+              PENDING_REPLACE_TOOL_NAME,
+              JSON.stringify({
+                customerId: customer.id,
+                items: [
+                  {
+                    productId: product.productId,
+                    quantityMilli: "3000",
+                  },
+                ],
+              }),
+            ),
+            mockTextStream("Quantity is now three."),
+          ],
+        }),
+        pendingStore: h.pendingStore,
+      }).app,
+      {
+        method: "POST",
+        path: ASSISTANT_HOST_CHAT_PATH,
+        token,
+        body: {
+          conversationId: conversation.id,
+          text: "Make it three of this cake instead",
+          locale: "en",
+        },
+      },
+    );
+    const ambiguousBody = assistantHostInteractionResultSchema.parse(
+      await ambiguous.json(),
+    );
+    expect(ambiguousBody.status).toBe("ok");
+    if (ambiguousBody.status !== "ok") {
+      return;
+    }
+    expect(ambiguousBody.pending?.kind).toBe("choice");
+    expect(ambiguousBody.pending?.id).not.toBe(hostId);
+    expect(ambiguousBody.pending?.id).not.toBe(record.id);
+    expect(await orderCount()).toBe(beforeOrders);
+    const staleHost = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_CONFIRM_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        challengeId: hostId,
+      },
+    });
+    expect(
+      assistantHostInteractionResultSchema.parse(await staleHost.json()),
+    ).toEqual({ status: "expired" });
+    expect(await orderCount()).toBe(beforeOrders);
+  });
+
+  it("displayed confirmation expiry rejects confirm while Redis still has the key", async () => {
+    const h = harness({ model: listThenSpeakModel() });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Displayed expiry host confirm",
+    });
+    await h.invoke(
+      appendUserMessage,
+      { conversationId: conversation.id, body: "Create the cake order" },
+      { idempotencyKey: attemptKey("message", conversation.id, randomUUID()) },
+    );
+    const customer = await h.invoke(createCustomer, {
+      name: "Expired Window Buyer",
+      phone: nextPhone(),
+    });
+    const product = await h.invoke(createProduct, {
+      name: "Expired Window Cake",
+      basePriceMinor: "1500",
+      variants: [{ name: "A" }, { name: "B" }],
+    });
+    const uniqueVariant = product.variants.find(
+      (variant) => variant.name === "A",
+    );
+    if (uniqueVariant === undefined) {
+      throw new Error("expected variant A");
+    }
+    const { record } = await seedHostOrdersCreateConfirmation(h, {
+      conversationId: conversation.id,
+      customerId: customer.id,
+      product,
+      variantId: uniqueVariant.variantId,
+      challengeExpiresAt: new Date(Date.now() - 1_000).toISOString(),
+    });
+    const beforeOrders = await orderCount();
+    const stillLive = await h.pendingStore.peek({
+      id: record.id,
+      kind: "confirmation",
+      bind: pendingBindFor(conversation.id),
+    });
+    expect(stillLive.kind).toBe("found");
+    const confirm = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_CONFIRM_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        challengeId: record.id,
+      },
+    });
+    expect(
+      assistantHostInteractionResultSchema.parse(await confirm.json()),
+    ).toEqual({ status: "expired" });
+    expect(await orderCount()).toBe(beforeOrders);
+  });
+
+  it("foreign bind on host confirmation returns expired and does not create an order", async () => {
+    const h = harness({ model: listThenSpeakModel() });
+    const anna = await insertBearer(kit, kitIdentities.users.anna);
+    const boris = await insertBearer(kit, kitIdentities.users.boris);
+    const conversation = await h.invoke(createConversation, {
+      title: "Host confirm foreign bind",
+    });
+    const other = await h.invoke(createConversation, {
+      title: "Host confirm other conversation",
+    });
+    await h.invoke(
+      appendUserMessage,
+      { conversationId: conversation.id, body: "Create the cake order" },
+      { idempotencyKey: attemptKey("message", conversation.id, randomUUID()) },
+    );
+    const customer = await h.invoke(createCustomer, {
+      name: "Foreign Bind Buyer",
+      phone: nextPhone(),
+    });
+    const product = await h.invoke(createProduct, {
+      name: "Foreign Bind Cake",
+      basePriceMinor: "1500",
+      variants: [{ name: "A" }, { name: "B" }],
+    });
+    const uniqueVariant = product.variants.find(
+      (variant) => variant.name === "A",
+    );
+    if (uniqueVariant === undefined) {
+      throw new Error("expected variant A");
+    }
+    const { record } = await seedHostOrdersCreateConfirmation(h, {
+      conversationId: conversation.id,
+      customerId: customer.id,
+      product,
+      variantId: uniqueVariant.variantId,
+    });
+    const beforeOrders = await orderCount();
+    const wrongConversation = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_CONFIRM_PATH,
+      token: anna,
+      body: {
+        conversationId: other.id,
+        challengeId: record.id,
+      },
+    });
+    expect(
+      assistantHostInteractionResultSchema.parse(
+        await wrongConversation.json(),
+      ),
+    ).toEqual({ status: "expired" });
+    expect(await orderCount()).toBe(beforeOrders);
+    const foreign = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_CONFIRM_PATH,
+      token: boris,
+      companyId: kitIdentities.companies.b,
+      body: {
+        conversationId: conversation.id,
+        challengeId: record.id,
+      },
+    });
+    if (foreign.status === 200) {
+      expect(
+        assistantHostInteractionResultSchema.parse(await foreign.json()),
+      ).toEqual({ status: "expired" });
+    } else {
+      expect(foreign.status).not.toBe(200);
+    }
+    expect(await orderCount()).toBe(beforeOrders);
+    const own = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_CONFIRM_PATH,
+      token: anna,
+      body: {
+        conversationId: conversation.id,
+        challengeId: record.id,
+      },
+    });
+    expect(
+      assistantHostInteractionResultSchema.parse(await own.json()).status,
+    ).toBe("ok");
+    expect(await orderCount()).toBe(beforeOrders + 1);
+  });
+
+  it("host confirmation crash after claim plus same execution_id replay creates exactly one order", async () => {
+    const h = harness({ model: listThenSpeakModel() });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Host confirm crash replay",
+    });
+    await h.invoke(
+      appendUserMessage,
+      { conversationId: conversation.id, body: "Create the cake order" },
+      { idempotencyKey: attemptKey("message", conversation.id, randomUUID()) },
+    );
+    const customer = await h.invoke(createCustomer, {
+      name: "Crash Replay Buyer",
+      phone: nextPhone(),
+    });
+    const product = await h.invoke(createProduct, {
+      name: "Crash Replay Cake",
+      basePriceMinor: "1500",
+      variants: [{ name: "A" }, { name: "B" }],
+    });
+    const uniqueVariant = product.variants.find(
+      (variant) => variant.name === "A",
+    );
+    if (uniqueVariant === undefined) {
+      throw new Error("expected variant A");
+    }
+    const { record } = await seedHostOrdersCreateConfirmation(h, {
+      conversationId: conversation.id,
+      customerId: customer.id,
+      product,
+      variantId: uniqueVariant.variantId,
+    });
+    if (record.executionId === undefined) {
+      throw new Error("seeded host confirmation missing executionId");
+    }
+    const bind = pendingBindFor(conversation.id);
+    const claimed = await h.pendingStore.claim({
+      id: record.id,
+      kind: "confirmation",
+      bind,
+    });
+    expect(claimed.kind).toBe("claimed");
+    const created = await h.invoke(
+      createOrder,
+      choiceCanonicalCreateInputSchema.parse(record.canonicalInput),
+      {
+        idempotencyKey: executionAttemptKey(
+          conversation.id,
+          record.executionId,
+        ),
+      },
+    );
+    const beforeConfirm = await orderCount();
+    expect(beforeConfirm).toBeGreaterThan(0);
+    const confirm = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_CONFIRM_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        challengeId: record.id,
+      },
+    });
+    const confirmBody = assistantHostInteractionResultSchema.parse(
+      await confirm.json(),
+    );
+    expect(confirmBody.status).toBe("ok");
+    expect(await orderCount()).toBe(beforeConfirm);
+    const createRows = (await conversationToolRuns(conversation.id)).filter(
+      (row) => row.actionName === "orders.create" && row.outcome === "success",
+    );
+    expect(createRows).toHaveLength(1);
+    expect(createRows[0]?.resultIds[0]).toBe(created.orderId);
+    const replay = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_CONFIRM_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        challengeId: record.id,
+      },
+    });
+    expect(
+      assistantHostInteractionResultSchema.parse(await replay.json()).status,
+    ).toBe("ok");
+    expect(await orderCount()).toBe(beforeConfirm);
+  });
+
+  it("unreadable confirmation approval fails closed and does not create an order", async () => {
+    const inner = createMemoryPendingStore();
+    const strippedStore: StaffAssistantPendingStore = {
+      open: (record) => inner.open(record),
+      claim: async (input) => {
+        const peeked = await inner.peek(input);
+        if (peeked.kind !== "found" || peeked.record.kind !== "confirmation") {
+          return inner.claim(input);
+        }
+        expect(
+          parsePendingRecord(
+            JSON.stringify({
+              kind: "confirmation",
+              id: peeked.record.id,
+              version: peeked.record.version,
+              status: peeked.record.status,
+              actorId: peeked.record.actorId,
+              companyId: peeked.record.companyId,
+              conversationId: peeked.record.conversationId,
+              actionName: peeked.record.actionName,
+              toolCallId: peeked.record.toolCallId,
+              canonicalInput: peeked.record.canonicalInput,
+              summary: peeked.record.summary,
+              challengeExpiresAt: peeked.record.challengeExpiresAt,
+              executionId: peeked.record.executionId,
+              locale: peeked.record.locale,
+            }),
+          ),
+        ).toBeUndefined();
+        return { kind: "expired" };
+      },
+      peek: async (input) => {
+        const peeked = await inner.peek(input);
+        if (peeked.kind !== "found" || peeked.record.kind !== "confirmation") {
+          return peeked;
+        }
+        expect(
+          parsePendingRecord(
+            JSON.stringify({
+              kind: "confirmation",
+              id: peeked.record.id,
+              version: peeked.record.version,
+              status: peeked.record.status,
+              actorId: peeked.record.actorId,
+              companyId: peeked.record.companyId,
+              conversationId: peeked.record.conversationId,
+              actionName: peeked.record.actionName,
+              toolCallId: peeked.record.toolCallId,
+              canonicalInput: peeked.record.canonicalInput,
+              summary: peeked.record.summary,
+              challengeExpiresAt: peeked.record.challengeExpiresAt,
+              executionId: peeked.record.executionId,
+              locale: peeked.record.locale,
+            }),
+          ),
+        ).toBeUndefined();
+        return { kind: "expired" };
+      },
+      peekOpen: (input) => inner.peekOpen(input),
+      complete: (input) => inner.complete(input),
+      abandon: (input) => inner.abandon(input),
+      replace: (input) => inner.replace(input),
+    };
+    const seedHarness = harness({ pendingStore: inner });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await seedHarness.invoke(createConversation, {
+      title: "Unreadable approval",
+    });
+    await seedHarness.invoke(
+      appendUserMessage,
+      { conversationId: conversation.id, body: "Create the cake order" },
+      { idempotencyKey: attemptKey("message", conversation.id, randomUUID()) },
+    );
+    const customer = await seedHarness.invoke(createCustomer, {
+      name: "Unreadable Buyer",
+      phone: nextPhone(),
+    });
+    const product = await seedHarness.invoke(createProduct, {
+      name: "Unreadable Cake",
+      basePriceMinor: "1500",
+      variants: [{ name: "A" }, { name: "B" }],
+    });
+    const uniqueVariant = product.variants.find(
+      (variant) => variant.name === "A",
+    );
+    if (uniqueVariant === undefined) {
+      throw new Error("expected variant A");
+    }
+    const { record } = await seedHostOrdersCreateConfirmation(seedHarness, {
+      conversationId: conversation.id,
+      customerId: customer.id,
+      product,
+      variantId: uniqueVariant.variantId,
+    });
+    const beforeOrders = await orderCount();
+    const confirm = await hostRequest(
+      harness({
+        model: listThenSpeakModel(),
+        pendingStore: strippedStore,
+      }).app,
+      {
+        method: "POST",
+        path: ASSISTANT_CONFIRM_PATH,
+        token,
+        body: {
+          conversationId: conversation.id,
+          challengeId: record.id,
+        },
+      },
+    );
+    expect(
+      assistantHostInteractionResultSchema.parse(await confirm.json()),
+    ).toEqual({ status: "expired" });
+    expect(await orderCount()).toBe(beforeOrders);
+  });
+
+  it("host approval on a core-confirmed action fails closed and does not consume GETDEL", async () => {
+    const confirmation = countingConfirmationStore();
+    const h = harness({
+      model: listThenSpeakModel(),
+      confirmation,
+    });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Host approval on delete",
+    });
+    await h.invoke(
+      appendUserMessage,
+      { conversationId: conversation.id, body: "Delete the customer" },
+      { idempotencyKey: attemptKey("message", conversation.id, randomUUID()) },
+    );
+    const seeded = await seedConfirmationPending(h, conversation.id);
+    const peeked = await h.pendingStore.peek({
+      id: seeded.challengeId,
+      kind: "confirmation",
+      bind: pendingBindFor(conversation.id),
+    });
+    expect(peeked.kind).toBe("found");
+    if (peeked.kind !== "found" || peeked.record.kind !== "confirmation") {
+      throw new Error("expected seeded core confirmation");
+    }
+    await h.pendingStore.abandon({
+      id: peeked.record.id,
+      bind: pendingBindFor(conversation.id),
+      expectedVersion: peeked.record.version,
+    });
+    const hostSpoof = confirmationPendingRecord({
+      challengeId: randomUUID(),
+      approval: { source: "host" },
+      bind: pendingBindFor(conversation.id),
+      actionName: "customers.deleteCustomer",
+      toolCallId: peeked.record.toolCallId,
+      canonicalInput: peeked.record.canonicalInput,
+      summary: peeked.record.summary,
+      challengeExpiresAt: peeked.record.challengeExpiresAt,
+      executionId: seeded.executionId,
+      locale: "en",
+    });
+    expect(await h.pendingStore.open(hostSpoof)).toBe(true);
+    const consumesBefore = h.consumeCount();
+    const confirm = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_CONFIRM_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        challengeId: hostSpoof.id,
+      },
+    });
+    expect(
+      assistantHostInteractionResultSchema.parse(await confirm.json()),
+    ).toEqual({ status: "expired" });
+    expect(h.consumeCount()).toBe(consumesBefore);
+    expect(await customerRow(seeded.customerId)).toBeDefined();
+  });
+
+  it("double tap of host confirmation creates exactly one order", async () => {
+    const h = harness({ model: listThenSpeakModel() });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Host confirm double tap",
+    });
+    await h.invoke(
+      appendUserMessage,
+      { conversationId: conversation.id, body: "Create the cake order" },
+      { idempotencyKey: attemptKey("message", conversation.id, randomUUID()) },
+    );
+    const customer = await h.invoke(createCustomer, {
+      name: "Double Tap Buyer",
+      phone: nextPhone(),
+    });
+    const product = await h.invoke(createProduct, {
+      name: "Double Tap Cake",
+      basePriceMinor: "1500",
+      variants: [{ name: "A" }, { name: "B" }],
+    });
+    const uniqueVariant = product.variants.find(
+      (variant) => variant.name === "A",
+    );
+    if (uniqueVariant === undefined) {
+      throw new Error("expected variant A");
+    }
+    const { record } = await seedHostOrdersCreateConfirmation(h, {
+      conversationId: conversation.id,
+      customerId: customer.id,
+      product,
+      variantId: uniqueVariant.variantId,
+    });
+    const beforeOrders = await orderCount();
+    const first = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_CONFIRM_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        challengeId: record.id,
+      },
+    });
+    expect(
+      assistantHostInteractionResultSchema.parse(await first.json()).status,
+    ).toBe("ok");
+    expect(await orderCount()).toBe(beforeOrders + 1);
+    const second = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_CONFIRM_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        challengeId: record.id,
+      },
+    });
+    expect(
+      assistantHostInteractionResultSchema.parse(await second.json()).status,
+    ).toBe("ok");
+    expect(await orderCount()).toBe(beforeOrders + 1);
   });
 
   it("Phase A CoreError on confirm does not complete pending; retry is not ok with null pending", async () => {

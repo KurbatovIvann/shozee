@@ -56,6 +56,7 @@ describe("assistant pending HTTP (SHO-522)", () => {
           summary: "Delete this archived customer.",
           expiresAt: "2026-09-08T12:00:00.000Z",
           toolCallId: "call-delete",
+          approval: { source: "core", challengeId },
         },
       }),
     );

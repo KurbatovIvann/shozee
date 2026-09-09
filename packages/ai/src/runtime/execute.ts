@@ -271,6 +271,10 @@ function wrapDomainExecute(
           const opened = await hooks.openPending(
             confirmationPendingRecord({
               challengeId: confirmation.challengeId,
+              approval: {
+                source: "core",
+                challengeId: confirmation.challengeId,
+              },
               bind: hooks.choiceBind,
               actionName,
               toolCallId,

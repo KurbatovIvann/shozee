@@ -309,6 +309,7 @@ describe("wrapHostSequentialExecute", () => {
         actionName: "customers.deleteCustomer",
         executionId: "exec-staged",
         canonicalInput: { id: customerId },
+        approval: { source: "core", challengeId },
       }),
     ]);
   });

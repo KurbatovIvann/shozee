@@ -85,9 +85,11 @@ last saved tool run, never a second domain write for that
 `execution_id`.
 
 This **keeps** the ADR-0035 store (one pending-interaction record,
-discriminated `kind`, CAS, bind isolation, core hash+GETDEL still
-both required). It **drops** “zero model after execute” as the end of
-the job.
+discriminated `kind`, CAS, bind isolation). Core hash+GETDEL are still
+both required for `approval.source: "core"`. Host confirmation uses
+Redis claim + displayed expiry, only for unique `orders.create` after
+`pending_replace` when `requiresConfirmation` is `false`. It **drops**
+“zero model after execute” as the end of the job.
 
 ### 3. One pending; replace is not matching `actionName`
 

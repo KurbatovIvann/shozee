@@ -264,6 +264,7 @@ export {
 } from "./runtime/loop.js";
 export {
   confirmationPendingRecord,
+  isPendingConfirmationDisplayExpired,
   parsePendingRecord,
   pendingChoiceRecordFromChoiceRecord,
   choiceRecordFromPendingChoice,
@@ -285,6 +286,7 @@ export {
   assistantPendingPeekQuerySchema,
   assistantPendingPeekResultSchema,
   assistantResumeEnvelopeSchema,
+  PENDING_CONFIRMATION_DISPLAY_TTL_MS,
   PENDING_CONFIRMATION_TTL_MS,
   PENDING_CONVERSATION_INDEX_PREFIX,
   PENDING_KINDS,
@@ -294,6 +296,7 @@ export {
   PENDING_REPLACE_TOOL_NAME,
   PENDING_STATUSES,
   pendingBindSchema,
+  pendingConfirmationApprovalSchema,
   pendingInteractionRecordSchema,
   publicPendingSchema,
   type AssistantAbandonBody,
@@ -305,6 +308,7 @@ export {
   type AssistantResumeEnvelope,
   type PendingBind,
   type PendingChoiceRecord,
+  type PendingConfirmationApproval,
   type PendingConfirmationRecord,
   type PendingInteractionRecord,
   type PendingKind,
