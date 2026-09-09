@@ -407,6 +407,31 @@ describe("commitHostConfirmResult", () => {
     expect(appendParts).not.toHaveBeenCalled();
     expect(ignoreChallenge).not.toHaveBeenCalled();
   });
+
+  it("does not ignore the confirmation card on VALIDATION (SHO-545)", () => {
+    const appendParts = vi.fn();
+    const ignoreChallenge = vi.fn();
+    expect(
+      commitHostConfirmResult({
+        result: {
+          status: "error",
+          code: "VALIDATION",
+          message: "Customer must be archived before delete.",
+        },
+        previousChallengeId: challengeA,
+        companyEpochRef: { current: 0 },
+        epoch: 0,
+        resolvingRef: { current: challengeA },
+        appendParts,
+        ignoreChallenge,
+      }),
+    ).toBe("applied");
+    expect(appendParts).not.toHaveBeenCalled();
+    expect(ignoreChallenge).not.toHaveBeenCalled();
+    expect(pendingConfirmationFromMessages(messages, new Set())).toMatchObject({
+      challengeId: challengeA,
+    });
+  });
 });
 
 describe("executeHostConfirmationConfirm", () => {

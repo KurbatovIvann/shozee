@@ -209,6 +209,23 @@ function errorResult(
   return { status: "error", code, message };
 }
 
+/**
+ * Phase A `CoreError` after claim: return the wire error and leave the
+ * pending `claimed`. Same-option claim replay retries; do not complete
+ * or unclaim (SHO-545). Completing would drop the HITL card while a
+ * retryable domain failure is still blocking writes. Reopening `open`
+ * would offer every picker option again (SHO-426).
+ */
+function phaseACoreErrorKeepsPending(
+  error: CoreError,
+  requestId: string,
+): Response {
+  return interactionResponse(
+    errorResult(error.code, error.clientMessage),
+    requestId,
+  );
+}
+
 function staffRequest(options: {
   readonly requestId: string;
   readonly clientIp: string;
@@ -1790,10 +1807,7 @@ export async function executeStaffAssistantHostChoiceResume(
             }
           }
           if (error instanceof CoreError) {
-            return interactionResponse(
-              errorResult(error.code, error.clientMessage),
-              options.requestId,
-            );
+            return phaseACoreErrorKeepsPending(error, options.requestId);
           }
           throw error;
         }
@@ -1990,10 +2004,7 @@ export async function executeStaffAssistantHostConfirm(
             );
           }
           if (error instanceof CoreError) {
-            return interactionResponse(
-              errorResult(error.code, error.clientMessage),
-              options.requestId,
-            );
+            return phaseACoreErrorKeepsPending(error, options.requestId);
           }
           throw error;
         }

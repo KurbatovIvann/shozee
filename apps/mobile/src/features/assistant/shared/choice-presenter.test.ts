@@ -933,6 +933,95 @@ describe("commitChoiceSelectResult", () => {
     ).toMatchObject({ challengeId: choiceId });
     expect(resolvingRef.current).toBe(choiceId);
   });
+
+  it("keeps the card after HTTP 200 VALIDATION so the claimed option can be retried (SHO-545)", () => {
+    const appendParts = vi.fn();
+    const ignoreChallenge = vi.fn();
+    const result = {
+      status: "error" as const,
+      code: "VALIDATION",
+      message: "Duplicate product/variant lines are not allowed.",
+      httpStatus: 200,
+    };
+    expect(classifyChoiceSelect(result)).toBe("retryable");
+    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(false);
+    expect(choiceSelectAllowsSameOptionRetry(result)).toBe(true);
+    expect(
+      commitChoiceSelectResult({
+        result,
+        previousChoiceId: choiceId,
+        locale: "en",
+        companyEpochRef: { current: 0 },
+        epoch: 0,
+        resolvingRef: { current: choiceId },
+        appendParts,
+        ignoreChallenge,
+      }),
+    ).toBe("applied");
+    expect(appendParts).not.toHaveBeenCalled();
+    expect(ignoreChallenge).not.toHaveBeenCalled();
+    const pending = pendingChoiceFromMessages(messages, new Set());
+    expect(pending?.status).toBe("needs_choice");
+    expect(pending?.challengeId).toBe(choiceId);
+    if (pending === null) {
+      throw new Error("expected needs_choice after VALIDATION");
+    }
+    expect(
+      choiceCardOfferedOptions({
+        choice: pending,
+        attempted: { challengeId: choiceId, optionId: lemonId },
+      }).map((option) => option.id),
+    ).toEqual([lemonId]);
+    expect(
+      canSelectChoiceOption({
+        pending,
+        optionId: lemonId,
+        attempted: { challengeId: choiceId, optionId: lemonId },
+      }),
+    ).toBe(true);
+    expect(
+      canSelectChoiceOption({
+        pending,
+        optionId: vanillaId,
+        attempted: { challengeId: choiceId, optionId: lemonId },
+      }),
+    ).toBe(false);
+    expect(choiceCardState({ pending, resolvingChallengeId: null })).toEqual({
+      kind: "proposed",
+      choice: pending,
+    });
+  });
+
+  it("keeps the card after HTTP 200 NOT_FOUND so the claimed option can be retried (SHO-545)", () => {
+    const appendParts = vi.fn();
+    const ignoreChallenge = vi.fn();
+    const result = {
+      status: "error" as const,
+      code: "NOT_FOUND",
+      message: "Product not found.",
+      httpStatus: 200,
+    };
+    expect(classifyChoiceSelect(result)).toBe("retryable");
+    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(false);
+    expect(choiceSelectAllowsSameOptionRetry(result)).toBe(true);
+    expect(
+      commitChoiceSelectResult({
+        result,
+        previousChoiceId: choiceId,
+        locale: "en",
+        companyEpochRef: { current: 0 },
+        epoch: 0,
+        resolvingRef: { current: choiceId },
+        appendParts,
+        ignoreChallenge,
+      }),
+    ).toBe("applied");
+    expect(appendParts).not.toHaveBeenCalled();
+    expect(ignoreChallenge).not.toHaveBeenCalled();
+    expect(pendingChoiceFromMessages(messages, new Set())?.challengeId).toBe(
+      choiceId,
+    );
+  });
 });
 
 describe("choice select recoverability", () => {

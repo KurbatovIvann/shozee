@@ -298,6 +298,44 @@ describe("postAssistantChoice", () => {
     expect(choiceSelectAllowsSameOptionRetry(result)).toBe(false);
   });
 
+  it("keeps HTTP 200 VALIDATION retryable so the client cannot hide a claimed pending (SHO-545)", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, {
+        status: "error",
+        code: "VALIDATION",
+        message: "Duplicate product/variant lines are not allowed.",
+      }),
+    );
+    const result = await postAssistantChoice(postArgs());
+    expect(result).toMatchObject({
+      status: "error",
+      code: "VALIDATION",
+      httpStatus: 200,
+      recoverability: "retryable",
+    });
+    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(false);
+    expect(choiceSelectAllowsSameOptionRetry(result)).toBe(true);
+  });
+
+  it("keeps HTTP 200 NOT_FOUND retryable so the client cannot hide a claimed pending (SHO-545)", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, {
+        status: "error",
+        code: "NOT_FOUND",
+        message: "Product not found.",
+      }),
+    );
+    const result = await postAssistantChoice(postArgs());
+    expect(result).toMatchObject({
+      status: "error",
+      code: "NOT_FOUND",
+      httpStatus: 200,
+      recoverability: "retryable",
+    });
+    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(false);
+    expect(choiceSelectAllowsSameOptionRetry(result)).toBe(true);
+  });
+
   it("does not copy confirmation challenge tokens into the typed result", async () => {
     const challengeId = "secret-confirmation-challenge-token";
     fetchMock.mockResolvedValue(

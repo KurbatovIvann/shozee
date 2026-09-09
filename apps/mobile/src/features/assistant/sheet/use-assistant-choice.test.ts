@@ -325,6 +325,81 @@ describe("useAssistantChoice attempted-option recovery (SHO-452)", () => {
   });
 });
 
+describe("useAssistantChoice Phase A keep-pending (SHO-545)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("does not hide the picker after VALIDATION and only retries the claimed option", async () => {
+    const postChoice = vi.fn(() =>
+      Promise.resolve({
+        status: "error",
+        code: "VALIDATION",
+        message: "Duplicate product/variant lines are not allowed.",
+        httpStatus: 200,
+      }),
+    );
+    const appendParts = vi.fn();
+    const mounted = mount({ postChoice, appendParts });
+    act(() => {
+      mounted.latest().select(lemonId);
+    });
+    await flush();
+    expect(postChoice).toHaveBeenCalledOnce();
+    expect(mounted.latest().ignoredChallengeIds.has(choiceId)).toBe(false);
+    expect(mounted.latest().card.kind).toBe("proposed");
+    expect(mounted.latest().attempted).toEqual({
+      challengeId: choiceId,
+      optionId: lemonId,
+    });
+    expect(appendParts).not.toHaveBeenCalled();
+    const pending = mounted.latest().pending;
+    if (pending === null) {
+      throw new Error("expected ChoiceCard after VALIDATION");
+    }
+    expect(
+      choiceCardOfferedOptions({
+        choice: pending,
+        attempted: mounted.latest().attempted,
+      }).map((option) => option.id),
+    ).toEqual([lemonId]);
+    act(() => {
+      mounted.latest().select(vanillaId);
+    });
+    await flush();
+    expect(postChoice).toHaveBeenCalledOnce();
+    act(() => {
+      mounted.latest().select(lemonId);
+    });
+    await flush();
+    expect(postChoice).toHaveBeenCalledTimes(2);
+    expect(postChoice).toHaveBeenNthCalledWith(2, {
+      choiceId,
+      optionId: lemonId,
+    });
+    mounted.unmount();
+  });
+
+  it("does not hide the picker after NOT_FOUND", async () => {
+    const postChoice = vi.fn(() =>
+      Promise.resolve({
+        status: "error",
+        code: "NOT_FOUND",
+        message: "Product not found.",
+        httpStatus: 200,
+      }),
+    );
+    const mounted = mount({ postChoice });
+    act(() => {
+      mounted.latest().select(lemonId);
+    });
+    await flush();
+    expect(mounted.latest().ignoredChallengeIds.has(choiceId)).toBe(false);
+    expect(mounted.latest().card.kind).toBe("proposed");
+    mounted.unmount();
+  });
+});
+
 describe("useAssistantChoice dismiss (SHO-524)", () => {
   afterEach(() => {
     vi.restoreAllMocks();

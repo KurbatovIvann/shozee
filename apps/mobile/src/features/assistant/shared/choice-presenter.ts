@@ -95,10 +95,16 @@ const TERMINAL_INTERACTION_CODES = new Set([
 const TERMINAL_WIRE_CODES = new Set([
   "UNAUTHENTICATED",
   "PERMISSION_DENIED",
-  "NOT_FOUND",
-  "VALIDATION",
   "IDEMPOTENCY_CONFLICT",
 ]);
+
+/**
+ * Phase A domain failures that leave Redis pending `claimed` / `open`.
+ * Hiding the ChoiceCard here is the forbidden pair (SHO-545): no card,
+ * writes still blocked. Same-option retry / claimed-recovery stays up.
+ * Do not fold these into transport `RETRYABLE_WIRE_CODES`.
+ */
+const PHASE_A_KEEP_PENDING_CODES = new Set(["VALIDATION", "NOT_FOUND"]);
 
 const RETRYABLE_WIRE_CODES = new Set([
   "RETRY_IN_PROGRESS",
@@ -164,7 +170,8 @@ function interactionErrorIsValid(result: ChoiceSelectResult): boolean {
 /**
  * Classify a choice POST outcome from real server codes and HTTP status.
  * HTTP 200 interaction errors with a validated code/message are
- * terminal domain completions. 409 is retryable only for
+ * terminal domain completions **except** Phase A `VALIDATION` /
+ * `NOT_FOUND`, which leave pending claimed. 409 is retryable only for
  * `RETRY_IN_PROGRESS`, not every conflict.
  */
 export function deriveChoiceSelectRecoverability(
@@ -184,6 +191,9 @@ export function deriveChoiceSelectRecoverability(
   }
   if (typeof result.code === "string") {
     if (RETRYABLE_WIRE_CODES.has(result.code)) {
+      return "retryable";
+    }
+    if (PHASE_A_KEEP_PENDING_CODES.has(result.code)) {
       return "retryable";
     }
     if (
