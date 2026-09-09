@@ -68,5 +68,15 @@ export type ChatDocument = z.output<typeof chatDocumentSchema>;
  * makes "next page of the list" an update rather than a new entity.
  */
 export type DocumentWrite =
-  | { readonly kind: "append"; readonly messageId: string; readonly parts: readonly DocumentPart[] }
-  | { readonly kind: "replace_card"; readonly messageId: string; readonly part: Extract<DocumentPart, { kind: "surface" }> };
+  | {
+      readonly kind: "append";
+      readonly messageId: string;
+      /** Needed because append may be the write that creates the message. */
+      readonly role: DocumentMessage["role"];
+      readonly parts: readonly DocumentPart[];
+    }
+  | {
+      readonly kind: "replace_card";
+      readonly messageId: string;
+      readonly part: Extract<DocumentPart, { kind: "surface" }>;
+    };

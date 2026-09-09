@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Server-only pause/resume protocol for a tool-calling model that must ask a human before a write, plus the stored chat document. Extends AI SDK 7; owns no domain, no HTTP, no storage, no UI.",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./testing": "./src/testing.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

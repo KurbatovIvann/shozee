@@ -86,5 +86,15 @@ export interface AssistantKit {
   };
 }
 
-/** Wired by the consumer in its composition root. */
-export declare function createAssistantKit(deps: KitDeps): AssistantKit;
+/**
+ * Wired by the consumer in its composition root.
+ *
+ * Unimplemented on purpose: `SCENARIOS.md` is written against this signature
+ * first, so the suite is red before any behaviour exists. This throw is the
+ * seam, not a protocol error — kit operations return variants, they do not
+ * throw.
+ */
+export function createAssistantKit(deps: KitDeps): AssistantKit {
+  void deps;
+  throw new Error("assistant-kit: createAssistantKit is not implemented yet");
+}

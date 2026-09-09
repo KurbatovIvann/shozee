@@ -65,8 +65,9 @@ export type {
   PauseStore,
 } from "./ports.js";
 
-export type {
-  AssistantKit,
-  OpenPauseInput,
-  OpenPauseResult,
+export {
+  createAssistantKit,
+  type AssistantKit,
+  type OpenPauseInput,
+  type OpenPauseResult,
 } from "./kit.js";
