@@ -71,9 +71,7 @@ export async function runOrdersSearchMatches(args: {
   readonly customerIds: readonly string[] | undefined;
 }): Promise<OrdersSearchMatchesResult> {
   const hits = sortHits(
-    dedupSearchHits(
-      (await fetchOrderRows(args)).map((row) => toOrderHit(row)),
-    ),
+    dedupSearchHits((await fetchOrderRows(args)).map((row) => toOrderHit(row))),
   );
   const group = toDisplayGroup(hits, args.limitPerType);
   return { groups: group === undefined ? [] : [group] };
