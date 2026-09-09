@@ -58,7 +58,11 @@ export interface UseAssistantConversation {
   readonly interaction: AssistantInteraction | null;
   readonly busy: boolean;
   readonly failure: AssistantKitFailure | null;
-  readonly send: (text: string) => void;
+  /**
+   * Resolves to `null` when the turn ran, and to the reason when it did not — so
+   * a caller holding the draft knows whether to put the text back in the field.
+   */
+  readonly send: (text: string) => Promise<AssistantKitFailure | null>;
   /** Answer the open question. The shape belongs to its kind. */
   readonly answer: (answer: unknown) => void;
   /** Drop the open question without answering it. */
@@ -119,11 +123,12 @@ export function useAssistantConversation(args: {
         call: AssistantKitCall,
         conversationId: string,
       ) => Promise<AssistantKitOutcome>,
-    ) => {
+    ): Promise<AssistantKitFailure | null> => {
       const call = callRef.current;
       const conversationId = conversationIdRef.current;
       if (call === null || conversationId === null || busyRef.current) {
-        return;
+        // Nothing was attempted. `aborted` is the reason a caller can act on.
+        return Promise.resolve({ kind: "aborted" });
       }
       const epoch = epochRef.current;
       ticketRef.current += 1;
@@ -136,20 +141,22 @@ export function useAssistantConversation(args: {
 
       busyRef.current = true;
       setBusy(true);
-      void perform(call, conversationId)
-        .then((outcome) => {
+      return perform(call, conversationId)
+        .then((outcome): AssistantKitFailure | null => {
           if (!current()) {
-            return;
+            return outcome.failure;
           }
           if (outcome.document !== null) {
             setDocument(outcome.document);
           }
           setFailure(outcome.failure);
+          return outcome.failure;
         })
-        .catch(() => {
+        .catch((): AssistantKitFailure => {
           if (current()) {
             setFailure({ kind: "unreachable" });
           }
+          return { kind: "unreachable" };
         })
         .finally(() => {
           // Unlatch only if this is still the request in flight. Whether its
@@ -164,7 +171,7 @@ export function useAssistantConversation(args: {
   );
 
   const reload = useCallback(() => {
-    run((call, conversationId) =>
+    void run((call, conversationId) =>
       getAssistantKitDocument({ ...call, conversationId }),
     );
   }, [run]);
@@ -173,10 +180,10 @@ export function useAssistantConversation(args: {
     (text: string) => {
       const clipped = clipAssistantKitText(text);
       if (clipped.length === 0) {
-        return;
+        return Promise.resolve<AssistantKitFailure>({ kind: "aborted" });
       }
       const commandId = newIdRef.current();
-      run((call, conversationId) =>
+      return run((call, conversationId) =>
         postAssistantKitChat({
           ...call,
           conversationId,
@@ -200,7 +207,7 @@ export function useAssistantConversation(args: {
         return;
       }
       const commandId = newIdRef.current();
-      run((call, conversationId) =>
+      void run((call, conversationId) =>
         postAssistantKitAnswer({
           ...call,
           conversationId,
@@ -219,7 +226,7 @@ export function useAssistantConversation(args: {
     if (open === null) {
       return;
     }
-    run((call, conversationId) =>
+    void run((call, conversationId) =>
       postAssistantKitAbandon({
         ...call,
         conversationId,

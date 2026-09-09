@@ -150,14 +150,16 @@ const envObjectSchema = z.object({
    * the per-user turn check (SHO-505). Default 20 turns / 60s / user.
    */
   /**
-   * Mounts the parallel `assistant-kit` routes (`/assistant/kit/*`). Off by
-   * default; the live assistant is unaffected either way. Present so the new
-   * path can be exercised by hand on real data before anything is switched
-   * over.
+   * Mounts the `assistant-kit` routes (`/assistant/kit/*`).
+   *
+   * **On by default since the mobile app was switched to them.** With it off the
+   * routes do not exist and the app's assistant sheet cannot load a conversation
+   * — the flag is now a way to take the assistant down, not a way to keep the
+   * previous one serving. `/assistant/chat` still exists but nothing calls it.
    */
   AI_ASSISTANT_KIT: z
     .enum(["0", "1"])
-    .default("0")
+    .default("1")
     .transform((value) => value === "1"),
   AI_CHAT_TURNS_PER_MINUTE_PER_USER: z.coerce.number().int().min(0).default(20),
   /**

@@ -766,10 +766,6 @@ describe("hide-without-abandon is not the host card path", () => {
 
 describe("live sheet calls host HTTP (SHO-524)", () => {
   it("POSTs confirm/abandon and GETs pending from production hooks", () => {
-    const sheet = readFileSync(
-      new URL("../sheet/use-assistant-sheet.ts", import.meta.url),
-      "utf8",
-    );
     const chat = readFileSync(
       new URL("../sheet/use-assistant-chat.ts", import.meta.url),
       "utf8",
@@ -795,9 +791,8 @@ describe("live sheet calls host HTTP (SHO-524)", () => {
     expect(confirmation).toContain("executeConfirmationAbandon");
     expect(confirmation).not.toContain("executeConfirmationConfirm(");
     expect(choice).toContain("executeChoiceAbandon");
-    expect(sheet).toContain("choice.dismiss");
-    expect(sheet).toContain("confirmation.dismiss");
-    expect(sheet).toContain("dismissPendingCard");
-    expect(sheet).toContain("companyEpochRef: chat.companyEpochRef");
+    // The sheet used to be asserted here too. It no longer wires these hooks —
+    // it reads the stored document instead (`document/`), and this file plus the
+    // three hooks above are what the next step deletes.
   });
 });

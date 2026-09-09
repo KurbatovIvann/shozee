@@ -12,8 +12,7 @@ import { StyleSheet, useUnistyles } from "react-native-unistyles";
 
 import { AppHeader, Banner, EmptyState } from "../../../components/ui";
 import type { AssistantCopy } from "../../../i18n/assistant";
-import type { AssistantVisibleRow } from "../shared/chat-rows";
-import type { ChoiceAttemptedOption } from "../shared/choice-presenter";
+import type { AssistantDocumentRow } from "../document/document-rows";
 import {
   assistantShozikPose,
   SHOZIK_EMPTY_POSE_SIZE,
@@ -23,31 +22,35 @@ import { AssistantComposer } from "./assistant-composer";
 import { AssistantMessageRow } from "./assistant-message-row";
 import { ShozikPoseMark } from "./shozik-pose-mark";
 
+/**
+ * One `busy` flag replaces `confirmationApplying`, `choiceApplying` and
+ * `hasInFlightTools`. The stored document holds only settled messages, so there
+ * is no per-row in-flight state to show; and only one request can run at a time,
+ * so there is no per-card one either.
+ *
+ * `answer` replaces `confirm` and `selectChoice`. What a valid answer looks like
+ * belongs to the question's kind, not to the screen.
+ */
 export type AssistantSheetViewModel = {
   readonly copy: AssistantCopy;
-  readonly rows: readonly AssistantVisibleRow[];
+  readonly rows: readonly AssistantDocumentRow[];
   readonly input: string;
   readonly changeInput: (value: string) => void;
   readonly send: () => void;
-  readonly confirm: () => void;
+  readonly answer: (answer: unknown) => void;
   readonly dismiss: () => void;
-  readonly selectChoice: (optionId: string) => void;
   readonly openHref: (href: string) => void;
   readonly busy: boolean;
   readonly thinking: boolean;
-  readonly hasInFlightTools: boolean;
-  readonly confirmationApplying: boolean;
-  readonly choiceApplying: boolean;
-  readonly choiceAttempted: ChoiceAttemptedOption | null;
   readonly canSend: boolean;
   readonly banner: string | null;
 };
 
-function keyExtractor(item: AssistantVisibleRow): string {
+function keyExtractor(item: AssistantDocumentRow): string {
   return item.id;
 }
 
-function itemType(item: AssistantVisibleRow): string {
+function itemType(item: AssistantDocumentRow): string {
   if (item.role === "user") {
     return "user";
   }
@@ -57,20 +60,17 @@ function itemType(item: AssistantVisibleRow): string {
   if (item.surfaces.length > 0) {
     return "assistant-cards";
   }
-  if (item.confirmation !== null) {
-    return "assistant-confirm";
-  }
-  if (item.choice !== null) {
-    return "assistant-choice";
+  if (item.interaction !== null) {
+    return "assistant-question";
   }
   return "assistant";
 }
 
 export function AssistantSheetView(model: AssistantSheetViewModel) {
   const { copy } = model;
-  const listRef = useRef<FlashListRef<AssistantVisibleRow>>(null);
+  const listRef = useRef<FlashListRef<AssistantDocumentRow>>(null);
 
-  const renderItem: ListRenderItem<AssistantVisibleRow> = useCallback(
+  const renderItem: ListRenderItem<AssistantDocumentRow> = useCallback(
     ({ item }) => (
       <AssistantMessageRow
         role={item.role}
@@ -81,70 +81,18 @@ export function AssistantSheetView(model: AssistantSheetViewModel) {
         waitLabel={copy.waitLabel}
         surfaces={item.surfaces}
         onOpenHref={model.openHref}
-        confirmationSummary={
-          item.confirmation === null ? null : item.confirmation.summary
-        }
-        confirmationTitle={copy.confirmationTitle}
-        confirmLabel={copy.confirmLabel}
-        dismissLabel={copy.dismissLabel}
-        confirmingLabel={copy.confirmingLabel}
-        confirmationApplying={model.confirmationApplying}
-        onConfirm={model.confirm}
+        interaction={item.interaction}
+        applying={model.busy}
+        interactionCopy={copy}
+        onAnswer={model.answer}
         onDismiss={model.dismiss}
-        choice={item.choice}
-        choiceTitle={
-          item.choice?.productName !== undefined &&
-          item.choice.productName.length > 0
-            ? item.choice.productName
-            : copy.choiceTitle
-        }
-        choiceTruncatedLabel={
-          item.choice?.status === "needs_choice" && item.choice.optionsTruncated
-            ? item.choice.choiceKind === "product" ||
-              item.choice.choiceKind === "customer"
-              ? copy.choiceTruncatedMatch
-              : copy.choiceTruncated
-            : null
-        }
-        choiceExpiredLabel={copy.choiceExpired}
-        choiceClaimedLabel={copy.choiceClaimed}
-        choiceRetryLabel={copy.choiceRetry}
-        choiceSelectingLabel={copy.choiceSelecting}
-        choiceApplying={model.choiceApplying}
-        choiceAttempted={model.choiceAttempted}
-        onSelectChoice={model.selectChoice}
       />
     ),
-    [
-      copy.choiceClaimed,
-      copy.choiceExpired,
-      copy.choiceRetry,
-      copy.choiceSelecting,
-      copy.choiceTitle,
-      copy.choiceTruncated,
-      copy.choiceTruncatedMatch,
-      copy.confirmLabel,
-      copy.confirmationTitle,
-      copy.confirmingLabel,
-      copy.dismissLabel,
-      copy.waitIntervalMs,
-      copy.waitLabel,
-      copy.waitLines,
-      model.choiceApplying,
-      model.choiceAttempted,
-      model.confirm,
-      model.confirmationApplying,
-      model.dismiss,
-      model.openHref,
-      model.selectChoice,
-    ],
+    [copy, model.answer, model.busy, model.dismiss, model.openHref],
   );
 
   const showEmpty = model.rows.length === 0 && !model.thinking;
-  const headerPose = assistantShozikPose({
-    thinking: model.thinking,
-    hasInFlightTools: model.hasInFlightTools,
-  });
+  const headerPose = assistantShozikPose({ thinking: model.thinking });
 
   return (
     <SafeAreaView

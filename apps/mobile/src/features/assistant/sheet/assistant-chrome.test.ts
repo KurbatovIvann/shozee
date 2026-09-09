@@ -47,22 +47,9 @@ const entityCard = readFileSync(
 );
 
 describe("assistantShozikPose", () => {
-  it("sits when idle", () => {
-    expect(
-      assistantShozikPose({ thinking: false, hasInFlightTools: false }),
-    ).toBe("sit");
-  });
-
-  it("digs while thinking or tools are in flight", () => {
-    expect(
-      assistantShozikPose({ thinking: true, hasInFlightTools: false }),
-    ).toBe("dig");
-    expect(
-      assistantShozikPose({ thinking: false, hasInFlightTools: true }),
-    ).toBe("dig");
-    expect(
-      assistantShozikPose({ thinking: true, hasInFlightTools: true }),
-    ).toBe("dig");
+  it("sits when idle and digs while a request is in flight", () => {
+    expect(assistantShozikPose({ thinking: false })).toBe("sit");
+    expect(assistantShozikPose({ thinking: true })).toBe("dig");
   });
 });
 
@@ -158,12 +145,20 @@ describe("assistant wait-state chrome (SHO-394)", () => {
     expect(waitLine).not.toContain("ActivityIndicator");
   });
 
-  it("gates wait on current-turn HITL from mapped rows, not thread-wide pending", () => {
+  /**
+   * There is no wait-gating question left to answer. The stored document holds
+   * only settled messages, so the wait row is appended while a request is in
+   * flight and hides nothing — the old path had to suppress a half-streamed
+   * assistant message, and decide whether an open HITL card counted as "still
+   * working".
+   */
+  it("takes the wait row from the document reader, not from thread-wide pending", () => {
     const hook = readFileSync(
       new URL("./use-assistant-sheet.ts", import.meta.url),
       "utf8",
     );
-    expect(hook).toContain("rows: mappedRows");
-    expect(hook.includes("confirmation: pendingConfirmation")).toBe(false);
+    expect(hook).toContain("rows: conversation.rows");
+    expect(hook.includes("assistantTurnIsWaiting")).toBe(false);
+    expect(hook.includes("pendingConfirmation")).toBe(false);
   });
 });

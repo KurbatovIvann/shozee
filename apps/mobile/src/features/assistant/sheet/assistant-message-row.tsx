@@ -6,16 +6,13 @@ import {
   assistantTurnColumnLayout,
   assistantTurnResultStretch,
 } from "../shared/assistant-turn-layout";
-import type {
-  ChoiceAttemptedOption,
-  PendingChoice,
-} from "../shared/choice-presenter";
+import type { AssistantInteraction } from "@showzy/validation/assistant-chat";
+
 import { assistantSurfaceKey, type AssistantSurface } from "../surfaces";
 import { AssistantMarkdownView } from "./assistant-markdown-view";
 import { AssistantSurfaceCard } from "./assistant-surface-card";
 import { AssistantWaitLine } from "./assistant-wait-line";
-import { ChoiceCard } from "./choice-card";
-import { ConfirmationCard } from "./confirmation-card";
+import { InteractionCard, type InteractionCardCopy } from "./interaction-card";
 
 export const AssistantMessageRow = memo(function AssistantMessageRow(props: {
   readonly role: "user" | "assistant";
@@ -26,28 +23,15 @@ export const AssistantMessageRow = memo(function AssistantMessageRow(props: {
   readonly waitLabel: string;
   readonly surfaces: readonly AssistantSurface[];
   readonly onOpenHref: (href: string) => void;
-  readonly confirmationSummary: string | null;
-  readonly confirmationTitle: string;
-  readonly confirmLabel: string;
-  readonly dismissLabel: string;
-  readonly confirmingLabel: string;
-  readonly confirmationApplying: boolean;
-  readonly onConfirm: () => void;
+  /** Present only while it is answerable. There is no closed-question card. */
+  readonly interaction: AssistantInteraction | null;
+  readonly applying: boolean;
+  readonly interactionCopy: InteractionCardCopy;
+  readonly onAnswer: (answer: unknown) => void;
   readonly onDismiss: () => void;
-  readonly choice: PendingChoice | null;
-  readonly choiceTitle: string;
-  readonly choiceTruncatedLabel: string | null;
-  readonly choiceExpiredLabel: string;
-  readonly choiceClaimedLabel: string;
-  readonly choiceRetryLabel: string;
-  readonly choiceSelectingLabel: string;
-  readonly choiceApplying: boolean;
-  readonly choiceAttempted: ChoiceAttemptedOption | null;
-  readonly onSelectChoice: (optionId: string) => void;
 }) {
   const isUser = props.role === "user";
-  const confirmationSummary = props.confirmationSummary;
-  const choice = props.choice;
+  const interaction = props.interaction;
 
   return (
     <View style={isUser ? styles.userWrap : styles.assistantWrap}>
@@ -80,34 +64,13 @@ export const AssistantMessageRow = memo(function AssistantMessageRow(props: {
             </AssistantTurnResult>
           ))
         : null}
-      {!props.waiting && confirmationSummary !== null ? (
+      {!props.waiting && interaction !== null ? (
         <AssistantTurnResult>
-          <ConfirmationCard
-            title={props.confirmationTitle}
-            summary={confirmationSummary}
-            confirmLabel={props.confirmLabel}
-            dismissLabel={props.dismissLabel}
-            confirmingLabel={props.confirmingLabel}
-            applying={props.confirmationApplying}
-            onConfirm={props.onConfirm}
-            onDismiss={props.onDismiss}
-          />
-        </AssistantTurnResult>
-      ) : null}
-      {!props.waiting && choice !== null ? (
-        <AssistantTurnResult>
-          <ChoiceCard
-            title={props.choiceTitle}
-            truncatedLabel={props.choiceTruncatedLabel}
-            expiredLabel={props.choiceExpiredLabel}
-            claimedLabel={props.choiceClaimedLabel}
-            retryLabel={props.choiceRetryLabel}
-            selectingLabel={props.choiceSelectingLabel}
-            dismissLabel={props.dismissLabel}
-            applying={props.choiceApplying}
-            choice={choice}
-            attempted={props.choiceAttempted}
-            onSelect={props.onSelectChoice}
+          <InteractionCard
+            interaction={interaction}
+            applying={props.applying}
+            copy={props.interactionCopy}
+            onAnswer={props.onAnswer}
             onDismiss={props.onDismiss}
           />
         </AssistantTurnResult>

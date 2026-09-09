@@ -299,7 +299,7 @@ describe("useAssistantConversation", () => {
 
     act(() => {
       view.latest().answer({ optionId: "opt-b" });
-      view.latest().send("щось інше");
+      void view.latest().send("щось інше");
       view.latest().dismiss();
     });
     await flush();
@@ -340,7 +340,7 @@ describe("useAssistantConversation", () => {
 
     fetchMock.mockRejectedValueOnce(new Error("offline"));
     act(() => {
-      view.latest().send("ще одне");
+      void view.latest().send("ще одне");
     });
     await flush();
 
@@ -362,7 +362,7 @@ describe("useAssistantConversation", () => {
         }),
     );
     act(() => {
-      view.latest().send("ще одне");
+      void view.latest().send("ще одне");
     });
     await flush();
 
@@ -390,7 +390,7 @@ describe("useAssistantConversation", () => {
 
     hang();
     act(() => {
-      view.latest().send("ще одне");
+      void view.latest().send("ще одне");
     });
     await flush();
 
@@ -405,7 +405,7 @@ describe("useAssistantConversation", () => {
     await flush();
 
     act(() => {
-      view.latest().send("   ");
+      void view.latest().send("   ");
     });
     await flush();
 

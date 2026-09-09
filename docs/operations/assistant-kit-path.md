@@ -1,23 +1,26 @@
-# Running the assistant-kit path by hand
+# The assistant-kit path
 
-The `assistant-kit` routes sit beside the live assistant. They are off unless
-`AI_ASSISTANT_KIT=1`, use their own Redis key prefix (`kit:`), and share nothing
-with the pending store the live assistant uses. Turning them on changes nothing
-about `/assistant/chat`.
+**No longer dark.** The mobile assistant sheet talks to these routes, and
+`AI_ASSISTANT_KIT` now defaults to `1`. They use their own Redis key prefix
+(`kit:`) and share nothing with the pending store the previous assistant used.
 
-This exists because the previous rewrite passed CI and still behaved worse on a
-phone. A protocol with 78 green tests and no minutes of real use is not yet
-known to work.
+`/assistant/chat` still exists and still works, but nothing calls it. The flag is
+now a way to take the assistant **down**, not a way to keep the previous one
+serving: with it off the routes do not exist and the sheet cannot load a
+conversation.
 
-## Turning it on
+This document exists because the previous rewrite passed CI and still behaved
+worse on a phone. A protocol with green tests and no minutes of real use is not
+yet known to work — so exercising these routes by hand stays worth doing.
+
+## Turning it off
 
 ```
-AI_ASSISTANT_KIT=1
+AI_ASSISTANT_KIT=0
 ```
 
-Boot mounts it only when a provider is also configured — there is nothing to
-exercise without one. With the flag off, `createApp` never sees the option and
-the routes do not exist.
+Boot mounts the routes only when a provider is also configured — there is nothing
+to exercise without one.
 
 Boot says which of those happened, so it is never a guess:
 
@@ -30,14 +33,18 @@ Boot says which of those happened, so it is never a guess:
 `enabled:true, mounted:false` means the flag is on but no language model was
 configured.
 
-## Nothing calls these routes on its own
+## What the phone does now
 
-The mobile app still talks to `/assistant/chat`. Turning the flag on does not
-change what the phone does, and it never will until the client is pointed here.
-Until then the only way this path runs is if you call it.
+The sheet resolves its conversation through the existing
+`assistant.createConversation` / `listConversations` pair — one row per person per
+company, found again by listing — and then does nothing but read this path's
+document and post answers to it. It mints no parts of its own and holds no memory
+of which questions it has already dealt with; a source test
+(`sheet/use-assistant-sheet.seam.test.ts`) fails if an import from the previous
+client sneaks back in.
 
-That is the point of the flag: the two runtimes sit side by side on the same
-data, and the old one keeps serving.
+The previous hooks, presenters and HTTP clients are still on disk, unreferenced.
+Deleting them is the next step.
 
 ## The four routes
 
@@ -139,14 +146,11 @@ What to watch for, because these are the failures the old path had:
   real key.
 - **Durable model history.** It lives in Redis with a ttl, so a conversation that
   sits long enough starts over. One port to replace; not a protocol question.
-- **The mobile client.** The reader and the hook exist
-  (`apps/mobile/src/features/assistant/document/`) and are tested, but no screen
-  is wired to them yet — the app still talks to `/assistant/chat`. Use an HTTP
-  client to exercise this path.
-- **Confirmations.** The kind is registered and the client can answer one, but
-  nothing on the server opens a confirmation yet, so only `choice` occurs in
-  practice.
-- **Streaming.** Responses are whole JSON.
+- **Confirmations.** The kind is registered, the server can store one and the
+  sheet can render and answer it, but nothing on the server *opens* one yet — only
+  `choice` occurs in practice, from a catalog picker conflict.
+- **Streaming.** Responses are whole JSON, so the sheet shows a wait row rather
+  than text appearing as it is generated.
 
 ## Reading the state directly
 
