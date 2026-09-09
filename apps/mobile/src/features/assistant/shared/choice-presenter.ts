@@ -95,8 +95,6 @@ const TERMINAL_INTERACTION_CODES = new Set([
 const TERMINAL_WIRE_CODES = new Set([
   "UNAUTHENTICATED",
   "PERMISSION_DENIED",
-  "NOT_FOUND",
-  "VALIDATION",
   "IDEMPOTENCY_CONFLICT",
 ]);
 
@@ -162,9 +160,48 @@ function interactionErrorIsValid(result: ChoiceSelectResult): boolean {
 }
 
 /**
+ * Host `POST /assistant/choice` domain errors are HTTP 200
+ * `{ status: "error", code }`. Phase A CoreError after claim uses this
+ * shape and leaves Redis `claimed`. Wire HTTP 400/404 VALIDATION /
+ * NOT_FOUND must not keep a ghost picker (SHO-545).
+ */
+function keepsPendingVisibleOnDomainError(result: ChoiceSelectResult): boolean {
+  if (result.status !== "error") {
+    return false;
+  }
+  if (typeof result.code !== "string" || result.code.length === 0) {
+    return false;
+  }
+  if (result.httpStatus === 200) {
+    return true;
+  }
+  return (
+    result.httpStatus === undefined && !TERMINAL_WIRE_CODES.has(result.code)
+  );
+}
+
+/**
+ * Hide the old picker only when the envelope proves the record is gone
+ * or a successor picker replaced it. Bare `{ status: "error" }` after
+ * claim is not enough (SHO-545).
+ */
+function choiceSelectEnvelopeRetiresChallenge(
+  result: ChoiceSelectResult,
+): boolean {
+  if (result.status === "expired") {
+    return true;
+  }
+  if (result.status === "needs_choice") {
+    return needsChoiceInteractionIsValid(result);
+  }
+  return result.envelope?.pending === null;
+}
+
+/**
  * Classify a choice POST outcome from real server codes and HTTP status.
- * HTTP 200 interaction errors with a validated code/message are
- * terminal domain completions. 409 is retryable only for
+ * HTTP 200 `{ status: "error" }` after claim leaves pending claimed —
+ * same-option retry, not a terminal hide. Outer-wire 401/403/404 before
+ * claim may still be terminal. 409 is retryable only for
  * `RETRY_IN_PROGRESS`, not every conflict.
  */
 export function deriveChoiceSelectRecoverability(
@@ -186,15 +223,15 @@ export function deriveChoiceSelectRecoverability(
     if (RETRYABLE_WIRE_CODES.has(result.code)) {
       return "retryable";
     }
-    if (
-      TERMINAL_INTERACTION_CODES.has(result.code) ||
-      TERMINAL_WIRE_CODES.has(result.code)
-    ) {
+    if (keepsPendingVisibleOnDomainError(result)) {
+      return "retryable";
+    }
+    if (TERMINAL_WIRE_CODES.has(result.code)) {
       return "terminal";
     }
   }
   if (interactionErrorIsValid(result)) {
-    return "terminal";
+    return "retryable";
   }
   if (typeof result.httpStatus === "number") {
     const fromHttp = httpStatusRecoverability(result.httpStatus);
@@ -325,6 +362,26 @@ export function choiceCardRetryOptionId(args: {
  * Tappable picker options. After an uncertain POST of A, B is not
  * offered while the remembered attempt still matches this challenge.
  */
+/**
+ * Dismiss stays on the retry/claimed card so a keep-pending Phase A
+ * error is not Redis-TTL-only. Abandon is still
+ * `POST /assistant/pending/abandon`. Expired copy has nothing to abandon.
+ */
+export function choiceCardShowsDismiss(args: {
+  readonly choice: StaffAssistantChoiceCardEnvelope;
+  readonly applying: boolean;
+}): boolean {
+  if (args.applying) {
+    return false;
+  }
+  if (args.choice.status === "expired") {
+    return false;
+  }
+  return (
+    args.choice.status === "needs_choice" || args.choice.status === "claimed"
+  );
+}
+
 export function choiceCardOfferedOptions(args: {
   readonly choice: StaffAssistantChoiceCardEnvelope;
   readonly attempted?: ChoiceAttemptedOption | null;
@@ -474,6 +531,15 @@ export function choiceSelectRememberedAttempt(args: {
   if (args.result === "skipped") {
     return args.previous;
   }
+  // Bare option-conflict after a keep-pending claim is not a successor.
+  // Do not lock retry to the conflicting tap (B) while Redis still has A.
+  if (
+    typeof args.result.code === "string" &&
+    TERMINAL_INTERACTION_CODES.has(args.result.code) &&
+    !choiceSelectShouldIgnoreChallenge(args.result)
+  ) {
+    return args.previous;
+  }
   if (!choiceSelectAllowsSameOptionRetry(args.result)) {
     return null;
   }
@@ -483,10 +549,45 @@ export function choiceSelectRememberedAttempt(args: {
   };
 }
 
+/**
+ * Hide the picker only when the host proves the old record is gone
+ * (expired / `pending: null`), a successor `needs_choice` opened, a
+ * completed resume landed, or outer-wire 401/403/404 happened before
+ * claim. HTTP 200 `{ status: "error" }` after claim keeps the card.
+ */
 export function choiceSelectShouldIgnoreChallenge(
   result: ChoiceSelectResult,
 ): boolean {
+  if (result.status === "ok") {
+    return true;
+  }
+  if (result.status === "completed") {
+    return completedSelectIsValid(result);
+  }
+  if (choiceSelectEnvelopeRetiresChallenge(result)) {
+    return true;
+  }
+  if (keepsPendingVisibleOnDomainError(result)) {
+    return false;
+  }
+  if (interactionErrorIsValid(result)) {
+    return false;
+  }
   return classifyChoiceSelect(result) === "terminal";
+}
+
+function choiceSelectShouldAppendErrorSpeech(
+  result: ChoiceSelectResult,
+): boolean {
+  if (result.status !== "error") {
+    return false;
+  }
+  if (choiceSelectShouldIgnoreChallenge(result)) {
+    return true;
+  }
+  return (
+    keepsPendingVisibleOnDomainError(result) || interactionErrorIsValid(result)
+  );
 }
 
 /**
@@ -584,10 +685,7 @@ export function choiceSelectAppendParts(args: {
       },
     ];
   }
-  if (
-    args.result.status === "error" &&
-    classifyChoiceSelect(args.result) === "terminal"
-  ) {
+  if (choiceSelectShouldAppendErrorSpeech(args.result)) {
     return [
       {
         type: "text",
@@ -603,8 +701,8 @@ export type CommitChoiceSelectResult = "skipped" | "stale" | "applied";
 /**
  * Apply a POST /assistant/choice body onto the current tenant session.
  * Append first so an expired envelope is in `messages` before ignore
- * skips the tappable `needs_choice`. Retryable and ambiguous outcomes
- * keep the original challenge so the same option can be posted again.
+ * skips the tappable `needs_choice`. HTTP 200 domain errors append
+ * speech and keep the original challenge for same-option retry.
  * Drop ignore + append when the company epoch moved or `reset()` cleared
  * the resolving lock.
  */

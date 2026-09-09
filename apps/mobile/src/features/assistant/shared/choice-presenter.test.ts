@@ -12,6 +12,7 @@ import {
   claimChoiceSelect,
   choiceCardOfferedOptions,
   choiceCardRetryOptionId,
+  choiceCardShowsDismiss,
   choiceCardState,
   choiceSelectAllowsSameOptionRetry,
   choiceSelectAppendParts,
@@ -573,15 +574,16 @@ describe("choiceSelectAppendParts", () => {
     expect(choiceSelectShouldIgnoreChallenge({ status: "expired" })).toBe(true);
   });
 
-  it("appends conflict error text, ignores the challenge, and does not leave a tappable picker", () => {
+  it("appends conflict error text and keeps the claimed option (SHO-545)", () => {
     const result = {
       status: "error" as const,
       code: "CHOICE_OPTION_CONFLICT",
       message: "This choice was already resolved with a different option.",
+      httpStatus: 200,
     };
-    expect(classifyChoiceSelect(result)).toBe("terminal");
-    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(true);
-    expect(choiceSelectAllowsSameOptionRetry(result)).toBe(false);
+    expect(classifyChoiceSelect(result)).toBe("retryable");
+    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(false);
+    expect(choiceSelectAllowsSameOptionRetry(result)).toBe(true);
     expect(
       choiceSelectAppendParts({
         result,
@@ -589,29 +591,47 @@ describe("choiceSelectAppendParts", () => {
         locale: "en",
       }),
     ).toEqual([{ type: "text", text: result.message }]);
-    const pending = pendingChoiceFromMessages(messages, new Set([choiceId]));
-    expect(pending).toBeNull();
+    const pending = pendingChoiceFromMessages(messages, new Set());
+    expect(pending?.challengeId).toBe(choiceId);
+    if (pending === null) {
+      throw new Error("expected ChoiceCard after CHOICE_OPTION_CONFLICT");
+    }
+    const attempted = choiceSelectRememberedAttempt({
+      result,
+      challengeId: choiceId,
+      optionId: vanillaId,
+      previous: { challengeId: choiceId, optionId: lemonId },
+    });
+    expect(attempted).toEqual({ challengeId: choiceId, optionId: lemonId });
     expect(
-      claimChoiceSelect({
+      choiceCardOfferedOptions({
+        choice: pending,
+        attempted,
+      }).map((option) => option.id),
+    ).toEqual([lemonId]);
+    expect(
+      canSelectChoiceOption({
         pending,
-        optionId: lemonId,
-        resolvingRef: { current: null },
+        optionId: vanillaId,
+        attempted,
       }),
-    ).toBeNull();
+    ).toBe(false);
     expect(choiceCardState({ pending, resolvingChallengeId: null })).toEqual({
-      kind: "hidden",
+      kind: "proposed",
+      choice: pending,
     });
   });
 
-  it("appends invalid-option error text and retires the picker", () => {
+  it("appends invalid-option error text and keeps the picker (SHO-545)", () => {
     const result = {
       status: "error" as const,
       code: "CHOICE_INVALID_OPTION",
       message: "That option is not available.",
+      httpStatus: 200,
     };
-    expect(classifyChoiceSelect(result)).toBe("terminal");
-    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(true);
-    expect(choiceSelectAllowsSameOptionRetry(result)).toBe(false);
+    expect(classifyChoiceSelect(result)).toBe("retryable");
+    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(false);
+    expect(choiceSelectAllowsSameOptionRetry(result)).toBe(true);
     expect(
       choiceSelectAppendParts({
         result,
@@ -619,7 +639,9 @@ describe("choiceSelectAppendParts", () => {
         locale: "en",
       }),
     ).toEqual([{ type: "text", text: result.message }]);
-    expect(pendingChoiceFromMessages(messages, new Set([choiceId]))).toBeNull();
+    expect(pendingChoiceFromMessages(messages, new Set())?.challengeId).toBe(
+      choiceId,
+    );
   });
 
   it("does not retire the picker on a generic parse-failure error body", () => {
@@ -650,12 +672,12 @@ describe("choiceSelectAppendParts", () => {
     ).toMatchObject({ challengeId: choiceId });
   });
 
-  it("uses existing assistant unavailable copy when a terminal error has no text", () => {
+  it("uses existing assistant unavailable copy when a keep-pending error has no text", () => {
     const result = {
       status: "error" as const,
       code: "CHOICE_INVALID_OPTION",
     };
-    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(true);
+    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(false);
     expect(
       choiceSelectAppendParts({
         result,
@@ -867,13 +889,14 @@ describe("commitChoiceSelectResult", () => {
     );
   });
 
-  it("appends error text, ignores the picker, and does not leave needs_choice", () => {
+  it("appends conflict error text and does not ignore the picker (SHO-545)", () => {
     const appendParts = vi.fn();
     const ignoreChallenge = vi.fn();
     const result = {
       status: "error" as const,
       code: "CHOICE_OPTION_CONFLICT",
       message: "This choice was already resolved with a different option.",
+      httpStatus: 200,
     };
     expect(
       commitChoiceSelectResult({
@@ -890,8 +913,10 @@ describe("commitChoiceSelectResult", () => {
     expect(appendParts).toHaveBeenCalledWith([
       { type: "text", text: result.message },
     ]);
-    expect(ignoreChallenge).toHaveBeenCalledWith(choiceId);
-    expect(pendingChoiceFromMessages(messages, new Set([choiceId]))).toBeNull();
+    expect(ignoreChallenge).not.toHaveBeenCalled();
+    expect(pendingChoiceFromMessages(messages, new Set())?.challengeId).toBe(
+      choiceId,
+    );
   });
 
   it("keeps the card after RETRY_IN_PROGRESS 409 so the same option can be posted again", () => {
@@ -933,6 +958,176 @@ describe("commitChoiceSelectResult", () => {
     ).toMatchObject({ challengeId: choiceId });
     expect(resolvingRef.current).toBe(choiceId);
   });
+
+  it("keeps the card after HTTP 200 VALIDATION so the claimed option can be retried (SHO-545)", () => {
+    const appendParts = vi.fn();
+    const ignoreChallenge = vi.fn();
+    const result = {
+      status: "error" as const,
+      code: "VALIDATION",
+      message: "Duplicate product/variant lines are not allowed.",
+      httpStatus: 200,
+    };
+    expect(classifyChoiceSelect(result)).toBe("retryable");
+    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(false);
+    expect(choiceSelectAllowsSameOptionRetry(result)).toBe(true);
+    expect(
+      commitChoiceSelectResult({
+        result,
+        previousChoiceId: choiceId,
+        locale: "en",
+        companyEpochRef: { current: 0 },
+        epoch: 0,
+        resolvingRef: { current: choiceId },
+        appendParts,
+        ignoreChallenge,
+      }),
+    ).toBe("applied");
+    expect(appendParts).toHaveBeenCalledWith([
+      { type: "text", text: result.message },
+    ]);
+    expect(ignoreChallenge).not.toHaveBeenCalled();
+    const pending = pendingChoiceFromMessages(messages, new Set());
+    expect(pending?.status).toBe("needs_choice");
+    expect(pending?.challengeId).toBe(choiceId);
+    if (pending === null) {
+      throw new Error("expected needs_choice after VALIDATION");
+    }
+    const attempted = { challengeId: choiceId, optionId: lemonId };
+    expect(
+      choiceCardOfferedOptions({
+        choice: pending,
+        attempted,
+      }).map((option) => option.id),
+    ).toEqual([lemonId]);
+    expect(
+      canSelectChoiceOption({
+        pending,
+        optionId: lemonId,
+        attempted,
+      }),
+    ).toBe(true);
+    expect(
+      canSelectChoiceOption({
+        pending,
+        optionId: vanillaId,
+        attempted,
+      }),
+    ).toBe(false);
+    expect(choiceCardShowsDismiss({ choice: pending, applying: false })).toBe(
+      true,
+    );
+    expect(choiceCardShowsDismiss({ choice: pending, applying: true })).toBe(
+      false,
+    );
+    expect(
+      choiceCardShowsDismiss({
+        choice: {
+          ...pending,
+          status: "claimed",
+          claimedOptionId: lemonId,
+        },
+        applying: false,
+      }),
+    ).toBe(true);
+    expect(
+      choiceCardShowsDismiss({
+        choice: { ...pending, status: "expired", options: [] },
+        applying: false,
+      }),
+    ).toBe(false);
+    expect(choiceCardState({ pending, resolvingChallengeId: null })).toEqual({
+      kind: "proposed",
+      choice: pending,
+    });
+  });
+
+  it("keeps the card after HTTP 200 NOT_FOUND so the claimed option can be retried (SHO-545)", () => {
+    const appendParts = vi.fn();
+    const ignoreChallenge = vi.fn();
+    const result = {
+      status: "error" as const,
+      code: "NOT_FOUND",
+      message: "Product not found.",
+      httpStatus: 200,
+    };
+    expect(classifyChoiceSelect(result)).toBe("retryable");
+    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(false);
+    expect(choiceSelectAllowsSameOptionRetry(result)).toBe(true);
+    expect(
+      commitChoiceSelectResult({
+        result,
+        previousChoiceId: choiceId,
+        locale: "en",
+        companyEpochRef: { current: 0 },
+        epoch: 0,
+        resolvingRef: { current: choiceId },
+        appendParts,
+        ignoreChallenge,
+      }),
+    ).toBe("applied");
+    expect(appendParts).toHaveBeenCalledWith([
+      { type: "text", text: result.message },
+    ]);
+    expect(ignoreChallenge).not.toHaveBeenCalled();
+    const pending = pendingChoiceFromMessages(messages, new Set());
+    expect(pending?.challengeId).toBe(choiceId);
+    if (pending === null) {
+      throw new Error("expected needs_choice after NOT_FOUND");
+    }
+    const attempted = { challengeId: choiceId, optionId: lemonId };
+    expect(
+      choiceCardOfferedOptions({
+        choice: pending,
+        attempted,
+      }).map((option) => option.id),
+    ).toEqual([lemonId]);
+    expect(
+      canSelectChoiceOption({
+        pending,
+        optionId: lemonId,
+        attempted,
+      }),
+    ).toBe(true);
+    expect(
+      canSelectChoiceOption({
+        pending,
+        optionId: vanillaId,
+        attempted,
+      }),
+    ).toBe(false);
+  });
+
+  it("retires the card on HTTP 404 NOT_FOUND (SHO-545)", () => {
+    const appendParts = vi.fn();
+    const ignoreChallenge = vi.fn();
+    const result = {
+      status: "error" as const,
+      code: "NOT_FOUND",
+      message: "Conversation not found.",
+      httpStatus: 404,
+    };
+    expect(classifyChoiceSelect(result)).toBe("terminal");
+    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(true);
+    expect(choiceSelectAllowsSameOptionRetry(result)).toBe(false);
+    expect(
+      commitChoiceSelectResult({
+        result,
+        previousChoiceId: choiceId,
+        locale: "en",
+        companyEpochRef: { current: 0 },
+        epoch: 0,
+        resolvingRef: { current: choiceId },
+        appendParts,
+        ignoreChallenge,
+      }),
+    ).toBe("applied");
+    expect(appendParts).toHaveBeenCalledWith([
+      { type: "text", text: result.message },
+    ]);
+    expect(ignoreChallenge).toHaveBeenCalledWith(choiceId);
+    expect(pendingChoiceFromMessages(messages, new Set([choiceId]))).toBeNull();
+  });
 });
 
 describe("choice select recoverability", () => {
@@ -958,7 +1153,7 @@ describe("choice select recoverability", () => {
         code: "CHOICE_OPTION_CONFLICT",
         httpStatus: 200,
       }),
-    ).toBe("terminal");
+    ).toBe("retryable");
   });
 
   it("retains the picker for 429, 500, 503, network, and malformed outcomes", () => {
@@ -1133,7 +1328,12 @@ describe("choice select recoverability", () => {
     expect(presentChoiceSelectErrorText(invalid, "en")).not.toBe(
       presentChoiceSelectErrorText(forbidden, "en"),
     );
-    for (const result of [expired, invalid, forbidden, unauthenticated]) {
+    expect(choiceSelectShouldIgnoreChallenge(invalid)).toBe(false);
+    expect(choiceSelectAllowsSameOptionRetry(invalid)).toBe(true);
+    expect(pendingChoiceFromMessages(messages, new Set())?.challengeId).toBe(
+      choiceId,
+    );
+    for (const result of [expired, forbidden, unauthenticated]) {
       expect(choiceSelectShouldIgnoreChallenge(result)).toBe(true);
       expect(choiceSelectAllowsSameOptionRetry(result)).toBe(false);
       expect(
@@ -1200,8 +1400,8 @@ describe("incomplete success-shaped bodies (SHO-452)", () => {
   });
 });
 
-describe("HTTP 200 domain error vs HTTP 409 uncertain (SHO-452)", () => {
-  it("treats a valid HTTP 200 interaction CONFLICT as terminal presenter text", () => {
+describe("HTTP 200 domain error vs HTTP 409 uncertain (SHO-452 / SHO-545)", () => {
+  it("keeps the card after HTTP 200 CONFLICT without picker extras", () => {
     const uk =
       "«Macarons» в архіві, в замовлення його додати не можна. Напиши інший товар або повтори замовлення без нього.";
     const result = {
@@ -1210,9 +1410,9 @@ describe("HTTP 200 domain error vs HTTP 409 uncertain (SHO-452)", () => {
       message: uk,
       httpStatus: 200,
     };
-    expect(classifyChoiceSelect(result)).toBe("terminal");
-    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(true);
-    expect(choiceSelectAllowsSameOptionRetry(result)).toBe(false);
+    expect(classifyChoiceSelect(result)).toBe("retryable");
+    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(false);
+    expect(choiceSelectAllowsSameOptionRetry(result)).toBe(true);
     expect(
       choiceSelectAppendParts({
         result,
@@ -1221,7 +1421,87 @@ describe("HTTP 200 domain error vs HTTP 409 uncertain (SHO-452)", () => {
       }),
     ).toEqual([{ type: "text", text: uk }]);
     expect(presentChoiceSelectErrorText(result, "en")).toBe(uk);
+    const pending = pendingChoiceFromMessages(messages, new Set());
+    expect(pending?.challengeId).toBe(choiceId);
+    if (pending === null) {
+      throw new Error("expected ChoiceCard after HTTP 200 CONFLICT");
+    }
+    const attempted = { challengeId: choiceId, optionId: lemonId };
+    expect(
+      choiceCardOfferedOptions({
+        choice: pending,
+        attempted,
+      }).map((option) => option.id),
+    ).toEqual([lemonId]);
+    expect(
+      canSelectChoiceOption({
+        pending,
+        optionId: vanillaId,
+        attempted,
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps the card after HTTP 200 PERMISSION_DENIED and IDEMPOTENCY_CONFLICT", () => {
+    const permission = {
+      status: "error" as const,
+      code: "PERMISSION_DENIED",
+      message: "You do not have permission to perform this action.",
+      httpStatus: 200,
+    };
+    const idempotency = {
+      status: "error" as const,
+      code: "IDEMPOTENCY_CONFLICT",
+      message: "Idempotency key already used with a different payload.",
+      httpStatus: 200,
+    };
+    for (const result of [permission, idempotency]) {
+      expect(classifyChoiceSelect(result)).toBe("retryable");
+      expect(choiceSelectShouldIgnoreChallenge(result)).toBe(false);
+      expect(choiceSelectAllowsSameOptionRetry(result)).toBe(true);
+      expect(
+        choiceSelectAppendParts({
+          result,
+          previousChoiceId: choiceId,
+          locale: "en",
+        }),
+      ).toEqual([
+        {
+          type: "text",
+          text: presentChoiceSelectErrorText(result, "en"),
+        },
+      ]);
+      expect(pendingChoiceFromMessages(messages, new Set())?.challengeId).toBe(
+        choiceId,
+      );
+    }
+  });
+
+  it("still hides the old picker on a successor needs_choice envelope", () => {
+    const result = {
+      status: "needs_choice" as const,
+      challengeId: successorId,
+      reason: "variant_required" as const,
+      productName: "Eclairs",
+      options: [{ id: lemonId, label: "Coffee" }],
+      optionsTruncated: false,
+      text: "Select a variant for Eclairs: Coffee.",
+    };
+    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(true);
     expect(pendingChoiceFromMessages(messages, new Set([choiceId]))).toBeNull();
+  });
+
+  it("hides the old picker when the resume envelope pending is null", () => {
+    const result = {
+      status: "ok" as const,
+      text: "Done.",
+      envelope: {
+        speech: "Done.",
+        cards: [],
+        pending: null,
+      },
+    };
+    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(true);
   });
 
   it("does not treat HTTP 409 CONFLICT as a terminal domain completion", () => {

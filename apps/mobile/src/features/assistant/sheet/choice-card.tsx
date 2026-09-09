@@ -9,6 +9,7 @@ import {
 import {
   choiceCardOfferedOptions,
   choiceCardRetryOptionId,
+  choiceCardShowsDismiss,
   type ChoiceAttemptedOption,
 } from "../shared/choice-presenter";
 
@@ -40,6 +41,10 @@ export function ChoiceCard(props: {
     props.choice.status === "needs_choice" &&
     !props.applying &&
     retryOptionId === undefined;
+  const showDismiss = choiceCardShowsDismiss({
+    choice: props.choice,
+    applying: props.applying,
+  });
   const selectedLabel =
     claimedOptionLabel(props.choice) ??
     (retryOptionId === undefined
@@ -84,7 +89,7 @@ export function ChoiceCard(props: {
             }}
           />
         ) : null}
-        {pickerTappable ? (
+        {showDismiss ? (
           <Button
             variant="secondary"
             fullWidth

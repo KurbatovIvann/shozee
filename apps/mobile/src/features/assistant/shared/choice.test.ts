@@ -149,6 +149,7 @@ describe("choice truncated copy", () => {
     expect(card).toContain("Card");
     expect(card).toContain("choiceCardRetryOptionId");
     expect(card).toContain("choiceCardOfferedOptions");
+    expect(card).toContain("choiceCardShowsDismiss");
     expect(card).toContain("attempted");
     expect(card).toContain("retryLabel");
     expect(card).toContain("dismissLabel");
