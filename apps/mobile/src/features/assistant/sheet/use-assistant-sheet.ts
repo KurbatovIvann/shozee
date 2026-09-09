@@ -24,17 +24,13 @@ import { detectLocale } from "../../../i18n/locale";
 import {
   clipAssistantKitText,
   type AssistantKitCall,
-  type AssistantKitFailure,
 } from "../api/assistant-kit-client";
 import { useAssistantConversation } from "../document/use-assistant-conversation";
 import {
   useAssistantConversationId,
   type AssistantConversationDirectory,
 } from "../document/use-assistant-conversation-id";
-import {
-  assistantChatErrorMessage,
-  type AssistantChatErrorKind,
-} from "../shared/chat-error";
+import { assistantChatErrorMessage, bannerKindFor } from "../shared/chat-error";
 import type { AssistantSheetViewModel } from "./assistant-sheet-view";
 
 function resolveApiUrl(): string | null {
@@ -42,40 +38,6 @@ function resolveApiUrl(): string | null {
     return apiUrlFromEnv();
   } catch {
     return null;
-  }
-}
-
-/**
- * Which failures are worth a banner, and which are already visible in the thread.
- *
- * `stale`, `unresolvable` and `interaction_open` all came back with the corrected
- * question, which is now on screen — saying so twice reads as an error when the
- * person can see what happened. `action_failed` does get one: the card is still
- * there and nothing about it explains why the tap did not take.
- */
-function bannerKindFor(
-  failure: AssistantKitFailure | null,
-): AssistantChatErrorKind | null {
-  if (failure === null) {
-    return null;
-  }
-  switch (failure.kind) {
-    case "stale":
-    case "unresolvable":
-    case "interaction_open":
-    case "aborted":
-      return null;
-    case "unreachable":
-      return "network";
-    case "unauthorized":
-      return "unauthenticated";
-    case "rejected":
-      return "validation";
-    case "expired":
-    case "unreadable":
-    case "server":
-    case "action_failed":
-      return "unavailable";
   }
 }
 

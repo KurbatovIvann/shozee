@@ -5,7 +5,6 @@
  */
 import { sharedAssistantCopy } from "@showzy/copy/assistant";
 import {
-  parseOrdersListSurface as parseOrdersListData,
   assistantSurfaceHandoffHref,
   ORDERS_LIST_COUNTS_TOOL,
   ORDERS_LIST_PAGE_TOOL,
@@ -30,16 +29,11 @@ import {
   type OrderLifecycleStatus,
   type OrderStatusTone,
 } from "../../orders/shared/order-status";
-import type { AssistantChatPart } from "../shared/confirmation-presenter";
 import {
   localizeAssistantCollection,
   type AssistantCollectionView,
 } from "./collection";
-import {
-  assistantSurfaceToolResultsFromParts,
-  formatMoneyAmount,
-  localizeCustomerName,
-} from "./helpers";
+import { formatMoneyAmount, localizeCustomerName } from "./helpers";
 import type { AssistantResultMarks } from "./marks";
 
 export const ASSISTANT_ORDERS_LIST_HREF = ASSISTANT_ORDERS_LIST_SCREEN_HREF;
@@ -198,20 +192,4 @@ export function localizeOrdersListCard(
     ctaLabel: ctaHref !== null ? chrome.openList : null,
     ctaHref,
   };
-}
-
-/**
- * One list surface when a live `orders_list_page` result is present.
- * Chips come from same-turn `orders_list_counts`. Returns null when there
- * is no successful page — counts-only is the aggregate kind.
- */
-export function parseOrdersListSurface(
-  parts: readonly AssistantChatPart[],
-  locale: Locale,
-): AssistantOrdersListCardView | null {
-  const data = parseOrdersListData(assistantSurfaceToolResultsFromParts(parts));
-  if (data === null) {
-    return null;
-  }
-  return localizeOrdersListCard(data, locale);
 }

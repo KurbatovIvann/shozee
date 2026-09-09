@@ -6,7 +6,6 @@
  */
 import { sharedAssistantCopy } from "@showzy/copy/assistant";
 import {
-  parseSearchResultsSurface as parseSearchResultsData,
   ASSISTANT_SEARCH_RESULTS_GROUP_HIT_MAX,
   isRecord,
   type AssistantSearchEntityType,
@@ -27,12 +26,10 @@ import {
 import { documentsHref } from "../../documents/shared/document-hrefs";
 import { orderDetailHref } from "../../orders/shared/order-hrefs";
 import { priceListEditorHref } from "../../pricing/shared/price-list-hrefs";
-import type { AssistantChatPart } from "../shared/confirmation-presenter";
 import {
   localizeAssistantCollection,
   type AssistantCollectionView,
 } from "./collection";
-import { assistantSurfaceToolResultsFromParts } from "./helpers";
 import type { AssistantResultMarks } from "./marks";
 
 export type AssistantSearchResultsHitView = {
@@ -211,17 +208,4 @@ export function localizeSearchResultsCard(
     ctaLabel: null,
     ctaHref: null,
   };
-}
-
-export function parseSearchResultsSurface(
-  parts: readonly AssistantChatPart[],
-  locale: Locale,
-): AssistantSearchResultsCardView | null {
-  const data = parseSearchResultsData(
-    assistantSurfaceToolResultsFromParts(parts),
-  );
-  if (data === null) {
-    return null;
-  }
-  return localizeSearchResultsCard(data, locale);
 }

@@ -6,7 +6,6 @@
  */
 import { sharedAssistantCopy } from "@showzy/copy/assistant";
 import {
-  parseCustomersListSurface as parseCustomersListData,
   assistantSurfaceHandoffHref,
   ASSISTANT_CUSTOMERS_LIST_ROW_MAX,
   ASSISTANT_CUSTOMERS_LIST_SCREEN_HREF,
@@ -21,12 +20,10 @@ import type { StatusPillTone } from "../../../components/ui/status-pill";
 import { customersCopy } from "../../../i18n/customers";
 import type { Locale } from "../../../i18n/locale";
 import { customerEditorHref } from "../../customers/shared/customer-hrefs";
-import type { AssistantChatPart } from "../shared/confirmation-presenter";
 import {
   localizeAssistantCollection,
   type AssistantCollectionView,
 } from "./collection";
-import { assistantSurfaceToolResultsFromParts } from "./helpers";
 import type { AssistantResultMarks } from "./marks";
 
 export const ASSISTANT_CUSTOMERS_LIST_HREF =
@@ -129,17 +126,4 @@ export function localizeCustomersListCard(
     ctaLabel: ctaHref !== null ? chrome.openList : null,
     ctaHref,
   };
-}
-
-export function parseCustomersListSurface(
-  parts: readonly AssistantChatPart[],
-  locale: Locale,
-): AssistantCustomersListCardView | null {
-  const data = parseCustomersListData(
-    assistantSurfaceToolResultsFromParts(parts),
-  );
-  if (data === null) {
-    return null;
-  }
-  return localizeCustomersListCard(data, locale);
 }
