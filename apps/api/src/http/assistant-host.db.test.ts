@@ -1380,9 +1380,7 @@ describe("unpublished staff assistant host HTTP", () => {
         (run) => run.executionId === record.executionId,
       ),
     ).toBe(false);
-    expect(
-      clipped.checkpointTurns.length,
-    ).toBeGreaterThan(1);
+    expect(clipped.checkpointTurns.length).toBeGreaterThan(1);
     const replay = await hostRequest(h.app, {
       method: "POST",
       path: ASSISTANT_HOST_CHOICE_PATH,
