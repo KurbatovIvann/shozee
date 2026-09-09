@@ -33,6 +33,13 @@ export type AssistantKitAppEnv = {
 export interface AssistantToolContext {
   readonly userId: string;
   readonly companySelector: string;
+  readonly conversationId: string;
+  /**
+   * The client's own token for this request. It is what makes a retry of the
+   * same tap the *same* attempt: a model-regenerated `toolCallId` is not, which
+   * is why the idempotency key is built from this instead.
+   */
+  readonly commandId: string;
   readonly requestId: string;
   readonly clientIp: string;
 }
@@ -113,10 +120,13 @@ export function goneResponse(requestId: string): Response {
 export function toolContext(
   c: Context<AssistantKitAppEnv>,
   caller: Extract<Caller, { ok: true }>,
+  command: { readonly conversationId: string; readonly commandId: string },
 ): AssistantToolContext {
   return {
     userId: caller.userId,
     companySelector: caller.companySelector,
+    conversationId: command.conversationId,
+    commandId: command.commandId,
     requestId: c.get("requestId"),
     clientIp: c.get("clientIp"),
   };

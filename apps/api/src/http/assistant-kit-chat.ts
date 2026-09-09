@@ -94,7 +94,12 @@ export async function handleAssistantKitChat(
     return goneResponse(requestId);
   }
 
-  const tools = await runtime.tools(toolContext(c, caller));
+  const tools = await runtime.tools(
+    toolContext(c, caller, {
+      conversationId: body.conversationId,
+      commandId: body.commandId,
+    }),
+  );
 
   const turn = await runHostTurn({
     kit: runtime.kit,

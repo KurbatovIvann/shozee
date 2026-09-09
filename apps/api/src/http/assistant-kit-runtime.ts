@@ -20,6 +20,7 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  attemptKey,
   filterStaffAiTools,
   staffAssistantTools,
   type ActionToolExecute,
@@ -86,15 +87,40 @@ function requireImplementation(
   return implementation as ImplementedAction<z.ZodType, z.ZodType, unknown>;
 }
 
-/** `channel: "ai"` is what marks these calls as assistant-initiated. */
-function aiRequest(context: AssistantToolContext, toolCallId?: string) {
+/**
+ * `channel: "ai"` is what marks these calls as assistant-initiated.
+ *
+ * Idempotent writes need a key, and it must identify the **attempt**. The
+ * provider's `toolCallId` is not that: the model regenerates it, so a retry of
+ * the same tap would look like a new write. The client's `commandId` is stable
+ * across a retry, so the key is that plus the action.
+ *
+ * Known limit, stated rather than hidden: two calls to the *same* action in one
+ * command share a key, so the second replays the first. One write of a kind per
+ * command is the rule that makes this safe, and it is the rule this product
+ * wants anyway.
+ */
+export function assistantKitIdempotencyKey(
+  context: Pick<AssistantToolContext, "conversationId" | "commandId">,
+  actionName: string,
+): string {
+  return attemptKey(
+    "tool",
+    context.conversationId,
+    `${context.commandId}:${actionName}`,
+  );
+}
+
+function aiRequest(context: AssistantToolContext, actionName?: string) {
   return {
     requestId: context.requestId,
     correlationId: context.requestId,
     channel: ASSISTANT_INVOCATION_CHANNEL,
     clientIp: context.clientIp,
     aiTraceId: context.requestId,
-    ...(toolCallId !== undefined ? { toolCallId } : {}),
+    ...(actionName === undefined
+      ? {}
+      : { idempotencyKey: assistantKitIdempotencyKey(context, actionName) }),
   };
 }
 
@@ -139,13 +165,15 @@ export function createAssistantKitRuntime(
         permissions: actor.permissions,
       });
 
-      const execute: ActionToolExecute = (actionName, input, toolOptions) =>
-        executeAction(options.pipeline, {
+      const execute: ActionToolExecute = (actionName, input, toolOptions) => {
+        void toolOptions;
+        return executeAction(options.pipeline, {
           action: requireImplementation(options.registry, actionName),
           input,
-          request: aiRequest(context, toolOptions.toolCallId),
+          request: aiRequest(context, actionName),
           principal,
         });
+      };
 
       return assistantKitTurnTools(staffAssistantTools(contracts, execute));
     },

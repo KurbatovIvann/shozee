@@ -23,6 +23,7 @@ import { describe, expect, it } from "vitest";
 import { createActionRegistry } from "../composition.js";
 import type { ChoiceSecret } from "./assistant-interactions.js";
 import { createResolveAnswer, withChosenId } from "./assistant-kit-resolve.js";
+import { assistantKitIdempotencyKey } from "./assistant-kit-runtime.js";
 import { assistantKitTurnTools } from "./assistant-kit-tools.js";
 
 const registry = createActionRegistry();
@@ -318,5 +319,33 @@ describe("resolveAnswer calls the same tool again", () => {
     expect(outcome.kind).toBe("pause");
     if (outcome.kind !== "pause") return;
     expect(outcome.prompt).toMatchObject({ subject: "Наполеон" });
+  });
+});
+
+describe("an idempotent write is given a key that survives a retry", () => {
+  it("is the same for a retry of one command, and different per action", () => {
+    // Found by running the path for real: without this, `orders.create` is a
+    // flat VALIDATION and the assistant explains an internal failure to the
+    // staff member. Seventy-eight green tests did not catch it, because none of
+    // them called the real pipeline.
+    const command = {
+      conversationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      commandId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    };
+
+    const first = assistantKitIdempotencyKey(command, ORDERS_CREATE_ACTION_NAME);
+    const retry = assistantKitIdempotencyKey(command, ORDERS_CREATE_ACTION_NAME);
+    const otherAction = assistantKitIdempotencyKey(command, "orders.list");
+    const otherCommand = assistantKitIdempotencyKey(
+      { ...command, commandId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" },
+      ORDERS_CREATE_ACTION_NAME,
+    );
+
+    expect(first).toBe(retry);
+    expect(first).not.toBe(otherAction);
+    expect(first).not.toBe(otherCommand);
+    // Never the model's own tool call id: it is regenerated, so a retry of the
+    // same tap would read as a new write.
+    expect(first).not.toContain("toolu_");
   });
 });
