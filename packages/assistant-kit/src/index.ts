@@ -81,3 +81,10 @@ export {
   type HostTurnOptions,
   type HostTurnResult,
 } from "./host.js";
+
+/**
+ * The SDK types a consumer needs to wire this up. Re-exported so a consumer
+ * does not take a direct `ai` dependency just to name a model or a tool set —
+ * the same seam `@showzy/ai` provides for its own callers.
+ */
+export type { LanguageModel, ModelMessage, ToolSet } from "ai";

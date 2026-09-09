@@ -4,7 +4,8 @@
  *
  * Not exported from the package root; consumers import `./testing`.
  */
-import type { ModelMessage } from "ai";
+import { simulateReadableStream, type LanguageModel, type ModelMessage } from "ai";
+import { MockLanguageModelV4 } from "ai/test";
 
 import { providerToolCallId, type ProviderToolCallId } from "./ids.js";
 import type { Clock, Ids, KitDeps, PauseStore, DocumentStore } from "./ports.js";
@@ -164,4 +165,80 @@ export function continuationOf(options?: {
     messages: options?.messages ?? pausedHistory({ id, name }),
     pausedToolCall: { id: toolCallId(id), name },
   };
+}
+
+/**
+ * Deterministic providers.
+ *
+ * The chunk shapes here were measured against `ai@7.0.87`, not assumed: a V4
+ * `finish` part carries a structured `finishReason` and `usage`, and a
+ * malformed one is swallowed — the stream completes, `finishReason` reads
+ * `other`, and tools never execute. That failure looks exactly like a passing
+ * test, so this knowledge belongs in one place rather than in each suite.
+ */
+const STUB_USAGE = {
+  inputTokens: { total: 10, noCache: 10, cacheRead: 0, cacheWrite: 0 },
+  outputTokens: { total: 5, text: 5, reasoning: 0 },
+};
+
+export function stubTextStep(text: string): { stream: ReadableStream } {
+  return {
+    stream: simulateReadableStream({
+      chunks: [
+        { type: "stream-start" as const, warnings: [] },
+        { type: "text-start" as const, id: "t1" },
+        { type: "text-delta" as const, id: "t1", delta: text },
+        { type: "text-end" as const, id: "t1" },
+        {
+          type: "finish" as const,
+          finishReason: { unified: "stop" as const, raw: "end_turn" },
+          usage: STUB_USAGE,
+        },
+      ],
+    }),
+  };
+}
+
+export function stubToolCallStep(
+  toolCallId: string,
+  toolName: string,
+  input: unknown,
+): { stream: ReadableStream } {
+  const serialized = JSON.stringify(input);
+  return {
+    stream: simulateReadableStream({
+      chunks: [
+        { type: "stream-start" as const, warnings: [] },
+        { type: "tool-input-start" as const, id: toolCallId, toolName },
+        { type: "tool-input-delta" as const, id: toolCallId, delta: serialized },
+        { type: "tool-input-end" as const, id: toolCallId },
+        { type: "tool-call" as const, toolCallId, toolName, input: serialized },
+        {
+          type: "finish" as const,
+          finishReason: { unified: "tool-calls" as const, raw: "tool_use" },
+          usage: STUB_USAGE,
+        },
+      ],
+    }),
+  };
+}
+
+/** Successive `streamText` steps consume successive entries. */
+export function stubModel(
+  steps: readonly { stream: ReadableStream }[],
+): LanguageModel {
+  return new MockLanguageModelV4({
+    doStream: [...steps] as never,
+  });
+}
+
+export function stubTextModel(text: string): LanguageModel {
+  return stubModel([stubTextStep(text)]);
+}
+
+/** A provider that fails before producing anything. */
+export function stubBrokenModel(message = "provider is down"): LanguageModel {
+  return new MockLanguageModelV4({
+    doStream: () => Promise.reject(new Error(message)),
+  });
 }

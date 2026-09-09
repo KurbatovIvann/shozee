@@ -19,6 +19,7 @@ interface Input {
 }
 
 const CONVERSATION = "11111111-1111-4111-8111-111111111111";
+const BIND = "actor-1:tenant-1";
 const SELECT_A: Answer = { kind: "select", optionId: "opt-a" };
 const PAUSED_ID = "toolu_stable";
 const HISTORY: readonly ModelMessage[] = pausedHistory({ id: PAUSED_ID });
@@ -41,6 +42,7 @@ function openInput(): OpenPauseInput<Input> {
   };
   return {
     conversationId: CONVERSATION,
+    bind: BIND,
     outcome,
     continuation: continuationOf({ messages: HISTORY, id: PAUSED_ID }),
   };
@@ -51,6 +53,7 @@ async function claimOne(kit: AssistantKit) {
   if (opened.kind !== "opened") throw new Error("expected opened");
   const claimed = await kit.claim<Input>({
     conversationId: CONVERSATION,
+    bind: BIND,
     interactionId: opened.pause.interactionId,
     revision: 1,
     answer: SELECT_A,

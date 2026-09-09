@@ -50,6 +50,13 @@ export interface Continuation {
  */
 export interface PauseRecord<TInput> {
   readonly kind: PauseKind;
+  /**
+   * Opaque owner token supplied by the caller — typically actor plus tenant.
+   * The kit never interprets it; it only requires an exact match. A mismatch
+   * is reported as `gone`, indistinguishable from "no such pause", so probing
+   * another owner's conversation teaches nothing.
+   */
+  readonly bind: string;
   readonly interactionId: string;
   readonly revision: number;
   readonly conversationId: string;
@@ -112,6 +119,12 @@ export type InteractionResponse = z.output<typeof interactionResponseSchema>;
  * answer is refused and the caller shows the current pause, it is never
  * silently applied to a different draft.
  */
+/** Who is asking. Every read and write of a pause is scoped by it. */
+export interface PauseScope {
+  readonly conversationId: string;
+  readonly bind: string;
+}
+
 export type ClaimResult<TInput> =
   | { readonly kind: "claimed"; readonly record: PauseRecord<TInput> }
   | { readonly kind: "stale"; readonly current: PublicPause }

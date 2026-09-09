@@ -11,8 +11,10 @@ Levels:
 - **K** — kit only. No HTTP, no database, no model. Runs in milliseconds.
 - **L** — loop. Kit wired into a real `streamText` on a `MockLanguageModelV4`
   (`host.integration.test.ts`). Still no HTTP, no database, no live model.
-- **R** — route. Needs the HTTP handler, a session and a tenant. Belongs to the
-  consumer's suite, not to this leaf.
+- **R** — route. Needs the HTTP handler, a session and a tenant. Lives in the
+  consumer's suite — for the first one, `apps/api/src/http/assistant-kit-choice.test.ts`.
+  Still no database and no live model: auth, both stores and the provider are
+  injected, so it runs in under two seconds.
 
 Each scenario names the defect it exists to prevent, so a deletion has to
 argue with history rather than with taste.
@@ -39,8 +41,8 @@ argue with history rather than with taste.
 | 11 | K | A claimed pause. → `resume` returns `messages` **byte-identical** to the stored continuation. No id is rewritten, no tool result is merged in from history, no message is re-derived. | Re-deriving model history on resume (SHO-539) |
 | 12 | K | `resume` output. → it carries exactly one tool result, addressed to `pausedToolCall.id`, so the paused call is finished rather than reissued. | Resume leaving the tool-run `started` (SHO-543) |
 | 13 | L | Picker answered. → the resumed turn's document holds one entity card and one follow-up list card, no duplicate entity. Covered, plus the stronger check the defect really needed: the pausing tool executes **once** — the host resolves it, never re-enters it. | Two `#…` cards from a fabricated `resume-surface:*` tool part (SHO-544) |
-| 14 | R | The tool returns `domain_error` after the pause was claimed. → the pause stays visible with its status, no success text appears, and no write is recorded. | Pause disappearing when Phase A errors (SHO-545) |
-| 15 | R | A write committed, then generation fails. → the surface part stays in the document, the text part is `status: "error"`, and no completion phrase is emitted. | A provider failure presenting itself as a finished reply |
+| 14 | K + R | The action refuses after the pause was claimed. → `release` puts the answer back: the pause is open at the same revision, the document is untouched, and a retry can claim it. | Pause disappearing when Phase A errors (SHO-545) |
+| 15 | R | A write committed, then generation fails. → the surface part stays in the document, the text part is `status: "error"`, and no completion phrase is emitted. Structural, not incidental: the earned card is stored **before** `streamText` is called. | A provider failure presenting itself as a finished reply |
 | 13b | L | The model emits a write and a read in one step. → the write pauses and the read never runs. | A write overtaking an unanswered question |
 
 ## Document
@@ -56,8 +58,9 @@ argue with history rather than with taste.
 | # | Level | Given / When / Then | Prevents |
 | --- | --- | --- | --- |
 | 19 | K | `src/**` contains no domain word (`no-domain.test.ts`). | A generic pause growing a hardcoded action name and entity-kind enum |
-| 20 | R | A pause opened for one tenant. → a claim carrying another tenant's session returns `gone`, and a late result from the previous selection is not appended. | Cross-tenant resume; late results after a switch (SHO-540) |
-| 21 | R | The request is aborted mid-turn. → the model call aborts, any budget hold is released, and the document keeps whatever was already settled. | Wasted generation and held budget on disconnect |
+| 20 | K + R | A pause opened for one owner. → a claim under another `bind` answers exactly as an absent pause does (410), the owner's card stays open, and nothing lands in the other tenant's document. | Cross-tenant resume; late results after a switch (SHO-540) |
+| 21 | R | The request is already gone when the answer arrives. → no write runs at all (the resolver is not called), the answer is released, and the card is answerable again. | Acting for a client that has left; wasted generation on disconnect |
+| 22 | R | The chosen `optionId` is not one this pause offered. → 409, nothing runs, the card survives. | A client-supplied id reaching a write |
 
 ## What this suite deliberately does not check
 
@@ -65,10 +68,10 @@ Tool choice, argument quality, phrasing, whether the assistant understood
 "this customer" — all model behaviour. It is verified by hand, and its
 regressions are prompt changes, not protocol changes.
 
-## What the loop level established that the contract could not
+## What each level established that the one below could not
 
-Two contract defects were found by running the real `streamText`, not by
-reading its types:
+The loop level found two contract defects by running the real `streamText`
+rather than reading its types:
 
 1. `streamText` accumulates a tool-result for the pausing call — the tool
    returned, so the SDK recorded its output. Resume therefore **replaces** that
@@ -78,3 +81,17 @@ reading its types:
    malformed finish chunk silently produced `finishReason: "other"` and the
    tool never executed — a probe that looked like a passing test while proving
    nothing. Fixtures here are measured against the SDK, not assumed.
+
+The route level then found the two the loop could not see, because neither is
+visible without a second caller:
+
+3. `claim` had **no owner check at all**. Any session could answer any
+   conversation's pause. `PauseRecord.bind` is now an opaque owner token the
+   caller supplies (identity plus tenant), and a mismatch is reported as
+   `gone` — the same answer as a miss, so probing another tenant teaches
+   nothing.
+4. A claim is consumed exactly once, which is right for a write but wrong when
+   the action it authorised **refused**. Without a way back, one validation
+   error made the card vanish. `release` returns a claimed pause to open at the
+   same revision; the caller asserts the absence of effect, since the kit
+   cannot know it.

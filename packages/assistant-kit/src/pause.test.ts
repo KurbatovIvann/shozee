@@ -17,6 +17,7 @@ interface Input {
 }
 
 const CONVERSATION = "11111111-1111-4111-8111-111111111111";
+const BIND = "actor-1:tenant-1";
 const ABSENT_INTERACTION = "22222222-2222-4222-8222-222222222222";
 
 function newKit(): { kit: AssistantKit; deps: TestDeps } {
@@ -49,7 +50,12 @@ function confirmationOutcome(): Extract<
 function openInput(
   outcome: OpenPauseInput<Input>["outcome"] = choiceOutcome(),
 ): OpenPauseInput<Input> {
-  return { conversationId: CONVERSATION, outcome, continuation: continuationOf() };
+  return {
+    conversationId: CONVERSATION,
+    bind: BIND,
+    outcome,
+    continuation: continuationOf(),
+  };
 }
 
 const SELECT_A: Answer = { kind: "select", optionId: "opt-a" };
@@ -73,6 +79,7 @@ describe("scenario 1 - an unsendable tool call id cannot be stored", () => {
 
     const claimed = await kit.claim<Input>({
       conversationId: CONVERSATION,
+      bind: BIND,
       interactionId: opened.pause.interactionId,
       revision: 1,
       answer: SELECT_A,
@@ -104,6 +111,7 @@ describe("scenario 3 - a claim is consumed exactly once", () => {
     if (opened.kind !== "opened") throw new Error("expected opened");
     const claim = {
       conversationId: CONVERSATION,
+      bind: BIND,
       interactionId: opened.pause.interactionId,
       revision: 1,
       answer: SELECT_A,
@@ -119,6 +127,7 @@ describe("scenario 3 - a claim is consumed exactly once", () => {
     if (opened.kind !== "opened") throw new Error("expected opened");
     const claim = {
       conversationId: CONVERSATION,
+      bind: BIND,
       interactionId: opened.pause.interactionId,
       revision: 1,
       answer: SELECT_A,
@@ -142,12 +151,14 @@ describe("scenario 4 - a stale revision is refused, not applied", () => {
 
     await kit.revise<Input>({
       conversationId: CONVERSATION,
+      bind: BIND,
       interactionId: opened.pause.interactionId,
       next: { outcome: choiceOutcome({ n: 5 }), continuation: continuationOf() },
     });
 
     const stale = await kit.claim<Input>({
       conversationId: CONVERSATION,
+      bind: BIND,
       interactionId: opened.pause.interactionId,
       revision: 1,
       answer: SELECT_A,
@@ -167,6 +178,7 @@ describe("scenario 5 - the answer kind must match the pause kind", () => {
 
     const wrong = await kit.claim<Input>({
       conversationId: CONVERSATION,
+      bind: BIND,
       interactionId: opened.pause.interactionId,
       revision: 1,
       answer: SELECT_A,
@@ -188,6 +200,7 @@ describe("scenario 6 - an expired pause is not resumable", () => {
 
     const expired = await kit.claim<Input>({
       conversationId: CONVERSATION,
+      bind: BIND,
       interactionId: opened.pause.interactionId,
       revision: 1,
       answer: SELECT_A,
@@ -223,6 +236,7 @@ describe("scenario 8 - the server resolves optionId", () => {
 
     const claimed = await kit.claim<Input>({
       conversationId: CONVERSATION,
+      bind: BIND,
       interactionId: opened.pause.interactionId,
       revision: 1,
       answer: SELECT_A,
@@ -242,6 +256,7 @@ describe("scenario 9 - revise invalidates the previous answer", () => {
 
     const revised = await kit.revise<Input>({
       conversationId: CONVERSATION,
+      bind: BIND,
       interactionId: opened.pause.interactionId,
       next: { outcome: choiceOutcome({ n: 9 }), continuation: continuationOf() },
     });
@@ -259,6 +274,7 @@ describe("scenario 10 - an answer that outruns the pause is not silently lost", 
 
     const early = await kit.claim<Input>({
       conversationId: CONVERSATION,
+      bind: BIND,
       interactionId: ABSENT_INTERACTION,
       revision: 1,
       answer: SELECT_A,
@@ -266,5 +282,99 @@ describe("scenario 10 - an answer that outruns the pause is not silently lost", 
 
     expect(early.kind).toBe("gone");
     expect(deps.documents.writes).toHaveLength(0);
+  });
+});
+
+describe("scenario 20a - another owner's pause reads as absent", () => {
+  const OTHER = "actor-2:tenant-2";
+
+  it("a claim under a different bind is gone, not refused", async () => {
+    const { kit } = newKit();
+    const opened = await kit.open(openInput());
+    if (opened.kind !== "opened") throw new Error("expected opened");
+
+    const foreign = await kit.claim<Input>({
+      conversationId: CONVERSATION,
+      bind: OTHER,
+      interactionId: opened.pause.interactionId,
+      revision: 1,
+      answer: SELECT_A,
+    });
+
+    // Deliberately the same answer as a miss: probing must teach nothing.
+    expect(foreign.kind).toBe("gone");
+    const absent = await kit.claim<Input>({
+      conversationId: CONVERSATION,
+      bind: OTHER,
+      interactionId: ABSENT_INTERACTION,
+      revision: 1,
+      answer: SELECT_A,
+    });
+    expect(absent.kind).toBe("gone");
+  });
+
+  it("peek and document read under a different bind see no pause", async () => {
+    const { kit } = newKit();
+    await kit.open(openInput());
+
+    expect(await kit.peek({ conversationId: CONVERSATION, bind: OTHER })).toBeNull();
+    const document = await kit.document.read({
+      conversationId: CONVERSATION,
+      bind: OTHER,
+    });
+    expect(document.openPause).toBeNull();
+  });
+
+  it("the owner still sees it", async () => {
+    const { kit } = newKit();
+    await kit.open(openInput());
+
+    expect(
+      await kit.peek({ conversationId: CONVERSATION, bind: BIND }),
+    ).not.toBeNull();
+  });
+});
+
+describe("scenario 14a - an answer whose action had no effect is answerable again", () => {
+  it("release reopens at the same revision and a second claim succeeds", async () => {
+    const { kit } = newKit();
+    const opened = await kit.open(openInput());
+    if (opened.kind !== "opened") throw new Error("expected opened");
+    const claim = {
+      conversationId: CONVERSATION,
+      bind: BIND,
+      interactionId: opened.pause.interactionId,
+      revision: 1,
+      answer: SELECT_A,
+    };
+
+    expect((await kit.claim<Input>(claim)).kind).toBe("claimed");
+    expect((await kit.claim<Input>(claim)).kind).toBe("gone");
+
+    const released = await kit.release({
+      conversationId: CONVERSATION,
+      bind: BIND,
+      interactionId: opened.pause.interactionId,
+    });
+    expect(released.kind).toBe("released");
+
+    const again = await kit.claim<Input>(claim);
+    expect(again.kind).toBe("claimed");
+    const still = await kit.peek({ conversationId: CONVERSATION, bind: BIND });
+    // Claimed again, so the slot is settled again.
+    expect(still).toBeNull();
+  });
+
+  it("release on a pause that was never claimed is gone", async () => {
+    const { kit } = newKit();
+    const opened = await kit.open(openInput());
+    if (opened.kind !== "opened") throw new Error("expected opened");
+
+    const released = await kit.release({
+      conversationId: CONVERSATION,
+      bind: BIND,
+      interactionId: opened.pause.interactionId,
+    });
+    expect(released.kind).toBe("gone");
   });
 });

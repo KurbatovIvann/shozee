@@ -31,6 +31,7 @@ import type {
   ClaimResult,
   PauseKind,
   PauseRecord,
+  PauseScope,
   PublicPause,
   ResumeInput,
 } from "./pause.js";
@@ -121,7 +122,7 @@ function holdsTheSlot(record: AnyRecord, now: Date): boolean {
 }
 
 function recordFrom<TInput>(
-  conversationId: string,
+  scope: PauseScope,
   outcome: OpenPauseInput<TInput>["outcome"],
   continuation: PauseRecord<TInput>["continuation"],
   identity: { readonly interactionId: string; readonly revision: number },
@@ -132,9 +133,10 @@ function recordFrom<TInput>(
   const options = isChoice ? outcome.options : [];
   return {
     kind: isChoice ? "choice" : "confirmation",
+    bind: scope.bind,
     interactionId: identity.interactionId,
     revision: identity.revision,
-    conversationId,
+    conversationId: scope.conversationId,
     status: "open",
     continuation,
     resolvedInput: outcome.resume,
@@ -164,7 +166,25 @@ function storedDocument(raw: unknown, conversationId: string): ChatDocument {
 }
 
 export function createAssistantKit(deps: KitDeps): AssistantKit {
-  async function readRecord(conversationId: string): Promise<StoredRecord | null> {
+  /**
+   * A record whose `bind` does not match reads as absent. Same answer as "no
+   * such pause", on purpose — a cross-owner probe must not be distinguishable
+   * from a miss.
+   */
+  async function readRecord(scope: PauseScope): Promise<StoredRecord | null> {
+    const raw = await deps.pauses.get(pauseKey(scope.conversationId));
+    if (raw === null) {
+      return null;
+    }
+    const record = decode(raw);
+    if (record === null || record.bind !== scope.bind) {
+      return null;
+    }
+    return { raw, record };
+  }
+
+  /** Slot occupancy ignores `bind`: one open pause per conversation, full stop. */
+  async function readSlot(conversationId: string): Promise<StoredRecord | null> {
     const raw = await deps.pauses.get(pauseKey(conversationId));
     if (raw === null) {
       return null;
@@ -194,7 +214,7 @@ export function createAssistantKit(deps: KitDeps): AssistantKit {
     record: PauseRecord<TInput>,
   ): Promise<OpenPauseResult> {
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const existing = await readRecord(record.conversationId);
+      const existing = await readSlot(record.conversationId);
       if (existing !== null && holdsTheSlot(existing.record, deps.clock.now())) {
         return { kind: "already_open", current: publicPauseOf(existing.record) };
       }
@@ -202,7 +222,7 @@ export function createAssistantKit(deps: KitDeps): AssistantKit {
         return { kind: "opened", pause: publicPauseOf(record) };
       }
     }
-    const last = await readRecord(record.conversationId);
+    const last = await readSlot(record.conversationId);
     // Unreachable with a real compare-and-set store. `already_open` is the safe
     // direction either way: the caller must not proceed with this pause.
     return {
@@ -215,7 +235,7 @@ export function createAssistantKit(deps: KitDeps): AssistantKit {
     open<TInput>(input: OpenPauseInput<TInput>): Promise<OpenPauseResult> {
       return install(
         recordFrom(
-          input.conversationId,
+          { conversationId: input.conversationId, bind: input.bind },
           input.outcome,
           input.continuation,
           { interactionId: deps.ids.uuid(), revision: 1 },
@@ -224,20 +244,21 @@ export function createAssistantKit(deps: KitDeps): AssistantKit {
       );
     },
 
-    async peek(conversationId) {
-      const existing = await readRecord(conversationId);
+    async peek(scope) {
+      const existing = await readRecord(scope);
       return existing !== null && holdsTheSlot(existing.record, deps.clock.now())
         ? publicPauseOf(existing.record)
         : null;
     },
 
-    async claim<TInput>(input: {
-      readonly conversationId: string;
-      readonly interactionId: string;
-      readonly revision: number;
-      readonly answer: Answer;
-    }): Promise<ClaimResult<TInput>> {
-      const existing = await readRecord(input.conversationId);
+    async claim<TInput>(
+      input: PauseScope & {
+        readonly interactionId: string;
+        readonly revision: number;
+        readonly answer: Answer;
+      },
+    ): Promise<ClaimResult<TInput>> {
+      const existing = await readRecord(input);
       if (
         existing === null ||
         existing.record.interactionId !== input.interactionId ||
@@ -290,12 +311,13 @@ export function createAssistantKit(deps: KitDeps): AssistantKit {
       return record.optionMap[optionId];
     },
 
-    async revise<TInput>(input: {
-      readonly conversationId: string;
-      readonly interactionId: string;
-      readonly next: Omit<OpenPauseInput<TInput>, "conversationId">;
-    }): Promise<RevisePauseResult> {
-      const existing = await readRecord(input.conversationId);
+    async revise<TInput>(
+      input: PauseScope & {
+        readonly interactionId: string;
+        readonly next: Omit<OpenPauseInput<TInput>, "conversationId" | "bind">;
+      },
+    ): Promise<RevisePauseResult> {
+      const existing = await readRecord(input);
       if (
         existing === null ||
         existing.record.interactionId !== input.interactionId ||
@@ -304,7 +326,7 @@ export function createAssistantKit(deps: KitDeps): AssistantKit {
         return { kind: "gone" };
       }
       const revised = recordFrom(
-        input.conversationId,
+        { conversationId: input.conversationId, bind: input.bind },
         input.next.outcome,
         input.next.continuation,
         {
@@ -319,7 +341,7 @@ export function createAssistantKit(deps: KitDeps): AssistantKit {
     },
 
     async abandon(input) {
-      const existing = await readRecord(input.conversationId);
+      const existing = await readRecord(input);
       if (
         existing === null ||
         existing.record.interactionId !== input.interactionId
@@ -330,13 +352,28 @@ export function createAssistantKit(deps: KitDeps): AssistantKit {
       return { kind: "cancelled" };
     },
 
+    async release(input) {
+      const existing = await readRecord(input);
+      if (
+        existing === null ||
+        existing.record.interactionId !== input.interactionId ||
+        existing.record.status !== "claimed"
+      ) {
+        return { kind: "gone" };
+      }
+      const reopened: AnyRecord = { ...existing.record, status: "open" };
+      return (await put(reopened, existing.raw))
+        ? { kind: "released" }
+        : { kind: "gone" };
+    },
+
     document: {
-      async read(conversationId) {
+      async read(scope) {
         const stored = storedDocument(
-          await deps.documents.read(conversationId),
-          conversationId,
+          await deps.documents.read(scope.conversationId),
+          scope.conversationId,
         );
-        const existing = await readRecord(conversationId);
+        const existing = await readRecord(scope);
         const openPause =
           existing !== null && holdsTheSlot(existing.record, deps.clock.now())
             ? publicPauseOf(existing.record)

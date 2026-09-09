@@ -33,6 +33,30 @@ replays them. Nothing is re-derived from persisted rows, so there is no id to
 mint and no boundary sanitizer. `ProviderToolCallId` makes an unsendable id
 unstorable.
 
+## Ownership
+
+Every read and write of a pause is scoped by `{ conversationId, bind }`.
+`bind` is an opaque owner token the caller supplies — in `apps/api` it is
+`userId:companySelector`. The kit never interprets it and only requires an
+exact match.
+
+A mismatch is reported as `gone`, deliberately identical to "no such pause".
+Distinguishing the two would let one tenant probe another's conversation.
+
+Slot occupancy ignores `bind`: one open pause per conversation, full stop. Two
+owners cannot both hold a pause on the same conversation id.
+
+## When the answer does not take
+
+`claim` consumes a (interactionId, revision) exactly once — right for a write,
+wrong when the action it authorised refused. `release` puts a claimed pause
+back to open at the same revision, so a validation failure does not make the
+card vanish.
+
+The caller asserts the absence of effect; the kit cannot know it. Never call it
+after a write that may have committed — the domain's idempotency key is what
+makes a retry safe, not this.
+
 ## Secrets
 
 `resolvedInput` and `optionMap` live on `PauseRecord` (a TypeScript type,
@@ -56,7 +80,17 @@ supplied by the consumer's composition root. A test uses a `Map` and needs no
 Redis, no database and no model — which is why the whole protocol is
 verifiable in milliseconds. See `SCENARIOS.md`.
 
+## Testing
+
+`./testing` supplies in-memory ports and deterministic providers
+(`stubModel`, `stubTextModel`, `stubBrokenModel`, and the step builders). The
+chunk shapes there were **measured** against the pinned `ai` version, not
+assumed: a malformed V4 `finish` part is swallowed, `finishReason` reads
+`other`, and tools never execute — a suite that looks green while proving
+nothing. Keep that knowledge in `testing.ts` rather than in each consumer.
+
 ## Status
 
-Contract only. `createAssistantKit` is `declare`d, not implemented. Do not add
-an implementation in the same change as an API change to this surface.
+Implemented, with `SCENARIOS.md` green at levels K and L. The first route
+consumer is `apps/api/src/http/assistant-kit-choice.ts`, mounted on its own
+path and not reachable from `createApp` — the live assistant is untouched.

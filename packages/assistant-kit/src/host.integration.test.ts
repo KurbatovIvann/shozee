@@ -8,67 +8,24 @@
  * the pausing tool executes **once**. The old runtime re-entered it, which is
  * why a picker could produce two entities or none.
  */
-import { simulateReadableStream, tool } from "ai";
-import { MockLanguageModelV4 } from "ai/test";
+import { tool, type LanguageModel } from "ai";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import { continueHostTurn, runHostTurn } from "./host.js";
 import { createAssistantKit } from "./kit.js";
 import type { ToolOutcome } from "./outcome.js";
-import { testDeps } from "./testing.js";
+import {
+  stubModel,
+  stubTextStep,
+  stubToolCallStep,
+  testDeps,
+} from "./testing.js";
 
 const CONVERSATION = "11111111-1111-4111-8111-111111111111";
+const BIND = "actor-1:tenant-1";
 const FIRST_MESSAGE = "44444444-4444-4444-8444-444444444444";
 const SECOND_MESSAGE = "55555555-5555-4555-8555-555555555555";
-
-const USAGE = {
-  inputTokens: { total: 10, noCache: 10, cacheRead: 0, cacheWrite: 0 },
-  outputTokens: { total: 5, text: 5, reasoning: 0 },
-};
-
-function toolCallStream(toolCallId: string, toolName: string, input: unknown) {
-  const serialized = JSON.stringify(input);
-  return {
-    stream: simulateReadableStream({
-      chunks: [
-        { type: "stream-start" as const, warnings: [] },
-        { type: "tool-input-start" as const, id: toolCallId, toolName },
-        { type: "tool-input-delta" as const, id: toolCallId, delta: serialized },
-        { type: "tool-input-end" as const, id: toolCallId },
-        {
-          type: "tool-call" as const,
-          toolCallId,
-          toolName,
-          input: serialized,
-        },
-        {
-          type: "finish" as const,
-          finishReason: { unified: "tool-calls" as const, raw: "tool_use" },
-          usage: USAGE,
-        },
-      ],
-    }),
-  };
-}
-
-function textStream(text: string) {
-  return {
-    stream: simulateReadableStream({
-      chunks: [
-        { type: "stream-start" as const, warnings: [] },
-        { type: "text-start" as const, id: "t1" },
-        { type: "text-delta" as const, id: "t1", delta: text },
-        { type: "text-end" as const, id: "t1" },
-        {
-          type: "finish" as const,
-          finishReason: { unified: "stop" as const, raw: "end_turn" },
-          usage: USAGE,
-        },
-      ],
-    }),
-  };
-}
 
 interface CreateInput {
   readonly label: string;
@@ -76,7 +33,7 @@ interface CreateInput {
 
 interface Slice {
   readonly kit: ReturnType<typeof createAssistantKit>;
-  readonly model: MockLanguageModelV4;
+  readonly model: LanguageModel;
   readonly tools: Parameters<typeof runHostTurn>[0]["tools"];
   readonly calls: { create: number; list: number };
 }
@@ -87,13 +44,11 @@ interface Slice {
  */
 function slice(): Slice {
   const calls = { create: 0, list: 0 };
-  const model = new MockLanguageModelV4({
-    doStream: [
-      toolCallStream("toolu_create", "thing_create", { label: "two matches" }),
-      toolCallStream("toolu_list", "thing_list", { limit: 5 }),
-      textStream("Готово, ось перелік."),
-    ],
-  });
+  const model = stubModel([
+    stubToolCallStep("toolu_create", "thing_create", { label: "two matches" }),
+    stubToolCallStep("toolu_list", "thing_list", { limit: 5 }),
+    stubTextStep("Готово, ось перелік."),
+  ]);
 
   const tools = {
     thing_create: tool({
@@ -141,6 +96,7 @@ describe("vertical slice: pause, answer, resume", () => {
     const turn = await runHostTurn({
       kit,
       conversationId: CONVERSATION,
+      bind: BIND,
       messageId: FIRST_MESSAGE,
       model,
       messages: [{ role: "user", content: "create one for the second match" }],
@@ -152,7 +108,7 @@ describe("vertical slice: pause, answer, resume", () => {
     // The id came from the SDK, not from the host.
     expect(JSON.stringify(turn.messages)).toContain("toolu_create");
 
-    const open = await kit.peek(CONVERSATION);
+    const open = await kit.peek({ conversationId: CONVERSATION, bind: BIND });
     expect(open?.interactionId).toBe(turn.pause?.interactionId);
     // The wire view of the pause never carries the entity ids behind it.
     expect(JSON.stringify(open)).not.toContain("entity-a");
@@ -164,6 +120,7 @@ describe("vertical slice: pause, answer, resume", () => {
     const first = await runHostTurn({
       kit,
       conversationId: CONVERSATION,
+      bind: BIND,
       messageId: FIRST_MESSAGE,
       model,
       messages: [{ role: "user", content: "create one for the second match" }],
@@ -173,6 +130,7 @@ describe("vertical slice: pause, answer, resume", () => {
 
     const claimed = await kit.claim<CreateInput>({
       conversationId: CONVERSATION,
+      bind: BIND,
       interactionId: first.pause.interactionId,
       revision: first.pause.revision,
       answer: { kind: "select", optionId: "opt-b" },
@@ -186,6 +144,7 @@ describe("vertical slice: pause, answer, resume", () => {
     const second = await continueHostTurn<CreateInput>({
       kit,
       conversationId: CONVERSATION,
+      bind: BIND,
       messageId: SECOND_MESSAGE,
       model,
       tools,
@@ -207,7 +166,7 @@ describe("vertical slice: pause, answer, resume", () => {
     expect(calls.list).toBe(1);
     // The placeholder is gone from the history the model was given.
     expect(JSON.stringify(second.messages)).not.toContain("needs_choice");
-    expect(await kit.peek(CONVERSATION)).toBeNull();
+    expect(await kit.peek({ conversationId: CONVERSATION, bind: BIND })).toBeNull();
   });
 
   it("shows one entity card, one list card and the text — no duplicate", async () => {
@@ -216,6 +175,7 @@ describe("vertical slice: pause, answer, resume", () => {
     const first = await runHostTurn({
       kit,
       conversationId: CONVERSATION,
+      bind: BIND,
       messageId: FIRST_MESSAGE,
       model,
       messages: [{ role: "user", content: "create one" }],
@@ -225,6 +185,7 @@ describe("vertical slice: pause, answer, resume", () => {
 
     const claimed = await kit.claim<CreateInput>({
       conversationId: CONVERSATION,
+      bind: BIND,
       interactionId: first.pause.interactionId,
       revision: first.pause.revision,
       answer: { kind: "select", optionId: "opt-b" },
@@ -234,6 +195,7 @@ describe("vertical slice: pause, answer, resume", () => {
     await continueHostTurn<CreateInput>({
       kit,
       conversationId: CONVERSATION,
+      bind: BIND,
       messageId: SECOND_MESSAGE,
       model,
       tools,
@@ -249,7 +211,7 @@ describe("vertical slice: pause, answer, resume", () => {
       },
     });
 
-    const document = await kit.document.read(CONVERSATION);
+    const document = await kit.document.read({ conversationId: CONVERSATION, bind: BIND });
     const parts = document.messages.flatMap((message) => message.parts);
     const surfaces = parts.filter((part) => part.kind === "surface");
 
@@ -269,13 +231,14 @@ describe("vertical slice: pause, answer, resume", () => {
     const live = await runHostTurn({
       kit,
       conversationId: CONVERSATION,
+      bind: BIND,
       messageId: FIRST_MESSAGE,
       model,
       messages: [{ role: "user", content: "create one" }],
       tools,
     });
 
-    const reloaded = await kit.document.read(CONVERSATION);
+    const reloaded = await kit.document.read({ conversationId: CONVERSATION, bind: BIND });
     const parts = reloaded.messages.flatMap((message) => message.parts);
 
     expect(parts).toEqual(live.parts);
@@ -286,38 +249,41 @@ describe("vertical slice: pause, answer, resume", () => {
 
   it("a second tool in the same step does not act once a pause is captured", async () => {
     const { kit, tools, calls } = slice();
-    const both = new MockLanguageModelV4({
-      doStream: [
-        {
-          stream: simulateReadableStream({
-            chunks: [
-              { type: "stream-start" as const, warnings: [] },
-              {
-                type: "tool-call" as const,
-                toolCallId: "toolu_create",
-                toolName: "thing_create",
-                input: JSON.stringify({ label: "x" }),
+    const both = stubModel([
+      {
+        stream: new ReadableStream({
+          start(controller) {
+            controller.enqueue({ type: "stream-start", warnings: [] });
+            controller.enqueue({
+              type: "tool-call",
+              toolCallId: "toolu_create",
+              toolName: "thing_create",
+              input: JSON.stringify({ label: "x" }),
+            });
+            controller.enqueue({
+              type: "tool-call",
+              toolCallId: "toolu_list",
+              toolName: "thing_list",
+              input: JSON.stringify({ limit: 5 }),
+            });
+            controller.enqueue({
+              type: "finish",
+              finishReason: { unified: "tool-calls", raw: "tool_use" },
+              usage: {
+                inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+                outputTokens: { total: 1, text: 1, reasoning: 0 },
               },
-              {
-                type: "tool-call" as const,
-                toolCallId: "toolu_list",
-                toolName: "thing_list",
-                input: JSON.stringify({ limit: 5 }),
-              },
-              {
-                type: "finish" as const,
-                finishReason: { unified: "tool-calls" as const, raw: "tool_use" },
-                usage: USAGE,
-              },
-            ],
-          }),
-        },
-      ],
-    });
+            });
+            controller.close();
+          },
+        }),
+      },
+    ]);
 
     const turn = await runHostTurn({
       kit,
       conversationId: CONVERSATION,
+      bind: BIND,
       messageId: FIRST_MESSAGE,
       model: both,
       messages: [{ role: "user", content: "create one and list them" }],

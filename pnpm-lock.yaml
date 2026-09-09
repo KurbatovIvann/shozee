@@ -148,6 +148,9 @@ importers:
       '@showzy/assistant':
         specifier: workspace:*
         version: link:../../packages/modules/assistant
+      '@showzy/assistant-kit':
+        specifier: workspace:*
+        version: link:../../packages/assistant-kit
       '@showzy/catalog':
         specifier: workspace:*
         version: link:../../packages/modules/catalog

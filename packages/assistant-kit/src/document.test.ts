@@ -12,6 +12,7 @@ import { createAssistantKit, type AssistantKit } from "./kit.js";
 import { testDeps, type TestDeps } from "./testing.js";
 
 const CONVERSATION = "11111111-1111-4111-8111-111111111111";
+const BIND = "actor-1:tenant-1";
 const MESSAGE = "33333333-3333-4333-8333-333333333333";
 
 function newKit(): { kit: AssistantKit; deps: TestDeps } {
@@ -42,7 +43,7 @@ describe("scenario 16 - reload returns what live wrote", () => {
       role: "assistant",
       parts,
     });
-    const document = await kit.document.read(CONVERSATION);
+    const document = await kit.document.read({ conversationId: CONVERSATION, bind: BIND });
 
     const message = document.messages.find((m) => m.messageId === MESSAGE);
     expect(message?.parts).toEqual(parts);
@@ -66,7 +67,7 @@ describe("scenario 17 - a card updates in place", () => {
       part: card(2, 9) as Extract<DocumentPart, { kind: "surface" }>,
     });
 
-    const document = await kit.document.read(CONVERSATION);
+    const document = await kit.document.read({ conversationId: CONVERSATION, bind: BIND });
     const surfaces = document.messages
       .flatMap((message) => message.parts)
       .filter((part) => part.kind === "surface");
@@ -99,7 +100,7 @@ describe("scenario 18 - partial text is never presented as the answer", () => {
       parts: [TEXT],
     });
 
-    const document = await kit.document.read(CONVERSATION);
+    const document = await kit.document.read({ conversationId: CONVERSATION, bind: BIND });
     const texts = document.messages
       .flatMap((message) => message.parts)
       .filter((part) => part.kind === "text");
@@ -118,7 +119,7 @@ describe("scenario 18 - partial text is never presented as the answer", () => {
       parts: [card(1, 3), failed],
     });
 
-    const document = await kit.document.read(CONVERSATION);
+    const document = await kit.document.read({ conversationId: CONVERSATION, bind: BIND });
     const parts = document.messages.flatMap((message) => message.parts);
 
     expect(parts.filter((part) => part.kind === "surface")).toHaveLength(1);

@@ -11,6 +11,7 @@ import type {
   Answer,
   ClaimResult,
   PauseRecord,
+  PauseScope,
   PublicPause,
   ResumeInput,
 } from "./pause.js";
@@ -18,6 +19,8 @@ import type { ToolOutcome } from "./outcome.js";
 
 export interface OpenPauseInput<TInput> {
   readonly conversationId: string;
+  /** Opaque owner token. See `PauseRecord.bind`. */
+  readonly bind: string;
   readonly outcome: Extract<
     ToolOutcome<TInput>,
     { kind: "needs_choice" | "needs_confirmation" }
@@ -40,18 +43,19 @@ export interface AssistantKit {
   open<TInput>(input: OpenPauseInput<TInput>): Promise<OpenPauseResult>;
 
   /** Read-only. Safe to call on every document read. */
-  peek(conversationId: string): Promise<PublicPause | null>;
+  peek(scope: PauseScope): Promise<PublicPause | null>;
 
   /**
    * Consume one (interactionId, revision) exactly once. Concurrent callers:
    * one gets `claimed`, the rest get `gone`.
    */
-  claim<TInput>(input: {
-    readonly conversationId: string;
-    readonly interactionId: string;
-    readonly revision: number;
-    readonly answer: Answer;
-  }): Promise<ClaimResult<TInput>>;
+  claim<TInput>(
+    input: PauseScope & {
+      readonly interactionId: string;
+      readonly revision: number;
+      readonly answer: Answer;
+    },
+  ): Promise<ClaimResult<TInput>>;
 
   /**
    * Turn a claim into the exact provider payload. Pure: no I/O, no clock.
@@ -74,19 +78,32 @@ export interface AssistantKit {
    * there is no open pause under that id any more — the caller opens a fresh
    * one rather than reviving an expired decision.
    */
-  revise<TInput>(input: {
-    readonly conversationId: string;
-    readonly interactionId: string;
-    readonly next: Omit<OpenPauseInput<TInput>, "conversationId">;
-  }): Promise<RevisePauseResult>;
+  revise<TInput>(
+    input: PauseScope & {
+      readonly interactionId: string;
+      readonly next: Omit<OpenPauseInput<TInput>, "conversationId" | "bind">;
+    },
+  ): Promise<RevisePauseResult>;
 
-  abandon(input: {
-    readonly conversationId: string;
-    readonly interactionId: string;
-  }): Promise<{ readonly kind: "cancelled" | "gone" }>;
+  abandon(
+    input: PauseScope & { readonly interactionId: string },
+  ): Promise<{ readonly kind: "cancelled" | "gone" }>;
+
+  /**
+   * Make a claimed pause answerable again, at the same revision.
+   *
+   * For the case where the answer was accepted but the action it authorised
+   * had no effect — a validation failure, a conflict. The caller asserts the
+   * absence of effect; the kit cannot know it. Do not call this after a write
+   * that may have committed: the domain's idempotency key, not this, is what
+   * makes a retry safe.
+   */
+  release(
+    input: PauseScope & { readonly interactionId: string },
+  ): Promise<{ readonly kind: "released" | "gone" }>;
 
   readonly document: {
-    read(conversationId: string): Promise<ChatDocument>;
+    read(scope: PauseScope): Promise<ChatDocument>;
     write(conversationId: string, write: DocumentWrite): Promise<void>;
   };
 }

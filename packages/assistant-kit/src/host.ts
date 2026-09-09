@@ -108,6 +108,8 @@ function pausingTools(tools: ToolSet, state: TurnState): ToolSet {
 export interface HostTurnOptions {
   readonly kit: AssistantKit;
   readonly conversationId: string;
+  /** Opaque owner token. Every pause read or written this turn is scoped by it. */
+  readonly bind: string;
   readonly messageId: string;
   readonly model: LanguageModel;
   readonly messages: readonly ModelMessage[];
@@ -128,13 +130,32 @@ export interface HostTurnResult {
 
 async function runLoop(
   options: HostTurnOptions,
-  seedSurfaces: readonly SurfaceRef[],
+  /**
+   * Parts already earned — a write that committed before this turn began.
+   * They are stored **before** generation is attempted, so a provider failure
+   * or a disconnect cannot take the result down with the explanation.
+   */
+  commitFirst: readonly DocumentPart[],
 ): Promise<HostTurnResult> {
   const state: TurnState = {
     paused: undefined,
-    surfaces: [...seedSurfaces],
+    surfaces: [],
     chain: Promise.resolve(),
   };
+
+  async function append(parts: readonly DocumentPart[]): Promise<void> {
+    if (parts.length === 0) {
+      return;
+    }
+    await options.kit.document.write(options.conversationId, {
+      kind: "append",
+      messageId: options.messageId,
+      role: "assistant",
+      parts,
+    });
+  }
+
+  await append(commitFirst);
 
   const result = streamText({
     model: options.model,
@@ -150,9 +171,24 @@ async function runLoop(
       : {}),
   });
 
-  await result.consumeStream();
-  const messages = [...options.messages, ...(await result.responseMessages)];
-  const text = await result.text;
+  let messages: ModelMessage[];
+  let text: string;
+  try {
+    await result.consumeStream();
+    messages = [...options.messages, ...(await result.responseMessages)];
+    text = await result.text;
+  } catch {
+    // Aborted or the provider failed. An incomplete text part says so; it is
+    // never presented as the answer, and nothing already committed is undone.
+    const failed: DocumentPart = { kind: "text", text: "", status: "error" };
+    await append([failed]);
+    return {
+      kind: "settled",
+      pause: null,
+      parts: [...commitFirst, failed],
+      messages: options.messages,
+    };
+  }
 
   const parts: DocumentPart[] = state.surfaces.map((surface) => ({
     kind: "surface",
@@ -173,6 +209,7 @@ async function runLoop(
     if (id.kind === "ok") {
       const opened = await options.kit.open({
         conversationId: options.conversationId,
+        bind: options.bind,
         outcome: state.paused.outcome,
         continuation: {
           messages,
@@ -191,19 +228,12 @@ async function runLoop(
     }
   }
 
-  if (parts.length > 0) {
-    await options.kit.document.write(options.conversationId, {
-      kind: "append",
-      messageId: options.messageId,
-      role: "assistant",
-      parts,
-    });
-  }
+  await append(parts);
 
   return {
     kind: pause !== null ? "paused" : "settled",
     pause,
-    parts,
+    parts: [...commitFirst, ...parts],
     messages,
   };
 }
@@ -230,8 +260,17 @@ export function continueHostTurn<TInput>(
 ): Promise<HostTurnResult> {
   const { claimed, resolved, ...rest } = options;
   const { messages } = options.kit.resume(claimed, resolved.result);
-  return runLoop(
-    { ...rest, messages },
-    resolved.surface !== undefined ? [resolved.surface] : [],
-  );
+  const earned: DocumentPart[] =
+    resolved.surface === undefined
+      ? []
+      : [
+          {
+            kind: "surface",
+            cardId: resolved.surface.cardId,
+            revision: 1,
+            surface: resolved.surface.surface,
+            payload: resolved.surface.payload,
+          },
+        ];
+  return runLoop({ ...rest, messages }, earned);
 }
