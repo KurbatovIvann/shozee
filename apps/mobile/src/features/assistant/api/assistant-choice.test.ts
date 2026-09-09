@@ -227,7 +227,7 @@ describe("postAssistantChoice", () => {
     expect(choiceSelectShouldIgnoreChallenge(result)).toBe(false);
   });
 
-  it("treats a valid HTTP 200 domain CONFLICT as terminal, not ambiguous", async () => {
+  it("treats a valid HTTP 200 domain CONFLICT as keep-pending, not terminal", async () => {
     const message =
       '"Macarons" is archived and cannot be added to an order. Name a different product, or repeat the order without it.';
     fetchMock.mockResolvedValue(
@@ -243,11 +243,11 @@ describe("postAssistantChoice", () => {
       code: "CONFLICT",
       message,
       httpStatus: 200,
-      recoverability: "terminal",
+      recoverability: "retryable",
     });
-    expect(classifyChoiceSelect(result)).toBe("terminal");
-    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(true);
-    expect(choiceSelectAllowsSameOptionRetry(result)).toBe(false);
+    expect(classifyChoiceSelect(result)).toBe("retryable");
+    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(false);
+    expect(choiceSelectAllowsSameOptionRetry(result)).toBe(true);
   });
 
   it("keeps HTTP 409 CONFLICT uncertain rather than terminal", async () => {
@@ -332,6 +332,62 @@ describe("postAssistantChoice", () => {
       httpStatus: 200,
       recoverability: "retryable",
     });
+    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(false);
+    expect(choiceSelectAllowsSameOptionRetry(result)).toBe(true);
+  });
+
+  it("treats HTTP 404 NOT_FOUND as terminal so a missing conversation does not keep a ghost picker", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(404, {
+        code: "NOT_FOUND",
+        status: 404,
+        message: "Conversation not found.",
+      }),
+    );
+    const result = await postAssistantChoice(postArgs());
+    expect(result).toMatchObject({
+      status: "error",
+      code: "NOT_FOUND",
+      httpStatus: 404,
+      recoverability: "terminal",
+    });
+    expect(choiceSelectShouldIgnoreChallenge(result)).toBe(true);
+    expect(choiceSelectAllowsSameOptionRetry(result)).toBe(false);
+  });
+
+  it("keeps HTTP 200 PERMISSION_DENIED and IDEMPOTENCY_CONFLICT retryable after claim", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, {
+        status: "error",
+        code: "PERMISSION_DENIED",
+        message: "You do not have permission to perform this action.",
+      }),
+    );
+    const permission = await postAssistantChoice(postArgs());
+    expect(permission.recoverability).toBe("retryable");
+    expect(choiceSelectShouldIgnoreChallenge(permission)).toBe(false);
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, {
+        status: "error",
+        code: "IDEMPOTENCY_CONFLICT",
+        message: "Idempotency key already used with a different payload.",
+      }),
+    );
+    const idempotency = await postAssistantChoice(postArgs());
+    expect(idempotency.recoverability).toBe("retryable");
+    expect(choiceSelectShouldIgnoreChallenge(idempotency)).toBe(false);
+  });
+
+  it("keeps a bare HTTP 200 CHOICE_OPTION_CONFLICT retryable", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, {
+        status: "error",
+        code: "CHOICE_OPTION_CONFLICT",
+        message: "This choice was already resolved with a different option.",
+      }),
+    );
+    const result = await postAssistantChoice(postArgs());
+    expect(result.recoverability).toBe("retryable");
     expect(choiceSelectShouldIgnoreChallenge(result)).toBe(false);
     expect(choiceSelectAllowsSameOptionRetry(result)).toBe(true);
   });

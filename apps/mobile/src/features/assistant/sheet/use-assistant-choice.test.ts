@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import "../../../auth/react-test-dom";
 import {
   choiceCardOfferedOptions,
+  choiceCardShowsDismiss,
   type AssistantChoiceMessage,
   type ChoiceAppendPart,
   type ChoiceSelectResult,
@@ -352,11 +353,19 @@ describe("useAssistantChoice Phase A keep-pending (SHO-545)", () => {
       challengeId: choiceId,
       optionId: lemonId,
     });
-    expect(appendParts).not.toHaveBeenCalled();
+    expect(appendParts).toHaveBeenCalledWith([
+      {
+        type: "text",
+        text: "Duplicate product/variant lines are not allowed.",
+      },
+    ]);
     const pending = mounted.latest().pending;
     if (pending === null) {
       throw new Error("expected ChoiceCard after VALIDATION");
     }
+    expect(choiceCardShowsDismiss({ choice: pending, applying: false })).toBe(
+      true,
+    );
     expect(
       choiceCardOfferedOptions({
         choice: pending,
@@ -396,6 +405,147 @@ describe("useAssistantChoice Phase A keep-pending (SHO-545)", () => {
     await flush();
     expect(mounted.latest().ignoredChallengeIds.has(choiceId)).toBe(false);
     expect(mounted.latest().card.kind).toBe("proposed");
+    expect(mounted.latest().attempted).toEqual({
+      challengeId: choiceId,
+      optionId: lemonId,
+    });
+    const pending = mounted.latest().pending;
+    if (pending === null) {
+      throw new Error("expected ChoiceCard after NOT_FOUND");
+    }
+    expect(
+      choiceCardOfferedOptions({
+        choice: pending,
+        attempted: mounted.latest().attempted,
+      }).map((option) => option.id),
+    ).toEqual([lemonId]);
+    act(() => {
+      mounted.latest().select(vanillaId);
+    });
+    await flush();
+    expect(postChoice).toHaveBeenCalledOnce();
+    mounted.unmount();
+  });
+
+  it("does not hide the picker after HTTP 200 CONFLICT without picker extras", async () => {
+    const postChoice = vi.fn(() =>
+      Promise.resolve({
+        status: "error",
+        code: "CONFLICT",
+        message: "Order items must share a single currency.",
+        httpStatus: 200,
+      }),
+    );
+    const appendParts = vi.fn();
+    const mounted = mount({ postChoice, appendParts });
+    act(() => {
+      mounted.latest().select(lemonId);
+    });
+    await flush();
+    expect(mounted.latest().ignoredChallengeIds.has(choiceId)).toBe(false);
+    expect(mounted.latest().card.kind).toBe("proposed");
+    expect(appendParts).toHaveBeenCalledWith([
+      { type: "text", text: "Order items must share a single currency." },
+    ]);
+    act(() => {
+      mounted.latest().select(vanillaId);
+    });
+    await flush();
+    expect(postChoice).toHaveBeenCalledOnce();
+    mounted.unmount();
+  });
+
+  it("keeps the claimed option after bare CHOICE_OPTION_CONFLICT on a keep-pending card", async () => {
+    const postChoice = vi
+      .fn()
+      .mockResolvedValueOnce({
+        status: "error",
+        code: "VALIDATION",
+        message: "Duplicate product/variant lines are not allowed.",
+        httpStatus: 200,
+      })
+      .mockResolvedValueOnce({
+        status: "error",
+        code: "CHOICE_OPTION_CONFLICT",
+        message: "This choice was already resolved with a different option.",
+        httpStatus: 200,
+      });
+    const mounted = mount({ postChoice });
+    act(() => {
+      mounted.latest().select(lemonId);
+    });
+    await flush();
+    expect(mounted.latest().attempted).toEqual({
+      challengeId: choiceId,
+      optionId: lemonId,
+    });
+    act(() => {
+      mounted.latest().select(lemonId);
+    });
+    await flush();
+    expect(mounted.latest().ignoredChallengeIds.has(choiceId)).toBe(false);
+    expect(mounted.latest().card.kind).toBe("proposed");
+    expect(mounted.latest().attempted).toEqual({
+      challengeId: choiceId,
+      optionId: lemonId,
+    });
+    const pending = mounted.latest().pending;
+    if (pending === null) {
+      throw new Error("expected ChoiceCard after CHOICE_OPTION_CONFLICT");
+    }
+    expect(
+      choiceCardOfferedOptions({
+        choice: pending,
+        attempted: mounted.latest().attempted,
+      }).map((option) => option.id),
+    ).toEqual([lemonId]);
+    act(() => {
+      mounted.latest().select(vanillaId);
+    });
+    await flush();
+    expect(postChoice).toHaveBeenCalledTimes(2);
+    mounted.unmount();
+  });
+
+  it("hides the old picker on a successor needs_choice envelope", async () => {
+    const successorId = "44444444-4444-4444-8444-444444444444";
+    const postChoice = vi.fn(() =>
+      Promise.resolve({
+        status: "needs_choice",
+        text: "Select a variant for Eclairs: Coffee.",
+        challengeId: successorId,
+        reason: "variant_required" as const,
+        productName: "Eclairs",
+        options: [{ id: lemonId, label: "Coffee" }],
+        optionsTruncated: false,
+      }),
+    );
+    const mounted = mount({ postChoice });
+    act(() => {
+      mounted.latest().select(lemonId);
+    });
+    await flush();
+    expect(mounted.latest().ignoredChallengeIds.has(choiceId)).toBe(true);
+    expect(mounted.latest().card.kind).toBe("hidden");
+    mounted.unmount();
+  });
+
+  it("retires the card on HTTP 404 NOT_FOUND", async () => {
+    const postChoice = vi.fn(() =>
+      Promise.resolve({
+        status: "error",
+        code: "NOT_FOUND",
+        message: "Conversation not found.",
+        httpStatus: 404,
+      }),
+    );
+    const mounted = mount({ postChoice });
+    act(() => {
+      mounted.latest().select(lemonId);
+    });
+    await flush();
+    expect(mounted.latest().ignoredChallengeIds.has(choiceId)).toBe(true);
+    expect(mounted.latest().card.kind).toBe("hidden");
     mounted.unmount();
   });
 });

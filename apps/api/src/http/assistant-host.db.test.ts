@@ -34,7 +34,12 @@ import {
   createConversation,
   getModelHistory,
 } from "@showzy/assistant";
-import { archiveProduct, createProduct, restoreProduct } from "@showzy/catalog";
+import {
+  archiveProduct,
+  archiveVariant,
+  createProduct,
+  restoreProduct,
+} from "@showzy/catalog";
 import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
 import {
   createConfirmationHook,
@@ -2550,6 +2555,157 @@ describe("unpublished staff assistant host HTTP", () => {
     if (peekedRetry.kind === "found") {
       expect(peekedRetry.record.status).toBe("claimed");
       expect(peekedRetry.record.id).toBe(record.id);
+    }
+    expect(await orderCount()).toBe(beforeOrders);
+  });
+
+  it("Phase A CONFLICT without picker extras leaves pending claimed; same-option retry stays blocking (SHO-545)", async () => {
+    const h = harness({ model: silentModel() });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await h.invoke(createConversation, {
+      title: "Choice Phase A CONFLICT",
+    });
+    const customer = await h.invoke(createCustomer, {
+      name: "Phase A Conflict Buyer",
+      phone: nextPhone(),
+    });
+    const product = await h.invoke(createProduct, {
+      name: "Phase A Conflict Cake",
+      basePriceMinor: "1500",
+      variants: [{ name: "A" }, { name: "B" }],
+    });
+    const extra = await h.invoke(createProduct, {
+      name: "Phase A Conflict Extra",
+      basePriceMinor: "1000",
+      variants: [{ name: "Only" }],
+    });
+    const extraVariant = extra.variants[0];
+    if (extraVariant === undefined) {
+      throw new Error("expected extra variant");
+    }
+    await h.invoke(archiveVariant, { variantId: extraVariant.variantId });
+    const { record, optionByLabel } = await seedChoicePending(h, {
+      conversationId: conversation.id,
+      customerId: customer.id,
+      product,
+      extraProductId: extra.productId,
+    });
+    const optionId = optionByLabel.get("A");
+    if (optionId === undefined) {
+      throw new Error("expected option A");
+    }
+    const beforeOrders = await orderCount();
+    const first = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.id,
+        optionId,
+      },
+    });
+    expect(first.status).toBe(200);
+    const firstBody = assistantHostInteractionResultSchema.parse(
+      await first.json(),
+    );
+    expect(firstBody.status).toBe("error");
+    if (firstBody.status !== "error") {
+      return;
+    }
+    expect(firstBody.code).toBe("CONFLICT");
+    const peeked = await h.pendingStore.peekOpen({
+      conversationId: conversation.id,
+      bind: pendingBindFor(conversation.id),
+    });
+    expect(peeked.kind).toBe("found");
+    if (peeked.kind !== "found") {
+      throw new Error("expected pending still blocking after CONFLICT");
+    }
+    expect(peeked.record.status).toBe("claimed");
+    expect(peeked.record.id).toBe(record.id);
+    if (peeked.record.kind === "choice") {
+      expect(peeked.record.claimedOptionId).toBe(optionId);
+    }
+    expect(await orderCount()).toBe(beforeOrders);
+    const why = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHAT_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        text: "what happened?",
+        locale: "en",
+      },
+    });
+    const whyBody = assistantHostInteractionResultSchema.parse(
+      await why.json(),
+    );
+    expect(whyBody.status).toBe("ok");
+    if (whyBody.status === "ok") {
+      expect(whyBody.pending?.id).toBe(record.id);
+    }
+    const retry = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.id,
+        optionId,
+      },
+    });
+    const retryBody = assistantHostInteractionResultSchema.parse(
+      await retry.json(),
+    );
+    expect(retryBody.status).toBe("error");
+    if (retryBody.status === "error") {
+      expect(retryBody.code).toBe("CONFLICT");
+    }
+    if (retryBody.status === "ok") {
+      expect(retryBody.pending).not.toBeNull();
+    }
+    const peekedRetry = await h.pendingStore.peekOpen({
+      conversationId: conversation.id,
+      bind: pendingBindFor(conversation.id),
+    });
+    expect(peekedRetry.kind).toBe("found");
+    if (peekedRetry.kind === "found") {
+      expect(peekedRetry.record.status).toBe("claimed");
+      expect(peekedRetry.record.id).toBe(record.id);
+    }
+    const otherOptionId = optionByLabel.get("B");
+    if (otherOptionId === undefined) {
+      throw new Error("expected option B");
+    }
+    const conflict = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.id,
+        optionId: otherOptionId,
+      },
+    });
+    const conflictBody = assistantHostInteractionResultSchema.parse(
+      await conflict.json(),
+    );
+    expect(conflictBody).toMatchObject({
+      status: "error",
+      code: "CHOICE_OPTION_CONFLICT",
+    });
+    const peekedConflict = await h.pendingStore.peekOpen({
+      conversationId: conversation.id,
+      bind: pendingBindFor(conversation.id),
+    });
+    expect(peekedConflict.kind).toBe("found");
+    if (peekedConflict.kind === "found") {
+      expect(peekedConflict.record.status).toBe("claimed");
+      expect(peekedConflict.record.id).toBe(record.id);
+      if (peekedConflict.record.kind === "choice") {
+        expect(peekedConflict.record.claimedOptionId).toBe(optionId);
+      }
     }
     expect(await orderCount()).toBe(beforeOrders);
   });
