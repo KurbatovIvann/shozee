@@ -49,6 +49,12 @@ describe("live staff-assistant host (SHO-524)", () => {
     expect(hostSrc).not.toMatch(/defineActionContract\s*\(/);
     expect(hostSrc).toContain("catalog.resolveLineReferences");
     expect(hostSrc).toContain("customers.resolveCustomerReference");
+    expect(hostSrc).toContain("customers.getCustomer");
+    expect(hostSrc).toContain("catalog.getProduct");
+    expect(hostSrc).toContain('source: "host"');
+    expect(hostSrc).toContain("PENDING_CONFIRMATION_DISPLAY_TTL_MS");
+    expect(hostSrc).not.toContain("confirmationChallengeId: record.id");
+    expect(hostSrc).not.toContain("STAFF_ASSISTANT_CONFIRMATION_COPY");
     expect(hostSrc).not.toContain(
       "pending_replace choice probe must not execute the handler",
     );

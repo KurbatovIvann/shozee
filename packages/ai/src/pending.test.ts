@@ -8,16 +8,18 @@ import { CHOICE_TTL_MS } from "./choice.js";
 import {
   assistantResumeEnvelopeSchema,
   confirmationPendingRecord,
+  isPendingConfirmationDisplayExpired,
   parsePendingRecord,
+  PENDING_CONFIRMATION_DISPLAY_TTL_MS,
+  PENDING_CONFIRMATION_TTL_MS,
+  PENDING_OPEN_CODE,
+  PENDING_REPLACE_TOOL_NAME,
   pendingChoiceRecordFromChoiceRecord,
   pendingOpenRefuseOutput,
   pendingRedisKey,
   pendingTtlMs,
   publicPendingFromRecord,
   serializePendingRecord,
-  PENDING_CONFIRMATION_TTL_MS,
-  PENDING_OPEN_CODE,
-  PENDING_REPLACE_TOOL_NAME,
 } from "./pending.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -84,9 +86,10 @@ describe("pending record schema", () => {
     expect(JSON.stringify(publicView)).not.toContain(customerId);
   });
 
-  it("uses the core challengeId as the confirmation pending id", () => {
+  it("uses the core challengeId as the confirmation pending id when approval.source is core", () => {
     const record = confirmationPendingRecord({
       challengeId,
+      approval: { source: "core", challengeId },
       bind: { actorId: "anna", companyId, conversationId },
       actionName: "customers.deleteCustomer",
       toolCallId: "call-delete",
@@ -97,14 +100,82 @@ describe("pending record schema", () => {
     });
     expect(record.id).toBe(challengeId);
     expect(record.kind).toBe("confirmation");
+    expect(record.approval).toEqual({ source: "core", challengeId });
     const publicView = publicPendingFromRecord(record);
     expect(publicView).toMatchObject({
       kind: "confirmation",
       id: challengeId,
       challengeId,
       actionName: "customers.deleteCustomer",
+      approval: { source: "core", challengeId },
     });
     expect(JSON.stringify(publicView)).not.toContain("canonicalInput");
+  });
+
+  it("keeps a host pending id distinct from a core challenge and still confirms with that id", () => {
+    const pendingId = "99999999-9999-4999-8999-999999999999";
+    const record = confirmationPendingRecord({
+      challengeId: pendingId,
+      approval: { source: "host" },
+      bind: { actorId: "anna", companyId, conversationId },
+      actionName: "orders.create",
+      toolCallId: "call-create",
+      canonicalInput: { customer: { by: "id", id: customerId } },
+      summary: "Create 2 × Macarons (Lemon) for Anna.",
+      challengeExpiresAt: "2026-09-08T12:00:00.000Z",
+    });
+    expect(record.id).toBe(pendingId);
+    expect(record.approval).toEqual({ source: "host" });
+    const publicView = publicPendingFromRecord(record);
+    expect(publicView).toMatchObject({
+      kind: "confirmation",
+      id: pendingId,
+      challengeId: pendingId,
+      approval: { source: "host" },
+    });
+  });
+
+  it("fails closed when a confirmation record omits approval", () => {
+    expect(
+      parsePendingRecord(
+        JSON.stringify({
+          kind: "confirmation",
+          id: challengeId,
+          version: 1,
+          status: "open",
+          actorId: "anna",
+          companyId,
+          conversationId,
+          actionName: "customers.deleteCustomer",
+          toolCallId: "call-delete",
+          canonicalInput: { id: customerId },
+          summary: "Delete this archived customer.",
+          challengeExpiresAt: "2026-09-08T12:00:00.000Z",
+        }),
+      ),
+    ).toBeUndefined();
+  });
+
+  it("fails closed when core approval omits challengeId", () => {
+    expect(
+      parsePendingRecord(
+        JSON.stringify({
+          kind: "confirmation",
+          id: challengeId,
+          version: 1,
+          status: "open",
+          actorId: "anna",
+          companyId,
+          conversationId,
+          actionName: "customers.deleteCustomer",
+          toolCallId: "call-delete",
+          canonicalInput: { id: customerId },
+          summary: "Delete this archived customer.",
+          challengeExpiresAt: "2026-09-08T12:00:00.000Z",
+          approval: { source: "core" },
+        }),
+      ),
+    ).toBeUndefined();
   });
 
   it("namespaces pending Redis keys by kind so confirmation never GETDELs", () => {
@@ -116,13 +187,37 @@ describe("pending record schema", () => {
     );
   });
 
-  it("keeps confirmation TTL longer than core's 5 minutes by a short grace, shorter than choice", () => {
-    expect(PENDING_CONFIRMATION_TTL_MS).toBe(5 * 60 * 1000 + 15_000);
+  it("keeps confirmation Redis TTL longer than displayed 5 minutes by a short grace, shorter than choice", () => {
+    expect(PENDING_CONFIRMATION_DISPLAY_TTL_MS).toBe(5 * 60 * 1000);
+    expect(PENDING_CONFIRMATION_TTL_MS).toBe(
+      PENDING_CONFIRMATION_DISPLAY_TTL_MS + 15_000,
+    );
     expect(pendingTtlMs("confirmation")).toBe(PENDING_CONFIRMATION_TTL_MS);
     expect(pendingTtlMs("choice")).toBe(CHOICE_TTL_MS);
     expect(pendingTtlMs("choice")).toBeGreaterThan(
       pendingTtlMs("confirmation"),
     );
+    expect(
+      isPendingConfirmationDisplayExpired(
+        {
+          challengeExpiresAt: "2026-09-08T12:00:00.000Z",
+        },
+        Date.parse("2026-09-08T12:00:00.000Z"),
+      ),
+    ).toBe(true);
+    expect(
+      isPendingConfirmationDisplayExpired(
+        {
+          challengeExpiresAt: "2026-09-08T12:00:00.000Z",
+        },
+        Date.parse("2026-09-08T11:59:59.000Z"),
+      ),
+    ).toBe(false);
+    expect(
+      isPendingConfirmationDisplayExpired({
+        challengeExpiresAt: "not-a-date",
+      }),
+    ).toBe(true);
   });
 
   it("parses the shared resume envelope for surfaces, choice, and confirmation", () => {

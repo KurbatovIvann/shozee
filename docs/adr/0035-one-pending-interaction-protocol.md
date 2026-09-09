@@ -77,9 +77,13 @@ CAS; keys `pending:{kind}:{id}`):
 - common: `kind: "confirmation" | "choice"`, `id`, `status: "open" |
   "claimed" | "completed"`, bind `{ actorId, companyId, conversationId }`,
   `actionName`, `toolCallId`, `canonicalInput`, `locale`, `expiresAt`;
-- `confirmation` variant: `id` **is the core `challengeId`**; `canonicalInput`
-  is the exact object `executeAction` received (validated by the action's
-  own Zod on resume, so the core hash matches); `resolution: "confirmed"`;
+- `confirmation` variant: `id` is the **pending interaction id** (what
+  `POST /assistant/confirm` sends as `challengeId`). It is not always the
+  core `challengeId`. Discriminator `approval`:
+  `{ source: "host" }` or `{ source: "core"; challengeId }`. Canonical
+  input is the exact object `executeAction` received (validated by the
+  action's own Zod on resume, so a core hash matches when
+  `approval.source` is `"core"`); `resolution: "confirmed"`;
 - `choice` variant: the current `ChoiceRecord` fields (`target`,
   `optionMap`, `envelope`, `claimedOptionId`) unchanged.
 
@@ -109,26 +113,38 @@ rendering ids and summaries, never input.
 
 `POST /assistant/confirm { conversationId, challengeId }` mirrors
 `POST /assistant/choice`: session → resolve conversation → `claim`
-(bind must match, else `expired`) → `executeAction(actionName,
-canonicalInput, { confirmationChallengeId: challengeId, idempotencyKey:
-attemptKey("tool", conversationId, toolCallId) })` → core consumes the
-challenge and checks hash + bindings → persist the tool run
-(`recordAssistantTurn`, outcome `success`, plus `model_trace` per
-ADR-0034) → `complete` → one assistant turn with **protocol** speech and the
-entity card. Gate and reply model are not invoked.
+(bind must match, else `expired`) → execute stored canonical input.
+Body `challengeId` is the **pending interaction id** (`record.id`), not
+always a core challenge. Core resume (`approval.source: "core"`) passes
+`confirmationChallengeId: record.approval.challengeId` into
+`executeAction`; core consumes GETDEL and checks hash + bindings. Host
+resume (`approval.source: "host"`) omits `confirmationChallengeId`.
+Then persist the tool run (`recordAssistantTurn`, outcome `success`,
+plus `model_trace` per ADR-0034) → `complete` → continue the loop
+(ADR-0037). Gate and reply model are not invoked.
 
 Dismiss stays **client-local** (today's behaviour): nothing executes, the
 record and the core challenge expire. A server-side "reject" outcome is not
 part of this decision.
 
-### 5. Two locks, both mandatory
+### 5. Two locks, both mandatory for `approval.source: "core"`
 
-The api record is *what to run*; the core challenge is *permission to run
-it*. Resume succeeds only if the record claim passes **and** core's
-`getAndDelete` + hash/binding check passes. Neither is trusted instead of
-the other. A core mismatch (tampered record, expired challenge, idempotency
-key drift) does not loop: the api marks the record failed, persists outcome
-`error`, and protocol speech says the confirmation expired — ask again.
+For `approval.source: "core"`, the api record is *what to run*; the core
+challenge is *permission to run it*. Resume succeeds only if the record
+claim passes **and** core's `getAndDelete` + hash/binding check passes.
+Neither is trusted instead of the other. A core mismatch (tampered
+record, expired challenge, idempotency key drift) does not loop: the api
+marks the record failed, persists outcome `error`, and protocol speech
+says the confirmation expired — ask again.
+
+Named exception: `approval.source: "host"` only for unique
+`orders.create` after `pending_replace` when that action's
+`requiresConfirmation` is `false`. Redis bind+claim and the **displayed**
+approval expiry (5 minutes) are the HITL locks. GETDEL does not apply
+because core never issued a challenge. The host pending id must not be
+passed as `confirmationChallengeId`. The rejected alternative «Trust the
+api record alone and skip the core challenge on resume» **remains
+rejected** for `requiresConfirmation: true`.
 
 ### 6. Compatibility
 
@@ -183,10 +199,14 @@ Required by SHO-430; each is a test in SHO-516 unless marked otherwise.
   The next `/assistant/confirm` claims as replay, `executeAction` replays
   the stored result, the turn is persisted (idempotent by `attemptKey`),
   and the record is marked `completed`. No double write.
-- **TTLs.** Record TTL for `confirmation` = `CONFIRMATION_TTL_MS` (5 min)
-  plus a short grace so the api can answer "expired" instead of "missing";
-  core stays the authority on expiry. `choice` keeps `CHOICE_TTL_MS`
-  (15 min). Both records live only in Redis, are never logged at info
+- **TTLs.** Displayed confirmation expiry (`challengeExpiresAt` /
+  public `expiresAt`) is 5 minutes. Redis TTL for `confirmation` is that
+  window plus a short grace (+15s) so the api can answer "expired"
+  instead of "missing". Confirm execute rejects when
+  `now >= challengeExpiresAt` even if the Redis key is still live. Core
+  stays the authority on core-challenge expiry. `choice` keeps
+  `CHOICE_TTL_MS` (15 min). Both records live only in Redis, are never
+  logged at info
   level, and hold the same class of data the choice record already holds
   (canonical action input, which may include a customer's name or phone);
   this ADR accepts that posture explicitly.
@@ -211,9 +231,13 @@ Required by SHO-430; each is a test in SHO-516 unless marked otherwise.
   assistant is the only channel that needs a stored input, so the record
   belongs to the assistant's host, `apps/api`.
 - **Trust the api record alone and skip the core challenge on resume** —
-  rejected. Core's single-use challenge is the protocol every channel
-  shares; removing it from the AI path would make the AI path the weaker
-  one.
+  rejected for `requiresConfirmation: true`. Core's single-use challenge
+  is the protocol every channel shares; removing it from the AI path
+  would make the AI path the weaker one. Named exception (SHO-542):
+  unique `orders.create` after `pending_replace` when
+  `requiresConfirmation` is `false` may use `approval.source: "host"`
+  (Redis claim + displayed 5-minute expiry; pending id is not a core
+  challenge).
 - **Generalize by making choice a confirmation** (open a challenge for
   each picker option) — rejected. A picker is not a high-risk approval;
   forcing it through `requiresConfirmation` semantics would misuse the
@@ -238,12 +262,15 @@ Required by SHO-430; each is a test in SHO-516 unless marked otherwise.
 - Documentation: `packages/ai/AGENTS.md`, the `assistant` module
   `AGENTS.md`, and `docs/specs/security-operations.md` gain one paragraph
   each pointing here (in SHO-516). core.md §7 is unchanged.
-- Related ADRs: ADR-0008 (same actions for UI and AI) is preserved — both
-  channels still consume the same core challenge; ADR-0034 supplies the
-  model's memory of the confirmed result.
+- Related ADRs: ADR-0008 (same actions for UI and AI) is preserved —
+  `requiresConfirmation: true` resumes still consume the same core
+  challenge on every channel; host confirmation for unique
+  `orders.create` after `pending_replace` is the named exception in §5.
+  ADR-0034 supplies the model's memory of the confirmed result.
 - **Superseded in part by ADR-0037** (SHO-519 / SHO-520): keep this
   store (one pending record, discriminated `kind`, CAS, bind isolation,
-  core hash+GETDEL both required). Drop “zero model after execute” as
+  core hash+GETDEL both required for `approval.source: "core"`). Drop
+  “zero model after execute” as
   the end of the job. After the server runs stored canonical input, the
   same `streamText` loop continues from persisted messages. Replace is
   an explicit version-CAS of this pending, not a matching `actionName`.

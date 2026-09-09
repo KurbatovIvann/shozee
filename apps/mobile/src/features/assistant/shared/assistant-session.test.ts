@@ -941,6 +941,7 @@ describe("resumeOwnAssistantConversation", () => {
       summary: "Delete this archived customer.",
       expiresAt: "2026-09-08T12:00:00.000Z",
       toolCallId: "call-delete",
+      approval: { source: "core" as const, challengeId },
     };
     const result = await resumeOwnAssistantConversation({
       companyEpochRef: { current: 0 },

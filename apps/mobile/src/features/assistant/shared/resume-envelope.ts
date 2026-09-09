@@ -27,6 +27,16 @@ const publicPendingChoiceSchema = z.strictObject({
   envelope: staffAssistantChoiceCardEnvelopeSchema,
 });
 
+const publicPendingConfirmationApprovalSchema = z.discriminatedUnion("source", [
+  z.strictObject({
+    source: z.literal("host"),
+  }),
+  z.strictObject({
+    source: z.literal("core"),
+    challengeId: z.uuid(),
+  }),
+]);
+
 const publicPendingConfirmationSchema = z.strictObject({
   kind: z.literal("confirmation"),
   id: z.uuid(),
@@ -37,6 +47,7 @@ const publicPendingConfirmationSchema = z.strictObject({
   summary: z.string().min(1),
   expiresAt: z.string().min(1),
   toolCallId: z.string().min(1),
+  approval: publicPendingConfirmationApprovalSchema,
 });
 
 export const publicPendingSchema = z.discriminatedUnion("kind", [

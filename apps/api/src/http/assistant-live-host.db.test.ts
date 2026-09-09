@@ -852,6 +852,10 @@ async function seedConfirmationPending(
   }
   const record = confirmationPendingRecord({
     challengeId: unconfirmed.challenge.challengeId,
+    approval: {
+      source: "core",
+      challengeId: unconfirmed.challenge.challengeId,
+    },
     bind: pendingBindFor(conversationId),
     actionName: "customers.deleteCustomer",
     toolCallId: `call-delete:${customer.id}`,
@@ -1209,6 +1213,16 @@ describe("live staff assistant host HTTP (SHO-524)", () => {
         },
       ],
     });
+    expect(peeked.record.approval).toEqual({ source: "host" });
+    expect(replaced.pending).toMatchObject({
+      kind: "confirmation",
+      approval: { source: "host" },
+    });
+    expect(peeked.record.summary).toContain("Unique Live Buyer");
+    expect(peeked.record.summary).toContain("Unique Live Cake");
+    expect(peeked.record.summary).toContain("A");
+    expect(peeked.record.summary).toMatch(/\b2\b/);
+    expect(peeked.record.summary).not.toBe("Confirmation required.");
     const stale = await liveRequest(h.app, {
       method: "POST",
       path: ASSISTANT_HOST_CHOICE_PATH,

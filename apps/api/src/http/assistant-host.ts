@@ -10,8 +10,8 @@ import { randomUUID } from "node:crypto";
 import {
   applyChoiceOptionToCanonicalInput,
   assistantAbandonBodySchema,
-  assistantConfirmBodySchema,
   assistantChoiceBodySchema,
+  assistantConfirmBodySchema,
   assistantHostChatBodySchema,
   assistantHostInteractionResultSchema,
   assistantPendingPeekQuerySchema,
@@ -21,38 +21,42 @@ import {
   choiceCanonicalCreateInputSchema,
   choiceRecordFromPendingChoice,
   choiceRecordFromPickerConflict,
+  confirmationPendingRecord,
   continueStaffAssistantHostTurn,
   executionAttemptKey,
   extractUuidResultIds,
-  StaffAssistantNotConfiguredError,
+  fillStaffAssistantCopy,
   filterStaffAiTools,
   HOST_CHOICE_SEED_TOOL_CALL_ID_PREFIX,
-  isHostSeededHitlToolCallId,
   isChatTurnKey,
+  isHostSeededHitlToolCallId,
+  isPendingConfirmationDisplayExpired,
   isPendingReplaceActionName,
   isResumeTurnKey,
   mapPendingReplaceFacadeInput,
   ORDERS_CREATE_ACTION_NAME,
+  PENDING_CONFIRMATION_DISPLAY_TTL_MS,
   PENDING_REPLACE_TOOL_NAME,
   pendingChoiceRecordFromChoiceRecord,
+  pendingConfirmationApprovalSchema,
   presentChoiceStaffAssistantNeedsChoice,
   publicPendingFromRecord,
   refuseHostPendingOpen,
   resolveMappedVariantId,
   resumeTurnKey,
   runStaffAssistantHostTurn,
+  STAFF_ASSISTANT_DEFAULT_LOCALE,
+  StaffAssistantNotConfiguredError,
   staffAssistantModelMessagesFromPersisted,
   staffAssistantTurnContextAddendum,
   staffAssistantWorkingSetAddendum,
-  STAFF_ASSISTANT_CONFIRMATION_COPY,
-  STAFF_ASSISTANT_DEFAULT_LOCALE,
   successorPendingChoiceId,
-  confirmationPendingRecord,
   type AssistantHostInteractionResult,
   type AssistantResumeCard,
   type CatalogPickerConflictExtras,
   type ChoiceCanonicalCreateInput,
   type LanguageModel,
+  type PendingConfirmationApproval,
   type PendingInteractionRecord,
   type PublicPending,
   type StaffAssistantHostCheckpoint,
@@ -87,7 +91,7 @@ import {
 } from "@showzy/core/errors";
 import { assistantSurfacesFromToolResults } from "@showzy/validation/assistant-surfaces";
 import { Hono, type Context } from "hono";
-import type { z } from "zod";
+import { z } from "zod";
 
 import type { ConversationLock } from "../stores/conversation-lock.js";
 import type { StaffAssistantPendingStore } from "../stores/pending.js";
@@ -336,6 +340,8 @@ function priorRunsFromHistory(
 const RESOLVE_CUSTOMER_REFERENCE_ACTION =
   "customers.resolveCustomerReference" as const;
 const RESOLVE_LINE_REFERENCES_ACTION = "catalog.resolveLineReferences" as const;
+const GET_CUSTOMER_ACTION = "customers.getCustomer" as const;
+const GET_PRODUCT_ACTION = "catalog.getProduct" as const;
 
 const CHOICE_PENDING_REPLACE_UNIQUE_REFUSE = {
   status: "error" as const,
@@ -344,8 +350,24 @@ const CHOICE_PENDING_REPLACE_UNIQUE_REFUSE = {
     "This pending cannot be replaced with those arguments. Tap the card or abandon first.",
 };
 
-/** Displayed confirmation expiry. Matches core's 5-minute challenge; do not import core. */
-const HOST_CONFIRMATION_CHALLENGE_TTL_MS = 5 * 60 * 1000;
+const HOST_ORDERS_CREATE_CONFIRMATION_COPY = {
+  en: "Create {{lines}} for {{customer}}.",
+  uk: "Створити {{lines}} для {{customer}}.",
+} as const;
+
+const staffNamedOutputSchema = z.object({
+  name: z.string().min(1),
+});
+
+const staffProductOutputSchema = z.object({
+  name: z.string().min(1),
+  variants: z.array(
+    z.object({
+      id: z.uuid(),
+      name: z.string().min(1),
+    }),
+  ),
+});
 
 function catalogLineFromChoiceItem(
   item: ChoiceCanonicalCreateInput["items"][number],
@@ -1287,6 +1309,189 @@ async function harvestChoiceReplacePickerExtras(options: {
   return undefined;
 }
 
+function confirmationApprovalOf(
+  record: PendingInteractionRecord,
+): PendingConfirmationApproval | undefined {
+  if (record.kind !== "confirmation") {
+    return undefined;
+  }
+  const parsed = pendingConfirmationApprovalSchema.safeParse(record.approval);
+  return parsed.success ? parsed.data : undefined;
+}
+
+function isHostOrdersCreateConfirmationAllowed(
+  record: PendingInteractionRecord,
+  action: ImplementedAction<z.ZodType, z.ZodType, unknown>,
+): boolean {
+  return (
+    record.actionName === ORDERS_CREATE_ACTION_NAME &&
+    action.contract.requiresConfirmation === false &&
+    confirmationApprovalOf(record)?.source === "host"
+  );
+}
+
+function isHostOrdersCreatePendingReplace(
+  record: PendingInteractionRecord,
+  action: ImplementedAction<z.ZodType, z.ZodType, unknown>,
+): boolean {
+  if (record.actionName !== ORDERS_CREATE_ACTION_NAME) {
+    return false;
+  }
+  if (action.contract.requiresConfirmation !== false) {
+    return false;
+  }
+  if (record.kind === "choice") {
+    return true;
+  }
+  return confirmationApprovalOf(record)?.source === "host";
+}
+
+function formatMilliQuantity(milli: string): string {
+  const value = BigInt(milli);
+  const whole = value / 1000n;
+  const fraction = value % 1000n;
+  if (fraction === 0n) {
+    return String(whole);
+  }
+  const fractionText = fraction.toString().padStart(3, "0").replace(/0+$/, "");
+  return `${String(whole)}.${fractionText}`;
+}
+
+function formatCreateQuantity(
+  quantity: ChoiceCanonicalCreateInput["items"][number]["quantity"],
+): string {
+  if ("milli" in quantity) {
+    return formatMilliQuantity(quantity.milli);
+  }
+  return quantity.decimal;
+}
+
+function entityRefLabel(ref: ChoiceCanonicalCreateInput["customer"]): string {
+  return ref.by === "id" ? ref.id : ref.value;
+}
+
+async function executeStaffRead(
+  options: {
+    readonly runtime: StaffAssistantHostRuntime;
+    readonly staffPrincipal: {
+      readonly mode: "staff";
+      readonly session: SessionPrincipal;
+      readonly companySelector: string | null;
+    };
+  },
+  actionName: string,
+  input: unknown,
+): Promise<unknown> {
+  return executeAction(options.runtime.pipeline, {
+    action: requireImplementation(options.runtime.registry, actionName),
+    input,
+    request: staffRequest({
+      requestId: options.runtime.requestId,
+      clientIp: options.runtime.clientIp,
+      aiTraceId: options.runtime.requestId,
+    }),
+    principal: options.staffPrincipal,
+  });
+}
+
+async function hostOrdersCreateLineLabel(
+  options: {
+    readonly runtime: StaffAssistantHostRuntime;
+    readonly staffPrincipal: {
+      readonly mode: "staff";
+      readonly session: SessionPrincipal;
+      readonly companySelector: string | null;
+    };
+  },
+  item: ChoiceCanonicalCreateInput["items"][number],
+): Promise<string> {
+  let productName = entityRefLabel(item.product);
+  let variantName: string | undefined;
+  if (item.product.by === "id") {
+    try {
+      const product = staffProductOutputSchema.safeParse(
+        await executeStaffRead(options, GET_PRODUCT_ACTION, {
+          productId: item.product.id,
+        }),
+      );
+      if (product.success) {
+        productName = product.data.name;
+        const variantRef =
+          item.variantSelection?.kind === "reference"
+            ? item.variantSelection.ref
+            : item.variant;
+        if (variantRef?.by === "id") {
+          const variant = product.data.variants.find(
+            (entry) => entry.id === variantRef.id,
+          );
+          if (variant !== undefined) {
+            variantName = variant.name;
+          }
+        } else if (variantRef?.by === "query") {
+          variantName = variantRef.value;
+        }
+      }
+    } catch (error) {
+      if (!(error instanceof CoreError)) {
+        throw error;
+      }
+    }
+  }
+  if (
+    variantName === undefined &&
+    item.variantSelection?.kind === "reference" &&
+    item.variantSelection.ref.by === "query"
+  ) {
+    variantName = item.variantSelection.ref.value;
+  }
+  if (variantName === undefined && item.variant?.by === "query") {
+    variantName = item.variant.value;
+  }
+  const catalog =
+    variantName === undefined ? productName : `${productName} (${variantName})`;
+  return `${formatCreateQuantity(item.quantity)} × ${catalog}`;
+}
+
+async function hostOrdersCreateConfirmationSummary(
+  options: {
+    readonly runtime: StaffAssistantHostRuntime;
+    readonly staffPrincipal: {
+      readonly mode: "staff";
+      readonly session: SessionPrincipal;
+      readonly companySelector: string | null;
+    };
+  },
+  canonical: ChoiceCanonicalCreateInput,
+  locale: StaffAssistantLocale,
+): Promise<string> {
+  let customerName = entityRefLabel(canonical.customer);
+  if (canonical.customer.by === "id") {
+    try {
+      const customer = staffNamedOutputSchema.safeParse(
+        await executeStaffRead(options, GET_CUSTOMER_ACTION, {
+          id: canonical.customer.id,
+        }),
+      );
+      if (customer.success) {
+        customerName = customer.data.name;
+      }
+    } catch (error) {
+      if (!(error instanceof CoreError)) {
+        throw error;
+      }
+    }
+  }
+  const lines = (
+    await Promise.all(
+      canonical.items.map((item) => hostOrdersCreateLineLabel(options, item)),
+    )
+  ).join("; ");
+  return fillStaffAssistantCopy(HOST_ORDERS_CREATE_CONFIRMATION_COPY[locale], {
+    customer: customerName,
+    lines,
+  });
+}
+
 async function applyHostPendingReplace(options: {
   readonly runtime: StaffAssistantHostRuntime;
   readonly record: PendingInteractionRecord;
@@ -1306,60 +1511,12 @@ async function applyHostPendingReplace(options: {
     options.record.actionName,
     options.facade,
   );
+  const action = requireImplementation(
+    options.runtime.registry,
+    options.record.actionName,
+  );
   let next: PendingInteractionRecord;
-  if (options.record.kind === "confirmation") {
-    const stagedExecutionId = await stagePendingReplaceExecution(options);
-    const action = requireImplementation(
-      options.runtime.registry,
-      options.record.actionName,
-    );
-    let required: ConfirmationRequiredError | undefined;
-    try {
-      await executeAction(options.runtime.pipeline, {
-        action,
-        input: mapped,
-        request: staffRequest({
-          requestId: options.runtime.requestId,
-          clientIp: options.runtime.clientIp,
-          aiTraceId: options.runtime.requestId,
-          toolCallId: options.record.toolCallId,
-          idempotencyKey: executionAttemptKey(
-            options.bind.conversationId,
-            stagedExecutionId,
-          ),
-        }),
-        principal: options.staffPrincipal,
-      });
-    } catch (error) {
-      if (error instanceof ConfirmationRequiredError) {
-        required = error;
-      } else {
-        throw error;
-      }
-    }
-    if (required === undefined) {
-      throw new CoreInvariantError(
-        "pending_replace confirmation probe must not execute the handler",
-      );
-    }
-    next = confirmationPendingRecord({
-      challengeId: required.challenge.challengeId,
-      bind: options.bind,
-      actionName: options.record.actionName,
-      toolCallId: options.record.toolCallId,
-      canonicalInput: mapped,
-      summary: required.challenge.summary,
-      challengeExpiresAt: required.challenge.expiresAt,
-      executionId: stagedExecutionId,
-      version: options.record.version + 1,
-      ...(options.record.locale !== undefined
-        ? { locale: options.record.locale }
-        : {}),
-    });
-  } else {
-    if (options.record.actionName !== ORDERS_CREATE_ACTION_NAME) {
-      return CHOICE_PENDING_REPLACE_UNIQUE_REFUSE;
-    }
+  if (isHostOrdersCreatePendingReplace(options.record, action)) {
     const canonical = choiceCanonicalCreateInputSchema.parse(mapped);
     const extras = await harvestChoiceReplacePickerExtras({
       runtime: options.runtime,
@@ -1367,19 +1524,25 @@ async function applyHostPendingReplace(options: {
       staffPrincipal: options.staffPrincipal,
     });
     if (extras === undefined) {
-      // Unique args: persist confirmation (new version, new execution_id).
-      // Do not execute the write — staff still taps confirm (SHO-542).
       const stagedExecutionId = await stagePendingReplaceExecution(options);
       const locale = options.record.locale ?? STAFF_ASSISTANT_DEFAULT_LOCALE;
       next = confirmationPendingRecord({
         challengeId: randomUUID(),
+        approval: { source: "host" },
         bind: options.bind,
         actionName: options.record.actionName,
         toolCallId: options.record.toolCallId,
         canonicalInput: canonical,
-        summary: STAFF_ASSISTANT_CONFIRMATION_COPY[locale],
+        summary: await hostOrdersCreateConfirmationSummary(
+          {
+            runtime: options.runtime,
+            staffPrincipal: options.staffPrincipal,
+          },
+          canonical,
+          locale,
+        ),
         challengeExpiresAt: new Date(
-          Date.now() + HOST_CONFIRMATION_CHALLENGE_TTL_MS,
+          Date.now() + PENDING_CONFIRMATION_DISPLAY_TTL_MS,
         ).toISOString(),
         executionId: stagedExecutionId,
         version: options.record.version + 1,
@@ -1411,6 +1574,63 @@ async function applyHostPendingReplace(options: {
         executionId: stagedExecutionId,
       });
     }
+  } else if (
+    options.record.kind === "confirmation" &&
+    action.contract.requiresConfirmation === true &&
+    confirmationApprovalOf(options.record)?.source === "core"
+  ) {
+    const stagedExecutionId = await stagePendingReplaceExecution(options);
+    let required: ConfirmationRequiredError | undefined;
+    try {
+      await executeAction(options.runtime.pipeline, {
+        action,
+        input: mapped,
+        request: staffRequest({
+          requestId: options.runtime.requestId,
+          clientIp: options.runtime.clientIp,
+          aiTraceId: options.runtime.requestId,
+          toolCallId: options.record.toolCallId,
+          idempotencyKey: executionAttemptKey(
+            options.bind.conversationId,
+            stagedExecutionId,
+          ),
+        }),
+        principal: options.staffPrincipal,
+      });
+    } catch (error) {
+      if (error instanceof ConfirmationRequiredError) {
+        required = error;
+      } else {
+        throw error;
+      }
+    }
+    if (required === undefined) {
+      throw new CoreInvariantError(
+        "pending_replace confirmation probe must not execute the handler",
+      );
+    }
+    next = confirmationPendingRecord({
+      challengeId: required.challenge.challengeId,
+      approval: {
+        source: "core",
+        challengeId: required.challenge.challengeId,
+      },
+      bind: options.bind,
+      actionName: options.record.actionName,
+      toolCallId: options.record.toolCallId,
+      canonicalInput: mapped,
+      summary: required.challenge.summary,
+      challengeExpiresAt: required.challenge.expiresAt,
+      executionId: stagedExecutionId,
+      version: options.record.version + 1,
+      ...(options.record.locale !== undefined
+        ? { locale: options.record.locale }
+        : {}),
+    });
+  } else if (options.record.kind === "choice") {
+    return CHOICE_PENDING_REPLACE_UNIQUE_REFUSE;
+  } else {
+    return { status: "expired" as const };
   }
   const replaced = await options.runtime.pendingStore.replace({
     id: options.record.id,
@@ -1943,6 +2163,29 @@ export async function executeStaffAssistantHostConfirm(
         if (peeked.kind === "expired" || peeked.kind === "forbidden") {
           return interactionResponse(expiredResult(), options.requestId);
         }
+        if (peeked.record.kind !== "confirmation") {
+          return interactionResponse(expiredResult(), options.requestId);
+        }
+        const peekedApproval = confirmationApprovalOf(peeked.record);
+        if (peekedApproval === undefined) {
+          return interactionResponse(expiredResult(), options.requestId);
+        }
+        if (isPendingConfirmationDisplayExpired(peeked.record)) {
+          return interactionResponse(expiredResult(), options.requestId);
+        }
+        const peekedAction = requireImplementation(
+          options.registry,
+          peeked.record.actionName,
+        );
+        if (peekedApproval.source === "host") {
+          if (
+            !isHostOrdersCreateConfirmationAllowed(peeked.record, peekedAction)
+          ) {
+            return interactionResponse(expiredResult(), options.requestId);
+          }
+        } else if (peekedAction.contract.requiresConfirmation !== true) {
+          return interactionResponse(expiredResult(), options.requestId);
+        }
         const claimed = await options.pendingStore.claim({
           id: parsed.data.challengeId,
           kind: "confirmation",
@@ -1956,6 +2199,24 @@ export async function executeStaffAssistantHostConfirm(
         }
         const record = claimed.record;
         if (record.kind !== "confirmation") {
+          return interactionResponse(expiredResult(), options.requestId);
+        }
+        const approval = confirmationApprovalOf(record);
+        if (approval === undefined) {
+          return interactionResponse(expiredResult(), options.requestId);
+        }
+        if (isPendingConfirmationDisplayExpired(record)) {
+          return interactionResponse(expiredResult(), options.requestId);
+        }
+        const action = requireImplementation(
+          options.registry,
+          record.actionName,
+        );
+        if (approval.source === "host") {
+          if (!isHostOrdersCreateConfirmationAllowed(record, action)) {
+            return interactionResponse(expiredResult(), options.requestId);
+          }
+        } else if (action.contract.requiresConfirmation !== true) {
           return interactionResponse(expiredResult(), options.requestId);
         }
         const actor = await executeAction(options.pipeline, {
@@ -1996,7 +2257,9 @@ export async function executeStaffAssistantHostConfirm(
             runtime: options,
             record,
             input: record.canonicalInput,
-            confirmationChallengeId: record.id,
+            ...(approval.source === "core"
+              ? { confirmationChallengeId: approval.challengeId }
+              : {}),
             staffPrincipal: auth.staffPrincipal,
             executionId,
           });
