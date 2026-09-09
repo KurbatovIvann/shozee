@@ -141,9 +141,26 @@ export async function handleAssistantKitChoice(
         requestId,
       );
     }
+    // The transcript has to carry the second question too. Live it is in
+    // `openPause`, but a reload reads the document — and a document that shows
+    // the first question and not the second is a record of a conversation that
+    // did not happen.
+    const asked = {
+      kind: "interaction" as const,
+      interactionId: opened.pause.interactionId,
+      revision: opened.pause.revision,
+      pause: opened.pause,
+    };
+    await runtime.kit.document.write(scope, {
+      kind: "append",
+      messageId: randomUUID(),
+      role: "assistant",
+      parts: [asked],
+    });
+
     const payload: AssistantKitTurnOk = {
       status: "ok",
-      parts: [],
+      parts: [asked],
       pause: opened.pause,
     };
     return json(200, payload, requestId);
