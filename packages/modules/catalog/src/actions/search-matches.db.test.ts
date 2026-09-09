@@ -14,11 +14,13 @@ import { companyMembers } from "@showzy/db/schema/companies";
 import {
   SEARCH_GOLDEN_NAME_CASES,
   SEARCH_GOLDEN_VANILLA_NEGATIVE_NAME,
+  SEARCH_NAME_TRGM_THRESHOLD,
   SEARCH_QUERY_MAX,
   SEARCH_SUBLABEL_MAX,
   type SearchHit,
   type SearchVariantHit,
 } from "@showzy/validation/search";
+import { or, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { searchMatches } from "./search-matches.js";
@@ -371,6 +373,58 @@ describe("catalog.searchMatches", () => {
         companyId: kitIdentities.companies.b,
       }),
     ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it("runs with the clusterwide word-similarity threshold the matcher assumes", async () => {
+    // `<%` carries no literal threshold — it reads this GUC, which
+    // migration 0056 sets clusterwide. If the two drift, every trigram
+    // branch silently changes selectivity with no error, so pin them.
+    const shown = await kit.db.runtime.pool.query<{
+      "pg_trgm.word_similarity_threshold": string;
+    }>("SHOW pg_trgm.word_similarity_threshold");
+    const threshold = shown.rows[0]?.["pg_trgm.word_similarity_threshold"];
+    expect(threshold).toBeDefined();
+    expect(Number(threshold)).toBe(SEARCH_NAME_TRGM_THRESHOLD);
+  });
+
+  it("matches names through index-servable operators, not a scan", async () => {
+    // The pre-fix predicate was `word_similarity(token, name) >= 0.25` — a
+    // function call in a filter, which `gin_trgm_ops` cannot serve at any
+    // table size, and OR-ing it with the FTS branch blocked a BitmapOr so
+    // `name_fts` went unused too. What this pins is that both branches can
+    // now be *answered* from an index.
+    //
+    // The tenant conjunct is deliberately left out. On a fixture this small
+    // the planner satisfies `company_id = X` from its own index and drops
+    // the name predicate into a Filter — which it is free to do, and which
+    // would hide the difference this test exists to catch.
+    const token = "мак";
+    const compiled = kit.db.runtime.db
+      .select({ id: products.id })
+      .from(products)
+      .where(
+        or(
+          sql`${products.nameFts} @@ to_tsquery('simple', ${`${token}:*`})`,
+          sql`${token} <% ${products.name}`,
+        ),
+      )
+      .toSQL();
+
+    await kit.db.admin.query("BEGIN");
+    try {
+      await kit.db.admin.query("SET LOCAL enable_seqscan = off");
+      const explained = await kit.db.admin.query<{ "QUERY PLAN": string }>(
+        `EXPLAIN ${compiled.sql}`,
+        compiled.params,
+      );
+      const plan = explained.rows.map((row) => row["QUERY PLAN"]).join("\n");
+      expect(plan).toMatch(/BitmapOr/);
+      expect(plan).toMatch(/products_name_fts_gin_idx/);
+      expect(plan).toMatch(/products_name_trgm_idx/);
+      expect(plan).not.toMatch(/\bSeq Scan\b/);
+    } finally {
+      await kit.db.admin.query("ROLLBACK");
+    }
   });
 });
 

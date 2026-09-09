@@ -9,6 +9,7 @@
  * desc, then id asc. T3 Bugbot: the SQL window must match that sort.
  */
 import type { ActionCtx } from "@showzy/core";
+import { CoreInvariantError } from "@showzy/core/errors";
 import { orders } from "@showzy/db/schema/orders";
 import { likeContainsPattern } from "@showzy/validation/pagination";
 import {
@@ -17,7 +18,6 @@ import {
   SEARCH_STATUS_MAX,
   SEARCH_SUBLABEL_MAX,
   canonicalizeOrderNumberToken,
-  collapseSearchWhitespace,
   dedupSearchHits,
   foldSearchNameToken,
   pickPreferredSearchHit,
@@ -71,9 +71,7 @@ export async function runOrdersSearchMatches(args: {
   readonly customerIds: readonly string[] | undefined;
 }): Promise<OrdersSearchMatchesResult> {
   const hits = sortHits(
-    dedupSearchHits(
-      (await fetchOrderRows(args)).map((row) => toOrderHit(row, args)),
-    ),
+    dedupSearchHits((await fetchOrderRows(args)).map((row) => toOrderHit(row))),
   );
   const group = toDisplayGroup(hits, args.limitPerType);
   return { groups: group === undefined ? [] : [group] };
@@ -88,19 +86,15 @@ async function fetchOrderRows(args: {
   readonly limitPerType: number;
   readonly customerIds: readonly string[] | undefined;
 }): Promise<readonly OrderSearchRow[]> {
-  const numberToken = canonicalizeOrderNumberToken(args.query, args.prefix);
-  const numberPattern =
-    numberToken === undefined
-      ? undefined
-      : orderNumberLeftPrefixPattern(numberToken);
+  const numberLiteral = canonicalOrderNumberLiteral(args.query, args.prefix);
   const numberMatch =
-    numberPattern === undefined
+    numberLiteral === undefined
       ? undefined
-      : sql`${orders.orderNumber} LIKE ${numberPattern}`;
+      : sql`${orders.orderNumber} LIKE ${`${numberLiteral}%`}`;
   const numberExact =
-    numberToken === undefined
+    numberLiteral === undefined
       ? undefined
-      : sql`${orders.orderNumber} = ${numberToken}`;
+      : sql`${orders.orderNumber} = ${numberLiteral}`;
   const customerIds = uniqueIds(args.customerIds);
   const customerMatch =
     customerIds.length === 0
@@ -134,6 +128,15 @@ async function fetchOrderRows(args: {
       customerNameSnapshot: orders.customerNameSnapshot,
       status: orders.status,
       rank,
+      // `matchedOn` is read back from the very predicates that formed the
+      // WHERE clause instead of being re-derived in TypeScript. Two
+      // implementations of one match could disagree, and the row still
+      // shipped — with whatever `matchedOn` the reconstruction defaulted to.
+      matchedNumber: numberMatch ?? sql`FALSE`,
+      matchedNumberExact: numberExact ?? sql`FALSE`,
+      matchedCustomer: customerMatch ?? sql`FALSE`,
+      matchedSnapshot: snapshotMatch ?? sql`FALSE`,
+      matchedSnapshotExact: snapshotExact,
     })
     .from(orders)
     .where(scoped)
@@ -148,7 +151,26 @@ type OrderSearchRow = {
   readonly customerNameSnapshot: string;
   readonly status: string;
   readonly rank: unknown;
+  readonly matchedNumber: unknown;
+  readonly matchedNumberExact: unknown;
+  readonly matchedCustomer: unknown;
+  readonly matchedSnapshot: unknown;
+  readonly matchedSnapshotExact: unknown;
 };
+
+/**
+ * One canonical literal for both the LIKE prefix and the equality test.
+ * `sanitizeLikeLiteral` strips LIKE metacharacters, and only the pattern
+ * used to go through it — so `= 'SP-32_KU'` and `LIKE 'SP-32KU%'` were
+ * comparing different strings for the same query.
+ */
+function canonicalOrderNumberLiteral(
+  query: string,
+  prefix: string,
+): string | undefined {
+  const canonical = canonicalizeOrderNumberToken(query, prefix);
+  return canonical === undefined ? undefined : sanitizeLikeLiteral(canonical);
+}
 
 function snapshotMatchSql(tokens: readonly string[]): SQL | undefined {
   const clauses: SQL[] = [notUnlinkedSql()];
@@ -207,19 +229,21 @@ function rankSql(args: {
   END)`;
 }
 
-function toOrderHit(
-  row: OrderSearchRow,
-  args: {
-    readonly prefix: string;
-    readonly query: string;
-    readonly prepared: PreparedTokens;
-    readonly customerIds: readonly string[] | undefined;
-  },
-): InternalHit {
-  const preferred = preferredHit([
-    numberCandidate(row.orderNumber, args.query, args.prefix),
-    customerCandidate(row.customerId, args.customerIds),
-    snapshotCandidate(row.customerNameSnapshot, args.prepared),
+function toOrderHit(row: OrderSearchRow): InternalHit {
+  const preferred = preferredHit(row.id, [
+    toBool(row.matchedNumber)
+      ? { matchedOn: "number", exact: toBool(row.matchedNumberExact) }
+      : undefined,
+    // Found through a related customer — never this order's own field.
+    toBool(row.matchedCustomer)
+      ? { matchedOn: "customer", exact: false }
+      : undefined,
+    toBool(row.matchedSnapshot)
+      ? {
+          matchedOn: "customerNameSnapshot",
+          exact: toBool(row.matchedSnapshotExact),
+        }
+      : undefined,
   ]);
   return {
     type: "order",
@@ -233,55 +257,8 @@ function toOrderHit(
   };
 }
 
-function numberCandidate(
-  stored: string,
-  query: string,
-  prefix: string,
-): { matchedOn: "number"; exact: boolean } | undefined {
-  const canonical = canonicalizeOrderNumberToken(query, prefix);
-  if (canonical === undefined || !stored.startsWith(canonical)) {
-    return undefined;
-  }
-  return { matchedOn: "number", exact: stored === canonical };
-}
-
-function customerCandidate(
-  customerId: string | null,
-  customerIds: readonly string[] | undefined,
-): { matchedOn: "customer"; exact: false } | undefined {
-  if (customerId === null) {
-    return undefined;
-  }
-  const ids = uniqueIds(customerIds);
-  if (!ids.includes(customerId)) {
-    return undefined;
-  }
-  return { matchedOn: "customer", exact: false };
-}
-
-function snapshotCandidate(
-  snapshot: string,
-  prepared: PreparedTokens,
-): { matchedOn: "customerNameSnapshot"; exact: boolean } | undefined {
-  if (snapshot === UNLINKED_CUSTOMER_NAME_SNAPSHOT) {
-    return undefined;
-  }
-  const foldedSnapshot = foldSearchNameToken(
-    collapseSearchWhitespace(snapshot),
-  );
-  const foldedQuery = foldSearchNameToken(prepared.queryNormalized);
-  if (foldedSnapshot === foldedQuery) {
-    return { matchedOn: "customerNameSnapshot", exact: true };
-  }
-  for (const token of prepared.tokens) {
-    if (!foldedSnapshot.includes(token)) {
-      return undefined;
-    }
-  }
-  return { matchedOn: "customerNameSnapshot", exact: false };
-}
-
 function preferredHit(
+  orderId: string,
   candidates: ReadonlyArray<
     { matchedOn: SearchMatchedOn; exact: boolean } | undefined
   >,
@@ -292,7 +269,14 @@ function preferredHit(
   );
   const first = present[0];
   if (first === undefined) {
-    return { matchedOn: "number", exact: false };
+    // The WHERE clause is the OR of exactly these three predicates and the
+    // selected booleans are those same expressions, so every fetched row
+    // explains itself. Reaching here means the two drifted apart, which is
+    // a server bug -- not a reason to ship a made-up `matchedOn` to the
+    // client and to the model that reads it.
+    throw new CoreInvariantError(
+      `orders.searchMatches fetched order "${orderId}" without a matching predicate`,
+    );
   }
   return present.reduce(pickPreferredSearchHit, first);
 }
@@ -368,6 +352,17 @@ function optionalClip(
   }
   const clipped = clip(value, max);
   return clipped.length === 0 ? undefined : clipped;
+}
+
+/**
+ * Postgres boolean columns arrive as JS booleans; the string forms are a
+ * driver-shape guard only. Anything else is not a match.
+ */
+function toBool(value: unknown): boolean {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  return value === "t" || value === "true";
 }
 
 function toRank(value: unknown): number {

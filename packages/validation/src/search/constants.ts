@@ -13,6 +13,19 @@ export const SEARCH_LABEL_MAX = 120;
 export const SEARCH_SUBLABEL_MAX = 80;
 /** Digits-only length after UA canonicalize (`0…` / `+380…` → `380…`). */
 export const SEARCH_PHONE_MIN_DIGITS = 5;
+
+/**
+ * v1 `word_similarity` threshold for name matching; SHO-526 names 0.25.
+ *
+ * Matchers filter with the `<%` operator, not `word_similarity(…) >= x`:
+ * only the operator form can be served by a `gin_trgm_ops` index, and
+ * OR-ing a non-indexable call with the FTS branch cost that index too.
+ * `<%` reads its threshold from `pg_trgm.word_similarity_threshold`,
+ * which migration 0056 sets clusterwide to this value — so this constant
+ * is the code-side half of a pair. A db test pins the two together; do
+ * not change one without the other.
+ */
+export const SEARCH_NAME_TRGM_THRESHOLD = 0.25;
 export const SEARCH_STATUS_MAX = 40;
 
 export const SEARCH_ENTITY_TYPES = [
