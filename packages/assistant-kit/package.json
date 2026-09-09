@@ -1,0 +1,27 @@
+{
+  "name": "@showzy/assistant-kit",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Server-only pause/resume protocol for a tool-calling model that must ask a human before a write, plus the stored chat document. Extends AI SDK 7; owns no domain, no HTTP, no storage, no UI.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:unit": "vitest run"
+  },
+  "dependencies": {
+    "ai": "7.0.87",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@showzy/tooling": "workspace:*",
+    "@types/node": "^22.20.1",
+    "eslint": "^10.8.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10"
+  }
+}
