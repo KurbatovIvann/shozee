@@ -644,7 +644,7 @@ export function choiceSelectAppendParts(args: {
       {
         type: "dynamic-tool",
         toolName: "orders.create",
-        toolCallId: `choice:${args.previousChoiceId}`,
+        toolCallId: `choice_${args.previousChoiceId}`,
         state: "output-available",
         input: {},
         output: {

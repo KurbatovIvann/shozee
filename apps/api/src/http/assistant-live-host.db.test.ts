@@ -12,6 +12,7 @@ import {
   attemptKey,
   confirmationPendingRecord,
   executionAttemptKey,
+  HOST_PHASE_A_TOOL_CALL_ID_PREFIX,
   ORDERS_CREATE_TOOL_NAME,
   ORDERS_LIST_PAGE_TOOL_NAME,
   PENDING_REPLACE_TOOL_NAME,
@@ -1739,7 +1740,11 @@ describe("live staff assistant host HTTP (SHO-524)", () => {
       false,
     );
     expect(
-      afterCreates.some((row) => row.toolCallId.startsWith("phase-a:")),
+      afterCreates.some(
+        (row) =>
+          row.toolCallId.startsWith("phase-a:") ||
+          row.toolCallId.startsWith(HOST_PHASE_A_TOOL_CALL_ID_PREFIX),
+      ),
     ).toBe(false);
     const replay = await parseOk(
       await liveRequest(

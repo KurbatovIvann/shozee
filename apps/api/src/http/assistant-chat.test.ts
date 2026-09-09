@@ -244,6 +244,7 @@ describe("live assistant chat mount (SHO-524)", () => {
     expect(chat).not.toContain("streamStaffAssistantChat");
     expect(chat).not.toContain("classifyStaffAssistantTurn");
     expect(chat).not.toContain("runStaffAssistantHostTurn");
+    expect(chat).toContain("StaffAssistantProviderError");
     const guard = readFileSync(join(here, "assistant-budget-guard.ts"), "utf8");
     expect(guard).toContain("estimatedCostUsd: null");
     expect(guard).toContain("withStaffAssistantBudget");

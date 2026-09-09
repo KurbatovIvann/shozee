@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   ORDERS_CREATE_TOOL_NAME,
   ORDERS_LIST_PAGE_TOOL_NAME,
+  toProviderToolCallId,
 } from "./action-tool.js";
 import { STAFF_ASSISTANT_HISTORY_CACHE_PROVIDER_OPTIONS } from "./provider/anthropic.js";
 import {
@@ -12,6 +13,7 @@ import {
   pausedToolAttemptFromToolRuns,
   resolvePausedToolAttempt,
   resolveStaffAssistantChatUserMessage,
+  sanitizeStaffAssistantProviderHistory,
   staffAssistantChatBodySchema,
   staffAssistantHistoryStats,
   staffAssistantModelMessages,
@@ -884,6 +886,105 @@ describe("staffAssistantModelMessagesFromPersisted tool traces", () => {
           input: {},
         },
       ]),
+    );
+  });
+
+  it("keeps persisted HITL seed ids so stored toolCallId still matches reconstruction", () => {
+    const choiceId = "7f99ce88-b6ff-4ffd-9e8a-7ee15c2b3eb1";
+    const messages = staffAssistantModelMessagesFromPersisted([
+      { role: "user", body: "create" },
+      {
+        role: "assistant",
+        body: "Pick a customer.",
+        toolRuns: [
+          {
+            action: "orders.create",
+            toolCallId: `choice:${choiceId}`,
+            toolName: ORDERS_CREATE_TOOL_NAME,
+            modelTrace: { status: "choice_required" },
+          },
+        ],
+      },
+    ]);
+    expect(JSON.stringify(messages)).toContain(`choice:${choiceId}`);
+    expect(JSON.stringify(messages)).not.toContain(`choice_${choiceId}`);
+  });
+});
+
+describe("sanitizeStaffAssistantProviderHistory", () => {
+  const choiceId = "7f99ce88-b6ff-4ffd-9e8a-7ee15c2b3eb1";
+
+  it("rewrites paired tool-call and tool-result ids for the provider payload", () => {
+    const illegalToolName = `choice:${choiceId}`;
+    const sanitized = sanitizeStaffAssistantProviderHistory([
+      { role: "user", content: "create" },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: `choice:${choiceId}`,
+            toolName: illegalToolName,
+            input: {},
+          },
+          {
+            type: "tool-call",
+            toolCallId: `phase-a:${choiceId}`,
+            toolName: ORDERS_CREATE_TOOL_NAME,
+            input: {},
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: `choice:${choiceId}`,
+            toolName: illegalToolName,
+            output: { type: "json", value: { ok: true } },
+          },
+          {
+            type: "tool-result",
+            toolCallId: `phase-a:${choiceId}`,
+            toolName: ORDERS_CREATE_TOOL_NAME,
+            output: { type: "json", value: { ok: true } },
+          },
+        ],
+      },
+    ]);
+    expect(sanitized[1]).toMatchObject({
+      role: "assistant",
+      content: [
+        {
+          type: "tool-call",
+          toolCallId: `choice_${choiceId}`,
+          toolName: `choice_${choiceId}`,
+        },
+        {
+          type: "tool-call",
+          toolCallId: `phase-a_${choiceId}`,
+          toolName: ORDERS_CREATE_TOOL_NAME,
+        },
+      ],
+    });
+    expect(sanitized[2]).toMatchObject({
+      role: "tool",
+      content: [
+        {
+          type: "tool-result",
+          toolCallId: `choice_${choiceId}`,
+          toolName: `choice_${choiceId}`,
+        },
+        {
+          type: "tool-result",
+          toolCallId: `phase-a_${choiceId}`,
+          toolName: ORDERS_CREATE_TOOL_NAME,
+        },
+      ],
+    });
+    expect(toProviderToolCallId(`choice:${choiceId}`)).toBe(
+      `choice_${choiceId}`,
     );
   });
 });

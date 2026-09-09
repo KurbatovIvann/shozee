@@ -47,10 +47,12 @@ import {
   runStaffAssistantHostTurn,
   STAFF_ASSISTANT_DEFAULT_LOCALE,
   StaffAssistantNotConfiguredError,
+  StaffAssistantProviderError,
   staffAssistantModelMessagesFromPersisted,
   staffAssistantTurnContextAddendum,
   staffAssistantWorkingSetAddendum,
   successorPendingChoiceId,
+  toProviderToolName,
   type AssistantHostInteractionResult,
   type AssistantResumeCard,
   type CatalogPickerConflictExtras,
@@ -174,6 +176,17 @@ function wireResponse(error: unknown, requestId: string): Response {
       {
         code: error.code,
         status: 503,
+        message: error.message,
+      },
+      requestId,
+    );
+  }
+  if (error instanceof StaffAssistantProviderError) {
+    return jsonResponse(
+      502,
+      {
+        code: error.code,
+        status: 502,
         message: error.message,
       },
       requestId,
@@ -2147,7 +2160,7 @@ async function stageSuccessorExecutionId(options: {
     actionName: options.actionName,
     beginKey: `begin:successor:${options.nextId}`,
     toolCallId: `${HOST_CHOICE_SEED_TOOL_CALL_ID_PREFIX}${options.nextId}`,
-    toolName: `${HOST_CHOICE_SEED_TOOL_CALL_ID_PREFIX}${options.nextId}`,
+    toolName: toProviderToolName(options.actionName),
     toolInput: options.toolInput,
   });
 }

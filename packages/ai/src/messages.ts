@@ -1,6 +1,7 @@
 import type { ModelMessage } from "ai";
 import { z } from "zod";
 
+import { toProviderToolCallId } from "./action-tool.js";
 import { confirmationFromChatPart } from "./confirmation.js";
 import {
   budgetStaffAssistantToolRuns,
@@ -168,6 +169,48 @@ export type {
   StaffAssistantPersistedMessage,
   StaffAssistantPersistedToolRun,
 } from "./model-trace.js";
+
+function withProviderSafeToolIds<
+  T extends { toolCallId: string; toolName: string },
+>(part: T): T {
+  return {
+    ...part,
+    toolCallId: toProviderToolCallId(part.toolCallId),
+    toolName: toProviderToolCallId(part.toolName),
+  };
+}
+
+/**
+ * Anthropic rejects `tool_use.id` / tool names outside
+ * `^[a-zA-Z0-9_-]+$`. Host-minted HITL seeds used `choice:` / `phase-a:`.
+ * Persistence keeps those strings; apply this at the `streamText`
+ * boundary so reconstructed history still matches stored ids.
+ */
+export function sanitizeStaffAssistantProviderHistory(
+  messages: readonly ModelMessage[],
+): ModelMessage[] {
+  return messages.map((message) => {
+    if (message.role === "assistant" && Array.isArray(message.content)) {
+      return {
+        ...message,
+        content: message.content.map((part) =>
+          part.type === "tool-call" || part.type === "tool-result"
+            ? withProviderSafeToolIds(part)
+            : part,
+        ),
+      };
+    }
+    if (message.role === "tool" && Array.isArray(message.content)) {
+      return {
+        ...message,
+        content: message.content.map((part) =>
+          part.type === "tool-result" ? withProviderSafeToolIds(part) : part,
+        ),
+      };
+    }
+    return message;
+  });
+}
 
 /**
  * Model history from persisted conversation rows. Client `messages` are

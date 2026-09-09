@@ -16,6 +16,7 @@ import {
   type ActionToolExecute,
 } from "../action-tool.js";
 import { STAFF_ASSISTANT_CONFIRMATION_COPY } from "../confirmation.js";
+import { StaffAssistantProviderError } from "../errors.js";
 import {
   MockLanguageModelV3,
   mockSpokenStream,
@@ -25,10 +26,18 @@ import {
   mockToolCallsStream,
 } from "../test.js";
 import { ORDERS_LIST_PAGE_ASSISTANT_DEFAULT_LIMIT } from "../tool-facades/orders-list.js";
-import { STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK } from "../turn-speech.js";
+import {
+  STAFF_ASSISTANT_SUCCESS_SPEECH_FALLBACK,
+  STAFF_ASSISTANT_TOOL_ERROR_FALLBACK,
+} from "../turn-speech.js";
 import { HOST_HITL_PAUSED_STATUS } from "./execute.js";
 import {
   continueStaffAssistantHostTurn,
+  HOST_CHOICE_SEED_TOOL_CALL_ID_PREFIX,
+  HOST_CHOICE_SEED_TOOL_CALL_ID_PREFIX_LEGACY,
+  HOST_PHASE_A_TOOL_CALL_ID_PREFIX,
+  HOST_PHASE_A_TOOL_CALL_ID_PREFIX_LEGACY,
+  isHostSeededHitlToolCallId,
   refuseHostPendingOpen,
   runStaffAssistantHostTurn,
   type StaffAssistantHostCheckpoint,
@@ -267,11 +276,31 @@ describe("runStaffAssistantHostTurn", () => {
     expect(src).toContain("resumeTurn");
     expect(src).toContain("trailingUserMessageCount");
     expect(src).toContain("isHostSeededHitlToolCallId");
+    expect(src).toContain("sanitizeStaffAssistantProviderHistory");
+    expect(src).toContain("StaffAssistantProviderError");
+    expect(src).toContain('HOST_CHOICE_SEED_TOOL_CALL_ID_PREFIX = "choice_"');
+    expect(src).toContain(
+      'HOST_CHOICE_SEED_TOOL_CALL_ID_PREFIX_LEGACY = "choice:"',
+    );
     expect(src).toContain("streamText");
     expect(src).not.toContain("staff-assistant-stream");
     const toolRun = readFileSync(join(here, "../tool-run.ts"), "utf8");
     expect(toolRun).not.toContain("runStaffAssistantHostTurn");
     expect(toolRun).not.toContain("runtime/loop");
+  });
+
+  it("treats current and legacy HITL seed prefixes as host-minted", () => {
+    expect(HOST_CHOICE_SEED_TOOL_CALL_ID_PREFIX).toBe("choice_");
+    expect(HOST_CHOICE_SEED_TOOL_CALL_ID_PREFIX_LEGACY).toBe("choice:");
+    expect(HOST_PHASE_A_TOOL_CALL_ID_PREFIX).toBe("phase-a_");
+    expect(HOST_PHASE_A_TOOL_CALL_ID_PREFIX_LEGACY).toBe("phase-a:");
+    expect(isHostSeededHitlToolCallId("choice:pending-1")).toBe(true);
+    expect(isHostSeededHitlToolCallId("choice_pending-1")).toBe(true);
+    expect(isHostSeededHitlToolCallId("phase-a:pending-1")).toBe(true);
+    expect(isHostSeededHitlToolCallId("phase-a_pending-1")).toBe(true);
+    expect(isHostSeededHitlToolCallId("toolu_016wZR1CiDWHewr1ng2Yna1v")).toBe(
+      false,
+    );
   });
 
   it("persists usable model prose", async () => {
@@ -883,6 +912,93 @@ describe("runStaffAssistantHostTurn", () => {
     expect(turn.toolRuns).toEqual([]);
   });
 
+  it("fails the turn when generation fails without a committed write", async () => {
+    const kinds: string[] = [];
+    const checkpoint: StaffAssistantHostCheckpoint = {
+      begin: () => {
+        kinds.push("begin");
+        return Promise.resolve({ messageId: "msg-fail" });
+      },
+      stageRun: () => Promise.resolve({ executionId: "exec-1" }),
+      finishRun: () => Promise.resolve(),
+      complete: (input) => {
+        kinds.push(`complete:${input.body}`);
+        return Promise.resolve();
+      },
+    };
+    const model = new MockLanguageModelV3({
+      doStream: () => Promise.reject(new Error("generation failed")),
+    });
+    await expect(
+      runStaffAssistantHostTurn({
+        model,
+        messages: [{ role: "user", content: "hello" }],
+        contracts: [listOrders],
+        execute: vi.fn(),
+        checkpoint,
+      }),
+    ).rejects.toBeInstanceOf(StaffAssistantProviderError);
+    expect(kinds).toEqual([
+      "begin",
+      `complete:${STAFF_ASSISTANT_TOOL_ERROR_FALLBACK.uk}`,
+    ]);
+  });
+
+  it("rewrites illegal persisted toolCallIds before the provider call", async () => {
+    const choiceId = "7f99ce88-b6ff-4ffd-9e8a-7ee15c2b3eb1";
+    const model = new MockLanguageModelV3({
+      doStream: () => Promise.resolve(mockTextStream("ok")),
+    });
+    await runStaffAssistantHostTurn({
+      model,
+      messages: [
+        { role: "user", content: "create" },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "tool-call",
+              toolCallId: `choice:${choiceId}`,
+              toolName: ORDERS_CREATE_TOOL_NAME,
+              input: {},
+            },
+            {
+              type: "tool-call",
+              toolCallId: `phase-a:${choiceId}`,
+              toolName: ORDERS_CREATE_TOOL_NAME,
+              input: {},
+            },
+          ],
+        },
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: `choice:${choiceId}`,
+              toolName: ORDERS_CREATE_TOOL_NAME,
+              output: { type: "json", value: { ok: true } },
+            },
+            {
+              type: "tool-result",
+              toolCallId: `phase-a:${choiceId}`,
+              toolName: ORDERS_CREATE_TOOL_NAME,
+              output: { type: "json", value: { ok: true } },
+            },
+          ],
+        },
+        { role: "user", content: "and then?" },
+      ],
+      contracts: [listOrders],
+      execute: vi.fn(),
+    });
+    const prompt = JSON.stringify(model.doStreamCalls[0]?.prompt ?? []);
+    expect(prompt).not.toContain(`choice:${choiceId}`);
+    expect(prompt).not.toContain(`phase-a:${choiceId}`);
+    expect(prompt).toContain(`choice_${choiceId}`);
+    expect(prompt).toContain(`phase-a_${choiceId}`);
+  });
+
   it("replays a started run from storage without asking the model to re-emit the tool", async () => {
     const kinds: string[] = [];
     const checkpoint: StaffAssistantHostCheckpoint = {
@@ -1320,7 +1436,16 @@ describe("runStaffAssistantHostTurn", () => {
           seq: 0,
           actionName: "customers.deleteCustomer",
           toolName: toProviderToolName("customers.deleteCustomer"),
-          toolCallId: "phase-a:pending-1",
+          toolCallId: `${HOST_PHASE_A_TOOL_CALL_ID_PREFIX_LEGACY}pending-1`,
+          toolInput: { id: customerId },
+        },
+        {
+          messageId: "msg-phase-a-new",
+          executionId: "phase-a-exec-new",
+          seq: 0,
+          actionName: "customers.deleteCustomer",
+          toolName: toProviderToolName("customers.deleteCustomer"),
+          toolCallId: `${HOST_PHASE_A_TOOL_CALL_ID_PREFIX}pending-1`,
           toolInput: { id: customerId },
         },
         {
@@ -1329,7 +1454,19 @@ describe("runStaffAssistantHostTurn", () => {
           seq: 0,
           actionName: "orders.create",
           toolName: ORDERS_CREATE_TOOL_NAME,
-          toolCallId: "choice:pending-2",
+          toolCallId: `${HOST_CHOICE_SEED_TOOL_CALL_ID_PREFIX_LEGACY}pending-2`,
+          toolInput: {
+            customerId,
+            items: [{ productId: customerId, quantityMilli: "1000" }],
+          },
+        },
+        {
+          messageId: "msg-choice-new",
+          executionId: "choice-exec-new",
+          seq: 0,
+          actionName: "orders.create",
+          toolName: ORDERS_CREATE_TOOL_NAME,
+          toolCallId: `${HOST_CHOICE_SEED_TOOL_CALL_ID_PREFIX}pending-2`,
           toolInput: {
             customerId,
             items: [{ productId: customerId, quantityMilli: "1000" }],

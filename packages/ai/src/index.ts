@@ -18,7 +18,9 @@ export {
   ORDERS_LIST_PAGE_TOOL_NAME,
   PRICING_LIST_PRICE_LISTS_ACTION_NAME,
   PRICING_LIST_PRICE_LISTS_TOOL_NAME,
+  PROVIDER_TOOL_CALL_ID_FALLBACK,
   PROVIDER_TOOL_NAME_PATTERN,
+  toProviderToolCallId,
   STAFF_ASSISTANT_FACADE_TOOL_NAMES,
   STAFF_ASSISTANT_HOT_ACTION_NAMES,
   STAFF_ASSISTANT_TOOL_SEARCH_NAME,
@@ -33,7 +35,10 @@ export {
   STAFF_ASSISTANT_CONFIRMATION_STATUS,
   type StaffAssistantConfirmationOutput,
 } from "./confirmation.js";
-export { StaffAssistantNotConfiguredError } from "./errors.js";
+export {
+  StaffAssistantNotConfiguredError,
+  StaffAssistantProviderError,
+} from "./errors.js";
 export {
   clipStaffAssistantToolResult,
   STAFF_ASSISTANT_CLIPPED_STATUS,
@@ -193,6 +198,7 @@ export {
   staffAssistantHistoryStats,
   staffAssistantModelMessages,
   staffAssistantModelMessagesFromPersisted,
+  sanitizeStaffAssistantProviderHistory,
   STAFF_ASSISTANT_CHAT_MESSAGES_MAX,
   STAFF_ASSISTANT_CHAT_MESSAGE_TEXT_MAX,
   STAFF_ASSISTANT_CHAT_PARTS_MAX,
@@ -246,9 +252,11 @@ export {
   runStaffAssistantHostTurn,
   usableHostModelText,
   HOST_CHOICE_SEED_TOOL_CALL_ID_PREFIX,
+  HOST_CHOICE_SEED_TOOL_CALL_ID_PREFIX_LEGACY,
   HOST_HITL_PAUSED_OUTPUT,
   HOST_HITL_PAUSED_STATUS,
   HOST_PHASE_A_TOOL_CALL_ID_PREFIX,
+  HOST_PHASE_A_TOOL_CALL_ID_PREFIX_LEGACY,
   isHostHitlPausedOutput,
   isHostSeededHitlToolCallId,
   type StaffAssistantHostCheckpoint,

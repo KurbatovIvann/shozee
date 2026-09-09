@@ -25,11 +25,12 @@ import {
   type ChoiceBind,
   type ChoiceRecord,
 } from "../choice.js";
-import { isStaffAssistantConfirmationOutput } from "../confirmation.js";
 import {
   clipStaffAssistantToolResult,
   STAFF_ASSISTANT_CLIP_JSON_MAX,
 } from "../clip-tool-result.js";
+import { isStaffAssistantConfirmationOutput } from "../confirmation.js";
+import { StaffAssistantProviderError } from "../errors.js";
 import {
   createPendingReplaceTool,
   type PendingReplaceHostApply,
@@ -48,6 +49,7 @@ import {
 } from "../locale.js";
 import {
   STAFF_ASSISTANT_EMPTY_ASSISTANT_HISTORY_PLACEHOLDER,
+  sanitizeStaffAssistantProviderHistory,
   staffAssistantHistoryStats,
   stripStaffAssistantToolParts,
 } from "../messages.js";
@@ -303,21 +305,39 @@ export interface StaffAssistantHostStartedRun {
 }
 
 /**
- * Host-minted Phase A attempt (`begin:phase-a:${pendingId}`). Chat
- * recovery must not execute these rows on a later assistant message.
+ * Host-minted Phase A attempt. Chat recovery must not execute these rows
+ * on a later assistant message. Underscore, not colon — Anthropic
+ * `tool_use.id` is `^[a-zA-Z0-9_-]+$`.
  */
-export const HOST_PHASE_A_TOOL_CALL_ID_PREFIX = "phase-a:" as const;
+export const HOST_PHASE_A_TOOL_CALL_ID_PREFIX = "phase-a_" as const;
+/** Rows minted before the Anthropic-safe prefix. */
+export const HOST_PHASE_A_TOOL_CALL_ID_PREFIX_LEGACY = "phase-a:" as const;
 
 /**
  * Host-minted choice / successor HITL seed (`begin:successor:` /
- * `choice:${pendingId}`). Same exclusion as Phase A.
+ * `choice_${pendingId}`). Same exclusion as Phase A.
  */
-export const HOST_CHOICE_SEED_TOOL_CALL_ID_PREFIX = "choice:" as const;
+export const HOST_CHOICE_SEED_TOOL_CALL_ID_PREFIX = "choice_" as const;
+export const HOST_CHOICE_SEED_TOOL_CALL_ID_PREFIX_LEGACY = "choice:" as const;
 
 export function isHostSeededHitlToolCallId(toolCallId: string): boolean {
   return (
     toolCallId.startsWith(HOST_PHASE_A_TOOL_CALL_ID_PREFIX) ||
-    toolCallId.startsWith(HOST_CHOICE_SEED_TOOL_CALL_ID_PREFIX)
+    toolCallId.startsWith(HOST_PHASE_A_TOOL_CALL_ID_PREFIX_LEGACY) ||
+    toolCallId.startsWith(HOST_CHOICE_SEED_TOOL_CALL_ID_PREFIX) ||
+    toolCallId.startsWith(HOST_CHOICE_SEED_TOOL_CALL_ID_PREFIX_LEGACY)
+  );
+}
+
+function hostTurnHasCommittedWork(
+  prior: readonly StaffAssistantTurnRun[] | undefined,
+  runs: readonly StaffAssistantToolRun[],
+): boolean {
+  return [...(prior ?? []), ...runs].some(
+    (run) =>
+      run.outcome === "success" ||
+      run.outcome === "choice_required" ||
+      run.outcome === "confirmation_required",
   );
 }
 
@@ -686,6 +706,7 @@ export async function runStaffAssistantHostTurn(
       presentedToolResults,
     );
   }
+  messages = sanitizeStaffAssistantProviderHistory(messages);
   const history = staffAssistantHistoryStats(messages);
 
   const result = streamText({
@@ -715,25 +736,35 @@ export async function runStaffAssistantHostTurn(
     },
   });
 
+  let generationError: unknown;
   let rawText: string;
   try {
     rawText = await result.text;
-  } catch {
+  } catch (error) {
+    generationError = error;
     rawText = "";
   }
 
   let steps: Array<StepResult<ToolSet>>;
   try {
     steps = await result.steps;
-  } catch {
+  } catch (error) {
+    generationError ??= error;
     steps = [];
   }
 
+  const committed = hostTurnHasCommittedWork(options.priorRuns, state.runs);
   const fromSteps = lastUsableHostModelText(steps.map((step) => step.text));
   const speech = commitHostSpeech({
     locale,
-    rawText: fromSteps ?? (steps.length === 0 ? rawText : ""),
-    runs: [...(options.priorRuns ?? []), ...state.runs],
+    rawText:
+      generationError !== undefined
+        ? ""
+        : (fromSteps ?? (steps.length === 0 ? rawText : "")),
+    runs:
+      generationError !== undefined && !committed
+        ? [{ outcome: "error" }]
+        : [...(options.priorRuns ?? []), ...state.runs],
     toolOutputs: presentedToolResults.map((item) => item.output),
   });
 
@@ -742,6 +773,10 @@ export async function runStaffAssistantHostTurn(
       messageId: state.messageId,
       body: speech.text,
     });
+  }
+
+  if (generationError !== undefined && !committed) {
+    throw new StaffAssistantProviderError(generationError);
   }
 
   return {

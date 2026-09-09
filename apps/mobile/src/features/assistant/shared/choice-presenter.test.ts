@@ -388,7 +388,7 @@ describe("choiceSelectAppendParts", () => {
       {
         type: "dynamic-tool",
         toolName: "orders.create",
-        toolCallId: `choice:${choiceId}`,
+        toolCallId: `choice_${choiceId}`,
         state: "output-available",
         input: {},
         output: { orderId, orderNumber: "1049" },

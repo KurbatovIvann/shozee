@@ -18,6 +18,7 @@ import {
   assistantConfirmBodySchema,
   createStaffLanguageModel,
   StaffAssistantNotConfiguredError,
+  StaffAssistantProviderError,
   type LanguageModel,
   type StaffProviderAdapter,
 } from "@showzy/ai";
@@ -148,6 +149,17 @@ function wireResponse(error: unknown, requestId: string): Response {
       requestId,
     );
   }
+  if (error instanceof StaffAssistantProviderError) {
+    return jsonResponse(
+      502,
+      {
+        code: error.code,
+        status: 502,
+        message: error.message,
+      },
+      requestId,
+    );
+  }
   const wire = toWireError(error);
   const body: Record<string, unknown> = {
     code: wire.code,
@@ -162,6 +174,9 @@ function wireResponse(error: unknown, requestId: string): Response {
 
 function failureCode(error: unknown): string {
   if (error instanceof StaffAssistantNotConfiguredError) {
+    return error.code;
+  }
+  if (error instanceof StaffAssistantProviderError) {
     return error.code;
   }
   if (error instanceof CoreError) {

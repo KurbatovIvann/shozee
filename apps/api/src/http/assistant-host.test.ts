@@ -68,6 +68,11 @@ describe("live staff-assistant host (SHO-524)", () => {
     expect(hostSrc).not.toContain("resolveGateLanguageModel");
     expect(hostSrc).not.toContain("staffAssistantGateToolPolicy");
     expect(hostSrc).not.toContain('run.action.replace(".", "_")');
+    expect(hostSrc).toContain("toProviderToolName(options.actionName)");
+    expect(hostSrc).not.toContain(
+      "toolName: `${HOST_CHOICE_SEED_TOOL_CALL_ID_PREFIX}${options.nextId}`",
+    );
+    expect(hostSrc).toContain("StaffAssistantProviderError");
     expect(hostSrc).toContain("run.toolName === null");
     expect(hostSrc).toContain("startedRunsForResumeTurnRecovery");
     expect(hostSrc).toContain("startedRunsForChatRecovery");

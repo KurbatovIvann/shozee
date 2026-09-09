@@ -19,11 +19,13 @@ import {
   ORDERS_LIST_COUNTS_TOOL_NAME,
   ORDERS_LIST_PAGE_TOOL_NAME,
   PRICING_LIST_PRICE_LISTS_TOOL_NAME,
+  PROVIDER_TOOL_CALL_ID_FALLBACK,
   PROVIDER_TOOL_NAME_PATTERN,
   staffAssistantHotToolNames,
   staffAssistantTools,
   STAFF_ASSISTANT_FACADE_TOOL_NAMES,
   STAFF_ASSISTANT_TOOL_SEARCH_NAME,
+  toProviderToolCallId,
   toProviderToolName,
 } from "./action-tool.js";
 import {
@@ -95,6 +97,30 @@ describe("toProviderToolName", () => {
     expect(
       fromProviderToolName(toProviderToolName("customers.deleteCustomer")),
     ).toBe("customers.deleteCustomer");
+  });
+});
+
+describe("toProviderToolCallId", () => {
+  it("rewrites illegal HITL seeds and leaves Anthropic ids unchanged", () => {
+    const choiceId = "7f99ce88-b6ff-4ffd-9e8a-7ee15c2b3eb1";
+    expect(toProviderToolCallId(`choice:${choiceId}`)).toBe(
+      `choice_${choiceId}`,
+    );
+    expect(toProviderToolCallId(`phase-a:${choiceId}`)).toBe(
+      `phase-a_${choiceId}`,
+    );
+    expect(toProviderToolCallId(`choice_${choiceId}`)).toBe(
+      `choice_${choiceId}`,
+    );
+    expect(toProviderToolCallId("toolu_016wZR1CiDWHewr1ng2Yna1v")).toBe(
+      "toolu_016wZR1CiDWHewr1ng2Yna1v",
+    );
+    expect(toProviderToolCallId("")).toBe(PROVIDER_TOOL_CALL_ID_FALLBACK);
+    expect(toProviderToolCallId("::")).toBe("__");
+    expect(toProviderToolCallId("::")).toMatch(PROVIDER_TOOL_NAME_PATTERN);
+    expect(toProviderToolCallId(`choice:${choiceId}`)).toMatch(
+      PROVIDER_TOOL_NAME_PATTERN,
+    );
   });
 });
 
