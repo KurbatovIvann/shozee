@@ -149,6 +149,16 @@ const envObjectSchema = z.object({
    * Staff-assistant HTTP turn bucket (`POST /assistant/chat`). `0` disables
    * the per-user turn check (SHO-505). Default 20 turns / 60s / user.
    */
+  /**
+   * Mounts the parallel `assistant-kit` routes (`/assistant/kit/*`). Off by
+   * default; the live assistant is unaffected either way. Present so the new
+   * path can be exercised by hand on real data before anything is switched
+   * over.
+   */
+  AI_ASSISTANT_KIT: z
+    .enum(["0", "1"])
+    .default("0")
+    .transform((value) => value === "1"),
   AI_CHAT_TURNS_PER_MINUTE_PER_USER: z.coerce.number().int().min(0).default(20),
   /**
    * Kyiv-calendar daily USD ceiling per company for `/assistant/chat`.
@@ -283,6 +293,8 @@ export interface ServerConfig {
   };
   readonly ai: {
     readonly anthropicApiKey: string | undefined;
+    /** Mounts `/assistant/kit/*` alongside the live assistant. Off by default. */
+    readonly assistantKitEnabled: boolean;
     readonly model: string;
     readonly gateModel: string;
     /** `0` disables the per-user `/assistant/chat` turn check. */
@@ -392,6 +404,7 @@ export function loadServerConfig(
     otpDelivery: mapOtpDelivery(parsed),
     ai: {
       anthropicApiKey: parsed.ANTHROPIC_API_KEY,
+      assistantKitEnabled: parsed.AI_ASSISTANT_KIT,
       model: parsed.AI_MODEL,
       gateModel: parsed.AI_GATE_MODEL,
       chatTurnsPerMinutePerUser: parsed.AI_CHAT_TURNS_PER_MINUTE_PER_USER,

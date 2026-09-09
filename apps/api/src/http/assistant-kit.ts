@@ -35,7 +35,16 @@ export function createAssistantKitApp(
   const app = new Hono<AssistantKitAppEnv>();
 
   app.use(async (c, next) => {
-    c.set("requestId", resolveRequestId(c.req.header(REQUEST_ID_HEADER)));
+    // Mounted inside the main app, the outer middleware has already resolved
+    // both — including the trusted-proxy handling for the client address.
+    // Re-deriving them here would be a second, weaker answer to the same
+    // question. These fallbacks are for running this app on its own, in tests.
+    if ((c.get("requestId") as string | undefined) === undefined) {
+      c.set("requestId", resolveRequestId(c.req.header(REQUEST_ID_HEADER)));
+    }
+    if ((c.get("clientIp") as string | undefined) === undefined) {
+      c.set("clientIp", "127.0.0.1");
+    }
     await next();
   });
 

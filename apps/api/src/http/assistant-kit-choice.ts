@@ -23,6 +23,7 @@ import {
   json,
   readJson,
   requireCaller,
+  toolContext,
   type AssistantKitAppEnv,
   type AssistantKitRuntime,
 } from "./assistant-kit-http.js";
@@ -97,7 +98,7 @@ export async function handleAssistantKitChoice(
 
   // One tool set for the whole request: the resolved call and the turn that
   // follows it compose their cards together.
-  const tools = runtime.tools();
+  const tools = await runtime.tools(toolContext(c, caller));
 
   const resolvedOutcome = await runtime.resolveAnswer({
     toolName: claimed.record.continuation.pausedToolCall.name,

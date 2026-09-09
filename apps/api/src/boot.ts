@@ -25,6 +25,8 @@ import {
   createActionRegistry,
   createStaffAssistantProvider,
 } from "./composition.js";
+import { optionalStaffAssistantLanguageModel } from "./http/assistant-chat.js";
+import { createAssistantKitRuntime } from "./http/assistant-kit-runtime.js";
 import { createApp, type AuthInstance } from "./http/app.js";
 import { createProcessObservability } from "./observability.js";
 import { createActionPipeline } from "./pipeline.js";
@@ -121,6 +123,20 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
 
   const registry = createActionRegistry();
   const staffProvider = createStaffAssistantProvider(config.ai);
+  const assistantConfig = {
+    model: config.ai.model,
+    provider: staffProvider,
+    ...(config.ai.anthropicApiKey !== undefined
+      ? { anthropicApiKey: config.ai.anthropicApiKey }
+      : {}),
+  };
+  // Off unless AI_ASSISTANT_KIT=1, and silently off with no model configured:
+  // the parallel path is for exercising the protocol on real data, and it has
+  // nothing to exercise without a provider.
+  const assistantKitModel = config.ai.assistantKitEnabled
+    ? optionalStaffAssistantLanguageModel(assistantConfig)
+    : undefined;
+
   const app = createApp({
     auth,
     registry,
@@ -132,13 +148,18 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
       rateLimitStore,
       ipHmacSecret: config.rateLimit.ipHmacSecret,
     },
-    assistant: {
-      model: config.ai.model,
-      provider: staffProvider,
-      ...(config.ai.anthropicApiKey !== undefined
-        ? { anthropicApiKey: config.ai.anthropicApiKey }
-        : {}),
-    },
+    assistant: assistantConfig,
+    ...(assistantKitModel === undefined
+      ? {}
+      : {
+          assistantKit: createAssistantKitRuntime({
+            auth,
+            registry,
+            pipeline,
+            model: assistantKitModel,
+            redis,
+          }),
+        }),
     pendingStore: createRedisPendingStore(redis),
     conversationLock: createRedisConversationLock(redis),
     assistantBudget: {

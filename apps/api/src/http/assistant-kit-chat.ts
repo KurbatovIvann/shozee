@@ -23,6 +23,7 @@ import {
   json,
   readJson,
   requireCaller,
+  toolContext,
   type AssistantKitAppEnv,
   type AssistantKitRuntime,
 } from "./assistant-kit-http.js";
@@ -93,13 +94,15 @@ export async function handleAssistantKitChat(
     return goneResponse(requestId);
   }
 
+  const tools = await runtime.tools(toolContext(c, caller));
+
   const turn = await runHostTurn({
     kit: runtime.kit,
     conversationId: body.conversationId,
     bind: caller.bind,
     messageId: randomUUID(),
     model: runtime.model,
-    tools: runtime.tools(),
+    tools,
     messages,
     abortSignal: c.req.raw.signal,
   });

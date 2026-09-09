@@ -157,7 +157,7 @@ function harness(options?: {
     },
     kit,
     model,
-    tools: () => options?.tools ?? {},
+    tools: () => Promise.resolve(options?.tools ?? {}),
     history,
     resolveAnswer: options?.resolveAnswer ?? OK_RESOLVE,
   });
@@ -212,7 +212,8 @@ async function openPause(kit: Kit, bind: string) {
       pausedToolCall: { id: "toolu_create" as never, name: "orders_create" },
     },
   });
-  if (opened.kind !== "opened") throw new Error(`expected opened: ${opened.kind}`);
+  if (opened.kind !== "opened")
+    throw new Error(`expected opened: ${opened.kind}`);
   return opened.pause;
 }
 
@@ -257,7 +258,11 @@ function chatBody(text = "покажи замовлення") {
   return { commandId: COMMAND, conversationId: CONVERSATION, text };
 }
 
-function answerBody(interactionId: string, revision: number, optionId = "opt-b") {
+function answerBody(
+  interactionId: string,
+  revision: number,
+  optionId = "opt-b",
+) {
   return {
     commandId: COMMAND,
     conversationId: CONVERSATION,
@@ -306,7 +311,11 @@ describe("POST /assistant/kit/chat", () => {
   it("401 without a session and 400 without the company header", async () => {
     expect(
       (
-        await post(harness({ session: null }).app, ASSISTANT_KIT_CHAT_PATH, chatBody())
+        await post(
+          harness({ session: null }).app,
+          ASSISTANT_KIT_CHAT_PATH,
+          chatBody(),
+        )
       ).status,
     ).toBe(401);
     expect(
@@ -340,7 +349,11 @@ describe("POST /assistant/kit/chat", () => {
       tools: PAUSING_TOOLS,
     });
 
-    const response = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("створи"));
+    const response = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      chatBody("створи"),
+    );
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
       pause: { kind: string; prompt: { subject: string } } | null;
@@ -352,9 +365,9 @@ describe("POST /assistant/kit/chat", () => {
     expect(body.pause?.prompt.subject).toBe("two matches");
     // The private side never left the server.
     expect(JSON.stringify(body)).not.toContain("entity-a");
-    expect((await kit.peek({ conversationId: CONVERSATION, bind }))?.status).toBe(
-      "open",
-    );
+    expect(
+      (await kit.peek({ conversationId: CONVERSATION, bind }))?.status,
+    ).toBe("open");
   });
 
   it("keeps the question in the document when generation fails", async () => {
@@ -423,7 +436,9 @@ describe("GET /assistant/kit/messages", () => {
       (message) => message.role === "assistant",
     );
     expect(assistant?.parts).toEqual(liveBody.parts);
-    expect(JSON.stringify(assistant?.parts)).toBe(JSON.stringify(liveBody.parts));
+    expect(JSON.stringify(assistant?.parts)).toBe(
+      JSON.stringify(liveBody.parts),
+    );
   });
 
   it("carries the open question so a reload can show the card", async () => {
@@ -432,7 +447,9 @@ describe("GET /assistant/kit/messages", () => {
 
     const response = await get(app, messagesPath());
     const body = (await response.json()) as {
-      document: { openPause: { interactionId: string; prompt: unknown } | null };
+      document: {
+        openPause: { interactionId: string; prompt: unknown } | null;
+      };
     };
 
     expect(body.document.openPause?.interactionId).toBe(pause.interactionId);
@@ -470,7 +487,9 @@ describe("GET /assistant/kit/messages", () => {
       document: { messages: unknown[] };
     };
     expect(foreignBody.document.messages).toEqual([]);
-    expect(foreignBody.document.messages).toEqual(missingBody.document.messages);
+    expect(foreignBody.document.messages).toEqual(
+      missingBody.document.messages,
+    );
   });
 });
 
@@ -537,9 +556,9 @@ describe("POST /assistant/kit/choice", () => {
     });
 
     expect(response.status).toBe(400);
-    expect((await kit.peek({ conversationId: CONVERSATION, bind }))?.status).toBe(
-      "open",
-    );
+    expect(
+      (await kit.peek({ conversationId: CONVERSATION, bind }))?.status,
+    ).toBe("open");
   });
 
   it("409 for an option this question never offered, without spending the claim", async () => {
@@ -594,9 +613,9 @@ describe("POST /assistant/kit/choice", () => {
     const body = (await response.json()) as { status: string; code: string };
     expect(body.status).toBe("action_failed");
     expect(body.code).toBe("CONFLICT");
-    expect((await kit.peek({ conversationId: CONVERSATION, bind }))?.status).toBe(
-      "open",
-    );
+    expect(
+      (await kit.peek({ conversationId: CONVERSATION, bind }))?.status,
+    ).toBe("open");
     const document = await kit.document.read({
       conversationId: CONVERSATION,
       bind,
@@ -645,9 +664,9 @@ describe("POST /assistant/kit/choice", () => {
 
     expect(response.status).toBe(499);
     expect(called).toBe(0);
-    expect((await kit.peek({ conversationId: CONVERSATION, bind }))?.status).toBe(
-      "open",
-    );
+    expect(
+      (await kit.peek({ conversationId: CONVERSATION, bind }))?.status,
+    ).toBe("open");
   });
 });
 

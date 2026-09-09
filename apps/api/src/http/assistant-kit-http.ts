@@ -21,7 +21,21 @@ import type { Context } from "hono";
 import type { AssistantInteractionTypes } from "./assistant-interactions.js";
 import { REQUEST_ID_HEADER } from "./request-id.js";
 
-export type AssistantKitAppEnv = { Variables: { requestId: string } };
+export type AssistantKitAppEnv = {
+  Variables: { requestId: string; clientIp: string };
+};
+
+/**
+ * What a tool set needs to exist: domain actions run **as the caller**, so the
+ * set cannot be built once at boot. Permissions decide which tools are even
+ * offered, and that is a read against the actor.
+ */
+export interface AssistantToolContext {
+  readonly userId: string;
+  readonly companySelector: string;
+  readonly requestId: string;
+  readonly clientIp: string;
+}
 
 export type AssistantKitFor = AssistantKit<AssistantInteractionTypes>;
 
@@ -65,10 +79,10 @@ export interface AssistantKitRuntime {
   readonly kit: AssistantKitFor;
   readonly model: LanguageModel;
   /**
-   * Built fresh per request: card composition needs every result of one turn,
-   * and one turn's results must never leak into another's.
+   * Built fresh per request: the caller's permissions decide the set, and card
+   * composition needs every result of one turn without leaking into another's.
    */
-  readonly tools: () => ToolSet;
+  readonly tools: (context: AssistantToolContext) => Promise<ToolSet>;
   readonly history: AssistantHistoryPort;
   readonly resolveAnswer: ResolveAnswer;
 }
@@ -94,6 +108,18 @@ export function json(
  */
 export function goneResponse(requestId: string): Response {
   return json(410, { status: "expired" }, requestId);
+}
+
+export function toolContext(
+  c: Context<AssistantKitAppEnv>,
+  caller: Extract<Caller, { ok: true }>,
+): AssistantToolContext {
+  return {
+    userId: caller.userId,
+    companySelector: caller.companySelector,
+    requestId: c.get("requestId"),
+    clientIp: c.get("clientIp"),
+  };
 }
 
 export type Caller =

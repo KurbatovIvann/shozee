@@ -66,6 +66,8 @@ import {
   type StaffAssistantHostRuntime,
 } from "./assistant-host.js";
 import { ASSISTANT_CHAT_PATH } from "./assistant-invocation.js";
+import { createAssistantKitApp } from "./assistant-kit.js";
+import type { AssistantKitRuntime } from "./assistant-kit-http.js";
 import { createTrustedProxyMatcher, resolveClientIp } from "./client-ip.js";
 import {
   DOCUMENT_SHARE_LANDING_ROUTE,
@@ -144,6 +146,15 @@ export interface CreateAppOptions {
     readonly budgetStore: AiBudgetStore;
     readonly limits?: StaffAssistantBudgetLimits;
   };
+  /**
+   * The `assistant-kit` path (`/assistant/kit/*`), off unless this is passed.
+   *
+   * Parallel to the live assistant, on its own paths and its own Redis key
+   * prefix. Boot passes it only when `SHOWZY_ASSISTANT_KIT` is set, so the
+   * running assistant is unaffected by its presence and the two can be compared
+   * by hand on the same data.
+   */
+  readonly assistantKit?: AssistantKitRuntime;
 }
 
 /**
@@ -505,6 +516,12 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     });
     return withRequestId(response, c.get("requestId"));
   });
+
+  if (options.assistantKit !== undefined) {
+    // Dark by default. Mounted as a whole app so its three routes stay
+    // together; it inherits this app's request id and client ip.
+    app.route("/", createAssistantKitApp(options.assistantKit));
+  }
 
   app.on(["GET", "POST"], `${AUTH_PREFIX}/*`, async (c) => {
     const response = await options.auth.handler(
