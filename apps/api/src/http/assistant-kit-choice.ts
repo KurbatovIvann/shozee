@@ -166,7 +166,12 @@ export async function handleAssistantKitChoice(
     );
   }
 
+  const prompt = runtime.prompt();
   const turn = await continueHostTurn({
+    system: prompt.system,
+    ...(prompt.providerOptions === undefined
+      ? {}
+      : { providerOptions: prompt.providerOptions }),
     kit: runtime.kit,
     conversationId: body.conversationId,
     bind: caller.bind,

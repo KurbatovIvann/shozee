@@ -97,4 +97,9 @@ export {
  * The SDK types a consumer needs to wire this up, re-exported so a consumer
  * does not take a direct `ai` dependency just to name a model or a tool set.
  */
-export type { LanguageModel, ModelMessage, ToolSet } from "ai";
+export type {
+  LanguageModel,
+  ModelMessage,
+  SystemModelMessage,
+  ToolSet,
+} from "ai";

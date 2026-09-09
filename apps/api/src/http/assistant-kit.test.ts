@@ -160,6 +160,7 @@ function harness(options?: {
     tools: () => Promise.resolve(options?.tools ?? {}),
     history,
     resolveAnswer: options?.resolveAnswer ?? OK_RESOLVE,
+    prompt: () => ({ system: "you are a test" }),
   });
   return { kit, app, history, bind: `${USER}:${COMPANY}` };
 }

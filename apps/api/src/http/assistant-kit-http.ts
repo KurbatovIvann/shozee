@@ -9,6 +9,7 @@
  */
 import type {
   AssistantKit,
+  HostTurnOptions,
   LanguageModel,
   ModelMessage,
   PauseScope,
@@ -75,6 +76,21 @@ export type ResolveAnswer = (args: {
   readonly companySelector: string;
 }) => Promise<ToolOutcome>;
 
+/**
+ * The instructions the model runs under, and how the provider should treat
+ * them.
+ *
+ * Separate from the tools on purpose: this is the half of the learned
+ * behaviour that does not live in a tool description, and forgetting it is
+ * silent — the assistant simply answers worse.
+ */
+export interface AssistantTurnPrompt {
+  readonly system: NonNullable<HostTurnOptions<never>["system"]>;
+  readonly providerOptions?: NonNullable<
+    HostTurnOptions<never>["providerOptions"]
+  >;
+}
+
 export interface AssistantKitRuntime {
   readonly auth: {
     readonly api: {
@@ -92,6 +108,8 @@ export interface AssistantKitRuntime {
   readonly tools: (context: AssistantToolContext) => Promise<ToolSet>;
   readonly history: AssistantHistoryPort;
   readonly resolveAnswer: ResolveAnswer;
+  /** Built per turn: the turn context carries the current time. */
+  readonly prompt: () => AssistantTurnPrompt;
 }
 
 export function json(

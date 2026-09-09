@@ -17,6 +17,7 @@ import {
   streamText,
   type LanguageModel,
   type ModelMessage,
+  type SystemModelMessage,
   type ToolSet,
 } from "ai";
 import type { z } from "zod";
@@ -107,7 +108,18 @@ export interface HostTurnOptions<T extends AnyTypes> {
   readonly messages: readonly ModelMessage[];
   /** Tools whose `execute` returns a `ToolOutcome`. */
   readonly tools: ToolSet;
-  readonly system?: string;
+  /**
+   * Kept as a list, not a joined string: a caller that caches a static prefix
+   * needs the parts that change to stay separate from the parts that do not.
+   */
+  readonly system?: string | SystemModelMessage[];
+  /**
+   * Provider-specific settings for this call — prompt caching, for instance.
+   * Typed off `streamText` itself, because the SDK keeps the name internal.
+   */
+  readonly providerOptions?: NonNullable<
+    Parameters<typeof streamText>[0]["providerOptions"]
+  >;
   readonly abortSignal?: AbortSignal;
   readonly maxSteps?: number;
 }
@@ -163,6 +175,9 @@ async function runLoop<T extends AnyTypes>(
       () => state.paused !== undefined,
     ],
     ...(options.system !== undefined ? { system: options.system } : {}),
+    ...(options.providerOptions !== undefined
+      ? { providerOptions: options.providerOptions }
+      : {}),
     ...(options.abortSignal !== undefined
       ? { abortSignal: options.abortSignal }
       : {}),

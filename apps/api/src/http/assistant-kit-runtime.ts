@@ -20,10 +20,14 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  anthropicStaffProvider,
   attemptKey,
   filterStaffAiTools,
+  staffAssistantSystemMessages,
   staffAssistantTools,
+  staffAssistantTurnContextAddendum,
   type ActionToolExecute,
+  type StaffProviderAdapter,
 } from "@showzy/ai";
 import { getStaffActor } from "@showzy/assistant";
 import {
@@ -72,6 +76,8 @@ export interface CreateAssistantKitRuntimeOptions {
   readonly registry: ActionRegistry;
   readonly pipeline: ActionPipelineDeps;
   readonly model: LanguageModel;
+  /** Same adapter the live assistant uses: it owns the caching options. */
+  readonly provider?: StaffProviderAdapter;
   readonly redis: RedisLike;
 }
 
@@ -137,12 +143,31 @@ export function createAssistantKitRuntime(
 
   const history = createRedisAssistantKitHistoryStore(options.redis);
 
+  const provider = options.provider ?? anthropicStaffProvider;
+
   return {
     auth: options.auth,
     kit,
     model: options.model,
     history,
     resolveAnswer: createResolveAnswer(),
+
+    /**
+     * The system prompt is not optional decoration: it is the half of the
+     * learned behaviour that does not live in a tool description. Running
+     * without it fails silently — the assistant simply answers worse.
+     *
+     * Two messages, not one joined string. The first is static and the provider
+     * caches it; folding the turn context into it would change the prefix every
+     * turn and throw that cache away.
+     */
+    prompt: () => ({
+      system: staffAssistantSystemMessages(
+        staffAssistantTurnContextAddendum({ now: new Date() }),
+        provider,
+      ),
+      providerOptions: provider.replyProviderOptions(),
+    }),
 
     async tools(context): Promise<ToolSet> {
       const principal = {

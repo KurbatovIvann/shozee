@@ -178,6 +178,7 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
             registry,
             pipeline,
             model: assistantKitModel,
+            provider: staffProvider,
             redis,
           }),
         }),
