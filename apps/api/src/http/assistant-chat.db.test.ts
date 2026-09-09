@@ -723,14 +723,23 @@ describe("staff assistant HTTP budget guard (SHO-505 / SHO-541)", () => {
     readonly logger?: ReturnType<typeof createCapturingLogger>["logger"];
     readonly limits?: StaffAssistantBudgetLimits;
   }) {
+    const basePipeline =
+      options.logger === undefined
+        ? pipeline
+        : { ...pipeline, logger: options.logger };
     return createApp({
       auth,
       registry,
       contractModules,
-      pipeline:
-        options.logger === undefined
-          ? pipeline
-          : { ...pipeline, logger: options.logger },
+      pipeline: {
+        ...basePipeline,
+        hooks: {
+          ...basePipeline.hooks,
+          // Host checkpoints on choice/confirm would exhaust the kit
+          // staff bucket. Chat-turn budget still uses Redis below.
+          rateLimit: { enforce: () => Promise.resolve() },
+        },
+      },
       trustedProxies: [],
       getPeerAddress: () => REAL_CLIENT,
       pkiProxy: {
