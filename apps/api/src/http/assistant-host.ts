@@ -44,6 +44,7 @@ import {
   staffAssistantModelMessagesFromPersisted,
   staffAssistantTurnContextAddendum,
   staffAssistantWorkingSetAddendum,
+  STAFF_ASSISTANT_CONFIRMATION_COPY,
   STAFF_ASSISTANT_DEFAULT_LOCALE,
   successorPendingChoiceId,
   confirmationPendingRecord,
@@ -340,8 +341,11 @@ const CHOICE_PENDING_REPLACE_UNIQUE_REFUSE = {
   status: "error" as const,
   code: "VALIDATION",
   message:
-    "This pending still needs a picker. Arguments that resolve uniquely cannot replace it; tap the card or abandon first.",
+    "This pending cannot be replaced with those arguments. Tap the card or abandon first.",
 };
+
+/** Displayed confirmation expiry. Matches core's 5-minute challenge; do not import core. */
+const HOST_CONFIRMATION_CHALLENGE_TTL_MS = 5 * 60 * 1000;
 
 function catalogLineFromChoiceItem(
   item: ChoiceCanonicalCreateInput["items"][number],
@@ -1363,30 +1367,50 @@ async function applyHostPendingReplace(options: {
       staffPrincipal: options.staffPrincipal,
     });
     if (extras === undefined) {
-      return CHOICE_PENDING_REPLACE_UNIQUE_REFUSE;
+      // Unique args: persist confirmation (new version, new execution_id).
+      // Do not execute the write — staff still taps confirm (SHO-542).
+      const stagedExecutionId = await stagePendingReplaceExecution(options);
+      const locale = options.record.locale ?? STAFF_ASSISTANT_DEFAULT_LOCALE;
+      next = confirmationPendingRecord({
+        challengeId: randomUUID(),
+        bind: options.bind,
+        actionName: options.record.actionName,
+        toolCallId: options.record.toolCallId,
+        canonicalInput: canonical,
+        summary: STAFF_ASSISTANT_CONFIRMATION_COPY[locale],
+        challengeExpiresAt: new Date(
+          Date.now() + HOST_CONFIRMATION_CHALLENGE_TTL_MS,
+        ).toISOString(),
+        executionId: stagedExecutionId,
+        version: options.record.version + 1,
+        ...(options.record.locale !== undefined
+          ? { locale: options.record.locale }
+          : {}),
+      });
+    } else {
+      const nextId = randomUUID();
+      const rebuilt = choiceRecordFromPickerConflict({
+        choiceId: nextId,
+        bind: options.bind,
+        canonicalInput: canonical,
+        extras,
+        ...(options.record.locale !== undefined
+          ? { locale: options.record.locale }
+          : {}),
+      });
+      if (rebuilt === undefined) {
+        throw new CoreInvariantError(
+          "pending_replace choice probe produced no picker",
+        );
+      }
+      const stagedExecutionId = await stagePendingReplaceExecution(options);
+      next = pendingChoiceRecordFromChoiceRecord(rebuilt, {
+        actionName: options.record.actionName,
+        toolCallId: options.record.toolCallId,
+        version: options.record.version + 1,
+        executionId: stagedExecutionId,
+      });
     }
-    const nextId = randomUUID();
-    const rebuilt = choiceRecordFromPickerConflict({
-      choiceId: nextId,
-      bind: options.bind,
-      canonicalInput: canonical,
-      extras,
-      ...(options.record.locale !== undefined
-        ? { locale: options.record.locale }
-        : {}),
-    });
-    if (rebuilt === undefined) {
-      throw new CoreInvariantError(
-        "pending_replace choice probe produced no picker",
-      );
-    }
-    const stagedExecutionId = await stagePendingReplaceExecution(options);
-    next = pendingChoiceRecordFromChoiceRecord(rebuilt, {
-      actionName: options.record.actionName,
-      toolCallId: options.record.toolCallId,
-      version: options.record.version + 1,
-      executionId: stagedExecutionId,
-    });
   }
   const replaced = await options.runtime.pendingStore.replace({
     id: options.record.id,

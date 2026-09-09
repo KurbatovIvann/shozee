@@ -60,7 +60,7 @@ import {
   deleteCustomer,
   restoreCustomer,
 } from "@showzy/customers";
-import { createOrder } from "@showzy/orders";
+import { createOrder, getOrder } from "@showzy/orders";
 import { session } from "@showzy/db/schema/auth";
 import {
   assistantMessages,
@@ -2171,11 +2171,13 @@ describe("unpublished staff assistant host HTTP", () => {
     if (uniqueVariant === undefined) {
       throw new Error("expected variant A");
     }
-    const { record } = await seedChoicePending(h, {
+    const { record, optionByLabel } = await seedChoicePending(h, {
       conversationId: conversation.id,
       customerId: customer.id,
       product,
     });
+    const staleOptionId = optionByLabel.get("A");
+    expect(staleOptionId).toEqual(expect.any(String));
     const beforeOrders = await orderCount();
     const replaceHarness = harness({
       model: new MockLanguageModelV3({
@@ -2216,20 +2218,93 @@ describe("unpublished staff assistant host HTTP", () => {
     if (replaced.status !== "ok") {
       return;
     }
-    expect(replaced.pending?.id).toBe(record.id);
-    expect(replaced.pending?.version).toBe(record.version);
+    expect(replaced.pending?.kind).toBe("confirmation");
+    expect(replaced.pending?.id).not.toBe(record.id);
+    expect(replaced.pending?.version).toBe(record.version + 1);
+    const successorId = replaced.pending?.id;
+    expect(successorId).toEqual(expect.any(String));
     const peeked = await h.pendingStore.peekOpen({
       conversationId: conversation.id,
       bind: pendingBindFor(conversation.id),
     });
     expect(peeked.kind).toBe("found");
-    if (peeked.kind !== "found" || peeked.record.kind !== "choice") {
-      throw new Error("expected original choice pending still open");
+    if (peeked.kind !== "found" || peeked.record.kind !== "confirmation") {
+      throw new Error("expected confirmation pending after unique replace");
     }
     expect(peeked.record.status).toBe("open");
-    expect(peeked.record.id).toBe(record.id);
-    expect(peeked.record.executionId).toBe(record.executionId);
+    expect(peeked.record.version).toBe(record.version + 1);
+    expect(peeked.record.executionId).not.toBe(record.executionId);
+    expect(peeked.record.canonicalInput).toMatchObject({
+      customer: { by: "id", id: customer.id },
+      items: [
+        {
+          product: { by: "id", id: product.productId },
+          variantSelection: {
+            kind: "reference",
+            ref: { by: "id", id: uniqueVariant.variantId },
+          },
+          quantity: { milli: "2000" },
+        },
+      ],
+    });
     expect(await orderCount()).toBe(beforeOrders);
+
+    const stale = await hostRequest(h.app, {
+      method: "POST",
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        choiceId: record.id,
+        optionId: staleOptionId,
+      },
+    });
+    expect(
+      assistantHostInteractionResultSchema.parse(await stale.json()),
+    ).toEqual({ status: "expired" });
+    expect(await orderCount()).toBe(beforeOrders);
+
+    const confirmHarness = harness({
+      model: listThenSpeakModel(),
+      pendingStore: h.pendingStore,
+    });
+    const confirm = await hostRequest(confirmHarness.app, {
+      method: "POST",
+      path: ASSISTANT_CONFIRM_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        challengeId: successorId,
+      },
+    });
+    const confirmBody = assistantHostInteractionResultSchema.parse(
+      await confirm.json(),
+    );
+    expect(confirmBody.status).toBe("ok");
+    if (confirmBody.status !== "ok") {
+      return;
+    }
+    expect(confirmBody.pending).toBeNull();
+    expect(await orderCount()).toBe(beforeOrders + 1);
+    const created = await h.invoke(getOrder, {
+      orderId: orderIdFromEntityCard(confirmBody.cards),
+    });
+    expect(created.items).toHaveLength(1);
+    expect(created.items[0]?.variantId).toBe(uniqueVariant.variantId);
+    expect(created.items[0]?.quantityMilli).toBe("2000");
+    const replay = await hostRequest(confirmHarness.app, {
+      method: "POST",
+      path: ASSISTANT_CONFIRM_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        challengeId: successorId,
+      },
+    });
+    expect(
+      assistantHostInteractionResultSchema.parse(await replay.json()).status,
+    ).toBe("ok");
+    expect(await orderCount()).toBe(beforeOrders + 1);
   });
 
   it("Phase A CoreError on confirm does not complete pending; retry is not ok with null pending", async () => {

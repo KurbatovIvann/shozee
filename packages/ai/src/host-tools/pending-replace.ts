@@ -52,7 +52,7 @@ export function isPendingReplaceActionName(
 }
 
 export const PENDING_REPLACE_DESCRIPTION =
-  "Amend THIS open pending write (quantity, customer, or other args of the current job) with a versioned replace. Do not send pending id or version. Chat text, including «Так», is not confirmation, picker resolution, replace, or abandon. A second job — even another create with the same actionName — is not replace; point at the open card to finish or dismiss. Do not call a second create/delete while a pending card is open. Unfinished jobs stay until tap, this pending_replace, abandon, or TTL.";
+  "Amend THIS open pending write (quantity, customer, or other args of the current job) with a versioned replace. Do not send pending id or version. Chat text, including «Так», is not confirmation, picker resolution, replace, or abandon. Arguments that already uniquely identify the write persist a confirmation; they do not execute it. A second job — even another create with the same actionName — is not replace; point at the open card to finish or dismiss. Do not call a second create/delete while a pending card is open. Unfinished jobs stay until tap, this pending_replace, abandon, or TTL.";
 
 export function pendingReplaceFacadeSchema(actionName: string): z.ZodType {
   if (!isPendingReplaceActionName(actionName)) {

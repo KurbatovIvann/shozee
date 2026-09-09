@@ -32,6 +32,9 @@ describe("pending_replace host tool", () => {
     expect(PENDING_REPLACE_DESCRIPTION).toContain(
       "even another create with the same actionName — is not replace",
     );
+    expect(PENDING_REPLACE_DESCRIPTION).toContain(
+      "persist a confirmation; they do not execute it",
+    );
     expect(PENDING_REPLACE_DESCRIPTION).toContain("versioned replace");
   });
 

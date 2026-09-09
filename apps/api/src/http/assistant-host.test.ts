@@ -52,6 +52,10 @@ describe("live staff-assistant host (SHO-524)", () => {
     expect(hostSrc).not.toContain(
       "pending_replace choice probe must not execute the handler",
     );
+    expect(hostSrc).not.toContain(
+      "Arguments that resolve uniquely cannot replace it",
+    );
+    expect(hostSrc).toContain("CHOICE_PENDING_REPLACE_UNIQUE_REFUSE");
     expect(hostSrc).not.toContain("classifyStaffAssistantTurn");
     expect(hostSrc).not.toContain("staffAssistantShouldSkipIntentGate");
     expect(hostSrc).not.toContain("gateLanguageModel");
