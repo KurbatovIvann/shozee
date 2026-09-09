@@ -6,7 +6,9 @@
  *
  * Budget is reserved (increment-with-cap of `unknownModelTurnUsd`) before
  * the turn bucket is consumed, so a budget 429 does not spend a turn slot.
- * HITL resume (`skipTurnLimit: true`) still reserves and settles USD.
+ * HITL resume (`skipTurnLimit: true`) still reserves USD. Settle only
+ * when the host marks Phase B generation (`x-showzy-ai-budget: settle`);
+ * HTTP 200 alone is not a billed turn on choice/confirm.
  */
 import { kyivCalendarDate, secondsUntilKyivMidnight } from "@showzy/ai";
 import type { RateLimitDecision, RateLimitStore } from "@showzy/core";
@@ -23,6 +25,16 @@ import {
   type AiBudgetStore,
   type AiBudgetTryAddDecision,
 } from "../stores/budget.js";
+
+/** Host sets this when the request entered `runPhaseB`. */
+export const STAFF_ASSISTANT_BUDGET_SETTLE_HEADER = "x-showzy-ai-budget";
+export const STAFF_ASSISTANT_BUDGET_SETTLE_VALUE = "settle";
+
+export interface StaffAssistantBudgetedRun {
+  readonly response: Response;
+  /** True only when the request entered Phase B generation. */
+  readonly settle: boolean;
+}
 
 export type StaffAssistantBudgetDenialReason =
   "turn_limit" | "company_budget" | "global_budget";
@@ -168,10 +180,40 @@ export async function enforceStaffAssistantBudget(options: {
   return hold;
 }
 
+export function staffAssistantBudgetSettleMarked(response: Response): boolean {
+  return (
+    response.headers.get(STAFF_ASSISTANT_BUDGET_SETTLE_HEADER) ===
+    STAFF_ASSISTANT_BUDGET_SETTLE_VALUE
+  );
+}
+
+export function stripStaffAssistantBudgetSettleHeader(
+  response: Response,
+): Response {
+  if (!staffAssistantBudgetSettleMarked(response)) {
+    return response;
+  }
+  const headers = new Headers(response.headers);
+  headers.delete(STAFF_ASSISTANT_BUDGET_SETTLE_HEADER);
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+function isStaffAssistantBudgetedRun(
+  value: Response | StaffAssistantBudgetedRun,
+): value is StaffAssistantBudgetedRun {
+  return !(value instanceof Response);
+}
+
 /**
- * Reserve USD (and optionally a chat-turn slot), run the host, settle on
- * HTTP success, release the hold on denial or host failure. Callers must
- * admit **before** host claim so a budget 429 cannot claim pending.
+ * Reserve USD (and optionally a chat-turn slot), run the host, settle or
+ * release. A bare `Response` settles on `response.ok` (chat). A
+ * `{ response, settle }` result is the HITL signal — HTTP 200 is not
+ * enough. Callers must admit **before** host claim so a budget 429
+ * cannot claim pending.
  */
 export async function withStaffAssistantBudget(options: {
   readonly logger: Logger;
@@ -183,7 +225,7 @@ export async function withStaffAssistantBudget(options: {
   readonly rateLimitStore?: RateLimitStore | undefined;
   readonly budgetStore?: AiBudgetStore | undefined;
   readonly limits: StaffAssistantBudgetLimits;
-  readonly run: () => Promise<Response>;
+  readonly run: () => Promise<Response | StaffAssistantBudgetedRun>;
 }): Promise<Response> {
   const hold = await enforceStaffAssistantBudget({
     logger: options.logger,
@@ -202,8 +244,12 @@ export async function withStaffAssistantBudget(options: {
   });
   let settled = false;
   try {
-    const response = await options.run();
-    if (response.ok) {
+    const outcome = await options.run();
+    const billed = isStaffAssistantBudgetedRun(outcome)
+      ? outcome
+      : { response: outcome, settle: outcome.ok };
+    const response = stripStaffAssistantBudgetSettleHeader(billed.response);
+    if (billed.settle) {
       await recordStaffAssistantBudgetSpend({
         logger: options.logger,
         requestId: options.requestId,

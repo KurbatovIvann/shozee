@@ -56,6 +56,7 @@ import {
 } from "../stores/pending.js";
 import {
   DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+  staffAssistantBudgetSettleMarked,
   withStaffAssistantBudget,
   type StaffAssistantBudgetLimits,
 } from "./assistant-budget-guard.js";
@@ -413,7 +414,9 @@ export async function executeStaffAssistantChat(
  * Choice and confirm Phase B (SHO-541). Same USD reserve → host →
  * settle/release as chat. `skipTurnLimit: true`: HITL resume is
  * continuation of an already-admitted job, not a new chat turn. Runs
- * before host claim so a budget 429 cannot claim pending.
+ * before host claim so a budget 429 cannot claim pending. Language
+ * model is resolved before the budget hold so a 503 never reserves.
+ * Settle only when the host marked Phase B (`x-showzy-ai-budget: settle`).
  */
 export async function executeBudgetedStaffAssistantHost(options: {
   readonly request: Request;
@@ -421,10 +424,11 @@ export async function executeBudgetedStaffAssistantHost(options: {
   readonly clientIp: string;
   readonly pipeline: ActionPipelineDeps;
   readonly getSession: StaffAssistantChatOptions["getSession"];
+  readonly assistant?: StaffAssistantRuntime;
   readonly rateLimitStore?: RateLimitStore;
   readonly budgetStore?: AiBudgetStore;
   readonly budgetLimits?: StaffAssistantBudgetLimits;
-  readonly run: () => Promise<Response>;
+  readonly run: (model: LanguageModel) => Promise<Response>;
 }): Promise<Response> {
   const session = await options.getSession(options.request.headers);
   if (session === null) {
@@ -449,6 +453,7 @@ export async function executeBudgetedStaffAssistantHost(options: {
       }),
       principal: staffPrincipal,
     });
+    const model = resolveLanguageModel(options.assistant);
     if (companySelector === null) {
       throw new CoreInvariantError(
         "staff assistant budget guard requires a verified company selector",
@@ -469,7 +474,13 @@ export async function executeBudgetedStaffAssistantHost(options: {
         ? {}
         : { budgetStore: options.budgetStore }),
       limits: budgetLimits,
-      run: options.run,
+      run: async () => {
+        const response = await options.run(model);
+        return {
+          response,
+          settle: staffAssistantBudgetSettleMarked(response),
+        };
+      },
     });
   } catch (error) {
     if (!(error instanceof RateLimitError)) {

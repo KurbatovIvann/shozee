@@ -95,6 +95,10 @@ import { z } from "zod";
 
 import type { ConversationLock } from "../stores/conversation-lock.js";
 import type { StaffAssistantPendingStore } from "../stores/pending.js";
+import {
+  STAFF_ASSISTANT_BUDGET_SETTLE_HEADER,
+  STAFF_ASSISTANT_BUDGET_SETTLE_VALUE,
+} from "./assistant-budget-guard.js";
 import { ASSISTANT_INVOCATION_CHANNEL } from "./assistant-invocation.js";
 import { REQUEST_ID_HEADER, resolveRequestId } from "./request-id.js";
 
@@ -138,6 +142,7 @@ function jsonResponse(
   status: number,
   body: Record<string, unknown>,
   requestId: string,
+  extraHeaders?: Readonly<Record<string, string>>,
 ): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -145,6 +150,7 @@ function jsonResponse(
       "content-type": "application/json",
       "cache-control": "private, no-store",
       [REQUEST_ID_HEADER]: requestId,
+      ...(extraHeaders ?? {}),
     },
   });
 }
@@ -195,12 +201,26 @@ function requireHostModel(model: LanguageModel | undefined): LanguageModel {
 function interactionResponse(
   result: AssistantHostInteractionResult,
   requestId: string,
+  budget?: { readonly settle: true },
 ): Response {
   return jsonResponse(
     200,
     assistantHostInteractionResultSchema.parse(result),
     requestId,
+    budget?.settle === true
+      ? {
+          [STAFF_ASSISTANT_BUDGET_SETTLE_HEADER]:
+            STAFF_ASSISTANT_BUDGET_SETTLE_VALUE,
+        }
+      : undefined,
   );
+}
+
+function phaseBInteractionResponse(
+  result: AssistantHostInteractionResult,
+  requestId: string,
+): Response {
+  return interactionResponse(result, requestId, { settle: true });
 }
 
 function expiredResult(): AssistantHostInteractionResult {
@@ -1775,7 +1795,7 @@ async function afterPhaseASuccess(options: {
   readonly actor: StaffMembership;
   readonly locale: StaffAssistantLocale;
   readonly output: unknown;
-}): Promise<AssistantHostInteractionResult> {
+}): Promise<Response> {
   await options.runtime.pendingStore.complete({
     id: options.record.id,
     kind: options.record.kind,
@@ -1784,16 +1804,19 @@ async function afterPhaseASuccess(options: {
   });
   // SHO-544: pass the committed Phase A write so resume cards include
   // the existing surface even when Phase B is speech-only or fails.
-  return runPhaseB({
-    runtime: options.runtime,
-    conversationId: options.record.conversationId,
-    locale: options.locale,
-    bind: options.bind,
-    staffPrincipal: options.staffPrincipal,
-    actor: options.actor,
-    pending: options.record,
-    phaseAOutput: options.output,
-  });
+  return phaseBInteractionResponse(
+    await runPhaseB({
+      runtime: options.runtime,
+      conversationId: options.record.conversationId,
+      locale: options.locale,
+      bind: options.bind,
+      staffPrincipal: options.staffPrincipal,
+      actor: options.actor,
+      pending: options.record,
+      phaseAOutput: options.output,
+    }),
+    options.runtime.requestId,
+  );
 }
 
 async function replayCompletedPending(options: {
@@ -1812,7 +1835,7 @@ async function replayCompletedPending(options: {
   };
   readonly actor: StaffMembership;
   readonly record: PendingInteractionRecord;
-}): Promise<AssistantHostInteractionResult> {
+}): Promise<Response> {
   const open = await options.runtime.pendingStore.peekOpen({
     conversationId: options.conversationId,
     bind: options.bind,
@@ -1827,29 +1850,38 @@ async function replayCompletedPending(options: {
     pending: options.record,
   });
   if (open.kind === "found" && open.record.id !== options.record.id) {
-    return okEnvelope({
-      speech: lastAssistantSpeech(history, resumeKey),
-      toolResults: resumeToolResultsFromHistory(history, options.record),
-      pending: publicPendingFromRecord(open.record) ?? null,
-    });
+    return interactionResponse(
+      okEnvelope({
+        speech: lastAssistantSpeech(history, resumeKey),
+        toolResults: resumeToolResultsFromHistory(history, options.record),
+        pending: publicPendingFromRecord(open.record) ?? null,
+      }),
+      options.runtime.requestId,
+    );
   }
   const state = phaseBState(history, options.record);
   if (state === "done") {
-    return okEnvelope({
-      speech: lastAssistantSpeech(history, resumeKey),
-      toolResults: resumeToolResultsFromHistory(history, options.record),
-      pending: null,
-    });
+    return interactionResponse(
+      okEnvelope({
+        speech: lastAssistantSpeech(history, resumeKey),
+        toolResults: resumeToolResultsFromHistory(history, options.record),
+        pending: null,
+      }),
+      options.runtime.requestId,
+    );
   }
-  return runPhaseB({
-    runtime: options.runtime,
-    conversationId: options.conversationId,
-    locale: options.locale,
-    bind: options.bind,
-    staffPrincipal: options.staffPrincipal,
-    actor: options.actor,
-    pending: options.record,
-  });
+  return phaseBInteractionResponse(
+    await runPhaseB({
+      runtime: options.runtime,
+      conversationId: options.conversationId,
+      locale: options.locale,
+      bind: options.bind,
+      staffPrincipal: options.staffPrincipal,
+      actor: options.actor,
+      pending: options.record,
+    }),
+    options.runtime.requestId,
+  );
 }
 
 export async function executeStaffAssistantHostChoiceResume(
@@ -1924,18 +1956,15 @@ export async function executeStaffAssistantHostChoiceResume(
         });
         const locale = record.locale ?? STAFF_ASSISTANT_DEFAULT_LOCALE;
         if (claimed.kind === "replay" && record.status === "completed") {
-          return interactionResponse(
-            await replayCompletedPending({
-              runtime: options,
-              conversationId: conversation.id,
-              locale,
-              bind,
-              staffPrincipal: auth.staffPrincipal,
-              actor,
-              record,
-            }),
-            options.requestId,
-          );
+          return await replayCompletedPending({
+            runtime: options,
+            conversationId: conversation.id,
+            locale,
+            bind,
+            staffPrincipal: auth.staffPrincipal,
+            actor,
+            record,
+          });
         }
         const mappedId = resolveMappedVariantId(
           record.optionMap,
@@ -1985,19 +2014,16 @@ export async function executeStaffAssistantHostChoiceResume(
             outcome: "success",
             output,
           });
-          return interactionResponse(
-            await afterPhaseASuccess({
-              runtime: options,
-              record,
-              bind,
-              optionId: parsed.data.optionId,
-              staffPrincipal: auth.staffPrincipal,
-              actor,
-              locale,
-              output,
-            }),
-            options.requestId,
-          );
+          return await afterPhaseASuccess({
+            runtime: options,
+            record,
+            bind,
+            optionId: parsed.data.optionId,
+            staffPrincipal: auth.staffPrincipal,
+            actor,
+            locale,
+            output,
+          });
         } catch (error) {
           if (error instanceof ConfirmationRequiredError) {
             return interactionResponse(
@@ -2231,18 +2257,15 @@ export async function executeStaffAssistantHostConfirm(
         });
         const locale = record.locale ?? STAFF_ASSISTANT_DEFAULT_LOCALE;
         if (claimed.kind === "replay" && record.status === "completed") {
-          return interactionResponse(
-            await replayCompletedPending({
-              runtime: options,
-              conversationId: conversation.id,
-              locale,
-              bind,
-              staffPrincipal: auth.staffPrincipal,
-              actor,
-              record,
-            }),
-            options.requestId,
-          );
+          return await replayCompletedPending({
+            runtime: options,
+            conversationId: conversation.id,
+            locale,
+            bind,
+            staffPrincipal: auth.staffPrincipal,
+            actor,
+            record,
+          });
         }
         const history = await loadHistory({
           pipeline: options.pipeline,
@@ -2271,18 +2294,15 @@ export async function executeStaffAssistantHostConfirm(
             outcome: "success",
             output,
           });
-          return interactionResponse(
-            await afterPhaseASuccess({
-              runtime: options,
-              record,
-              bind,
-              staffPrincipal: auth.staffPrincipal,
-              actor,
-              locale,
-              output,
-            }),
-            options.requestId,
-          );
+          return await afterPhaseASuccess({
+            runtime: options,
+            record,
+            bind,
+            staffPrincipal: auth.staffPrincipal,
+            actor,
+            locale,
+            output,
+          });
         } catch (error) {
           if (error instanceof ConfirmationRequiredError) {
             return interactionResponse(

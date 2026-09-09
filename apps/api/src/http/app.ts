@@ -459,7 +459,11 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
       rateLimitStore: assistantBudget.rateLimitStore,
       budgetStore: assistantBudget.budgetStore,
       budgetLimits,
-      run: () => executeStaffAssistantHostChoiceResume(runtime),
+      ...(options.assistant !== undefined
+        ? { assistant: options.assistant }
+        : {}),
+      run: (model) =>
+        executeStaffAssistantHostChoiceResume({ ...runtime, model }),
     });
     return withRequestId(response, c.get("requestId"));
   });
@@ -478,7 +482,10 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
       rateLimitStore: assistantBudget.rateLimitStore,
       budgetStore: assistantBudget.budgetStore,
       budgetLimits,
-      run: () => executeStaffAssistantHostConfirm(runtime),
+      ...(options.assistant !== undefined
+        ? { assistant: options.assistant }
+        : {}),
+      run: (model) => executeStaffAssistantHostConfirm({ ...runtime, model }),
     });
     return withRequestId(response, c.get("requestId"));
   });

@@ -18,6 +18,8 @@ import {
   recordStaffAssistantBudgetSpend,
   releaseStaffAssistantBudgetHold,
   staffAssistantBudgetSpendUsd,
+  STAFF_ASSISTANT_BUDGET_SETTLE_HEADER,
+  STAFF_ASSISTANT_BUDGET_SETTLE_VALUE,
   withStaffAssistantBudget,
 } from "./assistant-budget-guard.js";
 
@@ -617,6 +619,53 @@ describe("withStaffAssistantBudget", () => {
       run: () => Promise.resolve(new Response("ok", { status: 200 })),
     });
     expect(response.status).toBe(200);
+    expect(
+      await budgetStore.read(aiCompanyBudgetKey(COMPANY_A, KYIV_DATE)),
+    ).toBeCloseTo(0.1);
+    expect(await budgetStore.read(aiGlobalBudgetKey(KYIV_DATE))).toBeCloseTo(
+      0.1,
+    );
+  });
+
+  it("releases a 200 that the host did not mark as Phase B settle", async () => {
+    const budgetStore = createMemoryAiBudgetStore();
+    const response = await withStaffAssistantBudget({
+      ...wrapOptions(budgetStore),
+      now: NOW,
+      run: () =>
+        Promise.resolve({
+          response: new Response("expired", { status: 200 }),
+          settle: false,
+        }),
+    });
+    expect(response.status).toBe(200);
+    expect(
+      await budgetStore.read(aiCompanyBudgetKey(COMPANY_A, KYIV_DATE)),
+    ).toBe(0);
+    expect(await budgetStore.read(aiGlobalBudgetKey(KYIV_DATE))).toBe(0);
+  });
+
+  it("settles when the host marks Phase B and strips the settle header", async () => {
+    const budgetStore = createMemoryAiBudgetStore();
+    const response = await withStaffAssistantBudget({
+      ...wrapOptions(budgetStore),
+      now: NOW,
+      run: () =>
+        Promise.resolve({
+          response: new Response("phase-b", {
+            status: 200,
+            headers: {
+              [STAFF_ASSISTANT_BUDGET_SETTLE_HEADER]:
+                STAFF_ASSISTANT_BUDGET_SETTLE_VALUE,
+            },
+          }),
+          settle: true,
+        }),
+    });
+    expect(response.status).toBe(200);
+    expect(
+      response.headers.get(STAFF_ASSISTANT_BUDGET_SETTLE_HEADER),
+    ).toBeNull();
     expect(
       await budgetStore.read(aiCompanyBudgetKey(COMPANY_A, KYIV_DATE)),
     ).toBeCloseTo(0.1);

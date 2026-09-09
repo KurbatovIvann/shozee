@@ -233,12 +233,24 @@ describe("live assistant chat mount (SHO-524)", () => {
     expect(chat).toContain("withStaffAssistantBudget");
     expect(chat).toContain("executeBudgetedStaffAssistantHost");
     expect(chat).toContain("skipTurnLimit: true");
+    expect(chat).toContain("staffAssistantBudgetSettleMarked");
+    const budgetedHost = chat.slice(
+      chat.indexOf("export async function executeBudgetedStaffAssistantHost"),
+    );
+    expect(budgetedHost.indexOf("resolveLanguageModel")).toBeGreaterThan(-1);
+    expect(budgetedHost.indexOf("resolveLanguageModel")).toBeLessThan(
+      budgetedHost.indexOf("withStaffAssistantBudget"),
+    );
     expect(chat).not.toContain("streamStaffAssistantChat");
     expect(chat).not.toContain("classifyStaffAssistantTurn");
     expect(chat).not.toContain("runStaffAssistantHostTurn");
     const guard = readFileSync(join(here, "assistant-budget-guard.ts"), "utf8");
     expect(guard).toContain("estimatedCostUsd: null");
     expect(guard).toContain("withStaffAssistantBudget");
+    expect(guard).toContain("staffAssistantBudgetSettleMarked");
+    const host = readFileSync(join(here, "assistant-host.ts"), "utf8");
+    expect(host).toContain("phaseBInteractionResponse");
+    expect(host).toContain("STAFF_ASSISTANT_BUDGET_SETTLE_HEADER");
     const app = readFileSync(join(here, "app.ts"), "utf8");
     expect(app).toContain("executeStaffAssistantChat");
     expect(app).toContain("executeBudgetedStaffAssistantHost");
