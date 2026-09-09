@@ -95,15 +95,55 @@ export async function handleAssistantKitChoice(
     return json(499, { status: "aborted" }, requestId);
   }
 
+  // One tool set for the whole request: the resolved call and the turn that
+  // follows it compose their cards together.
+  const tools = runtime.tools();
+
   const resolvedOutcome = await runtime.resolveAnswer({
     toolName: claimed.record.continuation.pausedToolCall.name,
     kind: claimed.record.kind,
     value: claimed.value,
+    tools,
     session: { userId: caller.userId },
     companySelector: caller.companySelector,
   });
 
-  if (resolvedOutcome.kind !== "ok") {
+  if (resolvedOutcome.kind === "pause") {
+    // The answer settled one ambiguity and uncovered the next — a picker for
+    // the customer, then one for the product. A new question, not a failure:
+    // the claimed record no longer holds the slot, so this simply takes it.
+    const nextKind = resolvedOutcome.interaction;
+    if (!runtime.kit.interactions.has(nextKind)) {
+      return json(
+        500,
+        { status: "pause_rejected", reason: `unknown kind ${nextKind}` },
+        requestId,
+      );
+    }
+    const opened = await runtime.kit.open({
+      conversationId: body.conversationId,
+      bind: caller.bind,
+      kind: nextKind,
+      prompt: resolvedOutcome.prompt,
+      secret: resolvedOutcome.secret,
+      continuation: claimed.record.continuation,
+    });
+    if (opened.kind !== "opened") {
+      return json(
+        500,
+        { status: "pause_rejected", reason: opened.kind },
+        requestId,
+      );
+    }
+    const payload: AssistantKitTurnOk = {
+      status: "ok",
+      parts: [],
+      pause: opened.pause,
+    };
+    return json(200, payload, requestId);
+  }
+
+  if (resolvedOutcome.kind === "error") {
     // The action refused. No effect, so the answer did not take: the card stays
     // on screen instead of vanishing with the failure.
     await release();
@@ -112,9 +152,8 @@ export async function handleAssistantKitChoice(
       409,
       {
         status: "action_failed",
-        ...(resolvedOutcome.kind === "error"
-          ? { code: resolvedOutcome.code, message: resolvedOutcome.message }
-          : { code: "PAUSE_NOT_SUPPORTED" }),
+        code: resolvedOutcome.code,
+        message: resolvedOutcome.message,
         pause: current,
       },
       requestId,
@@ -127,7 +166,7 @@ export async function handleAssistantKitChoice(
     bind: caller.bind,
     messageId: randomUUID(),
     model: runtime.model,
-    tools: runtime.tools,
+    tools,
     claimed,
     resolved: resolvedOutcome,
     abortSignal: c.req.raw.signal,

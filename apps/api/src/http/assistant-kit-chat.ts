@@ -99,7 +99,7 @@ export async function handleAssistantKitChat(
     bind: caller.bind,
     messageId: randomUUID(),
     model: runtime.model,
-    tools: runtime.tools,
+    tools: runtime.tools(),
     messages,
     abortSignal: c.req.raw.signal,
   });

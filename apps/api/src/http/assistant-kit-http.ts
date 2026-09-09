@@ -38,11 +38,18 @@ export interface AssistantHistoryPort {
   save(scope: PauseScope, messages: readonly ModelMessage[]): Promise<void>;
 }
 
-/** Runs the real action with whatever an interaction resolved to. */
+/**
+ * Runs the real action with whatever an interaction resolved to.
+ *
+ * It is handed the **same** tool set the turn is using, so resolving an
+ * ambiguity is another call through the same façade — and a second ambiguity
+ * comes back as another pause rather than as a failure.
+ */
 export type ResolveAnswer = (args: {
   readonly toolName: string;
   readonly kind: string;
   readonly value: unknown;
+  readonly tools: ToolSet;
   readonly session: { readonly userId: string };
   readonly companySelector: string;
 }) => Promise<ToolOutcome>;
@@ -57,7 +64,11 @@ export interface AssistantKitRuntime {
   };
   readonly kit: AssistantKitFor;
   readonly model: LanguageModel;
-  readonly tools: ToolSet;
+  /**
+   * Built fresh per request: card composition needs every result of one turn,
+   * and one turn's results must never leak into another's.
+   */
+  readonly tools: () => ToolSet;
   readonly history: AssistantHistoryPort;
   readonly resolveAnswer: ResolveAnswer;
 }

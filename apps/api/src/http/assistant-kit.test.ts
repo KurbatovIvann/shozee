@@ -110,7 +110,9 @@ const PAUSING_TOOLS: ToolSet = {
       },
       secret: {
         byOption: { "opt-a": "entity-a", "opt-b": "entity-b" },
-        canonicalInput: input,
+        toolName: "orders_create",
+        input,
+        target: { kind: "customer", query: input.label },
       },
     }),
   },
@@ -155,7 +157,7 @@ function harness(options?: {
     },
     kit,
     model,
-    tools: options?.tools ?? {},
+    tools: () => options?.tools ?? {},
     history,
     resolveAnswer: options?.resolveAnswer ?? OK_RESOLVE,
   });
@@ -177,7 +179,9 @@ async function openPause(kit: Kit, bind: string) {
     },
     secret: {
       byOption: { "opt-a": "entity-a", "opt-b": "entity-b" },
-      canonicalInput: { label: "two matches" },
+      toolName: "orders_create",
+      input: { customerQuery: "two matches", items: [] },
+      target: { kind: "customer", query: "two matches" },
     },
     continuation: {
       messages: [
@@ -514,7 +518,9 @@ describe("POST /assistant/kit/choice", () => {
 
     expect(seen).toEqual({
       entityId: "entity-b",
-      canonicalInput: { label: "two matches" },
+      toolName: "orders_create",
+      input: { customerQuery: "two matches", items: [] },
+      target: { kind: "customer", query: "two matches" },
     });
   });
 
