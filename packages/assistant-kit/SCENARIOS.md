@@ -1,6 +1,12 @@
 # assistant-kit conformance scenarios
 
-The acceptance suite for the protocol. Every scenario below is
+The acceptance suite for the protocol.
+
+Nothing below names a kind this package knows about: `pick` and `confirm` come
+from `fixture.ts`, and the route level uses the consumer's own registry. If a
+scenario here can only be written with one product's vocabulary, it belongs in
+that product's suite.
+ Every scenario below is
 **deterministic**: a stub model, a `Map`-backed `PauseStore`, an in-memory
 `DocumentStore`, a fixed `Clock` and a counter `Ids`. No scenario calls a real
 provider — there is no budget for live-model runs, and none of these check
@@ -27,10 +33,10 @@ argue with history rather than with taste.
 | 2 | K | An open pause exists. → a second `open` on the same conversation returns `already_open` with the current pause, and does not overwrite. | One-open-pending protocol (ADR-0035) |
 | 3 | K | An open pause. → `claim` with the right revision returns `claimed` once; every further `claim` returns `gone`. Two concurrent claims: exactly one `claimed`. | Double-tap creating two writes |
 | 4 | K | Revision was raised while the card was on screen. → `claim` with the old revision returns `stale` carrying the current pause, and does **not** apply the answer. | An answer applied to a draft the human did not see |
-| 5 | K | A `confirmation` pause. → `claim` with `{ kind: "select" }` returns `wrong_answer_kind`, listing what is accepted. | A picker answer approving a confirmation |
+| 5 | K | A body the kind's own `answer` schema rejects → `invalid_answer`, and the claim is **not** consumed. Per kind, never one wide union. | An answer meant for a different kind of question |
 | 6 | K | Clock advanced past `expiresAt`. → `claim` returns `expired`; the record is not resumable and no write happens. | Stale approval replayed against a new challenge |
 | 7 | K | Any pause. → `publicPauseSchema.parse(publicPause)` succeeds and the parsed object has no `resolvedInput`, no `optionMap`, and no `entityId` on any option. | Canonical input on the wire |
-| 8 | K | `entityIdFor(record, optionId)` resolves server-side. An `optionId` absent from `optionMap` returns `undefined` and the caller refuses. | Client-supplied entity ids |
+| 8 | K | The kind's `resolve` runs server-side and hands back a value, not the raw answer. An answer it cannot make sense of → `unresolvable`, decided **before** the claim is spent. | Client-supplied ids; a meaningless answer burning the one claim |
 | 9 | K | The subject of the decision changes mid-pause. → `revise` raises the revision, replaces options, and invalidates the previous answer. | `pending_replace` losing a confirmation (SHO-542) |
 | 10 | K | An answer arrives for a conversation whose pause is not stored yet. → `claim` returns `gone` and the caller retries; nothing is silently dropped and no write runs. | Answer racing the pause write |
 
@@ -95,3 +101,18 @@ visible without a second caller:
    error made the card vanish. `release` returns a claimed pause to open at the
    same revision; the caller asserts the absence of effect, since the kit
    cannot know it.
+
+## What being parametric changed
+
+The first shape enumerated two kinds and four answer forms, capped a picker at
+twenty, and had a field that existed only because of that cap. None of that is
+a protocol concern, and a third kind meant editing the package.
+
+Three checks became possible only after the vocabulary moved out:
+
+| # | Level | Given / When / Then |
+| --- | --- | --- |
+| 23 | K | Opening on a kind the registry does not have → `unknown_kind`; a payload the kind's `prompt` schema rejects → `invalid_prompt`. Neither stores anything. |
+| 24 | K | Two kinds with different ttls expire at different times, with no ttl configured on the deployment. |
+| 25 | K | A pause whose kind is no longer registered → `unknown_kind` on claim. A pause can outlive the deploy that removed its kind; a caller treats it as gone. |
+| 26 | L | A tool asking to pause on an unregistered kind → the turn is `pause_rejected` and no pause is stored. |

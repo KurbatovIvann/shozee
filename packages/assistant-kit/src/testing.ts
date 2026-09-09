@@ -7,7 +7,10 @@
 import { simulateReadableStream, type LanguageModel, type ModelMessage } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 
+import type { z } from "zod";
+
 import { providerToolCallId, type ProviderToolCallId } from "./ids.js";
+import type { InteractionRegistry, InteractionType } from "./interaction.js";
 import type { Clock, Ids, KitDeps, PauseStore, DocumentStore } from "./ports.js";
 import type { Continuation } from "./pause.js";
 
@@ -88,23 +91,28 @@ export function counterIds(): Ids {
   };
 }
 
-export const TEST_CHOICE_TTL_MS = 15 * 60 * 1000;
-export const TEST_CONFIRMATION_TTL_MS = 5 * 60 * 1000;
-
-export interface TestDeps extends KitDeps {
+export interface TestDeps<
+  T extends Record<string, InteractionType<z.ZodType, z.ZodType, never>>,
+> extends KitDeps<T> {
   readonly pauses: MemoryPauseStore;
   readonly documents: MemoryDocumentStore;
   readonly clock: TestClock;
 }
 
-export function testDeps(): TestDeps {
+/**
+ * The registry is a parameter, not a default: what kinds of question exist is
+ * the consumer's decision, and a fixture here would quietly become a shipped
+ * vocabulary.
+ */
+export function testDeps<
+  T extends Record<string, InteractionType<z.ZodType, z.ZodType, never>>,
+>(interactions: InteractionRegistry<T>): TestDeps<T> {
   return {
     pauses: memoryPauseStore(),
     documents: memoryDocumentStore(),
     clock: fixedClock(),
     ids: counterIds(),
-    choiceTtlMs: TEST_CHOICE_TTL_MS,
-    confirmationTtlMs: TEST_CONFIRMATION_TTL_MS,
+    interactions,
   };
 }
 
@@ -146,7 +154,7 @@ export function pausedHistory(options?: {
           toolName: name,
           output: {
             type: "json",
-            value: (options?.placeholder ?? { status: "needs_choice" }) as never,
+            value: (options?.placeholder ?? { status: "paused" }) as never,
           },
         },
       ],

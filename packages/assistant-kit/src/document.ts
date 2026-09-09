@@ -6,8 +6,9 @@
  * one card live and a different set after reload, and how the same entity can
  * appear twice.
  *
- * A surface part is a snapshot of that turn. "Open" navigates to the live
- * entity; the domain stays the authority if they disagree.
+ * A card part is a snapshot of the moment it was written. Following it should
+ * re-read the live record; whatever owns that record stays the authority if
+ * the two disagree.
  */
 import { z } from "zod";
 
@@ -28,10 +29,11 @@ export const documentPartSchema = z.discriminatedUnion("kind", [
     status: textPartStatusSchema,
   }),
   z.strictObject({
-    kind: z.literal("surface"),
+    kind: z.literal("card"),
     cardId: cardIdSchema,
     revision: revisionSchema,
-    surface: z.string().min(1).max(64),
+    /** Whatever the caller's own card registry calls this. */
+    type: z.string().min(1).max(64),
     payload: z.unknown(),
   }),
   z.strictObject({
@@ -78,5 +80,5 @@ export type DocumentWrite =
   | {
       readonly kind: "replace_card";
       readonly messageId: string;
-      readonly part: Extract<DocumentPart, { kind: "surface" }>;
+      readonly part: Extract<DocumentPart, { kind: "card" }>;
     };

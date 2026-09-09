@@ -1,10 +1,15 @@
 /**
- * `@showzy/assistant-kit` — pause a tool call, ask a human, resume the model
+ * `assistant-kit` — pause a tool call, ask a person, resume the model
  * conversation verbatim, and keep one stored chat document.
  *
- * An extension to AI SDK 7, not a replacement: the caller still owns the
- * single `streamText`. The kit owns only what happens between `stopWhen`
- * firing and the next request arriving.
+ * An extension to the AI SDK, not a replacement: the caller still owns the
+ * single `streamText`. This package owns only what happens between the loop
+ * stopping and the next request arriving.
+ *
+ * It knows nothing about any application. What kinds of question exist, what a
+ * valid answer to each looks like, and what may appear on a card are all the
+ * caller's registry — so the set of kinds is derived from that registry rather
+ * than declared here.
  */
 export {
   PROVIDER_TOOL_CALL_ID_PATTERN,
@@ -19,28 +24,34 @@ export {
 } from "./ids.js";
 
 export {
-  CHOICE_OPTIONS_MAX,
-  choiceOptionSchema,
-  isPausing,
-  surfaceRefSchema,
-  type ChoiceOption,
-  type SurfaceRef,
+  createInteractions,
+  defineInteraction,
+  resolved,
+  unresolvable,
+  type AnyInteraction,
+  type InteractionRegistry,
+  type InteractionSpec,
+  type InteractionType,
+  type KindOf,
+  type Resolution,
+} from "./interaction.js";
+
+export {
+  cardRefSchema,
+  isPause,
+  type CardRef,
   type ToolOutcome,
 } from "./outcome.js";
 
 export {
-  PAUSE_KINDS,
-  answerSchema,
   interactionResponseSchema,
   pauseStatusSchema,
   publicPauseSchema,
-  type Answer,
-  type AnswerKind,
   type ClaimResult,
   type Continuation,
   type InteractionResponse,
-  type PauseKind,
   type PauseRecord,
+  type PauseScope,
   type PauseStatus,
   type PublicPause,
   type ResumeInput,
@@ -83,8 +94,7 @@ export {
 } from "./host.js";
 
 /**
- * The SDK types a consumer needs to wire this up. Re-exported so a consumer
- * does not take a direct `ai` dependency just to name a model or a tool set —
- * the same seam `@showzy/ai` provides for its own callers.
+ * The SDK types a consumer needs to wire this up, re-exported so a consumer
+ * does not take a direct `ai` dependency just to name a model or a tool set.
  */
 export type { LanguageModel, ModelMessage, ToolSet } from "ai";

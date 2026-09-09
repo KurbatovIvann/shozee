@@ -1,88 +1,72 @@
 /**
- * SCENARIOS.md 1-10. Kit level: a Map, a fixed clock, no model.
+ * The pause store: a Map, a fixed clock, no model.
  *
- * Red until `createAssistantKit` exists. Each `it` names its scenario number
- * so a deletion has to argue with the defect it was written against.
+ * Nothing here names a kind this package knows about — `pick` and `confirm`
+ * come from the fixture registry, exactly as a consumer's kinds would.
  */
 import { describe, expect, it } from "vitest";
 
+import { fixtureInteractions, PICK_PROMPT, PICK_SECRET } from "./fixture.js";
 import { providerToolCallId } from "./ids.js";
-import { createAssistantKit, type AssistantKit, type OpenPauseInput } from "./kit.js";
-import { publicPauseSchema, type Answer } from "./pause.js";
-import { continuationOf, testDeps, type TestDeps } from "./testing.js";
-import type { ToolOutcome } from "./outcome.js";
-
-interface Input {
-  readonly n: number;
-}
+import { createInteractions } from "./interaction.js";
+import { createAssistantKit } from "./kit.js";
+import { publicPauseSchema } from "./pause.js";
+import { continuationOf, testDeps } from "./testing.js";
 
 const CONVERSATION = "11111111-1111-4111-8111-111111111111";
-const BIND = "actor-1:tenant-1";
+const BIND = "owner-1:scope-1";
+const OTHER = "owner-2:scope-2";
 const ABSENT_INTERACTION = "22222222-2222-4222-8222-222222222222";
+const CHOSE_A = { chose: "opt-a" };
 
-function newKit(): { kit: AssistantKit; deps: TestDeps } {
-  const deps = testDeps();
+function newKit() {
+  const deps = testDeps(fixtureInteractions);
   return { kit: createAssistantKit(deps), deps };
 }
 
-function choiceOutcome(
-  resume: Input = { n: 1 },
-): Extract<ToolOutcome<Input>, { kind: "needs_choice" }> {
-  return {
-    kind: "needs_choice",
-    subject: "two matches",
-    options: [
-      { optionId: "opt-a", label: "A", entityId: "entity-a" },
-      { optionId: "opt-b", label: "B", entityId: "entity-b" },
-    ],
-    optionsTruncated: false,
-    resume,
-  };
-}
+type Kit = ReturnType<typeof newKit>["kit"];
+type OpenArgs = Parameters<Kit["open"]>[0];
 
-function confirmationOutcome(): Extract<
-  ToolOutcome<Input>,
-  { kind: "needs_confirmation" }
-> {
-  return { kind: "needs_confirmation", summary: "are you sure", resume: { n: 1 } };
-}
-
-function openInput(
-  outcome: OpenPauseInput<Input>["outcome"] = choiceOutcome(),
-): OpenPauseInput<Input> {
+function openInput(overrides?: Partial<OpenArgs>): OpenArgs {
   return {
     conversationId: CONVERSATION,
     bind: BIND,
-    outcome,
+    kind: "pick",
+    prompt: PICK_PROMPT,
+    secret: PICK_SECRET,
     continuation: continuationOf(),
+    ...overrides,
   };
 }
 
-const SELECT_A: Answer = { kind: "select", optionId: "opt-a" };
+async function openPick(kit: Kit) {
+  const opened = await kit.open(openInput());
+  if (opened.kind !== "opened") throw new Error(`expected opened, got ${opened.kind}`);
+  return opened.pause;
+}
 
-describe("scenario 1 - an unsendable tool call id cannot be stored", () => {
-  it("1a rejects the id shapes the old host minted", () => {
+describe("an unsendable tool call id cannot be stored", () => {
+  it("rejects ids outside what a provider accepts", () => {
     expect(providerToolCallId("choice:abc").kind).toBe("illegal");
     expect(providerToolCallId("phase-a:1").kind).toBe("illegal");
     expect(providerToolCallId("").kind).toBe("illegal");
   });
 
-  it("1a accepts a provider id and an underscore-minted one", () => {
+  it("accepts a provider id and an underscore-minted one", () => {
     expect(providerToolCallId("toolu_01ABC").kind).toBe("ok");
     expect(providerToolCallId("choice_abc").kind).toBe("ok");
   });
 
-  it("1b stores the continuation id unchanged", async () => {
+  it("stores the continuation id unchanged", async () => {
     const { kit } = newKit();
-    const opened = await kit.open(openInput());
-    if (opened.kind !== "opened") throw new Error("expected opened");
+    const pause = await openPick(kit);
 
-    const claimed = await kit.claim<Input>({
+    const claimed = await kit.claim({
       conversationId: CONVERSATION,
       bind: BIND,
-      interactionId: opened.pause.interactionId,
+      interactionId: pause.interactionId,
       revision: 1,
-      answer: SELECT_A,
+      answer: CHOSE_A,
     });
 
     expect(claimed.kind).toBe("claimed");
@@ -91,11 +75,73 @@ describe("scenario 1 - an unsendable tool call id cannot be stored", () => {
   });
 });
 
-describe("scenario 2 - one open interaction per conversation", () => {
+describe("the kind decides what is acceptable", () => {
+  it("refuses a kind the registry does not have", async () => {
+    const { kit } = newKit();
+
+    const opened = await kit.open(openInput({ kind: "nope" } as never));
+
+    expect(opened.kind).toBe("unknown_kind");
+  });
+
+  it("refuses a prompt the kind's schema rejects", async () => {
+    const { kit } = newKit();
+
+    const opened = await kit.open(
+      openInput({ prompt: { question: "which one" } }),
+    );
+
+    expect(opened.kind).toBe("invalid_prompt");
+  });
+
+  it("takes the ttl from the kind, not from the deployment", async () => {
+    const { kit, deps } = newKit();
+    const picked = await openPick(kit);
+
+    const confirmed = await createAssistantKit(
+      testDeps(fixtureInteractions),
+    ).open({
+      conversationId: CONVERSATION,
+      bind: BIND,
+      kind: "confirm",
+      prompt: { question: "are you sure" },
+      secret: { replay: { n: 1 } },
+      continuation: continuationOf(),
+    });
+    if (confirmed.kind !== "opened") throw new Error("expected opened");
+
+    const pickTtl = Date.parse(picked.expiresAt) - deps.clock.now().getTime();
+    const confirmTtl =
+      Date.parse(confirmed.pause.expiresAt) - deps.clock.now().getTime();
+    expect(pickTtl).toBeGreaterThan(confirmTtl);
+  });
+
+  it("treats a pause whose kind is no longer registered as unknown", async () => {
+    const { kit, deps } = newKit();
+    const pause = await openPick(kit);
+
+    // The deploy that removed the kind did not remove the open pause.
+    const narrowed = createAssistantKit({
+      ...deps,
+      interactions: createInteractions({}),
+    });
+    const claimed = await narrowed.claim({
+      conversationId: CONVERSATION,
+      bind: BIND,
+      interactionId: pause.interactionId,
+      revision: 1,
+      answer: CHOSE_A,
+    });
+
+    expect(claimed.kind).toBe("unknown_kind");
+  });
+});
+
+describe("one open interaction per conversation", () => {
   it("refuses a second open and returns the current pause", async () => {
     const { kit } = newKit();
     const first = await kit.open(openInput());
-    const second = await kit.open(openInput(choiceOutcome({ n: 2 })));
+    const second = await kit.open(openInput());
 
     expect(first.kind).toBe("opened");
     expect(second.kind).toBe("already_open");
@@ -104,218 +150,222 @@ describe("scenario 2 - one open interaction per conversation", () => {
   });
 });
 
-describe("scenario 3 - a claim is consumed exactly once", () => {
+describe("a claim is consumed exactly once", () => {
   it("the second claim is gone", async () => {
     const { kit } = newKit();
-    const opened = await kit.open(openInput());
-    if (opened.kind !== "opened") throw new Error("expected opened");
+    const pause = await openPick(kit);
     const claim = {
       conversationId: CONVERSATION,
       bind: BIND,
-      interactionId: opened.pause.interactionId,
+      interactionId: pause.interactionId,
       revision: 1,
-      answer: SELECT_A,
+      answer: CHOSE_A,
     };
 
-    expect((await kit.claim<Input>(claim)).kind).toBe("claimed");
-    expect((await kit.claim<Input>(claim)).kind).toBe("gone");
+    expect((await kit.claim(claim)).kind).toBe("claimed");
+    expect((await kit.claim(claim)).kind).toBe("gone");
   });
 
   it("concurrent claims produce exactly one winner", async () => {
     const { kit } = newKit();
-    const opened = await kit.open(openInput());
-    if (opened.kind !== "opened") throw new Error("expected opened");
+    const pause = await openPick(kit);
     const claim = {
       conversationId: CONVERSATION,
       bind: BIND,
-      interactionId: opened.pause.interactionId,
+      interactionId: pause.interactionId,
       revision: 1,
-      answer: SELECT_A,
+      answer: CHOSE_A,
     };
 
     const results = await Promise.all([
-      kit.claim<Input>(claim),
-      kit.claim<Input>(claim),
-      kit.claim<Input>(claim),
+      kit.claim(claim),
+      kit.claim(claim),
+      kit.claim(claim),
     ]);
 
     expect(results.filter((result) => result.kind === "claimed")).toHaveLength(1);
   });
-});
 
-describe("scenario 4 - a stale revision is refused, not applied", () => {
-  it("returns the current pause instead of answering an unseen draft", async () => {
+  it("hands back what the kind resolved, not the raw answer", async () => {
     const { kit } = newKit();
-    const opened = await kit.open(openInput());
-    if (opened.kind !== "opened") throw new Error("expected opened");
+    const pause = await openPick(kit);
 
-    await kit.revise<Input>({
+    const claimed = await kit.claim({
       conversationId: CONVERSATION,
       bind: BIND,
-      interactionId: opened.pause.interactionId,
-      next: { outcome: choiceOutcome({ n: 5 }), continuation: continuationOf() },
+      interactionId: pause.interactionId,
+      revision: 1,
+      answer: { chose: "opt-b" },
     });
 
-    const stale = await kit.claim<Input>({
+    expect(claimed.kind).toBe("claimed");
+    if (claimed.kind !== "claimed") return;
+    expect(claimed.value).toEqual({ chosen: "value-b", replay: { n: 1 } });
+  });
+});
+
+describe("an answer that cannot mean anything does not burn the claim", () => {
+  it("refuses a body the kind's schema rejects, and the pause stays open", async () => {
+    const { kit } = newKit();
+    const pause = await openPick(kit);
+
+    const bad = await kit.claim({
       conversationId: CONVERSATION,
       bind: BIND,
-      interactionId: opened.pause.interactionId,
+      interactionId: pause.interactionId,
       revision: 1,
-      answer: SELECT_A,
+      answer: { agreed: true },
+    });
+
+    expect(bad.kind).toBe("invalid_answer");
+    expect(
+      (await kit.peek({ conversationId: CONVERSATION, bind: BIND }))?.status,
+    ).toBe("open");
+  });
+
+  it("refuses an option the interaction never offered, and the pause stays open", async () => {
+    const { kit } = newKit();
+    const pause = await openPick(kit);
+
+    const bad = await kit.claim({
+      conversationId: CONVERSATION,
+      bind: BIND,
+      interactionId: pause.interactionId,
+      revision: 1,
+      answer: { chose: "opt-z" },
+    });
+
+    expect(bad.kind).toBe("unresolvable");
+    const still = await kit.peek({ conversationId: CONVERSATION, bind: BIND });
+    expect(still?.status).toBe("open");
+
+    // And the real answer still works afterwards.
+    const good = await kit.claim({
+      conversationId: CONVERSATION,
+      bind: BIND,
+      interactionId: pause.interactionId,
+      revision: 1,
+      answer: CHOSE_A,
+    });
+    expect(good.kind).toBe("claimed");
+  });
+});
+
+describe("a stale revision is refused, not applied", () => {
+  it("returns the current pause instead of answering an unseen draft", async () => {
+    const { kit } = newKit();
+    const pause = await openPick(kit);
+
+    await kit.revise({
+      conversationId: CONVERSATION,
+      bind: BIND,
+      interactionId: pause.interactionId,
+      next: {
+        kind: "pick",
+        prompt: { question: "changed", options: [{ id: "opt-c", label: "C" }] },
+        secret: { byOption: { "opt-c": "value-c" }, replay: { n: 5 } },
+        continuation: continuationOf(),
+      },
+    });
+
+    const stale = await kit.claim({
+      conversationId: CONVERSATION,
+      bind: BIND,
+      interactionId: pause.interactionId,
+      revision: 1,
+      answer: CHOSE_A,
     });
 
     expect(stale.kind).toBe("stale");
     if (stale.kind !== "stale") return;
     expect(stale.current.revision).toBeGreaterThan(1);
   });
-});
 
-describe("scenario 5 - the answer kind must match the pause kind", () => {
-  it("a picker answer does not approve a confirmation", async () => {
+  it("revise keeps the interaction identity and raises the revision", async () => {
     const { kit } = newKit();
-    const opened = await kit.open(openInput(confirmationOutcome()));
-    if (opened.kind !== "opened") throw new Error("expected opened");
+    const pause = await openPick(kit);
 
-    const wrong = await kit.claim<Input>({
+    const revised = await kit.revise({
       conversationId: CONVERSATION,
       bind: BIND,
-      interactionId: opened.pause.interactionId,
-      revision: 1,
-      answer: SELECT_A,
+      interactionId: pause.interactionId,
+      next: {
+        kind: "pick",
+        prompt: PICK_PROMPT,
+        secret: PICK_SECRET,
+        continuation: continuationOf(),
+      },
     });
 
-    expect(wrong.kind).toBe("wrong_answer_kind");
-    if (wrong.kind !== "wrong_answer_kind") return;
-    expect(wrong.expected).toContain("approve");
+    expect(revised.kind).toBe("opened");
+    if (revised.kind !== "opened") return;
+    expect(revised.pause.revision).toBe(pause.revision + 1);
+    expect(revised.pause.interactionId).toBe(pause.interactionId);
   });
 });
 
-describe("scenario 6 - an expired pause is not resumable", () => {
-  it("a claim after the ttl returns expired", async () => {
+describe("an expired pause is not resumable", () => {
+  it("a claim after the kind's ttl returns expired", async () => {
     const { kit, deps } = newKit();
-    const opened = await kit.open(openInput());
-    if (opened.kind !== "opened") throw new Error("expected opened");
+    const pause = await openPick(kit);
 
-    deps.clock.advance(deps.choiceTtlMs + 1);
+    deps.clock.advance(15 * 60 * 1000 + 1);
 
-    const expired = await kit.claim<Input>({
+    const expired = await kit.claim({
       conversationId: CONVERSATION,
       bind: BIND,
-      interactionId: opened.pause.interactionId,
+      interactionId: pause.interactionId,
       revision: 1,
-      answer: SELECT_A,
+      answer: CHOSE_A,
     });
 
     expect(expired.kind).toBe("expired");
   });
 });
 
-describe("scenario 7 - the wire view cannot carry a secret", () => {
-  it("has no resolved input, option map, or entity id", async () => {
+describe("the wire view cannot carry a secret", () => {
+  it("shows the prompt and nothing behind it", async () => {
     const { kit } = newKit();
-    const opened = await kit.open(openInput());
-    if (opened.kind !== "opened") throw new Error("expected opened");
+    const pause = await openPick(kit);
 
-    const parsed = publicPauseSchema.parse(opened.pause);
+    const parsed = publicPauseSchema.parse(pause);
     const flat = JSON.stringify(parsed);
 
-    expect(flat).not.toContain("entity-a");
-    expect(flat).not.toContain("resolvedInput");
-    expect(flat).not.toContain("optionMap");
-    for (const option of parsed.options) {
-      expect(Object.keys(option)).not.toContain("entityId");
-    }
+    expect(flat).not.toContain("value-a");
+    expect(flat).not.toContain("byOption");
+    expect(flat).not.toContain("replay");
+    expect(Object.keys(parsed)).not.toContain("secret");
   });
 });
 
-describe("scenario 8 - the server resolves optionId", () => {
-  it("maps a known option and refuses an unknown one", async () => {
-    const { kit } = newKit();
-    const opened = await kit.open(openInput());
-    if (opened.kind !== "opened") throw new Error("expected opened");
-
-    const claimed = await kit.claim<Input>({
-      conversationId: CONVERSATION,
-      bind: BIND,
-      interactionId: opened.pause.interactionId,
-      revision: 1,
-      answer: SELECT_A,
-    });
-    if (claimed.kind !== "claimed") throw new Error("expected claimed");
-
-    expect(kit.entityIdFor(claimed.record, "opt-a")).toBe("entity-a");
-    expect(kit.entityIdFor(claimed.record, "opt-z")).toBeUndefined();
-  });
-});
-
-describe("scenario 9 - revise invalidates the previous answer", () => {
-  it("raises the revision and keeps the interaction identity", async () => {
-    const { kit } = newKit();
-    const opened = await kit.open(openInput());
-    if (opened.kind !== "opened") throw new Error("expected opened");
-
-    const revised = await kit.revise<Input>({
-      conversationId: CONVERSATION,
-      bind: BIND,
-      interactionId: opened.pause.interactionId,
-      next: { outcome: choiceOutcome({ n: 9 }), continuation: continuationOf() },
-    });
-
-    expect(revised.kind).toBe("opened");
-    if (revised.kind !== "opened") return;
-    expect(revised.pause.revision).toBe(opened.pause.revision + 1);
-    expect(revised.pause.interactionId).toBe(opened.pause.interactionId);
-  });
-});
-
-describe("scenario 10 - an answer that outruns the pause is not silently lost", () => {
-  it("a claim before the pause exists is gone, and nothing is written", async () => {
-    const { kit, deps } = newKit();
-
-    const early = await kit.claim<Input>({
-      conversationId: CONVERSATION,
-      bind: BIND,
-      interactionId: ABSENT_INTERACTION,
-      revision: 1,
-      answer: SELECT_A,
-    });
-
-    expect(early.kind).toBe("gone");
-    expect(deps.documents.writes).toHaveLength(0);
-  });
-});
-
-describe("scenario 20a - another owner's pause reads as absent", () => {
-  const OTHER = "actor-2:tenant-2";
-
+describe("another owner's pause reads as absent", () => {
   it("a claim under a different bind is gone, not refused", async () => {
     const { kit } = newKit();
-    const opened = await kit.open(openInput());
-    if (opened.kind !== "opened") throw new Error("expected opened");
+    const pause = await openPick(kit);
 
-    const foreign = await kit.claim<Input>({
+    const foreign = await kit.claim({
       conversationId: CONVERSATION,
       bind: OTHER,
-      interactionId: opened.pause.interactionId,
+      interactionId: pause.interactionId,
       revision: 1,
-      answer: SELECT_A,
+      answer: CHOSE_A,
     });
-
-    // Deliberately the same answer as a miss: probing must teach nothing.
-    expect(foreign.kind).toBe("gone");
-    const absent = await kit.claim<Input>({
+    const absent = await kit.claim({
       conversationId: CONVERSATION,
       bind: OTHER,
       interactionId: ABSENT_INTERACTION,
       revision: 1,
-      answer: SELECT_A,
+      answer: CHOSE_A,
     });
+
+    // Deliberately the same answer: probing must teach nothing.
+    expect(foreign.kind).toBe("gone");
     expect(absent.kind).toBe("gone");
   });
 
   it("peek and document read under a different bind see no pause", async () => {
     const { kit } = newKit();
-    await kit.open(openInput());
+    await openPick(kit);
 
     expect(await kit.peek({ conversationId: CONVERSATION, bind: OTHER })).toBeNull();
     const document = await kit.document.read({
@@ -327,7 +377,7 @@ describe("scenario 20a - another owner's pause reads as absent", () => {
 
   it("the owner still sees it", async () => {
     const { kit } = newKit();
-    await kit.open(openInput());
+    await openPick(kit);
 
     expect(
       await kit.peek({ conversationId: CONVERSATION, bind: BIND }),
@@ -335,46 +385,56 @@ describe("scenario 20a - another owner's pause reads as absent", () => {
   });
 });
 
-describe("scenario 14a - an answer whose action had no effect is answerable again", () => {
-  it("release reopens at the same revision and a second claim succeeds", async () => {
+describe("an answer whose action had no effect is answerable again", () => {
+  it("release reopens at the same revision", async () => {
     const { kit } = newKit();
-    const opened = await kit.open(openInput());
-    if (opened.kind !== "opened") throw new Error("expected opened");
+    const pause = await openPick(kit);
     const claim = {
       conversationId: CONVERSATION,
       bind: BIND,
-      interactionId: opened.pause.interactionId,
+      interactionId: pause.interactionId,
       revision: 1,
-      answer: SELECT_A,
+      answer: CHOSE_A,
     };
 
-    expect((await kit.claim<Input>(claim)).kind).toBe("claimed");
-    expect((await kit.claim<Input>(claim)).kind).toBe("gone");
+    expect((await kit.claim(claim)).kind).toBe("claimed");
+    expect((await kit.claim(claim)).kind).toBe("gone");
 
     const released = await kit.release({
       conversationId: CONVERSATION,
       bind: BIND,
-      interactionId: opened.pause.interactionId,
+      interactionId: pause.interactionId,
     });
     expect(released.kind).toBe("released");
-
-    const again = await kit.claim<Input>(claim);
-    expect(again.kind).toBe("claimed");
-    const still = await kit.peek({ conversationId: CONVERSATION, bind: BIND });
-    // Claimed again, so the slot is settled again.
-    expect(still).toBeNull();
+    expect((await kit.claim(claim)).kind).toBe("claimed");
   });
 
   it("release on a pause that was never claimed is gone", async () => {
     const { kit } = newKit();
-    const opened = await kit.open(openInput());
-    if (opened.kind !== "opened") throw new Error("expected opened");
+    const pause = await openPick(kit);
 
     const released = await kit.release({
       conversationId: CONVERSATION,
       bind: BIND,
-      interactionId: opened.pause.interactionId,
+      interactionId: pause.interactionId,
     });
     expect(released.kind).toBe("gone");
+  });
+});
+
+describe("an answer that outruns the pause is not silently lost", () => {
+  it("a claim before the pause exists is gone, and nothing is written", async () => {
+    const { kit, deps } = newKit();
+
+    const early = await kit.claim({
+      conversationId: CONVERSATION,
+      bind: BIND,
+      interactionId: ABSENT_INTERACTION,
+      revision: 1,
+      answer: CHOSE_A,
+    });
+
+    expect(early.kind).toBe("gone");
+    expect(deps.documents.writes).toHaveLength(0);
   });
 });

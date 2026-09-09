@@ -1,81 +1,60 @@
 /**
- * What a tool returns. The kit reads this union and nothing else.
+ * What a tool returns. This package reads this union and nothing else.
  *
- * `needs_choice` and `needs_confirmation` are ordinary outputs, not thrown
- * errors. The kit never inspects an exception, never matches on an action
- * name, and never parses a domain input schema — so adding a new ambiguous
- * write is a change in that tool, not in this package.
+ * A pause is an ordinary return value, not a thrown error. Nothing here
+ * inspects an exception, matches on a tool name, or parses a caller's input
+ * schema, so adding a kind of ambiguity is a change in that tool.
  *
  * Ambiguity must be discovered by a read. A tool that attempts its write to
  * find out whether it is ambiguous puts the pause inside a half-done write,
- * which is what forces a two-phase resume.
+ * and a two-phase resume is the price.
  */
 import { z } from "zod";
 
-import { cardIdSchema } from "./ids.js";
-
-/** Opaque to the kit: `entityId` is a domain id it never dereferences. */
-export const choiceOptionSchema = z.strictObject({
-  optionId: z.string().min(1).max(128),
-  label: z.string().min(1).max(400),
-  entityId: z.string().min(1).max(128),
-  detail: z.string().min(1).max(400).optional(),
-});
-
-export type ChoiceOption = z.output<typeof choiceOptionSchema>;
-
-export const CHOICE_OPTIONS_MAX = 20;
-
 /**
- * A card the tool wants rendered. `payload` is validated by the consumer's
- * own registry (`@showzy/validation`), never here.
+ * A card the tool wants rendered. `payload` is validated by the caller's own
+ * registry, never here: this package stores the document, it does not know
+ * what may appear in it.
  */
-export const surfaceRefSchema = z.strictObject({
-  cardId: cardIdSchema,
-  surface: z.string().min(1).max(64),
+export const cardRefSchema = z.strictObject({
+  cardId: z.string().min(1).max(128),
+  type: z.string().min(1).max(64),
   payload: z.unknown(),
 });
 
-export type SurfaceRef = z.output<typeof surfaceRefSchema>;
+export type CardRef = z.output<typeof cardRefSchema>;
 
-/**
- * `TInput` is the tool's canonical, server-only input. The kit stores it and
- * hands it back on resume; it has no opinion about its shape.
- */
-export type ToolOutcome<TInput> =
+export type ToolOutcome =
   | {
       readonly kind: "ok";
-      /** Fed back to the model. Clip before returning it. */
+      /** Fed back to the model. Clip it before returning it. */
       readonly result: unknown;
-      readonly surface?: SurfaceRef;
+      readonly card?: CardRef;
     }
   | {
-      readonly kind: "needs_choice";
-      /** What the human is choosing between, as a label. Not a domain type. */
-      readonly subject: string;
-      readonly options: readonly ChoiceOption[];
-      readonly optionsTruncated: boolean;
-      /** Replayed verbatim after the answer. Never leaves the server. */
-      readonly resume: TInput;
+      readonly kind: "pause";
+      /** A registered interaction kind. Unknown kinds are refused. */
+      readonly interaction: string;
+      /**
+       * The public payload. Validated against the kind's `prompt` schema, and
+       * shown to the client and to the model — so it is the caller's job not
+       * to put a secret in it.
+       */
+      readonly prompt: unknown;
+      /**
+       * Private data the pause keeps for the answer to be resolved against.
+       * Never leaves the server. Must survive a JSON round trip.
+       */
+      readonly secret: unknown;
     }
   | {
-      readonly kind: "needs_confirmation";
-      readonly summary: string;
-      /** Opaque reference to whatever the domain issued, if anything. */
-      readonly challengeRef?: string;
-      readonly resume: TInput;
-    }
-  | {
-      readonly kind: "domain_error";
+      readonly kind: "error";
       readonly code: string;
       readonly message: string;
     };
 
-export function isPausing<TInput>(
-  outcome: ToolOutcome<TInput>,
-): outcome is Extract<
-  ToolOutcome<TInput>,
-  { kind: "needs_choice" | "needs_confirmation" }
-> {
-  return outcome.kind === "needs_choice" || outcome.kind === "needs_confirmation";
+export function isPause(
+  outcome: ToolOutcome,
+): outcome is Extract<ToolOutcome, { kind: "pause" }> {
+  return outcome.kind === "pause";
 }

@@ -1,10 +1,10 @@
 /**
- * SCENARIOS.md 14, 15, 20, 21 — the route level, plus the HTTP contract the
- * definition of done requires: happy path, 401, validation, cross-tenant.
+ * The route level: auth, tenant, and what happens when the action refuses,
+ * the provider fails, or the client has already left.
  *
- * No database and no live model. Auth, the pause store, the document store and
- * the provider are all injected, so this suite runs in milliseconds and can be
- * run on every save.
+ * No database and no live model. Auth, both stores and the provider are
+ * injected, so this suite runs in a couple of seconds and can be run on every
+ * save.
  */
 import {
   createAssistantKit,
@@ -20,6 +20,11 @@ import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
 import { describe, expect, it } from "vitest";
 
 import {
+  assistantInteractions,
+  type AssistantInteractionTypes,
+  type ChoiceResolution,
+} from "./assistant-interactions.js";
+import {
   ASSISTANT_KIT_CHOICE_PATH,
   createAssistantKitChoiceApp,
   type ResolveAnswer,
@@ -31,26 +36,30 @@ const OTHER_COMPANY = "22222222-2222-4222-8222-2222222222bb";
 const CONVERSATION = "33333333-3333-4333-8333-333333333333";
 const COMMAND = "44444444-4444-4444-8444-444444444444";
 
-const OK_RESOLVE: ResolveAnswer = ({ entityId }) =>
-  Promise.resolve({
+const OK_RESOLVE: ResolveAnswer = ({ value }) => {
+  const resolution = value as ChoiceResolution;
+  return Promise.resolve({
     kind: "ok",
-    result: { entityId, number: "CO-1" },
-    surface: {
+    result: { entityId: resolution.entityId, number: "CO-1" },
+    card: {
       cardId: "card-entity",
-      surface: "entity",
-      payload: { entityId, number: "CO-1" },
+      type: "order-entity",
+      payload: { entityId: resolution.entityId, number: "CO-1" },
     },
   });
+};
 
 const FAILING_RESOLVE: ResolveAnswer = () =>
   Promise.resolve({
-    kind: "domain_error",
+    kind: "error",
     code: "CONFLICT",
     message: "no longer available",
-  } satisfies ToolOutcome<unknown>);
+  } satisfies ToolOutcome);
+
+type Kit = AssistantKit<AssistantInteractionTypes>;
 
 interface Harness {
-  readonly kit: AssistantKit;
+  readonly kit: Kit;
   readonly app: ReturnType<typeof createAssistantKitChoiceApp>;
   readonly bind: string;
 }
@@ -60,7 +69,7 @@ function harness(options?: {
   readonly resolveAnswer?: ResolveAnswer;
   readonly broken?: boolean;
 }): Harness {
-  const kit = createAssistantKit(testDeps());
+  const kit = createAssistantKit(testDeps(assistantInteractions));
   const app = createAssistantKitChoiceApp({
     auth: {
       api: {
@@ -80,19 +89,22 @@ function harness(options?: {
   return { kit, app, bind: `${USER}:${COMPANY}` };
 }
 
-async function openPause(kit: AssistantKit, bind: string) {
+async function openPause(kit: Kit, bind: string) {
   const opened = await kit.open({
     conversationId: CONVERSATION,
     bind,
-    outcome: {
-      kind: "needs_choice",
+    kind: "choice",
+    prompt: {
       subject: "two matches",
       options: [
-        { optionId: "opt-a", label: "A", entityId: "entity-a" },
-        { optionId: "opt-b", label: "B", entityId: "entity-b" },
+        { optionId: "opt-a", label: "A" },
+        { optionId: "opt-b", label: "B" },
       ],
       optionsTruncated: false,
-      resume: { label: "two matches" },
+    },
+    secret: {
+      byOption: { "opt-a": "entity-a", "opt-b": "entity-b" },
+      canonicalInput: { label: "two matches" },
     },
     continuation: {
       messages: [
@@ -103,7 +115,7 @@ async function openPause(kit: AssistantKit, bind: string) {
             {
               type: "tool-call",
               toolCallId: "toolu_create",
-              toolName: "thing_create",
+              toolName: "orders_create",
               input: { label: "two matches" },
             },
           ],
@@ -114,19 +126,16 @@ async function openPause(kit: AssistantKit, bind: string) {
             {
               type: "tool-result",
               toolCallId: "toolu_create",
-              toolName: "thing_create",
-              output: { type: "json", value: { status: "needs_choice" } },
+              toolName: "orders_create",
+              output: { type: "json", value: { status: "paused" } },
             },
           ],
         },
       ],
-      pausedToolCall: {
-        id: "toolu_create" as never,
-        name: "thing_create",
-      },
+      pausedToolCall: { id: "toolu_create" as never, name: "orders_create" },
     },
   });
-  if (opened.kind !== "opened") throw new Error("expected opened");
+  if (opened.kind !== "opened") throw new Error(`expected opened: ${opened.kind}`);
   return opened.pause;
 }
 
@@ -156,7 +165,7 @@ function answer(interactionId: string, revision: number, optionId = "opt-b") {
     conversationId: CONVERSATION,
     interactionId,
     revision,
-    answer: { kind: "select", optionId },
+    answer: { optionId },
   };
 }
 
@@ -170,26 +179,43 @@ describe("POST /assistant/kit/choice — happy path", () => {
 
     const body = (await response.json()) as {
       status: string;
-      parts: Array<{ kind: string; surface?: string; text?: string }>;
+      parts: Array<{ kind: string; type?: string; text?: string }>;
       pause: unknown;
     };
     expect(body.status).toBe("ok");
     expect(body.pause).toBeNull();
 
-    // The card comes first: it is the part that was earned before generation.
-    expect(body.parts[0]?.kind).toBe("surface");
-    expect(body.parts[0]?.surface).toBe("entity");
+    // The card comes first: it is the part earned before generation.
+    expect(body.parts[0]?.kind).toBe("card");
+    expect(body.parts[0]?.type).toBe("order-entity");
     expect(body.parts.at(-1)?.text).toContain("Готово");
 
     const document = await kit.document.read({
       conversationId: CONVERSATION,
       bind,
     });
-    const surfaces = document.messages
+    const cards = document.messages
       .flatMap((message) => message.parts)
-      .filter((part) => part.kind === "surface");
-    expect(surfaces).toHaveLength(1);
+      .filter((part) => part.kind === "card");
+    expect(cards).toHaveLength(1);
     expect(await kit.peek({ conversationId: CONVERSATION, bind })).toBeNull();
+  });
+
+  it("resolves the option on the server; the client only sent an id", async () => {
+    let seen: unknown;
+    const capture: ResolveAnswer = (args) => {
+      seen = args.value;
+      return OK_RESOLVE(args);
+    };
+    const { kit, app, bind } = harness({ resolveAnswer: capture });
+    const pause = await openPause(kit, bind);
+
+    await post(app, answer(pause.interactionId, pause.revision));
+
+    expect(seen).toEqual({
+      entityId: "entity-b",
+      canonicalInput: { label: "two matches" },
+    });
   });
 });
 
@@ -219,6 +245,24 @@ describe("POST /assistant/kit/choice — the HTTP contract", () => {
     expect(response.status).toBe(400);
   });
 
+  it("400 on an answer the kind's schema rejects, and the card survives", async () => {
+    const { kit, app, bind } = harness();
+    const pause = await openPause(kit, bind);
+
+    const response = await post(app, {
+      commandId: COMMAND,
+      conversationId: CONVERSATION,
+      interactionId: pause.interactionId,
+      revision: pause.revision,
+      answer: { approved: true },
+    });
+
+    expect(response.status).toBe(400);
+    expect(
+      (await kit.peek({ conversationId: CONVERSATION, bind }))?.status,
+    ).toBe("open");
+  });
+
   it("409 with the current pause when the revision is stale", async () => {
     const { kit, app, bind } = harness();
     const pause = await openPause(kit, bind);
@@ -227,27 +271,29 @@ describe("POST /assistant/kit/choice — the HTTP contract", () => {
       bind,
       interactionId: pause.interactionId,
       next: {
-        outcome: {
-          kind: "needs_choice",
+        kind: "choice",
+        prompt: {
           subject: "changed",
-          options: [{ optionId: "opt-c", label: "C", entityId: "entity-c" }],
+          options: [{ optionId: "opt-c", label: "C" }],
           optionsTruncated: false,
-          resume: { label: "changed" },
+        },
+        secret: {
+          byOption: { "opt-c": "entity-c" },
+          canonicalInput: { label: "changed" },
         },
         continuation: {
           messages: [{ role: "user", content: "again" }],
-          pausedToolCall: { id: "toolu_create" as never, name: "thing_create" },
+          pausedToolCall: { id: "toolu_create" as never, name: "orders_create" },
         },
       },
     });
 
     const response = await post(app, answer(pause.interactionId, 1));
     expect(response.status).toBe(409);
-    const body = (await response.json()) as { status: string };
-    expect(body.status).toBe("stale");
+    expect(((await response.json()) as { status: string }).status).toBe("stale");
   });
 
-  it("409 for an option this pause never offered, and the card survives", async () => {
+  it("409 for an option this pause never offered, without spending the claim", async () => {
     const { kit, app, bind } = harness();
     const pause = await openPause(kit, bind);
 
@@ -257,13 +303,16 @@ describe("POST /assistant/kit/choice — the HTTP contract", () => {
     );
 
     expect(response.status).toBe(409);
-    expect(
-      await kit.peek({ conversationId: CONVERSATION, bind }),
-    ).not.toBeNull();
+    expect(((await response.json()) as { status: string }).status).toBe(
+      "unresolvable",
+    );
+    // Still answerable: the real option works straight afterwards.
+    const retry = await post(app, answer(pause.interactionId, pause.revision));
+    expect(retry.status).toBe(200);
   });
 });
 
-describe("scenario 20 — another tenant cannot answer this pause", () => {
+describe("another tenant cannot answer this pause", () => {
   it("410 for a session in a different company, and the owner's card stays open", async () => {
     const { kit, app, bind } = harness();
     const pause = await openPause(kit, bind);
@@ -272,7 +321,7 @@ describe("scenario 20 — another tenant cannot answer this pause", () => {
       company: OTHER_COMPANY,
     });
 
-    // Same answer as a pause that never existed: nothing to enumerate.
+    // The same answer as a pause that never existed: nothing to enumerate.
     expect(response.status).toBe(410);
     const owner = await kit.peek({ conversationId: CONVERSATION, bind });
     expect(owner?.interactionId).toBe(pause.interactionId);
@@ -296,7 +345,7 @@ describe("scenario 20 — another tenant cannot answer this pause", () => {
   });
 });
 
-describe("scenario 14 — a refused action leaves the card answerable", () => {
+describe("a refused action leaves the card answerable", () => {
   it("409 action_failed, the pause is still open, and a retry can claim it", async () => {
     const { kit, app, bind } = harness({ resolveAnswer: FAILING_RESOLVE });
     const pause = await openPause(kit, bind);
@@ -323,13 +372,13 @@ describe("scenario 14 — a refused action leaves the card answerable", () => {
       bind,
       interactionId: pause.interactionId,
       revision: pause.revision,
-      answer: { kind: "select", optionId: "opt-b" },
+      answer: { optionId: "opt-b" },
     });
     expect(retry.kind).toBe("claimed");
   });
 });
 
-describe("scenario 15 — a committed write survives a failed explanation", () => {
+describe("a committed write survives a failed explanation", () => {
   it("keeps the result card and marks the text as error", async () => {
     const { kit, app, bind } = harness({ broken: true });
     const pause = await openPause(kit, bind);
@@ -342,18 +391,18 @@ describe("scenario 15 — a committed write survives a failed explanation", () =
       bind,
     });
     const parts = document.messages.flatMap((message) => message.parts);
-    const surfaces = parts.filter((part) => part.kind === "surface");
+    const cards = parts.filter((part) => part.kind === "card");
     const texts = parts.filter((part) => part.kind === "text");
 
-    expect(surfaces).toHaveLength(1);
-    expect(surfaces[0]?.surface).toBe("entity");
+    expect(cards).toHaveLength(1);
+    expect(cards[0]?.type).toBe("order-entity");
     // No invented success sentence — the failure is stated as a failure.
     expect(texts.at(-1)?.status).toBe("error");
     expect(texts.at(-1)?.text).toBe("");
   });
 });
 
-describe("scenario 21 — a request that is already gone performs no write", () => {
+describe("a request that is already gone performs no write", () => {
   it("499, no write, and the card is answerable again", async () => {
     let called = 0;
     const counting: ResolveAnswer = (args) => {
@@ -371,7 +420,8 @@ describe("scenario 21 — a request that is already gone performs no write", () 
 
     expect(response.status).toBe(499);
     expect(called).toBe(0);
-    const still = await kit.peek({ conversationId: CONVERSATION, bind });
-    expect(still?.status).toBe("open");
+    expect(
+      (await kit.peek({ conversationId: CONVERSATION, bind }))?.status,
+    ).toBe("open");
   });
 });

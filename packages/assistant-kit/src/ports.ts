@@ -1,5 +1,9 @@
+import type { z } from "zod";
+
+import type { InteractionRegistry, InteractionType } from "./interaction.js";
+
 /**
- * Everything the kit needs from the outside, and nothing more.
+ * Everything this package needs from the outside, and nothing more.
  *
  * The kit owns no storage. A test supplies a Map and needs no Redis, no
  * Postgres and no model. That is the whole reason these are interfaces:
@@ -29,12 +33,13 @@ export interface Ids {
   uuid(): string;
 }
 
-export interface KitDeps {
+export interface KitDeps<
+  T extends Record<string, InteractionType<z.ZodType, z.ZodType, never>>,
+> {
   readonly pauses: PauseStore;
   readonly documents: DocumentStore;
   readonly clock: Clock;
   readonly ids: Ids;
-  /** Choice tolerates interruption longer than "are you sure". Keep asymmetric. */
-  readonly choiceTtlMs: number;
-  readonly confirmationTtlMs: number;
+  /** The kinds this deployment accepts. Their ttl travels with them. */
+  readonly interactions: InteractionRegistry<T>;
 }

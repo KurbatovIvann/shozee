@@ -1,14 +1,14 @@
 /**
- * The implementation. Every branch exists because a scenario in
- * `SCENARIOS.md` demanded it; nothing is defensive for its own sake.
+ * The implementation. Every branch exists because a scenario demanded it;
+ * nothing is defensive for its own sake.
  *
- * Two things this file deliberately does not do. It does not validate
- * `resolvedInput` — the kit has no opinion about a caller's canonical input,
- * so that value is round-tripped, not parsed. And it does not reshape a
- * document on read: it validates and returns the stored object, so what
- * reload renders is byte-identical to what live wrote.
+ * Two things it deliberately does not do. It does not parse a pause's
+ * `secret` — that value is round-tripped, not interpreted. And it does not
+ * reshape a document on read: it validates and returns the stored object, so
+ * what a reload renders is byte-identical to what the live turn wrote.
  */
 import type { ToolResultPart } from "ai";
+import type { z } from "zod";
 
 import type {
   ChatDocument,
@@ -19,65 +19,45 @@ import type {
 import { chatDocumentSchema } from "./document.js";
 import { providerToolCallIdSchema } from "./ids.js";
 import type {
+  AnyInteraction,
+  InteractionType,
+  Resolution,
+} from "./interaction.js";
+import type {
   AssistantKit,
   OpenPauseInput,
   OpenPauseResult,
   RevisePauseResult,
 } from "./kit.js";
-import type { KitDeps } from "./ports.js";
 import type {
-  Answer,
-  AnswerKind,
   ClaimResult,
-  PauseKind,
   PauseRecord,
   PauseScope,
   PublicPause,
   ResumeInput,
 } from "./pause.js";
+import type { KitDeps } from "./ports.js";
+
+type AnyTypes = Record<string, InteractionType<z.ZodType, z.ZodType, never>>;
 
 /** One open interaction per conversation is the key itself, not a query. */
 function pauseKey(conversationId: string): string {
   return `pause:${conversationId}`;
 }
 
-const ANSWERS_BY_KIND: Readonly<Record<PauseKind, readonly AnswerKind[]>> = {
-  choice: ["select", "text"],
-  confirmation: ["approve", "reject", "text"],
-};
-
-type AnyRecord = PauseRecord<unknown>;
-
 interface StoredRecord {
   readonly raw: string;
-  readonly record: AnyRecord;
+  readonly record: PauseRecord;
 }
 
-function optionMapOf(
-  options: readonly { readonly optionId: string; readonly entityId: string }[],
-): Record<string, string> {
-  const map: Record<string, string> = {};
-  for (const option of options) {
-    map[option.optionId] = option.entityId;
-  }
-  return map;
-}
-
-/** The only way to produce a wire view. `entityId` has no path out of here. */
-function publicPauseOf(record: AnyRecord): PublicPause {
+/** The only way to produce a wire view. `secret` has no path out of here. */
+function publicPauseOf(record: PauseRecord): PublicPause {
   return {
     kind: record.kind,
     interactionId: record.interactionId,
     revision: record.revision,
     status: record.status,
-    subject: record.subject,
-    ...(record.summary !== undefined ? { summary: record.summary } : {}),
-    options: record.options.map((option) => ({
-      optionId: option.optionId,
-      label: option.label,
-      ...(option.detail !== undefined ? { detail: option.detail } : {}),
-    })),
-    optionsTruncated: record.optionsTruncated,
+    prompt: record.prompt,
     expiresAt: record.expiresAt,
   };
 }
@@ -87,7 +67,7 @@ function publicPauseOf(record: AnyRecord): PublicPause {
  * pause. Treating it as absent keeps an unsendable id from reaching the
  * provider by a second route.
  */
-function decode(raw: string): AnyRecord | null {
+function decode(raw: string): PauseRecord | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -97,8 +77,9 @@ function decode(raw: string): AnyRecord | null {
   if (typeof parsed !== "object" || parsed === null) {
     return null;
   }
-  const record = parsed as AnyRecord;
+  const record = parsed as PauseRecord;
   if (
+    typeof record.kind !== "string" ||
     typeof record.interactionId !== "string" ||
     typeof record.revision !== "number" ||
     typeof record.expiresAt !== "string" ||
@@ -106,51 +87,36 @@ function decode(raw: string): AnyRecord | null {
   ) {
     return null;
   }
-  const id = providerToolCallIdSchema.safeParse(
-    record.continuation.pausedToolCall.id,
-  );
-  return id.success ? record : null;
+  return providerToolCallIdSchema.safeParse(record.continuation.pausedToolCall.id)
+    .success
+    ? record
+    : null;
 }
 
-function isExpired(record: AnyRecord, now: Date): boolean {
+function isExpired(record: PauseRecord, now: Date): boolean {
   return now.getTime() >= Date.parse(record.expiresAt);
 }
 
 /** Claimed, cancelled or past its ttl — the record no longer holds the slot. */
-function holdsTheSlot(record: AnyRecord, now: Date): boolean {
+function holdsTheSlot(record: PauseRecord, now: Date): boolean {
   return record.status === "open" && !isExpired(record, now);
 }
 
-function recordFrom<TInput>(
-  scope: PauseScope,
-  outcome: OpenPauseInput<TInput>["outcome"],
-  continuation: PauseRecord<TInput>["continuation"],
-  identity: { readonly interactionId: string; readonly revision: number },
-  deps: KitDeps,
-): PauseRecord<TInput> {
-  const isChoice = outcome.kind === "needs_choice";
-  const ttl = isChoice ? deps.choiceTtlMs : deps.confirmationTtlMs;
-  const options = isChoice ? outcome.options : [];
-  return {
-    kind: isChoice ? "choice" : "confirmation",
-    bind: scope.bind,
-    interactionId: identity.interactionId,
-    revision: identity.revision,
-    conversationId: scope.conversationId,
-    status: "open",
-    continuation,
-    resolvedInput: outcome.resume,
-    optionMap: optionMapOf(options),
-    // A confirmation has no list to choose from, so its summary is the subject.
-    subject: isChoice ? outcome.subject : outcome.summary,
-    options,
-    optionsTruncated: isChoice ? outcome.optionsTruncated : false,
-    ...(isChoice ? {} : { summary: outcome.summary }),
-    ...(!isChoice && outcome.challengeRef !== undefined
-      ? { challengeRef: outcome.challengeRef }
-      : {}),
-    expiresAt: new Date(deps.clock.now().getTime() + ttl).toISOString(),
-  };
+/**
+ * The registry erases each kind's type parameters, so calling `resolve`
+ * through it needs this one cast. The pairing of answer and secret was
+ * guaranteed where the kind was defined.
+ */
+function resolveThrough(
+  type: AnyInteraction,
+  answer: unknown,
+  secret: unknown,
+): Resolution {
+  const resolve = type.resolve as (input: {
+    readonly answer: unknown;
+    readonly secret: unknown;
+  }) => Resolution;
+  return resolve({ answer, secret });
 }
 
 function emptyDocument(conversationId: string): ChatDocument {
@@ -158,18 +124,20 @@ function emptyDocument(conversationId: string): ChatDocument {
 }
 
 function storedDocument(raw: unknown, conversationId: string): ChatDocument {
-  // Validated, then returned as stored — a re-serialisation would make reload
-  // a second derivation of the document rather than the same one.
+  // Validated, then returned as stored — a re-serialisation would make a
+  // reload a second derivation of the document rather than the same one.
   return chatDocumentSchema.safeParse(raw).success
     ? (raw as ChatDocument)
     : emptyDocument(conversationId);
 }
 
-export function createAssistantKit(deps: KitDeps): AssistantKit {
+export function createAssistantKit<T extends AnyTypes>(
+  deps: KitDeps<T>,
+): AssistantKit<T> {
   /**
-   * A record whose `bind` does not match reads as absent. Same answer as "no
-   * such pause", on purpose — a cross-owner probe must not be distinguishable
-   * from a miss.
+   * A record whose `bind` does not match reads as absent. The same answer as
+   * "no such pause", on purpose — a cross-owner probe must not be
+   * distinguishable from a miss.
    */
   async function readRecord(scope: PauseScope): Promise<StoredRecord | null> {
     const raw = await deps.pauses.get(pauseKey(scope.conversationId));
@@ -193,8 +161,8 @@ export function createAssistantKit(deps: KitDeps): AssistantKit {
     return record === null ? null : { raw, record };
   }
 
-  async function put<TInput>(
-    record: PauseRecord<TInput>,
+  async function put(
+    record: PauseRecord,
     expected: string | null,
   ): Promise<boolean> {
     const key = pauseKey(record.conversationId);
@@ -209,10 +177,47 @@ export function createAssistantKit(deps: KitDeps): AssistantKit {
     return deps.pauses.setIfAbsent(key, next, ttl);
   }
 
+  /**
+   * Build a record, or say why the kind or the payload is unacceptable. The
+   * ttl comes from the kind, so one question can wait longer than another
+   * without this package knowing either name.
+   */
+  function build(
+    scope: PauseScope,
+    input: Omit<OpenPauseInput<T>, "conversationId" | "bind">,
+    identity: { readonly interactionId: string; readonly revision: number },
+  ):
+    | { readonly kind: "built"; readonly record: PauseRecord }
+    | Extract<OpenPauseResult, { kind: "unknown_kind" | "invalid_prompt" }> {
+    const type = deps.interactions.get(input.kind);
+    if (type === undefined) {
+      return { kind: "unknown_kind", kindName: input.kind };
+    }
+    const prompt = type.prompt.safeParse(input.prompt);
+    if (!prompt.success) {
+      return { kind: "invalid_prompt", reason: prompt.error.message };
+    }
+    return {
+      kind: "built",
+      record: {
+        kind: input.kind,
+        bind: scope.bind,
+        interactionId: identity.interactionId,
+        revision: identity.revision,
+        conversationId: scope.conversationId,
+        status: "open",
+        continuation: input.continuation,
+        prompt: prompt.data,
+        secret: input.secret,
+        expiresAt: new Date(
+          deps.clock.now().getTime() + type.ttlMs,
+        ).toISOString(),
+      },
+    };
+  }
+
   /** Read first, then claim the slot. Two attempts absorb a lost race. */
-  async function install<TInput>(
-    record: PauseRecord<TInput>,
-  ): Promise<OpenPauseResult> {
+  async function install(record: PauseRecord): Promise<OpenPauseResult> {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const existing = await readSlot(record.conversationId);
       if (existing !== null && holdsTheSlot(existing.record, deps.clock.now())) {
@@ -232,16 +237,15 @@ export function createAssistantKit(deps: KitDeps): AssistantKit {
   }
 
   return {
-    open<TInput>(input: OpenPauseInput<TInput>): Promise<OpenPauseResult> {
-      return install(
-        recordFrom(
-          { conversationId: input.conversationId, bind: input.bind },
-          input.outcome,
-          input.continuation,
-          { interactionId: deps.ids.uuid(), revision: 1 },
-          deps,
-        ),
-      );
+    interactions: deps.interactions,
+
+    async open(input) {
+      const scope = { conversationId: input.conversationId, bind: input.bind };
+      const built = build(scope, input, {
+        interactionId: deps.ids.uuid(),
+        revision: 1,
+      });
+      return built.kind === "built" ? await install(built.record) : built;
     },
 
     async peek(scope) {
@@ -251,13 +255,7 @@ export function createAssistantKit(deps: KitDeps): AssistantKit {
         : null;
     },
 
-    async claim<TInput>(
-      input: PauseScope & {
-        readonly interactionId: string;
-        readonly revision: number;
-        readonly answer: Answer;
-      },
-    ): Promise<ClaimResult<TInput>> {
+    async claim(input): Promise<ClaimResult> {
       const existing = await readRecord(input);
       if (
         existing === null ||
@@ -273,24 +271,35 @@ export function createAssistantKit(deps: KitDeps): AssistantKit {
       if (record.revision !== input.revision) {
         return { kind: "stale", current: publicPauseOf(record) };
       }
-      const accepted = ANSWERS_BY_KIND[record.kind];
-      if (!accepted.includes(input.answer.kind)) {
-        return { kind: "wrong_answer_kind", expected: accepted };
+      const type = deps.interactions.get(record.kind);
+      if (type === undefined) {
+        // The pause outlived the deploy that removed its kind.
+        return { kind: "unknown_kind", kindName: record.kind };
+      }
+      const answer = type.answer.safeParse(input.answer);
+      if (!answer.success) {
+        return { kind: "invalid_answer", reason: answer.error.message };
+      }
+      const resolution = resolveThrough(type, answer.data, record.secret);
+      if (resolution.kind === "unresolvable") {
+        // Decided before the claim is spent: a meaningless answer does not
+        // burn the one claim this pause has.
+        return { kind: "unresolvable", reason: resolution.reason };
       }
       // The one atomic point: whoever wins this compare-and-set owns the answer.
-      const claimed: AnyRecord = { ...record, status: "claimed" };
+      const claimed: PauseRecord = { ...record, status: "claimed" };
       return (await put(claimed, raw))
-        ? { kind: "claimed", record: claimed as PauseRecord<TInput> }
+        ? { kind: "claimed", record: claimed, value: resolution.value }
         : { kind: "gone" };
     },
 
-    resume<TInput>(
-      claimed: Extract<ClaimResult<TInput>, { kind: "claimed" }>,
-      output: unknown,
-    ): ResumeInput {
+    resume(claimed, output): ResumeInput {
       const { continuation } = claimed.record;
       const paused = continuation.pausedToolCall.id;
-      const resolved = { type: "json", value: output } as ToolResultPart["output"];
+      const resolvedOutput = {
+        type: "json",
+        value: output,
+      } as ToolResultPart["output"];
       return {
         messages: continuation.messages.map((message) =>
           message.role !== "tool"
@@ -299,7 +308,7 @@ export function createAssistantKit(deps: KitDeps): AssistantKit {
                 ...message,
                 content: message.content.map((part) =>
                   part.type === "tool-result" && part.toolCallId === paused
-                    ? { ...part, output: resolved }
+                    ? { ...part, output: resolvedOutput }
                     : part,
                 ),
               },
@@ -307,16 +316,7 @@ export function createAssistantKit(deps: KitDeps): AssistantKit {
       };
     },
 
-    entityIdFor(record, optionId) {
-      return record.optionMap[optionId];
-    },
-
-    async revise<TInput>(
-      input: PauseScope & {
-        readonly interactionId: string;
-        readonly next: Omit<OpenPauseInput<TInput>, "conversationId" | "bind">;
-      },
-    ): Promise<RevisePauseResult> {
+    async revise(input): Promise<RevisePauseResult> {
       const existing = await readRecord(input);
       if (
         existing === null ||
@@ -325,18 +325,15 @@ export function createAssistantKit(deps: KitDeps): AssistantKit {
       ) {
         return { kind: "gone" };
       }
-      const revised = recordFrom(
-        { conversationId: input.conversationId, bind: input.bind },
-        input.next.outcome,
-        input.next.continuation,
-        {
-          interactionId: existing.record.interactionId,
-          revision: existing.record.revision + 1,
-        },
-        deps,
-      );
-      return (await put(revised, existing.raw))
-        ? { kind: "opened", pause: publicPauseOf(revised) }
+      const built = build(input, input.next, {
+        interactionId: existing.record.interactionId,
+        revision: existing.record.revision + 1,
+      });
+      if (built.kind !== "built") {
+        return built;
+      }
+      return (await put(built.record, existing.raw))
+        ? { kind: "opened", pause: publicPauseOf(built.record) }
         : { kind: "already_open", current: publicPauseOf(existing.record) };
     },
 
@@ -361,7 +358,7 @@ export function createAssistantKit(deps: KitDeps): AssistantKit {
       ) {
         return { kind: "gone" };
       }
-      const reopened: AnyRecord = { ...existing.record, status: "open" };
+      const reopened: PauseRecord = { ...existing.record, status: "open" };
       return (await put(reopened, existing.raw))
         ? { kind: "released" }
         : { kind: "gone" };
@@ -399,9 +396,9 @@ export function createAssistantKit(deps: KitDeps): AssistantKit {
           parts.push(...write.parts);
         } else {
           const at = parts.findIndex(
-            (part) => part.kind === "surface" && part.cardId === write.part.cardId,
+            (part) => part.kind === "card" && part.cardId === write.part.cardId,
           );
-          // Same cardId is an update. A second card is how one entity showed twice.
+          // Same cardId is an update. A second card is how one record showed twice.
           if (at === -1) {
             parts.push(write.part);
           } else {

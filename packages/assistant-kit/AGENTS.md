@@ -1,96 +1,113 @@
-# @showzy/assistant-kit — Agent Instructions
+# assistant-kit — Agent Instructions
 
-Server-only protocol leaf. It owns one thing: **a tool call pauses, a human
-answers, the model conversation resumes verbatim, and one stored document is
-what both live and reload render.**
+## The rule that governs every other one
 
-An extension to AI SDK 7, not a replacement. The caller keeps its single
-`streamText`. This package owns only the gap between `stopWhen` firing and the
+**This package is not connected to any application. Not by an import, a type,
+a name, a comment or an example.**
+
+It does not know what an order, a customer, a product, a tenant or a company
+is — and it does not know what kinds of question exist either. Those come from
+the caller's registry.
+
+Runtime dependencies: the model SDK and `zod`. Never a workspace package.
+
+Read it as a stranger would: **if this sat in someone else's `node_modules`,
+would it still make sense?** If the answer is no, the design is wrong — not the
+naming.
+
+One test enforces this, and it checks the isolation, not a list of forbidden
+words. A blocklist of one product's nouns would itself be that product's
+knowledge living here. Everything else is held by the shape: because the set of
+kinds comes from the registry, there is no vocabulary here to leak.
+
+## What it owns
+
+A tool call pauses, a person answers, the model conversation resumes verbatim,
+and one stored document is what both a live turn and a reload render.
+
+An extension to the AI SDK, not a replacement: the caller keeps its single
+`streamText`. This package owns only the gap between the loop stopping and the
 next request arriving.
 
-## Hard scope
-
 Does **not**: call a model, mount HTTP, own storage, render UI, hold a tool
-registry, run a queue or scheduler, or name a domain concept.
+registry, run a queue or scheduler.
 
-`src/no-domain.test.ts` fails the build on a domain word anywhere in `src`. A
-hit is not a naming problem — it means a decision belonging to a tool or to
-the domain has moved into the protocol. That is exactly how the previous
-runtime reached 961 lines in one file: a generic pause absorbed a hardcoded
-action name, a domain input schema, and an enum of entity kinds.
+## Mechanism, not vocabulary
+
+`defineInteraction` and `createInteractions` are the seam. A kind carries its
+own ttl, the schema of the payload a client may see, the schema of an answer it
+accepts, and a pure function from answer plus private data to a resolved value.
+
+The set of kinds is the set of registry keys, so the union is **derived**: a
+mistyped kind is a type error and completions work, exactly as an enum would
+give — but the enum belongs to the consumer.
+
+Consequences worth keeping straight:
+
+- ttl belongs to a kind, not to a deployment.
+- An answer is validated by its own kind's schema, never by one wide union.
+- `resolve` runs **before** the claim is consumed, so an answer that cannot
+  mean anything leaves the pause answerable.
+- A kind that is no longer registered makes an open pause `unknown_kind`; a
+  caller treats that as gone. A pause can outlive the deploy that removed it.
 
 ## The two invariants everything else follows from
 
 **1. Ambiguity is discovered by a read, never by attempting the write.** A tool
-returns `needs_choice` as an ordinary output. The kit never inspects an
-exception. A tool that calls its write to learn whether it is ambiguous puts
-the pause inside a half-done write, and that is what forces a two-phase
-resume with staged execution ids.
+returns a pause as an ordinary output. Nothing here inspects an exception. A
+tool that calls its write to learn whether it is ambiguous puts the pause
+inside a half-done write, and a two-phase resume is the price.
 
 **2. The pause stores the continuation, not a description of itself.** The exact
 provider messages and the provider's own tool-call id are stored, so resume
-replays them. Nothing is re-derived from persisted rows, so there is no id to
-mint and no boundary sanitizer. `ProviderToolCallId` makes an unsendable id
-unstorable.
+replays them. Nothing is re-derived, so there is no id to mint and no boundary
+sanitiser. `ProviderToolCallId` makes an unsendable id unstorable.
 
 ## Ownership
 
-Every read and write of a pause is scoped by `{ conversationId, bind }`.
-`bind` is an opaque owner token the caller supplies — in `apps/api` it is
-`userId:companySelector`. The kit never interprets it and only requires an
-exact match.
+Every read and write of a pause is scoped by `{ conversationId, bind }`. `bind`
+is an opaque owner token the caller supplies — identity and tenant, typically.
+It is never interpreted, only matched exactly.
 
 A mismatch is reported as `gone`, deliberately identical to "no such pause".
-Distinguishing the two would let one tenant probe another's conversation.
+Distinguishing the two would let one owner probe another's conversation.
 
-Slot occupancy ignores `bind`: one open pause per conversation, full stop. Two
-owners cannot both hold a pause on the same conversation id.
+Slot occupancy ignores `bind`: one open pause per conversation, full stop.
+
+## Secrets
+
+`prompt` is public — it reaches the client and the model. `secret` never leaves
+the server: `PublicPause` has no field able to hold it. Putting something
+private in `prompt` is the caller's mistake to avoid; this package cannot tell
+the difference.
 
 ## When the answer does not take
 
 `claim` consumes a (interactionId, revision) exactly once — right for a write,
 wrong when the action it authorised refused. `release` puts a claimed pause
-back to open at the same revision, so a validation failure does not make the
-card vanish.
+back to open at the same revision.
 
-The caller asserts the absence of effect; the kit cannot know it. Never call it
-after a write that may have committed — the domain's idempotency key is what
+The caller asserts the absence of effect; this package cannot know it. Never
+call it after a write that may have committed — an idempotency key is what
 makes a retry safe, not this.
-
-## Secrets
-
-`resolvedInput` and `optionMap` live on `PauseRecord` (a TypeScript type,
-server-only). `PublicPause` is a separate zod schema with no field able to
-hold either, and no `entityId` on an option. Leaking one is a type error, not
-a review catch. `optionId → entityId` is resolved by `entityIdFor` on the
-server; the client sends only `optionId`.
-
-## Contracts shared with clients
-
-Wire types the phone or the panel must read do **not** get a new package —
-they belong in `@showzy/validation`, a zod-only leaf already imported by
-`@showzy/ai`, `apps/mobile` and `apps/web`. Duplicating a schema so a client
-can avoid importing a server package is the pattern that produced
-`resume-envelope.ts`.
-
-## Ports
-
-`PauseStore` (CAS), `DocumentStore`, `Clock`, `Ids`. All interfaces, all
-supplied by the consumer's composition root. A test uses a `Map` and needs no
-Redis, no database and no model — which is why the whole protocol is
-verifiable in milliseconds. See `SCENARIOS.md`.
 
 ## Testing
 
-`./testing` supplies in-memory ports and deterministic providers
-(`stubModel`, `stubTextModel`, `stubBrokenModel`, and the step builders). The
-chunk shapes there were **measured** against the pinned `ai` version, not
-assumed: a malformed V4 `finish` part is swallowed, `finishReason` reads
-`other`, and tools never execute — a suite that looks green while proving
-nothing. Keep that knowledge in `testing.ts` rather than in each consumer.
+`./testing` supplies in-memory ports and deterministic providers. The registry
+is a **parameter** of `testDeps`, not a default: a fixture here would quietly
+become a shipped vocabulary.
+
+The stream chunk shapes were **measured** against the pinned SDK, not assumed:
+a malformed `finish` part is swallowed, the finish reason reads `other`, and
+tools never execute — a suite that looks green while proving nothing. Keep that
+knowledge in `testing.ts` rather than in each consumer.
+
+`fixture.ts` holds the abstract kinds this package's own suites exercise
+(`pick`, `confirm`). It is not exported from the root, and it is not a
+suggestion.
 
 ## Status
 
-Implemented, with `SCENARIOS.md` green at levels K and L. The first route
-consumer is `apps/api/src/http/assistant-kit-choice.ts`, mounted on its own
-path and not reachable from `createApp` — the live assistant is untouched.
+Implemented; `SCENARIOS.md` green at the store, loop and route levels. The
+first route consumer lives outside this package and is not reachable from a
+production app yet.
