@@ -600,9 +600,9 @@ describe("withStaffAssistantBudget", () => {
       withStaffAssistantBudget({
         ...wrapOptions(budgetStore),
         now: NOW,
-        run: async () => {
+        run: () => {
           called = true;
-          return new Response("ok");
+          return Promise.resolve(new Response("ok"));
         },
       }),
     ).rejects.toBeInstanceOf(RateLimitError);

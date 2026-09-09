@@ -6,6 +6,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 
 import {
+  assistantHostInteractionResultSchema,
   assistantPendingPeekResultSchema,
   kyivCalendarDate,
   ORDERS_CREATE_TOOL_NAME,
@@ -1186,25 +1187,15 @@ describe("staff assistant HTTP budget guard (SHO-505 / SHO-541)", () => {
     readonly choiceId: string;
     readonly optionId: string;
   } {
-    if (!isRecord(body) || body["status"] !== "ok") {
-      throw new Error(`expected ok pause, got ${JSON.stringify(body)}`);
+    const parsed = assistantHostInteractionResultSchema.parse(body);
+    if (parsed.status !== "ok" || parsed.pending?.kind !== "choice") {
+      throw new Error(`expected choice pause, got ${JSON.stringify(body)}`);
     }
-    const pending = body["pending"];
-    if (!isRecord(pending) || pending["kind"] !== "choice") {
-      throw new Error("expected choice pending");
-    }
-    if (typeof pending["id"] !== "string") {
-      throw new Error("expected choice id");
-    }
-    const envelope = pending["envelope"];
-    if (!isRecord(envelope) || !Array.isArray(envelope["options"])) {
-      throw new Error("expected choice options");
-    }
-    const first = envelope["options"][0];
-    if (!isRecord(first) || typeof first["id"] !== "string") {
+    const optionId = parsed.pending.envelope.options[0]?.id;
+    if (optionId === undefined) {
       throw new Error("expected choice option id");
     }
-    return { choiceId: pending["id"], optionId: first["id"] };
+    return { choiceId: parsed.pending.id, optionId };
   }
 
   it("returns the same company-budget 429 on /assistant/choice without claiming pending", async () => {
@@ -1511,9 +1502,6 @@ describe("staff assistant HTTP budget guard (SHO-505 / SHO-541)", () => {
     });
     const app = budgetApp({ streamModel });
     const token = await insertBearer(kit, kitIdentities.users.anna);
-    const conversation = await staffInvoke(createConversation, {
-      title: "Budget host failure release",
-    });
     const failed = await postAssistant(app, {
       path: ASSISTANT_HOST_CHOICE_PATH,
       token,
