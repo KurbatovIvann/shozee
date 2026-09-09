@@ -2356,7 +2356,9 @@ describe("unpublished staff assistant host HTTP", () => {
         locale: "en",
       },
     });
-    const whyBody = assistantHostInteractionResultSchema.parse(await why.json());
+    const whyBody = assistantHostInteractionResultSchema.parse(
+      await why.json(),
+    );
     expect(whyBody.status).toBe("ok");
     if (whyBody.status === "ok") {
       expect(whyBody.pending?.id).toBe(record.id);
