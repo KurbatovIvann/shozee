@@ -75,6 +75,14 @@ describe("live staff-assistant host (SHO-524)", () => {
     expect(hostSrc).toContain("includeTurnKeys");
     expect(hostSrc).toContain("loadHistoryForPendingResume");
     expect(hostSrc).toContain("HOST_INCLUDE_TURN_KEYS_MAX = 8");
+    expect(hostSrc).toContain("Do not guess from sibling");
+    const includeKeysFn = hostSrc.slice(
+      hostSrc.indexOf("function includeTurnKeysForPendingResume"),
+      hostSrc.indexOf("function historyHasTurnKeys"),
+    );
+    expect(includeKeysFn).toContain("phaseAPauseTurnKey");
+    expect(includeKeysFn).not.toContain("checkpointTurns");
+    expect(includeKeysFn).not.toContain("extras");
     expect(hostSrc).toContain(
       "never bind a different execution's success as this pending's card",
     );

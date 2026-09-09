@@ -1581,11 +1581,13 @@ describe("live staff assistant host HTTP (SHO-524)", () => {
     expectKnownResumeCardKinds(resumed.cards);
     expect(surfaceCard(resumed.cards, "order-entity")).toBeDefined();
     expect(surfaceCard(resumed.cards, "orders-list")).toBeDefined();
-    expect(orderIdFromEntityCard(resumed.cards)).toEqual(expect.any(String));
     const afterCreates = (await conversationToolRuns(conversation.id)).filter(
       (row) => row.actionName === "orders.create",
     );
     expect(afterCreates).toHaveLength(1);
+    const createdOrderId = afterCreates[0]?.resultIds[0];
+    expect(typeof createdOrderId).toBe("string");
+    expect(orderIdFromEntityCard(resumed.cards)).toBe(createdOrderId);
     expect(afterCreates[0]?.executionId).toBe(pausedCreates[0]?.executionId);
     expect(afterCreates[0]?.outcome).toBe("success");
     expect(afterCreates[0]?.seq).toBe(pausedCreates[0]?.seq);

@@ -32,6 +32,7 @@ import { createConversation } from "./create-conversation.js";
 import { getConversation } from "./get-conversation.js";
 import {
   GET_MODEL_HISTORY_CHECKPOINT_TURNS_MAX,
+  GET_MODEL_HISTORY_MESSAGES_MAX,
   GET_MODEL_HISTORY_WINDOW,
 } from "./get-model-history.contract.js";
 import { getModelHistory } from "./get-model-history.js";
@@ -1805,6 +1806,10 @@ describe("assistant staff conversation actions", () => {
     });
     const pause = pinned.messages.find(
       (message) => message.turnKey === pauseKey,
+    );
+    expect(pinned.messages).toHaveLength(GET_MODEL_HISTORY_WINDOW + 1);
+    expect(pinned.messages.length).toBeLessThanOrEqual(
+      GET_MODEL_HISTORY_MESSAGES_MAX,
     );
     expect(pause?.id).toBe(begun.messageId);
     expect(pause?.toolRuns).toEqual([

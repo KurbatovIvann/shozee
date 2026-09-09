@@ -690,21 +690,16 @@ function includeTurnKeysForPendingResume(
   history: Awaited<ReturnType<typeof loadHistory>>,
 ): string[] {
   const resumeKey = resumeTurnKey(pending.id);
-  const keys = new Set<string>([resumeKey]);
   const pauseKey = phaseAPauseTurnKey(history, pending);
-  if (pauseKey !== undefined) {
-    keys.add(pauseKey);
-    return [...keys];
-  }
-  const extras = history.checkpointTurns
-    .map((turn) => turn.turnKey)
-    .filter((key) => !keys.has(key));
-  if (keys.size + extras.length <= HOST_INCLUDE_TURN_KEYS_MAX) {
-    for (const key of extras) {
-      keys.add(key);
-    }
-  }
-  return [...keys];
+  // SHO-544: pin the one pause turnKey that owns pending.executionId
+  // (messages / unfinishedStartedRuns). Do not guess from sibling
+  // assistant begins. Unknown pause → fail closed (resume key only;
+  // omit the Phase A card).
+  const keys =
+    pauseKey === undefined || pauseKey === resumeKey
+      ? [resumeKey]
+      : [resumeKey, pauseKey];
+  return keys.slice(0, HOST_INCLUDE_TURN_KEYS_MAX);
 }
 
 function historyHasTurnKeys(

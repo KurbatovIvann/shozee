@@ -37,6 +37,13 @@ export const GET_MODEL_HISTORY_CHECKPOINT_TURNS_MAX = 256;
 export const GET_MODEL_HISTORY_INCLUDE_TURN_KEYS_MAX = 8;
 
 /**
+ * Newest window plus exact includeTurnKeys pins (T6 membership, T9 cards).
+ * Pinning 1–2 keys is the host intent; this is the hard output cap.
+ */
+export const GET_MODEL_HISTORY_MESSAGES_MAX =
+  GET_MODEL_HISTORY_WINDOW + GET_MODEL_HISTORY_INCLUDE_TURN_KEYS_MAX;
+
+/**
  * Conversation-scoped empty `begin:resume:` begins pinned into
  * checkpointTurns so chat write refusal does not depend on the 256 cap.
  */
@@ -98,7 +105,9 @@ export const getModelHistoryInputSchema = z.strictObject({
 
 export const getModelHistoryOutputSchema = z.object({
   conversationId: z.uuid(),
-  messages: z.array(modelHistoryMessageSchema),
+  messages: z
+    .array(modelHistoryMessageSchema)
+    .max(GET_MODEL_HISTORY_MESSAGES_MAX),
   unfinishedStartedRuns: z
     .array(modelHistoryUnfinishedStartedRunSchema)
     .max(GET_MODEL_HISTORY_UNFINISHED_STARTED_MAX),
@@ -113,7 +122,7 @@ export const getModelHistoryOutputSchema = z.object({
 
 export const getModelHistoryContract = defineActionContract({
   name: "assistant.getModelHistory",
-  description: `${STAFF_CONVERSATION_AUTHOR_INVARIANT} Return the newest 8 author-owned conversation messages as model-history rows: id, role, text, turnKey (host begin identity; null on user rows and pre-SHO-539 assistant rows), and per-run action / toolCallId / toolName / modelTrace / toolInput / seq / executionId / outcome (ADR-0034 prompt state — post-clip façade output, never a projection). Includes started runs on those 8 messages. Also returns unfinishedStartedRuns (conversation-scoped started rows, including messages outside the 8-message prompt window) and checkpointTurns (newest assistant rows with a non-null turnKey plus hasSpeech and speech, capped) so crash recovery and Phase B state do not depend on the prompt clip. checkpointTurns.speech is the assistant body so a pinned completed resume can replay original Phase B prose when the 8-message window is later filler. Optional includeTurnKeys pins exact begin identities (Phase B begin:resume:\${pendingId}, or a pause turnKey) so a completed resume clipped from the 256 newest checkpointTurns is still returned and is not treated as missing, and so those pinned assistant messages (with toolRuns / executionId) are present on messages even when they are outside the newest-8 prompt window. Conversation-scoped unfinished empty begin:resume: rows are pinned into checkpointTurns the same way so chat write refusal does not depend on the 256 cap. Recovery must not auto-execute started rows whose turnKey is null. toolInput is façade/tool args when present; pre-T2 rows without toolInput reconstruct as {}. Order runs by seq ascending, not created_at alone. toolName is the live ToolSet key used to reconstruct model history; action is the executeAction registry identity. executionId is the server-minted attempt identity. Message id is the append-idempotency merge key for the HTTP mount (same as getConversation). Used only by the staff assistant HTTP mount to build ModelMessage tool-call and tool-result parts. Company id is never input. Internal — not mounted on HTTP and not an AI tool.`,
+  description: `${STAFF_CONVERSATION_AUTHOR_INVARIANT} Return the newest 8 author-owned conversation messages as model-history rows: id, role, text, turnKey (host begin identity; null on user rows and pre-SHO-539 assistant rows), and per-run action / toolCallId / toolName / modelTrace / toolInput / seq / executionId / outcome (ADR-0034 prompt state — post-clip façade output, never a projection). Includes started runs on those 8 messages. Also returns unfinishedStartedRuns (conversation-scoped started rows, including messages outside the 8-message prompt window) and checkpointTurns (newest assistant rows with a non-null turnKey plus hasSpeech and speech, capped) so crash recovery and Phase B state do not depend on the prompt clip. checkpointTurns.speech is the assistant body so a pinned completed resume can replay original Phase B prose when the 8-message window is later filler. Optional includeTurnKeys pins exact begin identities (Phase B begin:resume:\${pendingId}, or a pause turnKey) so a completed resume clipped from the 256 newest checkpointTurns is still returned and is not treated as missing, and so those pinned assistant messages (with toolRuns / executionId) are present on messages even when they are outside the newest-8 prompt window (messages stay newest 8 plus at most those pins; cap 16). Conversation-scoped unfinished empty begin:resume: rows are pinned into checkpointTurns the same way so chat write refusal does not depend on the 256 cap. Recovery must not auto-execute started rows whose turnKey is null. toolInput is façade/tool args when present; pre-T2 rows without toolInput reconstruct as {}. Order runs by seq ascending, not created_at alone. toolName is the live ToolSet key used to reconstruct model history; action is the executeAction registry identity. executionId is the server-minted attempt identity. Message id is the append-idempotency merge key for the HTTP mount (same as getConversation). Used only by the staff assistant HTTP mount to build ModelMessage tool-call and tool-result parts. Company id is never input. Internal — not mounted on HTTP and not an AI tool.`,
   principal: "staff",
   transport: "internal",
   input: getModelHistoryInputSchema,
