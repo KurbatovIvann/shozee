@@ -10,7 +10,9 @@
  * The handler wraps the T1–T4 host plus the USD/turn budget. Chat body
  * is `{ conversationId, text, locale? }`. Legacy
  * `x-confirmation-challenge-id` calls the host confirm executor and
- * ignores client text.
+ * ignores client text. Live choice/confirm mounts use
+ * `executeBudgetedStaffAssistantHost` (`skipTurnLimit: true`) so Phase B
+ * cannot skip USD accounting.
  */
 import {
   assistantConfirmBodySchema,
@@ -54,9 +56,7 @@ import {
 } from "../stores/pending.js";
 import {
   DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
-  enforceStaffAssistantBudget,
-  recordStaffAssistantBudgetSpend,
-  releaseStaffAssistantBudgetHold,
+  withStaffAssistantBudget,
   type StaffAssistantBudgetLimits,
 } from "./assistant-budget-guard.js";
 import {
@@ -169,7 +169,12 @@ function failureCode(error: unknown): string {
   return "INTERNAL";
 }
 
-function logFailure(logger: Logger, requestId: string, error: unknown): void {
+function logFailure(
+  logger: Logger,
+  requestId: string,
+  error: unknown,
+  message = "staff assistant chat failed",
+): void {
   const issuePaths =
     error instanceof ValidationError
       ? error.issues.map((issue) => issue.path.map(String).join("."))
@@ -180,7 +185,7 @@ function logFailure(logger: Logger, requestId: string, error: unknown): void {
       code: failureCode(error),
       ...(issuePaths !== undefined ? { issue_paths: issuePaths } : {}),
     },
-    "staff assistant chat failed",
+    message,
   );
 }
 
@@ -345,7 +350,17 @@ export async function executeStaffAssistantChat(
     const budgetLimits =
       options.budgetLimits ?? DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS;
     const headerConfirm = confirmationChallengeId !== undefined;
-    const budgetHold = await enforceStaffAssistantBudget({
+    const hostRuntime: Omit<StaffAssistantHostRuntime, "request"> = {
+      requestId: options.requestId,
+      clientIp: options.clientIp,
+      registry: options.registry,
+      pipeline: options.pipeline,
+      getSession: options.getSession,
+      pendingStore,
+      conversationLock,
+      model,
+    };
+    return await withStaffAssistantBudget({
       logger: options.pipeline.logger,
       requestId: options.requestId,
       userId: session.userId,
@@ -358,72 +373,112 @@ export async function executeStaffAssistantChat(
         ? {}
         : { budgetStore: options.budgetStore }),
       limits: budgetLimits,
-    });
-    let budgetSettled = false;
-    const hostRuntime: Omit<StaffAssistantHostRuntime, "request"> = {
-      requestId: options.requestId,
-      clientIp: options.clientIp,
-      registry: options.registry,
-      pipeline: options.pipeline,
-      getSession: options.getSession,
-      pendingStore,
-      conversationLock,
-      model,
-    };
-    try {
-      let hostRequest: Request;
-      if (headerConfirm) {
-        const parsedConfirm = assistantConfirmBodySchema.safeParse({
-          conversationId: conversationIdFromBody(rawBody),
-          challengeId: confirmationChallengeId,
-        });
-        if (!parsedConfirm.success) {
-          throw new ValidationError(parsedConfirm.error.issues);
-        }
-        hostRequest = requestWithJsonBody(options.request, parsedConfirm.data);
-      } else {
-        hostRequest = requestWithJsonBody(options.request, rawBody);
-      }
-      const response = headerConfirm
-        ? await executeStaffAssistantHostConfirm({
-            ...hostRuntime,
-            request: hostRequest,
-          })
-        : await executeStaffAssistantHostChat({
-            ...hostRuntime,
-            request: hostRequest,
+      run: async () => {
+        let hostRequest: Request;
+        if (headerConfirm) {
+          const parsedConfirm = assistantConfirmBodySchema.safeParse({
+            conversationId: conversationIdFromBody(rawBody),
+            challengeId: confirmationChallengeId,
           });
-      if (response.ok) {
-        await recordStaffAssistantBudgetSpend({
-          logger: options.pipeline.logger,
-          requestId: options.requestId,
-          companyId: budgetCompanyId,
-          estimatedCostUsd: null,
-          hold: budgetHold,
-          ...(options.budgetStore === undefined
-            ? {}
-            : { budgetStore: options.budgetStore }),
-          limits: budgetLimits,
-        });
-        budgetSettled = true;
-      }
-      return response;
-    } finally {
-      if (!budgetSettled) {
-        await releaseStaffAssistantBudgetHold({
-          logger: options.pipeline.logger,
-          requestId: options.requestId,
-          companyId: budgetCompanyId,
-          hold: budgetHold,
-          ...(options.budgetStore === undefined
-            ? {}
-            : { budgetStore: options.budgetStore }),
-        });
-      }
-    }
+          if (!parsedConfirm.success) {
+            throw new ValidationError(parsedConfirm.error.issues);
+          }
+          hostRequest = requestWithJsonBody(
+            options.request,
+            parsedConfirm.data,
+          );
+        } else {
+          hostRequest = requestWithJsonBody(options.request, rawBody);
+        }
+        return headerConfirm
+          ? await executeStaffAssistantHostConfirm({
+              ...hostRuntime,
+              request: hostRequest,
+            })
+          : await executeStaffAssistantHostChat({
+              ...hostRuntime,
+              request: hostRequest,
+            });
+      },
+    });
   } catch (error) {
     if (!(error instanceof RateLimitError)) {
       logFailure(options.pipeline.logger, options.requestId, error);
+    }
+    return wireResponse(error, options.requestId);
+  }
+}
+
+/**
+ * Choice and confirm Phase B (SHO-541). Same USD reserve → host →
+ * settle/release as chat. `skipTurnLimit: true`: HITL resume is
+ * continuation of an already-admitted job, not a new chat turn. Runs
+ * before host claim so a budget 429 cannot claim pending.
+ */
+export async function executeBudgetedStaffAssistantHost(options: {
+  readonly request: Request;
+  readonly requestId: string;
+  readonly clientIp: string;
+  readonly pipeline: ActionPipelineDeps;
+  readonly getSession: StaffAssistantChatOptions["getSession"];
+  readonly rateLimitStore?: RateLimitStore;
+  readonly budgetStore?: AiBudgetStore;
+  readonly budgetLimits?: StaffAssistantBudgetLimits;
+  readonly run: () => Promise<Response>;
+}): Promise<Response> {
+  const session = await options.getSession(options.request.headers);
+  if (session === null) {
+    return unauthenticatedResponse(options.requestId);
+  }
+  const companySelector = headerOrNull(
+    options.request.headers,
+    COMPANY_SELECTOR_HEADER,
+  );
+  const staffPrincipal = {
+    mode: "staff" as const,
+    session,
+    companySelector,
+  };
+  try {
+    await executeAction(options.pipeline, {
+      action: getStaffActor,
+      input: {},
+      request: staffRequest({
+        requestId: options.requestId,
+        clientIp: options.clientIp,
+      }),
+      principal: staffPrincipal,
+    });
+    if (companySelector === null) {
+      throw new CoreInvariantError(
+        "staff assistant budget guard requires a verified company selector",
+      );
+    }
+    const budgetLimits =
+      options.budgetLimits ?? DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS;
+    return await withStaffAssistantBudget({
+      logger: options.pipeline.logger,
+      requestId: options.requestId,
+      userId: session.userId,
+      companyId: canonicalizeAiBudgetCompanyId(companySelector),
+      skipTurnLimit: true,
+      ...(options.rateLimitStore === undefined
+        ? {}
+        : { rateLimitStore: options.rateLimitStore }),
+      ...(options.budgetStore === undefined
+        ? {}
+        : { budgetStore: options.budgetStore }),
+      limits: budgetLimits,
+      run: options.run,
+    });
+  } catch (error) {
+    if (!(error instanceof RateLimitError)) {
+      logFailure(
+        options.pipeline.logger,
+        options.requestId,
+        error,
+        "staff assistant host failed",
+      );
     }
     return wireResponse(error, options.requestId);
   }

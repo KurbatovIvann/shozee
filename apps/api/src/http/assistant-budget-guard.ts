@@ -1,10 +1,12 @@
 /**
- * Per-user turn limit and Kyiv-day USD budget for `POST /assistant/chat`
- * (SHO-505). Consumes core `RateLimitStore` and `AiBudgetStore`. Throws
- * `RateLimitError` — no new error code.
+ * Per-user turn limit and Kyiv-day USD budget for staff assistant HTTP
+ * (SHO-505 chat, SHO-541 choice/confirm Phase B). Consumes core
+ * `RateLimitStore` and `AiBudgetStore`. Throws `RateLimitError` — no new
+ * error code.
  *
  * Budget is reserved (increment-with-cap of `unknownModelTurnUsd`) before
  * the turn bucket is consumed, so a budget 429 does not spend a turn slot.
+ * HITL resume (`skipTurnLimit: true`) still reserves and settles USD.
  */
 import { kyivCalendarDate, secondsUntilKyivMidnight } from "@showzy/ai";
 import type { RateLimitDecision, RateLimitStore } from "@showzy/core";
@@ -164,6 +166,73 @@ export async function enforceStaffAssistantBudget(options: {
     throw new RateLimitError(decision.retryAfterSec);
   }
   return hold;
+}
+
+/**
+ * Reserve USD (and optionally a chat-turn slot), run the host, settle on
+ * HTTP success, release the hold on denial or host failure. Callers must
+ * admit **before** host claim so a budget 429 cannot claim pending.
+ */
+export async function withStaffAssistantBudget(options: {
+  readonly logger: Logger;
+  readonly requestId: string;
+  readonly userId: string;
+  readonly companyId: string;
+  readonly skipTurnLimit: boolean;
+  readonly now?: Date;
+  readonly rateLimitStore?: RateLimitStore | undefined;
+  readonly budgetStore?: AiBudgetStore | undefined;
+  readonly limits: StaffAssistantBudgetLimits;
+  readonly run: () => Promise<Response>;
+}): Promise<Response> {
+  const hold = await enforceStaffAssistantBudget({
+    logger: options.logger,
+    requestId: options.requestId,
+    userId: options.userId,
+    companyId: options.companyId,
+    skipTurnLimit: options.skipTurnLimit,
+    ...(options.now === undefined ? {} : { now: options.now }),
+    ...(options.rateLimitStore === undefined
+      ? {}
+      : { rateLimitStore: options.rateLimitStore }),
+    ...(options.budgetStore === undefined
+      ? {}
+      : { budgetStore: options.budgetStore }),
+    limits: options.limits,
+  });
+  let settled = false;
+  try {
+    const response = await options.run();
+    if (response.ok) {
+      await recordStaffAssistantBudgetSpend({
+        logger: options.logger,
+        requestId: options.requestId,
+        companyId: options.companyId,
+        estimatedCostUsd: null,
+        hold,
+        ...(options.now === undefined ? {} : { now: options.now }),
+        ...(options.budgetStore === undefined
+          ? {}
+          : { budgetStore: options.budgetStore }),
+        limits: options.limits,
+      });
+      settled = true;
+    }
+    return response;
+  } finally {
+    if (!settled) {
+      await releaseStaffAssistantBudgetHold({
+        logger: options.logger,
+        requestId: options.requestId,
+        companyId: options.companyId,
+        hold,
+        ...(options.now === undefined ? {} : { now: options.now }),
+        ...(options.budgetStore === undefined
+          ? {}
+          : { budgetStore: options.budgetStore }),
+      });
+    }
+  }
 }
 
 export async function recordStaffAssistantBudgetSpend(options: {

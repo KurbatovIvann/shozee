@@ -6,7 +6,9 @@
 import { randomBytes, randomUUID } from "node:crypto";
 
 import {
+  assistantPendingPeekResultSchema,
   kyivCalendarDate,
+  ORDERS_CREATE_TOOL_NAME,
   ORDERS_LIST_PAGE_TOOL_NAME,
   secondsUntilKyivMidnight,
   STAFF_ASSISTANT_MODEL_HISTORY_MAX,
@@ -43,6 +45,7 @@ import {
   kitIdentities,
   type TestKit,
 } from "@showzy/core/testing";
+import { createProduct } from "@showzy/catalog";
 import { archiveCustomer, createCustomer } from "@showzy/customers";
 import { auditLog } from "@showzy/db";
 import { assistantMessages } from "@showzy/db/schema/assistant";
@@ -88,6 +91,11 @@ import {
   ASSISTANT_CHAT_PATH,
   ASSISTANT_INVOCATION_CHANNEL,
 } from "./assistant-chat.js";
+import {
+  ASSISTANT_CONFIRM_PATH,
+  ASSISTANT_HOST_CHOICE_PATH,
+  ASSISTANT_PENDING_PATH,
+} from "./assistant-host.js";
 
 const REAL_CLIENT = "203.0.113.50";
 
@@ -691,7 +699,7 @@ describe("POST /assistant/chat logs and /rpc channel", () => {
   });
 });
 
-describe("POST /assistant/chat budget guard (SHO-505)", () => {
+describe("staff assistant HTTP budget guard (SHO-505 / SHO-541)", () => {
   let redisContainer: StartedRedisContainer;
   let redis: Redis;
 
@@ -1132,5 +1140,525 @@ describe("POST /assistant/chat budget guard (SHO-505)", () => {
     });
     expect(allowed.status).toBe(200);
     await allowed.json();
+  });
+
+  async function postAssistant(
+    app: ReturnType<typeof createApp>,
+    options: {
+      readonly path: string;
+      readonly token: string;
+      readonly companyId?: string;
+      readonly body: unknown;
+    },
+  ): Promise<Response> {
+    const headers = new Headers({
+      "content-type": "application/json",
+      origin: "http://localhost:3000",
+      authorization: `Bearer ${options.token}`,
+      [COMPANY_SELECTOR_HEADER]: options.companyId ?? kitIdentities.companies.a,
+    });
+    return app.request(`http://localhost:3000${options.path}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(options.body),
+    });
+  }
+
+  async function peekPending(
+    app: ReturnType<typeof createApp>,
+    token: string,
+    conversationId: string,
+  ) {
+    const headers = new Headers({
+      origin: "http://localhost:3000",
+      authorization: `Bearer ${token}`,
+      [COMPANY_SELECTOR_HEADER]: kitIdentities.companies.a,
+    });
+    const response = await app.request(
+      `http://localhost:3000${ASSISTANT_PENDING_PATH}?conversationId=${conversationId}`,
+      { method: "GET", headers },
+    );
+    expect(response.status).toBe(200);
+    return assistantPendingPeekResultSchema.parse(await response.json());
+  }
+
+  function choiceFromPauseBody(body: unknown): {
+    readonly choiceId: string;
+    readonly optionId: string;
+  } {
+    if (!isRecord(body) || body["status"] !== "ok") {
+      throw new Error(`expected ok pause, got ${JSON.stringify(body)}`);
+    }
+    const pending = body["pending"];
+    if (!isRecord(pending) || pending["kind"] !== "choice") {
+      throw new Error("expected choice pending");
+    }
+    if (typeof pending["id"] !== "string") {
+      throw new Error("expected choice id");
+    }
+    const envelope = pending["envelope"];
+    if (!isRecord(envelope) || !Array.isArray(envelope["options"])) {
+      throw new Error("expected choice options");
+    }
+    const first = envelope["options"][0];
+    if (!isRecord(first) || typeof first["id"] !== "string") {
+      throw new Error("expected choice option id");
+    }
+    return { choiceId: pending["id"], optionId: first["id"] };
+  }
+
+  it("returns the same company-budget 429 on /assistant/choice without claiming pending", async () => {
+    const customer = await staffInvoke(createCustomer, {
+      name: "Budget Choice Buyer",
+      phone: `+38067${randomUUID().replace(/-/g, "").replace(/\D/g, "1").slice(0, 7)}`,
+    });
+    const product = await staffInvoke(createProduct, {
+      name: `Budget Choice Cake ${randomUUID()}`,
+      basePriceMinor: "1500",
+      variants: [{ name: "Lemon" }, { name: "Vanilla" }],
+    });
+    const streamModel = new MockLanguageModelV3({
+      doStream: [
+        mockToolCallStream(
+          "call-create",
+          ORDERS_CREATE_TOOL_NAME,
+          JSON.stringify({
+            customerId: customer.id,
+            items: [{ productId: product.productId, quantityMilli: "1000" }],
+          }),
+        ),
+        mockTextStream("Pick a flavour."),
+        mockTextStream("should not run"),
+      ],
+    });
+    const app = budgetApp({
+      streamModel,
+      limits: {
+        ...DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+        dailyBudgetUsdPerCompany: 0.1,
+      },
+    });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await staffInvoke(createConversation, {
+      title: "Budget choice 429",
+    });
+    const pause = await postChat(app, {
+      token,
+      companyId: kitIdentities.companies.a,
+      body: userChatBody(conversation.id, "торт"),
+    });
+    expect(pause.status).toBe(200);
+    const { choiceId, optionId } = choiceFromPauseBody(await pause.json());
+    const streamCallsAfterPause = streamModel.doStreamCalls.length;
+    expect(streamCallsAfterPause).toBeGreaterThan(0);
+
+    const denied = await postAssistant(app, {
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        choiceId,
+        optionId,
+      },
+    });
+    expect(denied.status).toBe(429);
+    expect(await denied.json()).toMatchObject({
+      code: "RATE_LIMITED",
+      status: 429,
+    });
+    expect(streamModel.doStreamCalls).toHaveLength(streamCallsAfterPause);
+    const peeked = await peekPending(app, token, conversation.id);
+    expect(peeked.pending?.kind).toBe("choice");
+    expect(peeked.pending?.status).toBe("open");
+    expect(peeked.pending?.id).toBe(choiceId);
+  });
+
+  it("returns the same company-budget 429 on /assistant/confirm without claiming pending", async () => {
+    const customer = await staffInvoke(createCustomer, {
+      name: "Budget Confirm Target",
+      phone: `+38067${randomUUID().replace(/-/g, "").replace(/\D/g, "1").slice(0, 7)}`,
+    });
+    await staffInvoke(archiveCustomer, { id: customer.id });
+    const streamModel = new MockLanguageModelV3({
+      doStream: [
+        mockToolCallStream(
+          "call-delete",
+          toProviderToolName("customers.deleteCustomer"),
+          JSON.stringify({ id: customer.id }),
+        ),
+        mockTextStream("should not run"),
+      ],
+    });
+    const app = budgetApp({
+      streamModel,
+      limits: {
+        ...DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+        dailyBudgetUsdPerCompany: 0.1,
+      },
+    });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await staffInvoke(createConversation, {
+      title: "Budget confirm 429",
+    });
+    const pause = await postChat(app, {
+      token,
+      companyId: kitIdentities.companies.a,
+      body: userChatBody(conversation.id, "Delete the archived customer"),
+    });
+    expect(pause.status).toBe(200);
+    const challengeId = confirmationChallengeIdFromHostBody(await pause.json());
+    expect(challengeId).toBeDefined();
+    if (challengeId === undefined) {
+      expect.unreachable("expected confirmation pending");
+    }
+    const streamCallsAfterPause = streamModel.doStreamCalls.length;
+
+    const denied = await postAssistant(app, {
+      path: ASSISTANT_CONFIRM_PATH,
+      token,
+      body: { conversationId: conversation.id, challengeId },
+    });
+    expect(denied.status).toBe(429);
+    expect(await denied.json()).toMatchObject({
+      code: "RATE_LIMITED",
+      status: 429,
+    });
+    expect(streamModel.doStreamCalls).toHaveLength(streamCallsAfterPause);
+    expect(await customerRow(customer.id)).toBeDefined();
+    const peeked = await peekPending(app, token, conversation.id);
+    expect(peeked.pending?.kind).toBe("confirmation");
+    expect(peeked.pending?.status).toBe("open");
+    expect(peeked.pending?.id).toBe(challengeId);
+  });
+
+  it("returns the same global-budget 429 on choice and confirm without a model call", async () => {
+    const streamModel = new MockLanguageModelV3({
+      doStream: [mockTextStream("ok")],
+    });
+    const limits: StaffAssistantBudgetLimits = {
+      ...DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+      dailyBudgetUsdGlobal: 2,
+    };
+    const app = budgetApp({ streamModel, limits });
+    await createRedisAiBudgetStore(redis).add(
+      aiGlobalBudgetKey(kyivCalendarDate(new Date())),
+      2,
+      AI_BUDGET_TTL_SEC,
+    );
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await staffInvoke(createConversation, {
+      title: "Global resume 429",
+    });
+    const choiceDenied = await postAssistant(app, {
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        choiceId: randomUUID(),
+        optionId: randomUUID(),
+      },
+    });
+    const confirmDenied = await postAssistant(app, {
+      path: ASSISTANT_CONFIRM_PATH,
+      token,
+      body: {
+        conversationId: conversation.id,
+        challengeId: randomUUID(),
+      },
+    });
+    expect(choiceDenied.status).toBe(429);
+    expect(await choiceDenied.json()).toMatchObject({
+      code: "RATE_LIMITED",
+      status: 429,
+    });
+    expect(confirmDenied.status).toBe(429);
+    expect(await confirmDenied.json()).toMatchObject({
+      code: "RATE_LIMITED",
+      status: 429,
+    });
+    expect(streamModel.doStreamCalls).toHaveLength(0);
+  });
+
+  it("increments company and global USD after successful choice and confirm Phase B", async () => {
+    const customer = await staffInvoke(createCustomer, {
+      name: "Budget Phase B Buyer",
+      phone: `+38067${randomUUID().replace(/-/g, "").replace(/\D/g, "1").slice(0, 7)}`,
+    });
+    const product = await staffInvoke(createProduct, {
+      name: `Budget Phase B Cake ${randomUUID()}`,
+      basePriceMinor: "1500",
+      variants: [{ name: "Lemon" }, { name: "Vanilla" }],
+    });
+    const deleteTarget = await staffInvoke(createCustomer, {
+      name: "Budget Phase B Delete",
+      phone: `+38067${randomUUID().replace(/-/g, "").replace(/\D/g, "1").slice(0, 7)}`,
+    });
+    await staffInvoke(archiveCustomer, { id: deleteTarget.id });
+    const streamModel = new MockLanguageModelV3({
+      doStream: [
+        mockToolCallStream(
+          "call-create",
+          ORDERS_CREATE_TOOL_NAME,
+          JSON.stringify({
+            customerId: customer.id,
+            items: [{ productId: product.productId, quantityMilli: "1000" }],
+          }),
+        ),
+        mockTextStream("Pick a flavour."),
+        mockTextStream("Order created."),
+        mockToolCallStream(
+          "call-delete",
+          toProviderToolName("customers.deleteCustomer"),
+          JSON.stringify({ id: deleteTarget.id }),
+        ),
+        mockTextStream("The customer was deleted."),
+      ],
+    });
+    const app = budgetApp({ streamModel });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const choiceConversation = await staffInvoke(createConversation, {
+      title: "Budget choice spend",
+    });
+    const choicePause = await postChat(app, {
+      token,
+      companyId: kitIdentities.companies.a,
+      body: userChatBody(choiceConversation.id, "торт"),
+    });
+    expect(choicePause.status).toBe(200);
+    const { choiceId, optionId } = choiceFromPauseBody(
+      await choicePause.json(),
+    );
+    const kyivDate = kyivCalendarDate(new Date());
+    const budgetStore = createRedisAiBudgetStore(redis);
+    expect(
+      await budgetStore.read(
+        aiCompanyBudgetKey(kitIdentities.companies.a, kyivDate),
+      ),
+    ).toBeCloseTo(0.1);
+
+    const choiceResume = await postAssistant(app, {
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token,
+      body: {
+        conversationId: choiceConversation.id,
+        choiceId,
+        optionId,
+      },
+    });
+    expect(choiceResume.status).toBe(200);
+    await choiceResume.json();
+    expect(
+      await budgetStore.read(
+        aiCompanyBudgetKey(kitIdentities.companies.a, kyivDate),
+      ),
+    ).toBeCloseTo(0.2);
+    expect(await budgetStore.read(aiGlobalBudgetKey(kyivDate))).toBeCloseTo(
+      0.2,
+    );
+    expect(
+      (await peekPending(app, token, choiceConversation.id)).pending,
+    ).toBeNull();
+
+    const confirmConversation = await staffInvoke(createConversation, {
+      title: "Budget confirm spend",
+    });
+    const confirmPause = await postChat(app, {
+      token,
+      companyId: kitIdentities.companies.a,
+      body: userChatBody(
+        confirmConversation.id,
+        "Delete the archived customer",
+      ),
+    });
+    expect(confirmPause.status).toBe(200);
+    const challengeId = confirmationChallengeIdFromHostBody(
+      await confirmPause.json(),
+    );
+    expect(challengeId).toBeDefined();
+    if (challengeId === undefined) {
+      expect.unreachable("expected confirmation pending");
+    }
+    expect(
+      await budgetStore.read(
+        aiCompanyBudgetKey(kitIdentities.companies.a, kyivDate),
+      ),
+    ).toBeCloseTo(0.3);
+
+    const confirmResume = await postAssistant(app, {
+      path: ASSISTANT_CONFIRM_PATH,
+      token,
+      body: {
+        conversationId: confirmConversation.id,
+        challengeId,
+      },
+    });
+    expect(confirmResume.status).toBe(200);
+    await confirmResume.json();
+    expect(await customerRow(deleteTarget.id)).toBeUndefined();
+    expect(
+      await budgetStore.read(
+        aiCompanyBudgetKey(kitIdentities.companies.a, kyivDate),
+      ),
+    ).toBeCloseTo(0.4);
+    expect(await budgetStore.read(aiGlobalBudgetKey(kyivDate))).toBeCloseTo(
+      0.4,
+    );
+  });
+
+  it("releases the USD hold when choice host fails after reserve", async () => {
+    const streamModel = new MockLanguageModelV3({
+      doStream: [mockTextStream("ok")],
+    });
+    const app = budgetApp({ streamModel });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const conversation = await staffInvoke(createConversation, {
+      title: "Budget host failure release",
+    });
+    const failed = await postAssistant(app, {
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token,
+      body: {},
+    });
+    expect(failed.status).toBe(400);
+    expect(streamModel.doStreamCalls).toHaveLength(0);
+    const kyivDate = kyivCalendarDate(new Date());
+    const budgetStore = createRedisAiBudgetStore(redis);
+    expect(
+      await budgetStore.read(
+        aiCompanyBudgetKey(kitIdentities.companies.a, kyivDate),
+      ),
+    ).toBe(0);
+    expect(await budgetStore.read(aiGlobalBudgetKey(kyivDate))).toBe(0);
+  });
+
+  it("does not consume an extra chat-turn slot on choice or confirm", async () => {
+    const customer = await staffInvoke(createCustomer, {
+      name: "Budget Turn Skip Buyer",
+      phone: `+38067${randomUUID().replace(/-/g, "").replace(/\D/g, "1").slice(0, 7)}`,
+    });
+    const product = await staffInvoke(createProduct, {
+      name: `Budget Turn Skip Cake ${randomUUID()}`,
+      basePriceMinor: "1500",
+      variants: [{ name: "Lemon" }, { name: "Vanilla" }],
+    });
+    const deleteTarget = await staffInvoke(createCustomer, {
+      name: "Budget Turn Skip Delete",
+      phone: `+38067${randomUUID().replace(/-/g, "").replace(/\D/g, "1").slice(0, 7)}`,
+    });
+    await staffInvoke(archiveCustomer, { id: deleteTarget.id });
+    const streamModel = new MockLanguageModelV3({
+      doStream: [
+        mockToolCallStream(
+          "call-create",
+          ORDERS_CREATE_TOOL_NAME,
+          JSON.stringify({
+            customerId: customer.id,
+            items: [{ productId: product.productId, quantityMilli: "1000" }],
+          }),
+        ),
+        mockTextStream("Pick a flavour."),
+        mockTextStream("Order created."),
+        mockToolCallStream(
+          "call-delete",
+          toProviderToolName("customers.deleteCustomer"),
+          JSON.stringify({ id: deleteTarget.id }),
+        ),
+        mockTextStream("The customer was deleted."),
+        mockTextStream("blocked"),
+      ],
+    });
+    const app = budgetApp({
+      streamModel,
+      limits: {
+        ...DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+        chatTurnsPerMinutePerUser: 1,
+      },
+    });
+    const token = await insertBearer(kit, kitIdentities.users.anna);
+    const choiceConversation = await staffInvoke(createConversation, {
+      title: "Budget turn skip choice",
+    });
+    const choicePause = await postChat(app, {
+      token,
+      companyId: kitIdentities.companies.a,
+      body: userChatBody(choiceConversation.id, "торт"),
+    });
+    expect(choicePause.status).toBe(200);
+    const { choiceId, optionId } = choiceFromPauseBody(
+      await choicePause.json(),
+    );
+    const blockedChat = await postChat(app, {
+      token,
+      companyId: kitIdentities.companies.a,
+      body: userChatBody(choiceConversation.id, "another turn"),
+    });
+    expect(blockedChat.status).toBe(429);
+
+    const choiceResume = await postAssistant(app, {
+      path: ASSISTANT_HOST_CHOICE_PATH,
+      token,
+      body: {
+        conversationId: choiceConversation.id,
+        choiceId,
+        optionId,
+      },
+    });
+    expect(choiceResume.status).toBe(200);
+    await choiceResume.json();
+
+    const secondUserId = randomUUID();
+    await kit.db.runtime.db.insert(user).values({
+      id: secondUserId,
+      name: "Budget Confirm Clerk",
+      email: `budget-confirm-clerk-${secondUserId}@assistant-kit.test`,
+    });
+    await kit.db.runtime.db.insert(companyMembers).values({
+      companyId: kitIdentities.companies.a,
+      userId: secondUserId,
+      role: "employee",
+      permissions: {
+        granted: ["assistant:use", "customers:delete"],
+        denied: [],
+      },
+    });
+    const secondUser = {
+      userId: secondUserId,
+      token: await insertBearer(kit, secondUserId),
+    };
+    const secondConversation = await staffInvoke(
+      createConversation,
+      { title: "Budget turn skip other user confirm" },
+      { userId: secondUser.userId, companyId: kitIdentities.companies.a },
+    );
+    const otherPause = await postChat(app, {
+      token: secondUser.token,
+      companyId: kitIdentities.companies.a,
+      body: userChatBody(secondConversation.id, "Delete the archived customer"),
+    });
+    expect(otherPause.status).toBe(200);
+    const challengeId = confirmationChallengeIdFromHostBody(
+      await otherPause.json(),
+    );
+    expect(challengeId).toBeDefined();
+    if (challengeId === undefined) {
+      expect.unreachable("expected confirmation pending");
+    }
+    const blockedOtherChat = await postChat(app, {
+      token: secondUser.token,
+      companyId: kitIdentities.companies.a,
+      body: userChatBody(secondConversation.id, "another turn"),
+    });
+    expect(blockedOtherChat.status).toBe(429);
+    const confirmResume = await postAssistant(app, {
+      path: ASSISTANT_CONFIRM_PATH,
+      token: secondUser.token,
+      body: {
+        conversationId: secondConversation.id,
+        challengeId,
+      },
+    });
+    expect(confirmResume.status).toBe(200);
+    await confirmResume.json();
+    expect(await customerRow(deleteTarget.id)).toBeUndefined();
   });
 });
