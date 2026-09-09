@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { STAFF_CONVERSATION_AUTHOR_INVARIANT } from "./conversation-view.contract.js";
 import {
   GET_MODEL_HISTORY_INCLUDE_TURN_KEYS_MAX,
+  GET_MODEL_HISTORY_MESSAGES_MAX,
   GET_MODEL_HISTORY_UNFINISHED_RESUME_BEGINS_MAX,
   GET_MODEL_HISTORY_WINDOW,
   getModelHistoryContract,
@@ -36,9 +37,15 @@ describe("assistant.getModelHistory contract", () => {
     );
     expect(getModelHistoryContract.timeout).toBe(5_000);
     expect(GET_MODEL_HISTORY_WINDOW).toBe(8);
+    expect(GET_MODEL_HISTORY_MESSAGES_MAX).toBe(
+      GET_MODEL_HISTORY_WINDOW + GET_MODEL_HISTORY_INCLUDE_TURN_KEYS_MAX,
+    );
     expect(getModelHistoryContract.description).toContain("includeTurnKeys");
     expect(getModelHistoryContract.description).toContain("speech");
     expect(getModelHistoryContract.description).toContain("begin:resume:");
+    expect(getModelHistoryContract.description).toContain(
+      "outside the newest-8 prompt window",
+    );
   });
 
   it("takes conversationId and optional includeTurnKeys and rejects companyId", () => {
@@ -107,6 +114,42 @@ describe("assistant.getModelHistory contract", () => {
           { length: GET_MODEL_HISTORY_INCLUDE_TURN_KEYS_MAX + 1 },
           (_, index) => `begin:${String(index).padStart(8, "0")}`,
         ),
+      }).success,
+    ).toBe(false);
+  });
+
+  it("caps messages at the newest window plus includeTurnKeys pins", () => {
+    const conversationId = "11111111-1111-4111-8111-111111111111";
+    const row = {
+      id: "11111111-1111-4111-8111-111111111112",
+      role: "user" as const,
+      text: "pad",
+      turnKey: null,
+      toolRuns: [],
+    };
+    const atCap = {
+      conversationId,
+      messages: Array.from(
+        { length: GET_MODEL_HISTORY_MESSAGES_MAX },
+        (_, index) => ({
+          ...row,
+          id: `11111111-1111-4111-8111-${String(index).padStart(12, "0")}`,
+        }),
+      ),
+      unfinishedStartedRuns: [],
+      checkpointTurns: [],
+    };
+    expect(getModelHistoryOutputSchema.safeParse(atCap).success).toBe(true);
+    expect(
+      getModelHistoryOutputSchema.safeParse({
+        ...atCap,
+        messages: [
+          ...atCap.messages,
+          {
+            ...row,
+            id: "11111111-1111-4111-8111-111111111199",
+          },
+        ],
       }).success,
     ).toBe(false);
   });

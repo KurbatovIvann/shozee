@@ -98,6 +98,8 @@ export const ASSISTANT_CONFIRM_PATH = "/assistant/confirm";
 export const ASSISTANT_PENDING_PATH = "/assistant/pending";
 export const ASSISTANT_PENDING_ABANDON_PATH = "/assistant/pending/abandon";
 export const ASSISTANT_HOST_CHOICE_PATH = "/assistant/choice";
+/** Same cap as GET_MODEL_HISTORY_INCLUDE_TURN_KEYS_MAX. Do not pass more. */
+const HOST_INCLUDE_TURN_KEYS_MAX = 8;
 
 export interface StaffAssistantHostRuntime {
   readonly request: Request;
@@ -662,6 +664,91 @@ async function loadHistory(options: {
   });
 }
 
+function phaseAPauseTurnKey(
+  history: Awaited<ReturnType<typeof loadHistory>>,
+  pending: PendingInteractionRecord,
+): string | undefined {
+  if (pending.executionId === undefined) {
+    return undefined;
+  }
+  for (const message of history.messages) {
+    if (
+      message.turnKey !== null &&
+      message.toolRuns.some((run) => run.executionId === pending.executionId)
+    ) {
+      return message.turnKey;
+    }
+  }
+  const unfinished = history.unfinishedStartedRuns.find(
+    (run) => run.executionId === pending.executionId && run.turnKey !== null,
+  );
+  return unfinished?.turnKey ?? undefined;
+}
+
+function includeTurnKeysForPendingResume(
+  pending: PendingInteractionRecord,
+  history: Awaited<ReturnType<typeof loadHistory>>,
+): string[] {
+  const resumeKey = resumeTurnKey(pending.id);
+  const pauseKey = phaseAPauseTurnKey(history, pending);
+  // SHO-544: pin the one pause turnKey that owns pending.executionId
+  // (messages / unfinishedStartedRuns). Do not guess from sibling
+  // assistant begins. Unknown pause → fail closed (resume key only;
+  // omit the Phase A card).
+  const keys =
+    pauseKey === undefined || pauseKey === resumeKey
+      ? [resumeKey]
+      : [resumeKey, pauseKey];
+  return keys.slice(0, HOST_INCLUDE_TURN_KEYS_MAX);
+}
+
+function historyHasTurnKeys(
+  history: Awaited<ReturnType<typeof loadHistory>>,
+  keys: readonly string[],
+): boolean {
+  const have = new Set(
+    history.messages.flatMap((message) =>
+      message.turnKey === null ? [] : [message.turnKey],
+    ),
+  );
+  return keys.every((key) => have.has(key));
+}
+
+async function loadHistoryForPendingResume(options: {
+  readonly pipeline: ActionPipelineDeps;
+  readonly conversationId: string;
+  readonly requestId: string;
+  readonly clientIp: string;
+  readonly principal: {
+    readonly mode: "staff";
+    readonly session: SessionPrincipal;
+    readonly companySelector: string | null;
+  };
+  readonly pending: PendingInteractionRecord;
+}) {
+  const resumeKey = resumeTurnKey(options.pending.id);
+  const first = await loadHistory({
+    pipeline: options.pipeline,
+    conversationId: options.conversationId,
+    requestId: options.requestId,
+    clientIp: options.clientIp,
+    principal: options.principal,
+    includeTurnKeys: [resumeKey],
+  });
+  const keys = includeTurnKeysForPendingResume(options.pending, first);
+  if (historyHasTurnKeys(first, keys)) {
+    return first;
+  }
+  return loadHistory({
+    pipeline: options.pipeline,
+    conversationId: options.conversationId,
+    requestId: options.requestId,
+    clientIp: options.clientIp,
+    principal: options.principal,
+    includeTurnKeys: keys,
+  });
+}
+
 function resolveStagedExecutionId(options: {
   readonly record: PendingInteractionRecord;
   readonly history: Awaited<ReturnType<typeof loadHistory>>;
@@ -805,39 +892,122 @@ function lastAssistantSpeech(
   return last?.text ?? "";
 }
 
-function historyToolResults(
-  history: Awaited<ReturnType<typeof loadHistory>>,
-): { readonly toolName: string; readonly output: unknown }[] {
-  const last = history.messages.findLast(
-    (message) =>
-      message.role === "assistant" &&
-      message.toolRuns.some(
-        (run) =>
-          run.modelTrace !== null &&
-          run.modelTrace !== undefined &&
-          run.toolName !== null,
-      ),
-  );
-  if (last === undefined) {
-    return [];
+type ResumeToolResult = {
+  readonly toolName: string;
+  readonly output: unknown;
+};
+
+function resumeToolResultFromStoredRun(run: {
+  readonly toolName: string | null;
+  readonly action: string;
+  readonly modelTrace: unknown;
+}): ResumeToolResult | null {
+  if (run.modelTrace === null || run.modelTrace === undefined) {
+    return null;
   }
-  const results: { readonly toolName: string; readonly output: unknown }[] = [];
-  for (const run of last.toolRuns) {
-    if (run.modelTrace === null || run.modelTrace === undefined) {
+  if (isStartedToolTrace(run.modelTrace)) {
+    return null;
+  }
+  const toolName = run.toolName ?? run.action;
+  if (toolName === "") {
+    return null;
+  }
+  return { toolName, output: run.modelTrace };
+}
+
+function findPhaseAStoredRun(
+  history: Awaited<ReturnType<typeof loadHistory>>,
+  pending: PendingInteractionRecord,
+) {
+  const runs = history.messages.flatMap((message) => message.toolRuns);
+  if (pending.executionId !== undefined) {
+    // SHO-544: never bind a different execution's success as this pending's card.
+    return runs.find((run) => run.executionId === pending.executionId) ?? null;
+  }
+  const resumeKey = resumeTurnKey(pending.id);
+  return (
+    history.messages
+      .filter((message) => message.turnKey !== resumeKey)
+      .flatMap((message) => message.toolRuns)
+      .findLast(
+        (run) => run.action === pending.actionName && run.outcome === "success",
+      ) ?? null
+  );
+}
+
+function phaseAResumeToolResult(options: {
+  readonly pending: PendingInteractionRecord;
+  readonly history: Awaited<ReturnType<typeof loadHistory>>;
+  readonly output?: unknown;
+}): ResumeToolResult | null {
+  const stored = findPhaseAStoredRun(options.history, options.pending);
+  if (options.output !== undefined) {
+    if (isStartedToolTrace(options.output)) {
+      return null;
+    }
+    return {
+      toolName: stored?.toolName ?? options.pending.actionName,
+      output: options.output,
+    };
+  }
+  if (stored === null || stored.outcome !== "success") {
+    return null;
+  }
+  return resumeToolResultFromStoredRun(stored);
+}
+
+function phaseBResumeToolResultsFromHistory(
+  history: Awaited<ReturnType<typeof loadHistory>>,
+  pending: PendingInteractionRecord,
+): ResumeToolResult[] {
+  const resumeKey = resumeTurnKey(pending.id);
+  const results: ResumeToolResult[] = [];
+  for (const message of history.messages) {
+    if (message.turnKey !== resumeKey) {
       continue;
     }
-    if (run.toolName === null) {
-      continue;
+    for (const run of message.toolRuns) {
+      const result = resumeToolResultFromStoredRun(run);
+      if (result !== null) {
+        results.push(result);
+      }
     }
-    if (isStartedToolTrace(run.modelTrace)) {
-      continue;
-    }
-    results.push({
-      toolName: run.toolName,
-      output: run.modelTrace,
-    });
   }
   return results;
+}
+
+function phaseBResumeToolResultsFromTurn(
+  toolRuns: ReadonlyArray<{
+    readonly modelTrace?: unknown;
+    readonly toolName?: string;
+  }>,
+): ResumeToolResult[] {
+  return toolRuns.flatMap((run) => {
+    if (run.modelTrace === undefined || run.toolName === undefined) {
+      return [];
+    }
+    if (isStartedToolTrace(run.modelTrace)) {
+      return [];
+    }
+    return [{ toolName: run.toolName, output: run.modelTrace }];
+  });
+}
+
+function mergeResumeToolResults(
+  phaseA: ResumeToolResult | null,
+  phaseB: readonly ResumeToolResult[],
+): ResumeToolResult[] {
+  return phaseA === null ? [...phaseB] : [phaseA, ...phaseB];
+}
+
+function resumeToolResultsFromHistory(
+  history: Awaited<ReturnType<typeof loadHistory>>,
+  pending: PendingInteractionRecord,
+): ResumeToolResult[] {
+  return mergeResumeToolResults(
+    phaseAResumeToolResult({ pending, history }),
+    phaseBResumeToolResultsFromHistory(history, pending),
+  );
 }
 
 function isStartedToolTrace(output: unknown): boolean {
@@ -866,14 +1036,15 @@ async function runPhaseB(options: {
   };
   readonly actor: StaffMembership;
   readonly pending: PendingInteractionRecord;
+  readonly phaseAOutput?: unknown;
 }): Promise<AssistantHostInteractionResult> {
-  const history = await loadHistory({
+  const history = await loadHistoryForPendingResume({
     pipeline: options.runtime.pipeline,
     conversationId: options.conversationId,
     requestId: options.runtime.requestId,
     clientIp: options.runtime.clientIp,
     principal: options.staffPrincipal,
-    includeTurnKeys: [resumeTurnKey(options.pending.id)],
+    pending: options.pending,
   });
   const conversation = await executeAction(options.runtime.pipeline, {
     action: getConversation,
@@ -990,12 +1161,16 @@ async function runPhaseB(options: {
     after.kind === "found"
       ? (publicPendingFromRecord(after.record) ?? null)
       : null;
-  const toolResults = turn.toolRuns.flatMap((run) => {
-    if (run.modelTrace === undefined || run.toolName === undefined) {
-      return [];
-    }
-    return [{ toolName: run.toolName, output: run.modelTrace }];
-  });
+  const toolResults = mergeResumeToolResults(
+    phaseAResumeToolResult({
+      pending: options.pending,
+      history,
+      ...(options.phaseAOutput !== undefined
+        ? { output: options.phaseAOutput }
+        : {}),
+    }),
+    phaseBResumeToolResultsFromTurn(turn.toolRuns),
+  );
   return okEnvelope({
     speech: turn.speech.text,
     toolResults,
@@ -1346,6 +1521,8 @@ async function afterPhaseASuccess(options: {
     bind: options.bind,
     ...(options.optionId !== undefined ? { optionId: options.optionId } : {}),
   });
+  // SHO-544: pass the committed Phase A write so resume cards include
+  // the existing surface even when Phase B is speech-only or fails.
   return runPhaseB({
     runtime: options.runtime,
     conversationId: options.record.conversationId,
@@ -1354,6 +1531,7 @@ async function afterPhaseASuccess(options: {
     staffPrincipal: options.staffPrincipal,
     actor: options.actor,
     pending: options.record,
+    phaseAOutput: options.output,
   });
 }
 
@@ -1379,18 +1557,18 @@ async function replayCompletedPending(options: {
     bind: options.bind,
   });
   const resumeKey = resumeTurnKey(options.record.id);
-  const history = await loadHistory({
+  const history = await loadHistoryForPendingResume({
     pipeline: options.runtime.pipeline,
     conversationId: options.conversationId,
     requestId: options.runtime.requestId,
     clientIp: options.runtime.clientIp,
     principal: options.staffPrincipal,
-    includeTurnKeys: [resumeKey],
+    pending: options.record,
   });
   if (open.kind === "found" && open.record.id !== options.record.id) {
     return okEnvelope({
       speech: lastAssistantSpeech(history, resumeKey),
-      toolResults: historyToolResults(history),
+      toolResults: resumeToolResultsFromHistory(history, options.record),
       pending: publicPendingFromRecord(open.record) ?? null,
     });
   }
@@ -1398,7 +1576,7 @@ async function replayCompletedPending(options: {
   if (state === "done") {
     return okEnvelope({
       speech: lastAssistantSpeech(history, resumeKey),
-      toolResults: historyToolResults(history),
+      toolResults: resumeToolResultsFromHistory(history, options.record),
       pending: null,
     });
   }

@@ -30,7 +30,11 @@ import { appendUserMessage } from "./append-user-message.js";
 import { checkpointAssistantTurn } from "./checkpoint-assistant-turn.js";
 import { createConversation } from "./create-conversation.js";
 import { getConversation } from "./get-conversation.js";
-import { GET_MODEL_HISTORY_CHECKPOINT_TURNS_MAX } from "./get-model-history.contract.js";
+import {
+  GET_MODEL_HISTORY_CHECKPOINT_TURNS_MAX,
+  GET_MODEL_HISTORY_MESSAGES_MAX,
+  GET_MODEL_HISTORY_WINDOW,
+} from "./get-model-history.contract.js";
 import { getModelHistory } from "./get-model-history.js";
 import { getStaffActor } from "./get-staff-actor.js";
 import { listConversations } from "./list-conversations.js";
@@ -1748,6 +1752,74 @@ describe("assistant staff conversation actions", () => {
       hasSpeech: true,
       speech: "The order is ready.",
     });
+  });
+
+  it("pins a clipped pause turnKey into messages with toolRuns", async () => {
+    const conversation = await kit.invoke(createConversation, {
+      title: "Clipped pause tool run",
+    });
+    const pauseKey = `begin:${randomUUID()}`;
+    const begun = await kit.invoke(
+      checkpointAssistantTurn,
+      beginInput(conversation.id, pauseKey),
+    );
+    const staged = await kit.invoke(checkpointAssistantTurn, {
+      kind: "stageRun",
+      conversationId: conversation.id,
+      messageId: begun.messageId,
+      seq: 0,
+      actionName: "orders.create",
+      toolName: "orders_create",
+      toolCallId: "call_pause_create",
+      toolInput: { customerId: orderId },
+    });
+    await kit.invoke(checkpointAssistantTurn, {
+      kind: "finishRun",
+      conversationId: conversation.id,
+      executionId: staged.executionId ?? "",
+      outcome: "success",
+      resultIds: [orderId],
+      modelTrace: { orderId },
+    });
+    await kit.invoke(checkpointAssistantTurn, {
+      kind: "complete",
+      conversationId: conversation.id,
+      messageId: begun.messageId,
+      body: "Order created.",
+    });
+    for (let index = 0; index < GET_MODEL_HISTORY_WINDOW; index += 1) {
+      await kit.invoke(appendUserMessage, {
+        conversationId: conversation.id,
+        body: `pad-user-${String(index)}`,
+      });
+    }
+    const clipped = await kit.invoke(getModelHistory, {
+      conversationId: conversation.id,
+    });
+    expect(clipped.messages).toHaveLength(GET_MODEL_HISTORY_WINDOW);
+    expect(
+      clipped.messages.some((message) => message.id === begun.messageId),
+    ).toBe(false);
+    const pinned = await kit.invoke(getModelHistory, {
+      conversationId: conversation.id,
+      includeTurnKeys: [pauseKey],
+    });
+    const pause = pinned.messages.find(
+      (message) => message.turnKey === pauseKey,
+    );
+    expect(pinned.messages).toHaveLength(GET_MODEL_HISTORY_WINDOW + 1);
+    expect(pinned.messages.length).toBeLessThanOrEqual(
+      GET_MODEL_HISTORY_MESSAGES_MAX,
+    );
+    expect(pause?.id).toBe(begun.messageId);
+    expect(pause?.toolRuns).toEqual([
+      expect.objectContaining({
+        action: "orders.create",
+        executionId: staged.executionId,
+        outcome: "success",
+        modelTrace: { orderId },
+      }),
+    ]);
   });
 
   it("pins an unfinished empty resume begin clipped from the newest checkpointTurns", async () => {

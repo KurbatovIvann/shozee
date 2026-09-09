@@ -73,7 +73,31 @@ describe("live staff-assistant host (SHO-524)", () => {
     expect(hostSrc).toContain("recoverStartedExecutionIds");
     expect(hostSrc).toContain("unfinishedStartedRuns");
     expect(hostSrc).toContain("includeTurnKeys");
+    expect(hostSrc).toContain("loadHistoryForPendingResume");
+    expect(hostSrc).toContain("HOST_INCLUDE_TURN_KEYS_MAX = 8");
+    expect(hostSrc).toContain("Do not guess from sibling");
+    const includeKeysFn = hostSrc.slice(
+      hostSrc.indexOf("function includeTurnKeysForPendingResume"),
+      hostSrc.indexOf("function historyHasTurnKeys"),
+    );
+    expect(includeKeysFn).toContain("phaseAPauseTurnKey");
+    expect(includeKeysFn).not.toContain("checkpointTurns");
+    expect(includeKeysFn).not.toContain("extras");
+    expect(hostSrc).toContain(
+      "never bind a different execution's success as this pending's card",
+    );
     expect(hostSrc).not.toContain("isChatTurnAssistantMessage");
+    const phaseALookup = hostSrc.slice(
+      hostSrc.indexOf("function findPhaseAStoredRun"),
+      hostSrc.indexOf("function phaseAResumeToolResult"),
+    );
+    const executionIdBranch = phaseALookup.slice(
+      phaseALookup.indexOf("pending.executionId !== undefined"),
+      phaseALookup.indexOf("const resumeKey"),
+    );
+    expect(executionIdBranch).toContain("pending.executionId");
+    expect(executionIdBranch).not.toContain("findLast");
+    expect(executionIdBranch).not.toContain("pending.actionName");
   });
 
   it("does not GETDEL in the pending Redis scripts (core owns confirmation consume)", () => {
