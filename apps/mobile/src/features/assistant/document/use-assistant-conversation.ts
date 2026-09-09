@@ -84,6 +84,12 @@ export function useAssistantConversation(args: {
 }): UseAssistantConversation {
   const [document, setDocument] = useState<AssistantChatDocument | null>(null);
   const [busy, setBusy] = useState(false);
+  /**
+   * Echoed in the thread until the reply lands. The server stores the person's
+   * words before the model runs, so this is only ever showing what is already
+   * committed — but the response that would prove it is a turn away.
+   */
+  const [pending, setPending] = useState<string | null>(null);
   const [failure, setFailure] = useState<AssistantKitFailure | null>(null);
 
   const callRef = useRef(args.call);
@@ -183,6 +189,7 @@ export function useAssistantConversation(args: {
         return Promise.resolve<AssistantKitFailure>({ kind: "aborted" });
       }
       const commandId = newIdRef.current();
+      setPending(clipped);
       return run((call, conversationId) =>
         postAssistantKitChat({
           ...call,
@@ -190,7 +197,11 @@ export function useAssistantConversation(args: {
           commandId,
           text: clipped,
         }),
-      );
+      ).finally(() => {
+        // Cleared in the same batch as the document that now contains it, so
+        // the echo is replaced rather than briefly doubled.
+        setPending(null);
+      });
     },
     [run],
   );
@@ -242,6 +253,7 @@ export function useAssistantConversation(args: {
     setDocument(null);
     documentRef.current = null;
     setFailure(null);
+    setPending(null);
     // Orphan anything still running for the previous conversation, then read.
     ticketRef.current += 1;
     busyRef.current = false;
@@ -256,8 +268,9 @@ export function useAssistantConversation(args: {
             document,
             locale: args.locale,
             waiting: busy,
+            pending,
           }),
-    [document, args.locale, busy],
+    [document, args.locale, busy, pending],
   );
 
   const interaction = useMemo(

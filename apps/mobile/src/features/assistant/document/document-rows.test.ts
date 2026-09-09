@@ -15,6 +15,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   ASSISTANT_ORPHAN_INTERACTION_ROW_ID,
+  ASSISTANT_PENDING_USER_ROW_ID,
   ASSISTANT_WAITING_ROW_ID,
   assistantDocumentRows,
 } from "./document-rows";
@@ -275,6 +276,43 @@ describe("assistantDocumentRows", () => {
 
     expect(result).toHaveLength(1);
     expect(result[0]?.role).toBe("assistant");
+  });
+
+  it("echoes a message that has been sent but not yet stored", () => {
+    const result = assistantDocumentRows({
+      document: document([
+        message(REPLY_MESSAGE, "assistant", [textPart("Готово.")]),
+      ]),
+      locale: "uk",
+      waiting: true,
+      pending: "Ще одне замовлення",
+    });
+
+    // The person's own words first, then the wait — the order they happened in.
+    expect(result.map((row) => [row.role, row.text])).toEqual([
+      ["assistant", "Готово."],
+      ["user", "Ще одне замовлення"],
+      ["assistant", ""],
+    ]);
+    expect(result[1]?.id).toBe(ASSISTANT_PENDING_USER_ROW_ID);
+    expect(result[2]?.waiting).toBe(true);
+  });
+
+  it("shows nothing extra once the document carries the message", () => {
+    const result = assistantDocumentRows({
+      document: document([
+        message(USER_MESSAGE, "user", [textPart("Ще одне замовлення")]),
+        message(REPLY_MESSAGE, "assistant", [textPart("Готово.")]),
+      ]),
+      locale: "uk",
+      waiting: false,
+      pending: null,
+    });
+
+    expect(result.map((row) => row.text)).toEqual([
+      "Ще одне замовлення",
+      "Готово.",
+    ]);
   });
 
   it("adds one trailing row while a request is in flight, hiding nothing", () => {

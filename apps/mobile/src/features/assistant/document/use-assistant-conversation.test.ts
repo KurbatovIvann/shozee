@@ -383,7 +383,12 @@ describe("useAssistantConversation", () => {
     expect(view.latest().rows.map((row) => row.text)).toEqual(["Привіт."]);
   });
 
-  it("shows a waiting row while a turn is running, hiding nothing", async () => {
+  /**
+   * The complaint this fixes: the person's message was invisible for the whole
+   * turn, so their words and the reply appeared together at the end and it read
+   * as though the app had dropped what they typed.
+   */
+  it("shows the sent message straight away, above the waiting row", async () => {
     respond(200, { status: "ok", document: document({ text: "Привіт." }) });
     const view = mount();
     await flush();
@@ -395,8 +400,43 @@ describe("useAssistantConversation", () => {
     await flush();
 
     const rows = view.latest().rows;
-    expect(rows.map((row) => row.text)).toEqual(["Привіт.", ""]);
+    expect(rows.map((row) => [row.role, row.text])).toEqual([
+      ["assistant", "Привіт."],
+      ["user", "ще одне"],
+      ["assistant", ""],
+    ]);
     expect(rows.at(-1)?.waiting).toBe(true);
+  });
+
+  it("replaces the echo with the stored message rather than showing both", async () => {
+    respond(200, { status: "ok", document: document({ text: "Привіт." }) });
+    const view = mount();
+    await flush();
+
+    respond(200, {
+      status: "ok",
+      document: {
+        ...document({ text: "Готово." }),
+        messages: [
+          {
+            messageId: "55555555-5555-4555-8555-555555555555",
+            role: "user",
+            createdAt: "2026-09-09T10:01:00.000Z",
+            parts: [{ kind: "text", text: "ще одне", status: "complete" }],
+          },
+          ...document({ text: "Готово." }).messages,
+        ],
+      },
+    });
+    act(() => {
+      void view.latest().send("ще одне");
+    });
+    await flush();
+
+    expect(view.latest().rows.map((row) => [row.role, row.text])).toEqual([
+      ["user", "ще одне"],
+      ["assistant", "Готово."],
+    ]);
   });
 
   it("sends nothing for blank text", async () => {

@@ -39,6 +39,9 @@ export const ASSISTANT_WAITING_ROW_ID = "assistant-waiting";
 /** Stable list id for a question whose own message is no longer stored. */
 export const ASSISTANT_ORPHAN_INTERACTION_ROW_ID = "assistant-open-question";
 
+/** Stable list id for a message that has been sent but not yet acknowledged. */
+export const ASSISTANT_PENDING_USER_ROW_ID = "assistant-pending-user";
+
 export type AssistantDocumentRow = {
   readonly id: string;
   readonly role: "user" | "assistant";
@@ -136,6 +139,17 @@ export function assistantDocumentRows(input: {
   readonly locale: Locale;
   /** A request is in flight. Adds one trailing row; hides nothing. */
   readonly waiting: boolean;
+  /**
+   * What the person just sent, until the server confirms it.
+   *
+   * Not an exception to "nothing here invents a part": this is the composer's
+   * own text, echoed back to the person who typed it, and it disappears the
+   * moment the stored document carries the real message. The server writes the
+   * user message before the model runs, so the gap is one round trip — but that
+   * round trip is a whole turn, and watching your own message vanish for it
+   * reads as the app having dropped it.
+   */
+  readonly pending?: string | null;
 }): readonly AssistantDocumentRow[] {
   const { messages, openPause } = input.document;
   const interaction =
@@ -172,6 +186,19 @@ export function assistantDocumentRows(input: {
       text: "",
       surfaces: NO_SURFACES,
       interaction,
+      failed: false,
+      waiting: false,
+    });
+  }
+
+  const pending = input.pending ?? null;
+  if (pending !== null && pending.length > 0) {
+    rows.push({
+      id: ASSISTANT_PENDING_USER_ROW_ID,
+      role: "user",
+      text: pending,
+      surfaces: NO_SURFACES,
+      interaction: null,
       failed: false,
       waiting: false,
     });
