@@ -49,6 +49,7 @@ import {
   type StaffAssistantBudgetLimits,
 } from "./assistant-budget-guard.js";
 import {
+  executeBudgetedStaffAssistantHost,
   executeStaffAssistantChat,
   optionalStaffAssistantLanguageModel,
   type StaffAssistantRuntime,
@@ -135,7 +136,8 @@ export interface CreateAppOptions {
   readonly conversationLock?: ConversationLock;
   /**
    * Per-user turn limit + Kyiv-day USD budget on `POST /assistant/chat`
-   * (SHO-505). Boot mounts Redis. Tests inject memory stores.
+   * and HITL resume (`POST /assistant/choice`, `POST /assistant/confirm`)
+   * (SHO-505 / SHO-541). Boot mounts Redis. Tests inject memory stores.
    */
   readonly assistantBudget?: {
     readonly rateLimitStore: RateLimitStore;
@@ -444,17 +446,46 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
   });
 
   app.post(ASSISTANT_HOST_CHOICE_PATH, async (c) => {
-    const response = await executeStaffAssistantHostChoiceResume({
+    const runtime = {
       ...hostRuntime(c),
       request: c.req.raw,
+    };
+    const response = await executeBudgetedStaffAssistantHost({
+      request: runtime.request,
+      requestId: runtime.requestId,
+      clientIp: runtime.clientIp,
+      pipeline: runtime.pipeline,
+      getSession: runtime.getSession,
+      rateLimitStore: assistantBudget.rateLimitStore,
+      budgetStore: assistantBudget.budgetStore,
+      budgetLimits,
+      ...(options.assistant !== undefined
+        ? { assistant: options.assistant }
+        : {}),
+      run: (model) =>
+        executeStaffAssistantHostChoiceResume({ ...runtime, model }),
     });
     return withRequestId(response, c.get("requestId"));
   });
 
   app.post(ASSISTANT_CONFIRM_PATH, async (c) => {
-    const response = await executeStaffAssistantHostConfirm({
+    const runtime = {
       ...hostRuntime(c),
       request: c.req.raw,
+    };
+    const response = await executeBudgetedStaffAssistantHost({
+      request: runtime.request,
+      requestId: runtime.requestId,
+      clientIp: runtime.clientIp,
+      pipeline: runtime.pipeline,
+      getSession: runtime.getSession,
+      rateLimitStore: assistantBudget.rateLimitStore,
+      budgetStore: assistantBudget.budgetStore,
+      budgetLimits,
+      ...(options.assistant !== undefined
+        ? { assistant: options.assistant }
+        : {}),
+      run: (model) => executeStaffAssistantHostConfirm({ ...runtime, model }),
     });
     return withRequestId(response, c.get("requestId"));
   });

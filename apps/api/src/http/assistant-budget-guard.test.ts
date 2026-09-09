@@ -18,6 +18,9 @@ import {
   recordStaffAssistantBudgetSpend,
   releaseStaffAssistantBudgetHold,
   staffAssistantBudgetSpendUsd,
+  STAFF_ASSISTANT_BUDGET_SETTLE_HEADER,
+  STAFF_ASSISTANT_BUDGET_SETTLE_VALUE,
+  withStaffAssistantBudget,
 } from "./assistant-budget-guard.js";
 
 const COMPANY_A = "11111111-1111-4111-8111-111111111111";
@@ -567,5 +570,136 @@ describe("releaseStaffAssistantBudgetHold", () => {
       await budgetStore.read(aiCompanyBudgetKey(COMPANY_A, NEXT_KYIV_DATE)),
     ).toBe(0);
     expect(await budgetStore.read(aiGlobalBudgetKey(NEXT_KYIV_DATE))).toBe(0);
+  });
+});
+
+describe("withStaffAssistantBudget", () => {
+  const limits = DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS;
+
+  function wrapOptions(
+    budgetStore: ReturnType<typeof createMemoryAiBudgetStore>,
+  ) {
+    return {
+      logger: createCapturingLogger().logger,
+      requestId: "req-wrap",
+      userId: USER_A,
+      companyId: COMPANY_A,
+      skipTurnLimit: true as const,
+      budgetStore,
+      limits,
+    };
+  }
+
+  it("does not call run when the company cap is exhausted", async () => {
+    const budgetStore = createMemoryAiBudgetStore();
+    await budgetStore.add(
+      aiCompanyBudgetKey(COMPANY_A, KYIV_DATE),
+      5,
+      AI_BUDGET_TTL_SEC,
+    );
+    let called = false;
+    await expect(
+      withStaffAssistantBudget({
+        ...wrapOptions(budgetStore),
+        now: NOW,
+        run: () => {
+          called = true;
+          return Promise.resolve(new Response("ok"));
+        },
+      }),
+    ).rejects.toBeInstanceOf(RateLimitError);
+    expect(called).toBe(false);
+  });
+
+  it("settles the unknown-model ceiling when run returns HTTP success", async () => {
+    const budgetStore = createMemoryAiBudgetStore();
+    const response = await withStaffAssistantBudget({
+      ...wrapOptions(budgetStore),
+      now: NOW,
+      run: () => Promise.resolve(new Response("ok", { status: 200 })),
+    });
+    expect(response.status).toBe(200);
+    expect(
+      await budgetStore.read(aiCompanyBudgetKey(COMPANY_A, KYIV_DATE)),
+    ).toBeCloseTo(0.1);
+    expect(await budgetStore.read(aiGlobalBudgetKey(KYIV_DATE))).toBeCloseTo(
+      0.1,
+    );
+  });
+
+  it("releases a 200 that the host did not mark as Phase B settle", async () => {
+    const budgetStore = createMemoryAiBudgetStore();
+    const response = await withStaffAssistantBudget({
+      ...wrapOptions(budgetStore),
+      now: NOW,
+      run: () =>
+        Promise.resolve({
+          response: new Response("expired", { status: 200 }),
+          settle: false,
+        }),
+    });
+    expect(response.status).toBe(200);
+    expect(
+      await budgetStore.read(aiCompanyBudgetKey(COMPANY_A, KYIV_DATE)),
+    ).toBe(0);
+    expect(await budgetStore.read(aiGlobalBudgetKey(KYIV_DATE))).toBe(0);
+  });
+
+  it("settles when the host marks Phase B and strips the settle header", async () => {
+    const budgetStore = createMemoryAiBudgetStore();
+    const response = await withStaffAssistantBudget({
+      ...wrapOptions(budgetStore),
+      now: NOW,
+      run: () =>
+        Promise.resolve({
+          response: new Response("phase-b", {
+            status: 200,
+            headers: {
+              [STAFF_ASSISTANT_BUDGET_SETTLE_HEADER]:
+                STAFF_ASSISTANT_BUDGET_SETTLE_VALUE,
+            },
+          }),
+          settle: true,
+        }),
+    });
+    expect(response.status).toBe(200);
+    expect(
+      response.headers.get(STAFF_ASSISTANT_BUDGET_SETTLE_HEADER),
+    ).toBeNull();
+    expect(
+      await budgetStore.read(aiCompanyBudgetKey(COMPANY_A, KYIV_DATE)),
+    ).toBeCloseTo(0.1);
+    expect(await budgetStore.read(aiGlobalBudgetKey(KYIV_DATE))).toBeCloseTo(
+      0.1,
+    );
+  });
+
+  it("releases the hold when run returns a non-OK status", async () => {
+    const budgetStore = createMemoryAiBudgetStore();
+    const response = await withStaffAssistantBudget({
+      ...wrapOptions(budgetStore),
+      now: NOW,
+      run: () => Promise.resolve(new Response("no", { status: 500 })),
+    });
+    expect(response.status).toBe(500);
+    expect(
+      await budgetStore.read(aiCompanyBudgetKey(COMPANY_A, KYIV_DATE)),
+    ).toBe(0);
+    expect(await budgetStore.read(aiGlobalBudgetKey(KYIV_DATE))).toBe(0);
+  });
+
+  it("releases the hold when run throws", async () => {
+    const budgetStore = createMemoryAiBudgetStore();
+    await expect(
+      withStaffAssistantBudget({
+        ...wrapOptions(budgetStore),
+        now: NOW,
+        run: () => Promise.reject(new Error("host down")),
+      }),
+    ).rejects.toThrow("host down");
+    expect(
+      await budgetStore.read(aiCompanyBudgetKey(COMPANY_A, KYIV_DATE)),
+    ).toBe(0);
+    expect(await budgetStore.read(aiGlobalBudgetKey(KYIV_DATE))).toBe(0);
   });
 });

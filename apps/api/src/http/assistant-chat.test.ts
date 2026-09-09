@@ -230,14 +230,46 @@ describe("live assistant chat mount (SHO-524)", () => {
     expect(chat).toContain("executeStaffAssistantHostConfirm");
     expect(chat).toContain("CONFIRMATION_CHALLENGE_HEADER");
     expect(chat).toContain("skipTurnLimit: headerConfirm");
-    expect(chat).toContain("estimatedCostUsd: null");
+    expect(chat).toContain("withStaffAssistantBudget");
+    expect(chat).toContain("executeBudgetedStaffAssistantHost");
+    expect(chat).toContain("skipTurnLimit: true");
+    expect(chat).toContain("staffAssistantBudgetSettleMarked");
+    const budgetedHost = chat.slice(
+      chat.indexOf("export async function executeBudgetedStaffAssistantHost"),
+    );
+    expect(budgetedHost.indexOf("resolveLanguageModel")).toBeGreaterThan(-1);
+    expect(budgetedHost.indexOf("resolveLanguageModel")).toBeLessThan(
+      budgetedHost.indexOf("withStaffAssistantBudget"),
+    );
     expect(chat).not.toContain("streamStaffAssistantChat");
     expect(chat).not.toContain("classifyStaffAssistantTurn");
     expect(chat).not.toContain("runStaffAssistantHostTurn");
+    const guard = readFileSync(join(here, "assistant-budget-guard.ts"), "utf8");
+    expect(guard).toContain("estimatedCostUsd: null");
+    expect(guard).toContain("withStaffAssistantBudget");
+    expect(guard).toContain("staffAssistantBudgetSettleMarked");
+    const host = readFileSync(join(here, "assistant-host.ts"), "utf8");
+    expect(host).toContain("phaseBInteractionResponse");
+    expect(host).toContain("STAFF_ASSISTANT_BUDGET_SETTLE_HEADER");
     const app = readFileSync(join(here, "app.ts"), "utf8");
     expect(app).toContain("executeStaffAssistantChat");
+    expect(app).toContain("executeBudgetedStaffAssistantHost");
+    expect(app).toContain("executeStaffAssistantHostChoiceResume");
+    expect(app).toContain("executeStaffAssistantHostConfirm");
     expect(app).not.toContain("ASSISTANT_HOST_CHAT_PATH");
     expect(app).not.toContain("runStaffAssistantHostTurn");
+    const choiceHandler = app
+      .split("app.post(ASSISTANT_HOST_CHOICE_PATH")[1]
+      ?.split("app.post(")[0];
+    const confirmHandler = app
+      .split("app.post(ASSISTANT_CONFIRM_PATH")[1]
+      ?.split("app.post(")[0];
+    const abandonHandler = app
+      .split("app.post(ASSISTANT_PENDING_ABANDON_PATH")[1]
+      ?.split("app.get(ASSISTANT_PENDING_PATH")[0];
+    expect(choiceHandler).toContain("executeBudgetedStaffAssistantHost");
+    expect(confirmHandler).toContain("executeBudgetedStaffAssistantHost");
+    expect(abandonHandler).not.toContain("executeBudgetedStaffAssistantHost");
     const invocation = readFileSync(
       join(here, "assistant-invocation.ts"),
       "utf8",

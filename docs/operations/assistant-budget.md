@@ -53,8 +53,17 @@ Chat confirmation resume (`x-confirmation-challenge-id` on
 `POST /assistant/chat`) skips the turn bucket but still reserves and
 settles estimated USD on both budget keys.
 
-`POST /assistant/choice` does not call a model, costs `$0`, and does
-not write Redis.
+Live `POST /assistant/choice` and `POST /assistant/confirm` Phase B use
+the same reserve → host → settle/release path as chat, with
+`skipTurnLimit: true` (continuation of an already-admitted job, not a
+new chat turn). Budget 429 is the same `RATE_LIMITED` wire as chat.
+Abandon (`POST /assistant/pending/abandon`) and peek
+(`GET /assistant/pending`) stay unwrapped — no model, no Redis budget.
+
+Settle is only for a request that entered Phase B generation. HTTP 200
+expired, option conflict, Phase A error, successor picker without
+generation, and completed-claim replay of an already-done Phase B
+**release** the hold (unknown-model reservation is not a charge).
 
 A budget 429 does not consume a turn slot. A 503 (`AI_NOT_CONFIGURED`)
 does not consume a turn slot or reserve budget.
