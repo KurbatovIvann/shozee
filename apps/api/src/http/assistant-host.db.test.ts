@@ -2286,9 +2286,16 @@ describe("unpublished staff assistant host HTTP", () => {
     }
     expect(confirmBody.pending).toBeNull();
     expect(await orderCount()).toBe(beforeOrders + 1);
-    const created = await h.invoke(getOrder, {
-      orderId: orderIdFromEntityCard(confirmBody.cards),
-    });
+    const createRows = (await conversationToolRuns(conversation.id)).filter(
+      (row) => row.actionName === "orders.create" && row.outcome === "success",
+    );
+    expect(createRows).toHaveLength(1);
+    const orderId = createRows[0]?.resultIds[0];
+    expect(typeof orderId).toBe("string");
+    if (typeof orderId !== "string") {
+      throw new Error("expected orders.create result id");
+    }
+    const created = await h.invoke(getOrder, { orderId });
     expect(created.items).toHaveLength(1);
     expect(created.items[0]?.variantId).toBe(uniqueVariant.variantId);
     expect(created.items[0]?.quantityMilli).toBe("2000");
