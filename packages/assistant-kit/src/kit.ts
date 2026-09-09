@@ -7,7 +7,6 @@
  * anywhere in `src` is the failure signal — `no-domain.test.ts` enforces it.
  */
 import type { ChatDocument, DocumentWrite } from "./document.js";
-import type { KitDeps } from "./ports.js";
 import type {
   Answer,
   ClaimResult,
@@ -30,6 +29,8 @@ export type OpenPauseResult =
   | { readonly kind: "opened"; readonly pause: PublicPause }
   /** One open interaction per conversation. The caller decides: replace or refuse. */
   | { readonly kind: "already_open"; readonly current: PublicPause };
+
+export type RevisePauseResult = OpenPauseResult | { readonly kind: "gone" };
 
 export interface AssistantKit {
   /**
@@ -68,12 +69,16 @@ export interface AssistantKit {
     optionId: string,
   ): string | undefined;
 
-  /** Raise the revision when the subject of the decision changes. */
+  /**
+   * Raise the revision when the subject of the decision changes. `gone` when
+   * there is no open pause under that id any more — the caller opens a fresh
+   * one rather than reviving an expired decision.
+   */
   revise<TInput>(input: {
     readonly conversationId: string;
     readonly interactionId: string;
     readonly next: Omit<OpenPauseInput<TInput>, "conversationId">;
-  }): Promise<OpenPauseResult>;
+  }): Promise<RevisePauseResult>;
 
   abandon(input: {
     readonly conversationId: string;
@@ -86,15 +91,5 @@ export interface AssistantKit {
   };
 }
 
-/**
- * Wired by the consumer in its composition root.
- *
- * Unimplemented on purpose: `SCENARIOS.md` is written against this signature
- * first, so the suite is red before any behaviour exists. This throw is the
- * seam, not a protocol error — kit operations return variants, they do not
- * throw.
- */
-export function createAssistantKit(deps: KitDeps): AssistantKit {
-  void deps;
-  throw new Error("assistant-kit: createAssistantKit is not implemented yet");
-}
+/** Wired by the consumer in its composition root. */
+export { createAssistantKit } from "./create-kit.js";

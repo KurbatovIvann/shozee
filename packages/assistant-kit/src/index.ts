@@ -70,4 +70,5 @@ export {
   type AssistantKit,
   type OpenPauseInput,
   type OpenPauseResult,
+  type RevisePauseResult,
 } from "./kit.js";
