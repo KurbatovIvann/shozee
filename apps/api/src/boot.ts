@@ -148,7 +148,8 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
           ? []
           : [
               "POST /assistant/kit/chat",
-              "POST /assistant/kit/choice",
+              "POST /assistant/kit/answer",
+              "POST /assistant/kit/abandon",
               "GET /assistant/kit/messages",
             ],
       ...(config.ai.assistantKitEnabled && assistantKitModel === undefined

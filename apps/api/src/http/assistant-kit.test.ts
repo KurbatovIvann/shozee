@@ -29,8 +29,9 @@ import {
   type ChoiceResolution,
 } from "./assistant-interactions.js";
 import {
+  ASSISTANT_KIT_ABANDON_PATH,
+  ASSISTANT_KIT_ANSWER_PATH,
   ASSISTANT_KIT_CHAT_PATH,
-  ASSISTANT_KIT_CHOICE_PATH,
   ASSISTANT_KIT_MESSAGES_PATH,
   createAssistantKitApp,
 } from "./assistant-kit.js";
@@ -273,6 +274,34 @@ function answerBody(
   };
 }
 
+/**
+ * Every route answers with the whole stored document, so one type covers them
+ * all. `parts` is loosely typed here on purpose: this suite reads the wire, not
+ * the package's own union.
+ */
+type KitBody = {
+  readonly status?: string;
+  readonly reason?: string;
+  readonly code?: string;
+  readonly document?: {
+    readonly messages: readonly {
+      readonly role: string;
+      readonly parts: readonly {
+        readonly kind: string;
+        readonly type?: string;
+        readonly text?: string;
+        readonly interactionId?: string;
+      }[];
+    }[];
+    readonly openPause: {
+      readonly kind: string;
+      readonly interactionId: string;
+      readonly revision: number;
+      readonly prompt: unknown;
+    } | null;
+  };
+};
+
 const messagesPath = (id = CONVERSATION) =>
   `${ASSISTANT_KIT_MESSAGES_PATH}?conversationId=${id}`;
 
@@ -282,9 +311,9 @@ describe("POST /assistant/kit/chat", () => {
 
     const response = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody());
     expect(response.status).toBe(200);
-    const body = (await response.json()) as { status: string; pause: unknown };
+    const body = (await response.json()) as KitBody;
     expect(body.status).toBe("ok");
-    expect(body.pause).toBeNull();
+    expect(body.document?.openPause).toBeNull();
 
     const document = await kit.document.read({
       conversationId: CONVERSATION,
@@ -294,6 +323,8 @@ describe("POST /assistant/kit/chat", () => {
       "user",
       "assistant",
     ]);
+    // The response is the stored document, not a second view of it.
+    expect(body.document).toEqual(document);
     expect(history.saved).toHaveLength(1);
   });
 
@@ -335,13 +366,10 @@ describe("POST /assistant/kit/chat", () => {
     const response = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody());
 
     expect(response.status).toBe(409);
-    const body = (await response.json()) as {
-      status: string;
-      pause: { interactionId: string };
-    };
+    const body = (await response.json()) as KitBody;
     // Visible, not a silent supersede: the draft is still there.
     expect(body.status).toBe("interaction_open");
-    expect(body.pause.interactionId).toBe(pause.interactionId);
+    expect(body.document?.openPause?.interactionId).toBe(pause.interactionId);
   });
 
   it("pauses when a tool asks a question, and stores it", async () => {
@@ -356,14 +384,15 @@ describe("POST /assistant/kit/chat", () => {
       chatBody("створи"),
     );
     expect(response.status).toBe(200);
-    const body = (await response.json()) as {
-      pause: { kind: string; prompt: { subject: string } } | null;
-    };
+    const body = (await response.json()) as KitBody;
+    const open = body.document?.openPause;
 
-    expect(body.pause?.kind).toBe("choice");
+    expect(open?.kind).toBe("choice");
     // The prompt comes from the tool's input, which the model chose — not from
     // the text the person typed.
-    expect(body.pause?.prompt.subject).toBe("two matches");
+    expect((open?.prompt as { subject: string } | undefined)?.subject).toBe(
+      "two matches",
+    );
     // The private side never left the server.
     expect(JSON.stringify(body)).not.toContain("entity-a");
     expect(
@@ -422,23 +451,23 @@ describe("POST /assistant/kit/chat", () => {
 });
 
 describe("GET /assistant/kit/messages", () => {
-  it("returns exactly what the live turn wrote", async () => {
+  /**
+   * The invariant the whole path exists for. A live turn and a reload are not
+   * two views that have to be kept in agreement — they are the same bytes, so
+   * there is no derivation left to disagree.
+   */
+  it("returns exactly what the live turn returned", async () => {
     const { app } = harness();
     const live = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody());
-    const liveBody = (await live.json()) as { parts: unknown[] };
+    const liveBody = (await live.json()) as KitBody;
 
     const response = await get(app, messagesPath());
     expect(response.status).toBe(200);
-    const body = (await response.json()) as {
-      document: { messages: Array<{ role: string; parts: unknown[] }> };
-    };
+    const body = (await response.json()) as KitBody;
 
-    const assistant = body.document.messages.find(
-      (message) => message.role === "assistant",
-    );
-    expect(assistant?.parts).toEqual(liveBody.parts);
-    expect(JSON.stringify(assistant?.parts)).toBe(
-      JSON.stringify(liveBody.parts),
+    expect(body.document).toEqual(liveBody.document);
+    expect(JSON.stringify(body.document)).toBe(
+      JSON.stringify(liveBody.document),
     );
   });
 
@@ -494,29 +523,26 @@ describe("GET /assistant/kit/messages", () => {
   });
 });
 
-describe("POST /assistant/kit/choice", () => {
+describe("POST /assistant/kit/answer", () => {
   it("writes the result card, then the explanation, and closes the question", async () => {
     const { kit, app, bind } = harness();
     const pause = await openPause(kit, bind);
 
     const response = await post(
       app,
-      ASSISTANT_KIT_CHOICE_PATH,
+      ASSISTANT_KIT_ANSWER_PATH,
       answerBody(pause.interactionId, pause.revision),
     );
     expect(response.status).toBe(200);
 
-    const body = (await response.json()) as {
-      status: string;
-      parts: Array<{ kind: string; type?: string; text?: string }>;
-      pause: unknown;
-    };
+    const body = (await response.json()) as KitBody;
     expect(body.status).toBe("ok");
-    expect(body.pause).toBeNull();
+    expect(body.document?.openPause).toBeNull();
+    const written = body.document?.messages.at(-1)?.parts ?? [];
     // The card comes first: it is the part earned before generation.
-    expect(body.parts[0]?.kind).toBe("card");
-    expect(body.parts[0]?.type).toBe("order-entity");
-    expect(body.parts.at(-1)?.text).toContain("Готово");
+    expect(written[0]?.kind).toBe("card");
+    expect(written[0]?.type).toBe("order-entity");
+    expect(written.at(-1)?.text).toContain("Готово");
 
     expect(await kit.peek({ conversationId: CONVERSATION, bind })).toBeNull();
   });
@@ -532,7 +558,7 @@ describe("POST /assistant/kit/choice", () => {
 
     await post(
       app,
-      ASSISTANT_KIT_CHOICE_PATH,
+      ASSISTANT_KIT_ANSWER_PATH,
       answerBody(pause.interactionId, pause.revision),
     );
 
@@ -548,7 +574,7 @@ describe("POST /assistant/kit/choice", () => {
     const { kit, app, bind } = harness();
     const pause = await openPause(kit, bind);
 
-    const response = await post(app, ASSISTANT_KIT_CHOICE_PATH, {
+    const response = await post(app, ASSISTANT_KIT_ANSWER_PATH, {
       commandId: COMMAND,
       conversationId: CONVERSATION,
       interactionId: pause.interactionId,
@@ -568,7 +594,7 @@ describe("POST /assistant/kit/choice", () => {
 
     const response = await post(
       app,
-      ASSISTANT_KIT_CHOICE_PATH,
+      ASSISTANT_KIT_ANSWER_PATH,
       answerBody(pause.interactionId, pause.revision, "opt-nope"),
     );
 
@@ -578,7 +604,7 @@ describe("POST /assistant/kit/choice", () => {
     );
     const retry = await post(
       app,
-      ASSISTANT_KIT_CHOICE_PATH,
+      ASSISTANT_KIT_ANSWER_PATH,
       answerBody(pause.interactionId, pause.revision),
     );
     expect(retry.status).toBe(200);
@@ -590,7 +616,7 @@ describe("POST /assistant/kit/choice", () => {
 
     const response = await post(
       app,
-      ASSISTANT_KIT_CHOICE_PATH,
+      ASSISTANT_KIT_ANSWER_PATH,
       answerBody(pause.interactionId, pause.revision),
       { company: OTHER_COMPANY },
     );
@@ -606,7 +632,7 @@ describe("POST /assistant/kit/choice", () => {
 
     const response = await post(
       app,
-      ASSISTANT_KIT_CHOICE_PATH,
+      ASSISTANT_KIT_ANSWER_PATH,
       answerBody(pause.interactionId, pause.revision),
     );
 
@@ -630,7 +656,7 @@ describe("POST /assistant/kit/choice", () => {
 
     const response = await post(
       app,
-      ASSISTANT_KIT_CHOICE_PATH,
+      ASSISTANT_KIT_ANSWER_PATH,
       answerBody(pause.interactionId, pause.revision),
     );
     expect(response.status).toBe(200);
@@ -658,7 +684,7 @@ describe("POST /assistant/kit/choice", () => {
 
     const response = await post(
       app,
-      ASSISTANT_KIT_CHOICE_PATH,
+      ASSISTANT_KIT_ANSWER_PATH,
       answerBody(pause.interactionId, pause.revision),
       { signal: AbortSignal.abort() },
     );
@@ -671,6 +697,87 @@ describe("POST /assistant/kit/choice", () => {
   });
 });
 
+describe("POST /assistant/kit/abandon", () => {
+  it("frees the conversation so the next job is not blocked", async () => {
+    const { kit, app, bind } = harness();
+    const pause = await openPause(kit, bind);
+
+    const dropped = await post(app, ASSISTANT_KIT_ABANDON_PATH, {
+      conversationId: CONVERSATION,
+      interactionId: pause.interactionId,
+    });
+
+    expect(dropped.status).toBe(200);
+    expect(await kit.peek({ conversationId: CONVERSATION, bind })).toBeNull();
+    // The point of the route: a new turn is accepted again.
+    expect((await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody())).status).toBe(
+      200,
+    );
+  });
+
+  it("keeps the record that the question was asked", async () => {
+    const { kit, app, bind } = harness({ pausing: true, tools: PAUSING_TOOLS });
+    const paused = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody());
+    const asked = (await paused.json()) as KitBody;
+    const interactionId = asked.document?.openPause?.interactionId ?? "";
+
+    await post(app, ASSISTANT_KIT_ABANDON_PATH, {
+      conversationId: CONVERSATION,
+      interactionId,
+    });
+
+    const document = await kit.document.read({
+      conversationId: CONVERSATION,
+      bind,
+    });
+    const parts = document.messages.flatMap((message) => message.parts);
+    expect(parts.filter((part) => part.kind === "interaction")).toHaveLength(1);
+    expect(document.openPause).toBeNull();
+  });
+
+  it("answers the same way twice, so a second tap is not an error", async () => {
+    const { kit, app, bind } = harness();
+    const pause = await openPause(kit, bind);
+    const body = {
+      conversationId: CONVERSATION,
+      interactionId: pause.interactionId,
+    };
+
+    const first = await post(app, ASSISTANT_KIT_ABANDON_PATH, body);
+    const second = await post(app, ASSISTANT_KIT_ABANDON_PATH, body);
+
+    expect([first.status, second.status]).toEqual([200, 200]);
+  });
+
+  it("cannot drop another tenant's question", async () => {
+    const { kit, app, bind } = harness();
+    const pause = await openPause(kit, bind);
+
+    const response = await post(
+      app,
+      ASSISTANT_KIT_ABANDON_PATH,
+      { conversationId: CONVERSATION, interactionId: pause.interactionId },
+      { company: OTHER_COMPANY },
+    );
+
+    expect(response.status).toBe(200);
+    // Same answer either way, and the owner's question is untouched.
+    expect(
+      await kit.peek({ conversationId: CONVERSATION, bind }),
+    ).not.toBeNull();
+  });
+
+  it("400 without a usable body", async () => {
+    const { app } = harness();
+
+    const response = await post(app, ASSISTANT_KIT_ABANDON_PATH, {
+      conversationId: CONVERSATION,
+    });
+
+    expect(response.status).toBe(400);
+  });
+});
+
 describe("the full round trip through HTTP", () => {
   it("chat pauses, choice resolves it, and a reload shows both turns", async () => {
     const { app, kit, bind } = harness({
@@ -679,28 +786,23 @@ describe("the full round trip through HTTP", () => {
     });
 
     const first = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("створи"));
-    const firstBody = (await first.json()) as {
-      pause: { interactionId: string; revision: number } | null;
-    };
-    if (firstBody.pause === null) throw new Error("expected a pause");
+    const firstBody = (await first.json()) as KitBody;
+    const open = firstBody.document?.openPause;
+    if (open === null || open === undefined)
+      throw new Error("expected a pause");
 
     const second = await post(
       app,
-      ASSISTANT_KIT_CHOICE_PATH,
-      answerBody(firstBody.pause.interactionId, firstBody.pause.revision),
+      ASSISTANT_KIT_ANSWER_PATH,
+      answerBody(open.interactionId, open.revision),
     );
     expect(second.status).toBe(200);
 
     const reload = await get(app, messagesPath());
-    const body = (await reload.json()) as {
-      document: {
-        openPause: unknown;
-        messages: Array<{ role: string; parts: Array<{ kind: string }> }>;
-      };
-    };
+    const body = (await reload.json()) as KitBody;
 
-    expect(body.document.openPause).toBeNull();
-    const kinds = body.document.messages.flatMap((message) =>
+    expect(body.document?.openPause).toBeNull();
+    const kinds = (body.document?.messages ?? []).flatMap((message) =>
       message.parts.map((part) => part.kind),
     );
     // The question, the interaction that was asked, and the record that came out.

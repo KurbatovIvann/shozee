@@ -1,7 +1,16 @@
 /**
- * `POST /assistant/kit/choice` — answering an open interaction.
+ * The two ways an open question closes.
  *
- * What this handler owns, and nothing more: who is asking, which tenant they
+ * `POST /assistant/kit/answer` — a person answered it.
+ * `POST /assistant/kit/abandon` — a person dropped it.
+ *
+ * One answer route, not one per kind. The body carries an `interactionId` and
+ * an opaque `answer`; which kind that is, and what a valid answer to it looks
+ * like, is read from the stored pause and checked by that kind's own schema. A
+ * second kind therefore needs no second endpoint, and a client needs no
+ * per-kind URL.
+ *
+ * What these handlers own, and nothing more: who is asking, which tenant they
  * are in, and dispatching what the interaction resolved to a domain action.
  * Claim once, refuse a stale revision, replay the continuation — all of that
  * belongs to `@showzy/assistant-kit`, and which kinds exist belongs to
@@ -16,6 +25,7 @@ import { randomUUID } from "node:crypto";
 import { continueHostTurn } from "@showzy/assistant-kit";
 import { interactionResponseSchema } from "@showzy/assistant-kit";
 import type { Context } from "hono";
+import { z } from "zod";
 
 import type { AssistantKitTurnOk } from "./assistant-kit-chat.js";
 import {
@@ -28,9 +38,60 @@ import {
   type AssistantKitRuntime,
 } from "./assistant-kit-http.js";
 
-export const ASSISTANT_KIT_CHOICE_PATH = "/assistant/kit/choice";
+export const ASSISTANT_KIT_ANSWER_PATH = "/assistant/kit/answer";
+export const ASSISTANT_KIT_ABANDON_PATH = "/assistant/kit/abandon";
 
-export async function handleAssistantKitChoice(
+export const assistantKitAbandonBodySchema = z.strictObject({
+  conversationId: z.uuid(),
+  interactionId: z.uuid(),
+});
+
+/**
+ * Drop an open question without answering it.
+ *
+ * Not decoration: one open question blocks the next job, so without a way to
+ * drop one a conversation whose question no longer makes sense is stuck until
+ * the pause expires. That is the shape of the defect this path was built to
+ * remove, so the way out is a route rather than a client-side hide.
+ *
+ * No revision is sent. Abandoning is not an answer to a particular version of
+ * the question — whichever version is open, the person is done with it.
+ *
+ * The `interaction` part stays in the document. The record of having been asked
+ * is part of the conversation; only the ability to answer goes away.
+ */
+export async function handleAssistantKitAbandon(
+  c: Context<AssistantKitAppEnv>,
+  runtime: AssistantKitRuntime,
+): Promise<Response> {
+  const requestId = c.get("requestId");
+  const caller = await requireCaller(c, runtime);
+  if (!caller.ok) {
+    return caller.response;
+  }
+
+  const raw = await readJson(c);
+  if (!raw.ok) {
+    return json(400, { error: { code: "VALIDATION" } }, requestId);
+  }
+  const parsed = assistantKitAbandonBodySchema.safeParse(raw.body);
+  if (!parsed.success) {
+    return json(400, { error: { code: "VALIDATION" } }, requestId);
+  }
+
+  const dropped = await runtime.kit.abandon({
+    conversationId: parsed.data.conversationId,
+    bind: caller.bind,
+    interactionId: parsed.data.interactionId,
+  });
+
+  // Already gone answers the same as just cancelled: the caller wanted no open
+  // question, and there is none. A second tap is not an error.
+  void dropped;
+  return json(200, { status: "abandoned" }, requestId);
+}
+
+export async function handleAssistantKitAnswer(
   c: Context<AssistantKitAppEnv>,
   runtime: AssistantKitRuntime,
 ): Promise<Response> {
@@ -64,23 +125,34 @@ export async function handleAssistantKitChoice(
     case "unknown_kind":
       return goneResponse(requestId);
     case "stale":
-      return json(409, { status: "stale", pause: claimed.current }, requestId);
+      // The subject of the decision changed under the card. The document
+      // carries the current question, so the picker re-renders as it now is.
+      return json(
+        409,
+        {
+          status: "stale",
+          document: await runtime.kit.document.read(scope),
+        },
+        requestId,
+      );
     case "invalid_answer":
       return json(
         400,
         { error: { code: "VALIDATION" }, reason: claimed.reason },
         requestId,
       );
-    case "unresolvable": {
+    case "unresolvable":
       // The interaction refused the answer before spending the claim, so the
       // card is still on screen and still answerable.
-      const current = await runtime.kit.peek(scope);
       return json(
         409,
-        { status: "unresolvable", reason: claimed.reason, pause: current },
+        {
+          status: "unresolvable",
+          reason: claimed.reason,
+          document: await runtime.kit.document.read(scope),
+        },
         requestId,
       );
-    }
     default:
       break;
   }
@@ -160,8 +232,7 @@ export async function handleAssistantKitChoice(
 
     const payload: AssistantKitTurnOk = {
       status: "ok",
-      parts: [asked],
-      pause: opened.pause,
+      document: await runtime.kit.document.read(scope),
     };
     return json(200, payload, requestId);
   }
@@ -170,14 +241,13 @@ export async function handleAssistantKitChoice(
     // The action refused. No effect, so the answer did not take: the card stays
     // on screen instead of vanishing with the failure.
     await release();
-    const current = await runtime.kit.peek(scope);
     return json(
       409,
       {
         status: "action_failed",
         code: resolvedOutcome.code,
         message: resolvedOutcome.message,
-        pause: current,
+        document: await runtime.kit.document.read(scope),
       },
       requestId,
     );
@@ -204,8 +274,7 @@ export async function handleAssistantKitChoice(
 
   const payload: AssistantKitTurnOk = {
     status: "ok",
-    parts: turn.parts,
-    pause: turn.pause,
+    document: await runtime.kit.document.read(scope),
   };
   return json(200, payload, requestId);
 }

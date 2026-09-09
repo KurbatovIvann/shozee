@@ -103,20 +103,29 @@ export const choice = defineInteraction<ChoiceSecret>()({
   },
 });
 
+/**
+ * `approved` is a literal `true`: this kind has exactly one answer.
+ *
+ * Saying no is not an answer to a confirmation, it is dropping the question —
+ * the same gesture as dismissing a picker, and the same route. Modelling it as
+ * `approved: false` would have to resolve to something, and "resolved to doing
+ * nothing" is a second meaning for a value the pipeline reads as an
+ * authorisation. `unresolvable` is not the escape either: by design it does not
+ * spend the claim, so a decline expressed that way would leave the question open
+ * forever and block every later job in the conversation.
+ */
 export const confirmation = defineInteraction<ConfirmationSecret>()({
   ttlMs: CONFIRMATION_TTL_MS,
   prompt: assistantConfirmationPromptSchema,
-  answer: z.strictObject({ approved: z.boolean() }),
-  resolve: ({ answer, secret }) =>
-    answer.approved
-      ? resolved({
-          approved: true,
-          canonicalInput: secret.canonicalInput,
-          ...(secret.challengeId !== undefined
-            ? { challengeId: secret.challengeId }
-            : {}),
-        } satisfies ConfirmationResolution)
-      : unresolvable("declined"),
+  answer: z.strictObject({ approved: z.literal(true) }),
+  resolve: ({ secret }) =>
+    resolved({
+      approved: true,
+      canonicalInput: secret.canonicalInput,
+      ...(secret.challengeId !== undefined
+        ? { challengeId: secret.challengeId }
+        : {}),
+    } satisfies ConfirmationResolution),
 });
 
 /** The kinds this deployment accepts. The union of keys is the set of kinds. */

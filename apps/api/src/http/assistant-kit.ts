@@ -14,9 +14,11 @@ import {
   handleAssistantKitMessages,
 } from "./assistant-kit-chat.js";
 import {
-  ASSISTANT_KIT_CHOICE_PATH,
-  handleAssistantKitChoice,
-} from "./assistant-kit-choice.js";
+  ASSISTANT_KIT_ABANDON_PATH,
+  ASSISTANT_KIT_ANSWER_PATH,
+  handleAssistantKitAbandon,
+  handleAssistantKitAnswer,
+} from "./assistant-kit-answer.js";
 import type {
   AssistantKitAppEnv,
   AssistantKitRuntime,
@@ -24,8 +26,9 @@ import type {
 import { REQUEST_ID_HEADER, resolveRequestId } from "./request-id.js";
 
 export {
+  ASSISTANT_KIT_ABANDON_PATH,
+  ASSISTANT_KIT_ANSWER_PATH,
   ASSISTANT_KIT_CHAT_PATH,
-  ASSISTANT_KIT_CHOICE_PATH,
   ASSISTANT_KIT_MESSAGES_PATH,
 };
 
@@ -49,8 +52,11 @@ export function createAssistantKitApp(
   });
 
   app.post(ASSISTANT_KIT_CHAT_PATH, (c) => handleAssistantKitChat(c, runtime));
-  app.post(ASSISTANT_KIT_CHOICE_PATH, (c) =>
-    handleAssistantKitChoice(c, runtime),
+  app.post(ASSISTANT_KIT_ANSWER_PATH, (c) =>
+    handleAssistantKitAnswer(c, runtime),
+  );
+  app.post(ASSISTANT_KIT_ABANDON_PATH, (c) =>
+    handleAssistantKitAbandon(c, runtime),
   );
   app.get(ASSISTANT_KIT_MESSAGES_PATH, (c) =>
     handleAssistantKitMessages(c, runtime),

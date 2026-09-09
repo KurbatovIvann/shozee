@@ -23,7 +23,8 @@ Boot says which of those happened, so it is never a guess:
 
 ```
 {"msg":"assistant-kit path","enabled":true,"mounted":true,
- "paths":["POST /assistant/kit/chat","POST /assistant/kit/choice","GET /assistant/kit/messages"]}
+ "paths":["POST /assistant/kit/chat","POST /assistant/kit/answer",
+          "POST /assistant/kit/abandon","GET /assistant/kit/messages"]}
 ```
 
 `enabled:true, mounted:false` means the flag is on but no language model was
@@ -38,16 +39,35 @@ Until then the only way this path runs is if you call it.
 That is the point of the flag: the two runtimes sit side by side on the same
 data, and the old one keeps serving.
 
-## The three routes
+## The four routes
 
 | Method | Path | Body / query |
 | --- | --- | --- |
 | POST | `/assistant/kit/chat` | `{ commandId, conversationId, text }` |
-| POST | `/assistant/kit/choice` | `{ commandId, conversationId, interactionId, revision, answer }` |
+| POST | `/assistant/kit/answer` | `{ commandId, conversationId, interactionId, revision, answer }` |
+| POST | `/assistant/kit/abandon` | `{ conversationId, interactionId }` |
 | GET | `/assistant/kit/messages` | `?conversationId=` |
 
 Same auth as the live assistant: staff session cookie plus `x-company-id`.
 `commandId` and `conversationId` are uuids the client makes up.
+
+One answer route for every kind of question, not one per kind: `answer` is
+opaque, and the stored pause says which kind it belongs to. `abandon` is how a
+question is dropped — including saying no to a confirmation, which is not an
+answer to it but a decision to stop.
+
+**Every route answers with the whole document**, never with just the parts one
+request produced:
+
+```json
+{ "status": "ok", "document": { "conversationId": "...", "bind": "...",
+  "messages": [...], "openPause": null } }
+```
+
+A refusal carries it too — `409 stale`, `409 unresolvable`, `409 action_failed`
+and `409 interaction_open` all come back with the current `document`, so a client
+never has to guess what the card should now say. That is deliberate: a response
+carrying only the new fragment is what made a live turn and a reload disagree.
 
 ### Calling it
 
@@ -68,11 +88,18 @@ A turn:
 curl -sS "$KIT/assistant/kit/chat" -H "cookie: $COOKIE" -H "x-company-id: $COMPANY" -H 'content-type: application/json' -d "{\"commandId\":\"$(uuidgen)\",\"conversationId\":\"$CONV\",\"text\":\"покажи замовлення цього місяця\"}" | jq
 ```
 
-Answering a question it asked (take `interactionId` and `revision` from the
-`pause` in the previous response, and `optionId` from `pause.prompt.options`):
+Answering a question it asked (take `interactionId` and `revision` from
+`document.openPause` in the previous response, and `optionId` from
+`document.openPause.prompt.options`):
 
 ```bash
-curl -sS "$KIT/assistant/kit/choice" -H "cookie: $COOKIE" -H "x-company-id: $COMPANY" -H 'content-type: application/json' -d "{\"commandId\":\"$(uuidgen)\",\"conversationId\":\"$CONV\",\"interactionId\":\"PASTE\",\"revision\":1,\"answer\":{\"optionId\":\"PASTE\"}}" | jq
+curl -sS "$KIT/assistant/kit/answer" -H "cookie: $COOKIE" -H "x-company-id: $COMPANY" -H 'content-type: application/json' -d "{\"commandId\":\"$(uuidgen)\",\"conversationId\":\"$CONV\",\"interactionId\":\"PASTE\",\"revision\":1,\"answer\":{\"optionId\":\"PASTE\"}}" | jq
+```
+
+Dropping the question instead:
+
+```bash
+curl -sS "$KIT/assistant/kit/abandon" -H "cookie: $COOKIE" -H "x-company-id: $COMPANY" -H 'content-type: application/json' -d "{\"conversationId\":\"$CONV\",\"interactionId\":\"PASTE\"}" | jq
 ```
 
 What a reload would render:
@@ -84,17 +111,20 @@ curl -sS "$KIT/assistant/kit/messages?conversationId=$CONV" -H "cookie: $COOKIE"
 ## The scenario worth running
 
 1. **A read.** `chat` with "покажи замовлення цього клієнта". Expect one list or
-   aggregate card in `parts`, not one card per row.
+   aggregate card in the last message, not one card per row.
 2. **A write that needs a choice.** `chat` with "створи замовлення для <an
-   ambiguous name>". Expect `pause` with the options, and `parts` containing an
-   `interaction` part.
-3. **Answer it.** `choice` with `{ optionId }` from that pause. Expect the
-   record's card **first** in `parts`, then the explanation, and `pause: null`.
-4. **Reload.** `messages`. Expect exactly the parts the two turns returned, and
-   no open pause.
+   ambiguous name>". Expect `document.openPause` with the options, and an
+   `interaction` part in the last message.
+3. **Answer it.** `answer` with `{ optionId }` from that pause. In the last
+   message expect the record's card **first**, then the explanation, and
+   `document.openPause: null`.
+4. **Reload.** `messages`. Expect a document byte-identical to the one the turn
+   returned.
 5. **The second question.** Try a request where both the customer and the product
    are ambiguous. Expect a pause, then after answering it, **another** pause
    rather than an error.
+6. **Drop one.** Ask something ambiguous, then `abandon` it. Expect the next
+   `chat` to be accepted rather than refused with `interaction_open`.
 
 What to watch for, because these are the failures the old path had:
 
@@ -109,8 +139,13 @@ What to watch for, because these are the failures the old path had:
   real key.
 - **Durable model history.** It lives in Redis with a ttl, so a conversation that
   sits long enough starts over. One port to replace; not a protocol question.
-- **The mobile client.** Untouched — it still talks to the live assistant. Use an
-  HTTP client for now.
+- **The mobile client.** The reader and the hook exist
+  (`apps/mobile/src/features/assistant/document/`) and are tested, but no screen
+  is wired to them yet — the app still talks to `/assistant/chat`. Use an HTTP
+  client to exercise this path.
+- **Confirmations.** The kind is registered and the client can answer one, but
+  nothing on the server opens a confirmation yet, so only `choice` occurs in
+  practice.
 - **Streaming.** Responses are whole JSON.
 
 ## Reading the state directly

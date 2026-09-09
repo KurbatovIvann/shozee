@@ -14,7 +14,7 @@
  */
 import { randomUUID } from "node:crypto";
 
-import { runHostTurn, type PublicPause } from "@showzy/assistant-kit";
+import { runHostTurn, type ChatDocument } from "@showzy/assistant-kit";
 import type { Context } from "hono";
 import { z } from "zod";
 
@@ -38,10 +38,22 @@ export const assistantKitChatBodySchema = z.strictObject({
   text: z.string().min(1).max(4000),
 });
 
+/**
+ * Every route answers with the whole stored document, never with just the parts
+ * one request produced.
+ *
+ * A response that carries only the new parts makes the client splice them into
+ * what it already has, and a splice is a second derivation of the conversation —
+ * the one that used to disagree with what a reload showed. Sending the document
+ * costs one Redis read and removes the disagreement by construction: live and
+ * reload are literally the same bytes.
+ *
+ * `openPause` inside it is the open question, so there is no separate `pause`
+ * field to keep consistent with it either.
+ */
 export interface AssistantKitTurnOk {
   readonly status: "ok";
-  readonly parts: unknown;
-  readonly pause: PublicPause | null;
+  readonly document: ChatDocument;
 }
 
 export async function handleAssistantKitChat(
@@ -69,7 +81,14 @@ export async function handleAssistantKitChat(
   // A visible limitation is better than a draft that silently disappears.
   const open = await runtime.kit.peek(scope);
   if (open !== null) {
-    return json(409, { status: "interaction_open", pause: open }, requestId);
+    return json(
+      409,
+      {
+        status: "interaction_open",
+        document: await runtime.kit.document.read(scope),
+      },
+      requestId,
+    );
   }
 
   if (c.req.raw.signal.aborted) {
@@ -131,8 +150,7 @@ export async function handleAssistantKitChat(
 
   const payload: AssistantKitTurnOk = {
     status: "ok",
-    parts: turn.parts,
-    pause: turn.pause,
+    document: await runtime.kit.document.read(scope),
   };
   return json(200, payload, requestId);
 }
