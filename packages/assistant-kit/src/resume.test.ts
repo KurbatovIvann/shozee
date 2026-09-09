@@ -1,16 +1,17 @@
 /**
  * SCENARIOS.md 11-12 — the reason this package exists.
  *
- * Resume replays what was already sent. It does not re-derive a conversation
- * from persisted rows, so there is no id to mint, no tool result to merge in,
- * and no execution id to stage.
+ * Resume replays what was already sent, with exactly one change: the paused
+ * tool-result's output becomes the resolved one. It does not append a second
+ * result for that call (no provider accepts two), and it does not trim the
+ * tool message (that would make resume a reconstruction again).
  */
 import type { ModelMessage } from "ai";
 import { describe, expect, it } from "vitest";
 
 import { createAssistantKit, type AssistantKit, type OpenPauseInput } from "./kit.js";
 import type { Answer } from "./pause.js";
-import { continuationOf, testDeps, type TestDeps } from "./testing.js";
+import { continuationOf, pausedHistory, testDeps, type TestDeps } from "./testing.js";
 import type { ToolOutcome } from "./outcome.js";
 
 interface Input {
@@ -19,22 +20,8 @@ interface Input {
 
 const CONVERSATION = "11111111-1111-4111-8111-111111111111";
 const SELECT_A: Answer = { kind: "select", optionId: "opt-a" };
-
-const MESSAGES: readonly ModelMessage[] = [
-  { role: "system", content: "rules" },
-  { role: "user", content: "do the thing for the second one" },
-  {
-    role: "assistant",
-    content: [
-      {
-        type: "tool-call",
-        toolCallId: "toolu_stable",
-        toolName: "widget_create",
-        input: { n: 1 },
-      },
-    ],
-  },
-];
+const PAUSED_ID = "toolu_stable";
+const HISTORY: readonly ModelMessage[] = pausedHistory({ id: PAUSED_ID });
 
 function newKit(): { kit: AssistantKit; deps: TestDeps } {
   const deps = testDeps();
@@ -55,11 +42,7 @@ function openInput(): OpenPauseInput<Input> {
   return {
     conversationId: CONVERSATION,
     outcome,
-    continuation: continuationOf({
-      messages: MESSAGES,
-      id: "toolu_stable",
-      name: "widget_create",
-    }),
+    continuation: continuationOf({ messages: HISTORY, id: PAUSED_ID }),
   };
 }
 
@@ -76,48 +59,60 @@ async function claimOne(kit: AssistantKit) {
   return claimed;
 }
 
+/** `tool` content also carries approval responses, which have no output. */
+function toolResultsIn(messages: readonly ModelMessage[]) {
+  return messages
+    .flatMap((message) => (message.role === "tool" ? message.content : []))
+    .filter((part) => part.type === "tool-result");
+}
+
 describe("scenario 11 - resume replays, it does not re-derive", () => {
-  it("returns the stored messages unchanged", async () => {
+  it("changes exactly one output and nothing else", async () => {
     const { kit } = newKit();
     const claimed = await claimOne(kit);
 
-    const resumed = kit.resume(claimed, { ok: true });
+    const resumed = kit.resume(claimed, { entityId: "entity-a" });
 
-    expect(resumed.messages).toEqual(MESSAGES);
-    expect(JSON.stringify(resumed.messages)).toBe(JSON.stringify(MESSAGES));
+    expect(resumed.messages).toHaveLength(HISTORY.length);
+    // Every message but the tool message is untouched.
+    expect(resumed.messages.slice(0, -1)).toEqual(HISTORY.slice(0, -1));
+    expect(JSON.stringify(resumed.messages.slice(0, -1))).toBe(
+      JSON.stringify(HISTORY.slice(0, -1)),
+    );
   });
 
   it("does not rewrite the tool call id at any boundary", async () => {
     const { kit } = newKit();
     const claimed = await claimOne(kit);
 
-    const resumed = kit.resume(claimed, { ok: true });
+    const resumed = kit.resume(claimed, { entityId: "entity-a" });
 
-    expect(resumed.toolResult.toolCallId).toBe("toolu_stable");
-    expect(JSON.stringify(resumed.messages)).toContain("toolu_stable");
+    expect(JSON.stringify(resumed.messages)).toContain(PAUSED_ID);
+    expect(JSON.stringify(resumed.messages)).not.toContain("choice:");
+    expect(JSON.stringify(resumed.messages)).not.toContain("phase-a:");
   });
 });
 
 describe("scenario 12 - the paused call is finished, not reissued", () => {
-  it("carries exactly one tool result, addressed to the paused call", async () => {
+  it("keeps one tool result for the paused call, carrying the resolved output", async () => {
     const { kit } = newKit();
     const claimed = await claimOne(kit);
-    const output = { entityId: "entity-a" };
+    const output = { entityId: "entity-a", number: "1" };
 
     const resumed = kit.resume(claimed, output);
+    const results = toolResultsIn(resumed.messages).filter(
+      (part) => part.toolCallId === PAUSED_ID,
+    );
 
-    expect(resumed.toolResult).toEqual({
-      toolCallId: "toolu_stable",
-      toolName: "widget_create",
-      output,
-    });
+    expect(results).toHaveLength(1);
+    expect(results[0]?.output).toEqual({ type: "json", value: output });
   });
 
   it("adds no second assistant tool-call to the replayed history", async () => {
     const { kit } = newKit();
     const claimed = await claimOne(kit);
 
-    const resumed = kit.resume(claimed, { ok: true });
+    const resumed = kit.resume(claimed, { entityId: "entity-a" });
 
     const calls = resumed.messages.flatMap((message) =>
       message.role === "assistant" && Array.isArray(message.content)
@@ -125,5 +120,14 @@ describe("scenario 12 - the paused call is finished, not reissued", () => {
         : [],
     );
     expect(calls).toHaveLength(1);
+  });
+
+  it("leaves the needs_choice placeholder nowhere in the resumed history", async () => {
+    const { kit } = newKit();
+    const claimed = await claimOne(kit);
+
+    const resumed = kit.resume(claimed, { entityId: "entity-a" });
+
+    expect(JSON.stringify(resumed.messages)).not.toContain("needs_choice");
   });
 });

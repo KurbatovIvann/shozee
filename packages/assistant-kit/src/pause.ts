@@ -122,12 +122,18 @@ export type ClaimResult<TInput> =
       readonly expected: readonly AnswerKind[];
     };
 
-/** What the caller feeds back into `streamText`. No reconstruction. */
+/**
+ * What the caller feeds back into `streamText`.
+ *
+ * The stored continuation already ends with a tool-result for the paused
+ * call — the pausing tool returned, so the SDK recorded its output. Resume
+ * therefore **replaces** that one output with the resolved one. Appending a
+ * second result for the same `toolCallId` would be history no provider
+ * accepts, and trimming the message would make resume a reconstruction again.
+ *
+ * The invariant: identical to the stored continuation except exactly one
+ * `output`. Nothing added, removed or re-ordered.
+ */
 export interface ResumeInput {
   readonly messages: readonly ModelMessage[];
-  readonly toolResult: {
-    readonly toolCallId: z.output<typeof providerToolCallIdSchema>;
-    readonly toolName: string;
-    readonly output: unknown;
-  };
 }

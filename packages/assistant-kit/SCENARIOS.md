@@ -9,7 +9,10 @@ generation quality. Model behaviour stays a hand-test.
 Levels:
 
 - **K** — kit only. No HTTP, no database, no model. Runs in milliseconds.
-- **I** — integration. Kit wired into the host turn and the route.
+- **L** — loop. Kit wired into a real `streamText` on a `MockLanguageModelV4`
+  (`host.integration.test.ts`). Still no HTTP, no database, no live model.
+- **R** — route. Needs the HTTP handler, a session and a tenant. Belongs to the
+  consumer's suite, not to this leaf.
 
 Each scenario names the defect it exists to prevent, so a deletion has to
 argue with history rather than with taste.
@@ -35,15 +38,16 @@ argue with history rather than with taste.
 | --- | --- | --- | --- |
 | 11 | K | A claimed pause. → `resume` returns `messages` **byte-identical** to the stored continuation. No id is rewritten, no tool result is merged in from history, no message is re-derived. | Re-deriving model history on resume (SHO-539) |
 | 12 | K | `resume` output. → it carries exactly one tool result, addressed to `pausedToolCall.id`, so the paused call is finished rather than reissued. | Resume leaving the tool-run `started` (SHO-543) |
-| 13 | I | Picker answered. → the resumed turn's document contains the entity card from the write **and** any follow-up list card, in one assistant message, with no duplicate entity. | Two `#…` cards from a fabricated `resume-surface:*` tool part (SHO-544) |
-| 14 | I | The tool returns `domain_error` after the pause was claimed. → the pause stays visible with its status, no success text appears, and no write is recorded. | Pause disappearing when Phase A errors (SHO-545) |
-| 15 | I | A write committed, then generation fails. → the surface part stays in the document, the text part is `status: "error"`, and no completion phrase is emitted. | A provider failure presenting itself as a finished reply |
+| 13 | L | Picker answered. → the resumed turn's document holds one entity card and one follow-up list card, no duplicate entity. Covered, plus the stronger check the defect really needed: the pausing tool executes **once** — the host resolves it, never re-enters it. | Two `#…` cards from a fabricated `resume-surface:*` tool part (SHO-544) |
+| 14 | R | The tool returns `domain_error` after the pause was claimed. → the pause stays visible with its status, no success text appears, and no write is recorded. | Pause disappearing when Phase A errors (SHO-545) |
+| 15 | R | A write committed, then generation fails. → the surface part stays in the document, the text part is `status: "error"`, and no completion phrase is emitted. | A provider failure presenting itself as a finished reply |
+| 13b | L | The model emits a write and a read in one step. → the write pauses and the read never runs. | A write overtaking an unanswered question |
 
 ## Document
 
 | # | Level | Given / When / Then | Prevents |
 | --- | --- | --- | --- |
-| 16 | K | A turn's parts are appended live. → `document.read` afterwards returns the **same parts in the same order**. Live and reload are the same bytes, not two derivations. | Live and reload composing different cards |
+| 16 | K + L | A turn's parts are appended live. → `document.read` afterwards returns the **same parts in the same order**. Live and reload are the same bytes, not two derivations. Also asserted against a real turn's own `parts`. | Live and reload composing different cards |
 | 17 | K | `replace_card` with the same `cardId` and a higher revision. → the document holds one surface part for that id, updated — not two. | A second card per pagination step |
 | 18 | K | A `text` part streams then settles. → `status` moves `streaming` → `complete`; a partial text left by a crash reads `error` and is never presented as final. | Partial generation shown as the answer |
 
@@ -52,11 +56,25 @@ argue with history rather than with taste.
 | # | Level | Given / When / Then | Prevents |
 | --- | --- | --- | --- |
 | 19 | K | `src/**` contains no domain word (`no-domain.test.ts`). | A generic pause growing a hardcoded action name and entity-kind enum |
-| 20 | I | A pause opened for one company. → a claim carrying another company's session returns `gone`, and a late result from the previous selection is not appended. | Cross-tenant resume; late results after a switch (SHO-540) |
-| 21 | I | The request is aborted mid-turn. → the model call aborts, any budget hold is released, and the document keeps whatever was already settled. | Wasted generation and held budget on disconnect |
+| 20 | R | A pause opened for one tenant. → a claim carrying another tenant's session returns `gone`, and a late result from the previous selection is not appended. | Cross-tenant resume; late results after a switch (SHO-540) |
+| 21 | R | The request is aborted mid-turn. → the model call aborts, any budget hold is released, and the document keeps whatever was already settled. | Wasted generation and held budget on disconnect |
 
 ## What this suite deliberately does not check
 
 Tool choice, argument quality, phrasing, whether the assistant understood
 "this customer" — all model behaviour. It is verified by hand, and its
 regressions are prompt changes, not protocol changes.
+
+## What the loop level established that the contract could not
+
+Two contract defects were found by running the real `streamText`, not by
+reading its types:
+
+1. `streamText` accumulates a tool-result for the pausing call — the tool
+   returned, so the SDK recorded its output. Resume therefore **replaces** that
+   one output. The first contract appended a second result for the same
+   `toolCallId`, which is history no provider accepts.
+2. A `MockLanguageModelV4` needs structured `finishReason` and `usage`. A
+   malformed finish chunk silently produced `finishReason: "other"` and the
+   tool never executed — a probe that looked like a passing test while proving
+   nothing. Fixtures here are measured against the SDK, not assumed.

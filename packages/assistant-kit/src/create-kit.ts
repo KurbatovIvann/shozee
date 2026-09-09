@@ -8,6 +8,8 @@
  * document on read: it validates and returns the stored object, so what
  * reload renders is byte-identical to what live wrote.
  */
+import type { ToolResultPart } from "ai";
+
 import type {
   ChatDocument,
   DocumentMessage,
@@ -266,13 +268,21 @@ export function createAssistantKit(deps: KitDeps): AssistantKit {
       output: unknown,
     ): ResumeInput {
       const { continuation } = claimed.record;
+      const paused = continuation.pausedToolCall.id;
+      const resolved = { type: "json", value: output } as ToolResultPart["output"];
       return {
-        messages: continuation.messages,
-        toolResult: {
-          toolCallId: continuation.pausedToolCall.id,
-          toolName: continuation.pausedToolCall.name,
-          output,
-        },
+        messages: continuation.messages.map((message) =>
+          message.role !== "tool"
+            ? message
+            : {
+                ...message,
+                content: message.content.map((part) =>
+                  part.type === "tool-result" && part.toolCallId === paused
+                    ? { ...part, output: resolved }
+                    : part,
+                ),
+              },
+        ),
       };
     },
 

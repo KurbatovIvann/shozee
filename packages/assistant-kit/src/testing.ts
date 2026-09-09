@@ -116,29 +116,52 @@ export function toolCallId(raw: string): ProviderToolCallId {
   return parsed.id;
 }
 
+/**
+ * Shaped like what `streamText` actually accumulates: the assistant tool-call
+ * **and** the tool-result the pausing tool returned. Measured with a
+ * `MockLanguageModelV4`, not assumed — an earlier fixture omitted the tool
+ * message and hid the fact that resume must replace an output rather than
+ * append one.
+ */
+export function pausedHistory(options?: {
+  readonly id?: string;
+  readonly name?: string;
+  readonly placeholder?: unknown;
+}): ModelMessage[] {
+  const id = options?.id ?? "toolu_01";
+  const name = options?.name ?? "widget_create";
+  return [
+    { role: "user", content: "do the thing" },
+    {
+      role: "assistant",
+      content: [{ type: "tool-call", toolCallId: id, toolName: name, input: { q: 1 } }],
+    },
+    {
+      role: "tool",
+      content: [
+        {
+          type: "tool-result",
+          toolCallId: id,
+          toolName: name,
+          output: {
+            type: "json",
+            value: (options?.placeholder ?? { status: "needs_choice" }) as never,
+          },
+        },
+      ],
+    },
+  ];
+}
+
 export function continuationOf(options?: {
   readonly messages?: readonly ModelMessage[];
   readonly id?: string;
   readonly name?: string;
 }): Continuation {
+  const id = options?.id ?? "toolu_01";
+  const name = options?.name ?? "widget_create";
   return {
-    messages: options?.messages ?? [
-      { role: "user", content: "…" },
-      {
-        role: "assistant",
-        content: [
-          {
-            type: "tool-call",
-            toolCallId: options?.id ?? "toolu_01",
-            toolName: options?.name ?? "widget_create",
-            input: { q: 1 },
-          },
-        ],
-      },
-    ],
-    pausedToolCall: {
-      id: toolCallId(options?.id ?? "toolu_01"),
-      name: options?.name ?? "widget_create",
-    },
+    messages: options?.messages ?? pausedHistory({ id, name }),
+    pausedToolCall: { id: toolCallId(id), name },
   };
 }

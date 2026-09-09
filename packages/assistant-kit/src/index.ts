@@ -72,3 +72,12 @@ export {
   type OpenPauseResult,
   type RevisePauseResult,
 } from "./kit.js";
+
+export {
+  HOST_SKIPPED_OUTPUT,
+  continueHostTurn,
+  runHostTurn,
+  type ContinueHostTurnOptions,
+  type HostTurnOptions,
+  type HostTurnResult,
+} from "./host.js";
