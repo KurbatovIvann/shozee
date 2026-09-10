@@ -1,11 +1,14 @@
 /**
- * The kit's invariants against a real Redis, not a Map.
+ * The pause store's invariants against a real Redis, not a Map.
  *
  * The package's own suite proves the protocol with an in-memory store. That
  * proves the logic; it does not prove that the port was implemented correctly.
- * This runs the two invariants that depend entirely on the store — exactly-once
- * claim under concurrency, and one open pause per conversation — through Lua on
- * a real server.
+ * This runs the invariants that depend entirely on the store — exactly-once
+ * claim under concurrency, one open pause per conversation, and a deadline that
+ * survives being touched — through Lua on a real server.
+ *
+ * The document and the history are not here any more: they are Postgres, and
+ * their round trip is proven in the assistant module's own database suite.
  */
 import { randomUUID } from "node:crypto";
 
@@ -16,18 +19,15 @@ import {
   resolved,
   unresolvable,
 } from "@showzy/assistant-kit";
-import { RedisContainer, type StartedRedisContainer } from "@testcontainers/redis";
+import {
+  RedisContainer,
+  type StartedRedisContainer,
+} from "@testcontainers/redis";
 import { Redis } from "ioredis";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import {
-  assistantKitDocumentKey,
-  assistantKitHistoryKey,
-  createRedisAssistantKitDocumentStore,
-  createRedisAssistantKitHistoryStore,
-  createRedisAssistantKitPauseStore,
-} from "./assistant-kit-stores.js";
+import { createRedisAssistantKitPauseStore } from "./assistant-kit-stores.js";
 
 let container: StartedRedisContainer;
 let redis: Redis;
@@ -42,22 +42,39 @@ afterAll(async () => {
   await container.stop();
 });
 
-const pick = defineInteraction<{ readonly byOption: Record<string, string> }>()({
-  ttlMs: 60_000,
-  prompt: z.strictObject({ question: z.string().min(1) }),
-  answer: z.strictObject({ chose: z.string().min(1) }),
-  resolve: ({ answer, secret }) => {
-    const value = secret.byOption[answer.chose];
-    return value === undefined ? unresolvable("no such option") : resolved(value);
+const pick = defineInteraction<{ readonly byOption: Record<string, string> }>()(
+  {
+    ttlMs: 60_000,
+    prompt: z.strictObject({ question: z.string().min(1) }),
+    answer: z.strictObject({ chose: z.string().min(1) }),
+    resolve: ({ answer, secret }) => {
+      const value = secret.byOption[answer.chose];
+      return value === undefined
+        ? unresolvable("no such option")
+        : resolved(value);
+    },
   },
-});
+);
 
 const interactions = createInteractions({ pick });
+
+/** The pause store is what this suite is about; the document is a Map. */
+function memoryDocuments() {
+  const rows = new Map<string, unknown>();
+  return {
+    read: (conversationId: string) =>
+      Promise.resolve(rows.get(conversationId) ?? null),
+    write: (conversationId: string, document: unknown) => {
+      rows.set(conversationId, document);
+      return Promise.resolve();
+    },
+  };
+}
 
 function kitOn(): ReturnType<typeof createAssistantKit<{ pick: typeof pick }>> {
   return createAssistantKit({
     pauses: createRedisAssistantKitPauseStore(redis),
-    documents: createRedisAssistantKitDocumentStore(redis),
+    documents: memoryDocuments(),
     clock: { now: () => new Date() },
     ids: { uuid: () => randomUUID() },
     interactions,
@@ -99,7 +116,9 @@ describe("the pause store, on Lua", () => {
       kit.claim(claim),
     ]);
 
-    expect(results.filter((result) => result.kind === "claimed")).toHaveLength(1);
+    expect(results.filter((result) => result.kind === "claimed")).toHaveLength(
+      1,
+    );
     expect(results.filter((result) => result.kind === "gone")).toHaveLength(2);
   });
 
@@ -152,67 +171,8 @@ describe("the pause store, on Lua", () => {
     });
 
     expect(await kit.peek({ conversationId, bind })).toBeNull();
-    expect((await kit.open(openInput(conversationId, bind))).kind).toBe("opened");
-  });
-});
-
-describe("the document store, on real bytes", () => {
-  it("round-trips a document and refuses another owner's write", async () => {
-    const kit = kitOn();
-    const conversationId = randomUUID();
-    const bind = `owner:${randomUUID()}`;
-    const messageId = randomUUID();
-
-    await kit.document.write(
-      { conversationId, bind },
-      {
-        kind: "append",
-        messageId,
-        role: "assistant",
-        parts: [{ kind: "text", text: "stored", status: "complete" }],
-      },
+    expect((await kit.open(openInput(conversationId, bind))).kind).toBe(
+      "opened",
     );
-
-    const mine = await kit.document.read({ conversationId, bind });
-    expect(mine.messages).toHaveLength(1);
-
-    const theirs = { conversationId, bind: `owner:${randomUUID()}` };
-    const refused = await kit.document.write(theirs, {
-      kind: "append",
-      messageId: randomUUID(),
-      role: "assistant",
-      parts: [{ kind: "text", text: "not yours", status: "complete" }],
-    });
-
-    expect(refused.kind).toBe("wrong_owner");
-    expect((await kit.document.read(theirs)).messages).toEqual([]);
-    const stored = await redis.get(assistantKitDocumentKey(conversationId));
-    expect(stored).not.toContain("not yours");
-  });
-
-  it("survives unreadable bytes rather than failing the conversation", async () => {
-    const kit = kitOn();
-    const conversationId = randomUUID();
-    const bind = `owner:${randomUUID()}`;
-    await redis.set(assistantKitDocumentKey(conversationId), "{not json");
-
-    const document = await kit.document.read({ conversationId, bind });
-
-    expect(document.messages).toEqual([]);
-  });
-});
-
-describe("the history store", () => {
-  it("round-trips provider messages per owner and conversation", async () => {
-    const store = createRedisAssistantKitHistoryStore(redis);
-    const scope = { conversationId: randomUUID(), bind: `owner:${randomUUID()}` };
-    const other = { conversationId: scope.conversationId, bind: "someone-else" };
-
-    await store.save(scope, [{ role: "user", content: "hello" }]);
-
-    expect(await store.load(scope)).toEqual([{ role: "user", content: "hello" }]);
-    // Keyed by owner as well, so one tenant's history is not another's.
-    expect(await store.load(other)).toEqual([]);
-    expect(assistantKitHistoryKey(scope)).not.toBe(assistantKitHistoryKey(other));
   });
 });

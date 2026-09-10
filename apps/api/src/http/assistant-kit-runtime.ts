@@ -47,10 +47,10 @@ import type { Redis } from "ioredis";
 import type { z } from "zod";
 
 import {
-  createRedisAssistantKitDocumentStore,
-  createRedisAssistantKitHistoryStore,
-  createRedisAssistantKitPauseStore,
-} from "../stores/assistant-kit-stores.js";
+  createPostgresAssistantKitDocumentStore,
+  createPostgresAssistantKitHistoryStore,
+} from "../stores/assistant-kit-postgres-stores.js";
+import { createRedisAssistantKitPauseStore } from "../stores/assistant-kit-stores.js";
 import {
   assistantInteractions,
   type AssistantInteractionTypes,
@@ -133,24 +133,39 @@ function aiRequest(context: AssistantToolContext, actionName?: string) {
 export function createAssistantKitRuntime(
   options: CreateAssistantKitRuntimeOptions,
 ): AssistantKitRuntime {
-  const kit: AssistantKit<AssistantInteractionTypes> = createAssistantKit({
-    pauses: createRedisAssistantKitPauseStore(options.redis),
-    documents: createRedisAssistantKitDocumentStore(options.redis),
-    clock: { now: () => new Date() },
-    ids: { uuid: () => randomUUID() },
-    interactions: assistantInteractions,
-  });
-
-  const history = createRedisAssistantKitHistoryStore(options.redis);
+  // One pause store for the process: a deadline and an atomic claim are Redis
+  // work and need no principal. The durable half is built per caller below.
+  const pauses = createRedisAssistantKitPauseStore(options.redis);
+  const storeDeps = { pipeline: options.pipeline };
 
   const provider = options.provider ?? anthropicStaffProvider;
 
   return {
     logger: options.pipeline.logger,
     auth: options.auth,
-    kit,
+
+    /**
+     * A kit per request, sharing one pause store.
+     *
+     * Cheap — a bundle of closures — and the only shape that lets the document
+     * and the history be read and written as the person asking, through the
+     * same pipeline as every other action.
+     */
+    forCaller(caller) {
+      const kit: AssistantKit<AssistantInteractionTypes> = createAssistantKit({
+        pauses,
+        documents: createPostgresAssistantKitDocumentStore(storeDeps, caller),
+        clock: { now: () => new Date() },
+        ids: { uuid: () => randomUUID() },
+        interactions: assistantInteractions,
+      });
+      return {
+        kit,
+        history: createPostgresAssistantKitHistoryStore(storeDeps, caller),
+      };
+    },
+
     model: options.model,
-    history,
     resolveAnswer: createResolveAnswer(),
 
     /**

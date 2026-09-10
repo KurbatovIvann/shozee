@@ -168,8 +168,6 @@ AI_UNKNOWN_MODEL_TURN_USD=0.1
 
 ## What is deliberately missing
 
-- **Durable model history.** It lives in Redis with a ttl, so a conversation that
-  sits long enough starts over. One port to replace; not a protocol question.
 - **Confirmations.** The kind is registered, the server can store one and the
   sheet can render and answer it, but nothing on the server *opens* one yet — only
   `choice` occurs in practice, from a catalog picker conflict.
@@ -178,11 +176,42 @@ AI_UNKNOWN_MODEL_TURN_USD=0.1
 
 ## Reading the state directly
 
+The open question is Redis; the conversation is Postgres.
+
 ```
 kit:pause:<conversationId>      the open interaction, if any
-kit:doc:<conversationId>        the chat document
-kit:history:<bind>:<conversationId>   provider messages for the next turn
 ```
 
-`bind` is `<userId>:<companyId>`. A document carries the `bind` it was created
-under; reading it as anyone else returns an empty document on purpose.
+```sql
+select document, history, updated_at
+from assistant_chat_state
+where conversation_id = '<conversationId>';
+```
+
+Two blobs in one row: the chat document a person reads, and the provider
+messages the next turn is built from. Both are replaced whole — there is no
+append, so a row is always a complete document rather than a fold over deltas,
+and that is what makes a reload byte-identical to the live turn.
+
+Read and written through `assistant.readChatState` / `assistant.writeChatState`
+as the caller, so the tenant scope and the author rule are the same ones every
+other read of that conversation goes through. A conversation that is not yours,
+and one that does not exist, both answer `410` — the store cannot tell them
+apart and must not.
+
+The document also carries the kit's own `bind` (`<userId>:<companyId>`), checked
+inside the package. Two independent answers to the same question, which is
+deliberate: the table scope is enforced by the database, the `bind` by the
+protocol.
+
+## What the audit says
+
+What the assistant *did* is in `audit_log`, not here — every tool call runs
+through `executeAction` with `channel: "ai"` and the request id as `ai_trace_id`:
+
+```sql
+select action, outcome, duration_ms, created_at
+from audit_log
+where channel = 'ai' and ai_trace_id = '<requestId>'
+order by created_at;
+```

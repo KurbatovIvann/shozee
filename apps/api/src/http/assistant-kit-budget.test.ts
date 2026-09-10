@@ -87,13 +87,12 @@ function harness(options?: {
           getSession: () => Promise.resolve({ user: { id: USER } }),
         },
       },
-      kit,
+      forCaller: () => ({ kit, history: memoryHistory() }),
       model: stubTextModel("Готово."),
       tools: () =>
         options?.failTurn === true
           ? Promise.reject(new Error("tools unavailable"))
           : Promise.resolve(options?.tools ?? {}),
-      history: memoryHistory(),
       resolveAnswer: OK_RESOLVE,
       prompt: () => ({ system: "you are a test" }),
     },
@@ -217,10 +216,12 @@ describe("the spend ceiling on the kit routes", () => {
           auth: {
             api: { getSession: () => Promise.resolve({ user: { id: USER } }) },
           },
-          kit: createAssistantKit(testDeps(assistantInteractions)),
+          forCaller: () => ({
+            kit: createAssistantKit(testDeps(assistantInteractions)),
+            history: memoryHistory(),
+          }),
           model: stubTextModel("Готово."),
           tools: () => Promise.resolve({}),
-          history: memoryHistory(),
           resolveAnswer: OK_RESOLVE,
           prompt: () => ({ system: "you are a test" }),
         },

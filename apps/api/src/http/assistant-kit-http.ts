@@ -92,6 +92,19 @@ export interface AssistantTurnPrompt {
   >;
 }
 
+/**
+ * The stores that act as one person, for one request.
+ *
+ * Built per request rather than once at boot because the durable half goes
+ * through `executeAction`: the document and the history are read and written as
+ * the caller, under the same tenant scope and author rule as every other read
+ * of that conversation. There is no ambient principal to bake in.
+ */
+export interface AssistantKitScoped {
+  readonly kit: AssistantKitFor;
+  readonly history: AssistantHistoryPort;
+}
+
 export interface AssistantKitRuntime {
   /** The pipeline's logger. Used for spend refusals, which are operational. */
   readonly logger: Logger;
@@ -102,14 +115,18 @@ export interface AssistantKitRuntime {
       }) => Promise<{ user: { id: string } } | null>;
     };
   };
-  readonly kit: AssistantKitFor;
+  readonly forCaller: (caller: {
+    readonly userId: string;
+    readonly companySelector: string;
+    readonly requestId: string;
+    readonly clientIp: string;
+  }) => AssistantKitScoped;
   readonly model: LanguageModel;
   /**
    * Built fresh per request: the caller's permissions decide the set, and card
    * composition needs every result of one turn without leaking into another's.
    */
   readonly tools: (context: AssistantToolContext) => Promise<ToolSet>;
-  readonly history: AssistantHistoryPort;
   readonly resolveAnswer: ResolveAnswer;
   /** Built per turn: the turn context carries the current time. */
   readonly prompt: () => AssistantTurnPrompt;

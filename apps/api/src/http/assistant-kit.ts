@@ -10,6 +10,7 @@ import { createInMemoryRateLimitStore } from "@showzy/core";
 import { Hono } from "hono";
 
 import { createMemoryAiBudgetStore } from "../stores/budget.js";
+import { AssistantKitConversationGoneError } from "../stores/assistant-kit-postgres-stores.js";
 
 import {
   ASSISTANT_KIT_CHAT_PATH,
@@ -23,6 +24,7 @@ import {
   handleAssistantKitAbandon,
   handleAssistantKitAnswer,
 } from "./assistant-kit-answer.js";
+import { goneResponse, json } from "./assistant-kit-http.js";
 import {
   memoryAssistantKitBudget,
   withAssistantKitBudget,
@@ -74,6 +76,25 @@ export function createAssistantKitApp(
   });
 
   // A new job: it consumes a turn slot as well as budget.
+  /**
+   * A conversation that does not exist and one belonging to someone else answer
+   * the same way, because the store cannot tell them apart and must not: a
+   * conversation id is not a secret, and a distinction here would make it one.
+   */
+  app.onError((error, c) => {
+    const requestId = c.get("requestId");
+    if (error instanceof AssistantKitConversationGoneError) {
+      return goneResponse(requestId);
+    }
+    // Everything else is a fault, answered in this path's own shape rather
+    // than Hono's plain-text default, and logged where it can be found.
+    runtime.logger.error(
+      { err: error, request_id: requestId },
+      "assistant-kit turn failed",
+    );
+    return json(500, { error: { code: "INTERNAL" } }, requestId);
+  });
+
   app.post(ASSISTANT_KIT_CHAT_PATH, (c) =>
     withAssistantKitBudget(c, runtime, spend, { skipTurnLimit: false }, () =>
       handleAssistantKitChat(c, runtime),

@@ -1,0 +1,215 @@
+/**
+ * The durable half of a conversation, against a real database.
+ *
+ * The claim being tested is the one phase 1 exists for: a conversation survives
+ * the process that produced it. Everything else about the kit is proven with a
+ * Map; this cannot be, because "it is still there tomorrow" is a property of the
+ * store and nothing else.
+ *
+ * Driven through `createAssistantKitRuntime`, not through HTTP — the question is
+ * whether the ports are wired to Postgres and scoped to the caller, and an app
+ * with auth in front of it would only make that harder to see.
+ */
+import { randomUUID } from "node:crypto";
+
+import type { ChatDocument, ModelMessage } from "@showzy/assistant-kit";
+import { createActionRegistry } from "../composition.js";
+import {
+  createTestKit,
+  kitIdentities,
+  type TestKit,
+} from "@showzy/core/testing";
+import { assistantConversations } from "@showzy/db/schema/assistant";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { createAssistantKitRuntime } from "../http/assistant-kit-runtime.js";
+import type { AssistantKitRuntime } from "../http/assistant-kit-http.js";
+import { AssistantKitConversationGoneError } from "./assistant-kit-postgres-stores.js";
+
+let kit: TestKit;
+const conversationId = randomUUID();
+const otherConversationId = randomUUID();
+
+const anna = {
+  userId: kitIdentities.users.anna,
+  companySelector: kitIdentities.companies.a,
+  requestId: randomUUID(),
+  clientIp: "127.0.0.1",
+};
+
+const boris = {
+  userId: kitIdentities.users.boris,
+  companySelector: kitIdentities.companies.b,
+  requestId: randomUUID(),
+  clientIp: "127.0.0.1",
+};
+
+/** Pauses only. A deadline and an atomic claim are not what this suite is about. */
+function memoryRedis() {
+  const rows = new Map<string, string>();
+  return {
+    eval: (_lua: string, _keys: number, key: string, value: string) => {
+      if (rows.has(key)) {
+        return Promise.resolve(null);
+      }
+      rows.set(key, value);
+      return Promise.resolve("OK");
+    },
+    get: (key: string) => Promise.resolve(rows.get(key) ?? null),
+    set: (key: string, value: string) => {
+      rows.set(key, value);
+      return Promise.resolve("OK");
+    },
+    del: (key: string) => {
+      rows.delete(key);
+      return Promise.resolve(1);
+    },
+  } as never;
+}
+
+/**
+ * A fresh runtime every time, so nothing can be carried between assertions in
+ * process memory. If a document survives, it survived in the database.
+ */
+function runtime(): AssistantKitRuntime {
+  return createAssistantKitRuntime({
+    auth: { api: { getSession: () => Promise.resolve(null) } },
+    registry: createActionRegistry(),
+    pipeline: kit.pipeline,
+    model: "mock",
+    redis: memoryRedis(),
+  });
+}
+
+function documentFor(text: string): ChatDocument {
+  return {
+    conversationId,
+    bind: `${anna.userId}:${anna.companySelector}`,
+    messages: [
+      {
+        messageId: randomUUID(),
+        role: "assistant",
+        createdAt: "2026-09-10T10:00:00.000Z",
+        parts: [{ kind: "text", text, status: "complete" }],
+      },
+    ],
+    openPause: null,
+  };
+}
+
+beforeAll(async () => {
+  kit = await createTestKit();
+  await kit.db.runtime.db.insert(assistantConversations).values([
+    {
+      id: conversationId,
+      companyId: kitIdentities.companies.a,
+      userId: kitIdentities.users.anna,
+      title: "Durable",
+    },
+    {
+      id: otherConversationId,
+      companyId: kitIdentities.companies.b,
+      userId: kitIdentities.users.boris,
+      title: "Someone else's",
+    },
+  ]);
+}, 180_000);
+
+afterAll(async () => {
+  await kit.db.close();
+});
+
+describe("the conversation, across processes", () => {
+  it("is still there for a runtime that never saw it written", async () => {
+    const written = documentFor("Готово.");
+    await runtime()
+      .forCaller(anna)
+      .kit.document.write(
+        { conversationId, bind: written.bind },
+        {
+          kind: "append",
+          messageId: written.messages[0]?.messageId ?? "",
+          role: "assistant",
+          parts: [...(written.messages[0]?.parts ?? [])],
+        },
+      );
+
+    const read = await runtime()
+      .forCaller(anna)
+      .kit.document.read({ conversationId, bind: written.bind });
+
+    expect(read.messages).toHaveLength(1);
+    expect(read.messages[0]?.parts[0]).toEqual({
+      kind: "text",
+      text: "Готово.",
+      status: "complete",
+    });
+  });
+
+  it("keeps the model history for the next turn", async () => {
+    const messages: ModelMessage[] = [
+      { role: "user", content: "привіт" },
+      { role: "assistant", content: "Готово." },
+    ];
+    const scope = {
+      conversationId,
+      bind: `${anna.userId}:${anna.companySelector}`,
+    };
+
+    await runtime().forCaller(anna).history.save(scope, messages);
+
+    expect(await runtime().forCaller(anna).history.load(scope)).toEqual(
+      messages,
+    );
+  });
+
+  /**
+   * The two halves share a row. A document write that blanked the history would
+   * leave the next turn with no memory of the conversation it is in — and the
+   * failure would look like the model forgetting, not like a store bug.
+   */
+  it("does not let one half overwrite the other", async () => {
+    const scope = {
+      conversationId,
+      bind: `${anna.userId}:${anna.companySelector}`,
+    };
+    await runtime()
+      .forCaller(anna)
+      .history.save(scope, [{ role: "user", content: "kept" }]);
+
+    await runtime()
+      .forCaller(anna)
+      .kit.document.write(scope, {
+        kind: "append",
+        messageId: randomUUID(),
+        role: "user",
+        parts: [{ kind: "text", text: "another", status: "complete" }],
+      });
+
+    expect(await runtime().forCaller(anna).history.load(scope)).toEqual([
+      { role: "user", content: "kept" },
+    ]);
+  });
+
+  it("refuses another tenant's conversation, and says nothing about it", async () => {
+    const scoped = runtime().forCaller(anna);
+
+    await expect(
+      scoped.kit.document.read({
+        conversationId: otherConversationId,
+        bind: `${boris.userId}:${boris.companySelector}`,
+      }),
+    ).rejects.toBeInstanceOf(AssistantKitConversationGoneError);
+  });
+
+  it("answers the same way for a conversation that never existed", async () => {
+    const scoped = runtime().forCaller(anna);
+    const unknown = randomUUID();
+
+    // Identical to the refusal above: the store cannot tell the two apart and
+    // must not, or a conversation id becomes a way to probe for one.
+    await expect(
+      scoped.kit.document.read({ conversationId: unknown, bind: "anna" }),
+    ).rejects.toBeInstanceOf(AssistantKitConversationGoneError);
+  });
+});

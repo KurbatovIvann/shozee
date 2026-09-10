@@ -10,6 +10,8 @@ export const assistantSuiteCoverage = {
     "assistant.checkpointAssistantTurn",
     "assistant.getStaffActor",
     "assistant.getModelHistory",
+    "assistant.readChatState",
+    "assistant.writeChatState",
   ],
   publicProjection: [],
   consumerIsolation: [],

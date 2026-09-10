@@ -207,3 +207,47 @@ export const assistantToolRuns = pgTable(
     ),
   ],
 );
+
+/**
+ * The durable half of an `assistant-kit` conversation: the chat document a
+ * person reads, and the provider messages the next turn is built from.
+ *
+ * Two blobs rather than rows per message, because neither is reconstructed
+ * from parts any more. The document is stored settled and read back as
+ * stored — that identity is the point of the path, and splitting it into
+ * columns would put a second derivation back in. The history is provider
+ * payload: opaque here by design, and a budget question for whoever sends it.
+ *
+ * One row per conversation, replaced in whole. There is no append: the kit
+ * applies a write to the document it read and stores the result, so the row
+ * is always a complete document rather than a fold over deltas.
+ *
+ * Deliberately absent: the open interaction. A pause has a deadline measured
+ * in minutes and one atomic claim, which is a Redis job, not a table.
+ */
+export const assistantChatState = pgTable(
+  "assistant_chat_state",
+  {
+    companyId: tenantCompanyId(),
+    conversationId: uuid("conversation_id").notNull(),
+    /** `ChatDocument` as the kit stores it. Null until the first write. */
+    document: jsonb("document"),
+    /** `ModelMessage[]` for the next turn. Null until the first turn. */
+    history: jsonb("history"),
+    ...timestampColumns(),
+  },
+  (table) => [
+    unique("assistant_chat_state_company_conversation_uq").on(
+      table.companyId,
+      table.conversationId,
+    ),
+    foreignKey({
+      name: "assistant_chat_state_conversations_company_fk",
+      columns: [table.companyId, table.conversationId],
+      foreignColumns: [
+        assistantConversations.companyId,
+        assistantConversations.id,
+      ],
+    }).onDelete("cascade"),
+  ],
+);

@@ -79,7 +79,13 @@ export async function handleAssistantKitAbandon(
     return json(400, { error: { code: "VALIDATION" } }, requestId);
   }
 
-  const dropped = await runtime.kit.abandon({
+  const { kit } = runtime.forCaller({
+    userId: caller.userId,
+    companySelector: caller.companySelector,
+    requestId,
+    clientIp: c.get("clientIp"),
+  });
+  const dropped = await kit.abandon({
     conversationId: parsed.data.conversationId,
     bind: caller.bind,
     interactionId: parsed.data.interactionId,
@@ -110,9 +116,15 @@ export async function handleAssistantKitAnswer(
     return json(400, { error: { code: "VALIDATION" } }, requestId);
   }
   const body = parsed.data;
+  const { kit, history } = runtime.forCaller({
+    userId: caller.userId,
+    companySelector: caller.companySelector,
+    requestId,
+    clientIp: c.get("clientIp"),
+  });
   const scope = { conversationId: body.conversationId, bind: caller.bind };
 
-  const claimed = await runtime.kit.claim({
+  const claimed = await kit.claim({
     ...scope,
     interactionId: body.interactionId,
     revision: body.revision,
@@ -131,7 +143,7 @@ export async function handleAssistantKitAnswer(
         409,
         {
           status: "stale",
-          document: await runtime.kit.document.read(scope),
+          document: await kit.document.read(scope),
         },
         requestId,
       );
@@ -149,7 +161,7 @@ export async function handleAssistantKitAnswer(
         {
           status: "unresolvable",
           reason: claimed.reason,
-          document: await runtime.kit.document.read(scope),
+          document: await kit.document.read(scope),
         },
         requestId,
       );
@@ -158,7 +170,7 @@ export async function handleAssistantKitAnswer(
   }
 
   const release = () =>
-    runtime.kit.release({ ...scope, interactionId: body.interactionId });
+    kit.release({ ...scope, interactionId: body.interactionId });
 
   if (c.req.raw.signal.aborted) {
     // The client is already gone. Do not perform the write on its behalf; give
@@ -191,14 +203,14 @@ export async function handleAssistantKitAnswer(
     // the customer, then one for the product. A new question, not a failure:
     // the claimed record no longer holds the slot, so this simply takes it.
     const nextKind = resolvedOutcome.interaction;
-    if (!runtime.kit.interactions.has(nextKind)) {
+    if (!kit.interactions.has(nextKind)) {
       return json(
         500,
         { status: "pause_rejected", reason: `unknown kind ${nextKind}` },
         requestId,
       );
     }
-    const opened = await runtime.kit.open({
+    const opened = await kit.open({
       conversationId: body.conversationId,
       bind: caller.bind,
       kind: nextKind,
@@ -223,7 +235,7 @@ export async function handleAssistantKitAnswer(
       revision: opened.pause.revision,
       pause: opened.pause,
     };
-    await runtime.kit.document.write(scope, {
+    await kit.document.write(scope, {
       kind: "append",
       messageId: randomUUID(),
       role: "assistant",
@@ -232,7 +244,7 @@ export async function handleAssistantKitAnswer(
 
     const payload: AssistantKitTurnOk = {
       status: "ok",
-      document: await runtime.kit.document.read(scope),
+      document: await kit.document.read(scope),
     };
     return json(200, payload, requestId);
   }
@@ -247,7 +259,7 @@ export async function handleAssistantKitAnswer(
         status: "action_failed",
         code: resolvedOutcome.code,
         message: resolvedOutcome.message,
-        document: await runtime.kit.document.read(scope),
+        document: await kit.document.read(scope),
       },
       requestId,
     );
@@ -259,7 +271,7 @@ export async function handleAssistantKitAnswer(
     ...(prompt.providerOptions === undefined
       ? {}
       : { providerOptions: prompt.providerOptions }),
-    kit: runtime.kit,
+    kit,
     conversationId: body.conversationId,
     bind: caller.bind,
     messageId: randomUUID(),
@@ -270,11 +282,11 @@ export async function handleAssistantKitAnswer(
     abortSignal: c.req.raw.signal,
   });
 
-  await runtime.history.save(scope, turn.messages);
+  await history.save(scope, turn.messages);
 
   const payload: AssistantKitTurnOk = {
     status: "ok",
-    document: await runtime.kit.document.read(scope),
+    document: await kit.document.read(scope),
   };
   return json(200, payload, requestId);
 }

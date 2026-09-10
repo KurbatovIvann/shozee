@@ -18,6 +18,7 @@ import {
 import { auditLog } from "@showzy/db";
 import { user } from "@showzy/db/schema/auth";
 import {
+  assistantChatState,
   assistantConversations,
   assistantMessages,
   assistantToolRuns,
@@ -40,7 +41,9 @@ import { getStaffActor } from "./get-staff-actor.js";
 import { listConversations } from "./list-conversations.js";
 import { LIST_CONVERSATIONS_MAX_LIMIT } from "./list-conversations.contract.js";
 import { MODEL_TRACE_JSON_MAX } from "./record-assistant-turn.contract.js";
+import { readChatState } from "./read-chat-state.js";
 import { recordAssistantTurn } from "./record-assistant-turn.js";
+import { writeChatState } from "./write-chat-state.js";
 
 const fixtures = {
   convA: randomUUID(),
@@ -53,6 +56,8 @@ const fixtures = {
   modelTrace: randomUUID(),
   checkpoint: randomUUID(),
   checkpointIdempotent: randomUUID(),
+  chatState: randomUUID(),
+  chatStateIdempotent: randomUUID(),
   employee: randomUUID(),
 };
 
@@ -94,6 +99,14 @@ async function countMessages(conversationId: string): Promise<number> {
     .select({ id: assistantMessages.id })
     .from(assistantMessages)
     .where(eq(assistantMessages.conversationId, conversationId));
+  return rows.length;
+}
+
+async function countChatState(conversationId: string): Promise<number> {
+  const rows = await kit.db.runtime.db
+    .select({ conversationId: assistantChatState.conversationId })
+    .from(assistantChatState)
+    .where(eq(assistantChatState.conversationId, conversationId));
   return rows.length;
 }
 
@@ -254,6 +267,18 @@ beforeAll(async () => {
   ]);
 
   await insertConversation({
+    id: fixtures.chatState,
+    companyId: kitIdentities.companies.a,
+    userId: kitIdentities.users.anna,
+    title: "Chat state",
+  });
+  await insertConversation({
+    id: fixtures.chatStateIdempotent,
+    companyId: kitIdentities.companies.a,
+    userId: kitIdentities.users.anna,
+    title: "Chat state idempotent",
+  });
+  await insertConversation({
     id: fixtures.employee,
     companyId: kitIdentities.companies.a,
     userId: clerks.employee,
@@ -330,6 +355,16 @@ crossTenantSuite(
       },
     ),
     isolationCase(
+      readChatState,
+      { input: { conversationId: fixtures.convA } },
+      { input: { conversationId: fixtures.convB } },
+    ),
+    isolationCase(
+      writeChatState,
+      { input: { conversationId: fixtures.convA, document: { a: 1 } } },
+      { input: { conversationId: fixtures.convB, document: { a: 1 } } },
+    ),
+    isolationCase(
       getStaffActor,
       { input: {} },
       {
@@ -387,6 +422,116 @@ idempotencySuite(requireKit, [
     readEffect: () => countMessages(fixtures.checkpointIdempotent),
   },
 ]);
+
+describe("the durable chat state", () => {
+  it("reads a conversation with no turns as empty rather than missing", async () => {
+    const state = await kit.invoke(
+      readChatState,
+      { conversationId: fixtures.chatState },
+      {},
+    );
+
+    expect(state).toEqual({ document: null, history: null });
+  });
+
+  it("round-trips both halves exactly as stored", async () => {
+    const document = {
+      conversationId: fixtures.chatState,
+      bind: "anna:company-a",
+      messages: [
+        {
+          messageId: randomUUID(),
+          role: "assistant",
+          createdAt: "2026-09-10T10:00:00.000Z",
+          parts: [{ kind: "text", text: "Готово.", status: "complete" }],
+        },
+      ],
+      openPause: null,
+    };
+    const history = [{ role: "user", content: "привіт" }];
+
+    await kit.invoke(
+      writeChatState,
+      { conversationId: fixtures.chatState, document, history },
+      {},
+    );
+    const state = await kit.invoke(
+      readChatState,
+      { conversationId: fixtures.chatState },
+      {},
+    );
+
+    // Byte-identical: the whole point of storing the document settled is that
+    // reading it back is not a second derivation of it.
+    expect(state.document).toEqual(document);
+    expect(state.history).toEqual(history);
+  });
+
+  /**
+   * A turn writes the document several times and the history once. If a write
+   * carrying one half blanked the other, the next turn would run with no memory
+   * of the conversation it is in.
+   */
+  it("leaves the half a write does not carry alone", async () => {
+    await kit.invoke(
+      writeChatState,
+      {
+        conversationId: fixtures.chatState,
+        document: { marker: "document" },
+        history: [{ role: "user", content: "kept" }],
+      },
+      {},
+    );
+
+    await kit.invoke(
+      writeChatState,
+      { conversationId: fixtures.chatState, document: { marker: "replaced" } },
+      {},
+    );
+    const state = await kit.invoke(
+      readChatState,
+      { conversationId: fixtures.chatState },
+      {},
+    );
+
+    expect(state.document).toEqual({ marker: "replaced" });
+    expect(state.history).toEqual([{ role: "user", content: "kept" }]);
+  });
+
+  it("replaces rather than accumulating", async () => {
+    await kit.invoke(
+      writeChatState,
+      { conversationId: fixtures.chatState, document: { v: 1 } },
+      {},
+    );
+    await kit.invoke(
+      writeChatState,
+      { conversationId: fixtures.chatState, document: { v: 2 } },
+      {},
+    );
+
+    expect(await countChatState(fixtures.chatState)).toBe(1);
+    const state = await kit.invoke(
+      readChatState,
+      { conversationId: fixtures.chatState },
+      {},
+    );
+    expect(state.document).toEqual({ v: 2 });
+  });
+
+  it("is not-found for a conversation that does not exist", async () => {
+    await expect(
+      kit.invoke(readChatState, { conversationId: randomUUID() }, {}),
+    ).rejects.toBeInstanceOf(NotFoundError);
+    await expect(
+      kit.invoke(
+        writeChatState,
+        { conversationId: randomUUID(), document: {} },
+        {},
+      ),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
 
 describe("assistant staff conversation actions", () => {
   it("creates a conversation in the active company and writes hash-only audit", async () => {

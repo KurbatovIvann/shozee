@@ -75,17 +75,23 @@ export async function handleAssistantKitChat(
     return json(400, { error: { code: "VALIDATION" } }, requestId);
   }
   const body = parsed.data;
+  const { kit, history } = runtime.forCaller({
+    userId: caller.userId,
+    companySelector: caller.companySelector,
+    requestId,
+    clientIp: c.get("clientIp"),
+  });
   const scope = { conversationId: body.conversationId, bind: caller.bind };
 
   // An unanswered question blocks a new job rather than being superseded by it.
   // A visible limitation is better than a draft that silently disappears.
-  const open = await runtime.kit.peek(scope);
+  const open = await kit.peek(scope);
   if (open !== null) {
     return json(
       409,
       {
         status: "interaction_open",
-        document: await runtime.kit.document.read(scope),
+        document: await kit.document.read(scope),
       },
       requestId,
     );
@@ -95,13 +101,16 @@ export async function handleAssistantKitChat(
     return json(499, { status: "aborted" }, requestId);
   }
 
-  const history = await runtime.history.load(scope);
-  const messages = [...history, { role: "user" as const, content: body.text }];
+  const priorMessages = await history.load(scope);
+  const messages = [
+    ...priorMessages,
+    { role: "user" as const, content: body.text },
+  ];
 
   // The person's own words go into the document before the model runs, so a
   // failed turn still shows what was asked.
   const userMessageId = randomUUID();
-  const stamped = await runtime.kit.document.write(scope, {
+  const stamped = await kit.document.write(scope, {
     kind: "append",
     messageId: userMessageId,
     role: "user",
@@ -126,7 +135,7 @@ export async function handleAssistantKitChat(
     ...(prompt.providerOptions === undefined
       ? {}
       : { providerOptions: prompt.providerOptions }),
-    kit: runtime.kit,
+    kit,
     conversationId: body.conversationId,
     bind: caller.bind,
     messageId: randomUUID(),
@@ -146,11 +155,11 @@ export async function handleAssistantKitChat(
     );
   }
 
-  await runtime.history.save(scope, turn.messages);
+  await history.save(scope, turn.messages);
 
   const payload: AssistantKitTurnOk = {
     status: "ok",
-    document: await runtime.kit.document.read(scope),
+    document: await kit.document.read(scope),
   };
   return json(200, payload, requestId);
 }
@@ -176,7 +185,13 @@ export async function handleAssistantKitMessages(
   // else comes back empty, indistinguishable from a conversation that does not
   // exist. No check is needed here, and adding one would only create a way to
   // tell the two apart.
-  const document = await runtime.kit.document.read({
+  const { kit } = runtime.forCaller({
+    userId: caller.userId,
+    companySelector: caller.companySelector,
+    requestId,
+    clientIp: c.get("clientIp"),
+  });
+  const document = await kit.document.read({
     conversationId: conversationId.data,
     bind: caller.bind,
   });

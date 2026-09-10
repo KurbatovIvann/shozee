@@ -163,10 +163,11 @@ function harness(options?: {
           ),
       },
     },
-    kit,
+    // In-memory stores for every caller: this suite is about the handlers, and
+    // the durable adapters have their own test against a real database.
+    forCaller: () => ({ kit, history }),
     model,
     tools: () => Promise.resolve(options?.tools ?? {}),
-    history,
     resolveAnswer: options?.resolveAnswer ?? OK_RESOLVE,
     prompt: () => ({ system: "you are a test" }),
   });
