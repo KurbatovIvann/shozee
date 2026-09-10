@@ -150,7 +150,7 @@ export async function handleAssistantKitChat(
     // in the tool, not something to hide behind a generic failure.
     return json(
       500,
-      { status: "pause_rejected", reason: turn.rejection },
+      { status: "pause_rejected", reason: turn.rejection ?? "unknown" },
       requestId,
     );
   }

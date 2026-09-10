@@ -460,7 +460,8 @@ describe("useAssistantConversation", () => {
     const view = mount();
     await flush();
 
-    respond(200, { status: "abandoned" });
+    // The server answers with the conversation, like every other route.
+    respond(200, { status: "abandoned", document: document({ asked: true }) });
     act(() => {
       view.latest().dismiss();
     });
@@ -472,6 +473,12 @@ describe("useAssistantConversation", () => {
       conversationId: CONVERSATION,
       interactionId: INTERACTION,
     });
+    // And the card stops rendering. Asserting only the request is what let a
+    // cancel that changed nothing on screen ship.
+    expect(view.latest().interaction).toBeNull();
+    expect(view.latest().rows.every((row) => row.interaction === null)).toBe(
+      true,
+    );
   });
 
   it("does nothing when asked to answer with no question open", async () => {

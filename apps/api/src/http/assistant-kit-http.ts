@@ -9,6 +9,7 @@
  */
 import type {
   AssistantKit,
+  ChatDocument,
   HostTurnOptions,
   LanguageModel,
   ModelMessage,
@@ -132,9 +133,49 @@ export interface AssistantKitRuntime {
   readonly prompt: () => AssistantTurnPrompt;
 }
 
+/**
+ * Every answer these routes can give, as one type.
+ *
+ * The rule it enforces: **a 2xx carries the whole document.** That was a
+ * convention held in a comment, and `abandon` broke it by answering with an
+ * object literal — the card stayed on screen, and the conversation locked until
+ * the pause expired. A rule a handler can quietly not follow is a rule that will
+ * eventually not be followed, so it is a type now and `json` accepts nothing
+ * else.
+ *
+ * Two shapes deliberately carry no document. `expired` is the answer for a
+ * conversation that is not yours *and* one that does not exist — attaching a
+ * document to either would make an id a way to tell them apart. A fault carries
+ * a code and nothing else, because there is nothing true to say about a
+ * conversation the request never got to read.
+ */
+export type AssistantKitResponse =
+  | { readonly status: "ok"; readonly document: ChatDocument }
+  | { readonly status: "interaction_open"; readonly document: ChatDocument }
+  | { readonly status: "stale"; readonly document: ChatDocument }
+  | {
+      readonly status: "unresolvable";
+      readonly reason: string;
+      readonly document: ChatDocument;
+    }
+  | {
+      readonly status: "action_failed";
+      readonly code: string;
+      readonly message: string;
+      readonly document: ChatDocument;
+    }
+  | { readonly status: "abandoned"; readonly document: ChatDocument }
+  | { readonly status: "expired" }
+  | { readonly status: "aborted" }
+  | { readonly status: "pause_rejected"; readonly reason: string }
+  | {
+      readonly error: { readonly code: string };
+      readonly retryAfterSec?: number;
+    };
+
 export function json(
   status: number,
-  body: unknown,
+  body: AssistantKitResponse,
   requestId: string,
 ): Response {
   return new Response(JSON.stringify(body), {

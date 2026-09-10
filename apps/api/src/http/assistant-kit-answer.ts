@@ -94,7 +94,22 @@ export async function handleAssistantKitAbandon(
   // Already gone answers the same as just cancelled: the caller wanted no open
   // question, and there is none. A second tap is not an error.
   void dropped;
-  return json(200, { status: "abandoned" }, requestId);
+
+  // With the document, like every other answer. Without it the card kept
+  // rendering on a client that had just cancelled it, and the conversation
+  // locked: the next tap hit a pause the server had dropped, and the next
+  // message was refused because the client was still posting against it.
+  return json(
+    200,
+    {
+      status: "abandoned",
+      document: await kit.document.read({
+        conversationId: parsed.data.conversationId,
+        bind: caller.bind,
+      }),
+    },
+    requestId,
+  );
 }
 
 export async function handleAssistantKitAnswer(

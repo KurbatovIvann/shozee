@@ -723,6 +723,27 @@ describe("POST /assistant/kit/abandon", () => {
     );
   });
 
+  /**
+   * The answer carries the document, like every other one. Without it the card
+   * kept rendering on the client that had just cancelled it — and the type now
+   * makes returning nothing impossible rather than merely discouraged.
+   */
+  it("answers with the conversation, so the card can stop rendering", async () => {
+    const { kit, app, bind } = harness();
+    const pause = await openPause(kit, bind);
+
+    const response = await post(app, ASSISTANT_KIT_ABANDON_PATH, {
+      conversationId: CONVERSATION,
+      interactionId: pause.interactionId,
+    });
+
+    const body = (await response.json()) as KitBody;
+    expect(body.status).toBe("abandoned");
+    expect(body.document).toBeDefined();
+    expect(body.document?.openPause).toBeNull();
+    void bind;
+  });
+
   it("keeps the record that the question was asked", async () => {
     const { kit, app, bind } = harness({ pausing: true, tools: PAUSING_TOOLS });
     const paused = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody());
