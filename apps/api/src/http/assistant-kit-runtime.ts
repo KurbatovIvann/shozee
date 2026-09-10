@@ -146,6 +146,7 @@ export function createAssistantKitRuntime(
   const provider = options.provider ?? anthropicStaffProvider;
 
   return {
+    logger: options.pipeline.logger,
     auth: options.auth,
     kit,
     model: options.model,

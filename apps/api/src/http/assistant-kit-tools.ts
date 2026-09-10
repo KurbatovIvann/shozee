@@ -27,7 +27,10 @@ import {
   type AssistantSurfaceToolResult,
 } from "@showzy/validation/assistant-surfaces";
 
-import type { ChoicePickerTarget, ChoiceSecret } from "./assistant-interactions.js";
+import type {
+  ChoicePickerTarget,
+  ChoiceSecret,
+} from "./assistant-interactions.js";
 
 /**
  * One card per surface, addressed by what the surface is.

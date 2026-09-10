@@ -48,6 +48,8 @@ export function bannerKindFor(
       return null;
     case "unreachable":
       return "network";
+    case "rate_limited":
+      return "rateLimited";
     case "unauthorized":
       return "unauthenticated";
     case "rejected":

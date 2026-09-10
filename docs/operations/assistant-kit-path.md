@@ -140,10 +140,34 @@ What to watch for, because these are the failures the old path had:
 - the card disappearing when the action refuses
 - a reload showing a different set of cards than the live turn did
 
+## The spend ceiling
+
+`POST /assistant/kit/chat` and `/answer` run under the same guard the previous
+assistant used, on the same Redis keys and the same per-user bucket: a Kyiv-day
+USD ceiling per company and globally, plus 20 turns/minute/user. The other two
+routes call no model and are unguarded.
+
+Reserve, run, settle or release. A refusal never spends a turn slot, and a turn
+that produced nothing gives its reservation back. Answering an open question
+skips the per-minute bucket — it is finishing work already admitted — but not
+the money.
+
+A refusal is `429` with `Retry-After` and `{ "error": { "code": "RATE_LIMITED" },
+"retryAfterSec": n }`. The app shows it as the rate-limit banner, not as a fault.
+
+Charged at the reservation (`AI_UNKNOWN_MODEL_TURN_USD`, default $0.10/turn)
+whatever the turn actually used — the previous path settled the same way, so
+this is the same coarseness, not a new one.
+
+```
+AI_CHAT_TURNS_PER_MINUTE_PER_USER=20
+AI_DAILY_BUDGET_USD_PER_COMPANY=5
+AI_DAILY_BUDGET_USD_GLOBAL=100
+AI_UNKNOWN_MODEL_TURN_USD=0.1
+```
+
 ## What is deliberately missing
 
-- **Budget and rate limits.** Not wired. Do not leave this on unattended with a
-  real key.
 - **Durable model history.** It lives in Redis with a ttl, so a conversation that
   sits long enough starts over. One port to replace; not a protocol question.
 - **Confirmations.** The kind is registered, the server can store one and the

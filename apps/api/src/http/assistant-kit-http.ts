@@ -18,6 +18,7 @@ import type {
 } from "@showzy/assistant-kit";
 import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
 import type { Context } from "hono";
+import type { Logger } from "pino";
 
 import type { AssistantInteractionTypes } from "./assistant-interactions.js";
 import { REQUEST_ID_HEADER } from "./request-id.js";
@@ -92,6 +93,8 @@ export interface AssistantTurnPrompt {
 }
 
 export interface AssistantKitRuntime {
+  /** The pipeline's logger. Used for spend refusals, which are operational. */
+  readonly logger: Logger;
   readonly auth: {
     readonly api: {
       readonly getSession: (args: {
@@ -191,7 +194,9 @@ export async function requireCaller(
 
 export async function readJson(
   c: Context<AssistantKitAppEnv>,
-): Promise<{ readonly ok: true; readonly body: unknown } | { readonly ok: false }> {
+): Promise<
+  { readonly ok: true; readonly body: unknown } | { readonly ok: false }
+> {
   try {
     return { ok: true, body: await c.req.raw.json() };
   } catch {

@@ -18,6 +18,7 @@ const ALL: readonly AssistantKitFailureKind[] = [
   "expired",
   "rejected",
   "server",
+  "rate_limited",
   "aborted",
   "interaction_open",
   "stale",
@@ -39,6 +40,10 @@ describe("bannerKindFor", () => {
 
   it("names a refused write, because the card alone does not explain it", () => {
     expect(bannerKindFor({ kind: "action_failed" })).toBe("unavailable");
+  });
+
+  it("names the spend ceiling as its own thing, not a fault", () => {
+    expect(bannerKindFor({ kind: "rate_limited" })).toBe("rateLimited");
   });
 
   it("distinguishes a lost connection from a refused request", () => {

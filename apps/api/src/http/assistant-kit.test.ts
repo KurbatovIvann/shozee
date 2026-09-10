@@ -20,6 +20,7 @@ import {
   testDeps,
 } from "@showzy/assistant-kit/testing";
 import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
+import pino, { type Logger } from "pino";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
@@ -39,6 +40,11 @@ import type {
   AssistantHistoryPort,
   ResolveAnswer,
 } from "./assistant-kit-http.js";
+
+/** The guard logs refusals; nothing here asserts on them. */
+function silentLogger(): Logger {
+  return pino({ level: "silent" });
+}
 
 const USER = "user-1";
 const COMPANY = "11111111-1111-4111-8111-1111111111aa";
@@ -146,6 +152,7 @@ function harness(options?: {
           ])
         : stubTextModel("Готово.");
   const app = createAssistantKitApp({
+    logger: silentLogger(),
     auth: {
       api: {
         getSession: () =>

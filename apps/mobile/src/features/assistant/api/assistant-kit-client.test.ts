@@ -230,6 +230,7 @@ describe("the assistant kit client", () => {
   it("maps the faults that are not about the conversation", async () => {
     respond(401, { error: { code: "UNAUTHENTICATED" } });
     respond(410, { status: "expired" });
+    respond(429, { error: { code: "RATE_LIMITED" }, retryAfterSec: 42 });
     respond(500, { status: "pause_rejected", reason: "unknown kind" });
 
     const read = () =>
@@ -237,6 +238,8 @@ describe("the assistant kit client", () => {
 
     expect((await read()).failure?.kind).toBe("unauthorized");
     expect((await read()).failure?.kind).toBe("expired");
+    // The spend ceiling, not a broken request.
+    expect((await read()).failure?.kind).toBe("rate_limited");
     expect(await read()).toEqual({
       document: null,
       failure: { kind: "server", message: "unknown kind" },

@@ -520,7 +520,15 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
   if (options.assistantKit !== undefined) {
     // Dark by default. Mounted as a whole app so its three routes stay
     // together; it inherits this app's request id and client ip.
-    app.route("/", createAssistantKitApp(options.assistantKit));
+    app.route(
+      "/",
+      createAssistantKitApp(options.assistantKit, {
+        logger: options.pipeline.logger,
+        limits: budgetLimits,
+        rateLimitStore: assistantBudget.rateLimitStore,
+        budgetStore: assistantBudget.budgetStore,
+      }),
+    );
   }
 
   app.on(["GET", "POST"], `${AUTH_PREFIX}/*`, async (c) => {

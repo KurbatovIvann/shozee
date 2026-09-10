@@ -1,11 +1,15 @@
 /**
  * The `assistant-kit` routes, mounted together.
  *
- * Parallel to the live assistant on its own path prefix and its own factory:
- * nothing here is reachable from `createApp`, so the running assistant is
- * untouched while this path is proven.
+ * Two of the four cost money, and those two are wrapped in the spend guard here
+ * rather than inside the handlers. Putting it at the mount point means a route
+ * cannot be added without deciding whether it calls the model — a new endpoint
+ * that quietly spends is the failure this shape prevents.
  */
+import { createInMemoryRateLimitStore } from "@showzy/core";
 import { Hono } from "hono";
+
+import { createMemoryAiBudgetStore } from "../stores/budget.js";
 
 import {
   ASSISTANT_KIT_CHAT_PATH,
@@ -19,11 +23,18 @@ import {
   handleAssistantKitAbandon,
   handleAssistantKitAnswer,
 } from "./assistant-kit-answer.js";
+import {
+  memoryAssistantKitBudget,
+  withAssistantKitBudget,
+  type AssistantKitBudget,
+} from "./assistant-kit-budget.js";
 import type {
   AssistantKitAppEnv,
   AssistantKitRuntime,
 } from "./assistant-kit-http.js";
 import { REQUEST_ID_HEADER, resolveRequestId } from "./request-id.js";
+
+export type { AssistantKitBudget };
 
 export {
   ASSISTANT_KIT_ABANDON_PATH,
@@ -34,8 +45,19 @@ export {
 
 export function createAssistantKitApp(
   runtime: AssistantKitRuntime,
+  /**
+   * Omitted only by tests and a single-process run: the fallback is in-process
+   * stores, never no ceiling. `app.ts` always passes the real ones.
+   */
+  budget?: AssistantKitBudget,
 ): Hono<AssistantKitAppEnv> {
   const app = new Hono<AssistantKitAppEnv>();
+  const spend =
+    budget ??
+    memoryAssistantKitBudget(runtime.logger, {
+      rateLimitStore: createInMemoryRateLimitStore(),
+      budgetStore: createMemoryAiBudgetStore(),
+    });
 
   app.use(async (c, next) => {
     // Mounted inside the main app, the outer middleware has already resolved
@@ -51,9 +73,17 @@ export function createAssistantKitApp(
     await next();
   });
 
-  app.post(ASSISTANT_KIT_CHAT_PATH, (c) => handleAssistantKitChat(c, runtime));
+  // A new job: it consumes a turn slot as well as budget.
+  app.post(ASSISTANT_KIT_CHAT_PATH, (c) =>
+    withAssistantKitBudget(c, runtime, spend, { skipTurnLimit: false }, () =>
+      handleAssistantKitChat(c, runtime),
+    ),
+  );
+  // Finishing work already admitted. Budget applies; the turn bucket does not.
   app.post(ASSISTANT_KIT_ANSWER_PATH, (c) =>
-    handleAssistantKitAnswer(c, runtime),
+    withAssistantKitBudget(c, runtime, spend, { skipTurnLimit: true }, () =>
+      handleAssistantKitAnswer(c, runtime),
+    ),
   );
   app.post(ASSISTANT_KIT_ABANDON_PATH, (c) =>
     handleAssistantKitAbandon(c, runtime),

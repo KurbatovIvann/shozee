@@ -29,7 +29,12 @@ import { assistantKitTurnTools } from "./assistant-kit-tools.js";
 const registry = createActionRegistry();
 const CONTRACTS = filterStaffAiTools(registry.contracts(), {
   role: "owner",
-  permissions: ["orders:view", "orders:edit", "customers:view", "assistant:use"],
+  permissions: [
+    "orders:view",
+    "orders:edit",
+    "customers:view",
+    "assistant:use",
+  ],
 });
 
 const ORDER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -71,7 +76,10 @@ async function run(
 ): Promise<ToolOutcome> {
   const execute = set[name]?.execute;
   if (execute === undefined) throw new Error(`no tool ${name}`);
-  return (await execute(input, { toolCallId, messages: [] } as never)) as ToolOutcome;
+  return (await execute(input, {
+    toolCallId,
+    messages: [],
+  } as never)) as ToolOutcome;
 }
 
 const CREATE_BY_QUERY = {
@@ -115,7 +123,12 @@ describe("a value becomes ok, with the card the surface registry composes", () =
     const set = tools((action) =>
       Promise.resolve(
         action.endsWith("list")
-          ? { status: "completed", kind: "page.summary", rows: [], hasMore: false }
+          ? {
+              status: "completed",
+              kind: "page.summary",
+              rows: [],
+              hasMore: false,
+            }
           : { status: "completed" },
       ),
     );
@@ -199,9 +212,9 @@ describe("any other domain refusal becomes an error", () => {
   it("lets an unknown fault escape rather than dressing it as an answer", async () => {
     const set = tools(() => Promise.reject(new TypeError("boom")));
 
-    await expect(run(set, ORDERS_CREATE_TOOL_NAME, CREATE_BY_QUERY)).rejects.toThrow(
-      "boom",
-    );
+    await expect(
+      run(set, ORDERS_CREATE_TOOL_NAME, CREATE_BY_QUERY),
+    ).rejects.toThrow("boom");
   });
 });
 
@@ -240,7 +253,11 @@ describe("the chosen id goes back into the tool's own input", () => {
     expect(variant.kind === "patched" ? variant.input : null).toEqual({
       customerQuery: "Катя",
       items: [
-        { productQuery: "Наполеон", variantId: CUSTOMER_B, quantityDecimal: "3" },
+        {
+          productQuery: "Наполеон",
+          variantId: CUSTOMER_B,
+          quantityDecimal: "3",
+        },
       ],
     });
   });
@@ -333,8 +350,14 @@ describe("an idempotent write is given a key that survives a retry", () => {
       commandId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
     };
 
-    const first = assistantKitIdempotencyKey(command, ORDERS_CREATE_ACTION_NAME);
-    const retry = assistantKitIdempotencyKey(command, ORDERS_CREATE_ACTION_NAME);
+    const first = assistantKitIdempotencyKey(
+      command,
+      ORDERS_CREATE_ACTION_NAME,
+    );
+    const retry = assistantKitIdempotencyKey(
+      command,
+      ORDERS_CREATE_ACTION_NAME,
+    );
     const otherAction = assistantKitIdempotencyKey(command, "orders.list");
     const otherCommand = assistantKitIdempotencyKey(
       { ...command, commandId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" },

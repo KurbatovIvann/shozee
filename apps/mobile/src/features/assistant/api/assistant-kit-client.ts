@@ -35,7 +35,8 @@ export const ASSISTANT_KIT_TEXT_MAX = 4000;
  *
  * `stale`, `unresolvable`, `action_failed` and `interaction_open` all mean the
  * conversation moved and the accompanying document is current — they are worth
- * telling the person about, but nothing is broken. The rest are faults.
+ * telling the person about, but nothing is broken. `rate_limited` is the spend
+ * ceiling, which is a decision rather than a fault. The rest are faults.
  */
 export type AssistantKitFailureKind =
   | "unreachable"
@@ -44,6 +45,7 @@ export type AssistantKitFailureKind =
   | "expired"
   | "rejected"
   | "server"
+  | "rate_limited"
   | "aborted"
   | "interaction_open"
   | "stale"
@@ -105,6 +107,9 @@ function failureFromStatus(
   }
   if (httpStatus === 410) {
     return "expired";
+  }
+  if (httpStatus === 429) {
+    return "rate_limited";
   }
   if (httpStatus === 499) {
     return "aborted";
