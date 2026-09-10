@@ -18,7 +18,8 @@ export type AssistantChatErrorKind =
   | "unauthenticated"
   | "notConfigured"
   | "rateLimited"
-  | "turnBusy";
+  | "turnBusy"
+  | "questionOpen";
 
 export function assistantChatErrorMessage(
   kind: AssistantChatErrorKind,
@@ -30,10 +31,11 @@ export function assistantChatErrorMessage(
 /**
  * Which failures are worth a banner, and which are already visible in the thread.
  *
- * `stale`, `unresolvable` and `interaction_open` all came back with the corrected
- * question, which is now on screen — saying so twice reads as an error when the
- * person can see what happened. `action_failed` does get one: the card is still
- * there and nothing about it explains why the tap did not take.
+ * The test for silence is whether the screen changed in a way that explains
+ * itself. Two refusals once shared a branch on the grounds that "the corrected
+ * question is on screen", and that was only true of one of them (SHO-550).
+ * `action_failed` gets a banner for the same reason: the card is still there
+ * and nothing about it explains why the tap did not take.
  */
 export function bannerKindFor(
   failure: AssistantKitFailure | null,
@@ -42,9 +44,20 @@ export function bannerKindFor(
     return null;
   }
   switch (failure.kind) {
+    // Refusals of an answer. The card re-renders as the question now stands,
+    // and that change is the explanation — a banner on top reads as a fault.
     case "stale":
     case "unresolvable":
+      return null;
+    // A refusal of a send. Nothing on screen changes, since the card was
+    // already there, and the draft goes back into the field — so without a
+    // line saying why, the tap looks as though it did nothing at all.
     case "interaction_open":
+      return "questionOpen";
+    // Nothing went out, or nobody is waiting for what came back: a tap while a
+    // request is in flight, blank text, or a 499 for a connection this phone had
+    // already closed. The thread is unchanged and the draft is back where it
+    // was, which is an accurate picture of what happened. Nothing to explain.
     case "aborted":
       return null;
     // Nothing on screen explains this one: the turn holding the conversation

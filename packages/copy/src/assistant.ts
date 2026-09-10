@@ -140,6 +140,12 @@ export type AssistantCopy = {
     readonly rateLimited: string;
     /** Another device is mid-turn on this conversation. Nothing was attempted. */
     readonly turnBusy: string;
+    /**
+     * A send refused because a question is still open. The card does not change
+     * and the draft goes back into the field, so this is the only thing on screen
+     * that says why. Names the card's own way out (`dismissLabel`).
+     */
+    readonly questionOpen: string;
   };
 };
 
@@ -305,6 +311,7 @@ const assistantEn: AssistantCopy = {
     notConfigured: "The assistant is not configured.",
     rateLimited: "Too many requests. Try again later.",
     turnBusy: "Shozik is busy with another request. Try again in a moment.",
+    questionOpen: "Answer the question above or cancel it first.",
   },
 };
 
@@ -384,6 +391,7 @@ const assistantUk: AssistantCopy = {
     notConfigured: "Асистент не налаштований.",
     rateLimited: "Забагато запитів. Спробуй пізніше.",
     turnBusy: "Шозік зараз зайнятий іншим запитом. Спробуй за мить.",
+    questionOpen: "Спершу дай відповідь на питання вище або скасуй його.",
   },
 };
 

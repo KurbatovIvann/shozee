@@ -125,6 +125,20 @@ describe("assistant copy", () => {
     expect(uk.choiceExpired).toBe("Цей вибір більше недоступний.");
   });
 
+  it("says why a send was refused, naming the card's own cancel action", () => {
+    const uk = assistantCopy("uk");
+    const en = assistantCopy("en");
+    expect(uk.errors.questionOpen).toBe(
+      "Спершу дай відповідь на питання вище або скасуй його.",
+    );
+    expect(en.errors.questionOpen).toBe(
+      "Answer the question above or cancel it first.",
+    );
+    // The way out it names is the button the card actually shows.
+    expect(uk.dismissLabel).toBe("Скасувати");
+    expect(en.dismissLabel).toBe("Cancel");
+  });
+
   it("pins sheet title Шозік/Shozik and matches the BottomNav label", () => {
     const uk = assistantCopy("uk");
     const en = assistantCopy("en");

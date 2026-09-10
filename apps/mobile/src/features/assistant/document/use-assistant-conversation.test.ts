@@ -344,6 +344,33 @@ describe("useAssistantConversation", () => {
     expect(view.latest().interaction?.revision).toBe(9);
   });
 
+  /**
+   * SHO-550. A send refused because a question is still open — possibly one
+   * asked on another device, which this screen had not seen. The refusal's
+   * document brings the question in, and the failure is what the sheet uses
+   * both to put the draft back and to say why.
+   */
+  it("reports a send refused by an open question, and shows that question", async () => {
+    respond(200, { status: "ok", document: document() });
+    const view = mount();
+    await flush();
+
+    respond(409, {
+      status: "interaction_open",
+      document: document({ openPause: OPEN_PAUSE, asked: true }),
+    });
+    let refused: unknown = null;
+    await act(async () => {
+      refused = await view.latest().send("створи ще одне");
+    });
+
+    expect(refused).toEqual({ kind: "interaction_open" });
+    expect(view.latest().failure?.kind).toBe("interaction_open");
+    expect(view.latest().interaction?.interactionId).toBe(INTERACTION);
+    // Nothing was stored, so the echo of the words does not stay behind.
+    expect(view.latest().rows.some((row) => row.role === "user")).toBe(false);
+  });
+
   it("keeps what it is showing when the network fails", async () => {
     respond(200, { status: "ok", document: document({ text: "Привіт." }) });
     const view = mount();
