@@ -67,17 +67,20 @@ describe("staffAssistantSystemPrompt", () => {
    */
   it("tells the model to attempt an ambiguous job rather than ask about it", () => {
     expect(staffAssistantSystemPrompt).toContain(
-      "An unclear detail is not a reason to ask in chat.",
+      "An unclear detail is not a reason to ask in chat — it is the reason to call.",
+    );
+    // The counter-argument the model was actually making: it had listed the
+    // catalog, seen six variants, and reasoned that asking was now the helpful
+    // thing. Knowing the answer is ambiguous is the moment to call, not to ask.
+    expect(staffAssistantSystemPrompt).toContain(
+      "This holds when you already know the answer will be ambiguous.",
     );
     expect(staffAssistantSystemPrompt).toContain(
-      "An ambiguity comes back as a picker they tap",
+      "Do not look a reference up to check whether it is ambiguous before a write",
     );
     // And the other half: asking is right when there is nothing to attempt.
     expect(staffAssistantSystemPrompt).toContain(
       "Ask in chat only when there is nothing to attempt",
-    );
-    expect(staffAssistantSystemPrompt).toContain(
-      "Do not list the candidates yourself",
     );
   });
 
