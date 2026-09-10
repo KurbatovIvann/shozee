@@ -135,18 +135,16 @@ export const assistantChatMessages = pgTable(
 );
 
 /**
- * The durable half of an `assistant-kit` conversation: the chat document a
- * person reads, and the provider messages the next turn is built from.
+ * The provider messages the next `assistant-kit` turn is built from.
  *
- * Two blobs rather than rows per message, because neither is reconstructed
- * from parts any more. The document is stored settled and read back as
- * stored — that identity is the point of the path, and splitting it into
- * columns would put a second derivation back in. The history is provider
- * payload: opaque here by design, and a budget question for whoever sends it.
+ * One value per conversation, replaced whole. The history is a working set,
+ * not a record: the runtime saves exactly what a turn ran with and windows it
+ * on the way out, so there is nothing to append to. Opaque here by design, and
+ * a budget question for whoever sends it.
  *
- * One row per conversation, replaced in whole. There is no append: the kit
- * applies a write to the document it read and stores the result, so the row
- * is always a complete document rather than a fold over deltas.
+ * The transcript a person reads used to live here too, as one document
+ * replaced whole on every write. It is a log, and is stored as one now, in
+ * `assistant_chat_messages` (SHO-555).
  *
  * Deliberately absent: the open interaction. A pause has a deadline measured
  * in minutes and one atomic claim, which is a Redis job, not a table.
@@ -156,7 +154,7 @@ export const assistantChatState = pgTable(
   {
     companyId: tenantCompanyId(),
     conversationId: uuid("conversation_id").notNull(),
-    /** `ChatDocument` as the kit stores it. Null until the first write. */
+    /** No longer written (SHO-555); dropped once nothing reads it. */
     document: jsonb("document"),
     /** `ModelMessage[]` for the next turn. Null until the first turn. */
     history: jsonb("history"),

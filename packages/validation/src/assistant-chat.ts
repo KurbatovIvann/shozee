@@ -90,6 +90,13 @@ export const assistantChatMessageSchema = z.strictObject({
 export type AssistantChatMessage = z.output<typeof assistantChatMessageSchema>;
 
 /**
+ * A window onto the conversation: its latest messages, or the page before a
+ * cursor, each exactly as stored.
+ *
+ * `olderCursor` says where the page before these messages starts, and is null
+ * when nothing precedes them. It is opaque — a client hands it back as `before`
+ * and never reads it.
+ *
  * `openPause` is the authority on which question is answerable — not the
  * `interaction` parts, which are snapshots of the moment each was asked. An
  * answered question simply stops appearing here, so a client needs no local
@@ -97,8 +104,8 @@ export type AssistantChatMessage = z.output<typeof assistantChatMessageSchema>;
  */
 export const assistantChatDocumentSchema = z.strictObject({
   conversationId: z.uuid(),
-  bind: z.string().min(1),
   messages: z.array(assistantChatMessageSchema),
+  olderCursor: z.string().min(1).nullable(),
   openPause: assistantPauseSchema.nullable(),
 });
 

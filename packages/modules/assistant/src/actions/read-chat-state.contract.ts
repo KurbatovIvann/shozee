@@ -1,10 +1,10 @@
 /**
- * Staff read: the durable half of an `assistant-kit` conversation.
+ * Staff read: the provider history of an `assistant-kit` conversation — what
+ * the next turn is built from.
  *
- * Two opaque blobs — the chat document a person reads, and the provider
- * messages the next turn is built from. Opaque on purpose: their shapes belong
- * to the runtime that writes them, and a schema here would be a second
- * definition to keep in step with the first.
+ * Opaque on purpose: its shape belongs to the runtime that writes it, and a
+ * schema here would be a second definition to keep in step with the first. The
+ * transcript a person reads is the message log, not this (SHO-555).
  *
  * Mechanical: `timeout: 5000` is one row by primary key.
  */
@@ -19,13 +19,12 @@ export const readChatStateInputSchema = z.strictObject({
 
 export const readChatStateOutputSchema = z.strictObject({
   /** `null` before the conversation's first turn. */
-  document: z.unknown(),
   history: z.unknown(),
 });
 
 export const readChatStateContract = defineActionContract({
   name: "assistant.readChatState",
-  description: `${STAFF_CONVERSATION_AUTHOR_INVARIANT} Read the stored chat document and provider history for one conversation. Both are opaque payloads owned by the assistant runtime. A conversation with no turns yet reads as two nulls, not as not-found; a conversation belonging to another author or another company is not-found. Company id is never input.`,
+  description: `${STAFF_CONVERSATION_AUTHOR_INVARIANT} Read the stored provider history for one conversation. It is an opaque payload owned by the assistant runtime. A conversation with no turns yet reads as null, not as not-found; a conversation belonging to another author or another company is not-found. Company id is never input.`,
   principal: "staff",
   transport: "internal",
   input: readChatStateInputSchema,

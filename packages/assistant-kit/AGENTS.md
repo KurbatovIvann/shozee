@@ -23,7 +23,8 @@ kinds comes from the registry, there is no vocabulary here to leak.
 ## What it owns
 
 A tool call pauses, a person answers, the model conversation resumes verbatim,
-and one stored document is what both a live turn and a reload render.
+and one stored message log is what both a live turn and a reload render — a
+window of it at a time, each message exactly as it was written.
 
 An extension to the AI SDK, not a replacement: the caller keeps its single
 `streamText`. This package owns only the gap between the loop stopping and the

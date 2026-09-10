@@ -19,6 +19,7 @@ import {
   resolved,
   unresolvable,
 } from "@showzy/assistant-kit";
+import { memoryMessageLog } from "@showzy/assistant-kit/testing";
 import {
   RedisContainer,
   type StartedRedisContainer,
@@ -61,26 +62,15 @@ const pick = defineInteraction<{ readonly byOption: Record<string, string> }>()(
 
 const interactions = createInteractions({ pick });
 
-/** The pause store is what this suite is about; the document is a Map. */
-function memoryDocuments() {
-  const rows = new Map<string, unknown>();
-  return {
-    read: (conversationId: string) =>
-      Promise.resolve(rows.get(conversationId) ?? null),
-    write: (conversationId: string, document: unknown) => {
-      rows.set(conversationId, document);
-      return Promise.resolve();
-    },
-  };
-}
-
+/** The pause store is what this suite is about; the transcript is in memory. */
 function kitOn(): ReturnType<typeof createAssistantKit<{ pick: typeof pick }>> {
   return createAssistantKit({
     pauses: createRedisAssistantKitPauseStore(redis),
-    documents: memoryDocuments(),
+    messages: memoryMessageLog(),
     clock: { now: () => new Date() },
     ids: { uuid: () => randomUUID() },
     interactions,
+    window: { messages: 20 },
   });
 }
 

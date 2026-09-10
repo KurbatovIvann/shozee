@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import type { DocumentPart } from "./document.js";
+import type { ChatDocument, DocumentPart } from "./document.js";
 import { fixtureInteractions } from "./fixture.js";
 import { createAssistantKit } from "./kit.js";
 import { testDeps } from "./testing.js";
@@ -239,5 +239,230 @@ describe("a document belongs to one owner", () => {
     const owner = await kit.document.read(SCOPE);
     expect(owner.messages).toHaveLength(1);
     expect(JSON.stringify(owner)).not.toContain("not yours");
+  });
+});
+
+/**
+ * SHO-555. A year of daily use is one conversation, so a read returns the
+ * latest window and a cursor, never the whole log.
+ */
+describe("a read is a window onto the log", () => {
+  function kitWithWindow(messages: number) {
+    return createAssistantKit(
+      testDeps(fixtureInteractions, { windowMessages: messages }),
+    );
+  }
+
+  function idOf(n: number): string {
+    return `aaaaaaaa-0000-4000-8000-${n.toString(16).padStart(12, "0")}`;
+  }
+
+  async function writeTexts(
+    kit: ReturnType<typeof kitWithWindow>,
+    count: number,
+  ): Promise<void> {
+    for (let n = 1; n <= count; n += 1) {
+      await kit.document.write(SCOPE, {
+        kind: "append",
+        messageId: idOf(n),
+        role: n % 2 === 1 ? "user" : "assistant",
+        parts: [
+          { kind: "text", text: `message ${String(n)}`, status: "complete" },
+        ],
+      });
+    }
+  }
+
+  function textsOf(document: ChatDocument): string[] {
+    return document.messages
+      .flatMap((message) => message.parts)
+      .map((part) => (part.kind === "text" ? part.text : part.kind));
+  }
+
+  it("returns the latest messages, and a cursor to the ones before them", async () => {
+    const kit = kitWithWindow(2);
+    await writeTexts(kit, 5);
+
+    const latest = await kit.document.read(SCOPE);
+    expect(textsOf(latest)).toEqual(["message 4", "message 5"]);
+    expect(latest.olderCursor).not.toBeNull();
+
+    const before = await kit.document.read(SCOPE, {
+      before: latest.olderCursor ?? "",
+    });
+    expect(textsOf(before)).toEqual(["message 2", "message 3"]);
+
+    const first = await kit.document.read(SCOPE, {
+      before: before.olderCursor ?? "",
+    });
+    expect(textsOf(first)).toEqual(["message 1"]);
+    expect(first.olderCursor).toBeNull();
+  });
+
+  it("pages back to the whole log, in order, with nothing missing or repeated", async () => {
+    const kit = kitWithWindow(3);
+    await writeTexts(kit, 10);
+
+    let document = await kit.document.read(SCOPE);
+    const pages = [textsOf(document)];
+    while (document.olderCursor !== null) {
+      document = await kit.document.read(SCOPE, {
+        before: document.olderCursor,
+      });
+      pages.unshift(textsOf(document));
+    }
+
+    expect(pages.flat()).toEqual(
+      Array.from({ length: 10 }, (_, index) => `message ${String(index + 1)}`),
+    );
+  });
+
+  it("has no cursor when the conversation fits in one window", async () => {
+    const kit = kitWithWindow(5);
+    await writeTexts(kit, 5);
+
+    expect((await kit.document.read(SCOPE)).olderCursor).toBeNull();
+  });
+});
+
+/**
+ * A message is finished once the request that wrote it ends. Reopening one
+ * would let a turn change what a person already read — or, with a lapsed lease,
+ * let a slow turn write into the middle of a newer one.
+ */
+describe("a message is written only while it is the latest", () => {
+  it("refuses an id the log already holds further back, and leaves both as they were", async () => {
+    const kit = newKit();
+    const later = "66666666-6666-4666-8666-666666666666";
+    await kit.document.write(SCOPE, {
+      kind: "append",
+      messageId: MESSAGE,
+      role: "assistant",
+      parts: [TEXT],
+    });
+    await kit.document.write(SCOPE, {
+      kind: "append",
+      messageId: later,
+      role: "assistant",
+      parts: [card(1, 3)],
+    });
+
+    await expect(
+      kit.document.write(SCOPE, {
+        kind: "append",
+        messageId: MESSAGE,
+        role: "assistant",
+        parts: [card(1, 9)],
+      }),
+    ).rejects.toThrow();
+
+    const document = await kit.document.read(SCOPE);
+    expect(document.messages.map((message) => message.parts)).toEqual([
+      [TEXT],
+      [card(1, 3)],
+    ]);
+  });
+});
+
+describe("a message this build cannot read", () => {
+  const FUTURE = "77777777-7777-4777-8777-777777777777";
+  const LATER = "88888888-8888-4888-8888-888888888888";
+
+  /** What a newer deploy might store: a part kind this one has never seen. */
+  const fromNewerDeploy = {
+    messageId: FUTURE,
+    role: "assistant",
+    createdAt: "2026-09-10T12:00:00.000Z",
+    parts: [{ kind: "voice", clipId: "clip-1" }],
+  };
+
+  function slice() {
+    const deps = testDeps(fixtureInteractions);
+    return { deps, kit: createAssistantKit(deps) };
+  }
+
+  it("is skipped and reported, and the rest of the conversation still reads", async () => {
+    const { deps, kit } = slice();
+    await kit.document.write(SCOPE, {
+      kind: "append",
+      messageId: MESSAGE,
+      role: "user",
+      parts: [TEXT],
+    });
+    await deps.messages.insert(CONVERSATION, {
+      messageId: FUTURE,
+      bind: BIND,
+      message: fromNewerDeploy,
+    });
+
+    const document = await kit.document.read(SCOPE);
+
+    expect(document.messages.map((message) => message.messageId)).toEqual([
+      MESSAGE,
+    ]);
+    expect(deps.unreadable).toEqual([{ conversationId: CONVERSATION, seq: 2 }]);
+  });
+
+  /**
+   * SHO-555, the defect this storage exists to remove. A document that failed
+   * its schema read as empty, and the next write stored itself over the whole
+   * history. Deploying a new part kind and rolling back was enough.
+   */
+  it("survives the next write untouched, and so does everything before it", async () => {
+    const { deps, kit } = slice();
+    await kit.document.write(SCOPE, {
+      kind: "append",
+      messageId: MESSAGE,
+      role: "user",
+      parts: [TEXT],
+    });
+    await deps.messages.insert(CONVERSATION, {
+      messageId: FUTURE,
+      bind: BIND,
+      message: fromNewerDeploy,
+    });
+
+    await kit.document.write(SCOPE, {
+      kind: "append",
+      messageId: LATER,
+      role: "user",
+      parts: [TEXT],
+    });
+
+    const stored = await deps.messages.page(CONVERSATION, { limit: 10 });
+    expect(stored.records.map((record) => record.messageId)).toEqual([
+      MESSAGE,
+      FUTURE,
+      LATER,
+    ]);
+    expect(stored.records[1]?.message).toEqual(fromNewerDeploy);
+    expect(
+      (await kit.document.read(SCOPE)).messages.map(
+        (message) => message.messageId,
+      ),
+    ).toEqual([MESSAGE, LATER]);
+  });
+
+  it("is not merged into when it is the latest — the write is refused instead", async () => {
+    const { deps, kit } = slice();
+    await deps.messages.insert(CONVERSATION, {
+      messageId: FUTURE,
+      bind: BIND,
+      message: fromNewerDeploy,
+    });
+
+    await expect(
+      kit.document.write(SCOPE, {
+        kind: "append",
+        messageId: FUTURE,
+        role: "assistant",
+        parts: [TEXT],
+      }),
+    ).rejects.toThrow("not overwritten");
+
+    const stored = await deps.messages.page(CONVERSATION, { limit: 10 });
+    expect(stored.records.map((record) => record.message)).toEqual([
+      fromNewerDeploy,
+    ]);
   });
 });

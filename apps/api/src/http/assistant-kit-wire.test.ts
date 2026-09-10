@@ -136,11 +136,37 @@ describe("the document a server writes and the document a client reads", () => {
     expect(JSON.stringify(document)).not.toContain("byOption");
   });
 
+  it("agrees on a window with older messages behind it, and carries no owner", async () => {
+    const instance = createAssistantKit(
+      testDeps(assistantInteractions, { windowMessages: 1 }),
+    );
+    const scope = { conversationId: CONVERSATION, bind: BIND };
+    for (const messageId of [
+      "55555555-5555-4555-8555-555555555551",
+      "55555555-5555-4555-8555-555555555552",
+    ]) {
+      await instance.document.write(scope, {
+        kind: "append",
+        messageId,
+        role: "user",
+        parts: [{ kind: "text", text: "привіт", status: "complete" }],
+      });
+    }
+
+    const document = await instance.document.read(scope);
+
+    expect(document.olderCursor).not.toBeNull();
+    // Whose conversation it is stays on the server: the client never needed it.
+    expect(document).not.toHaveProperty("bind");
+    expect(chatDocumentSchema.safeParse(document).success).toBe(true);
+    expect(assistantChatDocumentSchema.safeParse(document).success).toBe(true);
+  });
+
   it("refuses a field one side would add without the other", () => {
     const document = {
       conversationId: CONVERSATION,
-      bind: BIND,
       messages: [],
+      olderCursor: null,
       openPause: null,
       // A field a future kit might start writing.
       lastReadAt: "2026-09-09T00:00:00.000Z",

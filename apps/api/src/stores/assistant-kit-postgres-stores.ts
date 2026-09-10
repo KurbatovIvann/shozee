@@ -1,5 +1,5 @@
 /**
- * Postgres behind the `assistant-kit` document and history ports.
+ * Postgres behind the `assistant-kit` message-log and history ports.
  *
  * The conversation is the product's record, not a cache. Redis was right for
  * proving the protocol by hand and wrong the moment the app started using it: a
@@ -10,19 +10,26 @@
  * atomic claim is what that store is for. What is durable here is what a person
  * reads and what the next turn is built from.
  *
- * Both go through `executeAction`, so the tenant scope and the author rule are
- * the module's, applied the same way as every other read and write of that
- * conversation. That is why these are built per caller rather than once at boot:
- * the store acts as the person, and there is no ambient principal to act as.
+ * Everything goes through `executeAction`, so the tenant scope and the author
+ * rule are the module's, applied the same way as every other read and write of
+ * that conversation. That is why these are built per caller rather than once at
+ * boot: the store acts as the person, and there is no ambient principal to act
+ * as.
  */
-import { readChatState, writeChatState } from "@showzy/assistant";
+import {
+  insertChatMessage,
+  readChatMessages,
+  readChatState,
+  updateChatMessage,
+  writeChatState,
+} from "@showzy/assistant";
 import type {
-  DocumentStore,
+  MessageLogStore,
   ModelMessage,
   PauseScope,
 } from "@showzy/assistant-kit";
 import { executeAction, type ActionPipelineDeps } from "@showzy/core";
-import { CoreError } from "@showzy/core/errors";
+import { CoreError, CoreInvariantError } from "@showzy/core/errors";
 
 import { ASSISTANT_INVOCATION_CHANNEL } from "../http/assistant-invocation.js";
 import { assistantHistoryWindow } from "../http/assistant-kit-history-window.js";
@@ -60,6 +67,18 @@ function isNotFound(error: unknown): boolean {
   return error instanceof CoreError && error.code === "NOT_FOUND";
 }
 
+/** Runs one call as the caller, and names a missing conversation for what it is. */
+async function asCaller<T>(work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (error) {
+    if (isNotFound(error)) {
+      throw new AssistantKitConversationGoneError();
+    }
+    throw error;
+  }
+}
+
 /**
  * What goes into a `jsonb` column has to be JSON, and `undefined` is not.
  *
@@ -67,7 +86,7 @@ function isNotFound(error: unknown): boolean {
  * — `providerExecuted` is the one that turns up in practice. Postgres would
  * drop those keys on the way in regardless, but the audit hook hashes the
  * action's input first and refuses `undefined` outright, so an unnormalised
- * history fails the write rather than being quietly cleaned.
+ * value fails the write rather than being quietly cleaned.
  *
  * Normalising here rather than in the module is deliberate: this is the edge
  * where a runtime's in-memory objects become stored bytes, and it is the only
@@ -78,6 +97,15 @@ function asJson(value: unknown): unknown {
     return null;
   }
   return JSON.parse(JSON.stringify(value)) as unknown;
+}
+
+/** A stored message is always an object; anything else is a bug in the caller. */
+function asJsonObject(value: unknown): Record<string, unknown> {
+  const json = asJson(value);
+  if (typeof json !== "object" || json === null || Array.isArray(json)) {
+    throw new CoreInvariantError("assistant chat message is not a JSON object");
+  }
+  return json as Record<string, unknown>;
 }
 
 function callFor(caller: AssistantKitCaller) {
@@ -97,40 +125,67 @@ function callFor(caller: AssistantKitCaller) {
   };
 }
 
-export function createPostgresAssistantKitDocumentStore(
+/**
+ * The transcript, one row per message.
+ *
+ * Each operation is one action as the caller, so the author rule holds for every
+ * page read and every write alike. The sequence number and the refusal of a
+ * repeated message id are the module's; the kit relies on both.
+ */
+export function createPostgresAssistantKitMessageLog(
   deps: AssistantKitStoreDeps,
   caller: AssistantKitCaller,
-): DocumentStore {
+): MessageLogStore {
   const call = callFor(caller);
   return {
-    async read(conversationId) {
-      try {
-        const state = await executeAction(deps.pipeline, {
-          action: readChatState,
-          input: { conversationId },
+    page: (conversationId, options) =>
+      asCaller(async () => {
+        const page = await executeAction(deps.pipeline, {
+          action: readChatMessages,
+          input: {
+            conversationId,
+            limit: options.limit,
+            ...(options.beforeSeq === undefined
+              ? {}
+              : { beforeSeq: options.beforeSeq }),
+          },
           ...call,
         });
-        return state.document ?? null;
-      } catch (error) {
-        if (isNotFound(error)) {
-          throw new AssistantKitConversationGoneError();
-        }
-        throw error;
-      }
-    },
-    async write(conversationId, document) {
-      try {
-        await executeAction(deps.pipeline, {
-          action: writeChatState,
-          input: { conversationId, document: asJson(document) },
+        return { records: page.records, hasOlder: page.hasOlder };
+      }),
+
+    insert: (conversationId, record) =>
+      asCaller(async () => {
+        const inserted = await executeAction(deps.pipeline, {
+          action: insertChatMessage,
+          input: {
+            conversationId,
+            messageId: record.messageId,
+            bind: record.bind,
+            message: asJsonObject(record.message),
+          },
           ...call,
         });
-      } catch (error) {
-        if (isNotFound(error)) {
-          throw new AssistantKitConversationGoneError();
-        }
-        throw error;
-      }
+        return { seq: inserted.seq };
+      }),
+
+    /**
+     * Not through `asCaller`. The kit updates only the message it has just read
+     * in the same request, so the conversation is already known to be this
+     * person's; a not-found here means that message vanished under a held lease,
+     * and dressing it as a gone conversation would hide a fault as a 410.
+     */
+    update: async (conversationId, record) => {
+      await executeAction(deps.pipeline, {
+        action: updateChatMessage,
+        input: {
+          conversationId,
+          seq: record.seq,
+          messageId: record.messageId,
+          message: asJsonObject(record.message),
+        },
+        ...call,
+      });
     },
   };
 }
@@ -148,8 +203,8 @@ export function createPostgresAssistantKitHistoryStore(
 ): AssistantHistoryPort {
   const call = callFor(caller);
   return {
-    async load(scope: PauseScope): Promise<ModelMessage[]> {
-      try {
+    load: (scope: PauseScope): Promise<ModelMessage[]> =>
+      asCaller(async () => {
         const state = await executeAction(deps.pipeline, {
           action: readChatState,
           input: { conversationId: scope.conversationId },
@@ -164,15 +219,10 @@ export function createPostgresAssistantKitHistoryStore(
         return Array.isArray(state.history)
           ? assistantHistoryWindow(state.history as ModelMessage[])
           : [];
-      } catch (error) {
-        if (isNotFound(error)) {
-          throw new AssistantKitConversationGoneError();
-        }
-        throw error;
-      }
-    },
-    async save(scope: PauseScope, messages: readonly ModelMessage[]) {
-      try {
+      }),
+
+    save: (scope: PauseScope, messages: readonly ModelMessage[]) =>
+      asCaller(async () => {
         await executeAction(deps.pipeline, {
           action: writeChatState,
           input: {
@@ -181,12 +231,6 @@ export function createPostgresAssistantKitHistoryStore(
           },
           ...call,
         });
-      } catch (error) {
-        if (isNotFound(error)) {
-          throw new AssistantKitConversationGoneError();
-        }
-        throw error;
-      }
-    },
+      }),
   };
 }

@@ -133,16 +133,18 @@ export interface AssistantKit<T extends AnyTypes> {
   /**
    * One turn at a time, per conversation.
    *
-   * The document is read-modify-write. Two turns on one conversation — two
-   * devices, two tabs, a retry that outran its own reply — interleave their
-   * reads and the later write silently discards the earlier one. Nothing else
-   * here prevents it: `busy` in a client is per client, and the serial tool
-   * chain inside a turn is per turn.
+   * Two turns on one conversation — two devices, two tabs, a retry that outran
+   * its own reply — interleave their messages, and the second turn's model
+   * answers a conversation that no longer exists as it read it. Nothing else
+   * here prevents that: `busy` in a client is per client, and the serial tool
+   * chain inside a turn is per turn. The log refuses the storage half — a write
+   * reaches only the latest message, so a turn whose lease lapsed fails its next
+   * write instead of landing out of order — but it cannot make two
+   * conversations into one.
    *
    * A lease rather than a queue. Two people talking to one conversation at once
-   * is not work to be ordered — the second turn's model would be answering
-   * without knowing what the first is doing — so the second is refused, and
-   * told, rather than run late.
+   * is not work to be ordered, so the second is refused, and told, rather than
+   * run late.
    */
   readonly turn: {
     begin(
@@ -154,11 +156,23 @@ export interface AssistantKit<T extends AnyTypes> {
   };
 
   readonly document: {
-    read(scope: PauseScope): Promise<ChatDocument>;
     /**
-     * Scoped like the read. A write whose `bind` does not match the stored
-     * document is refused — `wrong_owner` — rather than silently appending to
-     * someone else's conversation.
+     * The latest window of the conversation, or the page before `before` — a
+     * cursor an earlier read returned as `olderCursor`. Check a cursor that
+     * came from outside with `chatCursorSchema` first; an invalid one throws.
+     */
+    read(
+      scope: PauseScope,
+      options?: { readonly before?: string },
+    ): Promise<ChatDocument>;
+    /**
+     * Scoped like the read. A write under a `bind` other than the one the log
+     * was written under is refused — `wrong_owner` — rather than silently
+     * appended to someone else's conversation.
+     *
+     * Only the latest message can change. A write naming it merges into it;
+     * any other message id starts a new one, and an id the log already holds
+     * further back is refused by the store.
      */
     write(
       scope: PauseScope,

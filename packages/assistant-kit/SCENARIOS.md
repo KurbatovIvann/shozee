@@ -8,7 +8,7 @@ scenario here can only be written with one product's vocabulary, it belongs in
 that product's suite.
 Every scenario below is
 **deterministic**: a stub model, a `Map`-backed `PauseStore`, an in-memory
-`DocumentStore`, a fixed `Clock` and a counter `Ids`. No scenario calls a real
+message log, a fixed `Clock` and a counter `Ids`. No scenario calls a real
 provider — there is no budget for live-model runs, and none of these check
 generation quality. Model behaviour stays a hand-test.
 
@@ -56,16 +56,19 @@ argue with history rather than with taste.
 
 | #   | Level | Given / When / Then                                                                                                                                                                                                                                    | Prevents                                                      |
 | --- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
-| 15c | K     | `begin` on a conversation that has one running → `busy`. `end` frees it. A second conversation is unaffected.                                                                                                                                          | Two turns interleaving read-modify-write on one document      |
+| 15c | K     | `begin` on a conversation that has one running → `busy`. `end` frees it. A second conversation is unaffected.                                                                                                                                          | Two turns interleaving their messages on one conversation     |
 | 15d | K     | `end` with the token of a lease that has already lapsed → `false`, and the lock the current holder took is left standing. The caller is told, because a lapsed lease means two turns may already be running and only the caller can say that out loud. | A cleanup releasing someone else's lock and causing the fault |
 
 ## Document
 
-| #   | Level | Given / When / Then                                                                                                                                                                                                                                                          | Prevents                                    |
-| --- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
-| 16  | K + L | A turn's parts are appended live. → `document.read` afterwards returns the **same parts in the same order**. Live and reload are the same bytes, not two derivations. Also asserted against a real turn's own `parts`.                                                       | Live and reload composing different cards   |
-| 17  | K + L | `append` a card whose `cardId` the message already holds, in a later write or the same one. → one card for that id, where it was first shown, with the new payload and a raised revision; a turn's own `parts` say the same. The same id in another message is another card. | A second card per pagination step (SHO-551) |
-| 18  | K     | A `text` part streams then settles. → `status` moves `streaming` → `complete`; a partial text left by a crash reads `error` and is never presented as final.                                                                                                                 | Partial generation shown as the answer      |
+| #   | Level | Given / When / Then                                                                                                                                                                                                                                                          | Prevents                                                                           |
+| --- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| 16  | K + L | A turn's parts are appended live. → `document.read` afterwards returns the **same parts in the same order**. Live and reload are the same bytes, not two derivations. Also asserted against a real turn's own `parts`.                                                       | Live and reload composing different cards                                          |
+| 17  | K + L | `append` a card whose `cardId` the message already holds, in a later write or the same one. → one card for that id, where it was first shown, with the new payload and a raised revision; a turn's own `parts` say the same. The same id in another message is another card. | A second card per pagination step (SHO-551)                                        |
+| 18  | K     | A `text` part streams then settles. → `status` moves `streaming` → `complete`; a partial text left by a crash reads `error` and is never presented as final.                                                                                                                 | Partial generation shown as the answer                                             |
+| 18b | K + R | A conversation longer than the window. → a read returns the latest window and an `olderCursor`; reading back by cursor yields the whole log in order, nothing missing or repeated, and the first page has no cursor. A cursor the route could not have issued is a 400.      | A year of history read, rewritten and sent on every turn (SHO-555)                 |
+| 18c | K     | A write naming a message that is no longer the latest. → refused by the store, and both messages stay as they were.                                                                                                                                                          | A turn whose lease lapsed writing into the middle of a newer one                   |
+| 18d | K     | A stored message this build cannot parse. → it is skipped and reported and the rest reads; the next write adds a message after it and leaves it byte-identical; a write naming it is refused.                                                                                | One unreadable message emptying the whole conversation on the next write (SHO-555) |
 
 ## Boundary
 
@@ -151,8 +154,8 @@ provider. No database, no live model.
 | 28  | `POST chat` with an extra `messages` key is a 400. A client never supplies the model transcript.                                                                                                                                                                                      |
 | 29  | `POST chat` while a question is unanswered → 409 `interaction_open` with the current pause. A visible limitation instead of a draft that silently disappears.                                                                                                                         |
 | 30  | `POST chat` for a conversation owned by someone else → 410, indistinguishable from one that does not exist.                                                                                                                                                                           |
-| 31  | `GET messages` returns exactly the parts the live turn returned, byte for byte, plus the open pause from the pause store.                                                                                                                                                             |
-| 32  | `GET messages` for another tenant returns an **empty document**, equal to what a conversation that does not exist returns.                                                                                                                                                            |
+| 31  | `GET messages` returns exactly the window the live turn returned, byte for byte, plus the open pause from the pause store. With `before`, the page before it.                                                                                                                         |
+| 32  | `GET messages` for another tenant returns an **empty window**, equal to what a conversation that does not exist returns.                                                                                                                                                              |
 | 33  | Full trip over HTTP: chat pauses → choice resolves → reload shows the interaction part and exactly one card, with no open pause left.                                                                                                                                                 |
 | 34  | Two identical sends → the write runs once and the retry is answered with the conversation. Also while the first is still in flight, and for a retried answer, which the exactly-once claim would otherwise refuse with `410` and no document (SHO-547).                               |
 | 34b | Two turns on one conversation → the second is refused `turn_open` with the current document, and the first's message survives whole. Also for a chat arriving while an answer is still resolving, which the pause check cannot catch because the claim already consumed it (SHO-548). |
@@ -161,7 +164,8 @@ provider. No database, no live model.
 ## A hole the route level found in the package
 
 `document.read` scoped only the _pause_ by owner; the messages came back to
-anyone who knew the conversation id — and an id is not a secret. A document now
-carries the `bind` it was created under: a read by anyone else returns an empty
-document, and a write by anyone else is refused as `wrong_owner` rather than
-appended. `document.write` takes a scope, like the read.
+anyone who knew the conversation id — and an id is not a secret. Every stored
+message now carries the `bind` it was written under: a read by anyone else
+returns an empty window, and a write by anyone else is refused as `wrong_owner`
+rather than appended. `document.write` takes a scope, like the read. The token
+itself never reaches a client.

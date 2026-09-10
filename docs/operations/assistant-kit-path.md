@@ -49,7 +49,7 @@ Nothing of the previous client remains on disk.
 | POST | `/assistant/kit/chat` | `{ commandId, conversationId, text }` |
 | POST | `/assistant/kit/answer` | `{ commandId, conversationId, interactionId, revision, answer }` |
 | POST | `/assistant/kit/abandon` | `{ conversationId, interactionId }` |
-| GET | `/assistant/kit/messages` | `?conversationId=` |
+| GET | `/assistant/kit/messages` | `?conversationId=` and, for an older page, `&before=` |
 
 Same auth as the live assistant: staff session cookie plus `x-company-id`.
 `commandId` and `conversationId` are uuids the client makes up.
@@ -59,13 +59,18 @@ opaque, and the stored pause says which kind it belongs to. `abandon` is how a
 question is dropped — including saying no to a confirmation, which is not an
 answer to it but a decision to stop.
 
-**Every route answers with the whole document**, never with just the parts one
-request produced:
+**Every route answers with the conversation's latest window**, never with just
+the parts one request produced:
 
 ```json
-{ "status": "ok", "document": { "conversationId": "...", "bind": "...",
-  "messages": [...], "openPause": null } }
+{ "status": "ok", "document": { "conversationId": "...",
+  "messages": [...], "olderCursor": "12", "openPause": null } }
 ```
+
+`messages` are the latest thirty, each exactly as stored. `olderCursor` is null
+when nothing precedes them; otherwise `GET /assistant/kit/messages` with
+`&before=<olderCursor>` returns the page before. A message is never changed once
+its request ends, so a page a client already holds does not go stale.
 
 A refusal carries it too — `409 stale`, `409 unresolvable`, `409 action_failed`
 and `409 interaction_open` all come back with the current `document`, so a client
@@ -111,6 +116,12 @@ What a reload would render:
 curl -sS "$KIT/assistant/kit/messages?conversationId=$CONV" -H "cookie: $COOKIE" -H "x-company-id: $COMPANY" | jq
 ```
 
+The page before it (take `olderCursor` from the previous response):
+
+```bash
+curl -sS "$KIT/assistant/kit/messages?conversationId=$CONV&before=PASTE" -H "cookie: $COOKIE" -H "x-company-id: $COMPANY" | jq
+```
+
 ## The scenario worth running
 
 1. **A read.** `chat` with "покажи замовлення цього клієнта". Expect one list or
@@ -121,8 +132,8 @@ curl -sS "$KIT/assistant/kit/messages?conversationId=$CONV" -H "cookie: $COOKIE"
 3. **Answer it.** `answer` with `{ optionId }` from that pause. In the last
    message expect the record's card **first**, then the explanation, and
    `document.openPause: null`.
-4. **Reload.** `messages`. Expect a document byte-identical to the one the turn
-   returned.
+4. **Reload.** `messages`. Expect the same window, byte for byte, as the one
+   the turn returned.
 5. **The second question.** Try a request where both the customer and the product
    are ambiguous. Expect a pause, then after answering it, **another** pause
    rather than an error.
@@ -206,26 +217,36 @@ kit:pause:<conversationId>      the open interaction, if any
 ```
 
 ```sql
-select document, history, updated_at
+select seq, message_id, message
+from assistant_chat_messages
+where conversation_id = '<conversationId>'
+order by seq;
+```
+
+```sql
+select history, updated_at
 from assistant_chat_state
 where conversation_id = '<conversationId>';
 ```
 
-Two blobs in one row: the chat document a person reads, and the provider
-messages the next turn is built from. Both are replaced whole — there is no
-append, so a row is always a complete document rather than a fold over deltas,
-and that is what makes a reload byte-identical to the live turn.
+The transcript is a log, one row per message, ordered by `seq`. A message is
+written by the request that produced it and not touched after, so nothing
+rewrites the conversation, and a message the running build cannot parse is
+skipped — logged as `assistant message could not be read and was skipped` —
+instead of emptying it (SHO-555). The provider messages the next turn is built
+from are one value in `assistant_chat_state`, replaced whole.
 
-Read and written through `assistant.readChatState` / `assistant.writeChatState`
-as the caller, so the tenant scope and the author rule are the same ones every
-other read of that conversation goes through. A conversation that is not yours,
-and one that does not exist, both answer `410` — the store cannot tell them
-apart and must not.
+Read and written through `assistant.readChatMessages` /
+`assistant.insertChatMessage` / `assistant.updateChatMessage` and
+`assistant.readChatState` / `assistant.writeChatState` as the caller, so the
+tenant scope and the author rule are the same ones every other read of that
+conversation goes through. A conversation that is not yours, and one that does
+not exist, both answer `410` — the store cannot tell them apart and must not.
 
-The document also carries the kit's own `bind` (`<userId>:<companyId>`), checked
-inside the package. Two independent answers to the same question, which is
-deliberate: the table scope is enforced by the database, the `bind` by the
-protocol.
+Each message also carries the kit's own `bind` (`<userId>:<companyId>`), checked
+inside the package and never sent to a client. Two independent answers to the
+same question, which is deliberate: the table scope is enforced by the database,
+the `bind` by the protocol.
 
 ## How much conversation the model sees
 
@@ -246,8 +267,9 @@ also how a habit picked up from earlier turns stops being demonstrated.
 
 ```sql
 select jsonb_array_length(history) as messages,
-       jsonb_array_length(document -> 'messages') as visible
-from assistant_chat_state where conversation_id = '<conversationId>';
+       (select count(*) from assistant_chat_messages m
+        where m.conversation_id = s.conversation_id) as visible
+from assistant_chat_state s where conversation_id = '<conversationId>';
 ```
 
 `ASSISTANT_HISTORY_TURNS` and `ASSISTANT_HISTORY_MESSAGES_MAX` (a backstop for a

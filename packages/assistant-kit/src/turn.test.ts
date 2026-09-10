@@ -1,11 +1,12 @@
 /**
  * One turn at a time, per conversation.
  *
- * The document is read-modify-write, so two turns on one conversation
- * interleave their reads and the later write discards the earlier one — with
- * nothing anywhere saying it happened (SHO-548). Neither of the things that
- * look like they would prevent it does: `busy` in a client is per client, and
- * the serial tool chain inside a turn is per turn.
+ * Two turns on one conversation interleave their messages, and the second
+ * turn's model answers without knowing what the first is doing (SHO-548). The
+ * message log makes the storage half fail loudly, but only this lease prevents
+ * the conversation half. Neither of the things that look like they would do it
+ * does: `busy` in a client is per client, and the serial tool chain inside a
+ * turn is per turn.
  *
  * The lease is a `setIfAbsent` on a second key, the same primitive that makes
  * one pause per conversation. What is worth testing is not that a Map can hold

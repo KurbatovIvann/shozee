@@ -97,3 +97,46 @@ that same attempt again with the challenge. Core decides; the pause only
 remembers what to ask it. The previous host's named exception, a host-side
 approval for a unique `orders.create`, went with that host and is not carried
 over.
+
+## Addendum — the transcript is a log (SHO-555, 2026-09-10)
+
+The decision says a turn stores the parts it settled and a reload returns those
+bytes. It was encoded as a shape — one `jsonb` document per conversation,
+replaced whole — and the shape was incidental to the rule. A message is never
+touched once the request that wrote it ends, so a conversation is an
+append-only log with one live message at its end. Storing a log as a value had
+consequences of its own:
+
+- every write read, validated and rewrote the whole history, and every answer
+  carried it, so a turn cost more with every day of use;
+- one stored message the running build could not parse made the whole
+  document read as empty, and the next write stored itself over the history —
+  deploying a new part kind and rolling back was enough;
+- two racing turns lost a whole write instead of failing.
+
+What changes:
+
+- **Stored as settled, returned as stored — per message.**
+  `assistant_chat_messages` holds one row per message; `seq` orders the log and
+  `message` stays opaque to the module.
+- **Only the latest message can change.** The kit's port appends, and replaces
+  the message it has just read as the latest; nothing can address an older one.
+  A repeated message id is refused, so a turn whose lease lapsed fails instead
+  of writing out of order.
+- **Every route answers with a window**, not the whole conversation: the latest
+  messages, the open question, and an opaque `olderCursor`;
+  `GET /assistant/kit/messages?before=` returns the page before it. The
+  guarantee against a second derivation is now that a response equals a reload
+  of the latest window byte for byte, and that everything before a window is
+  immutable, so a copy a client holds cannot go stale.
+- **An unreadable message costs that message.** It is skipped and reported,
+  never overwritten.
+- **Ownership stays two independent answers:** the module's author rule on every
+  read and write, and the kit's `bind`, now stored on each message and no longer
+  sent to clients.
+- `assistant_chat_state` keeps only the provider history, which genuinely is a
+  value: a windowed working set, replaced whole.
+
+Not changed: the pause, the claim, the turn lease, `appendParts`, and the rule
+that an answer carries the conversation's current state rather than the
+fragment one request produced.

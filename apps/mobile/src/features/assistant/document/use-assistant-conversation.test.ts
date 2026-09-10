@@ -74,7 +74,7 @@ function document(options?: {
   }
   return {
     conversationId: CONVERSATION,
-    bind: "user-1:company-a",
+    olderCursor: null,
     messages: [
       {
         messageId: MESSAGE,

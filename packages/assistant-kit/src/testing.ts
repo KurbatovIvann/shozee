@@ -19,8 +19,9 @@ import type {
   Clock,
   Ids,
   KitDeps,
+  MessageLogStore,
   PauseStore,
-  DocumentStore,
+  StoredMessage,
 } from "./ports.js";
 import type { Continuation } from "./pause.js";
 
@@ -63,21 +64,73 @@ export function memoryPauseStore(): MemoryPauseStore {
   };
 }
 
-export interface MemoryDocumentStore extends DocumentStore {
-  readonly writes: unknown[];
+export interface MemoryMessageLog extends MessageLogStore {
+  /** Every accepted insert and update, in order. */
+  readonly writes: {
+    readonly kind: "insert" | "update";
+    readonly conversationId: string;
+    readonly seq: number;
+  }[];
 }
 
-export function memoryDocumentStore(): MemoryDocumentStore {
-  const byConversation = new Map<string, unknown>();
-  const writes: unknown[] = [];
+/**
+ * The log, with the refusals a real store makes: a repeated message id on
+ * insert, and a `(seq, messageId)` pair that names nothing on update. Without
+ * them a suite here would prove behaviour the database then contradicts.
+ *
+ * Messages are cloned in and out, so a test cannot pass by holding a reference
+ * the kit later mutates.
+ */
+export function memoryMessageLog(): MemoryMessageLog {
+  const byConversation = new Map<string, StoredMessage[]>();
+  const writes: MemoryMessageLog["writes"] = [];
   return {
     writes,
-    read(conversationId) {
-      return Promise.resolve(byConversation.get(conversationId) ?? null);
+    page(conversationId, options) {
+      const all = byConversation.get(conversationId) ?? [];
+      const before = options.beforeSeq;
+      const eligible =
+        before === undefined ? all : all.filter((held) => held.seq < before);
+      return Promise.resolve({
+        records: structuredClone(
+          eligible.slice(Math.max(0, eligible.length - options.limit)),
+        ),
+        hasOlder: eligible.length > options.limit,
+      });
     },
-    write(conversationId, write) {
-      writes.push(write);
-      byConversation.set(conversationId, write);
+    insert(conversationId, record) {
+      const all = byConversation.get(conversationId) ?? [];
+      if (all.some((held) => held.messageId === record.messageId)) {
+        return Promise.reject(
+          new Error(`message ${record.messageId} is already stored`),
+        );
+      }
+      const seq = (all.at(-1)?.seq ?? 0) + 1;
+      byConversation.set(conversationId, [
+        ...all,
+        { seq, ...structuredClone(record) },
+      ]);
+      writes.push({ kind: "insert", conversationId, seq });
+      return Promise.resolve({ seq });
+    },
+    update(conversationId, record) {
+      const all = byConversation.get(conversationId) ?? [];
+      const at = all.findIndex(
+        (held) =>
+          held.seq === record.seq && held.messageId === record.messageId,
+      );
+      const held = all[at];
+      if (held === undefined) {
+        return Promise.reject(
+          new Error(
+            `no message ${record.messageId} at ${String(record.seq)} to update`,
+          ),
+        );
+      }
+      const next = [...all];
+      next[at] = { ...held, message: structuredClone(record.message) };
+      byConversation.set(conversationId, next);
+      writes.push({ kind: "update", conversationId, seq: record.seq });
       return Promise.resolve();
     },
   };
@@ -114,9 +167,20 @@ export interface TestDeps<
   T extends Record<string, InteractionType<z.ZodType, z.ZodType, never>>,
 > extends KitDeps<T> {
   readonly pauses: MemoryPauseStore;
-  readonly documents: MemoryDocumentStore;
+  readonly messages: MemoryMessageLog;
   readonly clock: TestClock;
+  /** What `onUnreadableMessage` was told, in order. */
+  readonly unreadable: {
+    readonly conversationId: string;
+    readonly seq: number;
+  }[];
 }
+
+/**
+ * Messages per read when a suite does not say. Small enough that a paging test
+ * needs no hundreds of writes; large enough that no other test reaches it.
+ */
+export const TEST_WINDOW_MESSAGES = 20;
 
 /**
  * The registry is a parameter, not a default: what kinds of question exist is
@@ -125,13 +189,22 @@ export interface TestDeps<
  */
 export function testDeps<
   T extends Record<string, InteractionType<z.ZodType, z.ZodType, never>>,
->(interactions: InteractionRegistry<T>): TestDeps<T> {
+>(
+  interactions: InteractionRegistry<T>,
+  options?: { readonly windowMessages?: number },
+): TestDeps<T> {
+  const unreadable: TestDeps<T>["unreadable"] = [];
   return {
     pauses: memoryPauseStore(),
-    documents: memoryDocumentStore(),
+    messages: memoryMessageLog(),
     clock: fixedClock(),
     ids: counterIds(),
     interactions,
+    window: { messages: options?.windowMessages ?? TEST_WINDOW_MESSAGES },
+    unreadable,
+    onUnreadableMessage: (event) => {
+      unreadable.push(event);
+    },
   };
 }
 

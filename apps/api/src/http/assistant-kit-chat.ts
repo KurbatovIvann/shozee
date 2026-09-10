@@ -1,6 +1,7 @@
 /**
  * `POST /assistant/kit/chat` — a fresh turn.
- * `GET  /assistant/kit/messages` — what to render after a reload.
+ * `GET  /assistant/kit/messages` — what to render after a reload, or the page
+ * before a cursor an earlier answer returned.
  *
  * Two things are worth reading here.
  *
@@ -14,7 +15,11 @@
  */
 import { randomUUID } from "node:crypto";
 
-import { runHostTurn, type ChatDocument } from "@showzy/assistant-kit";
+import {
+  chatCursorSchema,
+  runHostTurn,
+  type ChatDocument,
+} from "@showzy/assistant-kit";
 import type { Context } from "hono";
 import { z } from "zod";
 
@@ -42,14 +47,15 @@ export const assistantKitChatBodySchema = z.strictObject({
 });
 
 /**
- * Every route answers with the whole stored document, never with just the parts
- * one request produced.
+ * Every route answers with the conversation as it now stands — its latest
+ * window — never with just the parts one request produced.
  *
  * A response that carries only the new parts makes the client splice them into
  * what it already has, and a splice is a second derivation of the conversation —
- * the one that used to disagree with what a reload showed. Sending the document
- * costs one Redis read and removes the disagreement by construction: live and
- * reload are literally the same bytes.
+ * the one that used to disagree with what a reload showed. A window is not that:
+ * it is the same bytes a reload of the latest page returns, and everything
+ * before it is immutable, so a copy a client already holds cannot go stale. A
+ * year of messages is not carried on every answer (SHO-555).
  *
  * `openPause` inside it is the open question, so there is no separate `pause`
  * field to keep consistent with it either.
@@ -105,7 +111,7 @@ export async function handleAssistantKitChat(
   }
 
   // Everything from here writes. One turn at a time per conversation, or
-  // two of them interleave read-modify-write and one is lost (SHO-548).
+  // two of them interleave their messages (SHO-548).
   return await withConversationTurn(
     runtime,
     kit,
@@ -216,6 +222,12 @@ export async function handleAssistantKitMessages(
   if (!conversationId.success) {
     return json(400, { error: { code: "VALIDATION" } }, requestId);
   }
+  // Only a cursor this path could have issued. The kit would throw on anything
+  // else, and a client gets a 400 for a malformed query, not a 500.
+  const before = c.req.query("before");
+  if (before !== undefined && !chatCursorSchema.safeParse(before).success) {
+    return json(400, { error: { code: "VALIDATION" } }, requestId);
+  }
 
   // Ownership is enforced inside the package: a document belonging to someone
   // else comes back empty, indistinguishable from a conversation that does not
@@ -227,10 +239,10 @@ export async function handleAssistantKitMessages(
     requestId,
     clientIp: c.get("clientIp"),
   });
-  const document = await kit.document.read({
-    conversationId: conversationId.data,
-    bind: caller.bind,
-  });
+  const document = await kit.document.read(
+    { conversationId: conversationId.data, bind: caller.bind },
+    before === undefined ? {} : { before },
+  );
 
   return json(200, { status: "ok", document }, requestId);
 }

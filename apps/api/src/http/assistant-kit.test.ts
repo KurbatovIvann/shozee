@@ -39,9 +39,10 @@ import {
   createAssistantKitApp,
 } from "./assistant-kit.js";
 import { memoryAssistantKitCommands } from "../stores/assistant-kit-stores.js";
-import type {
-  AssistantHistoryPort,
-  ResolveAnswer,
+import {
+  ASSISTANT_CHAT_WINDOW_MESSAGES,
+  type AssistantHistoryPort,
+  type ResolveAnswer,
 } from "./assistant-kit-http.js";
 
 /** The guard logs refusals; most tests here do not assert on them. */
@@ -161,7 +162,10 @@ function harness(options?: {
   /** Held open to keep a turn in flight while a second request arrives. */
   readonly toolsGate?: Promise<unknown>;
 }): Harness {
-  const deps = testDeps(assistantInteractions);
+  // The window the routes really run with, so a page here is a page on a phone.
+  const deps = testDeps(assistantInteractions, {
+    windowMessages: ASSISTANT_CHAT_WINDOW_MESSAGES,
+  });
   const kit = createAssistantKit(deps);
   const history = memoryHistory();
   const model =
@@ -311,9 +315,9 @@ function answerBody(
 }
 
 /**
- * Every route answers with the whole stored document, so one type covers them
- * all. `parts` is loosely typed here on purpose: this suite reads the wire, not
- * the package's own union.
+ * Every route answers with the conversation's latest window, so one type covers
+ * them all. `parts` is loosely typed here on purpose: this suite reads the wire,
+ * not the package's own union.
  */
 type KitBody = {
   readonly status?: string;
@@ -330,6 +334,7 @@ type KitBody = {
         readonly interactionId?: string;
       }[];
     }[];
+    readonly olderCursor: string | null;
     readonly openPause: {
       readonly kind: string;
       readonly interactionId: string;
@@ -339,8 +344,10 @@ type KitBody = {
   };
 };
 
-const messagesPath = (id = CONVERSATION) =>
-  `${ASSISTANT_KIT_MESSAGES_PATH}?conversationId=${id}`;
+const messagesPath = (id = CONVERSATION, before?: string) =>
+  `${ASSISTANT_KIT_MESSAGES_PATH}?conversationId=${id}${
+    before === undefined ? "" : `&before=${encodeURIComponent(before)}`
+  }`;
 
 describe("POST /assistant/kit/chat", () => {
   it("runs a turn, stores the question and the answer, and saves history", async () => {
@@ -562,6 +569,59 @@ describe("GET /assistant/kit/messages", () => {
 
     expect((await get(app, ASSISTANT_KIT_MESSAGES_PATH)).status).toBe(400);
     expect((await get(app, messagesPath("not-a-uuid"))).status).toBe(400);
+  });
+
+  /**
+   * SHO-555. A year of use is one conversation; an answer carries one window of
+   * it, and the rest is a page away by the cursor that answer gave.
+   */
+  it("pages back from the cursor a read returned, to the first message", async () => {
+    const { app, kit, bind } = harness();
+    const total = ASSISTANT_CHAT_WINDOW_MESSAGES + 5;
+    for (let n = 1; n <= total; n += 1) {
+      await kit.document.write(
+        { conversationId: CONVERSATION, bind },
+        {
+          kind: "append",
+          messageId: `66666666-6666-4666-8666-${n.toString(16).padStart(12, "0")}`,
+          role: "user",
+          parts: [
+            { kind: "text", text: `запит ${String(n)}`, status: "complete" },
+          ],
+        },
+      );
+    }
+
+    const latest = (await (await get(app, messagesPath())).json()) as KitBody;
+    expect(latest.document?.messages).toHaveLength(
+      ASSISTANT_CHAT_WINDOW_MESSAGES,
+    );
+    const cursor = latest.document?.olderCursor ?? null;
+    expect(cursor).toEqual(expect.any(String));
+
+    const older = (await (
+      await get(app, messagesPath(CONVERSATION, cursor ?? ""))
+    ).json()) as KitBody;
+    expect(older.document?.olderCursor).toBeNull();
+
+    const texts = [
+      ...(older.document?.messages ?? []),
+      ...(latest.document?.messages ?? []),
+    ].map((message) => message.parts[0]?.text);
+    expect(texts).toEqual(
+      Array.from({ length: total }, (_, index) => `запит ${String(index + 1)}`),
+    );
+  });
+
+  it("400 for a cursor it could not have issued", async () => {
+    const { app } = harness();
+
+    for (const before of ["", "abc", "0", "-1", "1.5"]) {
+      expect(
+        (await get(app, messagesPath(CONVERSATION, before))).status,
+        before,
+      ).toBe(400);
+    }
   });
 
   it("401 without a session", async () => {
@@ -917,7 +977,7 @@ describe("the full round trip through HTTP", () => {
  * was looking at could never be answered.
  *
  * One receipt fixes both, and it stores no response body — every route already
- * answers with the whole document, so a replay is "here is where the
+ * answers with the conversation as it stands, so a replay is "here is where the
  * conversation actually is", which is truer than a recording of what the first
  * attempt said.
  */
@@ -1051,9 +1111,10 @@ describe("a retry of a command whose reply was lost", () => {
 });
 
 /**
- * SHO-548. Two turns on one conversation interleave read-modify-write on the
- * document and the later one silently discards the earlier. Two devices, two
- * tabs, a laptop left open — and nothing anywhere reports it.
+ * SHO-548. Two turns on one conversation interleave their messages, and the
+ * second turn's model answers a conversation that no longer exists as it read
+ * it. Two devices, two tabs, a laptop left open — and when this was a document
+ * replaced whole, the later write silently discarded the earlier one.
  *
  * A lease existed before, as `conversationLock` in `app.ts`, and went out in
  * phase 2 with the routes that used it. Same class as the history window: a

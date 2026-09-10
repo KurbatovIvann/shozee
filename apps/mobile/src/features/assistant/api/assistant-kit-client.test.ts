@@ -43,7 +43,7 @@ function sentBody(index: number): Record<string, unknown> {
 function document(openPause: unknown = null) {
   return {
     conversationId: CONVERSATION,
-    bind: "user-1:company-a",
+    olderCursor: null,
     messages: [
       {
         messageId: "44444444-4444-4444-8444-444444444444",

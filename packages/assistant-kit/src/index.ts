@@ -58,6 +58,7 @@ export {
 } from "./pause.js";
 
 export {
+  chatCursorSchema,
   chatDocumentSchema,
   documentMessageSchema,
   documentPartSchema,
@@ -70,10 +71,11 @@ export {
 
 export type {
   Clock,
-  DocumentStore,
   Ids,
   KitDeps,
+  MessageLogStore,
   PauseStore,
+  StoredMessage,
 } from "./ports.js";
 
 export {

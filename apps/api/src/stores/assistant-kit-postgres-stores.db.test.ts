@@ -12,7 +12,7 @@
  */
 import { randomUUID } from "node:crypto";
 
-import type { ChatDocument, ModelMessage } from "@showzy/assistant-kit";
+import type { ModelMessage } from "@showzy/assistant-kit";
 import { createActionRegistry } from "../composition.js";
 import {
   createTestKit,
@@ -22,12 +22,16 @@ import {
 import { assistantConversations } from "@showzy/db/schema/assistant";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import {
+  ASSISTANT_CHAT_WINDOW_MESSAGES,
+  type AssistantKitRuntime,
+} from "../http/assistant-kit-http.js";
 import { createAssistantKitRuntime } from "../http/assistant-kit-runtime.js";
-import type { AssistantKitRuntime } from "../http/assistant-kit-http.js";
 import { AssistantKitConversationGoneError } from "./assistant-kit-postgres-stores.js";
 
 let kit: TestKit;
 const conversationId = randomUUID();
+const longConversationId = randomUUID();
 const otherConversationId = randomUUID();
 
 const anna = {
@@ -43,6 +47,8 @@ const boris = {
   requestId: randomUUID(),
   clientIp: "127.0.0.1",
 };
+
+const annaBind = `${anna.userId}:${anna.companySelector}`;
 
 /** Pauses only. A deadline and an atomic claim are not what this suite is about. */
 function memoryRedis() {
@@ -69,7 +75,7 @@ function memoryRedis() {
 
 /**
  * A fresh runtime every time, so nothing can be carried between assertions in
- * process memory. If a document survives, it survived in the database.
+ * process memory. If a message survives, it survived in the database.
  */
 function runtime(): AssistantKitRuntime {
   return createAssistantKitRuntime({
@@ -81,19 +87,12 @@ function runtime(): AssistantKitRuntime {
   });
 }
 
-function documentFor(text: string): ChatDocument {
+function say(text: string, messageId: string = randomUUID()) {
   return {
-    conversationId,
-    bind: `${anna.userId}:${anna.companySelector}`,
-    messages: [
-      {
-        messageId: randomUUID(),
-        role: "assistant",
-        createdAt: "2026-09-10T10:00:00.000Z",
-        parts: [{ kind: "text", text, status: "complete" }],
-      },
-    ],
-    openPause: null,
+    kind: "append" as const,
+    messageId,
+    role: "user" as const,
+    parts: [{ kind: "text" as const, text, status: "complete" as const }],
   };
 }
 
@@ -105,6 +104,12 @@ beforeAll(async () => {
       companyId: kitIdentities.companies.a,
       userId: kitIdentities.users.anna,
       title: "Durable",
+    },
+    {
+      id: longConversationId,
+      companyId: kitIdentities.companies.a,
+      userId: kitIdentities.users.anna,
+      title: "Long",
     },
     {
       id: otherConversationId,
@@ -121,22 +126,10 @@ afterAll(async () => {
 
 describe("the conversation, across processes", () => {
   it("is still there for a runtime that never saw it written", async () => {
-    const written = documentFor("Готово.");
-    await runtime()
-      .forCaller(anna)
-      .kit.document.write(
-        { conversationId, bind: written.bind },
-        {
-          kind: "append",
-          messageId: written.messages[0]?.messageId ?? "",
-          role: "assistant",
-          parts: [...(written.messages[0]?.parts ?? [])],
-        },
-      );
+    const scope = { conversationId, bind: annaBind };
+    await runtime().forCaller(anna).kit.document.write(scope, say("Готово."));
 
-    const read = await runtime()
-      .forCaller(anna)
-      .kit.document.read({ conversationId, bind: written.bind });
+    const read = await runtime().forCaller(anna).kit.document.read(scope);
 
     expect(read.messages).toHaveLength(1);
     expect(read.messages[0]?.parts[0]).toEqual({
@@ -151,10 +144,7 @@ describe("the conversation, across processes", () => {
       { role: "user", content: "привіт" },
       { role: "assistant", content: "Готово." },
     ];
-    const scope = {
-      conversationId,
-      bind: `${anna.userId}:${anna.companySelector}`,
-    };
+    const scope = { conversationId, bind: annaBind };
 
     await runtime().forCaller(anna).history.save(scope, messages);
 
@@ -164,23 +154,15 @@ describe("the conversation, across processes", () => {
   });
 
   /**
-   * The two halves share a row. A document write that blanked the history would
-   * leave the next turn with no memory of the conversation it is in — and the
-   * failure would look like the model forgetting, not like a store bug.
-   */
-  /**
    * Found on a phone, not in a test: the SDK's tool-call parts carry optional
    * fields as an explicit `undefined`, and the audit hook hashes an action's
    * input before it runs and refuses `undefined` outright. So an unnormalised
    * history failed the write rather than being quietly cleaned by Postgres —
-   * and it failed *after* the document write had already succeeded, leaving a
+   * and it failed *after* the transcript write had already succeeded, leaving a
    * turn stored with no memory of itself.
    */
   it("stores a history whose parts carry undefined fields", async () => {
-    const scope = {
-      conversationId,
-      bind: `${anna.userId}:${anna.companySelector}`,
-    };
+    const scope = { conversationId, bind: annaBind };
     const messages: ModelMessage[] = [
       { role: "user", content: "створи замовлення" },
       {
@@ -221,10 +203,7 @@ describe("the conversation, across processes", () => {
    * taken on the way out so there is one place that makes it.
    */
   it("stores every turn and hands back only the recent ones", async () => {
-    const scope = {
-      conversationId,
-      bind: `${anna.userId}:${anna.companySelector}`,
-    };
+    const scope = { conversationId, bind: annaBind };
     const many: ModelMessage[] = Array.from({ length: 10 }, (_, index) => [
       { role: "user" as const, content: `запит ${String(index + 1)}` },
       { role: "assistant" as const, content: `відповідь ${String(index + 1)}` },
@@ -248,27 +227,73 @@ describe("the conversation, across processes", () => {
     ]);
   });
 
-  it("does not let one half overwrite the other", async () => {
-    const scope = {
-      conversationId,
-      bind: `${anna.userId}:${anna.companySelector}`,
-    };
+  /**
+   * A turn writes its messages several times and the history once. A message
+   * write that touched the history would leave the next turn with no memory of
+   * the conversation it is in — and it would look like the model forgetting,
+   * not like a store bug.
+   */
+  it("keeps the transcript and the model history apart", async () => {
+    const scope = { conversationId, bind: annaBind };
     await runtime()
       .forCaller(anna)
       .history.save(scope, [{ role: "user", content: "kept" }]);
 
-    await runtime()
-      .forCaller(anna)
-      .kit.document.write(scope, {
-        kind: "append",
-        messageId: randomUUID(),
-        role: "user",
-        parts: [{ kind: "text", text: "another", status: "complete" }],
-      });
+    await runtime().forCaller(anna).kit.document.write(scope, say("another"));
 
     expect(await runtime().forCaller(anna).history.load(scope)).toEqual([
       { role: "user", content: "kept" },
     ]);
+  });
+
+  /**
+   * SHO-555. One conversation is where a year of daily use accumulates, so a
+   * read carries one window and a cursor, and the rest is a page away.
+   */
+  it("pages a long conversation back without a gap or a repeat", async () => {
+    const scope = { conversationId: longConversationId, bind: annaBind };
+    const total = ASSISTANT_CHAT_WINDOW_MESSAGES + 5;
+    for (let n = 1; n <= total; n += 1) {
+      await runtime()
+        .forCaller(anna)
+        .kit.document.write(scope, say(`запит ${String(n)}`));
+    }
+
+    const latest = await runtime().forCaller(anna).kit.document.read(scope);
+    expect(latest.messages).toHaveLength(ASSISTANT_CHAT_WINDOW_MESSAGES);
+    expect(latest.olderCursor).not.toBeNull();
+
+    const older = await runtime()
+      .forCaller(anna)
+      .kit.document.read(scope, { before: latest.olderCursor ?? "" });
+    expect(older.olderCursor).toBeNull();
+
+    const texts = [...older.messages, ...latest.messages].map((message) =>
+      message.parts[0]?.kind === "text" ? message.parts[0].text : "",
+    );
+    expect(texts).toEqual(
+      Array.from({ length: total }, (_, index) => `запит ${String(index + 1)}`),
+    );
+  });
+
+  it("refuses to reopen a message that is no longer the latest", async () => {
+    const scope = { conversationId, bind: annaBind };
+    const first = randomUUID();
+    await runtime()
+      .forCaller(anna)
+      .kit.document.write(scope, say("one", first));
+    await runtime().forCaller(anna).kit.document.write(scope, say("two"));
+    const before = await runtime().forCaller(anna).kit.document.read(scope);
+
+    await expect(
+      runtime()
+        .forCaller(anna)
+        .kit.document.write(scope, say("rewritten", first)),
+    ).rejects.toThrow();
+
+    expect(await runtime().forCaller(anna).kit.document.read(scope)).toEqual(
+      before,
+    );
   });
 
   it("refuses another tenant's conversation, and says nothing about it", async () => {

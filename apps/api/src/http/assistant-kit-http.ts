@@ -65,6 +65,17 @@ export interface AssistantToolContext {
 export type AssistantKitFor = AssistantKit<AssistantInteractionTypes>;
 
 /**
+ * How many messages one answer carries.
+ *
+ * A request writes at most two messages — the person's words and the reply, or
+ * a second question — and a new turn is refused while a question is open, so
+ * the turn just taken and the message that asked the open question are always
+ * inside it. Thirty is a screen and a half of a phone thread; anything older is
+ * one page away (SHO-555).
+ */
+export const ASSISTANT_CHAT_WINDOW_MESSAGES = 30;
+
+/**
  * Model history for the next turn.
  *
  * Deliberately the consumer's, not the package's: how much of a conversation to
@@ -115,11 +126,13 @@ export interface AssistantTurnPrompt {
 /**
  * Run this handler holding the conversation, or refuse.
  *
- * The document is read-modify-write. Two turns on one conversation — two
- * devices, two tabs, a session left open on a laptop — interleave their reads
- * and the later write silently discards the earlier one (SHO-548). `busy` in a
- * client is per client and the serial tool chain inside a turn is per turn, so
- * neither is a guarantee across requests.
+ * Two turns on one conversation — two devices, two tabs, a session left open on
+ * a laptop — interleave their messages, and the second turn's model answers a
+ * conversation that no longer exists as it read it (SHO-548). The message log
+ * refuses a write into anything but the latest message, so the storage half now
+ * fails loudly instead of silently; the conversation half is still this lock's.
+ * `busy` in a client is per client and the serial tool chain inside a turn is
+ * per turn, so neither is a guarantee across requests.
  *
  * This existed before, as `conversationLock` in `app.ts`, and was deleted in
  * phase 2 with the routes that used it. The same class as the history window:
@@ -267,7 +280,8 @@ export interface AssistantKitRuntime {
 /**
  * Every answer these routes can give, as one type.
  *
- * The rule it enforces: **a 2xx carries the whole document.** That was a
+ * The rule it enforces: **a 2xx carries the conversation as it now stands** —
+ * its latest window, with the open question. That was a
  * convention held in a comment, and `abandon` broke it by answering with an
  * object literal — the card stayed on screen, and the conversation locked until
  * the pause expired. A rule a handler can quietly not follow is a rule that will

@@ -4,18 +4,19 @@
  *
  * Two things it deliberately does not do. It does not parse a pause's
  * `secret` — that value is round-tripped, not interpreted. And it does not
- * reshape a document on read: it validates and returns the stored object, so
- * what a reload renders is byte-identical to what the live turn wrote.
+ * reshape a message on read: it validates each stored message and returns it
+ * as stored, so what a reload renders is byte-identical to what the live turn
+ * wrote.
  */
 import type { ToolResultPart } from "ai";
 import type { z } from "zod";
 
-import type {
-  ChatDocument,
-  DocumentMessage,
-  DocumentWrite,
+import type { DocumentMessage, DocumentWrite } from "./document.js";
+import {
+  appendParts,
+  chatCursorSchema,
+  documentMessageSchema,
 } from "./document.js";
-import { appendParts, chatDocumentSchema } from "./document.js";
 import { providerToolCallIdSchema } from "./ids.js";
 import type {
   AnyInteraction,
@@ -125,29 +126,16 @@ function resolveThrough(
   return resolve({ answer, secret });
 }
 
-function emptyDocument(scope: PauseScope): ChatDocument {
-  return {
-    conversationId: scope.conversationId,
-    bind: scope.bind,
-    messages: [],
-    openPause: null,
-  };
+function cursorOf(seq: number): string {
+  return String(seq);
 }
 
-/**
- * Validated, then returned as stored — a re-serialisation would make a reload a
- * second derivation of the document rather than the same one.
- *
- * A document owned by someone else reads as an empty one, which is also what a
- * conversation that does not exist looks like. A conversation id is not a
- * secret, so the two must be indistinguishable.
- */
-function storedDocument(raw: unknown, scope: PauseScope): ChatDocument {
-  if (!chatDocumentSchema.safeParse(raw).success) {
-    return emptyDocument(scope);
+/** A consumer validates a cursor from outside first; this is not that check. */
+function seqOf(cursor: string): number {
+  if (!chatCursorSchema.safeParse(cursor).success) {
+    throw new TypeError(`not a chat cursor: ${cursor}`);
   }
-  const document = raw as ChatDocument;
-  return document.bind === scope.bind ? document : emptyDocument(scope);
+  return Number(cursor);
 }
 
 export function createAssistantKit<T extends AnyTypes>(
@@ -408,56 +396,102 @@ export function createAssistantKit<T extends AnyTypes>(
     },
 
     document: {
-      async read(scope) {
-        const stored = storedDocument(
-          await deps.documents.read(scope.conversationId),
-          scope,
-        );
+      async read(scope, options) {
+        const page = await deps.messages.page(scope.conversationId, {
+          limit: deps.window.messages,
+          ...(options?.before === undefined
+            ? {}
+            : { beforeSeq: seqOf(options.before) }),
+        });
         const existing = await readRecord(scope);
         const openPause =
           existing !== null && holdsTheSlot(existing.record, deps.clock.now())
             ? publicPauseOf(existing.record)
             : null;
-        return { ...stored, openPause };
+
+        // A log written under another owner reads as an empty one, which is
+        // also what a conversation that does not exist looks like — a
+        // conversation id is not a secret, so the two must be indistinguishable.
+        // Every write under anyone else is refused, so the first message speaks
+        // for all of them.
+        const first = page.records[0];
+        if (first === undefined || first.bind !== scope.bind) {
+          return {
+            conversationId: scope.conversationId,
+            messages: [],
+            olderCursor: null,
+            openPause,
+          };
+        }
+
+        const messages: DocumentMessage[] = [];
+        for (const record of page.records) {
+          if (!documentMessageSchema.safeParse(record.message).success) {
+            // One message this build cannot read costs that message, not the
+            // conversation. It stays stored exactly as it is.
+            deps.onUnreadableMessage?.({
+              conversationId: scope.conversationId,
+              seq: record.seq,
+            });
+            continue;
+          }
+          // Validated, then returned as stored — a re-serialisation would make a
+          // reload a second derivation of the message rather than the same one.
+          messages.push(record.message as DocumentMessage);
+        }
+
+        return {
+          conversationId: scope.conversationId,
+          messages,
+          olderCursor: page.hasOlder ? cursorOf(first.seq) : null,
+          openPause,
+        };
       },
 
       async write(scope, write: DocumentWrite) {
-        const raw = await deps.documents.read(scope.conversationId);
-        const parsed = chatDocumentSchema.safeParse(raw);
-        if (parsed.success && (raw as ChatDocument).bind !== scope.bind) {
+        const latest = (
+          await deps.messages.page(scope.conversationId, { limit: 1 })
+        ).records[0];
+        if (latest !== undefined && latest.bind !== scope.bind) {
           return { kind: "wrong_owner" };
         }
-        const current = storedDocument(raw, scope);
-        const messages = [...current.messages];
-        const index = messages.findIndex(
-          (message) => message.messageId === write.messageId,
-        );
-        const existing: DocumentMessage | undefined =
-          index === -1 ? undefined : messages[index];
-        // Same cardId in the same message is an update, never a second card.
-        const parts = appendParts(existing?.parts ?? [], write.parts);
 
-        const next: DocumentMessage =
-          existing === undefined
-            ? {
-                messageId: write.messageId,
-                role: write.role,
-                createdAt: deps.clock.now().toISOString(),
-                parts,
-              }
-            : { ...existing, parts };
-
-        if (index === -1) {
-          messages.push(next);
-        } else {
-          messages[index] = next;
+        if (latest?.messageId === write.messageId) {
+          // The message still being written. Same cardId in the same message is
+          // an update, never a second card.
+          const current = documentMessageSchema.safeParse(latest.message);
+          if (!current.success) {
+            // Replacing what could not be read would destroy it — which is how
+            // one unreadable message used to take a whole conversation with it.
+            throw new Error(
+              `message ${String(latest.seq)} of ${scope.conversationId} cannot be read, so it is not overwritten`,
+            );
+          }
+          await deps.messages.update(scope.conversationId, {
+            seq: latest.seq,
+            messageId: latest.messageId,
+            message: {
+              ...current.data,
+              parts: appendParts(current.data.parts, write.parts),
+            },
+          });
+          return { kind: "written" };
         }
 
-        await deps.documents.write(scope.conversationId, {
-          ...current,
-          conversationId: scope.conversationId,
+        // A new message at the end. An id the log already holds further back is
+        // refused by the store rather than reopened: only the latest message may
+        // change, and a turn whose lease lapsed finds out here instead of
+        // writing out of order.
+        const message: DocumentMessage = {
+          messageId: write.messageId,
+          role: write.role,
+          createdAt: deps.clock.now().toISOString(),
+          parts: appendParts([], write.parts),
+        };
+        await deps.messages.insert(scope.conversationId, {
+          messageId: write.messageId,
           bind: scope.bind,
-          messages,
+          message,
         });
         return { kind: "written" };
       },

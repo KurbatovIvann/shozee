@@ -1,9 +1,12 @@
 /**
- * The stored chat document and provider history for one conversation.
+ * The provider history for one conversation: what the next turn is built from.
  *
- * Both are opaque here. This module owns the row and the ownership rule; what
- * is inside the payloads belongs to the runtime that writes them, and parsing
- * it here would be a second definition of a shape that already has one.
+ * Opaque here. This module owns the row and the ownership rule; what is inside
+ * the payload belongs to the runtime that writes it, and parsing it here would
+ * be a second definition of a shape that already has one.
+ *
+ * The transcript a person reads is not here. It is a log of messages, in
+ * `chat-messages.ts` (SHO-555).
  */
 import type { ActionCtx } from "@showzy/core";
 import { assistantChatState } from "@showzy/db/schema/assistant";
@@ -15,7 +18,6 @@ import { requireWritable } from "./writable.js";
 type StaffCtx = Extract<ActionCtx, { principal: "staff" }>;
 
 export interface StaffChatState {
-  readonly document: unknown;
   readonly history: unknown;
 }
 
@@ -34,10 +36,7 @@ export async function readStaffChatState(env: {
 
   const row = (
     await env.ctx.db
-      .select({
-        document: assistantChatState.document,
-        history: assistantChatState.history,
-      })
+      .select({ history: assistantChatState.history })
       .from(assistantChatState)
       .where(
         and(
@@ -49,18 +48,13 @@ export async function readStaffChatState(env: {
   )[0];
 
   // A conversation with no turns yet is empty, not missing.
-  return {
-    document: row?.document ?? null,
-    history: row?.history ?? null,
-  };
+  return { history: row?.history ?? null };
 }
 
 export async function writeStaffChatState(env: {
   readonly ctx: StaffCtx;
   readonly conversationId: string;
-  /** Absent leaves the stored value alone. Present — including null — sets it. */
-  readonly document?: unknown;
-  readonly history?: unknown;
+  readonly history: unknown;
 }): Promise<void> {
   await loadOwnConversation({
     db: env.ctx.db,
@@ -70,30 +64,18 @@ export async function writeStaffChatState(env: {
   });
   const db = requireWritable(env.ctx.db);
 
-  const setsDocument = "document" in env;
-  const setsHistory = "history" in env;
-  if (!setsDocument && !setsHistory) {
-    return;
-  }
-
   const now = new Date();
+  const history = env.history ?? null;
   await db
     .insert(assistantChatState)
     .values({
       companyId: env.ctx.companyId,
       conversationId: env.conversationId,
-      document: setsDocument ? (env.document ?? null) : null,
-      history: setsHistory ? (env.history ?? null) : null,
+      history,
       updatedAt: now,
     })
     .onConflictDoUpdate({
       target: [assistantChatState.companyId, assistantChatState.conversationId],
-      // Only the halves this call carries. Writing both every time would let a
-      // document write blank the history it never saw.
-      set: {
-        ...(setsDocument ? { document: env.document ?? null } : {}),
-        ...(setsHistory ? { history: env.history ?? null } : {}),
-        updatedAt: now,
-      },
+      set: { history, updatedAt: now },
     });
 }

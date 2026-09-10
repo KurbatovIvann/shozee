@@ -236,8 +236,8 @@ crossTenantSuite(
     ),
     isolationCase(
       writeChatState,
-      { input: { conversationId: fixtures.convA, document: { a: 1 } } },
-      { input: { conversationId: fixtures.convB, document: { a: 1 } } },
+      { input: { conversationId: fixtures.convA, history: [] } },
+      { input: { conversationId: fixtures.convB, history: [] } },
     ),
     isolationCase(
       readChatMessages,
@@ -311,28 +311,18 @@ describe("the durable chat state", () => {
       {},
     );
 
-    expect(state).toEqual({ document: null, history: null });
+    expect(state).toEqual({ history: null });
   });
 
-  it("round-trips both halves exactly as stored", async () => {
-    const document = {
-      conversationId: fixtures.chatState,
-      bind: "anna:company-a",
-      messages: [
-        {
-          messageId: randomUUID(),
-          role: "assistant",
-          createdAt: "2026-09-10T10:00:00.000Z",
-          parts: [{ kind: "text", text: "Готово.", status: "complete" }],
-        },
-      ],
-      openPause: null,
-    };
-    const history = [{ role: "user", content: "привіт" }];
+  it("round-trips the history exactly as stored", async () => {
+    const history = [
+      { role: "user", content: "привіт" },
+      { role: "assistant", content: [{ type: "text", text: "Готово." }] },
+    ];
 
     await kit.invoke(
       writeChatState,
-      { conversationId: fixtures.chatState, document, history },
+      { conversationId: fixtures.chatState, history },
       {},
     );
     const state = await kit.invoke(
@@ -341,52 +331,20 @@ describe("the durable chat state", () => {
       {},
     );
 
-    // Byte-identical: the whole point of storing the document settled is that
-    // reading it back is not a second derivation of it.
-    expect(state.document).toEqual(document);
+    // Exactly the provider messages the turn ran with: the next turn replays
+    // them rather than reconstructing them.
     expect(state.history).toEqual(history);
-  });
-
-  /**
-   * A turn writes the document several times and the history once. If a write
-   * carrying one half blanked the other, the next turn would run with no memory
-   * of the conversation it is in.
-   */
-  it("leaves the half a write does not carry alone", async () => {
-    await kit.invoke(
-      writeChatState,
-      {
-        conversationId: fixtures.chatState,
-        document: { marker: "document" },
-        history: [{ role: "user", content: "kept" }],
-      },
-      {},
-    );
-
-    await kit.invoke(
-      writeChatState,
-      { conversationId: fixtures.chatState, document: { marker: "replaced" } },
-      {},
-    );
-    const state = await kit.invoke(
-      readChatState,
-      { conversationId: fixtures.chatState },
-      {},
-    );
-
-    expect(state.document).toEqual({ marker: "replaced" });
-    expect(state.history).toEqual([{ role: "user", content: "kept" }]);
   });
 
   it("replaces rather than accumulating", async () => {
     await kit.invoke(
       writeChatState,
-      { conversationId: fixtures.chatState, document: { v: 1 } },
+      { conversationId: fixtures.chatState, history: [{ v: 1 }] },
       {},
     );
     await kit.invoke(
       writeChatState,
-      { conversationId: fixtures.chatState, document: { v: 2 } },
+      { conversationId: fixtures.chatState, history: [{ v: 2 }] },
       {},
     );
 
@@ -396,7 +354,7 @@ describe("the durable chat state", () => {
       { conversationId: fixtures.chatState },
       {},
     );
-    expect(state.document).toEqual({ v: 2 });
+    expect(state.history).toEqual([{ v: 2 }]);
   });
 
   it("is not-found for a conversation that does not exist", async () => {
@@ -406,7 +364,7 @@ describe("the durable chat state", () => {
     await expect(
       kit.invoke(
         writeChatState,
-        { conversationId: randomUUID(), document: {} },
+        { conversationId: randomUUID(), history: [] },
         {},
       ),
     ).rejects.toBeInstanceOf(NotFoundError);

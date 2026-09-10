@@ -50,8 +50,8 @@ import type { Redis } from "ioredis";
 import type { z } from "zod";
 
 import {
-  createPostgresAssistantKitDocumentStore,
   createPostgresAssistantKitHistoryStore,
+  createPostgresAssistantKitMessageLog,
 } from "../stores/assistant-kit-postgres-stores.js";
 import {
   createRedisAssistantKitCommands,
@@ -63,9 +63,10 @@ import {
 } from "./assistant-interactions.js";
 import { ASSISTANT_INVOCATION_CHANNEL } from "./assistant-invocation.js";
 import { AssistantConfirmationRequired } from "./assistant-kit-confirmation.js";
-import type {
-  AssistantKitRuntime,
-  AssistantToolContext,
+import {
+  ASSISTANT_CHAT_WINDOW_MESSAGES,
+  type AssistantKitRuntime,
+  type AssistantToolContext,
 } from "./assistant-kit-http.js";
 import {
   createResolveAnswer,
@@ -224,17 +225,29 @@ export function createAssistantKitRuntime(
     /**
      * A kit per request, sharing one pause store.
      *
-     * Cheap — a bundle of closures — and the only shape that lets the document
-     * and the history be read and written as the person asking, through the
-     * same pipeline as every other action.
+     * Cheap — a bundle of closures — and the only shape that lets the
+     * transcript and the history be read and written as the person asking,
+     * through the same pipeline as every other action.
      */
     forCaller(caller) {
       const kit: AssistantKit<AssistantInteractionTypes> = createAssistantKit({
         pauses,
-        documents: createPostgresAssistantKitDocumentStore(storeDeps, caller),
+        messages: createPostgresAssistantKitMessageLog(storeDeps, caller),
         clock: { now: () => new Date() },
         ids: { uuid: () => randomUUID() },
         interactions: assistantInteractions,
+        window: { messages: ASSISTANT_CHAT_WINDOW_MESSAGES },
+        onUnreadableMessage: ({ conversationId, seq }) => {
+          // Where it is, never what it said: it is a staff member's words.
+          options.pipeline.logger.warn(
+            {
+              request_id: caller.requestId,
+              conversation_id: conversationId,
+              seq,
+            },
+            "assistant message could not be read and was skipped",
+          );
+        },
       });
       return {
         kit,

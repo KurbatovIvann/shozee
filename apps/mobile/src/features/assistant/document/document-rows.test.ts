@@ -67,7 +67,7 @@ function document(
 ): AssistantChatDocument {
   return {
     conversationId: CONVERSATION,
-    bind: "user-1:company-1",
+    olderCursor: null,
     messages: [...messages],
     openPause,
   };

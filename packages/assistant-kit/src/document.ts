@@ -9,6 +9,11 @@
  * A card part is a snapshot of the moment it was written. Following it should
  * re-read the live record; whatever owns that record stays the authority if
  * the two disagree.
+ *
+ * The conversation is stored as a log of messages, not as one document. A
+ * message is never touched once the request that wrote it ends, so "stored as
+ * settled, returned as stored" holds per message, and a read returns a window
+ * onto the log rather than the whole of it (SHO-555).
  */
 import { z } from "zod";
 
@@ -55,15 +60,26 @@ export const documentMessageSchema = z.strictObject({
 
 export type DocumentMessage = z.output<typeof documentMessageSchema>;
 
+/**
+ * A position in the log, as a client sees it: opaque. It is the stored sequence
+ * number of the oldest message a read returned, and a read given it as
+ * `before` returns the page that ends just before that message.
+ */
+export const chatCursorSchema = z.string().regex(/^[1-9][0-9]{0,8}$/);
+
+/**
+ * What a read returns: a window onto the log, not the whole of it.
+ *
+ * `messages` are the latest ones the consumer's window allows — or the page
+ * before a cursor, when one was asked for — each exactly as stored.
+ * `olderCursor` is null when nothing precedes them. Whose conversation it is
+ * does not travel: every stored message carries the owner it was written under,
+ * and a read by anyone else comes back empty.
+ */
 export const chatDocumentSchema = z.strictObject({
   conversationId: z.uuid(),
-  /**
-   * Whose document this is. Stamped on the first write and matched on every
-   * read: without it a conversation id alone would be enough to read someone
-   * else's chat, since an id is not a secret.
-   */
-  bind: z.string().min(1),
   messages: z.array(documentMessageSchema),
+  olderCursor: chatCursorSchema.nullable(),
   /** Present only while an interaction is open. Read from the pause store. */
   openPause: publicPauseSchema.nullable(),
 });
@@ -84,6 +100,10 @@ export type ChatDocument = z.output<typeof chatDocumentSchema>;
  * produces a card. It used to be a second write kind, `replace_card`, that a
  * producer had to remember to pick — none did, and one list rendered as two
  * cards (SHO-551).
+ *
+ * Only the latest message can be written to. An id that names it merges into
+ * it; any other id starts a new message, and one the log already holds further
+ * back is refused rather than reopened.
  */
 export interface DocumentWrite {
   readonly kind: "append";

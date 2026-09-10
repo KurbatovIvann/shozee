@@ -118,7 +118,7 @@ export const ASSISTANT_KIT_COMMAND_TTL_MS = 15 * 60 * 1000;
  * One attempt, once.
  *
  * The receipt stores no response body. It does not need one: every route
- * already answers with the whole document, so replaying a command means reading
+ * already answers with the conversation as it stands, so replaying a command means reading
  * where the conversation actually is — which is more truthful than a recording
  * of what the first attempt said, because the conversation may have moved since.
  */
