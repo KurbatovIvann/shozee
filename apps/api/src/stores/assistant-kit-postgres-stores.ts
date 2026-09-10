@@ -25,6 +25,7 @@ import { executeAction, type ActionPipelineDeps } from "@showzy/core";
 import { CoreError } from "@showzy/core/errors";
 
 import { ASSISTANT_INVOCATION_CHANNEL } from "../http/assistant-invocation.js";
+import { assistantHistoryWindow } from "../http/assistant-kit-history-window.js";
 import type { AssistantHistoryPort } from "../http/assistant-kit-http.js";
 
 /**
@@ -156,8 +157,12 @@ export function createPostgresAssistantKitHistoryStore(
         });
         // Anything unreadable is treated as no history: a malformed blob must
         // cost one conversation's memory, not the ability to answer at all.
+        //
+        // Windowed on the way out, which is where the decision belongs: what is
+        // stored is what the last turn ran with, and how much of it the next
+        // turn is told about is a budget question, not a storage one.
         return Array.isArray(state.history)
-          ? (state.history as ModelMessage[])
+          ? assistantHistoryWindow(state.history as ModelMessage[])
           : [];
       } catch (error) {
         if (isNotFound(error)) {

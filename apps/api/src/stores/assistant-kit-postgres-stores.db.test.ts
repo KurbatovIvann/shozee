@@ -215,6 +215,39 @@ describe("the conversation, across processes", () => {
     expect(part).toMatchObject({ toolCallId: "toolu_1" });
   });
 
+  /**
+   * Stored whole, sent windowed. The row holds what the last turn ran with;
+   * how much of it the next turn is told about is a budget decision, and it is
+   * taken on the way out so there is one place that makes it.
+   */
+  it("stores every turn and hands back only the recent ones", async () => {
+    const scope = {
+      conversationId,
+      bind: `${anna.userId}:${anna.companySelector}`,
+    };
+    const many: ModelMessage[] = Array.from({ length: 10 }, (_, index) => [
+      { role: "user" as const, content: `запит ${String(index + 1)}` },
+      { role: "assistant" as const, content: `відповідь ${String(index + 1)}` },
+    ]).flat();
+
+    await runtime().forCaller(anna).history.save(scope, many);
+    const loaded = await runtime().forCaller(anna).history.load(scope);
+
+    const asked = loaded
+      .filter((message) => message.role === "user")
+      .map((message) =>
+        typeof message.content === "string" ? message.content : "",
+      );
+    expect(asked).toEqual([
+      "запит 5",
+      "запит 6",
+      "запит 7",
+      "запит 8",
+      "запит 9",
+      "запит 10",
+    ]);
+  });
+
   it("does not let one half overwrite the other", async () => {
     const scope = {
       conversationId,

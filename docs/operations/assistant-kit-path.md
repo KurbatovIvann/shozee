@@ -200,6 +200,33 @@ inside the package. Two independent answers to the same question, which is
 deliberate: the table scope is enforced by the database, the `bind` by the
 protocol.
 
+## How much conversation the model sees
+
+The last **six requests**, cut on request boundaries — never inside a turn,
+because a provider refuses a history where a tool call has no result.
+
+Counted in requests rather than messages: one request that calls a tool is three
+or four messages, so "ten messages" would be two and a half requests. Six covers
+create, amend, check, act on what was just shown, with room for a detour.
+
+The row keeps what the last turn ran with; the window is applied on the way out.
+A turn appends to the window it was given, so the stored value never holds more
+than one request beyond it.
+
+Nothing is summarised. A précis of an operations log is not context for the next
+action and costs a model call to produce. Old turns simply fall out — which is
+also how a habit picked up from earlier turns stops being demonstrated.
+
+```sql
+select jsonb_array_length(history) as messages,
+       jsonb_array_length(document -> 'messages') as visible
+from assistant_chat_state where conversation_id = '<conversationId>';
+```
+
+`ASSISTANT_HISTORY_TURNS` and `ASSISTANT_HISTORY_MESSAGES_MAX` (a backstop for a
+turn that called many tools) live in
+`apps/api/src/http/assistant-kit-history-window.ts`.
+
 ## What the audit says
 
 What the assistant *did* is in `audit_log`, not here — every tool call runs
