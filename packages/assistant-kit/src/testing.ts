@@ -4,14 +4,24 @@
  *
  * Not exported from the package root; consumers import `./testing`.
  */
-import { simulateReadableStream, type LanguageModel, type ModelMessage } from "ai";
+import {
+  simulateReadableStream,
+  type LanguageModel,
+  type ModelMessage,
+} from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 
 import type { z } from "zod";
 
 import { providerToolCallId, type ProviderToolCallId } from "./ids.js";
 import type { InteractionRegistry, InteractionType } from "./interaction.js";
-import type { Clock, Ids, KitDeps, PauseStore, DocumentStore } from "./ports.js";
+import type {
+  Clock,
+  Ids,
+  KitDeps,
+  PauseStore,
+  DocumentStore,
+} from "./ports.js";
 import type { Continuation } from "./pause.js";
 
 export interface MemoryPauseStore extends PauseStore {
@@ -70,7 +80,9 @@ export interface TestClock extends Clock {
   advance(ms: number): void;
 }
 
-export function fixedClock(start = new Date("2026-09-09T12:00:00.000Z")): TestClock {
+export function fixedClock(
+  start = new Date("2026-09-09T12:00:00.000Z"),
+): TestClock {
   let current = start.getTime();
   return {
     now: () => new Date(current),
@@ -143,7 +155,9 @@ export function pausedHistory(options?: {
     { role: "user", content: "do the thing" },
     {
       role: "assistant",
-      content: [{ type: "tool-call", toolCallId: id, toolName: name, input: { q: 1 } }],
+      content: [
+        { type: "tool-call", toolCallId: id, toolName: name, input: { q: 1 } },
+      ],
     },
     {
       role: "tool",
@@ -218,7 +232,11 @@ export function stubToolCallStep(
       chunks: [
         { type: "stream-start" as const, warnings: [] },
         { type: "tool-input-start" as const, id: toolCallId, toolName },
-        { type: "tool-input-delta" as const, id: toolCallId, delta: serialized },
+        {
+          type: "tool-input-delta" as const,
+          id: toolCallId,
+          delta: serialized,
+        },
         { type: "tool-input-end" as const, id: toolCallId },
         { type: "tool-call" as const, toolCallId, toolName, input: serialized },
         {

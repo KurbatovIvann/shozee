@@ -10,13 +10,15 @@
 import type { z } from "zod";
 
 import type { ChatDocument, DocumentWrite } from "./document.js";
-import type {
-  InteractionRegistry,
-  InteractionType,
-} from "./interaction.js";
+import type { InteractionRegistry, InteractionType } from "./interaction.js";
 import type { Continuation } from "./pause.js";
 import type { KitDeps } from "./ports.js";
-import type { ClaimResult, PauseScope, PublicPause, ResumeInput } from "./pause.js";
+import type {
+  ClaimResult,
+  PauseScope,
+  PublicPause,
+  ResumeInput,
+} from "./pause.js";
 
 type AnyTypes = Record<string, InteractionType<z.ZodType, z.ZodType, never>>;
 

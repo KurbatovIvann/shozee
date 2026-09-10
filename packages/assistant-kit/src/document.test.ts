@@ -21,9 +21,16 @@ function newKit() {
   return createAssistantKit(testDeps(fixtureInteractions));
 }
 
-const TEXT: DocumentPart = { kind: "text", text: "here it is", status: "complete" };
+const TEXT: DocumentPart = {
+  kind: "text",
+  text: "here it is",
+  status: "complete",
+};
 
-function card(revision: number, rows: number): Extract<DocumentPart, { kind: "card" }> {
+function card(
+  revision: number,
+  rows: number,
+): Extract<DocumentPart, { kind: "card" }> {
   return {
     kind: "card",
     cardId: "card-1",
@@ -151,7 +158,9 @@ describe("a document belongs to one owner", () => {
     expect(foreign.messages).toEqual([]);
     expect(foreign.messages).toEqual(fresh.messages);
     // A conversation id is not a secret, so the two must be indistinguishable.
-    expect(JSON.stringify(foreign.messages)).toBe(JSON.stringify(fresh.messages));
+    expect(JSON.stringify(foreign.messages)).toBe(
+      JSON.stringify(fresh.messages),
+    );
   });
 
   it("refuses a write from anyone else instead of appending to it", async () => {

@@ -26,7 +26,9 @@ export const pick = defineInteraction<PickSecret>()({
   prompt: z.strictObject({
     question: z.string().min(1),
     options: z
-      .array(z.strictObject({ id: z.string().min(1), label: z.string().min(1) }))
+      .array(
+        z.strictObject({ id: z.string().min(1), label: z.string().min(1) }),
+      )
       .min(1)
       .max(20),
   }),

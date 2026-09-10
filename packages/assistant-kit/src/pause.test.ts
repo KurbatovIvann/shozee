@@ -41,7 +41,8 @@ function openInput(overrides?: Partial<OpenArgs>): OpenArgs {
 
 async function openPick(kit: Kit) {
   const opened = await kit.open(openInput());
-  if (opened.kind !== "opened") throw new Error(`expected opened, got ${opened.kind}`);
+  if (opened.kind !== "opened")
+    throw new Error(`expected opened, got ${opened.kind}`);
   return opened.pause;
 }
 
@@ -183,7 +184,9 @@ describe("a claim is consumed exactly once", () => {
       kit.claim(claim),
     ]);
 
-    expect(results.filter((result) => result.kind === "claimed")).toHaveLength(1);
+    expect(results.filter((result) => result.kind === "claimed")).toHaveLength(
+      1,
+    );
   });
 
   it("hands back what the kind resolved, not the raw answer", async () => {
@@ -367,7 +370,9 @@ describe("another owner's pause reads as absent", () => {
     const { kit } = newKit();
     await openPick(kit);
 
-    expect(await kit.peek({ conversationId: CONVERSATION, bind: OTHER })).toBeNull();
+    expect(
+      await kit.peek({ conversationId: CONVERSATION, bind: OTHER }),
+    ).toBeNull();
     const document = await kit.document.read({
       conversationId: CONVERSATION,
       bind: OTHER,

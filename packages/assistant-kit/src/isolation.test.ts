@@ -74,6 +74,9 @@ describe("the package stands alone", () => {
       readFileSync(join(import.meta.dirname, "..", "package.json"), "utf8"),
     ) as { dependencies?: Record<string, string> };
 
-    expect(Object.keys(manifest.dependencies ?? {}).sort()).toEqual(["ai", "zod"]);
+    expect(Object.keys(manifest.dependencies ?? {}).sort()).toEqual([
+      "ai",
+      "zod",
+    ]);
   });
 });

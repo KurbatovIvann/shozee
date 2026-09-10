@@ -87,8 +87,9 @@ function decode(raw: string): PauseRecord | null {
   ) {
     return null;
   }
-  return providerToolCallIdSchema.safeParse(record.continuation.pausedToolCall.id)
-    .success
+  return providerToolCallIdSchema.safeParse(
+    record.continuation.pausedToolCall.id,
+  ).success
     ? record
     : null;
 }
@@ -165,7 +166,9 @@ export function createAssistantKit<T extends AnyTypes>(
   }
 
   /** Slot occupancy ignores `bind`: one open pause per conversation, full stop. */
-  async function readSlot(conversationId: string): Promise<StoredRecord | null> {
+  async function readSlot(
+    conversationId: string,
+  ): Promise<StoredRecord | null> {
     const raw = await deps.pauses.get(pauseKey(conversationId));
     if (raw === null) {
       return null;
@@ -233,8 +236,14 @@ export function createAssistantKit<T extends AnyTypes>(
   async function install(record: PauseRecord): Promise<OpenPauseResult> {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const existing = await readSlot(record.conversationId);
-      if (existing !== null && holdsTheSlot(existing.record, deps.clock.now())) {
-        return { kind: "already_open", current: publicPauseOf(existing.record) };
+      if (
+        existing !== null &&
+        holdsTheSlot(existing.record, deps.clock.now())
+      ) {
+        return {
+          kind: "already_open",
+          current: publicPauseOf(existing.record),
+        };
       }
       if (await put(record, existing === null ? null : existing.raw)) {
         return { kind: "opened", pause: publicPauseOf(record) };
@@ -263,7 +272,8 @@ export function createAssistantKit<T extends AnyTypes>(
 
     async peek(scope) {
       const existing = await readRecord(scope);
-      return existing !== null && holdsTheSlot(existing.record, deps.clock.now())
+      return existing !== null &&
+        holdsTheSlot(existing.record, deps.clock.now())
         ? publicPauseOf(existing.record)
         : null;
     },

@@ -67,7 +67,11 @@ function slice() {
         return {
           kind: "ok",
           result: { rows: 2 },
-          card: { cardId: "card-list", type: "collection", payload: { rows: 2 } },
+          card: {
+            cardId: "card-list",
+            type: "collection",
+            payload: { rows: 2 },
+          },
         };
       },
     }),
@@ -268,7 +272,12 @@ describe("a write does not overtake an unanswered question", () => {
               type: "finish",
               finishReason: { unified: "tool-calls", raw: "tool_use" },
               usage: {
-                inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+                inputTokens: {
+                  total: 1,
+                  noCache: 1,
+                  cacheRead: 0,
+                  cacheWrite: 0,
+                },
                 outputTokens: { total: 1, text: 1, reasoning: 0 },
               },
             });
