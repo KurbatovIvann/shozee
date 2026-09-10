@@ -120,8 +120,6 @@ export {
 } from "./search-results.js";
 export {
   ASSISTANT_SURFACE_REGISTRY,
-  hydratableAssistantActionNames,
-  unrestorableAssistantActionNames,
   type AssistantSurfaceDescriptor,
   type AssistantSurfaceParse,
 } from "./registry.js";

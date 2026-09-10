@@ -1,11 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { staffAssistantTurnContextAddendum } from "./turn-context.js";
-import { staffAssistantWorkingSetAddendum } from "./working-set.js";
 
 const NOW = new Date("2026-09-02T12:00:00.000Z");
 const COMPANY_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
-const PRODUCT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
 describe("staffAssistantTurnContextAddendum", () => {
   it("always includes the injected clock and UAH, never a company id", () => {
@@ -42,27 +40,5 @@ describe("staffAssistantTurnContextAddendum", () => {
     });
     expect(addendum).toContain("Money is UAH.");
     expect(addendum).not.toContain("This company is called");
-  });
-
-  it("folds the working-set block into the same addendum", () => {
-    const workingSetAddendum = staffAssistantWorkingSetAddendum([
-      {
-        actionName: "catalog.listProducts",
-        resultIds: [PRODUCT_ID],
-        outcome: "success",
-      },
-    ]);
-    expect(workingSetAddendum).toBeDefined();
-    const addendum = staffAssistantTurnContextAddendum({
-      now: NOW,
-      companyName: "Konditerska Anna",
-      ...(workingSetAddendum !== undefined ? { workingSetAddendum } : {}),
-    });
-    expect(addendum).toContain("Konditerska Anna");
-    expect(addendum).toContain("catalog.listProducts");
-    expect(addendum).toContain(PRODUCT_ID);
-    expect(addendum).toContain(
-      "Do not call a list tool solely to recover these ids",
-    );
   });
 });

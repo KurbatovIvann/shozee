@@ -189,8 +189,6 @@ describe("staffAssistantSystemPrompt", () => {
     const addendum = staffAssistantTurnContextAddendum({
       now: new Date("2026-09-02T12:00:00.000Z"),
       companyName: "Konditerska Anna",
-      workingSetAddendum:
-        "Working set from earlier tool runs in this conversation (ids only; not live record state):\ncatalog.listProducts: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     });
     const withAddendum = staffAssistantSystemMessages(addendum);
     expect(withAddendum).toHaveLength(2);
@@ -202,6 +200,5 @@ describe("staffAssistantSystemPrompt", () => {
     expect(withAddendum[1]?.content).toContain("2 September 2026");
     expect(withAddendum[1]?.content).toContain("Europe/Kyiv");
     expect(withAddendum[1]?.content).toContain("Konditerska Anna");
-    expect(withAddendum[1]?.content).toContain("catalog.listProducts");
   });
 });

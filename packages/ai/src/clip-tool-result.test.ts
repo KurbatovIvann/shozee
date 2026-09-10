@@ -7,13 +7,9 @@ import {
   STAFF_ASSISTANT_CLIP_IDENTITY_KEYS,
   STAFF_ASSISTANT_CLIP_JSON_MAX,
 } from "./clip-tool-result.js";
-import { STAFF_ASSISTANT_CONFIRMATION_STATUS } from "./confirmation.js";
-import { STAFF_ASSISTANT_NEEDS_CHOICE_STATUS } from "./choice.js";
-import { extractUuidResultIds } from "./tool-run.js";
 
 const customerId = "11111111-1111-4111-8111-111111111111";
 const orderId = "44444444-4444-4444-8444-444444444444";
-const challengeId = "22222222-2222-4222-8222-222222222222";
 
 function rowId(index: number): string {
   return `33333333-3333-4333-8333-${index.toString(16).padStart(12, "0")}`;
@@ -35,30 +31,6 @@ function isClipped(
 }
 
 describe("clipStaffAssistantToolResult", () => {
-  it("passes confirmation payloads through unchanged", () => {
-    const confirmation = {
-      status: STAFF_ASSISTANT_CONFIRMATION_STATUS,
-      challengeId,
-      summary: "Delete this archived customer.",
-      expiresAt: "2026-09-01T12:00:00.000Z",
-      actionName: "customers.deleteCustomer",
-      toolCallId: "call-delete",
-    };
-    expect(clipStaffAssistantToolResult(confirmation)).toBe(confirmation);
-  });
-
-  it("passes needs_choice payloads through unchanged", () => {
-    const needsChoice = {
-      status: STAFF_ASSISTANT_NEEDS_CHOICE_STATUS,
-      challengeId,
-      reason: "variant_required",
-      productName: "Macarons",
-      options: [{ id: challengeId, label: "Lemon" }],
-      optionsTruncated: false,
-    };
-    expect(clipStaffAssistantToolResult(needsChoice)).toBe(needsChoice);
-  });
-
   it("passes typed error objects through unchanged", () => {
     const error = {
       status: "error",
@@ -84,8 +56,6 @@ describe("clipStaffAssistantToolResult", () => {
   it("does not clip a small create-style write result", () => {
     const created = { customerId };
     expect(clipStaffAssistantToolResult(created)).toBe(created);
-    expect(extractUuidResultIds({ customerId })).toEqual([customerId]);
-    expect(extractUuidResultIds({ id: customerId })).toEqual([customerId]);
   });
 
   it("does not wrap a single-record get that already fits the JSON cap", () => {

@@ -10,8 +10,6 @@ import {
   type AssistantClippedToolEnvelope,
 } from "@showzy/validation/assistant-surfaces";
 
-import { isStaffAssistantNeedsChoiceOutput } from "./choice.js";
-import { isStaffAssistantConfirmationOutput } from "./confirmation.js";
 import { staffAssistantPostgresJsonbTextChars } from "./json-chars.js";
 
 /**
@@ -201,11 +199,9 @@ function shrinkPreview(value: unknown): unknown {
 }
 
 export function clipStaffAssistantToolResult(output: unknown): unknown {
-  if (
-    isStaffAssistantConfirmationOutput(output) ||
-    isStaffAssistantNeedsChoiceOutput(output) ||
-    isTypedToolError(output)
-  ) {
+  // A typed façade error is already small and already shaped for the model;
+  // clipping it would only make the reason harder to read.
+  if (isTypedToolError(output)) {
     return output;
   }
 

@@ -13,7 +13,6 @@ import {
   clipStaffAssistantToolResult,
   STAFF_ASSISTANT_CLIP_JSON_MAX,
 } from "../clip-tool-result.js";
-import { STAFF_ASSISTANT_CONFIRMATION_STATUS } from "../confirmation.js";
 import {
   CUSTOMER_NAME_MAX,
   LIST_ORDERS_CURSOR_MAX,
@@ -243,22 +242,13 @@ describe("mapOrdersListPageOutput", () => {
     expect(JSON.stringify(mapped)).not.toContain("totalNetMinor");
   });
 
-  it("passes typed errors and confirmation through unchanged", () => {
+  it("passes a typed error through unchanged", () => {
     const error = {
       status: "error",
       code: "NOT_FOUND",
       message: "Order not found.",
     };
     expect(mapOrdersListPageOutput(error)).toBe(error);
-    const confirmation = {
-      status: STAFF_ASSISTANT_CONFIRMATION_STATUS,
-      challengeId: "22222222-2222-4222-8222-222222222222",
-      summary: "Confirm.",
-      expiresAt: "2026-09-02T12:00:00.000Z",
-      actionName: "orders.cancel",
-      toolCallId: "call-1",
-    };
-    expect(mapOrdersListPageOutput(confirmation)).toBe(confirmation);
   });
 
   it("truncates assistant-visible nameSnapshot to CUSTOMER_NAME_MAX", () => {

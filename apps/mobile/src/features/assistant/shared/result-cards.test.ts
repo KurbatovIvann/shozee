@@ -1577,14 +1577,9 @@ describe("assistant result-card surface registry", () => {
       { kind: "screen" },
       { kind: "terminal" },
     ]);
-    const customers = ASSISTANT_RESULT_SURFACE_REGISTRY.find(
-      (entry) => entry.kind === "customers-list",
-    );
     const search = ASSISTANT_RESULT_SURFACE_REGISTRY.find(
       (entry) => entry.kind === "search-results",
     );
-    expect(customers?.hydratable).toBe(false);
-    expect(search?.hydratable).toBe(false);
     expect(search?.actionNames).toEqual(["search.query"]);
     expect(search?.toolNames).toEqual(
       expect.arrayContaining(["search_query", "search.query"]),

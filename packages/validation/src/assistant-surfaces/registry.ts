@@ -1,8 +1,13 @@
 /**
  * Assistant result-surface registry (SHO-456 / SHO-470 / SHO-472). Each
  * kind owns the façade tools it binds, parse into an unlocalized
- * view-model, English `promptLine`, a required destination, and
- * hydration flags. Timeline and HITL are not registered here.
+ * view-model, English `promptLine`, and a required destination. Timeline
+ * and HITL are not registered here.
+ *
+ * There used to be a `hydratable` flag as well, read by the client that
+ * rebuilt cards from database rows on reload. Nothing rebuilds them: the
+ * server stores the surface it composed and the client reads it back
+ * (ADR-0038).
  *
  * List-shaped surfaces share one collection block driven by a typed
  * column descriptor (per-surface row cap, not one shared constant).
@@ -61,7 +66,6 @@ export type AssistantSurfaceDescriptor = {
   readonly version: number;
   readonly toolNames: readonly string[];
   readonly actionNames: readonly string[];
-  readonly hydratable: boolean;
   readonly promptLine: string;
   readonly destination: AssistantSurfaceDestinationDeclaration;
   readonly parse: AssistantSurfaceParse;
@@ -74,7 +78,6 @@ export const ASSISTANT_SURFACE_REGISTRY: readonly AssistantSurfaceDescriptor[] =
       version: 1,
       toolNames: ORDERS_LIST_SURFACE_TOOLS,
       actionNames: [ORDERS_LIST_ACTION_NAME],
-      hydratable: false,
       promptLine: ORDERS_LIST_PROMPT_LINE,
       destination: ORDERS_LIST_DESTINATION,
       parse: parseOrdersListSurface,
@@ -84,7 +87,6 @@ export const ASSISTANT_SURFACE_REGISTRY: readonly AssistantSurfaceDescriptor[] =
       version: 1,
       toolNames: ORDERS_AGGREGATE_SURFACE_TOOLS,
       actionNames: [ORDERS_LIST_ACTION_NAME],
-      hydratable: false,
       promptLine: ORDERS_AGGREGATE_PROMPT_LINE,
       destination: ORDERS_AGGREGATE_DESTINATION,
       parse: parseOrdersAggregateSurface,
@@ -94,7 +96,6 @@ export const ASSISTANT_SURFACE_REGISTRY: readonly AssistantSurfaceDescriptor[] =
       version: 1,
       toolNames: ORDER_ENTITY_SURFACE_TOOLS,
       actionNames: ORDER_ENTITY_ACTION_NAMES,
-      hydratable: true,
       promptLine: ORDER_ENTITY_PROMPT_LINE,
       destination: ORDER_ENTITY_DESTINATION,
       parse: parseOrderEntitySurfaces,
@@ -104,10 +105,6 @@ export const ASSISTANT_SURFACE_REGISTRY: readonly AssistantSurfaceDescriptor[] =
       version: 1,
       toolNames: CUSTOMERS_LIST_SURFACE_TOOLS,
       actionNames: [CUSTOMERS_LIST_ACTION_NAME],
-      // Lists are unrestorable today (`assistant-hydrate.ts`: "Do not
-      // restore list cards"; `orders-list` is `hydratable: false`). No
-      // ticket mandates hydrating customers-list on resume.
-      hydratable: false,
       promptLine: CUSTOMERS_LIST_PROMPT_LINE,
       destination: CUSTOMERS_LIST_DESTINATION,
       parse: parseCustomersListSurface,
@@ -117,37 +114,8 @@ export const ASSISTANT_SURFACE_REGISTRY: readonly AssistantSurfaceDescriptor[] =
       version: 1,
       toolNames: SEARCH_RESULTS_SURFACE_TOOLS,
       actionNames: [SEARCH_QUERY_ACTION_NAME],
-      hydratable: false,
       promptLine: SEARCH_RESULTS_PROMPT_LINE,
       destination: SEARCH_RESULTS_DESTINATION,
       parse: parseSearchResultsSurface,
     },
   ];
-
-function actionNamesFromRegistry(
-  registry: readonly AssistantSurfaceDescriptor[],
-  hydratable: boolean,
-): ReadonlySet<string> {
-  const names = new Set<string>();
-  for (const descriptor of registry) {
-    if (descriptor.hydratable !== hydratable) {
-      continue;
-    }
-    for (const actionName of descriptor.actionNames) {
-      names.add(actionName);
-    }
-  }
-  return names;
-}
-
-export function hydratableAssistantActionNames(
-  registry: readonly AssistantSurfaceDescriptor[] = ASSISTANT_SURFACE_REGISTRY,
-): ReadonlySet<string> {
-  return actionNamesFromRegistry(registry, true);
-}
-
-export function unrestorableAssistantActionNames(
-  registry: readonly AssistantSurfaceDescriptor[] = ASSISTANT_SURFACE_REGISTRY,
-): ReadonlySet<string> {
-  return actionNamesFromRegistry(registry, false);
-}
