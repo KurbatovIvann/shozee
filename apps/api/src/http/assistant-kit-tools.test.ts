@@ -24,7 +24,10 @@ import { createActionRegistry } from "../composition.js";
 import type { ChoiceSecret } from "./assistant-interactions.js";
 import { createResolveAnswer, withChosenId } from "./assistant-kit-resolve.js";
 import { assistantKitIdempotencyKey } from "./assistant-kit-runtime.js";
-import { assistantKitTurnTools } from "./assistant-kit-tools.js";
+import {
+  assistantKitTurnTools,
+  type AssistantToolLogger,
+} from "./assistant-kit-tools.js";
 
 const registry = createActionRegistry();
 const CONTRACTS = filterStaffAiTools(registry.contracts(), {
@@ -64,8 +67,49 @@ function pickerConflict(target: unknown): ConflictError {
   });
 }
 
-function tools(execute: ActionToolExecute): ToolSet {
-  return assistantKitTurnTools(staffAssistantTools(CONTRACTS, execute));
+type Warn = {
+  readonly fields: Record<string, unknown>;
+  readonly message: string;
+};
+
+/** Collects what the tool layer reports, so a silent path is a failing test. */
+function capturingLogger(): {
+  logger: AssistantToolLogger;
+  warnings: Warn[];
+} {
+  const warnings: Warn[] = [];
+  return {
+    logger: {
+      warn: (fields, message) => {
+        warnings.push({ fields, message });
+      },
+    },
+    warnings,
+  };
+}
+
+function tools(
+  execute: ActionToolExecute,
+  logger?: AssistantToolLogger,
+): ToolSet {
+  return assistantKitTurnTools(
+    staffAssistantTools(CONTRACTS, execute),
+    logger ?? capturingLogger().logger,
+  );
+}
+
+/**
+ * A catalog terminal: nothing to pick between, so it is correctly an error.
+ * The domain raises these with an empty option list.
+ */
+function terminalConflict(): ConflictError {
+  const error = new ConflictError("this product is archived");
+  return Object.assign(error, {
+    reason: "archived",
+    target: { kind: "order_line_product", lineIndex: 0, query: "торт" },
+    options: [],
+    optionsTruncated: false,
+  });
 }
 
 async function run(
@@ -148,6 +192,56 @@ describe("a value becomes ok, with the card the surface registry composes", () =
     if (page.card !== undefined && counts.card !== undefined) {
       expect(counts.card.cardId).toBe(page.card.cardId);
     }
+  });
+});
+
+describe("a CONFLICT that cannot open a picker", () => {
+  /**
+   * The gap this closes: from outside, a terminal refusal and a picker the
+   * extractor could not read look identical — the model gets an error and
+   * explains it in prose. Nobody could tell which one had happened, and the
+   * second is a bug while the first is correct behaviour.
+   */
+  it("says so in the log, with the shape and not the content", async () => {
+    const { logger, warnings } = capturingLogger();
+    const set = tools(() => Promise.reject(terminalConflict()), logger);
+
+    const outcome = await run(set, ORDERS_CREATE_TOOL_NAME, CREATE_BY_QUERY);
+
+    expect(outcome.kind).toBe("error");
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.fields).toMatchObject({
+      tool_name: ORDERS_CREATE_TOOL_NAME,
+      code: "CONFLICT",
+      conflict_reason: "archived",
+      target_kind: "order_line_product",
+      option_count: 0,
+    });
+    // The staff member's own words about their customers do not go in logs.
+    expect(JSON.stringify(warnings[0])).not.toContain("торт");
+  });
+
+  it("stays quiet when the conflict did open a picker", async () => {
+    const { logger, warnings } = capturingLogger();
+    const set = tools(
+      () => Promise.reject(pickerConflict({ kind: "customer", query: "Катя" })),
+      logger,
+    );
+
+    const outcome = await run(set, ORDERS_CREATE_TOOL_NAME, CREATE_BY_QUERY);
+
+    expect(outcome.kind).toBe("pause");
+    expect(warnings).toEqual([]);
+  });
+
+  it("stays quiet for a refusal that was never a choice", async () => {
+    const { logger, warnings } = capturingLogger();
+    const set = tools(() => Promise.reject(new NotFoundError()), logger);
+
+    expect(
+      (await run(set, ORDERS_CREATE_TOOL_NAME, CREATE_BY_QUERY)).kind,
+    ).toBe("error");
+    expect(warnings).toEqual([]);
   });
 });
 

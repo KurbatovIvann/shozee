@@ -57,6 +57,30 @@ describe("staffAssistantSystemPrompt", () => {
     expect(staffAssistantSystemPrompt).not.toContain("customers_list_groups");
   });
 
+  /**
+   * The behaviour this pins was seen on a phone: asked for "3 макаронси" when
+   * that product has several flavours, the model asked which flavour in prose
+   * instead of calling the tool. A typed reply is a guess about names it cannot
+   * see; a tapped picker option is exact. Nothing else in the prompt forbade
+   * it, so the rule is here rather than in a tool description — it is about
+   * when to call at all, not about how any one tool works.
+   */
+  it("tells the model to attempt an ambiguous job rather than ask about it", () => {
+    expect(staffAssistantSystemPrompt).toContain(
+      "An unclear detail is not a reason to ask in chat.",
+    );
+    expect(staffAssistantSystemPrompt).toContain(
+      "An ambiguity comes back as a picker they tap",
+    );
+    // And the other half: asking is right when there is nothing to attempt.
+    expect(staffAssistantSystemPrompt).toContain(
+      "Ask in chat only when there is nothing to attempt",
+    );
+    expect(staffAssistantSystemPrompt).toContain(
+      "Do not list the candidates yourself",
+    );
+  });
+
   it("does not dump orders / customers / pricing how-to that lives on façades", () => {
     expect(staffAssistantSystemPrompt).toContain(
       "Call one terminal tool per job. Do not narrate instead of calling.",

@@ -216,7 +216,10 @@ export function createAssistantKitRuntime(
         });
       };
 
-      return assistantKitTurnTools(staffAssistantTools(contracts, execute));
+      return assistantKitTurnTools(
+        staffAssistantTools(contracts, execute),
+        options.pipeline.logger,
+      );
     },
   };
 }

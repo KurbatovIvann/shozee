@@ -33,6 +33,15 @@ import type {
 } from "./assistant-interactions.js";
 
 /**
+ * The only thing this layer needs from a logger. Narrower than pino's, which a
+ * pino logger satisfies structurally — so the runtime passes the real one and a
+ * test passes an object.
+ */
+export interface AssistantToolLogger {
+  warn(fields: Record<string, unknown>, message: string): void;
+}
+
+/**
  * One card per surface, addressed by what the surface is.
  *
  * A page and a rollup compose into a single `orders-list`; writing it under the
@@ -58,6 +67,40 @@ function cardFor(
     : { cardId: cardIdFor(fresh), type: fresh.kind, payload: fresh };
 }
 
+/**
+ * A `CONFLICT` that did not become a picker, named in the log.
+ *
+ * There are two reasons it can happen and they are very different: a terminal
+ * refusal, where there is genuinely nothing to pick between, and a picker the
+ * extractor could not read. Both look identical from outside — the model gets
+ * an error and explains it in prose, and nobody can tell which one it was.
+ *
+ * Shape only, never content: the reason, what kind of thing was ambiguous, and
+ * how many options came with it. A query or a label is the staff member's own
+ * words about their customers, and those do not go in logs.
+ */
+function logUnpickableConflict(
+  logger: AssistantToolLogger,
+  toolName: string,
+  error: CoreError,
+): void {
+  const target: unknown = Reflect.get(error, "target");
+  const options: unknown = Reflect.get(error, "options");
+  logger.warn(
+    {
+      tool_name: toolName,
+      code: error.code,
+      conflict_reason: Reflect.get(error, "reason"),
+      target_kind:
+        typeof target === "object" && target !== null
+          ? Reflect.get(target, "kind")
+          : undefined,
+      option_count: Array.isArray(options) ? options.length : undefined,
+    },
+    "assistant conflict did not open a picker",
+  );
+}
+
 /** What the person is choosing between, in their own words where possible. */
 function subjectFor(target: ChoicePickerTarget): string {
   switch (target.kind) {
@@ -74,7 +117,10 @@ function subjectFor(target: ChoicePickerTarget): string {
  * Fresh per turn: the composer needs every result of the turn so far, and one
  * turn's results must never leak into another's.
  */
-export function assistantKitTurnTools(base: ToolSet): ToolSet {
+export function assistantKitTurnTools(
+  base: ToolSet,
+  logger: AssistantToolLogger,
+): ToolSet {
   const results: AssistantSurfaceToolResult[] = [];
   const wrapped: ToolSet = {};
 
@@ -126,6 +172,9 @@ export function assistantKitTurnTools(base: ToolSet): ToolSet {
             };
           }
           if (error instanceof CoreError) {
+            if (error.code === "CONFLICT") {
+              logUnpickableConflict(logger, name, error);
+            }
             return { kind: "error", code: error.code, message: error.message };
           }
           // Not a domain refusal. Let the loop see it as a failed turn rather
