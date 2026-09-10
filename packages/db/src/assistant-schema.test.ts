@@ -187,16 +187,16 @@ describe("assistant schema slice", () => {
     await dbClient.db.insert(assistantChatState).values({
       companyId: company.id,
       conversationId: conversation.id,
-      document: { messages: [] },
+      history: [],
     });
 
     // A second row for the same conversation is the shape that would let two
-    // documents disagree, so the database refuses it.
+    // histories disagree, so the database refuses it.
     await expectSqlState(
       dbClient.db.insert(assistantChatState).values({
         companyId: company.id,
         conversationId: conversation.id,
-        document: { messages: [] },
+        history: [],
       }),
       "23505",
     );
@@ -215,7 +215,7 @@ describe("assistant schema slice", () => {
       dbClient.db.insert(assistantChatState).values({
         companyId: other.id,
         conversationId: conversation.id,
-        document: {},
+        history: [],
       }),
       "23503",
     );
@@ -351,6 +351,28 @@ describe("assistant schema slice", () => {
       "assistant_chat_messages",
       "assistant_chat_state",
       "assistant_conversations",
+    ]);
+  });
+
+  /**
+   * The transcript was a document in this row, replaced whole on every write,
+   * and one message nobody could parse emptied it. It is a log in
+   * `assistant_chat_messages` now; a transcript blob back here is that defect
+   * again (SHO-555).
+   */
+  it("keeps only the provider history in chat state, not the transcript", async () => {
+    const result = await admin.query<{ column_name: string }>(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'assistant_chat_state'
+       ORDER BY column_name`,
+    );
+
+    expect(result.rows.map((row) => row.column_name)).toEqual([
+      "company_id",
+      "conversation_id",
+      "created_at",
+      "history",
+      "updated_at",
     ]);
   });
 

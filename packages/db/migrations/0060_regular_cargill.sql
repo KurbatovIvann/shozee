@@ -1,0 +1,1 @@
+ALTER TABLE "assistant_chat_state" DROP COLUMN "document";

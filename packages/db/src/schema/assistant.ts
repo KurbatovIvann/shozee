@@ -65,18 +65,6 @@ export const assistantConversations = pgTable(
 );
 
 /**
- * User/assistant text for a conversation. Role is forced by later write
- * actions; the CHECK is the closed set. Tool results live on
- * `assistant_tool_runs`, not here.
- * `turn_key` is the host begin identity on assistant rows (chat
- * `begin:${userMessageId}`, Phase B `begin:resume:${pendingId}`, Phase A
- * `begin:phase-a:${pendingId}`, replace/successor keys). Nullable on
- * pre-SHO-539 rows; recovery must not auto-execute `started` runs whose
- * message `turn_key` is null. Immutable after begin — complete does not
- * update it. UNIQUE `(company_id, conversation_id, turn_key)` allows
- * multiple NULLs (PostgreSQL NULL DISTINCT).
- */
-/**
  * The transcript of an `assistant-kit` conversation, one row per message.
  *
  * A log, not a document. A message is written by the request that produced it
@@ -154,8 +142,6 @@ export const assistantChatState = pgTable(
   {
     companyId: tenantCompanyId(),
     conversationId: uuid("conversation_id").notNull(),
-    /** No longer written (SHO-555); dropped once nothing reads it. */
-    document: jsonb("document"),
     /** `ModelMessage[]` for the next turn. Null until the first turn. */
     history: jsonb("history"),
     ...timestampColumns(),
