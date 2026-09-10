@@ -1,6 +1,7 @@
 /**
- * The four assistant calls. Every one of them answers with the whole stored
- * conversation, so this module has one job: get the document, or say why not.
+ * The four assistant calls. Every one of them answers with the conversation as
+ * it stands — its latest window, or the page a read asked for — so this module
+ * has one job: get that window, or say why not.
  *
  * There is nothing per-status to decode. The old client had a discriminated
  * union per endpoint and a local copy of the server's own union to parse it
@@ -16,7 +17,7 @@
  */
 import { fetch as expoFetch } from "expo/fetch";
 import {
-  assistantChatDocumentSchema,
+  parseAssistantChatWindow,
   type AssistantChatDocument,
 } from "@showzy/validation/assistant-chat";
 import { z } from "zod";
@@ -126,9 +127,9 @@ function failureFromStatus(
   return "rejected";
 }
 
+/** A message this build cannot read costs that message, not the conversation. */
 function documentFrom(value: unknown): AssistantChatDocument | null {
-  const parsed = assistantChatDocumentSchema.safeParse(value);
-  return parsed.success ? parsed.data : null;
+  return parseAssistantChatWindow(value);
 }
 
 async function call(
@@ -201,14 +202,25 @@ export function clipAssistantKitText(text: string): string {
   return text.trim().slice(0, ASSISTANT_KIT_TEXT_MAX);
 }
 
+/**
+ * The latest window, or with `before` — an `olderCursor` a previous answer gave
+ * — the page before it. The cursor is handed back as it came and never read.
+ */
 export function getAssistantKitDocument(
-  request: AssistantKitCall & { readonly conversationId: string },
+  request: AssistantKitCall & {
+    readonly conversationId: string;
+    readonly before?: string;
+  },
 ): Promise<AssistantKitOutcome> {
+  const before =
+    request.before === undefined
+      ? ""
+      : `&before=${encodeURIComponent(request.before)}`;
   return call(
     request,
     `${ASSISTANT_KIT_MESSAGES_PATH}?conversationId=${encodeURIComponent(
       request.conversationId,
-    )}`,
+    )}${before}`,
     { method: "GET" },
   );
 }

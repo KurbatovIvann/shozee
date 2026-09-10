@@ -17,9 +17,14 @@ import {
   assistantShozikPose,
   SHOZIK_EMPTY_POSE_SIZE,
   SHOZIK_HEADER_POSE_SIZE,
+  SHOZIK_WAIT_POSE_SIZE,
 } from "./assistant-chrome";
 import { AssistantComposer } from "./assistant-composer";
 import { AssistantMessageRow } from "./assistant-message-row";
+import {
+  ASSISTANT_THREAD_START,
+  assistantThreadFollow,
+} from "./assistant-thread-follow";
 import { ShozikPoseMark } from "./shozik-pose-mark";
 
 /**
@@ -44,6 +49,12 @@ export type AssistantSheetViewModel = {
   readonly thinking: boolean;
   readonly canSend: boolean;
   readonly banner: string | null;
+  /**
+   * The thread is a window onto a longer conversation. Reaching its top asks
+   * for the page before; nothing happens when there is none.
+   */
+  readonly loadOlder: () => void;
+  readonly loadingOlder: boolean;
 };
 
 function keyExtractor(item: AssistantDocumentRow): string {
@@ -67,8 +78,19 @@ function itemType(item: AssistantDocumentRow): string {
 }
 
 export function AssistantSheetView(model: AssistantSheetViewModel) {
-  const { copy } = model;
+  const { copy, rows } = model;
   const listRef = useRef<FlashListRef<AssistantDocumentRow>>(null);
+  const edgesRef = useRef(ASSISTANT_THREAD_START);
+
+  // FlashList keeps an older page from moving what is on screen on its own;
+  // this only decides when to bring the thread back down to its end.
+  const followThread = useCallback(() => {
+    const next = assistantThreadFollow(edgesRef.current, rows);
+    edgesRef.current = next.edges;
+    if (next.scrollToEnd) {
+      listRef.current?.scrollToEnd({ animated: true });
+    }
+  }, [rows]);
 
   const renderItem: ListRenderItem<AssistantDocumentRow> = useCallback(
     ({ item }) => (
@@ -123,15 +145,23 @@ export function AssistantSheetView(model: AssistantSheetViewModel) {
         ) : (
           <FlashList
             ref={listRef}
-            data={model.rows}
+            data={rows}
             style={styles.list}
             keyExtractor={keyExtractor}
             renderItem={renderItem}
             getItemType={itemType}
             contentContainerStyle={styles.listContent}
-            onContentSizeChange={() => {
-              listRef.current?.scrollToEnd({ animated: true });
-            }}
+            onContentSizeChange={followThread}
+            onStartReached={model.loadOlder}
+            ListHeaderComponent={
+              // The same dig pose the wait line uses, not a spinner (SHO-394):
+              // one mark for "Shozik is fetching", wherever it happens.
+              model.loadingOlder ? (
+                <View style={styles.older}>
+                  <ShozikPoseMark pose="dig" size={SHOZIK_WAIT_POSE_SIZE} />
+                </View>
+              ) : null
+            }
           />
         )}
         <View style={styles.composer}>
@@ -191,6 +221,10 @@ const styles = StyleSheet.create((theme) => ({
   listContent: {
     paddingHorizontal: theme.spacing.lg,
     paddingVertical: theme.spacing.md,
+  },
+  older: {
+    alignItems: "center",
+    paddingVertical: theme.spacing.sm,
   },
   composer: {
     paddingHorizontal: theme.spacing.lg,

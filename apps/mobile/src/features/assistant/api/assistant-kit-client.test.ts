@@ -262,6 +262,54 @@ describe("the assistant kit client", () => {
     });
   });
 
+  it("asks for the page before a cursor by the same query", async () => {
+    respond(200, { status: "ok", document: document() });
+
+    await getAssistantKitDocument({
+      ...call,
+      conversationId: CONVERSATION,
+      before: "31",
+    });
+
+    const [url] = fetchMock.mock.calls[0] as [string];
+    expect(url).toBe(
+      `https://api.example.com/assistant/kit/messages?conversationId=${CONVERSATION}&before=31`,
+    );
+  });
+
+  /**
+   * A phone is updated when its owner updates it, not when the server ships a
+   * new kind of part. One message it cannot read must not cost it the thread.
+   */
+  it("keeps the messages it can read when one it cannot is among them", async () => {
+    const readable = document();
+    respond(200, {
+      status: "ok",
+      document: {
+        ...readable,
+        messages: [
+          {
+            messageId: "55555555-5555-4555-8555-555555555555",
+            role: "assistant",
+            createdAt: "2026-09-09T09:00:00.000Z",
+            parts: [{ kind: "voice", clipId: "clip-1" }],
+          },
+          ...readable.messages,
+        ],
+      },
+    });
+
+    const outcome = await getAssistantKitDocument({
+      ...call,
+      conversationId: CONVERSATION,
+    });
+
+    expect(outcome.failure).toBeNull();
+    expect(outcome.document?.messages.map((m) => m.messageId)).toEqual([
+      "44444444-4444-4444-8444-444444444444",
+    ]);
+  });
+
   it("asks for a conversation by an encoded query, not a path", async () => {
     respond(200, { status: "ok", document: document() });
 

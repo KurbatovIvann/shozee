@@ -175,5 +175,7 @@ export function useAssistantSheet(): AssistantSheetViewModel & {
       identity.conversationId !== null,
     banner:
       bannerKind === null ? null : assistantChatErrorMessage(bannerKind, copy),
+    loadOlder: conversation.loadOlder,
+    loadingOlder: conversation.loadingOlder,
   };
 }

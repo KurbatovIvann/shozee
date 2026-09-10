@@ -778,3 +778,202 @@ describe("retrying a command whose reply never came", () => {
     expect(sentBody(2).commandId).not.toBe(sentBody(1).commandId);
   });
 });
+
+/**
+ * SHO-555. The server answers with a window, not the whole conversation, and
+ * the hook joins windows into one thread. The window here is three messages: a
+ * request adds at most two, so a reply always overlaps what is on screen — as it
+ * does with the real thirty.
+ */
+describe("a conversation longer than one window", () => {
+  function numbered(n: number) {
+    return {
+      messageId: `77777777-7777-4777-8777-${n.toString(16).padStart(12, "0")}`,
+      role: n % 2 === 1 ? "user" : "assistant",
+      createdAt: "2026-09-09T10:00:00.000Z",
+      parts: [
+        { kind: "text", text: `повідомлення ${String(n)}`, status: "complete" },
+      ],
+    };
+  }
+
+  /** What the server answers for messages `from`..`to`. */
+  function window(from: number, to: number) {
+    return {
+      conversationId: CONVERSATION,
+      messages: Array.from({ length: to - from + 1 }, (_, index) =>
+        numbered(from + index),
+      ),
+      olderCursor: from > 1 ? String(from) : null,
+      openPause: null,
+    };
+  }
+
+  function range(from: number, to: number): string[] {
+    return Array.from(
+      { length: to - from + 1 },
+      (_, index) => `повідомлення ${String(from + index)}`,
+    );
+  }
+
+  function texts(view: ReturnType<typeof mount>): string[] {
+    return view.latest().rows.map((row) => row.text);
+  }
+
+  /** A page that arrives only when told to. */
+  function pageLater(): (body: unknown) => void {
+    const pending: { resolve: ((response: Response) => void) | null } = {
+      resolve: null,
+    };
+    fetchMock.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          pending.resolve = resolve;
+        }),
+    );
+    return (body) => {
+      pending.resolve?.(
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    };
+  }
+
+  async function loadedWithOlder() {
+    respond(200, { status: "ok", document: window(2, 4) });
+    const view = mount();
+    await flush();
+    return view;
+  }
+
+  it("loads the page before the oldest message, and keeps the thread in order", async () => {
+    const view = await loadedWithOlder();
+    expect(view.latest().hasOlder).toBe(true);
+
+    respond(200, { status: "ok", document: window(1, 1) });
+    act(() => {
+      view.latest().loadOlder();
+    });
+    await flush();
+
+    expect(texts(view)).toEqual(range(1, 4));
+    expect(view.latest().hasOlder).toBe(false);
+    const [url] = fetchMock.mock.calls[1] as [string];
+    expect(url).toContain("before=2");
+  });
+
+  it("joins a reply onto the pages already loaded", async () => {
+    const view = await loadedWithOlder();
+    respond(200, { status: "ok", document: window(1, 1) });
+    act(() => {
+      view.latest().loadOlder();
+    });
+    await flush();
+
+    respond(200, { status: "ok", document: window(4, 6) });
+    await act(async () => {
+      await view.latest().send("повідомлення 5");
+    });
+
+    expect(texts(view)).toEqual(range(1, 6));
+    expect(view.latest().hasOlder).toBe(false);
+  });
+
+  it("starts again from the latest window when the conversation moved on further than one", async () => {
+    const view = await loadedWithOlder();
+    respond(200, { status: "ok", document: window(1, 1) });
+    act(() => {
+      view.latest().loadOlder();
+    });
+    await flush();
+
+    // Another device took several turns meanwhile.
+    respond(200, { status: "ok", document: window(8, 10) });
+    act(() => {
+      view.latest().reload();
+    });
+    await flush();
+
+    expect(texts(view)).toEqual(range(8, 10));
+    expect(view.latest().hasOlder).toBe(true);
+  });
+
+  it("drops an older page that arrives after the thread was reset under it", async () => {
+    const view = await loadedWithOlder();
+    const deliver = pageLater();
+    act(() => {
+      view.latest().loadOlder();
+    });
+    await flush();
+    expect(view.latest().loadingOlder).toBe(true);
+
+    // Not held up by the page on its way.
+    respond(200, { status: "ok", document: window(8, 10) });
+    await act(async () => {
+      await view.latest().send("ще одне");
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    act(() => {
+      deliver({ status: "ok", document: window(1, 1) });
+    });
+    await flush();
+
+    expect(texts(view)).toEqual(range(8, 10));
+    expect(view.latest().loadingOlder).toBe(false);
+  });
+
+  it("drops an older page for a company that is no longer on screen", async () => {
+    const view = await loadedWithOlder();
+    const deliver = pageLater();
+    act(() => {
+      view.latest().loadOlder();
+    });
+    await flush();
+
+    respond(200, { status: "ok", document: document({ text: "Компанія B." }) });
+    view.switchCompany("66666666-6666-4666-8666-666666666666");
+    await flush();
+
+    act(() => {
+      deliver({ status: "ok", document: window(1, 1) });
+    });
+    await flush();
+
+    expect(texts(view)).toEqual(["Компанія B."]);
+    expect(view.latest().loadingOlder).toBe(false);
+  });
+
+  it("asks for nothing when nothing is older", async () => {
+    respond(200, { status: "ok", document: window(1, 3) });
+    const view = mount();
+    await flush();
+
+    act(() => {
+      view.latest().loadOlder();
+    });
+    await flush();
+
+    expect(view.latest().hasOlder).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks once while a page is already on its way", async () => {
+    const view = await loadedWithOlder();
+    hang();
+
+    act(() => {
+      view.latest().loadOlder();
+      view.latest().loadOlder();
+    });
+    await flush();
+    act(() => {
+      view.latest().loadOlder();
+    });
+    await flush();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});

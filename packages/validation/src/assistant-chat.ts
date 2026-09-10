@@ -113,6 +113,121 @@ export type AssistantChatDocument = z.output<
   typeof assistantChatDocumentSchema
 >;
 
+/**
+ * The envelope a reader accepts: the window's own fields, with each message
+ * left to be read on its own. Unknown envelope keys are stripped rather than
+ * refused, for the same reason a message is read on its own — a phone does not
+ * get to choose when it is updated.
+ */
+const assistantChatWindowEnvelopeSchema = z.object({
+  ...assistantChatDocumentSchema.shape,
+  messages: z.array(z.unknown()),
+});
+
+/**
+ * A window as a client reads it off the wire, one message at a time.
+ *
+ * A message this build cannot read is left out and the rest are kept — the
+ * server does the same with a stored message it cannot read. A phone installed
+ * before a new part kind shipped would otherwise lose the whole conversation
+ * over one message it has never seen.
+ *
+ * The strict schema above stays the contract: `apps/api` pins every window a
+ * server writes against it, so a message dropped here is one the server was
+ * right to send and this build is too old to show.
+ */
+export function parseAssistantChatWindow(
+  value: unknown,
+): AssistantChatDocument | null {
+  const envelope = assistantChatWindowEnvelopeSchema.safeParse(value);
+  if (!envelope.success) {
+    return null;
+  }
+  const messages: AssistantChatMessage[] = [];
+  for (const candidate of envelope.data.messages) {
+    const message = assistantChatMessageSchema.safeParse(candidate);
+    if (message.success) {
+      messages.push(message.data);
+    }
+  }
+  return { ...envelope.data, messages };
+}
+
+/**
+ * Where a window came from, which decides how it joins what a client holds.
+ *
+ * `latest` is any answer about the conversation as it now stands: a turn, a
+ * refusal, a reload. `older` is the page before `cursor`, asked for by
+ * scrolling back.
+ */
+export type AssistantChatWindowSource =
+  | { readonly kind: "latest" }
+  | { readonly kind: "older"; readonly cursor: string };
+
+/**
+ * One window joined to the thread a client holds — the only way a client
+ * changes what it shows.
+ *
+ * Not a splice. A message never changes once the request that wrote it ends, so
+ * joining windows by message id copies the server's log rather than deriving a
+ * second version of it: a client that merged every window it was sent and then
+ * paged back to the start holds exactly what the server stores.
+ *
+ * - A latest window replaces the thread from its first message on, and keeps
+ *   what was loaded before that. If that first message is not held, the
+ *   conversation moved on further than one window since the client last looked
+ *   — another device, a long absence — and the older pages it held join onto
+ *   nothing, so they are dropped rather than shown with a gap.
+ * - An older page goes in front, but only if it is the page before where the
+ *   thread starts now. One asked for before a reset belongs to a thread that is
+ *   gone.
+ * - The open question always comes from the latest window.
+ */
+export function mergeAssistantChatWindow(
+  held: AssistantChatDocument | null,
+  incoming: AssistantChatDocument,
+  source: AssistantChatWindowSource,
+): AssistantChatDocument | null {
+  if (source.kind === "older") {
+    if (
+      held === null ||
+      held.conversationId !== incoming.conversationId ||
+      held.olderCursor !== source.cursor
+    ) {
+      return held;
+    }
+    const seen = new Set(held.messages.map((message) => message.messageId));
+    return {
+      ...held,
+      messages: [
+        ...incoming.messages.filter((message) => !seen.has(message.messageId)),
+        ...held.messages,
+      ],
+      olderCursor: incoming.olderCursor,
+    };
+  }
+
+  const first = incoming.messages[0];
+  if (
+    held === null ||
+    held.conversationId !== incoming.conversationId ||
+    first === undefined
+  ) {
+    return incoming;
+  }
+  const at = held.messages.findIndex(
+    (message) => message.messageId === first.messageId,
+  );
+  if (at === -1) {
+    return incoming;
+  }
+  return {
+    ...incoming,
+    messages: [...held.messages.slice(0, at), ...incoming.messages],
+    olderCursor: held.olderCursor,
+  };
+}
+
 /* ------------------------------------------------------------------ *
  * This product's vocabulary: the kinds of question it asks.
  * ------------------------------------------------------------------ */

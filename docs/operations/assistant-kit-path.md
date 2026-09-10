@@ -42,6 +42,13 @@ client sneaks back in.
 
 Nothing of the previous client remains on disk.
 
+The thread is a window onto the conversation. It opens on the latest thirty
+messages, and scrolling to the top asks for the page before them. Every answer
+joins onto what is already loaded, by message id; if the conversation moved on
+by more than a window meanwhile — another device, a long absence — the older
+pages are dropped rather than shown with a gap. A page arriving at the top keeps
+the person where they are reading; a reply brings the thread back to its end.
+
 ## The four routes
 
 | Method | Path | Body / query |

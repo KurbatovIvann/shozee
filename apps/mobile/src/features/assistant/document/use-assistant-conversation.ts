@@ -11,11 +11,13 @@
  * one of those existed to guess at server state. The server now reports it, so
  * they are gone rather than reorganised.
  *
- * The rule that makes it small: every call answers with the whole conversation,
- * so every outcome is applied the same way. A success and a refusal both carry
- * the document; the refusal additionally has something to say. There is no
- * splicing, no locally invented part, and no second derivation to keep in step
- * with the first.
+ * The rule that makes it small: every call answers with the conversation as it
+ * stands — its latest window — so every outcome is applied the same way. A
+ * success and a refusal both carry the window; the refusal additionally has
+ * something to say. Windows join into one thread through one function,
+ * `mergeAssistantChatWindow`, by message id. A message never changes once its
+ * request ends, so that join copies the server's log; there is no locally
+ * invented part and no second derivation to keep in step with the first.
  *
  * `busy` is one flag for the whole surface, not one per card. While anything is
  * in flight nothing else may be sent — which is what the server enforces anyway,
@@ -25,6 +27,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   assistantInteractionFromPause,
+  mergeAssistantChatWindow,
   type AssistantChatDocument,
   type AssistantInteraction,
 } from "@showzy/validation/assistant-chat";
@@ -88,7 +91,18 @@ export interface UseAssistantConversation {
   /** Drop the open question without answering it. */
   readonly dismiss: () => void;
   readonly reload: () => void;
+  /** Whether messages older than the first one shown exist. */
+  readonly hasOlder: boolean;
+  /** A page of older messages is on its way. */
+  readonly loadingOlder: boolean;
+  /**
+   * Ask for the page before the oldest message shown. Does nothing when there
+   * is none, or when one is already on its way.
+   */
+  readonly loadOlder: () => void;
 }
+
+const LATEST = { kind: "latest" } as const;
 
 function defaultNewId(): string {
   return crypto.randomUUID();
@@ -262,8 +276,11 @@ export function useAssistantConversation(args: {
           if (!current()) {
             return { failure: outcome.failure, current: false };
           }
-          if (outcome.document !== null) {
-            setDocument(outcome.document);
+          const incoming = outcome.document;
+          if (incoming !== null) {
+            setDocument((held) =>
+              mergeAssistantChatWindow(held, incoming, LATEST),
+            );
           }
           setFailure(outcome.failure);
           return { failure: outcome.failure, current: true };
@@ -394,6 +411,65 @@ export function useAssistantConversation(args: {
     );
   }, [run]);
 
+  /**
+   * The older page on its way, if any. Its own latch, not `busy`: reading
+   * history changes nothing on the server, so a person scrolling back does not
+   * wait for a reply to finish, and a send does not wait for a page.
+   */
+  const olderRef = useRef<object | null>(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+
+  /**
+   * Whether the page joins the thread is `mergeAssistantChatWindow`'s question:
+   * only if the thread still starts where the page was asked from. A reply that
+   * arrived in between may have reset it, and a page for a thread that is gone
+   * must not be put in front of the one that replaced it.
+   */
+  const loadOlder = useCallback(() => {
+    const call = callRef.current;
+    const conversationId = conversationIdRef.current;
+    const cursor = documentRef.current?.olderCursor ?? null;
+    if (
+      call === null ||
+      conversationId === null ||
+      cursor === null ||
+      olderRef.current !== null
+    ) {
+      return;
+    }
+    const epoch = epochRef.current;
+    const request = {};
+    olderRef.current = request;
+    setLoadingOlder(true);
+    void getAssistantKitDocument({ ...call, conversationId, before: cursor })
+      .then((outcome) => {
+        if (
+          olderRef.current !== request ||
+          epochRef.current !== epoch ||
+          conversationIdRef.current !== conversationId
+        ) {
+          return;
+        }
+        const page = outcome.document;
+        if (page !== null) {
+          setDocument((held) =>
+            mergeAssistantChatWindow(held, page, { kind: "older", cursor }),
+          );
+        }
+        // Said, not swallowed. Success leaves the banner alone: it may be
+        // reporting a refused send that this page has nothing to do with.
+        if (outcome.failure !== null) {
+          setFailure(outcome.failure);
+        }
+      })
+      .finally(() => {
+        if (olderRef.current === request) {
+          olderRef.current = null;
+          setLoadingOlder(false);
+        }
+      });
+  }, [epochRef]);
+
   // A new tenant or a new conversation is a different document. Clearing before
   // the read is deliberate: showing the previous company's thread for the length
   // of one request is worse than showing nothing.
@@ -405,6 +481,8 @@ export function useAssistantConversation(args: {
     // Orphan anything still running for the previous conversation, then read.
     ticketRef.current += 1;
     busyRef.current = false;
+    olderRef.current = null;
+    setLoadingOlder(false);
     reload();
   }, [args.conversationId, args.call, reload]);
 
@@ -429,5 +507,17 @@ export function useAssistantConversation(args: {
     [document],
   );
 
-  return { rows, interaction, busy, failure, send, answer, dismiss, reload };
+  return {
+    rows,
+    interaction,
+    busy,
+    failure,
+    send,
+    answer,
+    dismiss,
+    reload,
+    hasOlder: document !== null && document.olderCursor !== null,
+    loadingOlder,
+    loadOlder,
+  };
 }

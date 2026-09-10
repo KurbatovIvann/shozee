@@ -125,6 +125,21 @@ describe("the assistant sheet's wiring", () => {
     expect(SHEET).not.toMatch(/\.send\(text\)\.then\(\(failure\)/);
   });
 
+  /**
+   * SHO-555. The thread is a window onto a longer conversation. Reaching its top
+   * asks for the page before, and a page arriving above must not throw the
+   * person back to the bottom — which an unconditional scroll to the end on
+   * every size change did. The decision is `assistantThreadFollow`'s, tested on
+   * its own; this pins that the screen uses it.
+   */
+  it("asks for older messages from the top, and stays where the person is reading", () => {
+    expect(SHEET).toContain("loadOlder: conversation.loadOlder");
+    expect(SHEET).toContain("loadingOlder: conversation.loadingOlder");
+    expect(VIEW).toContain("onStartReached={model.loadOlder}");
+    expect(VIEW).toContain("onContentSizeChange={followThread}");
+    expect(VIEW).toContain("assistantThreadFollow(");
+  });
+
   it("offers one answer callback, not one per kind of question", () => {
     expect(VIEW).toContain("readonly answer: (answer: unknown) => void");
     // The declarations, not the words: the header comment names what these
