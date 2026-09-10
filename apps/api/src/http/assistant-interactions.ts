@@ -19,6 +19,7 @@ import {
   resolved,
   unresolvable,
 } from "@showzy/assistant-kit";
+import { CONFIRMATION_TTL_MS as CHALLENGE_TTL_MS } from "@showzy/core";
 import {
   assistantChoicePromptSchema,
   assistantConfirmationPromptSchema,
@@ -28,7 +29,13 @@ import { z } from "zod";
 /** Deliberately longer than a confirmation: "which one" waits better than
  * "are you sure". */
 export const CHOICE_TTL_MS = 15 * 60 * 1000;
-export const CONFIRMATION_TTL_MS = 5 * 60 * 1000;
+/**
+ * Core's challenge lifetime, read rather than restated, so the two cannot
+ * drift. The pause opens when the turn ends, after the challenge was issued, so
+ * it outlives the challenge by the turn's length; a tap in that gap gets a fresh
+ * challenge and a new card, never an execution.
+ */
+export const CONFIRMATION_TTL_MS = CHALLENGE_TTL_MS;
 
 /**
  * Where the chosen id belongs once the ambiguity is settled. Mirrors what the
@@ -66,9 +73,18 @@ export interface ChoiceSecret {
   readonly target: ChoicePickerTarget;
 }
 
+/**
+ * Server-side only: what core bound the challenge to, which a resume presents
+ * again unchanged. The idempotency key above all — it is the attempt's identity,
+ * and a resume under any other key is a different attempt that core answers with
+ * a fresh challenge instead of running.
+ */
 export interface ConfirmationSecret {
+  readonly actionName: string;
+  /** The object `executeAction` received. Core hashed it. */
   readonly canonicalInput: unknown;
-  readonly challengeId?: string;
+  readonly idempotencyKey: string;
+  readonly challengeId: string;
 }
 
 export interface ChoiceResolution {
@@ -78,10 +94,16 @@ export interface ChoiceResolution {
   readonly target: ChoicePickerTarget;
 }
 
+/**
+ * Names the attempt a person approved. It authorises nothing by itself: core
+ * decides whether the challenge still holds for that attempt (SHO-553).
+ */
 export interface ConfirmationResolution {
   readonly approved: true;
+  readonly actionName: string;
   readonly canonicalInput: unknown;
-  readonly challengeId?: string;
+  readonly idempotencyKey: string;
+  readonly challengeId: string;
 }
 
 export const choice = defineInteraction<ChoiceSecret>()({
@@ -121,10 +143,10 @@ export const confirmation = defineInteraction<ConfirmationSecret>()({
   resolve: ({ secret }) =>
     resolved({
       approved: true,
+      actionName: secret.actionName,
       canonicalInput: secret.canonicalInput,
-      ...(secret.challengeId !== undefined
-        ? { challengeId: secret.challengeId }
-        : {}),
+      idempotencyKey: secret.idempotencyKey,
+      challengeId: secret.challengeId,
     } satisfies ConfirmationResolution),
 });
 

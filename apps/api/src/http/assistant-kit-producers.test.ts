@@ -9,7 +9,9 @@
  * the `confirmation` interaction, registered and rendered end to end with no
  * server path that opens one. `replace_card` is gone (SHO-551): what it
  * promised became a rule the writer enforces on every append, so there is no
- * second kind left for a producer to forget.
+ * second kind left for a producer to forget. The confirmation is opened by
+ * core's own challenge since SHO-553. The list below is empty for now, and it is
+ * where the next such debt gets its name.
  *
  * A registry makes declaring cheap and wiring separate, so the gap between them
  * is invisible until something tries to use it. This closes the gap by making it
@@ -39,11 +41,7 @@ const kitSrc = path.resolve(httpDir, "../../../../packages/assistant-kit/src");
  *
  * Removing a kind from this list without wiring it turns the suite red.
  */
-const UNWIRED: Readonly<Record<string, string>> = {
-  // Registered, prompt schema shared, card rendered — and nothing opens one.
-  // The resolver would also answer `no tool named undefined` if it did.
-  confirmation: "SHO-553",
-};
+const UNWIRED: Readonly<Record<string, string>> = {};
 
 function sourcesUnder(dir: string): string[] {
   const out: string[] = [];

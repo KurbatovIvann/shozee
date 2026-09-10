@@ -128,6 +128,10 @@ curl -sS "$KIT/assistant/kit/messages?conversationId=$CONV" -H "cookie: $COOKIE"
    rather than an error.
 6. **Drop one.** Ask something ambiguous, then `abandon` it. Expect the next
    `chat` to be accepted rather than refused with `interaction_open`.
+7. **A confirmation.** Archive a customer, then `chat` with "видали клієнта
+   <that name>". Expect `document.openPause.kind: "confirmation"` with a
+   summary, and the customer still there. `answer` with `{ "approved": true }`
+   and expect it gone; `abandon` instead and expect it untouched.
 
 What to watch for, because these are the failures the old path had:
 
@@ -135,6 +139,32 @@ What to watch for, because these are the failures the old path had:
 - a confident "Готово." when nothing was written
 - the card disappearing when the action refuses
 - a reload showing a different set of cards than the live turn did
+
+## Confirmations
+
+Five actions will not run without a person's say-so (`requiresConfirmation:
+true`): deleting a customer, a group, a counterparty or a price list, and
+requesting a signature. The assistant reaches them through core's challenge —
+the same one every other channel uses — never around it.
+
+1. The model calls the tool. Core refuses with a single-use challenge bound to
+   the action, the hash of its input, the person, the company and the
+   **idempotency key of the attempt**. Nothing is written.
+2. The tool layer turns the refusal into a `confirmation` pause. Its prompt is
+   core's redacted summary; the action, the input, the key and the challenge
+   stay in the pause's secret, which no client sees.
+3. `answer` with `{ "approved": true }` presents that stored attempt to
+   `executeAction` again with the challenge. Core consumes it once and checks
+   every binding before anything runs.
+
+Saying no is `abandon`. A challenge core will not accept — expired, or presented
+for anything it was not issued for — comes back as a new confirmation card, not
+as an execution. A retry of an answer that already ran replays the stored
+result.
+
+The key is the part not to lose. The answer arrives with its own `commandId`,
+and a resume that built its key from that would be a different attempt: core
+would ask again every time, and nothing would ever run.
 
 ## The spend ceiling
 
@@ -164,9 +194,6 @@ AI_UNKNOWN_MODEL_TURN_USD=0.1
 
 ## What is deliberately missing
 
-- **Confirmations.** The kind is registered, the server can store one and the
-  sheet can render and answer it, but nothing on the server *opens* one yet — only
-  `choice` occurs in practice, from a catalog picker conflict.
 - **Streaming.** Responses are whole JSON, so the sheet shows a wait row rather
   than text appearing as it is generated.
 

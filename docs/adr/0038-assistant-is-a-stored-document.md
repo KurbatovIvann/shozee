@@ -86,3 +86,14 @@ package that knows nothing about this product.
   tool's input rather than from the stored card.
 - The kit is written to be extractable. It takes no dependency on this
   product, and an isolation test fails if one appears.
+
+## Addendum — confirmations (SHO-553, 2026-09-10)
+
+ADR-0035's rule outlives the machinery it was written for: **the assistant
+never skips core's challenge.** A `requiresConfirmation` action refused inside
+a turn becomes a `confirmation` pause holding the attempt core bound the
+challenge to — action, input, idempotency key — and a person's answer presents
+that same attempt again with the challenge. Core decides; the pause only
+remembers what to ask it. The previous host's named exception, a host-side
+approval for a unique `orders.create`, went with that host and is not carried
+over.

@@ -237,22 +237,20 @@ export async function handleAssistantKitAnswer(
         return json(499, { status: "aborted" }, requestId);
       }
 
+      const context = toolContext(c, caller, {
+        conversationId: body.conversationId,
+        commandId: body.commandId,
+      });
       // One tool set for the whole request: the resolved call and the turn that
       // follows it compose their cards together.
-      const tools = await runtime.tools(
-        toolContext(c, caller, {
-          conversationId: body.conversationId,
-          commandId: body.commandId,
-        }),
-      );
+      const tools = await runtime.tools(context);
 
       const resolvedOutcome = await runtime.resolveAnswer({
         toolName: claimed.record.continuation.pausedToolCall.name,
         kind: claimed.record.kind,
         value: claimed.value,
         tools,
-        session: { userId: caller.userId },
-        companySelector: caller.companySelector,
+        context,
       });
 
       if (resolvedOutcome.kind === "pause") {

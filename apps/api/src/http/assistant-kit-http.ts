@@ -89,8 +89,12 @@ export type ResolveAnswer = (args: {
   readonly kind: string;
   readonly value: unknown;
   readonly tools: ToolSet;
-  readonly session: { readonly userId: string };
-  readonly companySelector: string;
+  /**
+   * The request the answer arrived on: who is answering, in which company. A
+   * confirmed action runs as this person, but under the attempt stored with the
+   * pause — never under this request's own command.
+   */
+  readonly context: AssistantToolContext;
 }) => Promise<ToolOutcome>;
 
 /**

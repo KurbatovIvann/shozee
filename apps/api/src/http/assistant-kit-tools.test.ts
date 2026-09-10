@@ -34,9 +34,15 @@ import { describe, expect, it } from "vitest";
 import { createActionRegistry } from "../composition.js";
 import {
   assistantInteractions,
+  confirmation,
   type ChoiceSecret,
 } from "./assistant-interactions.js";
-import { createResolveAnswer, withChosenId } from "./assistant-kit-resolve.js";
+import { AssistantConfirmationRequired } from "./assistant-kit-confirmation.js";
+import {
+  createResolveAnswer,
+  withChosenId,
+  type ResolveAnswerDeps,
+} from "./assistant-kit-resolve.js";
 import { assistantKitIdempotencyKey } from "./assistant-kit-runtime.js";
 import {
   assistantKitTurnTools,
@@ -496,6 +502,22 @@ describe("the chosen id goes back into the tool's own input", () => {
   });
 });
 
+/** The request an answer arrives on — a different command from the turn's. */
+const ANSWER_CONTEXT = {
+  userId: "user-1",
+  companySelector: "company-1",
+  conversationId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+  commandId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+  requestId: "request-answer",
+  clientIp: "127.0.0.1",
+};
+
+/** For a resolver that must never reach a confirmed action. */
+const NEVER_CONFIRMED: ResolveAnswerDeps = {
+  runConfirmed: () =>
+    Promise.reject(new Error("no confirmation was expected here")),
+};
+
 describe("resolveAnswer calls the same tool again", () => {
   it("sends the patched input to the same action and returns its card", async () => {
     const seen: unknown[] = [];
@@ -503,7 +525,7 @@ describe("resolveAnswer calls the same tool again", () => {
       seen.push({ action, input });
       return Promise.resolve({ status: "completed", ...CREATED_ORDER });
     });
-    const resolveAnswer = createResolveAnswer();
+    const resolveAnswer = createResolveAnswer(NEVER_CONFIRMED);
 
     const outcome = await resolveAnswer({
       toolName: ORDERS_CREATE_TOOL_NAME,
@@ -515,8 +537,7 @@ describe("resolveAnswer calls the same tool again", () => {
         target: { kind: "customer", query: "Катя" },
       },
       tools: set,
-      session: { userId: "user-1" },
-      companySelector: "company-1",
+      context: ANSWER_CONTEXT,
     });
 
     expect(outcome.kind).toBe("ok");
@@ -541,7 +562,7 @@ describe("resolveAnswer calls the same tool again", () => {
       ),
     );
 
-    const outcome = await createResolveAnswer()({
+    const outcome = await createResolveAnswer(NEVER_CONFIRMED)({
       toolName: ORDERS_CREATE_TOOL_NAME,
       kind: "choice",
       value: {
@@ -551,14 +572,146 @@ describe("resolveAnswer calls the same tool again", () => {
         target: { kind: "customer", query: "Катя" },
       },
       tools: set,
-      session: { userId: "user-1" },
-      companySelector: "company-1",
+      context: ANSWER_CONTEXT,
     });
 
     // Not a failure: the next question, on the same job.
     expect(outcome.kind).toBe("pause");
     if (outcome.kind !== "pause") return;
     expect(outcome.prompt).toMatchObject({ subject: "Наполеон" });
+  });
+});
+
+/**
+ * SHO-553. An action core will not run without a person's authorisation, and
+ * the answer that resumes it. Core's protocol itself is exercised end to end in
+ * `assistant-kit-confirmation.db.test.ts`; these pin the adaptation on each side.
+ */
+describe("an action that needs a person's authorisation", () => {
+  const ATTEMPT = {
+    actionName: "customers.deleteCustomer",
+    input: { id: CUSTOMER_A },
+    idempotencyKey: "tool:the-turn-that-asked",
+  };
+  const CHALLENGE = {
+    challengeId: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+    summary: "The customer will be deleted permanently.",
+    expiresAt: "2026-09-10T12:05:00.000Z",
+  };
+
+  /** What a claim hands the resolver, produced by the kind's own `resolve`. */
+  function approved(): unknown {
+    const resolution = confirmation.resolve({
+      answer: { approved: true },
+      secret: {
+        actionName: ATTEMPT.actionName,
+        canonicalInput: ATTEMPT.input,
+        idempotencyKey: ATTEMPT.idempotencyKey,
+        challengeId: CHALLENGE.challengeId,
+      },
+    });
+    if (resolution.kind !== "resolved") {
+      throw new Error("a confirmation always resolves");
+    }
+    return resolution.value;
+  }
+
+  function answerWith(deps: ResolveAnswerDeps): Promise<ToolOutcome> {
+    return createResolveAnswer(deps)({
+      toolName: "customers_deleteCustomer",
+      kind: "confirmation",
+      value: approved(),
+      // Nothing is looked up by tool name: the stored attempt says what runs.
+      tools: {},
+      context: ANSWER_CONTEXT,
+    });
+  }
+
+  it("pauses on a confirmation that shows the summary and keeps the attempt server-side", async () => {
+    const set = tools(() =>
+      Promise.reject(new AssistantConfirmationRequired(ATTEMPT, CHALLENGE)),
+    );
+
+    const outcome = await run(set, "customers_deleteCustomer", {
+      id: CUSTOMER_A,
+    });
+
+    expect(outcome).toEqual({
+      kind: "pause",
+      interaction: "confirmation",
+      prompt: { summary: CHALLENGE.summary },
+      secret: {
+        actionName: ATTEMPT.actionName,
+        canonicalInput: ATTEMPT.input,
+        idempotencyKey: ATTEMPT.idempotencyKey,
+        challengeId: CHALLENGE.challengeId,
+      },
+    });
+  });
+
+  it("presents the stored attempt again, under its own key rather than the answer's", async () => {
+    const seen: unknown[] = [];
+
+    const outcome = await answerWith({
+      runConfirmed: (args) => {
+        seen.push(args);
+        return Promise.resolve({ id: CUSTOMER_A });
+      },
+    });
+
+    expect(outcome).toEqual({ kind: "ok", result: { id: CUSTOMER_A } });
+    expect(seen).toEqual([
+      {
+        context: ANSWER_CONTEXT,
+        actionName: ATTEMPT.actionName,
+        input: ATTEMPT.input,
+        idempotencyKey: ATTEMPT.idempotencyKey,
+        challengeId: CHALLENGE.challengeId,
+      },
+    ]);
+  });
+
+  it("asks again when core issues a fresh challenge, instead of running", async () => {
+    const fresh = {
+      ...CHALLENGE,
+      challengeId: "abababab-abab-4bab-8bab-abababababab",
+    };
+
+    const outcome = await answerWith({
+      runConfirmed: () =>
+        Promise.reject(new AssistantConfirmationRequired(ATTEMPT, fresh)),
+    });
+
+    expect(outcome).toMatchObject({
+      kind: "pause",
+      interaction: "confirmation",
+      secret: {
+        challengeId: fresh.challengeId,
+        idempotencyKey: ATTEMPT.idempotencyKey,
+      },
+    });
+  });
+
+  it("reports a domain refusal after the approval as an error", async () => {
+    const refusal = new NotFoundError();
+
+    const outcome = await answerWith({
+      runConfirmed: () => Promise.reject(refusal),
+    });
+
+    expect(outcome).toMatchObject({ kind: "error", code: refusal.code });
+  });
+
+  it("refuses a kind it has no resolver for instead of guessing one", async () => {
+    const outcome = await createResolveAnswer(NEVER_CONFIRMED)({
+      toolName: "anything",
+      kind: "survey",
+      value: {},
+      tools: {},
+      context: ANSWER_CONTEXT,
+    });
+
+    expect(outcome).toMatchObject({ kind: "error", code: "CONFLICT" });
   });
 });
 

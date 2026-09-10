@@ -10,8 +10,8 @@
  * permissions — a read against the actor, not a static list.
  *
  * Every action still goes through `executeAction` with `channel: "ai"`, so
- * audit, permissions, timeouts and idempotency are exactly what they were. This
- * path changes who calls the domain, not what the domain does.
+ * audit, permissions, timeouts, idempotency and confirmation are exactly what
+ * they were. This path changes who calls the domain, not what the domain does.
  *
  * Model history lives in Redis for now, which is transient by design: a
  * conversation that outlives the ttl starts over. Acceptable while the point is
@@ -42,7 +42,10 @@ import {
   type ActionRegistry,
   type ImplementedAction,
 } from "@showzy/core";
-import { CoreInvariantError } from "@showzy/core/errors";
+import {
+  ConfirmationRequiredError,
+  CoreInvariantError,
+} from "@showzy/core/errors";
 import type { Redis } from "ioredis";
 import type { z } from "zod";
 
@@ -59,11 +62,15 @@ import {
   type AssistantInteractionTypes,
 } from "./assistant-interactions.js";
 import { ASSISTANT_INVOCATION_CHANNEL } from "./assistant-invocation.js";
+import { AssistantConfirmationRequired } from "./assistant-kit-confirmation.js";
 import type {
   AssistantKitRuntime,
   AssistantToolContext,
 } from "./assistant-kit-http.js";
-import { createResolveAnswer } from "./assistant-kit-resolve.js";
+import {
+  createResolveAnswer,
+  type RunConfirmedAction,
+} from "./assistant-kit-resolve.js";
 import { assistantKitTurnTools } from "./assistant-kit-tools.js";
 
 type RedisLike = Pick<Redis, "eval" | "get" | "set" | "del">;
@@ -120,16 +127,21 @@ export function assistantKitIdempotencyKey(
   );
 }
 
-function aiRequest(context: AssistantToolContext, actionName?: string) {
+function aiRequest(context: AssistantToolContext) {
   return {
     requestId: context.requestId,
     correlationId: context.requestId,
     channel: ASSISTANT_INVOCATION_CHANNEL,
     clientIp: context.clientIp,
     aiTraceId: context.requestId,
-    ...(actionName === undefined
-      ? {}
-      : { idempotencyKey: assistantKitIdempotencyKey(context, actionName) }),
+  };
+}
+
+function staffPrincipal(context: AssistantToolContext) {
+  return {
+    mode: "staff" as const,
+    session: { userId: context.userId },
+    companySelector: context.companySelector,
   };
 }
 
@@ -142,6 +154,67 @@ export function createAssistantKitRuntime(
   const storeDeps = { pipeline: options.pipeline };
 
   const provider = options.provider ?? anthropicStaffProvider;
+
+  /**
+   * Every call the assistant makes into the domain: a tool the model chose, and
+   * an action a person confirmed. One function, so the two cannot differ in who
+   * the call runs as, what it is audited as, or which key it is idempotent
+   * under.
+   *
+   * A `requiresConfirmation` action refuses its first call with a challenge.
+   * The refusal is rethrown with the attempt attached, because this is the only
+   * frame that has it — and a resume must present exactly that attempt again,
+   * its key above all (SHO-553).
+   */
+  async function runAction(args: {
+    readonly context: AssistantToolContext;
+    readonly actionName: string;
+    readonly input: unknown;
+    readonly confirmed?: {
+      readonly idempotencyKey: string;
+      readonly challengeId: string;
+    };
+  }): Promise<unknown> {
+    const idempotencyKey =
+      args.confirmed?.idempotencyKey ??
+      assistantKitIdempotencyKey(args.context, args.actionName);
+    try {
+      return await executeAction(options.pipeline, {
+        action: requireImplementation(options.registry, args.actionName),
+        input: args.input,
+        request: {
+          ...aiRequest(args.context),
+          idempotencyKey,
+          ...(args.confirmed === undefined
+            ? {}
+            : { confirmationChallengeId: args.confirmed.challengeId }),
+        },
+        principal: staffPrincipal(args.context),
+      });
+    } catch (error) {
+      if (error instanceof ConfirmationRequiredError) {
+        throw new AssistantConfirmationRequired(
+          { actionName: args.actionName, input: args.input, idempotencyKey },
+          error.challenge,
+        );
+      }
+      throw error;
+    }
+  }
+
+  const runConfirmed: RunConfirmedAction = ({
+    context,
+    actionName,
+    input,
+    idempotencyKey,
+    challengeId,
+  }) =>
+    runAction({
+      context,
+      actionName,
+      input,
+      confirmed: { idempotencyKey, challengeId },
+    });
 
   return {
     logger: options.pipeline.logger,
@@ -170,7 +243,7 @@ export function createAssistantKitRuntime(
     },
 
     model: options.model,
-    resolveAnswer: createResolveAnswer(),
+    resolveAnswer: createResolveAnswer({ runConfirmed }),
 
     /**
      * The system prompt is not optional decoration: it is the half of the
@@ -190,19 +263,13 @@ export function createAssistantKitRuntime(
     }),
 
     async tools(context): Promise<ToolSet> {
-      const principal = {
-        mode: "staff" as const,
-        session: { userId: context.userId },
-        companySelector: context.companySelector,
-      };
-
       // The verified membership, not the selector. A tool the caller may not
       // use is never offered, and the pipeline would refuse it anyway.
       const actor = await executeAction(options.pipeline, {
         action: getStaffActor,
         input: {},
         request: aiRequest(context),
-        principal,
+        principal: staffPrincipal(context),
       });
 
       const contracts = filterStaffAiTools(options.registry.contracts(), {
@@ -212,12 +279,7 @@ export function createAssistantKitRuntime(
 
       const execute: ActionToolExecute = (actionName, input, toolOptions) => {
         void toolOptions;
-        return executeAction(options.pipeline, {
-          action: requireImplementation(options.registry, actionName),
-          input,
-          request: aiRequest(context, actionName),
-          principal,
-        });
+        return runAction({ context, actionName, input });
       };
 
       return assistantKitTurnTools(

@@ -32,6 +32,10 @@ import type {
   ChoicePickerTarget,
   ChoiceSecret,
 } from "./assistant-interactions.js";
+import {
+  AssistantConfirmationRequired,
+  confirmationPause,
+} from "./assistant-kit-confirmation.js";
 
 /**
  * The only thing this layer needs from a logger. Narrower than pino's, which a
@@ -172,6 +176,11 @@ export function assistantKitTurnTools(
               },
               secret,
             };
+          }
+          if (error instanceof AssistantConfirmationRequired) {
+            // Core will not run this without a person's say-so and has issued
+            // a challenge for it. Nothing was written; the person is asked.
+            return confirmationPause(error);
           }
           if (error instanceof CoreError) {
             if (error.code === "CONFLICT") {
