@@ -66,8 +66,8 @@ the hold instead of settling it.
 A budget 429 does not consume a turn slot. A 503 (`AI_NOT_CONFIGURED`)
 does not consume a turn slot or reserve budget.
 
-If a reserved turn never reaches settlement (gate failure,
-`appendUserMessage` failure, or SSE abort), the unused hold is released
+If a reserved turn never reaches settlement (a failed turn or
+a client that has already gone), the unused hold is released
 on the same Kyiv-date keys. Settlement and release are mutually
 exclusive for one turn (no double subtract).
 

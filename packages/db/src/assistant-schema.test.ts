@@ -4,28 +4,17 @@
  * limited to PostgreSQL catalog structure checks.
  */
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 
 import { eq } from "drizzle-orm";
 import pg from "pg";
-import {
-  afterAll,
-  beforeAll,
-  describe,
-  expect,
-  expectTypeOf,
-  it,
-} from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { rolePermissionDefaultRows } from "../seed/role-permission-defaults.js";
 import type { DbClient } from "./client.js";
 import type { UserId } from "./schema/auth-ids.js";
 import {
+  assistantChatState,
   assistantConversations,
-  assistantMessages,
-  assistantToolRuns,
 } from "./schema/assistant.js";
 import { user } from "./schema/auth.js";
 import { companies } from "./schema/companies.js";
@@ -102,57 +91,13 @@ async function insertConversation(
   return row;
 }
 
-async function insertMessage(values: typeof assistantMessages.$inferInsert) {
-  const rows = await dbClient.db
-    .insert(assistantMessages)
-    .values(values)
-    .returning();
-  const row = rows[0];
-  assert.ok(row);
-  return row;
-}
-
 /**
  * `message_id` is NOT NULL: a run is always recorded with the assistant
  * turn that produced it. Cases that do not care which turn get a fresh
  * assistant message in the same conversation.
  */
-async function insertToolRun(
-  values: Omit<typeof assistantToolRuns.$inferInsert, "messageId"> & {
-    messageId?: string;
-  },
-) {
-  const messageId =
-    values.messageId ??
-    (
-      await insertMessage({
-        companyId: values.companyId,
-        conversationId: values.conversationId,
-        role: "assistant",
-        body: "turn",
-      })
-    ).id;
-  const rows = await dbClient.db
-    .insert(assistantToolRuns)
-    .values({ ...values, messageId })
-    .returning();
-  const row = rows[0];
-  assert.ok(row);
-  return row;
-}
 
 /** The `message_id` backfill statement shipped in migration 0050. */
-function backfillMessageIdStatement(): string {
-  const path = fileURLToPath(
-    new URL("../migrations/0050_panoramic_prodigy.sql", import.meta.url),
-  );
-  const statement = readFileSync(path, "utf8")
-    .split("--> statement-breakpoint")
-    .map((part) => part.trim())
-    .find((part) => part.startsWith("UPDATE"));
-  assert.ok(statement, "0050 must ship a message_id backfill UPDATE");
-  return statement;
-}
 
 async function foreignKeysFor(
   tables: readonly string[],
@@ -176,437 +121,6 @@ async function foreignKeysFor(
 }
 
 describe("assistant schema slice", () => {
-  it("creates only the card-named columns with timestamptz timestamps", async () => {
-    const result = await admin.query<{
-      table_name: string;
-      column_name: string;
-      data_type: string;
-      udt_name: string;
-      is_nullable: string;
-    }>(
-      `SELECT table_name, column_name, data_type, udt_name, is_nullable
-       FROM information_schema.columns
-       WHERE table_schema = 'public'
-         AND table_name IN
-           ('assistant_conversations', 'assistant_messages',
-            'assistant_tool_runs')
-       ORDER BY table_name, ordinal_position`,
-    );
-
-    const byTable = new Map<string, string[]>();
-    for (const row of result.rows) {
-      const names = byTable.get(row.table_name) ?? [];
-      names.push(row.column_name);
-      byTable.set(row.table_name, names);
-      if (row.column_name.endsWith("_at")) {
-        expect(row.data_type).toBe("timestamp with time zone");
-      }
-    }
-
-    expect(byTable.get("assistant_conversations")).toEqual([
-      "id",
-      "company_id",
-      "user_id",
-      "title",
-      "created_at",
-      "updated_at",
-    ]);
-    expect(byTable.get("assistant_messages")).toEqual([
-      "id",
-      "company_id",
-      "conversation_id",
-      "role",
-      "body",
-      "created_at",
-      "updated_at",
-      "turn_key",
-    ]);
-    expect(byTable.get("assistant_tool_runs")).toEqual([
-      "id",
-      "company_id",
-      "conversation_id",
-      "action_name",
-      "tool_call_id",
-      "challenge_id",
-      "result_ids",
-      "outcome",
-      "created_at",
-      "updated_at",
-      "model_trace",
-      "tool_name",
-      "message_id",
-      "tool_input",
-      "execution_id",
-      "seq",
-    ]);
-
-    const resultIds = result.rows.find(
-      (row) =>
-        row.table_name === "assistant_tool_runs" &&
-        row.column_name === "result_ids",
-    );
-    expect(resultIds?.data_type).toBe("ARRAY");
-    expect(resultIds?.udt_name).toBe("_uuid");
-    expect(resultIds?.is_nullable).toBe("NO");
-
-    const title = result.rows.find(
-      (row) =>
-        row.table_name === "assistant_conversations" &&
-        row.column_name === "title",
-    );
-    expect(title?.is_nullable).toBe("YES");
-
-    const turnKey = result.rows.find(
-      (row) =>
-        row.table_name === "assistant_messages" &&
-        row.column_name === "turn_key",
-    );
-    expect(turnKey?.data_type).toBe("text");
-    expect(turnKey?.is_nullable).toBe("YES");
-
-    const challengeId = result.rows.find(
-      (row) =>
-        row.table_name === "assistant_tool_runs" &&
-        row.column_name === "challenge_id",
-    );
-    expect(challengeId?.data_type).toBe("uuid");
-    expect(challengeId?.is_nullable).toBe("YES");
-
-    const modelTrace = result.rows.find(
-      (row) =>
-        row.table_name === "assistant_tool_runs" &&
-        row.column_name === "model_trace",
-    );
-    expect(modelTrace?.udt_name).toBe("jsonb");
-    expect(modelTrace?.is_nullable).toBe("YES");
-
-    const names = result.rows.map((row) => row.column_name);
-    for (const forbidden of [
-      "status",
-      "order_id",
-      "document_id",
-      "order_status",
-      "document_status",
-    ]) {
-      expect(names).not.toContain(forbidden);
-    }
-  });
-
-  it("represents staff user ids, uuid result ids, and optional challenge ids", () => {
-    expectTypeOf<
-      (typeof assistantConversations.$inferSelect)["userId"]
-    >().toEqualTypeOf<UserId>();
-    expectTypeOf<
-      (typeof assistantConversations.$inferSelect)["title"]
-    >().toEqualTypeOf<string | null>();
-    expectTypeOf<
-      (typeof assistantToolRuns.$inferSelect)["resultIds"]
-    >().toEqualTypeOf<string[]>();
-    expectTypeOf<
-      (typeof assistantToolRuns.$inferSelect)["challengeId"]
-    >().toEqualTypeOf<string | null>();
-    expectTypeOf<
-      (typeof assistantToolRuns.$inferSelect)["modelTrace"]
-    >().toEqualTypeOf<unknown>();
-    expectTypeOf<
-      (typeof assistantToolRuns.$inferSelect)["toolName"]
-    >().toEqualTypeOf<string | null>();
-    expectTypeOf<
-      (typeof assistantToolRuns.$inferSelect)["toolInput"]
-    >().toEqualTypeOf<unknown>();
-    expectTypeOf<
-      (typeof assistantToolRuns.$inferSelect)["executionId"]
-    >().toEqualTypeOf<string | null>();
-    expectTypeOf<
-      (typeof assistantToolRuns.$inferSelect)["seq"]
-    >().toEqualTypeOf<number | null>();
-    expectTypeOf<
-      (typeof assistantMessages.$inferSelect)["turnKey"]
-    >().toEqualTypeOf<string | null>();
-  });
-
-  it("declares UNIQUE (company_id, id) and the conversation list index", async () => {
-    const result = await admin.query<{ indexname: string; indexdef: string }>(
-      `SELECT indexname, indexdef
-       FROM pg_indexes
-       WHERE schemaname = 'public'
-         AND tablename IN
-           ('assistant_conversations', 'assistant_messages',
-            'assistant_tool_runs')`,
-    );
-    const indexes = new Map(
-      result.rows.map((row) => [row.indexname, row.indexdef]),
-    );
-
-    for (const name of [
-      "assistant_conversations_company_id_id_uq",
-      "assistant_messages_company_id_id_uq",
-      "assistant_tool_runs_company_id_id_uq",
-    ] as const) {
-      expect(indexes.get(name)).toContain("UNIQUE");
-      expect(indexes.get(name)).toContain("(company_id, id)");
-    }
-
-    const list = indexes.get("assistant_conversations_company_updated_at_idx");
-    expect(list).toContain("(company_id");
-    expect(list).toMatch(/updated_at.*DESC/i);
-    expect(
-      indexes.get("assistant_messages_company_conversation_idx"),
-    ).toContain("(company_id, conversation_id)");
-    expect(
-      indexes.get("assistant_tool_runs_company_conversation_idx"),
-    ).toContain("(company_id, conversation_id)");
-    expect(
-      indexes.get("assistant_tool_runs_company_execution_id_uq"),
-    ).toContain("UNIQUE");
-    expect(
-      indexes.get("assistant_tool_runs_company_execution_id_uq"),
-    ).toContain("(company_id, execution_id)");
-    expect(indexes.get("assistant_tool_runs_company_message_seq_uq")).toContain(
-      "UNIQUE",
-    );
-    expect(indexes.get("assistant_tool_runs_company_message_seq_uq")).toContain(
-      "(company_id, message_id, seq)",
-    );
-    expect(
-      indexes.get("assistant_messages_company_conversation_turn_key_uq"),
-    ).toContain("UNIQUE");
-    expect(
-      indexes.get("assistant_messages_company_conversation_turn_key_uq"),
-    ).toContain("(company_id, conversation_id, turn_key)");
-  });
-
-  it("rejects a second tool run with the same company, message, and seq", async () => {
-    const company = await insertCompany();
-    const userId = await insertUser();
-    const conversation = await insertConversation({
-      companyId: company.id,
-      userId,
-    });
-    const message = await insertMessage({
-      companyId: company.id,
-      conversationId: conversation.id,
-      role: "assistant",
-      body: "",
-    });
-    const first = await insertToolRun({
-      companyId: company.id,
-      conversationId: conversation.id,
-      messageId: message.id,
-      actionName: "orders.list",
-      toolCallId: "call_seq_first",
-      toolName: "orders_list_page",
-      toolInput: { limit: 20 },
-      executionId: randomUUID(),
-      seq: 0,
-      outcome: "started",
-    });
-    expect(first.seq).toBe(0);
-
-    await expectSqlState(
-      insertToolRun({
-        companyId: company.id,
-        conversationId: conversation.id,
-        messageId: message.id,
-        actionName: "orders.list",
-        toolCallId: "call_seq_second",
-        toolName: "orders_list_page",
-        toolInput: { limit: 5 },
-        executionId: randomUUID(),
-        seq: 0,
-        outcome: "started",
-      }),
-      "23505",
-    );
-
-    const nextSeq = await insertToolRun({
-      companyId: company.id,
-      conversationId: conversation.id,
-      messageId: message.id,
-      actionName: "orders.get",
-      toolCallId: "call_seq_next",
-      toolName: "orders_get",
-      toolInput: { id: randomUUID() },
-      executionId: randomUUID(),
-      seq: 1,
-      outcome: "started",
-    });
-    expect(nextSeq.seq).toBe(1);
-  });
-
-  it("stores nullable turn_key, rejects a duplicate in the same conversation, and isolates tenants", async () => {
-    const companyA = await insertCompany();
-    const companyB = await insertCompany();
-    const userId = await insertUser();
-    const conversationA = await insertConversation({
-      companyId: companyA.id,
-      userId,
-    });
-    const conversationA2 = await insertConversation({
-      companyId: companyA.id,
-      userId,
-    });
-    const conversationB = await insertConversation({
-      companyId: companyB.id,
-      userId,
-    });
-    const turnKey = `begin:${randomUUID()}`;
-    const first = await insertMessage({
-      companyId: companyA.id,
-      conversationId: conversationA.id,
-      role: "assistant",
-      body: "",
-      turnKey,
-    });
-    expect(first.turnKey).toBe(turnKey);
-
-    const legacy = await insertMessage({
-      companyId: companyA.id,
-      conversationId: conversationA.id,
-      role: "assistant",
-      body: "old row",
-    });
-    expect(legacy.turnKey).toBeNull();
-    const anotherNull = await insertMessage({
-      companyId: companyA.id,
-      conversationId: conversationA.id,
-      role: "user",
-      body: "also null",
-    });
-    expect(anotherNull.turnKey).toBeNull();
-
-    await expectSqlState(
-      insertMessage({
-        companyId: companyA.id,
-        conversationId: conversationA.id,
-        role: "assistant",
-        body: "",
-        turnKey,
-      }),
-      "23505",
-    );
-
-    const otherConversation = await insertMessage({
-      companyId: companyA.id,
-      conversationId: conversationA2.id,
-      role: "assistant",
-      body: "",
-      turnKey,
-    });
-    expect(otherConversation.turnKey).toBe(turnKey);
-
-    const otherTenant = await insertMessage({
-      companyId: companyB.id,
-      conversationId: conversationB.id,
-      role: "assistant",
-      body: "",
-      turnKey,
-    });
-    expect(otherTenant.turnKey).toBe(turnKey);
-    expect(otherTenant.companyId).toBe(companyB.id);
-  });
-
-  it("declares tenant, staff-user, and composite conversation foreign keys", async () => {
-    const defs = await foreignKeysFor([
-      "assistant_conversations",
-      "assistant_messages",
-      "assistant_tool_runs",
-    ]);
-
-    expect(
-      defs.get("assistant_conversations_company_id_companies_id_fk"),
-    ).toContain("FOREIGN KEY (company_id) REFERENCES companies(id)");
-    expect(
-      defs.get("assistant_conversations_company_id_companies_id_fk"),
-    ).toContain("ON DELETE CASCADE");
-    expect(defs.get("assistant_conversations_user_id_user_id_fk")).toContain(
-      "FOREIGN KEY (user_id) REFERENCES",
-    );
-    expect(defs.get("assistant_conversations_user_id_user_id_fk")).toContain(
-      "ON DELETE RESTRICT",
-    );
-
-    expect(defs.get("assistant_messages_conversations_company_fk")).toContain(
-      "(company_id, conversation_id) REFERENCES assistant_conversations(company_id, id)",
-    );
-    expect(defs.get("assistant_messages_conversations_company_fk")).toContain(
-      "ON DELETE CASCADE",
-    );
-    expect(defs.get("assistant_tool_runs_conversations_company_fk")).toContain(
-      "(company_id, conversation_id) REFERENCES assistant_conversations(company_id, id)",
-    );
-    expect(defs.get("assistant_tool_runs_conversations_company_fk")).toContain(
-      "ON DELETE CASCADE",
-    );
-    expect(defs.get("assistant_tool_runs_messages_company_fk")).toContain(
-      "(company_id, message_id) REFERENCES assistant_messages(company_id, id)",
-    );
-    expect(defs.get("assistant_tool_runs_messages_company_fk")).toContain(
-      "ON DELETE CASCADE",
-    );
-
-    const joined = [...defs.values()].join("\n");
-    expect(joined).not.toMatch(/REFERENCES (orders|documents|files)\b/);
-  });
-
-  it("declares role and outcome CHECKs", async () => {
-    const result = await admin.query<{
-      conname: string;
-      definition: string;
-    }>(
-      `SELECT con.conname,
-              pg_get_constraintdef(con.oid) AS definition
-       FROM pg_constraint con
-       JOIN pg_class rel ON rel.oid = con.conrelid
-       JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
-       WHERE nsp.nspname = 'public'
-         AND con.contype = 'c'
-         AND rel.relname IN
-           ('assistant_conversations', 'assistant_messages',
-            'assistant_tool_runs')
-       ORDER BY con.conname`,
-    );
-    const defs = new Map(
-      result.rows.map((row) => [row.conname, row.definition]),
-    );
-
-    expect(defs.get("assistant_messages_role_check")).toContain("'user'");
-    expect(defs.get("assistant_messages_role_check")).toContain("'assistant'");
-    expect(defs.get("assistant_messages_role_check")).not.toContain("'system'");
-    expect(defs.get("assistant_messages_role_check")).not.toContain("'tool'");
-    expect(defs.get("assistant_tool_runs_outcome_check")).toContain(
-      "'success'",
-    );
-    expect(defs.get("assistant_tool_runs_outcome_check")).toContain("'error'");
-    expect(defs.get("assistant_tool_runs_outcome_check")).toContain(
-      "'confirmation_required'",
-    );
-    expect(defs.get("assistant_tool_runs_outcome_check")).toContain(
-      "'choice_required'",
-    );
-    expect(defs.get("assistant_tool_runs_outcome_check")).toContain(
-      "'started'",
-    );
-    expect(defs.get("assistant_tool_runs_outcome_check")).not.toContain(
-      "'confirmed'",
-    );
-    expect(defs.get("assistant_tool_runs_model_trace_length_check")).toContain(
-      "22000",
-    );
-    expect(defs.get("assistant_tool_runs_model_trace_length_check")).toMatch(
-      /length\(.*model_trace.*::text\)/i,
-    );
-    expect(defs.get("assistant_tool_runs_tool_input_length_check")).toContain(
-      "22000",
-    );
-    expect(defs.get("assistant_tool_runs_tool_input_length_check")).toMatch(
-      /length\(.*tool_input.*::text\)/i,
-    );
-    expect(defs.get("assistant_tool_runs_started_identity_check")).toMatch(
-      /execution_id/i,
-    );
-  });
-
   it("accepts a conversation with optional title and rejects a missing staff user", async () => {
     const company = await insertCompany();
     const userId = await insertUser();
@@ -633,92 +147,31 @@ describe("assistant schema slice", () => {
     );
   });
 
-  it("rejects a message that points at another tenant's conversation", async () => {
-    const companyA = await insertCompany();
-    const companyB = await insertCompany();
-    const userId = await insertUser();
-    const conversationB = await insertConversation({
-      companyId: companyB.id,
-      userId,
-    });
+  it("declares the conversation's tenant, staff-user, and chat-state keys", async () => {
+    const keys = await foreignKeysFor([
+      "assistant_conversations",
+      "assistant_chat_state",
+    ]);
+    const definitions = [...keys.values()].join("\n");
 
-    await expectSqlState(
-      insertMessage({
-        companyId: companyA.id,
-        conversationId: conversationB.id,
-        role: "user",
-        body: "cross-tenant",
-      }),
-      "23503",
+    // The staff user is RESTRICT: a person with conversations is not deleted
+    // out from under them.
+    expect(definitions).toContain("FOREIGN KEY (user_id) REFERENCES");
+    const byColumn = (column: string) =>
+      [...keys.values()].find((definition) =>
+        definition.includes(`FOREIGN KEY (${column})`),
+      ) ?? "";
+    expect(byColumn("user_id")).toMatch(/ON DELETE RESTRICT/i);
+    // Company is CASCADE, for tenant wipe.
+    expect(byColumn("company_id")).toMatch(/ON DELETE CASCADE/i);
+    // Chat state hangs off the conversation composite key, not off its id
+    // alone: a conversation id is only unique within a tenant.
+    expect(definitions).toContain(
+      "FOREIGN KEY (company_id, conversation_id) REFERENCES assistant_conversations(company_id, id)",
     );
   });
 
-  it("rejects a tool run that points at another tenant's conversation", async () => {
-    const companyA = await insertCompany();
-    const companyB = await insertCompany();
-    const userId = await insertUser();
-    const conversationA = await insertConversation({
-      companyId: companyA.id,
-      userId,
-    });
-    const conversationB = await insertConversation({
-      companyId: companyB.id,
-      userId,
-    });
-    // Own-tenant message, so the conversation FK is what rejects the row.
-    const messageA = await insertMessage({
-      companyId: companyA.id,
-      conversationId: conversationA.id,
-      role: "assistant",
-      body: "own turn",
-    });
-
-    await expectSqlState(
-      insertToolRun({
-        companyId: companyA.id,
-        conversationId: conversationB.id,
-        messageId: messageA.id,
-        actionName: "orders.list",
-        toolCallId: "call_cross",
-        outcome: "success",
-      }),
-      "23503",
-    );
-  });
-
-  it("rejects a tool run that points at another tenant's message", async () => {
-    const companyA = await insertCompany();
-    const companyB = await insertCompany();
-    const userId = await insertUser();
-    const conversationA = await insertConversation({
-      companyId: companyA.id,
-      userId,
-    });
-    const conversationB = await insertConversation({
-      companyId: companyB.id,
-      userId,
-    });
-    const messageB = await insertMessage({
-      companyId: companyB.id,
-      conversationId: conversationB.id,
-      role: "assistant",
-      body: "foreign turn",
-    });
-
-    await expectSqlState(
-      insertToolRun({
-        companyId: companyA.id,
-        conversationId: conversationA.id,
-        messageId: messageB.id,
-        actionName: "orders.list",
-        toolCallId: "call_cross_message",
-        outcome: "success",
-      }),
-      "23503",
-    );
-  });
-
-  it("rejects invalid message roles and tool-run outcomes", async () => {
+  it("keeps one row of chat state per conversation", async () => {
     const company = await insertCompany();
     const userId = await insertUser();
     const conversation = await insertConversation({
@@ -726,491 +179,82 @@ describe("assistant schema slice", () => {
       userId,
     });
 
+    await dbClient.db.insert(assistantChatState).values({
+      companyId: company.id,
+      conversationId: conversation.id,
+      document: { messages: [] },
+    });
+
+    // A second row for the same conversation is the shape that would let two
+    // documents disagree, so the database refuses it.
     await expectSqlState(
-      insertMessage({
+      dbClient.db.insert(assistantChatState).values({
         companyId: company.id,
         conversationId: conversation.id,
-        role: "system",
-        body: "no",
-      }),
-      "23514",
-    );
-    await expectSqlState(
-      insertMessage({
-        companyId: company.id,
-        conversationId: conversation.id,
-        role: "tool",
-        body: "no",
-      }),
-      "23514",
-    );
-    await expectSqlState(
-      insertToolRun({
-        companyId: company.id,
-        conversationId: conversation.id,
-        actionName: "orders.create",
-        toolCallId: "call_bad_outcome",
-        outcome: "confirmed",
-      }),
-      "23514",
-    );
-    await expectSqlState(
-      insertToolRun({
-        companyId: company.id,
-        conversationId: conversation.id,
-        actionName: "orders.create",
-        toolCallId: "call_status",
-        outcome: "issued",
-      }),
-      "23514",
-    );
-  });
-
-  it("stores user/assistant text and uuid result ids without status snapshots", async () => {
-    const company = await insertCompany();
-    const userId = await insertUser();
-    const conversation = await insertConversation({
-      companyId: company.id,
-      userId,
-    });
-    const orderId = randomUUID();
-    const challengeId = randomUUID();
-
-    const userMessage = await insertMessage({
-      companyId: company.id,
-      conversationId: conversation.id,
-      role: "user",
-      body: "Create an order",
-    });
-    const assistantMessage = await insertMessage({
-      companyId: company.id,
-      conversationId: conversation.id,
-      role: "assistant",
-      body: "I will create it after you confirm.",
-    });
-    expect(userMessage.body).toBe("Create an order");
-    expect(assistantMessage.role).toBe("assistant");
-
-    const pending = await insertToolRun({
-      companyId: company.id,
-      conversationId: conversation.id,
-      actionName: "customers.deleteCustomer",
-      toolCallId: "call_hitl",
-      challengeId,
-      outcome: "confirmation_required",
-    });
-    expect(pending.resultIds).toEqual([]);
-    expect(pending.challengeId).toBe(challengeId);
-    expect(pending.outcome).toBe("confirmation_required");
-
-    const choicePending = await insertToolRun({
-      companyId: company.id,
-      conversationId: conversation.id,
-      actionName: "orders.create",
-      toolCallId: "call_choice",
-      challengeId,
-      outcome: "choice_required",
-    });
-    expect(choicePending.resultIds).toEqual([]);
-    expect(choicePending.challengeId).toBe(challengeId);
-    expect(choicePending.outcome).toBe("choice_required");
-
-    const succeeded = await insertToolRun({
-      companyId: company.id,
-      conversationId: conversation.id,
-      actionName: "orders.create",
-      toolCallId: "call_ok",
-      resultIds: [orderId],
-      outcome: "success",
-    });
-    expect(succeeded.resultIds).toEqual([orderId]);
-    expect(succeeded.modelTrace).toBeNull();
-    expect(pending.modelTrace).toBeNull();
-
-    const failed = await insertToolRun({
-      companyId: company.id,
-      conversationId: conversation.id,
-      actionName: "orders.list",
-      toolCallId: "call_err",
-      outcome: "error",
-    });
-    expect(failed.resultIds).toEqual([]);
-
-    const traced = await insertToolRun({
-      companyId: company.id,
-      conversationId: conversation.id,
-      actionName: "orders.list",
-      toolCallId: "call_trace",
-      outcome: "success",
-      toolName: "orders_list_page",
-      modelTrace: { kind: "page.summary", rows: [{ orderNumber: "12" }] },
-    });
-    expect(traced.modelTrace).toEqual({
-      kind: "page.summary",
-      rows: [{ orderNumber: "12" }],
-    });
-    expect(traced.toolName).toBe("orders_list_page");
-
-    const emptyBody = await insertMessage({
-      companyId: company.id,
-      conversationId: conversation.id,
-      role: "assistant",
-      body: "",
-    });
-    expect(emptyBody.body).toBe("");
-
-    const started = await insertToolRun({
-      companyId: company.id,
-      conversationId: conversation.id,
-      messageId: emptyBody.id,
-      actionName: "orders.list",
-      toolCallId: "call_started",
-      toolName: "orders_list_page",
-      toolInput: { limit: 20 },
-      executionId: randomUUID(),
-      seq: 0,
-      outcome: "started",
-    });
-    expect(started.outcome).toBe("started");
-    expect(started.toolInput).toEqual({ limit: 20 });
-    expect(started.executionId).toEqual(expect.any(String));
-    expect(started.seq).toBe(0);
-
-    await expectSqlState(
-      insertToolRun({
-        companyId: company.id,
-        conversationId: conversation.id,
-        messageId: emptyBody.id,
-        actionName: "orders.list",
-        toolCallId: "call_started_same_seq",
-        toolName: "orders_list_page",
-        toolInput: { limit: 2 },
-        executionId: randomUUID(),
-        seq: 0,
-        outcome: "started",
+        document: { messages: [] },
       }),
       "23505",
     );
-
-    await expectSqlState(
-      insertToolRun({
-        companyId: company.id,
-        conversationId: conversation.id,
-        actionName: "orders.list",
-        toolCallId: "call_started_dup",
-        toolName: "orders_list_page",
-        toolInput: { limit: 1 },
-        executionId: started.executionId ?? randomUUID(),
-        seq: 1,
-        outcome: "started",
-      }),
-      "23505",
-    );
-
-    await expectSqlState(
-      insertToolRun({
-        companyId: company.id,
-        conversationId: conversation.id,
-        actionName: "orders.list",
-        toolCallId: "call_started_no_id",
-        outcome: "started",
-      }),
-      "23514",
-    );
-
-    await expectSqlState(
-      insertToolRun({
-        companyId: company.id,
-        conversationId: conversation.id,
-        actionName: "orders.list",
-        toolCallId: "call_input_stringify_ok",
-        outcome: "success",
-        toolInput: { pad: "x".repeat(21_990) },
-      }),
-      "23514",
-    );
-
-    await expectSqlState(
-      insertToolRun({
-        companyId: company.id,
-        conversationId: conversation.id,
-        actionName: "orders.list",
-        toolCallId: "call_input_huge",
-        outcome: "success",
-        toolInput: { pad: "x".repeat(22_000) },
-      }),
-      "23514",
-    );
-
-    const postgresLimit = await insertToolRun({
-      companyId: company.id,
-      conversationId: conversation.id,
-      actionName: "orders.list",
-      toolCallId: "call_trace_postgres_limit",
-      outcome: "success",
-      modelTrace: { pad: "x".repeat(21_989) },
-    });
-    expect(postgresLimit.modelTrace).toEqual({ pad: "x".repeat(21_989) });
-
-    await expectSqlState(
-      insertToolRun({
-        companyId: company.id,
-        conversationId: conversation.id,
-        actionName: "orders.list",
-        toolCallId: "call_trace_stringify_ok",
-        outcome: "success",
-        modelTrace: { pad: "x".repeat(21_990) },
-      }),
-      "23514",
-    );
-
-    await expectSqlState(
-      insertToolRun({
-        companyId: company.id,
-        conversationId: conversation.id,
-        actionName: "orders.list",
-        toolCallId: "call_trace_huge",
-        outcome: "success",
-        modelTrace: { pad: "x".repeat(22_000) },
-      }),
-      "23514",
-    );
-
-    await expectSqlState(
-      admin.query(
-        `INSERT INTO assistant_tool_runs
-           (company_id, conversation_id, action_name, tool_call_id,
-            result_ids, outcome)
-         VALUES ($1, $2, 'orders.create', 'call_json',
-                 '{"status":"confirmed"}'::jsonb, 'success')`,
-        [company.id, conversation.id],
-      ),
-      "42804",
-    );
   });
 
-  it("backfills message_id from the newest assistant message at or before the run", async () => {
-    // The shipped 0050 statement, run verbatim against rows unlinked the way
-    // pre-SHO-510 rows were. A confirmation resume writes two assistant
-    // messages with no user message between them, which is the shape the
-    // created_at heuristic used to get wrong.
-    const company = await insertCompany();
+  it("refuses chat state for another tenant's conversation", async () => {
+    const owner = await insertCompany();
+    const other = await insertCompany();
     const userId = await insertUser();
     const conversation = await insertConversation({
-      companyId: company.id,
+      companyId: owner.id,
       userId,
-    });
-    const paused = await insertMessage({
-      companyId: company.id,
-      conversationId: conversation.id,
-      role: "assistant",
-      body: "Confirm?",
-    });
-    const pausedRun = await insertToolRun({
-      companyId: company.id,
-      conversationId: conversation.id,
-      messageId: paused.id,
-      actionName: "customers.deleteCustomer",
-      toolCallId: "call_backfill_pause",
-      outcome: "confirmation_required",
-    });
-    const resumed = await insertMessage({
-      companyId: company.id,
-      conversationId: conversation.id,
-      role: "assistant",
-      body: "Deleted.",
-    });
-    const resumedRun = await insertToolRun({
-      companyId: company.id,
-      conversationId: conversation.id,
-      messageId: resumed.id,
-      actionName: "customers.deleteCustomer",
-      toolCallId: "call_backfill_resume",
-      outcome: "success",
-    });
-
-    await admin.query(
-      `ALTER TABLE assistant_tool_runs ALTER COLUMN message_id DROP NOT NULL`,
-    );
-    try {
-      await admin.query(
-        `UPDATE assistant_tool_runs SET message_id = NULL WHERE id = ANY($1::uuid[])`,
-        [[pausedRun.id, resumedRun.id]],
-      );
-      await admin.query(backfillMessageIdStatement());
-    } finally {
-      await admin.query(
-        `ALTER TABLE assistant_tool_runs ALTER COLUMN message_id SET NOT NULL`,
-      );
-    }
-
-    const relinked = await dbClient.db
-      .select()
-      .from(assistantToolRuns)
-      .where(eq(assistantToolRuns.conversationId, conversation.id));
-    const byToolCallId = new Map(
-      relinked.map((row) => [row.toolCallId, row.messageId]),
-    );
-    expect(byToolCallId.get("call_backfill_pause")).toBe(paused.id);
-    expect(byToolCallId.get("call_backfill_resume")).toBe(resumed.id);
-  });
-
-  it("cascades tool runs when their assistant message is deleted", async () => {
-    const company = await insertCompany();
-    const userId = await insertUser();
-    const conversation = await insertConversation({
-      companyId: company.id,
-      userId,
-    });
-    const message = await insertMessage({
-      companyId: company.id,
-      conversationId: conversation.id,
-      role: "assistant",
-      body: "listed",
-    });
-    await insertToolRun({
-      companyId: company.id,
-      conversationId: conversation.id,
-      messageId: message.id,
-      actionName: "orders.list",
-      toolCallId: "call_message_cascade",
-      outcome: "success",
-    });
-
-    await dbClient.db
-      .delete(assistantMessages)
-      .where(eq(assistantMessages.id, message.id));
-    expect(
-      await dbClient.db
-        .select()
-        .from(assistantToolRuns)
-        .where(eq(assistantToolRuns.conversationId, conversation.id)),
-    ).toEqual([]);
-  });
-
-  it("cascades conversation deletion and restricts deleting a staff user with conversations", async () => {
-    const company = await insertCompany();
-    const owner = await insertUser();
-    const other = await insertUser();
-    const conversation = await insertConversation({
-      companyId: company.id,
-      userId: owner,
-    });
-    await insertMessage({
-      companyId: company.id,
-      conversationId: conversation.id,
-      role: "user",
-      body: "hello",
-    });
-    await insertToolRun({
-      companyId: company.id,
-      conversationId: conversation.id,
-      actionName: "orders.list",
-      toolCallId: "call_list",
-      outcome: "success",
     });
 
     await expectSqlState(
-      dbClient.db.delete(user).where(eq(user.id, owner)),
+      dbClient.db.insert(assistantChatState).values({
+        companyId: other.id,
+        conversationId: conversation.id,
+        document: {},
+      }),
       "23503",
     );
-    await dbClient.db.delete(user).where(eq(user.id, other));
+  });
+
+  it("takes the chat state with the conversation and with the company", async () => {
+    const company = await insertCompany();
+    const userId = await insertUser();
+    const conversation = await insertConversation({
+      companyId: company.id,
+      userId,
+    });
+    await dbClient.db.insert(assistantChatState).values({
+      companyId: company.id,
+      conversationId: conversation.id,
+      history: [],
+    });
 
     await dbClient.db
       .delete(assistantConversations)
       .where(eq(assistantConversations.id, conversation.id));
-    expect(
-      await dbClient.db
-        .select()
-        .from(assistantMessages)
-        .where(eq(assistantMessages.conversationId, conversation.id)),
-    ).toEqual([]);
-    expect(
-      await dbClient.db
-        .select()
-        .from(assistantToolRuns)
-        .where(eq(assistantToolRuns.conversationId, conversation.id)),
-    ).toEqual([]);
 
-    await dbClient.db.delete(user).where(eq(user.id, owner));
-  });
-
-  it("cascades company deletion to conversations, messages, and tool runs", async () => {
-    const company = await insertCompany();
-    const userId = await insertUser();
-    const conversation = await insertConversation({
-      companyId: company.id,
-      userId,
-    });
-    const message = await insertMessage({
-      companyId: company.id,
-      conversationId: conversation.id,
-      role: "user",
-      body: "wipe",
-    });
-    const toolRun = await insertToolRun({
-      companyId: company.id,
-      conversationId: conversation.id,
-      actionName: "orders.list",
-      toolCallId: "call_wipe",
-      outcome: "success",
-    });
-
-    await dbClient.db.delete(companies).where(eq(companies.id, company.id));
     expect(
       await dbClient.db
-        .select()
-        .from(assistantConversations)
-        .where(eq(assistantConversations.id, conversation.id)),
-    ).toEqual([]);
-    expect(
-      await dbClient.db
-        .select()
-        .from(assistantMessages)
-        .where(eq(assistantMessages.id, message.id)),
-    ).toEqual([]);
-    expect(
-      await dbClient.db
-        .select()
-        .from(assistantToolRuns)
-        .where(eq(assistantToolRuns.id, toolRun.id)),
+        .select({ conversationId: assistantChatState.conversationId })
+        .from(assistantChatState)
+        .where(eq(assistantChatState.conversationId, conversation.id)),
     ).toEqual([]);
   });
 
-  it("attaches the shared updated_at trigger to assistant tables", async () => {
-    const result = await admin.query<{ tgname: string }>(
-      `SELECT t.tgname
-       FROM pg_trigger t
-       JOIN pg_class c ON c.oid = t.tgrelid
-       WHERE NOT t.tgisinternal
-         AND t.tgname LIKE '%_set_updated_at'
-         AND c.relname IN
-           ('assistant_conversations', 'assistant_messages',
-            'assistant_tool_runs')
-       ORDER BY t.tgname`,
+  it("carries only the two tables the assistant still has", async () => {
+    const result = await admin.query<{ table_name: string }>(
+      `SELECT table_name FROM information_schema.tables
+       WHERE table_schema = 'public' AND table_name LIKE 'assistant%'
+       ORDER BY table_name`,
     );
-    expect(result.rows.map((row) => row.tgname)).toEqual([
-      "assistant_conversations_set_updated_at",
-      "assistant_messages_set_updated_at",
-      "assistant_tool_runs_set_updated_at",
+
+    // `assistant_messages` and `assistant_tool_runs` stored a turn row by row
+    // so the model conversation could be rebuilt from them. Nothing rebuilds
+    // it, and the audit lives in `audit_log` (ADR-0038).
+    expect(result.rows.map((row) => row.table_name)).toEqual([
+      "assistant_chat_state",
+      "assistant_conversations",
     ]);
-
-    const company = await insertCompany();
-    const userId = await insertUser();
-    const conversation = await insertConversation({
-      companyId: company.id,
-      userId,
-      title: "before",
-    });
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    const updated = await dbClient.db
-      .update(assistantConversations)
-      .set({ title: "after" })
-      .where(eq(assistantConversations.id, conversation.id))
-      .returning();
-    expect(updated[0]?.updatedAt.getTime()).toBeGreaterThan(
-      conversation.updatedAt.getTime(),
-    );
   });
 
   it("seeds assistant:use for admin, manager, and employee, not owner", () => {
