@@ -246,34 +246,40 @@ describe("CI contract-check stage", () => {
     expect(inputRequiresFileIdOrFileIds(setProductImages)).toBe(true);
   });
 
-  it("SHO-510: assistant.getModelHistory is internal and not an AI tool", () => {
+  /**
+   * Same rule as SHO-510 and SHO-521, about the actions that replaced those.
+   * The conversation's stored state is read and written on the caller's behalf
+   * and must never be reachable as a tool: a model able to write the transcript
+   * it is being shown can rewrite what it was told it did.
+   */
+  it("the stored chat state is internal and not an AI tool", () => {
     const contracts = buildContractCheckInput().registry.contracts();
-    const history = contracts.find(
-      (contract) => contract.name === "assistant.getModelHistory",
-    );
-    expect(history).toBeDefined();
-    expect(history?.transport).toBe("internal");
-    expect(history?.aiExposure).toBe("internal");
-    expect(history?.risk).toBe("read");
-    expect(history?.principal).toBe("staff");
-    expect(staffExposedActionNames(contracts)).not.toContain(
+    const exposed = staffExposedActionNames(contracts);
+    for (const [name, risk] of [
+      ["assistant.readChatState", "read"],
+      ["assistant.writeChatState", "write"],
+    ] as const) {
+      const contract = contracts.find((entry) => entry.name === name);
+      expect(contract, name).toBeDefined();
+      expect(contract?.transport).toBe("internal");
+      expect(contract?.aiExposure).toBe("internal");
+      expect(contract?.risk).toBe(risk);
+      expect(contract?.principal).toBe("staff");
+      expect(exposed).not.toContain(name);
+    }
+    // And the actions they replaced are gone rather than merely unexposed.
+    for (const gone of [
       "assistant.getModelHistory",
-    );
-  });
-
-  it("SHO-521: assistant.checkpointAssistantTurn is internal and not an AI tool", () => {
-    const contracts = buildContractCheckInput().registry.contracts();
-    const checkpoint = contracts.find(
-      (contract) => contract.name === "assistant.checkpointAssistantTurn",
-    );
-    expect(checkpoint).toBeDefined();
-    expect(checkpoint?.transport).toBe("internal");
-    expect(checkpoint?.aiExposure).toBe("internal");
-    expect(checkpoint?.risk).toBe("write");
-    expect(checkpoint?.principal).toBe("staff");
-    expect(staffExposedActionNames(contracts)).not.toContain(
       "assistant.checkpointAssistantTurn",
-    );
+      "assistant.appendUserMessage",
+      "assistant.recordAssistantTurn",
+      "assistant.getConversation",
+    ]) {
+      expect(
+        contracts.map((entry) => entry.name),
+        gone,
+      ).not.toContain(gone);
+    }
   });
 
   /**

@@ -59,6 +59,26 @@ function isNotFound(error: unknown): boolean {
   return error instanceof CoreError && error.code === "NOT_FOUND";
 }
 
+/**
+ * What goes into a `jsonb` column has to be JSON, and `undefined` is not.
+ *
+ * The AI SDK's message parts carry optional fields as an explicit `undefined`
+ * — `providerExecuted` is the one that turns up in practice. Postgres would
+ * drop those keys on the way in regardless, but the audit hook hashes the
+ * action's input first and refuses `undefined` outright, so an unnormalised
+ * history fails the write rather than being quietly cleaned.
+ *
+ * Normalising here rather than in the module is deliberate: this is the edge
+ * where a runtime's in-memory objects become stored bytes, and it is the only
+ * place that knows they came from a JS object graph in the first place.
+ */
+function asJson(value: unknown): unknown {
+  if (value === undefined) {
+    return null;
+  }
+  return JSON.parse(JSON.stringify(value)) as unknown;
+}
+
 function callFor(caller: AssistantKitCaller) {
   return {
     request: {
@@ -101,7 +121,7 @@ export function createPostgresAssistantKitDocumentStore(
       try {
         await executeAction(deps.pipeline, {
           action: writeChatState,
-          input: { conversationId, document },
+          input: { conversationId, document: asJson(document) },
           ...call,
         });
       } catch (error) {
@@ -152,7 +172,7 @@ export function createPostgresAssistantKitHistoryStore(
           action: writeChatState,
           input: {
             conversationId: scope.conversationId,
-            history: [...messages],
+            history: asJson(messages),
           },
           ...call,
         });

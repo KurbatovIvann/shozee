@@ -168,6 +168,53 @@ describe("the conversation, across processes", () => {
    * leave the next turn with no memory of the conversation it is in — and the
    * failure would look like the model forgetting, not like a store bug.
    */
+  /**
+   * Found on a phone, not in a test: the SDK's tool-call parts carry optional
+   * fields as an explicit `undefined`, and the audit hook hashes an action's
+   * input before it runs and refuses `undefined` outright. So an unnormalised
+   * history failed the write rather than being quietly cleaned by Postgres —
+   * and it failed *after* the document write had already succeeded, leaving a
+   * turn stored with no memory of itself.
+   */
+  it("stores a history whose parts carry undefined fields", async () => {
+    const scope = {
+      conversationId,
+      bind: `${anna.userId}:${anna.companySelector}`,
+    };
+    const messages: ModelMessage[] = [
+      { role: "user", content: "створи замовлення" },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: "toolu_1",
+            toolName: "orders_create",
+            input: { customerQuery: "Катя" },
+          },
+        ],
+      },
+    ];
+    // The SDK hands the part back with this key present and undefined.
+    // `exactOptionalPropertyTypes` forbids writing that directly, which is
+    // exactly why the compiler could not see the bug: the type says the key is
+    // absent or a boolean, and the runtime value is neither.
+    const [, assistant] = messages;
+    const sent = (assistant as { content: Record<string, unknown>[] })
+      .content[0];
+    Object.assign(sent ?? {}, { providerExecuted: undefined });
+
+    await runtime().forCaller(anna).history.save(scope, messages);
+
+    const loaded = await runtime().forCaller(anna).history.load(scope);
+    const part = (loaded[1] as { content: { providerExecuted?: unknown }[] })
+      .content[0];
+    // The key is gone rather than null: that is what `jsonb` would have done
+    // anyway, and the SDK reads an absent optional the same way.
+    expect(part).not.toHaveProperty("providerExecuted");
+    expect(part).toMatchObject({ toolCallId: "toolu_1" });
+  });
+
   it("does not let one half overwrite the other", async () => {
     const scope = {
       conversationId,
