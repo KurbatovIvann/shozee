@@ -152,17 +152,28 @@ function mount(options?: { readonly conversationId?: string | null }) {
   const container = globalThis.document.createElement("div");
   const root = createRoot(container);
   roots.push(root);
-  const conversationId =
+  const render = (conversationId: string | null) => {
+    act(() => {
+      root.render(
+        createElement(Probe, { latest, conversationId, tenantEpochRef }),
+      );
+    });
+  };
+  render(
     options?.conversationId === undefined
       ? CONVERSATION
-      : options.conversationId;
-  act(() => {
-    root.render(
-      createElement(Probe, { latest, conversationId, tenantEpochRef }),
-    );
-  });
+      : options.conversationId,
+  );
   return {
     tenantEpochRef,
+    /**
+     * What the sheet does when the company changes: a new epoch during render,
+     * then the identity hook resolves the other company's conversation.
+     */
+    switchCompany: (conversationId: string) => {
+      tenantEpochRef.current += 1;
+      render(conversationId);
+    },
     latest: () => {
       const value = latest.current;
       if (value === null) {
@@ -364,7 +375,10 @@ describe("useAssistantConversation", () => {
       refused = await view.latest().send("створи ще одне");
     });
 
-    expect(refused).toEqual({ kind: "interaction_open" });
+    expect(refused).toEqual({
+      kind: "refused",
+      failure: { kind: "interaction_open" },
+    });
     expect(view.latest().failure?.kind).toBe("interaction_open");
     expect(view.latest().interaction?.interactionId).toBe(INTERACTION);
     // Nothing was stored, so the echo of the words does not stay behind.
@@ -531,6 +545,92 @@ describe("useAssistantConversation", () => {
     await flush();
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * SHO-552. The company changes while a send is in flight, and then that send
+ * fails. Its reply belongs to a thread nobody is looking at, so nothing it says
+ * may land on the one that is. The document has been guarded against that since
+ * this hook was written; the draft and the echo were settled after it, outside
+ * the guard, and a failed send put company A's words in company B's composer.
+ */
+describe("a send still in flight when the company changes", () => {
+  const OTHER_CONVERSATION = "66666666-6666-4666-8666-666666666666";
+
+  /** A send that fails only when told to. */
+  function failLater(): () => void {
+    const pending: { reject: ((reason: Error) => void) | null } = {
+      reject: null,
+    };
+    fetchMock.mockImplementationOnce(
+      () =>
+        new Promise<Response>((_resolve, reject) => {
+          pending.reject = reject;
+        }),
+    );
+    return () => {
+      pending.reject?.(new Error("network is gone"));
+    };
+  }
+
+  function loadedInCompanyA() {
+    respond(200, { status: "ok", document: document({ text: "Компанія A." }) });
+    return mount();
+  }
+
+  it("comes back superseded, so the draft has nowhere to go back to", async () => {
+    const view = loadedInCompanyA();
+    await flush();
+
+    const fail = failLater();
+    const sent: { outcome?: ReturnType<UseAssistantConversation["send"]> } = {};
+    act(() => {
+      sent.outcome = view.latest().send("замовлення для Каті");
+    });
+    await flush();
+
+    respond(200, { status: "ok", document: document({ text: "Компанія B." }) });
+    view.switchCompany(OTHER_CONVERSATION);
+    await flush();
+
+    fail();
+    await flush();
+
+    expect(await sent.outcome).toEqual({ kind: "superseded" });
+    // Nor does company B's screen report company A's failure.
+    expect(view.latest().failure).toBeNull();
+    expect(view.latest().rows.map((row) => row.text)).toEqual(["Компанія B."]);
+  });
+
+  it("leaves the echo of a send made after the switch where it is", async () => {
+    const view = loadedInCompanyA();
+    await flush();
+
+    const fail = failLater();
+    act(() => {
+      void view.latest().send("замовлення для Каті");
+    });
+    await flush();
+
+    respond(200, { status: "ok", document: document({ text: "Компанія B." }) });
+    view.switchCompany(OTHER_CONVERSATION);
+    await flush();
+
+    hang();
+    act(() => {
+      void view.latest().send("а тут інше");
+    });
+    await flush();
+
+    fail();
+    await flush();
+
+    expect(view.latest().rows.map((row) => [row.role, row.text])).toEqual([
+      ["assistant", "Компанія B."],
+      ["user", "а тут інше"],
+      ["assistant", ""],
+    ]);
   });
 });
 

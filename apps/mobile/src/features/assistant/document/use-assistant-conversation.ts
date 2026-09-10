@@ -53,6 +53,25 @@ import {
  */
 export type AssistantTenantEpochRef = { current: number };
 
+/**
+ * What became of a send, as far as the screen that made it is concerned.
+ *
+ * `refused` is the only outcome that gives the words back. `superseded` means
+ * the tenant or the conversation changed while it was in flight: whatever came
+ * back belongs to a thread nobody is looking at, so there is nothing to restore
+ * and nothing to report on this one (SHO-552).
+ */
+export type AssistantSendOutcome =
+  | { readonly kind: "sent" }
+  | { readonly kind: "refused"; readonly failure: AssistantKitFailure }
+  | { readonly kind: "superseded" };
+
+/** A call's failure, and whether the screen that made it is still the one showing. */
+type RunResult = {
+  readonly failure: AssistantKitFailure | null;
+  readonly current: boolean;
+};
+
 export interface UseAssistantConversation {
   readonly rows: readonly AssistantDocumentRow[];
   /** The open question, if any, with its prompt already parsed. */
@@ -60,10 +79,10 @@ export interface UseAssistantConversation {
   readonly busy: boolean;
   readonly failure: AssistantKitFailure | null;
   /**
-   * Resolves to `null` when the turn ran, and to the reason when it did not — so
-   * a caller holding the draft knows whether to put the text back in the field.
+   * What became of the send, for the screen that made it — so a caller holding
+   * the draft knows whether to put the text back in the field.
    */
-  readonly send: (text: string) => Promise<AssistantKitFailure | null>;
+  readonly send: (text: string) => Promise<AssistantSendOutcome>;
   /** Answer the open question. The shape belongs to its kind. */
   readonly answer: (answer: unknown) => void;
   /** Drop the open question without answering it. */
@@ -203,6 +222,12 @@ export function useAssistantConversation(args: {
    * A reply is dropped if the tenant or the conversation changed while it was in
    * flight. Both, not just the epoch: switching conversations without switching
    * company would otherwise let one thread's reply land in another.
+   *
+   * Whether it was dropped goes back to the caller with the failure. Anything a
+   * caller does after the document — put a draft back, clear an echo — depends
+   * on the same question this has just answered. A caller that answered it again
+   * for itself, from a failure alone, put one company's words into another
+   * company's composer (SHO-552).
    */
   const run = useCallback(
     (
@@ -210,12 +235,16 @@ export function useAssistantConversation(args: {
         call: AssistantKitCall,
         conversationId: string,
       ) => Promise<AssistantKitOutcome>,
-    ): Promise<AssistantKitFailure | null> => {
+    ): Promise<RunResult> => {
       const call = callRef.current;
       const conversationId = conversationIdRef.current;
       if (call === null || conversationId === null || busyRef.current) {
-        // Nothing was attempted. `aborted` is the reason a caller can act on.
-        return Promise.resolve({ kind: "aborted" });
+        // Nothing was attempted and nothing changed. `aborted` is the reason a
+        // caller can act on.
+        return Promise.resolve<RunResult>({
+          failure: { kind: "aborted" },
+          current: true,
+        });
       }
       const epoch = epochRef.current;
       ticketRef.current += 1;
@@ -229,21 +258,22 @@ export function useAssistantConversation(args: {
       busyRef.current = true;
       setBusy(true);
       return perform(call, conversationId)
-        .then((outcome): AssistantKitFailure | null => {
+        .then((outcome): RunResult => {
           if (!current()) {
-            return outcome.failure;
+            return { failure: outcome.failure, current: false };
           }
           if (outcome.document !== null) {
             setDocument(outcome.document);
           }
           setFailure(outcome.failure);
-          return outcome.failure;
+          return { failure: outcome.failure, current: true };
         })
-        .catch((): AssistantKitFailure => {
-          if (current()) {
+        .catch((): RunResult => {
+          const still = current();
+          if (still) {
             setFailure({ kind: "unreachable" });
           }
-          return { kind: "unreachable" };
+          return { failure: { kind: "unreachable" }, current: still };
         })
         .finally(() => {
           // Unlatch only if this is still the request in flight. Whether its
@@ -263,16 +293,32 @@ export function useAssistantConversation(args: {
     );
   }, [run]);
 
+  /**
+   * Which send the echo on screen belongs to.
+   *
+   * A send clears its own echo when it settles, and only its own. After a switch
+   * mid-flight a later send may have put its words there, and the earlier
+   * send's late reply used to wipe them for the rest of that turn (SHO-552).
+   * Ownership rather than currency: a reply nobody is looking at still takes
+   * back the echo it left, if nothing replaced it.
+   */
+  const echoRef = useRef<object | null>(null);
+
   const send = useCallback(
-    (text: string) => {
+    (text: string): Promise<AssistantSendOutcome> => {
       const clipped = clipAssistantKitText(text);
       if (clipped.length === 0) {
-        return Promise.resolve<AssistantKitFailure>({ kind: "aborted" });
+        return Promise.resolve<AssistantSendOutcome>({
+          kind: "refused",
+          failure: { kind: "aborted" },
+        });
       }
       // Keyed by the words, so retrying the same draft is the same attempt and
       // editing it before retrying is a new one.
       const key = `send:${clipped}`;
       const commandId = commandIdFor(key);
+      const echo = {};
+      echoRef.current = echo;
       setPending(clipped);
       return run((call, conversationId) =>
         postAssistantKitChat({
@@ -281,16 +327,24 @@ export function useAssistantConversation(args: {
           commandId,
           text: clipped,
         }),
-      )
-        .then((failure) => {
-          settleCommand(key, failure);
-          return failure;
-        })
-        .finally(() => {
-          // Cleared in the same batch as the document that now contains it, so
-          // the echo is replaced rather than briefly doubled.
+      ).then(({ failure, current }): AssistantSendOutcome => {
+        // Settled whether or not anyone is still looking: the token is about
+        // the attempt, which the server has decided, not about the screen.
+        settleCommand(key, failure);
+        if (echoRef.current === echo) {
+          // Right after the document that now contains it, so the echo is
+          // replaced rather than briefly doubled.
+          echoRef.current = null;
           setPending(null);
-        });
+        }
+        if (!current) {
+          // A thread nobody is looking at: nothing to restore, nothing to say.
+          return { kind: "superseded" };
+        }
+        return failure === null
+          ? { kind: "sent" }
+          : { kind: "refused", failure };
+      });
     },
     [commandIdFor, run, settleCommand],
   );
@@ -319,9 +373,8 @@ export function useAssistantConversation(args: {
           revision: open.revision,
           answer: value,
         }),
-      ).then((failure) => {
+      ).then(({ failure }) => {
         settleCommand(key, failure);
-        return failure;
       });
     },
     [commandIdFor, run, settleCommand],

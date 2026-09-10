@@ -123,8 +123,13 @@ export function useAssistantSheet(): AssistantSheetViewModel & {
   /**
    * The draft is held here, not in the conversation hook, because it has to
    * survive a send that did not happen: an unreachable server, or a question
-   * still open. `send` reports which, so the text goes back in the field instead
-   * of being lost.
+   * still open.
+   *
+   * It goes back on `refused` and on nothing else. Whether a reply still belongs
+   * to what is on screen is the conversation hook's question, answered there by
+   * the check that already guards the document. Deciding it here from a bare
+   * failure — "the field is empty, so put it back" — put one company's words
+   * into another company's composer after a switch mid-flight (SHO-552).
    */
   const send = useCallback(() => {
     const text = clipAssistantKitText(input);
@@ -132,8 +137,8 @@ export function useAssistantSheet(): AssistantSheetViewModel & {
       return;
     }
     setInput("");
-    void conversation.send(text).then((failure) => {
-      if (failure !== null) {
+    void conversation.send(text).then((outcome) => {
+      if (outcome.kind === "refused") {
         // Only if the person has not started typing something else since.
         setInput((current) => (current.length === 0 ? text : current));
       }

@@ -112,6 +112,19 @@ describe("the assistant sheet's wiring", () => {
     expect(unread).toEqual([]);
   });
 
+  /**
+   * SHO-552. The draft goes back only when the conversation hook says this
+   * screen's send was refused. The restore used to decide for itself from a bare
+   * failure, outside the tenant guard every other late reply goes through, and
+   * after a company switch it put the old company's words in the new composer.
+   * Behaviour is asserted in the hook's own suite; this pins that the sheet
+   * reads the hook's answer instead of re-deriving it.
+   */
+  it("restores the draft only on a refusal the hook reports as current", () => {
+    expect(SHEET).toContain('outcome.kind === "refused"');
+    expect(SHEET).not.toMatch(/\.send\(text\)\.then\(\(failure\)/);
+  });
+
   it("offers one answer callback, not one per kind of question", () => {
     expect(VIEW).toContain("readonly answer: (answer: unknown) => void");
     // The declarations, not the words: the header comment names what these
