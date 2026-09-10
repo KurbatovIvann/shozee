@@ -152,10 +152,9 @@ const envObjectSchema = z.object({
   /**
    * Mounts the `assistant-kit` routes (`/assistant/kit/*`).
    *
-   * **On by default since the mobile app was switched to them.** With it off the
-   * routes do not exist and the app's assistant sheet cannot load a conversation
-   * — the flag is now a way to take the assistant down, not a way to keep the
-   * previous one serving. `/assistant/chat` still exists but nothing calls it.
+   * On by default. With it off the routes do not exist and the app's assistant
+   * sheet cannot load a conversation — the flag is a way to take the assistant
+   * down, not a way to switch to another one. There is no other one (ADR-0038).
    */
   AI_ASSISTANT_KIT: z
     .enum(["0", "1"])

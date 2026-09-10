@@ -1,12 +1,9 @@
 # The assistant-kit path
 
-**No longer dark.** The mobile assistant sheet talks to these routes, and
-`AI_ASSISTANT_KIT` now defaults to `1`. They use their own Redis key prefix
-(`kit:`) and share nothing with the pending store the previous assistant used.
-
-`/assistant/chat` still exists and still works, but nothing calls it. The flag is
-now a way to take the assistant **down**, not a way to keep the previous one
-serving: with it off the routes do not exist and the sheet cannot load a
+**This is the assistant** (ADR-0038). There is no other one: `/assistant/chat`,
+the pending store and the host loop were removed once the app stopped calling
+them. `AI_ASSISTANT_KIT` defaults to `1` and is a way to take the assistant
+**down** — with it off the routes do not exist and the sheet cannot load a
 conversation.
 
 This document exists because the previous rewrite passed CI and still behaved
@@ -43,8 +40,7 @@ of which questions it has already dealt with; a source test
 (`sheet/use-assistant-sheet.seam.test.ts`) fails if an import from the previous
 client sneaks back in.
 
-The previous hooks, presenters and HTTP clients are still on disk, unreferenced.
-Deleting them is the next step.
+Nothing of the previous client remains on disk.
 
 ## The four routes
 

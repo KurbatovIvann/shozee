@@ -170,7 +170,7 @@ tool result. Zod validation is necessary but never grants tenant access.
   idempotency or reconciliation.
 - **Invocation `channel` (phase 0):** every HTTP transport invocation —
   oRPC at `/rpc` and OpenAPI REST aliases at `/api/v1` — is labeled
-  `channel: "ui"`. `POST /assistant/chat` uses `channel: "ai"`. Webhooks
+  `channel: "ui"`. `POST /assistant/kit/*` uses `channel: "ai"`. Webhooks
   and workers set `system` / `webhook` when those mounts exist. Do not add
   a client-spoofable `x-channel` header on `/rpc`.
 

@@ -25,7 +25,7 @@ import {
   createActionRegistry,
   createStaffAssistantProvider,
 } from "./composition.js";
-import { optionalStaffAssistantLanguageModel } from "./http/assistant-chat.js";
+import { optionalStaffAssistantLanguageModel } from "./http/assistant-model.js";
 import { createAssistantKitRuntime } from "./http/assistant-kit-runtime.js";
 import { createApp, type AuthInstance } from "./http/app.js";
 import { createProcessObservability } from "./observability.js";
@@ -34,9 +34,7 @@ import {
   createRedisAiBudgetStore,
   createRedisAuthRateLimitStore,
   createRedisConfirmationStore,
-  createRedisConversationLock,
   createRedisOtpSendStore,
-  createRedisPendingStore,
   createRedisRateLimitStore,
   createRedisSecondaryStorage,
 } from "./stores/redis.js";
@@ -130,9 +128,8 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
       ? { anthropicApiKey: config.ai.anthropicApiKey }
       : {}),
   };
-  // Off unless AI_ASSISTANT_KIT=1, and off with no model configured: the
-  // parallel path is for exercising the protocol on real data, and it has
-  // nothing to exercise without a provider.
+  // Off unless AI_ASSISTANT_KIT=1, and off with no model configured — there is
+  // nothing for the routes to call without a provider.
   //
   // Logged either way. A path that can be off for two different reasons and
   // says nothing is a path you cannot tell is running.
@@ -170,7 +167,6 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
       rateLimitStore,
       ipHmacSecret: config.rateLimit.ipHmacSecret,
     },
-    assistant: assistantConfig,
     ...(assistantKitModel === undefined
       ? {}
       : {
@@ -183,8 +179,6 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
             redis,
           }),
         }),
-    pendingStore: createRedisPendingStore(redis),
-    conversationLock: createRedisConversationLock(redis),
     assistantBudget: {
       rateLimitStore,
       budgetStore: createRedisAiBudgetStore(redis),

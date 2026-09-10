@@ -1,6 +1,6 @@
 # ADR-0036: Assistant speech is not a surface
 
-- **Status**: Accepted (speech priority superseded in part by
+- **Status**: Superseded by [ADR-0038](0038-assistant-is-a-stored-document.md)
   [ADR-0037](0037-assistant-host-is-one-tool-loop.md))
 - **Date**: 2026-09-08
 - **Deciders**: Ivan Kurbatov (human) (+ proposing agent)

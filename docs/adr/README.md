@@ -50,7 +50,8 @@ humans) don't relitigate settled questions or silently deviate.
 | [0031](0031-module-kit-server-micro-utilities.md) | Server module micro-utilities live in `@showzy/module-kit` | Accepted |
 | [0032](0032-ai-sdk-7-thin-loop-no-harness.md) | AI loop is AI SDK 7; no coding harness | Accepted |
 | [0033](0033-channel-neutral-actions.md) | Channel-neutral actions — task-complete lists and reference writes | Accepted |
-| [0034](0034-model-trace-is-prompt-state.md) | Model trace is prompt state, not a projection | Accepted |
-| [0035](0035-one-pending-interaction-protocol.md) | One pending-interaction protocol; confirmation resumes without a model call | Accepted (superseded in part by ADR-0037) |
-| [0036](0036-assistant-speech-is-not-a-surface.md) | Assistant speech is not a surface | Accepted (speech priority superseded in part by ADR-0037) |
-| [0037](0037-assistant-host-is-one-tool-loop.md) | The staff assistant host is one tool loop | Accepted |
+| [0034](0034-model-trace-is-prompt-state.md) | Model trace is prompt state, not a projection | Superseded by ADR-0038 |
+| [0035](0035-one-pending-interaction-protocol.md) | One pending-interaction protocol; confirmation resumes without a model call | Superseded by ADR-0038 |
+| [0036](0036-assistant-speech-is-not-a-surface.md) | Assistant speech is not a surface | Superseded by ADR-0038 |
+| [0037](0037-assistant-host-is-one-tool-loop.md) | The staff assistant host is one tool loop | Superseded by ADR-0038 |
+| [0038](0038-assistant-is-a-stored-document.md) | The assistant is a stored document and a claimable pause | Accepted |

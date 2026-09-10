@@ -1,7 +1,7 @@
 /**
  * The Hono HTTP app (ADR-0003, contract.md §3): request-id, trusted-proxy
  * IP, better-auth, oRPC at `/rpc`, OpenAPI REST aliases at `/api/v1`,
- * document-share landing, PKI proxy, staff AI JSON at `/assistant/chat`,
+ * document-share landing, PKI proxy, the assistant at `/assistant/kit/*`,
  * and a liveness endpoint. Business logic does not live here — every
  * action runs `executeAction` through the contract server router or the
  * dedicated AI mount. `POST /pki/proxy` is HTTP, not an action.
@@ -37,35 +37,9 @@ import {
   type AiBudgetStore,
 } from "../stores/budget.js";
 import {
-  createMemoryConversationLock,
-  type ConversationLock,
-} from "../stores/conversation-lock.js";
-import {
-  createMemoryPendingStore,
-  type StaffAssistantPendingStore,
-} from "../stores/pending.js";
-import {
   DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
   type StaffAssistantBudgetLimits,
 } from "./assistant-budget-guard.js";
-import {
-  executeBudgetedStaffAssistantHost,
-  executeStaffAssistantChat,
-  optionalStaffAssistantLanguageModel,
-  type StaffAssistantRuntime,
-} from "./assistant-chat.js";
-import {
-  ASSISTANT_CONFIRM_PATH,
-  ASSISTANT_HOST_CHOICE_PATH,
-  ASSISTANT_PENDING_ABANDON_PATH,
-  ASSISTANT_PENDING_PATH,
-  executeStaffAssistantHostChoiceResume,
-  executeStaffAssistantHostConfirm,
-  executeStaffAssistantPendingAbandon,
-  executeStaffAssistantPendingPeek,
-  type StaffAssistantHostRuntime,
-} from "./assistant-host.js";
-import { ASSISTANT_CHAT_PATH } from "./assistant-invocation.js";
 import { createAssistantKitApp } from "./assistant-kit.js";
 import type { AssistantKitRuntime } from "./assistant-kit-http.js";
 import { createTrustedProxyMatcher, resolveClientIp } from "./client-ip.js";
@@ -89,7 +63,7 @@ export const HEALTH_PATH = "/health";
 
 /**
  * oRPC at `/rpc` and OpenAPI REST aliases at `/api/v1` are labeled `ui`.
- * `POST /assistant/chat` sets `channel: "ai"` (security-operations §4).
+ * The assistant routes set `channel: "ai"` (security-operations §4).
  * Do not add a client-spoofable `x-channel` header.
  */
 export const HTTP_INVOCATION_CHANNEL = "ui" as const;
@@ -124,22 +98,9 @@ export interface CreateAppOptions {
   readonly getPeerAddress: (c: Context<AppEnv>) => string;
   /** SSRF-gated OCSP/TSA proxy (SHO-255). Not an action. */
   readonly pkiProxy: PkiProxyRuntime;
-  /** Staff AI JSON (`POST /assistant/chat`). Optional so unit tests of the HTTP shell still boot. */
-  readonly assistant?: StaffAssistantRuntime;
   /**
-   * Pending HITL store (`POST /assistant/choice`, confirm, abandon, peek).
-   * Boot mounts Redis Lua. Tests inject the in-memory CAS store.
-   */
-  readonly pendingStore?: StaffAssistantPendingStore;
-  /**
-   * Conversation mutex shared by chat, replace, abandon, and resume.
-   * Boot mounts Redis SET NX. Tests inject the in-memory lock.
-   */
-  readonly conversationLock?: ConversationLock;
-  /**
-   * Per-user turn limit + Kyiv-day USD budget on `POST /assistant/chat`
-   * and HITL resume (`POST /assistant/choice`, `POST /assistant/confirm`)
-   * (SHO-505 / SHO-541). Boot mounts Redis. Tests inject memory stores.
+   * Per-user turn limit + Kyiv-day USD budget on the assistant routes
+   * (SHO-505). Boot mounts Redis. Tests inject memory stores.
    */
   readonly assistantBudget?: {
     readonly rateLimitStore: RateLimitStore;
@@ -147,12 +108,9 @@ export interface CreateAppOptions {
     readonly limits?: StaffAssistantBudgetLimits;
   };
   /**
-   * The `assistant-kit` path (`/assistant/kit/*`), off unless this is passed.
-   *
-   * Parallel to the live assistant, on its own paths and its own Redis key
-   * prefix. Boot passes it only when `SHOWZY_ASSISTANT_KIT` is set, so the
-   * running assistant is unaffected by its presence and the two can be compared
-   * by hand on the same data.
+   * The assistant (`/assistant/kit/*`). Absent leaves the app without one,
+   * which is what unit tests of the HTTP shell want and what a deployment with
+   * no model configured gets.
    */
   readonly assistantKit?: AssistantKitRuntime;
 }
@@ -409,9 +367,6 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     return c.html(result.html, result.status);
   });
 
-  const pendingStore = options.pendingStore ?? createMemoryPendingStore();
-  const conversationLock =
-    options.conversationLock ?? createMemoryConversationLock();
   const assistantBudget = options.assistantBudget ?? {
     rateLimitStore: createInMemoryRateLimitStore(),
     budgetStore: createMemoryAiBudgetStore(),
@@ -419,107 +374,10 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
   };
   const budgetLimits =
     assistantBudget.limits ?? DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS;
-  const hostModel = optionalStaffAssistantLanguageModel(options.assistant);
-
-  function hostRuntime(
-    c: Context<AppEnv>,
-  ): Omit<StaffAssistantHostRuntime, "request"> {
-    return {
-      requestId: c.get("requestId"),
-      clientIp: c.get("clientIp"),
-      registry: options.registry,
-      pipeline: options.pipeline,
-      getSession: (headers) => resolveSession(options.auth, headers),
-      pendingStore,
-      conversationLock,
-      ...(hostModel !== undefined ? { model: hostModel } : {}),
-    };
-  }
-
-  app.post(ASSISTANT_CHAT_PATH, async (c) => {
-    const response = await executeStaffAssistantChat({
-      request: c.req.raw,
-      requestId: c.get("requestId"),
-      clientIp: c.get("clientIp"),
-      registry: options.registry,
-      pipeline: options.pipeline,
-      getSession: (headers) => resolveSession(options.auth, headers),
-      pendingStore,
-      conversationLock,
-      rateLimitStore: assistantBudget.rateLimitStore,
-      budgetStore: assistantBudget.budgetStore,
-      budgetLimits,
-      ...(options.assistant !== undefined
-        ? { assistant: options.assistant }
-        : {}),
-    });
-    return withRequestId(response, c.get("requestId"));
-  });
-
-  app.post(ASSISTANT_HOST_CHOICE_PATH, async (c) => {
-    const runtime = {
-      ...hostRuntime(c),
-      request: c.req.raw,
-    };
-    const response = await executeBudgetedStaffAssistantHost({
-      request: runtime.request,
-      requestId: runtime.requestId,
-      clientIp: runtime.clientIp,
-      pipeline: runtime.pipeline,
-      getSession: runtime.getSession,
-      rateLimitStore: assistantBudget.rateLimitStore,
-      budgetStore: assistantBudget.budgetStore,
-      budgetLimits,
-      ...(options.assistant !== undefined
-        ? { assistant: options.assistant }
-        : {}),
-      run: (model) =>
-        executeStaffAssistantHostChoiceResume({ ...runtime, model }),
-    });
-    return withRequestId(response, c.get("requestId"));
-  });
-
-  app.post(ASSISTANT_CONFIRM_PATH, async (c) => {
-    const runtime = {
-      ...hostRuntime(c),
-      request: c.req.raw,
-    };
-    const response = await executeBudgetedStaffAssistantHost({
-      request: runtime.request,
-      requestId: runtime.requestId,
-      clientIp: runtime.clientIp,
-      pipeline: runtime.pipeline,
-      getSession: runtime.getSession,
-      rateLimitStore: assistantBudget.rateLimitStore,
-      budgetStore: assistantBudget.budgetStore,
-      budgetLimits,
-      ...(options.assistant !== undefined
-        ? { assistant: options.assistant }
-        : {}),
-      run: (model) => executeStaffAssistantHostConfirm({ ...runtime, model }),
-    });
-    return withRequestId(response, c.get("requestId"));
-  });
-
-  app.post(ASSISTANT_PENDING_ABANDON_PATH, async (c) => {
-    const response = await executeStaffAssistantPendingAbandon({
-      ...hostRuntime(c),
-      request: c.req.raw,
-    });
-    return withRequestId(response, c.get("requestId"));
-  });
-
-  app.get(ASSISTANT_PENDING_PATH, async (c) => {
-    const response = await executeStaffAssistantPendingPeek({
-      ...hostRuntime(c),
-      request: c.req.raw,
-    });
-    return withRequestId(response, c.get("requestId"));
-  });
 
   if (options.assistantKit !== undefined) {
-    // Dark by default. Mounted as a whole app so its three routes stay
-    // together; it inherits this app's request id and client ip.
+    // Mounted as a whole app so its four routes stay together; it inherits
+    // this app's request id and client ip.
     app.route(
       "/",
       createAssistantKitApp(options.assistantKit, {

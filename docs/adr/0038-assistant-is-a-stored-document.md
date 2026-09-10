@@ -1,0 +1,88 @@
+# ADR-0038: The assistant is a stored document and a claimable pause
+
+- **Status**: Accepted
+- **Date**: 2026-09-10
+- **Deciders**: Ivan Kurbatov (human) (+ proposing agent)
+
+## Context
+
+ADR-0037 rebuilt the staff assistant as one tool loop. It shipped, and it
+behaved worse on a phone than what it replaced. Six of the eight commits
+after it launched were fixes to the same defect class: a question the
+assistant had already answered coming back, a tap that may or may not
+have been claimed, one order appearing twice or not at all, a reload
+showing a different set of cards than the live turn had shown.
+
+None of those were bugs in the loop. They came from two structural
+decisions underneath it.
+
+**Resume was a reconstruction.** The pending record stored no provider
+messages, so continuing after a human tap meant rebuilding the model
+conversation from database rows — `get-model-history.ts`, 547 lines of
+guessing tool-call ids, merging results and re-deriving stage identity.
+Every guess was a place to be wrong, and the wrongness surfaced as the
+model losing track of what it had just done.
+
+**The client owned a copy of the protocol.** The server could not say
+which question was still answerable, so the phone kept sets of ignored,
+dismissed and resolved challenge ids, plus an attempted `(challenge,
+option)` pair so a second tap could not post while the first might
+already be claimed. It also reached the same card three different ways —
+from parts it had appended itself, from a resume envelope, and from a
+re-derivation over raw tool parts — and when two of those disagreed, the
+disagreement was the bug.
+
+## Decision
+
+The assistant is a **stored chat document** plus a **claimable pause**,
+and the protocol that connects them lives in `@showzy/assistant-kit`, a
+package that knows nothing about this product.
+
+- A turn stores the parts it settled. A reload returns those bytes. There
+  is no second derivation, so there is nothing to disagree.
+- A pause stores the **exact provider messages** of the turn plus the
+  tool call that stopped it. Resuming replays them and replaces one tool
+  result. Nothing is reconstructed.
+- One open question per conversation, claimed exactly once by
+  compare-and-set. The server answers `gone`, `stale`, `unresolvable` or
+  `invalid_answer`; the client holds no exactly-once state of its own.
+- Every route returns the whole document, including refusals, so "your
+  tap did nothing" and "here is the question that is open now" are two
+  independent answers rather than one entangled one.
+- What kinds of question exist is the caller's registry, not the
+  package's. The kit has no `choice` and no `confirmation` in it.
+
+## Alternatives considered
+
+- **A third refactor of the ADR-0037 host.** Rejected on evidence: the
+  defect class was the reconstruction and the client-side state machine,
+  and neither is reachable by changing the loop.
+- **LangGraph + an agent server, or Mastra + Inngest.** Rejected: both
+  answer durability and orchestration, which were not the problem, at the
+  cost of a second runtime and vendor lock-in.
+- **Effect-TS.** Rejected: a second effect system for one module's
+  problem, and the problem was a missing protocol, not missing
+  combinators.
+- **Keeping both paths.** Rejected after the client moved: two assistants
+  on one database is how the previous one accumulated its
+  reconstruction-shaped fixes in the first place.
+
+## Consequences
+
+- ADR-0034 (`model_trace` is prompt state) and ADR-0035 (one pending
+  interaction, confirmation resumes without a model call) describe
+  machinery that no longer exists. ADR-0037's loop survives in shape —
+  one `streamText`, tools chosen by the model — but its host, its resume
+  and its speech pipeline do not.
+- `assistant_messages` and `assistant_tool_runs` lose their writer. They
+  were history-reconstruction storage, not the audit trail: what the
+  assistant did is in `audit_log` under `channel = 'ai'`, and stays there.
+- The conversation is durable in `assistant_chat_state`; only the pause
+  is in Redis, where a deadline in minutes and one atomic claim belong.
+- Roughly 45,000 lines come out across the client and the server, most of
+  it tests of a state machine that no longer exists.
+- What is lost, and named rather than discovered later: an
+  `orders-aggregate` card's period line, which came from the counts
+  tool's input rather than from the stored card.
+- The kit is written to be extractable. It takes no dependency on this
+  product, and an isolation test fails if one appears.
