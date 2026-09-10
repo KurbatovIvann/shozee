@@ -13,6 +13,7 @@ import { rolePermissionDefaultRows } from "../seed/role-permission-defaults.js";
 import type { DbClient } from "./client.js";
 import type { UserId } from "./schema/auth-ids.js";
 import {
+  assistantChatMessages,
   assistantChatState,
   assistantConversations,
 } from "./schema/assistant.js";
@@ -147,11 +148,15 @@ describe("assistant schema slice", () => {
     );
   });
 
-  it("declares the conversation's tenant, staff-user, and chat-state keys", async () => {
+  it("declares the conversation's tenant, staff-user, chat-state and message keys", async () => {
     const keys = await foreignKeysFor([
       "assistant_conversations",
       "assistant_chat_state",
+      "assistant_chat_messages",
     ]);
+    expect(keys.get("assistant_chat_messages_conversations_company_fk")).toBe(
+      "FOREIGN KEY (company_id, conversation_id) REFERENCES assistant_conversations(company_id, id) ON DELETE CASCADE",
+    );
     const definitions = [...keys.values()].join("\n");
 
     // The staff user is RESTRICT: a person with conversations is not deleted
@@ -241,7 +246,97 @@ describe("assistant schema slice", () => {
     ).toEqual([]);
   });
 
-  it("carries only the two tables the assistant still has", async () => {
+  it("orders a conversation's messages by a sequence that neither repeats nor starts below one", async () => {
+    const company = await insertCompany();
+    const userId = await insertUser();
+    const conversation = await insertConversation({
+      companyId: company.id,
+      userId,
+    });
+    const first = crypto.randomUUID();
+    const row = (seq: number, messageId: string) => ({
+      companyId: company.id,
+      conversationId: conversation.id,
+      seq,
+      messageId,
+      bind: "owner",
+      message: { messageId },
+    });
+
+    await dbClient.db.insert(assistantChatMessages).values(row(1, first));
+
+    // Two messages at one position is the shape that lets a lost lease
+    // overwrite a turn silently, so the database refuses it.
+    await expectSqlState(
+      dbClient.db
+        .insert(assistantChatMessages)
+        .values(row(1, crypto.randomUUID())),
+      "23505",
+    );
+    // The same message twice is a second insert, never an update.
+    await expectSqlState(
+      dbClient.db.insert(assistantChatMessages).values(row(2, first)),
+      "23505",
+    );
+    await expectSqlState(
+      dbClient.db
+        .insert(assistantChatMessages)
+        .values(row(0, crypto.randomUUID())),
+      "23514",
+    );
+  });
+
+  it("refuses a message for another tenant's conversation", async () => {
+    const owner = await insertCompany();
+    const other = await insertCompany();
+    const userId = await insertUser();
+    const conversation = await insertConversation({
+      companyId: owner.id,
+      userId,
+    });
+
+    await expectSqlState(
+      dbClient.db.insert(assistantChatMessages).values({
+        companyId: other.id,
+        conversationId: conversation.id,
+        seq: 1,
+        messageId: crypto.randomUUID(),
+        bind: "owner",
+        message: {},
+      }),
+      "23503",
+    );
+  });
+
+  it("takes the messages with the conversation", async () => {
+    const company = await insertCompany();
+    const userId = await insertUser();
+    const conversation = await insertConversation({
+      companyId: company.id,
+      userId,
+    });
+    await dbClient.db.insert(assistantChatMessages).values({
+      companyId: company.id,
+      conversationId: conversation.id,
+      seq: 1,
+      messageId: crypto.randomUUID(),
+      bind: "owner",
+      message: {},
+    });
+
+    await dbClient.db
+      .delete(assistantConversations)
+      .where(eq(assistantConversations.id, conversation.id));
+
+    expect(
+      await dbClient.db
+        .select({ seq: assistantChatMessages.seq })
+        .from(assistantChatMessages)
+        .where(eq(assistantChatMessages.conversationId, conversation.id)),
+    ).toEqual([]);
+  });
+
+  it("carries only the tables the assistant still has", async () => {
     const result = await admin.query<{ table_name: string }>(
       `SELECT table_name FROM information_schema.tables
        WHERE table_schema = 'public' AND table_name LIKE 'assistant%'
@@ -250,8 +345,10 @@ describe("assistant schema slice", () => {
 
     // `assistant_messages` and `assistant_tool_runs` stored a turn row by row
     // so the model conversation could be rebuilt from them. Nothing rebuilds
-    // it, and the audit lives in `audit_log` (ADR-0038).
+    // it, and the audit lives in `audit_log` (ADR-0038). The message log that
+    // came later is the transcript a person reads, stored as written.
     expect(result.rows.map((row) => row.table_name)).toEqual([
+      "assistant_chat_messages",
       "assistant_chat_state",
       "assistant_conversations",
     ]);

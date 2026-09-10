@@ -355,6 +355,9 @@ describe("client composition", () => {
       "checkpointAssistantTurn",
       "readChatState",
       "writeChatState",
+      "readChatMessages",
+      "insertChatMessage",
+      "updateChatMessage",
     ]) {
       expect(contractModules.assistant, gone).not.toHaveProperty(gone);
     }

@@ -1,7 +1,7 @@
 /**
  * Staff assistant persistence (SHO-320 / feature SHO-318, ADR-0038). Owned
- * by the assistant module (ADR-0014). Two tables: the conversation, and its
- * stored state.
+ * by the assistant module (ADR-0014). Three tables: the conversation, the
+ * messages a person reads, and the provider state the next turn is built from.
  *
  * There used to be a third and a fourth — `assistant_messages` and
  * `assistant_tool_runs` — holding a turn row by row so the model
@@ -15,9 +15,12 @@
  * conversation removes its state. `company_id → companies` stays CASCADE
  * for tenant wipe.
  */
+import { sql } from "drizzle-orm";
 import {
+  check,
   foreignKey,
   index,
+  integer,
   jsonb,
   pgTable,
   text,
@@ -73,6 +76,64 @@ export const assistantConversations = pgTable(
  * update it. UNIQUE `(company_id, conversation_id, turn_key)` allows
  * multiple NULLs (PostgreSQL NULL DISTINCT).
  */
+/**
+ * The transcript of an `assistant-kit` conversation, one row per message.
+ *
+ * A log, not a document. A message is written by the request that produced it
+ * and never touched once that request ends, so the conversation is an
+ * append-only sequence plus one live message at its end. Storing it as one
+ * value replaced whole made every turn read, validate and rewrite the entire
+ * history, and let one message nobody could parse turn the whole history empty
+ * on the next write (SHO-555).
+ *
+ * `message` is opaque here, exactly as the document was: the runtime that
+ * writes it owns its shape, and it is returned as stored. The columns are only
+ * what ordering and ownership need.
+ *
+ * - `seq` orders the log within a conversation. It is assigned on insert and
+ *   never reused, so it is also what a page cursor points at.
+ * - `message_id` is the runtime's own id for the message; an insert that
+ *   repeats one is refused rather than becoming an update.
+ * - `bind` is the runtime's opaque owner token, compared by the runtime and
+ *   never interpreted here.
+ */
+export const assistantChatMessages = pgTable(
+  "assistant_chat_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    companyId: tenantCompanyId(),
+    conversationId: uuid("conversation_id").notNull(),
+    seq: integer("seq").notNull(),
+    messageId: uuid("message_id").notNull(),
+    bind: text("bind").notNull(),
+    message: jsonb("message").notNull(),
+    ...timestampColumns(),
+  },
+  (table) => [
+    tenantRowUnique("assistant_chat_messages_company_id_id_uq", table),
+    // Also the index a page read walks: newest first within one conversation.
+    unique("assistant_chat_messages_conversation_seq_uq").on(
+      table.companyId,
+      table.conversationId,
+      table.seq,
+    ),
+    unique("assistant_chat_messages_conversation_message_uq").on(
+      table.companyId,
+      table.conversationId,
+      table.messageId,
+    ),
+    check("assistant_chat_messages_seq_check", sql`${table.seq} > 0`),
+    foreignKey({
+      name: "assistant_chat_messages_conversations_company_fk",
+      columns: [table.companyId, table.conversationId],
+      foreignColumns: [
+        assistantConversations.companyId,
+        assistantConversations.id,
+      ],
+    }).onDelete("cascade"),
+  ],
+);
+
 /**
  * The durable half of an `assistant-kit` conversation: the chat document a
  * person reads, and the provider messages the next turn is built from.

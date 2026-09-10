@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 
 import { staffHasPermission } from "@showzy/core";
-import { NotFoundError } from "@showzy/core/errors";
+import {
+  ConflictError,
+  NotFoundError,
+  PermissionDeniedError,
+} from "@showzy/core/errors";
 import {
   createTestKit,
   crossTenantSuite,
@@ -13,6 +17,7 @@ import {
 import { auditLog } from "@showzy/db";
 import { user } from "@showzy/db/schema/auth";
 import {
+  assistantChatMessages,
   assistantChatState,
   assistantConversations,
 } from "@showzy/db/schema/assistant";
@@ -22,13 +27,19 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createConversation } from "./create-conversation.js";
 import { getStaffActor } from "./get-staff-actor.js";
+import { insertChatMessage } from "./insert-chat-message.js";
 import { listConversations } from "./list-conversations.js";
+import { readChatMessages } from "./read-chat-messages.js";
 import { readChatState } from "./read-chat-state.js";
+import { updateChatMessage } from "./update-chat-message.js";
 import { writeChatState } from "./write-chat-state.js";
 
 const fixtures = {
   convA: randomUUID(),
+  /** A message already stored in `convA`, for the update isolation case. */
+  convAMessage: randomUUID(),
   convB: randomUUID(),
+  log: randomUUID(),
   newest: randomUUID(),
   older: randomUUID(),
   chatState: randomUUID(),
@@ -177,6 +188,20 @@ beforeAll(async () => {
     createdAt: stamps.employee,
     updatedAt: stamps.employee,
   });
+  await insertConversation({
+    id: fixtures.log,
+    companyId: kitIdentities.companies.a,
+    userId: kitIdentities.users.anna,
+    title: "Message log",
+  });
+  await kit.db.runtime.db.insert(assistantChatMessages).values({
+    companyId: kitIdentities.companies.a,
+    conversationId: fixtures.convA,
+    seq: 1,
+    messageId: fixtures.convAMessage,
+    bind: "anna:company-a",
+    message: { messageId: fixtures.convAMessage },
+  });
 });
 
 afterAll(async () => {
@@ -213,6 +238,49 @@ crossTenantSuite(
       writeChatState,
       { input: { conversationId: fixtures.convA, document: { a: 1 } } },
       { input: { conversationId: fixtures.convB, document: { a: 1 } } },
+    ),
+    isolationCase(
+      readChatMessages,
+      { input: { conversationId: fixtures.convA, limit: 10 } },
+      { input: { conversationId: fixtures.convB, limit: 10 } },
+    ),
+    isolationCase(
+      insertChatMessage,
+      {
+        input: {
+          conversationId: fixtures.convA,
+          messageId: randomUUID(),
+          bind: "anna:company-a",
+          message: { a: 1 },
+        },
+      },
+      {
+        input: {
+          conversationId: fixtures.convB,
+          messageId: randomUUID(),
+          bind: "anna:company-a",
+          message: { a: 1 },
+        },
+      },
+    ),
+    isolationCase(
+      updateChatMessage,
+      {
+        input: {
+          conversationId: fixtures.convA,
+          seq: 1,
+          messageId: fixtures.convAMessage,
+          message: { a: 2 },
+        },
+      },
+      {
+        input: {
+          conversationId: fixtures.convB,
+          seq: 1,
+          messageId: fixtures.convAMessage,
+          message: { a: 2 },
+        },
+      },
     ),
     isolationCase(
       getStaffActor,
@@ -342,6 +410,254 @@ describe("the durable chat state", () => {
         {},
       ),
     ).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
+describe("the message log", () => {
+  const BIND = "anna:company-a";
+
+  function message(label: string) {
+    return {
+      messageId: randomUUID(),
+      role: "assistant",
+      createdAt: "2026-09-10T10:00:00.000Z",
+      parts: [{ kind: "text", text: label, status: "complete" }],
+    };
+  }
+
+  async function append(stored: ReturnType<typeof message>) {
+    return kit.invoke(
+      insertChatMessage,
+      {
+        conversationId: fixtures.log,
+        messageId: stored.messageId,
+        bind: BIND,
+        message: stored,
+      },
+      {},
+    );
+  }
+
+  const stored: ReturnType<typeof message>[] = [];
+
+  it("reads a conversation with no messages as an empty page, not as missing", async () => {
+    const page = await kit.invoke(
+      readChatMessages,
+      { conversationId: fixtures.log, limit: 10 },
+      {},
+    );
+
+    expect(page).toEqual({ records: [], hasOlder: false });
+  });
+
+  it("numbers messages in the order they arrive and returns them as stored", async () => {
+    for (const label of ["one", "two", "three"]) {
+      const next = message(label);
+      stored.push(next);
+      const written = await append(next);
+      expect(written).toEqual({
+        conversationId: fixtures.log,
+        seq: stored.length,
+      });
+    }
+
+    const page = await kit.invoke(
+      readChatMessages,
+      { conversationId: fixtures.log, limit: 10 },
+      {},
+    );
+
+    expect(page.hasOlder).toBe(false);
+    expect(page.records).toEqual(
+      stored.map((entry, index) => ({
+        seq: index + 1,
+        messageId: entry.messageId,
+        bind: BIND,
+        message: entry,
+      })),
+    );
+  });
+
+  it("pages back from a position without skipping or repeating one", async () => {
+    const latest = await kit.invoke(
+      readChatMessages,
+      { conversationId: fixtures.log, limit: 2 },
+      {},
+    );
+    expect(latest.records.map((record) => record.seq)).toEqual([2, 3]);
+    expect(latest.hasOlder).toBe(true);
+
+    const older = await kit.invoke(
+      readChatMessages,
+      { conversationId: fixtures.log, limit: 2, beforeSeq: 2 },
+      {},
+    );
+    expect(older.records.map((record) => record.seq)).toEqual([1]);
+    expect(older.hasOlder).toBe(false);
+  });
+
+  /**
+   * The only message a runtime may change is the latest, by naming it. An
+   * insert that quietly became an update would let a turn rewrite a message it
+   * never read.
+   */
+  it("refuses a message id the conversation already holds, and changes nothing", async () => {
+    const first = stored[0];
+    expect(first).toBeDefined();
+    if (first === undefined) {
+      return;
+    }
+
+    await expect(append({ ...first, parts: [] })).rejects.toBeInstanceOf(
+      ConflictError,
+    );
+
+    const page = await kit.invoke(
+      readChatMessages,
+      { conversationId: fixtures.log, limit: 10 },
+      {},
+    );
+    expect(page.records).toHaveLength(3);
+    expect(page.records[0]?.message).toEqual(first);
+  });
+
+  it("replaces a message only when its position and its id both name it", async () => {
+    const second = stored[1];
+    const third = stored[2];
+    expect(second).toBeDefined();
+    expect(third).toBeDefined();
+    if (second === undefined || third === undefined) {
+      return;
+    }
+    const replaced = { ...third, parts: [] };
+
+    await expect(
+      kit.invoke(
+        updateChatMessage,
+        {
+          conversationId: fixtures.log,
+          seq: 3,
+          messageId: second.messageId,
+          message: replaced,
+        },
+        {},
+      ),
+    ).rejects.toBeInstanceOf(NotFoundError);
+
+    expect(
+      await kit.invoke(
+        updateChatMessage,
+        {
+          conversationId: fixtures.log,
+          seq: 3,
+          messageId: third.messageId,
+          message: replaced,
+        },
+        {},
+      ),
+    ).toEqual({ conversationId: fixtures.log, seq: 3 });
+
+    const page = await kit.invoke(
+      readChatMessages,
+      { conversationId: fixtures.log, limit: 10 },
+      {},
+    );
+    expect(page.records.map((record) => record.message)).toEqual([
+      stored[0],
+      second,
+      replaced,
+    ]);
+  });
+
+  it("audits each write against the conversation", async () => {
+    const requestId = randomUUID();
+    const next = message("audited");
+    await kit.invoke(
+      insertChatMessage,
+      {
+        conversationId: fixtures.log,
+        messageId: next.messageId,
+        bind: BIND,
+        message: next,
+      },
+      {},
+      { request: { requestId } },
+    );
+
+    const rows = await kit.db.runtime.db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.requestId, requestId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      action: "assistant.insertChatMessage",
+      companyId: kitIdentities.companies.a,
+      actorId: kitIdentities.users.anna,
+      targetType: "conversation",
+      targetId: fixtures.log,
+      outcome: "ok",
+    });
+  });
+
+  it("is not-found for a conversation that does not exist, or that a colleague wrote", async () => {
+    const colleague = {
+      userId: clerks.employee,
+      companyId: kitIdentities.companies.a,
+    };
+    for (const [conversationId, actor] of [
+      [randomUUID(), {}],
+      [fixtures.log, colleague],
+    ] as const) {
+      await expect(
+        kit.invoke(readChatMessages, { conversationId, limit: 10 }, actor),
+      ).rejects.toBeInstanceOf(NotFoundError);
+      await expect(
+        kit.invoke(
+          insertChatMessage,
+          {
+            conversationId,
+            messageId: randomUUID(),
+            bind: BIND,
+            message: {},
+          },
+          actor,
+        ),
+      ).rejects.toBeInstanceOf(NotFoundError);
+      await expect(
+        kit.invoke(
+          updateChatMessage,
+          { conversationId, seq: 1, messageId: randomUUID(), message: {} },
+          actor,
+        ),
+      ).rejects.toBeInstanceOf(NotFoundError);
+    }
+  });
+
+  it("refuses a person without assistant:use", async () => {
+    const denied = {
+      userId: clerks.denied,
+      companyId: kitIdentities.companies.a,
+    };
+
+    await expect(
+      kit.invoke(
+        readChatMessages,
+        { conversationId: fixtures.log, limit: 10 },
+        denied,
+      ),
+    ).rejects.toBeInstanceOf(PermissionDeniedError);
+    await expect(
+      kit.invoke(
+        insertChatMessage,
+        {
+          conversationId: fixtures.log,
+          messageId: randomUUID(),
+          bind: BIND,
+          message: {},
+        },
+        denied,
+      ),
+    ).rejects.toBeInstanceOf(PermissionDeniedError);
   });
 });
 

@@ -258,6 +258,9 @@ describe("CI contract-check stage", () => {
     for (const [name, risk] of [
       ["assistant.readChatState", "read"],
       ["assistant.writeChatState", "write"],
+      ["assistant.readChatMessages", "read"],
+      ["assistant.insertChatMessage", "write"],
+      ["assistant.updateChatMessage", "write"],
     ] as const) {
       const contract = contracts.find((entry) => entry.name === name);
       expect(contract, name).toBeDefined();
@@ -316,6 +319,9 @@ describe("CI contract-check stage", () => {
     // conversation's own data, and it goes through the module that owns it.
     expect(names).toContain("assistant.readChatState");
     expect(names).toContain("assistant.writeChatState");
+    expect(names).toContain("assistant.readChatMessages");
+    expect(names).toContain("assistant.insertChatMessage");
+    expect(names).toContain("assistant.updateChatMessage");
   });
 
   it("SHO-527/SHO-534/SHO-535: search.query is staff/client/exposed with companies:view; matcher callees are internal reads; fan-out and prefix edges", () => {
