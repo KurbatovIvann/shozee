@@ -268,3 +268,34 @@ export function stubBrokenModel(message = "provider is down"): LanguageModel {
     doStream: () => Promise.reject(new Error(message)),
   });
 }
+
+/**
+ * A provider that serves the given steps and then fails.
+ *
+ * Distinct from `stubBrokenModel` in a way that matters: measured against
+ * `ai@7.0.87`, a failure on the **first** call rejects every promise on the
+ * result, while a failure after a step has finished rejects none of them —
+ * `text` reads `""`, `finishReason` reads `"other"`, and the run looks like a
+ * model that had nothing to say. The two are different code paths in the host,
+ * so they need different providers here.
+ *
+ * `before` runs just before the failing call, for a test that needs to abort at
+ * that exact point.
+ */
+export function stubModelFailingAfter(
+  steps: readonly { stream: ReadableStream }[],
+  options?: { readonly message?: string; readonly before?: () => void },
+): LanguageModel {
+  let call = 0;
+  return new MockLanguageModelV4({
+    doStream: () => {
+      const step = steps[call];
+      call += 1;
+      if (step !== undefined) {
+        return Promise.resolve(step as never);
+      }
+      options?.before?.();
+      return Promise.reject(new Error(options?.message ?? "provider is down"));
+    },
+  });
+}

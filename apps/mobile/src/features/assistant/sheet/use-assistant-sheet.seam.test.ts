@@ -27,6 +27,11 @@ const ROW = readFileSync(
   "utf8",
 );
 
+const ROW_MODEL = readFileSync(
+  new URL("../document/document-rows.ts", import.meta.url),
+  "utf8",
+);
+
 const RETIRED = [
   "use-assistant-chat",
   "use-assistant-choice",
@@ -69,6 +74,42 @@ describe("the assistant sheet's wiring", () => {
       expect(VIEW.includes(module)).toBe(false);
       expect(ROW.includes(module)).toBe(false);
     }
+  });
+
+  /**
+   * Every field the row model computes reaches the screen.
+   *
+   * `failed` was computed, commented ("the reply is absent, not empty") and
+   * read by nobody: a turn that broke rendered its cards and said nothing about
+   * having broken (SHO-546). That is the same shape as a declared interaction
+   * kind with no producer, one layer down, and the same answer applies — the
+   * gap between deciding something and using it is closed by a failing test
+   * rather than by whoever next reads both files.
+   */
+  it("renders every field the row model computes", () => {
+    const declaration =
+      /export type AssistantDocumentRow = \{([^}]*(?:\}[^;][^}]*)*)\};/.exec(
+        ROW_MODEL,
+      );
+    const fields = [
+      ...(declaration?.[1] ?? "").matchAll(/readonly (\w+)[?]?:/g),
+    ].map((match) => match[1] ?? "");
+    // Proof the match spans the whole declaration rather than its first line —
+    // a regex that quietly stopped early would make the check below vacuous.
+    expect(fields).toEqual(
+      expect.arrayContaining([
+        "id",
+        "role",
+        "text",
+        "surfaces",
+        "interaction",
+        "failed",
+        "waiting",
+      ]),
+    );
+
+    const unread = fields.filter((field) => !VIEW.includes(`item.${field}`));
+    expect(unread).toEqual([]);
   });
 
   it("offers one answer callback, not one per kind of question", () => {

@@ -49,6 +49,25 @@ interface TurnState {
   paused: Captured | undefined;
   readonly cards: CardRef[];
   chain: Promise<unknown>;
+  /**
+   * Provider messages of every step that finished, accumulated as they finish.
+   *
+   * The SDK's own accumulator is unreachable once the run is aborted — every
+   * promise on the result rejects, including `steps`. This is the same value
+   * (measured: identical to `responseMessages` on a clean run) built from the
+   * parts that arrived, so an abort after a write keeps the memory of it.
+   */
+  readonly stepMessages: ModelMessage[];
+  /**
+   * The stream carried an error.
+   *
+   * Needed because `consumeStream` swallows one: measured against `ai@7.0.87`,
+   * a provider failure after the first step leaves every promise resolving —
+   * `text` is `""` and `finishReason` is `"other"` — so without this flag a
+   * turn that broke halfway is indistinguishable from one that had nothing to
+   * say.
+   */
+  interrupted: boolean;
 }
 
 function pausingTools(tools: ToolSet, state: TurnState): ToolSet {
@@ -132,6 +151,15 @@ export interface HostTurnResult {
   readonly parts: readonly DocumentPart[];
   /** Provider history after this turn — the continuation when paused. */
   readonly messages: readonly ModelMessage[];
+  /**
+   * Generation did not finish: the provider failed, or the request was aborted.
+   *
+   * Anything a tool committed still stands and is still in `parts`; what is
+   * missing is the reply that would have explained it. Reported rather than
+   * thrown so a caller can log it — a turn that ends this way is otherwise
+   * silent on both sides of the wire.
+   */
+  readonly interrupted: boolean;
 }
 
 async function runLoop<T extends AnyTypes>(
@@ -147,7 +175,19 @@ async function runLoop<T extends AnyTypes>(
     paused: undefined,
     cards: [],
     chain: Promise.resolve(),
+    stepMessages: [],
+    interrupted: false,
   };
+
+  function cardParts(): DocumentPart[] {
+    return state.cards.map((card) => ({
+      kind: "card",
+      cardId: card.cardId,
+      revision: 1,
+      type: card.type,
+      payload: card.payload,
+    }));
+  }
 
   async function append(parts: readonly DocumentPart[]): Promise<void> {
     if (parts.length === 0) {
@@ -174,6 +214,12 @@ async function runLoop<T extends AnyTypes>(
       stepCountIs(options.maxSteps ?? DEFAULT_MAX_STEPS),
       () => state.paused !== undefined,
     ],
+    onStepFinish: (step) => {
+      state.stepMessages.push(...step.response.messages);
+    },
+    onError: () => {
+      state.interrupted = true;
+    },
     ...(options.system !== undefined ? { system: options.system } : {}),
     ...(options.providerOptions !== undefined
       ? { providerOptions: options.providerOptions }
@@ -190,26 +236,51 @@ async function runLoop<T extends AnyTypes>(
     messages = [...options.messages, ...(await result.responseMessages)];
     text = await result.text;
   } catch {
-    // Aborted or the provider failed. An incomplete text part says so; it is
-    // never presented as the answer, and nothing already committed is undone.
+    // Reached when nothing at all was generated, and when the run was aborted
+    // mid-flight — a phone that lost the network or moved to the background.
+    //
+    // What a tool already committed comes first. The write happened; the card
+    // is the only thing that says so, and dropping it here left an order in the
+    // database that nobody could see (SHO-546). The empty text part follows it,
+    // so the same message reads "this was done, and then something broke".
+    const earned = cardParts();
     const failed: DocumentPart = { kind: "text", text: "", status: "error" };
-    await append([failed]);
+    await append([...earned, failed]);
     return {
       kind: "settled",
       pause: null,
-      parts: [...commitFirst, failed],
-      messages: options.messages,
+      parts: [...commitFirst, ...earned, failed],
+      // The steps that finished, when any did. An abort inside a tool leaves
+      // none — the step had not finished — and then the model's memory of this
+      // turn is genuinely gone even though the write stands. That is the seam a
+      // repeat can walk into twice, and it is closed by the command receipt in
+      // SHO-547, not here.
+      messages:
+        state.stepMessages.length > 0
+          ? [...options.messages, ...state.stepMessages]
+          : options.messages,
+      interrupted: true,
     };
   }
 
-  const parts: DocumentPart[] = state.cards.map((card) => ({
-    kind: "card",
-    cardId: card.cardId,
-    revision: 1,
-    type: card.type,
-    payload: card.payload,
-  }));
-  if (text.length > 0) {
+  // Two ways to get here without having finished. The stream carried an error
+  // and `consumeStream` swallowed it; or the signal was aborted between steps,
+  // which the SDK treats as a clean stop and reports as an ordinary result.
+  //
+  // Both are the same event to the person — the turn ended early — so both are
+  // marked the same way. Reading the signal rather than only the error is what
+  // keeps that true: measured, an abort that lands *inside* a tool rejects and
+  // an abort a moment later does not, and one dropped connection must not write
+  // two different-looking documents depending on which microsecond it hit.
+  const interrupted =
+    state.interrupted || options.abortSignal?.aborted === true;
+
+  const parts: DocumentPart[] = cardParts();
+  if (interrupted) {
+    // Whatever text arrived before the break is kept and marked `error`: it is
+    // a fragment, and a fragment presented as the answer is worse than none.
+    parts.push({ kind: "text", text, status: "error" });
+  } else if (text.length > 0) {
     parts.push({ kind: "text", text, status: "complete" });
   }
 
@@ -271,6 +342,7 @@ async function runLoop<T extends AnyTypes>(
     ...(rejection !== undefined ? { rejection } : {}),
     parts: [...commitFirst, ...parts],
     messages,
+    interrupted,
   };
 }
 

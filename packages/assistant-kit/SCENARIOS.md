@@ -42,14 +42,15 @@ argue with history rather than with taste.
 
 ## Resume
 
-| #   | Level | Given / When / Then                                                                                                                                                                                                                                                                                                                                                            | Prevents                                                                      |
-| --- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
-| 11  | K     | A claimed pause. → `resume` returns `messages` **byte-identical** to the stored continuation. No id is rewritten, no tool result is merged in from history, no message is re-derived.                                                                                                                                                                                          | Re-deriving model history on resume (SHO-539)                                 |
-| 12  | K     | `resume` output. → it carries exactly one tool result, addressed to `pausedToolCall.id`, so the paused call is finished rather than reissued.                                                                                                                                                                                                                                  | Resume leaving the tool-run `started` (SHO-543)                               |
-| 13  | L     | Picker answered. → the resumed turn's document holds one entity card and one follow-up list card, no duplicate entity. Covered, plus the stronger check the defect really needed: the pausing tool executes **once** — the host resolves it, never re-enters it.                                                                                                               | Two `#…` cards from a fabricated `resume-surface:*` tool part (SHO-544)       |
-| 14  | K + R | The action refuses after the pause was claimed. → `release` puts the answer back: the pause is open at the same revision, the document is untouched, and a retry can claim it.                                                                                                                                                                                                 | Pause disappearing when Phase A errors (SHO-545)                              |
-| 15  | R     | **Resume only.** A write committed by answering a question, then generation fails. → the surface part stays in the document, the text part is `status: "error"`, and no completion phrase is emitted, because that card is stored **before** `streamText` via `commitFirst`. A card earned by an ordinary tool call inside a turn has no such guard and **is lost** (SHO-546). | A provider failure presenting itself as a finished reply — on the resume path |
-| 13b | L     | The model emits a write and a read in one step. → the write pauses and the read never runs.                                                                                                                                                                                                                                                                                    | A write overtaking an unanswered question                                     |
+| #   | Level | Given / When / Then                                                                                                                                                                                                                                                                                                                                                                                       | Prevents                                                                            |
+| --- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| 11  | K     | A claimed pause. → `resume` returns `messages` **byte-identical** to the stored continuation. No id is rewritten, no tool result is merged in from history, no message is re-derived.                                                                                                                                                                                                                     | Re-deriving model history on resume (SHO-539)                                       |
+| 12  | K     | `resume` output. → it carries exactly one tool result, addressed to `pausedToolCall.id`, so the paused call is finished rather than reissued.                                                                                                                                                                                                                                                             | Resume leaving the tool-run `started` (SHO-543)                                     |
+| 13  | L     | Picker answered. → the resumed turn's document holds one entity card and one follow-up list card, no duplicate entity. Covered, plus the stronger check the defect really needed: the pausing tool executes **once** — the host resolves it, never re-enters it.                                                                                                                                          | Two `#…` cards from a fabricated `resume-surface:*` tool part (SHO-544)             |
+| 14  | K + R | The action refuses after the pause was claimed. → `release` puts the answer back: the pause is open at the same revision, the document is untouched, and a retry can claim it.                                                                                                                                                                                                                            | Pause disappearing when Phase A errors (SHO-545)                                    |
+| 15  | R + K | **Both paths.** A write committed, then the turn does not finish. → the surface part stays in the document and the text part is `status: "error"`. On resume the card is stored **before** `streamText` via `commitFirst`; on the ordinary path a card earned inside the turn is written by the failure path itself. Asserted for a provider failure mid-loop and for an abort inside the tool (SHO-546). | A provider failure presenting itself as a finished reply, or a write nobody can see |
+| 15b | K     | A turn ends early. → `interrupted` is set, whether the stream errored or the signal aborted. Measured: an abort inside a tool rejects every promise on the result, one a moment later rejects none, and a mid-loop provider error is swallowed by `consumeStream` — so one dropped connection must not write two different-looking documents. A finished turn is **not** marked, asserted separately.     | A broken turn that is silent on both sides of the wire                              |
+| 13b | L     | The model emits a write and a read in one step. → the write pauses and the read never runs.                                                                                                                                                                                                                                                                                                               | A write overtaking an unanswered question                                           |
 
 ## Document
 
@@ -76,12 +77,11 @@ regressions are prompt changes, not protocol changes.
 
 ## What it does not check, and should
 
-Listed because the absence is otherwise invisible. An audit found all three
+Listed because the absence is otherwise invisible. An audit found three of these
 after the rewrite shipped; the suite did not, and the reason was not the number
-of tests but which failures were imagined.
+of tests but which failures were imagined. SHO-546 has since been closed and
+moved into row 15.
 
-- **A tool succeeds and the turn then fails.** Row 15 covers the resume path
-  only. The ordinary path drops the earned card (SHO-546).
 - **A reply is lost after the write committed.** Retrying mints a new
   `commandId` and writes again; retrying an answer gets `gone` and no document
   (SHO-547).
@@ -90,7 +90,9 @@ of tests but which failures were imagined.
 
 A row here that names a class must say which member it tests. Row 15 said "a
 write committed, then generation fails" and tested one of the two ways that
-happens, which is why nobody went looking for the other.
+happens, which is why nobody went looking for the other. It now names both, and
+row 15b names the third thing that turned out to be hiding behind the same
+sentence: the turn that ends early without anything throwing at all.
 
 ## What each level established that the one below could not
 

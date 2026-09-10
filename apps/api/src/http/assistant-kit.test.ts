@@ -41,9 +41,21 @@ import type {
   ResolveAnswer,
 } from "./assistant-kit-http.js";
 
-/** The guard logs refusals; nothing here asserts on them. */
+/** The guard logs refusals; most tests here do not assert on them. */
 function silentLogger(): Logger {
   return pino({ level: "silent" });
+}
+
+/** For the one thing whose only output *is* a log line. */
+function capturingLogger(lines: string[]): Logger {
+  return pino(
+    { level: "warn" },
+    {
+      write: (line: string) => {
+        lines.push(line);
+      },
+    },
+  );
 }
 
 const USER = "user-1";
@@ -136,6 +148,7 @@ function harness(options?: {
   readonly session?: { user: { id: string } } | null;
   readonly resolveAnswer?: ResolveAnswer;
   readonly broken?: boolean;
+  readonly logger?: Logger;
   readonly pausing?: boolean;
   readonly tools?: ToolSet;
 }): Harness {
@@ -152,7 +165,7 @@ function harness(options?: {
           ])
         : stubTextModel("Готово.");
   const app = createAssistantKitApp({
-    logger: silentLogger(),
+    logger: options?.logger ?? silentLogger(),
     auth: {
       api: {
         getSession: () =>
@@ -421,6 +434,40 @@ describe("POST /assistant/kit/chat", () => {
     const texts = document.messages.flatMap((message) => message.parts);
     expect(texts[0]).toMatchObject({ kind: "text", status: "complete" });
     expect(texts.at(-1)).toMatchObject({ status: "error" });
+  });
+
+  /**
+   * A turn that broke is invisible everywhere else. The person's request may
+   * have been aborted, so no response reaches them; and a provider error after
+   * the first step is swallowed by the SDK rather than thrown, so the server
+   * sees an ordinary result. The log line is the only trace, which makes it the
+   * thing to test.
+   */
+  it("names a turn that did not finish in the log", async () => {
+    const lines: string[] = [];
+    const { app } = harness({ broken: true, logger: capturingLogger(lines) });
+
+    await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody());
+
+    const line = lines.find((entry) =>
+      entry.includes("assistant turn did not finish"),
+    );
+    expect(line, lines.join(" | ")).toBeDefined();
+    expect(JSON.parse(line ?? "{}")).toMatchObject({
+      cards_written: 0,
+      history_kept: false,
+    });
+  });
+
+  it("says nothing about a turn that finished", async () => {
+    const lines: string[] = [];
+    const { app } = harness({ logger: capturingLogger(lines) });
+
+    await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody());
+
+    expect(
+      lines.filter((entry) => entry.includes("assistant turn did not finish")),
+    ).toEqual([]);
   });
 
   it("does nothing for a client that has already gone", async () => {

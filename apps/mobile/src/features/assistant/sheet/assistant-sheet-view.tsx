@@ -80,6 +80,8 @@ export function AssistantSheetView(model: AssistantSheetViewModel) {
         waitIntervalMs={copy.waitIntervalMs}
         waitLabel={copy.waitLabel}
         surfaces={item.surfaces}
+        failed={item.failed}
+        failedLabel={copy.turnInterrupted}
         onOpenHref={model.openHref}
         interaction={item.interaction}
         applying={model.busy}

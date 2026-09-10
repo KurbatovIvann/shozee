@@ -31,6 +31,7 @@ import type { AssistantKitTurnOk } from "./assistant-kit-chat.js";
 import {
   goneResponse,
   json,
+  logInterruptedTurn,
   readJson,
   requireCaller,
   toolContext,
@@ -297,6 +298,12 @@ export async function handleAssistantKitAnswer(
     abortSignal: c.req.raw.signal,
   });
 
+  logInterruptedTurn(runtime, {
+    requestId,
+    turn,
+    // The replayed continuation, which `continueHostTurn` built from the claim.
+    priorMessages: claimed.record.continuation.messages.length,
+  });
   await history.save(scope, turn.messages);
 
   const payload: AssistantKitTurnOk = {

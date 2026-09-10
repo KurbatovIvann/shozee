@@ -11,6 +11,7 @@ import type {
   AssistantKit,
   ChatDocument,
   HostTurnOptions,
+  HostTurnResult,
   LanguageModel,
   ModelMessage,
   PauseScope,
@@ -91,6 +92,41 @@ export interface AssistantTurnPrompt {
   readonly providerOptions?: NonNullable<
     HostTurnOptions<never>["providerOptions"]
   >;
+}
+
+/**
+ * A turn that ended before it finished, named in the log.
+ *
+ * Otherwise this is silent on both sides. The person's request was aborted, so
+ * no response reaches them to say so; and a provider error after the first step
+ * is swallowed by `consumeStream`, so the server sees an ordinary result with
+ * an empty reply. The one thing that would have made it visible — an exception
+ * — is exactly what does not happen.
+ *
+ * Shape only. How many cards were written says whether something was committed
+ * without an explanation, and whether history survived says whether the model
+ * will remember it; neither carries a word the staff member typed.
+ */
+export function logInterruptedTurn(
+  runtime: AssistantKitRuntime,
+  fields: {
+    readonly requestId: string;
+    readonly turn: HostTurnResult;
+    readonly priorMessages: number;
+  },
+): void {
+  if (!fields.turn.interrupted) {
+    return;
+  }
+  runtime.logger.warn(
+    {
+      request_id: fields.requestId,
+      cards_written: fields.turn.parts.filter((part) => part.kind === "card")
+        .length,
+      history_kept: fields.turn.messages.length > fields.priorMessages,
+    },
+    "assistant turn did not finish",
+  );
 }
 
 /**

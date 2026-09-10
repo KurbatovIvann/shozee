@@ -22,6 +22,13 @@ export const AssistantMessageRow = memo(function AssistantMessageRow(props: {
   readonly waitIntervalMs: number;
   readonly waitLabel: string;
   readonly surfaces: readonly AssistantSurface[];
+  /**
+   * The turn ended before the assistant answered. Rendered under whatever it
+   * did produce, because the cards above are real: a card with no reply and no
+   * explanation is how a person decides to ask for the same order twice.
+   */
+  readonly failed: boolean;
+  readonly failedLabel: string;
   readonly onOpenHref: (href: string) => void;
   /** Present only while it is answerable. There is no closed-question card. */
   readonly interaction: AssistantInteraction | null;
@@ -64,6 +71,9 @@ export const AssistantMessageRow = memo(function AssistantMessageRow(props: {
             </AssistantTurnResult>
           ))
         : null}
+      {!props.waiting && props.failed ? (
+        <Text style={styles.failedNote}>{props.failedLabel}</Text>
+      ) : null}
       {!props.waiting && interaction !== null ? (
         <AssistantTurnResult>
           <InteractionCard
@@ -104,6 +114,12 @@ const styles = StyleSheet.create((theme) => ({
     paddingVertical: theme.spacing.sm + theme.spacing["2xs"],
     fontSize: theme.typography.sm.fontSize,
     lineHeight: theme.typography.sm.lineHeight,
+  },
+  failedNote: {
+    maxWidth: "100%",
+    color: theme.colors.mutedForeground,
+    fontSize: theme.typography.xs.fontSize,
+    lineHeight: theme.typography.xs.lineHeight,
   },
   assistantBubble: {
     maxWidth: "100%",

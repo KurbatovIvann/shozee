@@ -21,6 +21,7 @@ import { z } from "zod";
 import {
   goneResponse,
   json,
+  logInterruptedTurn,
   readJson,
   requireCaller,
   toolContext,
@@ -155,6 +156,11 @@ export async function handleAssistantKitChat(
     );
   }
 
+  logInterruptedTurn(runtime, {
+    requestId,
+    turn,
+    priorMessages: messages.length,
+  });
   await history.save(scope, turn.messages);
 
   const payload: AssistantKitTurnOk = {

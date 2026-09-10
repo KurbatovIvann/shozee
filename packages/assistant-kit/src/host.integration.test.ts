@@ -16,6 +16,7 @@ import { createAssistantKit } from "./kit.js";
 import type { ToolOutcome } from "./outcome.js";
 import {
   stubModel,
+  stubModelFailingAfter,
   stubTextStep,
   stubToolCallStep,
   testDeps,
@@ -292,6 +293,163 @@ describe("a write does not overtake an unanswered question", () => {
     expect(turn.kind).toBe("paused");
     expect(s.calls.make).toBe(1);
     expect(s.calls.list).toBe(0);
+  });
+});
+
+/**
+ * SHO-546. A tool wrote to the domain, and then the turn did not finish.
+ *
+ * The write stands — nothing here rolls a domain action back — so the only
+ * question is whether the person is told. The card is the one part that says
+ * "this happened", and it used to be dropped on the way out.
+ *
+ * The two ways a turn ends early are different code paths, because the SDK
+ * treats them differently: an abort rejects every promise on the result, and a
+ * provider failure after a step has finished rejects none of them.
+ */
+describe("a turn that breaks after a tool has written", () => {
+  /** Step one calls the tool that produces a card; step two never arrives. */
+  const oneCardThenNothing = () =>
+    stubToolCallStep("toolu_list", "thing_list", { limit: 5 });
+
+  it("keeps the card when the provider fails mid-loop, and says the turn broke", async () => {
+    const s = slice();
+
+    const turn = await firstTurn(
+      s,
+      stubModelFailingAfter([oneCardThenNothing()]),
+    );
+
+    expect(turn.interrupted).toBe(true);
+    expect(s.calls.list).toBe(1);
+
+    const parts = (await s.kit.document.read(SCOPE)).messages.flatMap(
+      (message) => message.parts,
+    );
+    expect(
+      parts.filter((part) => part.kind === "card").map((part) => part.cardId),
+    ).toEqual(["card-list"]);
+    // Marked, not presented as a reply: an empty `complete` text would read as
+    // the assistant having nothing to say about an order it had just created.
+    expect(
+      parts.filter((part) => part.kind === "text").map((part) => part.status),
+    ).toEqual(["error"]);
+
+    // This path keeps its memory: the step that ran did finish.
+    expect(JSON.stringify(turn.messages)).toContain("toolu_list");
+  });
+
+  it("keeps the card when the request is aborted inside the tool", async () => {
+    const s = slice();
+    const controller = new AbortController();
+    const aborting = {
+      thing_list: tool({
+        description: "list them",
+        inputSchema: z.object({ limit: z.number() }),
+        execute: (): ToolOutcome => {
+          s.calls.list += 1;
+          // The phone went into the background while the write was running.
+          controller.abort();
+          return {
+            kind: "ok",
+            result: { rows: 2 },
+            card: {
+              cardId: "card-list",
+              type: "collection",
+              payload: { rows: 2 },
+            },
+          };
+        },
+      }),
+    };
+
+    const turn = await runHostTurn({
+      kit: s.kit,
+      conversationId: CONVERSATION,
+      bind: BIND,
+      messageId: FIRST_MESSAGE,
+      model: stubModel([oneCardThenNothing(), stubTextStep("не встигне")]),
+      messages: [{ role: "user", content: "list them" }],
+      tools: aborting,
+      abortSignal: controller.signal,
+    });
+
+    expect(turn.interrupted).toBe(true);
+    expect(s.calls.list).toBe(1);
+
+    const parts = (await s.kit.document.read(SCOPE)).messages.flatMap(
+      (message) => message.parts,
+    );
+    expect(
+      parts.filter((part) => part.kind === "card").map((part) => part.cardId),
+    ).toEqual(["card-list"]);
+    expect(
+      parts.filter((part) => part.kind === "text").map((part) => part.status),
+    ).toEqual(["error"]);
+
+    // And the decision about history, asserted so it stays a decision: the step
+    // never finished, so there is nothing to keep. The model will not remember
+    // this call. SHO-547 is what stops a repeat writing twice.
+    expect(turn.messages).toEqual([{ role: "user", content: "list them" }]);
+  });
+
+  /**
+   * The SDK reports this one as an ordinary finished result — the abort landed
+   * where there was nothing in flight to reject. The host still calls it
+   * interrupted, because the person's connection dropped either way.
+   */
+  it("marks an abort that lands between steps, and keeps the finished step", async () => {
+    const s = slice();
+    const controller = new AbortController();
+
+    const turn = await runHostTurn({
+      kit: s.kit,
+      conversationId: CONVERSATION,
+      bind: BIND,
+      messageId: FIRST_MESSAGE,
+      model: stubModelFailingAfter([oneCardThenNothing()], {
+        before: () => {
+          controller.abort();
+        },
+      }),
+      messages: [{ role: "user", content: "list them" }],
+      tools: s.tools,
+      abortSignal: controller.signal,
+    });
+
+    expect(turn.interrupted).toBe(true);
+    expect(JSON.stringify(turn.messages)).toContain("toolu_list");
+    expect(
+      (await s.kit.document.read(SCOPE)).messages
+        .flatMap((message) => message.parts)
+        .filter((part) => part.kind === "card"),
+    ).toHaveLength(1);
+  });
+
+  /**
+   * The negative. `onError` is what makes a broken turn visible, and a callback
+   * that fires on a clean run would mark every reply as failed.
+   */
+  it("does not mark a turn that finished", async () => {
+    const s = slice();
+
+    const turn = await runHostTurn({
+      kit: s.kit,
+      conversationId: CONVERSATION,
+      bind: BIND,
+      messageId: FIRST_MESSAGE,
+      model: stubModel([oneCardThenNothing(), stubTextStep("Готово.")]),
+      messages: [{ role: "user", content: "list them" }],
+      tools: s.tools,
+    });
+
+    expect(turn.interrupted).toBe(false);
+    expect(
+      (await s.kit.document.read(SCOPE)).messages
+        .flatMap((message) => message.parts)
+        .filter((part) => part.kind === "text")
+        .map((part) => part.status),
+    ).toEqual(["complete"]);
   });
 });
 

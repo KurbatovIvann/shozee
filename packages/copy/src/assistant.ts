@@ -115,6 +115,16 @@ export type AssistantCopy = {
   readonly choiceRetry: string;
   readonly choiceSelecting: string;
   readonly waitLabel: string;
+  /**
+   * Shown under a turn that ended before the assistant answered — the network
+   * dropped, or the provider broke mid-reply.
+   *
+   * It says the work stands, because it does: anything a tool committed is in
+   * the cards above this line. Without that sentence a person who sees a card
+   * and no reply has no way to know whether the order was created, and asking
+   * again is how one order becomes two.
+   */
+  readonly turnInterrupted: string;
   readonly waitIntervalMs: number;
   readonly waitLines: readonly [string, string, string, string, string];
   readonly jobs: AssistantJobsCopy;
@@ -239,6 +249,7 @@ const assistantEn: AssistantCopy = {
   choiceRetry: "Continue",
   choiceSelecting: "Selecting…",
   waitLabel: "Shozik is thinking",
+  turnInterrupted: "The reply was cut short. Anything shown above was saved.",
   waitIntervalMs: 2000,
   waitLines: [
     "Digging through the data",
@@ -314,6 +325,7 @@ const assistantUk: AssistantCopy = {
   choiceRetry: "Продовжити",
   choiceSelecting: "Обираю…",
   waitLabel: "Шозік думає",
+  turnInterrupted: "Відповідь обірвалася. Те, що вище, вже збережено.",
   waitIntervalMs: 2000,
   waitLines: [
     "Копаюсь у даних",
