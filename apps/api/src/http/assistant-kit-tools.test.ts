@@ -16,12 +16,26 @@ import {
   staffAssistantTools,
   type ActionToolExecute,
 } from "@showzy/ai";
-import type { ToolOutcome, ToolSet } from "@showzy/assistant-kit";
+import {
+  createAssistantKit,
+  runHostTurn,
+  type ToolOutcome,
+  type ToolSet,
+} from "@showzy/assistant-kit";
+import {
+  stubModel,
+  stubTextStep,
+  stubToolCallStep,
+  testDeps,
+} from "@showzy/assistant-kit/testing";
 import { ConflictError, NotFoundError } from "@showzy/core/errors";
 import { describe, expect, it } from "vitest";
 
 import { createActionRegistry } from "../composition.js";
-import type { ChoiceSecret } from "./assistant-interactions.js";
+import {
+  assistantInteractions,
+  type ChoiceSecret,
+} from "./assistant-interactions.js";
 import { createResolveAnswer, withChosenId } from "./assistant-kit-resolve.js";
 import { assistantKitIdempotencyKey } from "./assistant-kit-runtime.js";
 import {
@@ -131,6 +145,54 @@ const CREATE_BY_QUERY = {
   items: [{ productQuery: "Наполеон", quantityDecimal: "3" }],
 };
 
+const UAH_12000 = [{ currency: "UAH", grossAmountMinor: "12000" }];
+const NEW_BUCKET = {
+  identity: { kind: "status", status: "new" },
+  label: "new",
+  orderCount: 1,
+  grossByCurrency: UAH_12000,
+};
+
+/** `orders.list` as the domain answers it: a page, or a status rollup. */
+const ordersListExecute: ActionToolExecute = (_action, input) =>
+  Promise.resolve(
+    (input as { readonly kind?: unknown }).kind === "aggregate"
+      ? {
+          status: "completed",
+          kind: "aggregate",
+          orderCount: 1,
+          grossByCurrency: UAH_12000,
+          buckets: [NEW_BUCKET],
+          statusBuckets: [NEW_BUCKET],
+          bucketsTruncated: false,
+          customerMatchTruncated: false,
+        }
+      : {
+          status: "completed",
+          kind: "page.summary",
+          items: [
+            {
+              orderId: ORDER_ID,
+              orderNumber: "CO-1",
+              customer: {
+                nameSnapshot: "Катя Самбука",
+                linkedCustomerId: null,
+              },
+              status: "new",
+              itemCount: 1,
+              totalGrossMinor: "12000",
+              currency: "UAH",
+              createdAt: "2026-09-10T09:00:00.000Z",
+            },
+          ],
+          nextCursor: null,
+          customerMatchTruncated: false,
+        },
+  );
+
+/** What the rollup above becomes on a list card. */
+const NEW_CHIPS = [{ status: "new", orderCount: 1 }];
+
 describe("the façades still carry their own descriptions", () => {
   it("keeps the learned wording rather than restating the schema", () => {
     const set = tools(() => Promise.resolve({}));
@@ -163,19 +225,13 @@ describe("a value becomes ok, with the card the surface registry composes", () =
     expect(outcome.card?.cardId).toBe(`order-entity:${ORDER_ID}`);
   });
 
-  it("gives a page and a rollup the same card id, so the second updates the first", async () => {
-    const set = tools((action) =>
-      Promise.resolve(
-        action.endsWith("list")
-          ? {
-              status: "completed",
-              kind: "page.summary",
-              rows: [],
-              hasMore: false,
-            }
-          : { status: "completed" },
-      ),
-    );
+  /**
+   * This used to read `if (page.card !== undefined && counts.card !== undefined)`
+   * before comparing ids — and the rollup it was fed composed to nothing, so the
+   * comparison never ran. Both cards are asserted to exist first now.
+   */
+  it("gives a page and the rollup after it the same card id, so the second updates the first", async () => {
+    const set = tools(ordersListExecute);
 
     const page = await run(set, ORDERS_LIST_PAGE_TOOL_NAME, { limit: 5 });
     const counts = await run(
@@ -185,13 +241,86 @@ describe("a value becomes ok, with the card the surface registry composes", () =
       "toolu_2",
     );
 
-    expect(page.kind).toBe("ok");
-    expect(counts.kind).toBe("ok");
+    expect(page).toMatchObject({ kind: "ok", card: { type: "orders-list" } });
+    expect(counts).toMatchObject({ kind: "ok", card: { type: "orders-list" } });
     if (page.kind !== "ok" || counts.kind !== "ok") return;
-    // Both produced a card; the ids match, so the document holds one list card.
-    if (page.card !== undefined && counts.card !== undefined) {
-      expect(counts.card.cardId).toBe(page.card.cardId);
-    }
+    expect(counts.card?.cardId).toBe(page.card?.cardId);
+    expect(counts.card?.payload).toMatchObject({ chips: NEW_CHIPS });
+  });
+
+  it("gives a rollup and the page after it the same card id, so the list takes the aggregate's place", async () => {
+    const set = tools(ordersListExecute);
+
+    const counts = await run(set, ORDERS_LIST_COUNTS_TOOL_NAME, {
+      groupBy: "status",
+    });
+    const page = await run(
+      set,
+      ORDERS_LIST_PAGE_TOOL_NAME,
+      { limit: 5 },
+      "toolu_2",
+    );
+
+    expect(counts).toMatchObject({
+      kind: "ok",
+      card: { type: "orders-aggregate" },
+    });
+    expect(page).toMatchObject({ kind: "ok", card: { type: "orders-list" } });
+    if (page.kind !== "ok" || counts.kind !== "ok") return;
+    expect(page.card?.cardId).toBe(counts.card?.cardId);
+  });
+});
+
+/**
+ * SHO-551 over the production pieces end to end: the façades, the composer, the
+ * kit's loop and its document writer. Two calls that compose into one surface
+ * must leave one card in the message, not one per call.
+ */
+describe("two calls that compose into one surface leave one card", () => {
+  const CONVERSATION = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  const MESSAGE = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+  const PAGE_CALL = [ORDERS_LIST_PAGE_TOOL_NAME, { limit: 5 }] as const;
+  const COUNTS_CALL = [
+    ORDERS_LIST_COUNTS_TOOL_NAME,
+    { groupBy: "status" },
+  ] as const;
+
+  async function turnOf(calls: readonly (readonly [string, unknown])[]) {
+    const kit = createAssistantKit(testDeps(assistantInteractions));
+    const scope = { conversationId: CONVERSATION, bind: "user-1:company-1" };
+    const turn = await runHostTurn({
+      kit,
+      ...scope,
+      messageId: MESSAGE,
+      model: stubModel([
+        ...calls.map(([name, input], index) =>
+          stubToolCallStep(`toolu_${String(index + 1)}`, name, input),
+        ),
+        stubTextStep("Ось замовлення."),
+      ]),
+      messages: [{ role: "user", content: "покажи замовлення" }],
+      tools: tools(ordersListExecute),
+    });
+    const cards = (await kit.document.read(scope)).messages
+      .flatMap((message) => message.parts)
+      .filter((part) => part.kind === "card");
+    return { turn, cards };
+  }
+
+  it.each([
+    ["a page, then its rollup", [PAGE_CALL, COUNTS_CALL]],
+    ["a rollup, then a page", [COUNTS_CALL, PAGE_CALL]],
+  ])("%s", async (_name, calls) => {
+    const { turn, cards } = await turnOf(calls);
+
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toMatchObject({
+      type: "orders-list",
+      revision: 2,
+      payload: { chips: NEW_CHIPS },
+    });
+    // What the turn reports is what a reload reads.
+    expect(turn.parts.filter((part) => part.kind === "card")).toEqual(cards);
   });
 });
 

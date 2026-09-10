@@ -59,9 +59,62 @@ describe("a reload returns what the live turn wrote", () => {
   });
 });
 
+/**
+ * SHO-551. The rule is the writer's, so no producer has to remember it: the
+ * previous design made it a second write kind, and nothing ever chose it.
+ */
 describe("a card updates in place", () => {
-  it("replaces by cardId instead of appending a second card", async () => {
+  it("replaces by cardId in a later write instead of appending a second card", async () => {
     const kit = newKit();
+
+    await kit.document.write(SCOPE, {
+      kind: "append",
+      messageId: MESSAGE,
+      role: "assistant",
+      parts: [card(1, 3), TEXT],
+    });
+    await kit.document.write(SCOPE, {
+      kind: "append",
+      messageId: MESSAGE,
+      role: "assistant",
+      parts: [card(1, 9)],
+    });
+
+    const document = await kit.document.read(SCOPE);
+    const parts = document.messages.flatMap((message) => message.parts);
+    const cards = parts.filter((part) => part.kind === "card");
+
+    expect(cards).toHaveLength(1);
+    expect(cards[0]?.revision).toBe(2);
+    expect(cards[0]?.payload).toEqual({ rows: 9 });
+    // Where it was first shown, not moved below the text that followed it.
+    expect(parts.map((part) => part.kind)).toEqual(["card", "text"]);
+  });
+
+  it("collapses the same cardId twice in one write", async () => {
+    const kit = newKit();
+
+    await kit.document.write(SCOPE, {
+      kind: "append",
+      messageId: MESSAGE,
+      role: "assistant",
+      parts: [card(1, 3), TEXT, card(1, 9)],
+    });
+
+    const parts = (await kit.document.read(SCOPE)).messages.flatMap(
+      (message) => message.parts,
+    );
+
+    expect(parts.map((part) => part.kind)).toEqual(["card", "text"]);
+    expect(parts.find((part) => part.kind === "card")).toMatchObject({
+      revision: 2,
+      payload: { rows: 9 },
+    });
+  });
+
+  it("leaves a card with the same id in another message alone", async () => {
+    const kit = newKit();
+    const later = "66666666-6666-4666-8666-666666666666";
 
     await kit.document.write(SCOPE, {
       kind: "append",
@@ -70,19 +123,22 @@ describe("a card updates in place", () => {
       parts: [card(1, 3)],
     });
     await kit.document.write(SCOPE, {
-      kind: "replace_card",
-      messageId: MESSAGE,
-      part: card(2, 9),
+      kind: "append",
+      messageId: later,
+      role: "assistant",
+      parts: [card(1, 9)],
     });
 
     const document = await kit.document.read(SCOPE);
-    const cards = document.messages
-      .flatMap((message) => message.parts)
-      .filter((part) => part.kind === "card");
 
-    expect(cards).toHaveLength(1);
-    expect(cards[0]?.revision).toBe(2);
-    expect(cards[0]?.payload).toEqual({ rows: 9 });
+    // A list shown in an earlier turn stays as it was shown then.
+    expect(
+      document.messages.map((message) =>
+        message.parts.map((part) =>
+          part.kind === "card" ? [part.revision, part.payload] : part.kind,
+        ),
+      ),
+    ).toEqual([[[1, { rows: 3 }]], [[1, { rows: 9 }]]]);
   });
 });
 

@@ -453,6 +453,99 @@ describe("a turn that breaks after a tool has written", () => {
   });
 });
 
+/**
+ * SHO-551. Two calls in one turn that show the same thing — a page and then the
+ * next one — produce a card under the same id twice. The document must hold one
+ * card, and the turn must report the one a reload will read.
+ */
+describe("a card written twice in a turn is one card", () => {
+  function growingList() {
+    let rows = 0;
+    return {
+      thing_list: tool({
+        description: "list them",
+        inputSchema: z.object({ limit: z.number() }),
+        execute: (input): ToolOutcome => {
+          rows += input.limit;
+          return {
+            kind: "ok",
+            result: { rows },
+            card: {
+              cardId: "card-list",
+              type: "collection",
+              payload: { rows },
+            },
+          };
+        },
+      }),
+    };
+  }
+
+  it("keeps the later payload in the first card's place", async () => {
+    const s = slice();
+
+    const turn = await runHostTurn({
+      kit: s.kit,
+      conversationId: CONVERSATION,
+      bind: BIND,
+      messageId: FIRST_MESSAGE,
+      model: stubModel([
+        stubToolCallStep("toolu_page_1", "thing_list", { limit: 5 }),
+        stubToolCallStep("toolu_page_2", "thing_list", { limit: 5 }),
+        stubTextStep("Ось і наступні."),
+      ]),
+      messages: [{ role: "user", content: "list them, and the next ones" }],
+      tools: growingList(),
+    });
+
+    const parts = (await s.kit.document.read(SCOPE)).messages.flatMap(
+      (message) => message.parts,
+    );
+    expect(parts.map((part) => part.kind)).toEqual(["card", "text"]);
+    expect(parts[0]).toMatchObject({ revision: 2, payload: { rows: 10 } });
+    // Live and reload agree on how many cards there are, not only on order.
+    expect(turn.parts).toEqual(parts);
+  });
+
+  it("updates the card an answer earned instead of adding a second", async () => {
+    const s = slice();
+    const first = await firstTurn(s);
+    if (first.pause === null) throw new Error("expected a pause");
+    const claimed = await s.kit.claim({
+      ...SCOPE,
+      interactionId: first.pause.interactionId,
+      revision: first.pause.revision,
+      answer: { chose: "opt-b" },
+    });
+    if (claimed.kind !== "claimed") throw new Error("expected claimed");
+
+    // The earned card is stored before generation; the follow-up list call
+    // writes the same id in a second write to the same message.
+    const second = await continueHostTurn({
+      kit: s.kit,
+      conversationId: CONVERSATION,
+      bind: BIND,
+      messageId: SECOND_MESSAGE,
+      model: s.model,
+      tools: s.tools,
+      claimed,
+      resolved: {
+        kind: "ok",
+        result: { rows: 1 },
+        card: { cardId: "card-list", type: "collection", payload: { rows: 1 } },
+      },
+    });
+
+    const message = (await s.kit.document.read(SCOPE)).messages.find(
+      (candidate) => candidate.messageId === SECOND_MESSAGE,
+    );
+    const cards = message?.parts.filter((part) => part.kind === "card") ?? [];
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toMatchObject({ revision: 2, payload: { rows: 2 } });
+    expect(second.parts).toEqual(message?.parts);
+  });
+});
+
 describe("the pause store is the only place a pause lives", () => {
   it("keeps exactly one key for the conversation", async () => {
     const s = slice();

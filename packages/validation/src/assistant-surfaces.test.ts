@@ -22,6 +22,7 @@ import {
   assistantAggregateSummary,
   assistantCollectionDescriptor,
   assistantSurfaceHandoffHref,
+  assistantSurfaceSlot,
   assistantSurfacesFromToolResults,
   isAssistantSurfaceResultOutput,
   parseCustomersListSurface,
@@ -1074,6 +1075,35 @@ function searchOutput(
     ...extra,
   };
 }
+
+/**
+ * SHO-551. A slot is what a card is addressed by, so it has to name what the
+ * composer itself treats as one surface. Addressed by kind, a rollup followed
+ * by a page left the rollup's card beside the list that had absorbed it.
+ */
+describe("assistantSurfaceSlot", () => {
+  const PAGE = result(ORDERS_LIST_PAGE_TOOL, pageOutput([pageRow(ORDER_A)]));
+  const COUNTS = result(ORDERS_LIST_COUNTS_TOOL, countsOutput([]));
+
+  it("puts the list in the slot of the aggregate it supersedes", () => {
+    const [aggregate] = assistantSurfacesFromToolResults([COUNTS]);
+    const [list] = assistantSurfacesFromToolResults([COUNTS, PAGE]);
+
+    expect(aggregate?.kind).toBe("orders-aggregate");
+    expect(list?.kind).toBe("orders-list");
+    if (aggregate === undefined || list === undefined) return;
+    expect(assistantSurfaceSlot(list)).toBe(assistantSurfaceSlot(aggregate));
+  });
+
+  it("is never shared by two surfaces of one composition", () => {
+    // The other half of the pair above. If the composer ever returned a list
+    // and an aggregate side by side, one card would silently replace the other.
+    const surfaces = assistantSurfacesFromToolResults([COUNTS, PAGE]);
+    const slots = surfaces.map((surface) => assistantSurfaceSlot(surface));
+
+    expect(slots).toEqual(["orders"]);
+  });
+});
 
 describe("search-results surface (SHO-535)", () => {
   it("binds search.query / search_query and keeps an English promptLine", () => {

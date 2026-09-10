@@ -13,10 +13,9 @@ import type { z } from "zod";
 import type {
   ChatDocument,
   DocumentMessage,
-  DocumentPart,
   DocumentWrite,
 } from "./document.js";
-import { chatDocumentSchema } from "./document.js";
+import { appendParts, chatDocumentSchema } from "./document.js";
 import { providerToolCallIdSchema } from "./ids.js";
 import type {
   AnyInteraction,
@@ -435,28 +434,14 @@ export function createAssistantKit<T extends AnyTypes>(
         );
         const existing: DocumentMessage | undefined =
           index === -1 ? undefined : messages[index];
-        const parts: DocumentPart[] =
-          existing === undefined ? [] : [...existing.parts];
-
-        if (write.kind === "append") {
-          parts.push(...write.parts);
-        } else {
-          const at = parts.findIndex(
-            (part) => part.kind === "card" && part.cardId === write.part.cardId,
-          );
-          // Same cardId is an update. A second card is how one record showed twice.
-          if (at === -1) {
-            parts.push(write.part);
-          } else {
-            parts[at] = write.part;
-          }
-        }
+        // Same cardId in the same message is an update, never a second card.
+        const parts = appendParts(existing?.parts ?? [], write.parts);
 
         const next: DocumentMessage =
           existing === undefined
             ? {
                 messageId: write.messageId,
-                role: write.kind === "append" ? write.role : "assistant",
+                role: write.role,
                 createdAt: deps.clock.now().toISOString(),
                 parts,
               }

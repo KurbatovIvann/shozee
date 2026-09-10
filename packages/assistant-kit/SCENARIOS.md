@@ -61,11 +61,11 @@ argue with history rather than with taste.
 
 ## Document
 
-| #   | Level | Given / When / Then                                                                                                                                                                                                    | Prevents                                  |
-| --- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
-| 16  | K + L | A turn's parts are appended live. → `document.read` afterwards returns the **same parts in the same order**. Live and reload are the same bytes, not two derivations. Also asserted against a real turn's own `parts`. | Live and reload composing different cards |
-| 17  | K     | `replace_card` with the same `cardId` and a higher revision. → the document holds one surface part for that id, updated — not two.                                                                                     | A second card per pagination step         |
-| 18  | K     | A `text` part streams then settles. → `status` moves `streaming` → `complete`; a partial text left by a crash reads `error` and is never presented as final.                                                           | Partial generation shown as the answer    |
+| #   | Level | Given / When / Then                                                                                                                                                                                                                                                          | Prevents                                    |
+| --- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| 16  | K + L | A turn's parts are appended live. → `document.read` afterwards returns the **same parts in the same order**. Live and reload are the same bytes, not two derivations. Also asserted against a real turn's own `parts`.                                                       | Live and reload composing different cards   |
+| 17  | K + L | `append` a card whose `cardId` the message already holds, in a later write or the same one. → one card for that id, where it was first shown, with the new payload and a raised revision; a turn's own `parts` say the same. The same id in another message is another card. | A second card per pagination step (SHO-551) |
+| 18  | K     | A `text` part streams then settles. → `status` moves `streaming` → `complete`; a partial text left by a crash reads `error` and is never presented as final.                                                                                                                 | Partial generation shown as the answer      |
 
 ## Boundary
 

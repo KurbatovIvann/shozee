@@ -22,7 +22,7 @@ import {
 } from "ai";
 import type { z } from "zod";
 
-import type { DocumentPart } from "./document.js";
+import { appendParts, type DocumentPart } from "./document.js";
 import { providerToolCallId } from "./ids.js";
 import type { InteractionType } from "./interaction.js";
 import type { AssistantKit } from "./kit.js";
@@ -148,6 +148,7 @@ export interface HostTurnResult {
   readonly pause: PublicPause | null;
   /** Present when a tool asked to pause on a kind or payload the registry refused. */
   readonly rejection?: string;
+  /** As the document stores them: one card per `cardId`, however often written. */
   readonly parts: readonly DocumentPart[];
   /** Provider history after this turn — the continuation when paused. */
   readonly messages: readonly ModelMessage[];
@@ -249,7 +250,7 @@ async function runLoop<T extends AnyTypes>(
     return {
       kind: "settled",
       pause: null,
-      parts: [...commitFirst, ...earned, failed],
+      parts: appendParts([], [...commitFirst, ...earned, failed]),
       // The steps that finished, when any did. An abort inside a tool leaves
       // none — the step had not finished — and then the model's memory of this
       // turn is genuinely gone even though the write stands. That is the seam a
@@ -340,7 +341,7 @@ async function runLoop<T extends AnyTypes>(
           : "settled",
     pause,
     ...(rejection !== undefined ? { rejection } : {}),
-    parts: [...commitFirst, ...parts],
+    parts: appendParts([], [...commitFirst, ...parts]),
     messages,
     interrupted,
   };

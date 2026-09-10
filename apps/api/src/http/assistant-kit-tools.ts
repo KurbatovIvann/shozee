@@ -22,6 +22,7 @@ import { catalogPickerConflictExtrasFromError } from "@showzy/ai";
 import type { CardRef, ToolOutcome, ToolSet } from "@showzy/assistant-kit";
 import { CoreError } from "@showzy/core/errors";
 import {
+  assistantSurfaceSlot,
   assistantSurfacesFromToolResults,
   type AssistantSurfaceData,
   type AssistantSurfaceToolResult,
@@ -42,18 +43,15 @@ export interface AssistantToolLogger {
 }
 
 /**
- * One card per surface, addressed by what the surface is.
+ * The card this call produced or changed, addressed by the slot its surface
+ * fills.
  *
- * A page and a rollup compose into a single `orders-list`; writing it under the
- * same id means the second tool call **updates** that card instead of adding a
- * second one next to it.
+ * A page and a rollup compose into a single `orders-list`, so the second call
+ * yields the same slot with a changed surface. The document keeps one card per
+ * id in a message, so that write **updates** the first card instead of adding a
+ * second beside it (SHO-551). The id is the composer's own slot rather than one
+ * decided here, so the two cannot drift apart on what counts as the same card.
  */
-function cardIdFor(surface: AssistantSurfaceData): string {
-  return surface.kind === "order-entity"
-    ? `order-entity:${surface.orderId}`
-    : surface.kind;
-}
-
 function cardFor(
   before: readonly AssistantSurfaceData[],
   after: readonly AssistantSurfaceData[],
@@ -64,7 +62,11 @@ function cardFor(
   const fresh = after.find((surface) => !seen.has(JSON.stringify(surface)));
   return fresh === undefined
     ? undefined
-    : { cardId: cardIdFor(fresh), type: fresh.kind, payload: fresh };
+    : {
+        cardId: assistantSurfaceSlot(fresh),
+        type: fresh.kind,
+        payload: fresh,
+      };
 }
 
 /**

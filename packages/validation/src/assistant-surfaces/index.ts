@@ -1,4 +1,5 @@
 export {
+  assistantSurfaceSlot,
   assistantSurfacesFromToolResults,
   type AssistantSurfaceData,
   type AssistantSurfaceKind,

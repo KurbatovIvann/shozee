@@ -7,7 +7,9 @@
  * `hydratable` flag whose only reader had been deleted. And this rewrite shipped
  * two more: `replace_card`, implemented in the kit and produced by nobody, and
  * the `confirmation` interaction, registered and rendered end to end with no
- * server path that opens one.
+ * server path that opens one. `replace_card` is gone (SHO-551): what it
+ * promised became a rule the writer enforces on every append, so there is no
+ * second kind left for a producer to forget.
  *
  * A registry makes declaring cheap and wiring separate, so the gap between them
  * is invisible until something tries to use it. This closes the gap by making it
@@ -41,9 +43,6 @@ const UNWIRED: Readonly<Record<string, string>> = {
   // Registered, prompt schema shared, card rendered — and nothing opens one.
   // The resolver would also answer `no tool named undefined` if it did.
   confirmation: "SHO-553",
-  // Implemented in `create-kit.ts` with the right comment, produced by nobody:
-  // the host appends every card, so one record can render twice.
-  replace_card: "SHO-551",
 };
 
 function sourcesUnder(dir: string): string[] {
@@ -101,16 +100,17 @@ describe("every declared kind has something that produces it", () => {
   });
 
   /**
-   * The ways a turn may change the stored document. `replace_card` is the one
-   * that makes "the same card id is an update" true; unproduced, that sentence
-   * is a comment and a record can show twice.
+   * The ways a turn may change the stored document. There is one: "the same
+   * card id is an update" is a rule of `append`, not a second kind a producer
+   * has to remember to choose — that second kind was produced by nobody, and a
+   * record showed twice (SHO-551). A new kind here needs a producer too.
    */
   it("document write kinds are produced by something, or named as unwired", () => {
     const declaration = readFileSync(path.join(kitSrc, "document.ts"), "utf8");
     const kinds = [
       ...declaration.matchAll(/readonly kind:\s*"([a-z_]+)"/g),
     ].map((match) => match[1] ?? "");
-    expect(kinds.toSorted()).toEqual(["append", "replace_card"]);
+    expect(kinds.toSorted()).toEqual(["append"]);
 
     const files = sourcesUnder(kitSrc).filter(
       (file) => !file.endsWith(`${path.sep}document.ts`),

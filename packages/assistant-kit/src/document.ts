@@ -71,20 +71,56 @@ export const chatDocumentSchema = z.strictObject({
 export type ChatDocument = z.output<typeof chatDocumentSchema>;
 
 /**
- * A surface part is addressed by `cardId`. Writing the same `cardId` with a
- * higher revision replaces it; it never appends a second card. This is what
- * makes "next page of the list" an update rather than a new entity.
+ * The one way a turn changes the stored document: parts added to a message.
+ *
+ * A card is addressed by `cardId` **within its message**. Adding a card whose
+ * id the message already holds replaces that card where it stands and raises
+ * its revision; it never puts a second card beside it. That is what makes the
+ * next page of a list, or a rollup folded into it, an update rather than a
+ * second record. Another message is another scope: a list shown in an earlier
+ * turn stays as it was shown.
+ *
+ * The rule is enforced here, by the writer, rather than chosen by whoever
+ * produces a card. It used to be a second write kind, `replace_card`, that a
+ * producer had to remember to pick — none did, and one list rendered as two
+ * cards (SHO-551).
  */
-export type DocumentWrite =
-  | {
-      readonly kind: "append";
-      readonly messageId: string;
-      /** Needed because append may be the write that creates the message. */
-      readonly role: DocumentMessage["role"];
-      readonly parts: readonly DocumentPart[];
+export interface DocumentWrite {
+  readonly kind: "append";
+  readonly messageId: string;
+  /** Needed because append may be the write that creates the message. */
+  readonly role: DocumentMessage["role"];
+  readonly parts: readonly DocumentPart[];
+}
+
+/**
+ * `incoming` added to a message that already holds `existing`, by the rule on
+ * `DocumentWrite`. A card's revision counts its writes in the message, so the
+ * revision a replacement arrives with is not the one it is stored with.
+ *
+ * Shared with the host, which reports the parts of a turn: a report that
+ * applied its own idea of "the same card" would be a second derivation, and
+ * live and reload would disagree about how many cards there are.
+ */
+export function appendParts(
+  existing: readonly DocumentPart[],
+  incoming: readonly DocumentPart[],
+): DocumentPart[] {
+  const parts = [...existing];
+  for (const part of incoming) {
+    if (part.kind !== "card") {
+      parts.push(part);
+      continue;
     }
-  | {
-      readonly kind: "replace_card";
-      readonly messageId: string;
-      readonly part: Extract<DocumentPart, { kind: "card" }>;
-    };
+    const at = parts.findIndex(
+      (held) => held.kind === "card" && held.cardId === part.cardId,
+    );
+    const held = parts[at];
+    if (held?.kind !== "card") {
+      parts.push(part);
+      continue;
+    }
+    parts[at] = { ...part, revision: held.revision + 1 };
+  }
+  return parts;
+}
