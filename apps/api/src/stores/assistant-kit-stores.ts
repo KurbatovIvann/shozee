@@ -36,6 +36,19 @@ end
 return 0
 `;
 
+/**
+ * `DEL key` only if it still holds what we put there.
+ *
+ * The releasing half of a lease. A plain `DEL` would let a holder whose ttl had
+ * already run out remove the lock a later turn has since taken.
+ */
+const DELETE_IF_EQUALS_LUA = `
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('DEL', KEYS[1])
+end
+return 0
+`;
+
 export const ASSISTANT_KIT_KEY_PREFIX = "kit:";
 
 export function assistantKitPauseKey(key: string): string {
@@ -69,6 +82,15 @@ export function createRedisAssistantKitPauseStore(
         assistantKitPauseKey(key),
         expected,
         next,
+      );
+      return result === 1;
+    },
+    async deleteIfEquals(key, expected) {
+      const result = await redis.eval(
+        DELETE_IF_EQUALS_LUA,
+        1,
+        assistantKitPauseKey(key),
+        expected,
       );
       return result === 1;
     },

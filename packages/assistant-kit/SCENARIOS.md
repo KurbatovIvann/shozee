@@ -52,6 +52,13 @@ argue with history rather than with taste.
 | 15b | K     | A turn ends early. → `interrupted` is set, whether the stream errored or the signal aborted. Measured: an abort inside a tool rejects every promise on the result, one a moment later rejects none, and a mid-loop provider error is swallowed by `consumeStream` — so one dropped connection must not write two different-looking documents. A finished turn is **not** marked, asserted separately.     | A broken turn that is silent on both sides of the wire                              |
 | 13b | L     | The model emits a write and a read in one step. → the write pauses and the read never runs.                                                                                                                                                                                                                                                                                                               | A write overtaking an unanswered question                                           |
 
+## Turn lease
+
+| #   | Level | Given / When / Then                                                                                                                                                                                                                                    | Prevents                                                      |
+| --- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
+| 15c | K     | `begin` on a conversation that has one running → `busy`. `end` frees it. A second conversation is unaffected.                                                                                                                                          | Two turns interleaving read-modify-write on one document      |
+| 15d | K     | `end` with the token of a lease that has already lapsed → `false`, and the lock the current holder took is left standing. The caller is told, because a lapsed lease means two turns may already be running and only the caller can say that out loud. | A cleanup releasing someone else's lock and causing the fault |
+
 ## Document
 
 | #   | Level | Given / When / Then                                                                                                                                                                                                    | Prevents                                  |
@@ -79,11 +86,10 @@ regressions are prompt changes, not protocol changes.
 
 Listed because the absence is otherwise invisible. An audit found three of these
 after the rewrite shipped; the suite did not, and the reason was not the number
-of tests but which failures were imagined. SHO-546 and SHO-547 have since been
-closed and moved into rows 15 and 34.
-
-- **Two turns on one conversation at once.** The document is read-modify-write
-  with no compare-and-set and nothing serialises turns (SHO-548).
+of tests but which failures were imagined. All three — SHO-546, SHO-547 and
+SHO-548 — have since been closed and moved into rows 15, 34 and 34b, so this
+section is empty. It stays because the next absence goes here, and because a
+heading nobody has to invent is one that gets used.
 
 A row here that names a class must say which member it tests. Row 15 said "a
 write committed, then generation fails" and tested one of the two ways that
@@ -139,17 +145,18 @@ Three checks became possible only after the vocabulary moved out:
 Three routes now, one factory, all on injected auth / stores / history /
 provider. No database, no live model.
 
-| #   | Given / When / Then                                                                                                                                                                                                                                     |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 27  | `POST chat` runs a turn, stores the person's words **before** the model runs, and saves the provider history it produced. A failed generation still shows what was asked.                                                                               |
-| 28  | `POST chat` with an extra `messages` key is a 400. A client never supplies the model transcript.                                                                                                                                                        |
-| 29  | `POST chat` while a question is unanswered → 409 `interaction_open` with the current pause. A visible limitation instead of a draft that silently disappears.                                                                                           |
-| 30  | `POST chat` for a conversation owned by someone else → 410, indistinguishable from one that does not exist.                                                                                                                                             |
-| 31  | `GET messages` returns exactly the parts the live turn returned, byte for byte, plus the open pause from the pause store.                                                                                                                               |
-| 32  | `GET messages` for another tenant returns an **empty document**, equal to what a conversation that does not exist returns.                                                                                                                              |
-| 33  | Full trip over HTTP: chat pauses → choice resolves → reload shows the interaction part and exactly one card, with no open pause left.                                                                                                                   |
-| 34  | Two identical sends → the write runs once and the retry is answered with the conversation. Also while the first is still in flight, and for a retried answer, which the exactly-once claim would otherwise refuse with `410` and no document (SHO-547). |
-| 35  | A retry is not charged. The per-minute bucket still counts it — that one runs before a handler can know a command has been seen, and a retry is an ask — but money does not double.                                                                     |
+| #   | Given / When / Then                                                                                                                                                                                                                                                                   |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 27  | `POST chat` runs a turn, stores the person's words **before** the model runs, and saves the provider history it produced. A failed generation still shows what was asked.                                                                                                             |
+| 28  | `POST chat` with an extra `messages` key is a 400. A client never supplies the model transcript.                                                                                                                                                                                      |
+| 29  | `POST chat` while a question is unanswered → 409 `interaction_open` with the current pause. A visible limitation instead of a draft that silently disappears.                                                                                                                         |
+| 30  | `POST chat` for a conversation owned by someone else → 410, indistinguishable from one that does not exist.                                                                                                                                                                           |
+| 31  | `GET messages` returns exactly the parts the live turn returned, byte for byte, plus the open pause from the pause store.                                                                                                                                                             |
+| 32  | `GET messages` for another tenant returns an **empty document**, equal to what a conversation that does not exist returns.                                                                                                                                                            |
+| 33  | Full trip over HTTP: chat pauses → choice resolves → reload shows the interaction part and exactly one card, with no open pause left.                                                                                                                                                 |
+| 34  | Two identical sends → the write runs once and the retry is answered with the conversation. Also while the first is still in flight, and for a retried answer, which the exactly-once claim would otherwise refuse with `410` and no document (SHO-547).                               |
+| 34b | Two turns on one conversation → the second is refused `turn_open` with the current document, and the first's message survives whole. Also for a chat arriving while an answer is still resolving, which the pause check cannot catch because the claim already consumed it (SHO-548). |
+| 35  | A retry is not charged. The per-minute bucket still counts it — that one runs before a handler can know a command has been seen, and a retry is an ask — but money does not double.                                                                                                   |
 
 ## A hole the route level found in the package
 

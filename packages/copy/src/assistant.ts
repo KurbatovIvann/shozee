@@ -138,6 +138,8 @@ export type AssistantCopy = {
     readonly unauthenticated: string;
     readonly notConfigured: string;
     readonly rateLimited: string;
+    /** Another device is mid-turn on this conversation. Nothing was attempted. */
+    readonly turnBusy: string;
   };
 };
 
@@ -302,6 +304,7 @@ const assistantEn: AssistantCopy = {
     unauthenticated: "Sign in again to continue.",
     notConfigured: "The assistant is not configured.",
     rateLimited: "Too many requests. Try again later.",
+    turnBusy: "Shozik is busy with another request. Try again in a moment.",
   },
 };
 
@@ -380,6 +383,7 @@ const assistantUk: AssistantCopy = {
     unauthenticated: "Увійди знову, щоб продовжити.",
     notConfigured: "Асистент не налаштований.",
     rateLimited: "Забагато запитів. Спробуй пізніше.",
+    turnBusy: "Шозік зараз зайнятий іншим запитом. Спробуй за мить.",
   },
 };
 

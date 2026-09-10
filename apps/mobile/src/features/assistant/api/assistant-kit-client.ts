@@ -35,8 +35,10 @@ export const ASSISTANT_KIT_TEXT_MAX = 4000;
  *
  * `stale`, `unresolvable`, `action_failed` and `interaction_open` all mean the
  * conversation moved and the accompanying document is current — they are worth
- * telling the person about, but nothing is broken. `rate_limited` is the spend
- * ceiling, which is a decision rather than a fault. The rest are faults.
+ * telling the person about, but nothing is broken. `turn_open` means another
+ * turn holds the conversation and this request did nothing at all.
+ * `rate_limited` is the spend ceiling, which is a decision rather than a fault.
+ * The rest are faults.
  */
 export type AssistantKitFailureKind =
   | "unreachable"
@@ -48,6 +50,7 @@ export type AssistantKitFailureKind =
   | "rate_limited"
   | "aborted"
   | "interaction_open"
+  | "turn_open"
   | "stale"
   | "unresolvable"
   | "action_failed";
@@ -92,6 +95,9 @@ function failureFromStatus(
 ): AssistantKitFailureKind {
   if (status === "interaction_open") {
     return "interaction_open";
+  }
+  if (status === "turn_open") {
+    return "turn_open";
   }
   if (status === "stale") {
     return "stale";

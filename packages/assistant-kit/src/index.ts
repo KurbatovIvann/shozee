@@ -77,8 +77,10 @@ export type {
 } from "./ports.js";
 
 export {
+  TURN_LEASE_MS,
   createAssistantKit,
   type AssistantKit,
+  type BeginTurnResult,
   type OpenPauseInput,
   type OpenPauseResult,
   type RevisePauseResult,

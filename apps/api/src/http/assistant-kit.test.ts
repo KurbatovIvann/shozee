@@ -146,6 +146,8 @@ interface Harness {
   readonly app: ReturnType<typeof createAssistantKitApp>;
   readonly history: ReturnType<typeof memoryHistory>;
   readonly bind: string;
+  /** The pause store behind the kit, for reaching in at a turn's lease. */
+  readonly deps: ReturnType<typeof testDeps<AssistantInteractionTypes>>;
 }
 
 function harness(options?: {
@@ -159,7 +161,8 @@ function harness(options?: {
   /** Held open to keep a turn in flight while a second request arrives. */
   readonly toolsGate?: Promise<unknown>;
 }): Harness {
-  const kit = createAssistantKit(testDeps(assistantInteractions));
+  const deps = testDeps(assistantInteractions);
+  const kit = createAssistantKit(deps);
   const history = memoryHistory();
   const model =
     options?.model ??
@@ -196,7 +199,7 @@ function harness(options?: {
     resolveAnswer: options?.resolveAnswer ?? OK_RESOLVE,
     prompt: () => ({ system: "you are a test" }),
   });
-  return { kit, app, history, bind: `${USER}:${COMPANY}` };
+  return { kit, app, history, deps, bind: `${USER}:${COMPANY}` };
 }
 
 async function openPause(kit: Kit, bind: string) {
@@ -970,6 +973,12 @@ describe("a retry of a command whose reply was lost", () => {
     expect(cardsIn(retryBody)).toEqual(["order-entity:order-1"]);
   });
 
+  /**
+   * Two guards, and this is the outer one. The turn lease refuses a second
+   * request before the receipt is ever consulted, which is why the answer here
+   * is `turn_open` rather than a replay — the receipt's own behaviour under
+   * simultaneous takes is proven against Redis in the store suite.
+   */
   it("does not run a retry that arrives while the first is still in flight", async () => {
     let open = (): void => undefined;
     const gate = new Promise<void>((resolve) => {
@@ -989,7 +998,8 @@ describe("a retry of a command whose reply was lost", () => {
     // The receipt is taken before the tools are built, so this lands while the
     // first turn is stopped at the gate.
     const retry = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("створи"));
-    expect(retry.status).toBe(200);
+    expect(retry.status).toBe(409);
+    expect(((await retry.json()) as KitBody).status).toBe("turn_open");
 
     open();
     expect((await first).status).toBe(200);
@@ -1037,5 +1047,185 @@ describe("a retry of a command whose reply was lost", () => {
 
     expect(second.status).toBe(200);
     expect(count.value).toBe(2);
+  });
+});
+
+/**
+ * SHO-548. Two turns on one conversation interleave read-modify-write on the
+ * document and the later one silently discards the earlier. Two devices, two
+ * tabs, a laptop left open — and nothing anywhere reports it.
+ *
+ * A lease existed before, as `conversationLock` in `app.ts`, and went out in
+ * phase 2 with the routes that used it. Same class as the history window: a
+ * guarantee that travelled out with code being removed for other reasons.
+ */
+describe("two turns on one conversation", () => {
+  const slowTools = (count: { value: number }): ToolSet => ({
+    orders_create: {
+      description: "create one",
+      inputSchema: z.object({ label: z.string() }),
+      execute: (): ToolOutcome => {
+        count.value += 1;
+        return {
+          kind: "ok",
+          result: { id: "order-1" },
+          card: {
+            cardId: "order-entity:order-1",
+            type: "order-entity",
+            payload: { kind: "order-entity", orderId: "order-1" },
+          },
+        };
+      },
+    },
+  });
+
+  const writingModel = () =>
+    stubModel([
+      stubToolCallStep("toolu_create", "orders_create", { label: "торт" }),
+      stubTextStep("Готово."),
+    ]);
+
+  it("refuses the second and loses nothing from the first", async () => {
+    let open = (): void => undefined;
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const count = { value: 0 };
+    const { app, kit, bind } = harness({
+      tools: slowTools(count),
+      toolsGate: gate,
+      model: writingModel(),
+    });
+
+    const first = post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("створи"));
+    const second = await post(app, ASSISTANT_KIT_CHAT_PATH, {
+      ...chatBody("а тепер покажи"),
+      commandId: OTHER_COMMAND,
+    });
+
+    expect(second.status).toBe(409);
+    expect(((await second.json()) as KitBody).status).toBe("turn_open");
+
+    open();
+    expect((await first).status).toBe(200);
+    expect(count.value).toBe(1);
+
+    // The first turn's whole message is there: what was asked, what was done,
+    // and the reply. Under last-write-wins the second request's own write of
+    // the person's words would have taken the place of all of it.
+    const parts = (
+      await kit.document.read({ conversationId: CONVERSATION, bind })
+    ).messages.flatMap((message) => message.parts);
+    expect(parts.filter((part) => part.kind === "card")).toHaveLength(1);
+    expect(
+      parts.filter((part) => part.kind === "text").map((part) => part.text),
+    ).toEqual(["створи", "Готово."]);
+  });
+
+  it("frees the conversation for the next turn", async () => {
+    const count = { value: 0 };
+    const { app } = harness({
+      tools: slowTools(count),
+      model: stubModel([
+        stubToolCallStep("toolu_create", "orders_create", { label: "торт" }),
+        stubTextStep("Готово."),
+        stubTextStep("І ще."),
+      ]),
+    });
+
+    await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("створи"));
+    const next = await post(app, ASSISTANT_KIT_CHAT_PATH, {
+      ...chatBody("а тепер покажи"),
+      commandId: OTHER_COMMAND,
+    });
+
+    expect(next.status).toBe(200);
+  });
+
+  /**
+   * The `finally`, which is the part most likely to rot. A turn that threw and
+   * kept the lease would lock the conversation for the lease's whole length,
+   * and the person would see "busy" with nothing running.
+   */
+  it("frees the conversation after a turn that failed", async () => {
+    const { app } = harness({ broken: true });
+
+    await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("створи"));
+    const next = await post(app, ASSISTANT_KIT_CHAT_PATH, {
+      ...chatBody("ще раз"),
+      commandId: OTHER_COMMAND,
+    });
+
+    expect(next.status).toBe(200);
+  });
+
+  /**
+   * The race the pause check cannot see. Answering claims the pause first, so
+   * by the time a second request looks there is no open question to refuse it
+   * with — and the answer is still running, still writing the document. This is
+   * the interleaving, and the lease is the only thing that catches it.
+   */
+  /**
+   * The lease can lapse under a turn that is genuinely slow, and then a second
+   * turn may already be running alongside it — the thing this prevents,
+   * happening anyway. It cannot be prevented from here, so it is reported:
+   * the line is the signal that `TURN_LEASE_MS` is too short for what this
+   * deployment's turns cost.
+   */
+  it("says so when a turn outlived its lease", async () => {
+    let open = (): void => undefined;
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const lines: string[] = [];
+    const { app, deps } = harness({
+      toolsGate: gate,
+      logger: capturingLogger(lines),
+    });
+
+    const turn = post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("створи"));
+    for (let tick = 0; tick < 50; tick += 1) {
+      if (deps.pauses.entries.delete(`turn:${CONVERSATION}`)) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+    open();
+    await turn;
+
+    expect(
+      lines.filter((line) => line.includes("outlived its lease")),
+    ).toHaveLength(1);
+  });
+
+  it("refuses a new turn while an answer is still resolving", async () => {
+    let open = (): void => undefined;
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const { app, kit, bind } = harness({ toolsGate: gate });
+    const pause = await openPause(kit, bind);
+
+    const answering = post(
+      app,
+      ASSISTANT_KIT_ANSWER_PATH,
+      answerBody(pause.interactionId, pause.revision),
+    );
+    // Let it reach the gate. By then the pause is claimed, so nothing else
+    // stands in the way of a second request — which is the whole point.
+    for (let tick = 0; tick < 50; tick += 1) {
+      if ((await kit.peek({ conversationId: CONVERSATION, bind })) === null) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+    expect(await kit.peek({ conversationId: CONVERSATION, bind })).toBeNull();
+
+    const chat = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("а тепер"));
+    expect(chat.status).toBe(409);
+    expect(((await chat.json()) as KitBody).status).toBe("turn_open");
+
+    open();
+    expect((await answering).status).toBe(200);
   });
 });

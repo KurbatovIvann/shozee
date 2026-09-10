@@ -17,7 +17,8 @@ export type AssistantChatErrorKind =
   | "permission"
   | "unauthenticated"
   | "notConfigured"
-  | "rateLimited";
+  | "rateLimited"
+  | "turnBusy";
 
 export function assistantChatErrorMessage(
   kind: AssistantChatErrorKind,
@@ -46,6 +47,10 @@ export function bannerKindFor(
     case "interaction_open":
     case "aborted":
       return null;
+    // Nothing on screen explains this one: the turn holding the conversation
+    // is running on another device, so the thread looks idle.
+    case "turn_open":
+      return "turnBusy";
     case "unreachable":
       return "network";
     case "rate_limited":

@@ -17,6 +17,14 @@ export interface PauseStore {
   setIfAbsent(key: string, value: string, ttlMs: number): Promise<boolean>;
   /** False on mismatch — this is the exactly-once claim. */
   compareAndSet(key: string, expected: string, next: string): Promise<boolean>;
+  /**
+   * False when the key held something else, or nothing.
+   *
+   * The releasing half of a lease. A plain delete would let a holder whose ttl
+   * had already run out remove the lock that someone else has since taken —
+   * rare, and exactly the kind of rare that later reads as a mystery.
+   */
+  deleteIfEquals(key: string, expected: string): Promise<boolean>;
   delete(key: string): Promise<void>;
 }
 

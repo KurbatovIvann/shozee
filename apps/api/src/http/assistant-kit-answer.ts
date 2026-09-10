@@ -36,6 +36,7 @@ import {
   requireCaller,
   takeCommand,
   toolContext,
+  withConversationTurn,
   type AssistantKitAppEnv,
   type AssistantKitRuntime,
 } from "./assistant-kit-http.js";
@@ -141,206 +142,216 @@ export async function handleAssistantKitAnswer(
   });
   const scope = { conversationId: body.conversationId, bind: caller.bind };
 
-  // Before the claim, not after. The claim is exactly-once by design, so a
-  // retry that reached it would be told `gone` — the answer *did* take, and the
-  // person would be looking at a card that can never be answered (SHO-547).
-  const command = {
-    route: "answer" as const,
-    bind: caller.bind,
-    conversationId: body.conversationId,
-    commandId: body.commandId,
-  };
-  // Read through a call, not a property: the signal can flip during the awaits
-  // between the two checks, and a direct read lets the compiler narrow the
-  // second one to `false` and call it dead.
-  const clientGone = (): boolean => c.req.raw.signal.aborted;
-  if (clientGone()) {
-    // Checked here as well as below, so an already-gone client does not spend a
-    // command before anything has been claimed.
-    return json(499, { status: "aborted" }, requestId);
-  }
-  if (!(await takeCommand(c, runtime, command))) {
-    return json(
-      200,
-      { status: "ok", document: await kit.document.read(scope) },
-      requestId,
-    );
-  }
-
-  const claimed = await kit.claim({
-    ...scope,
-    interactionId: body.interactionId,
-    revision: body.revision,
-    answer: body.answer,
-  });
-
-  switch (claimed.kind) {
-    case "gone":
-    case "expired":
-    case "unknown_kind":
-      return goneResponse(requestId);
-    case "stale":
-      // The subject of the decision changed under the card. The document
-      // carries the current question, so the picker re-renders as it now is.
-      return json(
-        409,
-        {
-          status: "stale",
-          document: await kit.document.read(scope),
-        },
-        requestId,
-      );
-    case "invalid_answer":
-      return json(
-        400,
-        { error: { code: "VALIDATION" }, reason: claimed.reason },
-        requestId,
-      );
-    case "unresolvable":
-      // The interaction refused the answer before spending the claim, so the
-      // card is still on screen and still answerable.
-      return json(
-        409,
-        {
-          status: "unresolvable",
-          reason: claimed.reason,
-          document: await kit.document.read(scope),
-        },
-        requestId,
-      );
-    default:
-      break;
-  }
-
-  const release = () =>
-    kit.release({ ...scope, interactionId: body.interactionId });
-
-  if (clientGone()) {
-    // The client is already gone. Do not perform the write on its behalf; give
-    // the answer back so the card is still there when they return. 499 is the
-    // client-closed-request convention.
-    //
-    // The command goes back with it. A phone whose request timed out in the
-    // network sees a transport failure and keeps its `commandId` for the retry;
-    // if the receipt stayed taken, that retry would replay a turn that never
-    // happened and the tap would be dead for the receipt's whole lifetime.
-    await Promise.all([release(), runtime.commands.release(command)]);
-    return json(499, { status: "aborted" }, requestId);
-  }
-
-  // One tool set for the whole request: the resolved call and the turn that
-  // follows it compose their cards together.
-  const tools = await runtime.tools(
-    toolContext(c, caller, {
-      conversationId: body.conversationId,
-      commandId: body.commandId,
-    }),
-  );
-
-  const resolvedOutcome = await runtime.resolveAnswer({
-    toolName: claimed.record.continuation.pausedToolCall.name,
-    kind: claimed.record.kind,
-    value: claimed.value,
-    tools,
-    session: { userId: caller.userId },
-    companySelector: caller.companySelector,
-  });
-
-  if (resolvedOutcome.kind === "pause") {
-    // The answer settled one ambiguity and uncovered the next — a picker for
-    // the customer, then one for the product. A new question, not a failure:
-    // the claimed record no longer holds the slot, so this simply takes it.
-    const nextKind = resolvedOutcome.interaction;
-    if (!kit.interactions.has(nextKind)) {
-      return json(
-        500,
-        { status: "pause_rejected", reason: `unknown kind ${nextKind}` },
-        requestId,
-      );
-    }
-    const opened = await kit.open({
-      conversationId: body.conversationId,
-      bind: caller.bind,
-      kind: nextKind,
-      prompt: resolvedOutcome.prompt,
-      secret: resolvedOutcome.secret,
-      continuation: claimed.record.continuation,
-    });
-    if (opened.kind !== "opened") {
-      return json(
-        500,
-        { status: "pause_rejected", reason: opened.kind },
-        requestId,
-      );
-    }
-    // The transcript has to carry the second question too. Live it is in
-    // `openPause`, but a reload reads the document — and a document that shows
-    // the first question and not the second is a record of a conversation that
-    // did not happen.
-    const asked = {
-      kind: "interaction" as const,
-      interactionId: opened.pause.interactionId,
-      revision: opened.pause.revision,
-      pause: opened.pause,
-    };
-    await kit.document.write(scope, {
-      kind: "append",
-      messageId: randomUUID(),
-      role: "assistant",
-      parts: [asked],
-    });
-
-    const payload: AssistantKitTurnOk = {
-      status: "ok",
-      document: await kit.document.read(scope),
-    };
-    return json(200, payload, requestId);
-  }
-
-  if (resolvedOutcome.kind === "error") {
-    // The action refused. No effect, so the answer did not take: the card stays
-    // on screen instead of vanishing with the failure.
-    await release();
-    return json(
-      409,
-      {
-        status: "action_failed",
-        code: resolvedOutcome.code,
-        message: resolvedOutcome.message,
-        document: await kit.document.read(scope),
-      },
-      requestId,
-    );
-  }
-
-  const prompt = runtime.prompt();
-  const turn = await continueHostTurn({
-    system: prompt.system,
-    ...(prompt.providerOptions === undefined
-      ? {}
-      : { providerOptions: prompt.providerOptions }),
+  // The claim, the write it authorises and the turn that follows all touch
+  // the document. One turn at a time per conversation (SHO-548).
+  return await withConversationTurn(
+    runtime,
     kit,
-    conversationId: body.conversationId,
-    bind: caller.bind,
-    messageId: randomUUID(),
-    model: runtime.model,
-    tools,
-    claimed,
-    resolved: resolvedOutcome,
-    abortSignal: c.req.raw.signal,
-  });
-
-  logInterruptedTurn(runtime, {
+    scope,
     requestId,
-    turn,
-    // The replayed continuation, which `continueHostTurn` built from the claim.
-    priorMessages: claimed.record.continuation.messages.length,
-  });
-  await history.save(scope, turn.messages);
+    async () => {
+      // Before the claim, not after. The claim is exactly-once by design, so a
+      // retry that reached it would be told `gone` — the answer *did* take, and the
+      // person would be looking at a card that can never be answered (SHO-547).
+      const command = {
+        route: "answer" as const,
+        bind: caller.bind,
+        conversationId: body.conversationId,
+        commandId: body.commandId,
+      };
+      // Read through a call, not a property: the signal can flip during the awaits
+      // between the two checks, and a direct read lets the compiler narrow the
+      // second one to `false` and call it dead.
+      const clientGone = (): boolean => c.req.raw.signal.aborted;
+      if (clientGone()) {
+        // Checked here as well as below, so an already-gone client does not spend a
+        // command before anything has been claimed.
+        return json(499, { status: "aborted" }, requestId);
+      }
+      if (!(await takeCommand(c, runtime, command))) {
+        return json(
+          200,
+          { status: "ok", document: await kit.document.read(scope) },
+          requestId,
+        );
+      }
 
-  const payload: AssistantKitTurnOk = {
-    status: "ok",
-    document: await kit.document.read(scope),
-  };
-  return json(200, payload, requestId);
+      const claimed = await kit.claim({
+        ...scope,
+        interactionId: body.interactionId,
+        revision: body.revision,
+        answer: body.answer,
+      });
+
+      switch (claimed.kind) {
+        case "gone":
+        case "expired":
+        case "unknown_kind":
+          return goneResponse(requestId);
+        case "stale":
+          // The subject of the decision changed under the card. The document
+          // carries the current question, so the picker re-renders as it now is.
+          return json(
+            409,
+            {
+              status: "stale",
+              document: await kit.document.read(scope),
+            },
+            requestId,
+          );
+        case "invalid_answer":
+          return json(
+            400,
+            { error: { code: "VALIDATION" }, reason: claimed.reason },
+            requestId,
+          );
+        case "unresolvable":
+          // The interaction refused the answer before spending the claim, so the
+          // card is still on screen and still answerable.
+          return json(
+            409,
+            {
+              status: "unresolvable",
+              reason: claimed.reason,
+              document: await kit.document.read(scope),
+            },
+            requestId,
+          );
+        default:
+          break;
+      }
+
+      const release = () =>
+        kit.release({ ...scope, interactionId: body.interactionId });
+
+      if (clientGone()) {
+        // The client is already gone. Do not perform the write on its behalf; give
+        // the answer back so the card is still there when they return. 499 is the
+        // client-closed-request convention.
+        //
+        // The command goes back with it. A phone whose request timed out in the
+        // network sees a transport failure and keeps its `commandId` for the retry;
+        // if the receipt stayed taken, that retry would replay a turn that never
+        // happened and the tap would be dead for the receipt's whole lifetime.
+        await Promise.all([release(), runtime.commands.release(command)]);
+        return json(499, { status: "aborted" }, requestId);
+      }
+
+      // One tool set for the whole request: the resolved call and the turn that
+      // follows it compose their cards together.
+      const tools = await runtime.tools(
+        toolContext(c, caller, {
+          conversationId: body.conversationId,
+          commandId: body.commandId,
+        }),
+      );
+
+      const resolvedOutcome = await runtime.resolveAnswer({
+        toolName: claimed.record.continuation.pausedToolCall.name,
+        kind: claimed.record.kind,
+        value: claimed.value,
+        tools,
+        session: { userId: caller.userId },
+        companySelector: caller.companySelector,
+      });
+
+      if (resolvedOutcome.kind === "pause") {
+        // The answer settled one ambiguity and uncovered the next — a picker for
+        // the customer, then one for the product. A new question, not a failure:
+        // the claimed record no longer holds the slot, so this simply takes it.
+        const nextKind = resolvedOutcome.interaction;
+        if (!kit.interactions.has(nextKind)) {
+          return json(
+            500,
+            { status: "pause_rejected", reason: `unknown kind ${nextKind}` },
+            requestId,
+          );
+        }
+        const opened = await kit.open({
+          conversationId: body.conversationId,
+          bind: caller.bind,
+          kind: nextKind,
+          prompt: resolvedOutcome.prompt,
+          secret: resolvedOutcome.secret,
+          continuation: claimed.record.continuation,
+        });
+        if (opened.kind !== "opened") {
+          return json(
+            500,
+            { status: "pause_rejected", reason: opened.kind },
+            requestId,
+          );
+        }
+        // The transcript has to carry the second question too. Live it is in
+        // `openPause`, but a reload reads the document — and a document that shows
+        // the first question and not the second is a record of a conversation that
+        // did not happen.
+        const asked = {
+          kind: "interaction" as const,
+          interactionId: opened.pause.interactionId,
+          revision: opened.pause.revision,
+          pause: opened.pause,
+        };
+        await kit.document.write(scope, {
+          kind: "append",
+          messageId: randomUUID(),
+          role: "assistant",
+          parts: [asked],
+        });
+
+        const payload: AssistantKitTurnOk = {
+          status: "ok",
+          document: await kit.document.read(scope),
+        };
+        return json(200, payload, requestId);
+      }
+
+      if (resolvedOutcome.kind === "error") {
+        // The action refused. No effect, so the answer did not take: the card stays
+        // on screen instead of vanishing with the failure.
+        await release();
+        return json(
+          409,
+          {
+            status: "action_failed",
+            code: resolvedOutcome.code,
+            message: resolvedOutcome.message,
+            document: await kit.document.read(scope),
+          },
+          requestId,
+        );
+      }
+
+      const prompt = runtime.prompt();
+      const turn = await continueHostTurn({
+        system: prompt.system,
+        ...(prompt.providerOptions === undefined
+          ? {}
+          : { providerOptions: prompt.providerOptions }),
+        kit,
+        conversationId: body.conversationId,
+        bind: caller.bind,
+        messageId: randomUUID(),
+        model: runtime.model,
+        tools,
+        claimed,
+        resolved: resolvedOutcome,
+        abortSignal: c.req.raw.signal,
+      });
+
+      logInterruptedTurn(runtime, {
+        requestId,
+        turn,
+        // The replayed continuation, which `continueHostTurn` built from the claim.
+        priorMessages: claimed.record.continuation.messages.length,
+      });
+      await history.save(scope, turn.messages);
+
+      const payload: AssistantKitTurnOk = {
+        status: "ok",
+        document: await kit.document.read(scope),
+      };
+      return json(200, payload, requestId);
+    },
+  );
 }

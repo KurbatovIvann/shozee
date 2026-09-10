@@ -181,6 +181,35 @@ describe("the pause store, on Lua", () => {
 });
 
 /**
+ * The releasing half of a lease, which the turn lock is built on (SHO-548).
+ *
+ * A plain `DEL` would let a holder whose ttl had already run out remove the
+ * lock a later turn has since taken, and then two turns run at once — produced
+ * by the cleanup of the thing meant to stop it.
+ */
+describe("deleteIfEquals", () => {
+  it("removes the key only for the holder that set it", async () => {
+    const store = createRedisAssistantKitPauseStore(redis);
+    const key = `lease:${randomUUID()}`;
+    await store.setIfAbsent(key, "mine", 60_000);
+
+    expect(await store.deleteIfEquals(key, "someone else")).toBe(false);
+    expect(await store.get(key)).toBe("mine");
+
+    expect(await store.deleteIfEquals(key, "mine")).toBe(true);
+    expect(await store.get(key)).toBeNull();
+  });
+
+  it("reports a key that was already gone", async () => {
+    const store = createRedisAssistantKitPauseStore(redis);
+
+    expect(await store.deleteIfEquals(`lease:${randomUUID()}`, "mine")).toBe(
+      false,
+    );
+  });
+});
+
+/**
  * The command receipt, on the same Redis (SHO-547).
  *
  * A Map proves the rule; only the server proves the port. The case that

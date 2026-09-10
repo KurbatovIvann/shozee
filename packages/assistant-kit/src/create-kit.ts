@@ -29,6 +29,7 @@ import type {
   OpenPauseResult,
   RevisePauseResult,
 } from "./kit.js";
+import { TURN_LEASE_MS } from "./kit.js";
 import type {
   ClaimResult,
   PauseRecord,
@@ -43,6 +44,11 @@ type AnyTypes = Record<string, InteractionType<z.ZodType, z.ZodType, never>>;
 /** One open interaction per conversation is the key itself, not a query. */
 function pauseKey(conversationId: string): string {
   return `pause:${conversationId}`;
+}
+
+/** One running turn per conversation, by the same means. */
+function turnKey(conversationId: string): string {
+  return `turn:${conversationId}`;
 }
 
 interface StoredRecord {
@@ -385,6 +391,21 @@ export function createAssistantKit<T extends AnyTypes>(
       return (await put(reopened, existing.raw))
         ? { kind: "released" }
         : { kind: "gone" };
+    },
+
+    turn: {
+      async begin(scope, options) {
+        const token = deps.ids.uuid();
+        const took = await deps.pauses.setIfAbsent(
+          turnKey(scope.conversationId),
+          token,
+          options?.ttlMs ?? TURN_LEASE_MS,
+        );
+        return took ? { kind: "began", token } : { kind: "busy" };
+      },
+      end(scope, token) {
+        return deps.pauses.deleteIfEquals(turnKey(scope.conversationId), token);
+      },
     },
 
     document: {

@@ -49,6 +49,13 @@ export function memoryPauseStore(): MemoryPauseStore {
       entries.set(key, next);
       return Promise.resolve(true);
     },
+    deleteIfEquals(key, expected) {
+      if (entries.get(key) !== expected) {
+        return Promise.resolve(false);
+      }
+      entries.delete(key);
+      return Promise.resolve(true);
+    },
     delete(key) {
       entries.delete(key);
       return Promise.resolve();

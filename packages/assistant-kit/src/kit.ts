@@ -43,6 +43,29 @@ export type OpenPauseResult =
 
 export type RevisePauseResult = OpenPauseResult | { readonly kind: "gone" };
 
+/**
+ * How long a turn may hold its conversation before the lease lapses.
+ *
+ * Chosen against the two ways it can be wrong. Too short and a slow turn loses
+ * the lock while it is still writing, which is the defect the lock exists to
+ * prevent. Too long and a process that died holding one leaves the person
+ * unable to say anything for that whole time. Losing writes is silent and
+ * losing time is not, so this errs long — and `end` reports a lease that had
+ * already lapsed, so the case is visible rather than guessed at.
+ */
+export const TURN_LEASE_MS = 120_000;
+
+export type BeginTurnResult =
+  | {
+      readonly kind: "began";
+      /**
+       * Proof of this holder. Passed back to `end`, so a turn whose lease has
+       * lapsed cannot release the lock a later turn now holds.
+       */
+      readonly token: string;
+    }
+  | { readonly kind: "busy" };
+
 export interface AssistantKit<T extends AnyTypes> {
   readonly interactions: InteractionRegistry<T>;
 
@@ -106,6 +129,29 @@ export interface AssistantKit<T extends AnyTypes> {
   release(
     input: PauseScope & { readonly interactionId: string },
   ): Promise<{ readonly kind: "released" | "gone" }>;
+
+  /**
+   * One turn at a time, per conversation.
+   *
+   * The document is read-modify-write. Two turns on one conversation — two
+   * devices, two tabs, a retry that outran its own reply — interleave their
+   * reads and the later write silently discards the earlier one. Nothing else
+   * here prevents it: `busy` in a client is per client, and the serial tool
+   * chain inside a turn is per turn.
+   *
+   * A lease rather than a queue. Two people talking to one conversation at once
+   * is not work to be ordered — the second turn's model would be answering
+   * without knowing what the first is doing — so the second is refused, and
+   * told, rather than run late.
+   */
+  readonly turn: {
+    begin(
+      scope: PauseScope,
+      options?: { readonly ttlMs?: number },
+    ): Promise<BeginTurnResult>;
+    /** False when the lease had already lapsed — the caller should say so. */
+    end(scope: PauseScope, token: string): Promise<boolean>;
+  };
 
   readonly document: {
     read(scope: PauseScope): Promise<ChatDocument>;

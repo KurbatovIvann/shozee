@@ -547,6 +547,34 @@ describe("retrying a command whose reply never came", () => {
     expect(sentBody(2).commandId).toBe(sentBody(1).commandId);
   });
 
+  /**
+   * The interaction between the two guards, and the one that would have been
+   * silent. A retry refused by the turn lease did nothing, so the *first*
+   * attempt's fate is still unknown — minting a new token here would miss the
+   * receipt and write the order a second time (SHO-548 meeting SHO-547).
+   */
+  it("keeps the token when the retry is refused by a running turn", async () => {
+    const view = loaded();
+    await flush();
+
+    fetchMock.mockRejectedValueOnce(new Error("network is gone"));
+    await act(async () => {
+      await view.latest().send("створи замовлення");
+    });
+
+    respond(409, { status: "turn_open", document: document() });
+    await act(async () => {
+      await view.latest().send("створи замовлення");
+    });
+
+    respond(200, { status: "ok", document: document({ text: "Готово." }) });
+    await act(async () => {
+      await view.latest().send("створи замовлення");
+    });
+
+    expect(sentBody(3).commandId).toBe(sentBody(1).commandId);
+  });
+
   it("mints a new one once the draft has been edited", async () => {
     const view = loaded();
     await flush();

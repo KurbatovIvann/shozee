@@ -38,6 +38,7 @@ import {
   postAssistantKitChat,
   type AssistantKitCall,
   type AssistantKitFailure,
+  type AssistantKitFailureKind,
   type AssistantKitOutcome,
 } from "../api/assistant-kit-client";
 import {
@@ -72,6 +73,46 @@ export interface UseAssistantConversation {
 
 function defaultNewId(): string {
   return crypto.randomUUID();
+}
+
+/**
+ * Whether this outcome leaves the fate of the attempt unknown.
+ *
+ * The token exists to make a retry of an unknown attempt the *same* attempt.
+ * So it survives every outcome where the earlier request may still have
+ * created the order, and is dropped the moment the server tells us where the
+ * conversation actually is.
+ *
+ * The first group: no response at all (`unreachable`, `unreadable`), nothing
+ * attempted this time so the last attempt's fate stands (`aborted`,
+ * `turn_open`, `rate_limited`), or a fault that may have landed either side of
+ * the write (`server`). The second group: the server read the conversation and
+ * said where it is, and whatever the earlier attempt did is in the document
+ * that came with the answer.
+ *
+ * A `switch` rather than a set, so a new kind of failure cannot be added
+ * without someone deciding which of the two it is. Getting `turn_open` wrong
+ * here would be silent: the retry would mint a new token, miss the receipt,
+ * and write the order twice.
+ */
+function stillUnknown(kind: AssistantKitFailureKind): boolean {
+  switch (kind) {
+    case "unreachable":
+    case "unreadable":
+    case "aborted":
+    case "turn_open":
+    case "rate_limited":
+    case "server":
+      return true;
+    case "interaction_open":
+    case "stale":
+    case "unresolvable":
+    case "action_failed":
+    case "expired":
+    case "rejected":
+    case "unauthorized":
+      return false;
+  }
 }
 
 export function useAssistantConversation(args: {
@@ -122,10 +163,9 @@ export function useAssistantConversation(args: {
    * *same* attempt, which the server recognises and answers with the
    * conversation as it now stands (SHO-547).
    *
-   * Held only for `unreachable`. Every other outcome is a reply — the request
-   * arrived and was decided — so the next attempt is genuinely a new one. That
-   * is also what keeps sending the same sentence twice on purpose from being
-   * collapsed into one.
+   * Held while the outcome is still unknown, and dropped once the server has
+   * decided this command. That is also what keeps sending the same sentence
+   * twice on purpose from being collapsed into one.
    */
   const heldCommandRef = useRef<{
     readonly key: string;
@@ -144,7 +184,7 @@ export function useAssistantConversation(args: {
 
   const settleCommand = useCallback(
     (key: string, failure: AssistantKitFailure | null): void => {
-      if (failure?.kind === "unreachable") {
+      if (failure !== null && stillUnknown(failure.kind)) {
         return;
       }
       if (heldCommandRef.current?.key === key) {

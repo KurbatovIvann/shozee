@@ -26,6 +26,7 @@ import {
   requireCaller,
   takeCommand,
   toolContext,
+  withConversationTurn,
   type AssistantKitAppEnv,
   type AssistantKitRuntime,
 } from "./assistant-kit-http.js";
@@ -103,90 +104,100 @@ export async function handleAssistantKitChat(
     return json(499, { status: "aborted" }, requestId);
   }
 
-  // Past every refusal and past the abort check, so a command is only spent by
-  // a request that is about to do something. A retry of a send whose reply was
-  // lost lands here and is answered with the conversation as it now stands —
-  // including the order the first attempt created (SHO-547).
-  const command = {
-    route: "chat" as const,
-    bind: caller.bind,
-    conversationId: body.conversationId,
-    commandId: body.commandId,
-  };
-  if (!(await takeCommand(c, runtime, command))) {
-    return json(
-      200,
-      { status: "ok", document: await kit.document.read(scope) },
-      requestId,
-    );
-  }
-
-  const priorMessages = await history.load(scope);
-  const messages = [
-    ...priorMessages,
-    { role: "user" as const, content: body.text },
-  ];
-
-  // The person's own words go into the document before the model runs, so a
-  // failed turn still shows what was asked.
-  const userMessageId = randomUUID();
-  const stamped = await kit.document.write(scope, {
-    kind: "append",
-    messageId: userMessageId,
-    role: "user",
-    parts: [{ kind: "text", text: body.text, status: "complete" }],
-  });
-  if (stamped.kind === "wrong_owner") {
-    // The conversation id exists and belongs to someone else. Same answer as a
-    // conversation that does not exist.
-    return goneResponse(requestId);
-  }
-
-  const tools = await runtime.tools(
-    toolContext(c, caller, {
-      conversationId: body.conversationId,
-      commandId: body.commandId,
-    }),
-  );
-
-  const prompt = runtime.prompt();
-  const turn = await runHostTurn({
-    system: prompt.system,
-    ...(prompt.providerOptions === undefined
-      ? {}
-      : { providerOptions: prompt.providerOptions }),
+  // Everything from here writes. One turn at a time per conversation, or
+  // two of them interleave read-modify-write and one is lost (SHO-548).
+  return await withConversationTurn(
+    runtime,
     kit,
-    conversationId: body.conversationId,
-    bind: caller.bind,
-    messageId: randomUUID(),
-    model: runtime.model,
-    tools,
-    messages,
-    abortSignal: c.req.raw.signal,
-  });
-
-  if (turn.kind === "pause_rejected") {
-    // A tool asked for a kind or a payload the registry refused. That is a bug
-    // in the tool, not something to hide behind a generic failure.
-    return json(
-      500,
-      { status: "pause_rejected", reason: turn.rejection ?? "unknown" },
-      requestId,
-    );
-  }
-
-  logInterruptedTurn(runtime, {
+    scope,
     requestId,
-    turn,
-    priorMessages: messages.length,
-  });
-  await history.save(scope, turn.messages);
+    async () => {
+      // Past every refusal and past the abort check, so a command is only spent by
+      // a request that is about to do something. A retry of a send whose reply was
+      // lost lands here and is answered with the conversation as it now stands —
+      // including the order the first attempt created (SHO-547).
+      const command = {
+        route: "chat" as const,
+        bind: caller.bind,
+        conversationId: body.conversationId,
+        commandId: body.commandId,
+      };
+      if (!(await takeCommand(c, runtime, command))) {
+        return json(
+          200,
+          { status: "ok", document: await kit.document.read(scope) },
+          requestId,
+        );
+      }
 
-  const payload: AssistantKitTurnOk = {
-    status: "ok",
-    document: await kit.document.read(scope),
-  };
-  return json(200, payload, requestId);
+      const priorMessages = await history.load(scope);
+      const messages = [
+        ...priorMessages,
+        { role: "user" as const, content: body.text },
+      ];
+
+      // The person's own words go into the document before the model runs, so a
+      // failed turn still shows what was asked.
+      const userMessageId = randomUUID();
+      const stamped = await kit.document.write(scope, {
+        kind: "append",
+        messageId: userMessageId,
+        role: "user",
+        parts: [{ kind: "text", text: body.text, status: "complete" }],
+      });
+      if (stamped.kind === "wrong_owner") {
+        // The conversation id exists and belongs to someone else. Same answer as a
+        // conversation that does not exist.
+        return goneResponse(requestId);
+      }
+
+      const tools = await runtime.tools(
+        toolContext(c, caller, {
+          conversationId: body.conversationId,
+          commandId: body.commandId,
+        }),
+      );
+
+      const prompt = runtime.prompt();
+      const turn = await runHostTurn({
+        system: prompt.system,
+        ...(prompt.providerOptions === undefined
+          ? {}
+          : { providerOptions: prompt.providerOptions }),
+        kit,
+        conversationId: body.conversationId,
+        bind: caller.bind,
+        messageId: randomUUID(),
+        model: runtime.model,
+        tools,
+        messages,
+        abortSignal: c.req.raw.signal,
+      });
+
+      if (turn.kind === "pause_rejected") {
+        // A tool asked for a kind or a payload the registry refused. That is a bug
+        // in the tool, not something to hide behind a generic failure.
+        return json(
+          500,
+          { status: "pause_rejected", reason: turn.rejection ?? "unknown" },
+          requestId,
+        );
+      }
+
+      logInterruptedTurn(runtime, {
+        requestId,
+        turn,
+        priorMessages: messages.length,
+      });
+      await history.save(scope, turn.messages);
+
+      const payload: AssistantKitTurnOk = {
+        status: "ok",
+        document: await kit.document.read(scope),
+      };
+      return json(200, payload, requestId);
+    },
+  );
 }
 
 export async function handleAssistantKitMessages(

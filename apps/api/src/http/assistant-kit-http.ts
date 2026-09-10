@@ -109,6 +109,54 @@ export interface AssistantTurnPrompt {
 }
 
 /**
+ * Run this handler holding the conversation, or refuse.
+ *
+ * The document is read-modify-write. Two turns on one conversation — two
+ * devices, two tabs, a session left open on a laptop — interleave their reads
+ * and the later write silently discards the earlier one (SHO-548). `busy` in a
+ * client is per client and the serial tool chain inside a turn is per turn, so
+ * neither is a guarantee across requests.
+ *
+ * This existed before, as `conversationLock` in `app.ts`, and was deleted in
+ * phase 2 with the routes that used it. The same class as the history window:
+ * a guarantee that travelled out with code being removed for other reasons.
+ *
+ * Refused rather than queued. The second turn's model would be answering
+ * without knowing what the first one is doing, so ordering the two would
+ * produce a reply to a conversation that no longer exists as it was read.
+ */
+export async function withConversationTurn(
+  runtime: AssistantKitRuntime,
+  kit: AssistantKitFor,
+  scope: PauseScope,
+  requestId: string,
+  handle: () => Promise<Response>,
+): Promise<Response> {
+  const lease = await kit.turn.begin(scope);
+  if (lease.kind === "busy") {
+    return json(
+      409,
+      { status: "turn_open", document: await kit.document.read(scope) },
+      requestId,
+    );
+  }
+  try {
+    return await handle();
+  } finally {
+    if (!(await kit.turn.end(scope, lease.token))) {
+      // The lease lapsed while the turn was still running, which means another
+      // turn may have started alongside it — the thing the lock exists to
+      // prevent. Reported rather than swallowed: it is the signal that
+      // `TURN_LEASE_MS` is too short for what this deployment's turns cost.
+      runtime.logger.warn(
+        { request_id: requestId },
+        "assistant turn outlived its lease",
+      );
+    }
+  }
+}
+
+/**
  * Take this command, or say it was already taken.
  *
  * Called at the point where a request stops being a question and starts being
@@ -231,6 +279,8 @@ export interface AssistantKitRuntime {
 export type AssistantKitResponse =
   | { readonly status: "ok"; readonly document: ChatDocument }
   | { readonly status: "interaction_open"; readonly document: ChatDocument }
+  /** Another turn holds this conversation. Nothing was attempted. */
+  | { readonly status: "turn_open"; readonly document: ChatDocument }
   | { readonly status: "stale"; readonly document: ChatDocument }
   | {
       readonly status: "unresolvable";
