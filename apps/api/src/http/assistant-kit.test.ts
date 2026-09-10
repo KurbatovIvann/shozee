@@ -8,6 +8,7 @@
 import {
   createAssistantKit,
   type AssistantKit,
+  type LanguageModel,
   type ModelMessage,
   type ToolOutcome,
   type ToolSet,
@@ -15,6 +16,7 @@ import {
 import {
   stubBrokenModel,
   stubModel,
+  stubTextStep,
   stubTextModel,
   stubToolCallStep,
   testDeps,
@@ -36,6 +38,7 @@ import {
   ASSISTANT_KIT_MESSAGES_PATH,
   createAssistantKitApp,
 } from "./assistant-kit.js";
+import { memoryAssistantKitCommands } from "../stores/assistant-kit-stores.js";
 import type {
   AssistantHistoryPort,
   ResolveAnswer,
@@ -63,6 +66,7 @@ const COMPANY = "11111111-1111-4111-8111-1111111111aa";
 const OTHER_COMPANY = "22222222-2222-4222-8222-2222222222bb";
 const CONVERSATION = "33333333-3333-4333-8333-333333333333";
 const COMMAND = "44444444-4444-4444-8444-444444444444";
+const OTHER_COMMAND = "55555555-5555-4555-8555-555555555555";
 
 type Kit = AssistantKit<AssistantInteractionTypes>;
 
@@ -151,11 +155,15 @@ function harness(options?: {
   readonly logger?: Logger;
   readonly pausing?: boolean;
   readonly tools?: ToolSet;
+  readonly model?: LanguageModel;
+  /** Held open to keep a turn in flight while a second request arrives. */
+  readonly toolsGate?: Promise<unknown>;
 }): Harness {
   const kit = createAssistantKit(testDeps(assistantInteractions));
   const history = memoryHistory();
   const model =
-    options?.broken === true
+    options?.model ??
+    (options?.broken === true
       ? stubBrokenModel()
       : options?.pausing === true
         ? stubModel([
@@ -163,9 +171,10 @@ function harness(options?: {
               label: "two matches",
             }),
           ])
-        : stubTextModel("Готово.");
+        : stubTextModel("Готово."));
   const app = createAssistantKitApp({
     logger: options?.logger ?? silentLogger(),
+    commands: memoryAssistantKitCommands(),
     auth: {
       api: {
         getSession: () =>
@@ -180,7 +189,10 @@ function harness(options?: {
     // the durable adapters have their own test against a real database.
     forCaller: () => ({ kit, history }),
     model,
-    tools: () => Promise.resolve(options?.tools ?? {}),
+    tools: async () => {
+      await options?.toolsGate;
+      return options?.tools ?? {};
+    },
     resolveAnswer: options?.resolveAnswer ?? OK_RESOLVE,
     prompt: () => ({ system: "you are a test" }),
   });
@@ -311,6 +323,7 @@ type KitBody = {
         readonly kind: string;
         readonly type?: string;
         readonly text?: string;
+        readonly cardId?: string;
         readonly interactionId?: string;
       }[];
     }[];
@@ -885,5 +898,144 @@ describe("the full round trip through HTTP", () => {
     expect(kinds).toContain("interaction");
     expect(kinds.filter((kind) => kind === "card")).toHaveLength(1);
     expect(await kit.peek({ conversationId: CONVERSATION, bind })).toBeNull();
+  });
+});
+
+/**
+ * SHO-547. A reply can be lost after the domain write committed — a dropped
+ * connection, a backgrounded app, a timeout. The person then retries, because
+ * the draft was put back in the field and nothing on screen says the order
+ * exists.
+ *
+ * Both halves of the retry were unsafe in opposite ways. Sending again minted a
+ * fresh `commandId`, so the idempotency key changed and the write ran twice.
+ * Answering again hit a claim that is exactly-once by design and got `gone`,
+ * which carried no document: the action *had* happened, and the card the person
+ * was looking at could never be answered.
+ *
+ * One receipt fixes both, and it stores no response body — every route already
+ * answers with the whole document, so a replay is "here is where the
+ * conversation actually is", which is truer than a recording of what the first
+ * attempt said.
+ */
+describe("a retry of a command whose reply was lost", () => {
+  const writingTools = (count: { value: number }): ToolSet => ({
+    orders_create: {
+      description: "create one",
+      inputSchema: z.object({ label: z.string() }),
+      execute: (): ToolOutcome => {
+        count.value += 1;
+        return {
+          kind: "ok",
+          result: { id: "order-1" },
+          card: {
+            cardId: "order-entity:order-1",
+            type: "order-entity",
+            payload: { kind: "order-entity", orderId: "order-1" },
+          },
+        };
+      },
+    },
+  });
+
+  function cardsIn(body: KitBody): string[] {
+    return (body.document?.messages ?? [])
+      .flatMap((message) => message.parts)
+      .filter((part) => part.kind === "card")
+      .map((part) => part.cardId ?? "");
+  }
+
+  it("writes once and answers the retry with the conversation", async () => {
+    const count = { value: 0 };
+    const { app, history } = harness({
+      tools: writingTools(count),
+      model: stubModel([
+        stubToolCallStep("toolu_create", "orders_create", { label: "торт" }),
+        stubTextStep("Готово."),
+      ]),
+    });
+
+    const first = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("створи"));
+    const retry = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("створи"));
+
+    expect(first.status).toBe(200);
+    expect(retry.status).toBe(200);
+    expect(count.value).toBe(1);
+    // No second turn: the model was not called and nothing was stored again.
+    expect(history.saved).toHaveLength(1);
+
+    const firstBody = (await first.json()) as KitBody;
+    const retryBody = (await retry.json()) as KitBody;
+    expect(retryBody.document).toEqual(firstBody.document);
+    expect(cardsIn(retryBody)).toEqual(["order-entity:order-1"]);
+  });
+
+  it("does not run a retry that arrives while the first is still in flight", async () => {
+    let open = (): void => undefined;
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const count = { value: 0 };
+    const { app } = harness({
+      tools: writingTools(count),
+      toolsGate: gate,
+      model: stubModel([
+        stubToolCallStep("toolu_create", "orders_create", { label: "торт" }),
+        stubTextStep("Готово."),
+      ]),
+    });
+
+    const first = post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("створи"));
+    // The receipt is taken before the tools are built, so this lands while the
+    // first turn is stopped at the gate.
+    const retry = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("створи"));
+    expect(retry.status).toBe(200);
+
+    open();
+    expect((await first).status).toBe(200);
+    expect(count.value).toBe(1);
+  });
+
+  it("answers a retried answer with the result, not a dead card", async () => {
+    let resolved = 0;
+    const counting: ResolveAnswer = (args) => {
+      resolved += 1;
+      return OK_RESOLVE(args);
+    };
+    const { app, kit, bind } = harness({ resolveAnswer: counting });
+    const pause = await openPause(kit, bind);
+    const body = answerBody(pause.interactionId, pause.revision);
+
+    const first = await post(app, ASSISTANT_KIT_ANSWER_PATH, body);
+    const retry = await post(app, ASSISTANT_KIT_ANSWER_PATH, body);
+
+    expect(first.status).toBe(200);
+    // The claim is exactly-once, so without the receipt this is a 410 with no
+    // document and a card that can never be answered again.
+    expect(retry.status).toBe(200);
+    expect(resolved).toBe(1);
+    expect(cardsIn((await retry.json()) as KitBody)).toEqual(["card-entity"]);
+  });
+
+  it("treats a different draft as a different command", async () => {
+    const count = { value: 0 };
+    const { app } = harness({
+      tools: writingTools(count),
+      model: stubModel([
+        stubToolCallStep("toolu_create", "orders_create", { label: "торт" }),
+        stubTextStep("Готово."),
+        stubToolCallStep("toolu_create", "orders_create", { label: "інше" }),
+        stubTextStep("Готово."),
+      ]),
+    });
+
+    await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("створи"));
+    const second = await post(app, ASSISTANT_KIT_CHAT_PATH, {
+      ...chatBody("створи інше"),
+      commandId: OTHER_COMMAND,
+    });
+
+    expect(second.status).toBe(200);
+    expect(count.value).toBe(2);
   });
 });

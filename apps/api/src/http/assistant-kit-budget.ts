@@ -132,7 +132,12 @@ export async function withAssistantKitBudget(
   let settled = false;
   try {
     const response = await handle();
-    if (response.ok) {
+    // A replay re-read the conversation and called no model, so it is not
+    // charged. The per-minute bucket above still counted it: that one is
+    // admission control on how often a person may ask, it runs before the
+    // handler can know the command has already been seen, and a retry is an
+    // ask. Money is the quantity that must not double.
+    if (response.ok && c.get("replayedCommand") !== true) {
       // Charged at the reservation. The previous path settled the same way —
       // `estimatedCostUsd: null` — so a turn costs `unknownModelTurnUsd`
       // whatever it actually used. Coarse, and the same coarseness as before.

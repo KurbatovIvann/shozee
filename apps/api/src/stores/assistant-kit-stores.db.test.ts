@@ -27,7 +27,10 @@ import { Redis } from "ioredis";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { createRedisAssistantKitPauseStore } from "./assistant-kit-stores.js";
+import {
+  createRedisAssistantKitCommands,
+  createRedisAssistantKitPauseStore,
+} from "./assistant-kit-stores.js";
 
 let container: StartedRedisContainer;
 let redis: Redis;
@@ -174,5 +177,69 @@ describe("the pause store, on Lua", () => {
     expect((await kit.open(openInput(conversationId, bind))).kind).toBe(
       "opened",
     );
+  });
+});
+
+/**
+ * The command receipt, on the same Redis (SHO-547).
+ *
+ * A Map proves the rule; only the server proves the port. The case that
+ * matters is the one a Map cannot show: two requests arriving together, which
+ * is what a phone with a retry timer actually does.
+ */
+describe("the command receipt", () => {
+  const ref = () => ({
+    route: "chat" as const,
+    bind: `owner:${randomUUID()}`,
+    conversationId: randomUUID(),
+    commandId: randomUUID(),
+  });
+
+  it("is taken once and replayed after", async () => {
+    const commands = createRedisAssistantKitCommands(redis);
+    const command = ref();
+
+    expect(await commands.take(command)).toBe(true);
+    expect(await commands.take(command)).toBe(false);
+  });
+
+  it("gives a command back when the request did nothing", async () => {
+    const commands = createRedisAssistantKitCommands(redis);
+    const command = ref();
+
+    await commands.take(command);
+    await commands.release(command);
+
+    expect(await commands.take(command)).toBe(true);
+  });
+
+  it("admits exactly one of eight simultaneous attempts", async () => {
+    const commands = createRedisAssistantKitCommands(redis);
+    const command = ref();
+
+    const results = await Promise.all(
+      Array.from({ length: 8 }, () => commands.take(command)),
+    );
+
+    expect(results.filter(Boolean)).toHaveLength(1);
+  });
+
+  it("expires, so a token burned before any work heals itself", async () => {
+    const commands = createRedisAssistantKitCommands(redis, 40);
+    const command = ref();
+
+    expect(await commands.take(command)).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    expect(await commands.take(command)).toBe(true);
+  });
+
+  it("keeps a send and an answer apart under one token", async () => {
+    const commands = createRedisAssistantKitCommands(redis);
+    const chat = ref();
+
+    expect(await commands.take(chat)).toBe(true);
+    // A client that labelled both with one token must still get both done.
+    expect(await commands.take({ ...chat, route: "answer" })).toBe(true);
   });
 });

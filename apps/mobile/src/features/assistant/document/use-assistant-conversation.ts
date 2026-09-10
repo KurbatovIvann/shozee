@@ -114,6 +114,47 @@ export function useAssistantConversation(args: {
   const ticketRef = useRef(0);
 
   /**
+   * The token of an attempt whose fate the client does not know.
+   *
+   * A request that never came back may or may not have created the order. A
+   * fresh token would write it twice — and the person is invited to try, since
+   * the draft goes back into the field. Keeping the token makes the retry the
+   * *same* attempt, which the server recognises and answers with the
+   * conversation as it now stands (SHO-547).
+   *
+   * Held only for `unreachable`. Every other outcome is a reply — the request
+   * arrived and was decided — so the next attempt is genuinely a new one. That
+   * is also what keeps sending the same sentence twice on purpose from being
+   * collapsed into one.
+   */
+  const heldCommandRef = useRef<{
+    readonly key: string;
+    readonly commandId: string;
+  } | null>(null);
+
+  const commandIdFor = useCallback((key: string): string => {
+    const held = heldCommandRef.current;
+    if (held !== null && held.key === key) {
+      return held.commandId;
+    }
+    const commandId = newIdRef.current();
+    heldCommandRef.current = { key, commandId };
+    return commandId;
+  }, []);
+
+  const settleCommand = useCallback(
+    (key: string, failure: AssistantKitFailure | null): void => {
+      if (failure?.kind === "unreachable") {
+        return;
+      }
+      if (heldCommandRef.current?.key === key) {
+        heldCommandRef.current = null;
+      }
+    },
+    [],
+  );
+
+  /**
    * One way to apply an outcome, whatever produced it.
    *
    * The document is taken whenever the server sent one — including on a refusal,
@@ -188,7 +229,10 @@ export function useAssistantConversation(args: {
       if (clipped.length === 0) {
         return Promise.resolve<AssistantKitFailure>({ kind: "aborted" });
       }
-      const commandId = newIdRef.current();
+      // Keyed by the words, so retrying the same draft is the same attempt and
+      // editing it before retrying is a new one.
+      const key = `send:${clipped}`;
+      const commandId = commandIdFor(key);
       setPending(clipped);
       return run((call, conversationId) =>
         postAssistantKitChat({
@@ -197,13 +241,18 @@ export function useAssistantConversation(args: {
           commandId,
           text: clipped,
         }),
-      ).finally(() => {
-        // Cleared in the same batch as the document that now contains it, so
-        // the echo is replaced rather than briefly doubled.
-        setPending(null);
-      });
+      )
+        .then((failure) => {
+          settleCommand(key, failure);
+          return failure;
+        })
+        .finally(() => {
+          // Cleared in the same batch as the document that now contains it, so
+          // the echo is replaced rather than briefly doubled.
+          setPending(null);
+        });
     },
-    [run],
+    [commandIdFor, run, settleCommand],
   );
 
   /**
@@ -217,7 +266,10 @@ export function useAssistantConversation(args: {
       if (open === null) {
         return;
       }
-      const commandId = newIdRef.current();
+      // The chosen option is part of the key: tapping the same one again after
+      // a lost reply is a retry, tapping a different one is a different answer.
+      const key = `answer:${open.interactionId}:${String(open.revision)}:${JSON.stringify(value)}`;
+      const commandId = commandIdFor(key);
       void run((call, conversationId) =>
         postAssistantKitAnswer({
           ...call,
@@ -227,9 +279,12 @@ export function useAssistantConversation(args: {
           revision: open.revision,
           answer: value,
         }),
-      );
+      ).then((failure) => {
+        settleCommand(key, failure);
+        return failure;
+      });
     },
-    [run],
+    [commandIdFor, run, settleCommand],
   );
 
   const dismiss = useCallback(() => {

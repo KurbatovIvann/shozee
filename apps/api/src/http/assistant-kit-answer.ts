@@ -34,6 +34,7 @@ import {
   logInterruptedTurn,
   readJson,
   requireCaller,
+  takeCommand,
   toolContext,
   type AssistantKitAppEnv,
   type AssistantKitRuntime,
@@ -140,6 +141,32 @@ export async function handleAssistantKitAnswer(
   });
   const scope = { conversationId: body.conversationId, bind: caller.bind };
 
+  // Before the claim, not after. The claim is exactly-once by design, so a
+  // retry that reached it would be told `gone` — the answer *did* take, and the
+  // person would be looking at a card that can never be answered (SHO-547).
+  const command = {
+    route: "answer" as const,
+    bind: caller.bind,
+    conversationId: body.conversationId,
+    commandId: body.commandId,
+  };
+  // Read through a call, not a property: the signal can flip during the awaits
+  // between the two checks, and a direct read lets the compiler narrow the
+  // second one to `false` and call it dead.
+  const clientGone = (): boolean => c.req.raw.signal.aborted;
+  if (clientGone()) {
+    // Checked here as well as below, so an already-gone client does not spend a
+    // command before anything has been claimed.
+    return json(499, { status: "aborted" }, requestId);
+  }
+  if (!(await takeCommand(c, runtime, command))) {
+    return json(
+      200,
+      { status: "ok", document: await kit.document.read(scope) },
+      requestId,
+    );
+  }
+
   const claimed = await kit.claim({
     ...scope,
     interactionId: body.interactionId,
@@ -188,11 +215,16 @@ export async function handleAssistantKitAnswer(
   const release = () =>
     kit.release({ ...scope, interactionId: body.interactionId });
 
-  if (c.req.raw.signal.aborted) {
+  if (clientGone()) {
     // The client is already gone. Do not perform the write on its behalf; give
     // the answer back so the card is still there when they return. 499 is the
     // client-closed-request convention.
-    await release();
+    //
+    // The command goes back with it. A phone whose request timed out in the
+    // network sees a transport failure and keeps its `commandId` for the retry;
+    // if the receipt stayed taken, that retry would replay a turn that never
+    // happened and the tap would be dead for the receipt's whole lifetime.
+    await Promise.all([release(), runtime.commands.release(command)]);
     return json(499, { status: "aborted" }, requestId);
   }
 

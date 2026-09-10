@@ -109,6 +109,16 @@ const CALL = {
   getCompanyId: () => "company-a",
 };
 
+/**
+ * Distinct per call, so a test can see whether a retry reused a token or minted
+ * a new one. A fixed id would make the whole of SHO-547 untestable from here.
+ */
+let minted = 0;
+function nextId(): string {
+  minted += 1;
+  return `22222222-2222-4222-8222-${String(minted).padStart(12, "0")}`;
+}
+
 type Latest = { current: UseAssistantConversation | null };
 
 function Probe(props: {
@@ -121,7 +131,7 @@ function Probe(props: {
     locale: "uk",
     call: CALL,
     tenantEpochRef: props.tenantEpochRef,
-    newId: () => "22222222-2222-4222-8222-222222222222",
+    newId: nextId,
   });
   return null;
 }
@@ -165,6 +175,7 @@ function mount(options?: { readonly conversationId?: string | null }) {
 
 beforeEach(() => {
   fetchMock.mockReset();
+  minted = 0;
 });
 
 afterEach(() => {
@@ -493,5 +504,122 @@ describe("useAssistantConversation", () => {
     await flush();
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * SHO-547. A request that never came back may or may not have created the
+ * order, and the draft goes straight back into the field — so the person is
+ * invited to send it again.
+ *
+ * The token is what decides whether that second send is the same attempt. Held
+ * across the one outcome where the client cannot know (`unreachable`), and
+ * dropped for every outcome that is a reply, because those mean the request
+ * arrived and was decided.
+ */
+describe("retrying a command whose reply never came", () => {
+  /** Mounted with its conversation already loaded, as every tap here assumes. */
+  function loaded(options?: { readonly open?: boolean }) {
+    respond(200, {
+      status: "ok",
+      document:
+        options?.open === true
+          ? document({ openPause: OPEN_PAUSE, asked: true })
+          : document(),
+    });
+    return mount();
+  }
+
+  it("sends the same command token, so the server can replay it", async () => {
+    const view = loaded();
+    await flush();
+
+    fetchMock.mockRejectedValueOnce(new Error("network is gone"));
+    await act(async () => {
+      await view.latest().send("створи замовлення");
+    });
+
+    respond(200, { status: "ok", document: document({ text: "Готово." }) });
+    await act(async () => {
+      await view.latest().send("створи замовлення");
+    });
+
+    expect(sentBody(2).commandId).toBe(sentBody(1).commandId);
+  });
+
+  it("mints a new one once the draft has been edited", async () => {
+    const view = loaded();
+    await flush();
+
+    fetchMock.mockRejectedValueOnce(new Error("network is gone"));
+    await act(async () => {
+      await view.latest().send("створи замовлення");
+    });
+
+    respond(200, { status: "ok", document: document({ text: "Готово." }) });
+    await act(async () => {
+      await view.latest().send("створи замовлення на завтра");
+    });
+
+    expect(sentBody(2).commandId).not.toBe(sentBody(1).commandId);
+  });
+
+  /**
+   * The negative, and the reason the token is not simply the text: a person who
+   * sends the same sentence twice on purpose wants it to happen twice.
+   */
+  it("mints a new one after a send that was answered", async () => {
+    const view = loaded();
+    await flush();
+
+    respond(200, { status: "ok", document: document({ text: "Готово." }) });
+    await act(async () => {
+      await view.latest().send("створи замовлення");
+    });
+
+    respond(200, { status: "ok", document: document({ text: "Ще раз." }) });
+    await act(async () => {
+      await view.latest().send("створи замовлення");
+    });
+
+    expect(sentBody(2).commandId).not.toBe(sentBody(1).commandId);
+  });
+
+  it("reuses the token when the same option is tapped again", async () => {
+    const view = loaded({ open: true });
+    await flush();
+
+    fetchMock.mockRejectedValueOnce(new Error("network is gone"));
+    await act(async () => {
+      view.latest().answer({ optionId: "opt-b" });
+      await flush();
+    });
+
+    respond(200, { status: "ok", document: document({ text: "Готово." }) });
+    await act(async () => {
+      view.latest().answer({ optionId: "opt-b" });
+      await flush();
+    });
+
+    expect(sentBody(2).commandId).toBe(sentBody(1).commandId);
+  });
+
+  it("mints a new one when a different option is tapped", async () => {
+    const view = loaded({ open: true });
+    await flush();
+
+    fetchMock.mockRejectedValueOnce(new Error("network is gone"));
+    await act(async () => {
+      view.latest().answer({ optionId: "opt-b" });
+      await flush();
+    });
+
+    respond(200, { status: "ok", document: document({ text: "Готово." }) });
+    await act(async () => {
+      view.latest().answer({ optionId: "opt-a" });
+      await flush();
+    });
+
+    expect(sentBody(2).commandId).not.toBe(sentBody(1).commandId);
   });
 });

@@ -24,6 +24,7 @@ import {
   logInterruptedTurn,
   readJson,
   requireCaller,
+  takeCommand,
   toolContext,
   type AssistantKitAppEnv,
   type AssistantKitRuntime,
@@ -100,6 +101,24 @@ export async function handleAssistantKitChat(
 
   if (c.req.raw.signal.aborted) {
     return json(499, { status: "aborted" }, requestId);
+  }
+
+  // Past every refusal and past the abort check, so a command is only spent by
+  // a request that is about to do something. A retry of a send whose reply was
+  // lost lands here and is answered with the conversation as it now stands —
+  // including the order the first attempt created (SHO-547).
+  const command = {
+    route: "chat" as const,
+    bind: caller.bind,
+    conversationId: body.conversationId,
+    commandId: body.commandId,
+  };
+  if (!(await takeCommand(c, runtime, command))) {
+    return json(
+      200,
+      { status: "ok", document: await kit.document.read(scope) },
+      requestId,
+    );
   }
 
   const priorMessages = await history.load(scope);

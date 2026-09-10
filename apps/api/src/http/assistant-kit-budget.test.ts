@@ -6,6 +6,8 @@
  * back, and answering an open question must not be refused by a bucket the
  * person cannot wait out.
  */
+import { randomUUID } from "node:crypto";
+
 import {
   createAssistantKit,
   type ModelMessage,
@@ -20,6 +22,7 @@ import { describe, expect, it } from "vitest";
 
 import { kyivCalendarDate } from "@showzy/ai";
 
+import { memoryAssistantKitCommands } from "../stores/assistant-kit-stores.js";
 import {
   aiCompanyBudgetKey,
   canonicalizeAiBudgetCompanyId,
@@ -82,6 +85,7 @@ function harness(options?: {
   const app = createAssistantKitApp(
     {
       logger: silentLogger(),
+      commands: memoryAssistantKitCommands(),
       auth: {
         api: {
           getSession: () => Promise.resolve({ user: { id: USER } }),
@@ -130,8 +134,16 @@ async function post(
   );
 }
 
-function chatBody(text = "покажи замовлення") {
-  return { commandId: COMMAND, conversationId: CONVERSATION, text };
+/**
+ * A fresh `commandId` per call unless one is given.
+ *
+ * Two sends with the same token are one command, and the server replays the
+ * second without running it — correct, and not what these tests are measuring.
+ * A budget test that accidentally sent a retry would read as a ceiling holding
+ * when nothing had been charged.
+ */
+function chatBody(text = "покажи замовлення", commandId = randomUUID()) {
+  return { commandId, conversationId: CONVERSATION, text };
 }
 
 /** What this company has been charged today, read straight from the store. */
@@ -213,6 +225,7 @@ describe("the spend ceiling on the kit routes", () => {
       createAssistantKitApp(
         {
           logger: silentLogger(),
+          commands: memoryAssistantKitCommands(),
           auth: {
             api: { getSession: () => Promise.resolve({ user: { id: USER } }) },
           },
@@ -315,5 +328,37 @@ describe("the spend ceiling on the kit routes", () => {
     });
 
     expect(dropped.status).toBe(200);
+  });
+});
+
+/**
+ * A replay re-read the conversation and called no model, so it is not charged
+ * (SHO-547).
+ *
+ * The per-minute bucket still counts it, and that is deliberate rather than
+ * overlooked: the bucket is admission control on how often a person may ask,
+ * it runs before the handler can know a command has already been seen, and a
+ * retry is an ask. Money is the quantity that must not double, and it does not.
+ */
+describe("a replayed command", () => {
+  it("is not charged a second time", async () => {
+    const { app, budgetStore } = harness({
+      limits: { unknownModelTurnUsd: 0.1 },
+    });
+
+    const first = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      chatBody("створи", COMMAND),
+    );
+    const retry = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      chatBody("створи", COMMAND),
+    );
+
+    expect(first.status).toBe(200);
+    expect(retry.status).toBe(200);
+    expect(await spent(budgetStore)).toBe(0.1);
   });
 });

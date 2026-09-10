@@ -50,7 +50,10 @@ import {
   createPostgresAssistantKitDocumentStore,
   createPostgresAssistantKitHistoryStore,
 } from "../stores/assistant-kit-postgres-stores.js";
-import { createRedisAssistantKitPauseStore } from "../stores/assistant-kit-stores.js";
+import {
+  createRedisAssistantKitCommands,
+  createRedisAssistantKitPauseStore,
+} from "../stores/assistant-kit-stores.js";
 import {
   assistantInteractions,
   type AssistantInteractionTypes,
@@ -142,6 +145,7 @@ export function createAssistantKitRuntime(
 
   return {
     logger: options.pipeline.logger,
+    commands: createRedisAssistantKitCommands(options.redis),
     auth: options.auth,
 
     /**

@@ -23,10 +23,24 @@ import type { Context } from "hono";
 import type { Logger } from "pino";
 
 import type { AssistantInteractionTypes } from "./assistant-interactions.js";
+import type {
+  AssistantKitCommandRef,
+  AssistantKitCommands,
+} from "../stores/assistant-kit-stores.js";
 import { REQUEST_ID_HEADER } from "./request-id.js";
 
 export type AssistantKitAppEnv = {
-  Variables: { requestId: string; clientIp: string };
+  Variables: {
+    requestId: string;
+    clientIp: string;
+    /**
+     * Set when a route answered a command it had already run. Read by the
+     * budget wrapper, which must not charge a turn for a reply it re-read: a
+     * person whose connection keeps dropping would otherwise spend their
+     * per-minute allowance on retries of work that already happened.
+     */
+    replayedCommand?: boolean;
+  };
 };
 
 /**
@@ -95,6 +109,30 @@ export interface AssistantTurnPrompt {
 }
 
 /**
+ * Take this command, or say it was already taken.
+ *
+ * Called at the point where a request stops being a question and starts being
+ * work — after the refusals, after the abort check, before the first write.
+ * Placement is the whole design: a command taken by a request that then refuses
+ * would be spent without running, and the person could not retry it.
+ *
+ * A replay answers `ok` with the current document rather than a status of its
+ * own. There is nothing for a client to do differently, and the honest answer
+ * to "did my command run?" is the conversation itself.
+ */
+export async function takeCommand(
+  c: Context<AssistantKitAppEnv>,
+  runtime: AssistantKitRuntime,
+  command: AssistantKitCommandRef,
+): Promise<boolean> {
+  const taken = await runtime.commands.take(command);
+  if (!taken) {
+    c.set("replayedCommand", true);
+  }
+  return taken;
+}
+
+/**
  * A turn that ended before it finished, named in the log.
  *
  * Otherwise this is silent on both sides. The person's request was aborted, so
@@ -145,6 +183,11 @@ export interface AssistantKitScoped {
 export interface AssistantKitRuntime {
   /** The pipeline's logger. Used for spend refusals, which are operational. */
   readonly logger: Logger;
+  /**
+   * One attempt, once. A retry of a request whose reply was lost must not run
+   * the write a second time — see `replayedCommand`.
+   */
+  readonly commands: AssistantKitCommands;
   readonly auth: {
     readonly api: {
       readonly getSession: (args: {

@@ -79,12 +79,9 @@ regressions are prompt changes, not protocol changes.
 
 Listed because the absence is otherwise invisible. An audit found three of these
 after the rewrite shipped; the suite did not, and the reason was not the number
-of tests but which failures were imagined. SHO-546 has since been closed and
-moved into row 15.
+of tests but which failures were imagined. SHO-546 and SHO-547 have since been
+closed and moved into rows 15 and 34.
 
-- **A reply is lost after the write committed.** Retrying mints a new
-  `commandId` and writes again; retrying an answer gets `gone` and no document
-  (SHO-547).
 - **Two turns on one conversation at once.** The document is read-modify-write
   with no compare-and-set and nothing serialises turns (SHO-548).
 
@@ -142,15 +139,17 @@ Three checks became possible only after the vocabulary moved out:
 Three routes now, one factory, all on injected auth / stores / history /
 provider. No database, no live model.
 
-| #   | Given / When / Then                                                                                                                                                       |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 27  | `POST chat` runs a turn, stores the person's words **before** the model runs, and saves the provider history it produced. A failed generation still shows what was asked. |
-| 28  | `POST chat` with an extra `messages` key is a 400. A client never supplies the model transcript.                                                                          |
-| 29  | `POST chat` while a question is unanswered → 409 `interaction_open` with the current pause. A visible limitation instead of a draft that silently disappears.             |
-| 30  | `POST chat` for a conversation owned by someone else → 410, indistinguishable from one that does not exist.                                                               |
-| 31  | `GET messages` returns exactly the parts the live turn returned, byte for byte, plus the open pause from the pause store.                                                 |
-| 32  | `GET messages` for another tenant returns an **empty document**, equal to what a conversation that does not exist returns.                                                |
-| 33  | Full trip over HTTP: chat pauses → choice resolves → reload shows the interaction part and exactly one card, with no open pause left.                                     |
+| #   | Given / When / Then                                                                                                                                                                                                                                     |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 27  | `POST chat` runs a turn, stores the person's words **before** the model runs, and saves the provider history it produced. A failed generation still shows what was asked.                                                                               |
+| 28  | `POST chat` with an extra `messages` key is a 400. A client never supplies the model transcript.                                                                                                                                                        |
+| 29  | `POST chat` while a question is unanswered → 409 `interaction_open` with the current pause. A visible limitation instead of a draft that silently disappears.                                                                                           |
+| 30  | `POST chat` for a conversation owned by someone else → 410, indistinguishable from one that does not exist.                                                                                                                                             |
+| 31  | `GET messages` returns exactly the parts the live turn returned, byte for byte, plus the open pause from the pause store.                                                                                                                               |
+| 32  | `GET messages` for another tenant returns an **empty document**, equal to what a conversation that does not exist returns.                                                                                                                              |
+| 33  | Full trip over HTTP: chat pauses → choice resolves → reload shows the interaction part and exactly one card, with no open pause left.                                                                                                                   |
+| 34  | Two identical sends → the write runs once and the retry is answered with the conversation. Also while the first is still in flight, and for a retried answer, which the exactly-once claim would otherwise refuse with `410` and no document (SHO-547). |
+| 35  | A retry is not charged. The per-minute bucket still counts it — that one runs before a handler can know a command has been seen, and a retry is an ask — but money does not double.                                                                     |
 
 ## A hole the route level found in the package
 

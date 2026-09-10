@@ -1,9 +1,11 @@
 /**
- * Redis behind the `assistant-kit` pause port.
+ * Redis behind the `assistant-kit` pause port, and the command receipts beside
+ * it.
  *
- * Only the pause. An open question has a deadline measured in minutes and
- * exactly one atomic claim, which is what this store is for; the document and
- * the history are the product's record and live in Postgres.
+ * Only short-lived, atomic things. An open question has a deadline measured in
+ * minutes and exactly one atomic claim; a command receipt is the same `SET NX`
+ * used to answer "has this attempt already run?". The document and the history
+ * are the product's record and live in Postgres.
  *
  * Keys are namespaced under `kit:` so nothing here can collide with the pending
  * store the previous assistant still uses. The two share a Redis and must not
@@ -72,6 +74,110 @@ export function createRedisAssistantKitPauseStore(
     },
     async delete(key) {
       await redis.del(assistantKitPauseKey(key));
+    },
+  };
+}
+
+export const ASSISTANT_KIT_COMMAND_PREFIX = `${ASSISTANT_KIT_KEY_PREFIX}cmd:`;
+
+/**
+ * How long a command stays spoken for.
+ *
+ * Long enough to cover a person picking the phone back up after a dropped
+ * connection and pressing send again; short enough that a `commandId` burned by
+ * a crash in the microsecond before any work began heals on its own. Retries
+ * that matter happen in seconds, not minutes — this is generous on purpose,
+ * because the cost of being too short is a duplicate order and the cost of
+ * being too long is one sentence that has to be retyped.
+ */
+export const ASSISTANT_KIT_COMMAND_TTL_MS = 15 * 60 * 1000;
+
+/**
+ * One attempt, once.
+ *
+ * The receipt stores no response body. It does not need one: every route
+ * already answers with the whole document, so replaying a command means reading
+ * where the conversation actually is — which is more truthful than a recording
+ * of what the first attempt said, because the conversation may have moved since.
+ */
+export interface AssistantKitCommands {
+  /**
+   * `false` when this command has already been taken. The caller must then do
+   * nothing and answer with the current document.
+   */
+  take(command: AssistantKitCommandRef): Promise<boolean>;
+  /** Give it back, for a request that took it and then did nothing at all. */
+  release(command: AssistantKitCommandRef): Promise<void>;
+}
+
+export interface AssistantKitCommandRef {
+  readonly bind: string;
+  readonly conversationId: string;
+  readonly commandId: string;
+  /**
+   * Which request this token was spent on.
+   *
+   * A send and an answer are different attempts even when a client happens to
+   * label them with the same token. Without this, a client that reused one id
+   * across the two would have its answer replayed as if it were the send — a
+   * tap that does nothing, silently, for the receipt's whole lifetime.
+   */
+  readonly route: "chat" | "answer";
+}
+
+export function assistantKitCommandKey(
+  command: AssistantKitCommandRef,
+): string {
+  // `bind` first: a receipt belongs to one person in one company, so a guessed
+  // conversation id from elsewhere cannot collide with theirs.
+  return `${ASSISTANT_KIT_COMMAND_PREFIX}${command.route}:${command.bind}:${command.conversationId}:${command.commandId}`;
+}
+
+export function createRedisAssistantKitCommands(
+  redis: RedisLike,
+  ttlMs = ASSISTANT_KIT_COMMAND_TTL_MS,
+): AssistantKitCommands {
+  return {
+    async take(command) {
+      const result = await redis.eval(
+        SET_IF_ABSENT_LUA,
+        1,
+        assistantKitCommandKey(command),
+        "1",
+        String(Math.max(1, Math.floor(ttlMs))),
+      );
+      return redisSetNxSucceeded(result);
+    },
+    async release(command) {
+      await redis.del(assistantKitCommandKey(command));
+    },
+  };
+}
+
+/**
+ * Receipts that live in this process only.
+ *
+ * Correct for a single-process run, and what the route tests use. It is a Map
+ * because that is all a receipt is: `SET NX` and a delete, with an expiry this
+ * one does not need — nothing in a test or a single run outlives the process.
+ */
+export function memoryAssistantKitCommands(): AssistantKitCommands & {
+  readonly taken: Set<string>;
+} {
+  const taken = new Set<string>();
+  return {
+    taken,
+    take(command) {
+      const key = assistantKitCommandKey(command);
+      if (taken.has(key)) {
+        return Promise.resolve(false);
+      }
+      taken.add(key);
+      return Promise.resolve(true);
+    },
+    release(command) {
+      taken.delete(assistantKitCommandKey(command));
+      return Promise.resolve();
     },
   };
 }
