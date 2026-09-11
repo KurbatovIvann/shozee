@@ -62,10 +62,13 @@ the queue and the events.**
   now stands and runs nothing twice. The turn lease and the command receipt
   live on these Postgres rows, not in Redis.
   - The turn row carries what the worker and the reconciler need and the
-    request would otherwise take with it: the placeholder's message id, the
+    request would otherwise take with it: the accept's kind (`chat` |
+    `answer`) and the turn's `commandId`, the placeholder's message id, the
     session id, the company, the request id the turn's actions are audited
     under, an answer's earned seed, and the budget hold (company and global
-    reservation, Kyiv date).
+    reservation, Kyiv date). The kind is stored, never inferred from other
+    columns: the reconciler derives the `jobId` from it, and a guess that
+    disagreed with the accept would name a second job for one turn.
   - **An answer keeps its synchronous half.** The pause is claimed and the
     resolved action runs in the request, exactly as today, so `stale`,
     `unresolvable`, `action_failed` and a second question are still

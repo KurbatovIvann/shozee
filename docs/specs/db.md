@@ -287,9 +287,9 @@ dropped, recorded in the owning module's spec §7 (v1 migration notes).
     the person, session, company and client IP stay in Postgres, so nothing
     that must stay off disk is written there.
   - Loss bound: up to one second of queue writes. It is covered by the
-    assistant reconciler: the accepted turn is already a Postgres row, and a
-    turn with no job is rebuilt from that row and enqueued under the same
-    `jobId`.
+    assistant reconciler: the accepted turn is already a Postgres row that
+    stores the accept's kind and the turn's command id, and a turn with no job
+    is rebuilt from that row and enqueued under the same `jobId`.
   - Development form (`docker-compose.yml`): `redis` on `127.0.0.1:6379` with
     no append-only file and no volume; `redis-queue` on `127.0.0.1:6380` with
     volume `redis-queue-data` at `/data` and `--appendonly yes --appendfsync

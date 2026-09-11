@@ -50,7 +50,8 @@ const canonicalUuidSchema = z.uuid().transform((value) => value.toLowerCase());
  * everything else: the worker loads the turn row, checks its session row —
  * which gives the verified user — and reads the company, the request id, the
  * answer's earned card and the rest from Postgres (SHO-560, SHO-561). The
- * reconciler rebuilds a lost job from the turn row alone, so nothing belongs
+ * reconciler rebuilds a lost job from the turn row alone — the row stores the
+ * accept's kind and the turn's `commandId`, never inferred — so nothing belongs
  * here that the row cannot give back.
  *
  * No person, session, company or client IP: a job is not an access grant, and
