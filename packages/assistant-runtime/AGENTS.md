@@ -39,6 +39,18 @@ runtime internals, so what both need lives here.
   turn's identity only (kind, conversation id, command id, lowercased);
   Postgres is the source of everything else, and the reconciler rebuilds a
   job from the turn row.
+- `events.ts` — the event channel contract (SHO-562): the per-conversation
+  channel and presence key (company then conversation, lowercased), the stream
+  slot key, the heartbeat, presence ttl, per-person stream limit and idle
+  close, and the versioned envelope a published event travels in. The payload
+  schemas themselves are client-safe and live in
+  `@showzy/validation/assistant-events`, because a phone parses them.
+- `stores/assistant-events-redis.ts` — the Redis half: the publisher (the
+  worker's), presence and stream slots (sorted sets whose deadlines come from
+  the Redis server's clock inside Lua), and the subscriber hub — one duplicated
+  connection per process, no automatic resubscribe, `onLost` when it drops. On
+  the shared, non-persistent Redis. No replay log: every stream starts from a
+  snapshot.
 
 ## Rules
 

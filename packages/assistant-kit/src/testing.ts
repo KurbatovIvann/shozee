@@ -106,7 +106,7 @@ export function memoryMessageLog(): MemoryMessageLog {
       const seq = (all.at(-1)?.seq ?? 0) + 1;
       byConversation.set(conversationId, [
         ...all,
-        { seq, ...structuredClone(record) },
+        { seq, revision: 1, ...structuredClone(record) },
       ]);
       writes += 1;
       return Promise.resolve({ seq });
@@ -126,7 +126,11 @@ export function memoryMessageLog(): MemoryMessageLog {
         );
       }
       const next = [...all];
-      next[at] = { ...held, message: structuredClone(record.message) };
+      next[at] = {
+        ...held,
+        message: structuredClone(record.message),
+        revision: held.revision + 1,
+      };
       byConversation.set(conversationId, next);
       writes += 1;
       return Promise.resolve();

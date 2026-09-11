@@ -24,7 +24,8 @@ Boot says which of those happened, so it is never a guess:
 ```
 {"msg":"assistant-kit path","enabled":true,"mounted":true,
  "paths":["POST /assistant/kit/chat","POST /assistant/kit/answer",
-          "POST /assistant/kit/abandon","GET /assistant/kit/messages"]}
+          "POST /assistant/kit/abandon","GET /assistant/kit/messages",
+          "GET /assistant/kit/events"]}
 ```
 
 `enabled:true, mounted:false` means the flag is on but no language model was
@@ -49,7 +50,7 @@ by more than a window meanwhile — another device, a long absence — the older
 pages are dropped rather than shown with a gap. A page arriving at the top keeps
 the person where they are reading; a reply brings the thread back to its end.
 
-## The four routes
+## The routes
 
 | Method | Path | Body / query |
 | --- | --- | --- |
@@ -57,6 +58,7 @@ the person where they are reading; a reply brings the thread back to its end.
 | POST | `/assistant/kit/answer` | `{ commandId, conversationId, interactionId, revision, answer }` |
 | POST | `/assistant/kit/abandon` | `{ conversationId, interactionId }` |
 | GET | `/assistant/kit/messages` | `?conversationId=` and, for an older page, `&before=` |
+| GET | `/assistant/kit/events` | `?conversationId=` — server-sent events, see [The event stream](#the-event-stream) |
 
 Same auth as the live assistant: staff session cookie plus `x-company-id`.
 `commandId` and `conversationId` are uuids the client makes up.
@@ -129,6 +131,88 @@ The page before it (take `olderCursor` from the previous response):
 curl -sS "$KIT/assistant/kit/messages?conversationId=$CONV&before=PASTE" -H "cookie: $COOKIE" -H "x-company-id: $COMPANY" | jq
 ```
 
+## The event stream
+
+`GET /assistant/kit/events?conversationId=` answers with server-sent events
+(ADR-0039, SHO-562). Additive until the switch (SHO-563): no client listens yet,
+and nothing publishes until the worker runs turns (SHO-561).
+
+Authorization is the other routes': the session cookie, `x-company-id`, and a
+read of the conversation as the caller. A conversation that is not yours and one
+that does not exist both answer `410 {"status":"expired"}`, exactly as
+`GET /assistant/kit/messages` does, before any stream opens.
+
+| Event | Data |
+| --- | --- |
+| `snapshot` | `{ type, window }` — always first; the window `GET /assistant/kit/messages` returns |
+| `turn.started` | `{ type, conversationId, kind, commandId }` |
+| `message.updated` | `{ type, conversationId, message }` — the latest message, whole, with its `revision` |
+| `turn.finished` | `{ type, kind, commandId, status, window }` — the window, because `openPause` is window-level |
+| `text.delta` | reserved for streaming tokens; never sent |
+
+Between events, a comment line `: heartbeat` every 15 s.
+
+**Every message carries a `revision`** — in every window and every event. It is
+1 when the message is stored and rises by one on each update. A client holding
+two copies of one message keeps the higher, so a window and an event that
+crossed cannot overwrite each other with the older copy.
+
+**Nothing is replayed.** An event published while nobody listened is gone, and
+that costs nothing: the next connection's snapshot already shows its effect. A
+client that suspects it missed something reconnects; it never asks for history.
+
+Limits, none of which touch the turn budget:
+
+- **5 open streams per person**, counted across API processes. The sixth answers
+  `429 {"error":{"code":"RATE_LIMITED"}}`. A closed stream frees its slot at once;
+  one whose process died frees it within 45 s.
+- **Sign-out ends a stream.** The session is re-checked on every heartbeat —
+  without refreshing it and bypassing the cookie cache — so a sign-out or a
+  revoked session ends the stream within 15 s, and watching never keeps a
+  session alive.
+- **Idle streams close** after 10 minutes without an event.
+- **A dropped Redis subscriber ends every stream on it**, so each client
+  reconnects from a snapshot rather than carrying on past a gap.
+
+```bash
+curl -N "$KIT/assistant/kit/events?conversationId=$CONV" -H "cookie: $COOKIE" -H "x-company-id: $COMPANY"
+```
+
+### Where it lives
+
+The channel and presence use the shared, non-persistent Redis (`REDIS_URL`):
+neither needs to survive a restart. Each API process holds one more connection,
+for subscribing, because a Redis connection in subscribe mode can run nothing
+else. The worker publishes on its own existing connection.
+
+```
+assistant:events:<companyId>:<conversationId>     pub/sub channel, ids lowercased
+assistant:presence:<companyId>:<conversationId>   live streams: stream id -> deadline
+assistant:streams:<userId>                        one person's open streams, same shape
+```
+
+```
+redis-cli PUBSUB NUMSUB assistant:events:<companyId>:<conversationId>
+redis-cli ZRANGE assistant:presence:<companyId>:<conversationId> 0 -1 WITHSCORES
+```
+
+Deadlines are Redis server time in milliseconds, set inside Lua, so the API that
+writes presence and the worker that reads it never compare their own clocks.
+
+### Required before production
+
+There is no production environment yet, so these are recorded, not built:
+
+- The ingress or proxy in front of the API must not buffer `text/event-stream`
+  responses (for nginx, `proxy_buffering off`), and its read timeout must be
+  comfortably longer than the 15 s heartbeat.
+- Idle timeouts at the load balancer and at the edge must also exceed the
+  heartbeat, or streams are cut and clients reconnect for nothing.
+- Connection limits per API instance must allow one long-lived connection per
+  open stream — up to 5 per signed-in person.
+- A deploy ends an instance's streams on SIGTERM before its HTTP server closes;
+  clients reconnect to another instance and start from a snapshot.
+
 ## The scenario worth running
 
 1. **A read.** `chat` with "покажи замовлення цього клієнта". Expect one list or
@@ -195,8 +279,9 @@ would ask again every time, and nothing would ever run.
 
 `POST /assistant/kit/chat` and `/answer` run under the same guard the previous
 assistant used, on the same Redis keys and the same per-user bucket: a Kyiv-day
-USD ceiling per company and globally, plus 20 turns/minute/user. The other two
-routes call no model and are unguarded.
+USD ceiling per company and globally, plus 20 turns/minute/user. The other
+routes call no model and are unguarded; the event stream has its own
+per-person limit instead, and never takes from the turn budget.
 
 Reserve, run, settle or release. A refusal never spends a turn slot, and a turn
 that produced nothing gives its reservation back. Answering an open question

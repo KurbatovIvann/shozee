@@ -40,6 +40,13 @@ export interface StoredMessage {
   /** The owner token the message was written under. */
   readonly bind: string;
   readonly message: unknown;
+  /**
+   * Also the store's: 1 on insert, raised by one on every update. It is how a
+   * reader holding two copies of one message keeps the newer, so it travels
+   * with the message in every window rather than being part of what was
+   * written.
+   */
+  readonly revision: number;
 }
 
 /**

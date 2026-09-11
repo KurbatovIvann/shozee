@@ -272,11 +272,13 @@ dropped, recorded in the owning module's spec §7 (v1 migration notes).
 - **Two Redis instances (ADR-0039).** Redis is split by what may reach disk.
   - **Shared Redis** (`REDIS_URL`): better-auth secondary storage, which holds
     plaintext phone OTP codes (`apps/api/src/auth/options.ts`); rate limits;
-    confirmation challenges; assistant pauses and budget counters; and the
+    confirmation challenges; assistant pauses and budget counters; the
+    assistant's event channels, presence and stream slots (SHO-562); and the
     worker's safe-to-miss BullMQ jobs (maintenance and pdf, schedulers
     re-upserted on boot), which may stay here. It must not persist, so OTP
     codes never reach disk or backups (`security-operations.md` §2). Losing it
-    costs codes and challenges in flight, open questions, counters and
+    costs codes and challenges in flight, open questions, counters, live event
+    streams (each client reconnects and starts from a Postgres snapshot) and
     re-runnable jobs — never product state.
   - **Queue Redis**: durable BullMQ queues, today the assistant queue. An
     accepted assistant turn is enqueued there, and a lost job is a turn nobody
@@ -402,6 +404,7 @@ Idempotent (`ON CONFLICT DO NOTHING`) seeds, runnable repeatedly.
 | Date | Change | Why | Reported by |
 | --- | --- | --- | --- |
 | 2026-09-11 | §6: two Redis instances — a non-persistent shared Redis (OTP codes stay off disk) and a dedicated queue Redis with AOF (`appendfsync everysec`) on a volume and `noeviction`; production requirements verified with `CONFIG GET appendonly` / `maxmemory-policy` / `save` | ADR-0039: an accepted assistant turn is a durable BullMQ job, the first non-rebuildable Redis use | assistant-async-T1 (SHO-559) |
+| 2026-09-11 | §6: the assistant's event pub/sub channels, presence and stream slots live on the shared, non-persistent Redis | ADR-0039 delivery: every stream starts from a Postgres snapshot, so nothing here needs to survive a restart and there is no replay log | assistant-async-T4 (SHO-562) |
 | 2026-09-08 | §3: GIN/trgm + generated `tsvector` on owner name columns for staff matchers are not ADR-0020 discovery / `schema/search.ts` grants | SHO-528 / SHO-526 global company search T1 | db-T4 (SHO-528) |
 | 2026-08-28 | §3: `customer_legal_profiles` is an account-scoped tenancy exception (no `company_id`); §7: user-delete contact-preserve trigger | SHO-170 / ADR-0028 legal requisites; SET NULL + contact CHECK coexistence | customers-T2 (SHO-170) |
 | 2026-08-20 | §3: later modules reuse the PG15 column-scoped SET NULL custom-migration pattern | SHO-91 orders customer FK cannot null `company_id` | orders-T1 (SHO-91) |

@@ -198,9 +198,10 @@ describe("the window a server writes and the window a client reads", () => {
     ];
 
     for (const placeholder of placeholders) {
+      // A read returns the stored message with the store's revision beside it.
       const window = {
         conversationId: CONVERSATION,
-        messages: [placeholder],
+        messages: [{ ...placeholder, revision: 1 }],
         olderCursor: null,
         openPause: null,
       };

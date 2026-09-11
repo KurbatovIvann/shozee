@@ -22,8 +22,17 @@ Auth policy parameters still live in `src/auth/` (fnd-T6).
   IP, better-auth at `/api/auth`, oRPC at `/rpc`, OpenAPI REST at `/api/v1`,
   `GET /health`, `GET /d/:token`, `POST /pki/proxy` (HTTP, not an action),
   `POST /assistant/kit/*` (the assistant, ADR-0038; budget at the mount point,
-  `channel: "ai"`). Dependencies are
-  injected; tests never read `process.env`.
+  `channel: "ai"`), and `GET /assistant/kit/events` (SSE, SHO-562; outside the
+  budget). Dependencies are injected; tests never read `process.env`.
+- `src/http/assistant-kit-events.ts` — the event stream: the other routes'
+  authorization (the caller's read is the author rule, 410 alike), then a
+  stream slot, the conversation's channel through the process's one
+  subscriber hub, a `snapshot` first and published events after, a heartbeat
+  that re-checks the session. Timers are injected. `BootedApi.closeStreams`
+  ends open streams before the HTTP server's close, which would otherwise wait
+  on them. The channel names, presence, slots and hub are
+  `@showzy/assistant-runtime`; the payload schemas are
+  `@showzy/validation/assistant-events`.
 - `src/http/assistant-kit*.ts` — the assistant routes: handlers, request
   plumbing (`assistant-kit-http.ts`: session, company header, command receipts,
   response shapes), the Hono budget wrapper, and `createAssistantKitRuntime`,

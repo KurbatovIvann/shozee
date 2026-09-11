@@ -5,7 +5,12 @@
  * Codes never reach logs (security-operations §2).
  */
 import { getConnInfo } from "@hono/node-server/conninfo";
-import { optionalStaffAssistantLanguageModel } from "@showzy/assistant-runtime";
+import {
+  createRedisAssistantEventHub,
+  createRedisAssistantPresence,
+  createRedisAssistantStreamSlots,
+  optionalStaffAssistantLanguageModel,
+} from "@showzy/assistant-runtime";
 import type { ServerConfig } from "@showzy/config";
 import { contractModules } from "@showzy/contract";
 import { createDbClient } from "@showzy/db";
@@ -26,6 +31,7 @@ import {
   createActionRegistry,
   createStaffAssistantProvider,
 } from "./composition.js";
+import { createAssistantKitEvents } from "./http/assistant-kit-events.js";
 import { createAssistantKitRuntime } from "./http/assistant-kit-runtime.js";
 import { createApp, type AuthInstance } from "./http/app.js";
 import { createProcessObservability } from "./observability.js";
@@ -41,6 +47,11 @@ import {
 
 export interface BootedApi {
   readonly app: ReturnType<typeof createApp>;
+  /**
+   * Ends every open event stream. Called before the HTTP server's close can
+   * finish, which otherwise waits on those connections indefinitely.
+   */
+  closeStreams(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -99,8 +110,10 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
   const auth: AuthInstance = {
     handler: (request) => authInstance.handler(request),
     api: {
-      async getSession({ headers }) {
-        const result = await authInstance.api.getSession({ headers });
+      async getSession({ headers, query }) {
+        const result = await authInstance.api.getSession(
+          query === undefined ? { headers } : { headers, query },
+        );
         if (result === null) {
           return null;
         }
@@ -148,6 +161,7 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
               "POST /assistant/kit/answer",
               "POST /assistant/kit/abandon",
               "GET /assistant/kit/messages",
+              "GET /assistant/kit/events",
             ],
       ...(config.ai.assistantKitEnabled && assistantKitModel === undefined
         ? { reason: "no language model configured" }
@@ -155,6 +169,18 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
     },
     "assistant-kit path",
   );
+
+  // Pub/sub and presence on the shared, non-persistent Redis: neither needs to
+  // survive a restart. The hub subscribes on its own connection, because a
+  // Redis connection in subscribe mode can run nothing else.
+  const assistantKitEvents =
+    assistantKitModel === undefined
+      ? undefined
+      : createAssistantKitEvents({
+          hub: createRedisAssistantEventHub(redis, { logger }),
+          presence: createRedisAssistantPresence(redis),
+          slots: createRedisAssistantStreamSlots(redis),
+        });
 
   const app = createApp({
     auth,
@@ -179,6 +205,7 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
             redis,
           }),
         }),
+    ...(assistantKitEvents === undefined ? {} : { assistantKitEvents }),
     assistantBudget: {
       rateLimitStore,
       budgetStore: createRedisAiBudgetStore(redis),
@@ -193,8 +220,12 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
 
   return {
     app,
+    async closeStreams() {
+      await assistantKitEvents?.streams.closeAll();
+    },
     async close() {
       closeFilesObjectStore();
+      await assistantKitEvents?.hub.close();
       await redis.quit();
       await db.pool.end();
     },

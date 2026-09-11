@@ -38,7 +38,10 @@ import {
   type StaffAssistantBudgetLimits,
 } from "@showzy/assistant-runtime";
 
-import { createAssistantKitApp } from "./assistant-kit.js";
+import {
+  createAssistantKitApp,
+  type AssistantKitEvents,
+} from "./assistant-kit.js";
 import type { AssistantKitRuntime } from "./assistant-kit-http.js";
 import { createTrustedProxyMatcher, resolveClientIp } from "./client-ip.js";
 import {
@@ -75,6 +78,11 @@ export interface AuthInstance {
   api: {
     getSession: (args: {
       headers: Headers;
+      /**
+       * For a check that must see a revocation and must not extend the
+       * session: a live event stream re-checking its caller (SHO-562).
+       */
+      query?: { disableRefresh?: boolean; disableCookieCache?: boolean };
     }) => Promise<{ user: { id: string } } | null>;
   };
 }
@@ -111,6 +119,11 @@ export interface CreateAppOptions {
    * no model configured gets.
    */
   readonly assistantKit?: AssistantKitRuntime;
+  /**
+   * `GET /assistant/kit/events` (SHO-562). Mounted only beside the assistant;
+   * absent, the other routes still serve.
+   */
+  readonly assistantKitEvents?: AssistantKitEvents;
 }
 
 /**
@@ -374,16 +387,20 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     assistantBudget.limits ?? DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS;
 
   if (options.assistantKit !== undefined) {
-    // Mounted as a whole app so its four routes stay together; it inherits
-    // this app's request id and client ip.
+    // Mounted as a whole app so its routes stay together; it inherits this
+    // app's request id and client ip.
     app.route(
       "/",
-      createAssistantKitApp(options.assistantKit, {
-        logger: options.pipeline.logger,
-        limits: budgetLimits,
-        rateLimitStore: assistantBudget.rateLimitStore,
-        budgetStore: assistantBudget.budgetStore,
-      }),
+      createAssistantKitApp(
+        options.assistantKit,
+        {
+          logger: options.pipeline.logger,
+          limits: budgetLimits,
+          rateLimitStore: assistantBudget.rateLimitStore,
+          budgetStore: assistantBudget.budgetStore,
+        },
+        options.assistantKitEvents,
+      ),
     );
   }
 

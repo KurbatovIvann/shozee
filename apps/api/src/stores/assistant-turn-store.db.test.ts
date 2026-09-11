@@ -202,6 +202,7 @@ describe("accepting a turn through the runtime", () => {
         parts: [
           { kind: "text", text: "створи замовлення", status: "complete" },
         ],
+        revision: 1,
       },
       {
         messageId: assistantTurnMessageId(
@@ -211,6 +212,7 @@ describe("accepting a turn through the runtime", () => {
         role: "assistant",
         createdAt: expect.any(String) as string,
         parts: [{ kind: "text", text: "", status: "streaming" }],
+        revision: 1,
       },
     ]);
   });
