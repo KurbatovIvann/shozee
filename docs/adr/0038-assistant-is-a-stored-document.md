@@ -174,10 +174,12 @@ ended. Both become one row of `assistant_turns`.
   reconciler needs without a request. Not the client IP: it is transport-only,
   and core builds a staff context without one.
 - **The actor is `user_id`, never the session.** `user_id` comes from the
-  accept's verified context. `session_id` is better-auth's `session.id` (never
-  its token), unverified on write, and only a liveness hint: the worker runs a
-  turn only while that session exists, is unexpired and belongs to `user_id`.
-  It is cleared when the turn ends.
+  accept's verified context, and core checks that user's membership again on
+  every action the turn runs. `session_id` is better-auth's `session.id`
+  (never its token), unverified on write, and read by nothing: a turn accepted
+  before its author signed out may still finish. It is cleared when the turn
+  ends. *(Amended 2026-09-11, SHO-561: an earlier wording made the session a
+  liveness hint the worker checked before running a turn.)*
 - **Messages carry a revision**, 1 on insert and one more on every update, so a
   client can keep the newer of two copies of the live message.
 

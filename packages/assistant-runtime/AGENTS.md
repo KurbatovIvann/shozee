@@ -21,9 +21,10 @@ runtime internals, so what both need lives here.
 - `assistant-kit-history-window.ts` — what the model reads of a conversation.
 - `assistant-model.ts` — which language model, or none.
 - `assistant-invocation.ts` — `channel: "ai"` and the assistant path name.
-- `assistant-budget-guard.ts`, `stores/budget.ts` — the pure spend guard and
-  the budget store port with its in-memory store. The Redis budget store is
-  still `apps/api/src/stores/redis.ts`.
+- `assistant-budget-guard.ts`, `stores/budget.ts`, `stores/budget-redis.ts` —
+  the pure spend guard, the budget store port with its in-memory reference
+  store, and the Redis store both processes mount (SHO-561). A counter never
+  goes below zero in either store.
 - `stores/assistant-kit-stores.ts` — Redis pause store and command receipts
   (the receipts and the kit's turn lease are replaced by `assistant_turns` at
   the switch, SHO-563).
@@ -33,7 +34,20 @@ runtime internals, so what both need lives here.
 - `stores/assistant-turn-store.ts` — accept, start and finish a turn as the
   caller, and the reconciler's global read (SHO-560). Owns the ids of a turn's
   messages (derived from the command), the placeholder's shape and the budget
-  hold's micro-USD form; the module stores them as given.
+  hold's micro-USD form; the module stores them as given. Finishing a turn
+  returns the hold it took off the row, once (SHO-561).
+- `stores/assistant-turn-for-job.ts` — the global system read of the turn a job
+  names, and the only producer of `VerifiedAssistantCaller` (the row's
+  `user_id`, `company_id` and `request_id`; no client IP), for a queued turn
+  only. A job payload is never a caller. The session is not read (ADR-0039,
+  amended SHO-561).
+  - The brand is produced only in this file.
+  - ESLint (`no-restricted-syntax`) catches only a direct type assertion to
+    the name `VerifiedAssistantCaller`. A renamed import, a type alias, an
+    indexed type (`AssistantTurnForJob["caller"]`), a user-defined type guard
+    or a generic cast helper gets past it.
+  - Any other way of producing a `VerifiedAssistantCaller` is a review
+    blocker.
 - `queue.ts` — the assistant queue contract: name, BullMQ prefix, job payload
   schema, `jobId` derivation. Pure constants and a schema. The payload is the
   turn's identity only (kind, conversation id, command id, lowercased);

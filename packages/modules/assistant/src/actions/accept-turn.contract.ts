@@ -51,10 +51,9 @@ export const acceptTurnInputSchema = z
     /**
      * better-auth `session.id` of the accepting request — never
      * `session.token`. Unverified on write: core's staff context carries only
-     * the user, so this is a liveness hint and never an identity. The turn's
-     * actor is the verified caller, stored as `user_id`; the worker runs the
-     * turn only while this session exists, is unexpired and belongs to that
-     * user (ADR-0039).
+     * the user, so this is recorded and never an identity. The turn's actor is
+     * the verified caller, stored as `user_id`; the worker does not read the
+     * session (ADR-0039, amended SHO-561).
      */
     sessionId: z.string().min(1).max(256),
     userMessage: acceptTurnMessageSchema.optional(),

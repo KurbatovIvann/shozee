@@ -20,19 +20,22 @@ import {
   assistantTurnMessageId,
   createMemoryAiBudgetStore,
   createPostgresAssistantStaleTurns,
+  createPostgresAssistantTurnForJob,
   createPostgresAssistantTurnStore,
   enforceStaffAssistantBudget,
   releaseStaffAssistantBudgetHold,
   type AiBudgetStore,
   type StaffAssistantBudgetHold,
 } from "@showzy/assistant-runtime";
-import { ConflictError } from "@showzy/core/errors";
+import { ConflictError, PermissionDeniedError } from "@showzy/core/errors";
 import {
   createTestKit,
   kitIdentities,
   type TestKit,
 } from "@showzy/core/testing";
 import { assistantConversations } from "@showzy/db/schema/assistant";
+import { user } from "@showzy/db/schema/auth";
+import { companyMembers } from "@showzy/db/schema/companies";
 import { assistantChatWindowSchema } from "@showzy/validation/assistant-chat";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -360,6 +363,10 @@ describe("the budget reservation of an accept", () => {
       throw new Error(`expected accepted, got ${accepted.outcome}`);
     }
     await turns().finish(accepted.turn, "done");
+    // Finishing took the hold off the row (SHO-561); the refusal below must
+    // leave the row as the finish left it.
+    const heldAfterFinish = await storedHolds(conversationId);
+    expect(heldAfterFinish).toEqual([{ company: 0, global: 0 }]);
 
     const refused = await turns().accept({
       ...chat(conversationId),
@@ -373,9 +380,7 @@ describe("the budget reservation of an accept", () => {
       company: 0.1,
       global: 0.1,
     });
-    expect(await storedHolds(conversationId)).toEqual([
-      { company: 100_000, global: 100_000 },
-    ]);
+    expect(await storedHolds(conversationId)).toEqual(heldAfterFinish);
   });
 
   it("is released when the accept is refused as a conflict", async () => {
@@ -492,6 +497,7 @@ describe("the reconciler", () => {
     expect(await turns().finish(accepted.turn, "interrupted")).toEqual({
       outcome: "finished",
       status: "interrupted",
+      releasedHold: hold,
     });
 
     const listed = await createPostgresAssistantStaleTurns({
@@ -500,5 +506,188 @@ describe("the reconciler", () => {
     expect(
       listed.some((row) => row.turn.conversationId === conversationId),
     ).toBe(false);
+  });
+});
+
+/**
+ * What the worker will do with a job: read the turn it names, and run the
+ * turn's actions as the caller that read produced — the row's user, company
+ * and request, with no client IP (SHO-561).
+ */
+describe("the turn a job names", () => {
+  it("runs as the row's user with no client IP, and hands its hold out once", async () => {
+    const conversationId = await newConversation();
+    const accepted = await turns().accept({
+      kind: "chat",
+      conversationId: conversationId.toUpperCase(),
+      commandId: randomUUID().toUpperCase(),
+      bind: annaBind,
+      text: "привіт",
+      sessionId: "session-anna",
+      ...nothingReserved,
+    });
+    if (accepted.outcome !== "accepted") {
+      throw new Error(`expected accepted, got ${accepted.outcome}`);
+    }
+    const forJob = createPostgresAssistantTurnForJob({
+      pipeline: kit.pipeline,
+    });
+
+    const found = await forJob.read({
+      job: accepted.job,
+      requestId: randomUUID(),
+    });
+
+    expect(found).toMatchObject({
+      companyId: kitIdentities.companies.a,
+      turn: {
+        kind: "chat",
+        conversationId,
+        commandId: accepted.turn.commandId,
+      },
+      status: "queued",
+      deadlineAt: null,
+      budgetHold: hold,
+      continuationRootCommandId: accepted.turn.commandId,
+      caller: {
+        userId: anna.userId,
+        companySelector: kitIdentities.companies.a,
+        requestId: anna.requestId,
+      },
+    });
+    if (found === null || found.caller === null) {
+      throw new Error("expected a verified caller for a queued turn");
+    }
+    expect(found.caller).not.toHaveProperty("clientIp");
+
+    // Core runs a staff action without an IP: the caller is enough.
+    const asTurn = createPostgresAssistantTurnStore(
+      { pipeline: kit.pipeline },
+      found.caller,
+    );
+    expect((await asTurn.start(found.turn)).outcome).toBe("started");
+    // A started turn gives no caller: only a queued turn is started from one.
+    expect(
+      await forJob.read({ job: accepted.job, requestId: randomUUID() }),
+    ).toMatchObject({ status: "running", caller: null });
+    expect(await asTurn.finish(found.turn, "done")).toEqual({
+      outcome: "finished",
+      status: "done",
+      releasedHold: hold,
+    });
+    expect(await asTurn.finish(found.turn, "failed")).toEqual({
+      outcome: "already_finished",
+      status: "done",
+      releasedHold: null,
+    });
+    expect(
+      await forJob.read({ job: accepted.job, requestId: randomUUID() }),
+    ).toMatchObject({
+      status: "done",
+      budgetHold: { companyReservedUsd: 0, globalReservedUsd: 0 },
+      // A replayed job for an ended turn is no way to act as its author.
+      caller: null,
+    });
+  });
+
+  /**
+   * The verified caller names a person, not a grant: core checks the author's
+   * membership again on every action, IP or not, so a member removed after the
+   * accept is refused at the turn's next action.
+   */
+  it("refuses the turn's actions once its author is no longer a member", async () => {
+    const clerkId = randomUUID();
+    await kit.db.runtime.db.insert(user).values({
+      id: clerkId,
+      name: "Leaving Clerk",
+      email: `${clerkId}@assistant-turn-store.test`,
+    });
+    await kit.db.runtime.db.insert(companyMembers).values({
+      companyId: kitIdentities.companies.a,
+      userId: clerkId,
+      role: "employee",
+      permissions: { granted: ["assistant:use"], denied: [] },
+    });
+    const clerk = {
+      userId: clerkId,
+      companySelector: kitIdentities.companies.a,
+      requestId: randomUUID(),
+    };
+    const forJob = createPostgresAssistantTurnForJob({
+      pipeline: kit.pipeline,
+    });
+
+    const acceptAndRead = async () => {
+      const conversationId = await newConversation({
+        companyId: kitIdentities.companies.a,
+        userId: clerkId,
+      });
+      const accepted = await createPostgresAssistantTurnStore(
+        { pipeline: kit.pipeline },
+        clerk,
+      ).accept({
+        kind: "chat",
+        conversationId,
+        commandId: randomUUID(),
+        bind: `${clerkId}:${kitIdentities.companies.a}`,
+        text: "привіт",
+        sessionId: "session-clerk",
+        ...nothingReserved,
+      });
+      if (accepted.outcome !== "accepted") {
+        throw new Error(`expected accepted, got ${accepted.outcome}`);
+      }
+      const found = await forJob.read({
+        job: accepted.job,
+        requestId: randomUUID(),
+      });
+      if (found === null || found.caller === null) {
+        throw new Error("expected a verified caller for a queued turn");
+      }
+      return {
+        job: accepted.job,
+        turn: found.turn,
+        asTurn: createPostgresAssistantTurnStore(
+          { pipeline: kit.pipeline },
+          found.caller,
+        ),
+      };
+    };
+    const queued = await acceptAndRead();
+    const running = await acceptAndRead();
+    expect((await running.asTurn.start(running.turn)).outcome).toBe("started");
+
+    const removed = await kit.db.admin.query(
+      "delete from company_members where user_id = $1",
+      [clerkId],
+    );
+    expect(removed.rowCount).toBe(1);
+
+    await expect(queued.asTurn.start(queued.turn)).rejects.toBeInstanceOf(
+      PermissionDeniedError,
+    );
+    await expect(
+      running.asTurn.finish(running.turn, "done"),
+    ).rejects.toBeInstanceOf(PermissionDeniedError);
+    expect(
+      await forJob.read({ job: queued.job, requestId: randomUUID() }),
+    ).toMatchObject({ status: "queued", budgetHold: hold });
+    expect(
+      await forJob.read({ job: running.job, requestId: randomUUID() }),
+    ).toMatchObject({ status: "running", budgetHold: hold });
+  });
+
+  it("finds nothing for a job nobody accepted", async () => {
+    expect(
+      await createPostgresAssistantTurnForJob({ pipeline: kit.pipeline }).read({
+        job: {
+          version: 1,
+          kind: "chat",
+          conversationId: randomUUID(),
+          commandId: randomUUID(),
+        },
+        requestId: randomUUID(),
+      }),
+    ).toBeNull();
   });
 });

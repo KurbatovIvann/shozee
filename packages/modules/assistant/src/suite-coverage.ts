@@ -14,6 +14,8 @@ export const assistantSuiteCoverage = {
     "assistant.startTurn",
     "assistant.finishTurn",
     "assistant.listStaleTurns",
+    "assistant.readTurnForJob",
+    "assistant.interruptTurn",
   ],
   publicProjection: [],
   consumerIsolation: [],

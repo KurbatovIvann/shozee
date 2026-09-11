@@ -27,8 +27,8 @@ Turn limit uses the existing token-bucket store:
 ai-chat:{userId}
 ```
 
-Daily USD (increment-with-cap reservation, then `INCRBYFLOAT` settle,
-`EXPIRE` 48 hours):
+Daily USD (increment-with-cap reservation, then a floored add to settle or
+release, kept 48 hours):
 
 ```
 ai-budget:{companyId}:{yyyy-mm-dd}
@@ -41,9 +41,14 @@ that reserves before Kyiv midnight and finishes after still writes the
 **reserve** day's keys. `{companyId}` is the lowercase UUID. Before the
 gate/model, the guard **reserves** `AI_UNKNOWN_MODEL_TURN_USD` on each
 enabled counter with an atomic increment-with-cap (Redis Lua; memory
-store serializes per key). After the turn, `INCRBYFLOAT` settles the
-delta `(estimated − reserved)`. Unknown-model `null` estimates stay at
-the reserved amount.
+store serializes per key). After the turn, `add` settles the delta
+`(estimated − reserved)`, and a release adds `−reserved`. `add` is a Lua
+read-add-floor: it adds the signed amount, stops at zero, and deletes the
+key when the result is zero or below, so a counter is never negative
+(SHO-561). A release that would have taken a non-zero counter below zero
+logs `staff assistant budget counter floored at zero` with the key, the
+counter and the delta. Unknown-model `null` estimates stay at the
+reserved amount.
 
 This is an admission threshold, not a hard cap on provider charges. An
 admitted turn may settle **above** its reservation; that overshoot is
@@ -84,10 +89,13 @@ GET ai-budget:{companyId}:{yyyy-mm-dd}
 
 Do not `DEL` or `SET 0` while chats that already reserved are still
 running. Those turns will still settle `(estimated − reserved)` or
-release `−reserved` against the key you just cleared, so the counter can
-go negative or a later settle can look like a fresh charge. Wait until
-in-flight turns finish, or subtract only the remaining spend you intend
-to forgive after accounting for reserved USD still on the counter.
+release `−reserved` against the key you just cleared. Settles and
+releases stop at zero, so the counter never goes negative, but today's
+spend then reads lower than what was really spent, and a later settle can
+look like a fresh charge. The floored releases show up as `staff assistant
+budget counter floored at zero` warnings. Wait until in-flight turns
+finish, or subtract only the remaining spend you intend to forgive after
+accounting for reserved USD still on the counter.
 
 Then, to let one company continue today without raising every tenant:
 

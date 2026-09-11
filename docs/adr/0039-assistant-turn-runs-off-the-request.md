@@ -64,42 +64,62 @@ the queue and the events.**
   - The turn row carries what the worker and the reconciler need and the
     request would otherwise take with it: the accept's kind (`chat` |
     `answer`) and the turn's `commandId`, the placeholder's message id, the
-    session id, the company, the request id the turn's actions are audited
-    under, an answer's earned seed, and the budget hold (company and global
-    reservation, Kyiv date). The kind is stored, never inferred from other
-    columns: the reconciler derives the `jobId` from it, and a guess that
-    disagreed with the accept would name a second job for one turn.
+    company, the author, the request id the turn's actions are audited under,
+    and the budget hold (company and global reservation, Kyiv date). The kind
+    is stored, never inferred from other columns: the reconciler derives the
+    `jobId` from it, and a guess that disagreed with the accept would name a
+    second job for one turn. *(Amended 2026-09-11, SHO-561: an earlier wording
+    also listed the session id and an answer's earned seed as what the worker
+    needs. It needs neither: the actor is `user_id`, and an answer runs from
+    history. The session id stays on an active row; the worker does not read
+    it.)*
   - **An answer keeps its synchronous half.** The pause is claimed and the
     resolved action runs in the request, exactly as today, so `stale`,
     `unresolvable`, `action_failed` and a second question are still
     immediate, and a committed write is stored before generation is attempted
-    (SHO-546). The action's result and card are stored in Postgres, on the
-    placeholder, as the parts already earned; the worker reads them from
-    there. Order: claim the pause, run the action, then accept; an
-    accept refused because another turn holds the conversation releases the
-    claim. An answer's accept stores no person's message, only the placeholder.
+    (SHO-546). The action's card is stored in Postgres, on the placeholder, as
+    the part already earned. Before it accepts, the answer route saves the
+    messages `kit.resume` resumed as the conversation's history, so the worker
+    runs an answer turn exactly as it runs a chat turn: from history. There is
+    no answer seed on the turn row. Order: claim the pause, run the action,
+    save the history, then accept; an accept refused because another turn
+    holds the conversation releases the claim. An answer's accept stores no
+    person's message, only the placeholder. *(Amended 2026-09-11, SHO-561: an
+    earlier wording had the worker read the action's result from the
+    placeholder, which would have given an answer turn a second way to start.
+    The placeholder still carries the earned card.)*
 - **Execute.** A BullMQ `assistant` queue on the worker runs the turn as the
   staff member who asked. The API is the producer and the worker the consumer,
   so the queue contract — name, prefix, job payload schema, the `jobId`
   derivation — lives in the shared runtime package, not in either app. The
   job is a pointer: its payload is the turn's kind, conversation id and
   command id, lowercased so the accept and the reconciler derive one `jobId`.
-  Postgres is the source of everything else. The worker loads the turn row;
-  the actor is the row's `user_id`, which the accept took from its verified
-  context, and the company and an answer's seed come from the same row. The
-  session is a liveness check, never a source of identity: the row's
-  `session_id` is unverified on write, so the worker refuses a job unless the
-  `session` row exists, is unexpired and `session.user_id` equals the turn's
-  `user_id` (a direct read of the `session` table; the worker has no
-  better-auth). *(Amended 2026-09-11, SHO-560: an earlier wording let the
-  session give the user, which would have made an input identifier an
-  identity grant.)*
+  Postgres is the source of everything else. The worker loads the turn row
+  through a global system read of the job's identity; the actor is the row's
+  `user_id`, which the accept took from its verified context, and the company
+  comes from the same row. Only that read produces the caller a turn runs as,
+  never a job payload. Authority is membership, which core checks again on
+  every action the turn runs, so a member removed mid-turn is refused at the
+  next action. There is no session read: a turn accepted before its author
+  signed out may still finish, as any command accepted before sign-out does.
+  *(Amended 2026-09-11, SHO-560: an earlier wording let the session give the
+  user, which would have made an input identifier an identity grant.)*
+  *(Amended 2026-09-11, SHO-561: the SHO-560 wording kept the session as a
+  liveness check — the worker refused a job unless the `session` row existed,
+  was unexpired and belonged to `user_id`. The owner removed it: identity is
+  `user_id`, authority is the membership core enforces, and signing out is not
+  a cancel. `session_id` stays on an active row and is not read.)*
   The reconciler rebuilds a lost job from that row alone. A server-side timeout
   is the only thing that ends a turn early; a closed connection never does.
   Each card is written to the live message as its tool completes, and each
   finished step is saved to history. Budget is reserved on accept; the worker
   releases the hold when the turn never reached the model and otherwise
   leaves the reservation as the charge, which is what settlement does today.
+  Whoever ends a turn — the worker finishing it or the reconciler interrupting
+  it — zeroes the row's hold in the same statement and is handed the hold it
+  zeroed, so a hold is settled or released at most once, and a release never
+  takes a counter below zero. *(Amended 2026-09-11, SHO-561: added; the
+  earlier wording did not say who releases a hold when both could.)*
 - **Fail visibly, never twice.** A turn runs once (`attempts: 1`), and a job
   whose worker disappears fails instead of re-running (`maxStalledCount: 0`).
   The turn becomes `interrupted`: what it did stays, the message's text part
@@ -114,10 +134,20 @@ the queue and the events.**
     interrupted turn's `commandId`, so a repeated call of the same action
     replays the first.
   - A reconciler on the maintenance scheduler re-enqueues an accepted turn
-    that never got a job, interrupts a running turn past its deadline, and
-    releases orphaned budget holds. Jobs are removed on completion and on
-    failure, so a re-enqueue under the same `jobId` is never a no-op against
-    a stale record.
+    that never got a job and interrupts a running turn past its deadline, and
+    nothing else: a queued turn, or a running turn inside its deadline, is
+    never interrupted. The interrupt hands the reconciler the turn's hold. It
+    cannot tell whether a stale running turn reached the model, so it leaves
+    the reservation as the charge, which fails safe. A finisher that commits
+    and then dies before it settles or releases leaves a hold that no row
+    names any more: it stays reserved until its Kyiv-day key expires. That
+    also fails safe — the day's cap is reached early, never lifted — and is
+    accepted. Jobs are removed on completion and on failure, so a re-enqueue
+    under the same `jobId` is never a no-op against a stale record.
+    *(Amended 2026-09-11, SHO-561: an earlier wording had the reconciler also
+    release orphaned budget holds. Ending a turn now zeroes its row's hold in
+    the same statement, so no row names a hold once its turn has ended, and
+    there is nothing left for a reconciler to find.)*
   - After a worker crash the interruption becomes visible only when the
     reconciler passes the deadline — up to the turn timeout plus one
     reconciler interval. Accepted, and stated so nobody reads it as a hang.

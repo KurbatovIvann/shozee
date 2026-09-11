@@ -6,6 +6,7 @@
  */
 import { getConnInfo } from "@hono/node-server/conninfo";
 import {
+  createRedisAiBudgetStore,
   createRedisAssistantEventHub,
   createRedisAssistantPresence,
   createRedisAssistantStreamSlots,
@@ -38,7 +39,6 @@ import { authInstanceFrom } from "./http/auth-instance.js";
 import { createProcessObservability } from "./observability.js";
 import { createActionPipeline } from "./pipeline.js";
 import {
-  createRedisAiBudgetStore,
   createRedisAuthRateLimitStore,
   createRedisConfirmationStore,
   createRedisOtpSendStore,
@@ -201,7 +201,9 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
     ...(assistantKitEvents === undefined ? {} : { assistantKitEvents }),
     assistantBudget: {
       rateLimitStore,
-      budgetStore: createRedisAiBudgetStore(redis),
+      budgetStore: createRedisAiBudgetStore(redis, {
+        logger: pipeline.logger,
+      }),
       limits: {
         chatTurnsPerMinutePerUser: config.ai.chatTurnsPerMinutePerUser,
         dailyBudgetUsdPerCompany: config.ai.dailyBudgetUsdPerCompany,

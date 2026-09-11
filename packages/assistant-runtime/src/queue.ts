@@ -54,9 +54,11 @@ const canonicalUuidSchema = z.uuid().transform((value) => value.toLowerCase());
  * A pointer to an accepted turn, not the turn.
  *
  * The payload carries only the turn's identity. Postgres is the source of
- * everything else: the worker loads the turn row, checks its session row —
- * which gives the verified user — and reads the company, the request id, the
- * answer's earned card and the rest from Postgres (SHO-560, SHO-561). The
+ * everything else: the worker loads the turn row through
+ * `assistant.readTurnForJob`. The actor is the row's `user_id`, which the
+ * accept took from its verified context; the company and the request id come
+ * from the same row; the session is not read; an answer's earned card is on the
+ * placeholder, and both kinds of turn run from history (SHO-560, SHO-561). The
  * reconciler rebuilds a lost job from the turn row alone — the row stores the
  * accept's kind and the turn's `commandId`, never inferred — so nothing belongs
  * here that the row cannot give back.

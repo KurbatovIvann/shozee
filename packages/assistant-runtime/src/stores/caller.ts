@@ -16,7 +16,11 @@ export interface AssistantKitCaller {
   readonly userId: string;
   readonly companySelector: string;
   readonly requestId: string;
-  readonly clientIp: string;
+  /**
+   * The request's trusted-proxy address, when there is a request. A turn the
+   * worker runs has none, and core builds a staff context without it (SHO-560).
+   */
+  readonly clientIp?: string;
 }
 
 export interface AssistantKitStoreDeps {
@@ -87,7 +91,7 @@ export function callFor(caller: AssistantKitCaller) {
       requestId: caller.requestId,
       correlationId: caller.requestId,
       channel: ASSISTANT_INVOCATION_CHANNEL,
-      clientIp: caller.clientIp,
+      ...(caller.clientIp === undefined ? {} : { clientIp: caller.clientIp }),
       aiTraceId: caller.requestId,
     },
     principal: {
