@@ -4,6 +4,11 @@
  * reference stores in `@showzy/core` (token-bucket continuous refill,
  * confirmation `GETDEL`).
  */
+import {
+  parseAiBudgetSpent,
+  type AiBudgetStore,
+  type AiBudgetTryAddDecision,
+} from "@showzy/assistant-runtime";
 import type { ConfirmationStore, RateLimitStore } from "@showzy/core";
 import type { Redis } from "ioredis";
 
@@ -12,11 +17,6 @@ import {
   hmacBetterAuthConsumeKey,
   requireAuthIpHmacSecret,
 } from "./auth-ip-hmac.js";
-import {
-  parseAiBudgetSpent,
-  type AiBudgetStore,
-  type AiBudgetTryAddDecision,
-} from "./budget.js";
 import type { AuthRateLimitStore, SecondaryStorage } from "./memory.js";
 
 /** Adapter failure — the rate-limit/confirmation hooks own fail-open/closed. */
@@ -117,14 +117,6 @@ if ttl == nil or ttl < 1 then
 end
 return {0, ttl}
 `;
-
-/**
- * Open a pending record and the conversation index together. A live
- * conversation index is a parallel pending — refuse.
- */
-export function redisSetNxSucceeded(result: unknown): boolean {
-  return result === "OK" || result === true || result === 1;
-}
 
 export function createRedisSecondaryStorage(redis: Redis): SecondaryStorage {
   return {

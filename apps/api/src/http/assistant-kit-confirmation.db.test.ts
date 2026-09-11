@@ -15,6 +15,12 @@ import { randomUUID } from "node:crypto";
 
 import type { ToolOutcome } from "@showzy/assistant-kit";
 import {
+  assistantKitIdempotencyKey,
+  confirmation,
+  type AssistantToolContext,
+  type ConfirmationSecret,
+} from "@showzy/assistant-runtime";
+import {
   createConfirmationHook,
   createInMemoryConfirmationStore,
   type ActionPipelineDeps,
@@ -28,18 +34,8 @@ import { companyCustomers } from "@showzy/db/schema/customers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createActionRegistry } from "../composition.js";
-import {
-  confirmation,
-  type ConfirmationSecret,
-} from "./assistant-interactions.js";
-import type {
-  AssistantKitRuntime,
-  AssistantToolContext,
-} from "./assistant-kit-http.js";
-import {
-  assistantKitIdempotencyKey,
-  createAssistantKitRuntime,
-} from "./assistant-kit-runtime.js";
+import type { AssistantKitRuntime } from "./assistant-kit-http.js";
+import { createAssistantKitRuntime } from "./assistant-kit-runtime.js";
 
 const DELETE_TOOL = "customers_deleteCustomer";
 const DELETE_ACTION = "customers.deleteCustomer";

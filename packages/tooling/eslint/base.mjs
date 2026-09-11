@@ -47,6 +47,7 @@ const boundaryElements = [
   { type: "config", pattern: "packages/config" },
   { type: "ai", pattern: "packages/ai" },
   { type: "ai-eval", pattern: "packages/ai-eval" },
+  { type: "assistant-runtime", pattern: "packages/assistant-runtime" },
   { type: "validation", pattern: "packages/validation" },
   { type: "copy", pattern: "packages/copy" },
   { type: "module-kit", pattern: "packages/module-kit" },
@@ -150,6 +151,12 @@ export const showzyBoundaryDependencyOptions = {
       message: "Client apps may not import @showzy/ai (server-only, ADR-0032).",
     },
     {
+      from: { file: { categories: "client-app" } },
+      disallow: { to: { module: { source: "@showzy/assistant-runtime" } } },
+      message:
+        "Client apps may not import @showzy/assistant-runtime (server-only, ADR-0039).",
+    },
+    {
       from: { element: { type: "copy" } },
       disallow: { to: { element: { type: "app" } } },
       message: "packages/copy must not import an app (SHO-414).",
@@ -163,13 +170,31 @@ export const showzyBoundaryDependencyOptions = {
       from: { element: { type: "module" } },
       disallow: { to: { element: { type: "ai" } } },
       message:
-        "Domain modules may not import packages/ai (ADR-0032). The API composition root mounts the AI loop.",
+        "Domain modules may not import packages/ai (ADR-0032). The server composition roots (apps/api, apps/worker) mount the AI loop (ADR-0039).",
     },
     {
       from: { element: { type: "module" } },
       disallow: { to: { module: { source: "@showzy/ai" } } },
       message:
-        "Domain modules may not import @showzy/ai (ADR-0032). The API composition root mounts the AI loop.",
+        "Domain modules may not import @showzy/ai (ADR-0032). The server composition roots (apps/api, apps/worker) mount the AI loop (ADR-0039).",
+    },
+    {
+      from: { element: { type: "module" } },
+      disallow: { to: { element: { type: "assistant-runtime" } } },
+      message:
+        "Domain modules may not import packages/assistant-runtime (ADR-0039).",
+    },
+    {
+      from: { element: { type: "module" } },
+      disallow: { to: { module: { source: "@showzy/assistant-runtime" } } },
+      message:
+        "Domain modules may not import @showzy/assistant-runtime (ADR-0039).",
+    },
+    {
+      from: { element: { type: "ai" } },
+      disallow: { to: { element: { type: "assistant-runtime" } } },
+      message:
+        "packages/ai must not depend on packages/assistant-runtime; the runtime composes the AI loop, not the other way round (ADR-0039).",
     },
     {
       from: { element: { type: "ai" } },

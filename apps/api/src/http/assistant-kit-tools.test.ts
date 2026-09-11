@@ -28,26 +28,22 @@ import {
   stubToolCallStep,
   testDeps,
 } from "@showzy/assistant-kit/testing";
+import {
+  AssistantConfirmationRequired,
+  assistantInteractions,
+  assistantKitIdempotencyKey,
+  assistantKitTurnTools,
+  confirmation,
+  createResolveAnswer,
+  withChosenId,
+  type AssistantToolLogger,
+  type ChoiceSecret,
+  type ResolveAnswerDeps,
+} from "@showzy/assistant-runtime";
 import { ConflictError, NotFoundError } from "@showzy/core/errors";
 import { describe, expect, it } from "vitest";
 
 import { createActionRegistry } from "../composition.js";
-import {
-  assistantInteractions,
-  confirmation,
-  type ChoiceSecret,
-} from "./assistant-interactions.js";
-import { AssistantConfirmationRequired } from "./assistant-kit-confirmation.js";
-import {
-  createResolveAnswer,
-  withChosenId,
-  type ResolveAnswerDeps,
-} from "./assistant-kit-resolve.js";
-import { assistantKitIdempotencyKey } from "./assistant-kit-runtime.js";
-import {
-  assistantKitTurnTools,
-  type AssistantToolLogger,
-} from "./assistant-kit-tools.js";
 
 const registry = createActionRegistry();
 const CONTRACTS = filterStaffAiTools(registry.contracts(), {

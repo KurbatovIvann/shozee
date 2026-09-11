@@ -19,6 +19,7 @@ const NODE_BUILTINS = new Set([
 const PLATFORM_PACKAGES = new Set([
   "ai",
   "assistant-kit",
+  "assistant-runtime",
   "config",
   "contract",
   "copy",
@@ -260,6 +261,9 @@ function violation(from, spec, typeOnly) {
     if (pkg.name === "ai") {
       return { messageId: "moduleAi" };
     }
+    if (pkg.name === "assistant-runtime") {
+      return { messageId: "moduleAssistantRuntime" };
+    }
     if (pkg.name === "ai-eval") {
       return { messageId: "moduleAiEval" };
     }
@@ -419,7 +423,9 @@ export const importBoundariesRule = {
       moduleCross:
         "Modules may import other modules only through their package index.ts; packages/contract is not a module dependency (ADR-0015, ADR-0016).",
       moduleAi:
-        "Domain modules may not import @showzy/ai (ADR-0032). The API composition root mounts the AI loop.",
+        "Domain modules may not import @showzy/ai (ADR-0032). The server composition roots (apps/api, apps/worker) mount the AI loop (ADR-0039).",
+      moduleAssistantRuntime:
+        "Domain modules may not import @showzy/assistant-runtime (ADR-0039). Only the server composition roots (apps/api, apps/worker) run the assistant.",
       contractModules:
         "packages/contract may import only a module's index.contract.ts barrel (@showzy/<module>/contract) (ADR-0016).",
       clientApp:

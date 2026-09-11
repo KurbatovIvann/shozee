@@ -1,4 +1,5 @@
-import { withKeyLock } from "../stores/with-key-lock.js";
+import { withKeyLock } from "@showzy/module-kit/key-lock";
+
 import { otpPolicy } from "./policy.js";
 
 export type OtpChannel = "phone" | "email";

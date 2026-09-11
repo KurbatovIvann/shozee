@@ -16,20 +16,20 @@
  * turn slot, and a turn that did not produce a response gives its reservation
  * back.
  */
+import {
+  canonicalizeAiBudgetCompanyId,
+  DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+  enforceStaffAssistantBudget,
+  recordStaffAssistantBudgetSpend,
+  releaseStaffAssistantBudgetHold,
+  type AiBudgetStore,
+  type StaffAssistantBudgetLimits,
+} from "@showzy/assistant-runtime";
 import type { RateLimitStore } from "@showzy/core";
 import { RateLimitError } from "@showzy/core/errors";
 import type { Context } from "hono";
 import type { Logger } from "pino";
 
-import type { AiBudgetStore } from "../stores/budget.js";
-import { canonicalizeAiBudgetCompanyId } from "../stores/budget.js";
-import {
-  DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
-  enforceStaffAssistantBudget,
-  recordStaffAssistantBudgetSpend,
-  releaseStaffAssistantBudgetHold,
-  type StaffAssistantBudgetLimits,
-} from "./assistant-budget-guard.js";
 import {
   json,
   requireCaller,

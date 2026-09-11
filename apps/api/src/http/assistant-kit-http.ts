@@ -8,25 +8,20 @@
  * loosely than its neighbours.
  */
 import type {
-  AssistantKit,
   ChatWindow,
-  HostTurnOptions,
   HostTurnResult,
-  LanguageModel,
-  ModelMessage,
   PauseScope,
-  ToolOutcome,
-  ToolSet,
 } from "@showzy/assistant-kit";
-import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
-import type { Context } from "hono";
-import type { Logger } from "pino";
-
-import type { AssistantInteractionTypes } from "./assistant-interactions.js";
 import type {
   AssistantKitCommandRef,
   AssistantKitCommands,
-} from "../stores/assistant-kit-stores.js";
+  AssistantKitFor,
+  AssistantRuntime,
+  AssistantToolContext,
+} from "@showzy/assistant-runtime";
+import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
+import type { Context } from "hono";
+
 import { REQUEST_ID_HEADER } from "./request-id.js";
 
 export type AssistantKitAppEnv = {
@@ -42,86 +37,6 @@ export type AssistantKitAppEnv = {
     replayedCommand?: boolean;
   };
 };
-
-/**
- * What a tool set needs to exist: domain actions run **as the caller**, so the
- * set cannot be built once at boot. Permissions decide which tools are even
- * offered, and that is a read against the actor.
- */
-export interface AssistantToolContext {
-  readonly userId: string;
-  readonly companySelector: string;
-  readonly conversationId: string;
-  /**
-   * The client's own token for this request. It is what makes a retry of the
-   * same tap the *same* attempt: a model-regenerated `toolCallId` is not, which
-   * is why the idempotency key is built from this instead.
-   */
-  readonly commandId: string;
-  readonly requestId: string;
-  readonly clientIp: string;
-}
-
-export type AssistantKitFor = AssistantKit<AssistantInteractionTypes>;
-
-/**
- * How many messages one answer carries.
- *
- * A request writes at most two messages — the person's words and the reply, or
- * a second question — and a new turn is refused while a question is open, so
- * the turn just taken and the message that asked the open question are always
- * inside it. Thirty is a screen and a half of a phone thread; anything older is
- * one page away (SHO-555).
- */
-export const ASSISTANT_CHAT_WINDOW_MESSAGES = 30;
-
-/**
- * Model history for the next turn.
- *
- * Deliberately the consumer's, not the package's: how much of a conversation to
- * send, and how to clip a large tool result, is a budget and prompt question
- * that belongs to whoever pays for the tokens. The transcript is what a
- * person reads; this is what the model reads, and they are not the same thing.
- */
-export interface AssistantHistoryPort {
-  load(scope: PauseScope): Promise<ModelMessage[]>;
-  save(scope: PauseScope, messages: readonly ModelMessage[]): Promise<void>;
-}
-
-/**
- * Runs the real action with whatever an interaction resolved to.
- *
- * It is handed the **same** tool set the turn is using, so resolving an
- * ambiguity is another call through the same façade — and a second ambiguity
- * comes back as another pause rather than as a failure.
- */
-export type ResolveAnswer = (args: {
-  readonly toolName: string;
-  readonly kind: string;
-  readonly value: unknown;
-  readonly tools: ToolSet;
-  /**
-   * The request the answer arrived on: who is answering, in which company. A
-   * confirmed action runs as this person, but under the attempt stored with the
-   * pause — never under this request's own command.
-   */
-  readonly context: AssistantToolContext;
-}) => Promise<ToolOutcome>;
-
-/**
- * The instructions the model runs under, and how the provider should treat
- * them.
- *
- * Separate from the tools on purpose: this is the half of the learned
- * behaviour that does not live in a tool description, and forgetting it is
- * silent — the assistant simply answers worse.
- */
-export interface AssistantTurnPrompt {
-  readonly system: NonNullable<HostTurnOptions<never>["system"]>;
-  readonly providerOptions?: NonNullable<
-    HostTurnOptions<never>["providerOptions"]
-  >;
-}
 
 /**
  * Run this handler holding the conversation, or refuse.
@@ -233,21 +148,14 @@ export function logInterruptedTurn(
 }
 
 /**
- * The stores that act as one person, for one request.
+ * The assistant as the routes see it: the shared runtime (ADR-0039) plus the
+ * two things only a request has.
  *
- * Built per request rather than once at boot because the durable half goes
- * through `executeAction`: the transcript and the history are read and written as
- * the caller, under the same tenant scope and author rule as every other read
- * of that conversation. There is no ambient principal to bake in.
+ * The runtime half — tools, stores, prompt, answer resolution — lives in
+ * `@showzy/assistant-runtime` because the worker runs turns too. Who is asking
+ * and whether this command was already taken are the request's business.
  */
-export interface AssistantKitScoped {
-  readonly kit: AssistantKitFor;
-  readonly history: AssistantHistoryPort;
-}
-
-export interface AssistantKitRuntime {
-  /** The pipeline's logger. Used for spend refusals, which are operational. */
-  readonly logger: Logger;
+export interface AssistantKitRuntime extends AssistantRuntime {
   /**
    * One attempt, once. A retry of a request whose reply was lost must not run
    * the write a second time — see `replayedCommand`.
@@ -260,21 +168,6 @@ export interface AssistantKitRuntime {
       }) => Promise<{ user: { id: string } } | null>;
     };
   };
-  readonly forCaller: (caller: {
-    readonly userId: string;
-    readonly companySelector: string;
-    readonly requestId: string;
-    readonly clientIp: string;
-  }) => AssistantKitScoped;
-  readonly model: LanguageModel;
-  /**
-   * Built fresh per request: the caller's permissions decide the set, and card
-   * composition needs every result of one turn without leaking into another's.
-   */
-  readonly tools: (context: AssistantToolContext) => Promise<ToolSet>;
-  readonly resolveAnswer: ResolveAnswer;
-  /** Built per turn: the turn context carries the current time. */
-  readonly prompt: () => AssistantTurnPrompt;
 }
 
 /**

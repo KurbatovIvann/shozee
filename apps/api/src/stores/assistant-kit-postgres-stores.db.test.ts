@@ -13,6 +13,10 @@
 import { randomUUID } from "node:crypto";
 
 import type { ModelMessage } from "@showzy/assistant-kit";
+import {
+  ASSISTANT_CHAT_WINDOW_MESSAGES,
+  AssistantKitConversationGoneError,
+} from "@showzy/assistant-runtime";
 import { createActionRegistry } from "../composition.js";
 import {
   createTestKit,
@@ -22,12 +26,8 @@ import {
 import { assistantConversations } from "@showzy/db/schema/assistant";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import {
-  ASSISTANT_CHAT_WINDOW_MESSAGES,
-  type AssistantKitRuntime,
-} from "../http/assistant-kit-http.js";
+import type { AssistantKitRuntime } from "../http/assistant-kit-http.js";
 import { createAssistantKitRuntime } from "../http/assistant-kit-runtime.js";
-import { AssistantKitConversationGoneError } from "./assistant-kit-postgres-stores.js";
 
 let kit: TestKit;
 const conversationId = randomUUID();

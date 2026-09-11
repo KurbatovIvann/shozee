@@ -288,7 +288,7 @@ from assistant_chat_state s where conversation_id = '<conversationId>';
 
 `ASSISTANT_HISTORY_TURNS` and `ASSISTANT_HISTORY_MESSAGES_MAX` (a backstop for a
 turn that called many tools) live in
-`apps/api/src/http/assistant-kit-history-window.ts`.
+`packages/assistant-runtime/src/assistant-kit-history-window.ts`.
 
 ## What the audit says
 

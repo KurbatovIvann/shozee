@@ -1,6 +1,6 @@
 # ADR-0039: The assistant turn runs off the request
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-11
 - **Deciders**: Ivan Kurbatov (human) (+ proposing agent)
 

@@ -14,6 +14,7 @@
   "dependencies": {
     "@sentry/node": "^10.70.0",
     "@showzy/api": "workspace:*",
+    "@showzy/assistant-runtime": "workspace:*",
     "@showzy/chat": "workspace:*",
     "@showzy/config": "workspace:*",
     "@showzy/core": "workspace:*",

@@ -5,6 +5,7 @@
  * Codes never reach logs (security-operations §2).
  */
 import { getConnInfo } from "@hono/node-server/conninfo";
+import { optionalStaffAssistantLanguageModel } from "@showzy/assistant-runtime";
 import type { ServerConfig } from "@showzy/config";
 import { contractModules } from "@showzy/contract";
 import { createDbClient } from "@showzy/db";
@@ -25,7 +26,6 @@ import {
   createActionRegistry,
   createStaffAssistantProvider,
 } from "./composition.js";
-import { optionalStaffAssistantLanguageModel } from "./http/assistant-model.js";
 import { createAssistantKitRuntime } from "./http/assistant-kit-runtime.js";
 import { createApp, type AuthInstance } from "./http/app.js";
 import { createProcessObservability } from "./observability.js";

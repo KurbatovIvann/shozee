@@ -9,7 +9,7 @@ import {
   aiCompanyBudgetKey,
   aiGlobalBudgetKey,
   createMemoryAiBudgetStore,
-} from "../stores/budget.js";
+} from "./stores/budget.js";
 import {
   DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
   emptyStaffAssistantBudgetHold,

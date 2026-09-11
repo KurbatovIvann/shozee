@@ -34,11 +34,18 @@ services:
       retries: 10
 
   redis:
-    # No persistence volume: Redis holds only rebuildable state — cache,
-    # rate limits, Socket.IO adapter, BullMQ (db.md §6).
+    # AOF on a volume (db.md §6, ADR-0039): BullMQ holds accepted assistant
+    # turns, the first non-rebuildable Redis use. Everything else here —
+    # cache, rate limits, confirmation, pauses — stays rebuildable. This is
+    # the development form; production must persist the same way
+    # (`CONFIG GET appendonly` → yes).
     image: redis:8-alpine
+    command:
+      ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
     ports:
       - "6379:6379"
+    volumes:
+      - redis-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -68,5 +75,6 @@ services:
 
 volumes:
   postgres-data:
+  redis-data:
   garage-meta:
   garage-data:

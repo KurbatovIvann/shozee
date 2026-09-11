@@ -1,9 +1,9 @@
+import { ASSISTANT_CHAT_PATH } from "@showzy/assistant-runtime";
 import { ActionRegistry, createInMemoryRateLimitStore } from "@showzy/core";
 import { pino } from "pino";
 import { describe, expect, it } from "vitest";
 
 import { createApp, HEALTH_PATH, HTTP_INVOCATION_CHANNEL } from "./app.js";
-import { ASSISTANT_CHAT_PATH } from "./assistant-invocation.js";
 import { PKI_PROXY_PATH } from "./pki-proxy.js";
 import { REQUEST_ID_HEADER } from "./request-id.js";
 

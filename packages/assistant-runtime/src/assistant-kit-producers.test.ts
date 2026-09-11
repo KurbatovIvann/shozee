@@ -32,7 +32,7 @@ import { describe, expect, it } from "vitest";
 import { assistantInteractionTypes } from "./assistant-interactions.js";
 
 const httpDir = path.dirname(fileURLToPath(import.meta.url));
-const kitSrc = path.resolve(httpDir, "../../../../packages/assistant-kit/src");
+const kitSrc = path.resolve(httpDir, "../../assistant-kit/src");
 
 /**
  * Kinds that are declared and not yet produced, each with the ticket that will

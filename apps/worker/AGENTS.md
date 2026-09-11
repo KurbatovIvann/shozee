@@ -32,9 +32,12 @@ wakeup, polling fallback, graceful drain, and the job host.
   processor invokes `docGeneration.renderPdf` as system/tenant from the
   envelope `companyId` (`executeAction` only — no domain SQL). Production
   `documents.created` delivery still runs through the outbox (chat
-  golden); Redis has no volume, so this host does not enqueue durable
-  one-shot PDF jobs. Do not pre-create email / push / sms / sync queues.
-  Processors stay thin (no domain SQL, no module service imports).
+  golden), so this host does not enqueue durable one-shot PDF jobs. Do not
+  pre-create email / push / sms / sync queues. Processors stay thin (no
+  domain SQL, no module service imports). Named exception: the `assistant`
+  processor (SHO-561) runs a whole turn through `@showzy/assistant-runtime`,
+  because the turn is the work — still only `executeAction` as the staff
+  member, never domain SQL.
 - `src/loop.ts` — `createOutboxWorker` / `createWorkerLoop`: one tick
   dispatches then executes due deliveries; shutdown waits for in-flight
   work and does not claim further. Executor lookup is keyed by
@@ -75,9 +78,20 @@ wakeup, polling fallback, graceful drain, and the job host.
 - Domain event delivery is not BullMQ (ADR-0007/ADR-0012). BullMQ is the
   execution job host (maintenance and PDF today; email, push, sync later).
   Outbox stays on core libraries.
-- Compose Redis has no volume (db.md §6). This host only runs work that
-  is safe to miss and re-run. Re-upsert the scheduler on every boot.
-  Durable one-shot jobs need a later ticket **and** a persistence policy.
+- Queue persistence (db.md §6, ADR-0039): the BullMQ Redis runs with AOF
+  (`appendfsync everysec`) on a volume. That policy covers **durable
+  assistant-turn jobs only**: an accepted turn is a Postgres row, and the
+  assistant reconciler re-enqueues one whose job was lost. Everything else
+  this host runs stays safe to miss and re-run; re-upsert the schedulers on
+  every boot. Any other durable one-shot job needs its own ticket and its
+  own recovery story — AOF alone is not one.
+- The worker is an AI process for assistant turns (ADR-0039): it may import
+  `@showzy/assistant-runtime` (and through it `@showzy/ai` and
+  `@showzy/assistant-kit`), never `apps/api` internals. The queue name,
+  prefix, payload schema and `jobId` derivation come from that package;
+  `assistant-queue-contract.test.ts` pins its prefix to `BULLMQ_PREFIX`.
+  Requirement for when infrastructure exists: the stop grace period is at
+  least the turn timeout, so a deploy drains in-flight turns.
 - OTP codes, tokens, and secrets never reach logs. Process loggers are
   `createProcessLogger` from `@showzy/config`. Sentry is initialized
   only when `SENTRY_DSN` is set; `beforeSend` scrubs the event. Do not

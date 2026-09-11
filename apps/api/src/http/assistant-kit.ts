@@ -6,11 +6,12 @@
  * cannot be added without deciding whether it calls the model — a new endpoint
  * that quietly spends is the failure this shape prevents.
  */
+import {
+  AssistantKitConversationGoneError,
+  createMemoryAiBudgetStore,
+} from "@showzy/assistant-runtime";
 import { createInMemoryRateLimitStore } from "@showzy/core";
 import { Hono } from "hono";
-
-import { createMemoryAiBudgetStore } from "../stores/budget.js";
-import { AssistantKitConversationGoneError } from "../stores/assistant-kit-postgres-stores.js";
 
 import {
   ASSISTANT_KIT_CHAT_PATH,
