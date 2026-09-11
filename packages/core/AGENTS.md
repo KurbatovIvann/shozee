@@ -3,7 +3,7 @@
 Action runtime and module test kit. **Frozen for module implementation
 tasks**: if core lacks a capability, stop and report; do not change it
 or work around the protocol. Root instructions and
-[prohibitions](../../.cursor/rules/prohibitions.mdc) apply.
+[prohibitions](../../.claude/rules/constitution.md) apply.
 
 The protocol authority is [docs/specs/core.md](../../docs/specs/core.md).
 Read the relevant sections before a core change. This file is a work map,

@@ -1,137 +1,176 @@
 # Agent Pipeline — Operations Manual
 
-How the feature loop from `docs/blueprint.md` §7 and ADR-0023 actually
-runs in Cursor. The blueprint defines *what* the roles are; this file is
-the day-to-day checklist: which agent, which command, what goes in, what
-comes out, and when a role is done.
+How the feature loop from `docs/blueprint.md` §7 and ADR-0023 runs in
+**Claude Code** (ADR-0040). The blueprint defines *what* the roles are; this
+file is the day-to-day checklist: which skill, which subagent, what goes in,
+what comes out, and when a role is done.
 
-**Two ways to run the loop.** The files in `.cursor/commands/` are the
-role instructions.
+Everything agent-facing lives in `.claude/`:
 
-1. **Leaf** — you (or an agent) run `/ticket SHO-<n>` on one child. The
-   executor opens a draft PR and does **not** merge. You merge.
-2. **Feature parent** — `/implement SHO-<parent>` (or `/ticket` on an
-   issue with children / label `Feature`) runs the **parent orchestrator**
-   (`.cursor/commands/conveyor.md`, ADR-0029). The parent does not
-   implement. It launches one cloud `/ticket` executor per child, attaches
-   independent Bugbot / `/review` / security-review from **its**
-   conversation, and squash-merges when the conveyor merge gate is green.
-   A human still closes the feature parent.
+| Path | Holds |
+| --- | --- |
+| `CLAUDE.md` → `AGENTS.md` | Entry point (imports the tool-agnostic `AGENTS.md`); nested `CLAUDE.md` files import the nearest package `AGENTS.md` lazily |
+| `.claude/rules/` | Constitution (`constitution.md`, `definition-of-done.md` — always loaded) and path-scoped area rules (`actions-and-ai.md`, `web.md`, `mobile.md`, `mobile-ui-state.md`) |
+| `.claude/skills/` | Workflow playbooks (`/feature`, `/ticket`, `/conveyor`, `/verify`, `/review-pr`, `/guard`, `/scaffold`) and code-pattern skills (`showzy-backend`, `showzy-web`, `showzy-mobile`, vendored Expo/RN skills) |
+| `.claude/agents/` | Subagent roles: `implementer`, `reviewer`, `guardian`, `ci-triage` |
+| `.claude/scripts/` | `verify.mjs` (local CI-equivalent, affected-only, compact output) and `merge-gate.mjs` (required Actions jobs on a PR) |
+| `.claude/settings.json` | Team permissions (allow/ask/deny) and the path guard hook |
 
-Cloud child executors cannot launch nested Task Bugbot, isolated
-`/review`, or `security-review` (SHO-197). That is expected. They
-self-check `review.md` / `guard.md`. **Writer ≠ reviewer** is the parent’s
-independent Task tools, not the child.
+**Two ways to run the loop.**
 
-Working model: **Grok 4.6** for every role. Do not stop a ticket because
-Claude or GPT names in older notes are unavailable. Independent review on
-the parent-conveyor path is green GitHub Actions, parent Task Bugbot on
-routine+, parent Task security-review on `sensitive`, and isolated
-`/review` when launched (wait for that verdict before merge).
+1. **Leaf** — `/ticket SHO-<n>` in a session (use `claude -w sho-<n>` for a
+   separate worktree). The session implements, verifies, opens a draft PR,
+   and launches independent `reviewer` / `guardian` subagents. **A human
+   merges.**
+2. **Feature parent** — `/conveyor SHO-<parent>` (or `/ticket` on an issue
+   with children / label `Feature`) runs the **parent orchestrator**
+   (ADR-0029). It launches one background `implementer` per child in its own
+   git worktree, launches independent reviews from **its** conversation,
+   waits on `merge-gate`, and squash-merges when the gate is green. A human
+   still closes the feature parent.
+
+**Writer ≠ reviewer** is structural: the writer is the `implementer` (or the
+`/ticket` session); reviewers are separate subagents with fresh context and
+no edit tools. Unlike Cursor cloud children, subagents are launched from the
+parent, so there is no nested-review gap (ADR-0029's SHO-197 limitation no
+longer applies).
 
 ```
 PLANNER → [parent orchestrator, optional] → EXECUTOR → VERIFIER → GUARDIAN
-(human+agent)   (/implement on feature parent)   (one cloud /ticket per child)
+/feature   (/conveyor on a feature parent)  implementer  reviewer   guardian
+                                            (worktree)   (+ CI gate)
 ```
 
-Constitution stays: blueprint §2–§6, accepted ADRs (including ADR-0033), `.cursor/rules/`, `docs/scope.md`,
-`docs/module-ownership.md`. Do not open `docs/archive/`. The executable
-contract of a feature is `*.contract.ts` plus the tests in the definition
-of done.
+Constitution stays: blueprint §2–§6, accepted ADRs (including ADR-0033),
+`.claude/rules/`, `docs/scope.md`, `docs/module-ownership.md`. Do not open
+`docs/archive/`. The executable contract of a feature is `*.contract.ts`
+plus the tests in the definition of done.
+
+## Models and token economy
+
+Working models on the Claude Max plan (ADR-0040). Quality anchors stay on
+Opus; volume work runs on Sonnet; log reading runs on Haiku.
+
+| Role | Model | Why |
+| --- | --- | --- |
+| Planner (`/feature`), orchestrator (`/conveyor`), sensitive `/ticket` | Opus (session model) | Product forks, sequencing, merge decisions |
+| Mechanical / routine `/ticket` session | `opusplan` (Opus plans, Sonnet edits) or Sonnet | Same split as the implementer |
+| `implementer` — mechanical / routine / UI | Sonnet (agent default) | Pattern-following implementation with a verify loop |
+| `implementer` — sensitive / first slice | Opus (override at launch) | Auth, money, tenant, QES, first golden |
+| `reviewer`, `guardian` | Opus, high effort | Independent gate; a different model than the routine writer |
+| `ci-triage` | Haiku | Reads failing logs so no one else has to |
+| Explore (built-in) | fast default | Context-pack research; skips `CLAUDE.md` |
+
+Rules that keep usage low without lowering quality:
+
+1. **Lazy context.** Only the constitution and `AGENTS.md` load at start.
+   Area rules load by path; package `AGENTS.md` loads via nested
+   `CLAUDE.md` when a file there is read; skills load only when invoked.
+2. **Compact tool output.** `verify.mjs` runs affected gates with
+   `--output-logs=errors-only` and prints a tail per failure; full logs stay
+   in `.claude/.verify/`. `merge-gate.mjs` prints a handful of lines.
+   CI logs go through `ci-triage`, never into the orchestrator.
+3. **Resume, don't relaunch.** Review and CI findings go back to the same
+   `implementer` via SendMessage — its context already holds the ticket and
+   the golden files.
+4. **Right-sized review.** Mechanical: CI only. Routine: `reviewer` in
+   `bugs` mode. UI: `reviewer` `full`. Sensitive: `reviewer` `full` +
+   `guardian`. Nits-only fixes merge on green CI without a second review.
+5. **Research by subagent.** Wide searches and context packs run in Explore
+   subagents that return paths and one-line notes, not file dumps. Long
+   manuals are read by section.
+6. **Fresh sessions per unit of work.** One session per `/feature`, per
+   `/ticket`, per `/conveyor` run; `/clear` between unrelated tasks.
 
 ## Role reference
 
-### 1. PLANNER — `/feature <name>`
+### 1. PLANNER — `/feature <capability>`
 
 | | |
 | --- | --- |
-| Agent | One chat agent in **Plan mode**, working with you interactively |
-| Command | `/feature` with a user-visible capability |
-| Input | Constitution, ADRs, ownership map, golden slice files for the layer, v1 reference only if needed |
-| Output | A Linear **feature card**, a ticket graph, and a 5–15 file context pack. Contested APIs also get a contract-first ticket (`*.contract.ts` only) |
+| Agent | The session (plan mode, Opus) with Explore subagents for research |
+| Input | Constitution, ADRs, ownership map, golden files for the layer, v1 reference only if needed |
+| Output | A Linear **feature card**, a ticket graph with **Lane** and **Touches** per ticket, and a 5–15 file context pack. Contested APIs also get a contract-first ticket (`*.contract.ts` only) |
 | Done when | You approve the card and tickets exist in Linear with `blocked by` relations |
 
 The agent proposes; you challenge product behavior. Expect a short
 iteration, not a novel. Never invent a new principal, table, or invariant
 silently — those stop and ask, or need an ADR.
 
-A **feature** is one closed capability (e.g. “staff creates a product with
-variants”). An epic is a Linear milestone. A ticket is one branch = one
-PR (~300 diff lines is comfort, not a cap). Product screens wait on the
+A **feature** is one closed capability (e.g. "staff creates a product with
+variants"). An epic is a Linear milestone. A ticket is one branch = one PR
+(~300 diff lines is comfort, not a cap). Product screens wait on the
 Experience Foundation UX gate; backend tickets do not.
 
-### 2. PARENT ORCHESTRATOR — `/implement SHO-<parent>` (optional)
+### 2. PARENT ORCHESTRATOR — `/conveyor SHO-<parent>` (optional)
 
 | | |
 | --- | --- |
-| Agent | One parent conversation. Children are isolated cloud Tasks |
-| Command | `/implement` or `/ticket` on a feature parent (children or `Feature` label). Playbook: `.cursor/commands/conveyor.md` |
+| Agent | One parent session. Children are background `implementer` subagents, each in its own git worktree |
 | Input | Approved Linear feature card and ticket graph |
-| Output | Each child squash-merged on green Actions + parent Task reviews. Parent stays In Progress |
+| Output | Each child squash-merged on the merge gate. Parent stays In Progress |
 | Done when | Named children and review follow-ups are on `main`. A human closes the parent |
-| Isolation | **Default sequential.** Linear `blocked by` empty is not enough (SHO-184/186/185). Parallel only if path sets are disjoint |
-| Merge gate | Seven GitHub Actions jobs (`checks`, `secret-scan`, `dependency-audit`, `contract-check`, `migration-drift`, `bundle-probe`, `e2e-smoke`). `checks` is the fail-closed aggregator (SHO-334); format/typecheck/lint/test/build-smoke run as independent workers. Parent Task Bugbot on routine+. Parent Task security-review on `sensitive`. Isolated `/review` **when launched** (`sensitive`, first-slice, UI, or a prior REQUEST CHANGES). GitHub-hosted Cursor Bugbot / Security Reviewer checks are **not** gates (usage limits, `neutral`, late) |
+| Isolation | **Default sequential.** Linear `blocked by` empty is not enough (SHO-184/186/185). Parallel only for disjoint **Touches** without migrations; at most two implementers at once |
+| Merge gate | `merge-gate.mjs` GREEN on seven Actions jobs (`checks`, `secret-scan`, `dependency-audit`, `contract-check`, `migration-drift`, `bundle-probe`, `e2e-smoke`; `checks` is the fail-closed aggregator, SHO-334) on the head being merged + `reviewer` APPROVE (or nits-only findings reported FIXED) when the lane requires it + `guardian` without medium+ findings when required. No launched review still running. Third-party GitHub bot checks are not gates |
 
-If `/review` is launched, wait for **APPROVE with no open nits** before
-squash-merge. REQUEST CHANGES with blockers/majors **or any nits** →
-same-branch fix. Re-launch `/review` after majors; after a nits-only
-apply, merge on green CI (no extra `/review`). A late post-merge verdict
-(hung agent) → new Linear child as **fallback** (majors and nits); do
-not reopen Done.
+Findings (review blockers/majors/nits, guardian medium+, CI regressions,
+conflicts) are same-branch fixes by the **same implementer**, resumed with
+the findings. Re-launch `reviewer` after blocker/major fixes; after a
+nits-only fix, merge on green CI. Two failed review rounds → ask the human.
+A late post-merge verdict becomes a new Linear child (fallback only); never
+reopen Done. Playbook: `.claude/skills/conveyor/SKILL.md`.
 
-### 3. EXECUTOR — `/ticket SHO-<n>` on a **leaf** (wraps `/implement`)
+### 3. EXECUTOR — `implementer` subagent, or the `/ticket` session
 
 | | |
 | --- | --- |
-| Agent | **One agent per ticket**, parallel where the dependency graph **and** file isolation allow |
-| Command | `/ticket` with the Linear ticket id — it lanes the ticket, gates on blockers, implements, and runs the verify loop |
-| Input | The Linear card + ticket, the context pack, the golden files for this layer |
-| Output | A **draft** PR with the required tests. Linear **In Review**. Nested Task Bugbot / `/review` / `security-review` often unavailable — self-check only (ADR-0029) |
-| Done when | PR opened with green local checks. Description names the feature card, the tests, and any deviations (there should be none — deviations mean stop). The executor does **not** merge |
+| Agent | One executor per ticket, parallel only where the dependency graph **and** path isolation allow |
+| Input | The Linear card + ticket, the context pack, the golden files for this layer (`showzy-backend` / `showzy-web` / `showzy-mobile`) |
+| Output | A **draft** PR with the required tests; Linear **In Review**; a compact report (`PR_OPEN` / `FIXED` / `STOPPED` / `FAILED`) |
+| Done when | PR opened with `verify.mjs` PASS. Description names the feature card, the tests, and any deviations (there should be none — deviations mean stop). The executor does **not** merge |
 | Escalation | 2 failed verify/review rounds → ask the human; 3 → design review or a new ADR |
 
-Use the merged reference files listed below. A new layer without an
-approved reference still needs a first-slice review before its pattern
-is copied.
+Lanes:
 
-### 4. VERIFIER — CI always; `/review` by lane
+| Lane | When | Run |
+| --- | --- | --- |
+| **mechanical** | tooling, seed, rename, docs-only, no new action protocol | blockers → implement → verify. No review subagents |
+| **routine** | new/changed module action, not `sensitive` | short analyze → implement → verify → `reviewer` (`bugs`) |
+| **ui** | `apps/web` / `apps/mobile` product code (never mechanical) | analyze + canvas read → implement → verify → `reviewer` (`full`) |
+| **sensitive** | `sensitive` label, first golden backend/UI slice, or first new principal / composition edge | full analyze → implement → verify → `reviewer` (`full`) + `guardian` |
 
-| Lane | Review |
-| --- | --- |
-| **mechanical** | CI + human skim. No Bugbot/`/review` |
-| **routine** | **Bugbot** + human. `/review` only if contested or a prior review failed |
-| **sensitive / first-slice** | Bugbot + `/review` + `/guard` when `sensitive` or this is the first backend/UI golden + full human review |
+A new layer without an approved reference still needs a first-slice review
+before its pattern is copied.
+
+### 4. VERIFIER — CI always; `reviewer` by lane
 
 | | |
 | --- | --- |
-| Agent | `/review` when the lane requires it |
-| Input | The PR diff + the feature card + golden files + `.cursor/rules/` + ADRs |
-| Output | Verdict: approve, or change requests referencing constitution / ADR / golden / DoD — not an archived spec section |
+| Agent | `reviewer` subagent (read-only, own worktree), or `/review-pr <pr>` manually |
+| Input | The PR diff + the feature card + golden files + `.claude/rules/` + ADRs |
+| Output | `VERDICT: APPROVE` or `REQUEST_CHANGES` with blocker/major/nit findings referencing constitution / ADR / golden / DoD — not an archived spec section |
 | Done when | Required reviewers for the lane have run. Leaf `/ticket`: **a human merges**. Parent conveyor: parent squash-merges on the merge gate (ADR-0029) |
 
-On the parent-conveyor path, launch Bugbot / `/review` / security-review
-from the **parent** conversation after the child PR exists. Do not expect
-the cloud executor to nest those Task tools.
+### 5. GUARDIAN — `guardian` subagent / `/guard <pr>` (optional)
 
-### 5. GUARDIAN — `/guard` (optional)
-
-Safety and irreversibility, not style. Skip on mechanical and ordinary
-routine work.
+Safety, security, and irreversibility, not style. Replaces Cursor's separate
+security-review agent. Skip on mechanical and ordinary routine work.
 
 | When | What |
 | --- | --- |
-| `sensitive` | Security-review agent + `/guard` (auth, payments, QES, webhooks, files, tenant/runtime protocols) |
+| `sensitive` label | Auth, payments, QES, webhooks, files, tenant/runtime protocols (money, confirmation) |
 | First golden backend or UI slice | Architecture pass vs ADRs and the intended copy template |
 | First use of a new principal or composition edge | Same |
-| Any ADR deviation | Stop. Do not land. Draft a new ADR instead |
+| Any ADR deviation | `STOP_ADR_REQUIRED`. Do not land. Draft a new ADR instead |
 
-Done when Guardian findings are addressed on the same branch and VERIFY
-is green again.
+Done when guardian findings are addressed on the same branch and verify is
+green again.
 
 ## Golden slices
 
-A golden is a designation, not a special package. Later Executors copy
-those files. They do not invent a new folder shape.
+A golden is a designation, not a special package. Later executors copy those
+files. They do not invent a new folder shape. The `showzy-backend` skill is
+the map.
 
 **Backend.** The merged order slice and its pricing/chat collaborators
 establish the action, transaction, event, and test protocols (ADR-0026).
@@ -146,7 +185,7 @@ tests in the feature card's context pack; do not copy the whole module.
 
 **Mobile.** Product feature placement follows
 [`catalog/products`](../apps/mobile/src/features/catalog/products/AGENTS.md)
-and the [`showzy-mobile` router](../.cursor/skills/showzy-mobile/SKILL.md).
+and the [`showzy-mobile` router](../.claude/skills/showzy-mobile/SKILL.md).
 Each product screen still needs the recorded
 [UX gate](design/process.md#ux-gate) and canvas coverage.
 
@@ -158,118 +197,99 @@ Core test fixtures in `packages/core/src/testing/` stay core-internal.
 
 ## Linear workflow
 
-Linear (team **Showzy-v2**, via MCP) is the work ledger. Mapping:
+Linear (team **Showzy-v2**, via the Linear MCP server) is the work ledger.
 
 - **Project = roadmap phase** (`Phase 0 — Foundation` … `Phase 9 — AI
-  Experience`, then `V2 Production Launch`, then `Phase 10 — Web` …)
-  plus the parallel `Experience Foundation` project.
-  Milestones inside a project = features / vertical slices.
-  **V2 Production Launch is its own project**, never a phase milestone.
+  Experience`, then `V2 Production Launch`, then `Phase 10 — Web` …) plus
+  the parallel `Experience Foundation` project. Milestones inside a project
+  = features / vertical slices. **V2 Production Launch is its own project**,
+  never a phase milestone.
 - **Issue = one ticket** from `/feature` (one branch = one PR).
-  Dependencies = `blocked by`; parallel tickets have none.
+  Dependencies = `blocked by`; parallel tickets have none. Descriptions carry
+  **Lane** and **Touches**.
 - **Labels**: the existing child label `<name>` under the `module` group
-  (for example `orders`), plus `sensitive` when flagged. Do not invent
-  a `spec` or `scaffold` label for new work.
+  (for example `orders`), plus `sensitive` when flagged. Do not invent a
+  `spec` or `scaffold` label.
 - **Statuses**: Backlog (blocked) → Todo (ready) → In Progress (executor
-  running) → **In Review** (draft PR open) → Done (merged). Canceled is
-  for dropped tasks. The leaf executor must move the ticket to In Review
-  when the PR exists (not leave it In Progress). Linear GitHub sync may
-  flip a ticket to In Progress when a PR is marked ready; after
-  squash-merge, set Done again if needed.
+  running) → **In Review** (draft PR open) → Done (merged). Canceled is for
+  dropped tasks. The executor moves the ticket to In Review when the PR
+  exists. Linear GitHub sync may flip a ticket to In Progress when a PR is
+  marked ready; after squash-merge, set Done again if needed.
 
 Day-to-day loop:
 
-1. You open a thread in Plan mode and type `/feature <capability>`.
-   Approve the card and tickets.
-2. **Either** open a fresh thread per leaf and type `/ticket SHO-<n>`
-   (you merge), **or** type `/implement SHO-<parent>` and let the parent
-   orchestrator run the graph (ADR-0029).
-3. The leaf executor implements, runs VERIFY, opens a draft PR, and
-   self-checks `review.md` / `guard.md` when nested Task tools are missing.
-4. Parent conveyor: independent reviews from the parent, then squash-merge
-   on green Actions **and** the launched `/review` verdict. Leaf
-   `/ticket` without a parent: **you merge.**
-   Linear's GitHub integration links `SHO-n` in the branch/PR. Do not
-   rely on it to mark Done — the conveyor sets Done after merge.
-
-Gaps that are product forks (new capability, new principal, new table,
-invariant change, “should this exist”) stop the ticket: it returns to
-Todo with a comment. Mechanical contract detail (timeout / rate-limit
-defaults, a Zod refine a test proved, a CHECK/column the card implied,
-a metadata field `defineActionContract` requires) patches in the same PR
-and is named in the description.
+1. New session, plan mode: `/feature <capability>`. Approve the card and
+   tickets.
+2. **Either** `/conveyor SHO-<parent>` and let it run the graph (check back
+   when notified), **or** one worktree session per leaf:
+   `claude -w sho-<n>` then `/ticket SHO-<n>` (you merge).
+3. Gaps that are product forks (new capability, new principal, new table,
+   invariant change, "should this exist") stop the ticket: it returns to Todo
+   with a comment. Mechanical contract detail (timeout / rate-limit defaults,
+   a Zod refine a test proved, a CHECK/column the card implied, a metadata
+   field `defineActionContract` requires) patches in the same PR and is named
+   in the description.
 
 ## Special roles (outside the main flow)
 
 | Role | When |
 | --- | --- |
-| Debugging hard bugs | Escalation when the working model can't find the root cause in 1–2 iterations — then a human |
+| Debugging hard bugs | Escalation when an executor can't find the root cause in 1–2 iterations — an Opus session with the failing summary, then a human |
 | ADR drafting | When any role hits a decision the blueprint doesn't cover, or wants to deviate from an accepted ADR |
-| Leftover foundation | `/scaffold`. Phases 0–1 only; allowlisted packages. New domain work uses `/feature`, not `/scaffold` |
+| Leftover foundation | `/scaffold`. Phases 0–1 only; allowlisted packages. New domain work uses `/feature` |
 
 ## Rules that keep the pipeline honest
 
-1. **Writer ≠ reviewer** when `/review` or `/guard` runs. Do not
-   rubber-stamp your own PR. On the parent conveyor, independent review is
-   green GitHub Actions plus parent-launched Task Bugbot / security-review
-   / `/review` when launched (ADR-0029). Do not merge while a launched
-   `/review` is still running. A child’s in-process `review.md` is a
-   self-check, not independent review. Mechanical PRs do not need
-   `/review`.
+1. **Writer ≠ reviewer** when `reviewer` or `guardian` runs. Reviews are
+   separate subagents without edit tools. Do not merge while a launched
+   review is still running. Mechanical PRs do not need a review subagent.
 2. **The contract is TypeScript.** `*.contract.ts` plus DoD tests. Do not
-   write `docs/specs/<module>.md` or open `docs/archive/`. Protocol
-   manuals for frozen packages may be patched in the same PR when a test
-   proves them wrong; otherwise they change via ADR.
-3. **Escalate, don't grind.** 2 failed review or debug iterations →
-   human. Do not wait for another model family.
-4. **Working model is Grok 4.6** until another family is on the Cursor
-   plan. Do not keep a per-role model matrix in the meantime.
+   write `docs/specs/<module>.md` or open `docs/archive/`. Protocol manuals
+   for frozen packages may be patched in the same PR when a test proves them
+   wrong; otherwise they change via ADR.
+3. **Escalate, don't grind.** 2 failed review or debug iterations → human.
+4. **CI is the gate, not a slot machine.** Never rerun a red job to get green,
+   never push an empty commit, never add retries (`docs/operations/ci-flakes.md`).
 5. **UX gate blocks product screens in `apps/mobile`.** It does not block
-   backend features. Mobile UI work must follow
-   `docs/design/mapping/mp-to-mobile.md` and reference the Magic
-   Patterns canvas screen, the running Expo SYSTEM, and
-   `docs/design/process.md` (ADR-0024). **Web** product screens
-   (`apps/web`) must MCP-read the web canvas (`mp-to-web.md`) before
-   writing JSX; if MCP fails, stop. That is a mandatory canvas read,
-   not the mobile UX gate. Figma is not a gate artifact.
-   Expo shell, auth, and deep-link infrastructure are not gated.
-6. **Copy the golden protocol. Do not invent layers.** Flag new
-   abstractions, extra folders, or generic “clean architecture” that the
-   golden does not use. Copy pagination helpers, tenant, errors, and
-   folders — not a screen-shaped list/write input that ADR-0033 retires.
+   backend features. Mobile UI follows `docs/design/mapping/mp-to-mobile.md`
+   and references the Magic Patterns canvas screen, the running Expo SYSTEM,
+   and `docs/design/process.md` (ADR-0024). **Web** product screens
+   (`apps/web`) must MCP-read the web canvas (`mp-to-web.md`) before writing
+   JSX; if MCP fails, stop. Figma is not a gate artifact. Expo shell, auth,
+   and deep-link infrastructure are not gated.
+6. **Copy the golden protocol. Do not invent layers.** Flag new abstractions,
+   extra folders, or generic "clean architecture" that the golden does not
+   use.
 
 ## Agent skills policy
 
-Skills (`.cursor/skills/` and the skills-CLI copy in `.agents/skills/`,
-SKILL.md format) distribute **code patterns**, not process and not
-constitution. Process lives in this file and the commands. Constitution
-lives in the blueprint, ADRs, and `.cursor/rules/`. Vendored skills are
-pinned in `skills-lock.json`. After `npx skills update`, recopy
-`.agents/skills/<name>` into `.cursor/skills/<name>` and keep the
-hand-written `showzy-mobile` router.
+Skills (`.claude/skills/`, SKILL.md format) distribute **code patterns** and
+**workflow playbooks**, not constitution. Constitution lives in the
+blueprint, ADRs, and `.claude/rules/`. Vendored skills are pinned in
+`skills-lock.json`; after updating one from its source, copy it into
+`.claude/skills/<name>` and keep the hand-written `showzy-*` routers.
 
 ### Ground rules
 
-1. **Skills are advisory.** On any conflict, `.cursor/rules/`, ADRs, the
-   golden files, and this pipeline win. A skill never justifies violating
-   a prohibition (e.g. raw SQL from a Postgres skill's examples).
-2. **Vetted like dependencies.** Every third-party skill is reviewed by a
-   human before it lands in `.cursor/skills/` / `.agents/skills/`.
+1. **Skills are advisory.** On any conflict, `.claude/rules/`, ADRs, the
+   golden files, and this pipeline win. A skill never justifies violating a
+   prohibition (e.g. raw SQL from a Postgres skill's examples).
+2. **Vetted like dependencies.** Every third-party skill or plugin is
+   reviewed by a human before it lands in `.claude/` or is enabled for the
+   team.
 3. **No generic backend-stack skills** (Drizzle, Hono, oRPC, better-auth,
    raw Postgres). Those leak conflicting patterns.
-4. **No Showzy backend skills until the golden backend slice has
-   merged.** Then extract hand-written skills from that code:
-   `showzy-action`, `showzy-schema`, `showzy-module-tests`,
-   `showzy-events`. A `showzy-panel-screen` skill waits on the golden
-   UI slice.
+4. **Showzy backend skills are extracted from merged golden code**, never
+   written from memory. `showzy-backend` is the golden-file map; deeper
+   `showzy-action` / `showzy-schema` / `showzy-module-tests` /
+   `showzy-events` skills may be extracted when repeated review findings
+   show the map is not enough.
 
 ### Phased skill set
 
 | Phase | Install | Notes |
 | --- | --- | --- |
-| Until golden backend merges | **Nothing backend** | Foundation and the first slice run under Guardian |
-| After golden backend | Hand-written Showzy skills listed above | Extracted from the golden files, not from memory |
-| 2–3 Mobile screens | Official `expo/skills` (selective: `expo-overview`, `expo-router`, `expo-native-ui`, `expo-design-system`, `expo-animation`, `expo-dev-client`) + **one** RN skill (`vercel-react-native-skills`, not Callstack) + hand-written `showzy-mobile` router | Skip `expo-tailwind-setup`, `expo-ui`, `expo-data-fetching`, and `expo-project-structure` — Unistyles, existing layout, Cookie/`@showzy/contract` transport. After the golden UI slice, add `showzy-panel-screen` |
+| Now | `showzy-backend` map; official `expo/skills` (selective: `expo-overview`, `expo-router`, `expo-native-ui`, `expo-design-system`, `expo-animation`, `expo-dev-client`) + **one** RN skill (`vercel-react-native-skills`) + hand-written `showzy-mobile` and `showzy-web` routers | Skip `expo-tailwind-setup`, `expo-ui`, `expo-data-fetching`, `expo-project-structure` — Unistyles, existing layout, Cookie/`@showzy/contract` transport |
 | 3 Delivery | Hand-written **Nova Poshta API** skill | No public equivalent; extract from v1 + official docs |
 | Pre-MVP | `eas-app-stores` from `expo/skills` | TestFlight / store submission |
 | 6 Web | Vercel `react-best-practices` + `composition-patterns` | Not earlier |
@@ -282,6 +302,8 @@ push raw SQL, and process-skill packs duplicate this pipeline.
 
 ## Health metrics (blueprint §7.4)
 
-Track per feature: % PRs merged without human edits (target >80% after
-the golden backend slice stabilizes), review iterations per PR (≤2),
-feature-card → green-CI time, regressions reaching main (~0).
+Track per feature: % PRs merged without human edits (target >80% after the
+golden backend slice stabilizes), review iterations per PR (≤2), feature-card
+→ green-CI time, regressions reaching main (~0). Add: Claude usage per merged
+PR (`/usage` or `/cost` at the end of a `/conveyor` run) to spot lanes that
+need a different model or a narrower context pack.

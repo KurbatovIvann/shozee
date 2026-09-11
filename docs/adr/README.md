@@ -45,7 +45,7 @@ humans) don't relitigate settled questions or silently deviate.
 | [0026](0026-golden-slice-confirm-is-status-only.md) | Golden-slice confirm is status-only | Accepted |
 | [0027](0027-s3-stand-in-is-garage.md) | S3 stand-in is Garage (R2 in prod) | Accepted |
 | [0028](0028-customer-spine-and-invite-crm.md) | Customer is the commercial spine; invite accept creates CRM | Accepted |
-| [0029](0029-autonomous-feature-conveyor.md) | Autonomous parent conveyor (writer ≠ reviewer at the parent) | Accepted |
+| [0029](0029-autonomous-feature-conveyor.md) | Autonomous parent conveyor (writer ≠ reviewer at the parent) | Accepted (mechanics amended by ADR-0040) |
 | [0030](0030-web-panel-spa-and-deferred-storefront.md) | Web panel is a Vite SPA; storefront is a separate later app | Accepted |
 | [0031](0031-module-kit-server-micro-utilities.md) | Server module micro-utilities live in `@showzy/module-kit` | Accepted |
 | [0032](0032-ai-sdk-7-thin-loop-no-harness.md) | AI loop is AI SDK 7; no coding harness | Accepted |
@@ -56,3 +56,4 @@ humans) don't relitigate settled questions or silently deviate.
 | [0037](0037-assistant-host-is-one-tool-loop.md) | The staff assistant host is one tool loop | Superseded by ADR-0038 |
 | [0038](0038-assistant-is-a-stored-document.md) | The assistant is a stored document and a claimable pause | Accepted |
 | [0039](0039-assistant-turn-runs-off-the-request.md) | The assistant turn runs off the request | Proposed |
+| [0040](0040-claude-code-agent-harness.md) | Claude Code is the agent harness | Accepted |

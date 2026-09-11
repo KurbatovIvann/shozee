@@ -14,7 +14,7 @@ editor (`form/`) binds `companies.get` to hydrate and
 / `FormTextField`). Keep draft/plan/schema/copy/load here. Do not call
 `companies.get` when `canViewCompanySettings` is false.
 
-UI state ownership is `.cursor/rules/mobile-ui-state.mdc`. Hub load
+UI state ownership is `.claude/rules/mobile-ui-state.md`. Hub load
 classification is a pure presenter. Form fields are RHF + UI Zod. No
 XState. No ФОП-registry quick-fill. Named deviation: ship ФОП/ТОВ
 (canvas is ФОП-only).

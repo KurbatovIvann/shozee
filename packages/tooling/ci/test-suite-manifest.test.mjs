@@ -60,6 +60,21 @@ test("packages/db postgres tests that are not *.db.test.ts stay classified as db
   );
 });
 
+test("Claude Code worktree copies are not this checkout's test files", () => {
+  assert.equal(
+    classifyTestFile(
+      ".claude/worktrees/sho-1/packages/core/src/errors/index.test.ts",
+    ),
+    null,
+  );
+  assert.equal(
+    classifyTestFile(
+      ".claude/worktrees/sho-1/packages/modules/orders/src/actions/orders.db.test.ts",
+    ),
+    null,
+  );
+});
+
 test("on-disk classification matches vitest.db.config include/exclude", () => {
   const { unit, db } = listClassifiedTestFiles();
   assert.ok(unit.length > 0, "expected unit test files");

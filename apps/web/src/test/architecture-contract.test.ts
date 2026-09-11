@@ -48,18 +48,17 @@ function extractJob(source: string, name: string): string {
 const rootAgents = readRepo("AGENTS.md");
 const webAgents = readRepo("apps/web/AGENTS.md");
 const architecture = readRepo("docs/design/web-panel-architecture.md");
-const skill = readRepo(".cursor/skills/showzy-web/SKILL.md");
-const agentsSkill = readRepo(".agents/skills/showzy-web/SKILL.md");
-const webRule = readRepo(".cursor/rules/web-agent-skills.mdc");
+const skill = readRepo(".claude/skills/showzy-web/SKILL.md");
+const webRule = readRepo(".claude/rules/web.md");
 const eslintConfig = readRepo("apps/web/eslint.config.mjs");
 
 describe("web architecture contract discovery (SHO-326)", () => {
   it("root AGENTS.md requires loading the web skill and apps/web/AGENTS.md", () => {
-    expect(rootAgents).toContain(".cursor/skills/showzy-mobile/SKILL.md");
+    expect(rootAgents).toContain(".claude/skills/showzy-mobile/SKILL.md");
     expect(rootAgents).toContain(
       "Do not load\nExpo skills for backend or module work.",
     );
-    expect(rootAgents).toContain(".cursor/skills/showzy-web/SKILL.md");
+    expect(rootAgents).toContain(".claude/skills/showzy-web/SKILL.md");
     expect(rootAgents).toContain("apps/web/AGENTS.md");
     expect(rootAgents).toContain("Do not load Expo skills for web work");
   });
@@ -68,9 +67,8 @@ describe("web architecture contract discovery (SHO-326)", () => {
     expect(webAgents.length).toBeGreaterThan(0);
     expect(skill).toContain("name: showzy-web");
     expect(skill).toContain("apps/web/AGENTS.md");
-    expect(agentsSkill).toBe(skill);
-    expect(webRule).toContain("globs: apps/web/**");
-    expect(webRule).toContain(".cursor/skills/showzy-web/SKILL.md");
+    expect(webRule).toContain('paths:\n  - "apps/web/**"');
+    expect(webRule).toContain(".claude/skills/showzy-web/SKILL.md");
   });
 
   it("does not copy the Expo skill table into the web skill", () => {

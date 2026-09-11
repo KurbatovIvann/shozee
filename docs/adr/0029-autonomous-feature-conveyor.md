@@ -1,6 +1,6 @@
 # ADR-0029: Autonomous parent conveyor
 
-- **Status**: Accepted
+- **Status**: Accepted (tooling mechanics amended by [ADR-0040](0040-claude-code-agent-harness.md): Claude Code subagents replace Cursor cloud Tasks; decisions unchanged)
 - **Date**: 2026-08-28
 - **Deciders**: owner (encoded from the SHO-183 staff price-lists run)
 

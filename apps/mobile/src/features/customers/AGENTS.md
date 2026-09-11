@@ -5,7 +5,7 @@ one-line re-exports. Feature code lives here. Form save/guard/scaffold
 adoption is SHO-307 via `src/components/form-kit` — do not clone the
 catalog form stack.
 
-UI state ownership is `.cursor/rules/mobile-ui-state.mdc`. List filters
+UI state ownership is `.claude/rules/mobile-ui-state.md`. List filters
 and tab chrome are `useState` / local view state, never XState. Writes
 on the list (archive / restore / delete) use `useContractMutation`.
 Delete re-invokes with the confirmation challenge (protocol). Archive

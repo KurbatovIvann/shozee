@@ -5,8 +5,8 @@ Query. Classic UI executes the same `@showzy/contract` actions as
 mobile and chat. This is **not** the public storefront (later app) and
 **not** the Expo client.
 
-Load this file and `.cursor/skills/showzy-web/SKILL.md` before writing
-code under `apps/web`. Skills are advisory: `.cursor/rules/`, accepted
+Load this file and `.claude/skills/showzy-web/SKILL.md` before writing
+code under `apps/web`. Skills are advisory: `.claude/rules/`, accepted
 ADRs, and this file win.
 
 ## Sources of truth

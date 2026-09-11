@@ -9,7 +9,7 @@ The create form uses type/layout cards, `SelectorRow`, and
 re-exports. Feature code lives here, not under
 `src/components/screens/`.
 
-UI state ownership is `.cursor/rules/mobile-ui-state.mdc`. List filters
+UI state ownership is `.claude/rules/mobile-ui-state.md`. List filters
 and options-sheet chrome are `useState` / local view state, never XState.
 Writes on the list (share / cancel) use `useContractMutation`. Cancel is
 UI confirm (`presentConfirmDialog`) after the options sheet hides — the

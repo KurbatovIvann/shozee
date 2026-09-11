@@ -5,7 +5,7 @@ chrome. `src/app/` stays one-line re-exports. Feature code lives here.
 Compose `src/components/form-kit` (`useFormSave`, `useUnsavedGuard`) for
 the create save/leave shell. Do not clone the catalog form stack.
 
-UI state ownership is `.cursor/rules/mobile-ui-state.mdc`. List filters
+UI state ownership is `.claude/rules/mobile-ui-state.md`. List filters
 and the status-filter sheet are `useState` / local view state, never
 XState. Detail sheet chrome is a `useReducer`. The create form uses RHF
 

@@ -1,0 +1,2 @@
+# Gitignored files copied into every Claude Code worktree (ADR-0040).
+.env

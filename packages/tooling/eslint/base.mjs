@@ -236,7 +236,7 @@ export function showzyEslintConfig({ tsconfigRootDir }) {
         "showzy/import-boundaries": "error",
         "showzy/record-verification-aggregates": "error",
         "boundaries/dependencies": ["error", showzyBoundaryDependencyOptions],
-        // Prohibitions (.cursor/rules/prohibitions.mdc): no `any`,
+        // Prohibitions (.claude/rules/constitution.md): no `any`,
         // no suppression comments without a linked issue.
         "@typescript-eslint/no-explicit-any": "error",
         "@typescript-eslint/ban-ts-comment": [

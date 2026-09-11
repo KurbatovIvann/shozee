@@ -31,6 +31,9 @@ export const DB_SUITE_EXCLUDE = Object.freeze([
 ]);
 
 const SKIP_DIR_NAMES = new Set([
+  // Claude Code worktrees (.claude/worktrees/<name>) are full checkouts of
+  // this repository; their copies are not this checkout's suites (ADR-0040).
+  ".claude",
   ".git",
   ".turbo",
   "coverage",
@@ -78,7 +81,11 @@ function walk(dir, visit) {
  */
 export function classifyTestFile(relativePath) {
   const normalized = relativePath.replaceAll("\\", "/");
-  if (normalized.startsWith("docs/") || normalized.includes("/archive/")) {
+  if (
+    normalized.startsWith("docs/") ||
+    normalized.startsWith(".claude/") ||
+    normalized.includes("/archive/")
+  ) {
     return null;
   }
   if (!TEST_FILE_RE.test(normalized)) {

@@ -12,8 +12,7 @@ widget: a list answers a bounded question (page or aggregate); a write
 accepts a stable id or a unique human reference. The assistant may see a
 narrower mapped schema in `packages/ai`; that is not a second domain API.
 Cross-module phrases stay several writes. Composition-only reads are not
-AI tools. Details: `.cursor/rules/channel-neutral-actions.mdc`,
-`.cursor/rules/ai-agent.mdc`, and
+AI tools. Details: `.claude/rules/actions-and-ai.md` and
 `docs/adr/0033-channel-neutral-actions.md`.
 
 ## Contract of this thread
@@ -29,10 +28,11 @@ deviations need a new ADR first.
 Documentation map: [`docs/README.md`](docs/README.md). Read the root and
 nearest package/feature `AGENTS.md`, then the task context pack.
 
-Repository rules live in `.cursor/rules/`. Outside Cursor, load
-`prohibitions.mdc`, `conventions.mdc`, and `definition-of-done.mdc`
-explicitly; do not assume an editor has injected them. Load the
-area-specific rules when their scope applies.
+Repository rules live in `.claude/rules/`. `constitution.md` (prohibitions
+and conventions) and `definition-of-done.md` always apply; the area rules
+(`actions-and-ai.md`, `web.md`, `mobile.md`, `mobile-ui-state.md`) apply
+when their paths are touched. Claude Code injects them; any other tool must
+load them explicitly.
 
 ## Non-negotiable invariants (blueprint §2.1)
 
@@ -73,9 +73,6 @@ area-specific rules when their scope applies.
   containers.
 - All code, comments, and documentation are in **English**.
 
-See `.cursor/rules/` for detailed conventions, prohibitions, and the
-definition of done.
-
 ## CI flakes
 
 A red Vitest on an unrelated file is a **flake or a real regression**,
@@ -85,25 +82,36 @@ commit) to turn CI green. Do not add Vitest `retry` or GitHub Actions
 rerun-on-failure — those hide the same bugs. Details:
 `docs/operations/ci-flakes.md`.
 
+## Area skills
+
 When the task touches `apps/mobile`, load
-`.cursor/skills/showzy-mobile/SKILL.md` before writing code. Do not load
+`.claude/skills/showzy-mobile/SKILL.md` before writing code. Do not load
 Expo skills for backend or module work.
 
 When the task touches `apps/web`, load
-`.cursor/skills/showzy-web/SKILL.md` and `apps/web/AGENTS.md` before
+`.claude/skills/showzy-web/SKILL.md` and `apps/web/AGENTS.md` before
 writing code. Do not load Expo skills for web work. The panel is a Vite
 SPA (ADR-0030), not the mobile client and not the future storefront.
 
-## Feature conveyor
+When the task adds or changes a module action, event, owned schema, or
+module tests, load `.claude/skills/showzy-backend/SKILL.md` (golden-file
+map) instead of rediscovering the golden slice.
 
-`/implement SHO-<parent>` (or `/ticket` / `/conveyor` on a Feature
-parent) runs the autonomous parent orchestrator: isolated cloud
-`/ticket` per child, independent reviews from the parent, squash-merge
-on green GitHub Actions and, when launched, a finished `/review`.
-Children on one feature are sequential by default. Playbook:
-`.cursor/commands/conveyor.md`. ADR-0029. A human closes the feature
-parent. Nested Bugbot / `/review` / `security-review` inside a cloud
-child are expected to be unavailable — do not fail the child for that.
+## Feature pipeline
+
+`/feature <capability>` plans a Linear feature card and ticket graph.
+`/conveyor SHO-<parent>` runs the autonomous parent orchestrator: one
+`implementer` subagent per child in its own git worktree, independent
+`reviewer` / `guardian` subagents from the parent, squash-merge on the
+merge gate. `/ticket SHO-<n>` runs one leaf interactively (a human merges).
+Children on one feature are sequential by default; parallel only for
+disjoint declared paths without migrations, at most two at a time. Manual:
+`docs/pipeline.md`; decisions: ADR-0029, ADR-0040.
+A human closes the feature parent.
+
+Local CI-equivalent checks: `node .claude/scripts/verify.mjs` (affected
+packages only, compact output). PR merge gate:
+`node .claude/scripts/merge-gate.mjs <pr>`.
 
 ## Legacy reference (Showzy v1)
 
