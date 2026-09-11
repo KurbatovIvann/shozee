@@ -136,18 +136,18 @@ the queue and the events.**
   - A reconciler on the maintenance scheduler re-enqueues an accepted turn
     that never got a job and interrupts a running turn past its deadline, and
     nothing else: a queued turn, or a running turn inside its deadline, is
-    never interrupted. The interrupt hands the reconciler the turn's hold; it
-    would release a hold only for a turn that never started, and every turn it
-    may interrupt has started, so the reservation stays as the charge. A finisher that commits
-    and then dies before it settles or releases leaves a hold that no row names
-    any more: it stays reserved until its Kyiv-day key expires. That fails
-    safe — the day's cap is reached early, never lifted — and is accepted. Jobs
-    are removed on completion and on failure, so a re-enqueue under the same
-    `jobId` is never a no-op against a stale record. *(Amended 2026-09-11,
-    SHO-561: an earlier wording had the reconciler also release orphaned
-    budget holds. Ending a turn now zeroes its row's hold in the same
-    statement, so no row names a hold once its turn has ended, and there is
-    nothing left for a reconciler to find.)*
+    never interrupted. The interrupt hands the reconciler the turn's hold. It
+    cannot tell whether a stale running turn reached the model, so it leaves
+    the reservation as the charge, which fails safe. A finisher that commits
+    and then dies before it settles or releases leaves a hold that no row
+    names any more: it stays reserved until its Kyiv-day key expires. That
+    also fails safe — the day's cap is reached early, never lifted — and is
+    accepted. Jobs are removed on completion and on failure, so a re-enqueue
+    under the same `jobId` is never a no-op against a stale record.
+    *(Amended 2026-09-11, SHO-561: an earlier wording had the reconciler also
+    release orphaned budget holds. Ending a turn now zeroes its row's hold in
+    the same statement, so no row names a hold once its turn has ended, and
+    there is nothing left for a reconciler to find.)*
   - After a worker crash the interruption becomes visible only when the
     reconciler passes the deadline — up to the turn timeout plus one
     reconciler interval. Accepted, and stated so nobody reads it as a hang.

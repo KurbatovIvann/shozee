@@ -39,8 +39,15 @@ runtime internals, so what both need lives here.
 - `stores/assistant-turn-for-job.ts` — the global system read of the turn a job
   names, and the only producer of `VerifiedAssistantCaller` (the row's
   `user_id`, `company_id` and `request_id`; no client IP), for a queued turn
-  only. A job payload is never a caller, and ESLint refuses a type assertion
-  to one. The session is not read (ADR-0039, amended SHO-561).
+  only. A job payload is never a caller. The session is not read (ADR-0039,
+  amended SHO-561).
+  - The brand is produced only in this file.
+  - ESLint (`no-restricted-syntax`) catches only a direct type assertion to
+    the name `VerifiedAssistantCaller`. A renamed import, a type alias, an
+    indexed type (`AssistantTurnForJob["caller"]`), a user-defined type guard
+    or a generic cast helper gets past it.
+  - Any other way of producing a `VerifiedAssistantCaller` is a review
+    blocker.
 - `queue.ts` — the assistant queue contract: name, BullMQ prefix, job payload
   schema, `jobId` derivation. Pure constants and a schema. The payload is the
   turn's identity only (kind, conversation id, command id, lowercased);
