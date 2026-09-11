@@ -55,3 +55,4 @@ humans) don't relitigate settled questions or silently deviate.
 | [0036](0036-assistant-speech-is-not-a-surface.md) | Assistant speech is not a surface | Superseded by ADR-0038 |
 | [0037](0037-assistant-host-is-one-tool-loop.md) | The staff assistant host is one tool loop | Superseded by ADR-0038 |
 | [0038](0038-assistant-is-a-stored-document.md) | The assistant is a stored document and a claimable pause | Accepted |
+| [0039](0039-assistant-turn-runs-off-the-request.md) | The assistant turn runs off the request | Proposed |
