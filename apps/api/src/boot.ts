@@ -10,7 +10,8 @@ import {
   createRedisAssistantEventHub,
   createRedisAssistantPresence,
   createRedisAssistantStreamSlots,
-  optionalStaffAssistantLanguageModel,
+  logStaffAssistantMount,
+  staffAssistantMount,
 } from "@showzy/assistant-runtime";
 import type { ServerConfig } from "@showzy/config";
 import { contractModules } from "@showzy/contract";
@@ -28,16 +29,13 @@ import { Redis } from "ioredis";
 
 import { buildAuthOptions } from "./auth/options.js";
 import { otpSendersFromConfig } from "./auth/otp-delivery.js";
-import {
-  createActionRegistry,
-  createStaffAssistantProvider,
-} from "./composition.js";
 import { createAssistantKitEvents } from "./http/assistant-kit-events.js";
 import { createAssistantKitRuntime } from "./http/assistant-kit-runtime.js";
 import { createApp, type AuthInstance } from "./http/app.js";
 import { authInstanceFrom } from "./http/auth-instance.js";
 import { createProcessObservability } from "./observability.js";
 import { createActionPipeline } from "./pipeline.js";
+import { createActionRegistry } from "./registry.js";
 import {
   createRedisAuthRateLimitStore,
   createRedisConfirmationStore,
@@ -126,42 +124,18 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
   });
 
   const registry = createActionRegistry();
-  const staffProvider = createStaffAssistantProvider(config.ai);
-  const assistantConfig = {
-    model: config.ai.model,
-    provider: staffProvider,
-    ...(config.ai.anthropicApiKey !== undefined
-      ? { anthropicApiKey: config.ai.anthropicApiKey }
-      : {}),
-  };
-  // Off unless AI_ASSISTANT_KIT=1, and off with no model configured — there is
-  // nothing for the routes to call without a provider.
-  //
-  // Logged either way. A path that can be off for two different reasons and
-  // says nothing is a path you cannot tell is running.
-  const assistantKitModel = config.ai.assistantKitEnabled
-    ? optionalStaffAssistantLanguageModel(assistantConfig)
-    : undefined;
-  logger.info(
-    {
-      enabled: config.ai.assistantKitEnabled,
-      mounted: assistantKitModel !== undefined,
-      paths:
-        assistantKitModel === undefined
-          ? []
-          : [
-              "POST /assistant/kit/chat",
-              "POST /assistant/kit/answer",
-              "POST /assistant/kit/abandon",
-              "GET /assistant/kit/messages",
-              "GET /assistant/kit/events",
-            ],
-      ...(config.ai.assistantKitEnabled && assistantKitModel === undefined
-        ? { reason: "no language model configured" }
-        : {}),
-    },
-    "assistant-kit path",
-  );
+  // The same rule and the same log line as the worker's assistant queue: off
+  // with AI_ASSISTANT_KIT=0, and off with no model configured.
+  const assistantMount = staffAssistantMount(config.ai);
+  const staffProvider = assistantMount.provider;
+  const assistantKitModel = assistantMount.model;
+  logStaffAssistantMount(logger, assistantMount, [
+    "POST /assistant/kit/chat",
+    "POST /assistant/kit/answer",
+    "POST /assistant/kit/abandon",
+    "GET /assistant/kit/messages",
+    "GET /assistant/kit/events",
+  ]);
 
   // Pub/sub and presence on the shared, non-persistent Redis: neither needs to
   // survive a restart. The hub subscribes on its own connection, because a

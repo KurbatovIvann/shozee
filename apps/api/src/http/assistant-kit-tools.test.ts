@@ -43,7 +43,7 @@ import {
 import { ConflictError, NotFoundError } from "@showzy/core/errors";
 import { describe, expect, it } from "vitest";
 
-import { createActionRegistry } from "../composition.js";
+import { createActionRegistry } from "../registry.js";
 
 const registry = createActionRegistry();
 const CONTRACTS = filterStaffAiTools(registry.contracts(), {

@@ -17,7 +17,7 @@ import {
   ASSISTANT_CHAT_WINDOW_MESSAGES,
   AssistantKitConversationGoneError,
 } from "@showzy/assistant-runtime";
-import { createActionRegistry } from "../composition.js";
+import { createActionRegistry } from "../registry.js";
 import {
   createTestKit,
   kitIdentities,

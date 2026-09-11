@@ -138,9 +138,6 @@ export const ASSISTANT_LOCK_DURATION_MS = 60_000;
  */
 export const ASSISTANT_MAX_STALLED_COUNT = 0;
 
-/** System actor name for the assistant job host's own logs. */
-export const ASSISTANT_JOB_HOST_NAME = "worker.assistant";
-
 /** First LISTEN reconnect delay after a dropped connection. */
 export const LISTEN_RECONNECT_MIN_MS = 1_000;
 

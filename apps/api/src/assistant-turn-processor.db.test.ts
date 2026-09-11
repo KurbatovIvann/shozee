@@ -42,6 +42,7 @@ import {
   createInMemoryConfirmationStore,
   type ActionPipelineDeps,
 } from "@showzy/core";
+import { PermissionDeniedError } from "@showzy/core/errors";
 import {
   createTestKit,
   kitIdentities,
@@ -64,7 +65,7 @@ import { and, eq } from "drizzle-orm";
 import { Redis } from "ioredis";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { createActionRegistry } from "./composition.js";
+import { createActionRegistry } from "./registry.js";
 
 const COMPANY = kitIdentities.companies.a;
 const ANNA = kitIdentities.users.anna;
@@ -353,7 +354,7 @@ async function historyOf(turn: Accepted): Promise<string> {
 function afterTool(
   runtime: AssistantRuntime,
   toolName: string,
-  after: () => void,
+  after: () => void | Promise<void>,
 ): AssistantRuntime {
   return {
     ...runtime,
@@ -369,7 +370,7 @@ function afterTool(
         ...definition,
         execute: async (input, options) => {
           const outcome = (await execute(input, options)) as ToolOutcome;
-          after();
+          await after();
           return outcome;
         },
       };
@@ -824,6 +825,140 @@ describe("a turn the worker runs", () => {
       company: COUNTER_BEFORE,
       global: COUNTER_BEFORE,
     });
+  });
+});
+
+describe("a turn that broke rather than stopped", () => {
+  it("stores `error` and finishes failed when the provider fails, keeping the hold as the charge", async () => {
+    const turn = await accepted({ history: USER_ASKS });
+    const h = await harness(runtimeWith(stubModelFailingAfter([])));
+
+    expect(await h.process(turn.job)).toEqual({
+      kind: "finished",
+      status: "failed",
+      reachedModel: true,
+    });
+    expect(texts((await placeholder(turn.placeholderId)).parts)).toEqual([
+      { text: "", status: "error" },
+    ]);
+    expect((await turnRow(turn.commandId)).status).toBe("failed");
+    expect(await counters(h.budget)).toEqual({
+      company: COUNTER_BEFORE,
+      global: COUNTER_BEFORE,
+    });
+    // Not offered as a turn to continue: the event says it failed.
+    expect(h.published.at(-1)?.event).toMatchObject({
+      type: "turn.finished",
+      status: "failed",
+    });
+  });
+
+  it("finishes failed when a tool asks for a pause the registry refuses", async () => {
+    const turn = await accepted({ history: USER_ASKS });
+    const base = runtimeWith(
+      stubModel([stubToolCallStep("toolu_list", LIST_TOOL, {})]),
+    );
+    const h = await harness({
+      ...base,
+      tools: async (context) => {
+        const set = await base.tools(context);
+        const definition = set[LIST_TOOL];
+        const execute = definition?.execute;
+        if (definition === undefined || execute === undefined) {
+          throw new Error(`${LIST_TOOL} is not offered`);
+        }
+        const wrapped: ToolSet = { ...set };
+        wrapped[LIST_TOOL] = {
+          ...definition,
+          execute: async (input, options) => {
+            await execute(input, options);
+            const refused: ToolOutcome = {
+              kind: "pause",
+              interaction: "not_registered",
+              prompt: {},
+              secret: {},
+            };
+            return refused;
+          },
+        };
+        return wrapped;
+      },
+    });
+
+    expect(await h.process(turn.job)).toMatchObject({
+      kind: "finished",
+      status: "failed",
+    });
+    expect(texts((await placeholder(turn.placeholderId)).parts)).toEqual([
+      { text: "", status: "error" },
+    ]);
+    expect((await turnRow(turn.commandId)).status).toBe("failed");
+  });
+});
+
+describe("an author removed while the turn runs", () => {
+  it("is refused at the next action: nothing is created, nothing reads as done, and the turn is left to the reconciler", async () => {
+    const member = randomUUID();
+    await kit.db.runtime.db.insert(user).values({
+      id: member,
+      name: "Oles Leaving",
+      email: `oles-${member}@assistant-worker.test`,
+    });
+    await kit.db.runtime.db.insert(companyMembers).values({
+      companyId: COMPANY,
+      userId: member,
+      role: "employee",
+      permissions: {
+        granted: ["assistant:use", "customers:view", "customers:create"],
+        denied: [],
+      },
+    });
+    const turn = await accepted({ history: USER_ASKS, userId: member });
+    const email = `oles-customer-${member}@example.com`;
+    const h = await harness(
+      afterTool(
+        runtimeWith(
+          stubModel([
+            stubToolCallStep("toolu_list", LIST_TOOL, {}),
+            stubToolCallStep("toolu_create", CREATE_TOOL, {
+              name: "Не створиться",
+              email,
+            }),
+            stubTextStep("Готово."),
+          ]),
+        ),
+        LIST_TOOL,
+        async () => {
+          await kit.db.runtime.db
+            .delete(companyMembers)
+            .where(
+              and(
+                eq(companyMembers.companyId, COMPANY),
+                eq(companyMembers.userId, member),
+              ),
+            );
+        },
+      ),
+    );
+
+    // Core refuses even the finish as this person; the job host catches it.
+    await expect(h.process(turn.job)).rejects.toBeInstanceOf(
+      PermissionDeniedError,
+    );
+
+    const created = await kit.db.runtime.db
+      .select({ id: companyCustomers.id })
+      .from(companyCustomers)
+      .where(eq(companyCustomers.email, email));
+    expect(created).toEqual([]);
+    const statuses = texts((await placeholder(turn.placeholderId)).parts).map(
+      (part) => part.status,
+    );
+    expect(statuses).not.toContain("complete");
+    expect((await turnRow(turn.commandId)).status).toBe("running");
+    expect(h.published.map((entry) => entry.event.type)).toEqual([
+      "turn.started",
+    ]);
   });
 });
 

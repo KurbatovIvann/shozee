@@ -19,6 +19,7 @@ import { invitesSuiteCoverage } from "@showzy/invites/suite-coverage";
 import { ordersSuiteCoverage } from "@showzy/orders/suite-coverage";
 import { pricingSuiteCoverage } from "@showzy/pricing/suite-coverage";
 import { searchSuiteCoverage } from "@showzy/search/suite-coverage";
+import { createStaffAssistantProvider } from "@showzy/assistant-runtime";
 import { implementAction, runContractCheck } from "@showzy/core";
 import { defineActionContract } from "@showzy/core/contract";
 import { projectionGrants } from "@showzy/db";
@@ -27,11 +28,10 @@ import { z } from "zod";
 
 import {
   buildContractCheckInput,
-  createActionRegistry,
-  createStaffAssistantProvider,
   mergeSuiteCoverage,
   registerAction,
 } from "./composition.js";
+import { createActionRegistry } from "./registry.js";
 import { registeredEventSubscriptions } from "./subscriptions.js";
 
 const io = z.object({});
@@ -55,14 +55,14 @@ describe("composition root identity", () => {
     expect(indexSource).toContain("S3_LOOPBACK_SIGNING_WARNING");
   });
 
-  it("boot.ts uses createActionRegistry from this module", () => {
+  it("boot.ts uses createActionRegistry from ./registry.js and the runtime's assistant mount", () => {
     const bootSource = readFileSync(
       join(import.meta.dirname, "boot.ts"),
       "utf8",
     );
-    expect(bootSource).toContain('from "./composition.js"');
+    expect(bootSource).toContain('from "./registry.js"');
     expect(bootSource).toContain("createActionRegistry");
-    expect(bootSource).toContain("createStaffAssistantProvider");
+    expect(bootSource).toContain("staffAssistantMount(config.ai)");
     expect(bootSource).toContain("createRedisAuthRateLimitStore(redis, {");
     expect(bootSource).toContain("ipHmacSecret: config.rateLimit.ipHmacSecret");
     expect(bootSource).toContain("configureFilesObjectStore");
@@ -218,7 +218,11 @@ describe("composition root identity", () => {
         .filter((edge) => edge.caller === "documents.attachSignedShare")
         .map((edge) => edge.callee),
     ).toEqual(["files.issueSystemSigningDownloadUrl"]);
-    expect(source).toContain("documentsActions");
+    // Action barrels register in `./registry.ts` (SHO-569): assert the
+    // registered action, not the source text.
+    expect(actionNames(createActionRegistry())).toContain(
+      "documents.attachSignedShare",
+    );
     // The subscription list moved to `./subscriptions.ts` (SHO-279) —
     // assert the registered composition, not the source text.
     expect(registeredEventSubscriptions.map((row) => row.consumer)).toContain(
@@ -367,8 +371,13 @@ describe("composition root identity", () => {
     expect(edges.map((edge) => `${edge.caller}->${edge.callee}`)).not.toContain(
       "docSigning.complete->files.finalizeUpload",
     );
-    expect(source).toContain("docSigningActions");
-    expect(source).toContain("filesActions");
+    // Action barrels register in `./registry.ts` (SHO-569).
+    expect(actionNames(createActionRegistry())).toContain(
+      "docSigning.complete",
+    );
+    expect(actionNames(createActionRegistry())).toContain(
+      "files.readPendingSigningObject",
+    );
     expect(source).toContain("docSigningRecorded");
   });
 });

@@ -43,7 +43,7 @@ import { assistantChatWindowSchema } from "@showzy/validation/assistant-chat";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { createActionRegistry } from "../composition.js";
+import { createActionRegistry } from "../registry.js";
 import { createAssistantKitRuntime } from "../http/assistant-kit-runtime.js";
 
 let kit: TestKit;

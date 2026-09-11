@@ -284,11 +284,20 @@ describe("a turn's job on the job host", () => {
     }
   });
 
-  it("runs a processor that throws once, and does not retry it", async () => {
+  /**
+   * A core error's message can name a person and a company, and BullMQ stores
+   * a thrown job's message as its `failedReason` — in the job and in the queue's
+   * event stream, which `removeOnFail` does not clear. ADR-0039: no personal
+   * data on the queue's disk.
+   */
+  it("runs a processor that throws once, and keeps what it threw off the queue Redis", async () => {
+    const sentinel = `SENTINEL-${randomUUID()}`;
     let runs = 0;
     const host = hostWith(() => {
       runs += 1;
-      return Promise.reject(new Error("the turn store is down"));
+      return Promise.reject(
+        new Error(`no company_members row for user ${sentinel} in company`),
+      );
     });
     await host.start();
     try {
@@ -299,6 +308,38 @@ describe("a turn's job on the job host", () => {
         );
       });
       expect(runs).toBe(1);
+
+      const raw = new Redis(queueUrl);
+      try {
+        const stream = await raw.xrange(
+          `${ASSISTANT_QUEUE_PREFIX}:${ASSISTANT_QUEUE_NAME}:events`,
+          "-",
+          "+",
+        );
+        expect(stream.length).toBeGreaterThan(0);
+        expect(JSON.stringify(stream)).not.toContain(sentinel);
+
+        const everything: unknown[] = [];
+        for (const key of await raw.keys("*")) {
+          const type = await raw.type(key);
+          if (type === "string") {
+            everything.push(await raw.get(key));
+          } else if (type === "hash") {
+            everything.push(await raw.hgetall(key));
+          } else if (type === "list") {
+            everything.push(await raw.lrange(key, 0, -1));
+          } else if (type === "set") {
+            everything.push(await raw.smembers(key));
+          } else if (type === "zset") {
+            everything.push(await raw.zrange(key, "0", "-1"));
+          } else if (type === "stream") {
+            everything.push(await raw.xrange(key, "-", "+"));
+          }
+        }
+        expect(JSON.stringify(everything)).not.toContain(sentinel);
+      } finally {
+        await raw.quit();
+      }
     } finally {
       await host.close();
     }

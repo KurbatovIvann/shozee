@@ -9,6 +9,11 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  ASSISTANT_QUEUE_NAME,
+  ASSISTANT_QUEUE_PREFIX,
+  enqueueAssistantTurn,
+} from "@showzy/assistant-runtime";
 import { createProcessLogger, loadServerConfig } from "@showzy/config";
 import { CoreInvariantError } from "@showzy/core/errors";
 import {
@@ -181,8 +186,8 @@ function runtimeConnectionString(): string {
   return connectionString;
 }
 
-function testConfig() {
-  return loadServerConfig({
+function testEnv(): Record<string, string> {
+  return {
     NODE_ENV: "test",
     DATABASE_URL: runtimeConnectionString(),
     REDIS_URL: redisUrl,
@@ -195,7 +200,11 @@ function testConfig() {
     BETTER_AUTH_SECRET: "dev-only-secret-change-me-0000000000",
     BETTER_AUTH_URL: "http://localhost:3000",
     IP_HMAC_SECRET: "dev-only-ip-hmac-secret-change-me-00",
-  });
+  };
+}
+
+function testConfig() {
+  return loadServerConfig(testEnv());
 }
 
 function stubSweep(): Promise<SweepTickResult> {
@@ -1126,6 +1135,123 @@ describe("apps/worker backfillCatalogRenditions scheduler (SHO-248)", () => {
       expect(payload).not.toMatch(/\/catalog\//);
       expect(payload).not.toContain(garageEndpoint);
       expect(payload).not.toContain(GARAGE_SECRET_KEY);
+    } finally {
+      await booted.close();
+    }
+  });
+});
+
+/**
+ * SHO-569. Boot mounts the assistant queue on the API's rule, on the queue
+ * Redis. The shared and the queue Redis are two logical databases of the test
+ * container, so a key on the wrong one is visible. The job names no turn: the
+ * boot-composed processor reads Postgres, answers `no_turn`, and never reaches
+ * a model (the configured key is never used).
+ */
+describe("apps/worker assistant queue at boot (SHO-569)", () => {
+  const queueUrl = () => `${redisUrl}/1`;
+
+  function assistantConfig(enabled: boolean) {
+    return loadServerConfig({
+      ...testEnv(),
+      REDIS_QUEUE_URL: queueUrl(),
+      AI_ASSISTANT_KIT: enabled ? "1" : "0",
+      ANTHROPIC_API_KEY: "ANTHROPIC_KEY_NEVER_CALLED_IN_TESTS",
+    });
+  }
+
+  function capturingLogger(lines: string[]) {
+    return createProcessLogger({
+      name: "worker-assistant-boot",
+      destination: {
+        write(chunk: string) {
+          lines.push(chunk);
+        },
+      },
+    });
+  }
+
+  async function withAssistantQueue<T>(
+    run: (queue: Queue) => Promise<T>,
+  ): Promise<T> {
+    const connection = new Redis(queueUrl(), { maxRetriesPerRequest: null });
+    const queue = new Queue(ASSISTANT_QUEUE_NAME, {
+      connection,
+      prefix: ASSISTANT_QUEUE_PREFIX,
+    });
+    try {
+      return await run(queue);
+    } finally {
+      await queue.close();
+      await connection.quit();
+    }
+  }
+
+  it("processes a turn's job from the queue Redis and puts no queue key on the shared Redis", async () => {
+    const lines: string[] = [];
+    const booted = await bootWorker(assistantConfig(true), {
+      logger: capturingLogger(lines),
+      pollIntervalMs: 60_000,
+      cleanupIntervalMs: LONG_INTERVAL_MS,
+      sweepIntervalMs: LONG_INTERVAL_MS,
+      backfillIntervalMs: LONG_INTERVAL_MS,
+    });
+    try {
+      await withAssistantQueue(async (queue) => {
+        expect(await queue.getWorkersCount()).toBeGreaterThan(0);
+        await enqueueAssistantTurn(queue, {
+          version: 1,
+          kind: "chat",
+          conversationId: randomUUID(),
+          commandId: randomUUID(),
+        });
+        await waitUntil(() =>
+          Promise.resolve(
+            lines.some((line) => line.includes("assistant job processed")),
+          ),
+        );
+        // The processor logs before BullMQ records the job as completed.
+        await waitUntil(async () =>
+          Object.values(await queue.getJobCounts()).every(
+            (count) => count === 0,
+          ),
+        );
+        const counts = await queue.getJobCounts();
+        expect(Object.values(counts).every((count) => count === 0)).toBe(true);
+      });
+
+      const log = lines.join("\n");
+      expect(log).toContain('"outcome":"no_turn"');
+      expect(log).toMatch(/"mounted":true[^\n]*"assistant-kit path"/);
+      expect(log).not.toContain("ANTHROPIC_KEY_NEVER_CALLED_IN_TESTS");
+
+      const shared = new Redis(redisUrl);
+      const onShared = await shared.keys(
+        `${ASSISTANT_QUEUE_PREFIX}:${ASSISTANT_QUEUE_NAME}:*`,
+      );
+      await shared.quit();
+      expect(onShared).toEqual([]);
+    } finally {
+      await booted.close();
+    }
+  });
+
+  it("does not start the assistant queue when the assistant is off", async () => {
+    const lines: string[] = [];
+    const booted = await bootWorker(assistantConfig(false), {
+      logger: capturingLogger(lines),
+      pollIntervalMs: 60_000,
+      cleanupIntervalMs: LONG_INTERVAL_MS,
+      sweepIntervalMs: LONG_INTERVAL_MS,
+      backfillIntervalMs: LONG_INTERVAL_MS,
+    });
+    try {
+      await withAssistantQueue(async (queue) => {
+        expect(await queue.getWorkersCount()).toBe(0);
+      });
+      expect(lines.join("\n")).toMatch(
+        /"enabled":false,"mounted":false[^\n]*"assistant-kit path"/,
+      );
     } finally {
       await booted.close();
     }

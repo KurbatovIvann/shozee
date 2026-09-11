@@ -3,8 +3,10 @@
 The server half of the staff assistant (ADR-0038, ADR-0039). A turn runs in
 two server processes — `apps/api` accepts it and runs an answer's synchronous
 half, `apps/worker` runs it off the request (SHO-557) — and the worker may
-import only the approved `@showzy/api/subscriptions` subpath, never the API's
-runtime internals, so what both need lives here.
+import only the approved `@showzy/api/subscriptions` and `@showzy/api/registry`
+subpaths, never the API's runtime internals, so what both need lives here. The
+registry is injected into `createAssistantRuntime`; this package never imports
+`@showzy/api`.
 
 ## Layout (`src/`)
 
@@ -19,7 +21,10 @@ runtime internals, so what both need lives here.
   types, the confirmation pause, answer resolution, and the façade-to-outcome
   adaptation.
 - `assistant-kit-history-window.ts` — what the model reads of a conversation.
-- `assistant-model.ts` — which language model, or none.
+- `assistant-model.ts` — which language model, or none; the provider from
+  config (`createStaffAssistantProvider`), and the one mount rule and log line
+  both processes use (`staffAssistantMount`, `logStaffAssistantMount`,
+  SHO-569).
 - `assistant-invocation.ts` — `channel: "ai"` and the assistant path name.
 - `assistant-budget-guard.ts`, `stores/budget.ts`, `stores/budget-redis.ts` —
   the pure spend guard, the budget store port with its in-memory reference

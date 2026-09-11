@@ -328,7 +328,22 @@ export function createJobHost(options: CreateJobHostOptions): JobHost {
       );
       return "dropped";
     }
-    const outcome = await assistant.process(parsed.data);
+    let outcome: AssistantTurnJobOutcome;
+    try {
+      outcome = await assistant.process(parsed.data);
+    } catch (error) {
+      // Never rethrown. A thrown job's message becomes its `failedReason` on
+      // the queue Redis — in the job and in the queue's event stream, which
+      // outlives `removeOnFail` — and a core error's message can name a person
+      // and a company, a Postgres error its text (ADR-0039: no personal data on
+      // the queue's disk). The redacting process log is where it goes. The job
+      // completes, so it is still never run again.
+      options.logger.error(
+        { err: error, worker_id: options.workerId },
+        "assistant job errored",
+      );
+      return "errored";
+    }
     options.logger.info(
       { worker_id: options.workerId, outcome: outcome.kind },
       "assistant job processed",

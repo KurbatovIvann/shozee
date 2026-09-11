@@ -89,8 +89,11 @@ export interface AssistantTurnProcessorDeps {
   readonly pipeline: ActionPipelineDeps;
   /** The T4 publisher, on the shared Redis. */
   readonly publisher: AssistantEventPublisher;
-  /** The counters the accept reserved on. Absent: nothing to release. */
-  readonly budgetStore?: AiBudgetStore;
+  /**
+   * The counters the accept reserved on. Required: a composition that forgot
+   * it would silently never give back a hold.
+   */
+  readonly budgetStore: AiBudgetStore;
   readonly timeoutMs?: number;
   readonly deadline?: AssistantTurnDeadline;
   /** The worker's own request id for reading the turn. */
@@ -317,6 +320,12 @@ export function createAssistantTurnProcessor(
     if (started.outcome === "not_queued") {
       return { kind: "not_queued", status: started.status };
     }
+    // Armed as soon as the row's deadline is, so the worker's timer is never
+    // later than the one the reconciler reads.
+    const controller = new AbortController();
+    const disarm = deadline(() => {
+      controller.abort();
+    }, timeoutMs);
 
     const events = eventsFor(
       {
@@ -334,10 +343,6 @@ export function createAssistantTurnProcessor(
 
     const { kit, history } = deps.runtime.forCaller(caller);
     const writer = publishing(kit, events, found.placeholderMessageId);
-    const controller = new AbortController();
-    const disarm = deadline(() => {
-      controller.abort();
-    }, timeoutMs);
     let reachedModel = false;
     let scope: PauseScope | undefined;
     let status: AssistantTurnEndStatus;

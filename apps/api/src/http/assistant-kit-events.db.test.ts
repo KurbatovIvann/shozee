@@ -60,7 +60,7 @@ import {
   it,
 } from "vitest";
 
-import { createActionRegistry } from "../composition.js";
+import { createActionRegistry } from "../registry.js";
 import {
   ASSISTANT_KIT_CHAT_PATH,
   ASSISTANT_KIT_EVENTS_PATH,

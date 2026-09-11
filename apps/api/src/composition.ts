@@ -13,45 +13,32 @@
  *
  * Worker delivery bindings stay in `apps/worker/src/subscriptions.ts`
  * and must list the same `defineEventHandler` objects this file passes
- * through `eventSubscriptionRefs`.
+ * through `eventSubscriptionRefs`. Action barrels register in
+ * `./registry.ts`, which the worker imports too (SHO-569).
  */
-import {
-  createAnthropicStaffProviderAdapter,
-  STAFF_ASSISTANT_FACADE_TOOL_NAMES,
-  type StaffProviderAdapter,
-} from "@showzy/ai";
-import { assistantActions } from "@showzy/assistant";
+import { STAFF_ASSISTANT_FACADE_TOOL_NAMES } from "@showzy/ai";
 import { assistantSuiteCoverage } from "@showzy/assistant/suite-coverage";
-import { catalogActions } from "@showzy/catalog";
 import { catalogSuiteCoverage } from "@showzy/catalog/suite-coverage";
-import { chatActions } from "@showzy/chat";
 import { chatSuiteCoverage } from "@showzy/chat/suite-coverage";
-import { companiesActions } from "@showzy/companies";
 import { companiesSuiteCoverage } from "@showzy/companies/suite-coverage";
-import { customersActions } from "@showzy/customers";
 import { customersSuiteCoverage } from "@showzy/customers/suite-coverage";
 import {
-  documentsActions,
   documentsCancelled,
   documentsCreated,
   documentsSignRequested,
 } from "@showzy/documents";
 import { documentsSuiteCoverage } from "@showzy/documents/suite-coverage";
-import { docGenerationActions } from "@showzy/doc-generation";
 import { docGenerationSuiteCoverage } from "@showzy/doc-generation/suite-coverage";
-import { docSigningActions, docSigningRecorded } from "@showzy/doc-signing";
+import { docSigningRecorded } from "@showzy/doc-signing";
 import { docSigningSuiteCoverage } from "@showzy/doc-signing/suite-coverage";
-import { filesActions } from "@showzy/files";
 import { filesSuiteCoverage } from "@showzy/files/suite-coverage";
 import {
-  invitesActions,
   invitesAccepted,
   invitesCreated,
   invitesRevoked,
 } from "@showzy/invites";
 import { invitesSuiteCoverage } from "@showzy/invites/suite-coverage";
 import {
-  ordersActions,
   ordersCanceled,
   ordersCompleted,
   ordersConfirmed,
@@ -59,9 +46,7 @@ import {
   ordersStarted,
 } from "@showzy/orders";
 import { ordersSuiteCoverage } from "@showzy/orders/suite-coverage";
-import { pricingActions } from "@showzy/pricing";
 import { pricingSuiteCoverage } from "@showzy/pricing/suite-coverage";
-import { searchActions } from "@showzy/search";
 import { searchSuiteCoverage } from "@showzy/search/suite-coverage";
 import {
   ActionRegistry,
@@ -79,6 +64,8 @@ import {
 import { ownedSchemaModules, projectionGrants } from "@showzy/db";
 import { ASSISTANT_SURFACE_REGISTRY } from "@showzy/validation/assistant-surfaces";
 import type { z } from "zod";
+
+import { createActionRegistry } from "./registry.js";
 import { registeredEventSubscriptions } from "./subscriptions.js";
 
 /**
@@ -344,15 +331,6 @@ export function registerAction<
   registry.registerImplementation(action);
 }
 
-function registerActions<TTarget>(
-  registry: ActionRegistry,
-  actions: readonly ImplementedAction<z.ZodType, z.ZodType, TTarget>[],
-): void {
-  for (const action of actions) {
-    registerAction(registry, action);
-  }
-}
-
 export function mergeSuiteCoverage(
   manifests: readonly SuiteCoverageManifest[],
 ): SuiteCoverageManifest {
@@ -377,27 +355,9 @@ export function mergeSuiteCoverage(
   };
 }
 
-/** The boot registry — same builder the contract-check stage walks. */
-export function createActionRegistry(): ActionRegistry {
-  const registry = new ActionRegistry();
-  registerActions(registry, assistantActions);
-  registerActions(registry, catalogActions);
-  registerActions(registry, chatActions);
-  registerActions(registry, companiesActions);
-  registerActions(registry, customersActions);
-  registerActions(registry, filesActions);
-  registerActions(registry, invitesActions);
-  registerActions(registry, documentsActions);
-  registerActions(registry, docGenerationActions);
-  registerActions(registry, docSigningActions);
-  registerActions(registry, ordersActions);
-  registerActions(registry, pricingActions);
-  registerActions(registry, searchActions);
-  return registry;
-}
-
 /**
- * Everything `runContractCheck` walks. Empty collections are explicit
+ * Everything `runContractCheck` walks. The registry is `./registry.js`'s, the
+ * one the API boots and the worker runs turns against (SHO-569). Empty collections are explicit
  * statements that nothing of that kind exists yet.
  */
 export function buildContractCheckInput(): ContractCheckInput {
@@ -418,20 +378,4 @@ export function buildContractCheckInput(): ContractCheckInput {
     })),
     assistantFacadeToolNames: STAFF_ASSISTANT_FACADE_TOOL_NAMES,
   };
-}
-
-/**
- * Staff-assistant provider from validated process config. Constructed
- * once at boot and passed into the HTTP mount (SHO-508). Not a registry.
- */
-export function createStaffAssistantProvider(ai: {
-  readonly anthropicApiKey: string | undefined;
-  readonly model: string;
-  readonly gateModel: string;
-}): StaffProviderAdapter {
-  return createAnthropicStaffProviderAdapter({
-    ...(ai.anthropicApiKey !== undefined ? { apiKey: ai.anthropicApiKey } : {}),
-    replyModel: ai.model,
-    gateModel: ai.gateModel,
-  });
 }
