@@ -36,7 +36,10 @@ import {
   kitIdentities,
   type TestKit,
 } from "@showzy/core/testing";
-import { assistantConversations } from "@showzy/db/schema/assistant";
+import {
+  assistantChatMessages,
+  assistantConversations,
+} from "@showzy/db/schema/assistant";
 import {
   parseAssistantStreamEvent,
   type AssistantStreamEvent,
@@ -45,6 +48,7 @@ import {
   RedisContainer,
   type StartedRedisContainer,
 } from "@testcontainers/redis";
+import { eq } from "drizzle-orm";
 import { Redis } from "ioredis";
 import {
   afterAll,
@@ -313,11 +317,11 @@ async function updatePlaceholder(
 }
 
 async function storedRevision(messageId: string): Promise<number> {
-  const rows = await kit.db.admin.query<{ revision: number }>(
-    "select revision from assistant_chat_messages where message_id = $1",
-    [messageId],
-  );
-  const row = rows.rows[0];
+  const rows = await kit.db.runtime.db
+    .select({ revision: assistantChatMessages.revision })
+    .from(assistantChatMessages)
+    .where(eq(assistantChatMessages.messageId, messageId));
+  const row = rows[0];
   if (row === undefined) {
     throw new Error(`no stored message ${messageId}`);
   }
