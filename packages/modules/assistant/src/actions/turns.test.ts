@@ -176,7 +176,10 @@ describe("the turn contracts", () => {
    * reserved.
    */
   it("refuse a hold above one turn's reservation", () => {
-    const hold = (companyReservedMicroUsd: number, globalReservedMicroUsd: number) =>
+    const hold = (
+      companyReservedMicroUsd: number,
+      globalReservedMicroUsd: number,
+    ) =>
       acceptTurnInputSchema.safeParse(
         chatAccept({
           budgetHold: {

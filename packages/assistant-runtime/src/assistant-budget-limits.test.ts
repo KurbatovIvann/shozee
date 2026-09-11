@@ -18,11 +18,13 @@ describe("the per-turn reservation", () => {
       unknownModelTurnUsd,
     });
 
-    expect(assertStaffAssistantBudgetLimits(DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS)).toBe(
-      DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
-    );
+    expect(
+      assertStaffAssistantBudgetLimits(DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS),
+    ).toBe(DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS);
     expect(() =>
-      assertStaffAssistantBudgetLimits(limits(ASSISTANT_TURN_RESERVATION_MAX_USD)),
+      assertStaffAssistantBudgetLimits(
+        limits(ASSISTANT_TURN_RESERVATION_MAX_USD),
+      ),
     ).not.toThrow();
     expect(() =>
       assertStaffAssistantBudgetLimits(

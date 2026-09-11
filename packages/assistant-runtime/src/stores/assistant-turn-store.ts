@@ -266,77 +266,81 @@ export function createPostgresAssistantTurnStore(
       // where no reconciler can see it.
       let stored = false;
       try {
-        const result = await asCaller(async (): Promise<AssistantTurnAcceptResult> => {
-        // The kit's owner rule, kept for this write path as `messages.write`
-        // keeps it: a log written under another token is not appended to.
-        const latest = (
-          await executeAction(deps.pipeline, {
-            action: readChatMessages,
-            input: { conversationId: input.conversationId, limit: 1 },
-            ...call,
-          })
-        ).records[0];
-        if (latest !== undefined && latest.bind !== input.bind) {
-          return { outcome: "wrong_owner" };
-        }
+        const result = await asCaller(
+          async (): Promise<AssistantTurnAcceptResult> => {
+            // The kit's owner rule, kept for this write path as `messages.write`
+            // keeps it: a log written under another token is not appended to.
+            const latest = (
+              await executeAction(deps.pipeline, {
+                action: readChatMessages,
+                input: { conversationId: input.conversationId, limit: 1 },
+                ...call,
+              })
+            ).records[0];
+            if (latest !== undefined && latest.bind !== input.bind) {
+              return { outcome: "wrong_owner" };
+            }
 
-        const createdAt = clock.now().toISOString();
-        const placeholderId = assistantTurnMessageId(input, "assistant");
-        const userMessage =
-          input.kind === "chat"
-            ? (() => {
-                const messageId = assistantTurnMessageId(input, "user");
-                const message: ChatMessage = {
-                  messageId,
-                  role: "user",
-                  createdAt,
-                  parts: [
-                    { kind: "text", text: input.text, status: "complete" },
-                  ],
-                };
-                return {
-                  messageId,
-                  bind: input.bind,
-                  message: asJsonObject(message),
-                };
-              })()
-            : undefined;
+            const createdAt = clock.now().toISOString();
+            const placeholderId = assistantTurnMessageId(input, "assistant");
+            const userMessage =
+              input.kind === "chat"
+                ? (() => {
+                    const messageId = assistantTurnMessageId(input, "user");
+                    const message: ChatMessage = {
+                      messageId,
+                      role: "user",
+                      createdAt,
+                      parts: [
+                        { kind: "text", text: input.text, status: "complete" },
+                      ],
+                    };
+                    return {
+                      messageId,
+                      bind: input.bind,
+                      message: asJsonObject(message),
+                    };
+                  })()
+                : undefined;
 
-        const accepted = await executeAction(deps.pipeline, {
-          action: acceptTurn,
-          input: {
-            conversationId: input.conversationId,
-            kind: input.kind,
-            commandId: input.commandId,
-            sessionId: input.sessionId,
-            ...(userMessage === undefined ? {} : { userMessage }),
-            placeholder: {
-              messageId: placeholderId,
-              bind: input.bind,
-              message: asJsonObject(
-                assistantTurnPlaceholder({
+            const accepted = await executeAction(deps.pipeline, {
+              action: acceptTurn,
+              input: {
+                conversationId: input.conversationId,
+                kind: input.kind,
+                commandId: input.commandId,
+                sessionId: input.sessionId,
+                ...(userMessage === undefined ? {} : { userMessage }),
+                placeholder: {
                   messageId: placeholderId,
-                  createdAt,
-                  ...(input.kind === "answer" ? { earned: input.earned } : {}),
-                }),
-              ),
-            },
-            budgetHold: assistantBudgetHoldToStored(input.budgetHold),
-            ...(input.continuesCommandId === undefined
-              ? {}
-              : { continuesCommandId: input.continuesCommandId }),
+                  bind: input.bind,
+                  message: asJsonObject(
+                    assistantTurnPlaceholder({
+                      messageId: placeholderId,
+                      createdAt,
+                      ...(input.kind === "answer"
+                        ? { earned: input.earned }
+                        : {}),
+                    }),
+                  ),
+                },
+                budgetHold: assistantBudgetHoldToStored(input.budgetHold),
+                ...(input.continuesCommandId === undefined
+                  ? {}
+                  : { continuesCommandId: input.continuesCommandId }),
+              },
+              ...call,
+            });
+            if (accepted.outcome === "busy") {
+              return { outcome: "busy" };
+            }
+            return {
+              outcome: accepted.outcome,
+              turn: accepted.turn,
+              job: jobOf(accepted.turn),
+            };
           },
-          ...call,
-        });
-        if (accepted.outcome === "busy") {
-          return { outcome: "busy" };
-        }
-        return {
-          outcome: accepted.outcome,
-          turn: accepted.turn,
-          job: jobOf(accepted.turn),
-        };
-      });
+        );
         stored = result.outcome === "accepted";
         return result;
       } finally {
