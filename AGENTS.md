@@ -58,6 +58,28 @@ none were bugs in the loop — they came from resume being a reconstruction
 and the client owning a copy of the protocol. Each fix was reasonable on
 its own; together they hid that the decision underneath was wrong.
 
+## No production yet
+
+There is no production environment: no production database and no deployed
+infrastructure (owner, 2026-09-11). The eventual database is created fresh
+and migrated from `0001`. Until that changes, do not spend a ticket on what
+only production would feel.
+
+- **Out of scope now:** Redis persistence and what a restart loses, deploy
+  drain and stop grace periods, backups and restore, ingress and proxy
+  settings, capacity, and backfills of existing data.
+- **Record, do not build.** When a change has a production consequence,
+  write it down as a requirement where the topic lives (`docs/specs/db.md`
+  §6, the feature's runbook in `docs/operations/`) and move on. Reviewers
+  and guardians report such an item as a production requirement, not as a
+  finding to fix, and it never blocks a merge.
+- **Still in scope, fully:** correctness, tenant isolation, idempotency,
+  security of the code and its data paths, and anything that fails in
+  development, CI or tests.
+
+When a production environment is being built, every recorded requirement is
+checked then.
+
 ## Contract of this thread
 
 The executable contract is the Linear feature card plus `*.contract.ts` and
