@@ -411,22 +411,33 @@ grep "assistant turn is queued behind its job" worker.log | tail -20
 
 ### A queued turn that will not clear
 
-A turn sits at `queued`, the reconciler reports it every minute as left alone,
-and nothing happens. That means the queue holds its job and no worker is taking
-it. Check, in this order:
+A turn sits at `queued` and the reconciler reports it every minute as left
+alone. Start by reading what that line already tells you: only a process with
+the assistant mounted writes it, and mounting builds the queue the reconciler
+reads and the worker that consumes it together, on one connection. So a
+consumer exists and it is watching this very queue. The job is not lost and
+nothing is misrouted — it is not being finished.
 
-1. **Is an assistant worker running at all?** Its boot line
-   `maintenance job host started` carries `assistant_queue`; a worker that did
-   not mount the assistant logs `null` there. The mount rule is the API's —
-   `AI_ASSISTANT_KIT` on and a language model configured — and the same
-   `assistant-kit path` line says which way it went.
-2. **Is it the same Redis?** The queue lives on `REDIS_QUEUE_URL`, not the
-   shared `REDIS_URL`. An enqueue against one and a worker against the other
-   leaves jobs waiting for nobody.
-3. **How deep is the backlog?** `LRANGE showzy:assistant:wait 0 -1` above. A
-   long list with a live worker is a queue that is draining slowly, not a stuck
-   one; the `left` count in `assistant turns reconciled` is the same picture
-   from the database side.
+1. **How deep is the backlog, and is it moving?** `LRANGE showzy:assistant:wait
+   0 -1` above, twice a minute apart. A list that shrinks is a queue draining
+   slowly — 4 turns at a time, up to 180 s each — and the turn clears by
+   itself; the `left` count in `assistant turns reconciled` is the same picture
+   from the database side. A list that does not move is the fault: every slot
+   is held by something that will not end. `assistant job failed` and
+   `assistant turns still running at the drain timeout` are where that shows.
+2. **Which process is reporting?** `worker_id` on the line. If no process logs
+   `assistant turns reconciled` at all, none has the assistant mounted — the
+   scheduler outlives a boot that dropped it, and such a process logs
+   `assistant reconciler is not mounted here` instead. That is a different
+   fault with a different fix: check the mount rule (`AI_ASSISTANT_KIT` on and
+   a language model configured; the `assistant-kit path` line says which way it
+   went).
+3. **Not the Redis split** — worth knowing because it looks like this and is
+   not. If the API and the worker disagree on `REDIS_QUEUE_URL`, the reconciler
+   finds no job on its own Redis, re-enqueues there, and its own worker runs
+   the turn. The tell is `assistant turn re-enqueued` instead of the left-alone
+   line, plus an orphaned job on the other Redis. Such a turn clears; it does
+   not stick.
 
 While that lasts, the person whose conversation it is cannot start another
 turn: the queued turn holds the conversation. **The money half heals itself** —
