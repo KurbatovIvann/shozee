@@ -11,7 +11,11 @@ import { z } from "zod";
 import { describe, expect, it } from "vitest";
 
 import { fixtureInteractions } from "./fixture.js";
-import { continueHostTurn, runHostTurn } from "./host.js";
+import {
+  MessageWriteRefusedError,
+  continueHostTurn,
+  runHostTurn,
+} from "./host.js";
 import { createAssistantKit } from "./kit.js";
 import type { ToolOutcome } from "./outcome.js";
 import {
@@ -863,6 +867,303 @@ describe("a turn stores what happened as it happens", () => {
       }),
     ).rejects.toThrow("history is down");
     expect(s.calls.list).toBe(1);
+  });
+});
+
+/** One step that calls several tools at once, as a provider may. */
+function stubToolCallsStep(
+  calls: readonly {
+    readonly id: string;
+    readonly name: string;
+    readonly input: unknown;
+  }[],
+): { stream: ReadableStream } {
+  return {
+    stream: new ReadableStream({
+      start(controller) {
+        controller.enqueue({ type: "stream-start", warnings: [] });
+        for (const call of calls) {
+          controller.enqueue({
+            type: "tool-call",
+            toolCallId: call.id,
+            toolName: call.name,
+            input: JSON.stringify(call.input),
+          });
+        }
+        controller.enqueue({
+          type: "finish",
+          finishReason: { unified: "tool-calls", raw: "tool_use" },
+          usage: {
+            inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+            outputTokens: { total: 1, text: 1, reasoning: 0 },
+          },
+        });
+        controller.close();
+      },
+    }),
+  };
+}
+
+describe("a turn whose writes cannot be stored", () => {
+  it("lets no other tool in the same step act once a card could not be stored", async () => {
+    const deps = testDeps(fixtureInteractions);
+    const kit = createAssistantKit({
+      ...deps,
+      messages: {
+        ...deps.messages,
+        insert: () => Promise.reject(new Error("log is down")),
+      },
+    });
+    const s = slice();
+    const second = { calls: 0 };
+    const tools = {
+      ...s.tools,
+      thing_record: tool({
+        description: "record one",
+        inputSchema: z.object({ label: z.string() }),
+        execute: (): ToolOutcome => {
+          second.calls += 1;
+          return {
+            kind: "ok",
+            result: { id: "value-x" },
+            card: {
+              cardId: "card-record",
+              type: "record",
+              payload: { id: "value-x" },
+            },
+          };
+        },
+      }),
+    };
+
+    await expect(
+      runHostTurn({
+        kit,
+        conversationId: CONVERSATION,
+        bind: BIND,
+        messageId: FIRST_MESSAGE,
+        model: stubModel([
+          stubToolCallsStep([
+            { id: "toolu_first", name: "thing_list", input: { limit: 5 } },
+            { id: "toolu_second", name: "thing_record", input: { label: "x" } },
+          ]),
+          stubTextStep("Готово."),
+        ]),
+        messages: [{ role: "user", content: "list them and record one" }],
+        tools,
+      }),
+    ).rejects.toThrow("log is down");
+    expect(s.calls.list).toBe(1);
+    // Queued in the same step, and never run: no effect without its card.
+    expect(second.calls).toBe(0);
+  });
+
+  it("rejects when the log refuses a card as another owner's, and stops", async () => {
+    const s = slice();
+    await s.kit.messages.write(
+      { conversationId: CONVERSATION, bind: "owner-2:scope-2" },
+      {
+        kind: "append",
+        messageId: SECOND_MESSAGE,
+        role: "user",
+        parts: [{ kind: "text", text: "not yours", status: "complete" }],
+      },
+    );
+
+    await expect(
+      runHostTurn({
+        kit: s.kit,
+        conversationId: CONVERSATION,
+        bind: BIND,
+        messageId: FIRST_MESSAGE,
+        model: stubModel([
+          stubToolCallStep("toolu_first", "thing_list", { limit: 5 }),
+          stubToolCallStep("toolu_second", "thing_list", { limit: 5 }),
+          stubTextStep("Готово."),
+        ]),
+        messages: [{ role: "user", content: "list them twice" }],
+        tools: s.tools,
+      }),
+    ).rejects.toBeInstanceOf(MessageWriteRefusedError);
+    expect(s.calls.list).toBe(1);
+  });
+
+  it("rejects when the log refuses the end of the turn as another owner's", async () => {
+    const s = slice();
+    await s.kit.messages.write(
+      { conversationId: CONVERSATION, bind: "owner-2:scope-2" },
+      {
+        kind: "append",
+        messageId: SECOND_MESSAGE,
+        role: "user",
+        parts: [{ kind: "text", text: "not yours", status: "complete" }],
+      },
+    );
+
+    await expect(
+      runHostTurn({
+        kit: s.kit,
+        conversationId: CONVERSATION,
+        bind: BIND,
+        messageId: FIRST_MESSAGE,
+        model: stubModel([stubTextStep("Готово.")]),
+        messages: [{ role: "user", content: "hello" }],
+        tools: s.tools,
+      }),
+    ).rejects.toBeInstanceOf(MessageWriteRefusedError);
+  });
+});
+
+/**
+ * A caller whose only abort is its own deadline stores the break as
+ * `interrupted` (ADR-0039). A text part is never re-marked once stored, so the
+ * status has to be right the first time — and the in-request default stays
+ * `error`.
+ */
+describe("the status an aborted run stores", () => {
+  function abortingInsideTool(controller: AbortController) {
+    return {
+      thing_list: tool({
+        description: "list them",
+        inputSchema: z.object({ limit: z.number() }),
+        execute: (): ToolOutcome => {
+          controller.abort();
+          return {
+            kind: "ok",
+            result: { rows: 2 },
+            card: {
+              cardId: "card-list",
+              type: "collection",
+              payload: { rows: 2 },
+            },
+          };
+        },
+      }),
+    };
+  }
+
+  async function storedParts(s: Slice) {
+    return (await s.kit.messages.read(SCOPE)).messages.flatMap(
+      (message) => message.parts,
+    );
+  }
+
+  it("stores `interrupted` for an abort inside a tool, and keeps the card", async () => {
+    const s = slice();
+    const controller = new AbortController();
+
+    const turn = await runHostTurn({
+      kit: s.kit,
+      conversationId: CONVERSATION,
+      bind: BIND,
+      messageId: FIRST_MESSAGE,
+      model: stubModel([
+        stubToolCallStep("toolu_first", "thing_list", { limit: 5 }),
+        stubTextStep("не встигне"),
+      ]),
+      messages: [{ role: "user", content: "list them" }],
+      tools: abortingInsideTool(controller),
+      abortSignal: controller.signal,
+      abortedTextStatus: "interrupted",
+    });
+
+    const parts = await storedParts(s);
+    expect(parts).toEqual([
+      {
+        kind: "card",
+        cardId: "card-list",
+        revision: 1,
+        type: "collection",
+        payload: { rows: 2 },
+      },
+      { kind: "text", text: "", status: "interrupted" },
+    ]);
+    expect(turn.interrupted).toBe(true);
+    expect(turn.parts).toEqual(parts);
+  });
+
+  it("stores `interrupted` for an abort between steps, and keeps the card", async () => {
+    const s = slice();
+    const controller = new AbortController();
+
+    const turn = await runHostTurn({
+      kit: s.kit,
+      conversationId: CONVERSATION,
+      bind: BIND,
+      messageId: FIRST_MESSAGE,
+      model: stubModelFailingAfter(
+        [stubToolCallStep("toolu_first", "thing_list", { limit: 5 })],
+        {
+          before: () => {
+            controller.abort();
+          },
+        },
+      ),
+      messages: [{ role: "user", content: "list them" }],
+      tools: s.tools,
+      abortSignal: controller.signal,
+      abortedTextStatus: "interrupted",
+    });
+
+    const parts = await storedParts(s);
+    expect(parts.map((part) => part.kind)).toEqual(["card", "text"]);
+    expect(
+      parts.flatMap((part) => (part.kind === "text" ? [part.status] : [])),
+    ).toEqual(["interrupted"]);
+    expect(turn.parts).toEqual(parts);
+  });
+
+  it("stores `error` for an abort when the caller did not ask otherwise", async () => {
+    const s = slice();
+    const controller = new AbortController();
+
+    await runHostTurn({
+      kit: s.kit,
+      conversationId: CONVERSATION,
+      bind: BIND,
+      messageId: FIRST_MESSAGE,
+      model: stubModelFailingAfter(
+        [stubToolCallStep("toolu_first", "thing_list", { limit: 5 })],
+        {
+          before: () => {
+            controller.abort();
+          },
+        },
+      ),
+      messages: [{ role: "user", content: "list them" }],
+      tools: s.tools,
+      abortSignal: controller.signal,
+    });
+
+    expect(
+      (await storedParts(s)).flatMap((part) =>
+        part.kind === "text" ? [part.status] : [],
+      ),
+    ).toEqual(["error"]);
+  });
+
+  it("stores `error` for a provider failure even when asked for `interrupted`", async () => {
+    const s = slice();
+
+    await runHostTurn({
+      kit: s.kit,
+      conversationId: CONVERSATION,
+      bind: BIND,
+      messageId: FIRST_MESSAGE,
+      model: stubModelFailingAfter([
+        stubToolCallStep("toolu_first", "thing_list", { limit: 5 }),
+      ]),
+      messages: [{ role: "user", content: "list them" }],
+      tools: s.tools,
+      abortSignal: new AbortController().signal,
+      abortedTextStatus: "interrupted",
+    });
+
+    expect(
+      (await storedParts(s)).flatMap((part) =>
+        part.kind === "text" ? [part.status] : [],
+      ),
+    ).toEqual(["error"]);
   });
 });
 

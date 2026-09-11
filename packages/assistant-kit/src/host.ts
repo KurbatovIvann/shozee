@@ -43,6 +43,31 @@ export const HOST_SKIPPED_OUTPUT = {
   reason: "interaction_open",
 } as const;
 
+/**
+ * What a tool returns once a write this turn could not be stored. It did not
+ * act: an effect committed now would have no card to show it, and the turn is
+ * about to reject.
+ */
+const HOST_STORE_FAILED_OUTPUT = {
+  status: "skipped",
+  reason: "store_failed",
+} as const;
+
+/**
+ * The message log refused a write this turn made — the conversation's latest
+ * message belongs to another owner. Not a storage outage, but the same outcome
+ * for the turn: what it produced cannot be stored, so it rejects.
+ */
+export class MessageWriteRefusedError extends Error {
+  readonly refusal: string;
+
+  constructor(refusal: string) {
+    super(`message write refused: ${refusal}`);
+    this.name = "MessageWriteRefusedError";
+    this.refusal = refusal;
+  }
+}
+
 interface Captured {
   readonly outcome: Extract<ToolOutcome, { kind: "pause" }>;
   readonly toolCallId: string;
@@ -116,6 +141,11 @@ function pausingTools(
           if (state.paused !== undefined) {
             return HOST_SKIPPED_OUTPUT;
           }
+          // The SDK starts every call of a step together; the loop stopping at
+          // the step boundary is too late for the calls already queued here.
+          if (state.failure !== undefined) {
+            return HOST_STORE_FAILED_OUTPUT;
+          }
           const outcome = (await execute(input, options)) as ToolOutcome;
           if (outcome.kind === "ok") {
             if (outcome.card !== undefined) {
@@ -173,6 +203,16 @@ export interface HostTurnOptions<T extends AnyTypes> {
     Parameters<typeof streamText>[0]["providerOptions"]
   >;
   readonly abortSignal?: AbortSignal;
+  /**
+   * The status of the text part a run ended by `abortSignal` stores.
+   *
+   * `error` by default: an in-request turn is aborted by its connection
+   * closing, and that has always read as a turn that broke. A caller whose
+   * only abort is its own deadline passes `interrupted` — the turn did not
+   * fail, it was stopped, and a text part is never re-marked once stored.
+   * A provider or model failure stores `error` whatever this says.
+   */
+  readonly abortedTextStatus?: "error" | "interrupted";
   readonly maxSteps?: number;
   /**
    * Store the provider history after each finished step, so a turn that dies
@@ -241,7 +281,7 @@ async function runLoop<T extends AnyTypes>(
     if (parts.length === 0) {
       return;
     }
-    await options.kit.messages.write(
+    const written = await options.kit.messages.write(
       { conversationId: options.conversationId, bind: options.bind },
       {
         kind: "append",
@@ -250,6 +290,18 @@ async function runLoop<T extends AnyTypes>(
         parts,
       },
     );
+    // A refusal is not a write. Counting it as one would report a card that
+    // no reload will ever show.
+    if (written.kind !== "written") {
+      throw new MessageWriteRefusedError(written.kind);
+    }
+  }
+
+  /** The status a text part that ended early is stored with. */
+  function brokenStatus(): "error" | "interrupted" {
+    return options.abortSignal?.aborted === true
+      ? (options.abortedTextStatus ?? "error")
+      : "error";
   }
 
   /** A write during the run: held on failure, and nothing after it is tried. */
@@ -323,8 +375,9 @@ async function runLoop<T extends AnyTypes>(
     //
     // What a tool already committed is already stored: its card was written
     // when the tool completed (SHO-546, SHO-568). The empty text part follows
-    // it, so the same message reads "this was done, and then something broke".
-    const failed: ChatPart = { kind: "text", text: "", status: "error" };
+    // it, so the same message reads "this was done, and then something broke" —
+    // or, for a caller that stops its own turns, "and then it was stopped".
+    const failed: ChatPart = { kind: "text", text: "", status: brokenStatus() };
     await append([failed]);
     return {
       kind: "settled",
@@ -360,9 +413,9 @@ async function runLoop<T extends AnyTypes>(
   // sending them again would count as a second write of each (SHO-551).
   const parts: ChatPart[] = [];
   if (interrupted) {
-    // Whatever text arrived before the break is kept and marked `error`: it is
-    // a fragment, and a fragment presented as the answer is worse than none.
-    parts.push({ kind: "text", text, status: "error" });
+    // Whatever text arrived before the break is kept and marked as broken: it
+    // is a fragment, and a fragment presented as the answer is worse than none.
+    parts.push({ kind: "text", text, status: brokenStatus() });
   } else if (text.length > 0) {
     parts.push({ kind: "text", text, status: "complete" });
   }

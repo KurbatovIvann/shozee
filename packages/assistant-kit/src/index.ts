@@ -92,6 +92,7 @@ export {
 
 export {
   HOST_SKIPPED_OUTPUT,
+  MessageWriteRefusedError,
   continueHostTurn,
   runHostTurn,
   type ContinueHostTurnOptions,
