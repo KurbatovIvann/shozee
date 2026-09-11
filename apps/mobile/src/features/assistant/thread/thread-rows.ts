@@ -49,7 +49,7 @@ export type AssistantThreadRow = {
   readonly surfaces: readonly AssistantSurface[];
   /** Answerable now. A closed question leaves no card behind. */
   readonly interaction: AssistantInteraction | null;
-  /** The provider failed mid-turn. The reply is absent, not empty. */
+  /** The reply stopped short — broke or was interrupted. Absent, not empty. */
   readonly failed: boolean;
   readonly waiting: boolean;
 };
@@ -66,9 +66,16 @@ function textOf(message: AssistantChatMessage): string {
   return chunks.join("");
 }
 
+/**
+ * A reply that stopped short. `error` is a turn that broke; `interrupted` is one
+ * that was stopped from outside (ADR-0039). To the person both read the same:
+ * the reply was cut off, and what is shown above it was saved.
+ */
 function failedIn(message: AssistantChatMessage): boolean {
   return message.parts.some(
-    (part) => part.kind === "text" && part.status === "error",
+    (part) =>
+      part.kind === "text" &&
+      (part.status === "error" || part.status === "interrupted"),
   );
 }
 

@@ -210,6 +210,44 @@ describe("the window a server writes and the window a client reads", () => {
     }
   });
 
+  /**
+   * A turn stopped from outside — its worker gone, its deadline passed — ends
+   * with an `interrupted` text part (ADR-0039). Both sides read it: the kit
+   * does not skip it as unreadable, and the client does not drop the message.
+   */
+  it("agrees on a reply that was interrupted", async () => {
+    const instance = kit();
+    const scope = { conversationId: CONVERSATION, bind: BIND };
+    await instance.messages.write(scope, {
+      kind: "append",
+      messageId: "55555555-5555-4555-8555-555555555555",
+      role: "assistant",
+      parts: [
+        {
+          kind: "card",
+          cardId: "order:1",
+          type: "orders-order",
+          payload: { orderId: "77777777-7777-4777-8777-777777777777" },
+          revision: 1,
+        },
+        { kind: "text", text: "", status: "interrupted" },
+      ],
+    });
+
+    const window = await instance.messages.read(scope);
+
+    expect(window.messages).toHaveLength(1);
+    expect(chatWindowSchema.safeParse(window).success).toBe(true);
+    const client = assistantChatWindowSchema.safeParse(window);
+    expect(client.success).toBe(true);
+    expect(
+      client.success &&
+        client.data.messages[0]?.parts.map((part) =>
+          part.kind === "text" ? part.status : part.kind,
+        ),
+    ).toEqual(["card", "interrupted"]);
+  });
+
   it("refuses a field one side would add without the other", () => {
     const window = {
       conversationId: CONVERSATION,

@@ -90,6 +90,34 @@ describe("the assistant kit client", () => {
     fetchMock.mockReset();
   });
 
+  it("keeps a message whose reply was interrupted", async () => {
+    const window = conversationWindow();
+    const [reply] = window.messages;
+    respond(200, {
+      status: "ok",
+      window: {
+        ...window,
+        messages: [
+          {
+            ...reply,
+            parts: [{ kind: "text", text: "Шукаю", status: "interrupted" }],
+          },
+        ],
+      },
+    });
+
+    const outcome = await getAssistantKitWindow({
+      ...call,
+      conversationId: CONVERSATION,
+    });
+
+    expect(outcome.failure).toBeNull();
+    expect(outcome.window?.messages).toHaveLength(1);
+    expect(outcome.window?.messages[0]?.parts).toEqual([
+      { kind: "text", text: "Шукаю", status: "interrupted" },
+    ]);
+  });
+
   it("returns the window on a successful turn", async () => {
     respond(200, { status: "ok", window: conversationWindow() });
 

@@ -1,7 +1,7 @@
 /**
  * The loop adapter: one `streamText`, and what to do when a tool pauses.
  *
- * This is the half a consumer would otherwise hand-write. Three decisions live
+ * This is the half a consumer would otherwise hand-write. Four decisions live
  * here, each the inverse of a way this goes wrong:
  *
  * 1. The pause is opened **after** the turn, not inside `execute`. Only then
@@ -11,6 +11,10 @@
  *    minted, so nothing needs sanitising at the provider boundary.
  * 3. Tools run one at a time, and once a pause is captured no further tool in
  *    that step may act. A write must never overtake an unanswered question.
+ * 4. What happened is stored as it happens. A card is written to the message
+ *    when its tool completes, and history is handed to the caller when a step
+ *    finishes — not both at the end, where a turn that dies first takes them
+ *    with it. The end of the turn writes only what the end produces.
  */
 import {
   stepCountIs,
@@ -39,6 +43,31 @@ export const HOST_SKIPPED_OUTPUT = {
   reason: "interaction_open",
 } as const;
 
+/**
+ * What a tool returns once a write this turn could not be stored. It did not
+ * act: an effect committed now would have no card to show it, and the turn is
+ * about to reject.
+ */
+const HOST_STORE_FAILED_OUTPUT = {
+  status: "skipped",
+  reason: "store_failed",
+} as const;
+
+/**
+ * The message log refused a write this turn made — the conversation's latest
+ * message belongs to another owner. Not a storage outage, but the same outcome
+ * for the turn: what it produced cannot be stored, so it rejects.
+ */
+export class MessageWriteRefusedError extends Error {
+  readonly refusal: string;
+
+  constructor(refusal: string) {
+    super(`message write refused: ${refusal}`);
+    this.name = "MessageWriteRefusedError";
+    this.refusal = refusal;
+  }
+}
+
 interface Captured {
   readonly outcome: Extract<ToolOutcome, { kind: "pause" }>;
   readonly toolCallId: string;
@@ -47,6 +76,7 @@ interface Captured {
 
 interface TurnState {
   paused: Captured | undefined;
+  /** Every card written this turn, in the order written, repeats included. */
   readonly cards: CardRef[];
   chain: Promise<unknown>;
   /**
@@ -68,9 +98,34 @@ interface TurnState {
    * say.
    */
   interrupted: boolean;
+  /**
+   * A write made during the run failed: a card, or the history of a step.
+   *
+   * Held rather than thrown where it happens, because neither place can throw
+   * usefully. A throw inside `execute` becomes a tool error the model reads as
+   * "the action failed" when the action committed; a throw inside
+   * `onStepFinish` is discarded by the SDK. So the loop stops at the next step
+   * boundary and the turn rejects with it once the run has settled — the same
+   * outcome a storage failure had when every write happened at the end.
+   */
+  failure: { readonly error: unknown } | undefined;
 }
 
-function pausingTools(tools: ToolSet, state: TurnState): ToolSet {
+function cardPart(card: CardRef): ChatPart {
+  return {
+    kind: "card",
+    cardId: card.cardId,
+    revision: 1,
+    type: card.type,
+    payload: card.payload,
+  };
+}
+
+function pausingTools(
+  tools: ToolSet,
+  state: TurnState,
+  storeCard: (card: CardRef) => Promise<void>,
+): ToolSet {
   const wrapped: ToolSet = {};
   for (const [name, definition] of Object.entries(tools)) {
     const execute = definition.execute;
@@ -86,10 +141,18 @@ function pausingTools(tools: ToolSet, state: TurnState): ToolSet {
           if (state.paused !== undefined) {
             return HOST_SKIPPED_OUTPUT;
           }
+          // The SDK starts every call of a step together; the loop stopping at
+          // the step boundary is too late for the calls already queued here.
+          if (state.failure !== undefined) {
+            return HOST_STORE_FAILED_OUTPUT;
+          }
           const outcome = (await execute(input, options)) as ToolOutcome;
           if (outcome.kind === "ok") {
             if (outcome.card !== undefined) {
               state.cards.push(outcome.card);
+              // Before the model sees the result: the write has committed, and
+              // from here on the card is the only record the person has of it.
+              await storeCard(outcome.card);
             }
             return outcome.result;
           }
@@ -140,7 +203,35 @@ export interface HostTurnOptions<T extends AnyTypes> {
     Parameters<typeof streamText>[0]["providerOptions"]
   >;
   readonly abortSignal?: AbortSignal;
+  /**
+   * The status of the text part a run ended by `abortSignal` stores.
+   *
+   * `error` by default: an in-request turn is aborted by its connection
+   * closing, and that has always read as a turn that broke. A caller whose
+   * only abort is its own deadline passes `interrupted` — the turn did not
+   * fail, it was stopped, and a text part is never re-marked once stored.
+   * A provider or model failure stores `error` whatever this says.
+   */
+  readonly abortedTextStatus?: "error" | "interrupted";
   readonly maxSteps?: number;
+  /**
+   * Store the provider history after each finished step, so a turn that dies
+   * later keeps the model's memory of the steps that finished.
+   *
+   * Called with the whole history so far — the messages this turn started from
+   * plus every finished step — never a delta. Each call supersedes the last,
+   * and a turn that finishes normally has last called it with exactly the
+   * `messages` its result returns, so storing both writes no step twice.
+   *
+   * Not called for the step that captured a pause. That history is the pause's
+   * continuation; it becomes the conversation's history once the pause is
+   * stored, which the caller does from the result, as it always has. A step
+   * that died inside a tool never finished, so its memory is not saved — its
+   * card is.
+   *
+   * A rejection stops the loop, and the turn rejects with it.
+   */
+  readonly saveHistory?: (messages: readonly ModelMessage[]) => Promise<void>;
 }
 
 export interface HostTurnResult {
@@ -178,23 +269,19 @@ async function runLoop<T extends AnyTypes>(
     chain: Promise.resolve(),
     stepMessages: [],
     interrupted: false,
+    failure: undefined,
   };
 
+  /** The cards as they were written, for the report. Never written again. */
   function cardParts(): ChatPart[] {
-    return state.cards.map((card) => ({
-      kind: "card",
-      cardId: card.cardId,
-      revision: 1,
-      type: card.type,
-      payload: card.payload,
-    }));
+    return state.cards.map(cardPart);
   }
 
   async function append(parts: readonly ChatPart[]): Promise<void> {
     if (parts.length === 0) {
       return;
     }
-    await options.kit.messages.write(
+    const written = await options.kit.messages.write(
       { conversationId: options.conversationId, bind: options.bind },
       {
         kind: "append",
@@ -203,20 +290,65 @@ async function runLoop<T extends AnyTypes>(
         parts,
       },
     );
+    // A refusal is not a write. Counting it as one would report a card that
+    // no reload will ever show.
+    if (written.kind !== "written") {
+      throw new MessageWriteRefusedError(written.kind);
+    }
   }
+
+  /** The status a text part that ended early is stored with. */
+  function brokenStatus(): "error" | "interrupted" {
+    return options.abortSignal?.aborted === true
+      ? (options.abortedTextStatus ?? "error")
+      : "error";
+  }
+
+  /** A write during the run: held on failure, and nothing after it is tried. */
+  async function duringRun(write: () => Promise<void>): Promise<void> {
+    if (state.failure !== undefined) {
+      return;
+    }
+    try {
+      await write();
+    } catch (error) {
+      state.failure = { error };
+    }
+  }
+
+  /**
+   * The run is over, but a tool may still be finishing: an abort rejects the
+   * result without waiting for the tool in flight, and that tool's card write
+   * must land before the end of the turn writes to the same message.
+   */
+  async function settled(): Promise<void> {
+    await state.chain;
+    if (state.failure !== undefined) {
+      throw state.failure.error;
+    }
+  }
+
+  const saveHistory = options.saveHistory;
 
   await append(commitFirst);
 
   const result = streamText({
     model: options.model,
     messages: [...options.messages],
-    tools: pausingTools(options.tools, state),
+    tools: pausingTools(options.tools, state, (card) =>
+      duringRun(() => append([cardPart(card)])),
+    ),
     stopWhen: [
       stepCountIs(options.maxSteps ?? DEFAULT_MAX_STEPS),
       () => state.paused !== undefined,
+      () => state.failure !== undefined,
     ],
-    onStepFinish: (step) => {
+    onStepFinish: async (step) => {
       state.stepMessages.push(...step.response.messages);
+      if (saveHistory !== undefined && state.paused === undefined) {
+        const history = [...options.messages, ...state.stepMessages];
+        await duringRun(() => saveHistory(history));
+      }
     },
     onError: () => {
       state.interrupted = true;
@@ -237,20 +369,20 @@ async function runLoop<T extends AnyTypes>(
     messages = [...options.messages, ...(await result.responseMessages)];
     text = await result.text;
   } catch {
+    await settled();
     // Reached when nothing at all was generated, and when the run was aborted
     // mid-flight — a phone that lost the network or moved to the background.
     //
-    // What a tool already committed comes first. The write happened; the card
-    // is the only thing that says so, and dropping it here left an order in the
-    // database that nobody could see (SHO-546). The empty text part follows it,
-    // so the same message reads "this was done, and then something broke".
-    const earned = cardParts();
-    const failed: ChatPart = { kind: "text", text: "", status: "error" };
-    await append([...earned, failed]);
+    // What a tool already committed is already stored: its card was written
+    // when the tool completed (SHO-546, SHO-568). The empty text part follows
+    // it, so the same message reads "this was done, and then something broke" —
+    // or, for a caller that stops its own turns, "and then it was stopped".
+    const failed: ChatPart = { kind: "text", text: "", status: brokenStatus() };
+    await append([failed]);
     return {
       kind: "settled",
       pause: null,
-      parts: appendParts([], [...commitFirst, ...earned, failed]),
+      parts: appendParts([], [...commitFirst, ...cardParts(), failed]),
       // The steps that finished, when any did. An abort inside a tool leaves
       // none — the step had not finished — and then the model's memory of this
       // turn is genuinely gone even though the write stands. That is the seam a
@@ -263,6 +395,7 @@ async function runLoop<T extends AnyTypes>(
       interrupted: true,
     };
   }
+  await settled();
 
   // Two ways to get here without having finished. The stream carried an error
   // and `consumeStream` swallowed it; or the signal was aborted between steps,
@@ -276,11 +409,13 @@ async function runLoop<T extends AnyTypes>(
   const interrupted =
     state.interrupted || options.abortSignal?.aborted === true;
 
-  const parts: ChatPart[] = cardParts();
+  // Only what the end of the turn produced. The cards are stored already, and
+  // sending them again would count as a second write of each (SHO-551).
+  const parts: ChatPart[] = [];
   if (interrupted) {
-    // Whatever text arrived before the break is kept and marked `error`: it is
-    // a fragment, and a fragment presented as the answer is worse than none.
-    parts.push({ kind: "text", text, status: "error" });
+    // Whatever text arrived before the break is kept and marked as broken: it
+    // is a fragment, and a fragment presented as the answer is worse than none.
+    parts.push({ kind: "text", text, status: brokenStatus() });
   } else if (text.length > 0) {
     parts.push({ kind: "text", text, status: "complete" });
   }
@@ -341,7 +476,7 @@ async function runLoop<T extends AnyTypes>(
           : "settled",
     pause,
     ...(rejection !== undefined ? { rejection } : {}),
-    parts: appendParts([], [...commitFirst, ...parts]),
+    parts: appendParts([], [...commitFirst, ...cardParts(), ...parts]),
     messages,
     interrupted,
   };
@@ -374,16 +509,6 @@ export function continueHostTurn<T extends AnyTypes>(
   const { claimed, resolved, ...rest } = options;
   const { messages } = options.kit.resume(claimed, resolved.result);
   const earned: ChatPart[] =
-    resolved.card === undefined
-      ? []
-      : [
-          {
-            kind: "card",
-            cardId: resolved.card.cardId,
-            revision: 1,
-            type: resolved.card.type,
-            payload: resolved.card.payload,
-          },
-        ];
+    resolved.card === undefined ? [] : [cardPart(resolved.card)];
   return runLoop({ ...rest, messages }, earned);
 }
