@@ -117,18 +117,39 @@ async function ownTurnIdentity(
 /**
  * What an accept answers without writing: this command's turn, if it was
  * accepted before, or `busy` when another turn holds the conversation.
+ *
+ * The receipt and the lease are read in one statement (SHO-567). Under READ
+ * COMMITTED every statement takes its own snapshot, and an accept of the same
+ * command writes both in one commit: two reads could straddle that commit,
+ * find no receipt and then the lease, and answer `busy` for the caller's own
+ * command. One statement sees that commit for both or for neither.
  */
 async function settledAccept(
   db: WritableStaffDb,
   identity: TurnIdentity,
 ): Promise<AcceptTurnOutput | null> {
-  const receipt = (
-    await db
-      .select(turnViewColumns)
-      .from(assistantTurns)
-      .where(byIdentity(identity))
-      .limit(1)
-  )[0];
+  // At most two rows: the receipt is unique per command and the lease per
+  // conversation, and they are one row when this command holds the lease.
+  const rows = await db
+    .select(turnViewColumns)
+    .from(assistantTurns)
+    .where(
+      and(
+        eq(assistantTurns.companyId, identity.companyId),
+        eq(assistantTurns.conversationId, identity.conversationId),
+        or(
+          and(
+            eq(assistantTurns.kind, identity.kind),
+            eq(assistantTurns.commandId, identity.commandId),
+          ),
+          isActive(),
+        ),
+      ),
+    )
+    .limit(2);
+  const receipt = rows.find(
+    (row) => row.kind === identity.kind && row.commandId === identity.commandId,
+  );
   if (receipt !== undefined) {
     return {
       outcome: "replayed",
@@ -136,20 +157,7 @@ async function settledAccept(
       turn: receipt,
     };
   }
-  const active = (
-    await db
-      .select({ id: assistantTurns.id })
-      .from(assistantTurns)
-      .where(
-        and(
-          eq(assistantTurns.companyId, identity.companyId),
-          eq(assistantTurns.conversationId, identity.conversationId),
-          isActive(),
-        ),
-      )
-      .limit(1)
-  )[0];
-  return active === undefined
+  return rows.length === 0
     ? null
     : { outcome: "busy", conversationId: identity.conversationId };
 }

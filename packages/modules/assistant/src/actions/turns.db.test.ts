@@ -24,7 +24,7 @@ import {
   kitIdentities,
   type TestKit,
 } from "@showzy/core/testing";
-import { auditLog } from "@showzy/db";
+import { auditLog, createDbClient } from "@showzy/db";
 import { user } from "@showzy/db/schema/auth";
 import {
   assistantChatMessages,
@@ -659,7 +659,241 @@ describe("two accepts at once", () => {
       expect(rows).toHaveLength(1);
     }
   });
+
+  /**
+   * The same races, one interleaving at a time instead of by luck (SHO-567).
+   * The winner holds its transaction open at commit, with its messages and turn
+   * written. The loser lets it commit before each statement it sends to claim
+   * the conversation, up to its first write, and once more while that write
+   * waits on the winner's key. No point may change the answer.
+   */
+  it("of the same command: the other replays wherever the winner's commit lands", async () => {
+    const races = await everyCommitPoint(async (point) => {
+      const conversationId = await newConversation();
+      const input = chatAccept(conversationId);
+      const race = await raceAccepts(input, input, point);
+      expect(await messageIds(conversationId)).toHaveLength(2);
+      expect(await turnRows(conversationId)).toHaveLength(1);
+      return race;
+    });
+
+    expect(races).toEqual(
+      races.map((race) => ({
+        committedBefore: race.committedBefore,
+        winner: "accepted",
+        loser: "replayed",
+      })),
+    );
+  });
+
+  it("of two commands: the other is busy wherever the winner's commit lands", async () => {
+    const races = await everyCommitPoint(async (point) => {
+      const conversationId = await newConversation();
+      const race = await raceAccepts(
+        chatAccept(conversationId),
+        chatAccept(conversationId),
+        point,
+      );
+      expect(await messageIds(conversationId)).toHaveLength(2);
+      expect(await turnRows(conversationId)).toHaveLength(1);
+      return race;
+    });
+
+    expect(races).toEqual(
+      races.map((race) => ({
+        committedBefore: race.committedBefore,
+        winner: "accepted",
+        loser: "busy",
+      })),
+    );
+  });
 });
+
+/**
+ * Where the winner committed, as seen from the loser: before its n-th claim
+ * statement (`"<n>:read"` or `"<n>:write"`), or `"waiting"` — after its first
+ * write was sent and seen waiting on the winner's lock.
+ */
+interface RaceResult {
+  readonly committedBefore: string;
+  readonly winner: string;
+  readonly loser: string;
+}
+
+/** Before the loser's n-th claim statement, or while its first write waits. */
+type CommitPoint = number | "while_waiting";
+
+/** A claim reads the turns; the first write stores the person's message. */
+const TURN_TABLE = '"assistant_turns"';
+const MESSAGE_WRITE = 'insert into "assistant_chat_messages"';
+const MAX_CLAIM_STATEMENTS = 10;
+
+function deferred() {
+  let resolve: () => void = () => undefined;
+  let reject: (error: unknown) => void = () => undefined;
+  const promise = new Promise<void>((onResolve, onReject) => {
+    resolve = onResolve;
+    reject = onReject;
+  });
+  return { promise, resolve, reject };
+}
+
+/**
+ * The kit's pipeline on a one-connection pool of its own, whose statements
+ * pass through `gate` before they are sent. The gate decides what the other
+ * transaction has committed when each statement runs.
+ */
+function gatedPipeline(gate: (text: string) => Promise<void>) {
+  const databaseUrl = kit.db.runtime.pool.options.connectionString;
+  if (databaseUrl === undefined) {
+    throw new Error("expected the test pool's connection string");
+  }
+  const client = createDbClient({ databaseUrl, max: 1 });
+  client.pool.on("connect", (connection) => {
+    const send: (
+      config: string | { readonly text: string },
+      values?: unknown[],
+    ) => Promise<unknown> = connection.query.bind(connection);
+    Object.defineProperty(connection, "query", {
+      value: async (
+        config: string | { readonly text: string },
+        values?: unknown[],
+      ) => {
+        await gate(typeof config === "string" ? config : config.text);
+        return send(config, values);
+      },
+    });
+  });
+  return {
+    deps: { ...kit.pipeline, db: client.db },
+    close: () => client.pool.end(),
+  };
+}
+
+/** Resolves once a session of this test's database waits on a lock. */
+async function waitForLockWait(): Promise<void> {
+  const deadline = Date.now() + 8_000;
+  while (Date.now() < deadline) {
+    const result = await kit.db.admin.query<{ n: number }>(
+      "SELECT COUNT(*)::int AS n FROM pg_stat_activity WHERE datname = $1 AND wait_event_type = 'Lock'",
+      [kit.db.name],
+    );
+    if ((result.rows[0]?.n ?? 0) > 0) {
+      return;
+    }
+    await new Promise((resolve) => {
+      setTimeout(resolve, 20);
+    });
+  }
+  throw new Error("timed out waiting for the loser to wait on the winner");
+}
+
+/**
+ * Accepts `winnerInput` and holds it at commit, then accepts `loserInput` and
+ * commits the winner at `point` of the loser's claim.
+ */
+async function raceAccepts(
+  winnerInput: ReturnType<typeof chatAccept>,
+  loserInput: ReturnType<typeof chatAccept>,
+  point: CommitPoint,
+): Promise<RaceResult> {
+  const held = deferred();
+  const release = deferred();
+  const state: {
+    winnerWroteTurn: boolean;
+    claims: number;
+    committedBefore: string | undefined;
+    waiting: Promise<unknown>;
+  } = {
+    winnerWroteTurn: false,
+    claims: 0,
+    committedBefore: undefined,
+    waiting: Promise.resolve(),
+  };
+
+  const winnerPool = gatedPipeline(async (text) => {
+    if (text.startsWith(`insert into ${TURN_TABLE}`)) {
+      state.winnerWroteTurn = true;
+    }
+    if (text === "commit" && state.winnerWroteTurn) {
+      held.resolve();
+      await release.promise;
+    }
+  });
+  const loserPool = gatedPipeline(async (text) => {
+    const write = text.startsWith(MESSAGE_WRITE);
+    if (
+      state.committedBefore !== undefined ||
+      (!write && !text.includes(TURN_TABLE))
+    ) {
+      return;
+    }
+    state.claims += 1;
+    if (point === "while_waiting") {
+      if (write) {
+        state.committedBefore = "waiting";
+        state.waiting = (async () => {
+          await waitForLockWait();
+          release.resolve();
+          await winner;
+        })();
+      }
+      return;
+    }
+    if (state.claims === point || write) {
+      state.committedBefore = `${String(state.claims)}:${write ? "write" : "read"}`;
+      release.resolve();
+      await winner;
+    }
+  });
+
+  const winner = kit.invoke(
+    acceptTurn,
+    winnerInput,
+    {},
+    { deps: winnerPool.deps },
+  );
+  try {
+    // A winner that fails before its commit must fail the race, not hang it.
+    await Promise.race([held.promise, winner]);
+    const loser = await kit.invoke(
+      acceptTurn,
+      loserInput,
+      {},
+      { deps: loserPool.deps },
+    );
+    await state.waiting;
+    return {
+      committedBefore: state.committedBefore ?? "never",
+      winner: (await winner).outcome,
+      loser: loser.outcome,
+    };
+  } finally {
+    release.resolve();
+    await winner.catch(() => undefined);
+    await winnerPool.close();
+    await loserPool.close();
+  }
+}
+
+/**
+ * Runs a race for every point of the loser's claim: before each statement up
+ * to its first write, then while that write waits.
+ */
+async function everyCommitPoint(
+  run: (point: CommitPoint) => Promise<RaceResult>,
+): Promise<RaceResult[]> {
+  const races: RaceResult[] = [];
+  for (let before = 1; before <= MAX_CLAIM_STATEMENTS; before += 1) {
+    const race = await run(before);
+    races.push(race);
+    if (race.committedBefore.endsWith(":write")) {
+      races.push(await run("while_waiting"));
+      return races;
+    }
+  }
+  throw new Error("the loser sent no write within its claim statements");
+}
 
 describe("starting and finishing a turn", () => {
   it("keeps the session only while the turn is active", async () => {
