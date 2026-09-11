@@ -356,14 +356,23 @@ was lost. Events are on the shared Redis, as above under **Where it lives**.
 ### The reconciler
 
 Every 60 s, on the worker's maintenance scheduler, one pass over the turns the
-database itself calls stale (`assistant.listStaleTurns`). It does three things
-and nothing else:
+database itself calls stale (`assistant.listStaleTurns`). It re-enqueues,
+interrupts, or leaves alone — nothing else:
 
 | What it finds | What it does |
 | --- | --- |
-| `queued`, no start, older than 60 s | enqueues the job again, rebuilt from the row alone (the id dedupes, so a turn never runs twice) |
-| `queued`, never started, older than **15 min** | interrupts it and **gives its hold back** — it never reached the model |
+| `queued`, its job still on the queue | **leaves it alone**, whatever its age — it is waiting its turn, not lost |
+| `queued`, no job, no start, older than 60 s | enqueues the job again, rebuilt from the row alone |
+| `queued`, no job, never started, older than **15 min** | interrupts it and **gives its hold back** — it never reached the model |
 | `running` past its deadline | interrupts it and **keeps the reservation as the charge** — it may have reached the model |
+
+**For a queued turn the job is the question, not the age.** The reconciler asks
+the queue once per queued turn before it does anything else. One worker runs 4
+turns at a time, each up to 180 s — about 1.33 turns a minute at worst — so a
+backlog of roughly twenty ages a perfectly healthy turn past fifteen minutes. A
+turn stuck behind that backlog still has its job waiting; a turn that can never
+start does not, because its job ran to a refusal and was removed. Age alone
+would end the first kind and hand back a hold for a turn that was about to run.
 
 An interrupted turn's placeholder text is settled to `interrupted` as the
 turn's own author; if that person is no longer a member, the turn still ends
@@ -378,16 +387,62 @@ stored stands.
 
 **Re-enqueue backs off** per turn: 60 s, doubling to at most 8 min. A turn whose
 start is refused every time — a lost membership, a rate limit, a timeout —
-would otherwise be enqueued on every pass. The 15-minute abandon threshold is
-the hard bound on that turn either way. Re-enqueues are logged as
-`assistant turn re-enqueued` with the conversation, the kind and the attempt;
-interrupts as `assistant turn interrupted by the reconciler`. Neither carries
-anyone's name or what they wrote.
+would otherwise be enqueued on every pass. Such a turn completes its job each
+time and the queue then holds none, so the 15-minute threshold does bound it.
+
+**The threshold bounds only a turn with no job.** A turn whose job is still
+waiting is never abandoned by age, and nothing ends it on a clock: it ends when
+a worker consumes the queue and runs it. If the queue is not being consumed at
+all, see below — that turn waits as long as that lasts.
+
+Re-enqueues are logged as `assistant turn re-enqueued` with the conversation,
+the kind and the attempt; interrupts as
+`assistant turn interrupted by the reconciler`; a turn left waiting for its own
+job as `assistant turn is queued behind its job and was left as it is`. None of
+them carries anyone's name or what they wrote.
 
 ```bash
 # What the last pass did.
 grep "assistant turns reconciled" worker.log | tail -1
+
+# Turns the pass found queued behind their own job and left alone.
+grep "assistant turn is queued behind its job" worker.log | tail -20
 ```
+
+### A queued turn that will not clear
+
+A turn sits at `queued`, the reconciler reports it every minute as left alone,
+and nothing happens. That means the queue holds its job and no worker is taking
+it. Check, in this order:
+
+1. **Is an assistant worker running at all?** Its boot line
+   `maintenance job host started` carries `assistant_queue`; a worker that did
+   not mount the assistant logs `null` there. The mount rule is the API's —
+   `AI_ASSISTANT_KIT` on and a language model configured — and the same
+   `assistant-kit path` line says which way it went.
+2. **Is it the same Redis?** The queue lives on `REDIS_QUEUE_URL`, not the
+   shared `REDIS_URL`. An enqueue against one and a worker against the other
+   leaves jobs waiting for nobody.
+3. **How deep is the backlog?** `LRANGE showzy:assistant:wait 0 -1` above. A
+   long list with a live worker is a queue that is draining slowly, not a stuck
+   one; the `left` count in `assistant turns reconciled` is the same picture
+   from the database side.
+
+While that lasts, the person whose conversation it is cannot start another
+turn: the queued turn holds the conversation. **The money half heals itself** —
+the reservation is keyed by its Kyiv day and stops counting against tomorrow's
+budget — **the conversation lease does not**. It is released only when the turn
+runs or the reconciler ends it, and the reconciler will not end it while its job
+is on the queue.
+
+**Requirement for when infrastructure exists:** a real bound on that wait, so a
+queue nobody consumes cannot hold a person's conversation indefinitely. It is
+not built now, deliberately: it needs to know whether a consumer exists and how
+deep the queue is, and neither is knowable until the routes enqueue (SHO-563)
+and the queue carries real traffic. Nothing reaches this state today — the
+routes do not enqueue yet — and reaching it later takes a misconfiguration and
+costs one person availability, not a tenant, money or security. Recorded, not
+configured; there is no production environment yet.
 
 ### Shutdown drains turns
 
