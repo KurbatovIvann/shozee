@@ -6,6 +6,7 @@
  */
 import { getConnInfo } from "@hono/node-server/conninfo";
 import {
+  createRedisAiBudgetStore,
   createRedisAssistantEventHub,
   createRedisAssistantPresence,
   createRedisAssistantStreamSlots,
@@ -38,7 +39,6 @@ import { authInstanceFrom } from "./http/auth-instance.js";
 import { createProcessObservability } from "./observability.js";
 import { createActionPipeline } from "./pipeline.js";
 import {
-  createRedisAiBudgetStore,
   createRedisAuthRateLimitStore,
   createRedisConfirmationStore,
   createRedisOtpSendStore,

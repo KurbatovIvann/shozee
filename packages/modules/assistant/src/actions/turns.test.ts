@@ -14,11 +14,21 @@ import { STAFF_CONVERSATION_AUTHOR_INVARIANT } from "./conversation-view.contrac
 import {
   finishTurnContract,
   finishTurnInputSchema,
+  finishTurnOutputSchema,
 } from "./finish-turn.contract.js";
+import {
+  interruptTurnContract,
+  interruptTurnInputSchema,
+  interruptTurnOutputSchema,
+} from "./interrupt-turn.contract.js";
 import {
   listStaleTurnsContract,
   listStaleTurnsInputSchema,
 } from "./list-stale-turns.contract.js";
+import {
+  readTurnForJobContract,
+  readTurnForJobInputSchema,
+} from "./read-turn-for-job.contract.js";
 import {
   startTurnContract,
   startTurnInputSchema,
@@ -87,6 +97,71 @@ describe("the turn contracts", () => {
     expect(listStaleTurnsContract.audit).toBe(false);
   });
 
+  it("read the turn a job names only as a global system job nobody else can reach", () => {
+    expect(readTurnForJobContract.principal).toBe("system");
+    expect(readTurnForJobContract.systemScope).toBe("global");
+    expect(readTurnForJobContract.transport).toBe("internal");
+    expect(readTurnForJobContract.aiExposure).toBe("internal");
+    expect(readTurnForJobContract.risk).toBe("read");
+    expect(readTurnForJobContract.permissions).toEqual([]);
+    expect(readTurnForJobContract.audit).toBe(false);
+  });
+
+  /**
+   * Replaying an interrupt would hand its hold to a retry, so the compare-and-
+   * set is its idempotency, not a replay key.
+   */
+  it("interrupt a turn only as an audited tenant system write, not replay-keyed", () => {
+    expect(interruptTurnContract.principal).toBe("system");
+    expect(interruptTurnContract.systemScope).toBe("tenant");
+    expect(interruptTurnContract.transport).toBe("internal");
+    expect(interruptTurnContract.aiExposure).toBe("internal");
+    expect(interruptTurnContract.risk).toBe("write");
+    expect(interruptTurnContract.permissions).toEqual([]);
+    expect(interruptTurnContract.audit).toBe(true);
+    expect(interruptTurnContract.idempotent).toBe(false);
+    expect(interruptTurnContract.emits).toEqual([]);
+    expect(interruptTurnContract.errors).toContain("NOT_FOUND");
+  });
+
+  it("hand back a hold only with the call that ended the turn", () => {
+    const hold = {
+      companyReservedMicroUsd: 100_000,
+      globalReservedMicroUsd: 100_000,
+      kyivDate: "2026-09-11",
+    };
+    expect(
+      finishTurnOutputSchema.safeParse({
+        outcome: "finished",
+        conversationId: CONVERSATION,
+        status: "done",
+      }).success,
+    ).toBe(false);
+    expect(
+      finishTurnOutputSchema.safeParse({
+        outcome: "already_finished",
+        conversationId: CONVERSATION,
+        status: "done",
+        releasedHold: hold,
+      }).success,
+    ).toBe(false);
+    expect(
+      interruptTurnOutputSchema.safeParse({
+        outcome: "interrupted",
+        conversationId: CONVERSATION,
+        releasedHold: hold,
+      }).success,
+    ).toBe(true);
+    expect(
+      interruptTurnOutputSchema.safeParse({
+        outcome: "already_finished",
+        conversationId: CONVERSATION,
+        status: "interrupted",
+        releasedHold: hold,
+      }).success,
+    ).toBe(false);
+  });
+
   it("never take a company id", () => {
     const companyId = "55555555-5555-4555-8555-555555555555";
     const ref = {
@@ -112,6 +187,12 @@ describe("the turn contracts", () => {
         limit: 10,
         companyId,
       }).success,
+    ).toBe(false);
+    expect(
+      readTurnForJobInputSchema.safeParse({ ...ref, companyId }).success,
+    ).toBe(false);
+    expect(
+      interruptTurnInputSchema.safeParse({ ...ref, companyId }).success,
     ).toBe(false);
   });
 

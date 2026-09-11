@@ -20,6 +20,7 @@ import {
   assistantTurnMessageId,
   createMemoryAiBudgetStore,
   createPostgresAssistantStaleTurns,
+  createPostgresAssistantTurnForJob,
   createPostgresAssistantTurnStore,
   enforceStaffAssistantBudget,
   releaseStaffAssistantBudgetHold,
@@ -360,6 +361,10 @@ describe("the budget reservation of an accept", () => {
       throw new Error(`expected accepted, got ${accepted.outcome}`);
     }
     await turns().finish(accepted.turn, "done");
+    // Finishing took the hold off the row (SHO-561); the refusal below must
+    // leave the row as the finish left it.
+    const heldAfterFinish = await storedHolds(conversationId);
+    expect(heldAfterFinish).toEqual([{ company: 0, global: 0 }]);
 
     const refused = await turns().accept({
       ...chat(conversationId),
@@ -373,9 +378,7 @@ describe("the budget reservation of an accept", () => {
       company: 0.1,
       global: 0.1,
     });
-    expect(await storedHolds(conversationId)).toEqual([
-      { company: 100_000, global: 100_000 },
-    ]);
+    expect(await storedHolds(conversationId)).toEqual(heldAfterFinish);
   });
 
   it("is released when the accept is refused as a conflict", async () => {
@@ -492,6 +495,7 @@ describe("the reconciler", () => {
     expect(await turns().finish(accepted.turn, "interrupted")).toEqual({
       outcome: "finished",
       status: "interrupted",
+      releasedHold: hold,
     });
 
     const listed = await createPostgresAssistantStaleTurns({
@@ -500,5 +504,95 @@ describe("the reconciler", () => {
     expect(
       listed.some((row) => row.turn.conversationId === conversationId),
     ).toBe(false);
+  });
+});
+
+/**
+ * What the worker will do with a job: read the turn it names, and run the
+ * turn's actions as the caller that read produced — the row's user, company
+ * and request, with no client IP (SHO-561).
+ */
+describe("the turn a job names", () => {
+  it("runs as the row's user with no client IP, and hands its hold out once", async () => {
+    const conversationId = await newConversation();
+    const accepted = await turns().accept({
+      kind: "chat",
+      conversationId: conversationId.toUpperCase(),
+      commandId: randomUUID().toUpperCase(),
+      bind: annaBind,
+      text: "привіт",
+      sessionId: "session-anna",
+      ...nothingReserved,
+    });
+    if (accepted.outcome !== "accepted") {
+      throw new Error(`expected accepted, got ${accepted.outcome}`);
+    }
+    const forJob = createPostgresAssistantTurnForJob({
+      pipeline: kit.pipeline,
+    });
+
+    const found = await forJob.read({
+      job: accepted.job,
+      requestId: randomUUID(),
+    });
+
+    expect(found).toMatchObject({
+      companyId: kitIdentities.companies.a,
+      turn: {
+        kind: "chat",
+        conversationId,
+        commandId: accepted.turn.commandId,
+      },
+      status: "queued",
+      deadlineAt: null,
+      budgetHold: hold,
+      continuationRootCommandId: accepted.turn.commandId,
+      caller: {
+        userId: anna.userId,
+        companySelector: kitIdentities.companies.a,
+        requestId: anna.requestId,
+      },
+    });
+    if (found === null) {
+      return;
+    }
+    expect(found.caller).not.toHaveProperty("clientIp");
+
+    // Core runs a staff action without an IP: the caller is enough.
+    const asTurn = createPostgresAssistantTurnStore(
+      { pipeline: kit.pipeline },
+      found.caller,
+    );
+    expect((await asTurn.start(found.turn)).outcome).toBe("started");
+    expect(await asTurn.finish(found.turn, "done")).toEqual({
+      outcome: "finished",
+      status: "done",
+      releasedHold: hold,
+    });
+    expect(await asTurn.finish(found.turn, "failed")).toEqual({
+      outcome: "already_finished",
+      status: "done",
+      releasedHold: null,
+    });
+    expect(
+      await forJob.read({ job: accepted.job, requestId: randomUUID() }),
+    ).toMatchObject({
+      status: "done",
+      budgetHold: { companyReservedUsd: 0, globalReservedUsd: 0 },
+    });
+  });
+
+  it("finds nothing for a job nobody accepted", async () => {
+    expect(
+      await createPostgresAssistantTurnForJob({ pipeline: kit.pipeline }).read({
+        job: {
+          version: 1,
+          kind: "chat",
+          conversationId: randomUUID(),
+          commandId: randomUUID(),
+        },
+        requestId: randomUUID(),
+      }),
+    ).toBeNull();
   });
 });

@@ -38,8 +38,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { acceptTurn } from "./accept-turn.js";
 import { finishTurn } from "./finish-turn.js";
 import { insertChatMessage } from "./insert-chat-message.js";
+import { interruptTurn } from "./interrupt-turn.js";
 import { listStaleTurns } from "./list-stale-turns.js";
 import { readChatMessages } from "./read-chat-messages.js";
+import { readTurnForJob } from "./read-turn-for-job.js";
 import { startTurn } from "./start-turn.js";
 import { updateChatMessage } from "./update-chat-message.js";
 
@@ -69,8 +71,60 @@ const isolation = {
   startCommand: randomUUID(),
   finish: randomUUID(),
   finishCommand: randomUUID(),
+  interrupt: randomUUID(),
+  interruptCommand: randomUUID(),
   foreign: randomUUID(),
+  /** A turn of company B, so a foreign interrupt has a real row to miss. */
+  foreignCommand: randomUUID(),
 };
+
+const EMPTY_HOLD = {
+  ...HOLD,
+  companyReservedMicroUsd: 0,
+  globalReservedMicroUsd: 0,
+};
+
+type TurnRef = {
+  readonly conversationId: string;
+  readonly kind: "chat" | "answer";
+  readonly commandId: string;
+};
+
+function systemRequest() {
+  const requestId = randomUUID();
+  return { requestId, correlationId: requestId, channel: "system" as const };
+}
+
+/** The reconciler's interrupt, inside one company. */
+function interruptAs(companyId: string, turn: TurnRef, requestId?: string) {
+  return executeAction(kit.pipeline, {
+    action: interruptTurn,
+    input: turn,
+    request:
+      requestId === undefined
+        ? systemRequest()
+        : { requestId, correlationId: requestId, channel: "system" as const },
+    principal: {
+      mode: "system",
+      serviceName: "assistant-reconciler",
+      scope: { scope: "tenant", companyId },
+    },
+  });
+}
+
+/** The worker's read of the turn its job names. */
+function readForJob(turn: TurnRef) {
+  return executeAction(kit.pipeline, {
+    action: readTurnForJob,
+    input: turn,
+    request: systemRequest(),
+    principal: {
+      mode: "system",
+      serviceName: "assistant-worker",
+      scope: { scope: "global" },
+    },
+  });
+}
 
 let kit: TestKit;
 
@@ -182,6 +236,7 @@ beforeAll(async () => {
   await newConversation(undefined, isolation.accept);
   await newConversation(undefined, isolation.start);
   await newConversation(undefined, isolation.finish);
+  await newConversation(undefined, isolation.interrupt);
   await newConversation(borisInB, isolation.foreign);
   await kit.invoke(
     acceptTurn,
@@ -192,6 +247,16 @@ beforeAll(async () => {
     acceptTurn,
     chatAccept(isolation.finish, isolation.finishCommand),
     {},
+  );
+  await kit.invoke(
+    acceptTurn,
+    chatAccept(isolation.interrupt, isolation.interruptCommand),
+    {},
+  );
+  await kit.invoke(
+    acceptTurn,
+    chatAccept(isolation.foreign, isolation.foreignCommand, BORIS_BIND),
+    borisInB,
   );
 }, 180_000);
 
@@ -241,6 +306,16 @@ crossTenantSuite(
       listStaleTurns,
       { input: { queuedStaleAfterMs: 60_000, limit: 10 } },
       { input: { queuedStaleAfterMs: 60_000, limit: 10 } },
+    ),
+    isolationCase(
+      readTurnForJob,
+      { input: ref(isolation.start, isolation.startCommand) },
+      { input: ref(isolation.foreign, isolation.foreignCommand) },
+    ),
+    isolationCase(
+      interruptTurn,
+      { input: ref(isolation.interrupt, isolation.interruptCommand) },
+      { input: ref(isolation.foreign, isolation.foreignCommand) },
     ),
   ],
 );
@@ -391,6 +466,35 @@ describe("accepting a turn", () => {
       turn: { status: "done" },
     });
     expect(await messageIds(conversationId)).toHaveLength(2);
+  });
+
+  /**
+   * A receipt is this command in this conversation (SHO-567). The same client
+   * token sent to another of the caller's conversations is a new command there.
+   */
+  it("accepts a command in a second conversation after it ended in the first", async () => {
+    const first = await newConversation();
+    const second = await newConversation();
+    const commandId = randomUUID();
+    await kit.invoke(acceptTurn, chatAccept(first, commandId), {});
+    await kit.invoke(
+      finishTurn,
+      { ...ref(first, commandId), status: "done" },
+      {},
+    );
+
+    const accepted = await kit.invoke(
+      acceptTurn,
+      chatAccept(second, commandId),
+      {},
+    );
+
+    expect(accepted).toMatchObject({
+      outcome: "accepted",
+      conversationId: second,
+      turn: { commandId, status: "queued" },
+    });
+    expect(await turnRows(second)).toHaveLength(1);
   });
 
   it("stores an answer as one placeholder carrying the earned card, and no person's message", async () => {
@@ -954,7 +1058,12 @@ describe("starting and finishing a turn", () => {
 
     expect(
       await kit.invoke(finishTurn, { ...turn, status: "done" }, {}),
-    ).toEqual({ outcome: "finished", conversationId, status: "done" });
+    ).toEqual({
+      outcome: "finished",
+      conversationId,
+      status: "done",
+      releasedHold: HOLD,
+    });
     // A late interruption cannot overwrite how the turn ended.
     expect(
       await kit.invoke(finishTurn, { ...turn, status: "interrupted" }, {}),
@@ -979,7 +1088,378 @@ describe("starting and finishing a turn", () => {
         { ...ref(conversationId, input.commandId), status: "failed" },
         {},
       ),
-    ).toEqual({ outcome: "finished", conversationId, status: "failed" });
+    ).toEqual({
+      outcome: "finished",
+      conversationId,
+      status: "failed",
+      releasedHold: HOLD,
+    });
+  });
+});
+
+/**
+ * A hold leaves its row once. The worker's finish and the reconciler's
+ * interrupt each zero it in the statement that ends the turn, and only that
+ * call is handed it, so nobody can settle or release it twice (SHO-561).
+ */
+describe("ending a turn takes its hold off the row", () => {
+  async function storedHold(conversationId: string) {
+    const row = (await turnRows(conversationId))[0];
+    return {
+      companyReservedMicroUsd: row?.companyReservedMicroUsd,
+      globalReservedMicroUsd: row?.globalReservedMicroUsd,
+    };
+  }
+
+  it("hands the hold to the first finish and none to a second", async () => {
+    const conversationId = await newConversation();
+    const input = chatAccept(conversationId);
+    const turn = ref(conversationId, input.commandId);
+    await kit.invoke(acceptTurn, input, {});
+
+    const first = await kit.invoke(finishTurn, { ...turn, status: "done" }, {});
+    const second = await kit.invoke(
+      finishTurn,
+      { ...turn, status: "failed" },
+      {},
+    );
+
+    expect(first).toEqual({
+      outcome: "finished",
+      conversationId,
+      status: "done",
+      releasedHold: HOLD,
+    });
+    expect(second).toEqual({
+      outcome: "already_finished",
+      conversationId,
+      status: "done",
+    });
+    expect(await storedHold(conversationId)).toEqual({
+      companyReservedMicroUsd: 0,
+      globalReservedMicroUsd: 0,
+    });
+  });
+
+  it("interrupts a running or a queued turn once, audited in its company", async () => {
+    for (const started of [true, false]) {
+      const conversationId = await newConversation();
+      const input = chatAccept(conversationId);
+      const turn = ref(conversationId, input.commandId.toUpperCase());
+      await kit.invoke(acceptTurn, input, {});
+      if (started) {
+        await kit.invoke(startTurn, { ...turn, timeoutMs: TIMEOUT_MS }, {});
+      }
+      const requestId = randomUUID();
+
+      const first = await interruptAs(
+        kitIdentities.companies.a,
+        turn,
+        requestId,
+      );
+      const second = await interruptAs(kitIdentities.companies.a, turn);
+
+      expect(first).toEqual({
+        outcome: "interrupted",
+        conversationId,
+        releasedHold: HOLD,
+      });
+      expect(second).toEqual({
+        outcome: "already_finished",
+        conversationId,
+        status: "interrupted",
+      });
+      expect((await turnRows(conversationId))[0]).toMatchObject({
+        status: "interrupted",
+        sessionId: null,
+        companyReservedMicroUsd: 0,
+        globalReservedMicroUsd: 0,
+      });
+      expect((await turnRows(conversationId))[0]?.finishedAt).not.toBeNull();
+
+      const audit = await kit.db.runtime.db
+        .select()
+        .from(auditLog)
+        .where(eq(auditLog.requestId, requestId));
+      expect(audit).toHaveLength(1);
+      expect(audit[0]).toMatchObject({
+        action: "assistant.interruptTurn",
+        companyId: kitIdentities.companies.a,
+        targetType: "conversation",
+        targetId: conversationId,
+        outcome: "ok",
+      });
+
+      // The conversation is free again.
+      expect(
+        (await kit.invoke(acceptTurn, chatAccept(conversationId), {})).outcome,
+      ).toBe("accepted");
+    }
+  });
+
+  it("never ends a turn that already ended, whichever of the two came first", async () => {
+    const finishedFirst = await newConversation();
+    const finishedInput = chatAccept(finishedFirst);
+    const finishedTurn = ref(finishedFirst, finishedInput.commandId);
+    await kit.invoke(acceptTurn, finishedInput, {});
+    await kit.invoke(finishTurn, { ...finishedTurn, status: "done" }, {});
+
+    expect(await interruptAs(kitIdentities.companies.a, finishedTurn)).toEqual({
+      outcome: "already_finished",
+      conversationId: finishedFirst,
+      status: "done",
+    });
+
+    const interruptedFirst = await newConversation();
+    const interruptedInput = chatAccept(interruptedFirst);
+    const interruptedTurn = ref(interruptedFirst, interruptedInput.commandId);
+    await kit.invoke(acceptTurn, interruptedInput, {});
+    await interruptAs(kitIdentities.companies.a, interruptedTurn);
+
+    // A late done from a worker cannot overwrite the interruption.
+    expect(
+      await kit.invoke(finishTurn, { ...interruptedTurn, status: "done" }, {}),
+    ).toEqual({
+      outcome: "already_finished",
+      conversationId: interruptedFirst,
+      status: "interrupted",
+    });
+  });
+
+  it("gives the hold to exactly one of a finish and an interrupt that race", async () => {
+    for (let round = 0; round < 5; round += 1) {
+      const conversationId = await newConversation();
+      const input = chatAccept(conversationId);
+      const turn = ref(conversationId, input.commandId);
+      await kit.invoke(acceptTurn, input, {});
+      await kit.invoke(startTurn, { ...turn, timeoutMs: TIMEOUT_MS }, {});
+
+      const outcomes = await Promise.all([
+        kit.invoke(finishTurn, { ...turn, status: "done" }, {}),
+        interruptAs(kitIdentities.companies.a, turn),
+      ]);
+
+      expect(
+        outcomes.flatMap((outcome) =>
+          "releasedHold" in outcome ? [outcome.releasedHold] : [],
+        ),
+      ).toEqual([HOLD]);
+      expect(await storedHold(conversationId)).toEqual({
+        companyReservedMicroUsd: 0,
+        globalReservedMicroUsd: 0,
+      });
+    }
+  });
+
+  it("is not-found for another company's turn, and a missing one", async () => {
+    await expect(
+      interruptAs(
+        kitIdentities.companies.a,
+        ref(isolation.foreign, isolation.foreignCommand),
+      ),
+    ).rejects.toBeInstanceOf(NotFoundError);
+    await expect(
+      interruptAs(kitIdentities.companies.a, ref(randomUUID(), randomUUID())),
+    ).rejects.toBeInstanceOf(NotFoundError);
+    expect((await turnRows(isolation.foreign))[0]).toMatchObject({
+      status: "queued",
+      companyReservedMicroUsd: HOLD.companyReservedMicroUsd,
+    });
+  });
+
+  it("refuses the interrupt to a staff caller and to a global system caller", async () => {
+    const conversationId = await newConversation();
+    const input = chatAccept(conversationId);
+    const turn = ref(conversationId, input.commandId);
+    await kit.invoke(acceptTurn, input, {});
+
+    await expect(
+      executeAction(kit.pipeline, {
+        action: interruptTurn,
+        input: turn,
+        request: { ...systemRequest(), channel: "ui" as const },
+        principal: {
+          mode: "staff",
+          session: { userId: kitIdentities.users.anna },
+          companySelector: kitIdentities.companies.a,
+        },
+      }),
+    ).rejects.toBeInstanceOf(CoreInvariantError);
+    await expect(
+      executeAction(kit.pipeline, {
+        action: interruptTurn,
+        input: turn,
+        request: systemRequest(),
+        principal: {
+          mode: "system",
+          serviceName: "assistant-reconciler",
+          scope: { scope: "global" },
+        },
+      }),
+    ).rejects.toBeInstanceOf(CoreInvariantError);
+    expect((await turnRows(conversationId))[0]?.status).toBe("queued");
+  });
+
+  it("refuses an interrupt that is not a turn's identity", async () => {
+    const conversationId = await newConversation();
+    const input = chatAccept(conversationId);
+    await kit.invoke(acceptTurn, input, {});
+
+    await expect(
+      interruptAs(kitIdentities.companies.a, {
+        ...ref(conversationId, input.commandId),
+        commandId: "not-a-uuid",
+      }),
+    ).rejects.toBeInstanceOf(ValidationError);
+    expect((await turnRows(conversationId))[0]?.status).toBe("queued");
+  });
+});
+
+describe("the worker's read of the turn a job names", () => {
+  it("returns what the worker needs, from ids in any casing", async () => {
+    const conversationId = await newConversation();
+    const input = chatAccept(conversationId);
+    const requestId = randomUUID();
+    await kit.invoke(acceptTurn, input, {}, { request: { requestId } });
+    await kit.invoke(
+      startTurn,
+      { ...ref(conversationId, input.commandId), timeoutMs: TIMEOUT_MS },
+      {},
+    );
+
+    const read = await readForJob({
+      conversationId: conversationId.toUpperCase(),
+      kind: "chat",
+      commandId: input.commandId.toUpperCase(),
+    });
+
+    const row = (await turnRows(conversationId))[0];
+    expect(read).toEqual({
+      turn: {
+        companyId: kitIdentities.companies.a,
+        conversationId,
+        kind: "chat",
+        commandId: input.commandId,
+        userId: kitIdentities.users.anna,
+        requestId,
+        status: "running",
+        placeholderMessageId: input.placeholder.messageId,
+        deadlineAt: row?.deadlineAt?.toISOString(),
+        budgetHold: HOLD,
+        continuationRootCommandId: input.commandId,
+      },
+    });
+    expect(read.turn).not.toHaveProperty("sessionId");
+
+    await kit.invoke(
+      finishTurn,
+      { ...ref(conversationId, input.commandId), status: "done" },
+      {},
+    );
+    expect(
+      (await readForJob(ref(conversationId, input.commandId))).turn,
+    ).toMatchObject({ status: "done", budgetHold: EMPTY_HOLD });
+  });
+
+  it("names the first turn of a continuation chain as the command its tools key under", async () => {
+    const conversationId = await newConversation();
+    const first = chatAccept(conversationId);
+    await kit.invoke(acceptTurn, first, {});
+    await interruptAs(
+      kitIdentities.companies.a,
+      ref(conversationId, first.commandId),
+    );
+    const second = chatAccept(conversationId);
+    await kit.invoke(
+      acceptTurn,
+      { ...second, continuesCommandId: first.commandId },
+      {},
+    );
+
+    expect(
+      (await readForJob(ref(conversationId, second.commandId))).turn,
+    ).toMatchObject({
+      commandId: second.commandId,
+      status: "queued",
+      deadlineAt: null,
+      continuationRootCommandId: first.commandId,
+    });
+  });
+
+  it("returns no turn for an identity nobody accepted, including another kind", async () => {
+    const conversationId = await newConversation();
+    const input = chatAccept(conversationId);
+    await kit.invoke(acceptTurn, input, {});
+
+    expect(await readForJob(ref(randomUUID(), input.commandId))).toEqual({
+      turn: null,
+    });
+    expect(
+      await readForJob({
+        conversationId,
+        kind: "answer",
+        commandId: input.commandId,
+      }),
+    ).toEqual({ turn: null });
+  });
+
+  it("reads a turn of any company", async () => {
+    expect(
+      (await readForJob(ref(isolation.foreign, isolation.foreignCommand))).turn,
+    ).toMatchObject({
+      companyId: kitIdentities.companies.b,
+      userId: kitIdentities.users.boris,
+    });
+  });
+
+  it("is refused to a staff caller and to a tenant-scoped system caller", async () => {
+    const turn = ref(isolation.start, isolation.startCommand);
+
+    await expect(
+      executeAction(kit.pipeline, {
+        action: readTurnForJob,
+        input: turn,
+        request: { ...systemRequest(), channel: "ui" as const },
+        principal: {
+          mode: "staff",
+          session: { userId: kitIdentities.users.anna },
+          companySelector: kitIdentities.companies.a,
+        },
+      }),
+    ).rejects.toBeInstanceOf(CoreInvariantError);
+    await expect(
+      executeAction(kit.pipeline, {
+        action: readTurnForJob,
+        input: turn,
+        request: systemRequest(),
+        principal: {
+          mode: "system",
+          serviceName: "assistant-worker",
+          scope: { scope: "tenant", companyId: kitIdentities.companies.a },
+        },
+      }),
+    ).rejects.toBeInstanceOf(CoreInvariantError);
+  });
+
+  it("refuses a job identity that is not one, and a company id", async () => {
+    await expect(
+      readForJob({ ...ref(randomUUID(), randomUUID()), commandId: "job-1" }),
+    ).rejects.toBeInstanceOf(ValidationError);
+    await expect(
+      executeAction(kit.pipeline, {
+        action: readTurnForJob,
+        input: {
+          ...ref(isolation.start, isolation.startCommand),
+          companyId: kitIdentities.companies.a,
+        },
+        request: systemRequest(),
+        principal: {
+          mode: "system",
+          serviceName: "assistant-worker",
+          scope: { scope: "global" },
+        },
+      }),
+    ).rejects.toBeInstanceOf(ValidationError);
   });
 });
 

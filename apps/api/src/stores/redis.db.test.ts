@@ -1,8 +1,7 @@
 /**
  * Redis adapters must match the in-memory reference stores (core.md §7/§10).
+ * The budget counters are tested with their store in `@showzy/assistant-runtime`.
  */
-import { randomUUID } from "node:crypto";
-
 import { CoreInvariantError } from "@showzy/core/errors";
 import {
   RedisContainer,
@@ -13,7 +12,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { hmacBetterAuthConsumeKey } from "./auth-ip-hmac.js";
 import {
-  createRedisAiBudgetStore,
   createRedisAuthRateLimitStore,
   createRedisConfirmationStore,
   createRedisOtpSendStore,
@@ -111,32 +109,6 @@ describe("createRedisRateLimitStore", () => {
     clock.advance(30_000);
     expect(await store.consume(request)).toEqual({ allowed: true });
     expect((await store.consume(request)).allowed).toBe(false);
-  });
-});
-
-describe("createRedisAiBudgetStore", () => {
-  it("INCRBYFLOAT adds spend and EXPIRE keeps the key for 48h", async () => {
-    const store = createRedisAiBudgetStore(redis);
-    const key = `ai-budget:test:${randomUUID()}`;
-    expect(await store.read(key)).toBe(0);
-    expect(await store.add(key, 0.1, 48 * 60 * 60)).toBeCloseTo(0.1);
-    expect(await store.add(key, 0.05, 48 * 60 * 60)).toBeCloseTo(0.15);
-    expect(await store.read(key)).toBeCloseTo(0.15);
-    const ttl = await redis.ttl(key);
-    expect(ttl).toBeGreaterThan(47 * 60 * 60);
-    expect(ttl).toBeLessThanOrEqual(48 * 60 * 60);
-  });
-
-  it("Lua increment-with-cap allows only one overlapping tryAdd under a one-turn remainder", async () => {
-    const store = createRedisAiBudgetStore(redis);
-    const key = `ai-budget:test:${randomUUID()}`;
-    const [first, second] = await Promise.all([
-      store.tryAdd(key, 0.1, 0.1, 48 * 60 * 60),
-      store.tryAdd(key, 0.1, 0.1, 48 * 60 * 60),
-    ]);
-    const allowed = [first, second].filter((decision) => decision.allowed);
-    expect(allowed).toHaveLength(1);
-    expect(await store.read(key)).toBeCloseTo(0.1);
   });
 });
 

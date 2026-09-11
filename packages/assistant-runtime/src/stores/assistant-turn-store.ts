@@ -248,13 +248,26 @@ export interface AssistantTurnStore {
     | { readonly outcome: "started"; readonly deadlineAt: string }
     | { readonly outcome: "not_queued"; readonly status: string }
   >;
+  /**
+   * `finished` hands back the hold this call took off the row, for the caller
+   * to settle or release; `already_finished` took nothing (SHO-561). Only one
+   * call ever gets a turn's hold.
+   */
   finish(
     ref: AssistantTurnRef,
     status: "done" | "failed" | "interrupted",
-  ): Promise<{
-    readonly outcome: "finished" | "already_finished";
-    readonly status: string;
-  }>;
+  ): Promise<
+    | {
+        readonly outcome: "finished";
+        readonly status: string;
+        readonly releasedHold: StaffAssistantBudgetHold;
+      }
+    | {
+        readonly outcome: "already_finished";
+        readonly status: string;
+        readonly releasedHold: null;
+      }
+  >;
 }
 
 /**
@@ -410,7 +423,17 @@ export function createPostgresAssistantTurnStore(
         input: { ...identityOf(ref), status },
         ...call,
       });
-      return { outcome: finished.outcome, status: finished.status };
+      return finished.outcome === "finished"
+        ? {
+            outcome: "finished",
+            status: finished.status,
+            releasedHold: assistantBudgetHoldFromStored(finished.releasedHold),
+          }
+        : {
+            outcome: "already_finished",
+            status: finished.status,
+            releasedHold: null,
+          };
     },
   };
 }

@@ -30,6 +30,21 @@ describe("createMemoryAiBudgetStore", () => {
     expect(allowed).toHaveLength(1);
     expect(await store.read(key)).toBeCloseTo(0.1);
   });
+
+  /** The Redis store must match this (SHO-561). */
+  it("never leaves a counter below zero", async () => {
+    const store = createMemoryAiBudgetStore();
+    const key = "ai-budget:c:2026-09-11";
+    await store.add(key, 0.1, AI_BUDGET_TTL_SEC);
+
+    expect(await store.add(key, -0.25, AI_BUDGET_TTL_SEC)).toBe(0);
+    expect(await store.read(key)).toBe(0);
+    expect(await store.add(key, -0.1, AI_BUDGET_TTL_SEC)).toBe(0);
+    expect(await store.add(key, 0.1, AI_BUDGET_TTL_SEC)).toBeCloseTo(0.1);
+    expect(
+      (await store.tryAdd(key, 0.1, 0.15, AI_BUDGET_TTL_SEC)).allowed,
+    ).toBe(false);
+  });
 });
 
 describe("aiCompanyBudgetKey", () => {

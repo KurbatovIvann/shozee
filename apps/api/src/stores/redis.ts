@@ -2,13 +2,9 @@
  * Redis adapters mounted by `apps/api` at boot (fnd-T26). Core stays
  * dependency-free: these implementations must match the in-memory
  * reference stores in `@showzy/core` (token-bucket continuous refill,
- * confirmation `GETDEL`).
+ * confirmation `GETDEL`). The staff-assistant budget counters live in
+ * `@showzy/assistant-runtime`, which the worker shares (SHO-561).
  */
-import {
-  parseAiBudgetSpent,
-  type AiBudgetStore,
-  type AiBudgetTryAddDecision,
-} from "@showzy/assistant-runtime";
 import type { ConfirmationStore, RateLimitStore } from "@showzy/core";
 import type { Redis } from "ioredis";
 
@@ -218,79 +214,6 @@ export function createRedisRateLimitStore(
       return parseTokenBucketResult(result);
     },
   };
-}
-
-/**
- * Atomic increment-with-cap for a Kyiv-day USD reservation (SHO-505
- * amendment). Settlement still uses INCRBYFLOAT + EXPIRE so an operator
- * can GET/SET/DEL the key.
- */
-const AI_BUDGET_TRY_ADD_LUA = `
-local amount = tonumber(ARGV[1])
-local cap = tonumber(ARGV[2])
-local ttlSec = tonumber(ARGV[3])
-local current = tonumber(redis.call('GET', KEYS[1]))
-if current == nil or current ~= current or current < 0 then
-  current = 0
-end
-local nxt = current + amount
-if nxt > cap then
-  return {0, tostring(current)}
-end
-local updated = redis.call('INCRBYFLOAT', KEYS[1], ARGV[1])
-redis.call('EXPIRE', KEYS[1], ttlSec)
-return {1, tostring(updated)}
-`;
-
-/**
- * Daily USD counters: `tryAdd` is Lua increment-with-cap; `add` is
- * INCRBYFLOAT then EXPIRE (settlement / release). A lost EXPIRE still
- * leaves a key an operator can DEL (SHO-505).
- */
-export function createRedisAiBudgetStore(
-  redis: Pick<Redis, "get" | "incrbyfloat" | "expire" | "eval">,
-): AiBudgetStore {
-  return {
-    async read(key) {
-      return parseAiBudgetSpent(await redis.get(key));
-    },
-    async add(key, amountUsd, ttlSec) {
-      const next = await redis.incrbyfloat(key, amountUsd);
-      await redis.expire(key, ttlSec);
-      return parseAiBudgetSpent(next);
-    },
-    async tryAdd(key, amountUsd, capUsd, ttlSec) {
-      const result = await redis.eval(
-        AI_BUDGET_TRY_ADD_LUA,
-        1,
-        key,
-        String(amountUsd),
-        String(capUsd),
-        String(ttlSec),
-      );
-      return parseAiBudgetTryAddResult(result);
-    },
-  };
-}
-
-function parseAiBudgetTryAddResult(result: unknown): AiBudgetTryAddDecision {
-  if (!Array.isArray(result) || result.length < 2) {
-    throw new RedisStoreError(
-      "ai-budget tryAdd Redis script returned an unexpected value",
-    );
-  }
-  const allowedFlag = Number(result[0]);
-  return {
-    allowed: allowedFlag === 1,
-    spent: parseAiBudgetSpent(aiBudgetScriptSpentRaw(result[1])),
-  };
-}
-
-function aiBudgetScriptSpentRaw(value: unknown): string | number | null {
-  if (typeof value === "string" || typeof value === "number") {
-    return value;
-  }
-  return null;
 }
 
 function parseTokenBucketResult(
