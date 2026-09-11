@@ -33,6 +33,13 @@ const PLATFORM_PACKAGES = new Set([
   "validation",
 ]);
 
+/**
+ * Server-only platform packages (ADR-0032, ADR-0039). Client-safe packages ship
+ * into mobile and web, so they may not import these even where platform
+ * packages are otherwise allowed (`packages/contract`).
+ */
+const SERVER_ONLY_PACKAGES = new Set(["ai", "assistant-runtime"]);
+
 /** Projection modules may import foreign schemas; contract-check enforces grants. */
 const PROJECTION_MODULES = new Set(["search", "analytics"]);
 
@@ -119,6 +126,12 @@ function classify(filename) {
   if (path.includes("/packages/copy/")) {
     return { kind: "copy" };
   }
+  if (
+    path.includes("/packages/validation/") ||
+    path.includes("/packages/ui/")
+  ) {
+    return { kind: "client-safe" };
+  }
   return { kind: "skip" };
 }
 
@@ -200,6 +213,15 @@ function violation(from, spec, typeOnly) {
       return null;
     }
     return { messageId: "contractClient" };
+  }
+
+  if (from.kind === "contract" || from.kind === "client-safe") {
+    if (pkg !== null && SERVER_ONLY_PACKAGES.has(pkg.name)) {
+      return { messageId: "clientSafeServerOnly" };
+    }
+    if (from.kind === "client-safe") {
+      return null;
+    }
   }
 
   if (from.kind === "contract") {
@@ -428,6 +450,8 @@ export const importBoundariesRule = {
         "Domain modules may not import @showzy/assistant-runtime (ADR-0039). Only the server composition roots (apps/api, apps/worker) run the assistant.",
       contractModules:
         "packages/contract may import only a module's index.contract.ts barrel (@showzy/<module>/contract) (ADR-0016).",
+      clientSafeServerOnly:
+        "Client-safe packages (packages/contract, packages/validation, packages/ui) ship into mobile and web and may not import @showzy/ai or @showzy/assistant-runtime (server-only, ADR-0032, ADR-0039).",
       clientApp:
         "Client apps may import only @showzy/contract, @showzy/validation, @showzy/copy, @showzy/ui, and @showzy/document-signing (native/web adapters; never /node) (contract.md §2, SHO-251, SHO-414).",
       copyLeaf:

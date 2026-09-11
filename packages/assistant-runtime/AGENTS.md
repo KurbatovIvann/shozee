@@ -2,8 +2,9 @@
 
 The server half of the staff assistant (ADR-0038, ADR-0039). A turn runs in
 two server processes — `apps/api` accepts it and runs an answer's synchronous
-half, `apps/worker` runs it off the request (SHO-557) — and neither app may
-import the other, so what both need lives here.
+half, `apps/worker` runs it off the request (SHO-557) — and the worker may
+import only the approved `@showzy/api/subscriptions` subpath, never the API's
+runtime internals, so what both need lives here.
 
 ## Layout (`src/`)
 
@@ -27,7 +28,10 @@ import the other, so what both need lives here.
 - `stores/assistant-kit-postgres-stores.ts` — Postgres message log and history,
   through `executeAction` as the caller.
 - `queue.ts` — the assistant queue contract: name, BullMQ prefix, job payload
-  schema, `jobId` derivation. Pure constants and a schema.
+  schema, `jobId` derivation. Pure constants and a schema. The payload is the
+  turn's identity only (kind, conversation id, command id, lowercased);
+  Postgres is the source of everything else, and the reconciler rebuilds a
+  job from the turn row.
 
 ## Rules
 

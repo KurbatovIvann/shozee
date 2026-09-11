@@ -11,13 +11,14 @@ import {
 const job: AssistantTurnJob = {
   version: 1,
   kind: "chat",
-  userId: "user-1",
-  sessionId: "session-1",
-  companySelector: "0b6f3f1e-4a4f-4c61-9d2e-7c0f1b7d5a10",
   conversationId: "4f8a2c7e-1b3d-4e5f-8a9b-0c1d2e3f4a5b",
   commandId: "9e8d7c6b-5a49-4382-b716-a5f4e3d2c1b0",
-  requestId: "req-1",
-  clientIp: "203.0.113.7",
+};
+
+const mixedCase = {
+  ...job,
+  conversationId: "4F8A2C7E-1b3d-4E5F-8a9b-0C1D2E3F4A5B",
+  commandId: "9E8D7C6B-5A49-4382-B716-A5F4E3D2C1B0",
 };
 
 describe("assistant queue contract", () => {
@@ -26,11 +27,15 @@ describe("assistant queue contract", () => {
     expect(ASSISTANT_QUEUE_PREFIX).toBe("showzy");
   });
 
-  it("derives one job id per command, so a repeated enqueue is the same job", () => {
+  it("derives one job id per turn, so a repeated enqueue is the same job", () => {
     expect(assistantTurnJobId(job)).toBe(assistantTurnJobId({ ...job }));
     expect(assistantTurnJobId(job)).toBe(
       "turn.chat.4f8a2c7e-1b3d-4e5f-8a9b-0c1d2e3f4a5b.9e8d7c6b-5a49-4382-b716-a5f4e3d2c1b0",
     );
+  });
+
+  it("derives the same job id from a mixed-case uuid as from the lowercase one Postgres returns", () => {
+    expect(assistantTurnJobId(mixedCase)).toBe(assistantTurnJobId(job));
   });
 
   it("keeps a send and an answer under one token as different jobs", () => {
@@ -54,17 +59,34 @@ describe("assistant queue contract", () => {
     expect(id).not.toMatch(/^\d+$/);
   });
 
-  it("accepts a complete payload", () => {
+  it("accepts the turn's identity", () => {
     expect(assistantTurnJobSchema.parse(job)).toEqual(job);
   });
 
-  it("refuses a payload with an unknown field, a missing field, or a non-uuid command", () => {
-    expect(
-      assistantTurnJobSchema.safeParse({ ...job, companyId: "x" }).success,
-    ).toBe(false);
-    const { sessionId, ...withoutSession } = job;
-    void sessionId;
-    expect(assistantTurnJobSchema.safeParse(withoutSession).success).toBe(
+  it("lowercases ids on parse, so a producer and the reconciler hold one payload", () => {
+    expect(assistantTurnJobSchema.parse(mixedCase)).toEqual(job);
+  });
+
+  it("carries only the turn's identity: no person, session, company, request or client IP", () => {
+    for (const field of [
+      "userId",
+      "sessionId",
+      "companySelector",
+      "companyId",
+      "requestId",
+      "clientIp",
+    ]) {
+      expect(
+        assistantTurnJobSchema.safeParse({ ...job, [field]: "x" }).success,
+        field,
+      ).toBe(false);
+    }
+  });
+
+  it("refuses a missing id, a non-uuid command, or an unknown version", () => {
+    const { commandId, ...withoutCommand } = job;
+    void commandId;
+    expect(assistantTurnJobSchema.safeParse(withoutCommand).success).toBe(
       false,
     );
     expect(

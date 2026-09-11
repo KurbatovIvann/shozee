@@ -1,9 +1,10 @@
 /**
  * The assistant queue contract (ADR-0039).
  *
- * The API produces into this queue and the worker consumes it, and neither app
- * may import the other, so the agreement lives here: the queue's name and
- * BullMQ prefix, the job payload, and how a job id is derived from a command.
+ * The API produces into this queue and the worker consumes it. The worker may
+ * import only the approved `@showzy/api/subscriptions` subpath, never the API's
+ * runtime internals, so the agreement lives here: the queue's name and BullMQ
+ * prefix, the job payload, and how a job id is derived from a turn.
  *
  * Pure constants and a schema. No `bullmq` here: the producer and the processor
  * arrive with the slices that run them (SHO-561, SHO-563).
@@ -15,8 +16,9 @@ export const ASSISTANT_QUEUE_NAME = "assistant";
 
 /**
  * BullMQ key prefix. The same prefix as the worker's job host (ADR-0007), so
- * every queue of this system sits under one namespace in Redis. Do not set an
- * ioredis `keyPrefix` beside it — BullMQ owns prefixing.
+ * every queue of this system uses one namespace. The assistant queue itself
+ * lives on the dedicated queue Redis, not the shared one (`db.md` §6). Do not
+ * set an ioredis `keyPrefix` beside it — BullMQ owns prefixing.
  */
 export const ASSISTANT_QUEUE_PREFIX = "showzy";
 
@@ -36,41 +38,46 @@ export const assistantTurnKindSchema = z.enum(["chat", "answer"]);
 export type AssistantTurnKind = z.infer<typeof assistantTurnKindSchema>;
 
 /**
- * What a worker needs to run a turn as the person who asked, and nothing the
- * Postgres turn row already holds.
+ * A uuid in the one casing both producers of a job id see. Postgres returns a
+ * `uuid` lowercase; a client may send one in any case.
+ */
+const canonicalUuidSchema = z.uuid().transform((value) => value.toLowerCase());
+
+/**
+ * A pointer to an accepted turn, not the turn.
  *
- * - `userId` and `companySelector` become the staff principal; core verifies
- *   membership on every action, so neither is an access grant.
- * - `sessionId` is checked against the `session` table at job start.
- * - `requestId` is the accepting request's id: the turn's actions are audited
- *   under it as `ai_trace_id`.
- * - `clientIp` is for the audit trail of the turn's actions. It reaches the AOF
- *   disk, and jobs are removed on completion and on failure so it does not
- *   outlive the turn (`db.md` §6).
+ * The payload carries only the turn's identity. Postgres is the source of
+ * everything else: the worker loads the turn row, checks its session row —
+ * which gives the verified user — and reads the company, the request id, the
+ * answer's earned card and the rest from Postgres (SHO-560, SHO-561). The
+ * reconciler rebuilds a lost job from the turn row alone, so nothing belongs
+ * here that the row cannot give back.
+ *
+ * No person, session, company or client IP: a job is not an access grant, and
+ * the queue Redis persists to disk (`db.md` §6).
  *
  * Strict, so a producer and a consumer that disagree about a field fail at the
- * boundary instead of running a turn with a missing context.
+ * boundary. Ids are lowercased on parse, as `assistantTurnJobId` does.
  */
 export const assistantTurnJobSchema = z.strictObject({
   version: z.literal(1),
   kind: assistantTurnKindSchema,
-  userId: z.string().min(1),
-  sessionId: z.string().min(1),
-  companySelector: z.string().min(1),
-  conversationId: z.uuid(),
-  commandId: z.uuid(),
-  requestId: z.string().min(1),
-  clientIp: z.string().min(1),
+  conversationId: canonicalUuidSchema,
+  commandId: canonicalUuidSchema,
 });
 
 export type AssistantTurnJob = z.infer<typeof assistantTurnJobSchema>;
 
 /**
- * The BullMQ job id of a turn, derived from its command.
+ * The BullMQ job id of a turn, derived from its identity.
  *
- * The same command always names the same job, so a repeated enqueue — a retry
- * of the accept, or the reconciler re-enqueuing a turn that never got a job —
- * is deduplicated by BullMQ rather than run twice.
+ * The same turn always names the same job, so a repeated enqueue — a retry of
+ * the accept, or the reconciler re-enqueuing a turn that never got a job — is
+ * deduplicated by BullMQ rather than run twice (blueprint §2.1, invariant 2).
+ *
+ * Both ids are lowercased here, not only in the schema: the accept derives the
+ * id from what the client sent and the reconciler from the Postgres row, and
+ * the two must agree whatever casing either side holds.
  *
  * The conversation is part of the id because a `commandId` is the client's
  * token; the conversation is the server's, and belongs to one author in one
@@ -81,5 +88,5 @@ export type AssistantTurnJob = z.infer<typeof assistantTurnJobSchema>;
 export function assistantTurnJobId(
   job: Pick<AssistantTurnJob, "kind" | "conversationId" | "commandId">,
 ): string {
-  return `turn.${job.kind}.${job.conversationId}.${job.commandId}`;
+  return `turn.${job.kind}.${job.conversationId.toLowerCase()}.${job.commandId.toLowerCase()}`;
 }

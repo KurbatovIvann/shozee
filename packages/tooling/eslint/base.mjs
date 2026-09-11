@@ -49,6 +49,7 @@ const boundaryElements = [
   { type: "ai-eval", pattern: "packages/ai-eval" },
   { type: "assistant-runtime", pattern: "packages/assistant-runtime" },
   { type: "validation", pattern: "packages/validation" },
+  { type: "ui", pattern: "packages/ui" },
   { type: "copy", pattern: "packages/copy" },
   { type: "module-kit", pattern: "packages/module-kit" },
   { type: "tooling", pattern: "packages/tooling" },
@@ -156,6 +157,15 @@ export const showzyBoundaryDependencyOptions = {
       message:
         "Client apps may not import @showzy/assistant-runtime (server-only, ADR-0039).",
     },
+    // Client-safe packages ship into mobile and web: a second hop through one
+    // of them must not carry a server-only package there (ADR-0032, ADR-0039).
+    ...["contract", "validation", "ui"].flatMap((type) =>
+      ["@showzy/ai", "@showzy/assistant-runtime"].map((source) => ({
+        from: { element: { type } },
+        disallow: { to: { module: { source } } },
+        message: `packages/${type} is client-safe and may not import ${source} (server-only, ADR-0032, ADR-0039).`,
+      })),
+    ),
     {
       from: { element: { type: "copy" } },
       disallow: { to: { element: { type: "app" } } },

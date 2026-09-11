@@ -5,7 +5,8 @@
  * Everything domain-shaped is assembled here so the HTTP handlers stay about
  * HTTP and `@showzy/assistant-kit` stays about the protocol. It lives in a
  * package rather than in `apps/api` because a turn runs in two processes — the
- * API and the worker (ADR-0039) — and neither may import the other. Who is
+ * API and the worker (ADR-0039) — and the worker may import only the approved
+ * `@showzy/api/subscriptions` subpath, never the API's runtime internals. Who is
  * asking and whether a command was already taken are the request's business and
  * stay in the API. Three things are worth reading.
  *
