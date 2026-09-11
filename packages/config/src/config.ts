@@ -24,6 +24,18 @@ const DEFAULT_SMS_FLY_API_URL = "https://sms-fly.ua/api/v2/api.php";
 
 const trustedProxyEntry = z.union([z.ipv4(), z.ipv6(), z.cidrv4(), z.cidrv6()]);
 
+/**
+ * The most one staff assistant turn may reserve, in USD — an owner-approved
+ * invariant (SHO-560). A turn row holds at most this, so a bad release cannot
+ * lift the daily cap by more than one turn's reservation.
+ *
+ * The same value as `ASSISTANT_TURN_RESERVATION_MAX_USD` in
+ * `@showzy/validation/assistant-budget`, which the assistant contract caps a
+ * stored hold with. This package takes no workspace dependencies, so the value
+ * is repeated here and `apps/api` pins the two equal.
+ */
+export const AI_UNKNOWN_MODEL_TURN_USD_MAX = 1;
+
 const envObjectSchema = z.object({
   NODE_ENV: z
     .enum(["development", "test", "production"])
@@ -173,10 +185,15 @@ const envObjectSchema = z.object({
   AI_DAILY_BUDGET_USD_GLOBAL: z.coerce.number().min(0).default(100),
   /**
    * Admission reservation and unknown-pricing accounting fallback
-   * (`estimateStaffAssistantTurnCostUsd` is `null`). Must be finite and
-   * greater than 0 — not a disable switch. Default 0.10.
+   * (`estimateStaffAssistantTurnCostUsd` is `null`). Must be finite,
+   * greater than 0 — not a disable switch — and at most
+   * `AI_UNKNOWN_MODEL_TURN_USD_MAX`. Default 0.10.
    */
-  AI_UNKNOWN_MODEL_TURN_USD: z.coerce.number().positive().default(0.1),
+  AI_UNKNOWN_MODEL_TURN_USD: z.coerce
+    .number()
+    .positive()
+    .max(AI_UNKNOWN_MODEL_TURN_USD_MAX)
+    .default(0.1),
 });
 
 const envSchema = envObjectSchema.superRefine((parsed, ctx) => {

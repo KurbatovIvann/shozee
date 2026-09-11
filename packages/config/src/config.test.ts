@@ -433,6 +433,31 @@ describe("loadServerConfig", () => {
     }
   });
 
+  /**
+   * An owner-approved invariant (SHO-560): a turn row holds at most one turn's
+   * reservation, so a release against a bad value cannot lift the daily cap by
+   * more than that.
+   */
+  it("caps the per-turn reservation at 1 USD", () => {
+    const atCap = validEnv();
+    atCap["AI_UNKNOWN_MODEL_TURN_USD"] = "1";
+    expect(loadServerConfig(atCap).ai.unknownModelTurnUsd).toBe(1);
+
+    const above = validEnv();
+    above["AI_UNKNOWN_MODEL_TURN_USD"] = "1.01";
+    expect(() => loadServerConfig(above)).toThrow(ConfigValidationError);
+    try {
+      loadServerConfig(above);
+    } catch (error) {
+      const configError = error as ConfigValidationError;
+      expect(
+        configError.issues.some(
+          (issue) => issue.key === "AI_UNKNOWN_MODEL_TURN_USD",
+        ),
+      ).toBe(true);
+    }
+  });
+
   it("treats an empty ANTHROPIC_API_KEY as unset", () => {
     const env = validEnv();
     env["ANTHROPIC_API_KEY"] = "";

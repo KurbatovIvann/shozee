@@ -5,10 +5,7 @@
  * Codes never reach logs (security-operations §2).
  */
 import { getConnInfo } from "@hono/node-server/conninfo";
-import {
-  assertStaffAssistantBudgetLimits,
-  optionalStaffAssistantLanguageModel,
-} from "@showzy/assistant-runtime";
+import { optionalStaffAssistantLanguageModel } from "@showzy/assistant-runtime";
 import type { ServerConfig } from "@showzy/config";
 import { contractModules } from "@showzy/contract";
 import { createDbClient } from "@showzy/db";
@@ -185,12 +182,12 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
     assistantBudget: {
       rateLimitStore,
       budgetStore: createRedisAiBudgetStore(redis),
-      limits: assertStaffAssistantBudgetLimits({
+      limits: {
         chatTurnsPerMinutePerUser: config.ai.chatTurnsPerMinutePerUser,
         dailyBudgetUsdPerCompany: config.ai.dailyBudgetUsdPerCompany,
         dailyBudgetUsdGlobal: config.ai.dailyBudgetUsdGlobal,
         unknownModelTurnUsd: config.ai.unknownModelTurnUsd,
-      }),
+      },
     },
   });
 

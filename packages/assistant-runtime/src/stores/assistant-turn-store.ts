@@ -25,6 +25,7 @@ import {
 } from "@showzy/assistant";
 import type { ChatMessage, ChatPart } from "@showzy/assistant-kit";
 import { executeAction } from "@showzy/core";
+import { CoreError } from "@showzy/core/errors";
 
 import type { StaffAssistantBudgetHold } from "../assistant-budget-guard.js";
 import {
@@ -34,12 +35,41 @@ import {
   type AssistantTurnKind,
 } from "../queue.js";
 import {
+  AssistantKitConversationGoneError,
   asCaller,
   asJsonObject,
   callFor,
   type AssistantKitCaller,
   type AssistantKitStoreDeps,
 } from "./caller.js";
+
+/**
+ * The refusals core raises before anything commits. Each is thrown from
+ * validation, authorization or a handler inside the execution transaction, and
+ * a throw there rolls the transaction back, so the turn was certainly not
+ * stored.
+ */
+const ROLLED_BACK_CODES: ReadonlySet<CoreError["code"]> = new Set<
+  CoreError["code"]
+>(["NOT_FOUND", "CONFLICT", "VALIDATION", "PERMISSION_DENIED"]);
+
+/**
+ * Whether a failed accept proves that no turn row holds this request's
+ * reservation, so the reservation may be given back.
+ *
+ * Only a refusal proves it. `INTERNAL` and anything that is not a core error
+ * may arrive after COMMIT — a telemetry error once the transaction finished, a
+ * connection lost between the server's commit and its acknowledgement. The row
+ * would then hold the hold while the counter lost it, and the counter would
+ * sit below real spend. Failing closed instead strands at most one turn's
+ * reservation until the Kyiv day ends.
+ */
+export function acceptProvedRollback(error: unknown): boolean {
+  if (error instanceof AssistantKitConversationGoneError) {
+    return true;
+  }
+  return error instanceof CoreError && ROLLED_BACK_CODES.has(error.code);
+}
 
 /**
  * How long a turn may sit accepted and unstarted before the reconciler treats
@@ -162,11 +192,12 @@ interface AcceptCommon {
   readonly continuesCommandId?: string;
   /**
    * Gives back the budget reservation this request made for the turn
-   * (`releaseStaffAssistantBudgetHold`). The store calls it exactly once when
-   * the accept did not store this turn — replayed, busy, wrong owner, or a
-   * throw — and never when it did, because then the row holds the hold and the
-   * worker or the reconciler settles it. Must not throw; the budget guard's
-   * release never does.
+   * (`releaseStaffAssistantBudgetHold`). The store calls it at most once, and
+   * only when it knows no row holds this reservation: replayed, busy, wrong
+   * owner, or a refusal that rolled back (`acceptProvedRollback`). Never after
+   * `accepted` (the row holds the hold and the worker or the reconciler settles
+   * it), and never after an unknown error, which may have followed COMMIT.
+   * Must not throw; the budget guard's release never does.
    */
   readonly releaseUnusedHold: () => Promise<void>;
 }
@@ -210,8 +241,9 @@ export type AssistantTurnAcceptResult =
 
 export interface AssistantTurnStore {
   /**
-   * On anything but `accepted`, and on a throw, the request's own reservation
-   * was not used; the store releases it through `releaseUnusedHold`.
+   * On replayed, busy, wrong owner and a rolled-back refusal the request's own
+   * reservation was not used, and the store releases it through
+   * `releaseUnusedHold`. An unknown error releases nothing (fail closed).
    */
   accept(input: AssistantTurnAcceptInput): Promise<AssistantTurnAcceptResult>;
   start(
@@ -264,7 +296,7 @@ export function createPostgresAssistantTurnStore(
       // holds: after the switch every reconnect replays its command, and a
       // forgotten release would strand the reservation until the Kyiv day ends
       // where no reconciler can see it.
-      let stored = false;
+      let release = false;
       try {
         const result = await asCaller(
           async (): Promise<AssistantTurnAcceptResult> => {
@@ -341,10 +373,20 @@ export function createPostgresAssistantTurnStore(
             };
           },
         );
-        stored = result.outcome === "accepted";
+        // Replayed, busy and wrong owner stored nothing: the row, if any, holds
+        // an earlier request's reservation, never this one.
+        release = result.outcome !== "accepted";
         return result;
+      } catch (error) {
+        // A refusal rolled the transaction back, so this reservation is on no
+        // row. An unknown error may have come after COMMIT; releasing then would
+        // leave the counter below what the stored turn holds, which lifts the
+        // cap instead of failing closed. Such a reservation is left to expire
+        // with its Kyiv day (at most one turn's hold).
+        release = acceptProvedRollback(error);
+        throw error;
       } finally {
-        if (!stored) {
+        if (release) {
           await input.releaseUnusedHold();
         }
       }
