@@ -19,6 +19,7 @@ import { createHash } from "node:crypto";
 import {
   acceptTurn,
   finishTurn,
+  interruptTurn,
   listStaleTurns,
   readChatMessages,
   startTurn,
@@ -440,17 +441,43 @@ export function createPostgresAssistantTurnStore(
 
 export interface AssistantStaleTurn {
   readonly companyId: string;
-  readonly staleness: "queued_without_start" | "running_past_deadline";
+  /**
+   * What the reconciler does with it: re-enqueue a `queued_without_start`,
+   * interrupt the other two. Decided by the module, by the same predicates its
+   * interrupt ends a turn by, so the reconciler holds no threshold of its own.
+   */
+  readonly staleness:
+    "queued_without_start" | "queued_abandoned" | "running_past_deadline";
   readonly turn: AssistantTurnRef;
   readonly placeholderMessageId: string;
-  readonly budgetHold: StaffAssistantBudgetHold;
-  /** Rebuilt from the row alone, as the reconciler re-enqueues it. */
+  /**
+   * Rebuilt from the row alone: what the reconciler re-enqueues, and the id it
+   * asks the queue about.
+   */
   readonly job: AssistantTurnJob;
 }
 
 /**
- * The reconciler's read, as the system across companies (ADR-0039). No caller:
- * the turns it finds were left behind by a worker that has no request any more.
+ * What one interrupt did: ended the turn from the status named, handing over
+ * the hold it zeroed, or left it alone.
+ */
+export type AssistantTurnInterruption =
+  | {
+      readonly outcome: "interrupted";
+      readonly from: "queued" | "running";
+      readonly releasedHold: StaffAssistantBudgetHold;
+    }
+  | {
+      readonly outcome: "not_stale" | "already_finished";
+      readonly status: string;
+    };
+
+/**
+ * The reconciler's read and write, as the system (ADR-0039). No caller: the
+ * turns it finds were left behind by a worker that has no request any more.
+ *
+ * The list is global — a stale turn belongs to any company — and the interrupt
+ * runs inside the company the listed row named, so it cannot reach another's.
  */
 export function createPostgresAssistantStaleTurns(
   deps: AssistantKitStoreDeps,
@@ -460,8 +487,46 @@ export function createPostgresAssistantStaleTurns(
     readonly requestId: string;
     readonly limit?: number;
   }): Promise<readonly AssistantStaleTurn[]>;
+  /**
+   * Ends one listed turn, if the database still judges it stale. Staleness is
+   * re-decided inside that statement, so a turn started, finished or renewed
+   * since it was listed is left alone.
+   */
+  interrupt(options: {
+    readonly companyId: string;
+    readonly turn: AssistantTurnRef;
+    readonly requestId: string;
+  }): Promise<AssistantTurnInterruption>;
 } {
   return {
+    async interrupt(options) {
+      const ended = await executeAction(deps.pipeline, {
+        action: interruptTurn,
+        input: {
+          conversationId: options.turn.conversationId,
+          kind: options.turn.kind,
+          commandId: options.turn.commandId,
+        },
+        request: {
+          requestId: options.requestId,
+          correlationId: options.requestId,
+          channel: "system",
+        },
+        principal: {
+          mode: "system",
+          serviceName: ASSISTANT_RECONCILER_SERVICE,
+          scope: { scope: "tenant", companyId: options.companyId },
+        },
+      });
+      return ended.outcome === "interrupted"
+        ? {
+            outcome: "interrupted",
+            from: ended.from,
+            releasedHold: assistantBudgetHoldFromStored(ended.releasedHold),
+          }
+        : { outcome: ended.outcome, status: ended.status };
+    },
+
     async list(options) {
       const page = await executeAction(deps.pipeline, {
         action: listStaleTurns,
@@ -491,7 +556,6 @@ export function createPostgresAssistantStaleTurns(
           staleness: row.staleness,
           turn,
           placeholderMessageId: row.placeholderMessageId,
-          budgetHold: assistantBudgetHoldFromStored(row.budgetHold),
           job: jobOf(turn),
         };
       });

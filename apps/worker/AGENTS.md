@@ -30,7 +30,13 @@ wakeup, polling fallback, graceful drain, and the job host.
   backfill processor invokes `files.backfillCatalogRenditions` the same
   way. The pdf
   processor invokes `docGeneration.renderPdf` as system/tenant from the
-  envelope `companyId` (`executeAction` only — no domain SQL). Production
+  envelope `companyId` (`executeAction` only — no domain SQL). When the
+  assistant is mounted it also upserts `reconcileAssistantTurns`
+  (`ASSISTANT_RECONCILE_INTERVAL_MS`, 60 s), and removes that scheduler when it
+  is not: the reconciler's pass is a maintenance job like any other (safe to
+  miss, safe to run again), and it is handed this host's assistant queue so a
+  turn it re-enqueues is added exactly as an accept adds it (SHO-570).
+  Production
   `documents.created` delivery still runs through the outbox (chat
   golden), so this host does not enqueue durable one-shot PDF jobs. Do not
   pre-create email / push / sms / sync queues. Processors stay thin (no
@@ -92,13 +98,27 @@ wakeup, polling fallback, graceful drain, and the job host.
   `maxStalledCount: 0`) lives in `policy.ts`; the job options a turn is
   enqueued with (`attempts: 1`, removed on completion and on failure) live
   with the producer, `enqueueAssistantTurn` in `@showzy/assistant-runtime`.
-- The assistant processor is `createAssistantTurnProcessor` from
+- **Shutdown drains turns.** `close()` waits for the assistant worker first,
+  and for at most `ASSISTANT_DRAIN_TIMEOUT_MS` (the turn timeout plus room for
+  a stopped turn's last writes). Past it the process logs
+  `assistant turns still running at the drain timeout` and goes; that turn's
+  row is then the reconciler's to interrupt. BullMQ keeps one close per worker,
+  so the bound is a race against that close, never a second forced one.
+  **Requirement for when infrastructure exists:** the stop grace period the
+  platform gives this process must be at least `ASSISTANT_DRAIN_TIMEOUT_MS`,
+  or a deploy kills turns the drain was waiting for (ADR-0039; no production
+  environment yet, so this is recorded, not configured).
+- The assistant processor is `createAssistantTurnProcessor` and the reconciler
+  `createAssistantTurnReconciler`, both from
   `@showzy/assistant-runtime`, composed in `src/assistant.ts` and mounted by
   boot on the API's rule (`staffAssistantMount`: `AI_ASSISTANT_KIT` on and a
   language model configured), with the same `assistant-kit path` log line.
   The runtime runs against the worker pipeline and the API's registry
   (`@showzy/api/registry`, `assertPaired()` at boot); its pauses, budget
   counters and published events use the shared Redis, never the queue Redis.
+  One `composeAssistantTurns` builds both, so a turn and the reconciler that
+  recovers it share one runtime, publisher and budget store. The reconciler is
+  held for the life of the process: its re-enqueue backoff is its memory.
   The job host only parses the payload and hands it over. A payload that does
   not parse is dropped, never retried. Whatever the processor throws is logged
   and the job completes as `errored`: a thrown message would be stored as
@@ -112,9 +132,8 @@ wakeup, polling fallback, graceful drain, and the job host.
   `jobId` derivation come from the runtime package;
   `assistant-queue-contract.test.ts` pins its prefix to `BULLMQ_PREFIX`. The
   payload is the turn's identity only: the processor reads the turn and its
-  company from Postgres, and the actor is the turn's `user_id`. Requirement
-  for when infrastructure exists: the stop grace period is at least the turn
-  timeout, so a deploy drains in-flight turns.
+  company from Postgres, and the actor is the turn's `user_id`. The stop grace
+  period is the drain bullet above; it is stated there and nowhere else.
 - OTP codes, tokens, and secrets never reach logs. Process loggers are
   `createProcessLogger` from `@showzy/config`. Sentry is initialized
   only when `SENTRY_DSN` is set; `beforeSend` scrubs the event. Do not

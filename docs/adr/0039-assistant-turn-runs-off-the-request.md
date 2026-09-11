@@ -148,11 +148,38 @@ the queue and the events.**
     release orphaned budget holds. Ending a turn now zeroes its row's hold in
     the same statement, so no row names a hold once its turn has ended, and
     there is nothing left for a reconciler to find.)*
+    *(Amended 2026-09-12, SHO-570: the reconciler also interrupts a **queued**
+    turn that the queue no longer holds a job for and that has not started
+    within the abandon threshold — 15 minutes. Both conditions are needed, and
+    the second alone would be wrong: one worker runs 4 turns at once, each up
+    to 180 s, so it drains about 1.33 turns a minute at worst, and a backlog of
+    roughly twenty turns ages a perfectly healthy queued turn past fifteen
+    minutes. What tells the two apart is the job — a backlogged turn has one
+    waiting however deep the queue, while a turn refused at start completes its
+    job, which is then removed. The threshold lives in the guarded UPDATE and
+    the job check lives in the reconciler, which can therefore only narrow what
+    is ended, never widen it.
+    A queued turn whose author lost membership, or whose job is refused at
+    every attempt, can never start, and the earlier wording left it holding its
+    author's conversation and its reservation for ever. The predicate is
+    computed by Postgres in the same guarded UPDATE as running-past-deadline,
+    so there is one definition of what may be ended; `startTurn` is a
+    compare-and-set on `queued`, so exactly one of a start and this interrupt
+    wins. Such a turn never reached the model, so its hold **is** released —
+    the interrupt says which state it ended the turn from — while a running
+    turn's reservation still stands as the charge. Re-enqueue of a queued turn
+    with no job backs off per turn, and the threshold is its hard bound.)*
   - After a worker crash the interruption becomes visible only when the
     reconciler passes the deadline — up to the turn timeout plus one
     reconciler interval. Accepted, and stated so nobody reads it as a hang.
   - Deploys drain in-flight turns; the stop grace period is at least the turn
-    timeout.
+    timeout. *(Amended 2026-09-12, SHO-570: shutdown waits for this worker's
+    turns and no longer than the turn timeout plus room for a stopped turn's
+    last writes. Past that bound the process says so and goes, and the turn's
+    row is the reconciler's to interrupt — the recovery a crashed worker
+    already gets. The platform's stop grace period must be at least that
+    bound; there is no production environment yet, so it is recorded in
+    `apps/worker/AGENTS.md` and the runbook, not configured.)*
 - **Persist the queue, on its own Redis.** Durable queues live on a dedicated
   queue Redis that runs with AOF (`appendonly yes`, `appendfsync everysec`) on
   a persistent volume and with `maxmemory-policy noeviction`. It is this
@@ -185,7 +212,12 @@ the queue and the events.**
   - `message.updated` carries the latest message whole; `turn.finished`
     carries the status and the latest window, because the window's
     `openPause` is the authority on which question is answerable and no
-    message can say that alone.
+    message can say that alone. *(Amended 2026-09-12, SHO-570: a
+    `turn.finished` published by the reconciler carries **no** window. That
+    pass acts for no person, and a conversation is read as the person whose
+    conversation it is; a client told that a turn ended reads the conversation
+    itself. The window is therefore optional on that event, and a reader must
+    handle its absence.)*
   - Because a connection always starts from a snapshot, a lost pub/sub message
     costs nothing.
   - `text.delta` is reserved for streaming tokens later.
@@ -209,6 +241,9 @@ Starting values (policy, changed with a proving test):
 | Queue concurrency per worker | 4 |
 | Job lock | 60 s, renewed |
 | Reconciler interval | 60 s |
+| Queued-turn abandon threshold | 15 min (SHO-570) |
+| Re-enqueue backoff | 60 s, doubling per attempt, capped at 8 min (SHO-570) |
+| Worker drain bound | turn timeout + 30 s (SHO-570) |
 | SSE heartbeat | 15 s |
 | Job retention | removed on completion and on failure |
 
@@ -255,7 +290,9 @@ Starting values (policy, changed with a proving test):
   only.
 - **The worker becomes an AI process.** It needs the provider configuration it
   already receives through `ServerConfig`, the new runtime package, and a stop
-  grace period of at least the turn timeout. The rule that the API composition
+  grace period of at least the drain bound named in the 2026-09-12 amendment
+  above (the turn timeout plus room for a stopped turn's last writes). The rule
+  that the API composition
   root alone mounts the AI loop (ADR-0032's import boundary) widens to both
   server processes; domain modules still may not import `@showzy/ai`. The
   worker's processors are thin by rule; the assistant processor is the named

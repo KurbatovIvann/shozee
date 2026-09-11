@@ -225,6 +225,27 @@ async function setDeadline(
   expect(moved).toHaveLength(1);
 }
 
+/**
+ * Moves a queued turn's accept back, in SQL, so Postgres judges it past (or
+ * inside) the abandon threshold against its own clock.
+ */
+async function ageQueuedTurn(
+  conversationId: string,
+  age: string,
+): Promise<void> {
+  const moved = await kit.db.runtime.db
+    .update(assistantTurns)
+    .set({ createdAt: sql`now() - ${age}::interval` })
+    .where(
+      and(
+        eq(assistantTurns.conversationId, conversationId),
+        eq(assistantTurns.status, "queued"),
+      ),
+    )
+    .returning({ id: assistantTurns.id });
+  expect(moved).toHaveLength(1);
+}
+
 /** Starts an accepted turn and puts its deadline behind it: a stale turn. */
 async function startPastDeadline(
   turn: TurnRef,
@@ -1202,6 +1223,7 @@ describe("ending a turn takes its hold off the row", () => {
     expect(first).toEqual({
       outcome: "interrupted",
       conversationId,
+      from: "running",
       releasedHold: HOLD,
     });
     expect(second).toEqual({
@@ -1237,18 +1259,20 @@ describe("ending a turn takes its hold off the row", () => {
   });
 
   /**
-   * Only a server-side timeout ends a turn early (ADR-0039). A turn the
+   * Only a server-side timeout ends a started turn early, and only the abandon
+   * threshold ends a queued one (ADR-0039 as amended, SHO-570). A turn the
    * reconciler listed as queued too long may have been started by a late worker
    * since; interrupting it would free the conversation under that worker and
    * release a hold the model is still spending.
    */
-  it("leaves a queued turn and a running turn inside its deadline as they are", async () => {
+  it("leaves a queued turn inside the abandon threshold and a running turn inside its deadline as they are", async () => {
     const queued = await newConversation();
     const queuedInput = chatAccept(queued);
     await kit.invoke(acceptTurn, queuedInput, {});
+    // Stale enough for the reconciler to re-enqueue, far from abandoned.
     await kit.db.runtime.db
       .update(assistantTurns)
-      .set({ createdAt: sql`now() - interval '2 hours'` })
+      .set({ createdAt: sql`now() - interval '5 minutes'` })
       .where(eq(assistantTurns.conversationId, queued));
 
     const running = await newConversation();
@@ -1290,6 +1314,58 @@ describe("ending a turn takes its hold off the row", () => {
         (await kit.invoke(acceptTurn, chatAccept(conversationId), {})).outcome,
       ).toBe("busy");
     }
+  });
+
+  /**
+   * A queued turn that can never start — its author lost membership, or its job
+   * is refused every time — would otherwise hold its conversation and its
+   * reservation for ever (SHO-570 conveyor decision). It never reached the
+   * model, so the hold comes back to the caller, which `from: "queued"` says.
+   */
+  it("ends a queued turn nobody started within the abandon threshold, and frees its conversation", async () => {
+    const conversationId = await newConversation();
+    const input = chatAccept(conversationId);
+    const turn = ref(conversationId, input.commandId);
+    await kit.invoke(acceptTurn, input, {});
+    await ageQueuedTurn(conversationId, "16 minutes");
+
+    expect(await interruptAs(kitIdentities.companies.a, turn)).toEqual({
+      outcome: "interrupted",
+      conversationId,
+      from: "queued",
+      releasedHold: HOLD,
+    });
+
+    expect((await turnRows(conversationId))[0]).toMatchObject({
+      status: "interrupted",
+      sessionId: null,
+      startedAt: null,
+      companyReservedMicroUsd: 0,
+      globalReservedMicroUsd: 0,
+    });
+    expect(
+      (await kit.invoke(acceptTurn, chatAccept(conversationId), {})).outcome,
+    ).toBe("accepted");
+  });
+
+  /** The start is a compare-and-set on `queued`, so the interrupt lost it. */
+  it("leaves an abandoned turn a worker started first alone", async () => {
+    const conversationId = await newConversation();
+    const input = chatAccept(conversationId);
+    const turn = ref(conversationId, input.commandId);
+    await kit.invoke(acceptTurn, input, {});
+    await ageQueuedTurn(conversationId, "16 minutes");
+    await kit.invoke(startTurn, { ...turn, timeoutMs: TIMEOUT_MS }, {});
+
+    expect(await interruptAs(kitIdentities.companies.a, turn)).toEqual({
+      outcome: "not_stale",
+      conversationId,
+      status: "running",
+    });
+    expect((await turnRows(conversationId))[0]).toMatchObject({
+      status: "running",
+      companyReservedMicroUsd: HOLD.companyReservedMicroUsd,
+    });
   });
 
   it("never ends a turn that already ended, whichever of the two came first", async () => {
@@ -1751,6 +1827,12 @@ describe("the reconciler's read", () => {
       })
       .where(eq(assistantTurns.conversationId, runningPast));
 
+    // Company A: queued past the abandon threshold — it can never start.
+    const queuedAbandoned = await newConversation();
+    const queuedAbandonedInput = chatAccept(queuedAbandoned);
+    await kit.invoke(acceptTurn, queuedAbandonedInput, {});
+    await ageTurn(queuedAbandoned, "20 minutes");
+
     // Not stale: accepted just now; running in time; old but finished.
     const queuedFresh = await newConversation();
     await kit.invoke(acceptTurn, chatAccept(queuedFresh), {});
@@ -1778,6 +1860,7 @@ describe("the reconciler's read", () => {
 
     const fixtures = new Set([
       queuedOld,
+      queuedAbandoned,
       runningPast,
       queuedFresh,
       runningInTime,
@@ -1792,6 +1875,17 @@ describe("the reconciler's read", () => {
     expect(
       stale.turns.filter((turn) => fixtures.has(turn.conversationId)),
     ).toEqual([
+      // Oldest first: abandoned at twenty minutes, then the one whose job was
+      // lost ten minutes ago, then the running turn accepted five minutes ago.
+      {
+        companyId: kitIdentities.companies.a,
+        conversationId: queuedAbandoned,
+        kind: "chat",
+        commandId: queuedAbandonedInput.commandId,
+        status: "queued",
+        placeholderMessageId: queuedAbandonedInput.placeholder.messageId,
+        staleness: "queued_abandoned",
+      },
       {
         companyId: kitIdentities.companies.a,
         conversationId: queuedOld,
@@ -1799,7 +1893,6 @@ describe("the reconciler's read", () => {
         commandId: queuedOldInput.commandId,
         status: "queued",
         placeholderMessageId: queuedOldInput.placeholder.messageId,
-        budgetHold: HOLD,
         staleness: "queued_without_start",
       },
       {
@@ -1809,7 +1902,6 @@ describe("the reconciler's read", () => {
         commandId: runningPastInput.commandId,
         status: "running",
         placeholderMessageId: runningPastInput.placeholder.messageId,
-        budgetHold: HOLD,
         staleness: "running_past_deadline",
       },
     ]);
@@ -1853,6 +1945,7 @@ describe("a message's revision", () => {
           conversationId,
           seq: 2,
           messageId: input.placeholder.messageId,
+          revision: expected - 1,
           message: input.placeholder.message,
         },
         {},
@@ -1872,5 +1965,182 @@ describe("a message's revision", () => {
       .from(assistantChatMessages)
       .where(eq(assistantChatMessages.messageId, input.placeholder.messageId));
     expect(stored).toEqual([{ revision: 3 }]);
+  });
+
+  /**
+   * A turn's message has two writers once the reconciler can end a turn the
+   * worker is still writing (SHO-570). Each stores a whole payload, so an
+   * update from a revision the message no longer has must store nothing rather
+   * than erase what it never read.
+   */
+  it("refuses an update from a revision the message has moved past, and stores nothing", async () => {
+    const conversationId = await newConversation();
+    const input = chatAccept(conversationId);
+    await kit.invoke(acceptTurn, input, {});
+    const placeholder = {
+      conversationId,
+      seq: 2,
+      messageId: input.placeholder.messageId,
+    };
+    const byTheOther = { ...input.placeholder.message, parts: [] };
+    await kit.invoke(
+      updateChatMessage,
+      { ...placeholder, revision: 1, message: byTheOther },
+      {},
+    );
+
+    await expect(
+      kit.invoke(
+        updateChatMessage,
+        {
+          ...placeholder,
+          revision: 1,
+          message: { ...input.placeholder.message, parts: ["late"] },
+        },
+        {},
+      ),
+    ).rejects.toBeInstanceOf(ConflictError);
+
+    const stored = await kit.db.runtime.db
+      .select({
+        message: assistantChatMessages.message,
+        revision: assistantChatMessages.revision,
+      })
+      .from(assistantChatMessages)
+      .where(eq(assistantChatMessages.messageId, input.placeholder.messageId));
+    expect(stored).toEqual([{ message: byTheOther, revision: 2 }]);
+
+    // Reading it again and writing from what is stored now is accepted.
+    expect(
+      await kit.invoke(
+        updateChatMessage,
+        { ...placeholder, revision: 2, message: input.placeholder.message },
+        {},
+      ),
+    ).toEqual({ conversationId, seq: 2, revision: 3 });
+  });
+
+  it("is not-found, not a conflict, for a pair that names no message", async () => {
+    const conversationId = await newConversation();
+    await kit.invoke(acceptTurn, chatAccept(conversationId), {});
+
+    await expect(
+      kit.invoke(
+        updateChatMessage,
+        {
+          conversationId,
+          seq: 2,
+          messageId: randomUUID(),
+          revision: 1,
+          message: {},
+        },
+        {},
+      ),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
+/**
+ * Exactly one of a start and an abandoned turn's interrupt wins, whichever
+ * reaches the row first, and the loser is told (SHO-570). The winner holds its
+ * transaction open with the row updated and locked; the loser is sent, seen
+ * waiting on that lock, and only then is the winner let go.
+ */
+describe("a start and a queued turn's interrupt, the second waiting on the first", () => {
+  async function holdThenWait(holder: "start" | "interrupt") {
+    const conversationId = await newConversation();
+    const input = chatAccept(conversationId);
+    const turn = ref(conversationId, input.commandId);
+    await kit.invoke(acceptTurn, input, {});
+    await ageQueuedTurn(conversationId, "16 minutes");
+
+    const held = deferred();
+    const release = deferred();
+    const state = { updatedTurn: false };
+    const holderPool = gatedPipeline(async (text) => {
+      if (text.startsWith(`update ${TURN_TABLE}`)) {
+        state.updatedTurn = true;
+      }
+      if (text === "commit" && state.updatedTurn) {
+        held.resolve();
+        await release.promise;
+      }
+    });
+    const waiterPool = gatedPipeline(() => Promise.resolve());
+
+    const start = (deps: Parameters<typeof executeAction>[0]) =>
+      kit.invoke(startTurn, { ...turn, timeoutMs: TIMEOUT_MS }, {}, { deps });
+    const interrupt = (deps: Parameters<typeof executeAction>[0]) =>
+      interruptAs(kitIdentities.companies.a, turn, undefined, deps);
+
+    const holding =
+      holder === "start" ? start(holderPool.deps) : interrupt(holderPool.deps);
+    try {
+      await Promise.race([held.promise, holding]);
+      const waiting =
+        holder === "start"
+          ? interrupt(waiterPool.deps)
+          : start(waiterPool.deps);
+      const settled = Promise.allSettled([holding, waiting]);
+      try {
+        await waitForLockWait();
+      } finally {
+        release.resolve();
+      }
+      const [holderResult, waiterResult] = await settled;
+      if (holderResult.status === "rejected") {
+        throw holderResult.reason;
+      }
+      if (waiterResult.status === "rejected") {
+        throw waiterResult.reason;
+      }
+      return {
+        conversationId,
+        holder: holderResult.value,
+        waiter: waiterResult.value,
+      };
+    } finally {
+      release.resolve();
+      await holding.catch(() => undefined);
+      await holderPool.close();
+      await waiterPool.close();
+    }
+  }
+
+  it("a start holding the row leaves the waiting interrupt nothing", async () => {
+    const race = await holdThenWait("start");
+
+    expect(race.holder).toMatchObject({ outcome: "started" });
+    expect(race.waiter).toEqual({
+      outcome: "not_stale",
+      conversationId: race.conversationId,
+      status: "running",
+    });
+    expect((await turnRows(race.conversationId))[0]).toMatchObject({
+      status: "running",
+      companyReservedMicroUsd: HOLD.companyReservedMicroUsd,
+    });
+  });
+
+  it("an interrupt holding the row leaves the waiting start nothing, and the hold once", async () => {
+    const race = await holdThenWait("interrupt");
+
+    expect(race.holder).toEqual({
+      outcome: "interrupted",
+      conversationId: race.conversationId,
+      from: "queued",
+      releasedHold: HOLD,
+    });
+    expect(race.waiter).toEqual({
+      outcome: "not_queued",
+      conversationId: race.conversationId,
+      status: "interrupted",
+    });
+    expect((await turnRows(race.conversationId))[0]).toMatchObject({
+      status: "interrupted",
+      startedAt: null,
+      companyReservedMicroUsd: 0,
+      globalReservedMicroUsd: 0,
+    });
   });
 });

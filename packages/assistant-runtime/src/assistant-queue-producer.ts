@@ -43,6 +43,24 @@ export interface AssistantTurnQueue {
     data: AssistantTurnJob,
     opts: typeof ASSISTANT_TURN_JOB_OPTIONS & { readonly jobId: string },
   ): Promise<unknown>;
+  /**
+   * The job under this id, or `undefined` when the queue holds none. Jobs are
+   * removed on completion and on failure, so "none" means the turn's job has
+   * run or was never added — the reconciler's one source for whether a queued
+   * turn is waiting to run or waiting for nothing (SHO-570).
+   *
+   * The job itself is deliberately opaque: nothing here reads its state, and a
+   * shape would be a second copy of BullMQ's.
+   */
+  getJob(jobId: string): Promise<unknown>;
+}
+
+/** Whether the queue still holds this turn's job. */
+export async function assistantTurnJobPending(
+  queue: AssistantTurnQueue,
+  job: AssistantTurnJob,
+): Promise<boolean> {
+  return (await queue.getJob(assistantTurnJobId(job))) !== undefined;
 }
 
 /**

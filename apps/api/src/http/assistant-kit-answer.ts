@@ -290,12 +290,21 @@ export async function handleAssistantKitAnswer(
           revision: opened.pause.revision,
           pause: opened.pause,
         };
-        await kit.messages.write(scope, {
+        const stored = await kit.messages.write(scope, {
           kind: "append",
           messageId: randomUUID(),
           role: "assistant",
           parts: [asked],
         });
+        if (stored.kind === "wrong_owner") {
+          return goneResponse(requestId);
+        }
+        if (stored.kind !== "written") {
+          // The second question is open but no message holds it: a reload would
+          // show a conversation that did not happen. Fail rather than answer ok
+          // (SHO-570).
+          return json(500, { error: { code: "INTERNAL" } }, requestId);
+        }
 
         const payload: AssistantKitTurnOk = {
           status: "ok",

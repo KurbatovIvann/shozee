@@ -137,13 +137,52 @@ export type ChatWindow = z.output<typeof chatWindowSchema>;
  * before its turn ran — an empty `streaming` text — ends with exactly one text
  * part, after the cards the turn wrote, carrying the status the turn ended
  * with. A message that holds no streaming part is appended to as before.
+ *
+ * `end_text` settles a message's `streaming` text part with the status given,
+ * keeping its text, and changes nothing else. A message that holds no streaming
+ * part — its text already ended, by whoever got there first — is left as it is,
+ * and so is a message that is not the latest. It never creates a message. It is
+ * the write for a writer that must end a turn's text without knowing whether
+ * the turn already did: appending a text part instead would store a second one.
+ *
+ * Every write is a compare-and-set on the message's revision as the writer read
+ * it. When another writer changed the message in between, the write reads it
+ * again and applies itself to what is now stored, so neither write is lost.
  */
-export interface MessageWrite {
-  readonly kind: "append";
-  readonly messageId: string;
-  /** Needed because append may be the write that creates the message. */
-  readonly role: ChatMessage["role"];
-  readonly parts: readonly ChatPart[];
+export type MessageWrite =
+  | {
+      readonly kind: "append";
+      readonly messageId: string;
+      /** Needed because append may be the write that creates the message. */
+      readonly role: ChatMessage["role"];
+      readonly parts: readonly ChatPart[];
+    }
+  | {
+      readonly kind: "end_text";
+      readonly messageId: string;
+      readonly status: Exclude<TextPartStatus, "streaming">;
+    };
+
+export type TextPartStatus = z.output<typeof textPartStatusSchema>;
+
+/**
+ * `parts` with its streaming text part settled to `status`, or null when there
+ * is no streaming part to settle.
+ */
+export function endStreamingText(
+  parts: readonly ChatPart[],
+  status: Exclude<TextPartStatus, "streaming">,
+): ChatPart[] | null {
+  const at = parts.findIndex(
+    (held) => held.kind === "text" && held.status === "streaming",
+  );
+  const held = parts[at];
+  if (held?.kind !== "text") {
+    return null;
+  }
+  const next = [...parts];
+  next[at] = { ...held, status };
+  return next;
 }
 
 /**

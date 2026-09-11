@@ -19,8 +19,10 @@ import {
   ASSISTANT_TURN_JOB_NAME,
   assistantTurnJobId,
   assistantTurnJobSchema,
+  type AssistantReconcileSummary,
   type AssistantTurnJob,
   type AssistantTurnJobOutcome,
+  type AssistantTurnQueue,
 } from "@showzy/assistant-runtime";
 import {
   cleanupExpiredIdempotencyKeys,
@@ -39,9 +41,12 @@ import { Redis } from "ioredis";
 import type { Logger } from "pino";
 
 import {
+  ASSISTANT_DRAIN_TIMEOUT_MS,
   ASSISTANT_LOCK_DURATION_MS,
   ASSISTANT_MAX_STALLED_COUNT,
   ASSISTANT_QUEUE_CONCURRENCY,
+  ASSISTANT_RECONCILE_INTERVAL_MS,
+  ASSISTANT_RECONCILE_JOB_NAME,
   BACKFILL_CATALOG_RENDITIONS_INTERVAL_MS,
   BACKFILL_CATALOG_RENDITIONS_JOB_NAME,
   BULLMQ_PREFIX,
@@ -80,6 +85,19 @@ export interface AssistantJobHostOptions {
   readonly redisUrl: string;
   /** `createAssistantTurnProcessor` from `@showzy/assistant-runtime`. */
   readonly process: (job: AssistantTurnJob) => Promise<AssistantTurnJobOutcome>;
+  /**
+   * `createAssistantTurnReconciler` from `@showzy/assistant-runtime`, run on
+   * the maintenance scheduler. It is given this host's queue, the only one on
+   * the queue Redis, so a turn it re-enqueues is added exactly as an accept
+   * adds it. Absent: no reconciler, and its scheduler is removed.
+   */
+  readonly reconcile?: (
+    queue: AssistantTurnQueue,
+  ) => Promise<AssistantReconcileSummary>;
+  /** Test seam; production uses `ASSISTANT_RECONCILE_INTERVAL_MS`. */
+  readonly reconcileIntervalMs?: number;
+  /** Test seam; production uses `ASSISTANT_DRAIN_TIMEOUT_MS`. */
+  readonly drainTimeoutMs?: number;
   /** Test seam; production uses `ASSISTANT_LOCK_DURATION_MS`. */
   readonly lockDurationMs?: number;
   /** Test seam; production uses BullMQ's default stalled-check interval. */
@@ -242,6 +260,32 @@ export function createJobHost(options: CreateJobHostOptions): JobHost {
           backfilled.skippedUndecodable
         );
       }
+      case ASSISTANT_RECONCILE_JOB_NAME: {
+        const reconcile = options.assistant?.reconcile;
+        if (reconcile === undefined || assistantQueue === undefined) {
+          // A scheduler left behind by a boot that had the assistant mounted.
+          options.logger.error(
+            { worker_id: options.workerId },
+            "assistant reconciler is not mounted here",
+          );
+          return 0;
+        }
+        const summary = await reconcile(assistantQueue);
+        options.logger.info(
+          {
+            worker_id: options.workerId,
+            listed: summary.listed,
+            reenqueued: summary.reenqueued,
+            backed_off: summary.backedOff,
+            interrupted: summary.interrupted,
+            released: summary.released,
+            left: summary.left,
+            failed: summary.failed,
+          },
+          "assistant turns reconciled",
+        );
+        return summary.listed;
+      }
       default: {
         options.logger.error(
           {
@@ -352,6 +396,7 @@ export function createJobHost(options: CreateJobHostOptions): JobHost {
   }
 
   let assistantWorker: Worker<unknown, string> | undefined;
+  let assistantQueue: Queue | undefined;
   let queue: Queue | undefined;
   let worker: Worker<Record<string, never>, number> | undefined;
   let pdfQueue: Queue | undefined;
@@ -453,8 +498,34 @@ export function createJobHost(options: CreateJobHostOptions): JobHost {
         },
       },
     );
+    // The reconciler's pass is a maintenance job like any other — safe to miss,
+    // safe to run again — while the turns it enqueues go on the queue Redis.
+    if (options.assistant?.reconcile === undefined) {
+      await queue.removeJobScheduler(ASSISTANT_RECONCILE_JOB_NAME);
+    } else {
+      await queue.upsertJobScheduler(
+        ASSISTANT_RECONCILE_JOB_NAME,
+        {
+          every:
+            options.assistant.reconcileIntervalMs ??
+            ASSISTANT_RECONCILE_INTERVAL_MS,
+        },
+        {
+          name: ASSISTANT_RECONCILE_JOB_NAME,
+          data: {},
+          opts: {
+            removeOnComplete: true,
+            removeOnFail: 50,
+          },
+        },
+      );
+    }
     if (options.assistant !== undefined && assistantConnection !== undefined) {
       await assistantConnection.ping();
+      assistantQueue = new Queue(ASSISTANT_QUEUE_NAME, {
+        connection: assistantConnection,
+        prefix: ASSISTANT_QUEUE_PREFIX,
+      });
       assistantWorker = new Worker<unknown, string>(
         ASSISTANT_QUEUE_NAME,
         processAssistantJob,
@@ -505,6 +576,45 @@ export function createJobHost(options: CreateJobHostOptions): JobHost {
     );
   }
 
+  /**
+   * Waits for the turns this worker is running, and no longer than the drain
+   * bound. A turn stops itself at its own deadline, so the wait normally ends
+   * well inside it; past the bound the process stops waiting rather than
+   * refusing to shut down, and the turn's row is left for the reconciler to
+   * interrupt — the same recovery a worker that crashed gets.
+   */
+  async function drainAssistantTurns(
+    worker: Worker<unknown, string>,
+  ): Promise<void> {
+    const timeoutMs =
+      options.assistant?.drainTimeoutMs ?? ASSISTANT_DRAIN_TIMEOUT_MS;
+    const drained = worker.close();
+    let wait: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = await Promise.race([
+      drained.then(
+        () => false,
+        () => false,
+      ),
+      new Promise<boolean>((resolve) => {
+        wait = setTimeout(() => {
+          resolve(true);
+        }, timeoutMs);
+      }),
+    ]);
+    if (wait !== undefined) {
+      clearTimeout(wait);
+    }
+    if (timedOut) {
+      // Never awaited again; BullMQ keeps one close per worker, so it cannot be
+      // forced from here, and its rejection must not surface unhandled.
+      drained.catch(() => undefined);
+      options.logger.warn(
+        { worker_id: options.workerId, drain_timeout_ms: timeoutMs },
+        "assistant turns still running at the drain timeout",
+      );
+    }
+  }
+
   return {
     async start() {
       if (started || closed) {
@@ -531,7 +641,10 @@ export function createJobHost(options: CreateJobHostOptions): JobHost {
       // First, and waited for: an in-flight turn finishes before the process
       // goes (ADR-0039 — the stop grace period is a production requirement).
       if (assistantWorker !== undefined) {
-        await assistantWorker.close();
+        await drainAssistantTurns(assistantWorker);
+      }
+      if (assistantQueue !== undefined) {
+        await assistantQueue.close();
       }
       if (pdfWorker !== undefined) {
         await pdfWorker.close();

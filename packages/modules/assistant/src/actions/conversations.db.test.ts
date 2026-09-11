@@ -251,6 +251,7 @@ crossTenantSuite(
           conversationId: fixtures.convA,
           seq: 1,
           messageId: fixtures.convAMessage,
+          revision: 1,
           message: { a: 2 },
         },
       },
@@ -259,6 +260,7 @@ crossTenantSuite(
           conversationId: fixtures.convB,
           seq: 1,
           messageId: fixtures.convAMessage,
+          revision: 1,
           message: { a: 2 },
         },
       },
@@ -478,6 +480,7 @@ describe("the message log", () => {
           conversationId: fixtures.log,
           seq: 3,
           messageId: second.messageId,
+          revision: 1,
           message: replaced,
         },
         {},
@@ -491,6 +494,7 @@ describe("the message log", () => {
           conversationId: fixtures.log,
           seq: 3,
           messageId: third.messageId,
+          revision: 1,
           message: replaced,
         },
         {},
@@ -566,7 +570,13 @@ describe("the message log", () => {
       await expect(
         kit.invoke(
           updateChatMessage,
-          { conversationId, seq: 1, messageId: randomUUID(), message: {} },
+          {
+            conversationId,
+            seq: 1,
+            messageId: randomUUID(),
+            revision: 1,
+            message: {},
+          },
           actor,
         ),
       ).rejects.toBeInstanceOf(NotFoundError);

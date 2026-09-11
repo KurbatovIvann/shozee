@@ -71,7 +71,8 @@ export interface MemoryMessageLog extends MessageLogStore {
 
 /**
  * The log, with the refusals a real store makes: a repeated message id on
- * insert, and a `(seq, messageId)` pair that names nothing on update. Without
+ * insert, a `(seq, messageId)` pair that names nothing on update, and an update
+ * from a revision the message no longer has. Without
  * them a suite here would prove behaviour the database then contradicts.
  *
  * Messages are cloned in and out, so a test cannot pass by holding a reference
@@ -125,6 +126,9 @@ export function memoryMessageLog(): MemoryMessageLog {
           ),
         );
       }
+      if (held.revision !== record.revision) {
+        return Promise.resolve(false);
+      }
       const next = [...all];
       next[at] = {
         ...held,
@@ -133,7 +137,7 @@ export function memoryMessageLog(): MemoryMessageLog {
       };
       byConversation.set(conversationId, next);
       writes += 1;
-      return Promise.resolve();
+      return Promise.resolve(true);
     },
   };
 }

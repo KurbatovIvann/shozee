@@ -173,11 +173,17 @@ export interface AssistantKit<T extends AnyTypes> {
      * Only the latest message can change. A write naming it merges into it;
      * any other message id starts a new one, and an id the log already holds
      * further back is refused by the store.
+     *
+     * `unchanged`: an `end_text` found nothing to end. `conflict`: other writes
+     * kept changing the message for every attempt this write made, and nothing
+     * was stored.
      */
     write(
       scope: PauseScope,
       write: MessageWrite,
-    ): Promise<{ readonly kind: "written" | "wrong_owner" }>;
+    ): Promise<{
+      readonly kind: "written" | "unchanged" | "wrong_owner" | "conflict";
+    }>;
   };
 }
 

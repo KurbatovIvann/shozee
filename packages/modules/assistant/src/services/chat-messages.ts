@@ -180,6 +180,8 @@ export async function updateStaffChatMessage(env: {
   readonly conversationId: string;
   readonly seq: number;
   readonly messageId: string;
+  /** The revision the caller read. */
+  readonly revision: number;
   readonly message: Record<string, unknown>;
 }): Promise<{ readonly seq: number; readonly revision: number }> {
   await loadOwnConversation({
@@ -190,6 +192,14 @@ export async function updateStaffChatMessage(env: {
   });
   const db = requireWritable(env.ctx.db);
 
+  // Both, never one: a sequence number alone could name a message the caller
+  // did not read, and a message id alone could name an old one.
+  const named = and(
+    eq(assistantChatMessages.companyId, env.ctx.companyId),
+    eq(assistantChatMessages.conversationId, env.conversationId),
+    eq(assistantChatMessages.seq, env.seq),
+    eq(assistantChatMessages.messageId, env.messageId),
+  );
   const updated = await db
     .update(assistantChatMessages)
     .set({
@@ -198,23 +208,26 @@ export async function updateStaffChatMessage(env: {
       // never both claim the same revision.
       revision: sql`${assistantChatMessages.revision} + 1`,
     })
-    .where(
-      and(
-        eq(assistantChatMessages.companyId, env.ctx.companyId),
-        eq(assistantChatMessages.conversationId, env.conversationId),
-        // Both, never one: a sequence number alone could name a message the
-        // caller did not read, and a message id alone could name an old one.
-        eq(assistantChatMessages.seq, env.seq),
-        eq(assistantChatMessages.messageId, env.messageId),
-      ),
-    )
+    // The compare is in the statement: a concurrent update waits on the row
+    // lock, then re-reads the committed revision and finds it moved on.
+    .where(and(named, eq(assistantChatMessages.revision, env.revision)))
     .returning({
       seq: assistantChatMessages.seq,
       revision: assistantChatMessages.revision,
     });
   const row = updated[0];
-  if (row === undefined) {
+  if (row !== undefined) {
+    return row;
+  }
+  const exists = await db
+    .select({ seq: assistantChatMessages.seq })
+    .from(assistantChatMessages)
+    .where(named)
+    .limit(1);
+  if (exists.length === 0) {
     throw new NotFoundError();
   }
-  return row;
+  throw new ConflictError(
+    "This message changed after it was read; read it again.",
+  );
 }

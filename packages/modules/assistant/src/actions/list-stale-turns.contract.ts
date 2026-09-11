@@ -6,10 +6,11 @@
  * - it is `transport: "internal"` and `aiExposure: "internal"`, so no client and
  *   no model can reach it; only a system context built by the maintenance
  *   scheduler can;
- * - it is a read, and it returns only what re-enqueueing, interrupting or
- *   releasing a hold needs — the turn's identity, its company, its placeholder
- *   and its budget hold. No message content, no person, no session, no request
- *   id;
+ * - it is a read, and it returns only what re-enqueueing or interrupting needs —
+ *   the turn's identity, its company and its placeholder. Not its budget hold:
+ *   the statement that ends a turn zeroes that hold and hands it back, and a
+ *   copy read here would be a second answer to "what does this turn hold"
+ *   (SHO-570). No message content, no person, no session, no request id;
  * - the reconciler exists because a crashed worker leaves no request and no
  *   caller behind: the turns it looks for belong to every company at once, and
  *   the company each belongs to comes from the row, never from input.
@@ -23,7 +24,6 @@ import { defineActionContract } from "@showzy/core/contract";
 import { z } from "zod";
 
 import {
-  assistantTurnBudgetHoldSchema,
   assistantTurnKindSchema,
   assistantTurnStatusSchema,
 } from "./turn-record.contract.js";
@@ -47,8 +47,16 @@ export const staleTurnSchema = z.strictObject({
   commandId: z.uuid(),
   status: assistantTurnStatusSchema,
   placeholderMessageId: z.uuid(),
-  budgetHold: assistantTurnBudgetHoldSchema,
-  staleness: z.enum(["queued_without_start", "running_past_deadline"]),
+  /**
+   * What the reconciler does with it, decided by the same predicates
+   * `assistant.interruptTurn` ends a turn by: re-enqueue a
+   * `queued_without_start`, interrupt the other two.
+   */
+  staleness: z.enum([
+    "queued_without_start",
+    "queued_abandoned",
+    "running_past_deadline",
+  ]),
 });
 
 export const listStaleTurnsOutputSchema = z.strictObject({
@@ -58,7 +66,7 @@ export const listStaleTurnsOutputSchema = z.strictObject({
 export const listStaleTurnsContract = defineActionContract({
   name: "assistant.listStaleTurns",
   description:
-    "List staff assistant turns across companies that the reconciler has to act on: turns still queued and never started longer than queuedStaleAfterMs after they were accepted, and running turns past their deadline. Oldest first, at most limit. Each turn carries its company, conversation, kind, command, placeholder message and budget hold; no message content, person or session.",
+    "List staff assistant turns across companies that the reconciler has to act on: turns still queued and never started longer than queuedStaleAfterMs after they were accepted (queued_without_start), turns queued past the abandon threshold (queued_abandoned), and running turns past their deadline (running_past_deadline). Oldest first, at most limit. Each turn carries its company, conversation, kind, command and placeholder message; no budget hold, message content, person or session.",
   principal: "system",
   systemScope: "global",
   transport: "internal",

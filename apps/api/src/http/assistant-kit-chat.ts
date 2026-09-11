@@ -156,6 +156,12 @@ export async function handleAssistantKitChat(
         // conversation that does not exist.
         return goneResponse(requestId);
       }
+      if (stamped.kind !== "written") {
+        // The person's message was not stored. Running the turn now would
+        // answer a question the transcript does not hold, so this fails instead
+        // (SHO-570: the write result is a union, not a formality).
+        return json(500, { error: { code: "INTERNAL" } }, requestId);
+      }
 
       const tools = await runtime.tools(
         toolContext(c, caller, {

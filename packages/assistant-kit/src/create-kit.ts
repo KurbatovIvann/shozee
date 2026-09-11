@@ -20,6 +20,7 @@ import {
   appendParts,
   chatCursorSchema,
   chatMessageSchema,
+  endStreamingText,
 } from "./messages.js";
 import { providerToolCallIdSchema } from "./ids.js";
 import type {
@@ -49,6 +50,15 @@ type AnyTypes = Record<string, InteractionType<z.ZodType, z.ZodType, never>>;
 function pauseKey(conversationId: string): string {
   return `pause:${conversationId}`;
 }
+
+/**
+ * How many times one write reads the latest message and tries to store itself
+ * before it gives up as `conflict`. Each failed attempt means another writer
+ * stored a change in between; a turn has at most two writers of its message —
+ * the process running it and the one that ends it — so a write that loses this
+ * many times in a row is not in a race, it is in a loop.
+ */
+const MESSAGE_WRITE_ATTEMPTS = 4;
 
 /** One running turn per conversation, by the same means. */
 function turnKey(conversationId: string): string {
@@ -457,51 +467,68 @@ export function createAssistantKit<T extends AnyTypes>(
       },
 
       async write(scope, write: MessageWrite) {
-        const latest = (
-          await deps.messages.page(scope.conversationId, { limit: 1 })
-        ).records[0];
-        if (latest !== undefined && latest.bind !== scope.bind) {
-          return { kind: "wrong_owner" };
-        }
-
-        if (latest?.messageId === write.messageId) {
-          // The message still being written. Same cardId in the same message is
-          // an update, never a second card.
-          const current = chatMessageSchema.safeParse(latest.message);
-          if (!current.success) {
-            // Replacing what could not be read would destroy it — which is how
-            // one unreadable message used to take a whole conversation with it.
-            throw new Error(
-              `message ${String(latest.seq)} of ${scope.conversationId} cannot be read, so it is not overwritten`,
-            );
+        for (let attempt = 0; attempt < MESSAGE_WRITE_ATTEMPTS; attempt += 1) {
+          const latest = (
+            await deps.messages.page(scope.conversationId, { limit: 1 })
+          ).records[0];
+          if (latest !== undefined && latest.bind !== scope.bind) {
+            return { kind: "wrong_owner" };
           }
-          await deps.messages.update(scope.conversationId, {
-            seq: latest.seq,
-            messageId: latest.messageId,
-            message: {
-              ...current.data,
-              parts: appendParts(current.data.parts, write.parts),
-            },
+
+          if (latest?.messageId === write.messageId) {
+            // The message still being written. Same cardId in the same message
+            // is an update, never a second card.
+            const current = chatMessageSchema.safeParse(latest.message);
+            if (!current.success) {
+              // Replacing what could not be read would destroy it — which is how
+              // one unreadable message used to take a whole conversation with it.
+              throw new Error(
+                `message ${String(latest.seq)} of ${scope.conversationId} cannot be read, so it is not overwritten`,
+              );
+            }
+            const parts =
+              write.kind === "append"
+                ? appendParts(current.data.parts, write.parts)
+                : endStreamingText(current.data.parts, write.status);
+            if (parts === null) {
+              return { kind: "unchanged" };
+            }
+            const stored = await deps.messages.update(scope.conversationId, {
+              seq: latest.seq,
+              messageId: latest.messageId,
+              revision: latest.revision,
+              message: { ...current.data, parts },
+            });
+            if (stored) {
+              return { kind: "written" };
+            }
+            // Another writer changed the message after it was read here: read
+            // it again and apply this write to what is stored now.
+            continue;
+          }
+
+          if (write.kind === "end_text") {
+            return { kind: "unchanged" };
+          }
+
+          // A new message at the end. An id the log already holds further back
+          // is refused by the store rather than reopened: only the latest message
+          // may change, and a turn whose lease lapsed finds out here instead of
+          // writing out of order.
+          const message: ChatMessage = {
+            messageId: write.messageId,
+            role: write.role,
+            createdAt: deps.clock.now().toISOString(),
+            parts: appendParts([], write.parts),
+          };
+          await deps.messages.insert(scope.conversationId, {
+            messageId: write.messageId,
+            bind: scope.bind,
+            message,
           });
           return { kind: "written" };
         }
-
-        // A new message at the end. An id the log already holds further back is
-        // refused by the store rather than reopened: only the latest message may
-        // change, and a turn whose lease lapsed finds out here instead of
-        // writing out of order.
-        const message: ChatMessage = {
-          messageId: write.messageId,
-          role: write.role,
-          createdAt: deps.clock.now().toISOString(),
-          parts: appendParts([], write.parts),
-        };
-        await deps.messages.insert(scope.conversationId, {
-          messageId: write.messageId,
-          bind: scope.bind,
-          message,
-        });
-        return { kind: "written" };
+        return { kind: "conflict" };
       },
     },
   };

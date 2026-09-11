@@ -159,12 +159,29 @@ function harness(options?: {
   readonly model?: LanguageModel;
   /** Held open to keep a turn in flight while a second request arrives. */
   readonly toolsGate?: Promise<unknown>;
+  /**
+   * Makes every message write refuse, as a message another writer changed under
+   * this one does (SHO-570). The routes see the refusal; this suite's own reads
+   * still go through the real kit.
+   */
+  readonly writeRefusal?: "conflict" | "unchanged";
 }): Harness {
   // The window the routes really run with, so a page here is a page on a phone.
   const deps = testDeps(assistantInteractions, {
     windowMessages: ASSISTANT_CHAT_WINDOW_MESSAGES,
   });
   const kit = createAssistantKit(deps);
+  const refusal = options?.writeRefusal;
+  const served: Kit =
+    refusal === undefined
+      ? kit
+      : {
+          ...kit,
+          messages: {
+            ...kit.messages,
+            write: () => Promise.resolve({ kind: refusal }),
+          },
+        };
   const history = memoryHistory();
   const model =
     options?.model ??
@@ -192,7 +209,7 @@ function harness(options?: {
     },
     // In-memory stores for every caller: this suite is about the handlers, and
     // the durable adapters have their own test against a real database.
-    forCaller: () => ({ kit, history }),
+    forCaller: () => ({ kit: served, history }),
     staffCompany: () => Promise.resolve(COMPANY),
     model,
     tools: async () => {
@@ -505,6 +522,28 @@ describe("POST /assistant/kit/chat", () => {
       bind,
     });
     expect(window.messages).toEqual([]);
+  });
+
+  /**
+   * A write result is a union, not a formality: `wrong_owner` is a 410, and
+   * anything else that is not `written` means the person's message was not
+   * stored. Running the turn then would answer a question the transcript does
+   * not hold (SHO-570).
+   */
+  it("fails the send when the person's message could not be stored", async () => {
+    const { app, kit, history, bind } = harness({ writeRefusal: "conflict" });
+
+    const response = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody());
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: { code: "INTERNAL" } });
+    const window = await kit.messages.read({
+      conversationId: CONVERSATION,
+      bind,
+    });
+    expect(window.messages).toEqual([]);
+    // The model never ran, so nothing was charged and no history was saved.
+    expect(history.saved).toEqual([]);
   });
 
   it("410 for a conversation that belongs to someone else", async () => {

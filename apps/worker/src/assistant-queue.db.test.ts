@@ -14,11 +14,15 @@ import {
   ASSISTANT_QUEUE_NAME,
   ASSISTANT_QUEUE_PREFIX,
   ASSISTANT_TURN_JOB_NAME,
+  ASSISTANT_TURN_TIMEOUT_MS,
   assistantTurnJobId,
   enqueueAssistantTurn,
+  type AssistantReconcileSummary,
   type AssistantTurnJob,
   type AssistantTurnJobOutcome,
+  type AssistantTurnQueue,
 } from "@showzy/assistant-runtime";
+import { createProcessLogger } from "@showzy/config";
 import { createTestKit, type TestKit } from "@showzy/core/testing";
 import {
   RedisContainer,
@@ -31,9 +35,14 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { createJobHost, type JobHost } from "./jobs.js";
 import {
+  ASSISTANT_DRAIN_TIMEOUT_MS,
   ASSISTANT_LOCK_DURATION_MS,
   ASSISTANT_MAX_STALLED_COUNT,
   ASSISTANT_QUEUE_CONCURRENCY,
+  ASSISTANT_RECONCILE_INTERVAL_MS,
+  ASSISTANT_RECONCILE_JOB_NAME,
+  BULLMQ_PREFIX,
+  MAINTENANCE_QUEUE_NAME,
 } from "./policy.js";
 
 const silent = pino({ enabled: false });
@@ -108,7 +117,14 @@ function gatedProcessor() {
 
 function hostWith(
   process: (job: AssistantTurnJob) => Promise<AssistantTurnJobOutcome>,
-  seams: { lockDurationMs?: number; stalledIntervalMs?: number } = {},
+  seams: {
+    lockDurationMs?: number;
+    stalledIntervalMs?: number;
+    reconcileIntervalMs?: number;
+    reconcile?: (
+      queue: AssistantTurnQueue,
+    ) => Promise<AssistantReconcileSummary>;
+  } = {},
 ): JobHost {
   return createJobHost({
     redisUrl: sharedUrl,
@@ -159,6 +175,189 @@ describe("the assistant queue policy", () => {
     expect(ASSISTANT_QUEUE_CONCURRENCY).toBe(4);
     expect(ASSISTANT_LOCK_DURATION_MS).toBe(60_000);
     expect(ASSISTANT_MAX_STALLED_COUNT).toBe(0);
+    expect(ASSISTANT_RECONCILE_INTERVAL_MS).toBe(60_000);
+    // A turn stops itself at its deadline and still has its last writes to make.
+    expect(ASSISTANT_DRAIN_TIMEOUT_MS).toBeGreaterThan(
+      ASSISTANT_TURN_TIMEOUT_MS,
+    );
+  });
+});
+
+describe("the reconciler on the maintenance scheduler", () => {
+  const emptyPass = {
+    listed: 0,
+    reenqueued: 0,
+    backedOff: 0,
+    interrupted: 0,
+    released: 0,
+    left: 0,
+    failed: 0,
+  };
+
+  it("runs on its own schedule and is handed the queue a turn is enqueued on", async () => {
+    const gated = gatedProcessor();
+    gated.release();
+    const job = turnJob();
+    const passes: AssistantTurnJob[][] = [];
+    const host = hostWith(gated.process, {
+      reconcileIntervalMs: 400,
+      reconcile: async (queue) => {
+        // What a pass does with a queued turn whose job was lost.
+        await enqueueAssistantTurn(queue, job);
+        passes.push([job]);
+        return { ...emptyPass, listed: 1, reenqueued: 1 };
+      },
+    });
+    await host.start();
+    try {
+      await waitUntil(() => passes.length >= 1);
+      await waitUntil(() => gated.runs.length === 1);
+      // The re-enqueued job went on the queue Redis, under the turn's own id.
+      expect(gated.runs).toEqual([job]);
+      const shared = new Redis(sharedUrl);
+      const onShared = await shared.keys(
+        `${ASSISTANT_QUEUE_PREFIX}:${ASSISTANT_QUEUE_NAME}:*`,
+      );
+      await shared.quit();
+      expect(onShared).toEqual([]);
+    } finally {
+      gated.release();
+      await host.close();
+    }
+  });
+
+  it("is not scheduled by a worker that runs no turns", async () => {
+    const host = createJobHost({
+      redisUrl: sharedUrl,
+      db: kit.db.runtime.db,
+      logger: silent,
+      workerId: `assistant-${randomUUID()}`,
+      cleanupIntervalMs: LONG_INTERVAL_MS,
+      sweepIntervalMs: LONG_INTERVAL_MS,
+      backfillIntervalMs: LONG_INTERVAL_MS,
+      cleanup: () => Promise.resolve(0),
+      sweep: () =>
+        Promise.resolve({
+          leftoverStagingDeleted: 0,
+          abandonedPendingDeleted: 0,
+        }),
+      backfill: () =>
+        Promise.resolve({
+          filled: 0,
+          alreadyComplete: 0,
+          skippedMissingOriginal: 0,
+          skippedUndecodable: 0,
+        }),
+    });
+    await host.start();
+    try {
+      const connection = new Redis(sharedUrl, { maxRetriesPerRequest: null });
+      const maintenance = new Queue(MAINTENANCE_QUEUE_NAME, {
+        connection,
+        prefix: BULLMQ_PREFIX,
+      });
+      try {
+        const scheduled = await maintenance.getJobSchedulers();
+        expect(scheduled.map((entry) => entry.key)).not.toContain(
+          ASSISTANT_RECONCILE_JOB_NAME,
+        );
+      } finally {
+        await maintenance.close();
+        await connection.quit();
+      }
+    } finally {
+      await host.close();
+    }
+  });
+});
+
+describe("shutdown drains the turns this worker is running", () => {
+  it("waits for an in-flight turn to finish, and lets its job complete", async () => {
+    const gated = gatedProcessor();
+    const host = hostWith(gated.process);
+    await host.start();
+    let closed = false;
+    try {
+      await withQueue(async (queue) => {
+        await enqueueAssistantTurn(queue, turnJob());
+        await waitUntil(() => gated.runs.length === 1);
+
+        const closing = host.close().then(() => {
+          closed = true;
+        });
+        // Still inside the turn: shutdown waits rather than dropping it.
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        expect(closed).toBe(false);
+
+        gated.release();
+        await closing;
+        expect(closed).toBe(true);
+        // Completed, not failed and not left waiting to be run again.
+        expect(await pendingJobs(queue)).toBe(0);
+      });
+    } finally {
+      gated.release();
+      await host.close();
+    }
+  });
+
+  /**
+   * A turn that outlives the bound is not waited for for ever: the process says
+   * so and goes, and its row is the reconciler's to interrupt — the same
+   * recovery a worker that crashed gets.
+   */
+  it("stops waiting at the drain bound and says so", async () => {
+    const lines: string[] = [];
+    const logger = createProcessLogger({
+      name: "assistant-drain",
+      destination: {
+        write(chunk: string) {
+          lines.push(chunk);
+        },
+      },
+    });
+    let entered = false;
+    const host = createJobHost({
+      redisUrl: sharedUrl,
+      db: kit.db.runtime.db,
+      logger,
+      workerId: `assistant-${randomUUID()}`,
+      cleanupIntervalMs: LONG_INTERVAL_MS,
+      sweepIntervalMs: LONG_INTERVAL_MS,
+      backfillIntervalMs: LONG_INTERVAL_MS,
+      cleanup: () => Promise.resolve(0),
+      sweep: () =>
+        Promise.resolve({
+          leftoverStagingDeleted: 0,
+          abandonedPendingDeleted: 0,
+        }),
+      backfill: () =>
+        Promise.resolve({
+          filled: 0,
+          alreadyComplete: 0,
+          skippedMissingOriginal: 0,
+          skippedUndecodable: 0,
+        }),
+      assistant: {
+        redisUrl: queueUrl,
+        drainTimeoutMs: 300,
+        process: () => {
+          entered = true;
+          return new Promise<AssistantTurnJobOutcome>(() => undefined);
+        },
+      },
+    });
+    await host.start();
+    await withQueue(async (queue) => {
+      await enqueueAssistantTurn(queue, turnJob());
+    });
+    await waitUntil(() => entered);
+
+    await host.close();
+
+    expect(lines.join("\n")).toContain(
+      "assistant turns still running at the drain timeout",
+    );
   });
 });
 

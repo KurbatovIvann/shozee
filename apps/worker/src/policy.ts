@@ -5,6 +5,8 @@
  * only through an ADR or a protocol-manual patch with a proving test.
  */
 
+import { ASSISTANT_TURN_TIMEOUT_MS } from "@showzy/assistant-runtime";
+
 /** Postgres NOTIFY channel fired on `domain_events` INSERT. */
 export const OUTBOX_NOTIFY_CHANNEL = "domain_events";
 
@@ -137,6 +139,31 @@ export const ASSISTANT_LOCK_DURATION_MS = 60_000;
  * reconciler interrupts it past its deadline.
  */
 export const ASSISTANT_MAX_STALLED_COUNT = 0;
+
+/**
+ * How often the reconciler passes over the turns the database calls stale
+ * (ADR-0039, starting values). On the maintenance scheduler, like every other
+ * periodic job: a missed pass costs nothing, because the next one finds the
+ * same rows. It bounds how long a crashed worker's turn stays `running` — up to
+ * the turn timeout plus one of these.
+ */
+export const ASSISTANT_RECONCILE_INTERVAL_MS = 60_000;
+
+/** Stable Job Scheduler id and job name for the reconciler's pass. */
+export const ASSISTANT_RECONCILE_JOB_NAME = "reconcileAssistantTurns";
+
+/**
+ * How long shutdown waits for the turns this worker is running (ADR-0039:
+ * deploys drain in-flight turns). A turn's own deadline stops it after the turn
+ * timeout, and it still has its last writes to make, so this is that timeout
+ * plus room for them. Past it the process stops waiting and says so; the turn's
+ * row is then the reconciler's to interrupt, as any crashed worker's is.
+ *
+ * The stop grace period the platform gives this process must be at least this
+ * long. There is no production environment yet, so that is a recorded
+ * requirement (`AGENTS.md`), not a setting here.
+ */
+export const ASSISTANT_DRAIN_TIMEOUT_MS = ASSISTANT_TURN_TIMEOUT_MS + 30_000;
 
 /** First LISTEN reconnect delay after a dropped connection. */
 export const LISTEN_RECONNECT_MIN_MS = 1_000;

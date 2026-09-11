@@ -114,7 +114,8 @@ export async function bootWorker(
         ? {
             assistant: {
               redisUrl: config.queueRedis.url,
-              process: assistantTurns,
+              process: assistantTurns.process,
+              reconcile: assistantTurns.reconcile,
             },
           }
         : {}),

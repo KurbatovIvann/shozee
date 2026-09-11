@@ -48,9 +48,10 @@ import type {
   finishTurnInputSchema,
   finishTurnOutputSchema,
 } from "../actions/finish-turn.contract.js";
-import type {
-  interruptTurnInputSchema,
-  interruptTurnOutputSchema,
+import {
+  ASSISTANT_QUEUED_TURN_ABANDON_MS,
+  type interruptTurnInputSchema,
+  type interruptTurnOutputSchema,
 } from "../actions/interrupt-turn.contract.js";
 import type {
   listStaleTurnsInputSchema,
@@ -113,14 +114,27 @@ function isActiveStatus(
 }
 
 /**
- * The one definition of a turn the reconciler may end: running, and past the
- * deadline Postgres set when it started, by Postgres's own clock. A server-side
- * timeout is the only thing that ends a turn early (ADR-0039), so a queued turn
- * and a running turn inside its deadline are never stale. `listStaleTurns`
- * finds turns by it and `interruptTurn` ends them by it.
+ * The two definitions of a turn the reconciler may end, each by Postgres's own
+ * clock against a time Postgres set. `listStaleTurns` finds turns by them and
+ * `interruptTurn` ends them by them, so the two cannot disagree.
+ *
+ * Running past the deadline set when it started: a server-side timeout is the
+ * only thing that ends a started turn early (ADR-0039).
  */
 function runningPastDeadline(): SQL {
   return sql`(${eq(assistantTurns.status, "running")} and ${lt(assistantTurns.deadlineAt, sql`now()`)})`;
+}
+
+/**
+ * Queued, and accepted longer than the abandon threshold ago: a turn that can
+ * never start (ADR-0039 as amended by SHO-570). A queued turn inside it is
+ * never ended — a worker, or the reconciler's re-enqueue, may still start it.
+ */
+function queuedPastAbandon(): SQL {
+  return sql`(${eq(assistantTurns.status, "queued")} and ${lt(
+    assistantTurns.createdAt,
+    sql`now() - (${ASSISTANT_QUEUED_TURN_ABANDON_MS}::integer * interval '1 millisecond')`,
+  )})`;
 }
 
 function byIdentity(identity: TurnIdentity) {
@@ -390,8 +404,8 @@ export async function startStaffTurn(env: {
 
 /**
  * Ends a turn that meets `eligible` and takes its budget hold off the row, in
- * one statement, and returns the hold it took — or null when the turn did not
- * meet it and nothing was taken.
+ * one statement, and returns the hold it took with the status it ended the turn
+ * from — or null when the turn did not meet it and nothing was taken.
  *
  * `RETURNING` sees only the updated row, whose hold is now zero, so the hold is
  * read from the same row locked in a sub-select. The lock is what makes this
@@ -405,10 +419,14 @@ async function finaliseTurn(
   identity: TurnIdentity,
   status: "done" | "failed" | "interrupted",
   eligible: SQL,
-): Promise<BudgetHold | null> {
+): Promise<{
+  readonly hold: BudgetHold;
+  readonly from: (typeof assistantTurns.$inferSelect)["status"];
+} | null> {
   const held = db
     .select({
       id: assistantTurns.id,
+      status: assistantTurns.status,
       companyReservedMicroUsd: assistantTurns.companyReservedMicroUsd,
       globalReservedMicroUsd: assistantTurns.globalReservedMicroUsd,
       budgetKyivDate: assistantTurns.budgetKyivDate,
@@ -431,12 +449,23 @@ async function finaliseTurn(
       .from(held)
       .where(eq(assistantTurns.id, held.id))
       .returning({
+        from: held.status,
         companyReservedMicroUsd: held.companyReservedMicroUsd,
         globalReservedMicroUsd: held.globalReservedMicroUsd,
         kyivDate: held.budgetKyivDate,
       })
   )[0];
-  return finished ?? null;
+  if (finished === undefined) {
+    return null;
+  }
+  return {
+    from: finished.from,
+    hold: {
+      companyReservedMicroUsd: finished.companyReservedMicroUsd,
+      globalReservedMicroUsd: finished.globalReservedMicroUsd,
+      kyivDate: finished.kyivDate,
+    },
+  };
 }
 
 export async function finishStaffTurn(env: {
@@ -446,13 +475,8 @@ export async function finishStaffTurn(env: {
   const identity = await ownTurnIdentity(env.ctx, env.input);
   const db = requireWritable(env.ctx.db);
 
-  const releasedHold = await finaliseTurn(
-    db,
-    identity,
-    env.input.status,
-    isActive(),
-  );
-  if (releasedHold === null) {
+  const ended = await finaliseTurn(db, identity, env.input.status, isActive());
+  if (ended === null) {
     return {
       outcome: "already_finished",
       conversationId: identity.conversationId,
@@ -463,7 +487,7 @@ export async function finishStaffTurn(env: {
     outcome: "finished",
     conversationId: identity.conversationId,
     status: env.input.status,
-    releasedHold,
+    releasedHold: ended.hold,
   };
 }
 
@@ -475,7 +499,9 @@ export async function finishStaffTurn(env: {
  * Staleness is part of the same statement, so a turn the reconciler listed as
  * stale but a worker started since is `not_stale`, never ended under it: ending
  * it would free the conversation while the worker still writes, and release a
- * hold the model is still spending.
+ * hold the model is still spending. The same holds the other way round: a start
+ * that waits on this statement's row lock re-reads an interrupted row and finds
+ * nothing queued to start.
  */
 export async function interruptSystemTurn(env: {
   readonly ctx: SystemCtx;
@@ -494,13 +520,13 @@ export async function interruptSystemTurn(env: {
     commandId: env.input.commandId.toLowerCase(),
   };
 
-  const releasedHold = await finaliseTurn(
+  const ended = await finaliseTurn(
     db,
     identity,
     "interrupted",
-    runningPastDeadline(),
+    sql`(${runningPastDeadline()} or ${queuedPastAbandon()})`,
   );
-  if (releasedHold === null) {
+  if (ended === null) {
     const status = await currentStatus(db, identity);
     return isActiveStatus(status)
       ? {
@@ -514,10 +540,16 @@ export async function interruptSystemTurn(env: {
           status,
         };
   }
+  if (!isActiveStatus(ended.from)) {
+    throw new CoreInvariantError(
+      "assistant.interruptTurn ended a turn that was not active",
+    );
+  }
   return {
     outcome: "interrupted",
     conversationId: identity.conversationId,
-    releasedHold,
+    from: ended.from,
+    releasedHold: ended.hold,
   };
 }
 
@@ -601,9 +633,11 @@ export async function listStaleTurns(env: {
       commandId: assistantTurns.commandId,
       status: assistantTurns.status,
       placeholderMessageId: assistantTurns.placeholderMessageId,
-      companyReservedMicroUsd: assistantTurns.companyReservedMicroUsd,
-      globalReservedMicroUsd: assistantTurns.globalReservedMicroUsd,
-      budgetKyivDate: assistantTurns.budgetKyivDate,
+      // Decided here, by the predicates the interrupt ends a turn by, so the
+      // reconciler never judges a threshold of its own.
+      staleness: sql<
+        "queued_without_start" | "queued_abandoned" | "running_past_deadline"
+      >`case when ${runningPastDeadline()} then 'running_past_deadline' when ${queuedPastAbandon()} then 'queued_abandoned' else 'queued_without_start' end`,
     })
     .from(assistantTurns)
     .where(
@@ -617,6 +651,7 @@ export async function listStaleTurns(env: {
               sql`now() - (${env.input.queuedStaleAfterMs}::integer * interval '1 millisecond')`,
             ),
           ),
+          queuedPastAbandon(),
           runningPastDeadline(),
         ),
       ),
@@ -632,15 +667,7 @@ export async function listStaleTurns(env: {
       commandId: row.commandId,
       status: row.status,
       placeholderMessageId: row.placeholderMessageId,
-      budgetHold: {
-        companyReservedMicroUsd: row.companyReservedMicroUsd,
-        globalReservedMicroUsd: row.globalReservedMicroUsd,
-        kyivDate: row.budgetKyivDate,
-      },
-      staleness:
-        row.status === "queued"
-          ? ("queued_without_start" as const)
-          : ("running_past_deadline" as const),
+      staleness: row.staleness,
     })),
   };
 }

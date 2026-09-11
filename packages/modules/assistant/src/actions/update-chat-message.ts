@@ -11,6 +11,7 @@ export const updateChatMessage = implementAction(updateChatMessageContract, {
       conversationId: input.conversationId,
       seq: input.seq,
       messageId: input.messageId,
+      revision: input.revision,
       message: input.message,
     });
     return {

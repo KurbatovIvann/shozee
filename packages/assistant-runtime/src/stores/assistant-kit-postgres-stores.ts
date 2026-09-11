@@ -29,6 +29,7 @@ import type {
   PauseScope,
 } from "@showzy/assistant-kit";
 import { executeAction } from "@showzy/core";
+import { CoreError } from "@showzy/core/errors";
 
 import { assistantHistoryWindow } from "../assistant-kit-history-window.js";
 import type { AssistantHistoryPort } from "../runtime-types.js";
@@ -96,18 +97,31 @@ export function createPostgresAssistantKitMessageLog(
      * in the same request, so the conversation is already known to be this
      * person's; a not-found here means that message vanished under a held lease,
      * and dressing it as a gone conversation would hide a fault as a 410.
+     *
+     * A `CONFLICT` is the compare-and-set refusing to overwrite a message
+     * another writer changed since this caller read it (SHO-570). It is not a
+     * fault: it is answered false, and the kit reads the message again.
      */
     update: async (conversationId, record) => {
-      await executeAction(deps.pipeline, {
-        action: updateChatMessage,
-        input: {
-          conversationId,
-          seq: record.seq,
-          messageId: record.messageId,
-          message: asJsonObject(record.message),
-        },
-        ...call,
-      });
+      try {
+        await executeAction(deps.pipeline, {
+          action: updateChatMessage,
+          input: {
+            conversationId,
+            seq: record.seq,
+            messageId: record.messageId,
+            revision: record.revision,
+            message: asJsonObject(record.message),
+          },
+          ...call,
+        });
+        return true;
+      } catch (error) {
+        if (error instanceof CoreError && error.code === "CONFLICT") {
+          return false;
+        }
+        throw error;
+      }
     },
   };
 }

@@ -98,19 +98,28 @@ describe("every declared kind has something that produces it", () => {
   });
 
   /**
-   * The ways a turn may change the stored messages. There is one: "the same
-   * card id is an update" is a rule of `append`, not a second kind a producer
-   * has to remember to choose — that second kind was produced by nobody, and a
-   * record showed twice (SHO-551). A new kind here needs a producer too.
+   * The ways a turn may change the stored messages. There are two, and each
+   * exists because something writes it.
+   *
+   * `append` carries everything a turn produces; "the same card id is an
+   * update" is a rule of it, not a third kind a producer has to remember to
+   * choose — that kind was produced by nobody, and a record showed twice
+   * (SHO-551). `end_text` settles a `streaming` text part, and it is a kind
+   * rather than a rule because a turn's message has two writers once the
+   * reconciler can end a turn the worker is still writing (SHO-570): reading
+   * the message and then appending would store a second text part beside the
+   * one the other writer had just settled. A new kind here needs a producer too.
    */
   it("message write kinds are produced by something, or named as unwired", () => {
     const declaration = readFileSync(path.join(kitSrc, "messages.ts"), "utf8");
     const kinds = [
       ...declaration.matchAll(/readonly kind:\s*"([a-z_]+)"/g),
     ].map((match) => match[1] ?? "");
-    expect(kinds.toSorted()).toEqual(["append"]);
+    expect(kinds.toSorted()).toEqual(["append", "end_text"]);
 
-    const files = sourcesUnder(kitSrc).filter(
+    // Both halves of the server: the kit's own host writes, and this package's
+    // turn processor and reconciler.
+    const files = [...sourcesUnder(kitSrc), ...sourcesUnder(httpDir)].filter(
       (file) => !file.endsWith(`${path.sep}messages.ts`),
     );
     const unwired = kinds.filter((kind) => !producedIn(files, kind));
