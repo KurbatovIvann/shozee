@@ -248,19 +248,40 @@ async function counters(store: AiBudgetStore) {
   };
 }
 
+/**
+ * The queue as the reconciler sees it: a job added stays until something takes
+ * it. `drain` is a worker taking every waiting job and finishing it, which is
+ * what removes it (`removeOnComplete`) — including the turn that was refused at
+ * start and stayed queued.
+ */
 function memoryQueue() {
   const added: { jobId: string; data: AssistantTurnJob }[] = [];
+  const pending = new Set<string>();
   const queue: AssistantTurnQueue = {
     add: (_name, data, opts) => {
       added.push({ jobId: opts.jobId, data });
+      pending.add(opts.jobId);
       return Promise.resolve(undefined);
     },
+    getJob: (jobId) =>
+      Promise.resolve(pending.has(jobId) ? { id: jobId } : undefined),
   };
-  return { queue, added };
+  return {
+    queue,
+    added,
+    hold: (job: AssistantTurnJob) => pending.add(assistantTurnJobId(job)),
+    drain: () => {
+      pending.clear();
+    },
+  };
 }
 
 interface Pass {
   run(): Promise<void>;
+  /** A job the queue is still holding for this turn. */
+  hold(job: AssistantTurnJob): void;
+  /** Every waiting job taken and finished, so none is left. */
+  drain(): void;
   readonly added: { jobId: string; data: AssistantTurnJob }[];
   readonly published: {
     readonly address: { readonly conversationId: string };
@@ -276,7 +297,7 @@ async function reconciler(options?: {
 }): Promise<Pass> {
   const budget = options?.budget ?? (await seededBudget());
   const published: Pass["published"] = [];
-  const { queue, added } = memoryQueue();
+  const { queue, added, hold, drain } = memoryQueue();
   const deps = options?.deps ?? pipeline;
   const clock = options?.clock;
   const reconcile = createAssistantTurnReconciler({
@@ -295,6 +316,8 @@ async function reconciler(options?: {
     added,
     published,
     budget,
+    hold,
+    drain,
     run: async () => {
       await reconcile(queue);
     },
@@ -358,14 +381,18 @@ describe("a turn whose job was lost", () => {
     expect(enqueuedIds(pass, turn)).toEqual([derivedAtAccept]);
     expect(assistantTurnJobId(turn.job)).toBe(derivedAtAccept);
 
-    // The same pass a minute later would enqueue it on every pass for ever;
-    // a turn refused at start every time is what that would cost.
+    // The job ran, was refused at start and was removed; the turn is queued
+    // again with nothing holding it.
+    pass.drain();
+    // Without a backoff this pass — and every pass after it — would enqueue it
+    // again, for as long as the turn existed.
     await pass.run();
     expect(enqueuedIds(pass, turn)).toEqual([derivedAtAccept]);
 
     clock.ms += ASSISTANT_REENQUEUE_BACKOFF_MS;
     await pass.run();
     expect(enqueuedIds(pass, turn)).toHaveLength(2);
+    pass.drain();
 
     // And the wait doubles: one more interval is not yet enough.
     clock.ms += ASSISTANT_REENQUEUE_BACKOFF_MS;
@@ -431,6 +458,49 @@ describe("a turn whose worker is gone", () => {
     expect(await turnRow(turn.commandId)).toMatchObject({
       status: "interrupted",
     });
+  });
+});
+
+describe("a queued turn behind a backlog", () => {
+  /**
+   * Age alone is not abandonment. One worker runs 4 turns at once, each up to
+   * 180 s — about 1.33 turns a minute at worst — so twenty turns ahead of this
+   * one put it past fifteen minutes while it is perfectly healthy. What tells
+   * the two apart is whether the queue still holds its job.
+   */
+  it("is left alone while its job waits, however long it has been queued, and ended once that job is gone", async () => {
+    const turn = await accepted();
+    await ageTurn(turn.conversationId, "16 minutes");
+    const pass = await reconciler();
+    pass.hold(turn.job);
+
+    await pass.run();
+
+    expect(await turnRow(turn.commandId)).toMatchObject({
+      status: "queued",
+      companyReservedMicroUsd: HOLD_MICRO_USD,
+    });
+    expect(about(pass, turn)).toEqual([]);
+    expect(await counters(pass.budget)).toEqual({
+      company: COUNTER_BEFORE,
+      global: COUNTER_BEFORE,
+    });
+    // It is not re-enqueued either: the queue is already holding it.
+    expect(enqueuedIds(pass, turn)).toEqual([]);
+
+    // The job ran, was refused at start, and was removed. Now nothing will
+    // start this turn, and the same threshold ends it.
+    pass.drain();
+    await pass.run();
+
+    expect(await turnRow(turn.commandId)).toMatchObject({
+      status: "interrupted",
+      startedAt: null,
+      companyReservedMicroUsd: 0,
+    });
+    expect((await counters(pass.budget)).company).toBeCloseTo(
+      COUNTER_BEFORE - HOLD.companyReservedUsd,
+    );
   });
 });
 

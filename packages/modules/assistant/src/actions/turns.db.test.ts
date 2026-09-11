@@ -1884,7 +1884,6 @@ describe("the reconciler's read", () => {
         commandId: queuedAbandonedInput.commandId,
         status: "queued",
         placeholderMessageId: queuedAbandonedInput.placeholder.messageId,
-        budgetHold: HOLD,
         staleness: "queued_abandoned",
       },
       {
@@ -1894,7 +1893,6 @@ describe("the reconciler's read", () => {
         commandId: queuedOldInput.commandId,
         status: "queued",
         placeholderMessageId: queuedOldInput.placeholder.messageId,
-        budgetHold: HOLD,
         staleness: "queued_without_start",
       },
       {
@@ -1904,7 +1902,6 @@ describe("the reconciler's read", () => {
         commandId: runningPastInput.commandId,
         status: "running",
         placeholderMessageId: runningPastInput.placeholder.messageId,
-        budgetHold: HOLD,
         staleness: "running_past_deadline",
       },
     ]);

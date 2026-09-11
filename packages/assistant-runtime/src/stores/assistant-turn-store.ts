@@ -450,8 +450,10 @@ export interface AssistantStaleTurn {
     "queued_without_start" | "queued_abandoned" | "running_past_deadline";
   readonly turn: AssistantTurnRef;
   readonly placeholderMessageId: string;
-  readonly budgetHold: StaffAssistantBudgetHold;
-  /** Rebuilt from the row alone, as the reconciler re-enqueues it. */
+  /**
+   * Rebuilt from the row alone: what the reconciler re-enqueues, and the id it
+   * asks the queue about.
+   */
   readonly job: AssistantTurnJob;
 }
 
@@ -554,7 +556,6 @@ export function createPostgresAssistantStaleTurns(
           staleness: row.staleness,
           turn,
           placeholderMessageId: row.placeholderMessageId,
-          budgetHold: assistantBudgetHoldFromStored(row.budgetHold),
           job: jobOf(turn),
         };
       });

@@ -477,7 +477,6 @@ describe("the reconciler", () => {
       companyId: kitIdentities.companies.a,
       staleness: "queued_without_start",
       turn: { kind: "chat", conversationId, commandId },
-      budgetHold: hold,
     });
     expect(assistantTurnJobId(accepted.job)).toBe(derivedAtAccept);
     expect(stale === undefined ? null : assistantTurnJobId(stale.job)).toBe(

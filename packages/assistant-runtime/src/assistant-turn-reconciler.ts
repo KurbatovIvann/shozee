@@ -19,6 +19,13 @@
  *    guarded write, which ends it only while it is still stale and zeroes its
  *    budget hold in the same statement. Staleness is never judged here: this
  *    file has no threshold and no clock of its own.
+ *    - For a **queued** turn there is one extra condition, and it can only
+ *      narrow what the database would allow: the queue must no longer hold its
+ *      job. Age alone does not mean abandoned — one worker drains about 1.33
+ *      turns a minute at the declared values, so a backlog of twenty ages a
+ *      healthy turn past any threshold — while a job that is gone means the
+ *      turn ran to a refusal and was removed. The same question decides the
+ *      re-enqueue above, asked once per turn.
  * 3. **The hold that interrupt handed back is released — once — only for a turn
  *    that never started.** A turn that started may have reached the model, and
  *    its reservation stands as the charge (ADR-0039, amended SHO-561). Nobody
@@ -44,6 +51,7 @@ import type { Logger } from "pino";
 
 import { releaseStaffAssistantBudgetHold } from "./assistant-budget-guard.js";
 import {
+  assistantTurnJobPending,
   enqueueAssistantTurn,
   type AssistantTurnQueue,
 } from "./assistant-queue-producer.js";
@@ -300,6 +308,23 @@ export function createAssistantTurnReconciler(
     for (const stale of listed) {
       const fields = fieldsOf(stale, requestId);
       try {
+        // Whether the queue still holds this turn's job is the one thing that
+        // separates a turn waiting behind a backlog from one waiting for
+        // nothing. Both queued branches ask it, once, the same way.
+        if (
+          stale.staleness === "queued_without_start" ||
+          stale.staleness === "queued_abandoned"
+        ) {
+          if (await assistantTurnJobPending(queue, stale.job)) {
+            seen.add(assistantTurnJobId(stale.job));
+            summary.left += 1;
+            logger.info(
+              fields,
+              "assistant turn is queued behind its job and was left as it is",
+            );
+            continue;
+          }
+        }
         if (stale.staleness === "queued_without_start") {
           seen.add(assistantTurnJobId(stale.job));
           const done = await reenqueue(stale, queue, fields);

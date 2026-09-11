@@ -18,10 +18,12 @@
  * - `running` past its deadline. A server-side timeout is the only thing that
  *   ends a started turn early.
  * - `queued` and not started within `ASSISTANT_QUEUED_TURN_ABANDON_MS` of its
- *   accept (SHO-570). Such a turn can never start — its author lost membership,
- *   or its job is refused every time — and would otherwise hold its
- *   conversation and its hold forever. `startTurn` is a compare-and-set on
- *   `queued` too, so exactly one of a start and this interrupt wins.
+ *   accept (SHO-570). Such a turn would otherwise hold its conversation and its
+ *   hold for ever. Age alone is not proof that it cannot start — a deep enough
+ *   backlog ages a healthy turn past any threshold — so the caller asks this
+ *   only for a turn whose job the queue no longer holds; see the threshold's
+ *   own note. `startTurn` is a compare-and-set on `queued` too, so exactly one
+ *   of a start and this interrupt wins.
  *
  * `from` says which: the turn's status when this statement ended it. A queued
  * turn never reached the model, so its hold is the caller's to release; a
@@ -48,11 +50,22 @@ import {
 } from "./turn-record.contract.js";
 
 /**
- * How long an accepted turn may stay queued before the reconciler ends it
- * (SHO-570, ADR-0039 as amended). A worker picks a job up in well under a
- * second, and the reconciler re-enqueues a lost one within a minute or two; a
- * turn still queued after fifteen minutes is not waiting, it cannot start.
- * A policy value, changed with a proving test.
+ * How long a queued turn that has **no job** may stay queued before the
+ * reconciler ends it (SHO-570, ADR-0039 as amended).
+ *
+ * Age alone does not mean abandoned, and this threshold must not be read as if
+ * it did. At the declared starting values one worker runs 4 turns at once, each
+ * up to 180 s, so it drains about 1.33 turns a minute at worst: a backlog of
+ * roughly twenty turns puts a perfectly healthy queued turn past fifteen
+ * minutes. What separates the two is the job. A backlogged turn has one
+ * waiting, however deep the queue; a turn that can never start has none,
+ * because its job completed and was removed (`removeOnComplete`) after being
+ * refused at start. The caller checks that — this statement decides only the
+ * age — and a caller can therefore only narrow what is ended here, never widen
+ * it.
+ *
+ * Fifteen minutes is then the bound on how long such a turn holds its author's
+ * conversation and its reservation. A policy value, changed with a proving test.
  */
 export const ASSISTANT_QUEUED_TURN_ABANDON_MS = 15 * 60 * 1000;
 

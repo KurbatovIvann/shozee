@@ -633,9 +633,6 @@ export async function listStaleTurns(env: {
       commandId: assistantTurns.commandId,
       status: assistantTurns.status,
       placeholderMessageId: assistantTurns.placeholderMessageId,
-      companyReservedMicroUsd: assistantTurns.companyReservedMicroUsd,
-      globalReservedMicroUsd: assistantTurns.globalReservedMicroUsd,
-      budgetKyivDate: assistantTurns.budgetKyivDate,
       // Decided here, by the predicates the interrupt ends a turn by, so the
       // reconciler never judges a threshold of its own.
       staleness: sql<
@@ -670,11 +667,6 @@ export async function listStaleTurns(env: {
       commandId: row.commandId,
       status: row.status,
       placeholderMessageId: row.placeholderMessageId,
-      budgetHold: {
-        companyReservedMicroUsd: row.companyReservedMicroUsd,
-        globalReservedMicroUsd: row.globalReservedMicroUsd,
-        kyivDate: row.budgetKyivDate,
-      },
       staleness: row.staleness,
     })),
   };

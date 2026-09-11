@@ -132,9 +132,8 @@ wakeup, polling fallback, graceful drain, and the job host.
   `jobId` derivation come from the runtime package;
   `assistant-queue-contract.test.ts` pins its prefix to `BULLMQ_PREFIX`. The
   payload is the turn's identity only: the processor reads the turn and its
-  company from Postgres, and the actor is the turn's `user_id`. Requirement
-  for when infrastructure exists: the stop grace period is at least the turn
-  timeout, so a deploy drains in-flight turns.
+  company from Postgres, and the actor is the turn's `user_id`. The stop grace
+  period is the drain bullet above; it is stated there and nowhere else.
 - OTP codes, tokens, and secrets never reach logs. Process loggers are
   `createProcessLogger` from `@showzy/config`. Sentry is initialized
   only when `SENTRY_DSN` is set; `beforeSend` scrubs the event. Do not
