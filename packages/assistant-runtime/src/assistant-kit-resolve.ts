@@ -29,10 +29,7 @@ import {
   AssistantConfirmationRequired,
   confirmationPause,
 } from "./assistant-kit-confirmation.js";
-import type {
-  AssistantToolContext,
-  ResolveAnswer,
-} from "./assistant-kit-http.js";
+import type { AssistantToolContext, ResolveAnswer } from "./runtime-types.js";
 
 interface FacadeInput {
   customerId?: string;

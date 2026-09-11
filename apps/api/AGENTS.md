@@ -24,9 +24,16 @@ Auth policy parameters still live in `src/auth/` (fnd-T6).
   `POST /assistant/kit/*` (the assistant, ADR-0038; budget at the mount point,
   `channel: "ai"`). Dependencies are
   injected; tests never read `process.env`.
-- `src/http/assistant-chat.ts` — staff AI mount. Session required;
-  membership via `executeAction` (`assistant.getStaffActor`). Tools run
-  `executeAction` with `channel: "ai"`; the adapter never calls `/rpc`.
+- `src/http/assistant-kit*.ts` — the assistant routes: handlers, request
+  plumbing (`assistant-kit-http.ts`: session, company header, command receipts,
+  response shapes), the Hono budget wrapper, and `createAssistantKitRuntime`,
+  which adds `auth` and `commands` to the shared runtime. The runtime itself —
+  tools, resolution, confirmation, history window, kit stores, budget guard,
+  model construction — is `@showzy/assistant-runtime` (ADR-0039), because the
+  worker runs turns too. Session required; membership via `executeAction`
+  (`assistant.getStaffActor`). Tools run `executeAction` with `channel: "ai"`;
+  the adapter never calls `/rpc`. Tests that need `createActionRegistry` for
+  runtime code stay here.
 - `src/http/client-ip.ts` — forwarded-IP headers are trusted only when the
   TCP peer is in `TRUSTED_PROXIES`. Spoofed `X-Forwarded-For` is ignored.
   `createTrustedProxyMatcher` builds the `BlockList` once at app construction.
@@ -44,8 +51,9 @@ Auth policy parameters still live in `src/auth/` (fnd-T6).
   `INCRBYFLOAT` settle).
   Consume keys are HMAC-SHA256 of the Better Auth `${ip}|${path}` key
   (32 hex chars, no 24h rotation; `IP_HMAC_SECRET` from config). Tests that
-  do not need Redis use the in-memory stores from `@showzy/core` and
-  `stores/memory.ts` / `stores/budget.ts`.
+  do not need Redis use the in-memory stores from `@showzy/core`,
+  `stores/memory.ts`, and `createMemoryAiBudgetStore` from
+  `@showzy/assistant-runtime` (which owns the `AiBudgetStore` port).
 - `src/auth/` — `buildAuthOptions` (fnd-T6). Every better-auth instance
   still goes through this factory.
 

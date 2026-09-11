@@ -13,7 +13,10 @@
 import type { PauseStore } from "@showzy/assistant-kit";
 import type { Redis } from "ioredis";
 
-import { redisSetNxSucceeded } from "./redis.js";
+/** Whether a `SET ... NX` — plain or through `eval` — took the key. */
+function redisSetNxSucceeded(result: unknown): boolean {
+  return result === "OK" || result === true || result === 1;
+}
 
 /** `SET key value PX ttl NX` — the one-open-pause guard. */
 const SET_IF_ABSENT_LUA = `

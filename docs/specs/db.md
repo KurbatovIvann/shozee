@@ -267,8 +267,42 @@ dropped, recorded in the owning module's spec §7 (v1 migration notes).
   stop-write, then drop.
 - Production has encrypted off-host PostgreSQL backups with PITR. Foundation
   target: RPO ≤ 15 minutes, RTO ≤ 4 hours; a restore drill must pass before
-  MVP launch and then quarterly. Redis is rebuildable for cache/rate-limit
-  state; any non-rebuildable Redis use requires its own persistence policy.
+  MVP launch and then quarterly. Any non-rebuildable Redis use requires its
+  own persistence policy.
+- **Two Redis instances (ADR-0039).** Redis is split by what may reach disk.
+  - **Shared Redis** (`REDIS_URL`): better-auth secondary storage, which holds
+    plaintext phone OTP codes (`apps/api/src/auth/options.ts`); rate limits;
+    confirmation challenges; assistant pauses and budget counters; and the
+    worker's safe-to-miss BullMQ jobs (maintenance and pdf, schedulers
+    re-upserted on boot), which may stay here. It must not persist, so OTP
+    codes never reach disk or backups (`security-operations.md` §2). Losing it
+    costs codes and challenges in flight, open questions, counters and
+    re-runnable jobs — never product state.
+  - **Queue Redis**: durable BullMQ queues, today the assistant queue. An
+    accepted assistant turn is enqueued there, and a lost job is a turn nobody
+    runs, so it is this system's first non-rebuildable Redis use. It runs with
+    AOF (`appendonly yes`, `appendfsync everysec`) on a persistent volume and
+    `maxmemory-policy noeviction`, because an evicted job is a lost turn. A job
+    payload is the turn's identity only (kind, conversation id, command id):
+    the person, session, company and client IP stay in Postgres, so nothing
+    that must stay off disk is written there.
+  - Loss bound: up to one second of queue writes. It is covered by the
+    assistant reconciler: the accepted turn is already a Postgres row that
+    stores the accept's kind and the turn's command id, and a turn with no job
+    is rebuilt from that row and enqueued under the same `jobId`.
+  - Development form (`docker-compose.yml`): `redis` on `127.0.0.1:6379` with
+    no append-only file and no volume; `redis-queue` on `127.0.0.1:6380` with
+    volume `redis-queue-data` at `/data` and `--appendonly yes --appendfsync
+    everysec --maxmemory-policy noeviction`. No configuration variable points
+    at the queue Redis yet; it arrives with the slices that connect to it
+    (SHO-561, SHO-563).
+  - Production form, a requirement to check when the infrastructure is built
+    (there is no production environment yet): the queue Redis persists with
+    AOF on durable storage and answers `CONFIG GET appendonly` → `yes` and
+    `CONFIG GET maxmemory-policy` → `noeviction`. The shared Redis does not
+    persist: `CONFIG GET appendonly` → `no` and `CONFIG GET save` → empty.
+    The assistant queue on the shared Redis, or a persisted shared Redis, is
+    not a valid deployment.
 
 ## 7. Migration workflow and CI
 
@@ -367,6 +401,7 @@ Idempotent (`ON CONFLICT DO NOTHING`) seeds, runnable repeatedly.
 
 | Date | Change | Why | Reported by |
 | --- | --- | --- | --- |
+| 2026-09-11 | §6: two Redis instances — a non-persistent shared Redis (OTP codes stay off disk) and a dedicated queue Redis with AOF (`appendfsync everysec`) on a volume and `noeviction`; production requirements verified with `CONFIG GET appendonly` / `maxmemory-policy` / `save` | ADR-0039: an accepted assistant turn is a durable BullMQ job, the first non-rebuildable Redis use | assistant-async-T1 (SHO-559) |
 | 2026-09-08 | §3: GIN/trgm + generated `tsvector` on owner name columns for staff matchers are not ADR-0020 discovery / `schema/search.ts` grants | SHO-528 / SHO-526 global company search T1 | db-T4 (SHO-528) |
 | 2026-08-28 | §3: `customer_legal_profiles` is an account-scoped tenancy exception (no `company_id`); §7: user-delete contact-preserve trigger | SHO-170 / ADR-0028 legal requisites; SET NULL + contact CHECK coexistence | customers-T2 (SHO-170) |
 | 2026-08-20 | §3: later modules reuse the PG15 column-scoped SET NULL custom-migration pattern | SHO-91 orders customer FK cannot null `company_id` | orders-T1 (SHO-91) |

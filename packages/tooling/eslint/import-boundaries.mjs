@@ -19,6 +19,7 @@ const NODE_BUILTINS = new Set([
 const PLATFORM_PACKAGES = new Set([
   "ai",
   "assistant-kit",
+  "assistant-runtime",
   "config",
   "contract",
   "copy",
@@ -31,6 +32,13 @@ const PLATFORM_PACKAGES = new Set([
   "ui",
   "validation",
 ]);
+
+/**
+ * Server-only platform packages (ADR-0032, ADR-0039). Client-safe packages ship
+ * into mobile and web, so they may not import these even where platform
+ * packages are otherwise allowed (`packages/contract`).
+ */
+const SERVER_ONLY_PACKAGES = new Set(["ai", "assistant-runtime"]);
 
 /** Projection modules may import foreign schemas; contract-check enforces grants. */
 const PROJECTION_MODULES = new Set(["search", "analytics"]);
@@ -118,6 +126,12 @@ function classify(filename) {
   if (path.includes("/packages/copy/")) {
     return { kind: "copy" };
   }
+  if (
+    path.includes("/packages/validation/") ||
+    path.includes("/packages/ui/")
+  ) {
+    return { kind: "client-safe" };
+  }
   return { kind: "skip" };
 }
 
@@ -201,6 +215,15 @@ function violation(from, spec, typeOnly) {
     return { messageId: "contractClient" };
   }
 
+  if (from.kind === "contract" || from.kind === "client-safe") {
+    if (pkg !== null && SERVER_ONLY_PACKAGES.has(pkg.name)) {
+      return { messageId: "clientSafeServerOnly" };
+    }
+    if (from.kind === "client-safe") {
+      return null;
+    }
+  }
+
   if (from.kind === "contract") {
     if (
       pkg !== null &&
@@ -259,6 +282,9 @@ function violation(from, spec, typeOnly) {
     }
     if (pkg.name === "ai") {
       return { messageId: "moduleAi" };
+    }
+    if (pkg.name === "assistant-runtime") {
+      return { messageId: "moduleAssistantRuntime" };
     }
     if (pkg.name === "ai-eval") {
       return { messageId: "moduleAiEval" };
@@ -419,9 +445,13 @@ export const importBoundariesRule = {
       moduleCross:
         "Modules may import other modules only through their package index.ts; packages/contract is not a module dependency (ADR-0015, ADR-0016).",
       moduleAi:
-        "Domain modules may not import @showzy/ai (ADR-0032). The API composition root mounts the AI loop.",
+        "Domain modules may not import @showzy/ai (ADR-0032). The server composition roots (apps/api, apps/worker) mount the AI loop (ADR-0039).",
+      moduleAssistantRuntime:
+        "Domain modules may not import @showzy/assistant-runtime (ADR-0039). Only the server composition roots (apps/api, apps/worker) run the assistant.",
       contractModules:
         "packages/contract may import only a module's index.contract.ts barrel (@showzy/<module>/contract) (ADR-0016).",
+      clientSafeServerOnly:
+        "Client-safe packages (packages/contract, packages/validation, packages/ui) ship into mobile and web and may not import @showzy/ai or @showzy/assistant-runtime (server-only, ADR-0032, ADR-0039).",
       clientApp:
         "Client apps may import only @showzy/contract, @showzy/validation, @showzy/copy, @showzy/ui, and @showzy/document-signing (native/web adapters; never /node) (contract.md §2, SHO-251, SHO-414).",
       copyLeaf:

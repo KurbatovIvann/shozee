@@ -224,7 +224,9 @@ AI_UNKNOWN_MODEL_TURN_USD=0.1
 
 ## Reading the state directly
 
-The open question is Redis; the conversation is Postgres.
+The open question is Redis — the shared, non-persistent instance (`db.md` §6);
+the conversation is Postgres. The assistant queue (ADR-0039, from SHO-561) will
+live on the separate queue Redis and hold only pointers to turns.
 
 ```
 kit:pause:<conversationId>      the open interaction, if any
@@ -288,7 +290,7 @@ from assistant_chat_state s where conversation_id = '<conversationId>';
 
 `ASSISTANT_HISTORY_TURNS` and `ASSISTANT_HISTORY_MESSAGES_MAX` (a backstop for a
 turn that called many tools) live in
-`apps/api/src/http/assistant-kit-history-window.ts`.
+`packages/assistant-runtime/src/assistant-kit-history-window.ts`.
 
 ## What the audit says
 

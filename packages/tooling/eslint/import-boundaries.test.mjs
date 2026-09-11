@@ -170,6 +170,25 @@ test("showzy/import-boundaries", () => {
         `,
       },
       {
+        filename: file("apps/worker/src/assistant/processor.ts"),
+        code: `
+          import { createAssistantRuntime, assistantTurnJobSchema } from "@showzy/assistant-runtime";
+          import { staffAssistantTools } from "@showzy/ai";
+        `,
+      },
+      {
+        filename: file("apps/api/src/boot.ts"),
+        code: `import { optionalStaffAssistantLanguageModel } from "@showzy/assistant-runtime";`,
+      },
+      {
+        filename: file("packages/validation/src/assistant-chat.ts"),
+        code: `import { z } from "zod";`,
+      },
+      {
+        filename: file("packages/contract/src/server/index.ts"),
+        code: `import { CUSTOMER_NAME_MAX } from "@showzy/validation/customers";`,
+      },
+      {
         filename: file("packages/copy/src/orders.ts"),
         code: `
           import { selectCopy, type Locale } from "./locale.js";
@@ -331,6 +350,56 @@ test("showzy/import-boundaries", () => {
         errors: [{ messageId: "clientApp" }],
       },
       {
+        filename: file("apps/mobile/src/app/index.ts"),
+        code: `import { assistantTurnJobId } from "@showzy/assistant-runtime";`,
+        errors: [{ messageId: "clientApp" }],
+      },
+      {
+        filename: file("apps/web/src/app/page.ts"),
+        code: `import { ASSISTANT_CHAT_WINDOW_MESSAGES } from "@showzy/assistant-runtime";`,
+        errors: [{ messageId: "clientApp" }],
+      },
+      {
+        filename: file("packages/modules/orders/actions/create.ts"),
+        code: `import { createAssistantRuntime } from "@showzy/assistant-runtime";`,
+        errors: [{ messageId: "moduleAssistantRuntime" }],
+      },
+      {
+        filename: file("packages/ai/src/index.ts"),
+        code: `import { createAssistantRuntime } from "@showzy/assistant-runtime";`,
+        errors: [{ messageId: "aiModuleBarrel" }],
+      },
+      {
+        filename: file("packages/contract/src/server/index.ts"),
+        code: `import { createAssistantRuntime } from "@showzy/assistant-runtime";`,
+        errors: [{ messageId: "clientSafeServerOnly" }],
+      },
+      {
+        filename: file("packages/contract/src/index.ts"),
+        code: `export { filterStaffAiTools } from "@showzy/ai";`,
+        errors: [{ messageId: "clientSafeServerOnly" }],
+      },
+      {
+        filename: file("packages/validation/src/assistant-chat.ts"),
+        code: `export { assistantTurnJobSchema } from "@showzy/assistant-runtime";`,
+        errors: [{ messageId: "clientSafeServerOnly" }],
+      },
+      {
+        filename: file("packages/validation/src/orders.ts"),
+        code: `import { staffAssistantTools } from "@showzy/ai";`,
+        errors: [{ messageId: "clientSafeServerOnly" }],
+      },
+      {
+        filename: file("packages/ui/src/button.ts"),
+        code: `import { ASSISTANT_CHAT_WINDOW_MESSAGES } from "@showzy/assistant-runtime";`,
+        errors: [{ messageId: "clientSafeServerOnly" }],
+      },
+      {
+        filename: file("packages/ui/src/button.ts"),
+        code: `import { filterStaffAiTools } from "@showzy/ai";`,
+        errors: [{ messageId: "clientSafeServerOnly" }],
+      },
+      {
         filename: file("packages/modules/orders/actions/create.ts"),
         code: `import { actionContractToTool } from "@showzy/ai";`,
         errors: [{ messageId: "moduleAi" }],
@@ -411,6 +480,72 @@ test("boundaries map includes the ai element and forbids client/module imports",
         policy.disallow?.to?.module?.source === "@showzy/ai",
     ),
     "domain modules must be disallowed from importing @showzy/ai",
+  );
+});
+
+test("boundaries map includes the assistant-runtime element and keeps it server-only (ADR-0039)", () => {
+  const settings = showzyBoundarySettings(repoRoot);
+  const elements = settings["boundaries/elements"];
+  assert.ok(
+    elements.some(
+      (element) =>
+        element.type === "assistant-runtime" &&
+        element.pattern === "packages/assistant-runtime",
+    ),
+    "boundaries/elements must declare type assistant-runtime for packages/assistant-runtime",
+  );
+
+  const policies = showzyBoundaryDependencyOptions.policies;
+  assert.ok(
+    policies.some(
+      (policy) =>
+        policy.from?.file?.categories === "client-app" &&
+        policy.disallow?.to?.module?.source === "@showzy/assistant-runtime",
+    ),
+    "client apps must be disallowed from importing @showzy/assistant-runtime",
+  );
+  assert.ok(
+    policies.some(
+      (policy) =>
+        policy.from?.element?.type === "module" &&
+        policy.disallow?.to?.element?.type === "assistant-runtime",
+    ),
+    "domain modules must be disallowed from depending on assistant-runtime",
+  );
+  assert.ok(
+    policies.some(
+      (policy) =>
+        policy.from?.element?.type === "ai" &&
+        policy.disallow?.to?.element?.type === "assistant-runtime",
+    ),
+    "packages/ai must be disallowed from depending on assistant-runtime",
+  );
+  assert.ok(
+    elements.some(
+      (element) => element.type === "ui" && element.pattern === "packages/ui",
+    ),
+    "boundaries/elements must declare type ui for packages/ui",
+  );
+  for (const type of ["contract", "validation", "ui"]) {
+    for (const source of ["@showzy/ai", "@showzy/assistant-runtime"]) {
+      assert.ok(
+        policies.some(
+          (policy) =>
+            policy.from?.element?.type === type &&
+            policy.disallow?.to?.module?.source === source,
+        ),
+        `client-safe packages/${type} must be disallowed from importing ${source}`,
+      );
+    }
+  }
+  assert.ok(
+    !policies.some(
+      (policy) =>
+        policy.from?.element?.type === "app" &&
+        (policy.disallow?.to?.element?.type === "assistant-runtime" ||
+          policy.disallow?.to?.module?.source === "@showzy/assistant-runtime"),
+    ),
+    "the server apps (apps/api, apps/worker) must stay allowed to import assistant-runtime",
   );
 });
 

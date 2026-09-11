@@ -23,10 +23,9 @@ import {
   assistantChatWindowSchema,
   assistantInteractionFromPause,
 } from "@showzy/validation/assistant-chat";
+import { assistantInteractions } from "@showzy/assistant-runtime";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-
-import { assistantInteractions } from "./assistant-interactions.js";
 
 const CONVERSATION = "33333333-3333-4333-8333-333333333333";
 const BIND = "user-1:11111111-1111-4111-8111-1111111111aa";

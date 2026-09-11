@@ -31,9 +31,9 @@ import type {
 import { executeAction, type ActionPipelineDeps } from "@showzy/core";
 import { CoreError, CoreInvariantError } from "@showzy/core/errors";
 
-import { ASSISTANT_INVOCATION_CHANNEL } from "../http/assistant-invocation.js";
-import { assistantHistoryWindow } from "../http/assistant-kit-history-window.js";
-import type { AssistantHistoryPort } from "../http/assistant-kit-http.js";
+import { ASSISTANT_INVOCATION_CHANNEL } from "../assistant-invocation.js";
+import { assistantHistoryWindow } from "../assistant-kit-history-window.js";
+import type { AssistantHistoryPort } from "../runtime-types.js";
 
 /**
  * Who the stores act as. Not the kit's `bind`, which is an opaque token the

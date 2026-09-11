@@ -21,16 +21,20 @@ import {
   stubToolCallStep,
   testDeps,
 } from "@showzy/assistant-kit/testing";
+import {
+  ASSISTANT_CHAT_WINDOW_MESSAGES,
+  assistantInteractions,
+  memoryAssistantKitCommands,
+  type AssistantHistoryPort,
+  type AssistantInteractionTypes,
+  type ChoiceResolution,
+  type ResolveAnswer,
+} from "@showzy/assistant-runtime";
 import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
 import pino, { type Logger } from "pino";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import {
-  assistantInteractions,
-  type AssistantInteractionTypes,
-  type ChoiceResolution,
-} from "./assistant-interactions.js";
 import {
   ASSISTANT_KIT_ABANDON_PATH,
   ASSISTANT_KIT_ANSWER_PATH,
@@ -38,12 +42,6 @@ import {
   ASSISTANT_KIT_MESSAGES_PATH,
   createAssistantKitApp,
 } from "./assistant-kit.js";
-import { memoryAssistantKitCommands } from "../stores/assistant-kit-stores.js";
-import {
-  ASSISTANT_CHAT_WINDOW_MESSAGES,
-  type AssistantHistoryPort,
-  type ResolveAnswer,
-} from "./assistant-kit-http.js";
 
 /** The guard logs refusals; most tests here do not assert on them. */
 function silentLogger(): Logger {

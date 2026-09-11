@@ -20,7 +20,7 @@ import {
   canonicalizeAiBudgetCompanyId,
   type AiBudgetStore,
   type AiBudgetTryAddDecision,
-} from "../stores/budget.js";
+} from "./stores/budget.js";
 
 export type StaffAssistantBudgetDenialReason =
   "turn_limit" | "company_budget" | "global_budget";

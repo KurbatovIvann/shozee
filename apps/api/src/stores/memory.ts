@@ -5,11 +5,12 @@
  * `getAndDelete` is atomic here because JavaScript is single-threaded; the
  * Redis client uses `GETDEL` for the same contract across processes.
  */
+import { withKeyLock } from "@showzy/module-kit/key-lock";
+
 import {
   hmacBetterAuthConsumeKey,
   requireAuthIpHmacSecret,
 } from "./auth-ip-hmac.js";
-import { withKeyLock } from "./with-key-lock.js";
 
 export interface SecondaryStorage {
   get(key: string): Promise<string | null>;

@@ -130,7 +130,7 @@ function changedFiles(root, baseSha) {
 const any = (files, re) => files.some((f) => re.test(f));
 
 const SERVER_RE =
-  /^(packages\/(core|db|module-kit|modules|ai|assistant-kit|contract|validation|config|document-signing)\/|apps\/(api|worker)\/)/;
+  /^(packages\/(core|db|module-kit|modules|ai|assistant-kit|assistant-runtime|contract|validation|config|document-signing)\/|apps\/(api|worker)\/)/;
 const DB_WIDE_RE = /^(packages\/(core|db|module-kit|config)\/|pnpm-lock\.yaml$)/;
 const GLOBAL_RE =
   /^(pnpm-lock\.yaml|pnpm-workspace\.yaml|package\.json|turbo\.json|prettier\.config\.mjs|packages\/tooling\/)/;
@@ -143,7 +143,7 @@ function dbFilters(files) {
       filters.add(`packages/modules/${mod[1]}/`);
       continue;
     }
-    const pkg = f.match(/^(packages\/(ai|assistant-kit|contract|validation|document-signing)|apps\/(api|worker))\//);
+    const pkg = f.match(/^(packages\/(ai|assistant-kit|assistant-runtime|contract|validation|document-signing)|apps\/(api|worker))\//);
     if (pkg) filters.add(`${pkg[1]}/`);
   }
   return [...filters].sort();
@@ -189,7 +189,7 @@ function buildPlan(files, opts) {
   plan.push(
     full ||
       global ||
-      any(files, /^(packages\/(core|modules|contract|ai|validation|assistant-kit)\/|apps\/api\/)/)
+      any(files, /^(packages\/(core|modules|contract|ai|validation|assistant-kit|assistant-runtime)\/|apps\/api\/)/)
       ? want("contract-check", full ? "full" : "actions/registry touched")
       : skipped("contract-check", "no action or registry changes"),
   );

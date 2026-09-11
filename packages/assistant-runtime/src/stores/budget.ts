@@ -4,7 +4,7 @@
  * INCRBYFLOAT + EXPIRE. Tests use the in-memory store. Never GETDEL —
  * that stays confirmation's primitive.
  */
-import { withKeyLock } from "./with-key-lock.js";
+import { withKeyLock } from "@showzy/module-kit/key-lock";
 
 /** Keep Kyiv-day counters past midnight so operators can inspect yesterday. */
 export const AI_BUDGET_TTL_SEC = 48 * 60 * 60;

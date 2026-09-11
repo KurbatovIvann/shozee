@@ -31,15 +31,13 @@ import {
 import type { ActionPrincipal } from "@showzy/core/contract";
 import { CoreInvariantError } from "@showzy/core/errors";
 import { Hono, type Context } from "hono";
-
 import {
   createMemoryAiBudgetStore,
-  type AiBudgetStore,
-} from "../stores/budget.js";
-import {
   DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+  type AiBudgetStore,
   type StaffAssistantBudgetLimits,
-} from "./assistant-budget-guard.js";
+} from "@showzy/assistant-runtime";
+
 import { createAssistantKitApp } from "./assistant-kit.js";
 import type { AssistantKitRuntime } from "./assistant-kit-http.js";
 import { createTrustedProxyMatcher, resolveClientIp } from "./client-ip.js";

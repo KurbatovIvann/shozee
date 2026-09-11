@@ -15,6 +15,16 @@ import {
   type ToolSet,
 } from "@showzy/assistant-kit";
 import { stubTextModel, testDeps } from "@showzy/assistant-kit/testing";
+import {
+  aiCompanyBudgetKey,
+  assistantInteractions,
+  canonicalizeAiBudgetCompanyId,
+  createMemoryAiBudgetStore,
+  memoryAssistantKitCommands,
+  type AiBudgetStore,
+  type AssistantHistoryPort,
+  type ChoiceResolution,
+} from "@showzy/assistant-runtime";
 import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
 import { createInMemoryRateLimitStore } from "@showzy/core";
 import pino, { type Logger } from "pino";
@@ -22,24 +32,12 @@ import { describe, expect, it } from "vitest";
 
 import { kyivCalendarDate } from "@showzy/ai";
 
-import { memoryAssistantKitCommands } from "../stores/assistant-kit-stores.js";
-import {
-  aiCompanyBudgetKey,
-  canonicalizeAiBudgetCompanyId,
-  createMemoryAiBudgetStore,
-  type AiBudgetStore,
-} from "../stores/budget.js";
-import {
-  assistantInteractions,
-  type ChoiceResolution,
-} from "./assistant-interactions.js";
 import {
   ASSISTANT_KIT_ABANDON_PATH,
   ASSISTANT_KIT_ANSWER_PATH,
   ASSISTANT_KIT_CHAT_PATH,
   createAssistantKitApp,
 } from "./assistant-kit.js";
-import type { AssistantHistoryPort } from "./assistant-kit-http.js";
 
 const USER = "user-1";
 const COMPANY = "11111111-1111-4111-8111-1111111111aa";

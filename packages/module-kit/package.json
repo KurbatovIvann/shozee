@@ -7,6 +7,7 @@
   "exports": {
     "./audit-target": "./src/audit-target.ts",
     "./canonical": "./src/canonical.ts",
+    "./key-lock": "./src/key-lock.ts",
     "./optional-nullable-uuid": "./src/optional-nullable-uuid.ts",
     "./parse-db-enum": "./src/parse-db-enum.ts",
     "./postgres-unique": "./src/postgres-unique.ts",

@@ -34,8 +34,11 @@ used by `.github/workflows/ci.yml` (SHO-334 aggregator, SHO-387
   never `@showzy/ai`). `@showzy/copy` is a client-safe leaf (SHO-414): apps
   may import it; it must not import React, React Native, Unistyles, Tailwind,
   Expo, or an app. `@showzy/ai` is a server-only platform package
-  (ADR-0032): `apps/api` may import it; mobile, web, and domain modules
-  must not. `packages/ai` itself may import `@showzy/core/*`,
+  (ADR-0032): the server composition roots (`apps/api`, `apps/worker`,
+  ADR-0039) may import it; mobile, web, and domain modules must not.
+  `@showzy/assistant-runtime` (ADR-0039) is the server half of the assistant:
+  `apps/api` and `apps/worker` may import it; mobile, web, domain modules, and
+  `packages/ai` must not. `packages/ai` itself may import `@showzy/core/*`,
   `@showzy/contract`, `@showzy/validation/*`, and `@showzy/<module>/contract`;
   it must not import a module barrel or `@showzy/db`. `@showzy/module-kit` is a platform package (ADR-0031): module server code
   may import it. The contract-client layer currently
