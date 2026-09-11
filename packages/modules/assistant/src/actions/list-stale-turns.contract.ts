@@ -48,7 +48,16 @@ export const staleTurnSchema = z.strictObject({
   status: assistantTurnStatusSchema,
   placeholderMessageId: z.uuid(),
   budgetHold: assistantTurnBudgetHoldSchema,
-  staleness: z.enum(["queued_without_start", "running_past_deadline"]),
+  /**
+   * What the reconciler does with it, decided by the same predicates
+   * `assistant.interruptTurn` ends a turn by: re-enqueue a
+   * `queued_without_start`, interrupt the other two.
+   */
+  staleness: z.enum([
+    "queued_without_start",
+    "queued_abandoned",
+    "running_past_deadline",
+  ]),
 });
 
 export const listStaleTurnsOutputSchema = z.strictObject({
@@ -58,7 +67,7 @@ export const listStaleTurnsOutputSchema = z.strictObject({
 export const listStaleTurnsContract = defineActionContract({
   name: "assistant.listStaleTurns",
   description:
-    "List staff assistant turns across companies that the reconciler has to act on: turns still queued and never started longer than queuedStaleAfterMs after they were accepted, and running turns past their deadline. Oldest first, at most limit. Each turn carries its company, conversation, kind, command, placeholder message and budget hold; no message content, person or session.",
+    "List staff assistant turns across companies that the reconciler has to act on: turns still queued and never started longer than queuedStaleAfterMs after they were accepted (queued_without_start), turns queued past the abandon threshold (queued_abandoned), and running turns past their deadline (running_past_deadline). Oldest first, at most limit. Each turn carries its company, conversation, kind, command, placeholder message and budget hold; no message content, person or session.",
   principal: "system",
   systemScope: "global",
   transport: "internal",

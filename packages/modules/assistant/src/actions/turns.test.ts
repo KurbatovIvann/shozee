@@ -18,6 +18,7 @@ import {
   finishTurnOutputSchema,
 } from "./finish-turn.contract.js";
 import {
+  ASSISTANT_QUEUED_TURN_ABANDON_MS,
   interruptTurnContract,
   interruptTurnInputSchema,
   interruptTurnOutputSchema,
@@ -126,6 +127,15 @@ describe("the turn contracts", () => {
     expect(interruptTurnContract.errors).toContain("NOT_FOUND");
   });
 
+  /**
+   * Far beyond any legitimate queue delay, and inside the reservation's Kyiv
+   * day for most turns (SHO-570 conveyor decision). Moving it is a policy
+   * change: the runbook and ADR-0039 name this value.
+   */
+  it("abandon a queued turn after fifteen minutes", () => {
+    expect(ASSISTANT_QUEUED_TURN_ABANDON_MS).toBe(15 * 60 * 1000);
+  });
+
   it("hand back a hold only with the call that ended the turn", () => {
     const hold = {
       companyReservedMicroUsd: 100_000,
@@ -147,13 +157,32 @@ describe("the turn contracts", () => {
         releasedHold: hold,
       }).success,
     ).toBe(false);
+    for (const from of ["queued", "running"]) {
+      expect(
+        interruptTurnOutputSchema.safeParse({
+          outcome: "interrupted",
+          conversationId: CONVERSATION,
+          from,
+          releasedHold: hold,
+        }).success,
+      ).toBe(true);
+    }
+    // Which state it ended the turn from decides who keeps the hold.
     expect(
       interruptTurnOutputSchema.safeParse({
         outcome: "interrupted",
         conversationId: CONVERSATION,
         releasedHold: hold,
       }).success,
-    ).toBe(true);
+    ).toBe(false);
+    expect(
+      interruptTurnOutputSchema.safeParse({
+        outcome: "interrupted",
+        conversationId: CONVERSATION,
+        from: "done",
+        releasedHold: hold,
+      }).success,
+    ).toBe(false);
     expect(
       interruptTurnOutputSchema.safeParse({
         outcome: "already_finished",

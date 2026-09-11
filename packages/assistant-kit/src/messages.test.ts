@@ -434,6 +434,237 @@ describe("a message is written only while it is the latest", () => {
   });
 });
 
+/**
+ * A turn's message can have two writers: the process running the turn, and the
+ * one that ends it when that process is gone or late (SHO-570). Each reads the
+ * message and stores a whole new copy, so without a compare on the revision it
+ * read, the second store would erase the first.
+ */
+describe("two writers of one message", () => {
+  const STREAMING: ChatPart = { kind: "text", text: "", status: "streaming" };
+
+  /**
+   * The kit whose next update lets `other` store first — after this write read
+   * the message and before its own store reaches the log.
+   */
+  function racing(other: (kit: ReturnType<typeof newKit>) => Promise<void>) {
+    const deps = testDeps(fixtureInteractions);
+    const plain = createAssistantKit(deps);
+    const state = { raced: false, updates: 0 };
+    const kit = createAssistantKit({
+      ...deps,
+      messages: {
+        ...deps.messages,
+        update: async (conversationId, record) => {
+          state.updates += 1;
+          if (!state.raced) {
+            state.raced = true;
+            await other(plain);
+          }
+          return deps.messages.update(conversationId, record);
+        },
+      },
+    });
+    return { deps, kit, plain, state };
+  }
+
+  it("keeps both when an ending write lands between a card write's read and its store", async () => {
+    const { deps, kit, plain, state } = racing(async (other) => {
+      expect(
+        await other.messages.write(SCOPE, {
+          kind: "end_text",
+          messageId: MESSAGE,
+          status: "interrupted",
+        }),
+      ).toEqual({ kind: "written" });
+    });
+    await plain.messages.write(SCOPE, {
+      kind: "append",
+      messageId: MESSAGE,
+      role: "assistant",
+      parts: [STREAMING],
+    });
+
+    expect(
+      await kit.messages.write(SCOPE, {
+        kind: "append",
+        messageId: MESSAGE,
+        role: "assistant",
+        parts: [card(1, 3)],
+      }),
+    ).toEqual({ kind: "written" });
+
+    // The card's first store lost the compare, read the message again and
+    // applied itself to the ended text rather than to the copy it first read.
+    expect(state.updates).toBe(2);
+    const stored = (await deps.messages.page(CONVERSATION, { limit: 1 }))
+      .records[0];
+    expect(stored?.revision).toBe(3);
+    expect((await kit.messages.read(SCOPE)).messages.at(-1)?.parts).toEqual([
+      { ...STREAMING, status: "interrupted" },
+      card(1, 3),
+    ]);
+  });
+
+  it("keeps both when a card lands between an ending write's read and its store", async () => {
+    const { kit, plain } = racing(async (other) => {
+      await other.messages.write(SCOPE, {
+        kind: "append",
+        messageId: MESSAGE,
+        role: "assistant",
+        parts: [card(1, 3)],
+      });
+    });
+    await plain.messages.write(SCOPE, {
+      kind: "append",
+      messageId: MESSAGE,
+      role: "assistant",
+      parts: [STREAMING],
+    });
+
+    expect(
+      await kit.messages.write(SCOPE, {
+        kind: "end_text",
+        messageId: MESSAGE,
+        status: "interrupted",
+      }),
+    ).toEqual({ kind: "written" });
+
+    expect((await kit.messages.read(SCOPE)).messages.at(-1)?.parts).toEqual([
+      card(1, 3),
+      { ...STREAMING, status: "interrupted" },
+    ]);
+  });
+
+  it("gives up as a conflict, storing nothing, when every attempt loses", async () => {
+    const deps = testDeps(fixtureInteractions);
+    const plain = createAssistantKit(deps);
+    await plain.messages.write(SCOPE, {
+      kind: "append",
+      messageId: MESSAGE,
+      role: "assistant",
+      parts: [STREAMING],
+    });
+    const before = await deps.messages.page(CONVERSATION, { limit: 1 });
+    let attempts = 0;
+    const losing = createAssistantKit({
+      ...deps,
+      messages: {
+        ...deps.messages,
+        update: () => {
+          attempts += 1;
+          return Promise.resolve(false);
+        },
+      },
+    });
+
+    expect(
+      await losing.messages.write(SCOPE, {
+        kind: "append",
+        messageId: MESSAGE,
+        role: "assistant",
+        parts: [card(1, 3)],
+      }),
+    ).toEqual({ kind: "conflict" });
+    expect(attempts).toBe(4);
+    expect(await deps.messages.page(CONVERSATION, { limit: 1 })).toEqual(
+      before,
+    );
+  });
+});
+
+describe("ending a message's text", () => {
+  it("settles the streaming part in place and keeps its text", async () => {
+    const kit = newKit();
+    await kit.messages.write(SCOPE, {
+      kind: "append",
+      messageId: MESSAGE,
+      role: "assistant",
+      parts: [
+        card(1, 3),
+        { kind: "text", text: "почато", status: "streaming" },
+      ],
+    });
+
+    expect(
+      await kit.messages.write(SCOPE, {
+        kind: "end_text",
+        messageId: MESSAGE,
+        status: "interrupted",
+      }),
+    ).toEqual({ kind: "written" });
+
+    expect((await kit.messages.read(SCOPE)).messages.at(-1)?.parts).toEqual([
+      card(1, 3),
+      { kind: "text", text: "почато", status: "interrupted" },
+    ]);
+  });
+
+  it("leaves text that already ended as it is, rather than storing a second text part", async () => {
+    const deps = testDeps(fixtureInteractions);
+    const kit = createAssistantKit(deps);
+    await kit.messages.write(SCOPE, {
+      kind: "append",
+      messageId: MESSAGE,
+      role: "assistant",
+      parts: [TEXT],
+    });
+    const writes = deps.messages.writes;
+
+    expect(
+      await kit.messages.write(SCOPE, {
+        kind: "end_text",
+        messageId: MESSAGE,
+        status: "interrupted",
+      }),
+    ).toEqual({ kind: "unchanged" });
+
+    expect(deps.messages.writes).toBe(writes);
+    expect((await kit.messages.read(SCOPE)).messages.at(-1)?.parts).toEqual([
+      TEXT,
+    ]);
+  });
+
+  it("never creates a message, and never reaches one that is no longer the latest", async () => {
+    const deps = testDeps(fixtureInteractions);
+    const kit = createAssistantKit(deps);
+    const later = "66666666-6666-4666-8666-666666666666";
+
+    expect(
+      await kit.messages.write(SCOPE, {
+        kind: "end_text",
+        messageId: MESSAGE,
+        status: "interrupted",
+      }),
+    ).toEqual({ kind: "unchanged" });
+    expect(deps.messages.writes).toBe(0);
+
+    await kit.messages.write(SCOPE, {
+      kind: "append",
+      messageId: MESSAGE,
+      role: "assistant",
+      parts: [{ kind: "text", text: "", status: "streaming" }],
+    });
+    await kit.messages.write(SCOPE, {
+      kind: "append",
+      messageId: later,
+      role: "user",
+      parts: [TEXT],
+    });
+
+    expect(
+      await kit.messages.write(SCOPE, {
+        kind: "end_text",
+        messageId: MESSAGE,
+        status: "interrupted",
+      }),
+    ).toEqual({ kind: "unchanged" });
+    expect((await kit.messages.read(SCOPE)).messages[0]?.parts).toEqual([
+      { kind: "text", text: "", status: "streaming" },
+    ]);
+  });
+});
+
 describe("a message this build cannot read", () => {
   const FUTURE = "77777777-7777-4777-8777-777777777777";
   const LATER = "88888888-8888-4888-8888-888888888888";

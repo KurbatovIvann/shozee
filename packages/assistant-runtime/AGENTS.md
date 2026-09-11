@@ -45,7 +45,10 @@ registry is injected into `createAssistantRuntime`; this package never imports
   names, and the only producer of `VerifiedAssistantCaller` (the row's
   `user_id`, `company_id` and `request_id`; no client IP), for a queued turn
   only. A job payload is never a caller. The session is not read (ADR-0039,
-  amended SHO-561).
+  amended SHO-561). The same file also produces the caller that settles an
+  **already interrupted** turn's placeholder (SHO-570) — a message is domain
+  content, so it is written as the turn's author and core re-checks that
+  membership; nothing running can be written to through it.
   - The brand is produced only in this file.
   - ESLint (`no-restricted-syntax`) catches only a direct type assertion to
     the name `VerifiedAssistantCaller`. A renamed import, a type alias, an
@@ -69,6 +72,19 @@ registry is injected into `createAssistantRuntime`; this package never imports
   when the model was never reached, and publishes each event after its write.
   A turn that is not queued, or whose start core refuses, runs nothing and
   writes nothing.
+- `assistant-turn-reconciler.ts` — `createAssistantTurnReconciler`: one pass
+  over `assistant.listStaleTurns` (SHO-570). A queued turn with no job is
+  enqueued again from the row alone, with a per-turn backoff held in the
+  process; a turn the database calls stale is ended through
+  `assistant.interruptTurn`, and the hold that statement handed back is released
+  only for a turn that never started. **Staleness is never judged here**: this
+  file holds no threshold and no clock of its own. The placeholder's text is
+  settled as the turn's author, never as the system, and the pass publishes no
+  more than the interrupted status — it read no window as the person whose
+  conversation it is.
+- `stores/assistant-turn-placeholder.ts` — the one answer to "which message is
+  this turn's, and under which owner token", used by both the processor and the
+  reconciler.
 - `events.ts` — the event channel contract (SHO-562): the per-conversation
   channel and presence key (company then conversation, lowercased), the stream
   slot key, the heartbeat, presence ttl, per-person stream limit and idle

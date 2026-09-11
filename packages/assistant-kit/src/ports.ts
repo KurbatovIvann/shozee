@@ -80,15 +80,23 @@ export interface MessageLogStore {
       readonly message: unknown;
     },
   ): Promise<{ readonly seq: number }>;
-  /** Rejects when `seq` and `messageId` together name no stored message. */
+  /**
+   * Rejects when `seq` and `messageId` together name no stored message.
+   *
+   * A compare-and-set: the message is replaced only while its revision is still
+   * `revision`, the one the caller read, and the store raises it by one. False
+   * when another write changed the message since, and nothing was stored — the
+   * caller reads it again rather than overwriting what it did not see.
+   */
   update(
     conversationId: string,
     record: {
       readonly seq: number;
       readonly messageId: string;
+      readonly revision: number;
       readonly message: unknown;
     },
-  ): Promise<void>;
+  ): Promise<boolean>;
 }
 
 export interface Clock {

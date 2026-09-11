@@ -457,7 +457,9 @@ describe("a turn the worker runs", () => {
       commandId: turn.commandId,
     });
     if (finished?.event.type === "turn.finished") {
-      expect(finished.event.window.messages.at(-1)?.revision).toBe(
+      // The worker read the window as the turn's author, so it travels with the
+      // finish; only the reconciler publishes a status without one (SHO-570).
+      expect(finished.event.window?.messages.at(-1)?.revision).toBe(
         stored.revision,
       );
     }
@@ -687,6 +689,7 @@ describe("a turn the worker runs", () => {
             messages: {
               ...scoped.kit.messages,
               write: (scope, write) =>
+                write.kind === "append" &&
                 write.parts.some((part) => part.kind === "card")
                   ? Promise.resolve({ kind: "wrong_owner" as const })
                   : scoped.kit.messages.write(scope, write),

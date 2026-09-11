@@ -50,7 +50,7 @@ import type { AssistantConversationAddress } from "./events.js";
 import { ASSISTANT_TURN_TIMEOUT_MS, type AssistantTurnJob } from "./queue.js";
 import type { AssistantKitFor, AssistantRuntime } from "./runtime-types.js";
 import type { AssistantEventPublisher } from "./stores/assistant-events-redis.js";
-import { createPostgresAssistantKitMessageLog } from "./stores/assistant-kit-postgres-stores.js";
+import { readTurnPlaceholderBind } from "./stores/assistant-turn-placeholder.js";
 import {
   createPostgresAssistantTurnForJob,
   type AssistantTurnForJob,
@@ -240,33 +240,31 @@ export function createAssistantTurnProcessor(
     };
   }
 
-  /**
-   * The owner token the accept stored the placeholder under. The turn writes
-   * under the same one rather than deriving it again, so the kit's owner rule
-   * compares a value with itself. The placeholder must still be the latest
-   * message: only the latest message can be written to.
-   */
+  /** The token the accept stored the placeholder under, while it is the latest. */
   async function placeholderBind(
     found: AssistantTurnForJob,
     caller: VerifiedAssistantCaller,
   ): Promise<string> {
-    const latest = (
-      await createPostgresAssistantKitMessageLog(storeDeps, caller).page(
-        found.turn.conversationId,
-        { limit: 1 },
-      )
-    ).records[0];
-    if (latest?.messageId !== found.placeholderMessageId) {
+    const bind = await readTurnPlaceholderBind(storeDeps, caller, {
+      conversationId: found.turn.conversationId,
+      placeholderMessageId: found.placeholderMessageId,
+    });
+    if (bind === null) {
       throw new CoreInvariantError(
         "assistant turn placeholder is not the conversation's latest message",
       );
     }
-    return latest.bind;
+    return bind;
   }
 
   /**
    * Ends the placeholder's text if it is still `streaming` — a turn that paused
    * or replied with no text left it so — and returns the status stored.
+   *
+   * The settle and the check that there is something to settle are one write
+   * (SHO-570): the turn's message has a second writer, the reconciler, and a
+   * read followed by an append could store a second text part beside the one it
+   * had just been beaten to.
    */
   async function endText(
     kit: AssistantKitFor,
@@ -274,22 +272,36 @@ export function createAssistantTurnProcessor(
     messageId: string,
     status: Exclude<TextStatus, "streaming">,
   ): Promise<TextStatus> {
+    const written = await kit.messages.write(scope, {
+      kind: "end_text",
+      messageId,
+      status,
+    });
+    if (written.kind === "written") {
+      return status;
+    }
+    if (written.kind !== "unchanged") {
+      throw new MessageWriteRefusedError(written.kind);
+    }
+    // Nothing was streaming: either the text has ended already — whoever got
+    // there first decides how the turn reads — or the message holds no text at
+    // all, which only a turn that never wrote one leaves behind.
     const stored = lastTextStatus(
       (await kit.messages.read(scope)).messages.find(
         (candidate) => candidate.messageId === messageId,
       ),
     );
-    if (stored !== undefined && stored !== "streaming") {
+    if (stored !== undefined) {
       return stored;
     }
-    const written = await kit.messages.write(scope, {
+    const appended = await kit.messages.write(scope, {
       kind: "append",
       messageId,
       role: "assistant",
       parts: [{ kind: "text", text: "", status }],
     });
-    if (written.kind !== "written") {
-      throw new MessageWriteRefusedError(written.kind);
+    if (appended.kind !== "written") {
+      throw new MessageWriteRefusedError(appended.kind);
     }
     return status;
   }

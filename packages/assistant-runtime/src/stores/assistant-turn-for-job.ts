@@ -18,6 +18,7 @@ import { executeAction } from "@showzy/core";
 import type { StaffAssistantBudgetHold } from "../assistant-budget-guard.js";
 import type { AssistantTurnJob } from "../queue.js";
 import {
+  ASSISTANT_RECONCILER_SERVICE,
   assistantBudgetHoldFromStored,
   type AssistantTurnRef,
   type AssistantTurnView,
@@ -55,6 +56,75 @@ export interface AssistantTurnForJob {
    * replayed or forged job naming it is no way to act as its author.
    */
   readonly caller: VerifiedAssistantCaller | null;
+}
+
+/** The author of a turn the reconciler has just interrupted, and its message. */
+export interface InterruptedTurnAuthor {
+  readonly companyId: string;
+  readonly placeholderMessageId: string;
+  readonly caller: VerifiedAssistantCaller;
+}
+
+/**
+ * Who ends the message of a turn the reconciler interrupted (SHO-570).
+ *
+ * The placeholder's `streaming` text has to be settled, and a message is domain
+ * content: a system job may not write it. So the write is made as the turn's
+ * author — the row's `user_id`, exactly as the worker runs the turn — and the
+ * caller is produced here, from the row, like every other one. Only for a turn
+ * that has already ended as `interrupted`: nothing that is still running can be
+ * written to through this, and the reconciler asks only after its own
+ * interrupt.
+ *
+ * Core checks that person's membership on the write, as it does for every
+ * action of a turn. An author who has since been removed cannot be acted as,
+ * and the placeholder keeps the status it has.
+ */
+export function createPostgresInterruptedTurnAuthor(
+  deps: AssistantKitStoreDeps,
+): {
+  read(options: {
+    readonly turn: AssistantTurnRef;
+    readonly requestId: string;
+  }): Promise<InterruptedTurnAuthor | null>;
+} {
+  return {
+    async read(options) {
+      const { turn } = await executeAction(deps.pipeline, {
+        action: readTurnForJob,
+        input: {
+          conversationId: options.turn.conversationId,
+          kind: options.turn.kind,
+          commandId: options.turn.commandId,
+        },
+        request: {
+          requestId: options.requestId,
+          correlationId: options.requestId,
+          channel: "system",
+        },
+        principal: {
+          mode: "system",
+          serviceName: ASSISTANT_RECONCILER_SERVICE,
+          scope: { scope: "global" },
+        },
+      });
+      if (turn === null || turn.status !== "interrupted") {
+        return null;
+      }
+      return {
+        companyId: turn.companyId,
+        placeholderMessageId: turn.placeholderMessageId,
+        caller: {
+          userId: turn.userId,
+          companySelector: turn.companyId,
+          // The turn's own request: the ending write belongs to that turn, and
+          // is audited under it, as the worker's writes are.
+          requestId: turn.requestId,
+          [verifiedCaller]: true,
+        },
+      };
+    },
+  };
 }
 
 export function createPostgresAssistantTurnForJob(

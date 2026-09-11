@@ -17,12 +17,15 @@ import {
   ASSISTANT_QUEUE_NAME,
   createAssistantRuntime,
   createAssistantTurnProcessor,
+  createAssistantTurnReconciler,
   createRedisAiBudgetStore,
   createRedisAssistantEventPublisher,
   logStaffAssistantMount,
   staffAssistantMount,
+  type AssistantReconcileSummary,
   type AssistantTurnJob,
   type AssistantTurnJobOutcome,
+  type AssistantTurnQueue,
   type StaffAssistantAiConfig,
 } from "@showzy/assistant-runtime";
 import type { ActionPipelineDeps } from "@showzy/core";
@@ -37,13 +40,26 @@ export const ASSISTANT_WORKER_PATHS: readonly string[] = [
   `queue ${ASSISTANT_QUEUE_NAME}`,
 ];
 
+export interface ComposedAssistantTurns {
+  /** What the job host runs for one turn's job. */
+  readonly process: (job: AssistantTurnJob) => Promise<AssistantTurnJobOutcome>;
+  /**
+   * One pass over the turns the database calls stale, on the maintenance
+   * scheduler. Held for the life of the process: its re-enqueue backoff is its
+   * memory (SHO-570).
+   */
+  readonly reconcile: (
+    queue: AssistantTurnQueue,
+  ) => Promise<AssistantReconcileSummary>;
+}
+
 export function composeAssistantTurns(options: {
   readonly ai: StaffAssistantAiConfig;
   readonly pipeline: ActionPipelineDeps;
   /** The shared, non-persistent Redis (`config.redis.url`). */
   readonly sharedRedis: Redis;
   readonly logger: Logger;
-}): ((job: AssistantTurnJob) => Promise<AssistantTurnJobOutcome>) | undefined {
+}): ComposedAssistantTurns | undefined {
   const mount = staffAssistantMount(options.ai);
   logStaffAssistantMount(options.logger, mount, ASSISTANT_WORKER_PATHS);
   if (mount.model === undefined) {
@@ -58,12 +74,16 @@ export function composeAssistantTurns(options: {
     provider: mount.provider,
     redis: options.sharedRedis,
   });
-  return createAssistantTurnProcessor({
+  const turnDeps = {
     runtime,
     pipeline: options.pipeline,
     publisher: createRedisAssistantEventPublisher(options.sharedRedis),
     budgetStore: createRedisAiBudgetStore(options.sharedRedis, {
       logger: options.logger,
     }),
-  });
+  };
+  return {
+    process: createAssistantTurnProcessor(turnDeps),
+    reconcile: createAssistantTurnReconciler(turnDeps),
+  };
 }

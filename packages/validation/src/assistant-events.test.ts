@@ -96,6 +96,34 @@ describe("reading an assistant stream event", () => {
     ).toBeNull();
   });
 
+  /**
+   * The reconciler ends a turn the process running it no longer can, and it
+   * acts for no person, so it has no window to send (SHO-570). A client reads
+   * the conversation itself after one of these.
+   */
+  it("reads a finish with no window: the reconciler ended that turn", () => {
+    const withoutWindow = {
+      type: "turn.finished",
+      kind: "chat",
+      commandId: COMMAND,
+      status: "interrupted",
+    };
+
+    expect(
+      parseAssistantStreamEvent("turn.finished", JSON.stringify(withoutWindow)),
+    ).toEqual(withoutWindow);
+    expect(assistantPublishedEventSchema.safeParse(withoutWindow).success).toBe(
+      true,
+    );
+    // A window that is there is still a window, not any other shape.
+    expect(
+      parseAssistantStreamEvent(
+        "turn.finished",
+        JSON.stringify({ ...withoutWindow, window: { messages: [] } }),
+      ),
+    ).toBeNull();
+  });
+
   it("never lets a producer publish a snapshot: each connection reads its own", () => {
     expect(
       assistantPublishedEventSchema.safeParse(events.snapshot).success,
