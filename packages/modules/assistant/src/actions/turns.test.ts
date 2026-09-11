@@ -1,4 +1,5 @@
 import {
+  ASSISTANT_TURN_ACTIVE_STATUSES,
   ASSISTANT_TURN_FINAL_STATUSES,
   ASSISTANT_TURN_KINDS,
   ASSISTANT_TURN_STATUSES,
@@ -34,6 +35,7 @@ import {
   startTurnInputSchema,
 } from "./start-turn.contract.js";
 import {
+  assistantTurnActiveStatusSchema,
   assistantTurnFinalStatusSchema,
   assistantTurnKindSchema,
   assistantTurnStatusSchema,
@@ -158,6 +160,29 @@ describe("the turn contracts", () => {
         conversationId: CONVERSATION,
         status: "interrupted",
         releasedHold: hold,
+      }).success,
+    ).toBe(false);
+    // A turn left running or queued names its status and hands out no hold.
+    expect(
+      interruptTurnOutputSchema.safeParse({
+        outcome: "not_stale",
+        conversationId: CONVERSATION,
+        status: "running",
+      }).success,
+    ).toBe(true);
+    expect(
+      interruptTurnOutputSchema.safeParse({
+        outcome: "not_stale",
+        conversationId: CONVERSATION,
+        status: "running",
+        releasedHold: hold,
+      }).success,
+    ).toBe(false);
+    expect(
+      interruptTurnOutputSchema.safeParse({
+        outcome: "not_stale",
+        conversationId: CONVERSATION,
+        status: "done",
       }).success,
     ).toBe(false);
   });
@@ -306,6 +331,9 @@ describe("the turn contracts", () => {
     ]);
     expect(assistantTurnFinalStatusSchema.options).toEqual([
       ...ASSISTANT_TURN_FINAL_STATUSES,
+    ]);
+    expect(assistantTurnActiveStatusSchema.options).toEqual([
+      ...ASSISTANT_TURN_ACTIVE_STATUSES,
     ]);
   });
 });

@@ -38,8 +38,9 @@ runtime internals, so what both need lives here.
   returns the hold it took off the row, once (SHO-561).
 - `stores/assistant-turn-for-job.ts` — the global system read of the turn a job
   names, and the only producer of `VerifiedAssistantCaller` (the row's
-  `user_id`, `company_id` and `request_id`; no client IP). A job payload is
-  never a caller. The session is not read (ADR-0039, amended SHO-561).
+  `user_id`, `company_id` and `request_id`; no client IP), for a queued turn
+  only. A job payload is never a caller, and ESLint refuses a type assertion
+  to one. The session is not read (ADR-0039, amended SHO-561).
 - `queue.ts` — the assistant queue contract: name, BullMQ prefix, job payload
   schema, `jobId` derivation. Pure constants and a schema. The payload is the
   turn's identity only (kind, conversation id, command id, lowercased);

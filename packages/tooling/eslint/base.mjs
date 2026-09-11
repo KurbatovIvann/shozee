@@ -8,6 +8,7 @@ import tseslint from "typescript-eslint";
 
 import { importBoundariesRule } from "./import-boundaries.mjs";
 import { recordVerificationAggregatesRule } from "./record-verification-aggregates.mjs";
+import { SHOWZY_RESTRICTED_SYNTAX } from "./restricted-syntax.mjs";
 
 /**
  * Walk from a package's eslint config directory to the monorepo root so
@@ -284,15 +285,9 @@ export function showzyEslintConfig({ tsconfigRootDir }) {
             "ts-expect-error": { descriptionFormat: "^ SHO-\\d+: .+$" },
           },
         ],
-        // No `x as unknown as Y` escape hatch (prohibitions.mdc).
-        "no-restricted-syntax": [
-          "error",
-          {
-            selector: "TSAsExpression > TSAsExpression",
-            message:
-              "Double assertions (`as unknown as`) are prohibited. Fix the types instead.",
-          },
-        ],
+        // No `x as unknown as Y` escape hatch (prohibitions.mdc), and no
+        // assertion to `VerifiedAssistantCaller` (SHO-561).
+        "no-restricted-syntax": ["error", ...SHOWZY_RESTRICTED_SYNTAX],
         // Typed error classes only (conventions.mdc); allowing only classes
         // that extend Error still permits `packages/core/errors` subclasses.
         "@typescript-eslint/only-throw-error": "error",

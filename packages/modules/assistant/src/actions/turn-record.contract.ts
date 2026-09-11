@@ -22,6 +22,9 @@ export const assistantTurnStatusSchema = z.enum([
   "interrupted",
 ]);
 
+/** A turn that still holds its conversation. */
+export const assistantTurnActiveStatusSchema = z.enum(["queued", "running"]);
+
 export const assistantTurnFinalStatusSchema = z.enum([
   "done",
   "failed",

@@ -27,7 +27,17 @@ import {
   type AssistantTurnKind,
 } from "@showzy/db/schema/assistant";
 import { postgresError } from "@showzy/module-kit/postgres-unique";
-import { and, asc, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  lt,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import type { z } from "zod";
 
 import type {
@@ -94,6 +104,23 @@ const turnViewColumns = {
 
 function isActive() {
   return inArray(assistantTurns.status, [...ASSISTANT_TURN_ACTIVE_STATUSES]);
+}
+
+function isActiveStatus(
+  status: string,
+): status is (typeof ASSISTANT_TURN_ACTIVE_STATUSES)[number] {
+  return (ASSISTANT_TURN_ACTIVE_STATUSES as readonly string[]).includes(status);
+}
+
+/**
+ * The one definition of a turn the reconciler may end: running, and past the
+ * deadline Postgres set when it started, by Postgres's own clock. A server-side
+ * timeout is the only thing that ends a turn early (ADR-0039), so a queued turn
+ * and a running turn inside its deadline are never stale. `listStaleTurns`
+ * finds turns by it and `interruptTurn` ends them by it.
+ */
+function runningPastDeadline(): SQL {
+  return sql`(${eq(assistantTurns.status, "running")} and ${lt(assistantTurns.deadlineAt, sql`now()`)})`;
 }
 
 function byIdentity(identity: TurnIdentity) {
@@ -362,20 +389,22 @@ export async function startStaffTurn(env: {
 }
 
 /**
- * Ends an active turn and takes its budget hold off the row, in one statement,
- * and returns the hold it took — or null when the turn was no longer active and
- * nothing was taken.
+ * Ends a turn that meets `eligible` and takes its budget hold off the row, in
+ * one statement, and returns the hold it took — or null when the turn did not
+ * meet it and nothing was taken.
  *
  * `RETURNING` sees only the updated row, whose hold is now zero, so the hold is
- * read from the same row locked in a sub-select. A second finaliser of the same
- * turn waits on that lock, then finds the row no longer active and takes
- * nothing: a hold leaves the row at most once, whichever of the worker and the
- * reconciler gets there first.
+ * read from the same row locked in a sub-select. The lock is what makes this
+ * at-most-once: a second finaliser of the same turn waits on it, then re-reads
+ * the committed row against `eligible`, finds it ended, and takes nothing.
+ * Without it, the waiting statement would re-check only the row id and
+ * overwrite the first ending with the old hold in hand.
  */
 async function finaliseTurn(
   db: WritableDb,
   identity: TurnIdentity,
   status: "done" | "failed" | "interrupted",
+  eligible: SQL,
 ): Promise<BudgetHold | null> {
   const held = db
     .select({
@@ -385,7 +414,7 @@ async function finaliseTurn(
       budgetKyivDate: assistantTurns.budgetKyivDate,
     })
     .from(assistantTurns)
-    .where(and(byIdentity(identity), isActive()))
+    .where(and(byIdentity(identity), eligible))
     .for("update")
     .as("held");
   const finished = (
@@ -417,7 +446,12 @@ export async function finishStaffTurn(env: {
   const identity = await ownTurnIdentity(env.ctx, env.input);
   const db = requireWritable(env.ctx.db);
 
-  const releasedHold = await finaliseTurn(db, identity, env.input.status);
+  const releasedHold = await finaliseTurn(
+    db,
+    identity,
+    env.input.status,
+    isActive(),
+  );
   if (releasedHold === null) {
     return {
       outcome: "already_finished",
@@ -437,6 +471,11 @@ export async function finishStaffTurn(env: {
  * The reconciler's interrupt, inside the company the stale turn belongs to. No
  * author rule: a system job acts for no person, and the company scope is the
  * whole of its reach.
+ *
+ * Staleness is part of the same statement, so a turn the reconciler listed as
+ * stale but a worker started since is `not_stale`, never ended under it: ending
+ * it would free the conversation while the worker still writes, and release a
+ * hold the model is still spending.
  */
 export async function interruptSystemTurn(env: {
   readonly ctx: SystemCtx;
@@ -455,13 +494,25 @@ export async function interruptSystemTurn(env: {
     commandId: env.input.commandId.toLowerCase(),
   };
 
-  const releasedHold = await finaliseTurn(db, identity, "interrupted");
+  const releasedHold = await finaliseTurn(
+    db,
+    identity,
+    "interrupted",
+    runningPastDeadline(),
+  );
   if (releasedHold === null) {
-    return {
-      outcome: "already_finished",
-      conversationId: identity.conversationId,
-      status: await currentStatus(db, identity),
-    };
+    const status = await currentStatus(db, identity);
+    return isActiveStatus(status)
+      ? {
+          outcome: "not_stale",
+          conversationId: identity.conversationId,
+          status,
+        }
+      : {
+          outcome: "already_finished",
+          conversationId: identity.conversationId,
+          status,
+        };
   }
   return {
     outcome: "interrupted",
@@ -566,10 +617,7 @@ export async function listStaleTurns(env: {
               sql`now() - (${env.input.queuedStaleAfterMs}::integer * interval '1 millisecond')`,
             ),
           ),
-          and(
-            eq(assistantTurns.status, "running"),
-            lt(assistantTurns.deadlineAt, sql`now()`),
-          ),
+          runningPastDeadline(),
         ),
       ),
     )

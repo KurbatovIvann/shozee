@@ -1,10 +1,24 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  AI_BUDGET_FLOORED_MESSAGE,
   AI_BUDGET_TTL_SEC,
   aiCompanyBudgetKey,
   createMemoryAiBudgetStore,
 } from "./budget.js";
+
+/** A logger that keeps what it was told. */
+function capturingLogger() {
+  const warnings: { fields: Record<string, unknown>; message: string }[] = [];
+  return {
+    warnings,
+    logger: {
+      warn(fields: Record<string, unknown>, message: string) {
+        warnings.push({ fields, message });
+      },
+    },
+  };
+}
 
 describe("createMemoryAiBudgetStore", () => {
   it("reads 0 for a missing key and adds spend with TTL", async () => {
@@ -44,6 +58,31 @@ describe("createMemoryAiBudgetStore", () => {
     expect(
       (await store.tryAdd(key, 0.1, 0.15, AI_BUDGET_TTL_SEC)).allowed,
     ).toBe(false);
+  });
+
+  /** A double release, or a reset under turns in flight, must not vanish. */
+  it("warns when a release stops a non-zero counter at zero, and only then", async () => {
+    const { logger, warnings } = capturingLogger();
+    const store = createMemoryAiBudgetStore({ logger });
+    const key = "ai-budget:c:2026-09-11";
+
+    await store.add(key, 0.1, AI_BUDGET_TTL_SEC);
+    await store.add(key, -0.05, AI_BUDGET_TTL_SEC);
+    await store.add(key, -0.05, AI_BUDGET_TTL_SEC);
+    expect(warnings).toEqual([]);
+
+    await store.add(key, 0.1, AI_BUDGET_TTL_SEC);
+    await store.add(key, -0.25, AI_BUDGET_TTL_SEC);
+    // A missing key has nothing to lose.
+    await store.add(key, -0.1, AI_BUDGET_TTL_SEC);
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.message).toBe(AI_BUDGET_FLOORED_MESSAGE);
+    expect(warnings[0]?.fields).toEqual({
+      budget_key: key,
+      current_usd: expect.closeTo(0.1) as number,
+      delta_usd: -0.25,
+    });
   });
 });
 

@@ -49,7 +49,12 @@ export interface AssistantTurnForJob {
   readonly budgetHold: StaffAssistantBudgetHold;
   /** The command the turn's tools derive their idempotency keys from. */
   readonly continuationRootCommandId: string;
-  readonly caller: VerifiedAssistantCaller;
+  /**
+   * Who the turn runs as — only while it is still queued, the one state a
+   * worker starts a turn from. A running or ended turn gives no caller, so a
+   * replayed or forged job naming it is no way to act as its author.
+   */
+  readonly caller: VerifiedAssistantCaller | null;
 }
 
 export function createPostgresAssistantTurnForJob(
@@ -100,12 +105,15 @@ export function createPostgresAssistantTurnForJob(
         deadlineAt: turn.deadlineAt,
         budgetHold: assistantBudgetHoldFromStored(turn.budgetHold),
         continuationRootCommandId: turn.continuationRootCommandId,
-        caller: {
-          userId: turn.userId,
-          companySelector: turn.companyId,
-          requestId: turn.requestId,
-          [verifiedCaller]: true,
-        },
+        caller:
+          turn.status === "queued"
+            ? {
+                userId: turn.userId,
+                companySelector: turn.companyId,
+                requestId: turn.requestId,
+                [verifiedCaller]: true,
+              }
+            : null,
       };
     },
   };

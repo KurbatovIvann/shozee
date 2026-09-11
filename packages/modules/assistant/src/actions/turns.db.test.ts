@@ -96,8 +96,13 @@ function systemRequest() {
 }
 
 /** The reconciler's interrupt, inside one company. */
-function interruptAs(companyId: string, turn: TurnRef, requestId?: string) {
-  return executeAction(kit.pipeline, {
+function interruptAs(
+  companyId: string,
+  turn: TurnRef,
+  requestId?: string,
+  deps: Parameters<typeof executeAction>[0] = kit.pipeline,
+) {
+  return executeAction(deps, {
     action: interruptTurn,
     input: turn,
     request:
@@ -194,6 +199,41 @@ async function turnRows(conversationId: string) {
     .where(eq(assistantTurns.conversationId, conversationId));
 }
 
+/**
+ * Moves a running turn's deadline behind or ahead of Postgres `now()`, in SQL,
+ * so a test never compares a host time with the container's.
+ */
+async function setDeadline(
+  conversationId: string,
+  when: "passed" | "ahead",
+): Promise<void> {
+  const moved = await kit.db.runtime.db
+    .update(assistantTurns)
+    .set({
+      deadlineAt:
+        when === "passed"
+          ? sql`now() - interval '1 second'`
+          : sql`now() + interval '1 hour'`,
+    })
+    .where(
+      and(
+        eq(assistantTurns.conversationId, conversationId),
+        eq(assistantTurns.status, "running"),
+      ),
+    )
+    .returning({ id: assistantTurns.id });
+  expect(moved).toHaveLength(1);
+}
+
+/** Starts an accepted turn and puts its deadline behind it: a stale turn. */
+async function startPastDeadline(
+  turn: TurnRef,
+  actor: { userId: string; companyId: string } | Record<string, never> = {},
+): Promise<void> {
+  await kit.invoke(startTurn, { ...turn, timeoutMs: TIMEOUT_MS }, actor);
+  await setDeadline(turn.conversationId, "passed");
+}
+
 async function messageIds(conversationId: string): Promise<string[]> {
   const page = await kit.invoke(
     readChatMessages,
@@ -256,6 +296,13 @@ beforeAll(async () => {
   await kit.invoke(
     acceptTurn,
     chatAccept(isolation.foreign, isolation.foreignCommand, BORIS_BIND),
+    borisInB,
+  );
+  // Both stale, so the interrupt's own case ends one and its foreign case has
+  // a turn it would end if company scope did not stop it.
+  await startPastDeadline(ref(isolation.interrupt, isolation.interruptCommand));
+  await startPastDeadline(
+    ref(isolation.foreign, isolation.foreignCommand),
     borisInB,
   );
 }, 180_000);
@@ -1141,59 +1188,107 @@ describe("ending a turn takes its hold off the row", () => {
     });
   });
 
-  it("interrupts a running or a queued turn once, audited in its company", async () => {
-    for (const started of [true, false]) {
-      const conversationId = await newConversation();
-      const input = chatAccept(conversationId);
-      const turn = ref(conversationId, input.commandId.toUpperCase());
-      await kit.invoke(acceptTurn, input, {});
-      if (started) {
-        await kit.invoke(startTurn, { ...turn, timeoutMs: TIMEOUT_MS }, {});
-      }
-      const requestId = randomUUID();
+  it("interrupts a running turn past its deadline once, audited in its company", async () => {
+    const conversationId = await newConversation();
+    const input = chatAccept(conversationId);
+    const turn = ref(conversationId, input.commandId.toUpperCase());
+    await kit.invoke(acceptTurn, input, {});
+    await startPastDeadline(turn);
+    const requestId = randomUUID();
 
-      const first = await interruptAs(
+    const first = await interruptAs(kitIdentities.companies.a, turn, requestId);
+    const second = await interruptAs(kitIdentities.companies.a, turn);
+
+    expect(first).toEqual({
+      outcome: "interrupted",
+      conversationId,
+      releasedHold: HOLD,
+    });
+    expect(second).toEqual({
+      outcome: "already_finished",
+      conversationId,
+      status: "interrupted",
+    });
+    expect((await turnRows(conversationId))[0]).toMatchObject({
+      status: "interrupted",
+      sessionId: null,
+      companyReservedMicroUsd: 0,
+      globalReservedMicroUsd: 0,
+    });
+    expect((await turnRows(conversationId))[0]?.finishedAt).not.toBeNull();
+
+    const audit = await kit.db.runtime.db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.requestId, requestId));
+    expect(audit).toHaveLength(1);
+    expect(audit[0]).toMatchObject({
+      action: "assistant.interruptTurn",
+      companyId: kitIdentities.companies.a,
+      targetType: "conversation",
+      targetId: conversationId,
+      outcome: "ok",
+    });
+
+    // The conversation is free again.
+    expect(
+      (await kit.invoke(acceptTurn, chatAccept(conversationId), {})).outcome,
+    ).toBe("accepted");
+  });
+
+  /**
+   * Only a server-side timeout ends a turn early (ADR-0039). A turn the
+   * reconciler listed as queued too long may have been started by a late worker
+   * since; interrupting it would free the conversation under that worker and
+   * release a hold the model is still spending.
+   */
+  it("leaves a queued turn and a running turn inside its deadline as they are", async () => {
+    const queued = await newConversation();
+    const queuedInput = chatAccept(queued);
+    await kit.invoke(acceptTurn, queuedInput, {});
+    await kit.db.runtime.db
+      .update(assistantTurns)
+      .set({ createdAt: sql`now() - interval '2 hours'` })
+      .where(eq(assistantTurns.conversationId, queued));
+
+    const running = await newConversation();
+    const runningInput = chatAccept(running);
+    const runningTurn = ref(running, runningInput.commandId);
+    await kit.invoke(acceptTurn, runningInput, {});
+    await kit.invoke(startTurn, { ...runningTurn, timeoutMs: TIMEOUT_MS }, {});
+    await setDeadline(running, "ahead");
+
+    expect(
+      await interruptAs(
         kitIdentities.companies.a,
-        turn,
-        requestId,
-      );
-      const second = await interruptAs(kitIdentities.companies.a, turn);
+        ref(queued, queuedInput.commandId),
+      ),
+    ).toEqual({
+      outcome: "not_stale",
+      conversationId: queued,
+      status: "queued",
+    });
+    expect(await interruptAs(kitIdentities.companies.a, runningTurn)).toEqual({
+      outcome: "not_stale",
+      conversationId: running,
+      status: "running",
+    });
 
-      expect(first).toEqual({
-        outcome: "interrupted",
-        conversationId,
-        releasedHold: HOLD,
-      });
-      expect(second).toEqual({
-        outcome: "already_finished",
-        conversationId,
-        status: "interrupted",
-      });
+    for (const [conversationId, status] of [
+      [queued, "queued"],
+      [running, "running"],
+    ] as const) {
       expect((await turnRows(conversationId))[0]).toMatchObject({
-        status: "interrupted",
-        sessionId: null,
-        companyReservedMicroUsd: 0,
-        globalReservedMicroUsd: 0,
+        status,
+        sessionId: "session-anna",
+        finishedAt: null,
+        companyReservedMicroUsd: HOLD.companyReservedMicroUsd,
+        globalReservedMicroUsd: HOLD.globalReservedMicroUsd,
       });
-      expect((await turnRows(conversationId))[0]?.finishedAt).not.toBeNull();
-
-      const audit = await kit.db.runtime.db
-        .select()
-        .from(auditLog)
-        .where(eq(auditLog.requestId, requestId));
-      expect(audit).toHaveLength(1);
-      expect(audit[0]).toMatchObject({
-        action: "assistant.interruptTurn",
-        companyId: kitIdentities.companies.a,
-        targetType: "conversation",
-        targetId: conversationId,
-        outcome: "ok",
-      });
-
-      // The conversation is free again.
+      // Still holding its conversation.
       expect(
         (await kit.invoke(acceptTurn, chatAccept(conversationId), {})).outcome,
-      ).toBe("accepted");
+      ).toBe("busy");
     }
   });
 
@@ -1214,6 +1309,7 @@ describe("ending a turn takes its hold off the row", () => {
     const interruptedInput = chatAccept(interruptedFirst);
     const interruptedTurn = ref(interruptedFirst, interruptedInput.commandId);
     await kit.invoke(acceptTurn, interruptedInput, {});
+    await startPastDeadline(interruptedTurn);
     await interruptAs(kitIdentities.companies.a, interruptedTurn);
 
     // A late done from a worker cannot overwrite the interruption.
@@ -1232,7 +1328,7 @@ describe("ending a turn takes its hold off the row", () => {
       const input = chatAccept(conversationId);
       const turn = ref(conversationId, input.commandId);
       await kit.invoke(acceptTurn, input, {});
-      await kit.invoke(startTurn, { ...turn, timeoutMs: TIMEOUT_MS }, {});
+      await startPastDeadline(turn);
 
       const outcomes = await Promise.all([
         kit.invoke(finishTurn, { ...turn, status: "done" }, {}),
@@ -1262,8 +1358,126 @@ describe("ending a turn takes its hold off the row", () => {
       interruptAs(kitIdentities.companies.a, ref(randomUUID(), randomUUID())),
     ).rejects.toBeInstanceOf(NotFoundError);
     expect((await turnRows(isolation.foreign))[0]).toMatchObject({
-      status: "queued",
+      status: "running",
       companyReservedMicroUsd: HOLD.companyReservedMicroUsd,
+    });
+  });
+});
+
+/**
+ * The same at-most-once property, one interleaving at a time instead of by luck.
+ * The first ender holds its transaction open at commit, with the row updated
+ * and locked; the second is sent, seen waiting on that lock, and only then is
+ * the first let go. The lock in `finaliseTurn`'s sub-select is what makes the
+ * second re-read the ended row and take nothing.
+ */
+describe("a finish and an interrupt, the second waiting on the first", () => {
+  type Ender = "finish" | "interrupt";
+  interface Ended {
+    readonly outcome: string;
+    readonly releasedHold: unknown;
+  }
+
+  async function endTurn(
+    ender: Ender,
+    turn: TurnRef,
+    deps: Parameters<typeof executeAction>[0],
+  ): Promise<Ended> {
+    const ended =
+      ender === "finish"
+        ? await kit.invoke(
+            finishTurn,
+            { ...turn, status: "done" },
+            {},
+            { deps },
+          )
+        : await interruptAs(kitIdentities.companies.a, turn, undefined, deps);
+    return {
+      outcome: ended.outcome,
+      releasedHold: "releasedHold" in ended ? ended.releasedHold : null,
+    };
+  }
+
+  async function holdThenWait(holder: Ender) {
+    const waiter: Ender = holder === "finish" ? "interrupt" : "finish";
+    const conversationId = await newConversation();
+    const input = chatAccept(conversationId);
+    const turn = ref(conversationId, input.commandId);
+    await kit.invoke(acceptTurn, input, {});
+    await startPastDeadline(turn);
+
+    const held = deferred();
+    const release = deferred();
+    const state = { updatedTurn: false };
+    const holderPool = gatedPipeline(async (text) => {
+      if (text.startsWith(`update ${TURN_TABLE}`)) {
+        state.updatedTurn = true;
+      }
+      if (text === "commit" && state.updatedTurn) {
+        held.resolve();
+        await release.promise;
+      }
+    });
+    const waiterPool = gatedPipeline(() => Promise.resolve());
+
+    const holding = endTurn(holder, turn, holderPool.deps);
+    try {
+      // A holder that fails before its commit must fail the test, not hang it.
+      await Promise.race([held.promise, holding]);
+      const waiting = endTurn(waiter, turn, waiterPool.deps);
+      const settled = Promise.allSettled([holding, waiting]);
+      try {
+        await waitForLockWait();
+      } finally {
+        release.resolve();
+      }
+      const [holderResult, waiterResult] = await settled;
+      if (holderResult.status === "rejected") {
+        throw holderResult.reason;
+      }
+      if (waiterResult.status === "rejected") {
+        throw waiterResult.reason;
+      }
+      return {
+        conversationId,
+        holder: holderResult.value,
+        waiter: waiterResult.value,
+      };
+    } finally {
+      release.resolve();
+      await holding.catch(() => undefined);
+      await holderPool.close();
+      await waiterPool.close();
+    }
+  }
+
+  it("a finish holding the row leaves the waiting interrupt nothing", async () => {
+    const race = await holdThenWait("finish");
+
+    expect(race.holder).toEqual({ outcome: "finished", releasedHold: HOLD });
+    expect(race.waiter).toEqual({
+      outcome: "already_finished",
+      releasedHold: null,
+    });
+    expect((await turnRows(race.conversationId))[0]).toMatchObject({
+      status: "done",
+      companyReservedMicroUsd: 0,
+      globalReservedMicroUsd: 0,
+    });
+  });
+
+  it("an interrupt holding the row leaves the waiting finish nothing", async () => {
+    const race = await holdThenWait("interrupt");
+
+    expect(race.holder).toEqual({ outcome: "interrupted", releasedHold: HOLD });
+    expect(race.waiter).toEqual({
+      outcome: "already_finished",
+      releasedHold: null,
+    });
+    expect((await turnRows(race.conversationId))[0]).toMatchObject({
+      status: "interrupted",
+      companyReservedMicroUsd: 0,
+      globalReservedMicroUsd: 0,
     });
   });
 
@@ -1365,6 +1579,7 @@ describe("the worker's read of the turn a job names", () => {
     const conversationId = await newConversation();
     const first = chatAccept(conversationId);
     await kit.invoke(acceptTurn, first, {});
+    await startPastDeadline(ref(conversationId, first.commandId));
     await interruptAs(
       kitIdentities.companies.a,
       ref(conversationId, first.commandId),

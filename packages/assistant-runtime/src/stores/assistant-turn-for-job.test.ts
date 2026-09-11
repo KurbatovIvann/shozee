@@ -35,6 +35,6 @@ describe("VerifiedAssistantCaller", () => {
     expectTypeOf<VerifiedAssistantCaller>().toExtend<AssistantKitCaller>();
     expectTypeOf<
       AssistantTurnForJob["caller"]
-    >().toEqualTypeOf<VerifiedAssistantCaller>();
+    >().toEqualTypeOf<VerifiedAssistantCaller | null>();
   });
 });

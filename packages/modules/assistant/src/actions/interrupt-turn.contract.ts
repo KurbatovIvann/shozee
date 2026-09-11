@@ -11,11 +11,18 @@
  * write cannot reach another company's turn and its audit row carries the
  * company.
  *
- * Compare-and-set, in one statement, from an active status to `interrupted`:
+ * Compare-and-set, in one statement, from `running` past its deadline to
+ * `interrupted`, judged by Postgres `now()` against the deadline Postgres set:
  * the same statement zeroes the hold the row stored and returns what it zeroed.
- * A turn that already ended — finished by its worker, or interrupted before —
- * keeps its status and reports it as `already_finished` with no hold, so each
- * hold is handed out at most once.
+ * A server-side timeout is the only thing that ends a turn early, so:
+ *
+ * - a queued turn, or a running turn still inside its deadline, is left as it
+ *   is and reported as `not_stale` — a worker may have started it since the
+ *   reconciler listed it;
+ * - a turn that already ended keeps its status and is reported as
+ *   `already_finished`.
+ *
+ * Neither hands out a hold, so each hold is handed out at most once.
  *
  * `idempotent: false`: the compare-and-set is the idempotency. A replay store
  * would hand the first call's hold to a retry, and it would be released twice.
@@ -26,6 +33,7 @@ import { defineActionContract } from "@showzy/core/contract";
 import { z } from "zod";
 
 import {
+  assistantTurnActiveStatusSchema,
   assistantTurnBudgetHoldSchema,
   assistantTurnRefShape,
   assistantTurnStatusSchema,
@@ -43,6 +51,11 @@ export const interruptTurnOutputSchema = z.discriminatedUnion("outcome", [
     releasedHold: assistantTurnBudgetHoldSchema,
   }),
   z.strictObject({
+    outcome: z.literal("not_stale"),
+    conversationId: z.uuid(),
+    status: assistantTurnActiveStatusSchema,
+  }),
+  z.strictObject({
     outcome: z.literal("already_finished"),
     conversationId: z.uuid(),
     status: assistantTurnStatusSchema,
@@ -52,7 +65,7 @@ export const interruptTurnOutputSchema = z.discriminatedUnion("outcome", [
 export const interruptTurnContract = defineActionContract({
   name: "assistant.interruptTurn",
   description:
-    "Interrupt a staff assistant turn of this company, named by its conversation, kind and command: a queued or running turn becomes interrupted, stops holding its conversation, and gives up the budget hold it stored, which is returned. A turn that already ended keeps its status and reports it as already_finished with no hold. A turn that does not exist in this company is not-found. Company id is never input.",
+    "Interrupt a staff assistant turn of this company that is running past its deadline, named by its conversation, kind and command: it becomes interrupted, stops holding its conversation, and gives up the budget hold it stored, which is returned. A queued turn, or a running turn still inside its deadline, is left as it is and reported as not_stale with its status. A turn that already ended keeps its status and reports it as already_finished. Neither returns a hold. A turn that does not exist in this company is not-found. Company id is never input.",
   principal: "system",
   systemScope: "tenant",
   transport: "internal",

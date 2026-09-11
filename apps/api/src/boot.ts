@@ -201,7 +201,9 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
     ...(assistantKitEvents === undefined ? {} : { assistantKitEvents }),
     assistantBudget: {
       rateLimitStore,
-      budgetStore: createRedisAiBudgetStore(redis),
+      budgetStore: createRedisAiBudgetStore(redis, {
+        logger: pipeline.logger,
+      }),
       limits: {
         chatTurnsPerMinutePerUser: config.ai.chatTurnsPerMinutePerUser,
         dailyBudgetUsdPerCompany: config.ai.dailyBudgetUsdPerCompany,

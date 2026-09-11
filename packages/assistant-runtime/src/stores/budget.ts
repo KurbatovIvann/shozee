@@ -1,8 +1,10 @@
 /**
- * Staff-assistant daily USD counters (SHO-505). Redis `tryAdd` is Lua
- * increment-with-cap (reservation before the model). Settlement uses
- * INCRBYFLOAT + EXPIRE. Tests use the in-memory store. Never GETDEL —
- * that stays confirmation's primitive.
+ * Staff-assistant daily USD counters (SHO-505). `tryAdd` is an
+ * increment-with-cap (the reservation before the model). `add` settles or
+ * releases: it adds a signed amount, stops at zero, and deletes the key at zero
+ * or below (SHO-561). In Redis both are Lua read-then-write scripts
+ * (`budget-redis.ts`); here they are serialized per key. Tests use this
+ * in-memory store. Never GETDEL — that stays confirmation's primitive.
  */
 import { withKeyLock } from "@showzy/module-kit/key-lock";
 
@@ -55,6 +57,40 @@ export interface AiBudgetStore {
   ): Promise<AiBudgetTryAddDecision>;
 }
 
+/**
+ * Where a budget store reports a counter it had to stop at zero. A process
+ * logger (pino) fits.
+ */
+export interface AiBudgetStoreLogger {
+  warn(fields: Record<string, unknown>, message: string): void;
+}
+
+export const AI_BUDGET_FLOORED_MESSAGE =
+  "staff assistant budget counter floored at zero";
+
+/**
+ * A release larger than what the counter holds — a hold released twice, or a
+ * key reset under turns still in flight — would otherwise vanish into the
+ * floor. The key names a company and a day; no person and no message.
+ */
+export function logAiBudgetFloored(
+  logger: AiBudgetStoreLogger | undefined,
+  floored: {
+    readonly key: string;
+    readonly currentUsd: number;
+    readonly deltaUsd: number;
+  },
+): void {
+  logger?.warn(
+    {
+      budget_key: floored.key,
+      current_usd: floored.currentUsd,
+      delta_usd: floored.deltaUsd,
+    },
+    AI_BUDGET_FLOORED_MESSAGE,
+  );
+}
+
 interface MemoryBudgetEntry {
   value: number;
   expiresAtMs: number;
@@ -74,6 +110,8 @@ function clampSpent(value: number): number {
 
 export function createMemoryAiBudgetStore(options?: {
   readonly now?: () => number;
+  /** Told when a release had to stop a non-zero counter at zero. */
+  readonly logger?: AiBudgetStoreLogger;
 }): AiBudgetStore {
   const now = options?.now ?? Date.now;
   const entries = new Map<string, MemoryBudgetEntry>();
@@ -108,7 +146,16 @@ export function createMemoryAiBudgetStore(options?: {
 
     add(key, amountUsd, ttlSec) {
       return withKeyLock(tails, key, () => {
-        return Promise.resolve(write(key, liveValue(key) + amountUsd, ttlSec));
+        const current = liveValue(key);
+        const next = current + amountUsd;
+        if (next < 0 && current > 0) {
+          logAiBudgetFloored(options?.logger, {
+            key,
+            currentUsd: current,
+            deltaUsd: amountUsd,
+          });
+        }
+        return Promise.resolve(write(key, next, ttlSec));
       });
     },
 

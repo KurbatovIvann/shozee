@@ -11,7 +11,7 @@ import {
 import { Redis } from "ioredis";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { AI_BUDGET_TTL_SEC } from "./budget.js";
+import { AI_BUDGET_FLOORED_MESSAGE, AI_BUDGET_TTL_SEC } from "./budget.js";
 import { createRedisAiBudgetStore } from "./budget-redis.js";
 
 let container: StartedRedisContainer;
@@ -78,6 +78,36 @@ describe("createRedisAiBudgetStore", () => {
     expect(
       (await store.tryAdd(key, 0.1, 0.15, AI_BUDGET_TTL_SEC)).allowed,
     ).toBe(false);
+  });
+
+  it("warns when a release stops a non-zero counter at zero, and only then", async () => {
+    const warnings: { fields: Record<string, unknown>; message: string }[] = [];
+    const store = createRedisAiBudgetStore(redis, {
+      logger: {
+        warn(fields, message) {
+          warnings.push({ fields, message });
+        },
+      },
+    });
+    const key = budgetKey();
+
+    await store.add(key, 0.1, AI_BUDGET_TTL_SEC);
+    await store.add(key, -0.05, AI_BUDGET_TTL_SEC);
+    await store.add(key, -0.05, AI_BUDGET_TTL_SEC);
+    expect(warnings).toEqual([]);
+
+    await store.add(key, 0.1, AI_BUDGET_TTL_SEC);
+    expect(await store.add(key, -0.25, AI_BUDGET_TTL_SEC)).toBe(0);
+    // A missing key has nothing to lose.
+    await store.add(key, -0.1, AI_BUDGET_TTL_SEC);
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.message).toBe(AI_BUDGET_FLOORED_MESSAGE);
+    expect(warnings[0]?.fields).toEqual({
+      budget_key: key,
+      current_usd: expect.closeTo(0.1) as number,
+      delta_usd: -0.25,
+    });
   });
 
   it("floors concurrent releases at zero", async () => {

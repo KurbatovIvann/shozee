@@ -27,13 +27,15 @@ import {
   type AiBudgetStore,
   type StaffAssistantBudgetHold,
 } from "@showzy/assistant-runtime";
-import { ConflictError } from "@showzy/core/errors";
+import { ConflictError, PermissionDeniedError } from "@showzy/core/errors";
 import {
   createTestKit,
   kitIdentities,
   type TestKit,
 } from "@showzy/core/testing";
 import { assistantConversations } from "@showzy/db/schema/assistant";
+import { user } from "@showzy/db/schema/auth";
+import { companyMembers } from "@showzy/db/schema/companies";
 import { assistantChatWindowSchema } from "@showzy/validation/assistant-chat";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -553,8 +555,8 @@ describe("the turn a job names", () => {
         requestId: anna.requestId,
       },
     });
-    if (found === null) {
-      return;
+    if (found === null || found.caller === null) {
+      throw new Error("expected a verified caller for a queued turn");
     }
     expect(found.caller).not.toHaveProperty("clientIp");
 
@@ -564,6 +566,10 @@ describe("the turn a job names", () => {
       found.caller,
     );
     expect((await asTurn.start(found.turn)).outcome).toBe("started");
+    // A started turn gives no caller: only a queued turn is started from one.
+    expect(
+      await forJob.read({ job: accepted.job, requestId: randomUUID() }),
+    ).toMatchObject({ status: "running", caller: null });
     expect(await asTurn.finish(found.turn, "done")).toEqual({
       outcome: "finished",
       status: "done",
@@ -579,7 +585,96 @@ describe("the turn a job names", () => {
     ).toMatchObject({
       status: "done",
       budgetHold: { companyReservedUsd: 0, globalReservedUsd: 0 },
+      // A replayed job for an ended turn is no way to act as its author.
+      caller: null,
     });
+  });
+
+  /**
+   * The verified caller names a person, not a grant: core checks the author's
+   * membership again on every action, IP or not, so a member removed after the
+   * accept is refused at the turn's next action.
+   */
+  it("refuses the turn's actions once its author is no longer a member", async () => {
+    const clerkId = randomUUID();
+    await kit.db.runtime.db.insert(user).values({
+      id: clerkId,
+      name: "Leaving Clerk",
+      email: `${clerkId}@assistant-turn-store.test`,
+    });
+    await kit.db.runtime.db.insert(companyMembers).values({
+      companyId: kitIdentities.companies.a,
+      userId: clerkId,
+      role: "employee",
+      permissions: { granted: ["assistant:use"], denied: [] },
+    });
+    const clerk = {
+      userId: clerkId,
+      companySelector: kitIdentities.companies.a,
+      requestId: randomUUID(),
+    };
+    const forJob = createPostgresAssistantTurnForJob({
+      pipeline: kit.pipeline,
+    });
+
+    const acceptAndRead = async () => {
+      const conversationId = await newConversation({
+        companyId: kitIdentities.companies.a,
+        userId: clerkId,
+      });
+      const accepted = await createPostgresAssistantTurnStore(
+        { pipeline: kit.pipeline },
+        clerk,
+      ).accept({
+        kind: "chat",
+        conversationId,
+        commandId: randomUUID(),
+        bind: `${clerkId}:${kitIdentities.companies.a}`,
+        text: "привіт",
+        sessionId: "session-clerk",
+        ...nothingReserved,
+      });
+      if (accepted.outcome !== "accepted") {
+        throw new Error(`expected accepted, got ${accepted.outcome}`);
+      }
+      const found = await forJob.read({
+        job: accepted.job,
+        requestId: randomUUID(),
+      });
+      if (found === null || found.caller === null) {
+        throw new Error("expected a verified caller for a queued turn");
+      }
+      return {
+        job: accepted.job,
+        turn: found.turn,
+        asTurn: createPostgresAssistantTurnStore(
+          { pipeline: kit.pipeline },
+          found.caller,
+        ),
+      };
+    };
+    const queued = await acceptAndRead();
+    const running = await acceptAndRead();
+    expect((await running.asTurn.start(running.turn)).outcome).toBe("started");
+
+    const removed = await kit.db.admin.query(
+      "delete from company_members where user_id = $1",
+      [clerkId],
+    );
+    expect(removed.rowCount).toBe(1);
+
+    await expect(queued.asTurn.start(queued.turn)).rejects.toBeInstanceOf(
+      PermissionDeniedError,
+    );
+    await expect(
+      running.asTurn.finish(running.turn, "done"),
+    ).rejects.toBeInstanceOf(PermissionDeniedError);
+    expect(
+      await forJob.read({ job: queued.job, requestId: randomUUID() }),
+    ).toMatchObject({ status: "queued", budgetHold: hold });
+    expect(
+      await forJob.read({ job: running.job, requestId: randomUUID() }),
+    ).toMatchObject({ status: "running", budgetHold: hold });
   });
 
   it("finds nothing for a job nobody accepted", async () => {

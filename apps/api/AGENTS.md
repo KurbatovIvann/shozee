@@ -54,9 +54,8 @@ Auth policy parameters still live in `src/auth/` (fnd-T6).
   `apps/worker/src/observability.ts`. `flushProcessObservability` drains
   Sentry on shutdown.
 - `src/stores/redis.ts` — Redis secondary storage (`GETDEL`), confirmation
-  store, Lua token-bucket rate-limit store, Lua OTP send throttle, Lua
-  and INCR+EXPIRE Better Auth IP rate-limit consume
-  (`customStorage.consume`). The staff-assistant USD budget counters are
+  store, Lua token-bucket rate-limit store, Lua OTP send throttle, and Lua
+  INCR+EXPIRE Better Auth IP rate-limit consume (`customStorage.consume`). The staff-assistant USD budget counters are
   `createRedisAiBudgetStore` from `@showzy/assistant-runtime`, shared with the
   worker (SHO-561).
   Consume keys are HMAC-SHA256 of the Better Auth `${ip}|${path}` key
