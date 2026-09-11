@@ -221,6 +221,19 @@ export interface AssistantTurnStore {
   }>;
 }
 
+/**
+ * Exactly the identity a job carries. A caller naturally hands over the turn it
+ * was given — a view with its status and message ids — and the action's input
+ * is strict, so the identity is picked rather than spread.
+ */
+function identityOf(ref: AssistantTurnRef): AssistantTurnRef {
+  return {
+    conversationId: ref.conversationId,
+    kind: ref.kind,
+    commandId: ref.commandId,
+  };
+}
+
 function jobOf(turn: AssistantTurnRef): AssistantTurnJob {
   return assistantTurnJobSchema.parse({
     version: 1,
@@ -315,7 +328,7 @@ export function createPostgresAssistantTurnStore(
       const started = await executeAction(deps.pipeline, {
         action: startTurn,
         input: {
-          ...ref,
+          ...identityOf(ref),
           timeoutMs: options?.timeoutMs ?? ASSISTANT_TURN_TIMEOUT_MS,
         },
         ...call,
@@ -328,7 +341,7 @@ export function createPostgresAssistantTurnStore(
     finish: async (ref, status) => {
       const finished = await executeAction(deps.pipeline, {
         action: finishTurn,
-        input: { ...ref, status },
+        input: { ...identityOf(ref), status },
         ...call,
       });
       return { outcome: finished.outcome, status: finished.status };
