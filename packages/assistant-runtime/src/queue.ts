@@ -26,6 +26,13 @@ export const ASSISTANT_QUEUE_PREFIX = "showzy";
 export const ASSISTANT_TURN_JOB_NAME = "runTurn";
 
 /**
+ * How long a started turn may run (ADR-0039, starting values). The worker's
+ * timer and the turn row's deadline both come from this one value, so the
+ * reconciler never interrupts a turn its worker still considers in time.
+ */
+export const ASSISTANT_TURN_TIMEOUT_MS = 180_000;
+
+/**
  * Which accept produced the turn.
  *
  * `chat` stored the person's message and a placeholder; `answer` claimed a

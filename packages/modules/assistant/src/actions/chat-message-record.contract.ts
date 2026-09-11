@@ -23,9 +23,13 @@ export const chatMessagePayloadSchema = z.record(z.string(), z.unknown());
 
 export const chatMessageSeqSchema = z.number().int().positive();
 
+/** 1 when a message is stored, one more on every update (ADR-0039). */
+export const chatMessageRevisionSchema = z.number().int().positive();
+
 export const chatMessageRecordSchema = z.strictObject({
   seq: chatMessageSeqSchema,
   messageId: z.uuid(),
   bind: z.string(),
   message: chatMessagePayloadSchema,
+  revision: chatMessageRevisionSchema,
 });

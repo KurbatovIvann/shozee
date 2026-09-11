@@ -24,9 +24,16 @@ runtime internals, so what both need lives here.
 - `assistant-budget-guard.ts`, `stores/budget.ts` — the pure spend guard and
   the budget store port with its in-memory store. The Redis budget store is
   still `apps/api/src/stores/redis.ts`.
-- `stores/assistant-kit-stores.ts` — Redis pause store and command receipts.
+- `stores/assistant-kit-stores.ts` — Redis pause store and command receipts
+  (the receipts and the kit's turn lease are replaced by `assistant_turns` at
+  the switch, SHO-563).
 - `stores/assistant-kit-postgres-stores.ts` — Postgres message log and history,
-  through `executeAction` as the caller.
+  through `executeAction` as the caller. `stores/caller.ts` is how every
+  Postgres store acts as the caller; internal.
+- `stores/assistant-turn-store.ts` — accept, start and finish a turn as the
+  caller, and the reconciler's global read (SHO-560). Owns the ids of a turn's
+  messages (derived from the command), the placeholder's shape and the budget
+  hold's micro-USD form; the module stores them as given.
 - `queue.ts` — the assistant queue contract: name, BullMQ prefix, job payload
   schema, `jobId` derivation. Pure constants and a schema. The payload is the
   turn's identity only (kind, conversation id, command id, lowercased);

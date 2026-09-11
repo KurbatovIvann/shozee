@@ -16,6 +16,7 @@ import {
   assistantChatMessages,
   assistantChatState,
   assistantConversations,
+  assistantTurns,
 } from "./schema/assistant.js";
 import { user } from "./schema/auth.js";
 import { companies } from "./schema/companies.js";
@@ -339,11 +340,211 @@ describe("assistant schema slice", () => {
     // so the model conversation could be rebuilt from them. Nothing rebuilds
     // it, and the audit lives in `audit_log` (ADR-0038). The message log that
     // came later is the transcript a person reads, stored as written.
+    // `assistant_turns` is the turn lease and the command receipt, moved off
+    // Redis so an accepted turn outlives its request (ADR-0039).
     expect(result.rows.map((row) => row.table_name)).toEqual([
       "assistant_chat_messages",
       "assistant_chat_state",
       "assistant_conversations",
+      "assistant_turns",
     ]);
+  });
+
+  it("starts a message at revision 1 and refuses a revision below it", async () => {
+    const company = await insertCompany();
+    const userId = await insertUser();
+    const conversation = await insertConversation({
+      companyId: company.id,
+      userId,
+    });
+    const row = (seq: number, revision?: number) => ({
+      companyId: company.id,
+      conversationId: conversation.id,
+      seq,
+      messageId: crypto.randomUUID(),
+      bind: "owner",
+      message: {},
+      ...(revision === undefined ? {} : { revision }),
+    });
+
+    const inserted = await dbClient.db
+      .insert(assistantChatMessages)
+      .values(row(1))
+      .returning({ revision: assistantChatMessages.revision });
+    expect(inserted).toEqual([{ revision: 1 }]);
+    await expectSqlState(
+      dbClient.db.insert(assistantChatMessages).values(row(2, 0)),
+      "23514",
+    );
+  });
+});
+
+describe("assistant turns", () => {
+  async function conversationWithMessages() {
+    const company = await insertCompany();
+    const userId = await insertUser();
+    const conversation = await insertConversation({
+      companyId: company.id,
+      userId,
+    });
+    const messages: string[] = [];
+    for (let seq = 1; seq <= 4; seq += 1) {
+      const messageId = crypto.randomUUID();
+      messages.push(messageId);
+      await dbClient.db.insert(assistantChatMessages).values({
+        companyId: company.id,
+        conversationId: conversation.id,
+        seq,
+        messageId,
+        bind: "owner",
+        message: {},
+      });
+    }
+    return { company, userId, conversation, messages };
+  }
+
+  function turn(
+    world: Awaited<ReturnType<typeof conversationWithMessages>>,
+    overrides: Partial<typeof assistantTurns.$inferInsert> = {},
+  ): typeof assistantTurns.$inferInsert {
+    return {
+      companyId: world.company.id,
+      conversationId: world.conversation.id,
+      kind: "chat",
+      commandId: crypto.randomUUID(),
+      status: "queued",
+      userId: world.userId,
+      sessionId: "session",
+      requestId: "request",
+      userMessageId: world.messages[0],
+      placeholderMessageId: world.messages[1] ?? "",
+      companyReservedMicroUsd: 100_000,
+      globalReservedMicroUsd: 100_000,
+      budgetKyivDate: "2026-09-11",
+      ...overrides,
+    };
+  }
+
+  it("holds one active turn per conversation, and any number that have ended", async () => {
+    const world = await conversationWithMessages();
+    await dbClient.db.insert(assistantTurns).values(turn(world));
+
+    // Two active turns on one conversation is the interleaving the lease exists
+    // to prevent, so the database refuses it whatever the code does.
+    await expectSqlState(
+      dbClient.db.insert(assistantTurns).values(
+        turn(world, {
+          userMessageId: world.messages[2],
+          placeholderMessageId: world.messages[3] ?? "",
+        }),
+      ),
+      "23505",
+    );
+
+    const finished = {
+      status: "done" as const,
+      finishedAt: new Date("2026-09-11T10:00:00.000Z"),
+    };
+    await dbClient.db
+      .insert(assistantTurns)
+      .values(turn(world, { ...finished, userMessageId: world.messages[2] }));
+    await dbClient.db
+      .insert(assistantTurns)
+      .values(turn(world, { ...finished, userMessageId: world.messages[3] }));
+  });
+
+  it("keeps one receipt per command and kind", async () => {
+    const world = await conversationWithMessages();
+    const commandId = crypto.randomUUID();
+    const done = {
+      commandId,
+      status: "done" as const,
+      finishedAt: new Date("2026-09-11T10:00:00.000Z"),
+    };
+    await dbClient.db.insert(assistantTurns).values(turn(world, done));
+
+    await expectSqlState(
+      dbClient.db
+        .insert(assistantTurns)
+        .values(turn(world, { ...done, userMessageId: world.messages[2] })),
+      "23505",
+    );
+    // The same client token on an answer is a different attempt.
+    await dbClient.db.insert(assistantTurns).values(
+      turn(world, {
+        ...done,
+        kind: "answer",
+        userMessageId: null,
+        placeholderMessageId: world.messages[3] ?? "",
+      }),
+    );
+  });
+
+  it("refuses a status its times do not match, and a chat without the person's message", async () => {
+    const world = await conversationWithMessages();
+    const at = new Date("2026-09-11T10:00:00.000Z");
+
+    for (const overrides of [
+      { status: "running" as const },
+      { status: "running" as const, startedAt: at },
+      { status: "queued" as const, startedAt: at, deadlineAt: at },
+      { status: "interrupted" as const },
+      { status: "paused" as never, finishedAt: at },
+      { kind: "chat" as const, userMessageId: null },
+      { kind: "answer" as const },
+      { kind: "other" as never, userMessageId: null },
+      { companyReservedMicroUsd: -1 },
+    ]) {
+      await expectSqlState(
+        dbClient.db.insert(assistantTurns).values(turn(world, overrides)),
+        "23514",
+      );
+    }
+    const commandId = crypto.randomUUID();
+    await expectSqlState(
+      dbClient.db
+        .insert(assistantTurns)
+        .values(turn(world, { commandId, continuesCommandId: commandId })),
+      "23514",
+    );
+  });
+
+  it("refuses a placeholder that is not a message of its conversation", async () => {
+    const world = await conversationWithMessages();
+    const other = await conversationWithMessages();
+
+    await expectSqlState(
+      dbClient.db
+        .insert(assistantTurns)
+        .values(turn(world, { placeholderMessageId: crypto.randomUUID() })),
+      "23503",
+    );
+    await expectSqlState(
+      dbClient.db
+        .insert(assistantTurns)
+        .values(turn(world, { placeholderMessageId: other.messages[1] ?? "" })),
+      "23503",
+    );
+  });
+
+  it("goes with its conversation", async () => {
+    const world = await conversationWithMessages();
+    const inserted = await dbClient.db
+      .insert(assistantTurns)
+      .values(turn(world))
+      .returning({ id: assistantTurns.id });
+    const row = inserted[0];
+    assert.ok(row);
+
+    await dbClient.db
+      .delete(assistantConversations)
+      .where(eq(assistantConversations.id, world.conversation.id));
+    expect(
+      await dbClient.db
+        .select({ id: assistantTurns.id })
+        .from(assistantTurns)
+        .where(eq(assistantTurns.id, row.id)),
+    ).toEqual([]);
   });
 
   /**
