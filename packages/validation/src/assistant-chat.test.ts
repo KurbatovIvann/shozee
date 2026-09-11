@@ -11,8 +11,9 @@ import { describe, expect, it } from "vitest";
 import {
   mergeAssistantChatWindow,
   parseAssistantChatWindow,
-  type AssistantChatDocument,
   type AssistantChatMessage,
+  type AssistantChatThread,
+  type AssistantChatWindow,
   type AssistantPause,
 } from "./assistant-chat.js";
 
@@ -42,7 +43,7 @@ function windowOf(
   stored: readonly AssistantChatMessage[],
   size: number,
   before?: number,
-): AssistantChatDocument {
+): AssistantChatWindow {
   const end = before === undefined ? stored.length : before - 1;
   const start = Math.max(0, end - size);
   return {
@@ -53,8 +54,8 @@ function windowOf(
   };
 }
 
-function numbers(document: AssistantChatDocument | null): number[] {
-  return (document?.messages ?? []).map((entry) =>
+function numbers(window: AssistantChatWindow | null): number[] {
+  return (window?.messages ?? []).map((entry) =>
     Number.parseInt(entry.messageId.slice(-12), 16),
   );
 }
@@ -62,8 +63,8 @@ function numbers(document: AssistantChatDocument | null): number[] {
 function olderPage(
   stored: readonly AssistantChatMessage[],
   size: number,
-  held: AssistantChatDocument | null,
-): AssistantChatDocument | null {
+  held: AssistantChatThread | null,
+): AssistantChatThread | null {
   const cursor = held?.olderCursor ?? null;
   if (cursor === null) {
     return held;

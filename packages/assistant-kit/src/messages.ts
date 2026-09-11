@@ -1,5 +1,5 @@
 /**
- * The chat document: the one thing both live and reload render.
+ * The conversation's messages: the one thing both live and reload render.
  *
  * Parts are stored when they are settled, not re-derived later from model
  * prompt state. Two renderers reading two derivations is how a turn can show
@@ -27,7 +27,7 @@ export const textPartStatusSchema = z.enum(["streaming", "complete", "error"]);
  * is proven by its surface part; a provider failure must not be able to
  * present itself as a successful reply.
  */
-export const documentPartSchema = z.discriminatedUnion("kind", [
+export const chatPartSchema = z.discriminatedUnion("kind", [
   z.strictObject({
     kind: z.literal("text"),
     text: z.string(),
@@ -49,16 +49,16 @@ export const documentPartSchema = z.discriminatedUnion("kind", [
   }),
 ]);
 
-export type DocumentPart = z.output<typeof documentPartSchema>;
+export type ChatPart = z.output<typeof chatPartSchema>;
 
-export const documentMessageSchema = z.strictObject({
+export const chatMessageSchema = z.strictObject({
   messageId: z.uuid(),
   role: z.enum(["user", "assistant"]),
   createdAt: z.string().min(1),
-  parts: z.array(documentPartSchema),
+  parts: z.array(chatPartSchema),
 });
 
-export type DocumentMessage = z.output<typeof documentMessageSchema>;
+export type ChatMessage = z.output<typeof chatMessageSchema>;
 
 /**
  * A position in the log, as a client sees it: opaque. It is the stored sequence
@@ -76,18 +76,18 @@ export const chatCursorSchema = z.string().regex(/^[1-9][0-9]{0,8}$/);
  * does not travel: every stored message carries the owner it was written under,
  * and a read by anyone else comes back empty.
  */
-export const chatDocumentSchema = z.strictObject({
+export const chatWindowSchema = z.strictObject({
   conversationId: z.uuid(),
-  messages: z.array(documentMessageSchema),
+  messages: z.array(chatMessageSchema),
   olderCursor: chatCursorSchema.nullable(),
   /** Present only while an interaction is open. Read from the pause store. */
   openPause: publicPauseSchema.nullable(),
 });
 
-export type ChatDocument = z.output<typeof chatDocumentSchema>;
+export type ChatWindow = z.output<typeof chatWindowSchema>;
 
 /**
- * The one way a turn changes the stored document: parts added to a message.
+ * The one way a turn changes the stored messages: parts added to a message.
  *
  * A card is addressed by `cardId` **within its message**. Adding a card whose
  * id the message already holds replaces that card where it stands and raises
@@ -105,17 +105,17 @@ export type ChatDocument = z.output<typeof chatDocumentSchema>;
  * it; any other id starts a new message, and one the log already holds further
  * back is refused rather than reopened.
  */
-export interface DocumentWrite {
+export interface MessageWrite {
   readonly kind: "append";
   readonly messageId: string;
   /** Needed because append may be the write that creates the message. */
-  readonly role: DocumentMessage["role"];
-  readonly parts: readonly DocumentPart[];
+  readonly role: ChatMessage["role"];
+  readonly parts: readonly ChatPart[];
 }
 
 /**
  * `incoming` added to a message that already holds `existing`, by the rule on
- * `DocumentWrite`. A card's revision counts its writes in the message, so the
+ * `MessageWrite`. A card's revision counts its writes in the message, so the
  * revision a replacement arrives with is not the one it is stored with.
  *
  * Shared with the host, which reports the parts of a turn: a report that
@@ -123,9 +123,9 @@ export interface DocumentWrite {
  * live and reload would disagree about how many cards there are.
  */
 export function appendParts(
-  existing: readonly DocumentPart[],
-  incoming: readonly DocumentPart[],
-): DocumentPart[] {
+  existing: readonly ChatPart[],
+  incoming: readonly ChatPart[],
+): ChatPart[] {
   const parts = [...existing];
   for (const part of incoming) {
     if (part.kind !== "card") {

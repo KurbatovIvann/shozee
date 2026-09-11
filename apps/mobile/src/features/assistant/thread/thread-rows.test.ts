@@ -6,7 +6,7 @@
  * failed turn must be distinguishable from a silent one.
  */
 import type {
-  AssistantChatDocument,
+  AssistantChatWindow,
   AssistantChatMessage,
   AssistantChatPart,
   AssistantPause,
@@ -17,8 +17,8 @@ import {
   ASSISTANT_ORPHAN_INTERACTION_ROW_ID,
   ASSISTANT_PENDING_USER_ROW_ID,
   ASSISTANT_WAITING_ROW_ID,
-  assistantDocumentRows,
-} from "./document-rows";
+  assistantThreadRows,
+} from "./thread-rows";
 
 const CONVERSATION = "33333333-3333-4333-8333-333333333333";
 const USER_MESSAGE = "11111111-1111-4111-8111-111111111111";
@@ -61,10 +61,10 @@ function choicePause(overrides?: Partial<AssistantPause>): AssistantPause {
   };
 }
 
-function document(
+function threadOf(
   messages: readonly AssistantChatMessage[],
   openPause: AssistantPause | null = null,
-): AssistantChatDocument {
+): AssistantChatWindow {
   return {
     conversationId: CONVERSATION,
     olderCursor: null,
@@ -74,10 +74,10 @@ function document(
 }
 
 function rows(
-  input: AssistantChatDocument,
+  input: AssistantChatWindow,
   waiting = false,
-): ReturnType<typeof assistantDocumentRows> {
-  return assistantDocumentRows({ document: input, locale: "uk", waiting });
+): ReturnType<typeof assistantThreadRows> {
+  return assistantThreadRows({ thread: input, locale: "uk", waiting });
 }
 
 const ORDER_CARD: AssistantChatPart = {
@@ -96,10 +96,10 @@ const ORDER_CARD: AssistantChatPart = {
   },
 };
 
-describe("assistantDocumentRows", () => {
+describe("assistantThreadRows", () => {
   it("renders the person's words and the reply in order", () => {
     const result = rows(
-      document([
+      threadOf([
         message(USER_MESSAGE, "user", [textPart("Скільки замовлень?")]),
         message(REPLY_MESSAGE, "assistant", [textPart("Три.")]),
       ]),
@@ -115,7 +115,7 @@ describe("assistantDocumentRows", () => {
   it("attaches an open question to the message that asked it", () => {
     const pause = choicePause();
     const result = rows(
-      document(
+      threadOf(
         [
           message(USER_MESSAGE, "user", [textPart("Замовлення для Каті")]),
           message(REPLY_MESSAGE, "assistant", [
@@ -155,7 +155,7 @@ describe("assistantDocumentRows", () => {
   it("leaves nothing tappable once the question is answered", () => {
     const asked = choicePause();
     const result = rows(
-      document(
+      threadOf(
         [
           message(REPLY_MESSAGE, "assistant", [
             textPart("Яку Катю?"),
@@ -178,7 +178,7 @@ describe("assistantDocumentRows", () => {
 
   it("gives an open question its own row when its message is gone", () => {
     const pause = choicePause();
-    const result = rows(document([], pause));
+    const result = rows(threadOf([], pause));
 
     expect(result).toHaveLength(1);
     expect(result[0]?.id).toBe(ASSISTANT_ORPHAN_INTERACTION_ROW_ID);
@@ -194,7 +194,7 @@ describe("assistantDocumentRows", () => {
       prompt: { summary: "Створити замовлення на 500 ₴?" },
       expiresAt: "2026-09-09T10:05:00.000Z",
     };
-    const result = rows(document([], pause));
+    const result = rows(threadOf([], pause));
 
     expect(result[0]?.interaction).toEqual({
       kind: "confirmation",
@@ -206,10 +206,10 @@ describe("assistantDocumentRows", () => {
 
   it("renders nothing for a kind or a prompt it cannot read", () => {
     const unknownKind = rows(
-      document([], choicePause({ kind: "signature-request" })),
+      threadOf([], choicePause({ kind: "signature-request" })),
     );
     const brokenPrompt = rows(
-      document([], choicePause({ prompt: { subject: "Катя" } })),
+      threadOf([], choicePause({ prompt: { subject: "Катя" } })),
     );
 
     expect(unknownKind).toEqual([]);
@@ -218,7 +218,7 @@ describe("assistantDocumentRows", () => {
 
   it("localizes a stored card without re-deriving it from tool parts", () => {
     const result = rows(
-      document([message(REPLY_MESSAGE, "assistant", [ORDER_CARD])]),
+      threadOf([message(REPLY_MESSAGE, "assistant", [ORDER_CARD])]),
     );
 
     expect(result).toHaveLength(1);
@@ -236,7 +236,7 @@ describe("assistantDocumentRows", () => {
    */
   it("omits a card it cannot render, and keeps the rest of the message", () => {
     const result = rows(
-      document([
+      threadOf([
         message(REPLY_MESSAGE, "assistant", [
           textPart("Ось."),
           { ...ORDER_CARD, cardId: "a", type: "future-surface" },
@@ -253,7 +253,7 @@ describe("assistantDocumentRows", () => {
 
   it("marks a failed turn instead of dropping it", () => {
     const result = rows(
-      document([
+      threadOf([
         message(USER_MESSAGE, "user", [textPart("Порахуй")]),
         message(REPLY_MESSAGE, "assistant", [
           { kind: "text", text: "", status: "error" },
@@ -268,7 +268,7 @@ describe("assistantDocumentRows", () => {
 
   it("drops a message with nothing in it", () => {
     const result = rows(
-      document([
+      threadOf([
         message(USER_MESSAGE, "user", [textPart("")]),
         message(REPLY_MESSAGE, "assistant", [textPart("Так.")]),
       ]),
@@ -279,8 +279,8 @@ describe("assistantDocumentRows", () => {
   });
 
   it("echoes a message that has been sent but not yet stored", () => {
-    const result = assistantDocumentRows({
-      document: document([
+    const result = assistantThreadRows({
+      thread: threadOf([
         message(REPLY_MESSAGE, "assistant", [textPart("Готово.")]),
       ]),
       locale: "uk",
@@ -298,9 +298,9 @@ describe("assistantDocumentRows", () => {
     expect(result[2]?.waiting).toBe(true);
   });
 
-  it("shows nothing extra once the document carries the message", () => {
-    const result = assistantDocumentRows({
-      document: document([
+  it("shows nothing extra once the thread carries the message", () => {
+    const result = assistantThreadRows({
+      thread: threadOf([
         message(USER_MESSAGE, "user", [textPart("Ще одне замовлення")]),
         message(REPLY_MESSAGE, "assistant", [textPart("Готово.")]),
       ]),
@@ -317,7 +317,7 @@ describe("assistantDocumentRows", () => {
 
   it("adds one trailing row while a request is in flight, hiding nothing", () => {
     const result = rows(
-      document([
+      threadOf([
         message(USER_MESSAGE, "user", [textPart("Ще одне")]),
         message(REPLY_MESSAGE, "assistant", [textPart("Готово.")]),
       ]),
@@ -334,7 +334,7 @@ describe("assistantDocumentRows", () => {
 
   it("never puts a surface on a user row", () => {
     const result = rows(
-      document([message(USER_MESSAGE, "user", [textPart("Ось"), ORDER_CARD])]),
+      threadOf([message(USER_MESSAGE, "user", [textPart("Ось"), ORDER_CARD])]),
     );
 
     expect(result[0]?.surfaces).toEqual([]);

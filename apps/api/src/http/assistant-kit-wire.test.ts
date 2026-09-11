@@ -1,18 +1,18 @@
 /**
  * The pin between the two halves of the chat protocol.
  *
- * `@showzy/assistant-kit` declares the document a server writes;
- * `@showzy/validation/assistant-chat` declares the document a client reads.
+ * `@showzy/assistant-kit` declares the window a server writes;
+ * `@showzy/validation/assistant-chat` declares the window a client reads.
  * Neither may import the other — a client app cannot depend on the kit, and the
  * kit carries no knowledge of this product. `apps/api` is the only place that
  * sees both, so the agreement is proven here.
  *
- * The strong case is the first test: a document produced by a real turn, parsed
+ * The strong case is the first test: a window produced by a real turn, parsed
  * by the client's schema. A field the kit adds and the client does not know
  * fails on `strictObject` before it can reach a screen.
  */
 import { createAssistantKit, runHostTurn } from "@showzy/assistant-kit";
-import { chatDocumentSchema } from "@showzy/assistant-kit";
+import { chatWindowSchema } from "@showzy/assistant-kit";
 import {
   stubModel,
   stubTextModel,
@@ -20,7 +20,7 @@ import {
   testDeps,
 } from "@showzy/assistant-kit/testing";
 import {
-  assistantChatDocumentSchema,
+  assistantChatWindowSchema,
   assistantInteractionFromPause,
 } from "@showzy/validation/assistant-chat";
 import { describe, expect, it } from "vitest";
@@ -86,17 +86,17 @@ async function turn(options: {
   return instance;
 }
 
-describe("the document a server writes and the document a client reads", () => {
+describe("the window a server writes and the window a client reads", () => {
   it("agrees on a settled turn", async () => {
     const instance = await turn({ pausing: false });
 
-    const document = await instance.document.read({
+    const window = await instance.messages.read({
       conversationId: CONVERSATION,
       bind: BIND,
     });
 
-    expect(chatDocumentSchema.safeParse(document).success).toBe(true);
-    const client = assistantChatDocumentSchema.safeParse(document);
+    expect(chatWindowSchema.safeParse(window).success).toBe(true);
+    const client = assistantChatWindowSchema.safeParse(window);
     expect(client.success).toBe(true);
     expect(client.success && client.data.openPause).toBeNull();
   });
@@ -104,12 +104,12 @@ describe("the document a server writes and the document a client reads", () => {
   it("agrees on a paused turn, and the client can read the question", async () => {
     const instance = await turn({ pausing: true });
 
-    const document = await instance.document.read({
+    const window = await instance.messages.read({
       conversationId: CONVERSATION,
       bind: BIND,
     });
 
-    const client = assistantChatDocumentSchema.safeParse(document);
+    const client = assistantChatWindowSchema.safeParse(window);
     expect(client.success).toBe(true);
     if (!client.success) {
       return;
@@ -133,7 +133,7 @@ describe("the document a server writes and the document a client reads", () => {
       ],
       optionsTruncated: false,
     });
-    expect(JSON.stringify(document)).not.toContain("byOption");
+    expect(JSON.stringify(window)).not.toContain("byOption");
   });
 
   it("agrees on a window with older messages behind it, and carries no owner", async () => {
@@ -145,7 +145,7 @@ describe("the document a server writes and the document a client reads", () => {
       "55555555-5555-4555-8555-555555555551",
       "55555555-5555-4555-8555-555555555552",
     ]) {
-      await instance.document.write(scope, {
+      await instance.messages.write(scope, {
         kind: "append",
         messageId,
         role: "user",
@@ -153,17 +153,17 @@ describe("the document a server writes and the document a client reads", () => {
       });
     }
 
-    const document = await instance.document.read(scope);
+    const window = await instance.messages.read(scope);
 
-    expect(document.olderCursor).not.toBeNull();
+    expect(window.olderCursor).not.toBeNull();
     // Whose conversation it is stays on the server: the client never needed it.
-    expect(document).not.toHaveProperty("bind");
-    expect(chatDocumentSchema.safeParse(document).success).toBe(true);
-    expect(assistantChatDocumentSchema.safeParse(document).success).toBe(true);
+    expect(window).not.toHaveProperty("bind");
+    expect(chatWindowSchema.safeParse(window).success).toBe(true);
+    expect(assistantChatWindowSchema.safeParse(window).success).toBe(true);
   });
 
   it("refuses a field one side would add without the other", () => {
-    const document = {
+    const window = {
       conversationId: CONVERSATION,
       messages: [],
       olderCursor: null,
@@ -172,7 +172,7 @@ describe("the document a server writes and the document a client reads", () => {
       lastReadAt: "2026-09-09T00:00:00.000Z",
     };
 
-    expect(chatDocumentSchema.safeParse(document).success).toBe(false);
-    expect(assistantChatDocumentSchema.safeParse(document).success).toBe(false);
+    expect(chatWindowSchema.safeParse(window).success).toBe(false);
+    expect(assistantChatWindowSchema.safeParse(window).success).toBe(false);
   });
 });

@@ -1,5 +1,5 @@
 /**
- * The whole assistant surface, as three pieces of state: the document, whether
+ * The whole assistant surface, as three pieces of state: the thread, whether
  * a request is in flight, and what last went wrong.
  *
  * This replaces `use-assistant-chat` plus `use-assistant-choice` plus
@@ -28,14 +28,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   assistantInteractionFromPause,
   mergeAssistantChatWindow,
-  type AssistantChatDocument,
+  type AssistantChatThread,
   type AssistantInteraction,
 } from "@showzy/validation/assistant-chat";
 
 import type { Locale } from "../../../i18n/locale";
 import {
   clipAssistantKitText,
-  getAssistantKitDocument,
+  getAssistantKitWindow,
   postAssistantKitAbandon,
   postAssistantKitAnswer,
   postAssistantKitChat,
@@ -44,10 +44,7 @@ import {
   type AssistantKitFailureKind,
   type AssistantKitOutcome,
 } from "../api/assistant-kit-client";
-import {
-  assistantDocumentRows,
-  type AssistantDocumentRow,
-} from "./document-rows";
+import { assistantThreadRows, type AssistantThreadRow } from "./thread-rows";
 
 /**
  * Bumped by the caller when the tenant or the signed-in person changes. A reply
@@ -76,7 +73,7 @@ type RunResult = {
 };
 
 export interface UseAssistantConversation {
-  readonly rows: readonly AssistantDocumentRow[];
+  readonly rows: readonly AssistantThreadRow[];
   /** The open question, if any, with its prompt already parsed. */
   readonly interaction: AssistantInteraction | null;
   readonly busy: boolean;
@@ -117,7 +114,7 @@ function defaultNewId(): string {
  * attempted this time so the last attempt's fate stands (`aborted`,
  * `turn_open`, `rate_limited`), or a fault that may have landed either side of
  * the write (`server`). The second group: the server read the conversation and
- * said where it is, and whatever the earlier attempt did is in the document
+ * said where it is, and whatever the earlier attempt did is in the window
  * that came with the answer.
  *
  * A `switch` rather than a set, so a new kind of failure cannot be added
@@ -153,7 +150,7 @@ export function useAssistantConversation(args: {
   readonly tenantEpochRef: AssistantTenantEpochRef;
   readonly newId?: () => string;
 }): UseAssistantConversation {
-  const [document, setDocument] = useState<AssistantChatDocument | null>(null);
+  const [thread, setThread] = useState<AssistantChatThread | null>(null);
   const [busy, setBusy] = useState(false);
   /**
    * Echoed in the thread until the reply lands. The server stores the person's
@@ -167,8 +164,8 @@ export function useAssistantConversation(args: {
   callRef.current = args.call;
   const conversationIdRef = useRef(args.conversationId);
   conversationIdRef.current = args.conversationId;
-  const documentRef = useRef(document);
-  documentRef.current = document;
+  const threadRef = useRef(thread);
+  threadRef.current = thread;
   const newIdRef = useRef(args.newId ?? defaultNewId);
   newIdRef.current = args.newId ?? defaultNewId;
   const epochRef = args.tenantEpochRef;
@@ -236,7 +233,7 @@ export function useAssistantConversation(args: {
    * company would otherwise let one thread's reply land in another.
    *
    * Whether it was dropped goes back to the caller with the failure. Anything a
-   * caller does after the document — put a draft back, clear an echo — depends
+   * caller does after the window — put a draft back, clear an echo — depends
    * on the same question this has just answered. A caller that answered it again
    * for itself, from a failure alone, put one company's words into another
    * company's composer (SHO-552).
@@ -274,9 +271,9 @@ export function useAssistantConversation(args: {
           if (!current()) {
             return { failure: outcome.failure, current: false };
           }
-          const incoming = outcome.document;
+          const incoming = outcome.window;
           if (incoming !== null) {
-            setDocument((held) =>
+            setThread((held) =>
               mergeAssistantChatWindow(held, incoming, LATEST),
             );
           }
@@ -304,7 +301,7 @@ export function useAssistantConversation(args: {
 
   const reload = useCallback(() => {
     void run((call, conversationId) =>
-      getAssistantKitDocument({ ...call, conversationId }),
+      getAssistantKitWindow({ ...call, conversationId }),
     );
   }, [run]);
 
@@ -347,7 +344,7 @@ export function useAssistantConversation(args: {
         // the attempt, which the server has decided, not about the screen.
         settleCommand(key, failure);
         if (echoRef.current === echo) {
-          // Right after the document that now contains it, so the echo is
+          // Right after the thread that now contains it, so the echo is
           // replaced rather than briefly doubled.
           echoRef.current = null;
           setPending(null);
@@ -371,7 +368,7 @@ export function useAssistantConversation(args: {
    */
   const answer = useCallback(
     (value: unknown) => {
-      const open = documentRef.current?.openPause ?? null;
+      const open = threadRef.current?.openPause ?? null;
       if (open === null) {
         return;
       }
@@ -396,7 +393,7 @@ export function useAssistantConversation(args: {
   );
 
   const dismiss = useCallback(() => {
-    const open = documentRef.current?.openPause ?? null;
+    const open = threadRef.current?.openPause ?? null;
     if (open === null) {
       return;
     }
@@ -426,7 +423,7 @@ export function useAssistantConversation(args: {
   const loadOlder = useCallback(() => {
     const call = callRef.current;
     const conversationId = conversationIdRef.current;
-    const cursor = documentRef.current?.olderCursor ?? null;
+    const cursor = threadRef.current?.olderCursor ?? null;
     if (
       call === null ||
       conversationId === null ||
@@ -439,7 +436,7 @@ export function useAssistantConversation(args: {
     const request = {};
     olderRef.current = request;
     setLoadingOlder(true);
-    void getAssistantKitDocument({ ...call, conversationId, before: cursor })
+    void getAssistantKitWindow({ ...call, conversationId, before: cursor })
       .then((outcome) => {
         if (
           olderRef.current !== request ||
@@ -448,9 +445,9 @@ export function useAssistantConversation(args: {
         ) {
           return;
         }
-        const page = outcome.document;
+        const page = outcome.window;
         if (page !== null) {
-          setDocument((held) =>
+          setThread((held) =>
             mergeAssistantChatWindow(held, page, { kind: "older", cursor }),
           );
         }
@@ -468,12 +465,12 @@ export function useAssistantConversation(args: {
       });
   }, [epochRef]);
 
-  // A new tenant or a new conversation is a different document. Clearing before
+  // A new tenant or a new conversation is a different thread. Clearing before
   // the read is deliberate: showing the previous company's thread for the length
   // of one request is worse than showing nothing.
   useEffect(() => {
-    setDocument(null);
-    documentRef.current = null;
+    setThread(null);
+    threadRef.current = null;
     setFailure(null);
     setPending(null);
     // Orphan anything still running for the previous conversation, then read.
@@ -486,23 +483,23 @@ export function useAssistantConversation(args: {
 
   const rows = useMemo(
     () =>
-      document === null
+      thread === null
         ? []
-        : assistantDocumentRows({
-            document,
+        : assistantThreadRows({
+            thread,
             locale: args.locale,
             waiting: busy,
             pending,
           }),
-    [document, args.locale, busy, pending],
+    [thread, args.locale, busy, pending],
   );
 
   const interaction = useMemo(
     () =>
-      document?.openPause === null || document?.openPause === undefined
+      thread?.openPause === null || thread?.openPause === undefined
         ? null
-        : assistantInteractionFromPause(document.openPause),
-    [document],
+        : assistantInteractionFromPause(thread.openPause),
+    [thread],
   );
 
   return {

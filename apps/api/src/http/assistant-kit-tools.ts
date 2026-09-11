@@ -51,7 +51,7 @@ export interface AssistantToolLogger {
  * fills.
  *
  * A page and a rollup compose into a single `orders-list`, so the second call
- * yields the same slot with a changed surface. The document keeps one card per
+ * yields the same slot with a changed surface. The message keeps one card per
  * id in a message, so that write **updates** the first card instead of adding a
  * second beside it (SHO-551). The id is the composer's own slot rather than one
  * decided here, so the two cannot drift apart on what counts as the same card.

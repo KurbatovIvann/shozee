@@ -60,7 +60,7 @@ export const assistantKitAbandonBodySchema = z.strictObject({
  * No revision is sent. Abandoning is not an answer to a particular version of
  * the question — whichever version is open, the person is done with it.
  *
- * The `interaction` part stays in the document. The record of having been asked
+ * The `interaction` part stays in its message. The record of having been asked
  * is part of the conversation; only the ability to answer goes away.
  */
 export async function handleAssistantKitAbandon(
@@ -98,7 +98,7 @@ export async function handleAssistantKitAbandon(
   // question, and there is none. A second tap is not an error.
   void dropped;
 
-  // With the document, like every other answer. Without it the card kept
+  // With the window, like every other answer. Without it the card kept
   // rendering on a client that had just cancelled it, and the conversation
   // locked: the next tap hit a pause the server had dropped, and the next
   // message was refused because the client was still posting against it.
@@ -106,7 +106,7 @@ export async function handleAssistantKitAbandon(
     200,
     {
       status: "abandoned",
-      document: await kit.document.read({
+      window: await kit.messages.read({
         conversationId: parsed.data.conversationId,
         bind: caller.bind,
       }),
@@ -143,7 +143,7 @@ export async function handleAssistantKitAnswer(
   const scope = { conversationId: body.conversationId, bind: caller.bind };
 
   // The claim, the write it authorises and the turn that follows all touch
-  // the document. One turn at a time per conversation (SHO-548).
+  // the messages. One turn at a time per conversation (SHO-548).
   return await withConversationTurn(
     runtime,
     kit,
@@ -171,7 +171,7 @@ export async function handleAssistantKitAnswer(
       if (!(await takeCommand(c, runtime, command))) {
         return json(
           200,
-          { status: "ok", document: await kit.document.read(scope) },
+          { status: "ok", window: await kit.messages.read(scope) },
           requestId,
         );
       }
@@ -189,13 +189,13 @@ export async function handleAssistantKitAnswer(
         case "unknown_kind":
           return goneResponse(requestId);
         case "stale":
-          // The subject of the decision changed under the card. The document
+          // The subject of the decision changed under the card. The window
           // carries the current question, so the picker re-renders as it now is.
           return json(
             409,
             {
               status: "stale",
-              document: await kit.document.read(scope),
+              window: await kit.messages.read(scope),
             },
             requestId,
           );
@@ -213,7 +213,7 @@ export async function handleAssistantKitAnswer(
             {
               status: "unresolvable",
               reason: claimed.reason,
-              document: await kit.document.read(scope),
+              window: await kit.messages.read(scope),
             },
             requestId,
           );
@@ -281,7 +281,7 @@ export async function handleAssistantKitAnswer(
           );
         }
         // The transcript has to carry the second question too. Live it is in
-        // `openPause`, but a reload reads the document — and a document that shows
+        // `openPause`, but a reload reads the messages — and a transcript that shows
         // the first question and not the second is a record of a conversation that
         // did not happen.
         const asked = {
@@ -290,7 +290,7 @@ export async function handleAssistantKitAnswer(
           revision: opened.pause.revision,
           pause: opened.pause,
         };
-        await kit.document.write(scope, {
+        await kit.messages.write(scope, {
           kind: "append",
           messageId: randomUUID(),
           role: "assistant",
@@ -299,7 +299,7 @@ export async function handleAssistantKitAnswer(
 
         const payload: AssistantKitTurnOk = {
           status: "ok",
-          document: await kit.document.read(scope),
+          window: await kit.messages.read(scope),
         };
         return json(200, payload, requestId);
       }
@@ -314,7 +314,7 @@ export async function handleAssistantKitAnswer(
             status: "action_failed",
             code: resolvedOutcome.code,
             message: resolvedOutcome.message,
-            document: await kit.document.read(scope),
+            window: await kit.messages.read(scope),
           },
           requestId,
         );
@@ -347,7 +347,7 @@ export async function handleAssistantKitAnswer(
 
       const payload: AssistantKitTurnOk = {
         status: "ok",
-        document: await kit.document.read(scope),
+        window: await kit.messages.read(scope),
       };
       return json(200, payload, requestId);
     },

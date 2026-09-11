@@ -124,7 +124,7 @@ export const ASSISTANT_KIT_COMMAND_TTL_MS = 15 * 60 * 1000;
 export interface AssistantKitCommands {
   /**
    * `false` when this command has already been taken. The caller must then do
-   * nothing and answer with the current document.
+   * nothing and answer with the current window.
    */
   take(command: AssistantKitCommandRef): Promise<boolean>;
   /** Give it back, for a request that took it and then did nothing at all. */

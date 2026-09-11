@@ -25,11 +25,11 @@ import {
   clipAssistantKitText,
   type AssistantKitCall,
 } from "../api/assistant-kit-client";
-import { useAssistantConversation } from "../document/use-assistant-conversation";
+import { useAssistantConversation } from "../thread/use-assistant-conversation";
 import {
   useAssistantConversationId,
   type AssistantConversationDirectory,
-} from "../document/use-assistant-conversation-id";
+} from "../thread/use-assistant-conversation-id";
 import { assistantChatErrorMessage, bannerKindFor } from "../shared/chat-error";
 import type { AssistantSheetViewModel } from "./assistant-sheet-view";
 
@@ -127,7 +127,7 @@ export function useAssistantSheet(): AssistantSheetViewModel & {
    *
    * It goes back on `refused` and on nothing else. Whether a reply still belongs
    * to what is on screen is the conversation hook's question, answered there by
-   * the check that already guards the document. Deciding it here from a bare
+   * the check that already guards the thread. Deciding it here from a bare
    * failure — "the field is empty, so put it back" — put one company's words
    * into another company's composer after a switch mid-flight (SHO-552).
    */

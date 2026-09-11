@@ -323,7 +323,7 @@ type KitBody = {
   readonly status?: string;
   readonly reason?: string;
   readonly code?: string;
-  readonly document?: {
+  readonly window?: {
     readonly messages: readonly {
       readonly role: string;
       readonly parts: readonly {
@@ -357,18 +357,18 @@ describe("POST /assistant/kit/chat", () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as KitBody;
     expect(body.status).toBe("ok");
-    expect(body.document?.openPause).toBeNull();
+    expect(body.window?.openPause).toBeNull();
 
-    const document = await kit.document.read({
+    const window = await kit.messages.read({
       conversationId: CONVERSATION,
       bind,
     });
-    expect(document.messages.map((message) => message.role)).toEqual([
+    expect(window.messages.map((message) => message.role)).toEqual([
       "user",
       "assistant",
     ]);
-    // The response is the stored document, not a second view of it.
-    expect(body.document).toEqual(document);
+    // The response is what is stored, not a second view of it.
+    expect(body.window).toEqual(window);
     expect(history.saved).toHaveLength(1);
   });
 
@@ -413,7 +413,7 @@ describe("POST /assistant/kit/chat", () => {
     const body = (await response.json()) as KitBody;
     // Visible, not a silent supersede: the draft is still there.
     expect(body.status).toBe("interaction_open");
-    expect(body.document?.openPause?.interactionId).toBe(pause.interactionId);
+    expect(body.window?.openPause?.interactionId).toBe(pause.interactionId);
   });
 
   it("pauses when a tool asks a question, and stores it", async () => {
@@ -429,7 +429,7 @@ describe("POST /assistant/kit/chat", () => {
     );
     expect(response.status).toBe(200);
     const body = (await response.json()) as KitBody;
-    const open = body.document?.openPause;
+    const open = body.window?.openPause;
 
     expect(open?.kind).toBe("choice");
     // The prompt comes from the tool's input, which the model chose — not from
@@ -444,17 +444,17 @@ describe("POST /assistant/kit/chat", () => {
     ).toBe("open");
   });
 
-  it("keeps the question in the document when generation fails", async () => {
+  it("keeps the question in the messages when generation fails", async () => {
     const { app, kit, bind } = harness({ broken: true });
 
     const response = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody());
     expect(response.status).toBe(200);
 
-    const document = await kit.document.read({
+    const window = await kit.messages.read({
       conversationId: CONVERSATION,
       bind,
     });
-    const texts = document.messages.flatMap((message) => message.parts);
+    const texts = window.messages.flatMap((message) => message.parts);
     expect(texts[0]).toMatchObject({ kind: "text", status: "complete" });
     expect(texts.at(-1)).toMatchObject({ status: "error" });
   });
@@ -501,16 +501,16 @@ describe("POST /assistant/kit/chat", () => {
     });
 
     expect(response.status).toBe(499);
-    const document = await kit.document.read({
+    const window = await kit.messages.read({
       conversationId: CONVERSATION,
       bind,
     });
-    expect(document.messages).toEqual([]);
+    expect(window.messages).toEqual([]);
   });
 
   it("410 for a conversation that belongs to someone else", async () => {
     const { app, kit, bind } = harness();
-    await kit.document.write(
+    await kit.messages.write(
       { conversationId: CONVERSATION, bind },
       {
         kind: "append",
@@ -543,10 +543,8 @@ describe("GET /assistant/kit/messages", () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as KitBody;
 
-    expect(body.document).toEqual(liveBody.document);
-    expect(JSON.stringify(body.document)).toBe(
-      JSON.stringify(liveBody.document),
-    );
+    expect(body.window).toEqual(liveBody.window);
+    expect(JSON.stringify(body.window)).toBe(JSON.stringify(liveBody.window));
   });
 
   it("carries the open question so a reload can show the card", async () => {
@@ -555,12 +553,12 @@ describe("GET /assistant/kit/messages", () => {
 
     const response = await get(app, messagesPath());
     const body = (await response.json()) as {
-      document: {
+      window: {
         openPause: { interactionId: string; prompt: unknown } | null;
       };
     };
 
-    expect(body.document.openPause?.interactionId).toBe(pause.interactionId);
+    expect(body.window.openPause?.interactionId).toBe(pause.interactionId);
     expect(JSON.stringify(body)).not.toContain("entity-a");
   });
 
@@ -579,7 +577,7 @@ describe("GET /assistant/kit/messages", () => {
     const { app, kit, bind } = harness();
     const total = ASSISTANT_CHAT_WINDOW_MESSAGES + 5;
     for (let n = 1; n <= total; n += 1) {
-      await kit.document.write(
+      await kit.messages.write(
         { conversationId: CONVERSATION, bind },
         {
           kind: "append",
@@ -593,20 +591,20 @@ describe("GET /assistant/kit/messages", () => {
     }
 
     const latest = (await (await get(app, messagesPath())).json()) as KitBody;
-    expect(latest.document?.messages).toHaveLength(
+    expect(latest.window?.messages).toHaveLength(
       ASSISTANT_CHAT_WINDOW_MESSAGES,
     );
-    const cursor = latest.document?.olderCursor ?? null;
+    const cursor = latest.window?.olderCursor ?? null;
     expect(cursor).toEqual(expect.any(String));
 
     const older = (await (
       await get(app, messagesPath(CONVERSATION, cursor ?? ""))
     ).json()) as KitBody;
-    expect(older.document?.olderCursor).toBeNull();
+    expect(older.window?.olderCursor).toBeNull();
 
     const texts = [
-      ...(older.document?.messages ?? []),
-      ...(latest.document?.messages ?? []),
+      ...(older.window?.messages ?? []),
+      ...(latest.window?.messages ?? []),
     ].map((message) => message.parts[0]?.text);
     expect(texts).toEqual(
       Array.from({ length: total }, (_, index) => `запит ${String(index + 1)}`),
@@ -642,15 +640,13 @@ describe("GET /assistant/kit/messages", () => {
 
     expect(foreign.status).toBe(200);
     const foreignBody = (await foreign.json()) as {
-      document: { messages: unknown[] };
+      window: { messages: unknown[] };
     };
     const missingBody = (await missing.json()) as {
-      document: { messages: unknown[] };
+      window: { messages: unknown[] };
     };
-    expect(foreignBody.document.messages).toEqual([]);
-    expect(foreignBody.document.messages).toEqual(
-      missingBody.document.messages,
-    );
+    expect(foreignBody.window.messages).toEqual([]);
+    expect(foreignBody.window.messages).toEqual(missingBody.window.messages);
   });
 });
 
@@ -668,8 +664,8 @@ describe("POST /assistant/kit/answer", () => {
 
     const body = (await response.json()) as KitBody;
     expect(body.status).toBe("ok");
-    expect(body.document?.openPause).toBeNull();
-    const written = body.document?.messages.at(-1)?.parts ?? [];
+    expect(body.window?.openPause).toBeNull();
+    const written = body.window?.messages.at(-1)?.parts ?? [];
     // The card comes first: it is the part earned before generation.
     expect(written[0]?.kind).toBe("card");
     expect(written[0]?.type).toBe("order-entity");
@@ -774,11 +770,11 @@ describe("POST /assistant/kit/answer", () => {
     expect(
       (await kit.peek({ conversationId: CONVERSATION, bind }))?.status,
     ).toBe("open");
-    const document = await kit.document.read({
+    const window = await kit.messages.read({
       conversationId: CONVERSATION,
       bind,
     });
-    expect(document.messages).toEqual([]);
+    expect(window.messages).toEqual([]);
   });
 
   it("keeps a committed write when the explanation fails", async () => {
@@ -792,11 +788,11 @@ describe("POST /assistant/kit/answer", () => {
     );
     expect(response.status).toBe(200);
 
-    const document = await kit.document.read({
+    const window = await kit.messages.read({
       conversationId: CONVERSATION,
       bind,
     });
-    const parts = document.messages.flatMap((message) => message.parts);
+    const parts = window.messages.flatMap((message) => message.parts);
     expect(parts.filter((part) => part.kind === "card")).toHaveLength(1);
     // No invented success sentence — the failure is stated as a failure.
     expect(parts.filter((part) => part.kind === "text").at(-1)?.status).toBe(
@@ -847,7 +843,7 @@ describe("POST /assistant/kit/abandon", () => {
   });
 
   /**
-   * The answer carries the document, like every other one. Without it the card
+   * The answer carries the window, like every other one. Without it the card
    * kept rendering on the client that had just cancelled it — and the type now
    * makes returning nothing impossible rather than merely discouraged.
    */
@@ -862,8 +858,8 @@ describe("POST /assistant/kit/abandon", () => {
 
     const body = (await response.json()) as KitBody;
     expect(body.status).toBe("abandoned");
-    expect(body.document).toBeDefined();
-    expect(body.document?.openPause).toBeNull();
+    expect(body.window).toBeDefined();
+    expect(body.window?.openPause).toBeNull();
     void bind;
   });
 
@@ -871,20 +867,20 @@ describe("POST /assistant/kit/abandon", () => {
     const { kit, app, bind } = harness({ pausing: true, tools: PAUSING_TOOLS });
     const paused = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody());
     const asked = (await paused.json()) as KitBody;
-    const interactionId = asked.document?.openPause?.interactionId ?? "";
+    const interactionId = asked.window?.openPause?.interactionId ?? "";
 
     await post(app, ASSISTANT_KIT_ABANDON_PATH, {
       conversationId: CONVERSATION,
       interactionId,
     });
 
-    const document = await kit.document.read({
+    const window = await kit.messages.read({
       conversationId: CONVERSATION,
       bind,
     });
-    const parts = document.messages.flatMap((message) => message.parts);
+    const parts = window.messages.flatMap((message) => message.parts);
     expect(parts.filter((part) => part.kind === "interaction")).toHaveLength(1);
-    expect(document.openPause).toBeNull();
+    expect(window.openPause).toBeNull();
   });
 
   it("answers the same way twice, so a second tap is not an error", async () => {
@@ -939,7 +935,7 @@ describe("the full round trip through HTTP", () => {
 
     const first = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("створи"));
     const firstBody = (await first.json()) as KitBody;
-    const open = firstBody.document?.openPause;
+    const open = firstBody.window?.openPause;
     if (open === null || open === undefined)
       throw new Error("expected a pause");
 
@@ -953,8 +949,8 @@ describe("the full round trip through HTTP", () => {
     const reload = await get(app, messagesPath());
     const body = (await reload.json()) as KitBody;
 
-    expect(body.document?.openPause).toBeNull();
-    const kinds = (body.document?.messages ?? []).flatMap((message) =>
+    expect(body.window?.openPause).toBeNull();
+    const kinds = (body.window?.messages ?? []).flatMap((message) =>
       message.parts.map((part) => part.kind),
     );
     // The question, the interaction that was asked, and the record that came out.
@@ -973,7 +969,7 @@ describe("the full round trip through HTTP", () => {
  * Both halves of the retry were unsafe in opposite ways. Sending again minted a
  * fresh `commandId`, so the idempotency key changed and the write ran twice.
  * Answering again hit a claim that is exactly-once by design and got `gone`,
- * which carried no document: the action *had* happened, and the card the person
+ * which carried no window: the action *had* happened, and the card the person
  * was looking at could never be answered.
  *
  * One receipt fixes both, and it stores no response body — every route already
@@ -1002,7 +998,7 @@ describe("a retry of a command whose reply was lost", () => {
   });
 
   function cardsIn(body: KitBody): string[] {
-    return (body.document?.messages ?? [])
+    return (body.window?.messages ?? [])
       .flatMap((message) => message.parts)
       .filter((part) => part.kind === "card")
       .map((part) => part.cardId ?? "");
@@ -1029,7 +1025,7 @@ describe("a retry of a command whose reply was lost", () => {
 
     const firstBody = (await first.json()) as KitBody;
     const retryBody = (await retry.json()) as KitBody;
-    expect(retryBody.document).toEqual(firstBody.document);
+    expect(retryBody.window).toEqual(firstBody.window);
     expect(cardsIn(retryBody)).toEqual(["order-entity:order-1"]);
   });
 
@@ -1081,7 +1077,7 @@ describe("a retry of a command whose reply was lost", () => {
 
     expect(first.status).toBe(200);
     // The claim is exactly-once, so without the receipt this is a 410 with no
-    // document and a card that can never be answered again.
+    // window and a card that can never be answered again.
     expect(retry.status).toBe(200);
     expect(resolved).toBe(1);
     expect(cardsIn((await retry.json()) as KitBody)).toEqual(["card-entity"]);
@@ -1175,7 +1171,7 @@ describe("two turns on one conversation", () => {
     // and the reply. Under last-write-wins the second request's own write of
     // the person's words would have taken the place of all of it.
     const parts = (
-      await kit.document.read({ conversationId: CONVERSATION, bind })
+      await kit.messages.read({ conversationId: CONVERSATION, bind })
     ).messages.flatMap((message) => message.parts);
     expect(parts.filter((part) => part.kind === "card")).toHaveLength(1);
     expect(
@@ -1223,7 +1219,7 @@ describe("two turns on one conversation", () => {
   /**
    * The race the pause check cannot see. Answering claims the pause first, so
    * by the time a second request looks there is no open question to refuse it
-   * with — and the answer is still running, still writing the document. This is
+   * with — and the answer is still running, still writing its messages. This is
    * the interleaving, and the lease is the only thing that catches it.
    */
   /**

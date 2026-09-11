@@ -28,7 +28,7 @@ const ROW = readFileSync(
 );
 
 const ROW_MODEL = readFileSync(
-  new URL("../document/document-rows.ts", import.meta.url),
+  new URL("../thread/thread-rows.ts", import.meta.url),
   "utf8",
 );
 
@@ -47,7 +47,7 @@ const RETIRED = [
 ];
 
 describe("the assistant sheet's wiring", () => {
-  it("reads the stored document and mints no parts of its own", () => {
+  it("reads the stored thread and mints no parts of its own", () => {
     expect(SHEET).toContain("useAssistantConversation");
     expect(SHEET).toContain("useAssistantConversationId");
     expect(SHEET).toContain("rows: conversation.rows");
@@ -88,7 +88,7 @@ describe("the assistant sheet's wiring", () => {
    */
   it("renders every field the row model computes", () => {
     const declaration =
-      /export type AssistantDocumentRow = \{([^}]*(?:\}[^;][^}]*)*)\};/.exec(
+      /export type AssistantThreadRow = \{([^}]*(?:\}[^;][^}]*)*)\};/.exec(
         ROW_MODEL,
       );
     const fields = [

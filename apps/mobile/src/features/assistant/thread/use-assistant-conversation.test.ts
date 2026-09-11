@@ -56,7 +56,7 @@ const OPEN_PAUSE = {
   expiresAt: "2026-09-09T10:15:00.000Z",
 };
 
-function document(options?: {
+function conversationWindow(options?: {
   readonly text?: string;
   readonly openPause?: unknown;
   readonly asked?: boolean;
@@ -200,7 +200,10 @@ afterEach(() => {
 
 describe("useAssistantConversation", () => {
   it("reads the conversation on mount", async () => {
-    respond(200, { status: "ok", document: document({ text: "Привіт." }) });
+    respond(200, {
+      status: "ok",
+      window: conversationWindow({ text: "Привіт." }),
+    });
     const view = mount();
 
     await flush();
@@ -224,7 +227,7 @@ describe("useAssistantConversation", () => {
   it("exposes the open question, parsed", async () => {
     respond(200, {
       status: "ok",
-      document: document({ openPause: OPEN_PAUSE, asked: true }),
+      window: conversationWindow({ openPause: OPEN_PAUSE, asked: true }),
     });
     const view = mount();
 
@@ -248,19 +251,19 @@ describe("useAssistantConversation", () => {
   /**
    * The behaviour six commits of the old path were spent chasing. Nothing here
    * remembers that `INTERACTION` was answered — the answer removed it from the
-   * document, and that is the whole mechanism.
+   * window, and that is the whole mechanism.
    */
   it("leaves no answerable question once it is answered", async () => {
     respond(200, {
       status: "ok",
-      document: document({ openPause: OPEN_PAUSE, asked: true }),
+      window: conversationWindow({ openPause: OPEN_PAUSE, asked: true }),
     });
     const view = mount();
     await flush();
 
     respond(200, {
       status: "ok",
-      document: document({ text: "Готово.", asked: true }),
+      window: conversationWindow({ text: "Готово.", asked: true }),
     });
     act(() => {
       view.latest().answer({ optionId: "opt-a" });
@@ -281,7 +284,7 @@ describe("useAssistantConversation", () => {
   it("sends the revision that is open now, not one captured earlier", async () => {
     respond(200, {
       status: "ok",
-      document: document({
+      window: conversationWindow({
         openPause: { ...OPEN_PAUSE, revision: 7 },
         asked: true,
       }),
@@ -289,7 +292,7 @@ describe("useAssistantConversation", () => {
     const view = mount();
     await flush();
 
-    respond(200, { status: "ok", document: document() });
+    respond(200, { status: "ok", window: conversationWindow() });
     act(() => {
       view.latest().answer({ optionId: "opt-a" });
     });
@@ -307,7 +310,7 @@ describe("useAssistantConversation", () => {
   it("refuses a second request while one is in flight", async () => {
     respond(200, {
       status: "ok",
-      document: document({ openPause: OPEN_PAUSE, asked: true }),
+      window: conversationWindow({ openPause: OPEN_PAUSE, asked: true }),
     });
     const view = mount();
     await flush();
@@ -330,17 +333,17 @@ describe("useAssistantConversation", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("applies a refusal's document and reports the refusal", async () => {
+  it("applies a refusal's window and reports the refusal", async () => {
     respond(200, {
       status: "ok",
-      document: document({ openPause: OPEN_PAUSE, asked: true }),
+      window: conversationWindow({ openPause: OPEN_PAUSE, asked: true }),
     });
     const view = mount();
     await flush();
 
     respond(409, {
       status: "stale",
-      document: document({
+      window: conversationWindow({
         openPause: { ...OPEN_PAUSE, revision: 9 },
         asked: true,
       }),
@@ -358,17 +361,17 @@ describe("useAssistantConversation", () => {
   /**
    * SHO-550. A send refused because a question is still open — possibly one
    * asked on another device, which this screen had not seen. The refusal's
-   * document brings the question in, and the failure is what the sheet uses
+   * window brings the question in, and the failure is what the sheet uses
    * both to put the draft back and to say why.
    */
   it("reports a send refused by an open question, and shows that question", async () => {
-    respond(200, { status: "ok", document: document() });
+    respond(200, { status: "ok", window: conversationWindow() });
     const view = mount();
     await flush();
 
     respond(409, {
       status: "interaction_open",
-      document: document({ openPause: OPEN_PAUSE, asked: true }),
+      window: conversationWindow({ openPause: OPEN_PAUSE, asked: true }),
     });
     let refused: unknown = null;
     await act(async () => {
@@ -386,7 +389,10 @@ describe("useAssistantConversation", () => {
   });
 
   it("keeps what it is showing when the network fails", async () => {
-    respond(200, { status: "ok", document: document({ text: "Привіт." }) });
+    respond(200, {
+      status: "ok",
+      window: conversationWindow({ text: "Привіт." }),
+    });
     const view = mount();
     await flush();
 
@@ -402,7 +408,10 @@ describe("useAssistantConversation", () => {
   });
 
   it("drops a reply that arrives after the tenant changed", async () => {
-    respond(200, { status: "ok", document: document({ text: "Привіт." }) });
+    respond(200, {
+      status: "ok",
+      window: conversationWindow({ text: "Привіт." }),
+    });
     const view = mount();
     await flush();
 
@@ -424,7 +433,7 @@ describe("useAssistantConversation", () => {
         new Response(
           JSON.stringify({
             status: "ok",
-            document: document({ text: "ІНША КОМПАНІЯ" }),
+            window: conversationWindow({ text: "ІНША КОМПАНІЯ" }),
           }),
           { status: 200, headers: { "content-type": "application/json" } },
         ),
@@ -441,7 +450,10 @@ describe("useAssistantConversation", () => {
    * as though the app had dropped what they typed.
    */
   it("shows the sent message straight away, above the waiting row", async () => {
-    respond(200, { status: "ok", document: document({ text: "Привіт." }) });
+    respond(200, {
+      status: "ok",
+      window: conversationWindow({ text: "Привіт." }),
+    });
     const view = mount();
     await flush();
 
@@ -461,14 +473,17 @@ describe("useAssistantConversation", () => {
   });
 
   it("replaces the echo with the stored message rather than showing both", async () => {
-    respond(200, { status: "ok", document: document({ text: "Привіт." }) });
+    respond(200, {
+      status: "ok",
+      window: conversationWindow({ text: "Привіт." }),
+    });
     const view = mount();
     await flush();
 
     respond(200, {
       status: "ok",
-      document: {
-        ...document({ text: "Готово." }),
+      window: {
+        ...conversationWindow({ text: "Готово." }),
         messages: [
           {
             messageId: "55555555-5555-4555-8555-555555555555",
@@ -476,7 +491,7 @@ describe("useAssistantConversation", () => {
             createdAt: "2026-09-09T10:01:00.000Z",
             parts: [{ kind: "text", text: "ще одне", status: "complete" }],
           },
-          ...document({ text: "Готово." }).messages,
+          ...conversationWindow({ text: "Готово." }).messages,
         ],
       },
     });
@@ -492,7 +507,7 @@ describe("useAssistantConversation", () => {
   });
 
   it("sends nothing for blank text", async () => {
-    respond(200, { status: "ok", document: document() });
+    respond(200, { status: "ok", window: conversationWindow() });
     const view = mount();
     await flush();
 
@@ -507,13 +522,16 @@ describe("useAssistantConversation", () => {
   it("dismisses the open question without a revision", async () => {
     respond(200, {
       status: "ok",
-      document: document({ openPause: OPEN_PAUSE, asked: true }),
+      window: conversationWindow({ openPause: OPEN_PAUSE, asked: true }),
     });
     const view = mount();
     await flush();
 
     // The server answers with the conversation, like every other route.
-    respond(200, { status: "abandoned", document: document({ asked: true }) });
+    respond(200, {
+      status: "abandoned",
+      window: conversationWindow({ asked: true }),
+    });
     act(() => {
       view.latest().dismiss();
     });
@@ -534,7 +552,7 @@ describe("useAssistantConversation", () => {
   });
 
   it("does nothing when asked to answer with no question open", async () => {
-    respond(200, { status: "ok", document: document() });
+    respond(200, { status: "ok", window: conversationWindow() });
     const view = mount();
     await flush();
 
@@ -551,7 +569,7 @@ describe("useAssistantConversation", () => {
 /**
  * SHO-552. The company changes while a send is in flight, and then that send
  * fails. Its reply belongs to a thread nobody is looking at, so nothing it says
- * may land on the one that is. The document has been guarded against that since
+ * may land on the one that is. The thread has been guarded against that since
  * this hook was written; the draft and the echo were settled after it, outside
  * the guard, and a failed send put company A's words in company B's composer.
  */
@@ -575,7 +593,10 @@ describe("a send still in flight when the company changes", () => {
   }
 
   function loadedInCompanyA() {
-    respond(200, { status: "ok", document: document({ text: "Компанія A." }) });
+    respond(200, {
+      status: "ok",
+      window: conversationWindow({ text: "Компанія A." }),
+    });
     return mount();
   }
 
@@ -590,7 +611,10 @@ describe("a send still in flight when the company changes", () => {
     });
     await flush();
 
-    respond(200, { status: "ok", document: document({ text: "Компанія B." }) });
+    respond(200, {
+      status: "ok",
+      window: conversationWindow({ text: "Компанія B." }),
+    });
     view.switchCompany(OTHER_CONVERSATION);
     await flush();
 
@@ -613,7 +637,10 @@ describe("a send still in flight when the company changes", () => {
     });
     await flush();
 
-    respond(200, { status: "ok", document: document({ text: "Компанія B." }) });
+    respond(200, {
+      status: "ok",
+      window: conversationWindow({ text: "Компанія B." }),
+    });
     view.switchCompany(OTHER_CONVERSATION);
     await flush();
 
@@ -649,10 +676,10 @@ describe("retrying a command whose reply never came", () => {
   function loaded(options?: { readonly open?: boolean }) {
     respond(200, {
       status: "ok",
-      document:
+      window:
         options?.open === true
-          ? document({ openPause: OPEN_PAUSE, asked: true })
-          : document(),
+          ? conversationWindow({ openPause: OPEN_PAUSE, asked: true })
+          : conversationWindow(),
     });
     return mount();
   }
@@ -666,7 +693,10 @@ describe("retrying a command whose reply never came", () => {
       await view.latest().send("створи замовлення");
     });
 
-    respond(200, { status: "ok", document: document({ text: "Готово." }) });
+    respond(200, {
+      status: "ok",
+      window: conversationWindow({ text: "Готово." }),
+    });
     await act(async () => {
       await view.latest().send("створи замовлення");
     });
@@ -689,12 +719,15 @@ describe("retrying a command whose reply never came", () => {
       await view.latest().send("створи замовлення");
     });
 
-    respond(409, { status: "turn_open", document: document() });
+    respond(409, { status: "turn_open", window: conversationWindow() });
     await act(async () => {
       await view.latest().send("створи замовлення");
     });
 
-    respond(200, { status: "ok", document: document({ text: "Готово." }) });
+    respond(200, {
+      status: "ok",
+      window: conversationWindow({ text: "Готово." }),
+    });
     await act(async () => {
       await view.latest().send("створи замовлення");
     });
@@ -711,7 +744,10 @@ describe("retrying a command whose reply never came", () => {
       await view.latest().send("створи замовлення");
     });
 
-    respond(200, { status: "ok", document: document({ text: "Готово." }) });
+    respond(200, {
+      status: "ok",
+      window: conversationWindow({ text: "Готово." }),
+    });
     await act(async () => {
       await view.latest().send("створи замовлення на завтра");
     });
@@ -727,12 +763,18 @@ describe("retrying a command whose reply never came", () => {
     const view = loaded();
     await flush();
 
-    respond(200, { status: "ok", document: document({ text: "Готово." }) });
+    respond(200, {
+      status: "ok",
+      window: conversationWindow({ text: "Готово." }),
+    });
     await act(async () => {
       await view.latest().send("створи замовлення");
     });
 
-    respond(200, { status: "ok", document: document({ text: "Ще раз." }) });
+    respond(200, {
+      status: "ok",
+      window: conversationWindow({ text: "Ще раз." }),
+    });
     await act(async () => {
       await view.latest().send("створи замовлення");
     });
@@ -750,7 +792,10 @@ describe("retrying a command whose reply never came", () => {
       await flush();
     });
 
-    respond(200, { status: "ok", document: document({ text: "Готово." }) });
+    respond(200, {
+      status: "ok",
+      window: conversationWindow({ text: "Готово." }),
+    });
     await act(async () => {
       view.latest().answer({ optionId: "opt-b" });
       await flush();
@@ -769,7 +814,10 @@ describe("retrying a command whose reply never came", () => {
       await flush();
     });
 
-    respond(200, { status: "ok", document: document({ text: "Готово." }) });
+    respond(200, {
+      status: "ok",
+      window: conversationWindow({ text: "Готово." }),
+    });
     await act(async () => {
       view.latest().answer({ optionId: "opt-a" });
       await flush();
@@ -842,7 +890,7 @@ describe("a conversation longer than one window", () => {
   }
 
   async function loadedWithOlder() {
-    respond(200, { status: "ok", document: window(2, 4) });
+    respond(200, { status: "ok", window: window(2, 4) });
     const view = mount();
     await flush();
     return view;
@@ -851,7 +899,7 @@ describe("a conversation longer than one window", () => {
   it("loads the page before the oldest message, and keeps the thread in order", async () => {
     const view = await loadedWithOlder();
 
-    respond(200, { status: "ok", document: window(1, 1) });
+    respond(200, { status: "ok", window: window(1, 1) });
     act(() => {
       view.latest().loadOlder();
     });
@@ -871,13 +919,13 @@ describe("a conversation longer than one window", () => {
 
   it("joins a reply onto the pages already loaded", async () => {
     const view = await loadedWithOlder();
-    respond(200, { status: "ok", document: window(1, 1) });
+    respond(200, { status: "ok", window: window(1, 1) });
     act(() => {
       view.latest().loadOlder();
     });
     await flush();
 
-    respond(200, { status: "ok", document: window(4, 6) });
+    respond(200, { status: "ok", window: window(4, 6) });
     await act(async () => {
       await view.latest().send("повідомлення 5");
     });
@@ -894,14 +942,14 @@ describe("a conversation longer than one window", () => {
 
   it("starts again from the latest window when the conversation moved on further than one", async () => {
     const view = await loadedWithOlder();
-    respond(200, { status: "ok", document: window(1, 1) });
+    respond(200, { status: "ok", window: window(1, 1) });
     act(() => {
       view.latest().loadOlder();
     });
     await flush();
 
     // Another device took several turns meanwhile.
-    respond(200, { status: "ok", document: window(8, 10) });
+    respond(200, { status: "ok", window: window(8, 10) });
     await act(async () => {
       await view.latest().send("ще одне");
     });
@@ -928,14 +976,14 @@ describe("a conversation longer than one window", () => {
     expect(view.latest().loadingOlder).toBe(true);
 
     // Not held up by the page on its way.
-    respond(200, { status: "ok", document: window(8, 10) });
+    respond(200, { status: "ok", window: window(8, 10) });
     await act(async () => {
       await view.latest().send("ще одне");
     });
     expect(fetchMock).toHaveBeenCalledTimes(3);
 
     act(() => {
-      deliver({ status: "ok", document: window(1, 1) });
+      deliver({ status: "ok", window: window(1, 1) });
     });
     await flush();
 
@@ -951,12 +999,15 @@ describe("a conversation longer than one window", () => {
     });
     await flush();
 
-    respond(200, { status: "ok", document: document({ text: "Компанія B." }) });
+    respond(200, {
+      status: "ok",
+      window: conversationWindow({ text: "Компанія B." }),
+    });
     view.switchCompany("66666666-6666-4666-8666-666666666666");
     await flush();
 
     act(() => {
-      deliver({ status: "ok", document: window(1, 1) });
+      deliver({ status: "ok", window: window(1, 1) });
     });
     await flush();
 
@@ -965,7 +1016,7 @@ describe("a conversation longer than one window", () => {
   });
 
   it("asks for nothing when nothing is older", async () => {
-    respond(200, { status: "ok", document: window(1, 3) });
+    respond(200, { status: "ok", window: window(1, 3) });
     const view = mount();
     await flush();
 

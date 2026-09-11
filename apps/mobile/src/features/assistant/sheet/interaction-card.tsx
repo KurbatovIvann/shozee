@@ -10,7 +10,7 @@
  *
  * None of that has a place here. A question that appears is answerable, because
  * the only source of one is the server's open pause; a question that has been
- * answered, dropped or expired simply is not in the document. A refused tap comes
+ * answered, dropped or expired simply is not in the window. A refused tap comes
  * back with the current question, so there is no retry state to hold either.
  */
 import { Text, View } from "react-native";

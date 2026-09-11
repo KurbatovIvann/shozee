@@ -1,9 +1,9 @@
 /**
  * What the client does with each kind of answer.
  *
- * The case worth pinning hardest is a refusal that carries a document: the call
+ * The case worth pinning hardest is a refusal that carries a window: the call
  * failed *and* the conversation is now known. Reporting only the failure is how
- * a stale picker stays on screen; reporting only the document is how a person
+ * a stale picker stays on screen; reporting only the window is how a person
  * never learns their tap did nothing.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -18,7 +18,7 @@ import {
   ASSISTANT_KIT_ANSWER_PATH,
   ASSISTANT_KIT_TEXT_MAX,
   clipAssistantKitText,
-  getAssistantKitDocument,
+  getAssistantKitWindow,
   postAssistantKitAbandon,
   postAssistantKitAnswer,
   postAssistantKitChat,
@@ -40,7 +40,7 @@ function sentBody(index: number): Record<string, unknown> {
   >;
 }
 
-function document(openPause: unknown = null) {
+function conversationWindow(openPause: unknown = null) {
   return {
     conversationId: CONVERSATION,
     olderCursor: null,
@@ -89,8 +89,8 @@ describe("the assistant kit client", () => {
     fetchMock.mockReset();
   });
 
-  it("returns the document on a successful turn", async () => {
-    respond(200, { status: "ok", document: document() });
+  it("returns the window on a successful turn", async () => {
+    respond(200, { status: "ok", window: conversationWindow() });
 
     const outcome = await postAssistantKitChat({
       ...call,
@@ -100,7 +100,7 @@ describe("the assistant kit client", () => {
     });
 
     expect(outcome.failure).toBeNull();
-    expect(outcome.document?.messages).toHaveLength(1);
+    expect(outcome.window?.messages).toHaveLength(1);
     const [url] = fetchMock.mock.calls[0] as [string];
     expect(url).toBe("https://api.example.com/assistant/kit/chat");
     // Posts what it was given: trimming and the length cap belong to the caller,
@@ -120,7 +120,7 @@ describe("the assistant kit client", () => {
   });
 
   it("sends the session as a header and never as body", async () => {
-    respond(200, { status: "ok", document: document() });
+    respond(200, { status: "ok", window: conversationWindow() });
 
     await postAssistantKitChat({
       ...call,
@@ -138,7 +138,7 @@ describe("the assistant kit client", () => {
   });
 
   it("reports the failure and the corrected conversation together", async () => {
-    respond(409, { status: "stale", document: document(OPEN_PAUSE) });
+    respond(409, { status: "stale", window: conversationWindow(OPEN_PAUSE) });
 
     const outcome = await postAssistantKitAnswer({
       ...call,
@@ -152,7 +152,7 @@ describe("the assistant kit client", () => {
     expect(outcome.failure?.kind).toBe("stale");
     // Both, not one or the other: the tap did nothing, and this is the question
     // that is actually open now.
-    expect(outcome.document?.openPause?.revision).toBe(2);
+    expect(outcome.window?.openPause?.revision).toBe(2);
   });
 
   it("carries the reason a refusal gives", async () => {
@@ -160,7 +160,7 @@ describe("the assistant kit client", () => {
       status: "action_failed",
       code: "CONFLICT",
       message: "no longer available",
-      document: document(OPEN_PAUSE),
+      window: conversationWindow(OPEN_PAUSE),
     });
 
     const outcome = await postAssistantKitAnswer({
@@ -176,11 +176,11 @@ describe("the assistant kit client", () => {
       kind: "action_failed",
       message: "no longer available",
     });
-    expect(outcome.document).not.toBeNull();
+    expect(outcome.window).not.toBeNull();
   });
 
   it("passes the answer through without interpreting it", async () => {
-    respond(200, { status: "ok", document: document() });
+    respond(200, { status: "ok", window: conversationWindow() });
 
     await postAssistantKitAnswer({
       ...call,
@@ -206,23 +206,23 @@ describe("the assistant kit client", () => {
       text: "привіт",
     });
 
-    // No document: the caller keeps whatever it was already showing.
+    // No window: the caller keeps whatever it was already showing.
     expect(outcome).toEqual({
-      document: null,
+      window: null,
       failure: { kind: "unreachable" },
     });
   });
 
   it("treats a 200 it cannot read as a fault, not an empty conversation", async () => {
-    respond(200, { status: "ok", document: { messages: "nope" } });
+    respond(200, { status: "ok", window: { messages: "nope" } });
 
-    const outcome = await getAssistantKitDocument({
+    const outcome = await getAssistantKitWindow({
       ...call,
       conversationId: CONVERSATION,
     });
 
     expect(outcome).toEqual({
-      document: null,
+      window: null,
       failure: { kind: "unreadable" },
     });
   });
@@ -234,19 +234,19 @@ describe("the assistant kit client", () => {
     respond(500, { status: "pause_rejected", reason: "unknown kind" });
 
     const read = () =>
-      getAssistantKitDocument({ ...call, conversationId: CONVERSATION });
+      getAssistantKitWindow({ ...call, conversationId: CONVERSATION });
 
     expect((await read()).failure?.kind).toBe("unauthorized");
     expect((await read()).failure?.kind).toBe("expired");
     // The spend ceiling, not a broken request.
     expect((await read()).failure?.kind).toBe("rate_limited");
     expect(await read()).toEqual({
-      document: null,
+      window: null,
       failure: { kind: "server", message: "unknown kind" },
     });
   });
 
-  it("abandons without a revision, and accepts a body with no document", async () => {
+  it("abandons without a revision, and accepts a body with no window", async () => {
     respond(200, { status: "abandoned" });
 
     const outcome = await postAssistantKitAbandon({
@@ -255,7 +255,7 @@ describe("the assistant kit client", () => {
       interactionId: INTERACTION,
     });
 
-    expect(outcome).toEqual({ document: null, failure: null });
+    expect(outcome).toEqual({ window: null, failure: null });
     expect(sentBody(0)).toEqual({
       conversationId: CONVERSATION,
       interactionId: INTERACTION,
@@ -263,9 +263,9 @@ describe("the assistant kit client", () => {
   });
 
   it("asks for the page before a cursor by the same query", async () => {
-    respond(200, { status: "ok", document: document() });
+    respond(200, { status: "ok", window: conversationWindow() });
 
-    await getAssistantKitDocument({
+    await getAssistantKitWindow({
       ...call,
       conversationId: CONVERSATION,
       before: "31",
@@ -282,10 +282,10 @@ describe("the assistant kit client", () => {
    * new kind of part. One message it cannot read must not cost it the thread.
    */
   it("keeps the messages it can read when one it cannot is among them", async () => {
-    const readable = document();
+    const readable = conversationWindow();
     respond(200, {
       status: "ok",
-      document: {
+      window: {
         ...readable,
         messages: [
           {
@@ -299,21 +299,21 @@ describe("the assistant kit client", () => {
       },
     });
 
-    const outcome = await getAssistantKitDocument({
+    const outcome = await getAssistantKitWindow({
       ...call,
       conversationId: CONVERSATION,
     });
 
     expect(outcome.failure).toBeNull();
-    expect(outcome.document?.messages.map((m) => m.messageId)).toEqual([
+    expect(outcome.window?.messages.map((m) => m.messageId)).toEqual([
       "44444444-4444-4444-8444-444444444444",
     ]);
   });
 
   it("asks for a conversation by an encoded query, not a path", async () => {
-    respond(200, { status: "ok", document: document() });
+    respond(200, { status: "ok", window: conversationWindow() });
 
-    await getAssistantKitDocument({ ...call, conversationId: "a b/c" });
+    await getAssistantKitWindow({ ...call, conversationId: "a b/c" });
 
     const [url] = fetchMock.mock.calls[0] as [string];
     expect(url).toBe(

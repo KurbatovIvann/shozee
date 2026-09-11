@@ -7,18 +7,18 @@
  * union per endpoint and a local copy of the server's own union to parse it
  * with — 357 lines to post one option id — because each status carried a
  * different fragment the client then had to splice into what it already had.
- * Here a refusal carries the same document a success does, so "what went wrong"
+ * Here a refusal carries the same window a success does, so "what went wrong"
  * and "what the conversation looks like now" are two independent answers instead
  * of one entangled one.
  *
- * A refusal with a document is the normal case worth keeping in mind: the
+ * A refusal with a window is the normal case worth keeping in mind: the
  * question you tried to answer is stale, and the card you should now see comes
  * back in the same response.
  */
 import { fetch as expoFetch } from "expo/fetch";
 import {
   parseAssistantChatWindow,
-  type AssistantChatDocument,
+  type AssistantChatWindow,
 } from "@showzy/validation/assistant-chat";
 import { z } from "zod";
 
@@ -35,7 +35,7 @@ export const ASSISTANT_KIT_TEXT_MAX = 4000;
  * Why a call did not do what was asked.
  *
  * `stale`, `unresolvable`, `action_failed` and `interaction_open` all mean the
- * conversation moved and the accompanying document is current — they are worth
+ * conversation moved and the accompanying window is current — they are worth
  * telling the person about, but nothing is broken. `turn_open` means another
  * turn holds the conversation and this request did nothing at all.
  * `rate_limited` is the spend ceiling, which is a decision rather than a fault.
@@ -62,11 +62,11 @@ export type AssistantKitFailure = {
 };
 
 /**
- * Both fields are independent. A refusal usually carries a document; a
+ * Both fields are independent. A refusal usually carries a window; a
  * transport failure carries none, and the caller keeps what it already had.
  */
 export type AssistantKitOutcome = {
-  readonly document: AssistantChatDocument | null;
+  readonly window: AssistantChatWindow | null;
   readonly failure: AssistantKitFailure | null;
 };
 
@@ -75,7 +75,7 @@ const bodySchema = z.looseObject({
   reason: z.string().optional(),
   code: z.string().optional(),
   message: z.string().optional(),
-  document: z.unknown().optional(),
+  window: z.unknown().optional(),
   error: z.looseObject({ code: z.string() }).optional(),
 });
 
@@ -128,7 +128,7 @@ function failureFromStatus(
 }
 
 /** A message this build cannot read costs that message, not the conversation. */
-function documentFrom(value: unknown): AssistantChatDocument | null {
+function windowFrom(value: unknown): AssistantChatWindow | null {
   return parseAssistantChatWindow(value);
 }
 
@@ -155,7 +155,7 @@ async function call(
   } catch {
     // Nothing was learned about the conversation, so nothing is reported about
     // it. Whatever the caller is showing stays.
-    return { document: null, failure: { kind: "unreachable" } };
+    return { window: null, failure: { kind: "unreachable" } };
   }
 
   let raw: unknown;
@@ -163,7 +163,7 @@ async function call(
     raw = await response.json();
   } catch {
     return {
-      document: null,
+      window: null,
       failure: {
         kind: response.ok
           ? "unreadable"
@@ -174,26 +174,26 @@ async function call(
 
   const body = bodySchema.safeParse(raw);
   if (!body.success) {
-    return { document: null, failure: { kind: "unreadable" } };
+    return { window: null, failure: { kind: "unreadable" } };
   }
-  const document = documentFrom(body.data.document);
+  const window = windowFrom(body.data.window);
 
   if (response.ok && body.data.status === "ok") {
-    // A 200 whose document this build cannot read is a fault, not an empty
+    // A 200 whose window this build cannot read is a fault, not an empty
     // conversation: showing nothing would look like the turn never happened.
-    return document === null
-      ? { document: null, failure: { kind: "unreadable" } }
-      : { document, failure: null };
+    return window === null
+      ? { window: null, failure: { kind: "unreadable" } }
+      : { window, failure: null };
   }
   if (response.ok) {
-    // `abandon` answers `{ status: "abandoned" }` and carries no document.
-    return { document, failure: null };
+    // `abandon` answers `{ status: "abandoned" }` and carries no window.
+    return { window, failure: null };
   }
 
   const message = body.data.message ?? body.data.reason;
   const kind = failureFromStatus(response.status, body.data.status);
   return {
-    document,
+    window,
     failure: { kind, ...(message === undefined ? {} : { message }) },
   };
 }
@@ -206,7 +206,7 @@ export function clipAssistantKitText(text: string): string {
  * The latest window, or with `before` — an `olderCursor` a previous answer gave
  * — the page before it. The cursor is handed back as it came and never read.
  */
-export function getAssistantKitDocument(
+export function getAssistantKitWindow(
   request: AssistantKitCall & {
     readonly conversationId: string;
     readonly before?: string;

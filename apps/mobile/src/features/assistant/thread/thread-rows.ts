@@ -21,7 +21,7 @@
  */
 import {
   assistantInteractionFromPause,
-  type AssistantChatDocument,
+  type AssistantChatThread,
   type AssistantChatMessage,
   type AssistantInteraction,
   type AssistantPause,
@@ -33,7 +33,7 @@ import {
   type AssistantSurface,
 } from "../surfaces";
 
-/** Stable list id for the in-flight row. Not part of the document. */
+/** Stable list id for the in-flight row. Not part of the thread. */
 export const ASSISTANT_WAITING_ROW_ID = "assistant-waiting";
 
 /** Stable list id for a question whose own message is no longer stored. */
@@ -42,7 +42,7 @@ export const ASSISTANT_ORPHAN_INTERACTION_ROW_ID = "assistant-open-question";
 /** Stable list id for a message that has been sent but not yet acknowledged. */
 export const ASSISTANT_PENDING_USER_ROW_ID = "assistant-pending-user";
 
-export type AssistantDocumentRow = {
+export type AssistantThreadRow = {
   readonly id: string;
   readonly role: "user" | "assistant";
   readonly text: string;
@@ -103,7 +103,7 @@ function asksThis(
   );
 }
 
-function isEmpty(row: AssistantDocumentRow): boolean {
+function isEmpty(row: AssistantThreadRow): boolean {
   return (
     row.text.length === 0 &&
     row.surfaces.length === 0 &&
@@ -135,8 +135,8 @@ function interactionHost(
   return null;
 }
 
-export function assistantDocumentRows(input: {
-  readonly document: AssistantChatDocument;
+export function assistantThreadRows(input: {
+  readonly thread: Pick<AssistantChatThread, "messages" | "openPause">;
   readonly locale: Locale;
   /** A request is in flight. Adds one trailing row; hides nothing. */
   readonly waiting: boolean;
@@ -145,14 +145,14 @@ export function assistantDocumentRows(input: {
    *
    * Not an exception to "nothing here invents a part": this is the composer's
    * own text, echoed back to the person who typed it, and it disappears the
-   * moment the stored document carries the real message. The server writes the
+   * moment the server's window carries the real message. The server writes the
    * user message before the model runs, so the gap is one round trip — but that
    * round trip is a whole turn, and watching your own message vanish for it
    * reads as the app having dropped it.
    */
   readonly pending?: string | null;
-}): readonly AssistantDocumentRow[] {
-  const { messages, openPause } = input.document;
+}): readonly AssistantThreadRow[] {
+  const { messages, openPause } = input.thread;
   const interaction =
     openPause === null ? null : assistantInteractionFromPause(openPause);
   const hostId =
@@ -160,9 +160,9 @@ export function assistantDocumentRows(input: {
       ? null
       : interactionHost(messages, openPause);
 
-  const rows: AssistantDocumentRow[] = [];
+  const rows: AssistantThreadRow[] = [];
   for (const message of messages) {
-    const row: AssistantDocumentRow = {
+    const row: AssistantThreadRow = {
       id: message.messageId,
       role: message.role,
       text: textOf(message),

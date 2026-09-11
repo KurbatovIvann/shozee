@@ -35,7 +35,7 @@ configured.
 The sheet resolves its conversation through the existing
 `assistant.createConversation` / `listConversations` pair — one row per person per
 company, found again by listing — and then does nothing but read this path's
-document and post answers to it. It mints no parts of its own and holds no memory
+windows and post answers to it. It mints no parts of its own and holds no memory
 of which questions it has already dealt with; a source test
 (`sheet/use-assistant-sheet.seam.test.ts`) fails if an import from the previous
 client sneaks back in.
@@ -70,7 +70,7 @@ answer to it but a decision to stop.
 the parts one request produced:
 
 ```json
-{ "status": "ok", "document": { "conversationId": "...",
+{ "status": "ok", "window": { "conversationId": "...",
   "messages": [...], "olderCursor": "12", "openPause": null } }
 ```
 
@@ -80,7 +80,7 @@ when nothing precedes them; otherwise `GET /assistant/kit/messages` with
 its request ends, so a page a client already holds does not go stale.
 
 A refusal carries it too — `409 stale`, `409 unresolvable`, `409 action_failed`
-and `409 interaction_open` all come back with the current `document`, so a client
+and `409 interaction_open` all come back with the current `window`, so a client
 never has to guess what the card should now say. That is deliberate: a response
 carrying only the new fragment is what made a live turn and a reload disagree.
 
@@ -104,8 +104,8 @@ curl -sS "$KIT/assistant/kit/chat" -H "cookie: $COOKIE" -H "x-company-id: $COMPA
 ```
 
 Answering a question it asked (take `interactionId` and `revision` from
-`document.openPause` in the previous response, and `optionId` from
-`document.openPause.prompt.options`):
+`window.openPause` in the previous response, and `optionId` from
+`window.openPause.prompt.options`):
 
 ```bash
 curl -sS "$KIT/assistant/kit/answer" -H "cookie: $COOKIE" -H "x-company-id: $COMPANY" -H 'content-type: application/json' -d "{\"commandId\":\"$(uuidgen)\",\"conversationId\":\"$CONV\",\"interactionId\":\"PASTE\",\"revision\":1,\"answer\":{\"optionId\":\"PASTE\"}}" | jq
@@ -134,11 +134,11 @@ curl -sS "$KIT/assistant/kit/messages?conversationId=$CONV&before=PASTE" -H "coo
 1. **A read.** `chat` with "покажи замовлення цього клієнта". Expect one list or
    aggregate card in the last message, not one card per row.
 2. **A write that needs a choice.** `chat` with "створи замовлення для <an
-   ambiguous name>". Expect `document.openPause` with the options, and an
+   ambiguous name>". Expect `window.openPause` with the options, and an
    `interaction` part in the last message.
 3. **Answer it.** `answer` with `{ optionId }` from that pause. In the last
    message expect the record's card **first**, then the explanation, and
-   `document.openPause: null`.
+   `window.openPause: null`.
 4. **Reload.** `messages`. Expect the same window, byte for byte, as the one
    the turn returned.
 5. **The second question.** Try a request where both the customer and the product
@@ -147,7 +147,7 @@ curl -sS "$KIT/assistant/kit/messages?conversationId=$CONV&before=PASTE" -H "coo
 6. **Drop one.** Ask something ambiguous, then `abandon` it. Expect the next
    `chat` to be accepted rather than refused with `interaction_open`.
 7. **A confirmation.** Archive a customer, then `chat` with "видали клієнта
-   <that name>". Expect `document.openPause.kind: "confirmation"` with a
+   <that name>". Expect `window.openPause.kind: "confirmation"` with a
    summary, and the customer still there. `answer` with `{ "approved": true }`
    and expect it gone; `abandon` instead and expect it untouched.
 8. **Scroll back.** In a conversation longer than thirty messages, `messages`

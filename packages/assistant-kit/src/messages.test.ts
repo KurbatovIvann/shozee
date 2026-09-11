@@ -1,5 +1,5 @@
 /**
- * The document: live and a reload are the same bytes.
+ * The messages: live and a reload are the same bytes.
  *
  * Parts are stored when they settle, not re-derived later from prompt state.
  * Two renderers reading two derivations is how one turn can show one card live
@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import type { ChatDocument, DocumentPart } from "./document.js";
+import type { ChatWindow, ChatPart } from "./messages.js";
 import { fixtureInteractions } from "./fixture.js";
 import { createAssistantKit } from "./kit.js";
 import { testDeps } from "./testing.js";
@@ -21,7 +21,7 @@ function newKit() {
   return createAssistantKit(testDeps(fixtureInteractions));
 }
 
-const TEXT: DocumentPart = {
+const TEXT: ChatPart = {
   kind: "text",
   text: "here it is",
   status: "complete",
@@ -30,7 +30,7 @@ const TEXT: DocumentPart = {
 function card(
   revision: number,
   rows: number,
-): Extract<DocumentPart, { kind: "card" }> {
+): Extract<ChatPart, { kind: "card" }> {
   return {
     kind: "card",
     cardId: "card-1",
@@ -45,15 +45,15 @@ describe("a reload returns what the live turn wrote", () => {
     const kit = newKit();
     const parts = [TEXT, card(1, 3)];
 
-    await kit.document.write(SCOPE, {
+    await kit.messages.write(SCOPE, {
       kind: "append",
       messageId: MESSAGE,
       role: "assistant",
       parts,
     });
-    const document = await kit.document.read(SCOPE);
+    const window = await kit.messages.read(SCOPE);
 
-    const message = document.messages.find((m) => m.messageId === MESSAGE);
+    const message = window.messages.find((m) => m.messageId === MESSAGE);
     expect(message?.parts).toEqual(parts);
     expect(JSON.stringify(message?.parts)).toBe(JSON.stringify(parts));
   });
@@ -67,21 +67,21 @@ describe("a card updates in place", () => {
   it("replaces by cardId in a later write instead of appending a second card", async () => {
     const kit = newKit();
 
-    await kit.document.write(SCOPE, {
+    await kit.messages.write(SCOPE, {
       kind: "append",
       messageId: MESSAGE,
       role: "assistant",
       parts: [card(1, 3), TEXT],
     });
-    await kit.document.write(SCOPE, {
+    await kit.messages.write(SCOPE, {
       kind: "append",
       messageId: MESSAGE,
       role: "assistant",
       parts: [card(1, 9)],
     });
 
-    const document = await kit.document.read(SCOPE);
-    const parts = document.messages.flatMap((message) => message.parts);
+    const window = await kit.messages.read(SCOPE);
+    const parts = window.messages.flatMap((message) => message.parts);
     const cards = parts.filter((part) => part.kind === "card");
 
     expect(cards).toHaveLength(1);
@@ -94,14 +94,14 @@ describe("a card updates in place", () => {
   it("collapses the same cardId twice in one write", async () => {
     const kit = newKit();
 
-    await kit.document.write(SCOPE, {
+    await kit.messages.write(SCOPE, {
       kind: "append",
       messageId: MESSAGE,
       role: "assistant",
       parts: [card(1, 3), TEXT, card(1, 9)],
     });
 
-    const parts = (await kit.document.read(SCOPE)).messages.flatMap(
+    const parts = (await kit.messages.read(SCOPE)).messages.flatMap(
       (message) => message.parts,
     );
 
@@ -116,24 +116,24 @@ describe("a card updates in place", () => {
     const kit = newKit();
     const later = "66666666-6666-4666-8666-666666666666";
 
-    await kit.document.write(SCOPE, {
+    await kit.messages.write(SCOPE, {
       kind: "append",
       messageId: MESSAGE,
       role: "assistant",
       parts: [card(1, 3)],
     });
-    await kit.document.write(SCOPE, {
+    await kit.messages.write(SCOPE, {
       kind: "append",
       messageId: later,
       role: "assistant",
       parts: [card(1, 9)],
     });
 
-    const document = await kit.document.read(SCOPE);
+    const window = await kit.messages.read(SCOPE);
 
     // A list shown in an earlier turn stays as it was shown then.
     expect(
-      document.messages.map((message) =>
+      window.messages.map((message) =>
         message.parts.map((part) =>
           part.kind === "card" ? [part.revision, part.payload] : part.kind,
         ),
@@ -145,27 +145,27 @@ describe("a card updates in place", () => {
 describe("partial text is never presented as the answer", () => {
   it("settles a streaming part to complete", async () => {
     const kit = newKit();
-    const streaming: DocumentPart = {
+    const streaming: ChatPart = {
       kind: "text",
       text: "here",
       status: "streaming",
     };
 
-    await kit.document.write(SCOPE, {
+    await kit.messages.write(SCOPE, {
       kind: "append",
       messageId: MESSAGE,
       role: "assistant",
       parts: [streaming],
     });
-    await kit.document.write(SCOPE, {
+    await kit.messages.write(SCOPE, {
       kind: "append",
       messageId: MESSAGE,
       role: "assistant",
       parts: [TEXT],
     });
 
-    const document = await kit.document.read(SCOPE);
-    const texts = document.messages
+    const window = await kit.messages.read(SCOPE);
+    const texts = window.messages
       .flatMap((message) => message.parts)
       .filter((part) => part.kind === "text");
 
@@ -174,17 +174,17 @@ describe("partial text is never presented as the answer", () => {
 
   it("keeps a settled card when the text part ends in error", async () => {
     const kit = newKit();
-    const failed: DocumentPart = { kind: "text", text: "", status: "error" };
+    const failed: ChatPart = { kind: "text", text: "", status: "error" };
 
-    await kit.document.write(SCOPE, {
+    await kit.messages.write(SCOPE, {
       kind: "append",
       messageId: MESSAGE,
       role: "assistant",
       parts: [card(1, 3), failed],
     });
 
-    const document = await kit.document.read(SCOPE);
-    const parts = document.messages.flatMap((message) => message.parts);
+    const window = await kit.messages.read(SCOPE);
+    const parts = window.messages.flatMap((message) => message.parts);
 
     expect(parts.filter((part) => part.kind === "card")).toHaveLength(1);
     expect(parts.filter((part) => part.kind === "text").at(-1)?.status).toBe(
@@ -193,20 +193,20 @@ describe("partial text is never presented as the answer", () => {
   });
 });
 
-describe("a document belongs to one owner", () => {
+describe("a conversation belongs to one owner", () => {
   const OTHER = { conversationId: CONVERSATION, bind: "owner-2:scope-2" };
 
   it("reads as empty for anyone else — the same as a conversation that does not exist", async () => {
     const kit = newKit();
-    await kit.document.write(SCOPE, {
+    await kit.messages.write(SCOPE, {
       kind: "append",
       messageId: MESSAGE,
       role: "assistant",
       parts: [TEXT],
     });
 
-    const foreign = await kit.document.read(OTHER);
-    const fresh = await kit.document.read({
+    const foreign = await kit.messages.read(OTHER);
+    const fresh = await kit.messages.read({
       conversationId: "99999999-9999-4999-8999-999999999999",
       bind: BIND,
     });
@@ -221,14 +221,14 @@ describe("a document belongs to one owner", () => {
 
   it("refuses a write from anyone else instead of appending to it", async () => {
     const kit = newKit();
-    await kit.document.write(SCOPE, {
+    await kit.messages.write(SCOPE, {
       kind: "append",
       messageId: MESSAGE,
       role: "assistant",
       parts: [TEXT],
     });
 
-    const refused = await kit.document.write(OTHER, {
+    const refused = await kit.messages.write(OTHER, {
       kind: "append",
       messageId: "88888888-8888-4888-8888-888888888888",
       role: "assistant",
@@ -236,7 +236,7 @@ describe("a document belongs to one owner", () => {
     });
 
     expect(refused.kind).toBe("wrong_owner");
-    const owner = await kit.document.read(SCOPE);
+    const owner = await kit.messages.read(SCOPE);
     expect(owner.messages).toHaveLength(1);
     expect(JSON.stringify(owner)).not.toContain("not yours");
   });
@@ -262,7 +262,7 @@ describe("a read is a window onto the log", () => {
     count: number,
   ): Promise<void> {
     for (let n = 1; n <= count; n += 1) {
-      await kit.document.write(SCOPE, {
+      await kit.messages.write(SCOPE, {
         kind: "append",
         messageId: idOf(n),
         role: n % 2 === 1 ? "user" : "assistant",
@@ -273,8 +273,8 @@ describe("a read is a window onto the log", () => {
     }
   }
 
-  function textsOf(document: ChatDocument): string[] {
-    return document.messages
+  function textsOf(window: ChatWindow): string[] {
+    return window.messages
       .flatMap((message) => message.parts)
       .map((part) => (part.kind === "text" ? part.text : part.kind));
   }
@@ -283,16 +283,16 @@ describe("a read is a window onto the log", () => {
     const kit = kitWithWindow(2);
     await writeTexts(kit, 5);
 
-    const latest = await kit.document.read(SCOPE);
+    const latest = await kit.messages.read(SCOPE);
     expect(textsOf(latest)).toEqual(["message 4", "message 5"]);
     expect(latest.olderCursor).not.toBeNull();
 
-    const before = await kit.document.read(SCOPE, {
+    const before = await kit.messages.read(SCOPE, {
       before: latest.olderCursor ?? "",
     });
     expect(textsOf(before)).toEqual(["message 2", "message 3"]);
 
-    const first = await kit.document.read(SCOPE, {
+    const first = await kit.messages.read(SCOPE, {
       before: before.olderCursor ?? "",
     });
     expect(textsOf(first)).toEqual(["message 1"]);
@@ -303,13 +303,13 @@ describe("a read is a window onto the log", () => {
     const kit = kitWithWindow(3);
     await writeTexts(kit, 10);
 
-    let document = await kit.document.read(SCOPE);
-    const pages = [textsOf(document)];
-    while (document.olderCursor !== null) {
-      document = await kit.document.read(SCOPE, {
-        before: document.olderCursor,
+    let window = await kit.messages.read(SCOPE);
+    const pages = [textsOf(window)];
+    while (window.olderCursor !== null) {
+      window = await kit.messages.read(SCOPE, {
+        before: window.olderCursor,
       });
-      pages.unshift(textsOf(document));
+      pages.unshift(textsOf(window));
     }
 
     expect(pages.flat()).toEqual(
@@ -321,7 +321,7 @@ describe("a read is a window onto the log", () => {
     const kit = kitWithWindow(5);
     await writeTexts(kit, 5);
 
-    expect((await kit.document.read(SCOPE)).olderCursor).toBeNull();
+    expect((await kit.messages.read(SCOPE)).olderCursor).toBeNull();
   });
 });
 
@@ -334,13 +334,13 @@ describe("a message is written only while it is the latest", () => {
   it("refuses an id the log already holds further back, and leaves both as they were", async () => {
     const kit = newKit();
     const later = "66666666-6666-4666-8666-666666666666";
-    await kit.document.write(SCOPE, {
+    await kit.messages.write(SCOPE, {
       kind: "append",
       messageId: MESSAGE,
       role: "assistant",
       parts: [TEXT],
     });
-    await kit.document.write(SCOPE, {
+    await kit.messages.write(SCOPE, {
       kind: "append",
       messageId: later,
       role: "assistant",
@@ -348,7 +348,7 @@ describe("a message is written only while it is the latest", () => {
     });
 
     await expect(
-      kit.document.write(SCOPE, {
+      kit.messages.write(SCOPE, {
         kind: "append",
         messageId: MESSAGE,
         role: "assistant",
@@ -356,8 +356,8 @@ describe("a message is written only while it is the latest", () => {
       }),
     ).rejects.toThrow();
 
-    const document = await kit.document.read(SCOPE);
-    expect(document.messages.map((message) => message.parts)).toEqual([
+    const window = await kit.messages.read(SCOPE);
+    expect(window.messages.map((message) => message.parts)).toEqual([
       [TEXT],
       [card(1, 3)],
     ]);
@@ -383,7 +383,7 @@ describe("a message this build cannot read", () => {
 
   it("is skipped and reported, and the rest of the conversation still reads", async () => {
     const { deps, kit } = slice();
-    await kit.document.write(SCOPE, {
+    await kit.messages.write(SCOPE, {
       kind: "append",
       messageId: MESSAGE,
       role: "user",
@@ -395,9 +395,9 @@ describe("a message this build cannot read", () => {
       message: fromNewerDeploy,
     });
 
-    const document = await kit.document.read(SCOPE);
+    const window = await kit.messages.read(SCOPE);
 
-    expect(document.messages.map((message) => message.messageId)).toEqual([
+    expect(window.messages.map((message) => message.messageId)).toEqual([
       MESSAGE,
     ]);
     expect(deps.unreadable).toEqual([{ conversationId: CONVERSATION, seq: 2 }]);
@@ -410,7 +410,7 @@ describe("a message this build cannot read", () => {
    */
   it("survives the next write untouched, and so does everything before it", async () => {
     const { deps, kit } = slice();
-    await kit.document.write(SCOPE, {
+    await kit.messages.write(SCOPE, {
       kind: "append",
       messageId: MESSAGE,
       role: "user",
@@ -422,7 +422,7 @@ describe("a message this build cannot read", () => {
       message: fromNewerDeploy,
     });
 
-    await kit.document.write(SCOPE, {
+    await kit.messages.write(SCOPE, {
       kind: "append",
       messageId: LATER,
       role: "user",
@@ -437,7 +437,7 @@ describe("a message this build cannot read", () => {
     ]);
     expect(stored.records[1]?.message).toEqual(fromNewerDeploy);
     expect(
-      (await kit.document.read(SCOPE)).messages.map(
+      (await kit.messages.read(SCOPE)).messages.map(
         (message) => message.messageId,
       ),
     ).toEqual([MESSAGE, LATER]);
@@ -452,7 +452,7 @@ describe("a message this build cannot read", () => {
     });
 
     await expect(
-      kit.document.write(SCOPE, {
+      kit.messages.write(SCOPE, {
         kind: "append",
         messageId: FUTURE,
         role: "assistant",

@@ -1,6 +1,6 @@
 /**
  * `assistant-kit` — pause a tool call, ask a person, resume the model
- * conversation verbatim, and keep one stored chat document.
+ * conversation verbatim, and keep one stored message log.
  *
  * An extension to the AI SDK, not a replacement: the caller still owns the
  * single `streamText`. This package owns only what happens between the loop
@@ -59,15 +59,15 @@ export {
 
 export {
   chatCursorSchema,
-  chatDocumentSchema,
-  documentMessageSchema,
-  documentPartSchema,
+  chatWindowSchema,
+  chatMessageSchema,
+  chatPartSchema,
   textPartStatusSchema,
-  type ChatDocument,
-  type DocumentMessage,
-  type DocumentPart,
-  type DocumentWrite,
-} from "./document.js";
+  type ChatWindow,
+  type ChatMessage,
+  type ChatPart,
+  type MessageWrite,
+} from "./messages.js";
 
 export type {
   Clock,

@@ -11,12 +11,12 @@
 import type { ToolResultPart } from "ai";
 import type { z } from "zod";
 
-import type { DocumentMessage, DocumentWrite } from "./document.js";
+import type { ChatMessage, MessageWrite } from "./messages.js";
 import {
   appendParts,
   chatCursorSchema,
-  documentMessageSchema,
-} from "./document.js";
+  chatMessageSchema,
+} from "./messages.js";
 import { providerToolCallIdSchema } from "./ids.js";
 import type {
   AnyInteraction,
@@ -395,7 +395,7 @@ export function createAssistantKit<T extends AnyTypes>(
       },
     },
 
-    document: {
+    messages: {
       async read(scope, options) {
         const page = await deps.messages.page(scope.conversationId, {
           limit: deps.window.messages,
@@ -424,9 +424,9 @@ export function createAssistantKit<T extends AnyTypes>(
           };
         }
 
-        const messages: DocumentMessage[] = [];
+        const messages: ChatMessage[] = [];
         for (const record of page.records) {
-          if (!documentMessageSchema.safeParse(record.message).success) {
+          if (!chatMessageSchema.safeParse(record.message).success) {
             // One message this build cannot read costs that message, not the
             // conversation. It stays stored exactly as it is.
             deps.onUnreadableMessage?.({
@@ -437,7 +437,7 @@ export function createAssistantKit<T extends AnyTypes>(
           }
           // Validated, then returned as stored — a re-serialisation would make a
           // reload a second derivation of the message rather than the same one.
-          messages.push(record.message as DocumentMessage);
+          messages.push(record.message as ChatMessage);
         }
 
         return {
@@ -448,7 +448,7 @@ export function createAssistantKit<T extends AnyTypes>(
         };
       },
 
-      async write(scope, write: DocumentWrite) {
+      async write(scope, write: MessageWrite) {
         const latest = (
           await deps.messages.page(scope.conversationId, { limit: 1 })
         ).records[0];
@@ -459,7 +459,7 @@ export function createAssistantKit<T extends AnyTypes>(
         if (latest?.messageId === write.messageId) {
           // The message still being written. Same cardId in the same message is
           // an update, never a second card.
-          const current = documentMessageSchema.safeParse(latest.message);
+          const current = chatMessageSchema.safeParse(latest.message);
           if (!current.success) {
             // Replacing what could not be read would destroy it — which is how
             // one unreadable message used to take a whole conversation with it.
@@ -482,7 +482,7 @@ export function createAssistantKit<T extends AnyTypes>(
         // refused by the store rather than reopened: only the latest message may
         // change, and a turn whose lease lapsed finds out here instead of
         // writing out of order.
-        const message: DocumentMessage = {
+        const message: ChatMessage = {
           messageId: write.messageId,
           role: write.role,
           createdAt: deps.clock.now().toISOString(),

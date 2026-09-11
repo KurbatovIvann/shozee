@@ -1,7 +1,7 @@
 /**
  * Which conversation this person is in.
  *
- * The kit stores its document under a `conversationId` it never mints and never
+ * The kit stores its messages under a `conversationId` it never mints and never
  * registers — an id is an argument to it, not something it owns. So identity has
  * to come from somewhere that survives an app restart, and the existing
  * `assistant.createConversation` / `listConversations` pair already is that: a

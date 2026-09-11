@@ -146,13 +146,13 @@ describe("assistant wait-state chrome (SHO-394)", () => {
   });
 
   /**
-   * There is no wait-gating question left to answer. The stored document holds
+   * There is no wait-gating question left to answer. The stored log holds
    * only settled messages, so the wait row is appended while a request is in
    * flight and hides nothing — the old path had to suppress a half-streamed
    * assistant message, and decide whether an open HITL card counted as "still
    * working".
    */
-  it("takes the wait row from the document reader, not from thread-wide pending", () => {
+  it("takes the wait row from the thread reader, not from thread-wide pending", () => {
     const hook = readFileSync(
       new URL("./use-assistant-sheet.ts", import.meta.url),
       "utf8",

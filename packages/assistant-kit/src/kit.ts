@@ -9,7 +9,7 @@
  */
 import type { z } from "zod";
 
-import type { ChatDocument, DocumentWrite } from "./document.js";
+import type { ChatWindow, MessageWrite } from "./messages.js";
 import type { InteractionRegistry, InteractionType } from "./interaction.js";
 import type { Continuation } from "./pause.js";
 import type { KitDeps } from "./ports.js";
@@ -75,7 +75,7 @@ export interface AssistantKit<T extends AnyTypes> {
    */
   open(input: OpenPauseInput<T>): Promise<OpenPauseResult>;
 
-  /** Read-only. Safe to call on every document read. */
+  /** Read-only. Safe to call on every read. */
   peek(scope: PauseScope): Promise<PublicPause | null>;
 
   /**
@@ -155,7 +155,7 @@ export interface AssistantKit<T extends AnyTypes> {
     end(scope: PauseScope, token: string): Promise<boolean>;
   };
 
-  readonly document: {
+  readonly messages: {
     /**
      * The latest window of the conversation, or the page before `before` — a
      * cursor an earlier read returned as `olderCursor`. Check a cursor that
@@ -164,7 +164,7 @@ export interface AssistantKit<T extends AnyTypes> {
     read(
       scope: PauseScope,
       options?: { readonly before?: string },
-    ): Promise<ChatDocument>;
+    ): Promise<ChatWindow>;
     /**
      * Scoped like the read. A write under a `bind` other than the one the log
      * was written under is refused — `wrong_owner` — rather than silently
@@ -176,7 +176,7 @@ export interface AssistantKit<T extends AnyTypes> {
      */
     write(
       scope: PauseScope,
-      write: DocumentWrite,
+      write: MessageWrite,
     ): Promise<{ readonly kind: "written" | "wrong_owner" }>;
   };
 }

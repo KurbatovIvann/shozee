@@ -220,8 +220,8 @@ describe("the whole round trip", () => {
       },
     });
 
-    const document = await s.kit.document.read(SCOPE);
-    const parts = document.messages.flatMap((message) => message.parts);
+    const window = await s.kit.messages.read(SCOPE);
+    const parts = window.messages.flatMap((message) => message.parts);
     const cards = parts.filter((part) => part.kind === "card");
 
     expect(cards.map((part) => part.cardId).sort()).toEqual([
@@ -240,7 +240,7 @@ describe("a reload returns what the live turn wrote", () => {
     const s = slice();
     const live = await firstTurn(s);
 
-    const reloaded = await s.kit.document.read(SCOPE);
+    const reloaded = await s.kit.messages.read(SCOPE);
     const parts = reloaded.messages.flatMap((message) => message.parts);
 
     expect(parts).toEqual(live.parts);
@@ -323,7 +323,7 @@ describe("a turn that breaks after a tool has written", () => {
     expect(turn.interrupted).toBe(true);
     expect(s.calls.list).toBe(1);
 
-    const parts = (await s.kit.document.read(SCOPE)).messages.flatMap(
+    const parts = (await s.kit.messages.read(SCOPE)).messages.flatMap(
       (message) => message.parts,
     );
     expect(
@@ -377,7 +377,7 @@ describe("a turn that breaks after a tool has written", () => {
     expect(turn.interrupted).toBe(true);
     expect(s.calls.list).toBe(1);
 
-    const parts = (await s.kit.document.read(SCOPE)).messages.flatMap(
+    const parts = (await s.kit.messages.read(SCOPE)).messages.flatMap(
       (message) => message.parts,
     );
     expect(
@@ -420,7 +420,7 @@ describe("a turn that breaks after a tool has written", () => {
     expect(turn.interrupted).toBe(true);
     expect(JSON.stringify(turn.messages)).toContain("toolu_list");
     expect(
-      (await s.kit.document.read(SCOPE)).messages
+      (await s.kit.messages.read(SCOPE)).messages
         .flatMap((message) => message.parts)
         .filter((part) => part.kind === "card"),
     ).toHaveLength(1);
@@ -445,7 +445,7 @@ describe("a turn that breaks after a tool has written", () => {
 
     expect(turn.interrupted).toBe(false);
     expect(
-      (await s.kit.document.read(SCOPE)).messages
+      (await s.kit.messages.read(SCOPE)).messages
         .flatMap((message) => message.parts)
         .filter((part) => part.kind === "text")
         .map((part) => part.status),
@@ -455,7 +455,7 @@ describe("a turn that breaks after a tool has written", () => {
 
 /**
  * SHO-551. Two calls in one turn that show the same thing — a page and then the
- * next one — produce a card under the same id twice. The document must hold one
+ * next one — produce a card under the same id twice. The message must hold one
  * card, and the turn must report the one a reload will read.
  */
 describe("a card written twice in a turn is one card", () => {
@@ -498,7 +498,7 @@ describe("a card written twice in a turn is one card", () => {
       tools: growingList(),
     });
 
-    const parts = (await s.kit.document.read(SCOPE)).messages.flatMap(
+    const parts = (await s.kit.messages.read(SCOPE)).messages.flatMap(
       (message) => message.parts,
     );
     expect(parts.map((part) => part.kind)).toEqual(["card", "text"]);
@@ -536,7 +536,7 @@ describe("a card written twice in a turn is one card", () => {
       },
     });
 
-    const message = (await s.kit.document.read(SCOPE)).messages.find(
+    const message = (await s.kit.messages.read(SCOPE)).messages.find(
       (candidate) => candidate.messageId === SECOND_MESSAGE,
     );
     const cards = message?.parts.filter((part) => part.kind === "card") ?? [];

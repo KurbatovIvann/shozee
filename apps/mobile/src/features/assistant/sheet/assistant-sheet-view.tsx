@@ -12,7 +12,7 @@ import { StyleSheet, useUnistyles } from "react-native-unistyles";
 
 import { AppHeader, Banner, EmptyState } from "../../../components/ui";
 import type { AssistantCopy } from "../../../i18n/assistant";
-import type { AssistantDocumentRow } from "../document/document-rows";
+import type { AssistantThreadRow } from "../thread/thread-rows";
 import {
   assistantShozikPose,
   SHOZIK_EMPTY_POSE_SIZE,
@@ -29,7 +29,7 @@ import { ShozikPoseMark } from "./shozik-pose-mark";
 
 /**
  * One `busy` flag replaces `confirmationApplying`, `choiceApplying` and
- * `hasInFlightTools`. The stored document holds only settled messages, so there
+ * `hasInFlightTools`. The stored log holds only settled messages, so there
  * is no per-row in-flight state to show; and only one request can run at a time,
  * so there is no per-card one either.
  *
@@ -38,7 +38,7 @@ import { ShozikPoseMark } from "./shozik-pose-mark";
  */
 export type AssistantSheetViewModel = {
   readonly copy: AssistantCopy;
-  readonly rows: readonly AssistantDocumentRow[];
+  readonly rows: readonly AssistantThreadRow[];
   readonly input: string;
   readonly changeInput: (value: string) => void;
   readonly send: () => void;
@@ -57,11 +57,11 @@ export type AssistantSheetViewModel = {
   readonly loadingOlder: boolean;
 };
 
-function keyExtractor(item: AssistantDocumentRow): string {
+function keyExtractor(item: AssistantThreadRow): string {
   return item.id;
 }
 
-function itemType(item: AssistantDocumentRow): string {
+function itemType(item: AssistantThreadRow): string {
   if (item.role === "user") {
     return "user";
   }
@@ -79,7 +79,7 @@ function itemType(item: AssistantDocumentRow): string {
 
 export function AssistantSheetView(model: AssistantSheetViewModel) {
   const { copy, rows } = model;
-  const listRef = useRef<FlashListRef<AssistantDocumentRow>>(null);
+  const listRef = useRef<FlashListRef<AssistantThreadRow>>(null);
   const edgesRef = useRef(ASSISTANT_THREAD_START);
 
   // FlashList keeps an older page from moving what is on screen on its own;
@@ -92,7 +92,7 @@ export function AssistantSheetView(model: AssistantSheetViewModel) {
     }
   }, [rows]);
 
-  const renderItem: ListRenderItem<AssistantDocumentRow> = useCallback(
+  const renderItem: ListRenderItem<AssistantThreadRow> = useCallback(
     ({ item }) => (
       <AssistantMessageRow
         role={item.role}

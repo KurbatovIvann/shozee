@@ -1,6 +1,6 @@
 # ADR-0038: The assistant is a stored document and a claimable pause
 
-- **Status**: Accepted
+- **Status**: Accepted; amended by the addenda below (SHO-553, SHO-555)
 - **Date**: 2026-09-10
 - **Deciders**: Ivan Kurbatov (human) (+ proposing agent)
 
@@ -37,6 +37,8 @@ disagreement was the bug.
 The assistant is a **stored chat document** plus a **claimable pause**,
 and the protocol that connects them lives in `@showzy/assistant-kit`, a
 package that knows nothing about this product.
+_(Amended by SHO-555: the conversation is stored as a log of messages, read a
+window at a time. See the addendum.)_
 
 - A turn stores the parts it settled. A reload returns those bytes. There
   is no second derivation, so there is nothing to disagree.
@@ -49,6 +51,8 @@ package that knows nothing about this product.
 - Every route returns the whole document, including refusals, so "your
   tap did nothing" and "here is the question that is open now" are two
   independent answers rather than one entangled one.
+  _(Superseded by SHO-555: every route returns the latest window and an
+  `olderCursor`. See the addendum.)_
 - What kinds of question exist is the caller's registry, not the
   package's. The kit has no `choice` and no `confirmation` in it.
 
@@ -79,6 +83,8 @@ package that knows nothing about this product.
   assistant did is in `audit_log` under `channel = 'ai'`, and stays there.
 - The conversation is durable in `assistant_chat_state`; only the pause
   is in Redis, where a deadline in minutes and one atomic claim belong.
+  _(Superseded by SHO-555: the transcript is `assistant_chat_messages`, and
+  `assistant_chat_state` keeps only the provider history.)_
 - Roughly 45,000 lines come out across the client and the server, most of
   it tests of a state machine that no longer exists.
 - What is lost, and named rather than discovered later: an

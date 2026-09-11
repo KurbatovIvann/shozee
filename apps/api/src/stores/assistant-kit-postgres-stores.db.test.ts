@@ -127,9 +127,9 @@ afterAll(async () => {
 describe("the conversation, across processes", () => {
   it("is still there for a runtime that never saw it written", async () => {
     const scope = { conversationId, bind: annaBind };
-    await runtime().forCaller(anna).kit.document.write(scope, say("Готово."));
+    await runtime().forCaller(anna).kit.messages.write(scope, say("Готово."));
 
-    const read = await runtime().forCaller(anna).kit.document.read(scope);
+    const read = await runtime().forCaller(anna).kit.messages.read(scope);
 
     expect(read.messages).toHaveLength(1);
     expect(read.messages[0]?.parts[0]).toEqual({
@@ -237,16 +237,16 @@ describe("the conversation, across processes", () => {
     for (let n = 1; n <= total; n += 1) {
       await runtime()
         .forCaller(anna)
-        .kit.document.write(scope, say(`запит ${String(n)}`));
+        .kit.messages.write(scope, say(`запит ${String(n)}`));
     }
 
-    const latest = await runtime().forCaller(anna).kit.document.read(scope);
+    const latest = await runtime().forCaller(anna).kit.messages.read(scope);
     expect(latest.messages).toHaveLength(ASSISTANT_CHAT_WINDOW_MESSAGES);
     expect(latest.olderCursor).not.toBeNull();
 
     const older = await runtime()
       .forCaller(anna)
-      .kit.document.read(scope, { before: latest.olderCursor ?? "" });
+      .kit.messages.read(scope, { before: latest.olderCursor ?? "" });
     expect(older.olderCursor).toBeNull();
 
     const texts = [...older.messages, ...latest.messages].map((message) =>
@@ -262,17 +262,17 @@ describe("the conversation, across processes", () => {
     const first = randomUUID();
     await runtime()
       .forCaller(anna)
-      .kit.document.write(scope, say("one", first));
-    await runtime().forCaller(anna).kit.document.write(scope, say("two"));
-    const before = await runtime().forCaller(anna).kit.document.read(scope);
+      .kit.messages.write(scope, say("one", first));
+    await runtime().forCaller(anna).kit.messages.write(scope, say("two"));
+    const before = await runtime().forCaller(anna).kit.messages.read(scope);
 
     await expect(
       runtime()
         .forCaller(anna)
-        .kit.document.write(scope, say("rewritten", first)),
+        .kit.messages.write(scope, say("rewritten", first)),
     ).rejects.toThrow();
 
-    expect(await runtime().forCaller(anna).kit.document.read(scope)).toEqual(
+    expect(await runtime().forCaller(anna).kit.messages.read(scope)).toEqual(
       before,
     );
   });
@@ -281,7 +281,7 @@ describe("the conversation, across processes", () => {
     const scoped = runtime().forCaller(anna);
 
     await expect(
-      scoped.kit.document.read({
+      scoped.kit.messages.read({
         conversationId: otherConversationId,
         bind: `${boris.userId}:${boris.companySelector}`,
       }),
@@ -295,7 +295,7 @@ describe("the conversation, across processes", () => {
     // Identical to the refusal above: the store cannot tell the two apart and
     // must not, or a conversation id becomes a way to probe for one.
     await expect(
-      scoped.kit.document.read({ conversationId: unknown, bind: "anna" }),
+      scoped.kit.messages.read({ conversationId: unknown, bind: "anna" }),
     ).rejects.toBeInstanceOf(AssistantKitConversationGoneError);
   });
 });

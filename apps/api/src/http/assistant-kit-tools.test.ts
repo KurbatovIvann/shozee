@@ -279,7 +279,7 @@ describe("a value becomes ok, with the card the surface registry composes", () =
 
 /**
  * SHO-551 over the production pieces end to end: the façades, the composer, the
- * kit's loop and its document writer. Two calls that compose into one surface
+ * kit's loop and its message writer. Two calls that compose into one surface
  * must leave one card in the message, not one per call.
  */
 describe("two calls that compose into one surface leave one card", () => {
@@ -307,7 +307,7 @@ describe("two calls that compose into one surface leave one card", () => {
       messages: [{ role: "user", content: "покажи замовлення" }],
       tools: tools(ordersListExecute),
     });
-    const cards = (await kit.document.read(scope)).messages
+    const cards = (await kit.messages.read(scope)).messages
       .flatMap((message) => message.parts)
       .filter((part) => part.kind === "card");
     return { turn, cards };

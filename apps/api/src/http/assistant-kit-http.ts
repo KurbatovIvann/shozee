@@ -9,7 +9,7 @@
  */
 import type {
   AssistantKit,
-  ChatDocument,
+  ChatWindow,
   HostTurnOptions,
   HostTurnResult,
   LanguageModel,
@@ -80,7 +80,7 @@ export const ASSISTANT_CHAT_WINDOW_MESSAGES = 30;
  *
  * Deliberately the consumer's, not the package's: how much of a conversation to
  * send, and how to clip a large tool result, is a budget and prompt question
- * that belongs to whoever pays for the tokens. The chat document is what a
+ * that belongs to whoever pays for the tokens. The transcript is what a
  * person reads; this is what the model reads, and they are not the same thing.
  */
 export interface AssistantHistoryPort {
@@ -153,7 +153,7 @@ export async function withConversationTurn(
   if (lease.kind === "busy") {
     return json(
       409,
-      { status: "turn_open", document: await kit.document.read(scope) },
+      { status: "turn_open", window: await kit.messages.read(scope) },
       requestId,
     );
   }
@@ -181,7 +181,7 @@ export async function withConversationTurn(
  * Placement is the whole design: a command taken by a request that then refuses
  * would be spent without running, and the person could not retry it.
  *
- * A replay answers `ok` with the current document rather than a status of its
+ * A replay answers `ok` with the current window rather than a status of its
  * own. There is nothing for a client to do differently, and the honest answer
  * to "did my command run?" is the conversation itself.
  */
@@ -236,7 +236,7 @@ export function logInterruptedTurn(
  * The stores that act as one person, for one request.
  *
  * Built per request rather than once at boot because the durable half goes
- * through `executeAction`: the document and the history are read and written as
+ * through `executeAction`: the transcript and the history are read and written as
  * the caller, under the same tenant scope and author rule as every other read
  * of that conversation. There is no ambient principal to bake in.
  */
@@ -288,30 +288,30 @@ export interface AssistantKitRuntime {
  * eventually not be followed, so it is a type now and `json` accepts nothing
  * else.
  *
- * Two shapes deliberately carry no document. `expired` is the answer for a
+ * Two shapes deliberately carry no window. `expired` is the answer for a
  * conversation that is not yours *and* one that does not exist — attaching a
- * document to either would make an id a way to tell them apart. A fault carries
+ * window to either would make an id a way to tell them apart. A fault carries
  * a code and nothing else, because there is nothing true to say about a
  * conversation the request never got to read.
  */
 export type AssistantKitResponse =
-  | { readonly status: "ok"; readonly document: ChatDocument }
-  | { readonly status: "interaction_open"; readonly document: ChatDocument }
+  | { readonly status: "ok"; readonly window: ChatWindow }
+  | { readonly status: "interaction_open"; readonly window: ChatWindow }
   /** Another turn holds this conversation. Nothing was attempted. */
-  | { readonly status: "turn_open"; readonly document: ChatDocument }
-  | { readonly status: "stale"; readonly document: ChatDocument }
+  | { readonly status: "turn_open"; readonly window: ChatWindow }
+  | { readonly status: "stale"; readonly window: ChatWindow }
   | {
       readonly status: "unresolvable";
       readonly reason: string;
-      readonly document: ChatDocument;
+      readonly window: ChatWindow;
     }
   | {
       readonly status: "action_failed";
       readonly code: string;
       readonly message: string;
-      readonly document: ChatDocument;
+      readonly window: ChatWindow;
     }
-  | { readonly status: "abandoned"; readonly document: ChatDocument }
+  | { readonly status: "abandoned"; readonly window: ChatWindow }
   | { readonly status: "expired" }
   | { readonly status: "aborted" }
   | { readonly status: "pause_rejected"; readonly reason: string }

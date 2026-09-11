@@ -22,7 +22,7 @@ import {
 } from "ai";
 import type { z } from "zod";
 
-import { appendParts, type DocumentPart } from "./document.js";
+import { appendParts, type ChatPart } from "./messages.js";
 import { providerToolCallId } from "./ids.js";
 import type { InteractionType } from "./interaction.js";
 import type { AssistantKit } from "./kit.js";
@@ -149,7 +149,7 @@ export interface HostTurnResult {
   /** Present when a tool asked to pause on a kind or payload the registry refused. */
   readonly rejection?: string;
   /** As the stored message holds them: one card per `cardId`, however often written. */
-  readonly parts: readonly DocumentPart[];
+  readonly parts: readonly ChatPart[];
   /** Provider history after this turn — the continuation when paused. */
   readonly messages: readonly ModelMessage[];
   /**
@@ -170,7 +170,7 @@ async function runLoop<T extends AnyTypes>(
    * are stored **before** generation is attempted, so a provider failure or a
    * disconnect cannot take the result down with the explanation.
    */
-  commitFirst: readonly DocumentPart[],
+  commitFirst: readonly ChatPart[],
 ): Promise<HostTurnResult> {
   const state: TurnState = {
     paused: undefined,
@@ -180,7 +180,7 @@ async function runLoop<T extends AnyTypes>(
     interrupted: false,
   };
 
-  function cardParts(): DocumentPart[] {
+  function cardParts(): ChatPart[] {
     return state.cards.map((card) => ({
       kind: "card",
       cardId: card.cardId,
@@ -190,11 +190,11 @@ async function runLoop<T extends AnyTypes>(
     }));
   }
 
-  async function append(parts: readonly DocumentPart[]): Promise<void> {
+  async function append(parts: readonly ChatPart[]): Promise<void> {
     if (parts.length === 0) {
       return;
     }
-    await options.kit.document.write(
+    await options.kit.messages.write(
       { conversationId: options.conversationId, bind: options.bind },
       {
         kind: "append",
@@ -245,7 +245,7 @@ async function runLoop<T extends AnyTypes>(
     // database that nobody could see (SHO-546). The empty text part follows it,
     // so the same message reads "this was done, and then something broke".
     const earned = cardParts();
-    const failed: DocumentPart = { kind: "text", text: "", status: "error" };
+    const failed: ChatPart = { kind: "text", text: "", status: "error" };
     await append([...earned, failed]);
     return {
       kind: "settled",
@@ -276,7 +276,7 @@ async function runLoop<T extends AnyTypes>(
   const interrupted =
     state.interrupted || options.abortSignal?.aborted === true;
 
-  const parts: DocumentPart[] = cardParts();
+  const parts: ChatPart[] = cardParts();
   if (interrupted) {
     // Whatever text arrived before the break is kept and marked `error`: it is
     // a fragment, and a fragment presented as the answer is worse than none.
@@ -373,7 +373,7 @@ export function continueHostTurn<T extends AnyTypes>(
 ): Promise<HostTurnResult> {
   const { claimed, resolved, ...rest } = options;
   const { messages } = options.kit.resume(claimed, resolved.result);
-  const earned: DocumentPart[] =
+  const earned: ChatPart[] =
     resolved.card === undefined
       ? []
       : [

@@ -8,7 +8,7 @@
  * `apps/api` — the one place allowed to see both — pins them together with a
  * conformance test. One drifting field fails that test rather than a screen.
  *
- * Two halves live here. The document and pause schemas are the protocol, and
+ * Two halves live here. The window and pause schemas are the protocol, and
  * would be identical for any product. The prompt schemas below them are this
  * product's vocabulary: what a question *is*. The API imports those instead of
  * declaring its own, so a picker's cap is one number, not two.
@@ -102,16 +102,33 @@ export type AssistantChatMessage = z.output<typeof assistantChatMessageSchema>;
  * answered question simply stops appearing here, so a client needs no local
  * memory of what it has already answered.
  */
-export const assistantChatDocumentSchema = z.strictObject({
+export const assistantChatWindowSchema = z.strictObject({
   conversationId: z.uuid(),
   messages: z.array(assistantChatMessageSchema),
   olderCursor: z.string().min(1).nullable(),
   openPause: assistantPauseSchema.nullable(),
 });
 
-export type AssistantChatDocument = z.output<
-  typeof assistantChatDocumentSchema
->;
+export type AssistantChatWindow = z.output<typeof assistantChatWindowSchema>;
+
+declare const assistantChatThreadBrand: unique symbol;
+
+/**
+ * What a client holds: every window it was sent, joined into one conversation.
+ *
+ * The same fields as a window, and deliberately not assignable from one. A
+ * thread is only ever made by `mergeAssistantChatWindow`, so a window cannot be
+ * passed where the thread is expected — the two arguments of a merge cannot be
+ * swapped without the compiler saying so.
+ */
+export type AssistantChatThread = AssistantChatWindow & {
+  readonly [assistantChatThreadBrand]: true;
+};
+
+/** The one place a window becomes a thread: a merge that took it whole. */
+function asThread(window: AssistantChatWindow): AssistantChatThread {
+  return window as AssistantChatThread;
+}
 
 /**
  * The envelope a reader accepts: the window's own fields, with each message
@@ -120,7 +137,7 @@ export type AssistantChatDocument = z.output<
  * get to choose when it is updated.
  */
 const assistantChatWindowEnvelopeSchema = z.object({
-  ...assistantChatDocumentSchema.shape,
+  ...assistantChatWindowSchema.shape,
   messages: z.array(z.unknown()),
 });
 
@@ -138,7 +155,7 @@ const assistantChatWindowEnvelopeSchema = z.object({
  */
 export function parseAssistantChatWindow(
   value: unknown,
-): AssistantChatDocument | null {
+): AssistantChatWindow | null {
   const envelope = assistantChatWindowEnvelopeSchema.safeParse(value);
   if (!envelope.success) {
     return null;
@@ -184,10 +201,10 @@ export type AssistantChatWindowSource =
  * - The open question always comes from the latest window.
  */
 export function mergeAssistantChatWindow(
-  held: AssistantChatDocument | null,
-  incoming: AssistantChatDocument,
+  held: AssistantChatThread | null,
+  incoming: AssistantChatWindow,
   source: AssistantChatWindowSource,
-): AssistantChatDocument | null {
+): AssistantChatThread | null {
   if (source.kind === "older") {
     if (
       held === null ||
@@ -213,19 +230,19 @@ export function mergeAssistantChatWindow(
     held.conversationId !== incoming.conversationId ||
     first === undefined
   ) {
-    return incoming;
+    return asThread(incoming);
   }
   const at = held.messages.findIndex(
     (message) => message.messageId === first.messageId,
   );
   if (at === -1) {
-    return incoming;
+    return asThread(incoming);
   }
-  return {
+  return asThread({
     ...incoming,
     messages: [...held.messages.slice(0, at), ...incoming.messages],
     olderCursor: held.olderCursor,
-  };
+  });
 }
 
 /* ------------------------------------------------------------------ *

@@ -366,18 +366,18 @@ describe("another owner's pause reads as absent", () => {
     expect(absent.kind).toBe("gone");
   });
 
-  it("peek and document read under a different bind see no pause", async () => {
+  it("peek and a read of the messages under a different bind see no pause", async () => {
     const { kit } = newKit();
     await openPick(kit);
 
     expect(
       await kit.peek({ conversationId: CONVERSATION, bind: OTHER }),
     ).toBeNull();
-    const document = await kit.document.read({
+    const window = await kit.messages.read({
       conversationId: CONVERSATION,
       bind: OTHER,
     });
-    expect(document.openPause).toBeNull();
+    expect(window.openPause).toBeNull();
   });
 
   it("the owner still sees it", async () => {

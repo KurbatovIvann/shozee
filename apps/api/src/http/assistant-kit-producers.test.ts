@@ -98,20 +98,20 @@ describe("every declared kind has something that produces it", () => {
   });
 
   /**
-   * The ways a turn may change the stored document. There is one: "the same
+   * The ways a turn may change the stored messages. There is one: "the same
    * card id is an update" is a rule of `append`, not a second kind a producer
    * has to remember to choose — that second kind was produced by nobody, and a
    * record showed twice (SHO-551). A new kind here needs a producer too.
    */
-  it("document write kinds are produced by something, or named as unwired", () => {
-    const declaration = readFileSync(path.join(kitSrc, "document.ts"), "utf8");
+  it("message write kinds are produced by something, or named as unwired", () => {
+    const declaration = readFileSync(path.join(kitSrc, "messages.ts"), "utf8");
     const kinds = [
       ...declaration.matchAll(/readonly kind:\s*"([a-z_]+)"/g),
     ].map((match) => match[1] ?? "");
     expect(kinds.toSorted()).toEqual(["append"]);
 
     const files = sourcesUnder(kitSrc).filter(
-      (file) => !file.endsWith(`${path.sep}document.ts`),
+      (file) => !file.endsWith(`${path.sep}messages.ts`),
     );
     const unwired = kinds.filter((kind) => !producedIn(files, kind));
 
@@ -128,7 +128,7 @@ describe("every declared kind has something that produces it", () => {
    * here rather than left to be read as a real debt.
    */
   it("carries no entry that is neither a real kind nor a named ticket", () => {
-    const declaration = readFileSync(path.join(kitSrc, "document.ts"), "utf8");
+    const declaration = readFileSync(path.join(kitSrc, "messages.ts"), "utf8");
     const known = new Set([
       ...Object.keys(assistantInteractionTypes),
       ...[...declaration.matchAll(/readonly kind:\s*"([a-z_]+)"/g)].map(

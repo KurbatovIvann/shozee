@@ -18,7 +18,7 @@ import { randomUUID } from "node:crypto";
 import {
   chatCursorSchema,
   runHostTurn,
-  type ChatDocument,
+  type ChatWindow,
 } from "@showzy/assistant-kit";
 import type { Context } from "hono";
 import { z } from "zod";
@@ -62,7 +62,7 @@ export const assistantKitChatBodySchema = z.strictObject({
  */
 export interface AssistantKitTurnOk {
   readonly status: "ok";
-  readonly document: ChatDocument;
+  readonly window: ChatWindow;
 }
 
 export async function handleAssistantKitChat(
@@ -100,7 +100,7 @@ export async function handleAssistantKitChat(
       409,
       {
         status: "interaction_open",
-        document: await kit.document.read(scope),
+        window: await kit.messages.read(scope),
       },
       requestId,
     );
@@ -131,7 +131,7 @@ export async function handleAssistantKitChat(
       if (!(await takeCommand(c, runtime, command))) {
         return json(
           200,
-          { status: "ok", document: await kit.document.read(scope) },
+          { status: "ok", window: await kit.messages.read(scope) },
           requestId,
         );
       }
@@ -142,10 +142,10 @@ export async function handleAssistantKitChat(
         { role: "user" as const, content: body.text },
       ];
 
-      // The person's own words go into the document before the model runs, so a
+      // The person's own words go into the transcript before the model runs, so a
       // failed turn still shows what was asked.
       const userMessageId = randomUUID();
-      const stamped = await kit.document.write(scope, {
+      const stamped = await kit.messages.write(scope, {
         kind: "append",
         messageId: userMessageId,
         role: "user",
@@ -199,7 +199,7 @@ export async function handleAssistantKitChat(
 
       const payload: AssistantKitTurnOk = {
         status: "ok",
-        document: await kit.document.read(scope),
+        window: await kit.messages.read(scope),
       };
       return json(200, payload, requestId);
     },
@@ -229,7 +229,7 @@ export async function handleAssistantKitMessages(
     return json(400, { error: { code: "VALIDATION" } }, requestId);
   }
 
-  // Ownership is enforced inside the package: a document belonging to someone
+  // Ownership is enforced inside the package: messages belonging to someone
   // else comes back empty, indistinguishable from a conversation that does not
   // exist. No check is needed here, and adding one would only create a way to
   // tell the two apart.
@@ -239,10 +239,10 @@ export async function handleAssistantKitMessages(
     requestId,
     clientIp: c.get("clientIp"),
   });
-  const document = await kit.document.read(
+  const window = await kit.messages.read(
     { conversationId: conversationId.data, bind: caller.bind },
     before === undefined ? {} : { before },
   );
 
-  return json(200, { status: "ok", document }, requestId);
+  return json(200, { status: "ok", window }, requestId);
 }
