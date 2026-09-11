@@ -193,6 +193,7 @@ function harness(options?: {
     // In-memory stores for every caller: this suite is about the handlers, and
     // the durable adapters have their own test against a real database.
     forCaller: () => ({ kit, history }),
+    staffCompany: () => Promise.resolve(COMPANY),
     model,
     tools: async () => {
       await options?.toolsGate;

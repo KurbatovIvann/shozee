@@ -81,6 +81,7 @@ function conversationWindow(options?: {
         role: "assistant",
         createdAt: "2026-09-09T10:00:00.000Z",
         parts,
+        revision: 1,
       },
     ],
     openPause: options?.openPause ?? null,
@@ -490,6 +491,7 @@ describe("useAssistantConversation", () => {
             role: "user",
             createdAt: "2026-09-09T10:01:00.000Z",
             parts: [{ kind: "text", text: "ще одне", status: "complete" }],
+            revision: 1,
           },
           ...conversationWindow({ text: "Готово." }).messages,
         ],
@@ -842,6 +844,7 @@ describe("a conversation longer than one window", () => {
       parts: [
         { kind: "text", text: `повідомлення ${String(n)}`, status: "complete" },
       ],
+      revision: 1,
     };
   }
 

@@ -44,7 +44,11 @@ function closeHttpServer(): Promise<void> {
 const shutdown = createProcessShutdown({
   logger,
   close: async () => {
-    await closeHttpServer();
+    // Stop accepting first, then end the event streams: the server's close
+    // waits for open connections, and a stream never ends on its own.
+    const httpClosed = closeHttpServer();
+    await booted.closeStreams();
+    await httpClosed;
     await booted.close();
   },
   flush: () => flushProcessObservability(),

@@ -673,6 +673,7 @@ describe("assistant staff conversation actions", () => {
   it("getStaffActor returns owner role with owner-all intact and stored employee permissions", async () => {
     const owner = await kit.invoke(getStaffActor, {});
     expect(owner.role).toBe("owner");
+    expect(owner.companyId).toBe(kitIdentities.companies.a);
     expect(owner.permissions).not.toContain("assistant:use");
     expect(staffHasPermission(owner, "assistant:use")).toBe(true);
     expect(staffHasPermission(owner, "orders.create")).toBe(true);

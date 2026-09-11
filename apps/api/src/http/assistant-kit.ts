@@ -25,6 +25,11 @@ import {
   handleAssistantKitAbandon,
   handleAssistantKitAnswer,
 } from "./assistant-kit-answer.js";
+import {
+  ASSISTANT_KIT_EVENTS_PATH,
+  handleAssistantKitEvents,
+  type AssistantKitEvents,
+} from "./assistant-kit-events.js";
 import { goneResponse, json } from "./assistant-kit-http.js";
 import {
   memoryAssistantKitBudget,
@@ -37,12 +42,13 @@ import type {
 } from "./assistant-kit-http.js";
 import { REQUEST_ID_HEADER, resolveRequestId } from "./request-id.js";
 
-export type { AssistantKitBudget };
+export type { AssistantKitBudget, AssistantKitEvents };
 
 export {
   ASSISTANT_KIT_ABANDON_PATH,
   ASSISTANT_KIT_ANSWER_PATH,
   ASSISTANT_KIT_CHAT_PATH,
+  ASSISTANT_KIT_EVENTS_PATH,
   ASSISTANT_KIT_MESSAGES_PATH,
 };
 
@@ -53,6 +59,8 @@ export function createAssistantKitApp(
    * stores, never no ceiling. `app.ts` always passes the real ones.
    */
   budget?: AssistantKitBudget,
+  /** The event stream (SHO-562). Absent, `GET /assistant/kit/events` is not mounted. */
+  events?: AssistantKitEvents,
 ): Hono<AssistantKitAppEnv> {
   const app = new Hono<AssistantKitAppEnv>();
   const spend =
@@ -113,6 +121,13 @@ export function createAssistantKitApp(
   app.get(ASSISTANT_KIT_MESSAGES_PATH, (c) =>
     handleAssistantKitMessages(c, runtime),
   );
+  // A stream is not a turn: no spend guard, no turn slot. It has its own
+  // per-person limit inside.
+  if (events !== undefined) {
+    app.get(ASSISTANT_KIT_EVENTS_PATH, (c) =>
+      handleAssistantKitEvents(c, runtime, events),
+    );
+  }
 
   return app;
 }

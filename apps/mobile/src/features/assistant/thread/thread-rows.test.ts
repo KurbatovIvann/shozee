@@ -39,6 +39,7 @@ function message(
     role,
     createdAt: "2026-09-09T10:00:00.000Z",
     parts: [...parts],
+    revision: 1,
   };
 }
 

@@ -11,7 +11,11 @@
 import type { ToolResultPart } from "ai";
 import type { z } from "zod";
 
-import type { ChatMessage, MessageWrite } from "./messages.js";
+import type {
+  ChatMessage,
+  ChatWindowMessage,
+  MessageWrite,
+} from "./messages.js";
 import {
   appendParts,
   chatCursorSchema,
@@ -424,7 +428,7 @@ export function createAssistantKit<T extends AnyTypes>(
           };
         }
 
-        const messages: ChatMessage[] = [];
+        const messages: ChatWindowMessage[] = [];
         for (const record of page.records) {
           if (!chatMessageSchema.safeParse(record.message).success) {
             // One message this build cannot read costs that message, not the
@@ -437,7 +441,11 @@ export function createAssistantKit<T extends AnyTypes>(
           }
           // Validated, then returned as stored — a re-serialisation would make a
           // reload a second derivation of the message rather than the same one.
-          messages.push(record.message as ChatMessage);
+          // The revision is the store's, beside what was written, never in it.
+          messages.push({
+            ...(record.message as ChatMessage),
+            revision: record.revision,
+          });
         }
 
         return {

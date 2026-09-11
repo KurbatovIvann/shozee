@@ -61,6 +61,21 @@ export const chatMessageSchema = z.strictObject({
 export type ChatMessage = z.output<typeof chatMessageSchema>;
 
 /**
+ * A message as a window returns it: what was written, and the store's revision
+ * of it.
+ *
+ * The revision is not part of the written message — no write can set it — so
+ * it is attached on the way out rather than stored inside. A reader that holds
+ * two copies of one message, from two reads that crossed, keeps the higher.
+ */
+export const chatWindowMessageSchema = z.strictObject({
+  ...chatMessageSchema.shape,
+  revision: revisionSchema,
+});
+
+export type ChatWindowMessage = z.output<typeof chatWindowMessageSchema>;
+
+/**
  * A position in the log, as a client sees it: opaque. It is the stored sequence
  * number of the oldest message a read returned, and a read given it as
  * `before` returns the page that ends just before that message.
@@ -78,7 +93,7 @@ export const chatCursorSchema = z.string().regex(/^[1-9][0-9]{0,8}$/);
  */
 export const chatWindowSchema = z.strictObject({
   conversationId: z.uuid(),
-  messages: z.array(chatMessageSchema),
+  messages: z.array(chatWindowMessageSchema),
   olderCursor: chatCursorSchema.nullable(),
   /** Present only while an interaction is open. Read from the pause store. */
   openPause: publicPauseSchema.nullable(),

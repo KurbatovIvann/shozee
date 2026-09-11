@@ -123,7 +123,9 @@ export function assistantKitIdempotencyKey(
   );
 }
 
-function aiRequest(context: AssistantToolContext) {
+function aiRequest(
+  context: Pick<AssistantToolContext, "requestId" | "clientIp">,
+) {
   return {
     requestId: context.requestId,
     correlationId: context.requestId,
@@ -133,7 +135,9 @@ function aiRequest(context: AssistantToolContext) {
   };
 }
 
-function staffPrincipal(context: AssistantToolContext) {
+function staffPrincipal(
+  context: Pick<AssistantToolContext, "userId" | "companySelector">,
+) {
   return {
     mode: "staff" as const,
     session: { userId: context.userId },
@@ -250,6 +254,20 @@ export function createAssistantRuntime(
 
     model: options.model,
     resolveAnswer: createResolveAnswer({ runConfirmed }),
+
+    /**
+     * Read through the staff context as the caller, so the answer is the
+     * company core verified membership in — never the selector as sent.
+     */
+    async staffCompany(caller) {
+      const actor = await executeAction(options.pipeline, {
+        action: getStaffActor,
+        input: {},
+        request: aiRequest(caller),
+        principal: staffPrincipal(caller),
+      });
+      return actor.companyId;
+    },
 
     /**
      * The system prompt is not optional decoration: it is the half of the

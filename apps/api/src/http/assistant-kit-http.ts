@@ -165,6 +165,8 @@ export interface AssistantKitRuntime extends AssistantRuntime {
     readonly api: {
       readonly getSession: (args: {
         headers: Headers;
+        /** Set by the event stream's re-check; see `AuthInstance`. */
+        query?: { disableRefresh?: boolean; disableCookieCache?: boolean };
       }) => Promise<{ user: { id: string } } | null>;
     };
   };

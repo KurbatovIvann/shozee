@@ -80,11 +80,17 @@ export const assistantChatPartSchema = z.discriminatedUnion("kind", [
 
 export type AssistantChatPart = z.output<typeof assistantChatPartSchema>;
 
+/**
+ * `revision` is the server's count of writes to this message: 1 when stored,
+ * raised by one on every update. A client that holds two copies of one message
+ * — a window and an event that crossed it — keeps the higher (ADR-0039).
+ */
 export const assistantChatMessageSchema = z.strictObject({
   messageId: z.uuid(),
   role: z.enum(["user", "assistant"]),
   createdAt: z.string().min(1),
   parts: z.array(assistantChatPartSchema),
+  revision: z.number().int().positive(),
 });
 
 export type AssistantChatMessage = z.output<typeof assistantChatMessageSchema>;

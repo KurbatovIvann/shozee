@@ -27,6 +27,7 @@ function message(n: number): AssistantChatMessage {
     role: n % 2 === 1 ? "user" : "assistant",
     createdAt: "2026-09-10T10:00:00.000Z",
     parts: [{ kind: "text", text: `message ${String(n)}`, status: "complete" }],
+    revision: 1,
   };
 }
 

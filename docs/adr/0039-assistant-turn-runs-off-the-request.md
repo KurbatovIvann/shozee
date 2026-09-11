@@ -233,9 +233,16 @@ Starting values (policy, changed with a proving test):
 - **The API becomes a producer.** It gains BullMQ as a dependency, for the
   `Queue` only; it never processes jobs. Both processes gain a connection to
   the queue Redis, configured separately from `REDIS_URL` (SHO-561, SHO-563).
-- **The message wire grows two additive fields:** a `revision` on every
-  message and the text status `interrupted`. Both are additive so an older
-  client keeps parsing; the strict wire test pins them.
+- **The message wire grows two fields:** a `revision` on every message
+  (SHO-562) and the text status `interrupted` (SHO-561, SHO-563); the strict
+  wire test pins them. *(Amended 2026-09-11, SHO-562: an earlier wording
+  called both additive, so that an older client keeps parsing. They are not:
+  the client schema is strict. A client build that predates `revision` drops
+  every message, because every message carries it as an unknown key, and so
+  shows an empty thread. A build that predates `interrupted` drops each
+  message whose text part carries that unknown status. That is accepted while
+  no production client exists (root `AGENTS.md`, "No production yet"). Once
+  one exists, a wire change must be one an older build tolerates.)*
 - **Realtime and push are new.** SSE is the system's first realtime transport,
   and it is authorized exactly like the HTTP routes. Push adds a device-token
   store, which is personal data.
