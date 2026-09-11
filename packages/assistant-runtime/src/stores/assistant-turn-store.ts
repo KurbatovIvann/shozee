@@ -44,31 +44,26 @@ import {
 } from "./caller.js";
 
 /**
- * The refusals core raises before anything commits. Each is thrown from
- * validation, authorization or a handler inside the execution transaction, and
- * a throw there rolls the transaction back, so the turn was certainly not
- * stored.
- */
-const ROLLED_BACK_CODES: ReadonlySet<CoreError["code"]> = new Set<
-  CoreError["code"]
->(["NOT_FOUND", "CONFLICT", "VALIDATION", "PERMISSION_DENIED"]);
-
-/**
  * Whether a failed accept proves that no turn row holds this request's
  * reservation, so the reservation may be given back.
  *
- * Only a refusal proves it. `INTERNAL` and anything that is not a core error
- * may arrive after COMMIT — a telemetry error once the transaction finished, a
- * connection lost between the server's commit and its acknowledgement. The row
- * would then hold the hold while the counter lost it, and the counter would
- * sit below real spend. Failing closed instead strands at most one turn's
- * reservation until the Kyiv day ends.
+ * Every core code except `INTERNAL` is raised before the execution transaction
+ * opens (validation, rate limit, preflight, the confirmation and idempotency
+ * gates) or inside it, where a throw rolls it back (authorization, a handler's
+ * refusal, a deadline): core.md §4. After COMMIT only `INTERNAL` can surface —
+ * a telemetry error, a connection lost between the server's commit and its
+ * acknowledgement — and anything that is not a core error is unknown too.
+ *
+ * Written as "not `INTERNAL`" rather than a list of codes, so a code core adds
+ * later releases by default instead of stranding reservations silently. An
+ * unknown error releases nothing: the row may hold the hold, and releasing
+ * would leave the counter below real spend.
  */
 export function acceptProvedRollback(error: unknown): boolean {
   if (error instanceof AssistantKitConversationGoneError) {
     return true;
   }
-  return error instanceof CoreError && ROLLED_BACK_CODES.has(error.code);
+  return error instanceof CoreError && error.code !== "INTERNAL";
 }
 
 /**
@@ -194,7 +189,7 @@ interface AcceptCommon {
    * Gives back the budget reservation this request made for the turn
    * (`releaseStaffAssistantBudgetHold`). The store calls it at most once, and
    * only when it knows no row holds this reservation: replayed, busy, wrong
-   * owner, or a refusal that rolled back (`acceptProvedRollback`). Never after
+   * owner, or a core refusal other than `INTERNAL` (`acceptProvedRollback`). Never after
    * `accepted` (the row holds the hold and the worker or the reconciler settles
    * it), and never after an unknown error, which may have followed COMMIT.
    * Must not throw; the budget guard's release never does.
@@ -378,11 +373,13 @@ export function createPostgresAssistantTurnStore(
         release = result.outcome !== "accepted";
         return result;
       } catch (error) {
-        // A refusal rolled the transaction back, so this reservation is on no
-        // row. An unknown error may have come after COMMIT; releasing then would
-        // leave the counter below what the stored turn holds, which lifts the
-        // cap instead of failing closed. Such a reservation is left to expire
-        // with its Kyiv day (at most one turn's hold).
+        // A core refusal (any code but INTERNAL) came before COMMIT, so this
+        // reservation is on no row. An unknown error may have come after COMMIT;
+        // releasing then would leave the counter below what the stored turn
+        // holds, which lifts the cap instead of failing closed. Such a
+        // reservation is left to expire with its Kyiv day: at most one turn's
+        // hold per failed attempt, so retries under the same command add up
+        // (SHO-563 must bound that).
         release = acceptProvedRollback(error);
         throw error;
       } finally {

@@ -9,10 +9,15 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  ConcurrentRetryError,
+  ConfirmationRequiredError,
   ConflictError,
   CoreInvariantError,
+  IdempotencyConflictError,
   NotFoundError,
   PermissionDeniedError,
+  RateLimitError,
+  TimeoutError,
   ValidationError,
 } from "@showzy/core/errors";
 import { pino } from "pino";
@@ -81,15 +86,26 @@ describe("a failed accept", () => {
   });
 
   /**
-   * The rule the store releases by. Only a refusal proves the transaction
-   * rolled back; an unknown error may have followed COMMIT.
+   * The rule the store releases by. Every core code but INTERNAL is raised
+   * before the transaction opens or inside one that rolls back — including the
+   * deadline and the rate limit, the common failures under load. Only INTERNAL
+   * or an unknown error may have followed COMMIT.
    */
-  it("proves a rollback only for a refusal", () => {
+  it("proves a rollback for every core refusal except INTERNAL", () => {
     for (const refusal of [
       new NotFoundError(),
       new ConflictError("taken"),
       new ValidationError([]),
       new PermissionDeniedError("no"),
+      new TimeoutError(),
+      new RateLimitError(60),
+      new ConcurrentRetryError(1),
+      new IdempotencyConflictError(),
+      new ConfirmationRequiredError({
+        challengeId: "challenge-1",
+        summary: "delete",
+        expiresAt: "2026-09-11T10:05:00.000Z",
+      }),
       new AssistantKitConversationGoneError(),
     ]) {
       expect(acceptProvedRollback(refusal), refusal.name).toBe(true);
