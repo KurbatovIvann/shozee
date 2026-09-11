@@ -34,7 +34,7 @@ import { companyCustomers } from "@showzy/db/schema/customers";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { createActionRegistry } from "../composition.js";
+import { createActionRegistry } from "../registry.js";
 import type { AssistantKitRuntime } from "./assistant-kit-http.js";
 import { createAssistantKitRuntime } from "./assistant-kit-runtime.js";
 

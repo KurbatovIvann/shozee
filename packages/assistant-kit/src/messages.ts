@@ -130,6 +130,13 @@ export type ChatWindow = z.output<typeof chatWindowSchema>;
  * Only the latest message can be written to. An id that names it merges into
  * it; any other id starts a new message, and one the log already holds further
  * back is refused rather than reopened.
+ *
+ * A `streaming` text part is a placeholder for the reply still being written.
+ * It stays the message's last part: parts added while it is there go in front
+ * of it, and a text part added replaces it where it stands. So a message stored
+ * before its turn ran — an empty `streaming` text — ends with exactly one text
+ * part, after the cards the turn wrote, carrying the status the turn ended
+ * with. A message that holds no streaming part is appended to as before.
  */
 export interface MessageWrite {
   readonly kind: "append";
@@ -154,19 +161,29 @@ export function appendParts(
 ): ChatPart[] {
   const parts = [...existing];
   for (const part of incoming) {
-    if (part.kind !== "card") {
-      parts.push(part);
-      continue;
-    }
-    const at = parts.findIndex(
-      (held) => held.kind === "card" && held.cardId === part.cardId,
+    const streaming = parts.findIndex(
+      (held) => held.kind === "text" && held.status === "streaming",
     );
-    const held = parts[at];
-    if (held?.kind !== "card") {
-      parts.push(part);
+    if (part.kind === "text" && streaming !== -1) {
+      parts[streaming] = part;
       continue;
     }
-    parts[at] = { ...part, revision: held.revision + 1 };
+    const at =
+      part.kind === "card"
+        ? parts.findIndex(
+            (held) => held.kind === "card" && held.cardId === part.cardId,
+          )
+        : -1;
+    const held = parts[at];
+    if (part.kind === "card" && held?.kind === "card") {
+      parts[at] = { ...part, revision: held.revision + 1 };
+      continue;
+    }
+    if (streaming === -1) {
+      parts.push(part);
+    } else {
+      parts.splice(streaming, 0, part);
+    }
   }
   return parts;
 }

@@ -39,6 +39,15 @@ test("showzy/import-boundaries", () => {
   tester.run("showzy/import-boundaries", importBoundariesRule, {
     valid: [
       {
+        filename: file("apps/worker/src/boot.ts"),
+        code: `
+          import { createActionRegistry } from "@showzy/api/registry";
+          import { registeredEventSubscriptions } from "@showzy/api/subscriptions";
+          import { createJobHost } from "./jobs.js";
+          import { createAssistantRuntime } from "@showzy/assistant-runtime";
+        `,
+      },
+      {
         filename: file("packages/modules/orders/actions/create.contract.ts"),
         code: `
           import { z } from "zod";
@@ -434,8 +443,31 @@ test("showzy/import-boundaries", () => {
       {
         filename: file("packages/ai-eval/src/run-turn.ts"),
         code: `import { createApiApp } from "@showzy/api";`,
-        errors: [{ messageId: "aiEvalLeaf" }],
+        errors: [{ messageId: "apiImport" }],
       },
+      ...[
+        `import { createApp } from "@showzy/api";`,
+        `import { buildContractCheckInput } from "@showzy/api/composition";`,
+        `import { bootApi } from "@showzy/api/src/boot";`,
+        `import { createApp } from "@showzy/api/src/http/app";`,
+        `import { buildContractCheckInput } from "../../api/src/composition.js";`,
+      ].map((code) => ({
+        filename: file("apps/worker/src/boot.ts"),
+        code,
+        errors: [{ messageId: "workerApi" }],
+      })),
+      ...[
+        "packages/assistant-runtime/src/x.ts",
+        "packages/modules/orders/src/x.ts",
+        "packages/ai/src/x.ts",
+        "packages/validation/src/x.ts",
+        "apps/web/src/x.ts",
+        "apps/mobile/src/x.ts",
+      ].map((importer) => ({
+        filename: file(importer),
+        code: `import { createActionRegistry } from "@showzy/api/registry";`,
+        errors: [{ messageId: "apiImport" }],
+      })),
       {
         filename: file("packages/ai-eval/src/run-turn.ts"),
         code: `import { sharedOrdersCopy } from "@showzy/copy/orders";`,
@@ -614,6 +646,16 @@ test("@showzy/validation runtime dependency is only zod (SHO-423)", () => {
     ),
   );
   assert.deepEqual(Object.keys(pkg.dependencies), ["zod"]);
+});
+
+test("@showzy/api exports only the worker's approved subpaths (SHO-279, SHO-569)", () => {
+  const pkg = JSON.parse(
+    readFileSync(path.join(repoRoot, "apps/api/package.json"), "utf8"),
+  );
+  assert.deepEqual(Object.keys(pkg.exports).sort(), [
+    "./registry",
+    "./subscriptions",
+  ]);
 });
 
 test("@showzy/copy has no runtime dependencies (SHO-414)", () => {

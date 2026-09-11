@@ -1,7 +1,8 @@
 /**
  * Process boot: load validated config, bind the files object store, open
- * Postgres + Redis, compose the action pipeline, start the BullMQ job
- * host, LISTEN on the outbox channel, start the loop.
+ * Postgres + Redis, compose the action pipeline and — when the assistant is
+ * mounted — the assistant turn processor, start the BullMQ job host, LISTEN
+ * on the outbox channel, start the loop.
  */
 import { randomUUID } from "node:crypto";
 
@@ -15,6 +16,7 @@ import {
 import { Redis } from "ioredis";
 import type { Logger } from "pino";
 
+import { composeAssistantTurns } from "./assistant.js";
 import { createJobHost, type JobHost } from "./jobs.js";
 import { createOutboxListener } from "./listen.js";
 import { createOutboxWorker, type WorkerLoop } from "./loop.js";
@@ -94,12 +96,28 @@ export async function bootWorker(
       confirmationStore: createRedisConfirmationStore(redis),
       ipHmacSecret: config.rateLimit.ipHmacSecret,
     });
+    // Mounted on the API's rule. The turn's pauses, budget and events use the
+    // shared Redis; only the queue is on the queue Redis (ADR-0039).
+    const assistantTurns = composeAssistantTurns({
+      ai: config.ai,
+      pipeline,
+      sharedRedis: redis,
+      logger,
+    });
     const jobHostOptions = {
       redisUrl: config.redis.url,
       db: db.db,
       logger,
       workerId,
       pipeline,
+      ...(assistantTurns !== undefined
+        ? {
+            assistant: {
+              redisUrl: config.queueRedis.url,
+              process: assistantTurns,
+            },
+          }
+        : {}),
       ...(options.cleanupIntervalMs !== undefined
         ? { cleanupIntervalMs: options.cleanupIntervalMs }
         : {}),

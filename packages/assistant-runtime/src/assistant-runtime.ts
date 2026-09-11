@@ -130,7 +130,8 @@ function aiRequest(
     requestId: context.requestId,
     correlationId: context.requestId,
     channel: ASSISTANT_INVOCATION_CHANNEL,
-    clientIp: context.clientIp,
+    // A worker-run turn has no request and so no address; nothing stands in.
+    ...(context.clientIp === undefined ? {} : { clientIp: context.clientIp }),
     aiTraceId: context.requestId,
   };
 }

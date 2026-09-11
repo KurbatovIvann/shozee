@@ -7,6 +7,7 @@
  * Module tasks copy these messages — do not weaken them without an ADR.
  */
 import { builtinModules } from "node:module";
+import path from "node:path";
 
 const NODE_BUILTINS = new Set([
   ...builtinModules,
@@ -56,6 +57,16 @@ const AI_EVAL_MODULE_PACKAGES = new Set([
 ]);
 
 const CLIENT_APPS = new Set(["mobile", "web"]);
+
+/**
+ * The only `@showzy/api` subpaths anything may import, and only `apps/worker`
+ * (SHO-279, SHO-569). The API's `exports` map is exactly these.
+ */
+const WORKER_API_SUBPATHS = new Set(["subscriptions", "registry"]);
+
+/** Platform packages whose own source is checked for `@showzy/api` imports. */
+const PLATFORM_SOURCE_RE =
+  /\/packages\/(assistant-kit|assistant-runtime|config|core|db|document-signing|module-kit|money)\//;
 
 /**
  * @param {string} filename
@@ -113,6 +124,14 @@ function classify(filename) {
   if (appMatch !== null && CLIENT_APPS.has(appMatch[1] ?? "")) {
     return { kind: "client-app" };
   }
+  const workerMatch = /^(.*\/apps\/worker\/)src\//.exec(path);
+  if (workerMatch !== null && workerMatch[1] !== undefined) {
+    return {
+      kind: "worker",
+      root: workerMatch[1],
+      dir: path.slice(0, path.lastIndexOf("/")),
+    };
+  }
   const moduleMatch = /\/packages\/modules\/([^/]+)\//.exec(path);
   if (moduleMatch !== null && moduleMatch[1] !== undefined) {
     return { kind: "module", module: moduleMatch[1] };
@@ -131,6 +150,9 @@ function classify(filename) {
     path.includes("/packages/ui/")
   ) {
     return { kind: "client-safe" };
+  }
+  if (PLATFORM_SOURCE_RE.test(path)) {
+    return { kind: "platform" };
   }
   return { kind: "skip" };
 }
@@ -160,7 +182,7 @@ function isTypeOnly(node) {
 }
 
 /**
- * @param {{ kind: string, module?: string }} from
+ * @param {{ kind: string, module?: string, root?: string, dir?: string }} from
  * @param {string} spec
  * @param {boolean} typeOnly
  * @returns {{ messageId: string, data?: Record<string, string> } | null}
@@ -183,6 +205,33 @@ function violation(from, spec, typeOnly) {
   }
 
   const pkg = showzyPackage(spec);
+
+  if (from.kind === "worker") {
+    if (isRelative(spec)) {
+      // A relative path out of apps/worker reaches another app's internals
+      // without its package name, so the subpath allowlist would never see it.
+      const target = path.posix.normalize(
+        path.posix.join(from.dir ?? "", spec),
+      );
+      return target.startsWith(from.root ?? "")
+        ? null
+        : { messageId: "workerApi" };
+    }
+    if (pkg !== null && pkg.name === "api") {
+      return WORKER_API_SUBPATHS.has(pkg.rest)
+        ? null
+        : { messageId: "workerApi" };
+    }
+    return null;
+  }
+
+  if (pkg !== null && pkg.name === "api") {
+    return { messageId: "apiImport" };
+  }
+
+  if (from.kind === "platform") {
+    return null;
+  }
 
   if (from.kind === "contract-client") {
     if (isRelative(spec)) {
@@ -466,6 +515,10 @@ export const importBoundariesRule = {
       aiEvalLeaf:
         "packages/ai-eval may import @showzy/ai, @showzy/core, @showzy/config, @showzy/contract, @showzy/validation, @showzy/db, and the catalog/companies/customers/orders/pricing barrels or */contract; it must not import apps, copy, or ui (SHO-412).",
       moduleAiEval: "Domain modules may not import @showzy/ai-eval (SHO-412).",
+      workerApi:
+        "apps/worker may import from the API only @showzy/api/subscriptions and @showzy/api/registry, and no relative path outside apps/worker — never the API's HTTP, auth, stores, boot, config or provider (SHO-279, SHO-569).",
+      apiImport:
+        "Only apps/worker may import @showzy/api, and only its /subscriptions and /registry subpaths. A package takes the registry by injection; importing the API would also make a package depend on an app (SHO-279, SHO-569).",
     },
   },
   create(context) {

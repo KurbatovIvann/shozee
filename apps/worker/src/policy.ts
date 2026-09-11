@@ -117,6 +117,27 @@ export const MAINTENANCE_SERVICE_NAME = "worker.maintenance";
  */
 export const MAINTENANCE_LOCK_DURATION_MS = 60_000;
 
+/**
+ * Turns one worker process runs at once (ADR-0039, starting values). The
+ * assistant queue — its name, prefix and job payload — is the contract in
+ * `@showzy/assistant-runtime`; these are the consumer's half of its policy.
+ */
+export const ASSISTANT_QUEUE_CONCURRENCY = 4;
+
+/**
+ * A turn's job lock (ADR-0039). BullMQ renews it at half this while the
+ * processor runs, so it bounds how long a dead worker's job looks alive, not
+ * how long a turn may take (the turn's own deadline is 180 s).
+ */
+export const ASSISTANT_LOCK_DURATION_MS = 60_000;
+
+/**
+ * A job whose worker disappeared fails instead of re-running (ADR-0039): a
+ * turn that has started is never run twice. Its turn stays `running` until the
+ * reconciler interrupts it past its deadline.
+ */
+export const ASSISTANT_MAX_STALLED_COUNT = 0;
+
 /** First LISTEN reconnect delay after a dropped connection. */
 export const LISTEN_RECONNECT_MIN_MS = 1_000;
 

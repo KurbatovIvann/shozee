@@ -38,7 +38,10 @@ used by `.github/workflows/ci.yml` (SHO-334 aggregator, SHO-387
   ADR-0039) may import it; mobile, web, and domain modules must not.
   `@showzy/assistant-runtime` (ADR-0039) is the server half of the assistant:
   `apps/api` and `apps/worker` may import it; mobile, web, domain modules, and
-  `packages/ai` must not. `packages/ai` itself may import `@showzy/core/*`,
+  `packages/ai` must not. `@showzy/api` is importable only from `apps/worker`,
+  and only as `@showzy/api/subscriptions` or `@showzy/api/registry`; a worker
+  relative import that leaves `apps/worker` is refused too (SHO-279,
+  SHO-569). `packages/ai` itself may import `@showzy/core/*`,
   `@showzy/contract`, `@showzy/validation/*`, and `@showzy/<module>/contract`;
   it must not import a module barrel or `@showzy/db`. `@showzy/module-kit` is a platform package (ADR-0031): module server code
   may import it. The contract-client layer currently

@@ -5,6 +5,7 @@
   "type": "module",
   "description": "HTTP transport composition: Hono app, better-auth, session/principal dispatch, oRPC at /rpc and OpenAPI REST at /api/v1 (fnd-T26).",
   "exports": {
+    "./registry": "./src/registry.ts",
     "./subscriptions": "./src/subscriptions.ts"
   },
   "scripts": {

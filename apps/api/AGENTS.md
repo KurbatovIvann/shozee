@@ -8,10 +8,17 @@ Auth policy parameters still live in `src/auth/` (fnd-T6).
 
 - `src/index.ts` — process entry. Calls `loadServerConfig()` once, boots,
   listens. An invalid environment crashes before anything serves.
-- `src/composition.ts` — the action/event composition root (fnd-G1 A2).
-  `createActionRegistry` is what `boot.ts` mounts; `buildContractCheckInput`
-  is what CI walks (`pnpm --filter @showzy/api contract:check`). Module
-  tasks register both barrels, events, call edges, schema-ownership rows,
+- `src/registry.ts` — `createActionRegistry` and nothing else: what
+  `boot.ts` mounts, what `buildContractCheckInput` checks, and what the worker
+  runs assistant turns against through the approved `@showzy/api/registry`
+  subpath (SHO-569). Module tasks register action barrels here. It imports
+  only `@showzy/core` and module barrels (`registry.test.ts`); never add a
+  relative import, config, a connection or a provider to it.
+- Package `exports` are exactly `./registry` and `./subscriptions`, and only
+  `apps/worker` may import them (`showzy/import-boundaries`).
+- `src/composition.ts` — the event composition root (fnd-G1 A2).
+  `buildContractCheckInput` is what CI walks (`pnpm --filter @showzy/api
+contract:check`). Module tasks register events, call edges, schema-ownership rows,
   `suiteCoverage` (`@showzy/<module>/suite-coverage`), and assistant-surface
   binding refs (SHO-471) here — never in `packages/core`.
   Register subscriptions in `src/subscriptions.ts`, the

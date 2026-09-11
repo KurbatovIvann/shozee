@@ -172,6 +172,76 @@ describe("partial text is never presented as the answer", () => {
     expect(texts.at(-1)?.status).toBe("complete");
   });
 
+  /**
+   * SHO-569. A turn that runs off the request writes into a message stored
+   * before it ran: an empty `streaming` text. Appended to, that message would
+   * end with two text parts — the stale placeholder still `streaming` — and the
+   * cards written meanwhile would sit after it.
+   */
+  it("keeps a streaming placeholder last, and replaces it with the text the turn ends with", async () => {
+    const kit = newKit();
+    const earned = { ...card(1, 1), cardId: "card-earned" };
+    const placeholder: ChatPart = {
+      kind: "text",
+      text: "",
+      status: "streaming",
+    };
+
+    await kit.messages.write(SCOPE, {
+      kind: "append",
+      messageId: MESSAGE,
+      role: "assistant",
+      parts: [earned, placeholder],
+    });
+    await kit.messages.write(SCOPE, {
+      kind: "append",
+      messageId: MESSAGE,
+      role: "assistant",
+      parts: [card(1, 3)],
+    });
+    await kit.messages.write(SCOPE, {
+      kind: "append",
+      messageId: MESSAGE,
+      role: "assistant",
+      parts: [{ kind: "text", text: "", status: "interrupted" }],
+    });
+
+    const message = (await kit.messages.read(SCOPE)).messages.find(
+      (candidate) => candidate.messageId === MESSAGE,
+    );
+    expect(message?.parts).toEqual([
+      earned,
+      card(1, 3),
+      { kind: "text", text: "", status: "interrupted" },
+    ]);
+  });
+
+  it("appends a text part to a message that holds no streaming part, as before", async () => {
+    const kit = newKit();
+
+    await kit.messages.write(SCOPE, {
+      kind: "append",
+      messageId: MESSAGE,
+      role: "assistant",
+      parts: [TEXT],
+    });
+    await kit.messages.write(SCOPE, {
+      kind: "append",
+      messageId: MESSAGE,
+      role: "assistant",
+      parts: [card(1, 3), TEXT],
+    });
+
+    const message = (await kit.messages.read(SCOPE)).messages.find(
+      (candidate) => candidate.messageId === MESSAGE,
+    );
+    expect(message?.parts.map((part) => part.kind)).toEqual([
+      "text",
+      "card",
+      "text",
+    ]);
+  });
+
   it("keeps a settled card when the text part ends in error", async () => {
     const kit = newKit();
     const failed: ChatPart = { kind: "text", text: "", status: "error" };

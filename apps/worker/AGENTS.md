@@ -86,18 +86,35 @@ wakeup, polling fallback, graceful drain, and the job host.
   `maxmemory-policy noeviction`): an accepted turn is a Postgres row, and the
   assistant reconciler rebuilds a lost job from it. Never put a durable job on
   the shared Redis. Any other durable one-shot job needs its own ticket and
-  its own recovery story — AOF alone is not one. The queue Redis connection
-  and its configuration arrive with SHO-561.
+  its own recovery story — AOF alone is not one. The queue Redis is
+  `config.queueRedis.url` (`REDIS_QUEUE_URL`); the job host opens its own
+  BullMQ connection to it only when the assistant is mounted (SHO-569). Worker-side queue policy (concurrency 4, lock 60 s,
+  `maxStalledCount: 0`) lives in `policy.ts`; the job options a turn is
+  enqueued with (`attempts: 1`, removed on completion and on failure) live
+  with the producer, `enqueueAssistantTurn` in `@showzy/assistant-runtime`.
+- The assistant processor is `createAssistantTurnProcessor` from
+  `@showzy/assistant-runtime`, composed in `src/assistant.ts` and mounted by
+  boot on the API's rule (`staffAssistantMount`: `AI_ASSISTANT_KIT` on and a
+  language model configured), with the same `assistant-kit path` log line.
+  The runtime runs against the worker pipeline and the API's registry
+  (`@showzy/api/registry`, `assertPaired()` at boot); its pauses, budget
+  counters and published events use the shared Redis, never the queue Redis.
+  The job host only parses the payload and hands it over. A payload that does
+  not parse is dropped, never retried. Whatever the processor throws is logged
+  and the job completes as `errored`: a thrown message would be stored as
+  `failedReason` on the queue Redis, and can name a person or a company.
 - The worker is an AI process for assistant turns (ADR-0039): it may import
   `@showzy/assistant-runtime` (and through it `@showzy/ai` and
   `@showzy/assistant-kit`), and from the API only the approved
-  `@showzy/api/subscriptions` subpath — never API runtime internals. The queue
-  name, prefix, payload schema and `jobId` derivation come from that package;
+  `@showzy/api/subscriptions` and `@showzy/api/registry` subpaths — never API
+  runtime internals, and nothing provider-related through the API
+  (`showzy/import-boundaries`). The queue name, prefix, payload schema and
+  `jobId` derivation come from the runtime package;
   `assistant-queue-contract.test.ts` pins its prefix to `BULLMQ_PREFIX`. The
-  payload is the turn's identity only: the processor reads the turn, the
-  session and the company from Postgres. Requirement for when infrastructure
-  exists: the stop grace period is at least the turn timeout, so a deploy
-  drains in-flight turns.
+  payload is the turn's identity only: the processor reads the turn and its
+  company from Postgres, and the actor is the turn's `user_id`. Requirement
+  for when infrastructure exists: the stop grace period is at least the turn
+  timeout, so a deploy drains in-flight turns.
 - OTP codes, tokens, and secrets never reach logs. Process loggers are
   `createProcessLogger` from `@showzy/config`. Sentry is initialized
   only when `SENTRY_DSN` is set; `beforeSend` scrubs the event. Do not

@@ -109,6 +109,15 @@ interface TurnState {
    * outcome a storage failure had when every write happened at the end.
    */
   failure: { readonly error: unknown } | undefined;
+  /**
+   * What ended the run first: the stream's own error or the abort signal.
+   *
+   * Recorded when it happens, not read at the end. A provider failure that a
+   * deadline abort overtakes before the end write is still a failure; reading
+   * the signal only at the end would store it as the caller's
+   * `abortedTextStatus` and offer to continue a turn that actually broke.
+   */
+  endedBy: "error" | "abort" | undefined;
 }
 
 function cardPart(card: CardRef): ChatPart {
@@ -270,7 +279,15 @@ async function runLoop<T extends AnyTypes>(
     stepMessages: [],
     interrupted: false,
     failure: undefined,
+    endedBy: options.abortSignal?.aborted === true ? "abort" : undefined,
   };
+  options.abortSignal?.addEventListener(
+    "abort",
+    () => {
+      state.endedBy ??= "abort";
+    },
+    { once: true },
+  );
 
   /** The cards as they were written, for the report. Never written again. */
   function cardParts(): ChatPart[] {
@@ -297,9 +314,12 @@ async function runLoop<T extends AnyTypes>(
     }
   }
 
-  /** The status a text part that ended early is stored with. */
+  /**
+   * The status a text part that ended early is stored with: the caller's
+   * `abortedTextStatus` only when the abort came before any error.
+   */
   function brokenStatus(): "error" | "interrupted" {
-    return options.abortSignal?.aborted === true
+    return state.endedBy === "abort"
       ? (options.abortedTextStatus ?? "error")
       : "error";
   }
@@ -352,6 +372,7 @@ async function runLoop<T extends AnyTypes>(
     },
     onError: () => {
       state.interrupted = true;
+      state.endedBy ??= "error";
     },
     ...(options.system !== undefined ? { system: options.system } : {}),
     ...(options.providerOptions !== undefined
