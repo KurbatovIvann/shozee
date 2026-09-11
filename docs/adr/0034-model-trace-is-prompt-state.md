@@ -1,6 +1,6 @@
 # ADR-0034: Model trace is prompt state, not a projection
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-0038](0038-assistant-is-a-stored-document.md)
 - **Date**: 2026-09-07
 - **Deciders**: Ivan Kurbatov (+ proposing agent: Shozik audit,
   Linear [SHO-504](https://linear.app/showzy-v2/issue/SHO-504) /

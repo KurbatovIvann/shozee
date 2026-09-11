@@ -246,69 +246,82 @@ describe("CI contract-check stage", () => {
     expect(inputRequiresFileIdOrFileIds(setProductImages)).toBe(true);
   });
 
-  it("SHO-510: assistant.getModelHistory is internal and not an AI tool", () => {
+  /**
+   * Same rule as SHO-510 and SHO-521, about the actions that replaced those.
+   * The conversation's stored state is read and written on the caller's behalf
+   * and must never be reachable as a tool: a model able to write the transcript
+   * it is being shown can rewrite what it was told it did.
+   */
+  it("the stored chat state is internal and not an AI tool", () => {
     const contracts = buildContractCheckInput().registry.contracts();
-    const history = contracts.find(
-      (contract) => contract.name === "assistant.getModelHistory",
-    );
-    expect(history).toBeDefined();
-    expect(history?.transport).toBe("internal");
-    expect(history?.aiExposure).toBe("internal");
-    expect(history?.risk).toBe("read");
-    expect(history?.principal).toBe("staff");
-    expect(staffExposedActionNames(contracts)).not.toContain(
+    const exposed = staffExposedActionNames(contracts);
+    for (const [name, risk] of [
+      ["assistant.readChatState", "read"],
+      ["assistant.writeChatState", "write"],
+      ["assistant.readChatMessages", "read"],
+      ["assistant.insertChatMessage", "write"],
+      ["assistant.updateChatMessage", "write"],
+    ] as const) {
+      const contract = contracts.find((entry) => entry.name === name);
+      expect(contract, name).toBeDefined();
+      expect(contract?.transport).toBe("internal");
+      expect(contract?.aiExposure).toBe("internal");
+      expect(contract?.risk).toBe(risk);
+      expect(contract?.principal).toBe("staff");
+      expect(exposed).not.toContain(name);
+    }
+    // And the actions they replaced are gone rather than merely unexposed.
+    for (const gone of [
       "assistant.getModelHistory",
-    );
-  });
-
-  it("SHO-521: assistant.checkpointAssistantTurn is internal and not an AI tool", () => {
-    const contracts = buildContractCheckInput().registry.contracts();
-    const checkpoint = contracts.find(
-      (contract) => contract.name === "assistant.checkpointAssistantTurn",
-    );
-    expect(checkpoint).toBeDefined();
-    expect(checkpoint?.transport).toBe("internal");
-    expect(checkpoint?.aiExposure).toBe("internal");
-    expect(checkpoint?.risk).toBe("write");
-    expect(checkpoint?.principal).toBe("staff");
-    expect(staffExposedActionNames(contracts)).not.toContain(
       "assistant.checkpointAssistantTurn",
-    );
+      "assistant.appendUserMessage",
+      "assistant.recordAssistantTurn",
+      "assistant.getConversation",
+    ]) {
+      expect(
+        contracts.map((entry) => entry.name),
+        gone,
+      ).not.toContain(gone);
+    }
   });
 
-  it("SHO-522: confirm, abandon, and pending GET are HTTP, not registry actions", () => {
+  /**
+   * Answering a question is HTTP, not a registry action.
+   *
+   * Same rule as SHO-522, now about the routes that replaced those: an action
+   * would put the interaction protocol into the tool surface the model sees,
+   * which is how a model ends up able to answer its own question.
+   */
+  it("answering and abandoning an interaction are HTTP, not registry actions", () => {
     const contracts = buildContractCheckInput().registry.contracts();
     const names = contracts.map((contract) => contract.name);
-    expect(names).not.toContain("assistant.confirm");
-    expect(names).not.toContain("assistant.abandon");
-    expect(names).not.toContain("assistant.pending");
-    expect(names).not.toContain("assistant.peekPending");
+    for (const gone of [
+      "assistant.confirm",
+      "assistant.abandon",
+      "assistant.pending",
+      "assistant.peekPending",
+      "assistant.answer",
+    ]) {
+      expect(names).not.toContain(gone);
+    }
     expect(staffExposedActionNames(contracts)).not.toContain("pending_replace");
     expect(STAFF_EXPOSED_ACTION_ALLOWLIST).not.toContain("pending_replace");
-    const hostSrc = readFileSync(
-      new URL("./http/assistant-host.ts", import.meta.url),
+
+    const kitSrc = readFileSync(
+      new URL("./http/assistant-kit.ts", import.meta.url),
       "utf8",
     );
-    const replaceSrc = readFileSync(
-      new URL(
-        "../../../packages/ai/src/host-tools/pending-replace.ts",
-        import.meta.url,
-      ),
-      "utf8",
-    );
-    const appSrc = readFileSync(
-      new URL("./http/app.ts", import.meta.url),
-      "utf8",
-    );
-    expect(hostSrc).toContain('"/assistant/confirm"');
-    expect(hostSrc).toContain('"/assistant/pending/abandon"');
-    expect(hostSrc).not.toMatch(/implementAction\s*\(/);
-    expect(replaceSrc).toContain("createPendingReplaceTool");
-    expect(replaceSrc).not.toMatch(/implementAction\s*\(/);
-    expect(replaceSrc).not.toMatch(/defineActionContract\s*\(/);
-    expect(appSrc).toContain("ASSISTANT_CONFIRM_PATH");
-    expect(appSrc).toContain("ASSISTANT_PENDING_ABANDON_PATH");
-    expect(appSrc).not.toContain('"/assistant/host/chat"');
+    expect(kitSrc).toContain("ASSISTANT_KIT_ANSWER_PATH");
+    expect(kitSrc).toContain("ASSISTANT_KIT_ABANDON_PATH");
+    expect(kitSrc).not.toMatch(/implementAction\s*\(/);
+
+    // The stored chat state is the exception, and deliberately so: it is the
+    // conversation's own data, and it goes through the module that owns it.
+    expect(names).toContain("assistant.readChatState");
+    expect(names).toContain("assistant.writeChatState");
+    expect(names).toContain("assistant.readChatMessages");
+    expect(names).toContain("assistant.insertChatMessage");
+    expect(names).toContain("assistant.updateChatMessage");
   });
 
   it("SHO-527/SHO-534/SHO-535: search.query is staff/client/exposed with companies:view; matcher callees are internal reads; fan-out and prefix edges", () => {

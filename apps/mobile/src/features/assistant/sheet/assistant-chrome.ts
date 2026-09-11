@@ -15,14 +15,16 @@ export const SHOZIK_EMPTY_POSE_SIZE = 72;
 /** Dig pose in the in-thread wait chip. Optical, not a hit target. */
 export const SHOZIK_WAIT_POSE_SIZE = 32;
 
+/**
+ * One input, not two. `hasInFlightTools` existed alongside `thinking` because the
+ * old path streamed a tool timeline and could be mid-turn without being mid-
+ * request. The stored log holds only settled messages, so "a request is in
+ * flight" is the whole of it.
+ */
 export function assistantShozikPose(input: {
   readonly thinking: boolean;
-  readonly hasInFlightTools: boolean;
 }): AssistantShozikPose {
-  if (input.thinking || input.hasInFlightTools) {
-    return "dig";
-  }
-  return "sit";
+  return input.thinking ? "dig" : "sit";
 }
 
 export function assistantComposerSendVisible(input: string): boolean {

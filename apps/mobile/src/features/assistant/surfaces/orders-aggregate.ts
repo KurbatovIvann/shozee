@@ -6,13 +6,10 @@
  */
 import {
   isAssistantOrdersAggregateGroupBy,
-  isAssistantSurfaceResultOutput,
   isRecord,
-  parseOrdersAggregateSurface as parseOrdersAggregateData,
   assistantSurfaceHandoffHref,
   ORDERS_AGGREGATE_PROMPT_LINE,
   ORDERS_AGGREGATE_SURFACE_TOOLS,
-  ORDERS_LIST_COUNTS_TOOL,
   type AssistantOrdersAggregateData,
   type AssistantOrdersAggregateExtraBucketData,
   type AssistantOrdersAggregateGroupBy,
@@ -31,15 +28,12 @@ import {
   type OrderLifecycleStatus,
   type OrderStatusTone,
 } from "../../orders/shared/order-status";
-import type { AssistantChatPart } from "../shared/confirmation-presenter";
-import { toolNameFromPart } from "../shared/turn-timeline";
 import type {
   AssistantAggregateSectionView,
   AssistantAggregateView,
 } from "./aggregate";
 import type { AssistantCollectionRowView } from "./collection";
 import {
-  assistantSurfaceToolResultsFromParts,
   formatQuantityLabel,
   localizeCustomerName,
   moneyLabels,
@@ -124,24 +118,6 @@ function parsePeriodLabel(
     return to;
   }
   return null;
-}
-
-function lastCountsInput(parts: readonly AssistantChatPart[]): unknown {
-  let found: unknown;
-  for (const part of parts) {
-    const toolName = toolNameFromPart(part);
-    if (toolName !== ORDERS_LIST_COUNTS_TOOL) {
-      continue;
-    }
-    if (part.state !== "output-available") {
-      continue;
-    }
-    if (!isAssistantSurfaceResultOutput(part.output)) {
-      continue;
-    }
-    found = part.input;
-  }
-  return found;
 }
 
 function localizeStatusBuckets(
@@ -327,21 +303,4 @@ export function localizeOrdersAggregateCard(
       extraBuckets,
     }),
   };
-}
-
-/**
- * Counts-only aggregate. Compose must not call this when a list page is
- * already on the turn.
- */
-export function parseOrdersAggregateSurface(
-  parts: readonly AssistantChatPart[],
-  locale: Locale,
-): AssistantOrdersAggregateCardView | null {
-  const data = parseOrdersAggregateData(
-    assistantSurfaceToolResultsFromParts(parts),
-  );
-  if (data === null) {
-    return null;
-  }
-  return localizeOrdersAggregateCard(data, locale, lastCountsInput(parts));
 }

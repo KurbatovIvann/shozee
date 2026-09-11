@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  appendUserMessageContract,
   createConversationContract,
-  getConversationContract,
   listConversationsContract,
 } from "@showzy/assistant/contract";
 import {
@@ -109,8 +107,6 @@ describe("client composition", () => {
       assistant: {
         createConversation: createConversationContract,
         listConversations: listConversationsContract,
-        getConversation: getConversationContract,
-        appendUserMessage: appendUserMessageContract,
       },
       catalog: {
         createProduct: createProductContract,
@@ -347,14 +343,30 @@ describe("client composition", () => {
     expect(contractModules.documents).not.toHaveProperty("searchMatches");
     expect(contractRouter.assistant.createConversation).toBeDefined();
     expect(contractRouter.assistant.listConversations).toBeDefined();
-    expect(contractRouter.assistant.getConversation).toBeDefined();
-    expect(contractRouter.assistant.appendUserMessage).toBeDefined();
-    expect(contractModules.assistant).not.toHaveProperty("recordAssistantTurn");
-    expect(contractModules.assistant).not.toHaveProperty("getStaffActor");
-    expect(contractModules.assistant).not.toHaveProperty("getModelHistory");
-    expect(contractModules.assistant).not.toHaveProperty(
+    // The client surface is identity only: which conversation this is. Its
+    // contents are read and written by the assistant routes, not over `/rpc`
+    // (ADR-0038).
+    for (const gone of [
+      "getConversation",
+      "appendUserMessage",
+      "recordAssistantTurn",
+      "getModelHistory",
       "checkpointAssistantTurn",
-    );
+    ]) {
+      expect(contractModules.assistant, gone).not.toHaveProperty(gone);
+    }
+    // These exist, and are `transport: "internal"`: the runtime calls them as
+    // the person, and no client can.
+    for (const internal of [
+      "getStaffActor",
+      "readChatState",
+      "writeChatState",
+      "readChatMessages",
+      "insertChatMessage",
+      "updateChatMessage",
+    ]) {
+      expect(contractModules.assistant, internal).not.toHaveProperty(internal);
+    }
   });
 
   it("keeps assistant persistence actions off the AI tool manifest", () => {
@@ -362,13 +374,9 @@ describe("client composition", () => {
       deriveAiToolSources([
         createConversationContract,
         listConversationsContract,
-        getConversationContract,
-        appendUserMessageContract,
       ]).map((contract) => contract.name),
     ).toEqual([]);
     expect(createConversationContract.aiExposure).toBe("internal");
     expect(listConversationsContract.aiExposure).toBe("internal");
-    expect(getConversationContract.aiExposure).toBe("internal");
-    expect(appendUserMessageContract.aiExposure).toBe("internal");
   });
 });

@@ -128,8 +128,7 @@ describe("OpenAPI generation", () => {
     const json = JSON.stringify(await generateOpenApiDocument());
     expect(json).toContain("/assistant/createConversation");
     expect(json).toContain("/assistant/listConversations");
-    expect(json).toContain("/assistant/getConversation");
-    expect(json).toContain("/assistant/appendUserMessage");
+
     expect(json).not.toContain("recordAssistantTurn");
     expect(json).not.toContain("getStaffActor");
     expect(json).not.toContain("getModelHistory");

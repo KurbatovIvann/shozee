@@ -115,6 +115,16 @@ export type AssistantCopy = {
   readonly choiceRetry: string;
   readonly choiceSelecting: string;
   readonly waitLabel: string;
+  /**
+   * Shown under a turn that ended before the assistant answered — the network
+   * dropped, or the provider broke mid-reply.
+   *
+   * It says the work stands, because it does: anything a tool committed is in
+   * the cards above this line. Without that sentence a person who sees a card
+   * and no reply has no way to know whether the order was created, and asking
+   * again is how one order becomes two.
+   */
+  readonly turnInterrupted: string;
   readonly waitIntervalMs: number;
   readonly waitLines: readonly [string, string, string, string, string];
   readonly jobs: AssistantJobsCopy;
@@ -128,6 +138,14 @@ export type AssistantCopy = {
     readonly unauthenticated: string;
     readonly notConfigured: string;
     readonly rateLimited: string;
+    /** Another device is mid-turn on this conversation. Nothing was attempted. */
+    readonly turnBusy: string;
+    /**
+     * A send refused because a question is still open. The card does not change
+     * and the draft goes back into the field, so this is the only thing on screen
+     * that says why. Names the card's own way out (`dismissLabel`).
+     */
+    readonly questionOpen: string;
   };
 };
 
@@ -239,6 +257,7 @@ const assistantEn: AssistantCopy = {
   choiceRetry: "Continue",
   choiceSelecting: "Selecting…",
   waitLabel: "Shozik is thinking",
+  turnInterrupted: "The reply was cut short. Anything shown above was saved.",
   waitIntervalMs: 2000,
   waitLines: [
     "Digging through the data",
@@ -291,6 +310,8 @@ const assistantEn: AssistantCopy = {
     unauthenticated: "Sign in again to continue.",
     notConfigured: "The assistant is not configured.",
     rateLimited: "Too many requests. Try again later.",
+    turnBusy: "Shozik is busy with another request. Try again in a moment.",
+    questionOpen: "Answer the question above or cancel it first.",
   },
 };
 
@@ -314,6 +335,7 @@ const assistantUk: AssistantCopy = {
   choiceRetry: "Продовжити",
   choiceSelecting: "Обираю…",
   waitLabel: "Шозік думає",
+  turnInterrupted: "Відповідь обірвалася. Те, що вище, вже збережено.",
   waitIntervalMs: 2000,
   waitLines: [
     "Копаюсь у даних",
@@ -368,6 +390,8 @@ const assistantUk: AssistantCopy = {
     unauthenticated: "Увійди знову, щоб продовжити.",
     notConfigured: "Асистент не налаштований.",
     rateLimited: "Забагато запитів. Спробуй пізніше.",
+    turnBusy: "Шозік зараз зайнятий іншим запитом. Спробуй за мить.",
+    questionOpen: "Спершу дай відповідь на питання вище або скасуй його.",
   },
 };
 

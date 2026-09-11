@@ -1,6 +1,6 @@
 # ADR-0035: One pending-interaction protocol; confirmation resumes without a model call
 
-- **Status**: Accepted (superseded in part by
+- **Status**: Superseded by [ADR-0038](0038-assistant-is-a-stored-document.md)
   [ADR-0037](0037-assistant-host-is-one-tool-loop.md))
 - **Date**: 2026-09-07
 - **Deciders**: Ivan Kurbatov (+ proposing agent: Shozik audit,

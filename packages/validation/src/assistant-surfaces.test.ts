@@ -22,8 +22,8 @@ import {
   assistantAggregateSummary,
   assistantCollectionDescriptor,
   assistantSurfaceHandoffHref,
+  assistantSurfaceSlot,
   assistantSurfacesFromToolResults,
-  hydratableAssistantActionNames,
   isAssistantSurfaceResultOutput,
   parseCustomersListSurface,
   parseOrderEntitySurfaces,
@@ -33,7 +33,6 @@ import {
   resolveAssistantSurfaceDestination,
   staffAssistantPresentationEnvelopeSchema,
   staffAssistantPresentationEnvelopesFromToolResults,
-  unrestorableAssistantActionNames,
   unwrapToolOutput,
   type AssistantAggregateDescriptor,
   type AssistantCollectionDescriptor,
@@ -243,7 +242,6 @@ describe("ASSISTANT_SURFACE_REGISTRY integrity", () => {
       version: 1,
       toolNames: ["orders_list_page"],
       actionNames: ["orders.list"],
-      hydratable: false,
       promptLine: "fixture",
       parse: () => null,
     };
@@ -611,93 +609,6 @@ describe("assistantSurfacesFromToolResults compose", () => {
       "order-entity",
       "order-entity",
     ]);
-  });
-});
-
-function fixtureDescriptor(args: {
-  readonly kind: AssistantSurfaceDescriptor["kind"];
-  readonly actionNames: readonly string[];
-  readonly hydratable: boolean;
-  readonly destination: AssistantSurfaceDestinationDeclaration;
-}): AssistantSurfaceDescriptor {
-  return {
-    kind: args.kind,
-    version: 1,
-    toolNames: [],
-    actionNames: args.actionNames,
-    hydratable: args.hydratable,
-    promptLine: "fixture",
-    destination: args.destination,
-    parse: () => null,
-  };
-}
-
-describe("hydration flags", () => {
-  it("derives hydratable actions from the registry and does not restore lists", () => {
-    expect([...hydratableAssistantActionNames()].sort()).toEqual([
-      "orders.create",
-      "orders.get",
-    ]);
-    expect([...unrestorableAssistantActionNames()].sort()).toEqual([
-      "customers.listCustomers",
-      "orders.list",
-      "search.query",
-    ]);
-    const list = ASSISTANT_SURFACE_REGISTRY.find(
-      (entry) => entry.kind === "orders-list",
-    );
-    const aggregate = ASSISTANT_SURFACE_REGISTRY.find(
-      (entry) => entry.kind === "orders-aggregate",
-    );
-    const entity = ASSISTANT_SURFACE_REGISTRY.find(
-      (entry) => entry.kind === "order-entity",
-    );
-    const customers = ASSISTANT_SURFACE_REGISTRY.find(
-      (entry) => entry.kind === "customers-list",
-    );
-    const search = ASSISTANT_SURFACE_REGISTRY.find(
-      (entry) => entry.kind === "search-results",
-    );
-    expect(list?.hydratable).toBe(false);
-    expect(aggregate?.hydratable).toBe(false);
-    expect(entity?.hydratable).toBe(true);
-    expect(customers?.hydratable).toBe(false);
-    expect(customers?.destination).toEqual({ kind: "screen" });
-    expect(search?.hydratable).toBe(false);
-    expect(search?.destination).toEqual({ kind: "terminal" });
-    expect(search?.actionNames).toEqual(["search.query"]);
-    expect(search?.toolNames).toEqual(
-      expect.arrayContaining(["search_query", "search.query"]),
-    );
-  });
-
-  it("recognises every unrestorable action name in a fixture registry (SHO-461)", () => {
-    const fixtureRegistry: readonly AssistantSurfaceDescriptor[] = [
-      fixtureDescriptor({
-        kind: "orders-list",
-        actionNames: ["orders.list"],
-        hydratable: false,
-        destination: { kind: "screen" },
-      }),
-      fixtureDescriptor({
-        kind: "orders-aggregate",
-        actionNames: ["customers.list"],
-        hydratable: false,
-        destination: { kind: "screen" },
-      }),
-      fixtureDescriptor({
-        kind: "order-entity",
-        actionNames: ["orders.get", "orders.create"],
-        hydratable: true,
-        destination: { kind: "screen" },
-      }),
-    ];
-    expect(
-      [...unrestorableAssistantActionNames(fixtureRegistry)].sort(),
-    ).toEqual(["customers.list", "orders.list"]);
-    expect([...hydratableAssistantActionNames(fixtureRegistry)].sort()).toEqual(
-      ["orders.create", "orders.get"],
-    );
   });
 });
 
@@ -1165,14 +1076,42 @@ function searchOutput(
   };
 }
 
+/**
+ * SHO-551. A slot is what a card is addressed by, so it has to name what the
+ * composer itself treats as one surface. Addressed by kind, a rollup followed
+ * by a page left the rollup's card beside the list that had absorbed it.
+ */
+describe("assistantSurfaceSlot", () => {
+  const PAGE = result(ORDERS_LIST_PAGE_TOOL, pageOutput([pageRow(ORDER_A)]));
+  const COUNTS = result(ORDERS_LIST_COUNTS_TOOL, countsOutput([]));
+
+  it("puts the list in the slot of the aggregate it supersedes", () => {
+    const [aggregate] = assistantSurfacesFromToolResults([COUNTS]);
+    const [list] = assistantSurfacesFromToolResults([COUNTS, PAGE]);
+
+    expect(aggregate?.kind).toBe("orders-aggregate");
+    expect(list?.kind).toBe("orders-list");
+    if (aggregate === undefined || list === undefined) return;
+    expect(assistantSurfaceSlot(list)).toBe(assistantSurfaceSlot(aggregate));
+  });
+
+  it("is never shared by two surfaces of one composition", () => {
+    // The other half of the pair above. If the composer ever returned a list
+    // and an aggregate side by side, one card would silently replace the other.
+    const surfaces = assistantSurfacesFromToolResults([COUNTS, PAGE]);
+    const slots = surfaces.map((surface) => assistantSurfaceSlot(surface));
+
+    expect(slots).toEqual(["orders"]);
+  });
+});
+
 describe("search-results surface (SHO-535)", () => {
-  it("binds search.query / search_query, stays unrestorable, and keeps English promptLine", () => {
+  it("binds search.query / search_query and keeps an English promptLine", () => {
     const entry = ASSISTANT_SURFACE_REGISTRY.find(
       (surface) => surface.kind === "search-results",
     );
     expect(entry?.actionNames).toEqual(["search.query"]);
     expect(entry?.toolNames).toEqual(["search_query", "search.query"]);
-    expect(entry?.hydratable).toBe(false);
     expect(entry?.destination).toEqual({ kind: "terminal" });
     expect(entry?.promptLine).toBe(SEARCH_RESULTS_PROMPT_LINE);
     expect(entry?.promptLine).toContain("search_query");

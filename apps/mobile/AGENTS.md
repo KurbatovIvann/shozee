@@ -8,13 +8,13 @@ Reanimated on 4.5.1 with worklets 0.10.1 — do not float Unistyles to 3.3
 
 ## Sources of truth
 
-| Concern              | Source                                                                                                                                                                                                           |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Visual language      | Unistyles `src/theme/` mapped from the Magic Patterns canvas ([`mp-to-mobile.md`](../../docs/design/mapping/mp-to-mobile.md))                                                                                    |
-| How to port a screen | Inventory the canvas → classify shared vs feature → reuse/create in `components/ui`, `components/form-kit`, or `src/features/<module>/` — [`mp-to-mobile.md`](../../docs/design/mapping/mp-to-mobile.md)         |
-| Domain behavior      | The Linear feature card, `@showzy/contract`, and the golden UI slice when it exists                                                                                                                              |
-| UI state             | [`.cursor/rules/mobile-ui-state.mdc`](../../.cursor/rules/mobile-ui-state.mdc) — Query vs RHF vs `useReducer` vs view. Compose `src/components/form-kit` for save/guard/scaffold (photos = `useReducer` session) |
-| Auth / sessions      | better-auth over `/api/auth` (ADR-0006, security-operations §2). Expo cookies via `@better-auth/expo` in SecureStore.                                                                                            |
+| Concern              | Source                                                                                                                                                                                                         |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Visual language      | Unistyles `src/theme/` mapped from the Magic Patterns canvas ([`mp-to-mobile.md`](../../docs/design/mapping/mp-to-mobile.md))                                                                                  |
+| How to port a screen | Inventory the canvas → classify shared vs feature → reuse/create in `components/ui`, `components/form-kit`, or `src/features/<module>/` — [`mp-to-mobile.md`](../../docs/design/mapping/mp-to-mobile.md)       |
+| Domain behavior      | The Linear feature card, `@showzy/contract`, and the golden UI slice when it exists                                                                                                                            |
+| UI state             | [`.claude/rules/mobile-ui-state.md`](../../.claude/rules/mobile-ui-state.md) — Query vs RHF vs `useReducer` vs view. Compose `src/components/form-kit` for save/guard/scaffold (photos = `useReducer` session) |
+| Auth / sessions      | better-auth over `/api/auth` (ADR-0006, security-operations §2). Expo cookies via `@better-auth/expo` in SecureStore.                                                                                          |
 
 Figma is not a source of spacing, color, or components. Never modify the
 V1 repository (`E:\showzy`). Do not paste Magic Patterns React/Tailwind
@@ -67,7 +67,7 @@ the same directory.
   not own transport. Compose `components/ui` and `components/form-kit`; do
   not duplicate button/card chrome, picker chrome, or the form
   save/guard/scaffold. Read
-  that folder's `AGENTS.md` and `.cursor/rules/mobile-ui-state.mdc` before
+  that folder's `AGENTS.md` and `.claude/rules/mobile-ui-state.md` before
   adding files. Do not add XState unless a later feature card names a
   protocol statechart.
 - `src/components/screens/<feature>/` — unmigrated feature screens (auth,
@@ -131,10 +131,10 @@ the same directory.
 - Native modules for owner-first launch and near-term surfaces are preinstalled (see `package.json` + `app.config.ts` plugins) so product screens do not force a new Expo/dev-client binary. Unistyles 3 already requires a custom dev client (`expo-dev-client`); do not use Expo Go. Pin new Expo packages with `pnpm --filter @showzy/mobile exec expo install`.
 - Icons: `lucide-react-native` (Magic Patterns canvas, ADR-0024). Do not add Ionicons, `@expo/vector-icons`, NativeWind, Google Sign-In, `expo-location`, `@callstack/liquid-glass`, or `@gorhom/bottom-sheet` (sheets are Reanimated; gorhom is unreliable on Reanimated 4.5).
 - Before writing mobile UI, routing, theme, animation, or native-module
-  code, load `.cursor/skills/showzy-mobile/SKILL.md` and the matching leaf
+  code, load `.claude/skills/showzy-mobile/SKILL.md` and the matching leaf
   (`expo-router`, `expo-native-ui`, `expo-design-system`, `expo-animation`,
   `expo-dev-client`, `vercel-react-native-skills`). Skills are advisory
-  (`docs/pipeline.md`): this file, ADRs, and `.cursor/rules/` win. Do not
+  (`docs/pipeline.md`): this file, ADRs, and `.claude/rules/` win. Do not
   load `expo-ui`, `expo-tailwind-setup`, `expo-data-fetching`, or
   `expo-project-structure`.
 - Porting a canvas screen: follow the inventory → classify → reuse/create

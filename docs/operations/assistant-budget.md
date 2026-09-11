@@ -1,9 +1,10 @@
 # Staff assistant budget and turn limit
 
-`POST /assistant/chat` spends Anthropic tokens. The staff action bucket
-(120/min per user) only covers tool calls *inside* a turn. This guard
-runs after session/company membership and before the intent gate and
-`appendUserMessage`.
+`POST /assistant/kit/chat` and `POST /assistant/kit/answer` spend
+Anthropic tokens. The staff action bucket (120/min per user) only covers
+tool calls *inside* a turn. This guard wraps those two routes at the
+mount point, after session and company membership and before the turn
+runs; the other two kit routes call no model and are unguarded.
 
 Runbook for SHO-505. Production keys live in Redis.
 
@@ -49,27 +50,24 @@ admitted turn may settle **above** its reservation; that overshoot is
 recorded in full. The next request is denied when the counter is at or
 over the cap.
 
-Chat confirmation resume (`x-confirmation-challenge-id` on
-`POST /assistant/chat`) skips the turn bucket but still reserves and
-settles estimated USD on both budget keys.
+Answering an open question (`POST /assistant/kit/answer`) skips the turn
+bucket but still reserves and settles on both budget keys. That bucket
+caps how often someone starts new work; answering is finishing work
+already admitted, and refusing it would strand a draft behind a limit the
+person cannot wait out.
 
-Live `POST /assistant/choice` and `POST /assistant/confirm` Phase B use
-the same reserve → host → settle/release path as chat, with
-`skipTurnLimit: true` (continuation of an already-admitted job, not a
-new chat turn). Budget 429 is the same `RATE_LIMITED` wire as chat.
-Abandon (`POST /assistant/pending/abandon`) and peek
-(`GET /assistant/pending`) stay unwrapped — no model, no Redis budget.
+`POST /assistant/kit/abandon` and `GET /assistant/kit/messages` call no
+model, cost `$0`, and do not write Redis.
 
-Settle is only for a request that entered Phase B generation. HTTP 200
-expired, option conflict, Phase A error, successor picker without
-generation, and completed-claim replay of an already-done Phase B
-**release** the hold (unknown-model reservation is not a charge).
+Only a request that ran a turn is charged. A refusal (any non-2xx, e.g. a
+`409` for a stale or unresolvable answer) and a replayed command release
+the hold instead of settling it.
 
 A budget 429 does not consume a turn slot. A 503 (`AI_NOT_CONFIGURED`)
 does not consume a turn slot or reserve budget.
 
-If a reserved turn never reaches settlement (gate failure,
-`appendUserMessage` failure, or SSE abort), the unused hold is released
+If a reserved turn never reaches settlement (a failed turn or
+a client that has already gone), the unused hold is released
 on the same Kyiv-date keys. Settlement and release are mutually
 exclusive for one turn (no double subtract).
 

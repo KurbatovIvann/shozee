@@ -6,12 +6,9 @@ import {
   UNLINKED_CUSTOMER_NAME_SNAPSHOT,
   moneyMinorFromFields,
   type AssistantMoneyMinor,
-  type AssistantSurfaceToolResult,
 } from "@showzy/validation/assistant-surfaces";
 
 import { formatMoneyMinor, groupDigits } from "../../../format/money";
-import type { AssistantChatPart } from "../shared/confirmation-presenter";
-import { toolNameFromPart } from "../shared/turn-timeline";
 
 export { UNLINKED_CUSTOMER_NAME_SNAPSHOT };
 
@@ -81,24 +78,3 @@ export function moneyLabels(
  * Chat-part adapter (SHO-456). The shared parse never sees a part: drop
  * non-tool parts, keep `state === "output-available"`, then map.
  */
-export function assistantSurfaceToolResultsFromParts(
-  parts: readonly AssistantChatPart[],
-): readonly AssistantSurfaceToolResult[] {
-  const results: AssistantSurfaceToolResult[] = [];
-  for (const part of parts) {
-    const toolName = toolNameFromPart(part);
-    if (toolName === null) {
-      continue;
-    }
-    if (part.state !== "output-available") {
-      continue;
-    }
-    const toolCallId = part.toolCallId;
-    if (typeof toolCallId === "string" && toolCallId.length > 0) {
-      results.push({ toolName, output: part.output, toolCallId });
-      continue;
-    }
-    results.push({ toolName, output: part.output });
-  }
-  return results;
-}

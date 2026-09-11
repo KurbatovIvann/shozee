@@ -104,22 +104,25 @@ describe("@showzy/validation/assistant-surfaces guards", () => {
     }
   });
 
-  it("exports unrestorableAssistantActionNames with a production caller (SHO-461)", () => {
-    const index = readFileSync(join(surfacesDir, "index.ts"), "utf8");
+  /**
+   * The two name helpers and the `hydratable` flag went with the client that
+   * rebuilt cards from rows on reload (ADR-0038). Kept as a check that they do
+   * not come back: a registry flag with no reader is how the last one survived
+   * long enough to be copied.
+   */
+  it("registers no hydration flag and derives no action-name sets", () => {
     const registry = readFileSync(join(surfacesDir, "registry.ts"), "utf8");
-    const hydrate = readFileSync(
-      join(
-        repoRoot,
-        "apps/mobile/src/features/assistant/shared/assistant-hydrate.ts",
-      ),
-      "utf8",
-    );
-    expect(index).toContain("unrestorableAssistantActionNames");
-    expect(index).not.toContain("unrestorableAssistantListAction");
-    expect(registry).not.toContain("unrestorableAssistantListAction");
-    expect(hydrate).toContain("unrestorableAssistantActionNames");
-    expect(hydrate).toContain("hydratableAssistantActionNames");
-    expect(hydrate).not.toContain("unrestorableAssistantListAction");
+    const index = readFileSync(join(surfacesDir, "index.ts"), "utf8");
+    // The prose above names it once; what must not come back is a field.
+    expect(registry).not.toMatch(/^\s*(?:readonly )?hydratable[?:]/m);
+    for (const gone of [
+      "hydratableAssistantActionNames",
+      "unrestorableAssistantActionNames",
+      "unrestorableAssistantListAction",
+    ]) {
+      expect(registry, gone).not.toContain(gone);
+      expect(index, gone).not.toContain(gone);
+    }
   });
 
   it("is the clipped-status source for packages/ai clip-tool-result", () => {

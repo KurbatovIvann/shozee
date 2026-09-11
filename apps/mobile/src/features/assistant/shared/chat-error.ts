@@ -1,10 +1,13 @@
 /**
- * Map live host HTTP failures onto assistant copy. JSON `{ code }`
- * bodies and fetch failures (`TypeError` / `Failed to fetch`) never log
- * cookies or OTP.
+ * The banner copy for a failed turn.
+ *
+ * What used to live here — parsing a JSON `{ code }` out of an `Error.message`,
+ * and mapping a query failure — went with the client that threw those. The kit
+ * path reports a typed failure instead, and the sheet maps it to one of these
+ * kinds before asking for the copy.
  */
-import type { QueryFailureKind } from "../../../api/errors";
 import type { AssistantCopy } from "../../../i18n/assistant";
+import type { AssistantKitFailure } from "../api/assistant-kit-client";
 
 export type AssistantChatErrorKind =
   | "validation"
@@ -14,70 +17,65 @@ export type AssistantChatErrorKind =
   | "permission"
   | "unauthenticated"
   | "notConfigured"
-  | "rateLimited";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNetworkTransportError(error: Error): boolean {
-  return error instanceof TypeError || error.message === "Failed to fetch";
-}
-
-export function assistantChatErrorKind(error: unknown): AssistantChatErrorKind {
-  if (!(error instanceof Error)) {
-    return "unavailable";
-  }
-  if (isNetworkTransportError(error)) {
-    return "network";
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(error.message);
-  } catch {
-    return "unavailable";
-  }
-  if (!isRecord(parsed) || typeof parsed.code !== "string") {
-    return "unavailable";
-  }
-  switch (parsed.code) {
-    case "VALIDATION":
-      return "validation";
-    case "UNAUTHENTICATED":
-      return "unauthenticated";
-    case "PERMISSION_DENIED":
-      return "permission";
-    case "ASSISTANT_NOT_CONFIGURED":
-      return "notConfigured";
-    case "RATE_LIMITED":
-      return "rateLimited";
-    case "NETWORK":
-      return "network";
-    default:
-      return "unavailable";
-  }
-}
-
-export function queryFailureToAssistantKind(
-  kind: QueryFailureKind,
-): AssistantChatErrorKind {
-  switch (kind) {
-    case "validation":
-    case "network":
-    case "offline":
-    case "permission":
-    case "unauthenticated":
-      return kind;
-    case "rate_limited":
-      return "rateLimited";
-    default:
-      return "unavailable";
-  }
-}
+  | "rateLimited"
+  | "turnBusy"
+  | "questionOpen";
 
 export function assistantChatErrorMessage(
   kind: AssistantChatErrorKind,
   copy: AssistantCopy,
 ): string {
   return copy.errors[kind];
+}
+
+/**
+ * Which failures are worth a banner, and which are already visible in the thread.
+ *
+ * The test for silence is whether the screen changed in a way that explains
+ * itself. Two refusals once shared a branch on the grounds that "the corrected
+ * question is on screen", and that was only true of one of them (SHO-550).
+ * `action_failed` gets a banner for the same reason: the card is still there
+ * and nothing about it explains why the tap did not take.
+ */
+export function bannerKindFor(
+  failure: AssistantKitFailure | null,
+): AssistantChatErrorKind | null {
+  if (failure === null) {
+    return null;
+  }
+  switch (failure.kind) {
+    // Refusals of an answer. The card re-renders as the question now stands,
+    // and that change is the explanation — a banner on top reads as a fault.
+    case "stale":
+    case "unresolvable":
+      return null;
+    // A refusal of a send. Nothing on screen changes, since the card was
+    // already there, and the draft goes back into the field — so without a
+    // line saying why, the tap looks as though it did nothing at all.
+    case "interaction_open":
+      return "questionOpen";
+    // Nothing went out, or nobody is waiting for what came back: a tap while a
+    // request is in flight, blank text, or a 499 for a connection this phone had
+    // already closed. The thread is unchanged and the draft is back where it
+    // was, which is an accurate picture of what happened. Nothing to explain.
+    case "aborted":
+      return null;
+    // Nothing on screen explains this one: the turn holding the conversation
+    // is running on another device, so the thread looks idle.
+    case "turn_open":
+      return "turnBusy";
+    case "unreachable":
+      return "network";
+    case "rate_limited":
+      return "rateLimited";
+    case "unauthorized":
+      return "unauthenticated";
+    case "rejected":
+      return "validation";
+    case "expired":
+    case "unreadable":
+    case "server":
+    case "action_failed":
+      return "unavailable";
+  }
 }

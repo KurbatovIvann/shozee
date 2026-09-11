@@ -57,6 +57,33 @@ describe("staffAssistantSystemPrompt", () => {
     expect(staffAssistantSystemPrompt).not.toContain("customers_list_groups");
   });
 
+  /**
+   * The behaviour this pins was seen on a phone: asked for "3 макаронси" when
+   * that product has several flavours, the model asked which flavour in prose
+   * instead of calling the tool. A typed reply is a guess about names it cannot
+   * see; a tapped picker option is exact. Nothing else in the prompt forbade
+   * it, so the rule is here rather than in a tool description — it is about
+   * when to call at all, not about how any one tool works.
+   */
+  it("tells the model to attempt an ambiguous job rather than ask about it", () => {
+    expect(staffAssistantSystemPrompt).toContain(
+      "An unclear detail is not a reason to ask in chat — it is the reason to call.",
+    );
+    // The counter-argument the model was actually making: it had listed the
+    // catalog, seen six variants, and reasoned that asking was now the helpful
+    // thing. Knowing the answer is ambiguous is the moment to call, not to ask.
+    expect(staffAssistantSystemPrompt).toContain(
+      "This holds when you already know the answer will be ambiguous.",
+    );
+    expect(staffAssistantSystemPrompt).toContain(
+      "Do not look a reference up to check whether it is ambiguous before a write",
+    );
+    // And the other half: asking is right when there is nothing to attempt.
+    expect(staffAssistantSystemPrompt).toContain(
+      "Ask in chat only when there is nothing to attempt",
+    );
+  });
+
   it("does not dump orders / customers / pricing how-to that lives on façades", () => {
     expect(staffAssistantSystemPrompt).toContain(
       "Call one terminal tool per job. Do not narrate instead of calling.",
@@ -189,8 +216,6 @@ describe("staffAssistantSystemPrompt", () => {
     const addendum = staffAssistantTurnContextAddendum({
       now: new Date("2026-09-02T12:00:00.000Z"),
       companyName: "Konditerska Anna",
-      workingSetAddendum:
-        "Working set from earlier tool runs in this conversation (ids only; not live record state):\ncatalog.listProducts: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     });
     const withAddendum = staffAssistantSystemMessages(addendum);
     expect(withAddendum).toHaveLength(2);
@@ -202,6 +227,5 @@ describe("staffAssistantSystemPrompt", () => {
     expect(withAddendum[1]?.content).toContain("2 September 2026");
     expect(withAddendum[1]?.content).toContain("Europe/Kyiv");
     expect(withAddendum[1]?.content).toContain("Konditerska Anna");
-    expect(withAddendum[1]?.content).toContain("catalog.listProducts");
   });
 });

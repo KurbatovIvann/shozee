@@ -189,9 +189,11 @@ showzy/
 │  ├─ specs/          # protocol manuals for frozen foundation packages
 │  ├─ archive/        # humans only; agents must not open (ADR-0033)
 │  └─ plans/          # historical breakdowns; new work is Linear feature cards
-└─ .cursor/
-   ├─ rules/          # rules for agents (conventions, prohibitions, DoD)
-   └─ commands/       # /feature /ticket /implement /conveyor /review /guard /scaffold
+└─ .claude/          # Claude Code harness (ADR-0040); CLAUDE.md imports AGENTS.md
+   ├─ rules/          # constitution (prohibitions + conventions), DoD, path-scoped area rules
+   ├─ skills/         # /feature /ticket /conveyor /verify /review-pr /guard /scaffold + code-pattern skills
+   ├─ agents/         # implementer, reviewer, guardian, ci-triage
+   └─ scripts/        # verify.mjs (local CI parity), merge-gate.mjs
 ```
 
 ### Domain modules (packages/modules/*)
@@ -251,7 +253,7 @@ PLANNER → EXECUTOR → VERIFIER → GUARDIAN (optional)
 (human+agent)  (agent)    (CI + agent)   (sensitive / first slice)
 ```
 
-Optional: `/implement` on a **feature parent** runs a parent orchestrator
+Optional: `/conveyor` on a **feature parent** runs a parent orchestrator
 that launches those roles per child (ADR-0029). The parent does not
 implement.
 
@@ -259,16 +261,15 @@ implement.
    agent produces a Linear feature card, a ticket graph, and a 5–15 file
    context pack. Contested APIs get a contract-first `*.contract.ts`
    ticket. No `docs/specs/<module>.md`. Product forks stop and ask.
-2. **Executor** (`/ticket` / `/implement` on a **leaf**). One agent per
-   ticket, one branch, one draft PR. Copies the **golden files for that
-   layer**. Runs the verify loop until CI-equivalent checks are green.
+2. **Executor** (`/ticket` on a **leaf**, or an `implementer` subagent
+   launched by `/conveyor`). One executor per ticket, one branch, one draft
+   PR. Copies the **golden files for that layer**. Runs the verify loop
+   (`node .claude/scripts/verify.mjs`) until CI-equivalent checks are green.
    Tests follow the definition of done — not a red-then-green ritual.
-   Nested Task Bugbot / `/review` / `security-review` are often
-   unavailable in cloud children; that is expected (ADR-0029).
-3. **Verifier.** CI always. Bugbot on routine+. `/review` on sensitive
-   and first-slice PRs. Rubric is constitution, ADRs, golden fidelity,
-   feature card, real tests — not an archived spec section. On a parent
-   conveyor, launch these from the parent conversation.
+3. **Verifier.** CI always. `reviewer` subagent in `bugs` mode on routine,
+   `full` mode on sensitive, first-slice, and UI PRs. Rubric is
+   constitution, ADRs, golden fidelity, feature card, real tests — not an
+   archived spec section. On a parent conveyor, the parent launches it.
 4. **Guardian** (`/guard`, optional). Sensitive surfaces, the first
    golden backend or UI slice, first use of a new principal or composition
    edge. Architecture/security pass. ADR deviation is a stop.
@@ -285,9 +286,9 @@ implement.
    `principal`/`transport`, pairing, resolver and event definitions) →
    migration drift/safety → e2e smoke: Playwright against the built web
    panel (SHO-331); Maestro once mobile screens exist. A parent conveyor
-   squash-merges a child when those Actions jobs are green and
-   parent-launched Task reviews for the lane have no blocking findings
-   (isolated `/review`, when launched, waits for APPROVE with nits
+   squash-merges a child when those Actions jobs are green and the
+   parent-launched `reviewer` / `guardian` subagents for the lane have no
+   blocking findings (a launched `reviewer` must APPROVE with nits
    already applied on that branch).
    A leaf `/ticket` without a parent still does not merge itself.
    Actual GitHub enforcement and its accepted limitations are documented
@@ -297,7 +298,7 @@ implement.
 Leftover phase 0–1 foundation work may still use `/scaffold` on the
 allowlisted packages. New domain work uses `/feature`.
 
-### 7.2 Rules for agents (`.cursor/rules/`)
+### 7.2 Rules for agents (`.claude/rules/`)
 
 - **Code conventions**: action naming (`<module>.<verb>`), module structure, error style (typed, no bare `throw new Error`).
 - **Prohibitions**: raw SQL outside approved Drizzle/foundation exceptions; DB access outside a handler/service/typed target resolver; `any`/`as unknown as`; new dependencies without approval; changing `packages/core` in module tasks; silent product forks.
@@ -306,21 +307,21 @@ allowlisted packages. New domain work uses `/feature`.
 
 ### 7.3 Model selection
 
-Every pipeline role uses **Grok 4.6** while that is the model on this
-Cursor plan. Do not stop a ticket because a named Claude or GPT model is
-unavailable.
+Roles use the Claude model that fits the job (ADR-0040): Opus for the
+planner, the parent orchestrator, sensitive / first-slice executors, and
+the independent `reviewer` / `guardian`; Sonnet for mechanical, routine,
+and UI executors; Haiku for CI log triage. The per-role table and the token
+economy rules live in `docs/pipeline.md`.
 
-Independent review is CI, Bugbot on routine+, `/review` / `/guard` when
-the lane requires them, and either a human merge (leaf `/ticket`) or a
-parent-conveyor squash-merge (ADR-0029) — not a second model family.
-When another family is on the plan, revisit this
-section; until then do not keep a per-role model matrix.
+Independent review is CI plus the `reviewer` / `guardian` subagents the
+lane requires, and either a human merge (leaf `/ticket`) or a
+parent-conveyor squash-merge (ADR-0029).
 
-Practice in Cursor: feature cards — in Plan mode (`/feature`);
-implementation — `/implement SHO-<parent>` for the whole graph, or
-parallel `/ticket` agents on separate branches for a single leaf;
-review — Bugbot + `/review` from the parent on a conveyor run; safety —
-`/guard` when the lane requires it.
+Practice in Claude Code: feature cards — plan mode `/feature`;
+implementation — `/conveyor SHO-<parent>` for the whole graph (one
+`implementer` per child in its own worktree), or `claude -w sho-<n>` +
+`/ticket SHO-<n>` for a single leaf; review — `reviewer` from the parent
+or `/review-pr`; safety — `guardian` / `/guard` when the lane requires it.
 See `docs/pipeline.md` for the day-to-day workflow including Linear.
 
 ### 7.4 Pipeline health metrics

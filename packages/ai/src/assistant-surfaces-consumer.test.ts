@@ -167,11 +167,6 @@ describe("promptLine definitions (SHO-457)", () => {
         ),
       ).toBe(true);
     }
-    const turnSpeech = readFileSync(join(aiSrc, "turn-speech.ts"), "utf8");
-    for (const name of PROMPT_LINE_CONSTANTS) {
-      expect(turnSpeech).not.toMatch(new RegExp(`export const ${name}\\s*=`));
-    }
-    expect(turnSpeech).not.toContain("assistantSurfacesFromToolResults");
   });
 });
 
@@ -298,12 +293,19 @@ describe("packages/ai owns localized copy (SHO-457)", () => {
     }
   });
 
-  it("does not keep a presenter.ts surface-to-text dump", () => {
-    expect(existsSync(join(aiSrc, "presenter.ts"))).toBe(false);
-    expect(existsSync(join(aiSrc, "spoken-reply.ts"))).toBe(false);
-    const turnSpeech = readFileSync(join(aiSrc, "turn-speech.ts"), "utf8");
-    expect(turnSpeech).not.toContain("@showzy/validation/assistant-surfaces");
-    expect(turnSpeech).not.toContain("assistantSurfacesFromToolResults");
-    expect(turnSpeech).not.toMatch(/from ["']apps\/mobile/);
+  /**
+   * The files this used to check the contents of are gone; what it was guarding
+   * against is that `@showzy/ai` grows its own surface-to-text layer again, so
+   * it now checks none of them came back.
+   */
+  it("keeps no surface-to-text layer of its own", () => {
+    for (const gone of [
+      "presenter.ts",
+      "spoken-reply.ts",
+      "turn-speech.ts",
+      "runtime/speech.ts",
+    ]) {
+      expect(existsSync(join(aiSrc, gone)), gone).toBe(false);
+    }
   });
 });

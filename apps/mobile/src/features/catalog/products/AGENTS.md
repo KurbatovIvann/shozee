@@ -15,7 +15,7 @@ Copy only what is product-specific: draft/plan/schema/copy/load, the
 photos `useReducer` session, the variant sheet, and the multi-write
 save loop (`photos.flush`, `too_many_variants`).
 
-UI state ownership is `.cursor/rules/mobile-ui-state.mdc`. The form uses
+UI state ownership is `.claude/rules/mobile-ui-state.md`. The form uses
 RHF `Controller` for create/edit scalar fields (name, price) and a nested
 RHF sheet for variants (SHO-163). Pin exact `react-hook-form` /
 `@hookform/resolvers` in `apps/mobile/package.json`. Photos is a

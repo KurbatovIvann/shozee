@@ -1,28 +1,28 @@
-import { appendUserMessage } from "./actions/append-user-message.js";
-import { checkpointAssistantTurn } from "./actions/checkpoint-assistant-turn.js";
 import { createConversation } from "./actions/create-conversation.js";
-import { getConversation } from "./actions/get-conversation.js";
-import { getModelHistory } from "./actions/get-model-history.js";
 import { getStaffActor } from "./actions/get-staff-actor.js";
+import { insertChatMessage } from "./actions/insert-chat-message.js";
 import { listConversations } from "./actions/list-conversations.js";
-import { recordAssistantTurn } from "./actions/record-assistant-turn.js";
+import { readChatMessages } from "./actions/read-chat-messages.js";
+import { readChatState } from "./actions/read-chat-state.js";
+import { updateChatMessage } from "./actions/update-chat-message.js";
+import { writeChatState } from "./actions/write-chat-state.js";
 
-export { appendUserMessage };
-export { checkpointAssistantTurn };
 export { createConversation };
-export { getConversation };
-export { getModelHistory };
 export { getStaffActor };
+export { insertChatMessage };
 export { listConversations };
-export { recordAssistantTurn };
+export { readChatMessages };
+export { readChatState };
+export { updateChatMessage };
+export { writeChatState };
 
 export const assistantActions = [
   createConversation,
   listConversations,
-  getConversation,
-  appendUserMessage,
-  recordAssistantTurn,
-  checkpointAssistantTurn,
   getStaffActor,
-  getModelHistory,
+  readChatState,
+  writeChatState,
+  readChatMessages,
+  insertChatMessage,
+  updateChatMessage,
 ] as const;

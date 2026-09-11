@@ -1,6 +1,6 @@
 export {
   assistantSurfaceKey,
-  assistantSurfacesFromParts,
+  localizeAssistantCardPayload,
   type AssistantSurface,
 } from "./compose";
 export {
@@ -23,13 +23,11 @@ export type {
   AssistantResultMarksCarrier,
 } from "./marks";
 export {
-  parseSearchResultsSurface,
   type AssistantSearchResultsCardView,
   type AssistantSearchResultsGroupView,
   type AssistantSearchResultsHitView,
 } from "./search-results";
 export {
-  parseCustomersListSurface,
   ASSISTANT_CUSTOMERS_LIST_HREF,
   ASSISTANT_CUSTOMERS_LIST_ROW_MAX,
   CUSTOMERS_LIST_PROMPT_LINE,
@@ -38,7 +36,6 @@ export {
   type AssistantCustomersListRowView,
 } from "./customers-list";
 export {
-  parseOrdersAggregateSurface,
   ORDERS_AGGREGATE_PROMPT_LINE,
   ORDERS_AGGREGATE_SURFACE_TOOLS,
   type AssistantOrdersAggregateBucketView,
@@ -46,13 +43,11 @@ export {
   type AssistantOrdersAggregateGroupBy,
 } from "./orders-aggregate";
 export {
-  parseOrderEntitySurfaces,
   ORDER_ENTITY_PROMPT_LINE,
   ORDER_ENTITY_SURFACE_TOOLS,
   type AssistantOrderEntityCardView,
 } from "./order-entity";
 export {
-  parseOrdersListSurface,
   ASSISTANT_ORDERS_LIST_HREF,
   ASSISTANT_ORDERS_LIST_ROW_MAX,
   ORDERS_LIST_PROMPT_LINE,

@@ -7,8 +7,17 @@ packages:
 # lodash 4.17.21 via the better-auth CLI
 # (`auth` → `@mrleebo/prisma-ast` → chevrotain). Force the patched 4.18.x
 # line already present in the tree (archiver-utils).
+#
+# Expo SDK 57 CLI (`@expo/plist`, `plist` via xcode/simple-plist, `@expo/xcpretty`)
+# still depends on @xmldom/xmldom 0.8.14 / 0.9.11 and js-yaml 4.3.1. Those
+# lines have high GHSAs; keep each major on its patched release until Expo
+# bumps them. Reachable from apps/mobile and, via @better-auth/expo optional
+# peers, from apps/api.
 overrides:
   lodash: "^4.18.1"
+  js-yaml: "^4.3.2"
+  "@xmldom/xmldom@^0.8.0": "0.8.15"
+  "@xmldom/xmldom@^0.9.0": "0.9.12"
 
 # SHO-246 / SHO-244: sharp's install script extracts the prebuilt libvips
 # binary. pnpm 12 `allowBuilds` replaces `onlyBuiltDependencies`. `true`

@@ -5,7 +5,6 @@
  * Do not import `@showzy/ai`.
  */
 import {
-  parseOrderEntitySurfaces as parseOrderEntityData,
   ORDER_ENTITY_PROMPT_LINE,
   ORDER_ENTITY_SURFACE_TOOLS,
   ORDERS_CREATE_TOOLS,
@@ -22,12 +21,7 @@ import {
   orderStatusTone,
   type OrderStatusTone,
 } from "../../orders/shared/order-status";
-import type { AssistantChatPart } from "../shared/confirmation-presenter";
-import {
-  assistantSurfaceToolResultsFromParts,
-  formatMoneyAmount,
-  localizeCustomerName,
-} from "./helpers";
+import { formatMoneyAmount, localizeCustomerName } from "./helpers";
 import type { AssistantResultMarks } from "./marks";
 
 export {
@@ -81,18 +75,4 @@ export function localizeOrderEntityCard(
     statusTone: status !== null ? orderStatusTone(status) : "action",
     totalLabel: formatMoneyAmount(data.total),
   };
-}
-
-/**
- * N entity surfaces from live get/create parts. Isolation / permission
- * errors and HITL payloads are omitted.
- */
-export function parseOrderEntitySurfaces(
-  parts: readonly AssistantChatPart[],
-  locale: Parameters<typeof ordersCopy>[0],
-): readonly AssistantOrderEntityCardView[] {
-  const orders = ordersCopy(locale);
-  return parseOrderEntityData(assistantSurfaceToolResultsFromParts(parts)).map(
-    (data) => localizeOrderEntityCard(data, orders, locale),
-  );
 }

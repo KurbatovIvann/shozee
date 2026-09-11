@@ -49,6 +49,22 @@ import {
  * adapter only — not a new principal and not a `packages/core` patch.
  */
 export const PROVIDER_TOOL_NAME_PATTERN = /^[a-zA-Z0-9_-]{1,128}$/;
+/** Anthropic `tool_use.id` uses the same charset as tool names. */
+export const PROVIDER_TOOL_CALL_ID_FALLBACK = "tool" as const;
+
+/**
+ * Map a stored or host-minted `toolCallId` onto Anthropic's
+ * `^[a-zA-Z0-9_-]+$` (colons in `choice:` / `phase-a:` seeds). Pair
+ * `tool-call` / `tool-result` ids must use the same mapping. Persistence
+ * keeps the original string.
+ */
+export function toProviderToolCallId(toolCallId: string): string {
+  if (PROVIDER_TOOL_NAME_PATTERN.test(toolCallId)) {
+    return toolCallId;
+  }
+  const sanitized = toolCallId.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 128);
+  return sanitized.length > 0 ? sanitized : PROVIDER_TOOL_CALL_ID_FALLBACK;
+}
 
 /** Always-in-context domain actions (no `deferLoading`). */
 export const STAFF_ASSISTANT_HOT_ACTION_NAMES = [

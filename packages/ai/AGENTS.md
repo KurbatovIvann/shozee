@@ -1,6 +1,7 @@
 # @showzy/ai — Agent Instructions
 
-Server-only AI SDK 7 staff loop (ADR-0032, ADR-0033). Owns no domain
+Server-only staff-assistant domain half (ADR-0032, ADR-0033, ADR-0038):
+tool façades, the system prompt, the provider adapter. Owns no domain
 state, does not mount HTTP, and never calls `/rpc`. The HTTP mount in
 `apps/api` injects `executeAction`.
 
@@ -71,42 +72,46 @@ Zod 4 discriminated unions omit top-level `type`. Anthropic requires
 Object façades already emit `type: "object"` and must not rely on that
 patch.
 
-## Speech (ADR-0036 / ADR-0037)
+## What this package is now (ADR-0038)
 
-A turn is three parts: **speech** (`text-*` and
-`assistant_messages.body`), **surface** (generic card from the registry),
-and **pending** (HITL envelope). Speech never duplicates a surface.
+It is **not** a runtime. The loop, the resume, the pending store, the
+speech pipeline and the model trace were removed with the assistant they
+served; the protocol lives in `@showzy/assistant-kit` and the routes in
+`apps/api`.
+
+What is left is the domain half a generic kit cannot have:
+
+- **Tool façades** (`src/tool-facades/`) — the input and output mapping
+  for each staff tool, and the descriptions the model reads. These took
+  real use to learn; a rewrite loses that silently.
+- **The system prompt** and the turn-context addendum. Identity,
+  language, HITL and card style — not a module how-to dump.
+- **The provider adapter**, model construction, and tool-schema patching
+  for Anthropic.
+- **`filterStaffAiTools`** — which tools a caller's permissions allow.
+- **`clipStaffAssistantToolResult`** — the size cap on what a tool result
+  puts in the prompt.
+- **`catalogPickerConflictExtrasFromError`** — reading a catalog
+  ambiguity out of a `CONFLICT`, which is domain knowledge, not protocol.
+
+Do not add a loop, a host, a speech pipeline, a pending record or a
+classifier back. A turn is one `streamText` in the kit; anything that
+wants to sit between the model and a tool belongs in the tool façade or
+in the prompt.
 
 The model streams **plain text**. Do not add `Output.object`,
 `experimental_output`, or a `{ spoken }` envelope. Do not parse model
 JSON to extract `spoken`, invent a delimiter protocol, or make a second
 model call to clean the reply.
 
-Live host is `runStaffAssistantHostTurn` (`src/runtime/`, ADR-0037).
-`POST /assistant/chat` wraps it (SHO-524). Usable model prose is the
-bubble. Guardrail rejects leftover `{ … }` JSON only — not `**`, and
-not markdown tables. Do not use `presentOrderCreatedSpeech` or catalog
-domain-error copy as the winner. `commitHostSpeech` does not call
-`commitTurnSpeech`. The loop must not call a classifier. It
-default-attaches the permitted tool set plus BM25 (`staffAssistantTools`);
-“давай ще один” still has tools. The system prompt is identity,
-language, HITL/safety, and card style — not a module how-to dump and
-not a speech-rewrite instruction for tables or `**`. `source` stays
-in-memory. Optional `checkpoint` is `begin` → `stageRun` (mint
-`executionId`) → execute with that id → `finishRun` → `complete`
-(SHO-521). Do not use a model `toolCallId` as the retry key.
+Do not delete a **surface** (registry / cards). Do not add a second model
+call to summarize the card.
 
-Do not delete a **surface** (registry / cards). Do not add a second
-model call to summarize the card. Do not re-introduce a JSON spoken
-envelope, a presenter that serializes rows, or live≠persisted replies.
+## Tools
 
-## Tools (SHO-523 / SHO-524)
-
-The live host does not classify intent. It always attaches the
-permitted tool set plus BM25. Do not add a replacement classifier.
-
-It does not force a tool. Call one terminal tool per job; do not
-narrate instead of calling.
+Call one terminal tool per job; do not narrate instead of calling. Do not
+add an intent classifier — the permitted tool set plus BM25 is attached
+every turn.
 
 ## Tests
 

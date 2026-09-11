@@ -24,7 +24,6 @@ import { z } from "zod";
 
 import type { ActionToolExecute } from "../action-tool.js";
 import { STAFF_ASSISTANT_CLIP_JSON_MAX } from "../clip-tool-result.js";
-import { isStaffAssistantConfirmationOutput } from "../confirmation.js";
 import {
   mapOrdersListPeriod,
   ORDERS_LIST_PERIODS,
@@ -306,14 +305,13 @@ function mapOrdersListPageCompactRow(row: unknown): unknown {
 /**
  * Assistant completed view of `orders.list` `page.summary`. Compact
  * `rows` plus `requestedLimit` and `hasMore` (`nextCursor != null`).
- * Typed errors and confirmation payloads pass through unchanged.
+ * Typed errors pass through unchanged.
  */
 export function mapOrdersListPageOutput(
   output: unknown,
   requestedLimit: number = ORDERS_LIST_PAGE_ASSISTANT_DEFAULT_LIMIT,
 ): unknown {
   if (
-    isStaffAssistantConfirmationOutput(output) ||
     isTypedToolError(output) ||
     !isRecord(output) ||
     output["kind"] !== "page.summary" ||
@@ -418,7 +416,6 @@ function countsPayload(
  */
 export function mapOrdersListCountsOutput(output: unknown): unknown {
   if (
-    isStaffAssistantConfirmationOutput(output) ||
     isTypedToolError(output) ||
     !isRecord(output) ||
     output["kind"] !== "aggregate" ||

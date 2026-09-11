@@ -10,12 +10,12 @@ packages/db/migrations/
 packages/contract/openapi.json
 
 # Human/pipeline-authored documents. docs/specs/* are frozen contracts that
-# implementers may not edit (prohibitions.mdc), so Prettier never rewrites
-# anything under docs/ or the agent instruction files. Vendored skills live
-# in `.agents/` (copy of `.cursor/skills`); neither tree is Prettier's.
+# implementers may not edit (constitution.md), so Prettier never rewrites
+# anything under docs/ or the agent instruction files. The Claude Code harness
+# (rules, skills incl. vendored ones, agents, scripts, worktrees) is not
+# Prettier's either (ADR-0040).
 docs/
-.cursor/
-.agents/
+.claude/
 
 # TanStack Router codegen must stay byte-identical to what the generator
 # emits (SHO-309); the router plugin rewrites it on every dev/build run.

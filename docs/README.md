@@ -13,7 +13,7 @@ manual sections on demand; this directory is not a mandatory reading list.
 | What owns a table or capability? | [Module ownership](module-ownership.md) | Ownership and sanctioned composition boundaries |
 | What must this feature do? | Approved Linear feature card, `*.contract.ts`, DoD tests | Current work and executable domain behavior; do not create new module spec novels |
 | How does a foundation protocol work? | [Protocol manuals](specs/README.md) | Runtime, DB, client boundary, money, security, RBAC |
-| How do agents plan, implement, and review? | [Pipeline](pipeline.md), [Cursor commands](../.cursor/commands/), [rules](../.cursor/rules/) | Workflow overview, executable command instructions, mandatory guardrails |
+| How do agents plan, implement, and review? | [Pipeline](pipeline.md), [Claude Code skills](../.claude/skills/), [agents](../.claude/agents/), [rules](../.claude/rules/) | Workflow overview, executable playbooks and roles, mandatory guardrails |
 | How should a screen look and behave? | [Design entry point](design/README.md) | Canvas, port rules, recorded UX approval; app-specific architecture |
 | How do we operate or recover the system? | [Operations](operations/) | Backups, restore drills, incidents, alerts, CI, branch protection |
 | What did V1 contain? | [V1 audit](reference/v1-backend-audit.md), [migration matrix](reference/v1-migration-matrix.md) | Read-only evidence; V2 schema is in `packages/db/src/schema/` |

@@ -33,3 +33,10 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Claude Code (ADR-0040): personal settings, worktrees, verify logs
+.claude/settings.local.json
+.claude/worktrees/
+.claude/.verify/
+.agent-tmp/
+CLAUDE.local.md

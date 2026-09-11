@@ -1,4 +1,5 @@
 export {
+  assistantSurfaceSlot,
   assistantSurfacesFromToolResults,
   type AssistantSurfaceData,
   type AssistantSurfaceKind,
@@ -120,8 +121,6 @@ export {
 } from "./search-results.js";
 export {
   ASSISTANT_SURFACE_REGISTRY,
-  hydratableAssistantActionNames,
-  unrestorableAssistantActionNames,
   type AssistantSurfaceDescriptor,
   type AssistantSurfaceParse,
 } from "./registry.js";

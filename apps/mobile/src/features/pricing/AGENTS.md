@@ -5,7 +5,7 @@ chrome. `src/app/` stays one-line re-exports. Feature code lives here.
 Form-kit adoption is SHO-304 (`src/components/form-kit`) — do not clone
 the catalog form stack.
 
-UI state ownership is `.cursor/rules/mobile-ui-state.mdc`. List filters
+UI state ownership is `.claude/rules/mobile-ui-state.md`. List filters
 and options-sheet chrome are `useState` / local view state, never XState.
 Writes on the list (default / active / delete) use `useContractMutation`.
 Delete is UI confirm (`presentConfirmDialog`) then protocol confirmation

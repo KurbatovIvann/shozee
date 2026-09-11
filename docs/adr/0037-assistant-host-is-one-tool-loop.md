@@ -1,6 +1,6 @@
 # ADR-0037: The staff assistant host is one tool loop
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-0038](0038-assistant-is-a-stored-document.md)
 - **Date**: 2026-09-08
 - **Deciders**: Ivan Kurbatov (human) (+ proposing agent: Linear
   [SHO-519](https://linear.app/showzy-v2/issue/SHO-519) /

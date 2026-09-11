@@ -149,6 +149,17 @@ const envObjectSchema = z.object({
    * Staff-assistant HTTP turn bucket (`POST /assistant/chat`). `0` disables
    * the per-user turn check (SHO-505). Default 20 turns / 60s / user.
    */
+  /**
+   * Mounts the `assistant-kit` routes (`/assistant/kit/*`).
+   *
+   * On by default. With it off the routes do not exist and the app's assistant
+   * sheet cannot load a conversation — the flag is a way to take the assistant
+   * down, not a way to switch to another one. There is no other one (ADR-0038).
+   */
+  AI_ASSISTANT_KIT: z
+    .enum(["0", "1"])
+    .default("1")
+    .transform((value) => value === "1"),
   AI_CHAT_TURNS_PER_MINUTE_PER_USER: z.coerce.number().int().min(0).default(20),
   /**
    * Kyiv-calendar daily USD ceiling per company for `/assistant/chat`.
@@ -283,6 +294,8 @@ export interface ServerConfig {
   };
   readonly ai: {
     readonly anthropicApiKey: string | undefined;
+    /** Mounts `/assistant/kit/*` alongside the live assistant. Off by default. */
+    readonly assistantKitEnabled: boolean;
     readonly model: string;
     readonly gateModel: string;
     /** `0` disables the per-user `/assistant/chat` turn check. */
@@ -392,6 +405,7 @@ export function loadServerConfig(
     otpDelivery: mapOtpDelivery(parsed),
     ai: {
       anthropicApiKey: parsed.ANTHROPIC_API_KEY,
+      assistantKitEnabled: parsed.AI_ASSISTANT_KIT,
       model: parsed.AI_MODEL,
       gateModel: parsed.AI_GATE_MODEL,
       chatTurnsPerMinutePerUser: parsed.AI_CHAT_TURNS_PER_MINUTE_PER_USER,

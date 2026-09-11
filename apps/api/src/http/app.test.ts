@@ -77,88 +77,29 @@ describe("createApp HTTP shell", () => {
     expect(response.status).toBe(400);
   });
 
-  it("POST /assistant/choice without a session is 401 UNAUTHENTICATED", async () => {
+  /**
+   * The previous assistant's five routes. Kept as a test rather than deleted
+   * with them: a half-removal that left one of these answering would otherwise
+   * be invisible, and the app must not carry two assistants again.
+   */
+  it("no longer answers on the retired assistant paths", async () => {
     const app = silentApp();
-    const response = await app.request("/assistant/choice", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        conversationId: UUID,
-        choiceId: UUID,
-        optionId: UUID,
-      }),
-    });
-    expect(response.status).toBe(401);
-    expect(await response.json()).toMatchObject({
-      code: "UNAUTHENTICATED",
-      status: 401,
-    });
-  });
+    const retired: readonly [string, RequestInit][] = [
+      [ASSISTANT_CHAT_PATH, { method: "POST" }],
+      ["/assistant/choice", { method: "POST" }],
+      ["/assistant/confirm", { method: "POST" }],
+      ["/assistant/pending/abandon", { method: "POST" }],
+      [`/assistant/pending?conversationId=${UUID}`, { method: "GET" }],
+    ];
 
-  it("GET /assistant/pending without a session is 401 UNAUTHENTICATED", async () => {
-    const app = silentApp();
-    const response = await app.request(
-      `/assistant/pending?conversationId=${UUID}`,
-    );
-    expect(response.status).toBe(401);
-    expect(await response.json()).toMatchObject({
-      code: "UNAUTHENTICATED",
-      status: 401,
-    });
-  });
-
-  it("POST /assistant/confirm without a session is 401 UNAUTHENTICATED", async () => {
-    const app = silentApp();
-    const response = await app.request("/assistant/confirm", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        conversationId: UUID,
-        challengeId: UUID,
-      }),
-    });
-    expect(response.status).toBe(401);
-    expect(await response.json()).toMatchObject({
-      code: "UNAUTHENTICATED",
-      status: 401,
-    });
-  });
-
-  it("POST /assistant/pending/abandon without a session is 401 UNAUTHENTICATED", async () => {
-    const app = silentApp();
-    const response = await app.request("/assistant/pending/abandon", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        conversationId: UUID,
-        pendingId: UUID,
-        expectedVersion: 1,
-      }),
-    });
-    expect(response.status).toBe(401);
-    expect(await response.json()).toMatchObject({
-      code: "UNAUTHENTICATED",
-      status: 401,
-    });
-  });
-
-  it("POST /assistant/chat without a session is 401 UNAUTHENTICATED", async () => {
-    const app = silentApp();
-    const response = await app.request(ASSISTANT_CHAT_PATH, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        conversationId: UUID,
-        messages: [
-          { id: "m1", role: "user", parts: [{ type: "text", text: "Hi" }] },
-        ],
-      }),
-    });
-    expect(response.status).toBe(401);
-    expect(await response.json()).toMatchObject({
-      code: "UNAUTHENTICATED",
-      status: 401,
-    });
+    for (const [path, init] of retired) {
+      const response = await app.request(path, {
+        ...init,
+        headers: { "content-type": "application/json" },
+        ...(init.method === "POST" ? { body: "{}" } : {}),
+      });
+      expect(response.status).toBe(404);
+    }
   });
 
   it("keeps /rpc and /api/v1 labeled ui", () => {

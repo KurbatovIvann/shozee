@@ -26,6 +26,7 @@
     "@sentry/node": "^10.70.0",
     "@showzy/ai": "workspace:*",
     "@showzy/assistant": "workspace:*",
+    "@showzy/assistant-kit": "workspace:*",
     "@showzy/catalog": "workspace:*",
     "@showzy/chat": "workspace:*",
     "@showzy/companies": "workspace:*",

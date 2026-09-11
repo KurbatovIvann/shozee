@@ -5,7 +5,7 @@
 > [`mapping/mp-to-web.md`](mapping/mp-to-web.md) (screen port), and
 > [`mapping/web-panel-chrome.md`](mapping/web-panel-chrome.md) (chrome
 > lock). Agent rules: [`apps/web/AGENTS.md`](../../apps/web/AGENTS.md)
-> and `.cursor/skills/showzy-web/SKILL.md`. This document is the
+> and `.claude/skills/showzy-web/SKILL.md`. This document is the
 > directory / data-flow contract for SHO-325; it is not a
 > product-behavior gate.
 

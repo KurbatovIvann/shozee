@@ -18,6 +18,7 @@ const NODE_BUILTINS = new Set([
 /** Platform packages — never treated as a domain module barrel. */
 const PLATFORM_PACKAGES = new Set([
   "ai",
+  "assistant-kit",
   "config",
   "contract",
   "copy",

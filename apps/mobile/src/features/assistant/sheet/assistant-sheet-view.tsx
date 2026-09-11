@@ -12,42 +12,56 @@ import { StyleSheet, useUnistyles } from "react-native-unistyles";
 
 import { AppHeader, Banner, EmptyState } from "../../../components/ui";
 import type { AssistantCopy } from "../../../i18n/assistant";
-import type { AssistantVisibleRow } from "../shared/chat-rows";
-import type { ChoiceAttemptedOption } from "../shared/choice-presenter";
+import type { AssistantThreadRow } from "../thread/thread-rows";
 import {
   assistantShozikPose,
   SHOZIK_EMPTY_POSE_SIZE,
   SHOZIK_HEADER_POSE_SIZE,
+  SHOZIK_WAIT_POSE_SIZE,
 } from "./assistant-chrome";
 import { AssistantComposer } from "./assistant-composer";
 import { AssistantMessageRow } from "./assistant-message-row";
+import {
+  ASSISTANT_THREAD_START,
+  assistantThreadFollow,
+} from "./assistant-thread-follow";
 import { ShozikPoseMark } from "./shozik-pose-mark";
 
+/**
+ * One `busy` flag replaces `confirmationApplying`, `choiceApplying` and
+ * `hasInFlightTools`. The stored log holds only settled messages, so there
+ * is no per-row in-flight state to show; and only one request can run at a time,
+ * so there is no per-card one either.
+ *
+ * `answer` replaces `confirm` and `selectChoice`. What a valid answer looks like
+ * belongs to the question's kind, not to the screen.
+ */
 export type AssistantSheetViewModel = {
   readonly copy: AssistantCopy;
-  readonly rows: readonly AssistantVisibleRow[];
+  readonly rows: readonly AssistantThreadRow[];
   readonly input: string;
   readonly changeInput: (value: string) => void;
   readonly send: () => void;
-  readonly confirm: () => void;
+  readonly answer: (answer: unknown) => void;
   readonly dismiss: () => void;
-  readonly selectChoice: (optionId: string) => void;
   readonly openHref: (href: string) => void;
   readonly busy: boolean;
   readonly thinking: boolean;
-  readonly hasInFlightTools: boolean;
-  readonly confirmationApplying: boolean;
-  readonly choiceApplying: boolean;
-  readonly choiceAttempted: ChoiceAttemptedOption | null;
   readonly canSend: boolean;
   readonly banner: string | null;
+  /**
+   * The thread is a window onto a longer conversation. Reaching its top asks
+   * for the page before; nothing happens when there is none.
+   */
+  readonly loadOlder: () => void;
+  readonly loadingOlder: boolean;
 };
 
-function keyExtractor(item: AssistantVisibleRow): string {
+function keyExtractor(item: AssistantThreadRow): string {
   return item.id;
 }
 
-function itemType(item: AssistantVisibleRow): string {
+function itemType(item: AssistantThreadRow): string {
   if (item.role === "user") {
     return "user";
   }
@@ -57,20 +71,28 @@ function itemType(item: AssistantVisibleRow): string {
   if (item.surfaces.length > 0) {
     return "assistant-cards";
   }
-  if (item.confirmation !== null) {
-    return "assistant-confirm";
-  }
-  if (item.choice !== null) {
-    return "assistant-choice";
+  if (item.interaction !== null) {
+    return "assistant-question";
   }
   return "assistant";
 }
 
 export function AssistantSheetView(model: AssistantSheetViewModel) {
-  const { copy } = model;
-  const listRef = useRef<FlashListRef<AssistantVisibleRow>>(null);
+  const { copy, rows } = model;
+  const listRef = useRef<FlashListRef<AssistantThreadRow>>(null);
+  const edgesRef = useRef(ASSISTANT_THREAD_START);
 
-  const renderItem: ListRenderItem<AssistantVisibleRow> = useCallback(
+  // FlashList keeps an older page from moving what is on screen on its own;
+  // this only decides when to bring the thread back down to its end.
+  const followThread = useCallback(() => {
+    const next = assistantThreadFollow(edgesRef.current, rows);
+    edgesRef.current = next.edges;
+    if (next.scrollToEnd) {
+      listRef.current?.scrollToEnd({ animated: true });
+    }
+  }, [rows]);
+
+  const renderItem: ListRenderItem<AssistantThreadRow> = useCallback(
     ({ item }) => (
       <AssistantMessageRow
         role={item.role}
@@ -80,71 +102,21 @@ export function AssistantSheetView(model: AssistantSheetViewModel) {
         waitIntervalMs={copy.waitIntervalMs}
         waitLabel={copy.waitLabel}
         surfaces={item.surfaces}
+        failed={item.failed}
+        failedLabel={copy.turnInterrupted}
         onOpenHref={model.openHref}
-        confirmationSummary={
-          item.confirmation === null ? null : item.confirmation.summary
-        }
-        confirmationTitle={copy.confirmationTitle}
-        confirmLabel={copy.confirmLabel}
-        dismissLabel={copy.dismissLabel}
-        confirmingLabel={copy.confirmingLabel}
-        confirmationApplying={model.confirmationApplying}
-        onConfirm={model.confirm}
+        interaction={item.interaction}
+        applying={model.busy}
+        interactionCopy={copy}
+        onAnswer={model.answer}
         onDismiss={model.dismiss}
-        choice={item.choice}
-        choiceTitle={
-          item.choice?.productName !== undefined &&
-          item.choice.productName.length > 0
-            ? item.choice.productName
-            : copy.choiceTitle
-        }
-        choiceTruncatedLabel={
-          item.choice?.status === "needs_choice" && item.choice.optionsTruncated
-            ? item.choice.choiceKind === "product" ||
-              item.choice.choiceKind === "customer"
-              ? copy.choiceTruncatedMatch
-              : copy.choiceTruncated
-            : null
-        }
-        choiceExpiredLabel={copy.choiceExpired}
-        choiceClaimedLabel={copy.choiceClaimed}
-        choiceRetryLabel={copy.choiceRetry}
-        choiceSelectingLabel={copy.choiceSelecting}
-        choiceApplying={model.choiceApplying}
-        choiceAttempted={model.choiceAttempted}
-        onSelectChoice={model.selectChoice}
       />
     ),
-    [
-      copy.choiceClaimed,
-      copy.choiceExpired,
-      copy.choiceRetry,
-      copy.choiceSelecting,
-      copy.choiceTitle,
-      copy.choiceTruncated,
-      copy.choiceTruncatedMatch,
-      copy.confirmLabel,
-      copy.confirmationTitle,
-      copy.confirmingLabel,
-      copy.dismissLabel,
-      copy.waitIntervalMs,
-      copy.waitLabel,
-      copy.waitLines,
-      model.choiceApplying,
-      model.choiceAttempted,
-      model.confirm,
-      model.confirmationApplying,
-      model.dismiss,
-      model.openHref,
-      model.selectChoice,
-    ],
+    [copy, model.answer, model.busy, model.dismiss, model.openHref],
   );
 
   const showEmpty = model.rows.length === 0 && !model.thinking;
-  const headerPose = assistantShozikPose({
-    thinking: model.thinking,
-    hasInFlightTools: model.hasInFlightTools,
-  });
+  const headerPose = assistantShozikPose({ thinking: model.thinking });
 
   return (
     <SafeAreaView
@@ -173,15 +145,23 @@ export function AssistantSheetView(model: AssistantSheetViewModel) {
         ) : (
           <FlashList
             ref={listRef}
-            data={model.rows}
+            data={rows}
             style={styles.list}
             keyExtractor={keyExtractor}
             renderItem={renderItem}
             getItemType={itemType}
             contentContainerStyle={styles.listContent}
-            onContentSizeChange={() => {
-              listRef.current?.scrollToEnd({ animated: true });
-            }}
+            onContentSizeChange={followThread}
+            onStartReached={model.loadOlder}
+            ListHeaderComponent={
+              // The same dig pose the wait line uses, not a spinner (SHO-394):
+              // one mark for "Shozik is fetching", wherever it happens.
+              model.loadingOlder ? (
+                <View style={styles.older}>
+                  <ShozikPoseMark pose="dig" size={SHOZIK_WAIT_POSE_SIZE} />
+                </View>
+              ) : null
+            }
           />
         )}
         <View style={styles.composer}>
@@ -241,6 +221,10 @@ const styles = StyleSheet.create((theme) => ({
   listContent: {
     paddingHorizontal: theme.spacing.lg,
     paddingVertical: theme.spacing.md,
+  },
+  older: {
+    alignItems: "center",
+    paddingVertical: theme.spacing.sm,
   },
   composer: {
     paddingHorizontal: theme.spacing.lg,
