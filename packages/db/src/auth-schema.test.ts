@@ -21,6 +21,7 @@ import {
   expect,
   expectTypeOf,
   it,
+  vi,
 } from "vitest";
 
 import type { DbClient } from "./client.js";
@@ -156,28 +157,28 @@ describe("better-auth generated schema (db.md §4)", () => {
     );
     expect(triggers.rows).toEqual([]);
 
+    // Pinning Node's clock makes the drizzle write carry a time no clock would
+    // produce: a BEFORE UPDATE trigger would overwrite it with Postgres now().
+    // Never compare it against a Postgres-written time — the container clock
+    // drifts hundreds of ms either side of the host (SHO-556).
+    const mark = new Date("2001-02-03T04:05:06.789Z");
     const userId = await insertUser({ name: "Before" });
-    const before = await dbClient.db
-      .select({ updatedAt: user.updatedAt })
-      .from(user)
-      .where(eq(user.id, userId));
-    const beforeAt = before[0]?.updatedAt;
-    expect(beforeAt).toBeInstanceOf(Date);
-
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    await dbClient.db
-      .update(user)
-      .set({ name: "Drizzle" })
-      .where(eq(user.id, userId));
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(mark);
+      await dbClient.db
+        .update(user)
+        .set({ name: "Drizzle" })
+        .where(eq(user.id, userId));
+    } finally {
+      vi.useRealTimers();
+    }
     const afterDrizzle = await dbClient.db
       .select({ updatedAt: user.updatedAt })
       .from(user)
       .where(eq(user.id, userId));
-    expect(afterDrizzle[0]?.updatedAt.getTime()).toBeGreaterThan(
-      beforeAt?.getTime() ?? Number.POSITIVE_INFINITY,
-    );
+    expect(afterDrizzle[0]?.updatedAt.getTime()).toBe(mark.getTime());
 
-    await new Promise((resolve) => setTimeout(resolve, 20));
     await admin.query(`UPDATE "user" SET name = $2 WHERE id = $1`, [
       userId,
       "Raw",
@@ -187,9 +188,7 @@ describe("better-auth generated schema (db.md §4)", () => {
       .from(user)
       .where(eq(user.id, userId));
     expect(afterRaw[0]?.name).toBe("Raw");
-    expect(afterRaw[0]?.updatedAt.getTime()).toBe(
-      afterDrizzle[0]?.updatedAt.getTime(),
-    );
+    expect(afterRaw[0]?.updatedAt.getTime()).toBe(mark.getTime());
   });
 });
 
