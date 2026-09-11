@@ -7,9 +7,11 @@ humans) don't relitigate settled questions or silently deviate.
 
 ## Rules
 
-- **Agents must not contradict an accepted ADR.** If an implementation task
-  seems to require deviating from one, stop and report — a new ADR
-  (superseding the old one) must be accepted first.
+- **An ADR is a decision dated by its Context.** Agents follow it and do not
+  reopen it on preference. When complying would need a workaround, the code
+  shows its Context no longer holds, or a clearly better design requires
+  changing it, stop and bring that evidence to the human. A superseding ADR
+  is accepted before code deviates.
 - New ADRs are proposed via PR using `template.md`, numbered sequentially.
 - Status lifecycle: `Proposed` → `Accepted` → (`Superseded by ADR-XXXX` | `Deprecated`).
 

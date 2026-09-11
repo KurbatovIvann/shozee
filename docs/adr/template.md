@@ -21,3 +21,7 @@ The decision, stated in one or two sentences, in active voice.
 
 - Positive, negative, and neutral consequences.
 - What becomes easier/harder; migration or follow-up work triggered.
+
+## Revisit when
+
+- The assumptions that, if they stop holding, reopen this decision.

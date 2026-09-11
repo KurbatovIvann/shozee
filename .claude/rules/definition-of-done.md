@@ -28,4 +28,5 @@ A task (one branch = one PR) is done only when all of the following hold.
    confirmation, events, tenant scope, and audit implied by the action
    metadata are implemented and tested, not just declared.
 5. **PR description** states: the Linear ticket / feature card, what was
-   tested, and any deviations or open questions.
+   tested, and any deviations or open questions; for a bug fix, the root
+   cause and why the fix sits at that level.

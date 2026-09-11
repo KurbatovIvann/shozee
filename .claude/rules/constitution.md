@@ -24,6 +24,9 @@ nearest `AGENTS.md` win over skills and agent playbooks.
   drive-by. Mechanical contract detail (timeout/rate-limit defaults, a Zod
   refine a test proved, a CHECK the card implied) may land in the same PR
   and must be named in the description.
+- **No workarounds for decisions.** Code that compensates for an ADR, a
+  contract, or a schema shape instead of following it is a stop, not a fix
+  (`AGENTS.md` → How we work).
 - **Do not read, grep, or cite `docs/archive/`** unless the human names a
   file. Those novels are not a contract, a golden, or a pipeline. Use
   `docs/reference/` for v1 archaeology. Protocol manuals in `docs/specs/`

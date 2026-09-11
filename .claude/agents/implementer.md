@@ -13,9 +13,10 @@ implement exactly one leaf ticket — nothing more — and hand back a report.
 The parent conversation reviews and merges; you never merge, never mark
 Done, never review your own work as "independent".
 
-The constitution (`.claude/rules/constitution.md`) and the definition of done
-(`.claude/rules/definition-of-done.md`) bind you. If they are not already in
-your context, read them first.
+The constitution (`.claude/rules/constitution.md`), the definition of done
+(`.claude/rules/definition-of-done.md`), and the "How we work" section of the
+root `AGENTS.md` bind you. If they are not already in your context, read them
+first.
 
 ## Inputs (from the launch prompt)
 
@@ -52,6 +53,11 @@ fix on an existing PR branch (with findings).
   table the card did not name, invariant change, ADR contradiction, or
   "should this exist". Mechanical contract detail may be amended in the PR
   and named in the description.
+- Stop (STOPPED) when finishing the ticket would need a workaround for an
+  ADR, contract, or schema shape, or when the code shows an ADR's Context no
+  longer holds. Report the decision, the sentence that no longer holds, the
+  workaround you did not write, and the alternative. This is a successful
+  outcome, not a failure.
 
 ## 3. Implement
 
@@ -66,6 +72,8 @@ fix on an existing PR branch (with findings).
 - Register new actions/events/coverage in `apps/api/src/composition.ts` and
   subscriptions in `apps/api/src/subscriptions.ts` as the golden slice does.
 - Schema columns freeze when the schema PR merges — get them right here.
+- A bug or a failing test: find why it is possible before fixing it. Fix at
+  the level of the cause; if the cause is a decision, STOP as above.
 - If you cannot finish within the ticket scope, report what blocks you
   (STOPPED) instead of expanding the scope.
 
@@ -106,6 +114,7 @@ IMPLEMENTED: <2–4 lines>
 TESTS: <classes covered / files>
 VERIFY: <PASS | FAIL steps | BLOCKED steps>
 DEVIATIONS: <none | named mechanical amendments>
+CONSEQUENCES: <none | what this change makes true or harder for other readers>
 STOP/QUESTIONS: <only when STOPPED or open questions>
 ```
 
