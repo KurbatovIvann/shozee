@@ -17,14 +17,18 @@
  */
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   check,
+  date,
   foreignKey,
   index,
   integer,
   jsonb,
   pgTable,
   text,
+  timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -84,6 +88,9 @@ export const assistantConversations = pgTable(
  *   repeats one is refused rather than becoming an update.
  * - `bind` is the runtime's opaque owner token, compared by the runtime and
  *   never interpreted here.
+ * - `revision` counts the writes of this message: 1 on insert, one more on
+ *   every update. A client holding two copies of the live message — an accept's
+ *   window and an event that overtook it — keeps the higher one (ADR-0039).
  */
 export const assistantChatMessages = pgTable(
   "assistant_chat_messages",
@@ -95,6 +102,7 @@ export const assistantChatMessages = pgTable(
     messageId: uuid("message_id").notNull(),
     bind: text("bind").notNull(),
     message: jsonb("message").notNull(),
+    revision: integer("revision").notNull().default(1),
     ...timestampColumns(),
   },
   (table) => [
@@ -111,12 +119,199 @@ export const assistantChatMessages = pgTable(
       table.messageId,
     ),
     check("assistant_chat_messages_seq_check", sql`${table.seq} > 0`),
+    check("assistant_chat_messages_revision_check", sql`${table.revision} > 0`),
     foreignKey({
       name: "assistant_chat_messages_conversations_company_fk",
       columns: [table.companyId, table.conversationId],
       foreignColumns: [
         assistantConversations.companyId,
         assistantConversations.id,
+      ],
+    }).onDelete("cascade"),
+  ],
+);
+
+/** Which accept produced a turn (ADR-0039). Stored, never inferred. */
+export const ASSISTANT_TURN_KINDS = ["chat", "answer"] as const;
+
+export type AssistantTurnKind = (typeof ASSISTANT_TURN_KINDS)[number];
+
+/** Every status a turn can hold. */
+export const ASSISTANT_TURN_STATUSES = [
+  "queued",
+  "running",
+  "done",
+  "failed",
+  "interrupted",
+] as const;
+
+export type AssistantTurnStatus = (typeof ASSISTANT_TURN_STATUSES)[number];
+
+/**
+ * The one definition of "the conversation's active turn": a turn row in one of
+ * these statuses. The partial unique index below and every query of the active
+ * turn read this list, so the two cannot disagree.
+ */
+export const ASSISTANT_TURN_ACTIVE_STATUSES = [
+  "queued",
+  "running",
+] as const satisfies readonly AssistantTurnStatus[];
+
+/** How a turn ended. A turn in one of these no longer holds its conversation. */
+export const ASSISTANT_TURN_FINAL_STATUSES = [
+  "done",
+  "failed",
+  "interrupted",
+] as const satisfies readonly AssistantTurnStatus[];
+
+function sqlInList(values: readonly string[]) {
+  return sql.raw(values.map((value) => `'${value}'`).join(", "));
+}
+
+/**
+ * One accepted turn per row (SHO-560, ADR-0039): the lease, the command
+ * receipt, and everything a worker or the reconciler needs to run or end the
+ * turn with no request in hand.
+ *
+ * - **The lease.** A turn in an active status holds its conversation; the
+ *   partial unique index allows one per conversation. `finish` moves it to a
+ *   final status, which frees the conversation. The status and its deadline
+ *   are Postgres facts, so the reconciler compares them to Postgres `now()`.
+ * - **The receipt.** `(conversation, kind, command)` is unique and the row is
+ *   kept after the turn ends, so a repeated command finds its turn whenever it
+ *   arrives. A send and an answer are different attempts under one client
+ *   token, which is why the kind is part of it.
+ * - **The request it replaces.** The BullMQ job carries only the turn's
+ *   identity (`kind`, conversation, command), so the row carries the rest: the
+ *   company, the author (`user_id`, the turn's only actor), the session the
+ *   worker checks for liveness, the request id the
+ *   turn's actions are audited under, the placeholder the worker writes into,
+ *   the budget hold, and a continuation's original command. No client IP: it
+ *   is transport-only (`security-operations.md` §3), and core does not need it
+ *   for a staff action.
+ *
+ * The budget hold is integer micro-USD. Floats are refused on schema files
+ * (`db.md` §3), and a reservation is a small decimal of dollars that a
+ * million-fold integer holds exactly.
+ *
+ * ON DELETE: the conversation, its messages and the company CASCADE, as the
+ * rest of the conversation does; the staff user is RESTRICT.
+ */
+export const assistantTurns = pgTable(
+  "assistant_turns",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    companyId: tenantCompanyId(),
+    conversationId: uuid("conversation_id").notNull(),
+    kind: text("kind").$type<AssistantTurnKind>().notNull(),
+    commandId: uuid("command_id").notNull(),
+    status: text("status").$type<AssistantTurnStatus>().notNull(),
+    userId: userIdColumn("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
+    /**
+     * better-auth `session.id` of the accepting request — never
+     * `session.token`. Unverified on write and never an identity: the actor is
+     * `user_id`, taken from the verified context. The worker runs the turn only
+     * while this session exists, is unexpired and has `session.user_id =
+     * user_id` (ADR-0039). Set while the turn is active, cleared when it ends.
+     * No FK: sessions expire.
+     */
+    sessionId: text("session_id"),
+    requestId: text("request_id").notNull(),
+    /** The person's message. A chat accept stores one; an answer none. */
+    userMessageId: uuid("user_message_id"),
+    placeholderMessageId: uuid("placeholder_message_id").notNull(),
+    /**
+     * The command whose idempotency keys a continuation's tools derive — the
+     * first turn of the chain, so continuing a continuation replays the same
+     * writes (ADR-0039, SHO-547).
+     */
+    continuesCommandId: uuid("continues_command_id"),
+    companyReservedMicroUsd: bigint("company_reserved_micro_usd", {
+      mode: "number",
+    }).notNull(),
+    globalReservedMicroUsd: bigint("global_reserved_micro_usd", {
+      mode: "number",
+    }).notNull(),
+    /** Europe/Kyiv day the hold was reserved on; release uses this day. */
+    budgetKyivDate: date("budget_kyiv_date", { mode: "string" }).notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    deadlineAt: timestamp("deadline_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    ...timestampColumns(),
+  },
+  (table) => [
+    tenantRowUnique("assistant_turns_company_id_id_uq", table),
+    unique("assistant_turns_command_uq").on(
+      table.companyId,
+      table.conversationId,
+      table.kind,
+      table.commandId,
+    ),
+    uniqueIndex("assistant_turns_active_uq")
+      .on(table.companyId, table.conversationId)
+      .where(
+        sql`${table.status} IN (${sqlInList(ASSISTANT_TURN_ACTIVE_STATUSES)})`,
+      ),
+    check(
+      "assistant_turns_kind_check",
+      sql`${table.kind} IN (${sqlInList(ASSISTANT_TURN_KINDS)})`,
+    ),
+    check(
+      "assistant_turns_status_check",
+      sql`${table.status} IN (${sqlInList(ASSISTANT_TURN_STATUSES)})`,
+    ),
+    check(
+      "assistant_turns_lifecycle_check",
+      sql`(${table.status} = 'queued' AND ${table.startedAt} IS NULL AND ${table.deadlineAt} IS NULL AND ${table.finishedAt} IS NULL)
+        OR (${table.status} = 'running' AND ${table.startedAt} IS NOT NULL AND ${table.deadlineAt} IS NOT NULL AND ${table.finishedAt} IS NULL)
+        OR (${table.status} IN (${sqlInList(ASSISTANT_TURN_FINAL_STATUSES)}) AND ${table.finishedAt} IS NOT NULL)`,
+    ),
+    check(
+      "assistant_turns_session_check",
+      sql`(${table.status} IN (${sqlInList(ASSISTANT_TURN_ACTIVE_STATUSES)})) = (${table.sessionId} IS NOT NULL)`,
+    ),
+    check(
+      "assistant_turns_user_message_check",
+      sql`(${table.kind} = 'chat') = (${table.userMessageId} IS NOT NULL)`,
+    ),
+    check(
+      "assistant_turns_continues_check",
+      sql`${table.continuesCommandId} IS NULL OR ${table.continuesCommandId} <> ${table.commandId}`,
+    ),
+    check(
+      "assistant_turns_reserved_check",
+      sql`${table.companyReservedMicroUsd} >= 0 AND ${table.globalReservedMicroUsd} >= 0`,
+    ),
+    foreignKey({
+      name: "assistant_turns_conversations_company_fk",
+      columns: [table.companyId, table.conversationId],
+      foreignColumns: [
+        assistantConversations.companyId,
+        assistantConversations.id,
+      ],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "assistant_turns_placeholder_message_fk",
+      columns: [
+        table.companyId,
+        table.conversationId,
+        table.placeholderMessageId,
+      ],
+      foreignColumns: [
+        assistantChatMessages.companyId,
+        assistantChatMessages.conversationId,
+        assistantChatMessages.messageId,
+      ],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "assistant_turns_user_message_fk",
+      columns: [table.companyId, table.conversationId, table.userMessageId],
+      foreignColumns: [
+        assistantChatMessages.companyId,
+        assistantChatMessages.conversationId,
+        assistantChatMessages.messageId,
       ],
     }).onDelete("cascade"),
   ],

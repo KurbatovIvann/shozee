@@ -27,10 +27,29 @@ export interface StaffChatMessageRecord {
   readonly messageId: string;
   readonly bind: string;
   readonly message: Record<string, unknown>;
+  readonly revision: number;
 }
 
 function isPayload(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * One past the last sequence number of a conversation, as an expression of the
+ * insert that uses it. Two inserts that race compute the same number and the
+ * unique key refuses the second, which is the point: the runtime serialises
+ * turns, and a failure of that must surface.
+ */
+export function nextChatMessageSeq(env: {
+  readonly companyId: string;
+  readonly conversationId: string;
+}) {
+  return sql<number>`(
+    select coalesce(max(${assistantChatMessages.seq}), 0) + 1
+    from ${assistantChatMessages}
+    where ${assistantChatMessages.companyId} = ${env.companyId}
+      and ${assistantChatMessages.conversationId} = ${env.conversationId}
+  )`;
 }
 
 function toRecord(row: {
@@ -38,6 +57,7 @@ function toRecord(row: {
   readonly messageId: string;
   readonly bind: string;
   readonly message: unknown;
+  readonly revision: number;
 }): StaffChatMessageRecord {
   // Every write goes through a schema that only admits an object, so anything
   // else in the column was put there around this module.
@@ -51,6 +71,7 @@ function toRecord(row: {
     messageId: row.messageId,
     bind: row.bind,
     message: row.message,
+    revision: row.revision,
   };
 }
 
@@ -78,6 +99,7 @@ export async function readStaffChatMessages(env: {
       messageId: assistantChatMessages.messageId,
       bind: assistantChatMessages.bind,
       message: assistantChatMessages.message,
+      revision: assistantChatMessages.revision,
     })
     .from(assistantChatMessages)
     .where(
@@ -114,15 +136,11 @@ export async function insertStaffChatMessage(env: {
   });
   const db = requireWritable(env.ctx.db);
 
-  // One past the last, in the same statement as the insert. Two inserts that
-  // race compute the same number and the unique key refuses the second, which is
-  // the point: the runtime serialises turns, and a failure of that must surface.
-  const next = sql<number>`(
-    select coalesce(max(${assistantChatMessages.seq}), 0) + 1
-    from ${assistantChatMessages}
-    where ${assistantChatMessages.companyId} = ${env.ctx.companyId}
-      and ${assistantChatMessages.conversationId} = ${env.conversationId}
-  )`;
+  // One past the last, in the same statement as the insert.
+  const next = nextChatMessageSeq({
+    companyId: env.ctx.companyId,
+    conversationId: env.conversationId,
+  });
 
   try {
     // A nested savepoint, so a refused insert does not abort the action's own
@@ -163,7 +181,7 @@ export async function updateStaffChatMessage(env: {
   readonly seq: number;
   readonly messageId: string;
   readonly message: Record<string, unknown>;
-}): Promise<number> {
+}): Promise<{ readonly seq: number; readonly revision: number }> {
   await loadOwnConversation({
     db: env.ctx.db,
     companyId: env.ctx.companyId,
@@ -174,7 +192,12 @@ export async function updateStaffChatMessage(env: {
 
   const updated = await db
     .update(assistantChatMessages)
-    .set({ message: env.message, updatedAt: new Date() })
+    .set({
+      message: env.message,
+      // One more per write, in the statement that writes, so two updates can
+      // never both claim the same revision.
+      revision: sql`${assistantChatMessages.revision} + 1`,
+    })
     .where(
       and(
         eq(assistantChatMessages.companyId, env.ctx.companyId),
@@ -185,10 +208,13 @@ export async function updateStaffChatMessage(env: {
         eq(assistantChatMessages.messageId, env.messageId),
       ),
     )
-    .returning({ seq: assistantChatMessages.seq });
+    .returning({
+      seq: assistantChatMessages.seq,
+      revision: assistantChatMessages.revision,
+    });
   const row = updated[0];
   if (row === undefined) {
     throw new NotFoundError();
   }
-  return row.seq;
+  return row;
 }

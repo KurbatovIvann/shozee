@@ -15,7 +15,7 @@ Runbook for SHO-505. Production keys live in Redis.
 | `AI_CHAT_TURNS_PER_MINUTE_PER_USER` | `20` | disables the per-user turn check |
 | `AI_DAILY_BUDGET_USD_PER_COMPANY` | `5` | disables the per-company Kyiv-day USD check |
 | `AI_DAILY_BUDGET_USD_GLOBAL` | `100` | disables the process-wide Kyiv-day USD check |
-| `AI_UNKNOWN_MODEL_TURN_USD` | `0.10` | not a disable switch — must be finite and greater than 0 (admission reservation and unpriced-model fallback) |
+| `AI_UNKNOWN_MODEL_TURN_USD` | `0.10` | not a disable switch — must be finite, greater than 0 and at most 1 USD (admission reservation and unpriced-model fallback). The cap bounds a turn's stored hold, so a bad release cannot lift the daily cap by more than that (SHO-560) |
 
 Restart the API after changing env. Counters are not reset by a restart.
 

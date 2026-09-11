@@ -413,6 +413,7 @@ describe("the message log", () => {
         messageId: entry.messageId,
         bind: BIND,
         message: entry,
+        revision: 1,
       })),
     );
   });
@@ -494,7 +495,7 @@ describe("the message log", () => {
         },
         {},
       ),
-    ).toEqual({ conversationId: fixtures.log, seq: 3 });
+    ).toEqual({ conversationId: fixtures.log, seq: 3, revision: 2 });
 
     const page = await kit.invoke(
       readChatMessages,

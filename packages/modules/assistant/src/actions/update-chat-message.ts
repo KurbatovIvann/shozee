@@ -6,14 +6,18 @@ import { updateChatMessageContract } from "./update-chat-message.contract.js";
 
 export const updateChatMessage = implementAction(updateChatMessageContract, {
   handler: async (input, ctx) => {
-    const seq = await updateStaffChatMessage({
+    const updated = await updateStaffChatMessage({
       ctx,
       conversationId: input.conversationId,
       seq: input.seq,
       messageId: input.messageId,
       message: input.message,
     });
-    return { conversationId: input.conversationId, seq };
+    return {
+      conversationId: input.conversationId,
+      seq: updated.seq,
+      revision: updated.revision,
+    };
   },
   auditTarget: conversationAuditTarget,
 });

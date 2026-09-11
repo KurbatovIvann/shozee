@@ -12,6 +12,7 @@ import { z } from "zod";
 
 import {
   chatMessagePayloadSchema,
+  chatMessageRevisionSchema,
   chatMessageSeqSchema,
 } from "./chat-message-record.contract.js";
 import { STAFF_CONVERSATION_AUTHOR_INVARIANT } from "./conversation-view.contract.js";
@@ -26,11 +27,13 @@ export const updateChatMessageInputSchema = z.strictObject({
 export const updateChatMessageOutputSchema = z.strictObject({
   conversationId: z.uuid(),
   seq: chatMessageSeqSchema,
+  /** The message's revision after this write: one more than before it. */
+  revision: chatMessageRevisionSchema,
 });
 
 export const updateChatMessageContract = defineActionContract({
   name: "assistant.updateChatMessage",
-  description: `${STAFF_CONVERSATION_AUTHOR_INVARIANT} Replace the stored payload of one message, named by its sequence number and its message id together. The payload is opaque and owned by the assistant runtime. A pair that names no stored message is not-found, as is a conversation belonging to another author or another company. Company id is never input.`,
+  description: `${STAFF_CONVERSATION_AUTHOR_INVARIANT} Replace the stored payload of one message, named by its sequence number and its message id together, and raise its revision by one. The payload is opaque and owned by the assistant runtime. A pair that names no stored message is not-found, as is a conversation belonging to another author or another company. Company id is never input.`,
   principal: "staff",
   transport: "internal",
   input: updateChatMessageInputSchema,

@@ -5,6 +5,7 @@
   "type": "module",
   "description": "Client-safe shared Zod schemas for action contracts and apps, plus the assistant presentation registry and its parse (ADR-0016, contract.md §2). Domain slices are exported as subpaths; this package owns no actions or tables.",
   "exports": {
+    "./assistant-budget": "./src/assistant-budget.ts",
     "./assistant-chat": "./src/assistant-chat.ts",
     "./assistant-surfaces": "./src/assistant-surfaces/index.ts",
     "./catalog": "./src/catalog.ts",

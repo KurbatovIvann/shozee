@@ -146,3 +146,42 @@ What changes:
 Not changed: the pause, the claim, the turn lease, `appendParts`, and the rule
 that an answer carries the conversation's current state rather than the
 fragment one request produced.
+
+## Addendum — the turn lease and the command receipt are a Postgres row (SHO-560, 2026-09-11)
+
+ADR-0039 moves the turn off the request. A turn that outlives its request
+cannot keep its lease and its receipt in Redis keys with a ttl: the lease has
+to last as long as a worker runs, and the receipt has to be found by a
+reconciler that holds no request and by a retry that arrives after the turn
+ended. Both become one row of `assistant_turns`.
+
+- **The lease.** A turn in `queued` or `running` holds its conversation; a
+  partial unique index allows one per conversation, and that status list
+  (`ASSISTANT_TURN_ACTIVE_STATUSES`) is the only definition of "the active
+  turn". `finish` moves the turn to `done`, `failed` or `interrupted` and frees
+  the conversation. The lease is not a ttl: a running turn has a deadline, and
+  the reconciler ends one past it.
+- **The receipt.** `(conversation, kind, command)` is unique and the row stays
+  after the turn ends, so a repeated command finds its turn whenever it arrives
+  and nothing runs twice. Ids are stored and compared lowercase.
+- **One transaction.** The row, the person's message (under an id derived from
+  the command) and the assistant's placeholder commit together through
+  `assistant.acceptTurn`. An answer stores only the placeholder, carrying the
+  card its resolved action earned.
+- **What the request carried.** The row stores the kind, the command, the
+  company, the author, the session, the request id, the placeholder, the budget
+  hold and a continuation's original command — everything a worker or the
+  reconciler needs without a request. Not the client IP: it is transport-only,
+  and core builds a staff context without one.
+- **The actor is `user_id`, never the session.** `user_id` comes from the
+  accept's verified context. `session_id` is better-auth's `session.id` (never
+  its token), unverified on write, and only a liveness hint: the worker runs a
+  turn only while that session exists, is unexpired and belongs to `user_id`.
+  It is cleared when the turn ends.
+- **Messages carry a revision**, 1 on insert and one more on every update, so a
+  client can keep the newer of two copies of the live message.
+
+Additive until the switch (SHO-563): the routes keep the Redis lease
+(`AssistantKit.turn`) and the Redis command receipts until then, and the switch
+removes both. After it there is one lease and one receipt, and they are this
+row.

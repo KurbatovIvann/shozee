@@ -23,7 +23,11 @@ import {
   assistantChatWindowSchema,
   assistantInteractionFromPause,
 } from "@showzy/validation/assistant-chat";
-import { assistantInteractions } from "@showzy/assistant-runtime";
+import {
+  assistantInteractions,
+  assistantTurnMessageId,
+  assistantTurnPlaceholder,
+} from "@showzy/assistant-runtime";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
@@ -159,6 +163,50 @@ describe("the window a server writes and the window a client reads", () => {
     expect(window).not.toHaveProperty("bind");
     expect(chatWindowSchema.safeParse(window).success).toBe(true);
     expect(assistantChatWindowSchema.safeParse(window).success).toBe(true);
+  });
+
+  /**
+   * An accepted turn answers with a window that ends in this placeholder
+   * (ADR-0039), so a client must read it before any worker has written to it.
+   */
+  it("agrees on an accepted turn's placeholder, with and without an earned card", () => {
+    const commandId = "66666666-6666-4666-8666-666666666666";
+    const placeholders = [
+      assistantTurnPlaceholder({
+        messageId: assistantTurnMessageId(
+          { kind: "chat", commandId },
+          "assistant",
+        ),
+        createdAt: "2026-09-11T10:00:00.000Z",
+      }),
+      assistantTurnPlaceholder({
+        messageId: assistantTurnMessageId(
+          { kind: "answer", commandId },
+          "assistant",
+        ),
+        createdAt: "2026-09-11T10:00:00.000Z",
+        earned: [
+          {
+            kind: "card",
+            cardId: "order:1",
+            revision: 1,
+            type: "orders-order",
+            payload: { orderId: "77777777-7777-4777-8777-777777777777" },
+          },
+        ],
+      }),
+    ];
+
+    for (const placeholder of placeholders) {
+      const window = {
+        conversationId: CONVERSATION,
+        messages: [placeholder],
+        olderCursor: null,
+        openPause: null,
+      };
+      expect(chatWindowSchema.safeParse(window).success).toBe(true);
+      expect(assistantChatWindowSchema.safeParse(window).success).toBe(true);
+    }
   });
 
   it("refuses a field one side would add without the other", () => {
