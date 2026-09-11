@@ -34,6 +34,7 @@ import {
 import { createAssistantKitEvents } from "./http/assistant-kit-events.js";
 import { createAssistantKitRuntime } from "./http/assistant-kit-runtime.js";
 import { createApp, type AuthInstance } from "./http/app.js";
+import { authInstanceFrom } from "./http/auth-instance.js";
 import { createProcessObservability } from "./observability.js";
 import { createActionPipeline } from "./pipeline.js";
 import {
@@ -107,20 +108,12 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
       secondaryStorage: secondary,
     }),
   );
-  const auth: AuthInstance = {
+  // What is forwarded — a session check's `query` included — is
+  // `authInstanceFrom`'s job, and tested there.
+  const auth: AuthInstance = authInstanceFrom({
     handler: (request) => authInstance.handler(request),
-    api: {
-      async getSession({ headers, query }) {
-        const result = await authInstance.api.getSession(
-          query === undefined ? { headers } : { headers, query },
-        );
-        if (result === null) {
-          return null;
-        }
-        return { user: { id: result.user.id } };
-      },
-    },
-  };
+    getSession: (args) => authInstance.api.getSession(args),
+  });
 
   const rateLimitStore = createRedisRateLimitStore(redis);
   const pipeline = createActionPipeline({

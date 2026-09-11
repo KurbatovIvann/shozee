@@ -103,16 +103,25 @@ beforeEach(async () => {
 
 /** Fired by the test, never by a clock. */
 interface ManualTimers extends AssistantKitStreamTimers {
-  beat(): void;
+  /** Resolves once a stream has armed its heartbeat: it has fully started. */
+  readonly armed: Promise<void>;
+  /** One whole heartbeat of every open stream. */
+  beat(): Promise<void>;
   idle(): void;
 }
 
 function manualTimers(): ManualTimers {
-  const beats = new Set<() => void>();
+  const beats = new Set<() => Promise<void>>();
   const idles = new Set<() => void>();
+  let arm = (): void => undefined;
+  const armed = new Promise<void>((resolve) => {
+    arm = resolve;
+  });
   return {
+    armed,
     every(_ms, tick) {
       beats.add(tick);
+      arm();
       return () => {
         beats.delete(tick);
       };
@@ -123,10 +132,8 @@ function manualTimers(): ManualTimers {
         idles.delete(fire);
       };
     },
-    beat() {
-      for (const tick of [...beats]) {
-        tick();
-      }
+    async beat() {
+      await Promise.all([...beats].map((tick) => tick()));
     },
     idle() {
       for (const fire of [...idles]) {
@@ -641,7 +648,7 @@ describe("what a stream carries", () => {
     const reader = await openStream(h, conversationId);
     await nextEvent(reader);
 
-    h.timers.beat();
+    await h.timers.beat();
 
     expect(await reader.next()).toEqual({ comment: "heartbeat" });
     expect(
@@ -742,7 +749,7 @@ describe("when a stream ends", () => {
     await nextEvent(reader);
 
     h.signOut();
-    h.timers.beat();
+    await h.timers.beat();
 
     expect(await reader.next()).toBeNull();
     await h.events.streams.settled();
@@ -756,11 +763,12 @@ describe("when a stream ends", () => {
     await nextEvent(reader);
 
     const session = h.holdSession();
-    h.timers.beat();
+    const beat = h.timers.beat();
     await session.asked;
     // The heartbeat is waiting on the session; the stream ends meanwhile.
     await reader.cancel();
     session.release();
+    await beat;
     await h.events.streams.settled();
 
     expect(await assistantEventKeys()).toEqual([]);
@@ -828,6 +836,36 @@ describe("limits", () => {
 
     const next = await openStream(h, conversationId);
     expect((await nextEvent(next)).type).toBe("snapshot");
+  });
+
+  it("keeps a stalled stream's slot counted: a heartbeat refreshes it while its client reads nothing", async () => {
+    const h = harness({ streamsPerUser: 1 });
+    const { conversationId, commandId } = await conversationWithTurn();
+    // Never read: the client stopped reading.
+    const stalled = await h.app.request(eventsPath(conversationId), {
+      headers: companyHeaders(),
+    });
+    expect(stalled.status).toBe(200);
+    await h.timers.armed;
+    const publisher = createRedisAssistantEventPublisher(redis);
+    for (let sent = 0; sent < 3; sent += 1) {
+      await publisher.publish(addressOf(conversationId), {
+        type: "turn.started",
+        conversationId,
+        kind: "chat",
+        commandId,
+      });
+    }
+
+    // What 45 s without a refresh would do: the slot's deadline has passed.
+    await redis.del(assistantStreamSlotsKey(anna.userId));
+    await h.timers.beat();
+
+    expect(await redis.zcard(assistantStreamSlotsKey(anna.userId))).toBe(1);
+    const another = await h.app.request(eventsPath(conversationId), {
+      headers: companyHeaders(),
+    });
+    expect(another.status).toBe(429);
   });
 
   it("opens a stream under a spend ceiling that refuses every turn: a stream is not a turn", async () => {

@@ -26,6 +26,8 @@ import {
 } from "vitest";
 
 import {
+  ASSISTANT_PRESENCE_TTL_MS,
+  ASSISTANT_STREAMS_PER_USER,
   assistantConversationChannel,
   assistantPresenceKey,
   type AssistantConversationAddress,
@@ -152,14 +154,17 @@ describe("presence", () => {
     expect(await redis.exists(assistantPresenceKey(address))).toBe(0);
   });
 
-  it("gives every live stream a deadline the key outlives", async () => {
-    const presence = createRedisAssistantPresence(redis, { ttlMs: 45_000 });
+  it("gives a stream the default 45 s deadline, which the key outlives", async () => {
+    const presence = createRedisAssistantPresence(redis);
     const address = newAddress();
 
     await presence.enter(address, "stream-a");
 
+    // Both sides of the comparison are Redis's clock: the deadline it set and
+    // the ttl it reports.
     const ttl = await redis.pttl(assistantPresenceKey(address));
-    expect(ttl).toBeGreaterThan(0);
+    expect(ASSISTANT_PRESENCE_TTL_MS).toBe(45_000);
+    expect(ttl).toBeGreaterThan(44_000);
     expect(ttl).toBeLessThanOrEqual(45_001);
   });
 
@@ -193,6 +198,20 @@ describe("stream slots", () => {
 
     await slots.release(userId, "stream-a");
     expect(await slots.acquire(userId, "stream-c")).toBe(true);
+  });
+
+  it("refuses a person's sixth stream by default", async () => {
+    const slots = createRedisAssistantStreamSlots(redis);
+    const userId = `user-${randomUUID()}`;
+
+    for (let stream = 1; stream <= 5; stream += 1) {
+      expect(await slots.acquire(userId, `stream-${String(stream)}`)).toBe(
+        true,
+      );
+    }
+
+    expect(ASSISTANT_STREAMS_PER_USER).toBe(5);
+    expect(await slots.acquire(userId, "stream-6")).toBe(false);
   });
 
   it("keeps one person's limit apart from another's", async () => {

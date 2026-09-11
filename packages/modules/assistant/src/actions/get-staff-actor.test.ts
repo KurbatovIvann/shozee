@@ -20,12 +20,14 @@ describe("assistant.getStaffActor contract", () => {
     expect(getStaffActorContract.timeout).toBe(5_000);
   });
 
-  it("takes empty input and returns role plus stored permissions", () => {
+  it("takes empty input and returns the verified company, role and stored permissions", () => {
     expect(Object.keys(getStaffActorInputSchema.shape)).toEqual([]);
     expect(Object.keys(getStaffActorOutputSchema.shape).toSorted()).toEqual([
+      "companyId",
       "permissions",
       "role",
     ]);
+    // The company is an answer, never a question: input still refuses it.
     expect(
       getStaffActorInputSchema.safeParse({
         companyId: "11111111-1111-4111-8111-111111111111",
@@ -33,9 +35,14 @@ describe("assistant.getStaffActor contract", () => {
     ).toBe(false);
     expect(
       getStaffActorOutputSchema.parse({
+        companyId: "11111111-1111-4111-8111-111111111111",
         role: "owner",
         permissions: [],
       }),
-    ).toEqual({ role: "owner", permissions: [] });
+    ).toEqual({
+      companyId: "11111111-1111-4111-8111-111111111111",
+      role: "owner",
+      permissions: [],
+    });
   });
 });

@@ -124,6 +124,13 @@ export interface AssistantRuntime {
   /** The pipeline's logger. Used for spend refusals, which are operational. */
   readonly logger: Logger;
   readonly forCaller: (caller: AssistantCaller) => AssistantKitScoped;
+  /**
+   * The company the staff context verified this caller's membership in, read
+   * as the caller. Not the selector they sent: a selector names a company, the
+   * context proves it. What a tenant-scoped name (a channel, a key) is built
+   * from (SHO-562).
+   */
+  readonly staffCompany: (caller: AssistantCaller) => Promise<string>;
   readonly model: LanguageModel;
   /**
    * Built fresh per turn: the caller's permissions decide the set, and card

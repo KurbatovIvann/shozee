@@ -88,6 +88,19 @@ export const ASSISTANT_STREAMS_PER_USER = 5;
  */
 export const ASSISTANT_STREAM_IDLE_MS = 10 * 60_000;
 
+/**
+ * Frames a stream may hold for its client and not yet have written. A turn
+ * publishes a handful — a start, an update per card or step, a finish — and a
+ * client that reads keeps this near zero. A backlog past it means the client
+ * stopped reading: its socket holds the writes, and every frame waiting behind
+ * them, a finished turn's whole window included, stays in memory until it
+ * reads. Ending the stream lets all of it go with the subscription, presence
+ * and slot, and the client's next connection starts from a snapshot — the
+ * recovery ADR-0039 relies on for any gap. A policy value, changed with a
+ * proving test.
+ */
+export const ASSISTANT_STREAM_PENDING_WRITES_MAX = 64;
+
 /** What travels on a channel: a versioned envelope around one published event. */
 export const assistantEventEnvelopeSchema = z.strictObject({
   version: z.literal(1),

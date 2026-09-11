@@ -24,15 +24,13 @@ import type { ChatWindow } from "@showzy/assistant-kit";
 import {
   ASSISTANT_EVENTS_HEARTBEAT_MS,
   ASSISTANT_STREAM_IDLE_MS,
+  ASSISTANT_STREAM_PENDING_WRITES_MAX,
   type AssistantConversationAddress,
   type AssistantEventHub,
   type AssistantPresence,
   type AssistantStreamSlots,
 } from "@showzy/assistant-runtime";
-import type {
-  AssistantPublishedEvent,
-  AssistantStreamEvent,
-} from "@showzy/validation/assistant-events";
+import type { AssistantPublishedEvent } from "@showzy/validation/assistant-events";
 import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
@@ -51,13 +49,16 @@ export const ASSISTANT_KIT_EVENTS_PATH = "/assistant/kit/events";
  * an idle close when it decides to, not after a real wait.
  */
 export interface AssistantKitStreamTimers {
-  every(ms: number, tick: () => void): () => void;
+  /** `tick` never rejects; its promise is one whole heartbeat, for a test to await. */
+  every(ms: number, tick: () => Promise<void>): () => void;
   after(ms: number, fire: () => void): () => void;
 }
 
 export const systemStreamTimers: AssistantKitStreamTimers = {
   every(ms, tick) {
-    const handle = setInterval(tick, ms);
+    const handle = setInterval(() => {
+      void tick();
+    }, ms);
     handle.unref();
     return () => {
       clearInterval(handle);
@@ -85,6 +86,8 @@ export interface AssistantKitStreams {
   closeAll(): Promise<void>;
   /** Resolves once every stream that has ended has also released its Redis state. */
   settled(): Promise<void>;
+  /** Resolves once no stream is open and every one has released its Redis state. */
+  drained(): Promise<void>;
 }
 
 interface AssistantKitStreamRegistry extends AssistantKitStreams {
@@ -96,7 +99,8 @@ interface AssistantKitStreamRegistry extends AssistantKitStreams {
 function createStreamRegistry(): AssistantKitStreamRegistry {
   const live = new Set<OpenStream>();
   const cleanups = new Set<Promise<void>>();
-  return {
+  const waiting: (() => void)[] = [];
+  const registry: AssistantKitStreamRegistry = {
     get open() {
       return live.size;
     },
@@ -106,11 +110,24 @@ function createStreamRegistry(): AssistantKitStreamRegistry {
     async settled() {
       await Promise.all([...cleanups]);
     },
+    async drained() {
+      if (live.size > 0) {
+        await new Promise<void>((resolve) => {
+          waiting.push(resolve);
+        });
+      }
+      await registry.settled();
+    },
     add(stream) {
       live.add(stream);
     },
     remove(stream) {
       live.delete(stream);
+      if (live.size === 0) {
+        for (const resolve of waiting.splice(0)) {
+          resolve();
+        }
+      }
     },
     cleaning(done) {
       cleanups.add(done);
@@ -119,6 +136,7 @@ function createStreamRegistry(): AssistantKitStreamRegistry {
       });
     },
   };
+  return registry;
 }
 
 export interface AssistantKitEvents {
@@ -129,6 +147,8 @@ export interface AssistantKitEvents {
   readonly timers: AssistantKitStreamTimers;
   readonly heartbeatMs: number;
   readonly idleMs: number;
+  /** Frames a stream may hold unwritten before it is ended. */
+  readonly pendingWritesMax: number;
   readonly streamId: () => string;
 }
 
@@ -143,6 +163,7 @@ export function createAssistantKitEvents(deps: {
   readonly timers?: AssistantKitStreamTimers;
   readonly heartbeatMs?: number;
   readonly idleMs?: number;
+  readonly pendingWritesMax?: number;
   readonly streamId?: () => string;
 }): AssistantKitEvents {
   const events: AssistantKitEventsInternal = {
@@ -153,6 +174,8 @@ export function createAssistantKitEvents(deps: {
     timers: deps.timers ?? systemStreamTimers,
     heartbeatMs: deps.heartbeatMs ?? ASSISTANT_EVENTS_HEARTBEAT_MS,
     idleMs: deps.idleMs ?? ASSISTANT_STREAM_IDLE_MS,
+    pendingWritesMax:
+      deps.pendingWritesMax ?? ASSISTANT_STREAM_PENDING_WRITES_MAX,
     streamId: deps.streamId ?? (() => randomUUID()),
   };
   return events;
@@ -166,6 +189,9 @@ function registryOf(events: AssistantKitEvents): AssistantKitStreamRegistry {
 
 /** A comment line: keeps intermediaries from timing the connection out. */
 const HEARTBEAT_COMMENT = ": heartbeat\n\n";
+
+const FELL_BEHIND =
+  "assistant event stream fell behind its client and was closed";
 
 export async function handleAssistantKitEvents(
   c: Context<AssistantKitAppEnv>,
@@ -184,12 +210,13 @@ export async function handleAssistantKitEvents(
     return json(400, { error: { code: "VALIDATION" } }, requestId);
   }
 
-  const { kit } = runtime.forCaller({
+  const assistantCaller = {
     userId: caller.userId,
     companySelector: caller.companySelector,
     requestId,
     clientIp: c.get("clientIp"),
-  });
+  };
+  const { kit } = runtime.forCaller(assistantCaller);
   const scope = { conversationId: conversationId.data, bind: caller.bind };
 
   // The author rule, and the same answer as the messages route: a foreign or
@@ -197,10 +224,11 @@ export async function handleAssistantKitEvents(
   // Nothing has been subscribed or counted yet, so a refusal leaves nothing.
   await kit.messages.read(scope);
 
-  // Only now does the company header name anything: the read proved this
-  // person's membership in it and their authorship of the conversation.
+  // A channel is a tenant boundary, so it is named from the company the staff
+  // context verified — not from the header. Today the two are the same string;
+  // only one of them is authority, and it stays right if selectors change.
   const address: AssistantConversationAddress = {
-    companyId: caller.companySelector,
+    companyId: await runtime.staffCompany(assistantCaller),
     conversationId: conversationId.data,
   };
   const streamId = events.streamId();
@@ -214,26 +242,38 @@ export async function handleAssistantKitEvents(
     return json(429, { error: { code: "RATE_LIMITED" } }, requestId);
   }
 
-  // Events that arrive before the snapshot is written wait here, then follow it.
+  // Events that arrive before the snapshot is written wait here, then follow
+  // it — up to the same cap as a stream's unwritten frames.
   const pending: AssistantPublishedEvent[] = [];
   let deliver: ((event: AssistantPublishedEvent) => void) | null = null;
-  let lost = false;
-  let onLost: (() => void) | null = null;
+  // The stream must end before it has started: the subscriber connection
+  // dropped, or events piled up past the cap while the snapshot was read.
+  let stopRequested = false;
+  let stop: (() => void) | null = null;
+  const requestStop = (): void => {
+    stopRequested = true;
+    stop?.();
+  };
 
   let subscription;
   try {
     subscription = await events.hub.subscribe(address, {
       onEvent: (event) => {
-        if (deliver === null) {
-          pending.push(event);
-        } else {
+        if (deliver !== null) {
           deliver(event);
+          return;
+        }
+        if (stopRequested) {
+          return;
+        }
+        pending.push(event);
+        if (pending.length > events.pendingWritesMax) {
+          log.info({ pending_writes: pending.length }, FELL_BEHIND);
+          pending.length = 0;
+          requestStop();
         }
       },
-      onLost: () => {
-        lost = true;
-        onLost?.();
-      },
+      onLost: requestStop,
     });
   } catch (error) {
     await events.slots.release(caller.userId, streamId);
@@ -241,8 +281,14 @@ export async function handleAssistantKitEvents(
   }
 
   // Subscribed before reading, so nothing published between the read and the
-  // subscription is missed. An event the snapshot already reflects arrives
-  // again; a client keeps the higher revision, so that is harmless.
+  // subscription is missed. An event the snapshot already reflects can then
+  // arrive after it. For `message.updated` that is harmless: a client keeps the
+  // higher revision. For `turn.finished` it is not entirely: its window's
+  // `openPause` carries no revision, so a finish held here can reach the client
+  // after a newer snapshot and show a question that closed in between (an
+  // abandon from another device publishes nothing). Answering it is refused as
+  // `stale`, so the harm is one refused tap; how a client merges a window that
+  // arrives after a newer one is SHO-563's rule, not this route's.
   let snapshot: ChatWindow;
   try {
     snapshot = await kit.messages.read(scope);
@@ -285,11 +331,29 @@ export async function handleAssistantKitEvents(
         await cleaned;
       },
     };
+    // Read through a call: `end` runs from callbacks (an abort, a lost
+    // subscriber, a failed check), so the flag can change between any two
+    // awaits here.
+    const isClosed = (): boolean => closed;
 
     // One write at a time, in the order they were asked for: that is what keeps
-    // the snapshot first and the events in publish order.
+    // the snapshot first and the events in publish order. Only writes wait here —
+    // a client that stops reading stalls this queue and nothing else.
+    let backlog = 0;
     let writes: Promise<void> = Promise.resolve();
     const enqueue = (write: () => Promise<void>): void => {
+      if (closed) {
+        return;
+      }
+      backlog += 1;
+      if (backlog > events.pendingWritesMax) {
+        // The client stopped reading. Every frame waiting for it stays in
+        // memory until it does; ending the stream lets all of it go, and the
+        // client's next connection starts from a snapshot.
+        log.info({ pending_writes: backlog }, FELL_BEHIND);
+        end();
+        return;
+      }
       writes = writes
         .then(async () => {
           if (!closed) {
@@ -299,18 +363,70 @@ export async function handleAssistantKitEvents(
         .catch((error: unknown) => {
           log.warn({ err: error }, "assistant event stream failed");
           end();
+        })
+        .then(() => {
+          backlog -= 1;
         });
-    };
-    const send = (event: AssistantStreamEvent): void => {
-      enqueue(() =>
-        stream.writeSSE({ event: event.type, data: JSON.stringify(event) }),
-      );
     };
     const restartIdle = (): void => {
       cancelIdle();
       if (!closed) {
         cancelIdle = events.timers.after(events.idleMs, end);
       }
+    };
+    const sendEvent = (event: AssistantPublishedEvent): void => {
+      enqueue(async () => {
+        await stream.writeSSE({
+          event: event.type,
+          data: JSON.stringify(event),
+        });
+        // Idle counts from what reached the client, not from what arrived for
+        // it: traffic a client never reads must not keep its stream open.
+        restartIdle();
+      });
+    };
+
+    // Re-checked on every beat: a session signed out or revoked elsewhere ends
+    // the stream within one heartbeat. Neither refreshed nor read from the
+    // cookie cache, so watching does not keep a session alive and a revoked one
+    // is seen at once. None of it waits behind the write queue: a stalled
+    // client must not be able to let its slot lapse while its stream is open.
+    let beating: Promise<void> | null = null;
+    const inFlightBeat = (): Promise<void> | null => beating;
+    const beat = async (): Promise<void> => {
+      try {
+        const session = await runtime.auth.api.getSession({
+          headers,
+          query: { disableRefresh: true, disableCookieCache: true },
+        });
+        if (session === null || session.user.id !== caller.userId) {
+          end();
+          return;
+        }
+        if (isClosed()) {
+          return;
+        }
+        await events.presence.enter(address, streamId);
+        await events.slots.refresh(caller.userId, streamId);
+        enqueue(async () => {
+          await stream.write(HEARTBEAT_COMMENT);
+        });
+      } catch (error) {
+        log.warn({ err: error }, "assistant event stream heartbeat failed");
+        end();
+      }
+    };
+    const heartbeat = (): Promise<void> => {
+      // One check at a time: a slow session store must not stack them up.
+      const running = inFlightBeat();
+      if (running !== null) {
+        return running;
+      }
+      const started = beat().finally(() => {
+        beating = null;
+      });
+      beating = started;
+      return started;
     };
 
     streams.add(handle);
@@ -320,55 +436,30 @@ export async function handleAssistantKitEvents(
     } else {
       signal.addEventListener("abort", end, { once: true });
     }
-    onLost = end;
-    if (lost) {
+    stop = end;
+    if (stopRequested) {
       end();
     }
-
-    // Read through a call: `end` runs from callbacks (an abort, a lost
-    // subscriber), so the flag can change between any two awaits here.
-    const isClosed = (): boolean => closed;
 
     try {
       if (!isClosed()) {
         await events.presence.enter(address, streamId);
       }
-      send({ type: "snapshot", window: snapshot });
-      deliver = (event) => {
-        restartIdle();
-        send(event);
-      };
+      enqueue(() =>
+        stream.writeSSE({
+          event: "snapshot",
+          data: JSON.stringify({ type: "snapshot", window: snapshot }),
+        }),
+      );
+      deliver = sendEvent;
       for (const event of pending.splice(0)) {
-        deliver(event);
+        sendEvent(event);
       }
       restartIdle();
 
-      // Re-checked on every beat: a session signed out or revoked elsewhere ends
-      // the stream within one heartbeat. Neither refreshed nor read from the
-      // cookie cache, so watching does not keep a session alive and a revoked
-      // one is seen at once.
-      cancelHeartbeat = isClosed()
-        ? cancelHeartbeat
-        : events.timers.every(events.heartbeatMs, () => {
-            enqueue(async () => {
-              const session = await runtime.auth.api.getSession({
-                headers,
-                query: { disableRefresh: true, disableCookieCache: true },
-              });
-              if (session === null || session.user.id !== caller.userId) {
-                end();
-                return;
-              }
-              // Ended while the session was being checked: refreshing now would
-              // put back the presence and the slot this stream is releasing.
-              if (isClosed()) {
-                return;
-              }
-              await events.presence.enter(address, streamId);
-              await events.slots.refresh(caller.userId, streamId);
-              await stream.write(HEARTBEAT_COMMENT);
-            });
-          });
+      if (!isClosed()) {
+        cancelHeartbeat = events.timers.every(events.heartbeatMs, heartbeat);
+      }
 
       await ended;
     } catch (error) {
@@ -378,10 +469,13 @@ export async function handleAssistantKitEvents(
     } finally {
       // Abort first: it drops whatever a client never read and makes any write
       // still pending fail at once, so waiting for the queue cannot hang on a
-      // client that stopped reading. Then wait for it, so no heartbeat already
-      // under way can refresh presence or a slot after they are released below.
+      // client that stopped reading.
       stream.abort();
       await writes;
+      // A heartbeat already checking the session finishes before anything is
+      // released, so it cannot put back what the lines below remove. Its awaits
+      // are the session store and Redis, never the client's socket.
+      await (inFlightBeat() ?? Promise.resolve());
       deliver = null;
       await release(log, "subscription", () => held.close());
       await release(log, "presence", () =>

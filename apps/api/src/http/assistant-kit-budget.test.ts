@@ -90,6 +90,7 @@ function harness(options?: {
         },
       },
       forCaller: () => ({ kit, history: memoryHistory() }),
+      staffCompany: () => Promise.resolve(COMPANY),
       model: stubTextModel("Готово."),
       tools: () =>
         options?.failTurn === true
@@ -231,6 +232,7 @@ describe("the spend ceiling on the kit routes", () => {
             kit: createAssistantKit(testDeps(assistantInteractions)),
             history: memoryHistory(),
           }),
+          staffCompany: () => Promise.resolve(COMPANY),
           model: stubTextModel("Готово."),
           tools: () => Promise.resolve({}),
           resolveAnswer: OK_RESOLVE,

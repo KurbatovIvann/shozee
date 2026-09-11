@@ -170,7 +170,13 @@ Limits, none of which touch the turn budget:
   without refreshing it and bypassing the cookie cache — so a sign-out or a
   revoked session ends the stream within 15 s, and watching never keeps a
   session alive.
-- **Idle streams close** after 10 minutes without an event.
+- **Idle streams close** after 10 minutes without an event written to the
+  client.
+- **A client that stops reading is let go.** A stream holding more than 64
+  frames it could not write is closed, releasing its subscription, presence and
+  slot; the client's next connection starts from a snapshot. The heartbeat's
+  session check and refreshes never wait behind those writes, so a stalled
+  stream cannot let its slot lapse while it is still open.
 - **A dropped Redis subscriber ends every stream on it**, so each client
   reconnects from a snapshot rather than carrying on past a gap.
 
