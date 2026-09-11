@@ -84,10 +84,16 @@ the queue and the events.**
   derivation — lives in the shared runtime package, not in either app. The
   job is a pointer: its payload is the turn's kind, conversation id and
   command id, lowercased so the accept and the reconciler derive one `jobId`.
-  Postgres is the source of everything else. The worker loads the turn row
-  and refuses a job whose session row is gone or expired (a direct read of
-  the `session` table; the worker has no better-auth); the session gives the
-  verified user, and the company and an answer's seed come from the turn row.
+  Postgres is the source of everything else. The worker loads the turn row;
+  the actor is the row's `user_id`, which the accept took from its verified
+  context, and the company and an answer's seed come from the same row. The
+  session is a liveness check, never a source of identity: the row's
+  `session_id` is unverified on write, so the worker refuses a job unless the
+  `session` row exists, is unexpired and `session.user_id` equals the turn's
+  `user_id` (a direct read of the `session` table; the worker has no
+  better-auth). *(Amended 2026-09-11, SHO-560: an earlier wording let the
+  session give the user, which would have made an input identifier an
+  identity grant.)*
   The reconciler rebuilds a lost job from that row alone. A server-side timeout
   is the only thing that ends a turn early; a closed connection never does.
   Each card is written to the live message as its tool completes, and each

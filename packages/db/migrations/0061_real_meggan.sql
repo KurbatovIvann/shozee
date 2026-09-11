@@ -6,7 +6,7 @@ CREATE TABLE "assistant_turns" (
 	"command_id" uuid NOT NULL,
 	"status" text NOT NULL,
 	"user_id" text NOT NULL,
-	"session_id" text NOT NULL,
+	"session_id" text,
 	"request_id" text NOT NULL,
 	"user_message_id" uuid,
 	"placeholder_message_id" uuid NOT NULL,
@@ -26,6 +26,7 @@ CREATE TABLE "assistant_turns" (
 	CONSTRAINT "assistant_turns_lifecycle_check" CHECK (("assistant_turns"."status" = 'queued' AND "assistant_turns"."started_at" IS NULL AND "assistant_turns"."deadline_at" IS NULL AND "assistant_turns"."finished_at" IS NULL)
         OR ("assistant_turns"."status" = 'running' AND "assistant_turns"."started_at" IS NOT NULL AND "assistant_turns"."deadline_at" IS NOT NULL AND "assistant_turns"."finished_at" IS NULL)
         OR ("assistant_turns"."status" IN ('done', 'failed', 'interrupted') AND "assistant_turns"."finished_at" IS NOT NULL)),
+	CONSTRAINT "assistant_turns_session_check" CHECK (("assistant_turns"."status" IN ('queued', 'running')) = ("assistant_turns"."session_id" IS NOT NULL)),
 	CONSTRAINT "assistant_turns_user_message_check" CHECK (("assistant_turns"."kind" = 'chat') = ("assistant_turns"."user_message_id" IS NOT NULL)),
 	CONSTRAINT "assistant_turns_continues_check" CHECK ("assistant_turns"."continues_command_id" IS NULL OR "assistant_turns"."continues_command_id" <> "assistant_turns"."command_id"),
 	CONSTRAINT "assistant_turns_reserved_check" CHECK ("assistant_turns"."company_reserved_micro_usd" >= 0 AND "assistant_turns"."global_reserved_micro_usd" >= 0)

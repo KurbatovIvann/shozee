@@ -48,7 +48,14 @@ export const acceptTurnInputSchema = z
     conversationId: z.uuid(),
     kind: assistantTurnKindSchema,
     commandId: z.uuid(),
-    /** The accepting request's session; the worker checks it is still live. */
+    /**
+     * better-auth `session.id` of the accepting request — never
+     * `session.token`. Unverified on write: core's staff context carries only
+     * the user, so this is a liveness hint and never an identity. The turn's
+     * actor is the verified caller, stored as `user_id`; the worker runs the
+     * turn only while this session exists, is unexpired and belongs to that
+     * user (ADR-0039).
+     */
     sessionId: z.string().min(1).max(256),
     userMessage: acceptTurnMessageSchema.optional(),
     placeholder: acceptTurnMessageSchema,

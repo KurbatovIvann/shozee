@@ -160,6 +160,15 @@ interface AcceptCommon {
   readonly budgetHold: StaffAssistantBudgetHold;
   /** Продовжити: the interrupted turn's command. */
   readonly continuesCommandId?: string;
+  /**
+   * Gives back the budget reservation this request made for the turn
+   * (`releaseStaffAssistantBudgetHold`). The store calls it exactly once when
+   * the accept did not store this turn — replayed, busy, wrong owner, or a
+   * throw — and never when it did, because then the row holds the hold and the
+   * worker or the reconciler settles it. Must not throw; the budget guard's
+   * release never does.
+   */
+  readonly releaseUnusedHold: () => Promise<void>;
 }
 
 export type AssistantTurnAcceptInput =
@@ -201,8 +210,8 @@ export type AssistantTurnAcceptResult =
 
 export interface AssistantTurnStore {
   /**
-   * On anything but `accepted` the caller's own budget reservation for this
-   * request was not used and is the caller's to release.
+   * On anything but `accepted`, and on a throw, the request's own reservation
+   * was not used; the store releases it through `releaseUnusedHold`.
    */
   accept(input: AssistantTurnAcceptInput): Promise<AssistantTurnAcceptResult>;
   start(
@@ -250,8 +259,14 @@ export function createPostgresAssistantTurnStore(
 ): AssistantTurnStore {
   const call = callFor(caller);
   return {
-    accept: (input) =>
-      asCaller(async (): Promise<AssistantTurnAcceptResult> => {
+    accept: async (input) => {
+      // The store, not each caller, owns giving back a reservation that no row
+      // holds: after the switch every reconnect replays its command, and a
+      // forgotten release would strand the reservation until the Kyiv day ends
+      // where no reconciler can see it.
+      let stored = false;
+      try {
+        const result = await asCaller(async (): Promise<AssistantTurnAcceptResult> => {
         // The kit's owner rule, kept for this write path as `messages.write`
         // keeps it: a log written under another token is not appended to.
         const latest = (
@@ -321,7 +336,15 @@ export function createPostgresAssistantTurnStore(
           turn: accepted.turn,
           job: jobOf(accepted.turn),
         };
-      }),
+      });
+        stored = result.outcome === "accepted";
+        return result;
+      } finally {
+        if (!stored) {
+          await input.releaseUnusedHold();
+        }
+      }
+    },
 
     /** Not through `asCaller`: a missing turn is not a gone conversation. */
     start: async (ref, options) => {

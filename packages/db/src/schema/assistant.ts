@@ -183,7 +183,8 @@ function sqlInList(values: readonly string[]) {
  *   token, which is why the kind is part of it.
  * - **The request it replaces.** The BullMQ job carries only the turn's
  *   identity (`kind`, conversation, command), so the row carries the rest: the
- *   company, the author, the session the worker re-checks, the request id the
+ *   company, the author (`user_id`, the turn's only actor), the session the
+ *   worker checks for liveness, the request id the
  *   turn's actions are audited under, the placeholder the worker writes into,
  *   the budget hold, and a continuation's original command. No client IP: it
  *   is transport-only (`security-operations.md` §3), and core does not need it
@@ -208,8 +209,15 @@ export const assistantTurns = pgTable(
     userId: userIdColumn("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "restrict" }),
-    /** The better-auth session of the accepting request. No FK: it expires. */
-    sessionId: text("session_id").notNull(),
+    /**
+     * better-auth `session.id` of the accepting request — never
+     * `session.token`. Unverified on write and never an identity: the actor is
+     * `user_id`, taken from the verified context. The worker runs the turn only
+     * while this session exists, is unexpired and has `session.user_id =
+     * user_id` (ADR-0039). Set while the turn is active, cleared when it ends.
+     * No FK: sessions expire.
+     */
+    sessionId: text("session_id"),
     requestId: text("request_id").notNull(),
     /** The person's message. A chat accept stores one; an answer none. */
     userMessageId: uuid("user_message_id"),
@@ -259,6 +267,10 @@ export const assistantTurns = pgTable(
       sql`(${table.status} = 'queued' AND ${table.startedAt} IS NULL AND ${table.deadlineAt} IS NULL AND ${table.finishedAt} IS NULL)
         OR (${table.status} = 'running' AND ${table.startedAt} IS NOT NULL AND ${table.deadlineAt} IS NOT NULL AND ${table.finishedAt} IS NULL)
         OR (${table.status} IN (${sqlInList(ASSISTANT_TURN_FINAL_STATUSES)}) AND ${table.finishedAt} IS NOT NULL)`,
+    ),
+    check(
+      "assistant_turns_session_check",
+      sql`(${table.status} IN (${sqlInList(ASSISTANT_TURN_ACTIVE_STATUSES)})) = (${table.sessionId} IS NOT NULL)`,
     ),
     check(
       "assistant_turns_user_message_check",

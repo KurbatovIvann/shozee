@@ -3,20 +3,30 @@
  * is served by (SHO-560, ADR-0039).
  *
  * What this proves that the module's own suite cannot: the messages the runtime
- * builds for an accept are ones the kit's window and the client's schema read,
- * and the job the accept names is the job the reconciler rebuilds from the row
- * alone — whatever casing the request carried.
+ * builds for an accept are ones the kit's window and the client's schema read;
+ * the job the accept names is the job the reconciler rebuilds from the row
+ * alone, whatever casing the request carried; and a request that stored no
+ * turn gives its budget reservation back.
  */
 import { randomUUID } from "node:crypto";
 
 import { chatWindowSchema } from "@showzy/assistant-kit";
 import {
   AssistantKitConversationGoneError,
+  DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+  aiCompanyBudgetKey,
+  aiGlobalBudgetKey,
   assistantTurnJobId,
   assistantTurnMessageId,
+  createMemoryAiBudgetStore,
   createPostgresAssistantStaleTurns,
   createPostgresAssistantTurnStore,
+  enforceStaffAssistantBudget,
+  releaseStaffAssistantBudgetHold,
+  type AiBudgetStore,
+  type StaffAssistantBudgetHold,
 } from "@showzy/assistant-runtime";
+import { ConflictError } from "@showzy/core/errors";
 import {
   createTestKit,
   kitIdentities,
@@ -42,6 +52,12 @@ const hold = {
   companyReservedUsd: 0.1,
   globalReservedUsd: 0.1,
   kyivDate: "2026-09-11",
+};
+
+/** For the tests that are not about the budget: nothing was reserved. */
+const nothingReserved = {
+  budgetHold: hold,
+  releaseUnusedHold: () => Promise.resolve(),
 };
 
 /** Pauses only; the kit reads one to fill `openPause`. */
@@ -95,6 +111,59 @@ async function ageTurn(conversationId: string): Promise<void> {
   expect(aged.rowCount).toBe(1);
 }
 
+/** The holds the turn rows of a conversation store, in micro-USD. */
+async function storedHolds(
+  conversationId: string,
+): Promise<{ company: number; global: number }[]> {
+  const rows = await kit.db.admin.query<{ company: number; global: number }>(
+    "select company_reserved_micro_usd::int as company, global_reserved_micro_usd::int as global from assistant_turns where conversation_id = $1",
+    [conversationId],
+  );
+  return rows.rows;
+}
+
+/**
+ * A real reservation against an in-memory budget, the way the route makes one,
+ * and the release the store is handed for it.
+ */
+async function reserve(budgetStore: AiBudgetStore): Promise<{
+  readonly budgetHold: StaffAssistantBudgetHold;
+  readonly releaseUnusedHold: () => Promise<void>;
+}> {
+  const reserved = await enforceStaffAssistantBudget({
+    logger: kit.pipeline.logger,
+    requestId: randomUUID(),
+    userId: anna.userId,
+    companyId: anna.companySelector,
+    skipTurnLimit: true,
+    budgetStore,
+    limits: DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+  });
+  return {
+    budgetHold: reserved,
+    releaseUnusedHold: () =>
+      releaseStaffAssistantBudgetHold({
+        logger: kit.pipeline.logger,
+        requestId: randomUUID(),
+        companyId: anna.companySelector,
+        hold: reserved,
+        budgetStore,
+      }),
+  };
+}
+
+async function reservedUsd(
+  budgetStore: AiBudgetStore,
+  kyivDate: string,
+): Promise<{ company: number; global: number }> {
+  return {
+    company: await budgetStore.read(
+      aiCompanyBudgetKey(anna.companySelector, kyivDate),
+    ),
+    global: await budgetStore.read(aiGlobalBudgetKey(kyivDate)),
+  };
+}
+
 beforeAll(async () => {
   kit = await createTestKit();
 }, 180_000);
@@ -115,7 +184,7 @@ describe("accepting a turn through the runtime", () => {
       bind: annaBind,
       text: "створи замовлення",
       sessionId: "session-anna",
-      budgetHold: hold,
+      ...nothingReserved,
     });
 
     expect(accepted.outcome).toBe("accepted");
@@ -156,7 +225,7 @@ describe("accepting a turn through the runtime", () => {
       bind: annaBind,
       text: "привіт",
       sessionId: "session-anna",
-      budgetHold: hold,
+      ...nothingReserved,
     };
 
     const first = await turns().accept(input);
@@ -177,23 +246,6 @@ describe("accepting a turn through the runtime", () => {
     ).toHaveLength(2);
   });
 
-  it("is busy while another turn holds the conversation", async () => {
-    const conversationId = await newConversation();
-    const base = {
-      kind: "chat" as const,
-      conversationId,
-      bind: annaBind,
-      text: "привіт",
-      sessionId: "session-anna",
-      budgetHold: hold,
-    };
-    await turns().accept({ ...base, commandId: randomUUID() });
-
-    expect(await turns().accept({ ...base, commandId: randomUUID() })).toEqual({
-      outcome: "busy",
-    });
-  });
-
   it("stores an answer's earned card on its placeholder, and no person's message", async () => {
     const conversationId = await newConversation();
     const card = {
@@ -211,7 +263,7 @@ describe("accepting a turn through the runtime", () => {
       bind: annaBind,
       earned: [card],
       sessionId: "session-anna",
-      budgetHold: hold,
+      ...nothingReserved,
     });
 
     expect(accepted).toMatchObject({
@@ -227,54 +279,147 @@ describe("accepting a turn through the runtime", () => {
       [card, { kind: "text", text: "", status: "streaming" }],
     ]);
   });
+});
 
-  it("does not append to a log written under another owner token", async () => {
-    const conversationId = await newConversation();
-    const base = {
-      kind: "chat" as const,
-      conversationId,
-      text: "привіт",
-      sessionId: "session-anna",
-      budgetHold: hold,
-    };
-    const first = await turns().accept({
-      ...base,
-      commandId: randomUUID(),
-      bind: annaBind,
-    });
-    if (first.outcome !== "accepted") {
-      throw new Error(`expected accepted, got ${first.outcome}`);
-    }
-    await turns().finish(first.turn, "done");
-
-    expect(
-      await turns().accept({
-        ...base,
-        commandId: randomUUID(),
-        bind: "someone-else",
-      }),
-    ).toEqual({ outcome: "wrong_owner" });
+/**
+ * Every accept is preceded by a reservation. Only a stored turn keeps it — the
+ * row then holds it for the worker or the reconciler. Every other outcome gives
+ * it back, and leaves the stored turn's hold as it was.
+ */
+describe("the budget reservation of an accept", () => {
+  const chat = (conversationId: string) => ({
+    kind: "chat" as const,
+    conversationId,
+    bind: annaBind,
+    text: "привіт",
+    sessionId: "session-anna",
   });
 
-  it("refuses another company's conversation with the same answer as a missing one", async () => {
+  it("is kept by the accepted turn and released when another turn is busy", async () => {
+    const budget = createMemoryAiBudgetStore();
+    const conversationId = await newConversation();
+    const first = await reserve(budget);
+
+    const accepted = await turns().accept({
+      ...chat(conversationId),
+      commandId: randomUUID(),
+      ...first,
+    });
+    const busy = await turns().accept({
+      ...chat(conversationId),
+      commandId: randomUUID(),
+      ...(await reserve(budget)),
+    });
+
+    expect(accepted.outcome).toBe("accepted");
+    expect(busy).toEqual({ outcome: "busy" });
+    expect(await reservedUsd(budget, first.budgetHold.kyivDate)).toEqual({
+      company: 0.1,
+      global: 0.1,
+    });
+    expect(await storedHolds(conversationId)).toEqual([
+      { company: 100_000, global: 100_000 },
+    ]);
+  });
+
+  it("is released when the command replays", async () => {
+    const budget = createMemoryAiBudgetStore();
+    const conversationId = await newConversation();
+    const commandId = randomUUID();
+    const first = await reserve(budget);
+    await turns().accept({ ...chat(conversationId), commandId, ...first });
+
+    const replayed = await turns().accept({
+      ...chat(conversationId),
+      commandId,
+      ...(await reserve(budget)),
+    });
+
+    expect(replayed.outcome).toBe("replayed");
+    expect(await reservedUsd(budget, first.budgetHold.kyivDate)).toEqual({
+      company: 0.1,
+      global: 0.1,
+    });
+    expect(await storedHolds(conversationId)).toEqual([
+      { company: 100_000, global: 100_000 },
+    ]);
+  });
+
+  it("is released when the log belongs to another owner token", async () => {
+    const budget = createMemoryAiBudgetStore();
+    const conversationId = await newConversation();
+    const first = await reserve(budget);
+    const accepted = await turns().accept({
+      ...chat(conversationId),
+      commandId: randomUUID(),
+      ...first,
+    });
+    if (accepted.outcome !== "accepted") {
+      throw new Error(`expected accepted, got ${accepted.outcome}`);
+    }
+    await turns().finish(accepted.turn, "done");
+
+    const refused = await turns().accept({
+      ...chat(conversationId),
+      bind: "someone-else",
+      commandId: randomUUID(),
+      ...(await reserve(budget)),
+    });
+
+    expect(refused).toEqual({ outcome: "wrong_owner" });
+    expect(await reservedUsd(budget, first.budgetHold.kyivDate)).toEqual({
+      company: 0.1,
+      global: 0.1,
+    });
+    expect(await storedHolds(conversationId)).toEqual([
+      { company: 100_000, global: 100_000 },
+    ]);
+  });
+
+  it("is released when the accept is refused as a conflict", async () => {
+    const budget = createMemoryAiBudgetStore();
+    const conversationId = await newConversation();
+    const reserved = await reserve(budget);
+
+    await expect(
+      turns().accept({
+        ...chat(conversationId),
+        commandId: randomUUID(),
+        // Nothing was interrupted, so there is nothing to continue.
+        continuesCommandId: randomUUID(),
+        ...reserved,
+      }),
+    ).rejects.toBeInstanceOf(ConflictError);
+
+    expect(await reservedUsd(budget, reserved.budgetHold.kyivDate)).toEqual({
+      company: 0,
+      global: 0,
+    });
+    expect(await storedHolds(conversationId)).toEqual([]);
+  });
+
+  it("is released when the conversation is gone, and says nothing about it", async () => {
+    const budget = createMemoryAiBudgetStore();
     const foreign = await newConversation({
       companyId: kitIdentities.companies.b,
       userId: kitIdentities.users.boris,
     });
 
     for (const conversationId of [foreign, randomUUID()]) {
+      const reserved = await reserve(budget);
       await expect(
         turns().accept({
-          kind: "chat",
-          conversationId,
+          ...chat(conversationId),
           commandId: randomUUID(),
-          bind: annaBind,
-          text: "привіт",
-          sessionId: "session-anna",
-          budgetHold: hold,
+          ...reserved,
         }),
       ).rejects.toBeInstanceOf(AssistantKitConversationGoneError);
+      expect(await reservedUsd(budget, reserved.budgetHold.kyivDate)).toEqual({
+        company: 0,
+        global: 0,
+      });
     }
+    expect(await storedHolds(foreign)).toEqual([]);
   });
 });
 
@@ -299,7 +444,7 @@ describe("the reconciler", () => {
       bind: annaBind,
       text: "привіт",
       sessionId: "session-anna",
-      budgetHold: hold,
+      ...nothingReserved,
     });
     if (accepted.outcome !== "accepted") {
       throw new Error(`expected accepted, got ${accepted.outcome}`);
@@ -334,7 +479,7 @@ describe("the reconciler", () => {
       bind: annaBind,
       text: "привіт",
       sessionId: "session-anna",
-      budgetHold: hold,
+      ...nothingReserved,
     });
     if (accepted.outcome !== "accepted") {
       throw new Error(`expected accepted, got ${accepted.outcome}`);

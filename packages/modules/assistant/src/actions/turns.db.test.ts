@@ -9,8 +9,10 @@
  */
 import { randomUUID } from "node:crypto";
 
+import { executeAction } from "@showzy/core";
 import {
   ConflictError,
+  CoreInvariantError,
   NotFoundError,
   PermissionDeniedError,
   ValidationError,
@@ -570,15 +572,33 @@ describe("accepting a turn", () => {
     expect((await turnRows(conversationId))[0]?.status).toBe("queued");
   });
 
-  it("refuses a person without assistant:use", async () => {
+  it("refuses a person without assistant:use to accept, start or finish", async () => {
     const conversationId = await newConversation();
+    const commandId = randomUUID();
+    await kit.invoke(acceptTurn, chatAccept(conversationId, commandId), {});
+    const denied = {
+      userId: clerks.denied,
+      companyId: kitIdentities.companies.a,
+    };
 
     await expect(
-      kit.invoke(acceptTurn, chatAccept(conversationId), {
-        userId: clerks.denied,
-        companyId: kitIdentities.companies.a,
-      }),
+      kit.invoke(acceptTurn, chatAccept(conversationId), denied),
     ).rejects.toBeInstanceOf(PermissionDeniedError);
+    await expect(
+      kit.invoke(
+        startTurn,
+        { ...ref(conversationId, commandId), timeoutMs: TIMEOUT_MS },
+        denied,
+      ),
+    ).rejects.toBeInstanceOf(PermissionDeniedError);
+    await expect(
+      kit.invoke(
+        finishTurn,
+        { ...ref(conversationId, commandId), status: "failed" },
+        denied,
+      ),
+    ).rejects.toBeInstanceOf(PermissionDeniedError);
+    expect((await turnRows(conversationId))[0]?.status).toBe("queued");
   });
 
   it("refuses a chat accept without the person's message", async () => {
@@ -593,7 +613,78 @@ describe("accepting a turn", () => {
   });
 });
 
+/**
+ * The claim is safe under concurrency because a unique violation waits for the
+ * winner to commit and is then answered by re-reading. Several rounds, so the
+ * two calls genuinely overlap rather than one finishing first.
+ */
+describe("two accepts at once", () => {
+  const ROUNDS = 5;
+
+  it("of the same command: one is accepted and the other replays it", async () => {
+    for (let round = 0; round < ROUNDS; round += 1) {
+      const conversationId = await newConversation();
+      const input = chatAccept(conversationId);
+
+      const outcomes = await Promise.all([
+        kit.invoke(acceptTurn, input, {}),
+        kit.invoke(acceptTurn, input, {}),
+      ]);
+
+      expect(outcomes.map((outcome) => outcome.outcome).sort()).toEqual([
+        "accepted",
+        "replayed",
+      ]);
+      expect(await messageIds(conversationId)).toHaveLength(2);
+      expect(await turnRows(conversationId)).toHaveLength(1);
+    }
+  });
+
+  it("of two commands: one is accepted and the other is busy", async () => {
+    for (let round = 0; round < ROUNDS; round += 1) {
+      const conversationId = await newConversation();
+
+      const outcomes = await Promise.all([
+        kit.invoke(acceptTurn, chatAccept(conversationId), {}),
+        kit.invoke(acceptTurn, chatAccept(conversationId), {}),
+      ]);
+
+      expect(outcomes.map((outcome) => outcome.outcome).sort()).toEqual([
+        "accepted",
+        "busy",
+      ]);
+      expect(await messageIds(conversationId)).toHaveLength(2);
+      const rows = await turnRows(conversationId);
+      expect(rows.filter((row) => row.status === "queued")).toHaveLength(1);
+      expect(rows).toHaveLength(1);
+    }
+  });
+});
+
 describe("starting and finishing a turn", () => {
+  it("keeps the session only while the turn is active", async () => {
+    for (const status of ["done", "failed", "interrupted"] as const) {
+      const conversationId = await newConversation();
+      const input = chatAccept(conversationId);
+      await kit.invoke(acceptTurn, input, {});
+      expect((await turnRows(conversationId))[0]?.sessionId).toBe(
+        "session-anna",
+      );
+
+      await kit.invoke(
+        finishTurn,
+        { ...ref(conversationId, input.commandId), status },
+        {},
+      );
+
+      expect((await turnRows(conversationId))[0]).toMatchObject({
+        status,
+        sessionId: null,
+        userId: kitIdentities.users.anna,
+      });
+    }
+  });
+
   it("frees the conversation on finish, and says what it found when there is nothing to do", async () => {
     const conversationId = await newConversation();
     const input = chatAccept(conversationId);
@@ -659,6 +750,44 @@ describe("starting and finishing a turn", () => {
 });
 
 describe("the reconciler's read", () => {
+  /**
+   * The isolation suite runs a global system action only in the scope it has,
+   * so the refusal of every other caller is proven here.
+   */
+  it("is refused to a staff caller and to a tenant-scoped system caller", async () => {
+    const input = { queuedStaleAfterMs: 60_000, limit: 10 };
+    const request = () => ({
+      requestId: randomUUID(),
+      correlationId: randomUUID(),
+      channel: "system" as const,
+    });
+
+    await expect(
+      executeAction(kit.pipeline, {
+        action: listStaleTurns,
+        input,
+        request: { ...request(), channel: "ui" as const },
+        principal: {
+          mode: "staff",
+          session: { userId: kitIdentities.users.anna },
+          companySelector: kitIdentities.companies.a,
+        },
+      }),
+    ).rejects.toBeInstanceOf(CoreInvariantError);
+    await expect(
+      executeAction(kit.pipeline, {
+        action: listStaleTurns,
+        input,
+        request: request(),
+        principal: {
+          mode: "system",
+          serviceName: "assistant-reconciler",
+          scope: { scope: "tenant", companyId: kitIdentities.companies.a },
+        },
+      }),
+    ).rejects.toBeInstanceOf(CoreInvariantError);
+  });
+
   it("returns exactly the stale turns, across companies, oldest first", async () => {
     const ageTurn = async (conversationId: string, age: string) => {
       await kit.db.runtime.db

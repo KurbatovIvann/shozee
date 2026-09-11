@@ -3,6 +3,7 @@ import {
   ASSISTANT_TURN_KINDS,
   ASSISTANT_TURN_STATUSES,
 } from "@showzy/db/schema/assistant";
+import { ASSISTANT_TURN_RESERVATION_MAX_MICRO_USD } from "@showzy/validation/assistant-budget";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -167,6 +168,29 @@ describe("the turn contracts", () => {
         kyivDate: "11.09.2026",
       }),
     ).toBe(false);
+  });
+
+  /**
+   * A release subtracts whatever the row holds, so a hold above one turn's
+   * reservation would lower the company and global counters below what was
+   * reserved.
+   */
+  it("refuse a hold above one turn's reservation", () => {
+    const hold = (companyReservedMicroUsd: number, globalReservedMicroUsd: number) =>
+      acceptTurnInputSchema.safeParse(
+        chatAccept({
+          budgetHold: {
+            companyReservedMicroUsd,
+            globalReservedMicroUsd,
+            kyivDate: "2026-09-11",
+          },
+        }),
+      ).success;
+    const max = ASSISTANT_TURN_RESERVATION_MAX_MICRO_USD;
+
+    expect(hold(max, max)).toBe(true);
+    expect(hold(max + 1, 0)).toBe(false);
+    expect(hold(0, max + 1)).toBe(false);
   });
 
   it("finish only as a final status", () => {

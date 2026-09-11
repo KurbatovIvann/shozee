@@ -9,6 +9,7 @@
  * owned schema, because a contract file may not import `@showzy/db`. A unit test
  * pins them equal.
  */
+import { ASSISTANT_TURN_RESERVATION_MAX_MICRO_USD } from "@showzy/validation/assistant-budget";
 import { z } from "zod";
 
 export const assistantTurnKindSchema = z.enum(["chat", "answer"]);
@@ -49,8 +50,14 @@ export const assistantTurnViewSchema = z.strictObject({
  * Europe/Kyiv day it was reserved on.
  */
 export const assistantTurnBudgetHoldSchema = z.strictObject({
-  companyReservedMicroUsd: z.int().nonnegative(),
-  globalReservedMicroUsd: z.int().nonnegative(),
+  companyReservedMicroUsd: z
+    .int()
+    .nonnegative()
+    .max(ASSISTANT_TURN_RESERVATION_MAX_MICRO_USD),
+  globalReservedMicroUsd: z
+    .int()
+    .nonnegative()
+    .max(ASSISTANT_TURN_RESERVATION_MAX_MICRO_USD),
   kyivDate: z.iso.date(),
 });
 

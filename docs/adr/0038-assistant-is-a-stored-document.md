@@ -173,6 +173,11 @@ ended. Both become one row of `assistant_turns`.
   hold and a continuation's original command — everything a worker or the
   reconciler needs without a request. Not the client IP: it is transport-only,
   and core builds a staff context without one.
+- **The actor is `user_id`, never the session.** `user_id` comes from the
+  accept's verified context. `session_id` is better-auth's `session.id` (never
+  its token), unverified on write, and only a liveness hint: the worker runs a
+  turn only while that session exists, is unexpired and belongs to `user_id`.
+  It is cleared when the turn ends.
 - **Messages carry a revision**, 1 on insert and one more on every update, so a
   client can keep the newer of two copies of the live message.
 

@@ -64,7 +64,7 @@ export async function writeStaffChatState(env: {
   });
   const db = requireWritable(env.ctx.db);
 
-  const now = new Date();
+  // `updated_at` is the shared trigger's (db.md §5): one clock, Postgres's.
   const history = env.history ?? null;
   await db
     .insert(assistantChatState)
@@ -72,10 +72,9 @@ export async function writeStaffChatState(env: {
       companyId: env.ctx.companyId,
       conversationId: env.conversationId,
       history,
-      updatedAt: now,
     })
     .onConflictDoUpdate({
       target: [assistantChatState.companyId, assistantChatState.conversationId],
-      set: { history, updatedAt: now },
+      set: { history },
     });
 }

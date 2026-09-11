@@ -444,6 +444,7 @@ describe("assistant turns", () => {
     const finished = {
       status: "done" as const,
       finishedAt: new Date("2026-09-11T10:00:00.000Z"),
+      sessionId: null,
     };
     await dbClient.db
       .insert(assistantTurns)
@@ -460,6 +461,7 @@ describe("assistant turns", () => {
       commandId,
       status: "done" as const,
       finishedAt: new Date("2026-09-11T10:00:00.000Z"),
+      sessionId: null,
     };
     await dbClient.db.insert(assistantTurns).values(turn(world, done));
 
@@ -490,6 +492,9 @@ describe("assistant turns", () => {
       { status: "queued" as const, startedAt: at, deadlineAt: at },
       { status: "interrupted" as const },
       { status: "paused" as never, finishedAt: at },
+      // An ended turn keeps no session; an active one always has one.
+      { status: "done" as const, finishedAt: at },
+      { sessionId: null },
       { kind: "chat" as const, userMessageId: null },
       { kind: "answer" as const },
       { kind: "other" as never, userMessageId: null },
@@ -525,6 +530,29 @@ describe("assistant turns", () => {
         .values(turn(world, { placeholderMessageId: other.messages[1] ?? "" })),
       "23503",
     );
+  });
+
+  /**
+   * One clock for `updated_at`: the shared trigger (db.md §5), never a handler's
+   * `new Date()` beside another handler's `now()`.
+   */
+  it("keeps updated_at by the shared trigger on every assistant table", async () => {
+    const result = await admin.query<{ tgname: string }>(
+      `SELECT t.tgname
+       FROM pg_trigger t
+       JOIN pg_class c ON c.oid = t.tgrelid
+       WHERE NOT t.tgisinternal
+         AND t.tgname LIKE '%_set_updated_at'
+         AND c.relname LIKE 'assistant%'
+       ORDER BY t.tgname`,
+    );
+
+    expect(result.rows.map((row) => row.tgname)).toEqual([
+      "assistant_chat_messages_set_updated_at",
+      "assistant_chat_state_set_updated_at",
+      "assistant_conversations_set_updated_at",
+      "assistant_turns_set_updated_at",
+    ]);
   });
 
   it("goes with its conversation", async () => {

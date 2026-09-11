@@ -313,7 +313,6 @@ export async function startStaffTurn(env: {
         status: "running",
         startedAt: sql`now()`,
         deadlineAt: nowPlusMs(env.input.timeoutMs),
-        updatedAt: sql`now()`,
       })
       .where(and(byIdentity(identity), eq(assistantTurns.status, "queued")))
       .returning({ deadlineAt: assistantTurns.deadlineAt })
@@ -348,7 +347,9 @@ export async function finishStaffTurn(env: {
       .set({
         status: env.input.status,
         finishedAt: sql`now()`,
-        updatedAt: sql`now()`,
+        // Only an active turn needs its session: the worker's liveness check.
+        // An ended turn keeps no pointer to a person's session.
+        sessionId: null,
       })
       .where(and(byIdentity(identity), isActive()))
       .returning({ status: assistantTurns.status })

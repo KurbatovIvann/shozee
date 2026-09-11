@@ -8,7 +8,8 @@
  */
 import { kyivCalendarDate, secondsUntilKyivMidnight } from "@showzy/ai";
 import type { RateLimitDecision, RateLimitStore } from "@showzy/core";
-import { RateLimitError } from "@showzy/core/errors";
+import { CoreInvariantError, RateLimitError } from "@showzy/core/errors";
+import { ASSISTANT_TURN_RESERVATION_MAX_USD } from "@showzy/validation/assistant-budget";
 import type { Logger } from "pino";
 
 import {
@@ -46,6 +47,26 @@ export const DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS: StaffAssistantBudgetLimits =
     dailyBudgetUsdGlobal: 100,
     unknownModelTurnUsd: 0.1,
   };
+
+/**
+ * Refuses limits whose per-turn reservation is more than a turn row may hold
+ * (`ASSISTANT_TURN_RESERVATION_MAX_USD`, SHO-560).
+ *
+ * The reservation is what a turn row stores as its hold and what a release
+ * later subtracts. The row refuses a hold above the bound, so a reservation
+ * above it could be taken and never recorded. Checked where the limits are
+ * composed, so a bad value stops the process at boot rather than a turn later.
+ */
+export function assertStaffAssistantBudgetLimits(
+  limits: StaffAssistantBudgetLimits,
+): StaffAssistantBudgetLimits {
+  if (!(limits.unknownModelTurnUsd <= ASSISTANT_TURN_RESERVATION_MAX_USD)) {
+    throw new CoreInvariantError(
+      `staff assistant per-turn reservation ${String(limits.unknownModelTurnUsd)} USD exceeds the ${String(ASSISTANT_TURN_RESERVATION_MAX_USD)} USD a turn may hold`,
+    );
+  }
+  return limits;
+}
 
 export interface StaffAssistantBudgetHold {
   readonly companyReservedUsd: number;

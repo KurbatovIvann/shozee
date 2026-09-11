@@ -197,7 +197,6 @@ export async function updateStaffChatMessage(env: {
       // One more per write, in the statement that writes, so two updates can
       // never both claim the same revision.
       revision: sql`${assistantChatMessages.revision} + 1`,
-      updatedAt: new Date(),
     })
     .where(
       and(
