@@ -31,6 +31,7 @@ import {
   type TestKit,
 } from "@showzy/core/testing";
 import { companyCustomers } from "@showzy/db/schema/customers";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createActionRegistry } from "../composition.js";
@@ -94,11 +95,11 @@ async function archivedCustomer(): Promise<string> {
 }
 
 async function customerExists(id: string): Promise<boolean> {
-  const found = await kit.db.admin.query(
-    "select 1 from company_customers where id = $1",
-    [id],
-  );
-  return found.rowCount === 1;
+  const found = await kit.db.runtime.db
+    .select({ id: companyCustomers.id })
+    .from(companyCustomers)
+    .where(eq(companyCustomers.id, id));
+  return found.length === 1;
 }
 
 /** The model's tool call, run the way the host runs it. */

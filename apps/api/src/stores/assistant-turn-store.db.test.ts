@@ -33,10 +33,14 @@ import {
   kitIdentities,
   type TestKit,
 } from "@showzy/core/testing";
-import { assistantConversations } from "@showzy/db/schema/assistant";
+import {
+  assistantConversations,
+  assistantTurns,
+} from "@showzy/db/schema/assistant";
 import { user } from "@showzy/db/schema/auth";
 import { companyMembers } from "@showzy/db/schema/companies";
 import { assistantChatWindowSchema } from "@showzy/validation/assistant-chat";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createActionRegistry } from "../composition.js";
@@ -107,22 +111,26 @@ async function newConversation(
  * meets a host clock.
  */
 async function ageTurn(conversationId: string): Promise<void> {
-  const aged = await kit.db.admin.query(
-    "update assistant_turns set created_at = now() - interval '10 minutes' where conversation_id = $1",
-    [conversationId],
-  );
-  expect(aged.rowCount).toBe(1);
+  const aged = await kit.db.runtime.db
+    .update(assistantTurns)
+    .set({ createdAt: sql`now() - interval '10 minutes'` })
+    .where(eq(assistantTurns.conversationId, conversationId))
+    .returning({ id: assistantTurns.id });
+  expect(aged.length).toBe(1);
 }
 
 /** The holds the turn rows of a conversation store, in micro-USD. */
 async function storedHolds(
   conversationId: string,
 ): Promise<{ company: number; global: number }[]> {
-  const rows = await kit.db.admin.query<{ company: number; global: number }>(
-    "select company_reserved_micro_usd::int as company, global_reserved_micro_usd::int as global from assistant_turns where conversation_id = $1",
-    [conversationId],
-  );
-  return rows.rows;
+  const rows = await kit.db.runtime.db
+    .select({
+      company: assistantTurns.companyReservedMicroUsd,
+      global: assistantTurns.globalReservedMicroUsd,
+    })
+    .from(assistantTurns)
+    .where(eq(assistantTurns.conversationId, conversationId));
+  return rows;
 }
 
 /**
@@ -657,11 +665,11 @@ describe("the turn a job names", () => {
     const running = await acceptAndRead();
     expect((await running.asTurn.start(running.turn)).outcome).toBe("started");
 
-    const removed = await kit.db.admin.query(
-      "delete from company_members where user_id = $1",
-      [clerkId],
-    );
-    expect(removed.rowCount).toBe(1);
+    const removed = await kit.db.runtime.db
+      .delete(companyMembers)
+      .where(eq(companyMembers.userId, clerkId))
+      .returning({ id: companyMembers.id });
+    expect(removed.length).toBe(1);
 
     await expect(queued.asTurn.start(queued.turn)).rejects.toBeInstanceOf(
       PermissionDeniedError,
