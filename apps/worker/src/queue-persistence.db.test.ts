@@ -5,12 +5,13 @@
  * Two Redis instances, on purpose. The queue Redis holds accepted assistant
  * turns, so it persists with AOF and never evicts. The shared Redis holds
  * better-auth secondary storage — plaintext OTP codes among it — plus rate
- * limits, confirmation challenges and pauses, and must not persist.
+ * limits, confirmation challenges and pauses, and must not persist: no RDB
+ * snapshots, no append-only file.
  *
- * This reads both services from `docker-compose.yml` and runs the queue
- * service's exact image and command, so a compose edit that drops AOF or
- * `noeviction`, a command Redis refuses, or persistence creeping onto the
- * shared Redis turns this red.
+ * This reads both services from `docker-compose.yml` and runs each service's
+ * exact image and command, so a compose edit that drops AOF or `noeviction`
+ * from the queue, lets persistence creep onto the shared Redis, or passes a
+ * command Redis refuses turns this red.
  */
 import { readFileSync } from "node:fs";
 
@@ -74,6 +75,14 @@ function blockList(service: string, key: string): string[] | undefined {
     );
 }
 
+function serviceCommand(service: string, name: string): string[] {
+  const command = blockList(service, "command");
+  if (command === undefined) {
+    throw new Error(`the ${name} service has no command`);
+  }
+  return command;
+}
+
 function flagValue(
   command: readonly string[],
   flag: string,
@@ -87,14 +96,44 @@ async function configGet(redis: Redis, name: string): Promise<unknown> {
   return Array.isArray(reply) ? reply[1] : undefined;
 }
 
+/** Runs a compose service's image with its command, as compose would. */
+function runningService(service: string, command: string[]) {
+  const running: { container?: StartedTestContainer; redis?: Redis } = {};
+
+  beforeAll(async () => {
+    const container = await new GenericContainer(serviceImage(service))
+      .withCommand(command)
+      .withExposedPorts(REDIS_PORT)
+      .withWaitStrategy(Wait.forLogMessage("Ready to accept connections"))
+      .start();
+    running.container = container;
+    const redis = new Redis({
+      host: container.getHost(),
+      port: container.getMappedPort(REDIS_PORT),
+      lazyConnect: true,
+    });
+    running.redis = redis;
+    await redis.connect();
+  });
+
+  afterAll(async () => {
+    await running.redis?.quit();
+    await running.container?.stop();
+  });
+
+  return (name: string): Promise<unknown> => {
+    if (running.redis === undefined) {
+      throw new Error("the redis container did not start");
+    }
+    return configGet(running.redis, name);
+  };
+}
+
 const compose = composeText();
 const queue = composeService(compose, QUEUE_SERVICE);
 const shared = composeService(compose, SHARED_SERVICE);
-
-const queueCommand = blockList(queue, "command");
-if (queueCommand === undefined) {
-  throw new Error(`the ${QUEUE_SERVICE} service has no command`);
-}
+const queueCommand = serviceCommand(queue, QUEUE_SERVICE);
+const sharedCommand = serviceCommand(shared, SHARED_SERVICE);
 
 describe("compose queue redis (static)", () => {
   it("keeps its data on its own named volume at /data", () => {
@@ -117,10 +156,14 @@ describe("compose queue redis (static)", () => {
 });
 
 describe("compose shared redis (static)", () => {
-  it("does not persist: no volume and no persistence command", () => {
+  it("has no volume to persist into", () => {
     expect(blockList(shared, "volumes")).toBeUndefined();
-    expect(blockList(shared, "command")).toBeUndefined();
-    expect(shared).not.toMatch(/appendonly|appendfsync/);
+  });
+
+  it("asks for no snapshots and no append-only file", () => {
+    expect(sharedCommand[0]).toBe("redis-server");
+    expect(flagValue(sharedCommand, "--save")).toBe("");
+    expect(flagValue(sharedCommand, "--appendonly")).toBe("no");
   });
 
   it("is published on loopback only", () => {
@@ -129,43 +172,33 @@ describe("compose shared redis (static)", () => {
 });
 
 describe("compose queue redis (running)", () => {
-  let container: StartedTestContainer;
-  let redis: Redis;
-
-  beforeAll(async () => {
-    container = await new GenericContainer(serviceImage(queue))
-      .withCommand(queueCommand)
-      .withExposedPorts(REDIS_PORT)
-      .withWaitStrategy(Wait.forLogMessage("Ready to accept connections"))
-      .start();
-    redis = new Redis({
-      host: container.getHost(),
-      port: container.getMappedPort(REDIS_PORT),
-      lazyConnect: true,
-    });
-    await redis.connect();
-  });
-
-  afterAll(async () => {
-    await redis.quit();
-    await container.stop();
-  });
+  const config = runningService(queue, queueCommand);
 
   it("runs with appendonly yes (CONFIG GET appendonly)", async () => {
-    await expect(configGet(redis, "appendonly")).resolves.toBe("yes");
+    await expect(config("appendonly")).resolves.toBe("yes");
   });
 
   it("runs with appendfsync everysec", async () => {
-    await expect(configGet(redis, "appendfsync")).resolves.toBe("everysec");
+    await expect(config("appendfsync")).resolves.toBe("everysec");
   });
 
   it("never evicts (CONFIG GET maxmemory-policy)", async () => {
-    await expect(configGet(redis, "maxmemory-policy")).resolves.toBe(
-      "noeviction",
-    );
+    await expect(config("maxmemory-policy")).resolves.toBe("noeviction");
   });
 
   it("writes its append-only file under /data, where the volume is mounted", async () => {
-    await expect(configGet(redis, "dir")).resolves.toBe("/data");
+    await expect(config("dir")).resolves.toBe("/data");
+  });
+});
+
+describe("compose shared redis (running)", () => {
+  const config = runningService(shared, sharedCommand);
+
+  it("takes no RDB snapshots (CONFIG GET save is empty)", async () => {
+    await expect(config("save")).resolves.toBe("");
+  });
+
+  it("writes no append-only file (CONFIG GET appendonly)", async () => {
+    await expect(config("appendonly")).resolves.toBe("no");
   });
 });

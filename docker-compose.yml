@@ -44,6 +44,13 @@ services:
     # confirmation challenges, assistant pauses and budget counters, and the
     # worker's safe-to-miss maintenance and pdf jobs.
     image: redis:8-alpine
+    # No RDB snapshots and no append-only file: OTP codes never reach disk.
+    command:
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
     ports:
       - "127.0.0.1:6379:6379"
     healthcheck:
