@@ -267,6 +267,21 @@ describe("assistantThreadRows", () => {
     expect(result[1]?.text).toBe("");
   });
 
+  it("shows an interrupted turn as a stopped reply, keeping what it said", () => {
+    const result = rows(
+      threadOf([
+        message(USER_MESSAGE, "user", [textPart("Порахуй")]),
+        message(REPLY_MESSAGE, "assistant", [
+          { kind: "text", text: "Рахую", status: "interrupted" },
+        ]),
+      ]),
+    );
+
+    expect(result).toHaveLength(2);
+    expect(result[1]?.failed).toBe(true);
+    expect(result[1]?.text).toBe("Рахую");
+  });
+
   it("drops a message with nothing in it", () => {
     const result = rows(
       threadOf([

@@ -20,12 +20,23 @@ import { z } from "zod";
 import { cardIdSchema, interactionIdSchema, revisionSchema } from "./ids.js";
 import { publicPauseSchema } from "./pause.js";
 
-export const textPartStatusSchema = z.enum(["streaming", "complete", "error"]);
+export const textPartStatusSchema = z.enum([
+  "streaming",
+  "complete",
+  "error",
+  "interrupted",
+]);
 
 /**
  * `complete` is set when generation finished, never to mark a write. A write
  * is proven by its surface part; a provider failure must not be able to
  * present itself as a successful reply.
+ *
+ * `interrupted` is a turn something outside it ended before it finished — the
+ * process running it went away, or it ran past its deadline. Like `error`, the
+ * text is not a reply; unlike `error`, nothing in the turn itself failed, so a
+ * caller may offer to continue it. What the turn stored before it stopped
+ * stands.
  */
 export const chatPartSchema = z.discriminatedUnion("kind", [
   z.strictObject({

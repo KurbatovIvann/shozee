@@ -44,10 +44,16 @@ export const assistantPauseSchema = z.strictObject({
 
 export type AssistantPause = z.output<typeof assistantPauseSchema>;
 
+/**
+ * `interrupted`: the turn was stopped from outside before it finished — its
+ * worker went away, or it passed its deadline (ADR-0039). The text is not a
+ * reply; what the message already shows was saved.
+ */
 export const assistantChatTextStatusSchema = z.enum([
   "streaming",
   "complete",
   "error",
+  "interrupted",
 ]);
 
 /**
