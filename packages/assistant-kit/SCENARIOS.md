@@ -18,7 +18,7 @@ Levels:
 - **L** — loop. Kit wired into a real `streamText` on a `MockLanguageModelV4`
   (`host.integration.test.ts`). Still no HTTP, no database, no live model.
 - **R** — route. Needs the HTTP handler, a session and a tenant. Lives in the
-  consumer's suite — for the first one, `apps/api/src/http/assistant-kit-choice.test.ts`.
+  consumer's suite — for the first one, `apps/api/src/http/assistant-kit.test.ts`.
   Still no database and no live model: auth, both stores and the provider are
   injected, so it runs in under two seconds.
 

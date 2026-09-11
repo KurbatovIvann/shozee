@@ -440,6 +440,6 @@ describe("an answer that outruns the pause is not silently lost", () => {
     });
 
     expect(early.kind).toBe("gone");
-    expect(deps.messages.writes).toHaveLength(0);
+    expect(deps.messages.writes).toBe(0);
   });
 });

@@ -7,8 +7,9 @@
  * claim under concurrency, one open pause per conversation, and a deadline that
  * survives being touched — through Lua on a real server.
  *
- * The document and the history are not here any more: they are Postgres, and
- * their round trip is proven in the assistant module's own database suite.
+ * The transcript and the history are not here: they are Postgres, proven in
+ * `assistant-kit-postgres-stores.db.test.ts` and the assistant module's own
+ * database suite.
  */
 import { randomUUID } from "node:crypto";
 

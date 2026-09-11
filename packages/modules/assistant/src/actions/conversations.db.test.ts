@@ -43,14 +43,12 @@ const fixtures = {
   newest: randomUUID(),
   older: randomUUID(),
   chatState: randomUUID(),
-  chatStateIdempotent: randomUUID(),
   employee: randomUUID(),
 };
 
 const clerks = {
   denied: randomUUID(),
   employee: randomUUID(),
-  lacking: randomUUID(),
 };
 
 const stamps = {
@@ -113,11 +111,6 @@ beforeAll(async () => {
       name: "Employee Clerk",
       email: "employee@assistant-kit.test",
     },
-    {
-      id: clerks.lacking,
-      name: "Lacking Clerk",
-      email: "lacking@assistant-kit.test",
-    },
   ]);
   await kit.db.runtime.db.insert(companyMembers).values([
     {
@@ -131,12 +124,6 @@ beforeAll(async () => {
       userId: clerks.employee,
       role: "employee",
       permissions: { granted: ["assistant:use"], denied: [] },
-    },
-    {
-      companyId: kitIdentities.companies.a,
-      userId: clerks.lacking,
-      role: "employee",
-      permissions: { granted: [], denied: [] },
     },
   ]);
 
@@ -173,12 +160,6 @@ beforeAll(async () => {
     companyId: kitIdentities.companies.a,
     userId: kitIdentities.users.anna,
     title: "Chat state",
-  });
-  await insertConversation({
-    id: fixtures.chatStateIdempotent,
-    companyId: kitIdentities.companies.a,
-    userId: kitIdentities.users.anna,
-    title: "Chat state idempotent",
   });
   await insertConversation({
     id: fixtures.employee,

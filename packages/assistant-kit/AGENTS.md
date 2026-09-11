@@ -109,6 +109,6 @@ suggestion.
 
 ## Status
 
-Implemented; `SCENARIOS.md` green at the store, loop and route levels. The
-first route consumer lives outside this package and is not reachable from a
-production app yet.
+Implemented; `SCENARIOS.md` green at the store, loop and route levels. Its
+consumer is `apps/api` (`/assistant/kit/*`), and that is the assistant the app
+runs (ADR-0038).

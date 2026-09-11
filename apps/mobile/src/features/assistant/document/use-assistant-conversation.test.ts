@@ -850,7 +850,6 @@ describe("a conversation longer than one window", () => {
 
   it("loads the page before the oldest message, and keeps the thread in order", async () => {
     const view = await loadedWithOlder();
-    expect(view.latest().hasOlder).toBe(true);
 
     respond(200, { status: "ok", document: window(1, 1) });
     act(() => {
@@ -859,9 +858,15 @@ describe("a conversation longer than one window", () => {
     await flush();
 
     expect(texts(view)).toEqual(range(1, 4));
-    expect(view.latest().hasOlder).toBe(false);
     const [url] = fetchMock.mock.calls[1] as [string];
     expect(url).toContain("before=2");
+
+    // Nothing precedes the first message, so there is nothing more to ask for.
+    act(() => {
+      view.latest().loadOlder();
+    });
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("joins a reply onto the pages already loaded", async () => {
@@ -878,7 +883,13 @@ describe("a conversation longer than one window", () => {
     });
 
     expect(texts(view)).toEqual(range(1, 6));
-    expect(view.latest().hasOlder).toBe(false);
+
+    // The loaded pages still reach the first message.
+    act(() => {
+      view.latest().loadOlder();
+    });
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it("starts again from the latest window when the conversation moved on further than one", async () => {
@@ -891,13 +902,20 @@ describe("a conversation longer than one window", () => {
 
     // Another device took several turns meanwhile.
     respond(200, { status: "ok", document: window(8, 10) });
-    act(() => {
-      view.latest().reload();
+    await act(async () => {
+      await view.latest().send("ще одне");
     });
-    await flush();
 
     expect(texts(view)).toEqual(range(8, 10));
-    expect(view.latest().hasOlder).toBe(true);
+
+    // Paging back starts again from the new window, not the dropped pages.
+    hang();
+    act(() => {
+      view.latest().loadOlder();
+    });
+    await flush();
+    const [url] = fetchMock.mock.calls[3] as [string];
+    expect(url).toContain("before=8");
   });
 
   it("drops an older page that arrives after the thread was reset under it", async () => {
@@ -956,7 +974,6 @@ describe("a conversation longer than one window", () => {
     });
     await flush();
 
-    expect(view.latest().hasOlder).toBe(false);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 

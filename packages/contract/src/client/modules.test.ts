@@ -345,21 +345,27 @@ describe("client composition", () => {
     expect(contractRouter.assistant.listConversations).toBeDefined();
     // The client surface is identity only: which conversation this is. Its
     // contents are read and written by the assistant routes, not over `/rpc`
-    // (ADR-0038), and the chat-state actions are `transport: "internal"`.
+    // (ADR-0038).
     for (const gone of [
       "getConversation",
       "appendUserMessage",
       "recordAssistantTurn",
-      "getStaffActor",
       "getModelHistory",
       "checkpointAssistantTurn",
+    ]) {
+      expect(contractModules.assistant, gone).not.toHaveProperty(gone);
+    }
+    // These exist, and are `transport: "internal"`: the runtime calls them as
+    // the person, and no client can.
+    for (const internal of [
+      "getStaffActor",
       "readChatState",
       "writeChatState",
       "readChatMessages",
       "insertChatMessage",
       "updateChatMessage",
     ]) {
-      expect(contractModules.assistant, gone).not.toHaveProperty(gone);
+      expect(contractModules.assistant, internal).not.toHaveProperty(internal);
     }
   });
 

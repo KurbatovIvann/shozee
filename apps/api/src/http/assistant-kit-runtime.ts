@@ -13,9 +13,9 @@
  * audit, permissions, timeouts, idempotency and confirmation are exactly what
  * they were. This path changes who calls the domain, not what the domain does.
  *
- * Model history lives in Redis for now, which is transient by design: a
- * conversation that outlives the ttl starts over. Acceptable while the point is
- * to exercise the protocol by hand, and one port to replace.
+ * The durable half is built per caller: the transcript and the model history
+ * are Postgres, read and written as the person asking. Only the pause and the
+ * command receipts are Redis, where a deadline and an atomic claim belong.
  */
 import { randomUUID } from "node:crypto";
 

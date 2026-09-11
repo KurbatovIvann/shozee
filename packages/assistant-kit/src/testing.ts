@@ -65,12 +65,8 @@ export function memoryPauseStore(): MemoryPauseStore {
 }
 
 export interface MemoryMessageLog extends MessageLogStore {
-  /** Every accepted insert and update, in order. */
-  readonly writes: {
-    readonly kind: "insert" | "update";
-    readonly conversationId: string;
-    readonly seq: number;
-  }[];
+  /** How many inserts and updates were accepted. */
+  readonly writes: number;
 }
 
 /**
@@ -83,9 +79,11 @@ export interface MemoryMessageLog extends MessageLogStore {
  */
 export function memoryMessageLog(): MemoryMessageLog {
   const byConversation = new Map<string, StoredMessage[]>();
-  const writes: MemoryMessageLog["writes"] = [];
+  let writes = 0;
   return {
-    writes,
+    get writes() {
+      return writes;
+    },
     page(conversationId, options) {
       const all = byConversation.get(conversationId) ?? [];
       const before = options.beforeSeq;
@@ -110,7 +108,7 @@ export function memoryMessageLog(): MemoryMessageLog {
         ...all,
         { seq, ...structuredClone(record) },
       ]);
-      writes.push({ kind: "insert", conversationId, seq });
+      writes += 1;
       return Promise.resolve({ seq });
     },
     update(conversationId, record) {
@@ -130,7 +128,7 @@ export function memoryMessageLog(): MemoryMessageLog {
       const next = [...all];
       next[at] = { ...held, message: structuredClone(record.message) };
       byConversation.set(conversationId, next);
-      writes.push({ kind: "update", conversationId, seq: record.seq });
+      writes += 1;
       return Promise.resolve();
     },
   };
@@ -180,7 +178,7 @@ export interface TestDeps<
  * Messages per read when a suite does not say. Small enough that a paging test
  * needs no hundreds of writes; large enough that no other test reaches it.
  */
-export const TEST_WINDOW_MESSAGES = 20;
+const TEST_WINDOW_MESSAGES = 20;
 
 /**
  * The registry is a parameter, not a default: what kinds of question exist is

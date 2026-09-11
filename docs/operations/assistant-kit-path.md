@@ -150,6 +150,11 @@ curl -sS "$KIT/assistant/kit/messages?conversationId=$CONV&before=PASTE" -H "coo
    <that name>". Expect `document.openPause.kind: "confirmation"` with a
    summary, and the customer still there. `answer` with `{ "approved": true }`
    and expect it gone; `abandon` instead and expect it untouched.
+8. **Scroll back.** In a conversation longer than thirty messages, `messages`
+   returns the latest thirty and an `olderCursor`, and `&before=<olderCursor>`
+   returns the page before; the two meet with no message missing or repeated.
+   On the phone, scrolling to the top loads that page without moving what is on
+   screen, and the next reply brings the thread back to its end.
 
 What to watch for, because these are the failures the old path had:
 
@@ -157,6 +162,8 @@ What to watch for, because these are the failures the old path had:
 - a confident "Готово." when nothing was written
 - the card disappearing when the action refuses
 - a reload showing a different set of cards than the live turn did
+- a jump to the bottom while an older page loads, or a gap or a repeated
+  message where two pages meet
 
 ## Confirmations
 

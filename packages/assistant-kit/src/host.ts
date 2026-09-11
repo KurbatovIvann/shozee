@@ -148,7 +148,7 @@ export interface HostTurnResult {
   readonly pause: PublicPause | null;
   /** Present when a tool asked to pause on a kind or payload the registry refused. */
   readonly rejection?: string;
-  /** As the document stores them: one card per `cardId`, however often written. */
+  /** As the stored message holds them: one card per `cardId`, however often written. */
   readonly parts: readonly DocumentPart[];
   /** Provider history after this turn — the continuation when paused. */
   readonly messages: readonly ModelMessage[];
@@ -272,7 +272,7 @@ async function runLoop<T extends AnyTypes>(
   // marked the same way. Reading the signal rather than only the error is what
   // keeps that true: measured, an abort that lands *inside* a tool rejects and
   // an abort a moment later does not, and one dropped connection must not write
-  // two different-looking documents depending on which microsecond it hit.
+  // two different-looking messages depending on which microsecond it hit.
   const interrupted =
     state.interrupted || options.abortSignal?.aborted === true;
 

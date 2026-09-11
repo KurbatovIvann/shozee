@@ -90,9 +90,6 @@ export interface UseAssistantConversation {
   readonly answer: (answer: unknown) => void;
   /** Drop the open question without answering it. */
   readonly dismiss: () => void;
-  readonly reload: () => void;
-  /** Whether messages older than the first one shown exist. */
-  readonly hasOlder: boolean;
   /** A page of older messages is on its way. */
   readonly loadingOlder: boolean;
   /**
@@ -230,8 +227,9 @@ export function useAssistantConversation(args: {
   /**
    * One way to apply an outcome, whatever produced it.
    *
-   * The document is taken whenever the server sent one — including on a refusal,
-   * where it is the corrected view of what the person is looking at.
+   * Whatever the server sent about the conversation is joined onto the thread —
+   * including on a refusal, where it is the corrected view of what the person is
+   * looking at.
    *
    * A reply is dropped if the tenant or the conversation changed while it was in
    * flight. Both, not just the epoch: switching conversations without switching
@@ -515,8 +513,6 @@ export function useAssistantConversation(args: {
     send,
     answer,
     dismiss,
-    reload,
-    hasOlder: document !== null && document.olderCursor !== null,
     loadingOlder,
     loadOlder,
   };

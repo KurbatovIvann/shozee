@@ -9,7 +9,7 @@
  * model transcript: history is loaded on the server, so a client cannot rewrite
  * what the model was told it did.
  *
- * The reload handler is four lines of work. That is the point — the document is
+ * The reload handler does almost nothing. That is the point — each message is
  * read back as stored, not recomposed from prompt state, so there is no second
  * derivation that can disagree with the live one.
  */

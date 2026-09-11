@@ -13,8 +13,8 @@ import { z } from "zod";
 
 /**
  * A card the tool wants rendered. `payload` is validated by the caller's own
- * registry, never here: this package stores the document, it does not know
- * what may appear in it.
+ * registry, never here: this package stores the card, it does not know what
+ * may appear in it.
  */
 export const cardRefSchema = z.strictObject({
   cardId: z.string().min(1).max(128),

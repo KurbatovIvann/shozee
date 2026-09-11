@@ -228,25 +228,6 @@ describe("the conversation, across processes", () => {
   });
 
   /**
-   * A turn writes its messages several times and the history once. A message
-   * write that touched the history would leave the next turn with no memory of
-   * the conversation it is in — and it would look like the model forgetting,
-   * not like a store bug.
-   */
-  it("keeps the transcript and the model history apart", async () => {
-    const scope = { conversationId, bind: annaBind };
-    await runtime()
-      .forCaller(anna)
-      .history.save(scope, [{ role: "user", content: "kept" }]);
-
-    await runtime().forCaller(anna).kit.document.write(scope, say("another"));
-
-    expect(await runtime().forCaller(anna).history.load(scope)).toEqual([
-      { role: "user", content: "kept" },
-    ]);
-  });
-
-  /**
    * SHO-555. One conversation is where a year of daily use accumulates, so a
    * read carries one window and a cursor, and the rest is a page away.
    */

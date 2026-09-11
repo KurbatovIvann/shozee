@@ -115,11 +115,12 @@ function isEmpty(row: AssistantDocumentRow): boolean {
 /**
  * The message that asked the open question, if it is still stored.
  *
- * The pause and the document are two records with two deadlines, so a document
- * can be evicted while its question is still answerable. Dropping the question
- * there would leave the conversation permanently stuck — every new turn refused
- * by a question nothing can answer. It gets a row of its own instead of being
- * attached to whatever message happens to be last.
+ * The pause and the messages are two records, and the message that asked can be
+ * missing from what this build shows: one it could not read is left out of the
+ * window. Dropping the question there would leave the conversation permanently
+ * stuck — every new turn refused by a question nothing can answer. It gets a
+ * row of its own instead of being attached to whatever message happens to be
+ * last.
  */
 function interactionHost(
   messages: readonly AssistantChatMessage[],

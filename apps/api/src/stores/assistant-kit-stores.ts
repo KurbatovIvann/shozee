@@ -4,12 +4,11 @@
  *
  * Only short-lived, atomic things. An open question has a deadline measured in
  * minutes and exactly one atomic claim; a command receipt is the same `SET NX`
- * used to answer "has this attempt already run?". The document and the history
+ * used to answer "has this attempt already run?". The transcript and the history
  * are the product's record and live in Postgres.
  *
- * Keys are namespaced under `kit:` so nothing here can collide with the pending
- * store the previous assistant still uses. The two share a Redis and must not
- * share a key.
+ * Keys are namespaced under `kit:` so nothing here can collide with anything
+ * else that shares this Redis.
  */
 import type { PauseStore } from "@showzy/assistant-kit";
 import type { Redis } from "ioredis";

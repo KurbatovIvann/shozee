@@ -92,14 +92,6 @@ async function insertConversation(
   return row;
 }
 
-/**
- * `message_id` is NOT NULL: a run is always recorded with the assistant
- * turn that produced it. Cases that do not care which turn get a fresh
- * assistant message in the same conversation.
- */
-
-/** The `message_id` backfill statement shipped in migration 0050. */
-
 async function foreignKeysFor(
   tables: readonly string[],
 ): Promise<Map<string, string>> {

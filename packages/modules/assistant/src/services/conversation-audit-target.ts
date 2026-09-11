@@ -2,8 +2,8 @@ import { createAuditTarget, pickString } from "@showzy/module-kit/audit-target";
 import { z } from "zod";
 
 /**
- * Writes audit the conversation aggregate. Create returns `{ id }`;
- * append/record carry `conversationId` on input and output.
+ * Writes audit the conversation aggregate. Create returns `{ id }`; the message
+ * and history writes carry `conversationId` on input and output.
  */
 export const conversationAuditTarget = createAuditTarget({
   type: "conversation",

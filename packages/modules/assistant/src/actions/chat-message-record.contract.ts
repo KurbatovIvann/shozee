@@ -12,7 +12,7 @@ import { z } from "zod";
 export const CHAT_MESSAGES_PAGE_MAX = 100;
 
 /** The runtime's owner token. Compared by the runtime, never interpreted here. */
-export const CHAT_MESSAGE_BIND_MAX = 512;
+const CHAT_MESSAGE_BIND_MAX = 512;
 
 export const chatMessageBindSchema = z
   .string()

@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Assistant module: staff conversation and tool-run persistence. This package exports actions only.",
+  "description": "Assistant module: staff conversations, their message log and provider history. This package exports actions only.",
   "exports": {
     ".": "./src/index.ts",
     "./contract": "./src/index.contract.ts",

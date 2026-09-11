@@ -1,5 +1,5 @@
 /**
- * The three `assistant-kit` routes at the HTTP level.
+ * The four `assistant-kit` routes at the HTTP level.
  *
  * No database and no live model: auth, both stores, the history port and the
  * provider are injected, so this suite runs in a couple of seconds and can be
