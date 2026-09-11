@@ -186,6 +186,7 @@ function testConfig() {
     NODE_ENV: "test",
     DATABASE_URL: runtimeConnectionString(),
     REDIS_URL: redisUrl,
+    REDIS_QUEUE_URL: redisUrl,
     S3_ENDPOINT: garageEndpoint,
     S3_ACCESS_KEY_ID: GARAGE_ACCESS_KEY,
     S3_SECRET_ACCESS_KEY: GARAGE_SECRET_KEY,

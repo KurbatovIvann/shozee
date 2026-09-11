@@ -20,6 +20,7 @@ function validEnv(): Record<string, string> {
     DATABASE_MIGRATE_URL:
       "postgresql://showzy_migrate:showzy@localhost:5432/showzy",
     REDIS_URL: "redis://localhost:6379",
+    REDIS_QUEUE_URL: "redis://localhost:6380",
     S3_ENDPOINT: "http://localhost:3900",
     S3_REGION: "us-east-1",
     S3_ACCESS_KEY_ID: "showzy-local",
@@ -47,6 +48,8 @@ describe("loadServerConfig", () => {
       "postgresql://showzy_migrate:showzy@localhost:5432/showzy",
     );
     expect(config.redis.url).toBe("redis://localhost:6379");
+    // The queue Redis is its own setting, never derived from the shared one.
+    expect(config.queueRedis.url).toBe("redis://localhost:6380");
     expect(config.s3.endpoint).toBe("http://localhost:3900");
     expect(config.s3.publicEndpoint).toBe("http://localhost:3900");
     expect(config.s3.forcePathStyle).toBe(true);
@@ -121,6 +124,7 @@ describe("loadServerConfig", () => {
     delete env["S3_BUCKET"];
     delete env["S3_ACCESS_KEY_ID"];
     delete env["S3_SECRET_ACCESS_KEY"];
+    delete env["REDIS_QUEUE_URL"];
 
     const load = () => loadServerConfig(env);
 
@@ -129,6 +133,7 @@ describe("loadServerConfig", () => {
       load();
     } catch (error) {
       const configError = error as ConfigValidationError;
+      expect(configError.message).toContain("REDIS_QUEUE_URL");
       expect(configError.message).toContain("DATABASE_URL");
       expect(configError.message).toContain("BETTER_AUTH_SECRET");
       expect(configError.message).toContain("IP_HMAC_SECRET");
@@ -164,6 +169,8 @@ describe("loadServerConfig", () => {
     env["DATABASE_URL"] =
       "mysql://showzy:DB_PASSWORD_SENTINEL@localhost:3306/showzy";
     env["REDIS_URL"] = "redis-wrong://:REDIS_PASSWORD_SENTINEL@localhost:6379";
+    env["REDIS_QUEUE_URL"] =
+      "redis-wrong://:QUEUE_REDIS_PASSWORD_SENTINEL@localhost:6380";
     env["BETTER_AUTH_SECRET"] = "AUTH_SECRET_SENTINEL";
     env["IP_HMAC_SECRET"] = "IP_HMAC_SECRET_SENTINEL";
     env["SENTRY_DSN"] = "not-a-url-SENTRY_KEY_SENTINEL";
@@ -186,6 +193,7 @@ describe("loadServerConfig", () => {
     // The offending keys are named so the operator knows what to fix...
     expect(configError.message).toContain("DATABASE_URL");
     expect(configError.message).toContain("REDIS_URL");
+    expect(configError.message).toContain("REDIS_QUEUE_URL");
     expect(configError.message).toContain("BETTER_AUTH_SECRET");
     expect(configError.message).toContain("IP_HMAC_SECRET");
     expect(configError.message).toContain("SENTRY_DSN");

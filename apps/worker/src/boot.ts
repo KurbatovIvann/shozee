@@ -15,7 +15,11 @@ import {
 import { Redis } from "ioredis";
 import type { Logger } from "pino";
 
-import { createJobHost, type JobHost } from "./jobs.js";
+import {
+  createJobHost,
+  type AssistantJobHostOptions,
+  type JobHost,
+} from "./jobs.js";
 import { createOutboxListener } from "./listen.js";
 import { createOutboxWorker, type WorkerLoop } from "./loop.js";
 import { createProcessObservability } from "./observability.js";
@@ -42,6 +46,13 @@ export interface BootWorkerOptions {
   readonly sweepIntervalMs?: number;
   readonly backfillIntervalMs?: number;
   readonly now?: () => number;
+  /**
+   * The assistant turn processor. When given, the job host starts the
+   * `assistant` queue on `config.queueRedis.url`. The entrypoint does not pass
+   * one yet: composing the runtime needs the action registry, which only the
+   * API composition root builds (open question on SHO-569).
+   */
+  readonly assistant?: Pick<AssistantJobHostOptions, "process">;
 }
 
 export async function bootWorker(
@@ -100,6 +111,14 @@ export async function bootWorker(
       logger,
       workerId,
       pipeline,
+      ...(options.assistant !== undefined
+        ? {
+            assistant: {
+              redisUrl: config.queueRedis.url,
+              process: options.assistant.process,
+            },
+          }
+        : {}),
       ...(options.cleanupIntervalMs !== undefined
         ? { cleanupIntervalMs: options.cleanupIntervalMs }
         : {}),

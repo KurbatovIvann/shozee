@@ -63,8 +63,8 @@ services:
     # The queue Redis: AOF on its own volume, fsync every second, never evict.
     # This is the development form; production must persist the same way
     # (`CONFIG GET appendonly` → yes, `CONFIG GET maxmemory-policy` →
-    # noeviction). Nothing connects to it yet: its URL arrives with the
-    # worker (SHO-561) and the API (SHO-563).
+    # noeviction). `REDIS_QUEUE_URL` points here: the worker's assistant queue
+    # (SHO-569) and, from SHO-563, the API's producer.
     image: redis:8-alpine
     command:
       - redis-server

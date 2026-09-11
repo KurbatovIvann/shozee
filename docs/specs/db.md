@@ -295,9 +295,10 @@ dropped, recorded in the owning module's spec §7 (v1 migration notes).
   - Development form (`docker-compose.yml`): `redis` on `127.0.0.1:6379` with
     no append-only file and no volume; `redis-queue` on `127.0.0.1:6380` with
     volume `redis-queue-data` at `/data` and `--appendonly yes --appendfsync
-    everysec --maxmemory-policy noeviction`. No configuration variable points
-    at the queue Redis yet; it arrives with the slices that connect to it
-    (SHO-561, SHO-563).
+    everysec --maxmemory-policy noeviction`. `REDIS_QUEUE_URL` points at the
+    queue Redis (`redis://localhost:6380` locally), separately from
+    `REDIS_URL`; the worker's assistant queue connects through it (SHO-569)
+    and the API's producer will (SHO-563).
   - Production form, a requirement to check when the infrastructure is built
     (there is no production environment yet): the queue Redis persists with
     AOF on durable storage and answers `CONFIG GET appendonly` → `yes` and

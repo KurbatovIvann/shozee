@@ -1142,6 +1142,73 @@ describe("the status an aborted run stores", () => {
     ).toEqual(["error"]);
   });
 
+  /**
+   * SHO-569. The deadline can fire after the provider already failed, while
+   * the turn is still finishing. What ended it was the failure; reading the
+   * signal at the end would store `interrupted` and offer to continue a turn
+   * that broke.
+   *
+   * The failure is an error part inside a step that still finishes, so the
+   * step's history save runs after the error and before the end of the turn —
+   * the abort lands exactly there.
+   */
+  it("stores `error` for a provider failure the deadline overtakes before the end", async () => {
+    const s = slice();
+    const controller = new AbortController();
+    const failingStep = {
+      stream: new ReadableStream({
+        start(stream) {
+          stream.enqueue({ type: "stream-start", warnings: [] });
+          stream.enqueue({ type: "text-start", id: "t1" });
+          stream.enqueue({ type: "text-delta", id: "t1", delta: "Зараз" });
+          stream.enqueue({ type: "error", error: new Error("provider broke") });
+          stream.enqueue({ type: "text-end", id: "t1" });
+          stream.enqueue({
+            type: "finish",
+            finishReason: { unified: "error", raw: "error" },
+            usage: {
+              inputTokens: {
+                total: 1,
+                noCache: 1,
+                cacheRead: 0,
+                cacheWrite: 0,
+              },
+              outputTokens: { total: 1, text: 1, reasoning: 0 },
+            },
+          });
+          stream.close();
+        },
+      }),
+    };
+    let savedAfterError = 0;
+
+    await runHostTurn({
+      kit: s.kit,
+      conversationId: CONVERSATION,
+      bind: BIND,
+      messageId: FIRST_MESSAGE,
+      model: stubModel([failingStep]),
+      messages: [{ role: "user", content: "list them" }],
+      tools: s.tools,
+      abortSignal: controller.signal,
+      abortedTextStatus: "interrupted",
+      saveHistory: () => {
+        savedAfterError += 1;
+        controller.abort();
+        return Promise.resolve();
+      },
+    });
+
+    // The abort really did land after the failure and before the end write.
+    expect(savedAfterError).toBe(1);
+    expect(controller.signal.aborted).toBe(true);
+    expect(
+      (await storedParts(s)).flatMap((part) =>
+        part.kind === "text" ? [part.status] : [],
+      ),
+    ).toEqual(["error"]);
+  });
+
   it("stores `error` for a provider failure even when asked for `interrupted`", async () => {
     const s = slice();
 

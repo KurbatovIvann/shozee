@@ -53,6 +53,17 @@ runtime internals, so what both need lives here.
   turn's identity only (kind, conversation id, command id, lowercased);
   Postgres is the source of everything else, and the reconciler rebuilds a
   job from the turn row.
+- `assistant-queue-producer.ts` — `enqueueAssistantTurn` (taking a BullMQ
+  `Queue` through `AssistantTurnQueue`) and the options every turn's job
+  carries (`attempts: 1`, removed on completion and on failure). The only way
+  to add a turn's job (SHO-569).
+- `assistant-turn-processor.ts` — `createAssistantTurnProcessor`: what the
+  worker does with a job (SHO-569). Reads the turn, starts it as its author,
+  runs the host from history with the 180 s deadline as the only abort, ends
+  the placeholder's text, finishes the turn, releases the returned hold only
+  when the model was never reached, and publishes each event after its write.
+  A turn that is not queued, or whose start core refuses, runs nothing and
+  writes nothing.
 - `events.ts` — the event channel contract (SHO-562): the per-conversation
   channel and presence key (company then conversation, lowercased), the stream
   slot key, the heartbeat, presence ttl, per-person stream limit and idle
@@ -75,7 +86,10 @@ runtime internals, so what both need lives here.
   `apps/api`.
 - Every domain call goes through `executeAction` as the staff member with
   `channel: "ai"`. No DB access, no module service imports.
-- No `bullmq` dependency here until a slice produces or processes jobs. Queue
-  contract values change only with ADR-0039 and a proving test.
+- No `bullmq` dependency. The producer takes the app's `Queue` through
+  `AssistantTurnQueue`: `bullmq` has peer dependencies, and a package with a
+  different peer set gets a second copy whose `Queue` is a different type
+  (SHO-569). No `Worker` here: processing jobs is the worker app's job host.
+  Queue contract values change only with ADR-0039 and a proving test.
 - Tests that need the API's action registry (`createActionRegistry`) stay in
   `apps/api`; unit and Redis tests of this package's own code live here.

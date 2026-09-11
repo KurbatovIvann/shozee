@@ -35,7 +35,11 @@ export interface AssistantToolContext {
    */
   readonly commandId: string;
   readonly requestId: string;
-  readonly clientIp: string;
+  /**
+   * The request's trusted-proxy address. A turn the worker runs has no request
+   * and carries none (SHO-569); every HTTP path passes it.
+   */
+  readonly clientIp?: string;
 }
 
 export type AssistantKitFor = AssistantKit<AssistantInteractionTypes>;
@@ -117,7 +121,8 @@ export interface AssistantCaller {
   readonly userId: string;
   readonly companySelector: string;
   readonly requestId: string;
-  readonly clientIp: string;
+  /** None for a worker-run turn, which has no request (SHO-569). */
+  readonly clientIp?: string;
 }
 
 export interface AssistantRuntime {

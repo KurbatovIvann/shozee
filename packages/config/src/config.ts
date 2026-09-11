@@ -10,6 +10,7 @@ const SECRET_ENV_KEYS: ReadonlySet<string> = new Set([
   "DATABASE_URL",
   "DATABASE_MIGRATE_URL",
   "REDIS_URL",
+  "REDIS_QUEUE_URL",
   "S3_ACCESS_KEY_ID",
   "S3_SECRET_ACCESS_KEY",
   "BETTER_AUTH_SECRET",
@@ -47,6 +48,13 @@ const envObjectSchema = z.object({
   DATABASE_MIGRATE_URL: z.url({ protocol: /^postgres(ql)?$/ }).optional(),
 
   REDIS_URL: z.url({ protocol: /^rediss?$/ }),
+  /**
+   * The queue Redis (ADR-0039, `db.md` §6): durable BullMQ queues, today the
+   * assistant queue. A separate instance from `REDIS_URL`, because it persists
+   * (AOF, `noeviction`) and the shared Redis must not — it holds plaintext OTP
+   * codes. Never the same URL as `REDIS_URL` in a real deployment.
+   */
+  REDIS_QUEUE_URL: z.url({ protocol: /^rediss?$/ }),
 
   S3_ENDPOINT: z.url({ protocol: /^https?$/ }),
   /**
@@ -270,7 +278,10 @@ export interface ServerConfig {
     readonly url: string;
     readonly migrateUrl: string | undefined;
   };
+  /** The shared, non-persistent Redis. */
   readonly redis: { readonly url: string };
+  /** The persistent queue Redis: durable BullMQ queues only (ADR-0039). */
+  readonly queueRedis: { readonly url: string };
   readonly s3: {
     readonly endpoint: string;
     /** Signed URL host; equals `endpoint` when `S3_PUBLIC_ENDPOINT` is unset. */
@@ -401,6 +412,7 @@ export function loadServerConfig(
       migrateUrl: parsed.DATABASE_MIGRATE_URL,
     },
     redis: { url: parsed.REDIS_URL },
+    queueRedis: { url: parsed.REDIS_QUEUE_URL },
     s3: {
       endpoint: parsed.S3_ENDPOINT,
       publicEndpoint: parsed.S3_PUBLIC_ENDPOINT ?? parsed.S3_ENDPOINT,

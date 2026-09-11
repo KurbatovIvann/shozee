@@ -86,8 +86,19 @@ wakeup, polling fallback, graceful drain, and the job host.
   `maxmemory-policy noeviction`): an accepted turn is a Postgres row, and the
   assistant reconciler rebuilds a lost job from it. Never put a durable job on
   the shared Redis. Any other durable one-shot job needs its own ticket and
-  its own recovery story — AOF alone is not one. The queue Redis connection
-  and its configuration arrive with SHO-561.
+  its own recovery story — AOF alone is not one. The queue Redis is
+  `config.queueRedis.url` (`REDIS_QUEUE_URL`); the job host opens its own
+  BullMQ connection to it only when an assistant processor is given
+  (SHO-569). Worker-side queue policy (concurrency 4, lock 60 s,
+  `maxStalledCount: 0`) lives in `policy.ts`; the job options a turn is
+  enqueued with (`attempts: 1`, removed on completion and on failure) live
+  with the producer, `enqueueAssistantTurn` in `@showzy/assistant-runtime`.
+- The assistant processor is `createAssistantTurnProcessor` from
+  `@showzy/assistant-runtime`; the job host only parses the payload and hands
+  it over. A payload that does not parse is dropped, never retried. Boot does
+  not mount it yet: composing the runtime needs the action registry, which
+  only `apps/api/src/composition.ts` builds and the worker may not import
+  (open question on SHO-569).
 - The worker is an AI process for assistant turns (ADR-0039): it may import
   `@showzy/assistant-runtime` (and through it `@showzy/ai` and
   `@showzy/assistant-kit`), and from the API only the approved

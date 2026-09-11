@@ -5,9 +5,23 @@
  * idempotency cleanup calls the core library; abandoned-upload GC,
  * catalog rendition backfill, and PDF render invoke registered system
  * actions. Domain event delivery stays on the outbox loop (ADR-0012).
+ *
+ * The `assistant` queue (ADR-0039, SHO-569) is the one durable queue, on its
+ * own connection to the queue Redis, and is started only when a processor is
+ * given. The host parses a job into a turn's identity and hands it to
+ * `createAssistantTurnProcessor`; the turn is the processor's work.
  */
 import { randomUUID } from "node:crypto";
 
+import {
+  ASSISTANT_QUEUE_NAME,
+  ASSISTANT_QUEUE_PREFIX,
+  ASSISTANT_TURN_JOB_NAME,
+  assistantTurnJobId,
+  assistantTurnJobSchema,
+  type AssistantTurnJob,
+  type AssistantTurnJobOutcome,
+} from "@showzy/assistant-runtime";
 import {
   cleanupExpiredIdempotencyKeys,
   executeAction,
@@ -25,6 +39,9 @@ import { Redis } from "ioredis";
 import type { Logger } from "pino";
 
 import {
+  ASSISTANT_LOCK_DURATION_MS,
+  ASSISTANT_MAX_STALLED_COUNT,
+  ASSISTANT_QUEUE_CONCURRENCY,
   BACKFILL_CATALOG_RENDITIONS_INTERVAL_MS,
   BACKFILL_CATALOG_RENDITIONS_JOB_NAME,
   BULLMQ_PREFIX,
@@ -58,8 +75,21 @@ export interface JobHost {
   close(): Promise<void>;
 }
 
+export interface AssistantJobHostOptions {
+  /** The queue Redis (`config.queueRedis.url`), never the shared one. */
+  readonly redisUrl: string;
+  /** `createAssistantTurnProcessor` from `@showzy/assistant-runtime`. */
+  readonly process: (job: AssistantTurnJob) => Promise<AssistantTurnJobOutcome>;
+  /** Test seam; production uses `ASSISTANT_LOCK_DURATION_MS`. */
+  readonly lockDurationMs?: number;
+  /** Test seam; production uses BullMQ's default stalled-check interval. */
+  readonly stalledIntervalMs?: number;
+}
+
 export interface CreateJobHostOptions {
   readonly redisUrl: string;
+  /** Starts the durable assistant queue. Absent: no assistant queue. */
+  readonly assistant?: AssistantJobHostOptions;
   readonly db: Database;
   readonly logger: Logger;
   readonly workerId: string;
@@ -101,6 +131,12 @@ export function createJobHost(options: CreateJobHostOptions): JobHost {
   const connection = new Redis(options.redisUrl, {
     maxRetriesPerRequest: null,
   });
+  // Its own connection: the assistant queue lives on the persistent queue
+  // Redis, and the maintenance and pdf queues stay on the shared one.
+  const assistantConnection =
+    options.assistant === undefined
+      ? undefined
+      : new Redis(options.assistant.redisUrl, { maxRetriesPerRequest: null });
   const cleanupIntervalMs = options.cleanupIntervalMs ?? CLEANUP_INTERVAL_MS;
   const sweepIntervalMs = options.sweepIntervalMs ?? SWEEP_INTERVAL_MS;
   const backfillIntervalMs =
@@ -264,6 +300,43 @@ export function createJobHost(options: CreateJobHostOptions): JobHost {
     });
   }
 
+  /**
+   * A job is a pointer to a turn and nothing more. One that is not a turn's
+   * identity under the id that identity derives is not a turn's job — BullMQ's
+   * one-job-per-id would not hold for it — so it is dropped, never retried.
+   */
+  async function processAssistantJob(
+    job: Job<unknown, string>,
+  ): Promise<string> {
+    const assistant = options.assistant;
+    if (assistant === undefined) {
+      throw new CoreInvariantError(
+        "assistant queue started without a processor",
+      );
+    }
+    const parsed =
+      job.name === ASSISTANT_TURN_JOB_NAME
+        ? assistantTurnJobSchema.safeParse(job.data)
+        : undefined;
+    if (
+      parsed?.success !== true ||
+      job.id !== assistantTurnJobId(parsed.data)
+    ) {
+      options.logger.error(
+        { worker_id: options.workerId, job_name: job.name },
+        "assistant job is not a turn's job and was dropped",
+      );
+      return "dropped";
+    }
+    const outcome = await assistant.process(parsed.data);
+    options.logger.info(
+      { worker_id: options.workerId, outcome: outcome.kind },
+      "assistant job processed",
+    );
+    return outcome.kind;
+  }
+
+  let assistantWorker: Worker<unknown, string> | undefined;
   let queue: Queue | undefined;
   let worker: Worker<Record<string, never>, number> | undefined;
   let pdfQueue: Queue | undefined;
@@ -365,6 +438,39 @@ export function createJobHost(options: CreateJobHostOptions): JobHost {
         },
       },
     );
+    if (options.assistant !== undefined && assistantConnection !== undefined) {
+      await assistantConnection.ping();
+      assistantWorker = new Worker<unknown, string>(
+        ASSISTANT_QUEUE_NAME,
+        processAssistantJob,
+        {
+          connection: assistantConnection,
+          prefix: ASSISTANT_QUEUE_PREFIX,
+          concurrency: ASSISTANT_QUEUE_CONCURRENCY,
+          lockDuration:
+            options.assistant.lockDurationMs ?? ASSISTANT_LOCK_DURATION_MS,
+          maxStalledCount: ASSISTANT_MAX_STALLED_COUNT,
+          ...(options.assistant.stalledIntervalMs === undefined
+            ? {}
+            : { stalledInterval: options.assistant.stalledIntervalMs }),
+        },
+      );
+      assistantWorker.on("error", (error) => {
+        options.logger.error(
+          { err: error, worker_id: options.workerId },
+          "assistant worker error",
+        );
+      });
+      assistantWorker.on("failed", (job, error) => {
+        // A stalled job lands here too: failed, removed, never re-run. Its
+        // turn stays running until the reconciler passes its deadline.
+        options.logger.error(
+          { err: error, worker_id: options.workerId, job_name: job?.name },
+          "assistant job failed",
+        );
+      });
+      await assistantWorker.waitUntilReady();
+    }
     await worker.waitUntilReady();
     await pdfWorker.waitUntilReady();
     started = true;
@@ -373,6 +479,8 @@ export function createJobHost(options: CreateJobHostOptions): JobHost {
         worker_id: options.workerId,
         queue: MAINTENANCE_QUEUE_NAME,
         pdf_queue: PDF_QUEUE_NAME,
+        assistant_queue:
+          assistantWorker === undefined ? null : ASSISTANT_QUEUE_NAME,
         prefix: BULLMQ_PREFIX,
         cleanup_interval_ms: cleanupIntervalMs,
         sweep_interval_ms: sweepIntervalMs,
@@ -405,6 +513,11 @@ export function createJobHost(options: CreateJobHostOptions): JobHost {
           // start()'s caller already received the failure.
         }
       }
+      // First, and waited for: an in-flight turn finishes before the process
+      // goes (ADR-0039 — the stop grace period is a production requirement).
+      if (assistantWorker !== undefined) {
+        await assistantWorker.close();
+      }
       if (pdfWorker !== undefined) {
         await pdfWorker.close();
       }
@@ -418,6 +531,9 @@ export function createJobHost(options: CreateJobHostOptions): JobHost {
         await queue.close();
       }
       await connection.quit();
+      if (assistantConnection !== undefined) {
+        await assistantConnection.quit();
+      }
     },
   };
 }
