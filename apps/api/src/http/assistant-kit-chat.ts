@@ -229,12 +229,20 @@ export async function handleAssistantKitChat(
     ]);
   }
 
-  // Both `accepted` and `replayed` name the same job, and BullMQ refuses a
-  // second under one id — so a replay re-enqueues rather than duplicating. That
-  // matters for exactly one path: a first attempt that committed and then
-  // failed gave its command back (above), so the retry lands here as `replayed`
-  // and puts back the job that attempt never got to add, instead of leaving the
-  // turn for the reconciler an interval later.
+  // Both `accepted` and `replayed` name the same job. This is here for one
+  // path: a first attempt that committed and then failed gave its command back
+  // (above), so the retry lands as `replayed` and puts back the job that
+  // attempt never got to add, instead of leaving the turn to the reconciler an
+  // interval later.
+  //
+  // A second job is not always refused, and it does not need to be. BullMQ
+  // refuses one under an existing id, but a turn's job is removed on completion
+  // and on failure, so a resend after the receipt's 15-minute TTL — long past
+  // the 180 s turn timeout — reaches the accept, is `replayed` for a turn that
+  // has already ended, and really does add a job. What makes that harmless is
+  // the worker, not the queue: `readTurnForJob` produces a caller for a
+  // **queued** turn only, so such a job is refused at the start and runs and
+  // writes nothing.
   await enqueueAcceptedTurn(runtime, result.job, requestId);
 
   return await accepted();
