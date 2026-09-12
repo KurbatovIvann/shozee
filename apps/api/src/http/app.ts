@@ -83,7 +83,11 @@ export interface AuthInstance {
        * session: a live event stream re-checking its caller (SHO-562).
        */
       query?: { disableRefresh?: boolean; disableCookieCache?: boolean };
-    }) => Promise<{ user: { id: string } } | null>;
+    }) => Promise<{
+      user: { id: string };
+      /** `session.id`, recorded on an accepted turn (ADR-0039). Never the token. */
+      session: { id: string };
+    } | null>;
   };
 }
 

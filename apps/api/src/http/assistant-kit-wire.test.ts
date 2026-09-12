@@ -31,6 +31,8 @@ import {
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
+import type { AssistantKitResponse } from "./assistant-kit-http.js";
+
 const CONVERSATION = "33333333-3333-4333-8333-333333333333";
 const BIND = "user-1:11111111-1111-4111-8111-1111111111aa";
 
@@ -246,6 +248,37 @@ describe("the window a server writes and the window a client reads", () => {
           part.kind === "text" ? part.status : part.kind,
         ),
     ).toEqual(["card", "interrupted"]);
+  });
+
+  /**
+   * The body an accepted turn answers with (SHO-563). `accepted` is a member of
+   * the response union at compile time — a route cannot answer it without the
+   * union saying so — and the window it carries is the one both sides read.
+   */
+  it("agrees on the body an accepted turn answers with", () => {
+    const commandId = "66666666-6666-4666-8666-666666666666";
+    const window = {
+      conversationId: CONVERSATION,
+      messages: [
+        {
+          ...assistantTurnPlaceholder({
+            messageId: assistantTurnMessageId(
+              { kind: "chat", commandId },
+              "assistant",
+            ),
+            createdAt: "2026-09-11T10:00:00.000Z",
+          }),
+          revision: 1,
+        },
+      ],
+      olderCursor: null,
+      openPause: null,
+    };
+    const body: AssistantKitResponse = { status: "accepted", window };
+
+    expect(body.status).toBe("accepted");
+    expect(chatWindowSchema.safeParse(window).success).toBe(true);
+    expect(assistantChatWindowSchema.safeParse(window).success).toBe(true);
   });
 
   it("refuses a field one side would add without the other", () => {

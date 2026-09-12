@@ -82,8 +82,12 @@ the queue and the events.**
     messages `kit.resume` resumed as the conversation's history, so the worker
     runs an answer turn exactly as it runs a chat turn: from history. There is
     no answer seed on the turn row. Order: claim the pause, run the action,
-    save the history, then accept; an accept refused because another turn
-    holds the conversation releases the claim. An answer's accept stores no
+    accept, then save the history; an accept refused because another turn
+    holds the conversation releases the claim. *(Amended 2026-09-12, SHO-563:
+    an earlier wording put the save before the accept. The owner's T3c decision
+    requires the reverse — history written before the accept has claimed the
+    lease can overwrite a still-running turn's history, and a `busy` accept must
+    mean nothing was written.)* An answer's accept stores no
     person's message, only the placeholder. *(Amended 2026-09-11, SHO-561: an
     earlier wording had the worker read the action's result from the
     placeholder, which would have given an answer turn a second way to start.
@@ -169,6 +173,14 @@ the queue and the events.**
     the interrupt says which state it ended the turn from — while a running
     turn's reservation still stands as the charge. Re-enqueue of a queued turn
     with no job backs off per turn, and the threshold is its hard bound.)*
+    *(Amended 2026-09-12, SHO-563: re-checked where real queue depth first
+    appears — the routes now enqueue. The threshold is unchanged, and it is
+    deliberately **not** depth-aware: it can only end a turn the queue holds no
+    job for, so a backlog never reaches it however deep it is and however slowly
+    it drains. Drain rate would bound this only if age alone could end a turn,
+    and the job check is exactly what stops that. Raising concurrency or the
+    threshold would change nothing for a backlogged turn; it would only delay
+    ending a turn that can never start.)*
   - After a worker crash the interruption becomes visible only when the
     reconciler passes the deadline — up to the turn timeout plus one
     reconciler interval. Accepted, and stated so nobody reads it as a hang.

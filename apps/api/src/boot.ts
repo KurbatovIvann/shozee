@@ -6,6 +6,8 @@
  */
 import { getConnInfo } from "@hono/node-server/conninfo";
 import {
+  ASSISTANT_QUEUE_NAME,
+  ASSISTANT_QUEUE_PREFIX,
   createRedisAiBudgetStore,
   createRedisAssistantEventHub,
   createRedisAssistantPresence,
@@ -13,6 +15,7 @@ import {
   logStaffAssistantMount,
   staffAssistantMount,
 } from "@showzy/assistant-runtime";
+import { Queue } from "bullmq";
 import type { ServerConfig } from "@showzy/config";
 import { contractModules } from "@showzy/contract";
 import { createDbClient } from "@showzy/db";
@@ -137,6 +140,22 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
     "GET /assistant/kit/events",
   ]);
 
+  // The API is the producer and never a consumer (ADR-0039). On the dedicated
+  // queue Redis, which persists and never evicts — never `REDIS_URL`, which
+  // holds plaintext OTP codes and is deliberately non-persistent (`db.md` §6).
+  // `maxRetriesPerRequest: null` is BullMQ's requirement of its connections.
+  const queueRedis =
+    assistantKitModel === undefined
+      ? undefined
+      : new Redis(config.queueRedis.url, { maxRetriesPerRequest: null });
+  const assistantQueue =
+    queueRedis === undefined
+      ? undefined
+      : new Queue(ASSISTANT_QUEUE_NAME, {
+          connection: queueRedis,
+          prefix: ASSISTANT_QUEUE_PREFIX,
+        });
+
   // Pub/sub and presence on the shared, non-persistent Redis: neither needs to
   // survive a restart. The hub subscribes on its own connection, because a
   // Redis connection in subscribe mode can run nothing else.
@@ -170,6 +189,7 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
             model: assistantKitModel,
             provider: staffProvider,
             redis,
+            ...(assistantQueue === undefined ? {} : { queue: assistantQueue }),
           }),
         }),
     ...(assistantKitEvents === undefined ? {} : { assistantKitEvents }),
@@ -195,6 +215,10 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
     async close() {
       closeFilesObjectStore();
       await assistantKitEvents?.hub.close();
+      // The queue owns nothing in flight — this process only adds jobs — so
+      // closing it is just letting go of its connection.
+      await assistantQueue?.close();
+      await queueRedis?.quit();
       await redis.quit();
       await db.pool.end();
     },

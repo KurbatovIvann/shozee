@@ -176,7 +176,10 @@ function harness(options?: {
   readonly streamsPerUser?: number;
   readonly budget?: AssistantKitBudget;
 }): Harness {
-  let session: { user: { id: string } } | null = { user: { id: anna.userId } };
+  let session: { user: { id: string }; session: { id: string } } | null = {
+    user: { id: anna.userId },
+    session: { id: "session-1" },
+  };
   let hold: { readonly until: Promise<void>; asked(): void } | null = null;
   const runtime = createAssistantKitRuntime({
     auth: {

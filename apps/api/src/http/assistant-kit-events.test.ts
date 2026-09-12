@@ -19,6 +19,7 @@ import {
   assistantConversationChannel,
   assistantInteractions,
   memoryAssistantKitCommands,
+  memoryAssistantTurnStore,
   type AssistantConversationAddress,
   type AssistantEventHub,
   type AssistantEventListener,
@@ -207,7 +208,10 @@ function harness(options?: {
   const slots = memorySlots(5);
   const timers = recordingTimers();
   const sessionQueries: SessionQuery[] = [];
-  let session: { user: { id: string } } | null = { user: { id: USER } };
+  let session: { user: { id: string }; session: { id: string } } | null = {
+    user: { id: USER },
+    session: { id: "session-1" },
+  };
 
   const presencePort: AssistantPresence =
     options?.holdPresence === undefined
@@ -249,6 +253,7 @@ function harness(options?: {
           load: () => Promise.resolve([]),
           save: () => Promise.resolve(),
         },
+        turns: memoryAssistantTurnStore(kit.messages),
       }),
       staffCompany: () => Promise.resolve(VERIFIED_COMPANY),
       model: stubTextModel("Готово."),

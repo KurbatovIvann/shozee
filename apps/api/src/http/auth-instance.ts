@@ -13,18 +13,26 @@ type SessionArgs = Parameters<AuthInstance["api"]["getSession"]>[0];
 
 export function authInstanceFrom(better: {
   readonly handler: (request: Request) => Promise<Response> | Response;
-  readonly getSession: (
-    args: SessionArgs,
-  ) => Promise<{ readonly user: { readonly id: string } } | null>;
+  readonly getSession: (args: SessionArgs) => Promise<{
+    readonly user: { readonly id: string };
+    readonly session: { readonly id: string };
+  } | null>;
 }): AuthInstance {
   return {
     handler: (request) => better.handler(request),
     api: {
       async getSession(args) {
         const result = await better.getSession(args);
-        // Identity only: the session row, its token and the user record stay
-        // inside better-auth.
-        return result === null ? null : { user: { id: result.user.id } };
+        // Identity and which session asked, and nothing else: the session's
+        // token and the user record stay inside better-auth. An accepted turn
+        // records `session.id` so an operator can tell which sign-in started it
+        // (ADR-0039); it is never read as an identity, and never the token.
+        return result === null
+          ? null
+          : {
+              user: { id: result.user.id },
+              session: { id: result.session.id },
+            };
       },
     },
   };

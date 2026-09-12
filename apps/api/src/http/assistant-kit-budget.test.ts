@@ -2,9 +2,15 @@
  * The spend ceiling on the kit routes, at the HTTP level.
  *
  * These are the cases that decide whether a ceiling is real: a refusal must not
- * spend a turn slot, a turn that produced nothing must give its reservation
+ * spend a turn slot, a request that stored no turn must give its reservation
  * back, and answering an open question must not be refused by a bucket the
  * person cannot wait out.
+ *
+ * Since the switch (SHO-563) there is nothing to settle after the fact. A turn
+ * runs in the worker, so the reservation the accept took **is** the charge and
+ * travels onto the turn row; the worker gives it back if the turn never reached
+ * the model. What this suite pins at the HTTP edge is the other half: every
+ * request that did *not* store a turn gives its reservation back here.
  */
 import { randomUUID } from "node:crypto";
 
@@ -21,8 +27,10 @@ import {
   canonicalizeAiBudgetCompanyId,
   createMemoryAiBudgetStore,
   memoryAssistantKitCommands,
+  memoryAssistantTurnStore,
   type AiBudgetStore,
   type AssistantHistoryPort,
+  type AssistantTurnStore,
   type ChoiceResolution,
 } from "@showzy/assistant-runtime";
 import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
@@ -68,6 +76,15 @@ const OK_RESOLVE = ({ value }: { value: unknown }) => {
   });
 };
 
+/** An accept that fails the way a database incident fails one. */
+function brokenTurns(): AssistantTurnStore {
+  return {
+    accept: () => Promise.reject(new Error("accept is down")),
+    start: () => Promise.reject(new Error("accept is down")),
+    finish: () => Promise.reject(new Error("accept is down")),
+  };
+}
+
 function harness(options?: {
   readonly limits?: {
     readonly chatTurnsPerMinutePerUser?: number;
@@ -76,9 +93,15 @@ function harness(options?: {
     readonly unknownModelTurnUsd?: number;
   };
   readonly tools?: ToolSet;
-  readonly failTurn?: boolean;
+  /** The accept fails, so no turn row holds the reservation. */
+  readonly failAccept?: boolean;
 }) {
   const kit = createAssistantKit(testDeps(assistantInteractions));
+  const turns =
+    options?.failAccept === true
+      ? brokenTurns()
+      : memoryAssistantTurnStore(kit.messages);
+  const history = memoryHistory();
   const budgetStore: AiBudgetStore = createMemoryAiBudgetStore();
   const app = createAssistantKitApp(
     {
@@ -86,16 +109,17 @@ function harness(options?: {
       commands: memoryAssistantKitCommands(),
       auth: {
         api: {
-          getSession: () => Promise.resolve({ user: { id: USER } }),
+          getSession: () =>
+            Promise.resolve({
+              user: { id: USER },
+              session: { id: "session-1" },
+            }),
         },
       },
-      forCaller: () => ({ kit, history: memoryHistory() }),
+      forCaller: () => ({ kit, history, turns }),
       staffCompany: () => Promise.resolve(COMPANY),
       model: stubTextModel("Готово."),
-      tools: () =>
-        options?.failTurn === true
-          ? Promise.reject(new Error("tools unavailable"))
-          : Promise.resolve(options?.tools ?? {}),
+      tools: () => Promise.resolve(options?.tools ?? {}),
       resolveAnswer: OK_RESOLVE,
       prompt: () => ({ system: "you are a test" }),
     },
@@ -137,9 +161,9 @@ async function post(
  * A fresh `commandId` per call unless one is given.
  *
  * Two sends with the same token are one command, and the server replays the
- * second without running it — correct, and not what these tests are measuring.
- * A budget test that accidentally sent a retry would read as a ceiling holding
- * when nothing had been charged.
+ * second without accepting it — correct, and not what these tests are
+ * measuring. A budget test that accidentally sent a retry would read as a
+ * ceiling holding when nothing had been charged.
  */
 function chatBody(text = "покажи замовлення", commandId = randomUUID()) {
   return { commandId, conversationId: CONVERSATION, text };
@@ -156,6 +180,10 @@ function spent(store: AiBudgetStore): Promise<number> {
 }
 
 describe("the spend ceiling on the kit routes", () => {
+  /**
+   * The reservation is the charge now: the accept takes it onto the turn row,
+   * and nothing here settles it a second time.
+   */
   it("admits a turn and charges it once", async () => {
     const { app, budgetStore } = harness({
       limits: { unknownModelTurnUsd: 0.1 },
@@ -164,8 +192,7 @@ describe("the spend ceiling on the kit routes", () => {
 
     const response = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody());
 
-    expect(response.status).toBe(200);
-    // Reserved then settled at the same figure, not both.
+    expect(response.status).toBe(202);
     expect(await spent(budgetStore)).toBeCloseTo(0.1, 5);
   });
 
@@ -175,7 +202,7 @@ describe("the spend ceiling on the kit routes", () => {
     const first = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody());
     const second = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("ще"));
 
-    expect(first.status).toBe(200);
+    expect(first.status).toBe(202);
     expect(second.status).toBe(429);
     expect(Number(second.headers.get("Retry-After"))).toBeGreaterThan(0);
     const body = (await second.json()) as {
@@ -194,43 +221,49 @@ describe("the spend ceiling on the kit routes", () => {
     const first = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody());
     const second = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("ще"));
 
-    expect(first.status).toBe(200);
+    expect(first.status).toBe(202);
     expect(second.status).toBe(429);
   });
 
   /**
-   * The reservation is what makes the ceiling atomic, so a turn that produced
-   * nothing has to give it back. Without this, failures would spend the day's
-   * budget as fast as successes.
+   * The reservation is what makes the ceiling atomic, so a request that stored
+   * no turn has to give it back. Without this, a database incident would spend
+   * the day's budget as fast as successful turns do.
    */
-  it("gives the reservation back when the turn produced nothing", async () => {
+  it("gives the reservation back when no turn was stored", async () => {
     const { app, budgetStore } = harness({
-      failTurn: true,
+      failAccept: true,
       limits: { unknownModelTurnUsd: 0.1 },
     });
 
     const response = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody());
 
     expect(response.ok).toBe(false);
-    // Nothing was produced, so nothing is charged. Without the release, failures
-    // would spend the day's budget as fast as successes.
     expect(await spent(budgetStore)).toBe(0);
   });
 
   it("does not spend a turn slot on a budget refusal", async () => {
     const rateLimitStore = createInMemoryRateLimitStore();
     const budgetStore = createMemoryAiBudgetStore();
-    const build = (dailyBudgetUsdPerCompany: number) =>
-      createAssistantKitApp(
+    const build = (dailyBudgetUsdPerCompany: number) => {
+      const kit = createAssistantKit(testDeps(assistantInteractions));
+      return createAssistantKitApp(
         {
           logger: silentLogger(),
           commands: memoryAssistantKitCommands(),
           auth: {
-            api: { getSession: () => Promise.resolve({ user: { id: USER } }) },
+            api: {
+              getSession: () =>
+                Promise.resolve({
+                  user: { id: USER },
+                  session: { id: "session-1" },
+                }),
+            },
           },
           forCaller: () => ({
-            kit: createAssistantKit(testDeps(assistantInteractions)),
+            kit,
             history: memoryHistory(),
+            turns: memoryAssistantTurnStore(kit.messages),
           }),
           staffCompany: () => Promise.resolve(COMPANY),
           model: stubTextModel("Готово."),
@@ -250,6 +283,7 @@ describe("the spend ceiling on the kit routes", () => {
           budgetStore,
         },
       );
+    };
 
     // A budget of zero refuses before the turn bucket is touched.
     const refused = await post(
@@ -262,10 +296,10 @@ describe("the spend ceiling on the kit routes", () => {
     // Two turns still available, so the refusal cost no slot.
     expect(
       (await post(build(100), ASSISTANT_KIT_CHAT_PATH, chatBody())).status,
-    ).toBe(200);
+    ).toBe(202);
     expect(
       (await post(build(100), ASSISTANT_KIT_CHAT_PATH, chatBody())).status,
-    ).toBe(200);
+    ).toBe(202);
   });
 
   /**
@@ -332,8 +366,7 @@ describe("the spend ceiling on the kit routes", () => {
 });
 
 /**
- * A replay re-read the conversation and called no model, so it is not charged
- * (SHO-547).
+ * A replay accepted no turn and stored nothing, so it is not charged (SHO-547).
  *
  * The per-minute bucket still counts it, and that is deliberate rather than
  * overlooked: the bucket is admission control on how often a person may ask,
@@ -357,8 +390,8 @@ describe("a replayed command", () => {
       chatBody("створи", COMMAND),
     );
 
-    expect(first.status).toBe(200);
-    expect(retry.status).toBe(200);
+    expect(first.status).toBe(202);
+    expect(retry.status).toBe(202);
     expect(await spent(budgetStore)).toBe(0.1);
   });
 });

@@ -289,7 +289,9 @@ function toAuthInstance(auth: {
   api: {
     getSession: (args: {
       headers: Headers;
-    }) => Promise<{ user: { id: string } } | null | undefined>;
+    }) => Promise<
+      { user: { id: string }; session?: { id: string } } | null | undefined
+    >;
   };
 }): AuthInstance {
   return {
@@ -301,7 +303,10 @@ function toAuthInstance(auth: {
         if (result === null || result === undefined) {
           return null;
         }
-        return { user: { id: result.user.id } };
+        return {
+          user: { id: result.user.id },
+          session: { id: result.session?.id ?? `session-${result.user.id}` },
+        };
       },
     },
   };

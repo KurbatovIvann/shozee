@@ -18,6 +18,7 @@ import type {
 import type { Logger } from "pino";
 
 import type { AssistantInteractionTypes } from "./assistant-interactions.js";
+import type { AssistantTurnStore } from "./stores/assistant-turn-store.js";
 
 /**
  * What a tool set needs to exist: domain actions run **as the caller**, so the
@@ -114,6 +115,15 @@ export interface AssistantTurnPrompt {
 export interface AssistantKitScoped {
   readonly kit: AssistantKitFor;
   readonly history: AssistantHistoryPort;
+  /**
+   * Accept, start and finish a turn as this caller (SHO-563).
+   *
+   * Beside the kit rather than reached for separately, because an accept is a
+   * write of this conversation by this person: it stores the person's message
+   * and the placeholder through the same pipeline, under the same tenant scope
+   * and author rule as every other read and write of the thread.
+   */
+  readonly turns: AssistantTurnStore;
 }
 
 /** Who a turn acts as, and the request it is audited under. */

@@ -3,35 +3,36 @@
  * `GET  /assistant/kit/messages` — what to render after a reload, or the page
  * before a cursor an earlier answer returned.
  *
- * Two things are worth reading here.
+ * Three things are worth reading here.
  *
  * The request body is `{ conversationId, text }`. A client never sends the
  * model transcript: history is loaded on the server, so a client cannot rewrite
  * what the model was told it did.
  *
+ * **The route accepts a turn; it does not run one (ADR-0039, SHO-563).** In one
+ * Postgres transaction the accept claims the conversation, stores the person's
+ * message and stores an assistant placeholder; the job goes on the queue and
+ * the answer is `202` with the window those two messages are already in. A turn
+ * therefore outlives the request that asked for it — locking the screen or
+ * closing the app is not a cancel — and nothing here reads the request signal.
+ *
  * The reload handler does almost nothing. That is the point — each message is
  * read back as stored, not recomposed from prompt state, so there is no second
  * derivation that can disagree with the live one.
  */
-import { randomUUID } from "node:crypto";
-
-import {
-  chatCursorSchema,
-  runHostTurn,
-  type ChatWindow,
-} from "@showzy/assistant-kit";
+import { chatCursorSchema, type ChatWindow } from "@showzy/assistant-kit";
 import type { Context } from "hono";
 import { z } from "zod";
 
 import {
+  canonicalCommandIds,
+  enqueueAcceptedTurn,
   goneResponse,
   json,
-  logInterruptedTurn,
   readJson,
+  requireBudgetTicket,
   requireCaller,
   takeCommand,
-  toolContext,
-  withConversationTurn,
   type AssistantKitAppEnv,
   type AssistantKitRuntime,
 } from "./assistant-kit-http.js";
@@ -65,6 +66,16 @@ export interface AssistantKitTurnOk {
   readonly window: ChatWindow;
 }
 
+/**
+ * The turn is stored and queued. The window already ends in the placeholder the
+ * worker writes into, so a client renders the thread correctly without knowing
+ * anything about the queue.
+ */
+export interface AssistantKitTurnAccepted {
+  readonly status: "accepted";
+  readonly window: ChatWindow;
+}
+
 export async function handleAssistantKitChat(
   c: Context<AssistantKitAppEnv>,
   runtime: AssistantKitRuntime,
@@ -83,14 +94,21 @@ export async function handleAssistantKitChat(
   if (!parsed.success) {
     return json(400, { error: { code: "VALIDATION" } }, requestId);
   }
-  const body = parsed.data;
-  const { kit, history } = runtime.forCaller({
+  // Before the receipt, the idempotency key, the turn row and its message ids.
+  const body = canonicalCommandIds(parsed.data);
+  const { kit, history, turns } = runtime.forCaller({
     userId: caller.userId,
     companySelector: caller.companySelector,
     requestId,
     clientIp: c.get("clientIp"),
   });
   const scope = { conversationId: body.conversationId, bind: caller.bind };
+  const accepted = async (): Promise<Response> =>
+    json(
+      202,
+      { status: "accepted", window: await kit.messages.read(scope) },
+      requestId,
+    );
 
   // An unanswered question blocks a new job rather than being superseded by it.
   // A visible limitation is better than a draft that silently disappears.
@@ -106,110 +124,72 @@ export async function handleAssistantKitChat(
     );
   }
 
-  if (c.req.raw.signal.aborted) {
-    return json(499, { status: "aborted" }, requestId);
+  // Past every refusal, so a command is only spent by a request that is about
+  // to do something. A retry of a send whose reply was lost lands here and is
+  // answered with the conversation as it now stands — including the order the
+  // first attempt's turn created (SHO-547).
+  const command = {
+    route: "chat" as const,
+    bind: caller.bind,
+    conversationId: body.conversationId,
+    commandId: body.commandId,
+  };
+  if (!(await takeCommand(runtime, command))) {
+    return await accepted();
   }
 
-  // Everything from here writes. One turn at a time per conversation, or
-  // two of them interleave their messages (SHO-548).
-  return await withConversationTurn(
-    runtime,
-    kit,
-    scope,
-    requestId,
-    async () => {
-      // Past every refusal and past the abort check, so a command is only spent by
-      // a request that is about to do something. A retry of a send whose reply was
-      // lost lands here and is answered with the conversation as it now stands —
-      // including the order the first attempt created (SHO-547).
-      const command = {
-        route: "chat" as const,
-        bind: caller.bind,
-        conversationId: body.conversationId,
-        commandId: body.commandId,
-      };
-      if (!(await takeCommand(c, runtime, command))) {
-        return json(
-          200,
-          { status: "ok", window: await kit.messages.read(scope) },
-          requestId,
-        );
-      }
+  // Read before the accept and saved after it: the worker runs the turn from
+  // this history, and it must not be written until the lease is claimed.
+  const priorMessages = await history.load(scope);
+  const budget = requireBudgetTicket(c);
 
-      const priorMessages = await history.load(scope);
-      const messages = [
-        ...priorMessages,
-        { role: "user" as const, content: body.text },
-      ];
+  const result = await turns.accept({
+    kind: "chat",
+    conversationId: body.conversationId,
+    commandId: body.commandId,
+    text: body.text,
+    bind: caller.bind,
+    sessionId: caller.sessionId,
+    budgetHold: budget.hold,
+    releaseUnusedHold: () => budget.release(),
+  });
 
-      // The person's own words go into the transcript before the model runs, so a
-      // failed turn still shows what was asked.
-      const userMessageId = randomUUID();
-      const stamped = await kit.messages.write(scope, {
-        kind: "append",
-        messageId: userMessageId,
-        role: "user",
-        parts: [{ kind: "text", text: body.text, status: "complete" }],
-      });
-      if (stamped.kind === "wrong_owner") {
-        // The conversation id exists and belongs to someone else. Same answer as a
-        // conversation that does not exist.
-        return goneResponse(requestId);
-      }
-      if (stamped.kind !== "written") {
-        // The person's message was not stored. Running the turn now would
-        // answer a question the transcript does not hold, so this fails instead
-        // (SHO-570: the write result is a union, not a formality).
-        return json(500, { error: { code: "INTERNAL" } }, requestId);
-      }
+  if (result.outcome === "busy") {
+    // Another turn holds the conversation and nothing was written. One turn at
+    // a time, or two of them interleave their messages (SHO-548).
+    //
+    // The command goes back: this request stored nothing, and a receipt kept
+    // for a send that never happened would answer the person's retry with a
+    // window their message is not in — a tap that does nothing, silently, for
+    // the receipt's whole lifetime.
+    await runtime.commands.release(command);
+    return json(
+      409,
+      { status: "turn_open", window: await kit.messages.read(scope) },
+      requestId,
+    );
+  }
+  if (result.outcome === "wrong_owner") {
+    // The conversation id exists and belongs to someone else. Same answer as a
+    // conversation that does not exist.
+    return goneResponse(requestId);
+  }
 
-      const tools = await runtime.tools(
-        toolContext(c, caller, {
-          conversationId: body.conversationId,
-          commandId: body.commandId,
-        }),
-      );
+  if (result.outcome === "accepted") {
+    // The row holds the reservation from here; the worker or the reconciler
+    // settles it.
+    budget.keep();
+    await enqueueAcceptedTurn(runtime, result.job, requestId);
+    // Only now. Saving before the accept claimed the lease could overwrite a
+    // still-running turn's history, and a `busy` accept must mean nothing was
+    // written (ADR-0039, amended by the SHO-569 decision).
+    await history.save(scope, [
+      ...priorMessages,
+      { role: "user" as const, content: body.text },
+    ]);
+  }
 
-      const prompt = runtime.prompt();
-      const turn = await runHostTurn({
-        system: prompt.system,
-        ...(prompt.providerOptions === undefined
-          ? {}
-          : { providerOptions: prompt.providerOptions }),
-        kit,
-        conversationId: body.conversationId,
-        bind: caller.bind,
-        messageId: randomUUID(),
-        model: runtime.model,
-        tools,
-        messages,
-        abortSignal: c.req.raw.signal,
-      });
-
-      if (turn.kind === "pause_rejected") {
-        // A tool asked for a kind or a payload the registry refused. That is a bug
-        // in the tool, not something to hide behind a generic failure.
-        return json(
-          500,
-          { status: "pause_rejected", reason: turn.rejection ?? "unknown" },
-          requestId,
-        );
-      }
-
-      logInterruptedTurn(runtime, {
-        requestId,
-        turn,
-        priorMessages: messages.length,
-      });
-      await history.save(scope, turn.messages);
-
-      const payload: AssistantKitTurnOk = {
-        status: "ok",
-        window: await kit.messages.read(scope),
-      };
-      return json(200, payload, requestId);
-    },
-  );
+  return await accepted();
 }
 
 export async function handleAssistantKitMessages(
@@ -246,7 +226,10 @@ export async function handleAssistantKitMessages(
     clientIp: c.get("clientIp"),
   });
   const window = await kit.messages.read(
-    { conversationId: conversationId.data, bind: caller.bind },
+    {
+      conversationId: conversationId.data.toLowerCase(),
+      bind: caller.bind,
+    },
     before === undefined ? {} : { before },
   );
 
