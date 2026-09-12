@@ -60,7 +60,12 @@ the queue and the events.**
   then enqueues a job whose id is derived from the same command, and answers
   `202` with the window. Repeating a command returns the conversation as it
   now stands and runs nothing twice. The turn lease and the command receipt
-  live on these Postgres rows, not in Redis.
+  live on these Postgres rows, not in Redis. *(Amended 2026-09-12, SHO-563: a
+  deviation found in implementation, not a design change — the accept is the
+  receipt for its own idempotency, but the routes keep a Redis `SET NX` guard
+  in front of it, because `/kit/answer` claims the pause before it accepts and
+  a claim is exactly-once, so the accept's own `replayed` outcome cannot guard
+  a retry that never reaches it.)*
   - The turn row carries what the worker and the reconciler need and the
     request would otherwise take with it: the accept's kind (`chat` |
     `answer`) and the turn's `commandId`, the placeholder's message id, the

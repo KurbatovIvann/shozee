@@ -21,6 +21,7 @@
  * derivation that can disagree with the live one.
  */
 import { chatCursorSchema, type ChatWindow } from "@showzy/assistant-kit";
+import { acceptProvedRollback } from "@showzy/assistant-runtime";
 import type { Context } from "hono";
 import { z } from "zod";
 
@@ -138,21 +139,36 @@ export async function handleAssistantKitChat(
     return await accepted();
   }
 
-  // Read before the accept and saved after it: the worker runs the turn from
-  // this history, and it must not be written until the lease is claimed.
-  const priorMessages = await history.load(scope);
   const budget = requireBudgetTicket(c);
 
-  const result = await turns.accept({
-    kind: "chat",
-    conversationId: body.conversationId,
-    commandId: body.commandId,
-    text: body.text,
-    bind: caller.bind,
-    sessionId: caller.sessionId,
-    budgetHold: budget.hold,
-    releaseUnusedHold: () => budget.release(),
-  });
+  let result: Awaited<ReturnType<typeof turns.accept>>;
+  try {
+    result = await turns.accept({
+      kind: "chat",
+      conversationId: body.conversationId,
+      commandId: body.commandId,
+      text: body.text,
+      bind: caller.bind,
+      sessionId: caller.sessionId,
+      budgetHold: budget.hold,
+      releaseUnusedHold: () => budget.release(),
+    });
+  } catch (error) {
+    // The accept threw. The command goes back for the same reason `busy` gives
+    // it back: a receipt kept for a send that stored nothing answers the
+    // person's retry `202 accepted` with a window their own message is not in,
+    // for the receipt's whole lifetime.
+    //
+    // `acceptProvedRollback` is the predicate the store already uses to decide
+    // whether the budget reservation may be given back, so the receipt and the
+    // hold are released on exactly the same evidence — nothing was stored. An
+    // `INTERNAL` may have committed after all, so its receipt stays and the
+    // retry resolves against the turn row, which is the accept's own receipt.
+    if (acceptProvedRollback(error)) {
+      await runtime.commands.release(command);
+    }
+    throw error;
+  }
 
   if (result.outcome === "busy") {
     // Another turn holds the conversation and nothing was written. One turn at
@@ -171,7 +187,9 @@ export async function handleAssistantKitChat(
   }
   if (result.outcome === "wrong_owner") {
     // The conversation id exists and belongs to someone else. Same answer as a
-    // conversation that does not exist.
+    // conversation that does not exist — and nothing was stored, so the command
+    // goes back rather than answering a retry `202` with an empty window.
+    await runtime.commands.release(command);
     return goneResponse(requestId);
   }
 
@@ -179,14 +197,20 @@ export async function handleAssistantKitChat(
     // The row holds the reservation from here; the worker or the reconciler
     // settles it.
     budget.keep();
-    await enqueueAcceptedTurn(runtime, result.job, requestId);
-    // Only now. Saving before the accept claimed the lease could overwrite a
-    // still-running turn's history, and a `busy` accept must mean nothing was
-    // written (ADR-0039, amended by the SHO-569 decision).
+    // Both the read and the write happen inside the lease. Saving before the
+    // accept claimed it could overwrite a still-running turn's history, and
+    // reading before it would carry a stale transcript across that same window
+    // — a turn finishing its final save in between would be overwritten by
+    // what this request had already read (ADR-0039, amended by the SHO-569
+    // decision).
+    const priorMessages = await history.load(scope);
+    // Before the job, so the ordinary failure leaves no queued turn whose
+    // history lacks the person's message.
     await history.save(scope, [
       ...priorMessages,
       { role: "user" as const, content: body.text },
     ]);
+    await enqueueAcceptedTurn(runtime, result.job, requestId);
   }
 
   return await accepted();

@@ -46,6 +46,7 @@ import {
   type ResolveAnswer,
 } from "@showzy/assistant-runtime";
 import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
+import { ConflictError } from "@showzy/core/errors";
 import pino, { type Logger } from "pino";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -201,6 +202,11 @@ function harness(options?: {
   readonly noQueue?: boolean;
   readonly brokenQueue?: boolean;
   /**
+   * The first accept throws a core refusal, the way one rolled back by the
+   * database does. `acceptProvedRollback` proves nothing was stored.
+   */
+  readonly acceptThrows?: boolean;
+  /**
    * Makes every message write refuse, as a message another writer changed under
    * this one does (SHO-570). The accept sees the refusal; this suite's own reads
    * still go through the real kit.
@@ -226,7 +232,18 @@ function harness(options?: {
   const history = memoryHistory();
   const queue = memoryQueue({ broken: options?.brokenQueue === true });
   // Written through the served kit, so a refused write is a failed accept.
-  const turns = memoryAssistantTurnStore(served.messages);
+  const accepting = memoryAssistantTurnStore(served.messages);
+  let acceptsToFail = options?.acceptThrows === true ? 1 : 0;
+  const turns: AssistantTurnStore = {
+    ...accepting,
+    accept: (input) => {
+      if (acceptsToFail > 0) {
+        acceptsToFail -= 1;
+        return Promise.reject(new ConflictError("the accept was rolled back"));
+      }
+      return accepting.accept(input);
+    },
+  };
   const app = createAssistantKitApp({
     logger: options?.logger ?? silentLogger(),
     commands: memoryAssistantKitCommands(),
@@ -709,6 +726,56 @@ describe("POST /assistant/kit/chat", () => {
     expect(history.saved).toEqual([]);
   });
 
+  /**
+   * A thrown accept stored nothing, so the command goes back. Kept, the retry
+   * would be answered `202 accepted` with a window the person's own message is
+   * not in — for the receipt's whole lifetime, and a regression against the
+   * synchronous route, which wrote the message before the turn ran.
+   */
+  it("gives the command back when the accept throws, so the retry stores the message", async () => {
+    const { app, kit, queue, bind } = harness({ acceptThrows: true });
+
+    const failed = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("створи"));
+    expect(failed.status).toBe(500);
+
+    const retry = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("створи"));
+
+    expect(retry.status).toBe(202);
+    const window = await kit.messages.read({
+      conversationId: CONVERSATION,
+      bind,
+    });
+    expect(
+      window.messages.flatMap((message) =>
+        message.parts.flatMap((part) =>
+          part.kind === "text" ? [part.text] : [],
+        ),
+      ),
+    ).toEqual(["створи", ""]);
+    expect(queue.added).toHaveLength(1);
+  });
+
+  it("treats a different draft as a different command", async () => {
+    const { app, kit, queue, turns, bind } = harness();
+
+    await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("створи"));
+    await turns.finish(turnRef("chat"), "done");
+    const second = await post(app, ASSISTANT_KIT_CHAT_PATH, {
+      ...chatBody("створи інше"),
+      commandId: OTHER_COMMAND,
+    });
+
+    expect(second.status).toBe(202);
+    expect(queue.added).toHaveLength(2);
+    const window = await kit.messages.read({
+      conversationId: CONVERSATION,
+      bind,
+    });
+    expect(
+      window.messages.filter((message) => message.role === "user"),
+    ).toHaveLength(2);
+  });
+
   it("410 for a conversation that belongs to someone else", async () => {
     const { app, kit, bind } = harness();
     await kit.messages.write(
@@ -936,7 +1003,7 @@ describe("POST /assistant/kit/answer", () => {
   });
 
   it("409 for an option this question never offered, without spending the claim", async () => {
-    const { kit, app, bind } = harness();
+    const { kit, app, queue, bind } = harness();
     const pause = await openPause(kit, bind);
 
     const response = await post(
@@ -949,12 +1016,17 @@ describe("POST /assistant/kit/answer", () => {
     expect(((await response.json()) as { status: string }).status).toBe(
       "unresolvable",
     );
+    // The refusal stored nothing and gave the command back, so answering again
+    // under the same command really runs and really queues a turn — rather
+    // than being replayed as work that never happened.
     const retry = await post(
       app,
       ASSISTANT_KIT_ANSWER_PATH,
       answerBody(pause.interactionId, pause.revision),
     );
     expect(retry.status).toBe(202);
+    expect(((await retry.json()) as KitBody).status).toBe("accepted");
+    expect(queue.added).toHaveLength(1);
   });
 
   it("410 for a session in another tenant, and the owner's card stays open", async () => {
@@ -1141,6 +1213,109 @@ describe("POST /assistant/kit/answer", () => {
 
     expect(retry.status).toBe(202);
     expect(resolved).toBe(2);
+    const parts = (
+      await kit.messages.read({ conversationId: CONVERSATION, bind })
+    ).messages.flatMap((message) => message.parts);
+    expect(
+      parts.filter((part) => part.kind === "card").map((part) => part.cardId),
+    ).toEqual(["card-entity"]);
+  });
+
+  /**
+   * Restored from the synchronous suite ("answers a retried answer with the
+   * result, not a dead card"). This is the behaviour the Redis receipt in front
+   * of the claim exists for: the claim is exactly-once, so without it the retry
+   * would be told `gone` and the card could never be answered (SHO-547).
+   */
+  it("answers a retried answer with the conversation, running the action once", async () => {
+    let resolved = 0;
+    const counting: ResolveAnswer = (args) => {
+      resolved += 1;
+      return OK_RESOLVE(args);
+    };
+    const { kit, app, queue, bind } = harness({ resolveAnswer: counting });
+    const pause = await openPause(kit, bind);
+    const body = answerBody(pause.interactionId, pause.revision);
+
+    const first = await post(app, ASSISTANT_KIT_ANSWER_PATH, body);
+    const retry = await post(app, ASSISTANT_KIT_ANSWER_PATH, body);
+
+    expect(first.status).toBe(202);
+    // A turn really was accepted, so the retry replays durable work: answered
+    // `ok` with the conversation, never a second `accepted`, which would claim
+    // a turn had just been queued.
+    expect(retry.status).toBe(200);
+    expect(((await retry.json()) as KitBody).status).toBe("ok");
+    expect(resolved).toBe(1);
+    expect(queue.added).toHaveLength(1);
+    const parts = (
+      await kit.messages.read({ conversationId: CONVERSATION, bind })
+    ).messages.flatMap((message) => message.parts);
+    expect(
+      parts.filter((part) => part.kind === "card").map((part) => part.cardId),
+    ).toEqual(["card-entity"]);
+  });
+
+  it("does not run a duplicate answer that arrives while the first is resolving", async () => {
+    let open = (): void => undefined;
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    let resolved = 0;
+    const counting: ResolveAnswer = (args) => {
+      resolved += 1;
+      return OK_RESOLVE(args);
+    };
+    const { kit, app, bind } = harness({
+      toolsGate: gate,
+      resolveAnswer: counting,
+    });
+    const pause = await openPause(kit, bind);
+    const body = answerBody(pause.interactionId, pause.revision);
+
+    const first = post(app, ASSISTANT_KIT_ANSWER_PATH, body);
+    // The receipt is taken before the claim, so this lands while the first is
+    // still stopped at the gate and does nothing.
+    const duplicate = await post(app, ASSISTANT_KIT_ANSWER_PATH, body);
+    expect(duplicate.status).toBe(200);
+
+    open();
+    expect((await first).status).toBe(202);
+    expect(resolved).toBe(1);
+  });
+
+  /**
+   * The throw path of the same defect the `turn_open` case closes: the claim is
+   * spent and the action has committed, so a receipt kept here would leave the
+   * earned card stored nowhere and the pause unanswerable for ever.
+   */
+  it("gives the claim and the command back when the accept throws, and the retry stores the card", async () => {
+    let resolved = 0;
+    const counting: ResolveAnswer = (args) => {
+      resolved += 1;
+      return OK_RESOLVE(args);
+    };
+    const { kit, app, queue, bind } = harness({
+      acceptThrows: true,
+      resolveAnswer: counting,
+    });
+    const pause = await openPause(kit, bind);
+    const body = answerBody(pause.interactionId, pause.revision);
+
+    const failed = await post(app, ASSISTANT_KIT_ANSWER_PATH, body);
+    expect(failed.status).toBe(500);
+    // Answerable again, rather than a card that can never be answered.
+    expect(
+      (await kit.peek({ conversationId: CONVERSATION, bind }))?.status,
+    ).toBe("open");
+
+    const retry = await post(app, ASSISTANT_KIT_ANSWER_PATH, body);
+
+    expect(retry.status).toBe(202);
+    // The action ran again under the same idempotency key — a replay, not a
+    // repeat — and its card is stored by the accept that succeeded.
+    expect(resolved).toBe(2);
+    expect(queue.added).toHaveLength(1);
     const parts = (
       await kit.messages.read({ conversationId: CONVERSATION, bind })
     ).messages.flatMap((message) => message.parts);

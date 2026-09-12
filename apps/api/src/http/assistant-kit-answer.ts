@@ -32,7 +32,10 @@
  * answerable.
  */
 import { interactionResponseSchema } from "@showzy/assistant-kit";
-import { assistantTurnEarnedCard } from "@showzy/assistant-runtime";
+import {
+  acceptProvedRollback,
+  assistantTurnEarnedCard,
+} from "@showzy/assistant-runtime";
 import type { Context } from "hono";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -164,12 +167,17 @@ export async function handleAssistantKitAnswer(
     conversationId: body.conversationId,
     commandId: body.commandId,
   };
+  /** Nothing durable happened under this command: let the person retry it. */
+  const giveBackCommand = () => runtime.commands.release(command);
+
+  // Every outcome below that stores nothing gives the command back, so reaching
+  // here means an earlier attempt under this command did something durable —
+  // it accepted a turn, or it opened the next question. Answered `ok` with the
+  // conversation as it stands, never `accepted`: that would claim a turn is
+  // queued, and a client waiting for this turn's `turn.finished` would wait for
+  // an event that is never coming (ADR-0039: `202` means stored and queued).
   if (!(await takeCommand(runtime, command))) {
-    return json(
-      202,
-      { status: "accepted", window: await windowNow() },
-      requestId,
-    );
+    return json(200, { status: "ok", window: await windowNow() }, requestId);
   }
 
   const claimed = await kit.claim({
@@ -179,20 +187,26 @@ export async function handleAssistantKitAnswer(
     answer: body.answer,
   });
 
+  // None of these refusals stored anything, so each gives the command back.
+  // Kept, the next attempt under the same command would be answered as a
+  // replay of work that never happened.
   switch (claimed.kind) {
     case "gone":
     case "expired":
     case "unknown_kind":
+      await giveBackCommand();
       return goneResponse(requestId);
     case "stale":
       // The subject of the decision changed under the card. The window
       // carries the current question, so the picker re-renders as it now is.
+      await giveBackCommand();
       return json(
         409,
         { status: "stale", window: await windowNow() },
         requestId,
       );
     case "invalid_answer":
+      await giveBackCommand();
       return json(
         400,
         { error: { code: "VALIDATION" }, reason: claimed.reason },
@@ -201,6 +215,7 @@ export async function handleAssistantKitAnswer(
     case "unresolvable":
       // The interaction refused the answer before spending the claim, so the
       // card is still on screen and still answerable.
+      await giveBackCommand();
       return json(
         409,
         {
@@ -240,6 +255,8 @@ export async function handleAssistantKitAnswer(
     // Nothing runs off the request, so no turn is accepted.
     const nextKind = resolvedOutcome.interaction;
     if (!kit.interactions.has(nextKind)) {
+      // No second question was opened, so nothing durable came of this command.
+      await giveBackCommand();
       return json(
         500,
         { status: "pause_rejected", reason: `unknown kind ${nextKind}` },
@@ -255,12 +272,16 @@ export async function handleAssistantKitAnswer(
       continuation: claimed.record.continuation,
     });
     if (opened.kind !== "opened") {
+      await giveBackCommand();
       return json(
         500,
         { status: "pause_rejected", reason: opened.kind },
         requestId,
       );
     }
+    // From here the second question is open — durable — so the command stays
+    // spent whatever follows: a retry must not claim a pause this attempt has
+    // already replaced.
     // The transcript has to carry the second question too. Live it is in
     // `openPause`, but a reload reads the messages — and a transcript that shows
     // the first question and not the second is a record of a conversation that
@@ -292,8 +313,9 @@ export async function handleAssistantKitAnswer(
 
   if (resolvedOutcome.kind === "error") {
     // The action refused. No effect, so the answer did not take: the card stays
-    // on screen instead of vanishing with the failure.
-    await release();
+    // on screen instead of vanishing with the failure, and the command goes
+    // back so the person can answer it again.
+    await Promise.all([release(), giveBackCommand()]);
     return json(
       409,
       {
@@ -309,16 +331,37 @@ export async function handleAssistantKitAnswer(
   // The action committed. Its card is stored by the accept, on the placeholder,
   // as the part already earned — before any generation is attempted.
   const budget = requireBudgetTicket(c);
-  const result = await turns.accept({
-    kind: "answer",
-    conversationId: body.conversationId,
-    commandId: body.commandId,
-    earned: assistantTurnEarnedCard(resolvedOutcome.card),
-    bind: caller.bind,
-    sessionId: caller.sessionId,
-    budgetHold: budget.hold,
-    releaseUnusedHold: () => budget.release(),
-  });
+  let result: Awaited<ReturnType<typeof turns.accept>>;
+  try {
+    result = await turns.accept({
+      kind: "answer",
+      conversationId: body.conversationId,
+      commandId: body.commandId,
+      earned: assistantTurnEarnedCard(resolvedOutcome.card),
+      bind: caller.bind,
+      sessionId: caller.sessionId,
+      budgetHold: budget.hold,
+      releaseUnusedHold: () => budget.release(),
+    });
+  } catch (error) {
+    // The accept threw with the claim already spent and the action already
+    // committed, so the card it earned is stored nowhere. Both the claim and
+    // the command go back, or the pause could never be answered again and a
+    // committed write would have no explanation anywhere — the silent SHO-546
+    // this route exists to prevent, reached through the throw instead of
+    // through `busy`.
+    //
+    // `acceptProvedRollback` is the same predicate the store uses for the
+    // budget hold, so claim, command and reservation are all given back on one
+    // piece of evidence: nothing was stored. The retry re-runs the action under
+    // the same idempotency key, so the write replays rather than repeats
+    // (SHO-547). An `INTERNAL` may have committed, so it keeps both and the
+    // retry resolves against the turn row.
+    if (acceptProvedRollback(error)) {
+      await Promise.all([release(), giveBackCommand()]);
+    }
+    throw error;
+  }
 
   if (result.outcome === "busy") {
     // Another turn took the conversation between the claim and the accept, and
@@ -330,7 +373,7 @@ export async function handleAssistantKitAnswer(
     // (SHO-546). With it, the retry runs the same action under the same
     // idempotency key, so the write is replayed rather than repeated and its
     // card is stored by the accept that finally succeeds (SHO-547).
-    await Promise.all([release(), runtime.commands.release(command)]);
+    await Promise.all([release(), giveBackCommand()]);
     return json(
       409,
       { status: "turn_open", window: await windowNow() },
@@ -338,6 +381,7 @@ export async function handleAssistantKitAnswer(
     );
   }
   if (result.outcome === "wrong_owner") {
+    await Promise.all([release(), giveBackCommand()]);
     return goneResponse(requestId);
   }
 
