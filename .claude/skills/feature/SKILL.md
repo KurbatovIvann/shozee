@@ -76,9 +76,13 @@ Sequencing rules:
   every action using those tables.
 - Actions before projections; emitters before subscribers; `ctx.call` targets
   (ADR-0015) before callers. Backend before UI for the same capability.
-- **Size is a hard constraint, not comfort.** One ticket ≈ ≤ 400 changed
-  lines and ≤ ~12 files, including tests. The first conveyor run shipped
-  3000-line children; each cost more than the whole feature should. Split
+- **Size is a hard constraint, not comfort.** One ticket ≤ **400 changed
+  source lines** and ≤ ~12 source files. Tests, generated files and markdown
+  do not count: the definition of done makes tests 1.5-4x the source, so a
+  budget over all changed lines is unmeetable and gets ignored — which is how
+  the assistant-async slice shipped 13 children averaging ~1,050 source lines
+  each. Estimate source lines per child **in the graph**, before approval: a
+  child whose size you cannot bound is not planned. Split
   by layer and by action (schema → one write action + tests → the next
   action → projection → UI). A ticket that cannot be described in five
   lines is two tickets.

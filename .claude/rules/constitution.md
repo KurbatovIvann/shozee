@@ -48,8 +48,13 @@ nearest `AGENTS.md` win over skills and agent playbooks.
   `.ts`/`.tsx` files: a name, a type, a small function, or a test carries
   the meaning; the commit subject carries the ticket. The only permitted
   comment lines are the ones a rule requires — the approval reference on an
-  ADR/spec-approved raw-SQL primitive, `eslint-disable` / `@ts-expect-error`
-  with a linked issue, and `@vitest-environment`. A hook blocks the rest.
+  ADR/spec-approved raw-SQL primitive (licensed only on a line whose file
+  actually adds such a primitive; an ADR number anywhere else is a comment
+  wearing a citation), `eslint-disable` / `@ts-expect-error` with a linked
+  issue, and `@vitest-environment`. Two gates block the rest: the
+  `Edit|Write` hook `.claude/hooks/no-comments.mjs`, and
+  `.claude/scripts/diff-hygiene.mjs` over the branch diff — the gate that
+  holds, because no writing tool can route around it.
   Do not strip existing comments in lines you are not otherwise changing.
 - **No prose artifacts.** Commit messages, PR bodies, Linear comments, and
   reports follow the output protocol in `CLAUDE.md`. A change that needs a
