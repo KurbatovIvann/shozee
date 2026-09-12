@@ -515,14 +515,15 @@ export function createPostgresAssistantTurnStore(
           };
     },
 
-    activeTurn: async (scope) => {
-      const read = await executeAction(deps.pipeline, {
-        action: readActiveTurn,
-        input: { conversationId: scope.conversationId },
-        ...call,
-      });
-      return read.turn;
-    },
+    activeTurn: async (scope) =>
+      asCaller(async () => {
+        const read = await executeAction(deps.pipeline, {
+          action: readActiveTurn,
+          input: { conversationId: scope.conversationId },
+          ...call,
+        });
+        return read.turn;
+      }),
   };
 }
 
