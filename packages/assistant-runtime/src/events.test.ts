@@ -35,6 +35,7 @@ const window = {
   messages: [message],
   olderCursor: null,
   openPause: null,
+  turn: null,
 };
 
 const published: readonly AssistantPublishedEvent[] = [

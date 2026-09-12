@@ -44,6 +44,7 @@ export type AssistantSheetViewModel = {
   readonly send: () => void;
   readonly answer: (answer: unknown) => void;
   readonly dismiss: () => void;
+  readonly continueTurn: () => void;
   readonly openHref: (href: string) => void;
   readonly busy: boolean;
   readonly thinking: boolean;
@@ -104,6 +105,10 @@ export function AssistantSheetView(model: AssistantSheetViewModel) {
         surfaces={item.surfaces}
         failed={item.failed}
         failedLabel={copy.turnInterrupted}
+        interrupted={item.interrupted}
+        interruptedLabel={copy.interruptedMessage}
+        continueLabel={copy.continueLabel}
+        onContinue={model.continueTurn}
         onOpenHref={model.openHref}
         interaction={item.interaction}
         applying={model.busy}
@@ -112,7 +117,14 @@ export function AssistantSheetView(model: AssistantSheetViewModel) {
         onDismiss={model.dismiss}
       />
     ),
-    [copy, model.answer, model.busy, model.dismiss, model.openHref],
+    [
+      copy,
+      model.answer,
+      model.busy,
+      model.continueTurn,
+      model.dismiss,
+      model.openHref,
+    ],
   );
 
   const showEmpty = model.rows.length === 0 && !model.thinking;

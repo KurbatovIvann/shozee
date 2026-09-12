@@ -1,5 +1,5 @@
 import { memo, type ReactNode } from "react";
-import { Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 
 import {
@@ -29,6 +29,10 @@ export const AssistantMessageRow = memo(function AssistantMessageRow(props: {
    */
   readonly failed: boolean;
   readonly failedLabel: string;
+  readonly interrupted: boolean;
+  readonly interruptedLabel: string;
+  readonly continueLabel: string;
+  readonly onContinue: () => void;
   readonly onOpenHref: (href: string) => void;
   /** Present only while it is answerable. There is no closed-question card. */
   readonly interaction: AssistantInteraction | null;
@@ -73,6 +77,14 @@ export const AssistantMessageRow = memo(function AssistantMessageRow(props: {
         : null}
       {!props.waiting && props.failed ? (
         <Text style={styles.failedNote}>{props.failedLabel}</Text>
+      ) : null}
+      {!props.waiting && props.interrupted ? (
+        <View style={styles.interruptedRow}>
+          <Text style={styles.failedNote}>{props.interruptedLabel}</Text>
+          <Pressable onPress={props.onContinue}>
+            <Text style={styles.continueLabel}>{props.continueLabel}</Text>
+          </Pressable>
+        </View>
       ) : null}
       {!props.waiting && interaction !== null ? (
         <AssistantTurnResult>
@@ -120,6 +132,17 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.mutedForeground,
     fontSize: theme.typography.xs.fontSize,
     lineHeight: theme.typography.xs.lineHeight,
+  },
+  interruptedRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+  },
+  continueLabel: {
+    color: theme.colors.primary,
+    fontSize: theme.typography.xs.fontSize,
+    lineHeight: theme.typography.xs.lineHeight,
+    fontWeight: "600",
   },
   assistantBubble: {
     maxWidth: "100%",

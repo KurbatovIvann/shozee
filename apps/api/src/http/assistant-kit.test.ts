@@ -475,7 +475,10 @@ describe("POST /assistant/kit/chat", () => {
       status: "streaming",
     });
     // The response is what is stored, not a second view of it.
-    expect(body.window).toEqual(window);
+    expect(body.window).toEqual({
+      ...window,
+      turn: { id: COMMAND, status: "queued" },
+    });
 
     // The job names the turn, and history is what the worker will run from.
     expect(queue.added).toEqual([
@@ -576,7 +579,10 @@ describe("POST /assistant/kit/chat", () => {
     expect(window.messages).toHaveLength(2);
     expect(queue.added).toHaveLength(1);
     expect(history.saved).toHaveLength(1);
-    expect(((await retry.json()) as KitBody).window).toEqual(window);
+    expect(((await retry.json()) as KitBody).window).toEqual({
+      ...window,
+      turn: { id: COMMAND, status: "queued" },
+    });
   });
 
   /**

@@ -146,7 +146,7 @@ export interface AssistantKitCommandRef {
    * across the two would have its answer replayed as if it were the send — a
    * tap that does nothing, silently, for the receipt's whole lifetime.
    */
-  readonly route: "chat" | "answer";
+  readonly route: "chat" | "answer" | "continue";
 }
 
 export function assistantKitCommandKey(

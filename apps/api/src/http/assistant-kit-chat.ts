@@ -20,7 +20,11 @@
  * read back as stored, not recomposed from prompt state, so there is no second
  * derivation that can disagree with the live one.
  */
-import { chatCursorSchema, type ChatWindow } from "@showzy/assistant-kit";
+import { chatCursorSchema } from "@showzy/assistant-kit";
+import {
+  readAssistantChatWindow,
+  type AssistantChatWindowWithTurn,
+} from "@showzy/assistant-runtime";
 import type { Context } from "hono";
 import { z } from "zod";
 
@@ -63,7 +67,7 @@ export const assistantKitChatBodySchema = z.strictObject({
  */
 export interface AssistantKitTurnOk {
   readonly status: "ok";
-  readonly window: ChatWindow;
+  readonly window: AssistantChatWindowWithTurn;
 }
 
 /**
@@ -73,7 +77,7 @@ export interface AssistantKitTurnOk {
  */
 export interface AssistantKitTurnAccepted {
   readonly status: "accepted";
-  readonly window: ChatWindow;
+  readonly window: AssistantChatWindowWithTurn;
 }
 
 export async function handleAssistantKitChat(
@@ -106,7 +110,10 @@ export async function handleAssistantKitChat(
   const accepted = async (): Promise<Response> =>
     json(
       202,
-      { status: "accepted", window: await kit.messages.read(scope) },
+      {
+        status: "accepted",
+        window: await readAssistantChatWindow(kit, turns, scope),
+      },
       requestId,
     );
 
@@ -118,7 +125,7 @@ export async function handleAssistantKitChat(
       409,
       {
         status: "interaction_open",
-        window: await kit.messages.read(scope),
+        window: await readAssistantChatWindow(kit, turns, scope),
       },
       requestId,
     );
@@ -198,7 +205,10 @@ export async function handleAssistantKitChat(
     await runtime.commands.release(command);
     return json(
       409,
-      { status: "turn_open", window: await kit.messages.read(scope) },
+      {
+        status: "turn_open",
+        window: await readAssistantChatWindow(kit, turns, scope),
+      },
       requestId,
     );
   }
@@ -273,13 +283,15 @@ export async function handleAssistantKitMessages(
   // else comes back empty, indistinguishable from a conversation that does not
   // exist. No check is needed here, and adding one would only create a way to
   // tell the two apart.
-  const { kit } = runtime.forCaller({
+  const { kit, turns } = runtime.forCaller({
     userId: caller.userId,
     companySelector: caller.companySelector,
     requestId,
     clientIp: c.get("clientIp"),
   });
-  const window = await kit.messages.read(
+  const window = await readAssistantChatWindow(
+    kit,
+    turns,
     {
       conversationId: conversationId.data.toLowerCase(),
       bind: caller.bind,

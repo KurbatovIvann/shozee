@@ -22,6 +22,7 @@ const window = {
   messages: [message],
   olderCursor: null,
   openPause: null,
+  turn: null,
 };
 
 const events = {

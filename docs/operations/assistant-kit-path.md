@@ -57,6 +57,7 @@ the person where they are reading; a reply brings the thread back to its end.
 | POST | `/assistant/kit/chat` | `{ commandId, conversationId, text }` |
 | POST | `/assistant/kit/answer` | `{ commandId, conversationId, interactionId, revision, answer }` |
 | POST | `/assistant/kit/abandon` | `{ conversationId, interactionId }` |
+| POST | `/assistant/kit/continue` | `{ commandId, conversationId }` — Продовжити (SHO-574) |
 | GET | `/assistant/kit/messages` | `?conversationId=` and, for an older page, `&before=` |
 | GET | `/assistant/kit/events` | `?conversationId=` — server-sent events, see [The event stream](#the-event-stream) |
 
@@ -73,13 +74,21 @@ the parts one request produced:
 
 ```json
 { "status": "ok", "window": { "conversationId": "...",
-  "messages": [...], "olderCursor": "12", "openPause": null } }
+  "messages": [...], "olderCursor": "12", "openPause": null,
+  "turn": { "id": "...", "status": "running" } } }
 ```
 
 `messages` are the latest thirty, each exactly as stored. `olderCursor` is null
 when nothing precedes them; otherwise `GET /assistant/kit/messages` with
 `&before=<olderCursor>` returns the page before. A message is never changed once
 its request ends, so a page a client already holds does not go stale.
+
+`turn` is `assistant_turns`' own answer to whether one is running on this
+conversation right now — `null` once it has ended, whoever ended it (SHO-574,
+item 0). A client derives "busy" and "is this streaming placeholder still being
+written" from this field alone, never from a message's own `streaming` text
+part: that part is a projection, and a turn the reconciler ended for a removed
+author leaves it stored forever with nothing to end it a second time.
 
 A refusal carries it too — `409 stale`, `409 unresolvable`, `409 action_failed`
 and `409 interaction_open` all come back with the current `window`, so a client
@@ -117,6 +126,14 @@ Dropping the question instead:
 
 ```bash
 curl -sS "$KIT/assistant/kit/abandon" -H "cookie: $COOKIE" -H "x-company-id: $COMPANY" -H 'content-type: application/json' -d "{\"conversationId\":\"$CONV\",\"interactionId\":\"PASTE\"}" | jq
+```
+
+Продовжити, on a conversation whose window reports `turn: null` and whose last
+assistant message still shows `streaming` — the server resolves which turn to
+continue from `assistant_turns` itself, never from a client-supplied id:
+
+```bash
+curl -sS "$KIT/assistant/kit/continue" -H "cookie: $COOKIE" -H "x-company-id: $COMPANY" -H 'content-type: application/json' -d "{\"commandId\":\"$(uuidgen)\",\"conversationId\":\"$CONV\"}" | jq
 ```
 
 What a reload would render:
@@ -341,7 +358,13 @@ order by created_at desc;
   stalled job, or a member removed mid-turn, which core refuses the finish of).
   The reconciler ends it.
 - `done` / `failed` / `interrupted`: ended, hold zeroed, conversation free.
-  `interrupted` is what **Продовжити** continues.
+  `interrupted` is what **Продовжити** (`POST /assistant/kit/continue`,
+  SHO-574) continues: a new turn from saved history with no new text, under a
+  db `kind: "answer"` row so it needs no new `assistant_turns.kind` value —
+  and `continues_command_id` set to the interrupted turn's own command (or, for
+  a continuation of a continuation, that command's own root), so its tools'
+  idempotency keys replay the interrupted turn's writes rather than repeating
+  them (SHO-547).
 
 The job for that turn, on the **queue** Redis (`REDIS_QUEUE_URL`), under the id
 the accept derived — `turn.<kind>.<conversationId>.<commandId>`, lowercased:

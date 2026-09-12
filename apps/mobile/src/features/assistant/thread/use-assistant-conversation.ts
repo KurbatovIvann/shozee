@@ -43,6 +43,7 @@ import {
   postAssistantKitAbandon,
   postAssistantKitAnswer,
   postAssistantKitChat,
+  postAssistantKitContinue,
   type AssistantKitCall,
   type AssistantKitFailure,
   type AssistantKitFailureKind,
@@ -109,6 +110,7 @@ export interface UseAssistantConversation {
   readonly answer: (answer: unknown) => void;
   /** Drop the open question without answering it. */
   readonly dismiss: () => void;
+  readonly continueTurn: () => void;
   /** A page of older messages is on its way. */
   readonly loadingOlder: boolean;
   /**
@@ -617,6 +619,16 @@ export function useAssistantConversation(args: {
     );
   }, [run]);
 
+  const continueTurn = useCallback(() => {
+    const key = "continue";
+    const commandId = commandIdFor(key);
+    void run((call, conversationId) =>
+      postAssistantKitContinue({ ...call, conversationId, commandId }),
+    ).then(({ failure }) => {
+      settleCommand(key, failure);
+    });
+  }, [commandIdFor, run, settleCommand]);
+
   /**
    * The older page on its way, if any. Its own latch, not `sending`: reading
    * history changes nothing on the server, so a person scrolling back does not
@@ -727,6 +739,7 @@ export function useAssistantConversation(args: {
     send,
     answer,
     dismiss,
+    continueTurn,
     loadingOlder,
     loadOlder,
   };

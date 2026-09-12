@@ -14,6 +14,7 @@ export * from "./assistant-queue-producer.js";
 export * from "./assistant-runtime.js";
 export * from "./assistant-turn-processor.js";
 export * from "./assistant-turn-reconciler.js";
+export * from "./assistant-window.js";
 export * from "./events.js";
 export * from "./queue.js";
 export * from "./runtime-types.js";

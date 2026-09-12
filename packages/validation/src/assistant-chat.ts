@@ -56,6 +56,10 @@ export const assistantChatTextStatusSchema = z.enum([
   "interrupted",
 ]);
 
+export type AssistantChatTextStatus = z.output<
+  typeof assistantChatTextStatusSchema
+>;
+
 /**
  * `type` and `payload` are an `AssistantSurfaceData` from
  * `./assistant-surfaces`, written by the server when the card was produced.
@@ -114,11 +118,19 @@ export type AssistantChatMessage = z.output<typeof assistantChatMessageSchema>;
  * answered question simply stops appearing here, so a client needs no local
  * memory of what it has already answered.
  */
+export const assistantChatTurnSchema = z.strictObject({
+  id: z.uuid(),
+  status: z.enum(["queued", "running"]),
+});
+
+export type AssistantChatTurn = z.output<typeof assistantChatTurnSchema>;
+
 export const assistantChatWindowSchema = z.strictObject({
   conversationId: z.uuid(),
   messages: z.array(assistantChatMessageSchema),
   olderCursor: z.string().min(1).nullable(),
   openPause: assistantPauseSchema.nullable(),
+  turn: assistantChatTurnSchema.nullable(),
 });
 
 export type AssistantChatWindow = z.output<typeof assistantChatWindowSchema>;

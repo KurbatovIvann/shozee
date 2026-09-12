@@ -36,6 +36,16 @@ import type { AssistantKitResponse } from "./assistant-kit-http.js";
 const CONVERSATION = "33333333-3333-4333-8333-333333333333";
 const BIND = "user-1:11111111-1111-4111-8111-1111111111aa";
 
+function withTurn(
+  window: object,
+  turn: {
+    readonly id: string;
+    readonly status: "queued" | "running";
+  } | null = null,
+) {
+  return { ...window, turn };
+}
+
 const pausingInput = z.object({ label: z.string() });
 
 /** Plain object rather than the SDK's `tool()`: no direct `ai` dependency. */
@@ -101,7 +111,7 @@ describe("the window a server writes and the window a client reads", () => {
     });
 
     expect(chatWindowSchema.safeParse(window).success).toBe(true);
-    const client = assistantChatWindowSchema.safeParse(window);
+    const client = assistantChatWindowSchema.safeParse(withTurn(window));
     expect(client.success).toBe(true);
     expect(client.success && client.data.openPause).toBeNull();
   });
@@ -114,7 +124,7 @@ describe("the window a server writes and the window a client reads", () => {
       bind: BIND,
     });
 
-    const client = assistantChatWindowSchema.safeParse(window);
+    const client = assistantChatWindowSchema.safeParse(withTurn(window));
     expect(client.success).toBe(true);
     if (!client.success) {
       return;
@@ -164,7 +174,9 @@ describe("the window a server writes and the window a client reads", () => {
     // Whose conversation it is stays on the server: the client never needed it.
     expect(window).not.toHaveProperty("bind");
     expect(chatWindowSchema.safeParse(window).success).toBe(true);
-    expect(assistantChatWindowSchema.safeParse(window).success).toBe(true);
+    expect(assistantChatWindowSchema.safeParse(withTurn(window)).success).toBe(
+      true,
+    );
   });
 
   /**
@@ -200,7 +212,6 @@ describe("the window a server writes and the window a client reads", () => {
     ];
 
     for (const placeholder of placeholders) {
-      // A read returns the stored message with the store's revision beside it.
       const window = {
         conversationId: CONVERSATION,
         messages: [{ ...placeholder, revision: 1 }],
@@ -208,7 +219,9 @@ describe("the window a server writes and the window a client reads", () => {
         openPause: null,
       };
       expect(chatWindowSchema.safeParse(window).success).toBe(true);
-      expect(assistantChatWindowSchema.safeParse(window).success).toBe(true);
+      expect(
+        assistantChatWindowSchema.safeParse(withTurn(window)).success,
+      ).toBe(true);
     }
   });
 
@@ -240,7 +253,7 @@ describe("the window a server writes and the window a client reads", () => {
 
     expect(window.messages).toHaveLength(1);
     expect(chatWindowSchema.safeParse(window).success).toBe(true);
-    const client = assistantChatWindowSchema.safeParse(window);
+    const client = assistantChatWindowSchema.safeParse(withTurn(window));
     expect(client.success).toBe(true);
     expect(
       client.success &&
@@ -273,11 +286,12 @@ describe("the window a server writes and the window a client reads", () => {
       ],
       olderCursor: null,
       openPause: null,
+      turn: null,
     };
     const body: AssistantKitResponse = { status: "accepted", window };
 
     expect(body.status).toBe("accepted");
-    expect(chatWindowSchema.safeParse(window).success).toBe(true);
+    expect(chatWindowSchema.safeParse(window).success).toBe(false);
     expect(assistantChatWindowSchema.safeParse(window).success).toBe(true);
   });
 

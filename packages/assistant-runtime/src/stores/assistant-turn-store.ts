@@ -21,12 +21,18 @@ import {
   finishTurn,
   interruptTurn,
   listStaleTurns,
+  readActiveTurn,
   readChatMessages,
+  readLatestInterruptedTurn,
   startTurn,
 } from "@showzy/assistant";
 import type { ChatMessage, ChatPart, ToolOutcome } from "@showzy/assistant-kit";
 import { executeAction } from "@showzy/core";
-import { CoreError, CoreInvariantError } from "@showzy/core/errors";
+import {
+  ConflictError,
+  CoreError,
+  CoreInvariantError,
+} from "@showzy/core/errors";
 
 import type { StaffAssistantBudgetHold } from "../assistant-budget-guard.js";
 import {
@@ -209,8 +215,6 @@ interface AcceptCommon {
   /** The accepting request's better-auth session id. */
   readonly sessionId: string;
   readonly budgetHold: StaffAssistantBudgetHold;
-  /** Продовжити: the interrupted turn's command. */
-  readonly continuesCommandId?: string;
   /**
    * Gives back the budget reservation this request made for the turn
    * (`releaseStaffAssistantBudgetHold`). The store calls it at most once, and
@@ -230,7 +234,8 @@ export type AssistantTurnAcceptInput =
       readonly kind: "answer";
       /** The parts the resolved action already earned, stored first. */
       readonly earned: readonly ChatPart[];
-    });
+    })
+  | (AcceptCommon & { readonly kind: "continue" });
 
 export interface AssistantTurnView {
   readonly conversationId: string;
@@ -295,6 +300,14 @@ export interface AssistantTurnStore {
         readonly releasedHold: null;
       }
   >;
+  activeTurn(scope: {
+    readonly conversationId: string;
+  }): Promise<AssistantTurnActiveView | null>;
+}
+
+export interface AssistantTurnActiveView {
+  readonly id: string;
+  readonly status: "queued" | "running";
 }
 
 /**
@@ -317,6 +330,24 @@ function jobOf(turn: AssistantTurnRef): AssistantTurnJob {
     conversationId: turn.conversationId,
     commandId: turn.commandId,
   });
+}
+
+async function resolveContinuation(
+  deps: AssistantKitStoreDeps,
+  call: ReturnType<typeof callFor>,
+  conversationId: string,
+): Promise<string> {
+  const found = await executeAction(deps.pipeline, {
+    action: readLatestInterruptedTurn,
+    input: { conversationId },
+    ...call,
+  });
+  if (found.commandId === null) {
+    throw new ConflictError(
+      "There is no interrupted turn of this conversation to continue.",
+    );
+  }
+  return found.commandId;
 }
 
 export function createPostgresAssistantTurnStore(
@@ -348,12 +379,24 @@ export function createPostgresAssistantTurnStore(
               return { outcome: "wrong_owner" };
             }
 
+            const dbKind: AssistantTurnKind =
+              input.kind === "continue" ? "answer" : input.kind;
+            const continuesCommandId =
+              input.kind === "continue"
+                ? await resolveContinuation(deps, call, input.conversationId)
+                : undefined;
             const createdAt = clock.now().toISOString();
-            const placeholderId = assistantTurnMessageId(input, "assistant");
+            const placeholderId = assistantTurnMessageId(
+              { kind: dbKind, commandId: input.commandId },
+              "assistant",
+            );
             const userMessage =
               input.kind === "chat"
                 ? (() => {
-                    const messageId = assistantTurnMessageId(input, "user");
+                    const messageId = assistantTurnMessageId(
+                      { kind: dbKind, commandId: input.commandId },
+                      "user",
+                    );
                     const message: ChatMessage = {
                       messageId,
                       role: "user",
@@ -374,7 +417,7 @@ export function createPostgresAssistantTurnStore(
               action: acceptTurn,
               input: {
                 conversationId: input.conversationId,
-                kind: input.kind,
+                kind: dbKind,
                 commandId: input.commandId,
                 sessionId: input.sessionId,
                 ...(userMessage === undefined ? {} : { userMessage }),
@@ -387,14 +430,16 @@ export function createPostgresAssistantTurnStore(
                       createdAt,
                       ...(input.kind === "answer"
                         ? { earned: input.earned }
-                        : {}),
+                        : input.kind === "continue"
+                          ? { earned: [] }
+                          : {}),
                     }),
                   ),
                 },
                 budgetHold: assistantBudgetHoldToStored(input.budgetHold),
-                ...(input.continuesCommandId === undefined
+                ...(continuesCommandId === undefined
                   ? {}
-                  : { continuesCommandId: input.continuesCommandId }),
+                  : { continuesCommandId }),
               },
               ...call,
             });
@@ -469,6 +514,16 @@ export function createPostgresAssistantTurnStore(
             releasedHold: null,
           };
     },
+
+    activeTurn: async (scope) =>
+      asCaller(async () => {
+        const read = await executeAction(deps.pipeline, {
+          action: readActiveTurn,
+          input: { conversationId: scope.conversationId },
+          ...call,
+        });
+        return read.turn;
+      }),
   };
 }
 
@@ -511,9 +566,11 @@ export function memoryAssistantTurnStore(
 
   return {
     async accept(input) {
+      const dbKind: AssistantTurnKind =
+        input.kind === "continue" ? "answer" : input.kind;
       const ref = {
         conversationId: input.conversationId,
-        kind: input.kind,
+        kind: dbKind,
         commandId: input.commandId,
       };
       const replayed = byCommand.get(key(ref));
@@ -533,15 +590,41 @@ export function memoryAssistantTurnStore(
         return { outcome: "busy" };
       }
 
+      let continuesCommandId: string | undefined;
+      if (input.kind === "continue") {
+        const interrupted = [...byCommand.values()]
+          .filter(
+            (turn) =>
+              turn.conversationId.toLowerCase() ===
+                input.conversationId.toLowerCase() &&
+              statuses.get(key(turn)) === "interrupted",
+          )
+          .at(-1);
+        if (interrupted === undefined) {
+          await input.releaseUnusedHold();
+          throw new ConflictError(
+            "There is no interrupted turn of this conversation to continue.",
+          );
+        }
+        continuesCommandId =
+          interrupted.continuesCommandId ?? interrupted.commandId;
+      }
+
       const createdAt = clock.now().toISOString();
       const scope = {
         conversationId: input.conversationId,
         bind: input.bind,
       };
-      const placeholderMessageId = assistantTurnMessageId(input, "assistant");
+      const placeholderMessageId = assistantTurnMessageId(
+        { kind: dbKind, commandId: input.commandId },
+        "assistant",
+      );
       let userMessageId: string | null = null;
       if (input.kind === "chat") {
-        userMessageId = assistantTurnMessageId(input, "user");
+        userMessageId = assistantTurnMessageId(
+          { kind: dbKind, commandId: input.commandId },
+          "user",
+        );
         const stored = await messages.write(scope, {
           kind: "append",
           messageId: userMessageId,
@@ -567,7 +650,11 @@ export function memoryAssistantTurnStore(
         parts: assistantTurnPlaceholder({
           messageId: placeholderMessageId,
           createdAt,
-          ...(input.kind === "answer" ? { earned: input.earned } : {}),
+          ...(input.kind === "answer"
+            ? { earned: input.earned }
+            : input.kind === "continue"
+              ? { earned: [] }
+              : {}),
         }).parts,
       });
       if (placeholder.kind === "wrong_owner") {
@@ -582,12 +669,12 @@ export function memoryAssistantTurnStore(
 
       const turn: AssistantTurnView = {
         conversationId: input.conversationId,
-        kind: input.kind,
+        kind: dbKind,
         commandId: input.commandId,
         status: "queued",
         placeholderMessageId,
         userMessageId,
-        continuesCommandId: input.continuesCommandId ?? null,
+        continuesCommandId: continuesCommandId ?? null,
       };
       byCommand.set(key(ref), turn);
       statuses.set(key(ref), "queued");
@@ -630,6 +717,22 @@ export function memoryAssistantTurnStore(
           kyivDate: "1970-01-01",
         },
       });
+    },
+
+    activeTurn(scope) {
+      for (const turn of byCommand.values()) {
+        if (
+          turn.conversationId.toLowerCase() !==
+          scope.conversationId.toLowerCase()
+        ) {
+          continue;
+        }
+        const status = statuses.get(key(turn));
+        if (status === "queued" || status === "running") {
+          return Promise.resolve({ id: turn.commandId, status });
+        }
+      }
+      return Promise.resolve(null);
     },
   };
 }

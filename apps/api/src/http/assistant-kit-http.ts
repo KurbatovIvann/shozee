@@ -25,7 +25,7 @@ import type {
   StaffAssistantBudgetHold,
 } from "@showzy/assistant-runtime";
 import { enqueueAssistantTurn } from "@showzy/assistant-runtime";
-import type { ChatWindow } from "@showzy/assistant-kit";
+import type { AssistantChatWindowWithTurn } from "@showzy/assistant-runtime";
 import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
 import { CoreInvariantError } from "@showzy/core/errors";
 import type { Context } from "hono";
@@ -234,25 +234,35 @@ export interface AssistantKitRuntime extends AssistantRuntime {
  * conversation the request never got to read.
  */
 export type AssistantKitResponse =
-  | { readonly status: "ok"; readonly window: ChatWindow }
-  /** Stored and queued; it runs off the request (ADR-0039). */
-  | { readonly status: "accepted"; readonly window: ChatWindow }
-  | { readonly status: "interaction_open"; readonly window: ChatWindow }
-  /** Another turn holds this conversation. Nothing was attempted. */
-  | { readonly status: "turn_open"; readonly window: ChatWindow }
-  | { readonly status: "stale"; readonly window: ChatWindow }
+  | { readonly status: "ok"; readonly window: AssistantChatWindowWithTurn }
+  | {
+      readonly status: "accepted";
+      readonly window: AssistantChatWindowWithTurn;
+    }
+  | {
+      readonly status: "interaction_open";
+      readonly window: AssistantChatWindowWithTurn;
+    }
+  | {
+      readonly status: "turn_open";
+      readonly window: AssistantChatWindowWithTurn;
+    }
+  | { readonly status: "stale"; readonly window: AssistantChatWindowWithTurn }
   | {
       readonly status: "unresolvable";
       readonly reason: string;
-      readonly window: ChatWindow;
+      readonly window: AssistantChatWindowWithTurn;
     }
   | {
       readonly status: "action_failed";
       readonly code: string;
       readonly message: string;
-      readonly window: ChatWindow;
+      readonly window: AssistantChatWindowWithTurn;
     }
-  | { readonly status: "abandoned"; readonly window: ChatWindow }
+  | {
+      readonly status: "abandoned";
+      readonly window: AssistantChatWindowWithTurn;
+    }
   | { readonly status: "expired" }
   | { readonly status: "pause_rejected"; readonly reason: string }
   | {

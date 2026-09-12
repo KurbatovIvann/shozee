@@ -172,7 +172,7 @@ async function accepted(options: {
   readonly history: readonly ModelMessage[];
   readonly userId?: string;
   readonly conversationId?: string;
-  readonly continuesCommandId?: string;
+  readonly continues?: true;
   readonly answerEarned?: readonly ChatPart[];
   /**
    * Reserve against this store the way the route does, instead of handing the
@@ -221,17 +221,16 @@ async function accepted(options: {
     sessionId: `session-${userId}`,
     budgetHold,
     releaseUnusedHold: () => Promise.resolve(),
-    ...(options.continuesCommandId === undefined
-      ? {}
-      : { continuesCommandId: options.continuesCommandId }),
   };
   const result = await createPostgresAssistantTurnStore(
     { pipeline },
     caller,
   ).accept(
-    options.answerEarned === undefined
-      ? { ...common, kind: "chat", text: "покажи клієнтів" }
-      : { ...common, kind: "answer", earned: options.answerEarned },
+    options.continues === true
+      ? { ...common, kind: "continue" }
+      : options.answerEarned === undefined
+        ? { ...common, kind: "chat", text: "покажи клієнтів" }
+        : { ...common, kind: "answer", earned: options.answerEarned },
   );
   if (result.outcome !== "accepted") {
     throw new Error(`expected an accepted turn, got ${result.outcome}`);
@@ -648,7 +647,7 @@ describe("a turn the worker runs", () => {
     const continuation = await accepted({
       history: USER_ASKS,
       conversationId: first.conversationId,
-      continuesCommandId: first.commandId,
+      continues: true,
     });
     const h2 = await harness(
       runtimeWith(

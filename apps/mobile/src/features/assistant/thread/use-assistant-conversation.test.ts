@@ -60,6 +60,7 @@ function conversationWindow(options?: {
   readonly text?: string;
   readonly openPause?: unknown;
   readonly asked?: boolean;
+  readonly turn?: { readonly id: string; readonly status: string } | null;
 }) {
   const parts: unknown[] = [
     { kind: "text", text: options?.text ?? "Яку Катю?", status: "complete" },
@@ -85,6 +86,7 @@ function conversationWindow(options?: {
       },
     ],
     openPause: options?.openPause ?? null,
+    turn: options?.turn ?? null,
   };
 }
 
@@ -917,6 +919,7 @@ describe("a conversation longer than one window", () => {
       ),
       olderCursor: from > 1 ? String(from) : null,
       openPause: null,
+      turn: null,
     };
   }
 
@@ -1138,7 +1141,10 @@ describe("the conversation, live", () => {
     };
   }
 
-  function streamingWindow(options?: { readonly openPause?: unknown }) {
+  function streamingWindow(options?: {
+    readonly openPause?: unknown;
+    readonly turn?: { readonly id: string; readonly status: string } | null;
+  }) {
     return {
       conversationId: CONVERSATION,
       olderCursor: null,
@@ -1152,6 +1158,10 @@ describe("the conversation, live", () => {
         },
       ],
       openPause: options?.openPause ?? null,
+      turn:
+        options !== undefined && "turn" in options
+          ? options.turn
+          : { id: COMMAND, status: "running" },
     };
   }
 
@@ -1169,6 +1179,7 @@ describe("the conversation, live", () => {
         },
       ],
       openPause,
+      turn: null,
     };
   }
 
@@ -1214,7 +1225,7 @@ describe("the conversation, live", () => {
   });
 
   it("merges a message the stream updates, and ignores an older revision", async () => {
-    const source = serve({ messages: [streamingWindow()] });
+    const source = serve({ messages: [streamingWindow({ turn: null })] });
     const view = mount({ visible: true });
     await flush();
 
@@ -1613,6 +1624,7 @@ describe("the conversation, live", () => {
         },
       ],
       openPause: null,
+      turn: null,
     });
     fetchMock.mockImplementation((url: unknown) => {
       const target = String(url);

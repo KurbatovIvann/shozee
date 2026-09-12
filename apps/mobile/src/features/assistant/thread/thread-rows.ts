@@ -23,9 +23,12 @@ import {
   assistantInteractionFromPause,
   type AssistantChatThread,
   type AssistantChatMessage,
+  type AssistantChatTurn,
   type AssistantInteraction,
   type AssistantPause,
 } from "@showzy/validation/assistant-chat";
+
+import { assistantTextPartStatus } from "./assistant-thread-merge";
 
 import type { Locale } from "../../../i18n/locale";
 import {
@@ -47,10 +50,9 @@ export type AssistantThreadRow = {
   readonly role: "user" | "assistant";
   readonly text: string;
   readonly surfaces: readonly AssistantSurface[];
-  /** Answerable now. A closed question leaves no card behind. */
   readonly interaction: AssistantInteraction | null;
-  /** The reply stopped short — broke or was interrupted. Absent, not empty. */
   readonly failed: boolean;
+  readonly interrupted: boolean;
   readonly waiting: boolean;
 };
 
@@ -66,16 +68,20 @@ function textOf(message: AssistantChatMessage): string {
   return chunks.join("");
 }
 
-/**
- * A reply that stopped short. `error` is a turn that broke; `interrupted` is one
- * that was stopped from outside (ADR-0039). To the person both read the same:
- * the reply was cut off, and what is shown above it was saved.
- */
 function failedIn(message: AssistantChatMessage): boolean {
+  return message.parts.some(
+    (part) => part.kind === "text" && part.status === "error",
+  );
+}
+
+function interruptedIn(
+  message: AssistantChatMessage,
+  turn: AssistantChatTurn | null,
+): boolean {
   return message.parts.some(
     (part) =>
       part.kind === "text" &&
-      (part.status === "error" || part.status === "interrupted"),
+      assistantTextPartStatus(turn, part.status) === "interrupted",
   );
 }
 
@@ -115,7 +121,8 @@ function isEmpty(row: AssistantThreadRow): boolean {
     row.text.length === 0 &&
     row.surfaces.length === 0 &&
     row.interaction === null &&
-    !row.failed
+    !row.failed &&
+    !row.interrupted
   );
 }
 
@@ -143,7 +150,7 @@ function interactionHost(
 }
 
 export function assistantThreadRows(input: {
-  readonly thread: Pick<AssistantChatThread, "messages" | "openPause">;
+  readonly thread: Pick<AssistantChatThread, "messages" | "openPause" | "turn">;
   readonly locale: Locale;
   /** A request is in flight. Adds one trailing row; hides nothing. */
   readonly waiting: boolean;
@@ -159,7 +166,7 @@ export function assistantThreadRows(input: {
    */
   readonly pending?: string | null;
 }): readonly AssistantThreadRow[] {
-  const { messages, openPause } = input.thread;
+  const { messages, openPause, turn } = input.thread;
   const interaction =
     openPause === null ? null : assistantInteractionFromPause(openPause);
   const hostId =
@@ -179,6 +186,7 @@ export function assistantThreadRows(input: {
           : NO_SURFACES,
       interaction: message.messageId === hostId ? interaction : null,
       failed: failedIn(message),
+      interrupted: interruptedIn(message, turn),
       waiting: false,
     };
     if (!isEmpty(row)) {
@@ -195,6 +203,7 @@ export function assistantThreadRows(input: {
       surfaces: NO_SURFACES,
       interaction,
       failed: false,
+      interrupted: false,
       waiting: false,
     });
   }
@@ -208,6 +217,7 @@ export function assistantThreadRows(input: {
       surfaces: NO_SURFACES,
       interaction: null,
       failed: false,
+      interrupted: false,
       waiting: false,
     });
   }
@@ -220,6 +230,7 @@ export function assistantThreadRows(input: {
       surfaces: NO_SURFACES,
       interaction: null,
       failed: false,
+      interrupted: false,
       waiting: true,
     });
   }

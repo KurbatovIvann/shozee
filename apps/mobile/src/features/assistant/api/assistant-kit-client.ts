@@ -27,6 +27,7 @@ import { staffAssistantChatHeaders } from "./assistant-chat-headers";
 export const ASSISTANT_KIT_CHAT_PATH = "/assistant/kit/chat";
 export const ASSISTANT_KIT_ANSWER_PATH = "/assistant/kit/answer";
 export const ASSISTANT_KIT_ABANDON_PATH = "/assistant/kit/abandon";
+export const ASSISTANT_KIT_CONTINUE_PATH = "/assistant/kit/continue";
 export const ASSISTANT_KIT_MESSAGES_PATH = "/assistant/kit/messages";
 
 export const ASSISTANT_KIT_TEXT_MAX = 4000;
@@ -302,6 +303,21 @@ export function postAssistantKitAbandon(
     body: {
       conversationId: request.conversationId,
       interactionId: request.interactionId,
+    },
+  });
+}
+
+export function postAssistantKitContinue(
+  request: AssistantKitCall & {
+    readonly conversationId: string;
+    readonly commandId: string;
+  },
+): Promise<AssistantKitOutcome> {
+  return call(request, ASSISTANT_KIT_CONTINUE_PATH, {
+    method: "POST",
+    body: {
+      commandId: request.commandId,
+      conversationId: request.conversationId,
     },
   });
 }
