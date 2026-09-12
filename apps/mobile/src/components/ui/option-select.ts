@@ -43,8 +43,62 @@ export function filterOptionSelectItems(
   });
 }
 
+export function visibleOptionSelectItems(args: {
+  readonly options: readonly OptionSelectItem[];
+  readonly query: string;
+  readonly serverFiltered: boolean;
+}): readonly OptionSelectItem[] {
+  if (args.serverFiltered) {
+    return args.options;
+  }
+  return filterOptionSelectItems(args.options, args.query);
+}
+
 export function flattenPages<T>(
   pages: ReadonlyArray<{ readonly items: readonly T[] }>,
 ): readonly T[] {
   return pages.flatMap((page) => page.items);
+}
+
+export type OptionSelectListState =
+  | { readonly kind: "loading" }
+  | { readonly kind: "empty" }
+  | { readonly kind: "items"; readonly items: readonly OptionSelectItem[] };
+
+export function resolveOptionSelectListState(args: {
+  readonly options: readonly OptionSelectItem[];
+  readonly query: string;
+  readonly serverFiltered: boolean;
+  readonly loadingMore: boolean;
+}): OptionSelectListState {
+  const items = visibleOptionSelectItems(args);
+  if (items.length > 0) {
+    return { kind: "items", items };
+  }
+  if (args.serverFiltered && args.loadingMore) {
+    return { kind: "loading" };
+  }
+  return { kind: "empty" };
+}
+
+export type QuerySelectMode =
+  | {
+      readonly controlled: true;
+      readonly query: string;
+      readonly onQueryChange: (value: string) => void;
+    }
+  | { readonly controlled: false };
+
+export function resolveQuerySelectMode(props: {
+  readonly query: string | undefined;
+  readonly onQueryChange: ((value: string) => void) | undefined;
+}): QuerySelectMode {
+  if (props.query !== undefined && props.onQueryChange !== undefined) {
+    return {
+      controlled: true,
+      query: props.query,
+      onQueryChange: props.onQueryChange,
+    };
+  }
+  return { controlled: false };
 }

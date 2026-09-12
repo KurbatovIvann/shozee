@@ -52,6 +52,43 @@ export function filterProductSelectRows(
  * Parent-row subtitle: variant count until the session has picks for
  * this product, then selected count · names (uk/en templates).
  */
+export function visibleProductSelectRows(args: {
+  readonly products: readonly ProductSelectRow[];
+  readonly query: string;
+  readonly sessionOpen: boolean;
+  readonly serverFiltered: boolean;
+}): readonly ProductSelectRow[] {
+  if (!args.sessionOpen) {
+    return EMPTY_PRODUCT_SELECT_ROWS;
+  }
+  if (args.serverFiltered) {
+    return args.products;
+  }
+  return filterProductSelectRows(args.products, args.query, args.sessionOpen);
+}
+
+export type ProductSelectListState =
+  | { readonly kind: "loading" }
+  | { readonly kind: "empty" }
+  | { readonly kind: "items"; readonly items: readonly ProductSelectRow[] };
+
+export function resolveProductSelectListState(args: {
+  readonly products: readonly ProductSelectRow[];
+  readonly query: string;
+  readonly sessionOpen: boolean;
+  readonly serverFiltered: boolean;
+  readonly loadingMore: boolean;
+}): ProductSelectListState {
+  const items = visibleProductSelectRows(args);
+  if (items.length > 0) {
+    return { kind: "items", items };
+  }
+  if (args.sessionOpen && args.serverFiltered && args.loadingMore) {
+    return { kind: "loading" };
+  }
+  return { kind: "empty" };
+}
+
 export function productPickerParentSubtitle(args: {
   readonly variantCount: number;
   readonly selectedNames: readonly string[];

@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { CheckIcon, UserIcon } from "lucide-react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 
 import { SearchField } from "./search-field";
 import { Sheet } from "./sheet";
 import {
-  filterOptionSelectItems,
+  resolveOptionSelectListState,
+  resolveQuerySelectMode,
   type OptionSelectItem,
 } from "./option-select";
 
@@ -31,16 +32,42 @@ export function OptionSelectSheet(props: {
   readonly searchMaxLength?: number | undefined;
   readonly selectedIds?: ReadonlySet<string> | undefined;
   readonly leading?: "user" | undefined;
+  readonly query?: string | undefined;
+  readonly onQueryChange?: ((value: string) => void) | undefined;
+  readonly loadingMore?: boolean | undefined;
+  readonly loadingMoreLabel?: string | undefined;
+  readonly onEndReached?: (() => void) | undefined;
+  readonly loadMoreLabel?: string | undefined;
 }) {
-  const [query, setQuery] = useState("");
+  const { theme } = useUnistyles();
+  const [localQuery, setLocalQuery] = useState("");
+  const queryMode = resolveQuerySelectMode({
+    query: props.query,
+    onQueryChange: props.onQueryChange,
+  });
+  const serverFiltered = queryMode.controlled;
+  const query = queryMode.controlled ? queryMode.query : localQuery;
 
   useEffect(() => {
-    if (!props.visible) {
-      setQuery("");
+    if (!props.visible && !serverFiltered) {
+      setLocalQuery("");
     }
-  }, [props.visible]);
+  }, [props.visible, serverFiltered]);
 
-  const filtered = filterOptionSelectItems(props.options, query);
+  function handleQueryChange(text: string): void {
+    if (queryMode.controlled) {
+      queryMode.onQueryChange(text);
+      return;
+    }
+    setLocalQuery(text);
+  }
+
+  const listState = resolveOptionSelectListState({
+    options: props.options,
+    query,
+    serverFiltered,
+    loadingMore: props.loadingMore === true,
+  });
   const emptyOptionLabel = props.emptyOptionLabel;
   const emptyLabel =
     props.emptyLabel != null && props.emptyLabel.length > 0
@@ -63,7 +90,7 @@ export function OptionSelectSheet(props: {
     >
       <SearchField
         value={query}
-        onChangeText={setQuery}
+        onChangeText={handleQueryChange}
         placeholder={props.searchPlaceholder}
         accessibilityLabel={props.searchLabel}
         {...(typeof props.searchMaxLength === "number"
@@ -80,12 +107,17 @@ export function OptionSelectSheet(props: {
             }}
           />
         ) : null}
-        {filtered.length === 0 ? (
+        {listState.kind === "loading" ? (
+          <ActivityIndicator
+            accessibilityLabel={props.loadingMoreLabel}
+            color={theme.colors.mutedForeground}
+          />
+        ) : listState.kind === "empty" ? (
           emptyLabel !== null ? (
             <Text style={styles.empty}>{emptyLabel}</Text>
           ) : null
         ) : (
-          filtered.map((option) => (
+          listState.items.map((option) => (
             <OptionRow
               key={option.id}
               label={option.name}
@@ -102,6 +134,28 @@ export function OptionSelectSheet(props: {
             />
           ))
         )}
+        {listState.kind === "items" && props.loadingMore === true ? (
+          <ActivityIndicator
+            accessibilityLabel={props.loadingMoreLabel}
+            color={theme.colors.mutedForeground}
+          />
+        ) : null}
+        {listState.kind === "items" &&
+        props.loadingMore !== true &&
+        props.onEndReached !== undefined &&
+        props.loadMoreLabel !== undefined ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={props.loadMoreLabel}
+            onPress={props.onEndReached}
+            style={({ pressed }) => [
+              styles.loadMore,
+              pressed ? styles.pressed : null,
+            ]}
+          >
+            <Text style={styles.loadMoreLabel}>{props.loadMoreLabel}</Text>
+          </Pressable>
+        ) : null}
       </View>
     </Sheet>
   );
@@ -219,5 +273,17 @@ const styles = StyleSheet.create((theme) => ({
   },
   pressed: {
     opacity: 0.85,
+  },
+  loadMore: {
+    minHeight: theme.hitTarget.min,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: theme.spacing.sm,
+  },
+  loadMoreLabel: {
+    color: theme.colors.accent,
+    fontSize: theme.typography.sm.fontSize,
+    lineHeight: theme.typography.sm.lineHeight,
+    fontWeight: "600",
   },
 }));

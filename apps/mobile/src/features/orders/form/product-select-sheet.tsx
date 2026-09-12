@@ -1,13 +1,18 @@
 import { memo, useEffect, useMemo, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { CheckIcon, ChevronRightIcon } from "lucide-react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 
-import { Button, SearchField, Sheet } from "../../../components/ui";
+import {
+  Button,
+  resolveQuerySelectMode,
+  SearchField,
+  Sheet,
+} from "../../../components/ui";
 import { interpolate } from "../../../i18n/locale";
 import { OrderThumbnail } from "../shared/order-thumbnail";
 import {
-  filterProductSelectRows,
+  resolveProductSelectListState,
   type ProductSelectLevel,
   type ProductSelectRow,
   type ProductSelectVariantRow,
@@ -50,20 +55,53 @@ export function ProductSelectSheet(props: {
   readonly onToggle: (productId: string) => void;
   readonly onToggleVariant: (variantId: string) => void;
   readonly onConfirm: () => void;
+  readonly query?: string | undefined;
+  readonly onQueryChange?: ((value: string) => void) | undefined;
+  readonly loadingMore?: boolean | undefined;
+  readonly loadingMoreLabel?: string | undefined;
+  readonly onEndReached?: (() => void) | undefined;
+  readonly loadMoreLabel?: string | undefined;
 }) {
-  const [query, setQuery] = useState("");
+  const { theme } = useUnistyles();
+  const [localQuery, setLocalQuery] = useState("");
   const variantsOpen = props.level === "variants";
+  const queryMode = resolveQuerySelectMode({
+    query: props.query,
+    onQueryChange: props.onQueryChange,
+  });
+  const serverFiltered = queryMode.controlled;
+  const query = queryMode.controlled ? queryMode.query : localQuery;
 
-  // Reset search when the picker session ends, not when variants open.
   useEffect(() => {
-    if (!props.sessionOpen) {
-      setQuery("");
+    if (!props.sessionOpen && !serverFiltered) {
+      setLocalQuery("");
     }
-  }, [props.sessionOpen]);
+  }, [props.sessionOpen, serverFiltered]);
 
-  const filtered = useMemo(
-    () => filterProductSelectRows(props.products, query, props.sessionOpen),
-    [props.products, props.sessionOpen, query],
+  function handleQueryChange(text: string): void {
+    if (queryMode.controlled) {
+      queryMode.onQueryChange(text);
+      return;
+    }
+    setLocalQuery(text);
+  }
+
+  const listState = useMemo(
+    () =>
+      resolveProductSelectListState({
+        products: props.products,
+        query,
+        sessionOpen: props.sessionOpen,
+        serverFiltered,
+        loadingMore: props.loadingMore === true,
+      }),
+    [
+      props.products,
+      props.sessionOpen,
+      query,
+      serverFiltered,
+      props.loadingMore,
+    ],
   );
 
   return (
@@ -107,16 +145,21 @@ export function ProductSelectSheet(props: {
           <>
             <SearchField
               value={query}
-              onChangeText={setQuery}
+              onChangeText={handleQueryChange}
               placeholder={props.searchPlaceholder}
               accessibilityLabel={props.searchLabel}
               maxLength={props.searchMaxLength}
             />
             <View style={styles.list}>
-              {filtered.length === 0 ? (
+              {listState.kind === "loading" ? (
+                <ActivityIndicator
+                  accessibilityLabel={props.loadingMoreLabel}
+                  color={theme.colors.mutedForeground}
+                />
+              ) : listState.kind === "empty" ? (
                 <Text style={styles.empty}>{props.emptyLabel}</Text>
               ) : (
-                filtered.map((product) => (
+                listState.items.map((product) => (
                   <ProductPickerRow
                     key={product.id}
                     id={product.id}
@@ -132,6 +175,30 @@ export function ProductSelectSheet(props: {
                   />
                 ))
               )}
+              {listState.kind === "items" && props.loadingMore === true ? (
+                <ActivityIndicator
+                  accessibilityLabel={props.loadingMoreLabel}
+                  color={theme.colors.mutedForeground}
+                />
+              ) : null}
+              {listState.kind === "items" &&
+              props.loadingMore !== true &&
+              props.onEndReached !== undefined &&
+              props.loadMoreLabel !== undefined ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={props.loadMoreLabel}
+                  onPress={props.onEndReached}
+                  style={({ pressed }) => [
+                    styles.loadMore,
+                    pressed ? styles.pressed : null,
+                  ]}
+                >
+                  <Text style={styles.loadMoreLabel}>
+                    {props.loadMoreLabel}
+                  </Text>
+                </Pressable>
+              ) : null}
             </View>
           </>
         )
@@ -322,5 +389,17 @@ const styles = StyleSheet.create((theme) => ({
   },
   pressed: {
     opacity: 0.85,
+  },
+  loadMore: {
+    minHeight: theme.hitTarget.min,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: theme.spacing.sm,
+  },
+  loadMoreLabel: {
+    color: theme.colors.accent,
+    fontSize: theme.typography.sm.fontSize,
+    lineHeight: theme.typography.sm.lineHeight,
+    fontWeight: "600",
   },
 }));

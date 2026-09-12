@@ -46,6 +46,39 @@ describe("OptionSelectSheet prop union", () => {
   });
 });
 
+describe("controlled query", () => {
+  it("derives the query mode once from resolveQuerySelectMode", () => {
+    expect(SOURCE).toContain("readonly query?: string | undefined;");
+    expect(SOURCE).toContain(
+      "readonly onQueryChange?: ((value: string) => void) | undefined;",
+    );
+    expect(SOURCE).toContain("resolveQuerySelectMode({");
+    expect(SOURCE).toContain("const serverFiltered = queryMode.controlled;");
+    expect(SOURCE).toContain("queryMode.onQueryChange(text);");
+    expect(SOURCE).toContain("onChangeText={handleQueryChange}");
+  });
+
+  it("derives what the list shows from resolveOptionSelectListState", () => {
+    expect(SOURCE).toContain("resolveOptionSelectListState({");
+    expect(SOURCE).not.toContain("filterOptionSelectItems(");
+  });
+
+  it("only resets local query on close when uncontrolled", () => {
+    expect(SOURCE).toContain("if (!props.visible && !serverFiltered) {");
+  });
+});
+
+describe("paged-result affordances", () => {
+  it("shows a loading indicator and a load-more affordance", () => {
+    expect(SOURCE).toContain("readonly loadingMore?: boolean | undefined;");
+    expect(SOURCE).toContain(
+      "readonly onEndReached?: (() => void) | undefined;",
+    );
+    expect(SOURCE).toContain("<ActivityIndicator");
+    expect(SOURCE).toContain("onPress={props.onEndReached}");
+  });
+});
+
 describe("customers picker empty-state backport", () => {
   it("passes emptyLabel at every customers OptionSelectSheet (owner decision 3)", () => {
     for (const relative of CUSTOMER_FORM_VIEWS) {

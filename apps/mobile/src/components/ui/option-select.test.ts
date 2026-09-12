@@ -4,6 +4,9 @@ import {
   filterOptionSelectItems,
   flattenPages,
   optionSelectItems,
+  resolveOptionSelectListState,
+  resolveQuerySelectMode,
+  visibleOptionSelectItems,
 } from "./option-select";
 
 describe("optionSelectItems", () => {
@@ -36,6 +39,112 @@ describe("filterOptionSelectItems", () => {
     expect(filterOptionSelectItems(options, "380")).toEqual([options[0]]);
     expect(filterOptionSelectItems(options, "12")).toEqual([options[2]]);
     expect(filterOptionSelectItems(options, "200")).toEqual([options[2]]);
+  });
+});
+
+describe("visibleOptionSelectItems", () => {
+  const options = optionSelectItems([
+    { id: "a", name: "Марія", description: "+38067" },
+    { id: "b", name: "Олег", description: null },
+  ]);
+
+  it("returns the caller's options untouched when server-filtered", () => {
+    expect(
+      visibleOptionSelectItems({
+        options,
+        query: "мар",
+        serverFiltered: true,
+      }),
+    ).toBe(options);
+  });
+
+  it("filters locally when not server-filtered", () => {
+    expect(
+      visibleOptionSelectItems({
+        options,
+        query: "мар",
+        serverFiltered: false,
+      }),
+    ).toEqual([options[0]]);
+  });
+});
+
+describe("resolveOptionSelectListState", () => {
+  const options = optionSelectItems([
+    { id: "a", name: "Марія", description: "+38067" },
+  ]);
+
+  it("shows loading while the first page of a controlled query loads", () => {
+    expect(
+      resolveOptionSelectListState({
+        options: [],
+        query: "мар",
+        serverFiltered: true,
+        loadingMore: true,
+      }),
+    ).toEqual({ kind: "loading" });
+  });
+
+  it("shows empty once a controlled query settles with no rows", () => {
+    expect(
+      resolveOptionSelectListState({
+        options: [],
+        query: "мар",
+        serverFiltered: true,
+        loadingMore: false,
+      }),
+    ).toEqual({ kind: "empty" });
+  });
+
+  it("shows empty for an uncontrolled query even while loadingMore is true", () => {
+    expect(
+      resolveOptionSelectListState({
+        options: [],
+        query: "мар",
+        serverFiltered: false,
+        loadingMore: true,
+      }),
+    ).toEqual({ kind: "empty" });
+  });
+
+  it("shows items once rows are visible regardless of loadingMore", () => {
+    expect(
+      resolveOptionSelectListState({
+        options,
+        query: "",
+        serverFiltered: false,
+        loadingMore: true,
+      }),
+    ).toEqual({ kind: "items", items: options });
+  });
+});
+
+describe("resolveQuerySelectMode", () => {
+  it("is uncontrolled when both props are absent", () => {
+    expect(
+      resolveQuerySelectMode({ query: undefined, onQueryChange: undefined }),
+    ).toEqual({ controlled: false });
+  });
+
+  it("is uncontrolled when only query is passed", () => {
+    expect(
+      resolveQuerySelectMode({ query: "мар", onQueryChange: undefined }),
+    ).toEqual({ controlled: false });
+  });
+
+  it("is uncontrolled when only onQueryChange is passed", () => {
+    expect(
+      resolveQuerySelectMode({ query: undefined, onQueryChange: () => {} }),
+    ).toEqual({ controlled: false });
+  });
+
+  it("is controlled only when both props are passed together", () => {
+    const onQueryChange = (): void => {};
+    expect(resolveQuerySelectMode({ query: "мар", onQueryChange })).toEqual({
+      controlled: true,
+      query: "мар",
+      onQueryChange,
+    });
   });
 });
 
