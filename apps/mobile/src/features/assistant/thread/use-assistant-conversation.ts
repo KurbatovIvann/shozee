@@ -432,6 +432,21 @@ export function useAssistantConversation(args: {
       }
       const epoch = epochRef.current;
       const request = {};
+      /**
+       * Ownership of the echo is captured **here**, when the read is issued,
+       * not asked again when it answers. Those are different questions.
+       *
+       * The window this read returns describes the conversation as of the
+       * moment it was taken, so a send in flight *then* may have accepted after
+       * it — and by the time it resolves `sendingRef` has gone false, because
+       * the send failed. Asking late therefore clears the echo of a send whose
+       * words this window does not contain; an undecided send does not restore
+       * the draft either, so they end up in neither place. That is the SHO-552
+       * class again, reached through timing instead of through the
+       * unconditional clear this replaced.
+       */
+      const sendingAtIssue = sendingRef.current;
+      const echoAtIssue = echoRef.current;
       rereadRef.current = request;
       void getAssistantKitWindow({ ...call, conversationId })
         .then((outcome) => {
@@ -447,18 +462,21 @@ export function useAssistantConversation(args: {
             return;
           }
           commit(applyAssistantWindow(stateRef.current, window, LATEST));
-          if (!sendingRef.current) {
-            // The echo belongs to the send that put it there, and only that
-            // send clears it while it is still in flight. This read takes no
-            // command latch, so its window can predate the accept of a send
-            // that is still running: clearing here would take the words off
-            // the screen, and if that send then ends undecided the draft is
-            // not restored either, so they would be in neither place
-            // (the SHO-552 class).
+          if (
+            !sendingAtIssue &&
+            !sendingRef.current &&
+            echoRef.current === echoAtIssue
+          ) {
+            // All three, and each rules out a different owner. No send was in
+            // flight when this read was taken, so its window cannot predate
+            // one; none is in flight now, so none is about to be answered by
+            // its own settle; and the echo is still the one that was there at
+            // issue, so this is not some later send's words. Only then is the
+            // window just applied the newest account of the conversation, and
+            // the echo answered by it.
             //
-            // With no send in flight the last one has settled, so the window
-            // just applied is the newest account of the conversation and the
-            // echo has been answered by it.
+            // Otherwise the words belong to a send, and only that send may
+            // take them off the screen.
             echoRef.current = null;
             setPending(null);
           }
@@ -482,7 +500,17 @@ export function useAssistantConversation(args: {
 
   const onStreamEvent = useCallback(
     (event: Parameters<typeof applyAssistantStreamEvent>[1]) => {
-      const applied = applyAssistantStreamEvent(stateRef.current, event);
+      const conversationId = conversationIdRef.current;
+      if (conversationId === null) {
+        return;
+      }
+      // The id this client asked for, so the merge can refuse an event for
+      // another conversation even before the first window has landed.
+      const applied = applyAssistantStreamEvent(
+        stateRef.current,
+        event,
+        conversationId,
+      );
       commit(applied.state);
       if (applied.rereadWindow) {
         reread();

@@ -1494,6 +1494,90 @@ describe("the conversation, live", () => {
     expect(view.latest().rows.map((row) => row.text)).toContain("ще одне");
   });
 
+  /**
+   * The mirror of the test above, with the order reversed — and the one the
+   * first fix missed. The re-read is *issued* while the send is in flight, but
+   * *resolves* after it has failed, so a guard that asks "is a send in flight?"
+   * when the answer arrives says no and clears the echo. The window it carries
+   * was taken before the accept, and an undecided send does not restore the
+   * draft, so the words would be in neither place.
+   */
+  it("keeps the echo when the send fails before the re-read resolves", async () => {
+    const source = bodyStream();
+    const chat: { reject: ((reason: Error) => void) | null } = { reject: null };
+    const reads: ((window: unknown) => void)[] = [];
+    fetchMock.mockImplementation((url: unknown) => {
+      const target = String(url);
+      if (target.includes("/assistant/kit/events")) {
+        return Promise.resolve({ ok: true, status: 200, body: source.body });
+      }
+      if (target.includes("/assistant/kit/chat")) {
+        return new Promise<Response>((_resolve, reject) => {
+          chat.reject = reject;
+        });
+      }
+      return new Promise<Response>((resolve) => {
+        reads.push((window) => {
+          resolve(
+            new Response(JSON.stringify({ status: "ok", window }), {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            }),
+          );
+        });
+      });
+    });
+
+    const view = mount({ visible: true });
+    await flush();
+    act(() => {
+      reads[0]?.(settledWindow("Готово."));
+    });
+    await flush();
+
+    const sent: { outcome: unknown } = { outcome: null };
+    act(() => {
+      void view
+        .latest()
+        .send("ще одне")
+        .then((outcome) => {
+          sent.outcome = outcome;
+        });
+    });
+    await flush();
+
+    // A re-read is issued while the send is still in flight.
+    act(() => {
+      source.send("turn.finished", {
+        type: "turn.finished",
+        kind: "chat",
+        commandId: COMMAND,
+        status: "done",
+        window: settledWindow("Готово."),
+      });
+    });
+    await flush();
+    expect(reads).toHaveLength(2);
+
+    // The send fails first, so nothing is in flight any more.
+    await act(async () => {
+      chat.reject?.(new Error("network is gone"));
+      await flush();
+    });
+    expect(sent.outcome).toEqual({
+      kind: "unknown",
+      failure: { kind: "unreachable" },
+    });
+
+    // Only now does that read answer, with a window from before the accept.
+    act(() => {
+      reads[1]?.(settledWindow("Готово."));
+    });
+    await flush();
+
+    expect(view.latest().rows.map((row) => row.text)).toContain("ще одне");
+  });
+
   it("replaces stale state from the snapshot a reconnection opens with", async () => {
     const source = serve({ messages: [streamingWindow()] });
     const view = mount({ visible: true });

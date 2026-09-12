@@ -125,6 +125,13 @@ export function openAssistantEventStream(
 
   void (async () => {
     try {
+      // Armed before the request, not after it. The failure this deadline
+      // exists for — a path that dies with no FIN — can just as easily happen
+      // while the headers are still outstanding, and then `await` below never
+      // settles at all: no close, so no backoff, and no `AppState` either for
+      // an app that stayed in the foreground. Re-armed on the response and by
+      // every chunk after it; cleared by `finish()` and `close()`.
+      armSilence();
       const response = await expoFetch(
         `${assistantKitUrl(request.apiUrl, ASSISTANT_KIT_EVENTS_PATH)}?conversationId=${encodeURIComponent(request.conversationId)}`,
         {

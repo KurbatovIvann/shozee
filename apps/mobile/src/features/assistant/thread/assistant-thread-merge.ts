@@ -114,27 +114,26 @@ export type AssistantStreamApplied = {
 };
 
 /**
- * Whether an event is about some other conversation than the one held.
+ * Whether an event is about some other conversation than the one being read.
  *
- * Unreachable today: the server subscribes a stream only after the author-rule
- * read, and the client tears the connection down on any conversation change. It
- * is here as defense in depth for invariant 1, because the cost of being wrong
- * is severe and silent — `mergeAssistantChatWindow`'s latest branch replaces
- * the thread **wholesale** when the ids differ, so a future caller that reused
- * one stream across conversations would swap one thread for another with
- * nothing to show for it. A guard that lives only in the transport is a guard
- * that a later refactor removes without noticing.
+ * Compared against the id this client **asked for**, never against the one the
+ * thread happens to hold. A thread-based check is blind in exactly the window
+ * where a stream is most likely to deliver its first event — before any window
+ * has landed — and a guard that stops one step short of the thing it guards is
+ * the shape that quietly becomes a defect.
  *
- * A thread not yet read contradicts nothing, so the first window is accepted
- * however it arrives.
+ * **The server is the real boundary.** A stream is subscribed only after the
+ * author-rule read, under the verified session and company header; that is the
+ * authorization, and this is not it. This is defense in depth for invariant 1,
+ * because the cost of being wrong here is severe and silent:
+ * `mergeAssistantChatWindow`'s latest branch replaces the thread **wholesale**
+ * when the ids differ, so a future caller that reused one stream across
+ * conversations would swap one thread for another with nothing to show for it.
+ * A guard that lives only in the transport is one a later refactor removes
+ * without noticing.
  */
-function elsewhere(
-  state: AssistantThreadState,
-  conversationId: string,
-): boolean {
-  return (
-    state.thread !== null && state.thread.conversationId !== conversationId
-  );
+function elsewhere(requested: string, conversationId: string): boolean {
+  return requested !== conversationId;
 }
 
 const UNCHANGED = (state: AssistantThreadState): AssistantStreamApplied => ({
@@ -145,12 +144,14 @@ const UNCHANGED = (state: AssistantThreadState): AssistantStreamApplied => ({
 export function applyAssistantStreamEvent(
   state: AssistantThreadState,
   event: AssistantStreamEvent,
+  /** The conversation this client asked for — see `elsewhere`. */
+  conversationId: string,
 ): AssistantStreamApplied {
   switch (event.type) {
     case "snapshot":
       // Every connection opens with one, and it is read as the conversation
       // now stands — the same standing as any window a request answers with.
-      return elsewhere(state, event.window.conversationId)
+      return elsewhere(conversationId, event.window.conversationId)
         ? UNCHANGED(state)
         : {
             state: applyAssistantWindow(state, event.window, LATEST),
@@ -159,7 +160,7 @@ export function applyAssistantStreamEvent(
 
     case "turn.started":
       // Which turn is running. Whether one is remains the thread's answer.
-      return elsewhere(state, event.conversationId)
+      return elsewhere(conversationId, event.conversationId)
         ? UNCHANGED(state)
         : {
             state: { ...state, trackedTurn: event.commandId },
@@ -167,7 +168,7 @@ export function applyAssistantStreamEvent(
           };
 
     case "message.updated":
-      return elsewhere(state, event.conversationId)
+      return elsewhere(conversationId, event.conversationId)
         ? UNCHANGED(state)
         : applyMessageUpdated(state, event.message);
 
@@ -176,7 +177,7 @@ export function applyAssistantStreamEvent(
       // without a window says only that some turn ended, and all it can cause
       // is a re-read of *this* client's own conversation, which is harmless.
       return event.window !== undefined &&
-        elsewhere(state, event.window.conversationId)
+        elsewhere(conversationId, event.window.conversationId)
         ? UNCHANGED(state)
         : applyTurnFinished(state, event);
   }

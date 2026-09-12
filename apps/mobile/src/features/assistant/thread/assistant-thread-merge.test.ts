@@ -78,6 +78,18 @@ function loaded(window: AssistantChatWindow): AssistantThreadState {
   return applyAssistantWindow(initialAssistantThreadState(), window, LATEST);
 }
 
+/**
+ * Every event is for the conversation this client asked for, unless a test
+ * says otherwise by passing a different `requested`.
+ */
+function apply(
+  state: AssistantThreadState,
+  event: AssistantStreamEvent,
+  requested: string = CONVERSATION,
+) {
+  return applyAssistantStreamEvent(state, event, requested);
+}
+
 function finished(
   window: AssistantChatWindow | undefined,
   commandId = COMMAND,
@@ -108,7 +120,7 @@ describe("a message that arrives twice", () => {
   it("takes the higher revision, whichever order the two arrive in", () => {
     const state = loaded(windowOf({ text: "Шукаю", status: "streaming" }));
 
-    const forward = applyAssistantStreamEvent(state, {
+    const forward = apply(state, {
       type: "message.updated",
       conversationId: CONVERSATION,
       message: message({ text: "Готово.", revision: 2 }),
@@ -128,7 +140,7 @@ describe("a message that arrives twice", () => {
   it("ignores a revision lower than the copy it holds", () => {
     const state = loaded(windowOf({ text: "Готово.", revision: 4 }));
 
-    const applied = applyAssistantStreamEvent(state, {
+    const applied = apply(state, {
       type: "message.updated",
       conversationId: CONVERSATION,
       message: message({ text: "Шукаю", status: "streaming", revision: 3 }),
@@ -143,7 +155,7 @@ describe("a message that arrives twice", () => {
   it("ignores a repeat of the revision it already holds", () => {
     const state = loaded(windowOf({ text: "Готово.", revision: 4 }));
 
-    const applied = applyAssistantStreamEvent(state, {
+    const applied = apply(state, {
       type: "message.updated",
       conversationId: CONVERSATION,
       message: message({ text: "Інше", revision: 4 }),
@@ -161,7 +173,7 @@ describe("a message that arrives twice", () => {
   it("reads the window rather than placing a message it does not hold", () => {
     const state = loaded(windowOf());
 
-    const applied = applyAssistantStreamEvent(state, {
+    const applied = apply(state, {
       type: "message.updated",
       conversationId: CONVERSATION,
       message: {
@@ -177,17 +189,14 @@ describe("a message that arrives twice", () => {
 
 describe("a turn that finished", () => {
   it("takes the window whole for the turn being followed", () => {
-    const state = applyAssistantStreamEvent(
-      loaded(windowOf({ status: "streaming" })),
-      {
-        type: "turn.started",
-        conversationId: CONVERSATION,
-        kind: "chat",
-        commandId: COMMAND,
-      },
-    ).state;
+    const state = apply(loaded(windowOf({ status: "streaming" })), {
+      type: "turn.started",
+      conversationId: CONVERSATION,
+      kind: "chat",
+      commandId: COMMAND,
+    }).state;
 
-    const applied = applyAssistantStreamEvent(
+    const applied = apply(
       state,
       finished(windowOf({ text: "Яку Катю?", openPause: OPEN_PAUSE })),
     );
@@ -208,12 +217,12 @@ describe("a turn that finished", () => {
    * publishes nothing at all. Applied blindly, this event brings it back.
    */
   it("leaves a pause a newer snapshot closed, and reads the window instead", () => {
-    const snapshot = applyAssistantStreamEvent(initialAssistantThreadState(), {
+    const snapshot = apply(initialAssistantThreadState(), {
       type: "snapshot",
       window: windowOf({ text: "Готово.", openPause: null }),
     }).state;
 
-    const applied = applyAssistantStreamEvent(
+    const applied = apply(
       snapshot,
       finished(windowOf({ text: "Яку Катю?", openPause: OPEN_PAUSE })),
     );
@@ -224,7 +233,7 @@ describe("a turn that finished", () => {
   });
 
   it("keeps the held pause when the turn is not the one being followed", () => {
-    const tracked = applyAssistantStreamEvent(
+    const tracked = apply(
       loaded(windowOf({ status: "streaming", openPause: OPEN_PAUSE })),
       {
         type: "turn.started",
@@ -234,7 +243,7 @@ describe("a turn that finished", () => {
       },
     ).state;
 
-    const applied = applyAssistantStreamEvent(
+    const applied = apply(
       tracked,
       finished(windowOf({ text: "Інша", openPause: null }), OTHER_COMMAND),
     );
@@ -260,7 +269,7 @@ describe("a turn that finished", () => {
       windowOf({ status: "streaming", openPause: OPEN_PAUSE }),
     );
 
-    const applied = applyAssistantStreamEvent(state, finished(undefined));
+    const applied = apply(state, finished(undefined));
 
     expect(applied.rereadWindow).toBe(true);
     expect(applied.state.thread?.openPause?.interactionId).toBe(INTERACTION);
@@ -280,13 +289,13 @@ describe("an event about another conversation", () => {
     const state = loaded(windowOf({ text: "Наше" }));
     const ours = { text: "Наше" };
 
-    const snapshot = applyAssistantStreamEvent(state, {
+    const snapshot = apply(state, {
       type: "snapshot",
       window: { ...windowOf({ text: "Чуже" }), conversationId: OTHER },
     });
     expect(snapshot.state.thread?.messages[0]?.parts[0]).toMatchObject(ours);
 
-    const updated = applyAssistantStreamEvent(state, {
+    const updated = apply(state, {
       type: "message.updated",
       conversationId: OTHER,
       message: message({ text: "Чуже", revision: 9 }),
@@ -295,7 +304,7 @@ describe("an event about another conversation", () => {
     // Not ours to re-read for, either.
     expect(updated.rereadWindow).toBe(false);
 
-    const started = applyAssistantStreamEvent(state, {
+    const started = apply(state, {
       type: "turn.started",
       conversationId: OTHER,
       kind: "chat",
@@ -303,7 +312,7 @@ describe("an event about another conversation", () => {
     });
     expect(started.state.trackedTurn).toBeNull();
 
-    const ended = applyAssistantStreamEvent(state, {
+    const ended = apply(state, {
       type: "turn.finished",
       kind: "chat",
       commandId: COMMAND,
@@ -318,13 +327,28 @@ describe("an event about another conversation", () => {
     expect(ended.rereadWindow).toBe(false);
   });
 
-  it("accepts the first window, because a thread not yet read contradicts nothing", () => {
-    const applied = applyAssistantStreamEvent(initialAssistantThreadState(), {
+  /**
+   * The hole a thread-based check leaves open, and the reason the comparison is
+   * against the requested id: before the first window lands there is no thread
+   * to disagree with, which is exactly when a freshly opened stream delivers
+   * its snapshot.
+   */
+  it("is ignored even before the first window has landed", () => {
+    const applied = apply(initialAssistantThreadState(), {
       type: "snapshot",
       window: { ...windowOf({ text: "Перше" }), conversationId: OTHER },
     });
 
-    expect(applied.state.thread?.conversationId).toBe(OTHER);
+    expect(applied.state.thread).toBeNull();
+  });
+
+  it("still accepts the first window of the conversation that was asked for", () => {
+    const applied = apply(initialAssistantThreadState(), {
+      type: "snapshot",
+      window: windowOf({ text: "Перше" }),
+    });
+
+    expect(applied.state.thread?.conversationId).toBe(CONVERSATION);
   });
 });
 
@@ -335,7 +359,7 @@ describe("a reconnection", () => {
    * still thinks is running.
    */
   it("replaces stale state from the snapshot it opens with", () => {
-    const stale = applyAssistantStreamEvent(
+    const stale = apply(
       loaded(windowOf({ text: "Шукаю", status: "streaming" })),
       {
         type: "turn.started",
@@ -346,7 +370,7 @@ describe("a reconnection", () => {
     ).state;
     expect(assistantTurnActive(stale.thread)).toBe(true);
 
-    const applied = applyAssistantStreamEvent(stale, {
+    const applied = apply(stale, {
       type: "snapshot",
       window: windowOf({ text: "Готово.", revision: 5 }),
     });
