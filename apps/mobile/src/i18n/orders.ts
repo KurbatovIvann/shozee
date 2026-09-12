@@ -41,6 +41,8 @@ export type OrdersCreateCopy = SharedOrdersCopy["create"] &
     readonly productSheetDone: string;
     readonly variantsNone: string;
     readonly emptyPositions: string;
+    readonly pickerLoadingMoreLabel: string;
+    readonly pickerLoadMoreLabel: string;
   };
 
 export type OrdersCopy = Omit<
@@ -101,6 +103,8 @@ type MobileOrdersExtension = {
     readonly productSheetDone: string;
     readonly variantsNone: string;
     readonly emptyPositions: string;
+    readonly pickerLoadingMoreLabel: string;
+    readonly pickerLoadMoreLabel: string;
   };
 };
 
@@ -143,6 +147,8 @@ const extraEn: MobileOrdersExtension = {
     productSheetDone: "Done · {{count}}",
     variantsNone: "No variants",
     emptyPositions: "No items",
+    pickerLoadingMoreLabel: "Loading more",
+    pickerLoadMoreLabel: "Load more",
   },
 };
 
@@ -185,6 +191,8 @@ const extraUk: MobileOrdersExtension = {
     productSheetDone: "Готово · {{count}}",
     variantsNone: "Без варіантів",
     emptyPositions: "Без позицій",
+    pickerLoadingMoreLabel: "Завантаження",
+    pickerLoadMoreLabel: "Завантажити ще",
   },
 };
 

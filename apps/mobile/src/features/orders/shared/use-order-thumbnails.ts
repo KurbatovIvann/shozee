@@ -17,6 +17,8 @@ import {
   uniquePrimaryImageFileIds,
 } from "./order-thumbnails";
 
+export const ORDER_THUMBNAIL_RENDITION = "thumb" as const;
+
 export function useOrderThumbnails(args: {
   readonly client: ContractClient | null;
   readonly companyId: string | null;
@@ -38,6 +40,7 @@ export function useOrderThumbnails(args: {
         client: args.client,
         companyId: args.companyId,
         fileIds,
+        rendition: ORDER_THUMBNAIL_RENDITION,
         getActiveCompany: args.getActiveCompany,
       });
       return {

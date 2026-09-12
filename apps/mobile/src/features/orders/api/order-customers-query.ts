@@ -20,11 +20,22 @@ export const ORDER_CUSTOMERS_LOOKUP_INPUT = {
   limit: ORDER_LOOKUP_PAGE_SIZE,
 };
 
-export type ListOrderCustomersPageInput = typeof ORDER_CUSTOMERS_LOOKUP_INPUT;
+export type ListOrderCustomersPageInput =
+  typeof ORDER_CUSTOMERS_LOOKUP_INPUT & { readonly search?: string };
+
+export function orderCustomersLookupInput(
+  search: string | undefined,
+): ListOrderCustomersPageInput {
+  return {
+    ...ORDER_CUSTOMERS_LOOKUP_INPUT,
+    ...(search === undefined ? {} : { search }),
+  };
+}
 
 export function listOrderCustomersInfiniteOptions(args: {
   readonly client: ContractClient | null;
   readonly companyId: string | null;
+  readonly input: ListOrderCustomersPageInput;
   readonly getActiveCompany: () => string | null;
   readonly enabled?: boolean;
 }) {
@@ -33,14 +44,14 @@ export function listOrderCustomersInfiniteOptions(args: {
     ...contractInfiniteQueryOptions({
       actionName: LIST_CUSTOMERS_ACTION,
       companyId: args.companyId,
-      input: ORDER_CUSTOMERS_LOOKUP_INPUT,
+      input: args.input,
       getActiveCompany: args.getActiveCompany,
       queryFn: (cursor: string | null) => {
         if (client === null) {
           return Promise.reject(new TypeError("Failed to fetch"));
         }
         return client.client.customers.listCustomers({
-          ...ORDER_CUSTOMERS_LOOKUP_INPUT,
+          ...args.input,
           ...(cursor === null ? {} : { cursor }),
         });
       },
