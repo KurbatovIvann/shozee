@@ -68,8 +68,16 @@ the queue and the events.**
   chat accept, replace the transcript whole for an answer accept, none for a
   continuation, which runs from what is stored — and the read-modify-write
   happens under the same savepoint, after the turn row is inserted, so the
-  partial unique index over active turns is what proves no still-running turn
-  can have a later save. Nothing guards this downstream: the invariant is held
+  partial unique index over active turns serializes it: no second accepted
+  turn can interleave its own read-modify-write, and a worker that ends its
+  turn saves the last of its history before the `finish` that frees the
+  conversation. What the index does not cover is a turn the reconciler ended
+  while its worker was still alive: that worker's next per-step save writes
+  the whole value and can overwrite the message an accept stored after it.
+  Known residue, not introduced here — the same overwrite was reachable while
+  the route did the saving — and bounded by the turn timeout; it belongs to
+  whatever stops an abandoned worker's writes, not to the accept.
+  Nothing else guards this: the invariant is held
   at the write, and a check in the worker would be a second derivation of it.
   The two hazards the SHO-569 amendment named — saving before the lease, and
   reading across it — are answered by the lease and the read being one
