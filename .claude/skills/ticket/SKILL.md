@@ -76,12 +76,14 @@ background shell `node .claude/scripts/merge-gate.mjs <pr> --wait`. They run
 in the background; do not poll. Comment verdicts on Linear.
 `GUARD REQUIRED` from the reviewer → launch `guardian` too.
 
-- Findings: you are the writer here — fix blockers/majors/nits on the same
-  branch (skip a nit only if it contradicts the card, golden, or an ADR, and
-  say why), re-verify, push, comment the PR.
+- Findings: you are the writer here — fix blockers/majors on the same branch,
+  re-verify, push, comment the PR. Nits and guardian lows are **not** fixed
+  here: file each as its own Backlog ticket under a `<feature>: slice nits`
+  parent (created the first time this feature produces one) and say so on the
+  ticket.
 - After blocker/major fixes, re-launch `reviewer`; after guardian medium+
-  fixes, re-launch `guardian`. Nits-only fixes need no re-review. Two failed
-  review rounds → ask the human; three → design review or a new ADR.
+  fixes, re-launch `guardian`. **At most two fix rounds**; after the second,
+  ask the human.
 - CI RED → launch `ci-triage` instead of reading logs yourself.
 
 ## 7. Handoff

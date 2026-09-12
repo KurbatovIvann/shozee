@@ -135,14 +135,16 @@ Experience Foundation UX gate; backend tickets do not.
 | Output | Each child squash-merged on the merge gate. Parent stays In Progress |
 | Done when | Named children and review follow-ups are on `main`. A human closes the parent |
 | Isolation | **Default sequential.** Linear `blocked by` empty is not enough (SHO-184/186/185). Parallel only for disjoint **Touches** without migrations; at most two implementers at once |
-| Merge gate | `merge-gate.mjs` GREEN on seven Actions jobs (`checks`, `secret-scan`, `dependency-audit`, `contract-check`, `migration-drift`, `bundle-probe`, `e2e-smoke`; `checks` is the fail-closed aggregator, SHO-334) on the head being merged + `reviewer` APPROVE (or nits-only findings reported FIXED) when the lane requires it + `guardian` without medium+ findings when required. No launched review still running. Third-party GitHub bot checks are not gates |
+| Merge gate | `merge-gate.mjs` GREEN on seven Actions jobs (`checks`, `secret-scan`, `dependency-audit`, `contract-check`, `migration-drift`, `bundle-probe`, `e2e-smoke`; `checks` is the fail-closed aggregator, SHO-334) on the head being merged + `reviewer` APPROVE when the lane requires it (nits do not hold it — they become tickets under the feature's slice-nits parent) + `guardian` without medium+ findings when required. No launched review still running. Third-party GitHub bot checks are not gates |
 
-Findings (review blockers/majors/nits, guardian medium+, CI regressions,
+Findings (review blockers/majors, guardian medium+, CI regressions,
 conflicts) are same-branch fixes by the **same implementer**, resumed with
-the findings. Re-launch `reviewer` after blocker/major fixes; after a
-nits-only fix, merge on green CI. Two failed review rounds → ask the human.
-A late post-merge verdict becomes a new Linear child (fallback only); never
-reopen Done. Playbook: `.claude/skills/conveyor/SKILL.md`.
+the findings. Re-launch `reviewer` after blocker/major fixes. Reviewer nits
+and guardian lows are not fixed on the branch: each becomes its own Backlog
+ticket under a `<feature>: slice nits` parent (ADR-0029, amended
+2026-09-12). **At most two fix rounds per child**; after the second, ask the
+human. A late post-merge major becomes a new Linear child (fallback only);
+never reopen Done. Playbook: `.claude/skills/conveyor/SKILL.md`.
 
 ### 3. EXECUTOR — `implementer` subagent, or the `/ticket` session
 
