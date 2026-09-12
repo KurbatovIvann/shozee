@@ -126,12 +126,14 @@ function Probe(props: {
   readonly latest: Latest;
   readonly conversationId: string | null;
   readonly tenantEpochRef: AssistantTenantEpochRef;
+  readonly visible?: boolean;
 }) {
   props.latest.current = useAssistantConversation({
     conversationId: props.conversationId,
     locale: "uk",
     call: CALL,
     tenantEpochRef: props.tenantEpochRef,
+    ...(props.visible === undefined ? {} : { visible: props.visible }),
     newId: nextId,
   });
   return null;
@@ -147,7 +149,15 @@ async function flush(): Promise<void> {
 
 let roots: Root[] = [];
 
-function mount(options?: { readonly conversationId?: string | null }) {
+function mount(options?: {
+  readonly conversationId?: string | null;
+  /**
+   * Off unless a test says otherwise, matching the hook's own default: a caller
+   * that never says the surface is on screen gets no stream, so the fetch
+   * counts below are the commands and nothing else.
+   */
+  readonly visible?: boolean;
+}) {
   const latest: Latest = { current: null };
   const tenantEpochRef: AssistantTenantEpochRef = { current: 0 };
   const container = globalThis.document.createElement("div");
@@ -156,7 +166,14 @@ function mount(options?: { readonly conversationId?: string | null }) {
   const render = (conversationId: string | null) => {
     act(() => {
       root.render(
-        createElement(Probe, { latest, conversationId, tenantEpochRef }),
+        createElement(Probe, {
+          latest,
+          conversationId,
+          tenantEpochRef,
+          ...(options?.visible === undefined
+            ? {}
+            : { visible: options.visible }),
+        }),
       );
     });
   };
@@ -321,7 +338,10 @@ describe("useAssistantConversation", () => {
       view.latest().answer({ optionId: "opt-a" });
     });
     await flush();
-    expect(view.latest().busy).toBe(true);
+    // `sending`, not `busy`: this screen has a command in flight. `busy` is the
+    // conversation's own answer and no turn has been accepted yet.
+    expect(view.latest().sending).toBe(true);
+    expect(view.latest().busy).toBe(false);
 
     act(() => {
       view.latest().answer({ optionId: "opt-b" });
@@ -389,7 +409,14 @@ describe("useAssistantConversation", () => {
     expect(view.latest().rows.some((row) => row.role === "user")).toBe(false);
   });
 
-  it("keeps what it is showing when the network fails", async () => {
+  /**
+   * ADR-0039. The accept may have stored the message and queued the turn, so
+   * the words are not taken off the screen and put back in an empty composer —
+   * that is an invitation to send a message the server already has. They stay
+   * as the echo, and the outcome says `unknown` rather than `refused`, which is
+   * what stops the sheet restoring the draft.
+   */
+  it("keeps the words on screen when the network fails, and does not offer them back", async () => {
     respond(200, {
       status: "ok",
       window: conversationWindow({ text: "Привіт." }),
@@ -398,14 +425,47 @@ describe("useAssistantConversation", () => {
     await flush();
 
     fetchMock.mockRejectedValueOnce(new Error("offline"));
-    act(() => {
-      void view.latest().send("ще одне");
+    let outcome: unknown = null;
+    await act(async () => {
+      outcome = await view.latest().send("ще одне");
     });
+
+    expect(outcome).toEqual({
+      kind: "unknown",
+      failure: { kind: "unreachable" },
+    });
+    expect(view.latest().failure?.kind).toBe("unreachable");
+    expect(view.latest().rows.map((row) => row.text)).toEqual([
+      "Привіт.",
+      "ще одне",
+    ]);
+    // No turn was reported, so the conversation is not busy.
+    expect(view.latest().busy).toBe(false);
+    expect(view.latest().sending).toBe(false);
+  });
+
+  /**
+   * The other side of the same rule: the server decided this attempt and
+   * accepted nothing, so the words belong back in the composer.
+   */
+  it("offers the words back when the server refused the send", async () => {
+    respond(200, { status: "ok", window: conversationWindow() });
+    const view = mount();
     await flush();
 
-    expect(view.latest().failure?.kind).toBe("unreachable");
-    expect(view.latest().rows.map((row) => row.text)).toEqual(["Привіт."]);
-    expect(view.latest().busy).toBe(false);
+    respond(409, {
+      status: "interaction_open",
+      window: conversationWindow({ openPause: OPEN_PAUSE, asked: true }),
+    });
+    let outcome: unknown = null;
+    await act(async () => {
+      outcome = await view.latest().send("створи ще одне");
+    });
+
+    expect(outcome).toEqual({
+      kind: "refused",
+      failure: { kind: "interaction_open" },
+    });
   });
 
   it("drops a reply that arrives after the tenant changed", async () => {
@@ -1046,5 +1106,270 @@ describe("a conversation longer than one window", () => {
     await flush();
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+/**
+ * The turn runs off the request now (ADR-0039), so the reply does not come back
+ * as the answer to the request that started it. It arrives on the stream, and
+ * these are the ways that can go wrong.
+ */
+describe("the conversation, live", () => {
+  const COMMAND = "88888888-8888-4888-8888-888888888888";
+
+  /** A body this test writes into, exactly as the network would. */
+  function bodyStream() {
+    const encoder = new TextEncoder();
+    let controller: ReadableStreamDefaultController<Uint8Array> | null = null;
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        controller = c;
+      },
+    });
+    return {
+      body,
+      send(event: string, payload: unknown) {
+        controller?.enqueue(
+          encoder.encode(
+            `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`,
+          ),
+        );
+      },
+    };
+  }
+
+  function streamingWindow(options?: { readonly openPause?: unknown }) {
+    return {
+      conversationId: CONVERSATION,
+      olderCursor: null,
+      messages: [
+        {
+          messageId: MESSAGE,
+          role: "assistant",
+          createdAt: "2026-09-09T10:00:00.000Z",
+          parts: [{ kind: "text", text: "", status: "streaming" }],
+          revision: 1,
+        },
+      ],
+      openPause: options?.openPause ?? null,
+    };
+  }
+
+  function settledWindow(text: string, openPause: unknown = null) {
+    return {
+      conversationId: CONVERSATION,
+      olderCursor: null,
+      messages: [
+        {
+          messageId: MESSAGE,
+          role: "assistant",
+          createdAt: "2026-09-09T10:00:00.000Z",
+          parts: [{ kind: "text", text, status: "complete" }],
+          revision: 4,
+        },
+      ],
+      openPause,
+    };
+  }
+
+  /** Routed by URL, because the stream and the commands interleave. */
+  function serve(windows: { readonly messages: unknown[] }) {
+    const source = bodyStream();
+    let read = 0;
+    fetchMock.mockImplementation((url: unknown) => {
+      if (String(url).includes("/assistant/kit/events")) {
+        return Promise.resolve({ ok: true, status: 200, body: source.body });
+      }
+      const window =
+        windows.messages[Math.min(read, windows.messages.length - 1)];
+      read += 1;
+      return Promise.resolve(
+        new Response(JSON.stringify({ status: "ok", window }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    });
+    return source;
+  }
+
+  function messageReads(): number {
+    return fetchMock.mock.calls.filter((call) =>
+      String(call[0]).includes("/assistant/kit/messages"),
+    ).length;
+  }
+
+  /**
+   * Item 3 of the ticket, and the reason there is no client-side turn state:
+   * the placeholder the accept stores is the report that a turn is running, so
+   * a turn started on another device reads as busy here too.
+   */
+  it("is busy because the conversation says so, not because a request is open", async () => {
+    serve({ messages: [streamingWindow()] });
+    const view = mount({ visible: true });
+    await flush();
+
+    expect(view.latest().busy).toBe(true);
+    expect(view.latest().sending).toBe(false);
+  });
+
+  it("merges a message the stream updates, and ignores an older revision", async () => {
+    const source = serve({ messages: [streamingWindow()] });
+    const view = mount({ visible: true });
+    await flush();
+
+    act(() => {
+      source.send("message.updated", {
+        type: "message.updated",
+        conversationId: CONVERSATION,
+        message: {
+          messageId: MESSAGE,
+          role: "assistant",
+          createdAt: "2026-09-09T10:00:00.000Z",
+          parts: [{ kind: "text", text: "Готово.", status: "complete" }],
+          revision: 4,
+        },
+      });
+    });
+    await flush();
+
+    expect(view.latest().rows.map((row) => row.text)).toEqual(["Готово."]);
+    expect(view.latest().busy).toBe(false);
+
+    act(() => {
+      source.send("message.updated", {
+        type: "message.updated",
+        conversationId: CONVERSATION,
+        message: {
+          messageId: MESSAGE,
+          role: "assistant",
+          createdAt: "2026-09-09T10:00:00.000Z",
+          parts: [{ kind: "text", text: "Шукаю", status: "streaming" }],
+          revision: 2,
+        },
+      });
+    });
+    await flush();
+
+    // The later write stands. Without the revision rule the placeholder would
+    // overwrite the card that had already arrived.
+    expect(view.latest().rows.map((row) => row.text)).toEqual(["Готово."]);
+    expect(view.latest().busy).toBe(false);
+  });
+
+  it("takes the window of the turn it was following when that turn ends", async () => {
+    const source = serve({ messages: [streamingWindow()] });
+    const view = mount({ visible: true });
+    await flush();
+    const readsBefore = messageReads();
+
+    act(() => {
+      source.send("turn.started", {
+        type: "turn.started",
+        conversationId: CONVERSATION,
+        kind: "chat",
+        commandId: COMMAND,
+      });
+      source.send("turn.finished", {
+        type: "turn.finished",
+        kind: "chat",
+        commandId: COMMAND,
+        status: "done",
+        window: settledWindow("Яку Катю?", OPEN_PAUSE),
+      });
+    });
+    await flush();
+
+    expect(view.latest().interaction?.interactionId).toBe(INTERACTION);
+    expect(view.latest().busy).toBe(false);
+    // It vouched for that window, so it had no reason to ask again.
+    expect(messageReads()).toBe(readsBefore);
+  });
+
+  /**
+   * The reconciler ends a turn while acting for no person and cannot read a
+   * window as a user it cannot act as (SHO-570). The absence is not "no open
+   * question" — the client goes and reads the authority, exactly once.
+   */
+  it("re-reads the window exactly once when a turn ends without one", async () => {
+    const source = serve({
+      messages: [
+        streamingWindow(),
+        settledWindow("Шозік не встиг", OPEN_PAUSE),
+      ],
+    });
+    const view = mount({ visible: true });
+    await flush();
+    expect(messageReads()).toBe(1);
+
+    act(() => {
+      source.send("turn.finished", {
+        type: "turn.finished",
+        kind: "chat",
+        commandId: COMMAND,
+        status: "interrupted",
+      });
+    });
+    await flush();
+
+    expect(messageReads()).toBe(2);
+    expect(view.latest().interaction?.interactionId).toBe(INTERACTION);
+    expect(view.latest().busy).toBe(false);
+  });
+
+  /**
+   * The stream subscribes, then reads its snapshot, and delivers what arrived
+   * in the gap afterwards — so a `turn.finished` published before that snapshot
+   * can land after it. The pause it carries was closed in between, by an
+   * abandon on another device that published nothing.
+   */
+  it("does not reopen a question a newer snapshot had already closed", async () => {
+    const source = serve({
+      messages: [settledWindow("Готово."), settledWindow("Готово.")],
+    });
+    const view = mount({ visible: true });
+    await flush();
+
+    act(() => {
+      source.send("snapshot", {
+        type: "snapshot",
+        window: settledWindow("Готово."),
+      });
+    });
+    await flush();
+    expect(view.latest().interaction).toBeNull();
+
+    act(() => {
+      source.send("turn.finished", {
+        type: "turn.finished",
+        kind: "chat",
+        commandId: COMMAND,
+        status: "done",
+        window: settledWindow("Яку Катю?", OPEN_PAUSE),
+      });
+    });
+    await flush();
+
+    // Still closed: this client was not following that turn, so its `openPause`
+    // — which carries no revision and cannot be ordered — does not stand.
+    expect(view.latest().interaction).toBeNull();
+  });
+
+  it("replaces stale state from the snapshot a reconnection opens with", async () => {
+    const source = serve({ messages: [streamingWindow()] });
+    const view = mount({ visible: true });
+    await flush();
+    expect(view.latest().busy).toBe(true);
+
+    act(() => {
+      source.send("snapshot", {
+        type: "snapshot",
+        window: settledWindow("Готово."),
+      });
+    });
+    await flush();
+
+    expect(view.latest().rows.map((row) => row.text)).toEqual(["Готово."]);
+    expect(view.latest().busy).toBe(false);
   });
 });

@@ -1,6 +1,6 @@
 /**
- * The whole assistant surface, as three pieces of state: the thread, whether
- * a request is in flight, and what last went wrong.
+ * The whole assistant surface, as three pieces of state: the thread, whether a
+ * command of this screen's is in flight, and what last went wrong.
  *
  * This replaces `use-assistant-chat` plus `use-assistant-choice` plus
  * `use-assistant-confirmation`. Those held, between them, a set of ignored
@@ -14,21 +14,25 @@
  * The rule that makes it small: every call answers with the conversation as it
  * stands — its latest window — so every outcome is applied the same way. A
  * success and a refusal both carry the window; the refusal additionally has
- * something to say. Windows join into one thread through one function,
- * `mergeAssistantChatWindow`, by message id. A message never changes once its
- * request ends, so that join copies the server's log; there is no locally
- * invented part and no second derivation to keep in step with the first.
+ * something to say. Windows and stream events join into one thread through
+ * `assistant-thread-merge.ts`, which owns every ordering rule.
  *
- * `busy` is one flag for the whole surface, not one per card. While anything is
- * in flight nothing else may be sent — which is what the server enforces anyway,
- * since one open question blocks the next job.
+ * **A turn no longer lives inside a request** (ADR-0039). `/kit/chat` and
+ * `/kit/answer` answer `202 accepted` once the turn is stored and queued, and
+ * the worker runs it. Two things follow, and they are the shape of this file:
+ *
+ * - `busy` is the *conversation's* answer, not this screen's. It comes from the
+ *   thread's active turn — the `streaming` placeholder the accept stores — so a
+ *   turn started on another device reads as busy here, and this phone's request
+ *   having returned does not mean the turn is over. `sending` is the separate,
+ *   much shorter fact that a command of this screen's is in flight.
+ * - The result arrives on the event stream rather than as the reply to the
+ *   request that started it. Nothing asks on a timer; see `use-assistant-stream`.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   assistantInteractionFromPause,
-  mergeAssistantChatWindow,
-  type AssistantChatThread,
   type AssistantInteraction,
 } from "@showzy/validation/assistant-chat";
 
@@ -44,6 +48,14 @@ import {
   type AssistantKitFailureKind,
   type AssistantKitOutcome,
 } from "../api/assistant-kit-client";
+import {
+  applyAssistantStreamEvent,
+  applyAssistantWindow,
+  assistantTurnActive,
+  initialAssistantThreadState,
+  type AssistantThreadState,
+} from "./assistant-thread-merge";
+import { useAssistantStream } from "./use-assistant-stream";
 import { assistantThreadRows, type AssistantThreadRow } from "./thread-rows";
 
 /**
@@ -56,14 +68,21 @@ export type AssistantTenantEpochRef = { current: number };
 /**
  * What became of a send, as far as the screen that made it is concerned.
  *
- * `refused` is the only outcome that gives the words back. `superseded` means
- * the tenant or the conversation changed while it was in flight: whatever came
- * back belongs to a thread nobody is looking at, so there is nothing to restore
- * and nothing to report on this one (SHO-552).
+ * `refused` is the only outcome that gives the words back — the server decided
+ * this attempt and accepted nothing, so the composer is where they belong.
+ * `unknown` is a fault that may have landed either side of the accept: the
+ * words stay on screen as the echo instead of going back into the composer,
+ * because the turn may well be running and a composer holding them again is an
+ * invitation to send a message the server already has.
+ *
+ * `superseded` means the tenant or the conversation changed while it was in
+ * flight: whatever came back belongs to a thread nobody is looking at, so there
+ * is nothing to restore and nothing to report on this one (SHO-552).
  */
 export type AssistantSendOutcome =
   | { readonly kind: "sent" }
   | { readonly kind: "refused"; readonly failure: AssistantKitFailure }
+  | { readonly kind: "unknown"; readonly failure: AssistantKitFailure }
   | { readonly kind: "superseded" };
 
 /** A call's failure, and whether the screen that made it is still the one showing. */
@@ -76,7 +95,10 @@ export interface UseAssistantConversation {
   readonly rows: readonly AssistantThreadRow[];
   /** The open question, if any, with its prompt already parsed. */
   readonly interaction: AssistantInteraction | null;
+  /** A turn is running on this conversation — here or on another device. */
   readonly busy: boolean;
+  /** A command of this screen's is in flight. Seconds, not the length of a turn. */
+  readonly sending: boolean;
   readonly failure: AssistantKitFailure | null;
   /**
    * What became of the send, for the screen that made it — so a caller holding
@@ -111,7 +133,7 @@ function defaultNewId(): string {
  * conversation actually is.
  *
  * The first group: no response at all (`unreachable`, `unreadable`), nothing
- * attempted this time so the last attempt's fate stands (`aborted`,
+ * attempted this time so the last attempt's fate stands (`not_sent`,
  * `turn_open`, `rate_limited`), or a fault that may have landed either side of
  * the write (`server`). The second group: the server read the conversation and
  * said where it is, and whatever the earlier attempt did is in the window
@@ -126,7 +148,7 @@ function stillUnknown(kind: AssistantKitFailureKind): boolean {
   switch (kind) {
     case "unreachable":
     case "unreadable":
-    case "aborted":
+    case "not_sent":
     case "turn_open":
     case "rate_limited":
     case "server":
@@ -142,20 +164,69 @@ function stillUnknown(kind: AssistantKitFailureKind): boolean {
   }
 }
 
+/**
+ * Whether the words are safe to put back in the composer.
+ *
+ * Deliberately **not** the same question as `stillUnknown`, though the two
+ * overlap. That one asks whether the attempt's fate is undecided, and keeps the
+ * token accordingly; this one asks whether showing the words in an empty
+ * composer would be telling the truth.
+ *
+ * They differ on exactly one case, and it is the case worth naming: `not_sent`
+ * leaves the fate of whatever came *before* unknown, so the token is kept — but
+ * this send itself never left the phone, so its words plainly belong back in the
+ * field. Collapsing the two predicates loses that, and either strands the draft
+ * or offers it back after a fault that may already have queued a turn.
+ */
+function draftReturns(kind: AssistantKitFailureKind): boolean {
+  switch (kind) {
+    // Either nothing left the phone at all (`not_sent`), or the server decided
+    // this attempt and accepted no turn. In both the words are unambiguously
+    // still the person's to send.
+    case "not_sent":
+    case "interaction_open":
+    case "turn_open":
+    case "stale":
+    case "unresolvable":
+    case "action_failed":
+    case "expired":
+    case "rejected":
+    case "unauthorized":
+    case "rate_limited":
+      return true;
+    // Undecided. The accept may have stored the message and queued the turn,
+    // and a retry of the same words is the same attempt anyway — so the words
+    // stay where the person can see them rather than going back into an empty
+    // composer that invites a second send.
+    case "unreachable":
+    case "unreadable":
+    case "server":
+      return false;
+  }
+}
+
 export function useAssistantConversation(args: {
   readonly conversationId: string | null;
   readonly locale: Locale;
   /** `null` until the session and the tenant are known. */
   readonly call: AssistantKitCall | null;
   readonly tenantEpochRef: AssistantTenantEpochRef;
+  /**
+   * The surface is on screen. Defaults to false: a caller that never says so
+   * gets the thread and no connection, and a turn that starts anyway opens one
+   * on its own (below). Nothing is streamed for a screen nobody is looking at.
+   */
+  readonly visible?: boolean;
   readonly newId?: () => string;
 }): UseAssistantConversation {
-  const [thread, setThread] = useState<AssistantChatThread | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [state, setState] = useState<AssistantThreadState>(
+    initialAssistantThreadState,
+  );
+  const [sending, setSending] = useState(false);
   /**
    * Echoed in the thread until the reply lands. The server stores the person's
    * words before the model runs, so this is only ever showing what is already
-   * committed — but the response that would prove it is a turn away.
+   * committed — but the response that would prove it is a round trip away.
    */
   const [pending, setPending] = useState<string | null>(null);
   const [failure, setFailure] = useState<AssistantKitFailure | null>(null);
@@ -164,11 +235,29 @@ export function useAssistantConversation(args: {
   callRef.current = args.call;
   const conversationIdRef = useRef(args.conversationId);
   conversationIdRef.current = args.conversationId;
-  const threadRef = useRef(thread);
-  threadRef.current = thread;
+  /**
+   * The thread as it stands, readable synchronously.
+   *
+   * Deliberately **not** mirrored from `state` during render. Events arrive in
+   * bursts — the stream writes its snapshot and everything queued behind it
+   * back to back — and each has to be applied to the result of the one before
+   * it. A ref that caught up only at the next render would hand the second
+   * event the state from before the first, which lost the turn the client was
+   * following and made its `turn.finished` read as somebody else's.
+   *
+   * So every change goes through `commit`, and this is the only copy that is
+   * always current.
+   */
+  const stateRef = useRef(state);
   const newIdRef = useRef(args.newId ?? defaultNewId);
   newIdRef.current = args.newId ?? defaultNewId;
   const epochRef = args.tenantEpochRef;
+
+  /** The one way the thread changes: the ref first, so the next caller sees it. */
+  const commit = useCallback((next: AssistantThreadState): void => {
+    stateRef.current = next;
+    setState(next);
+  }, []);
 
   /**
    * Guards a second tap, not the protocol. Exactly-once is decided by the
@@ -178,17 +267,15 @@ export function useAssistantConversation(args: {
    * bumping it orphans whatever is still running, so a reply that lands late
    * neither paints nor unlatches the surface it no longer owns.
    */
-  const busyRef = useRef(false);
+  const sendingRef = useRef(false);
   const ticketRef = useRef(0);
 
   /**
    * The token of an attempt whose fate the client does not know.
    *
-   * A request that never came back may or may not have created the order. A
-   * fresh token would write it twice — and the person is invited to try, since
-   * the draft goes back into the field. Keeping the token makes the retry the
-   * *same* attempt, which the server recognises and answers with the
-   * conversation as it now stands (SHO-547).
+   * A request that never came back may or may not have created the order.
+   * Keeping the token makes a retry the *same* attempt, which the server
+   * recognises and answers with the conversation as it now stands (SHO-547).
    *
    * Held while the outcome is still unknown, and dropped once the server has
    * decided this command. That is also what keeps sending the same sentence
@@ -222,6 +309,15 @@ export function useAssistantConversation(args: {
   );
 
   /**
+   * Which send the echo on screen belongs to.
+   *
+   * A send clears its own echo when it settles, and only its own. After a switch
+   * mid-flight a later send may have put its words there, and the earlier
+   * send's late reply used to wipe them for the rest of that turn (SHO-552).
+   */
+  const echoRef = useRef<object | null>(null);
+
+  /**
    * One way to apply an outcome, whatever produced it.
    *
    * Whatever the server sent about the conversation is joined onto the thread —
@@ -231,12 +327,6 @@ export function useAssistantConversation(args: {
    * A reply is dropped if the tenant or the conversation changed while it was in
    * flight. Both, not just the epoch: switching conversations without switching
    * company would otherwise let one thread's reply land in another.
-   *
-   * Whether it was dropped goes back to the caller with the failure. Anything a
-   * caller does after the window — put a draft back, clear an echo — depends
-   * on the same question this has just answered. A caller that answered it again
-   * for itself, from a failure alone, put one company's words into another
-   * company's composer (SHO-552).
    */
   const run = useCallback(
     (
@@ -247,11 +337,11 @@ export function useAssistantConversation(args: {
     ): Promise<RunResult> => {
       const call = callRef.current;
       const conversationId = conversationIdRef.current;
-      if (call === null || conversationId === null || busyRef.current) {
-        // Nothing was attempted and nothing changed. `aborted` is the reason a
+      if (call === null || conversationId === null || sendingRef.current) {
+        // Nothing was attempted and nothing changed. `not_sent` is the reason a
         // caller can act on.
         return Promise.resolve<RunResult>({
-          failure: { kind: "aborted" },
+          failure: { kind: "not_sent" },
           current: true,
         });
       }
@@ -264,8 +354,8 @@ export function useAssistantConversation(args: {
         epochRef.current === epoch &&
         conversationIdRef.current === conversationId;
 
-      busyRef.current = true;
-      setBusy(true);
+      sendingRef.current = true;
+      setSending(true);
       return perform(call, conversationId)
         .then((outcome): RunResult => {
           if (!current()) {
@@ -273,9 +363,7 @@ export function useAssistantConversation(args: {
           }
           const incoming = outcome.window;
           if (incoming !== null) {
-            setThread((held) =>
-              mergeAssistantChatWindow(held, incoming, LATEST),
-            );
+            commit(applyAssistantWindow(stateRef.current, incoming, LATEST));
           }
           setFailure(outcome.failure);
           return { failure: outcome.failure, current: true };
@@ -291,12 +379,12 @@ export function useAssistantConversation(args: {
           // Unlatch only if this is still the request in flight. Whether its
           // result was applied is a separate question, already answered above.
           if (mine()) {
-            busyRef.current = false;
-            setBusy(false);
+            sendingRef.current = false;
+            setSending(false);
           }
         });
     },
-    [epochRef],
+    [commit, epochRef],
   );
 
   const reload = useCallback(() => {
@@ -306,15 +394,81 @@ export function useAssistantConversation(args: {
   }, [run]);
 
   /**
-   * Which send the echo on screen belongs to.
+   * Reading the window because an event said this client cannot vouch for what
+   * it holds — a `turn.finished` with no window, one for a turn this client was
+   * not following, or a `message.updated` for a message it does not hold.
    *
-   * A send clears its own echo when it settles, and only its own. After a switch
-   * mid-flight a later send may have put its words there, and the earlier
-   * send's late reply used to wipe them for the rest of that turn (SHO-552).
-   * Ownership rather than currency: a reply nobody is looking at still takes
-   * back the echo it left, if nothing replaced it.
+   * Not `run`: this takes no command latch, so a re-read neither blocks a send
+   * nor is blocked by one. Single-flight, so a burst of such events costs one
+   * read rather than one each — the read asks for the conversation as it now
+   * stands, which is the same answer all of them wanted.
+   *
+   * This is not polling. It has no timer: every one of these is caused by an
+   * event that arrived, and when nothing arrives nothing is asked.
    */
-  const echoRef = useRef<object | null>(null);
+  const rereadRef = useRef<object | null>(null);
+  const reread = useCallback(() => {
+    const call = callRef.current;
+    const conversationId = conversationIdRef.current;
+    if (
+      call === null ||
+      conversationId === null ||
+      rereadRef.current !== null
+    ) {
+      return;
+    }
+    const epoch = epochRef.current;
+    const request = {};
+    rereadRef.current = request;
+    void getAssistantKitWindow({ ...call, conversationId })
+      .then((outcome) => {
+        if (
+          rereadRef.current !== request ||
+          epochRef.current !== epoch ||
+          conversationIdRef.current !== conversationId
+        ) {
+          return;
+        }
+        const window = outcome.window;
+        if (window !== null) {
+          commit(applyAssistantWindow(stateRef.current, window, LATEST));
+          // The words are in the thread now, or they were never stored. Either
+          // way the echo has been answered.
+          echoRef.current = null;
+          setPending(null);
+        }
+        // Silent on failure: this read is the client's own housekeeping, not
+        // something the person asked for, and the banner belongs to what they
+        // did ask for.
+      })
+      .finally(() => {
+        if (rereadRef.current === request) {
+          rereadRef.current = null;
+        }
+      });
+  }, [commit, epochRef]);
+
+  const onStreamEvent = useCallback(
+    (event: Parameters<typeof applyAssistantStreamEvent>[1]) => {
+      const applied = applyAssistantStreamEvent(stateRef.current, event);
+      commit(applied.state);
+      if (applied.rereadWindow) {
+        reread();
+      }
+    },
+    [commit, reread],
+  );
+
+  const turnActive = assistantTurnActive(state.thread);
+
+  useAssistantStream({
+    call: args.call,
+    conversationId: args.conversationId,
+    // A turn that is running has to be able to land wherever the person is, so
+    // the stream outlives the sheet being closed for exactly as long as one is.
+    listening: (args.visible ?? false) || turnActive,
+    onEvent: onStreamEvent,
+  });
 
   const send = useCallback(
     (text: string): Promise<AssistantSendOutcome> => {
@@ -322,7 +476,7 @@ export function useAssistantConversation(args: {
       if (clipped.length === 0) {
         return Promise.resolve<AssistantSendOutcome>({
           kind: "refused",
-          failure: { kind: "aborted" },
+          failure: { kind: "not_sent" },
         });
       }
       // Keyed by the words, so retrying the same draft is the same attempt and
@@ -343,9 +497,13 @@ export function useAssistantConversation(args: {
         // Settled whether or not anyone is still looking: the token is about
         // the attempt, which the server has decided, not about the screen.
         settleCommand(key, failure);
-        if (echoRef.current === echo) {
+        const undecided = failure !== null && !draftReturns(failure.kind);
+        if (echoRef.current === echo && !undecided) {
           // Right after the thread that now contains it, so the echo is
-          // replaced rather than briefly doubled.
+          // replaced rather than briefly doubled. An undecided outcome keeps it:
+          // the message may be stored and the turn running, and the next window
+          // — from the stream, or from the re-read an event triggers — is what
+          // replaces it with the stored message.
           echoRef.current = null;
           setPending(null);
         }
@@ -353,9 +511,12 @@ export function useAssistantConversation(args: {
           // A thread nobody is looking at: nothing to restore, nothing to say.
           return { kind: "superseded" };
         }
-        return failure === null
-          ? { kind: "sent" }
-          : { kind: "refused", failure };
+        if (failure === null) {
+          return { kind: "sent" };
+        }
+        return draftReturns(failure.kind)
+          ? { kind: "refused", failure }
+          : { kind: "unknown", failure };
       });
     },
     [commandIdFor, run, settleCommand],
@@ -368,7 +529,7 @@ export function useAssistantConversation(args: {
    */
   const answer = useCallback(
     (value: unknown) => {
-      const open = threadRef.current?.openPause ?? null;
+      const open = stateRef.current.thread?.openPause ?? null;
       if (open === null) {
         return;
       }
@@ -393,7 +554,7 @@ export function useAssistantConversation(args: {
   );
 
   const dismiss = useCallback(() => {
-    const open = threadRef.current?.openPause ?? null;
+    const open = stateRef.current.thread?.openPause ?? null;
     if (open === null) {
       return;
     }
@@ -407,7 +568,7 @@ export function useAssistantConversation(args: {
   }, [run]);
 
   /**
-   * The older page on its way, if any. Its own latch, not `busy`: reading
+   * The older page on its way, if any. Its own latch, not `sending`: reading
    * history changes nothing on the server, so a person scrolling back does not
    * wait for a reply to finish, and a send does not wait for a page.
    */
@@ -423,7 +584,7 @@ export function useAssistantConversation(args: {
   const loadOlder = useCallback(() => {
     const call = callRef.current;
     const conversationId = conversationIdRef.current;
-    const cursor = threadRef.current?.olderCursor ?? null;
+    const cursor = stateRef.current.thread?.olderCursor ?? null;
     if (
       call === null ||
       conversationId === null ||
@@ -447,8 +608,11 @@ export function useAssistantConversation(args: {
         }
         const page = outcome.window;
         if (page !== null) {
-          setThread((held) =>
-            mergeAssistantChatWindow(held, page, { kind: "older", cursor }),
+          commit(
+            applyAssistantWindow(stateRef.current, page, {
+              kind: "older",
+              cursor,
+            }),
           );
         }
         // Said, not swallowed. Success leaves the banner alone: it may be
@@ -463,49 +627,51 @@ export function useAssistantConversation(args: {
           setLoadingOlder(false);
         }
       });
-  }, [epochRef]);
+  }, [commit, epochRef]);
 
   // A new tenant or a new conversation is a different thread. Clearing before
   // the read is deliberate: showing the previous company's thread for the length
   // of one request is worse than showing nothing.
   useEffect(() => {
-    setThread(null);
-    threadRef.current = null;
+    commit(initialAssistantThreadState());
     setFailure(null);
     setPending(null);
+    echoRef.current = null;
     // Orphan anything still running for the previous conversation, then read.
     ticketRef.current += 1;
-    busyRef.current = false;
+    sendingRef.current = false;
     olderRef.current = null;
+    rereadRef.current = null;
     setLoadingOlder(false);
     reload();
-  }, [args.conversationId, args.call, reload]);
+  }, [args.conversationId, args.call, commit, reload]);
 
   const rows = useMemo(
     () =>
-      thread === null
+      state.thread === null
         ? []
         : assistantThreadRows({
-            thread,
+            thread: state.thread,
             locale: args.locale,
-            waiting: busy,
+            // The placeholder the accept stores renders as nothing of its own,
+            // so the waiting row is what says a turn is under way. It also
+            // covers the accept's round trip, before any placeholder exists.
+            waiting: turnActive || sending,
             pending,
           }),
-    [thread, args.locale, busy, pending],
+    [state.thread, args.locale, turnActive, sending, pending],
   );
 
-  const interaction = useMemo(
-    () =>
-      thread?.openPause === null || thread?.openPause === undefined
-        ? null
-        : assistantInteractionFromPause(thread.openPause),
-    [thread],
-  );
+  const interaction = useMemo(() => {
+    const open = state.thread?.openPause ?? null;
+    return open === null ? null : assistantInteractionFromPause(open);
+  }, [state.thread]);
 
   return {
     rows,
     interaction,
-    busy,
+    busy: turnActive,
+    sending,
     failure,
     send,
     answer,
