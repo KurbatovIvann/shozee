@@ -56,7 +56,32 @@ the queue and the events.**
 
 - **Accept.** In one Postgres transaction the API claims the conversation's
   active turn, stores the person's message under an id derived from the
-  command, and stores an assistant placeholder whose text is `streaming`. It
+  command, stores an assistant placeholder whose text is `streaming`, and
+  stores the provider history the turn will run from. *(Amended 2026-09-12,
+  SHO-575, owner decision: readiness to run means the inputs are committed. An
+  earlier wording left the history to a second transaction after the accept —
+  see the answer bullet below — which made a queued turn whose history lacks
+  the person's message reachable, and reachable in seconds rather than at a
+  reconciler interval: a first attempt that commits and then fails gives its
+  command back, the retry is `replayed`, and `replayed` enqueues at once. The
+  accept now takes one history instruction — append the person's message for a
+  chat accept, replace the transcript whole for an answer accept, none for a
+  continuation, which runs from what is stored — and the read-modify-write
+  happens under the same savepoint, after the turn row is inserted, so the
+  partial unique index over active turns serializes it: no second accepted
+  turn can interleave its own read-modify-write, and a worker that ends its
+  turn saves the last of its history before the `finish` that frees the
+  conversation. What the index does not cover is a turn the reconciler ended
+  while its worker was still alive: that worker's next per-step save writes
+  the whole value and can overwrite the message an accept stored after it.
+  Known residue, not introduced here — the same overwrite was reachable while
+  the route did the saving — and bounded by the turn timeout; it belongs to
+  whatever stops an abandoned worker's writes, not to the accept.
+  Nothing else guards this: the invariant is held
+  at the write, and a check in the worker would be a second derivation of it.
+  The two hazards the SHO-569 amendment named — saving before the lease, and
+  reading across it — are answered by the lease and the read being one
+  transaction.)* It
   then enqueues a job whose id is derived from the same command, and answers
   `202` with the window. Repeating a command returns the conversation as it
   now stands and runs nothing twice. The turn lease and the command receipt
@@ -83,16 +108,23 @@ the queue and the events.**
     `unresolvable`, `action_failed` and a second question are still
     immediate, and a committed write is stored before generation is attempted
     (SHO-546). The action's card is stored in Postgres, on the placeholder, as
-    the part already earned. After it accepts, the answer route saves the
-    messages `kit.resume` resumed as the conversation's history, so the worker
-    runs an answer turn exactly as it runs a chat turn: from history. There is
-    no answer seed on the turn row. Order: claim the pause, run the action,
-    accept, then save the history; an accept refused because another turn
-    holds the conversation releases the claim. *(Amended 2026-09-12, SHO-563:
-    an earlier wording put the save before the accept. The owner's T3c decision
-    requires the reverse — history written before the accept has claimed the
-    lease can overwrite a still-running turn's history, and a `busy` accept must
-    mean nothing was written.)* An answer's accept stores no
+    the part already earned. The messages `kit.resume` resumed are the
+    conversation's history, so the worker runs an answer turn exactly as it
+    runs a chat turn: from history. There is no answer seed on the turn row.
+    Order: claim the pause, run the action, then accept — the accept stores the
+    resumed history with the rest, and an accept refused because another turn
+    holds the conversation releases the claim and stores nothing at all.
+    *(Amended 2026-09-12, SHO-563: an earlier wording put a separate save
+    before the accept. Amended again 2026-09-12, SHO-575: there is no separate
+    save. The resumed set is computable before the accept, because the claim
+    has already happened, so it goes in as the accept's history instruction.
+    What this costs is named here rather than discovered later: a failure of
+    that write now rolls the earned card back too, and an `INTERNAL` — which
+    may have followed COMMIT — is not proof of rollback, so claim and command
+    are not given back and a committed write can be left with no card on
+    screen. Accepted as the lesser of the two: the ordering it replaces
+    answered the wrong question and re-issued the resolved tool call, charged,
+    with nothing on screen to say so.)* An answer's accept stores no
     person's message, only the placeholder. *(Amended 2026-09-11, SHO-561: an
     earlier wording had the worker read the action's result from the
     placeholder, which would have given an answer turn a second way to start.

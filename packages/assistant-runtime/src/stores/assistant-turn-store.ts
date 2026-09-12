@@ -26,7 +26,12 @@ import {
   readLatestInterruptedTurn,
   startTurn,
 } from "@showzy/assistant";
-import type { ChatMessage, ChatPart, ToolOutcome } from "@showzy/assistant-kit";
+import type {
+  ChatMessage,
+  ChatPart,
+  ModelMessage,
+  ToolOutcome,
+} from "@showzy/assistant-kit";
 import { executeAction } from "@showzy/core";
 import {
   ConflictError,
@@ -44,6 +49,7 @@ import {
 import {
   AssistantKitConversationGoneError,
   asCaller,
+  asJson,
   asJsonObject,
   callFor,
   type AssistantKitCaller,
@@ -234,8 +240,32 @@ export type AssistantTurnAcceptInput =
       readonly kind: "answer";
       /** The parts the resolved action already earned, stored first. */
       readonly earned: readonly ChatPart[];
+      readonly history: readonly ModelMessage[];
     })
   | (AcceptCommon & { readonly kind: "continue" });
+
+export function assistantAskedMessage(text: string): ModelMessage {
+  return { role: "user", content: text };
+}
+
+type AcceptedHistoryInstruction =
+  | { readonly kind: "append"; readonly message: unknown }
+  | { readonly kind: "replace"; readonly history: unknown };
+
+function acceptedHistoryInstruction(
+  input: AssistantTurnAcceptInput,
+): AcceptedHistoryInstruction | undefined {
+  if (input.kind === "chat") {
+    return {
+      kind: "append",
+      message: asJson(assistantAskedMessage(input.text)),
+    };
+  }
+  if (input.kind === "answer") {
+    return { kind: "replace", history: asJson(input.history) };
+  }
+  return undefined;
+}
 
 export interface AssistantTurnView {
   readonly conversationId: string;
@@ -385,6 +415,7 @@ export function createPostgresAssistantTurnStore(
               input.kind === "continue"
                 ? await resolveContinuation(deps, call, input.conversationId)
                 : undefined;
+            const history = acceptedHistoryInstruction(input);
             const createdAt = clock.now().toISOString();
             const placeholderId = assistantTurnMessageId(
               { kind: dbKind, commandId: input.commandId },
@@ -437,6 +468,7 @@ export function createPostgresAssistantTurnStore(
                   ),
                 },
                 budgetHold: assistantBudgetHoldToStored(input.budgetHold),
+                ...(history === undefined ? {} : { history }),
                 ...(continuesCommandId === undefined
                   ? {}
                   : { continuesCommandId }),
@@ -555,8 +587,20 @@ export interface AssistantTurnMessageWriter {
  * message ids come from the command — and leaves durability to the Postgres
  * store, which has its own test against a real database.
  */
+export interface AssistantTurnHistoryWriter {
+  load(scope: {
+    readonly conversationId: string;
+    readonly bind: string;
+  }): Promise<ModelMessage[]>;
+  save(
+    scope: { readonly conversationId: string; readonly bind: string },
+    messages: readonly ModelMessage[],
+  ): Promise<void>;
+}
+
 export function memoryAssistantTurnStore(
   messages: AssistantTurnMessageWriter,
+  history: AssistantTurnHistoryWriter,
   clock: { now(): Date } = { now: () => new Date() },
 ): AssistantTurnStore {
   const byCommand = new Map<string, AssistantTurnView>();
@@ -615,6 +659,22 @@ export function memoryAssistantTurnStore(
         conversationId: input.conversationId,
         bind: input.bind,
       };
+      const storedHistory = await history.load(scope);
+      const undoHistory = async (): Promise<void> => {
+        try {
+          await history.save(scope, storedHistory);
+        } catch {
+          return;
+        }
+      };
+      if (input.kind === "chat") {
+        await history.save(scope, [
+          ...storedHistory,
+          assistantAskedMessage(input.text),
+        ]);
+      } else if (input.kind === "answer") {
+        await history.save(scope, input.history);
+      }
       const placeholderMessageId = assistantTurnMessageId(
         { kind: dbKind, commandId: input.commandId },
         "assistant",
@@ -632,10 +692,12 @@ export function memoryAssistantTurnStore(
           parts: [{ kind: "text", text: input.text, status: "complete" }],
         });
         if (stored.kind === "wrong_owner") {
+          await undoHistory();
           await input.releaseUnusedHold();
           return { outcome: "wrong_owner" };
         }
         if (stored.kind !== "written") {
+          await undoHistory();
           // The real accept is one transaction: a refused write fails it, and
           // nothing — no turn row, no placeholder — is stored.
           throw new CoreInvariantError(
@@ -658,10 +720,12 @@ export function memoryAssistantTurnStore(
         }).parts,
       });
       if (placeholder.kind === "wrong_owner") {
+        await undoHistory();
         await input.releaseUnusedHold();
         return { outcome: "wrong_owner" };
       }
       if (placeholder.kind !== "written") {
+        await undoHistory();
         throw new CoreInvariantError(
           `assistant accept could not store the placeholder: ${placeholder.kind}`,
         );

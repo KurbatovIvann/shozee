@@ -62,6 +62,10 @@ function chatAccept(conversationId: string, commandId: string = randomUUID()) {
       message: textMessage(placeholderId, "assistant", ""),
     },
     budgetHold: HOLD,
+    history: {
+      kind: "append" as const,
+      message: { role: "user", content: "привіт" },
+    },
   };
 }
 

@@ -60,6 +60,7 @@ function chatAccept(overrides: Record<string, unknown> = {}) {
       globalReservedMicroUsd: 100_000,
       kyivDate: "2026-09-11",
     },
+    history: { kind: "append", message: { role: "user", content: "привіт" } },
     ...overrides,
   };
 }
@@ -258,11 +259,46 @@ describe("the turn contracts", () => {
     ).toBe(false);
     expect(
       acceptTurnInputSchema.safeParse(
-        chatAccept({ kind: "answer", userMessage: undefined }),
+        chatAccept({
+          kind: "answer",
+          userMessage: undefined,
+          history: { kind: "replace", history: [] },
+        }),
       ).success,
     ).toBe(true);
     expect(
       acceptTurnInputSchema.safeParse(chatAccept({ kind: "answer" })).success,
+    ).toBe(false);
+  });
+
+  it("pair the history instruction to the kind, and let a continuation give none", () => {
+    expect(acceptTurnInputSchema.safeParse(chatAccept()).success).toBe(true);
+    expect(
+      acceptTurnInputSchema.safeParse(chatAccept({ history: undefined }))
+        .success,
+    ).toBe(false);
+    expect(
+      acceptTurnInputSchema.safeParse(
+        chatAccept({ history: { kind: "replace", history: [] } }),
+      ).success,
+    ).toBe(false);
+    expect(
+      acceptTurnInputSchema.safeParse(
+        chatAccept({
+          kind: "answer",
+          userMessage: undefined,
+          history: undefined,
+        }),
+      ).success,
+    ).toBe(true);
+    expect(
+      acceptTurnInputSchema.safeParse(
+        chatAccept({
+          kind: "answer",
+          userMessage: undefined,
+          history: { kind: "append", message: {} },
+        }),
+      ).success,
     ).toBe(false);
   });
 

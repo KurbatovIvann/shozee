@@ -13,7 +13,7 @@ import { assistantChatState } from "@showzy/db/schema/assistant";
 import { and, eq } from "drizzle-orm";
 
 import { loadOwnConversation } from "./load-conversation.js";
-import { requireWritable } from "./writable.js";
+import { requireWritable, type WritableStaffDb } from "./writable.js";
 
 type StaffCtx = Extract<ActionCtx, { principal: "staff" }>;
 
@@ -64,13 +64,28 @@ export async function writeStaffChatState(env: {
   });
   const db = requireWritable(env.ctx.db);
 
+  await upsertChatState(db, {
+    companyId: env.ctx.companyId,
+    conversationId: env.conversationId,
+    history: env.history,
+  });
+}
+
+export async function upsertChatState(
+  db: WritableStaffDb,
+  scope: {
+    readonly companyId: string;
+    readonly conversationId: string;
+    readonly history: unknown;
+  },
+): Promise<void> {
   // `updated_at` is the shared trigger's (db.md §5): one clock, Postgres's.
-  const history = env.history ?? null;
+  const history = scope.history ?? null;
   await db
     .insert(assistantChatState)
     .values({
-      companyId: env.ctx.companyId,
-      conversationId: env.conversationId,
+      companyId: scope.companyId,
+      conversationId: scope.conversationId,
       history,
     })
     .onConflictDoUpdate({
