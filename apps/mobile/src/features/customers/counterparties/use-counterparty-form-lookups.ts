@@ -1,17 +1,27 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { useApiClient } from "../../../api/api-provider";
 import { useActiveCompany } from "../../../api/query-provider";
-import { useDrainInfinitePages } from "../../../hooks/use-drain-pages";
+import {
+  SEARCH_DEBOUNCE_MS,
+  useDebouncedValue,
+} from "../../../hooks/use-debounced-value";
 import { getCustomerQueryOptions } from "../api/customer-detail-query";
 import { listCustomersInfiniteOptions } from "../api/customer.queries";
-import { CUSTOMERS_LOOKUP_PAGE_SIZE } from "../shared/customer-caps";
+import {
+  CUSTOMERS_LOOKUP_PAGE_SIZE,
+  LIST_CUSTOMERS_SEARCH_MAX,
+} from "../shared/customer-caps";
 import {
   optionSelectItems,
   type OptionSelectItem,
 } from "../shared/option-select";
-import { flattenPages, nameById } from "../shared/paged-list";
+import {
+  flattenPages,
+  nameById,
+  normalizeCustomersSearch,
+} from "../shared/paged-list";
 import { mergePrefillCustomerName } from "./counterparty-form-options";
 
 /**
@@ -30,26 +40,46 @@ export function useCounterpartyFormLookups(args: {
   readonly customerOptions: readonly OptionSelectItem[];
   readonly customerNameById: ReadonlyMap<string, string>;
   readonly prefillCustomerName: string | null;
+  readonly customerQuery: string;
+  readonly onCustomerQueryChange: (value: string) => void;
+  readonly customersLoadingMore: boolean;
+  readonly onCustomersEndReached: () => void;
 } {
   const apiClient = useApiClient();
   const { activeCompanyId } = useActiveCompany();
   const getActiveCompany = () => apiClient?.getActiveCompany() ?? null;
 
+  const [customerQuery, setCustomerQuery] = useState("");
+  const debouncedCustomerQuery = useDebouncedValue(
+    customerQuery,
+    SEARCH_DEBOUNCE_MS,
+  );
+  const customerSearch = normalizeCustomersSearch(
+    debouncedCustomerQuery,
+    LIST_CUSTOMERS_SEARCH_MAX,
+  );
+
   const customersQuery = useInfiniteQuery(
     listCustomersInfiniteOptions({
       client: apiClient,
       companyId: activeCompanyId,
-      input: { status: "active", limit: CUSTOMERS_LOOKUP_PAGE_SIZE },
+      input: {
+        status: "active",
+        limit: CUSTOMERS_LOOKUP_PAGE_SIZE,
+        ...(customerSearch === undefined ? {} : { search: customerSearch }),
+      },
       getActiveCompany,
       enabled: args.enabled,
     }),
   );
-  useDrainInfinitePages({
-    status: customersQuery.status,
-    hasNextPage: customersQuery.hasNextPage,
-    isFetchingNextPage: customersQuery.isFetchingNextPage,
-    fetchNextPage: customersQuery.fetchNextPage,
-  });
+  const customersHasNextPage = customersQuery.hasNextPage;
+  const customersFetchingNextPage = customersQuery.isFetchingNextPage;
+  const customersFetchNextPage = customersQuery.fetchNextPage;
+  const onCustomersEndReached = useCallback(() => {
+    if (customersHasNextPage && !customersFetchingNextPage) {
+      void customersFetchNextPage();
+    }
+  }, [customersFetchNextPage, customersFetchingNextPage, customersHasNextPage]);
 
   const prefillQuery = useQuery(
     getCustomerQueryOptions({
@@ -97,5 +127,9 @@ export function useCounterpartyFormLookups(args: {
     customerOptions,
     customerNameById,
     prefillCustomerName,
+    customerQuery,
+    onCustomerQueryChange: setCustomerQuery,
+    customersLoadingMore: customersQuery.isFetching,
+    onCustomersEndReached,
   };
 }

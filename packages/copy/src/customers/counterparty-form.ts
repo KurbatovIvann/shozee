@@ -17,6 +17,8 @@ export type CustomersCounterpartyFormCopy = FormChromeCopy & {
   readonly customerEmptyOption: string;
   readonly customerEmpty: string;
   readonly customerSearchPlaceholder: string;
+  readonly pickerLoadingMoreLabel: string;
+  readonly pickerLoadMoreLabel: string;
   readonly openClient: string;
   readonly assignmentUnavailable: string;
   readonly requisitesTitle: string;
@@ -75,6 +77,8 @@ export const en: CustomersCounterpartyFormCopy = {
   customerEmptyOption: "No client",
   customerEmpty: "No clients found.",
   customerSearchPlaceholder: "Search clients…",
+  pickerLoadingMoreLabel: "Loading more",
+  pickerLoadMoreLabel: "Load more",
   openClient: "Open client",
   assignmentUnavailable: "Assigned",
   requisitesTitle: "Requisites",
@@ -139,6 +143,8 @@ export const uk: CustomersCounterpartyFormCopy = {
   customerEmptyOption: "Без клієнта",
   customerEmpty: "Клієнтів не знайдено.",
   customerSearchPlaceholder: "Пошук клієнтів…",
+  pickerLoadingMoreLabel: "Завантаження",
+  pickerLoadMoreLabel: "Завантажити ще",
   openClient: "Відкрити клієнта",
   assignmentUnavailable: "Призначено",
   requisitesTitle: "Реквізити",

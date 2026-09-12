@@ -26,8 +26,16 @@ export type ListCustomersPageInput = {
   readonly limit?: number;
 };
 
+export type CustomersListClient = {
+  readonly client: {
+    readonly customers: {
+      readonly listCustomers: ShowzyClient["client"]["customers"]["listCustomers"];
+    };
+  };
+};
+
 export function listCustomersInfiniteOptions(args: {
-  readonly client: ContractClient | null;
+  readonly client: CustomersListClient | null;
   readonly companyId: string | null;
   readonly input: ListCustomersPageInput;
   readonly getActiveCompany: () => string | null;
