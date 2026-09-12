@@ -142,7 +142,7 @@ lines is the ceiling, not a target — over it, STOP with a split.
   **In Review**. Then, in **one message**, launch what the lane requires:
   - `reviewer` (PR, branch, ticket, parent, lane, mode, plus the same
     trimmed card and ticket text — the reviewer has no Linear) — skip for
-    mechanical and for a nits-only `FIXED`;
+    mechanical;
   - `guardian` for the sensitive row — also re-run it after fixes for its own
     medium+ findings;
   - a background shell: `node .claude/scripts/merge-gate.mjs <pr> --wait`.
@@ -155,8 +155,8 @@ Merge only when **all** hold:
 
 1. `merge-gate` prints `GATE: GREEN` for the PR's current head.
 2. `reviewer`, when the lane requires it: `VERDICT: APPROVE` on the current
-   head, **or** its last verdict listed only nits and the implementer has
-   since reported them `FIXED` (no re-review for nits).
+   head. Nits in that verdict do not hold the merge — they become tickets
+   (§5.1).
 3. `guardian`, when required: last verdict on the current head has no
    critical/high/medium findings and no `STOP_ADR_REQUIRED`.
 4. No launched review is still running.
@@ -164,10 +164,11 @@ Merge only when **all** hold:
 Comment each verdict and its findings on the child in Linear before acting on
 it. Then:
 
-- **Findings** (reviewer blockers/majors/nits, guardian medium+, CI
-  regression, merge conflict) go back to an implementer. **Which one:**
-  - nits only, or a single small CI fix → **resume** the same implementer
-    (SendMessage): findings verbatim + `fix, re-verify, push, report FIXED`.
+- **Findings** (reviewer blockers/majors, guardian medium+, CI regression,
+  merge conflict) go back to an implementer. Reviewer nits and guardian lows
+  never do — they become tickets (§5.1). **Which one:**
+  - a single small CI fix → **resume** the same implementer (SendMessage):
+    findings verbatim + `fix, re-verify, push, report FIXED`.
   - blockers/majors, a merge conflict, or a second fix round → launch a
     **fresh** `implementer` with `Mode: fix`, the PR number, branch, and the
     findings verbatim. A fresh agent starts at ~20k context; a resumed one
@@ -175,11 +176,11 @@ it. Then:
     the old agent's worktree (`git worktree list`, `git worktree remove
     --force <path>`; the branch is on origin).
 
-  Never fix it yourself. Skip a nit only when it contradicts the card,
-  golden, or an ADR — say why on Linear.
+  Never fix it yourself.
 - After a **blocker/major** fix → re-launch `reviewer` and re-run the gate.
-  After a **nits-only** fix → re-run the gate only.
-- Two failed review rounds on one child → comment and ask the human.
+- **At most two fix rounds on one child.** After the second, comment the child
+  and the parent and ask the human; never open a third. Whatever is left that
+  is not a blocker becomes a ticket (§5.1).
 - `GATE: RED` → launch `ci-triage` on the PR.
   - `REGRESSION` → findings to the implementer (above).
   - `FLAKE_SUSPECT` → per `docs/operations/ci-flakes.md`: open or reuse a
@@ -194,6 +195,24 @@ it. Then:
 
 Not merge blockers: third-party GitHub bot checks that are neutral, missing,
 or rate-limited.
+
+### 5.1 Nits become tickets
+
+A reviewer nit and a guardian low are **recorded, not fixed on the branch**:
+
+1. Make sure the feature has a **slice-nits parent** — a Linear issue titled
+   `<feature>: slice nits` under the feature parent, created the first time
+   this feature produces one. Never up front, never one per child.
+2. File **each nit as its own Backlog ticket** under that parent: the
+   finding's line as the title, `file:line` and the rule it cites in the
+   description, the child's PR as a link. One nit, one ticket — a list of
+   nits in one ticket is read once and then never again.
+3. Comment on the child which tickets its nits became, then merge on the gate.
+
+This reverses ADR-0029's "nits are same-branch fixes" (amended 2026-09-12): a
+nit on the branch costs a review round, a ticket costs a link. That ADR's
+rejection of nits-as-**comments** still stands — a comment on a Done ticket is
+never read again, a Backlog ticket is.
 
 ## 6. Merge a child
 
@@ -214,9 +233,9 @@ or rate-limited.
 ## 7. Late review (fallback)
 
 A verdict that arrives after a merge (it should not — you wait): APPROVE →
-Linear comment only. Nits or blockers/majors → a **new** Linear child under
-the same parent with the findings, queued like any other child. Never reopen
-a Done ticket.
+Linear comment only. Blockers/majors → a **new** Linear child under the same
+parent with the findings, queued like any other child. Nits → tickets under
+the slice-nits parent (§5.1). Never reopen a Done ticket.
 
 ## 8. Finish
 

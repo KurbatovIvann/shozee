@@ -97,8 +97,10 @@ One line per finding. No praise, no restating what the code does, no
 production-only concerns (those are `[note]` lines, never findings, per
 `AGENTS.md` → No production yet).
 
-APPROVE means no blockers, no majors, and no nits. If there are only nits,
-the verdict is REQUEST_CHANGES with nit findings (the parent applies them
-before merge without re-review). If the PR touches auth, payments, QES,
+APPROVE means no blockers and no majors. Report nits in `FINDINGS` all the
+same: the parent files each one as its own Backlog ticket under the feature's
+slice-nits parent. A nit never opens a fix round and never holds a merge — an
+unbounded supply of nits against a zero-nit bar is what kept one slice in
+review for two days (ADR-0029, amended 2026-09-12). If the PR touches auth, payments, QES,
 webhooks, file authorization, or tenant/runtime protocols and no guardian
 pass was mentioned, end with `GUARD REQUIRED`.

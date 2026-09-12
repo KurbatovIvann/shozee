@@ -60,5 +60,6 @@ FINDINGS:
 - [critical|high|medium|low] path:line — <issue> — violates <ADR/invariant> — fix: <fix>
 ```
 
-Merge-blocking: any critical/high/medium finding or STOP_ADR_REQUIRED. Low
-findings are listed for the parent to decide.
+Merge-blocking: any critical/high/medium finding or STOP_ADR_REQUIRED. A low
+finding is the guardian's nit: list it, and the parent files it as its own
+Backlog ticket under the feature's slice-nits parent. It never holds a merge.
