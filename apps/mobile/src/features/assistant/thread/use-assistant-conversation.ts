@@ -467,32 +467,6 @@ export function useAssistantConversation(args: {
             !sendingRef.current &&
             echoRef.current === echoAtIssue
           ) {
-            // Three conditions, and they are **not** three symmetric owners.
-            // Worth stating exactly, because a comment that merely sounds
-            // right is how this branch would rot.
-            //
-            // `!sendingAtIssue` is the load-bearing one. A read taken while a
-            // send was in flight can carry a window from before that send's
-            // accept, and the send may fail before this resolves — so asking
-            // only about *now* would clear words the window does not contain,
-            // and an undecided send does not put them back in the composer.
-            //
-            // `echoRef.current === echoAtIssue` covers the other direction: a
-            // send that *started* after this read was issued minted a fresh
-            // echo (`send` allocates a new one every time), and those words
-            // are not this read's to answer for.
-            //
-            // `!sendingRef.current` adds nothing for sends — any send in
-            // flight now was either in flight at issue, or replaced the echo,
-            // so it is already caught by one of the two above. What it does
-            // add is declining to clear while an `answer` or `dismiss` is in
-            // flight, and those do not own the echo at all. Kept as a cheap
-            // belt: it can only delay a clear, and the next re-read makes it.
-            //
-            // When all three hold, the window just applied is the newest
-            // account of the conversation and the echo has been answered by
-            // it. Otherwise the words belong to a send, and only that send may
-            // take them off the screen.
             echoRef.current = null;
             setPending(null);
           }
