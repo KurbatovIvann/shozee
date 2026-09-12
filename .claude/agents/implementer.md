@@ -34,6 +34,13 @@ fix on an existing PR branch (with findings).
      `git switch -C <branch> origin/<branch>`. Do not open a new PR.
 2. `pnpm install --frozen-lockfile --prefer-offline` (the worktree has no
    `node_modules`). Never add, remove, or update dependencies.
+   **A new dependency is a STOP, never a lockfile edit.** `pnpm add` is
+   denied by the permission system, and that denial is the constitution's
+   "no new dependencies without explicit human approval" doing its job — not
+   an obstacle to route around. Never hand-write a lockfile entry and never
+   run `pnpm install --fix-lockfile` (it silently moves unrelated packages).
+   If the ticket cannot be finished without a dependency, report STOPPED and
+   name it; the human adds it.
 3. Linear MCP: read the ticket and its parent feature card (the launch prompt
    may already include them). Refuse (STOPPED) if a `blocked by` issue is not
    Done. On a fresh start, move the ticket to **In Progress** only after that
