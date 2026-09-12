@@ -89,6 +89,12 @@ export function CounterpartyFormView(model: CounterpartyFormModel) {
           searchMaxLength={LIST_GROUPS_SEARCH_MAX}
           onClose={model.closePicker}
           onChange={model.selectCustomer}
+          query={model.customerQuery}
+          onQueryChange={model.onCustomerQueryChange}
+          loadingMore={model.customersLoadingMore}
+          loadingMoreLabel={form.pickerLoadingMoreLabel}
+          onEndReached={model.onCustomersEndReached}
+          loadMoreLabel={form.pickerLoadMoreLabel}
         />
       }
     >

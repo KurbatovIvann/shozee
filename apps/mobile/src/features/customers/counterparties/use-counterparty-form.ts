@@ -15,6 +15,7 @@ import { customerEditorHref } from "../shared/customer-hrefs";
 import { customerIdFromParam } from "../shared/customer-id";
 import { canEditCustomers } from "../shared/customer-permissions";
 import { rhfPathsForFieldErrors } from "./counterparty-form-copy";
+import { mergePrefillCustomerName } from "./counterparty-form-options";
 import {
   cloneCounterpartyFormDraft,
   draftFromCounterparty,
@@ -77,6 +78,10 @@ export function useCounterpartyForm(args: {
     null,
   );
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickedCustomer, setPickedCustomer] = useState<{
+    readonly id: string;
+    readonly name: string;
+  } | null>(null);
 
   const baselineRef = useRef(baseline);
   baselineRef.current = baseline;
@@ -199,6 +204,12 @@ export function useCounterpartyForm(args: {
     saveApi.resetMutation();
   }
 
+  const customerNameById = mergePrefillCustomerName(
+    lookups.customerNameById,
+    pickedCustomer?.id ?? null,
+    pickedCustomer?.name ?? null,
+  );
+
   const presented = presentCounterpartyFormView({
     copy,
     mode: args.mode,
@@ -210,7 +221,7 @@ export function useCounterpartyForm(args: {
     pickerOpen,
     customerId,
     canWrite,
-    lookups,
+    lookups: { ...lookups, customerNameById },
     counterpartyCustomerName: query.data?.customerName,
     lifecycleBanner: lifecycle.banner,
   });
@@ -220,16 +231,27 @@ export function useCounterpartyForm(args: {
     mode: args.mode,
     control,
     ...presented,
+    customerQuery: lookups.customerQuery,
+    onCustomerQueryChange: lookups.onCustomerQueryChange,
+    customersLoadingMore: lookups.customersLoadingMore,
+    onCustomersEndReached: lookups.onCustomersEndReached,
     onFieldEdit,
     requestLeave,
     openCustomerPicker: () => {
       setPickerOpen(true);
     },
     closePicker: () => {
+      lookups.onCustomerQueryChange("");
       setPickerOpen(false);
     },
     selectCustomer: (id: string | null) => {
       setValue("customerId", id, { shouldDirty: true });
+      if (id !== null) {
+        const option = lookups.customerOptions.find((row) => row.id === id);
+        setPickedCustomer(
+          option === undefined ? null : { id, name: option.name },
+        );
+      }
       onFieldEdit();
     },
     openClient: () => {
