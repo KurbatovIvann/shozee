@@ -69,6 +69,11 @@ export function DocumentFormView(model: DocumentFormModel) {
             value={model.selectedOrderId}
             options={model.orderOptions}
             searchMaxLength={LIST_ORDERS_QUERY_MAX}
+            query={model.orderQuery}
+            onQueryChange={model.onOrderQueryChange}
+            loadingMore={model.ordersLoadingMore}
+            loadingMoreLabel={form.pickerLoadingMoreLabel}
+            onEndReached={model.onOrdersEndReached}
             onClose={model.closeOrderSheet}
             onChange={(id) => {
               if (id !== null) {

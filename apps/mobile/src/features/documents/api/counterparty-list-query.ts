@@ -1,10 +1,3 @@
-/**
- * `customers.listCounterparties` for the document create picker
- * (SHO-238). Company-wide drain annotates the order list; the sheet
- * then filters by the chosen order's customer. Keys follow SHO-102.
- * Lives in the documents slice so form code does not import
- * `features/customers`.
- */
 import type { ContractClient } from "../../../api/client";
 import { contractInfiniteQueryOptions } from "../../../api/query-options";
 import { DOCUMENT_LOOKUP_PAGE_SIZE } from "../shared/document-caps";
@@ -18,10 +11,12 @@ export type ListCounterpartiesOutput = Awaited<
 export type DocumentCounterpartyListItem =
   ListCounterpartiesOutput["items"][number];
 
-export const DOCUMENT_COUNTERPARTIES_COMPANY_INPUT: {
-  readonly limit: number;
-} = {
-  limit: DOCUMENT_LOOKUP_PAGE_SIZE,
+export type DocumentCounterpartiesListClient = {
+  readonly client: {
+    readonly customers: {
+      readonly listCounterparties: ShowzyClient["client"]["customers"]["listCounterparties"];
+    };
+  };
 };
 
 export function documentCounterpartiesLookupInput(customerId: string): {
@@ -35,17 +30,15 @@ export function documentCounterpartiesLookupInput(customerId: string): {
 }
 
 export function listDocumentCounterpartiesInfiniteOptions(args: {
-  readonly client: ContractClient | null;
+  readonly client: DocumentCounterpartiesListClient | null;
   readonly companyId: string | null;
   readonly customerId: string | null;
   readonly getActiveCompany: () => string | null;
   readonly enabled?: boolean;
 }) {
   const client = args.client;
-  const input =
-    args.customerId === null
-      ? DOCUMENT_COUNTERPARTIES_COMPANY_INPUT
-      : documentCounterpartiesLookupInput(args.customerId);
+  const customerId = args.customerId;
+  const input = documentCounterpartiesLookupInput(customerId ?? "");
   return {
     ...contractInfiniteQueryOptions({
       actionName: LIST_COUNTERPARTIES_ACTION,
@@ -53,17 +46,20 @@ export function listDocumentCounterpartiesInfiniteOptions(args: {
       input,
       getActiveCompany: args.getActiveCompany,
       queryFn: (cursor: string | null) => {
-        if (client === null) {
+        if (client === null || customerId === null) {
           return Promise.reject(new TypeError("Failed to fetch"));
         }
         return client.client.customers.listCounterparties({
-          ...input,
+          ...documentCounterpartiesLookupInput(customerId),
           ...(cursor === null ? {} : { cursor }),
         });
       },
       nextCursor: (page: ListCounterpartiesOutput) => page.nextCursor,
     }),
     enabled:
-      (args.enabled ?? true) && client !== null && args.companyId !== null,
+      (args.enabled ?? true) &&
+      client !== null &&
+      args.companyId !== null &&
+      customerId !== null,
   };
 }

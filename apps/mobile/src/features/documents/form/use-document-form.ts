@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 
 import { useApiClient } from "../../../api/api-provider";
@@ -27,7 +27,10 @@ import {
 import { documentFormResolver } from "./document-form.schema";
 import { useDocumentFormHandover } from "./use-document-form-handover";
 import { useDocumentFormLayouts } from "./use-document-form-layouts";
-import { useDocumentFormLookups } from "./use-document-form-lookups";
+import {
+  useDocumentFormLookups,
+  type DocumentFormOrderRow,
+} from "./use-document-form-lookups";
 import { useDocumentFormPickers } from "./use-document-form-pickers";
 import { useDocumentSave } from "./use-document-save";
 
@@ -69,9 +72,11 @@ export function useDocumentForm() {
     canCreate,
     clientReady,
   });
+  const [selectedOrder, setSelectedOrder] =
+    useState<DocumentFormOrderRow | null>(null);
   const lookups = useDocumentFormLookups({
     enabled: loadState.kind === "ready",
-    orderId,
+    customerId: selectedOrder?.customerId ?? null,
     missingCustomer: formCopy.orderMissingCustomer,
   });
   const layoutsQuery = useDocumentFormLayouts({
@@ -80,7 +85,6 @@ export function useDocumentForm() {
     layoutKey,
     setValue,
   });
-  const selectedOrder = lookups.selectedOrder;
   const selectedCounterparty = lookups.counterpartyOptions.find(
     (row) => row.id === counterpartyId,
   );
@@ -185,11 +189,22 @@ export function useDocumentForm() {
     copied: handover.copied,
     copyFailed: handover.copyFailed,
     requestLeave,
+    orderQuery: lookups.orderQuery,
+    onOrderQueryChange: lookups.onOrderQueryChange,
+    ordersLoadingMore: lookups.ordersLoadingMore,
+    onOrdersEndReached: lookups.onOrdersEndReached,
     openOrderSheet: pickers.openOrderSheet,
     openCounterpartySheet: pickers.openCounterpartySheet,
-    closeOrderSheet: pickers.closeOrderSheet,
+    closeOrderSheet: () => {
+      pickers.closeOrderSheet();
+      lookups.onOrderQueryChange("");
+    },
     closeCounterpartySheet: pickers.closeCounterpartySheet,
-    pickOrder: pickers.pickOrder,
+    pickOrder: (id: string) => {
+      setSelectedOrder(lookups.orderRows.find((row) => row.id === id) ?? null);
+      lookups.onOrderQueryChange("");
+      pickers.pickOrder(id);
+    },
     pickCounterparty: pickers.pickCounterparty,
     setType: pickers.setType,
     pickLayout: pickers.pickLayout,

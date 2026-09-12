@@ -1,10 +1,5 @@
-/**
- * Order and counterparty lookups for the document create form
- * (SHO-238). Binders live in documents `api/` so the form does not
- * import the orders or customers feature folders.
- */
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { useApiClient } from "../../../api/api-provider";
 import { useActiveCompany } from "../../../api/query-provider";
@@ -13,14 +8,21 @@ import {
   optionSelectItems,
   type OptionSelectItem,
 } from "../../../components/ui";
+import {
+  SEARCH_DEBOUNCE_MS,
+  useDebouncedValue,
+} from "../../../hooks/use-debounced-value";
 import { useDrainInfinitePages } from "../../../hooks/use-drain-pages";
 import { listDocumentCounterpartiesInfiniteOptions } from "../api/counterparty-list-query";
-import { listDocumentOrdersInfiniteOptions } from "../api/order-list-query";
+import {
+  documentOrdersLookupInput,
+  listDocumentOrdersInfiniteOptions,
+} from "../api/order-list-query";
+import { normalizeDocumentOrderQuery } from "../shared/document-caps";
 import {
   documentCounterpartyOptionDescription,
   documentOrderOptionDescription,
   documentOrderOptionName,
-  firstCounterpartyNameByCustomerId,
 } from "./document-form-pickers";
 
 export type DocumentFormOrderRow = {
@@ -32,40 +34,50 @@ export type DocumentFormOrderRow = {
 
 export function useDocumentFormLookups(args: {
   readonly enabled: boolean;
-  readonly orderId: string;
+  readonly customerId: string | null;
   readonly missingCustomer: string;
 }): {
   readonly orderOptions: readonly OptionSelectItem[];
   readonly orderRows: readonly DocumentFormOrderRow[];
+  readonly orderQuery: string;
+  readonly onOrderQueryChange: (value: string) => void;
+  readonly ordersLoadingMore: boolean;
+  readonly onOrdersEndReached: () => void;
   readonly counterpartyOptions: readonly OptionSelectItem[];
-  readonly selectedOrder: DocumentFormOrderRow | null;
 } {
   const apiClient = useApiClient();
   const { activeCompanyId } = useActiveCompany();
   const getActiveCompany = () => apiClient?.getActiveCompany() ?? null;
   const enabled = args.enabled;
-  const { missingCustomer, orderId } = args;
+  const { missingCustomer, customerId } = args;
+
+  const [orderQuery, setOrderQuery] = useState("");
+  const debouncedOrderQuery = useDebouncedValue(orderQuery, SEARCH_DEBOUNCE_MS);
+  const orderSearch = normalizeDocumentOrderQuery(debouncedOrderQuery);
 
   const ordersQuery = useInfiniteQuery(
     listDocumentOrdersInfiniteOptions({
       client: apiClient,
       companyId: activeCompanyId,
+      input: documentOrdersLookupInput(orderSearch),
       getActiveCompany,
       enabled,
     }),
   );
-  useDrainInfinitePages({
-    status: ordersQuery.status,
-    hasNextPage: ordersQuery.hasNextPage,
-    isFetchingNextPage: ordersQuery.isFetchingNextPage,
-    fetchNextPage: ordersQuery.fetchNextPage,
-  });
+  const ordersHasNextPage = ordersQuery.hasNextPage;
+  const ordersFetchingNextPage = ordersQuery.isFetchingNextPage;
+  const ordersFetchNextPage = ordersQuery.fetchNextPage;
+  const onOrdersEndReached = useCallback(() => {
+    if (ordersHasNextPage && !ordersFetchingNextPage) {
+      void ordersFetchNextPage();
+    }
+  }, [ordersFetchNextPage, ordersFetchingNextPage, ordersHasNextPage]);
 
   const counterpartiesQuery = useInfiniteQuery(
     listDocumentCounterpartiesInfiniteOptions({
       client: apiClient,
       companyId: activeCompanyId,
-      customerId: null,
+      customerId,
       getActiveCompany,
       enabled,
     }),
@@ -77,36 +89,17 @@ export function useDocumentFormLookups(args: {
     fetchNextPage: counterpartiesQuery.fetchNextPage,
   });
 
-  const counterpartyNameByCustomerId = useMemo(() => {
-    if (counterpartiesQuery.data === undefined) {
-      return new Map<string, string>();
-    }
-    return firstCounterpartyNameByCustomerId(
-      flattenPages(counterpartiesQuery.data.pages),
-    );
-  }, [counterpartiesQuery.data]);
-
   const orderRows = useMemo((): readonly DocumentFormOrderRow[] => {
     if (ordersQuery.data === undefined) {
       return [];
     }
-    return flattenPages(ordersQuery.data.pages).map((row) => {
-      const customerId = row.customer.linkedCustomerId;
-      const counterpartyName =
-        customerId === null
-          ? null
-          : (counterpartyNameByCustomerId.get(customerId) ?? null);
-      return {
-        id: row.orderId,
-        customerId,
-        name: documentOrderOptionName(row, missingCustomer),
-        description: documentOrderOptionDescription(row, counterpartyName),
-      };
-    });
-  }, [ordersQuery.data, counterpartyNameByCustomerId, missingCustomer]);
-
-  const selectedOrder = orderRows.find((row) => row.id === orderId) ?? null;
-  const customerId = selectedOrder?.customerId ?? null;
+    return flattenPages(ordersQuery.data.pages).map((row) => ({
+      id: row.orderId,
+      customerId: row.customer.linkedCustomerId,
+      name: documentOrderOptionName(row, missingCustomer),
+      description: documentOrderOptionDescription(row, null),
+    }));
+  }, [ordersQuery.data, missingCustomer]);
 
   const orderOptions = useMemo(
     () =>
@@ -121,24 +114,25 @@ export function useDocumentFormLookups(args: {
   );
 
   const counterpartyOptions = useMemo(() => {
-    if (counterpartiesQuery.data === undefined || customerId === null) {
+    if (counterpartiesQuery.data === undefined) {
       return [];
     }
     return optionSelectItems(
-      flattenPages(counterpartiesQuery.data.pages)
-        .filter((row) => row.customerId === customerId)
-        .map((row) => ({
-          id: row.id,
-          name: row.name,
-          description: documentCounterpartyOptionDescription(row),
-        })),
+      flattenPages(counterpartiesQuery.data.pages).map((row) => ({
+        id: row.id,
+        name: row.name,
+        description: documentCounterpartyOptionDescription(row),
+      })),
     );
-  }, [counterpartiesQuery.data, customerId]);
+  }, [counterpartiesQuery.data]);
 
   return {
     orderOptions,
     orderRows,
+    orderQuery,
+    onOrderQueryChange: setOrderQuery,
+    ordersLoadingMore: ordersQuery.isFetching,
+    onOrdersEndReached,
     counterpartyOptions,
-    selectedOrder,
   };
 }

@@ -35,6 +35,7 @@ export type DocumentsFormCopy = Omit<
   readonly orderSheetTitle: string;
   readonly orderSearchPlaceholder: string;
   readonly orderSearchLabel: string;
+  readonly pickerLoadingMoreLabel: string;
   readonly orderEmpty: string;
   readonly orderMissingCustomer: string;
   readonly counterpartyLabel: string;
@@ -209,6 +210,7 @@ const enForm: DocumentsFormCopy = {
   orderSheetTitle: "Order",
   orderSearchPlaceholder: "Search orders…",
   orderSearchLabel: "Search orders",
+  pickerLoadingMoreLabel: "Loading more",
   orderEmpty: "No orders found.",
   orderMissingCustomer: "Deleted customer",
   counterpartyLabel: "Counterparty",
@@ -259,6 +261,7 @@ const ukForm: DocumentsFormCopy = {
   orderSheetTitle: "Замовлення",
   orderSearchPlaceholder: "Пошук замовлень…",
   orderSearchLabel: "Пошук замовлень",
+  pickerLoadingMoreLabel: "Завантаження",
   orderEmpty: "Замовлень не знайдено.",
   orderMissingCustomer: "Клієнт видалений",
   counterpartyLabel: "Контрагент",
