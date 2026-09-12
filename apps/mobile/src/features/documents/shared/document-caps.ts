@@ -13,6 +13,14 @@ export const LIST_ORDERS_QUERY_MAX = 100;
 /** Page size for drained order / counterparty pickers (contract list max). */
 export const DOCUMENT_LOOKUP_PAGE_SIZE = 50;
 
+export function normalizeDocumentOrderQuery(text: string): string | undefined {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+  return trimmed.slice(0, LIST_ORDERS_QUERY_MAX);
+}
+
 /**
  * Create-time «Підстава» max. Matches `documents.createFromOrder` /
  * `DOCUMENT_BASIS_MAX` (SHO-365). There is no `@showzy/validation/documents`

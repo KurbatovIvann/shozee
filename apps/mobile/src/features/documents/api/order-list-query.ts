@@ -1,10 +1,3 @@
-/**
- * `orders.list` for the document create order picker (SHO-238 / SHO-351).
- * Keys follow SHO-102: `[actionName, companyId, input]`. Lives in the
- * documents slice so form code does not import `features/orders`.
- * Confirmed only: canceled orders are ConflictError on create, and the
- * feature card does not ask for draft (`new`) create-from-order.
- */
 import type { ContractClient } from "../../../api/client";
 import { contractInfiniteQueryOptions } from "../../../api/query-options";
 import { DOCUMENT_LOOKUP_PAGE_SIZE } from "../shared/document-caps";
@@ -21,6 +14,14 @@ export type ListOrdersSummaryPage = Extract<
 >;
 export type DocumentOrderListItem = ListOrdersSummaryPage["items"][number];
 
+export type DocumentOrdersListClient = {
+  readonly client: {
+    readonly orders: {
+      readonly list: ShowzyClient["client"]["orders"]["list"];
+    };
+  };
+};
+
 export const DOCUMENT_ORDERS_LOOKUP_INPUT: {
   readonly kind: "page.summary";
   readonly filter: {
@@ -35,14 +36,36 @@ export const DOCUMENT_ORDERS_LOOKUP_INPUT: {
   limit: DOCUMENT_LOOKUP_PAGE_SIZE,
 };
 
-export type ListDocumentOrdersPageInput = typeof DOCUMENT_ORDERS_LOOKUP_INPUT;
+export type ListDocumentOrdersPageInput = {
+  readonly kind: "page.summary";
+  readonly filter: {
+    readonly statuses: Array<
+      "new" | "confirmed" | "in_progress" | "done" | "canceled"
+    >;
+    readonly query?: string;
+  };
+  readonly limit: number;
+};
+
+export function documentOrdersLookupInput(
+  query: string | undefined,
+): ListDocumentOrdersPageInput {
+  return {
+    ...DOCUMENT_ORDERS_LOOKUP_INPUT,
+    filter: {
+      ...DOCUMENT_ORDERS_LOOKUP_INPUT.filter,
+      ...(query === undefined ? {} : { query }),
+    },
+  };
+}
 
 async function fetchDocumentOrdersPage(
-  client: ShowzyClient,
+  client: DocumentOrdersListClient,
+  input: ListDocumentOrdersPageInput,
   cursor: string | null,
 ): Promise<ListOrdersSummaryPage> {
   const page = await client.client.orders.list({
-    ...DOCUMENT_ORDERS_LOOKUP_INPUT,
+    ...input,
     ...(cursor === null ? {} : { cursor }),
   });
   if (page.kind !== "page.summary") {
@@ -52,8 +75,9 @@ async function fetchDocumentOrdersPage(
 }
 
 export function listDocumentOrdersInfiniteOptions(args: {
-  readonly client: ContractClient | null;
+  readonly client: DocumentOrdersListClient | null;
   readonly companyId: string | null;
+  readonly input: ListDocumentOrdersPageInput;
   readonly getActiveCompany: () => string | null;
   readonly enabled?: boolean;
 }) {
@@ -62,13 +86,13 @@ export function listDocumentOrdersInfiniteOptions(args: {
     ...contractInfiniteQueryOptions({
       actionName: LIST_ORDERS_ACTION,
       companyId: args.companyId,
-      input: DOCUMENT_ORDERS_LOOKUP_INPUT,
+      input: args.input,
       getActiveCompany: args.getActiveCompany,
       queryFn: (cursor: string | null) => {
         if (client === null) {
           return Promise.reject(new TypeError("Failed to fetch"));
         }
-        return fetchDocumentOrdersPage(client, cursor);
+        return fetchDocumentOrdersPage(client, args.input, cursor);
       },
       nextCursor: (page: ListOrdersSummaryPage) => page.nextCursor,
     }),

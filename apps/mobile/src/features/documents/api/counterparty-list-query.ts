@@ -18,6 +18,14 @@ export type ListCounterpartiesOutput = Awaited<
 export type DocumentCounterpartyListItem =
   ListCounterpartiesOutput["items"][number];
 
+export type DocumentCounterpartiesListClient = {
+  readonly client: {
+    readonly customers: {
+      readonly listCounterparties: ShowzyClient["client"]["customers"]["listCounterparties"];
+    };
+  };
+};
+
 export const DOCUMENT_COUNTERPARTIES_COMPANY_INPUT: {
   readonly limit: number;
 } = {
@@ -35,7 +43,7 @@ export function documentCounterpartiesLookupInput(customerId: string): {
 }
 
 export function listDocumentCounterpartiesInfiniteOptions(args: {
-  readonly client: ContractClient | null;
+  readonly client: DocumentCounterpartiesListClient | null;
   readonly companyId: string | null;
   readonly customerId: string | null;
   readonly getActiveCompany: () => string | null;
