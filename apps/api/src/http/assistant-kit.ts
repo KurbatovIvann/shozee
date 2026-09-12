@@ -6,6 +6,7 @@
  * cannot be added without deciding whether it calls the model — a new endpoint
  * that quietly spends is the failure this shape prevents.
  */
+import { interactionResponseSchema } from "@showzy/assistant-kit";
 import {
   AssistantKitConversationGoneError,
   createMemoryAiBudgetStore,
@@ -16,6 +17,7 @@ import { Hono } from "hono";
 import {
   ASSISTANT_KIT_CHAT_PATH,
   ASSISTANT_KIT_MESSAGES_PATH,
+  assistantKitChatBodySchema,
   handleAssistantKitChat,
   handleAssistantKitMessages,
 } from "./assistant-kit-chat.js";
@@ -105,14 +107,30 @@ export function createAssistantKitApp(
   });
 
   app.post(ASSISTANT_KIT_CHAT_PATH, (c) =>
-    withAssistantKitBudget(c, runtime, spend, { skipTurnLimit: false }, () =>
-      handleAssistantKitChat(c, runtime),
+    withAssistantKitBudget(
+      c,
+      runtime,
+      spend,
+      {
+        skipTurnLimit: false,
+        turnKind: "chat",
+        namesTurn: assistantKitChatBodySchema,
+      },
+      () => handleAssistantKitChat(c, runtime),
     ),
   );
   // Finishing work already admitted. Budget applies; the turn bucket does not.
   app.post(ASSISTANT_KIT_ANSWER_PATH, (c) =>
-    withAssistantKitBudget(c, runtime, spend, { skipTurnLimit: true }, () =>
-      handleAssistantKitAnswer(c, runtime),
+    withAssistantKitBudget(
+      c,
+      runtime,
+      spend,
+      {
+        skipTurnLimit: true,
+        turnKind: "answer",
+        namesTurn: interactionResponseSchema,
+      },
+      () => handleAssistantKitAnswer(c, runtime),
     ),
   );
   app.post(ASSISTANT_KIT_ABANDON_PATH, (c) =>

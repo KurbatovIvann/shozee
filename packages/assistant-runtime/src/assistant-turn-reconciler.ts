@@ -277,7 +277,8 @@ export function createAssistantTurnReconciler(
       await releaseStaffAssistantBudgetHold({
         logger,
         requestId,
-        companyId: stale.companyId,
+        // The stale row's own identity names the reservation it took (SHO-572).
+        ref: { companyId: stale.companyId, ...stale.turn },
         hold: ended.releasedHold,
         budgetStore: deps.budgetStore,
       });

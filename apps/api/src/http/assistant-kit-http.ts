@@ -55,7 +55,23 @@ export type AssistantKitAppEnv = {
  * single answer: either a row holds it, or this request gives it back.
  */
 export interface AssistantKitBudgetTicket {
-  readonly hold: StaffAssistantBudgetHold;
+  /**
+   * Hand the reservation to an accept, and take it out of the wrapper's hands
+   * (SHO-572).
+   *
+   * **The only way to obtain the reservation.** There is deliberately no plain
+   * `hold` field: one would hand a handler the reservation without recording
+   * that it left the wrapper, so the wrapper's `finally` would give back a hold
+   * a committed row already owns — the defect class this slice exists to end,
+   * and with no type error to catch it.
+   *
+   * The accept is the only thing that can put a reservation on a turn row, so
+   * from here the turn store owns the decision: it releases what it can prove
+   * no row took, and keeps what a commit may already own. Before this call the
+   * wrapper knows no row can ever hold the reservation and gives it back — a
+   * handler that throws on its way to the accept strands nothing.
+   */
+  handOverToAccept(): StaffAssistantBudgetHold;
   /**
    * The turn row holds this reservation now. The wrapper neither settles nor
    * releases it: the reservation stands as the charge, and the worker gives it
@@ -63,9 +79,10 @@ export interface AssistantKitBudgetTicket {
    */
   keep(): void;
   /**
-   * Give the reservation back. Idempotent, and a no-op once kept — the accept
-   * store calls it for every outcome that stored no row, and the wrapper calls
-   * it for every refusal that never reached an accept.
+   * Give the reservation back. Idempotent, a no-op once kept, and a no-op for a
+   * retry that found an earlier attempt's reservation rather than taking one —
+   * a request gives back only what it took. The accept store calls it for every
+   * outcome that stored no row.
    */
   release(): Promise<void>;
 }
@@ -333,7 +350,11 @@ export async function readJson(
   { readonly ok: true; readonly body: unknown } | { readonly ok: false }
 > {
   try {
-    return { ok: true, body: await c.req.raw.json() };
+    // Hono's accessor, not `c.req.raw.json()`: it caches the parsed body, and
+    // the spend guard reads the command out of it before the handler runs
+    // (SHO-572). Consuming the raw stream would leave the second reader with an
+    // unusable body.
+    return { ok: true, body: await c.req.json() };
   } catch {
     return { ok: false };
   }

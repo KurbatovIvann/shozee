@@ -340,7 +340,7 @@ export async function handleAssistantKitAnswer(
       earned: assistantTurnEarnedCard(resolvedOutcome.card),
       bind: caller.bind,
       sessionId: caller.sessionId,
-      budgetHold: budget.hold,
+      budgetHold: budget.handOverToAccept(),
       releaseUnusedHold: () => budget.release(),
     });
   } catch (error) {

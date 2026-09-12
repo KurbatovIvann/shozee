@@ -1,8 +1,12 @@
+import { randomUUID } from "node:crypto";
+
 import { describe, expect, it } from "vitest";
 
+import { describeAiBudgetHoldContract } from "./budget-hold-contract.test-suite.js";
 import {
   AI_BUDGET_FLOORED_MESSAGE,
   AI_BUDGET_TTL_SEC,
+  aiBudgetHoldKey,
   aiCompanyBudgetKey,
   createMemoryAiBudgetStore,
 } from "./budget.js";
@@ -83,6 +87,66 @@ describe("createMemoryAiBudgetStore", () => {
       current_usd: expect.closeTo(0.1) as number,
       delta_usd: -0.25,
     });
+  });
+});
+
+/**
+ * The record a turn's reservation is kept under (SHO-572), on the reference
+ * store. `budget-redis.db.test.ts` runs the same contract against Redis, from
+ * the same body, so the two cannot drift apart while both stay green.
+ */
+describeAiBudgetHoldContract({
+  name: "memory store",
+  createStore: () => createMemoryAiBudgetStore(),
+  newKey: () => `ai-budget-hold:c:2026-09-11:chat:conv:${randomUUID()}`,
+  concurrency: 5,
+});
+
+describe("hold records in the memory store", () => {
+  /** Only this store can be asked what happens after its clock moves. */
+  it("forgets a hold once its ttl passes, so a new day reserves again", async () => {
+    let nowMs = 1_000_000;
+    const store = createMemoryAiBudgetStore({ now: () => nowMs });
+    const key = "ai-budget-hold:c:2026-09-11:chat:conv:ttl";
+
+    await store.claimHold(key, "100000:0", AI_BUDGET_TTL_SEC);
+    nowMs += AI_BUDGET_TTL_SEC * 1000 + 1;
+
+    expect(await store.dropHold(key)).toBe(false);
+    expect(
+      (await store.claimHold(key, "200000:0", AI_BUDGET_TTL_SEC)).created,
+    ).toBe(true);
+  });
+});
+
+describe("aiBudgetHoldKey", () => {
+  it("names one turn, in one casing, per company and Kyiv day", () => {
+    const base = {
+      companyId: "ABCDEF00-0000-4000-8000-00000000C001",
+      kyivDate: "2026-09-11",
+      kind: "chat",
+      conversationId: "11111111-1111-4111-8111-111111111111",
+      commandId: "22222222-2222-4222-8222-222222222222",
+    };
+    expect(aiBudgetHoldKey(base)).toBe(
+      "ai-budget-hold:abcdef00-0000-4000-8000-00000000c001:2026-09-11:chat:11111111-1111-4111-8111-111111111111:22222222-2222-4222-8222-222222222222",
+    );
+    // A retry spelling its ids differently must reach the same reservation.
+    expect(
+      aiBudgetHoldKey({
+        ...base,
+        conversationId: base.conversationId.toUpperCase(),
+        commandId: base.commandId.toUpperCase(),
+      }),
+    ).toBe(aiBudgetHoldKey(base));
+    // An answer and a send under one command token are two turns.
+    expect(aiBudgetHoldKey({ ...base, kind: "answer" })).not.toBe(
+      aiBudgetHoldKey(base),
+    );
+    // And a turn is charged on the day it was admitted.
+    expect(aiBudgetHoldKey({ ...base, kyivDate: "2026-09-12" })).not.toBe(
+      aiBudgetHoldKey(base),
+    );
   });
 });
 

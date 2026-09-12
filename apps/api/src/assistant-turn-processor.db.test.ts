@@ -31,6 +31,8 @@ import {
   createAssistantTurnProcessor,
   createMemoryAiBudgetStore,
   createPostgresAssistantTurnStore,
+  DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+  enforceStaffAssistantBudget,
   type AiBudgetStore,
   type AssistantRuntime,
   type AssistantTurnJob,
@@ -75,6 +77,8 @@ const HOLD: StaffAssistantBudgetHold = {
   globalReservedUsd: 0.1,
   kyivDate: KYIV_DATE,
 };
+/** Noon in Kyiv on `KYIV_DATE`: when a real reservation below is dated. */
+const RESERVED_AT = new Date("2026-09-11T09:00:00.000Z");
 /** What the day's counters hold before a turn: this turn's hold and others'. */
 const COUNTER_BEFORE = 0.35;
 const LIST_TOOL = "customers_list_customers";
@@ -170,6 +174,16 @@ async function accepted(options: {
   readonly conversationId?: string;
   readonly continuesCommandId?: string;
   readonly answerEarned?: readonly ChatPart[];
+  /**
+   * Reserve against this store the way the route does, instead of handing the
+   * accept a bare `HOLD`.
+   *
+   * Since SHO-572 a reservation is a record under the turn's identity *and* the
+   * counters, and only a release that finds the record subtracts. A turn row
+   * carrying a hold no reservation ever made is a state no route can produce,
+   * so a test asserting about the day's counters has to make a real one.
+   */
+  readonly budget?: AiBudgetStore;
 }): Promise<Accepted> {
   const userId = options.userId ?? ANNA;
   const caller = callerOf(userId);
@@ -180,12 +194,32 @@ async function accepted(options: {
     .forCaller(caller)
     .history.save({ conversationId, bind }, options.history);
   const commandId = randomUUID();
+  const budgetHold =
+    options.budget === undefined
+      ? HOLD
+      : (
+          await enforceStaffAssistantBudget({
+            logger: pipeline.logger,
+            requestId: randomUUID(),
+            userId,
+            companyId: COMPANY,
+            turn: {
+              kind: options.answerEarned === undefined ? "chat" : "answer",
+              conversationId,
+              commandId,
+            },
+            skipTurnLimit: true,
+            now: RESERVED_AT,
+            budgetStore: options.budget,
+            limits: DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+          })
+        ).hold;
   const common = {
     conversationId,
     commandId,
     bind,
     sessionId: `session-${userId}`,
-    budgetHold: HOLD,
+    budgetHold,
     releaseUnusedHold: () => Promise.resolve(),
     ...(options.continuesCommandId === undefined
       ? {}
@@ -219,10 +253,10 @@ interface Published {
   readonly turnStatus: string | undefined;
 }
 
-async function seededBudget(): Promise<AiBudgetStore> {
+async function seededBudget(before = COUNTER_BEFORE): Promise<AiBudgetStore> {
   const store = createMemoryAiBudgetStore();
-  await store.add(aiCompanyBudgetKey(COMPANY, KYIV_DATE), COUNTER_BEFORE, 3600);
-  await store.add(aiGlobalBudgetKey(KYIV_DATE), COUNTER_BEFORE, 3600);
+  await store.add(aiCompanyBudgetKey(COMPANY, KYIV_DATE), before, 3600);
+  await store.add(aiGlobalBudgetKey(KYIV_DATE), before, 3600);
   return store;
 }
 
@@ -241,8 +275,12 @@ interface Harness {
   fireDeadline(): void;
 }
 
-async function harness(runtime: AssistantRuntime): Promise<Harness> {
-  const budget = await seededBudget();
+async function harness(
+  runtime: AssistantRuntime,
+  /** The store the turn was reserved against, when the test made a real one. */
+  provided?: AiBudgetStore,
+): Promise<Harness> {
+  const budget = provided ?? (await seededBudget());
   const published: Published[] = [];
   let fire: (() => void) | undefined;
   const process = createAssistantTurnProcessor({
@@ -738,13 +776,17 @@ describe("a turn the worker runs", () => {
   });
 
   it("releases exactly the hold finishTurn returned when the model was never reached", async () => {
-    const turn = await accepted({ history: USER_ASKS });
+    const budget = await seededBudget(COUNTER_BEFORE - HOLD.companyReservedUsd);
+    const turn = await accepted({ history: USER_ASKS, budget });
     const never = modelThatMustNotRun();
     const base = runtimeWith(never.model);
-    const h = await harness({
-      ...base,
-      tools: () => Promise.reject(new Error("permissions could not be read")),
-    });
+    const h = await harness(
+      {
+        ...base,
+        tools: () => Promise.reject(new Error("permissions could not be read")),
+      },
+      budget,
+    );
 
     expect(await h.process(turn.job)).toEqual({
       kind: "finished",

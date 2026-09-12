@@ -129,6 +129,13 @@ the queue and the events.**
   zeroed, so a hold is settled or released at most once, and a release never
   takes a counter below zero. *(Amended 2026-09-11, SHO-561: added; the
   earlier wording did not say who releases a hold when both could.)*
+  *(Amended 2026-09-12, SHO-572: there is no settlement any more. Once the turn
+  moved off the request, `recordStaffAssistantBudgetSpend` had no caller and it
+  was removed, so "what settlement does today" names nothing: the reservation
+  is the only charge, and a hold is either released or left standing. Read
+  "settled or released" in this section as "released". At-most-once is now a
+  property of the hold record — an unconditional delete that reports whether
+  it won — rather than of the two paths being mutually exclusive.)*
 - **Fail visibly, never twice.** A turn runs once (`attempts: 1`), and a job
   whose worker disappears fails instead of re-running (`maxStalledCount: 0`).
   The turn becomes `interrupted`: what it did stays, the message's text part

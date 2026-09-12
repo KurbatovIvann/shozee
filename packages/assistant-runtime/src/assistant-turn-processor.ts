@@ -461,7 +461,9 @@ export function createAssistantTurnProcessor(
       await releaseStaffAssistantBudgetHold({
         logger,
         requestId: caller.requestId,
-        companyId: found.companyId,
+        // The row's own identity names the reservation it took (SHO-572), so
+        // nothing had to be carried from the accepting request to find it.
+        ref: { companyId: found.companyId, ...found.turn },
         hold: finished.releasedHold,
         budgetStore: deps.budgetStore,
       });

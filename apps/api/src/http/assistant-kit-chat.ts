@@ -149,7 +149,7 @@ export async function handleAssistantKitChat(
       text: body.text,
       bind: caller.bind,
       sessionId: caller.sessionId,
-      budgetHold: budget.hold,
+      budgetHold: budget.handOverToAccept(),
       releaseUnusedHold: () => budget.release(),
     });
   } catch (error) {
@@ -211,8 +211,6 @@ export async function handleAssistantKitChat(
   }
 
   if (result.outcome === "accepted") {
-    // The row holds the reservation from here; the worker or the reconciler
-    // settles it.
     budget.keep();
     // Both the read and the write happen inside the lease. Saving before the
     // accept claimed it could overwrite a still-running turn's history, and

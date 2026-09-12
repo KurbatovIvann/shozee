@@ -22,6 +22,8 @@ import {
   createAssistantTurnReconciler,
   createMemoryAiBudgetStore,
   createPostgresAssistantTurnStore,
+  DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+  enforceStaffAssistantBudget,
   type AiBudgetStore,
   type AssistantRuntime,
   type AssistantTurnJob,
@@ -62,6 +64,8 @@ const HOLD: StaffAssistantBudgetHold = {
 };
 /** The same hold as the turn row stores it. */
 const HOLD_MICRO_USD = 100_000;
+/** Noon in Kyiv on `KYIV_DATE`: when a real reservation below is dated. */
+const RESERVED_AT = new Date("2026-09-11T09:00:00.000Z");
 /** What the day's counters hold before a turn: this turn's hold and others'. */
 const COUNTER_BEFORE = 0.35;
 const TIMEOUT_MS = 180_000;
@@ -133,6 +137,16 @@ async function accepted(options?: {
   readonly conversationId?: string;
   /** Sent by a client in any casing, as a phone may. */
   readonly upperCaseIds?: boolean;
+  /**
+   * Reserve against this store the way the route does, instead of handing the
+   * accept a bare `HOLD`.
+   *
+   * Since SHO-572 a reservation is a record under the turn's identity *and* the
+   * counters, and only a release that finds the record subtracts. A turn row
+   * carrying a hold no reservation ever made is a state no route can produce,
+   * so a test asserting about the day's counters has to make a real one.
+   */
+  readonly budget?: AiBudgetStore;
 }): Promise<Accepted> {
   const userId = options?.userId ?? ANNA;
   const conversationId =
@@ -144,6 +158,22 @@ async function accepted(options?: {
       : conversationId,
     commandId: options?.upperCaseIds ? commandId.toUpperCase() : commandId,
   };
+  const budgetHold =
+    options?.budget === undefined
+      ? HOLD
+      : (
+          await enforceStaffAssistantBudget({
+            logger: pipeline.logger,
+            requestId: randomUUID(),
+            userId,
+            companyId: COMPANY,
+            turn: { kind: "chat", conversationId, commandId },
+            skipTurnLimit: true,
+            now: RESERVED_AT,
+            budgetStore: options.budget,
+            limits: DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+          })
+        ).hold;
   const result = await createPostgresAssistantTurnStore(
     { pipeline },
     callerOf(userId),
@@ -154,7 +184,7 @@ async function accepted(options?: {
     bind: bindOf(userId),
     text: "покажи клієнтів",
     sessionId: `session-${userId}`,
-    budgetHold: HOLD,
+    budgetHold,
     releaseUnusedHold: () => Promise.resolve(),
   });
   if (result.outcome !== "accepted") {
@@ -469,9 +499,10 @@ describe("a queued turn behind a backlog", () => {
    * the two apart is whether the queue still holds its job.
    */
   it("is left alone while its job waits, however long it has been queued, and ended once that job is gone", async () => {
-    const turn = await accepted();
+    const budget = await seededBudget(COUNTER_BEFORE - HOLD.companyReservedUsd);
+    const turn = await accepted({ budget });
     await ageTurn(turn.conversationId, "16 minutes");
-    const pass = await reconciler();
+    const pass = await reconciler({ budget });
     pass.hold(turn.job);
 
     await pass.run();
@@ -506,9 +537,10 @@ describe("a queued turn behind a backlog", () => {
 
 describe("a queued turn that can never start", () => {
   it("is ended past the abandon threshold, its hold given back, and its conversation freed", async () => {
-    const turn = await accepted();
+    const budget = await seededBudget(COUNTER_BEFORE - HOLD.companyReservedUsd);
+    const turn = await accepted({ budget });
     await ageTurn(turn.conversationId, "16 minutes");
-    const pass = await reconciler();
+    const pass = await reconciler({ budget });
 
     await pass.run();
 
@@ -543,10 +575,15 @@ describe("a queued turn that can never start", () => {
   });
 
   it("never takes a counter below zero when the hold is larger than what is on it", async () => {
-    const turn = await accepted();
+    const budget = await seededBudget(0);
+    const turn = await accepted({ budget });
     await ageTurn(turn.conversationId, "16 minutes");
-    // Less on the day's counters than this turn reserved: a restart lost them.
-    const pass = await reconciler({ budget: await seededBudget(0.05) });
+    // Less on the day's counters than this turn reserved: a restart lost part
+    // of them after the reservation was taken. The record still stands, so the
+    // release is the one that has to stop at zero.
+    await budget.add(aiCompanyBudgetKey(COMPANY, KYIV_DATE), -0.05, 3600);
+    await budget.add(aiGlobalBudgetKey(KYIV_DATE), -0.05, 3600);
+    const pass = await reconciler({ budget });
 
     await pass.run();
 
@@ -585,9 +622,9 @@ describe("a queued turn that can never start", () => {
 
 describe("the worker and the reconciler reaching one row", () => {
   it("gives the hold back once when the reconciler ends the turn as the worker starts it", async () => {
-    const turn = await accepted();
+    const budget = await seededBudget(COUNTER_BEFORE - HOLD.companyReservedUsd);
+    const turn = await accepted({ budget });
     await ageTurn(turn.conversationId, "16 minutes");
-    const budget = await seededBudget();
     const pass = await reconciler({ budget });
     // The worker's start meets a turn the reconciler ended a moment before.
     const worker = createAssistantTurnProcessor({
@@ -688,10 +725,11 @@ describe("a turn whose author is no longer a member", () => {
 
   it("is ended while queued, its hold released, and its conversation takes a new turn once they are back", async () => {
     const userId = await member();
-    const turn = await accepted({ userId });
+    const budget = await seededBudget(COUNTER_BEFORE - HOLD.companyReservedUsd);
+    const turn = await accepted({ userId, budget });
     await remove(userId);
     await ageTurn(turn.conversationId, "16 minutes");
-    const pass = await reconciler();
+    const pass = await reconciler({ budget });
 
     await pass.run();
 

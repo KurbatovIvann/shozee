@@ -1,12 +1,12 @@
 /**
  * The staff-assistant budget counters on Redis (SHO-505). Here rather than in
- * `apps/api` since SHO-561: a turn is settled or released by the worker too,
- * and it must move the same counters the accept reserved on.
+ * `apps/api` since SHO-561: a turn's hold is released by the worker too, and it
+ * must move the same counters the accept reserved on.
  *
  * It matches `createMemoryAiBudgetStore`, the reference store: `tryAdd` is an
- * increment-with-cap, and `add` never leaves a counter below zero and says so
- * when it had to stop there. Both are Lua so each read-then-write is atomic,
- * and both store a plain decimal string an operator can GET, SET or DEL.
+ * increment-with-cap, `add` never leaves a counter below zero and says so when
+ * it had to stop there. All are Lua so each read-then-write is atomic, and the counters
+ * store a plain decimal string an operator can GET, SET or DEL.
  */
 import { CoreInvariantError } from "@showzy/core/errors";
 import type { Redis } from "ioredis";
@@ -70,6 +70,36 @@ redis.call('SET', KEYS[1], stored, 'EX', ttlSec)
 return {stored, 0, tostring(current)}
 `;
 
+/**
+ * Records one turn's reservation if none is recorded yet, and reports the hold
+ * that stands either way (SHO-572).
+ *
+ * One script rather than `SET NX` and then a `GET`: a plain `SET NX` says only
+ * that it lost, not what the winner recorded, and reading it afterwards is a
+ * second round trip that another retry of the same command can interleave with.
+ * Here the answer is always the hold actually stored under the key.
+ */
+const AI_BUDGET_CLAIM_HOLD_LUA = `
+local existing = redis.call('GET', KEYS[1])
+if existing then
+  return {0, existing}
+end
+redis.call('SET', KEYS[1], ARGV[1], 'EX', tonumber(ARGV[2]))
+return {1, ARGV[1]}
+`;
+
+/**
+ * Forgets a recorded hold, and says whether this call is the one that did it.
+ *
+ * `DEL` returns how many keys it removed, so the caller that gets 1 is the only
+ * one that may subtract the hold from the counters. That is what makes a
+ * release by the request and a release by the turn row's finisher add up to one
+ * subtraction rather than two.
+ */
+const AI_BUDGET_DROP_HOLD_LUA = `
+return redis.call('DEL', KEYS[1])
+`;
+
 export function createRedisAiBudgetStore(
   redis: Pick<Redis, "get" | "eval">,
   options?: {
@@ -113,6 +143,31 @@ export function createRedisAiBudgetStore(
         String(ttlSec),
       );
       return parseTryAddResult(result);
+    },
+    async claimHold(key, value, ttlSec) {
+      const result = await redis.eval(
+        AI_BUDGET_CLAIM_HOLD_LUA,
+        1,
+        key,
+        value,
+        String(ttlSec),
+      );
+      if (!Array.isArray(result) || result.length < 2) {
+        throw new CoreInvariantError(
+          "ai-budget claimHold Redis script returned an unexpected value",
+        );
+      }
+      const stored: unknown = result[1];
+      if (typeof stored !== "string") {
+        throw new CoreInvariantError(
+          "ai-budget claimHold Redis script returned a non-string hold",
+        );
+      }
+      return { created: Number(result[0]) === 1, value: stored };
+    },
+    async dropHold(key) {
+      const result = await redis.eval(AI_BUDGET_DROP_HOLD_LUA, 1, key);
+      return Number(result) === 1;
     },
   };
 }

@@ -33,7 +33,6 @@ export const finishTurnOutputSchema = z.discriminatedUnion("outcome", [
     outcome: z.literal("finished"),
     conversationId: z.uuid(),
     status: assistantTurnFinalStatusSchema,
-    /** The hold this call took off the row; the caller settles or releases it. */
     releasedHold: assistantTurnBudgetHoldSchema,
   }),
   z.strictObject({
