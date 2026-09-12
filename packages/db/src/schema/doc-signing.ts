@@ -104,7 +104,7 @@ export const signingSignatures = pgTable(
     signerTaxId: text("signer_tax_id").notNull(),
     signatureAlg: text("signature_alg").notNull(),
     signedAt: timestamp("signed_at", { withTimezone: true }).notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
+    createdAt: timestamp("created_at", { withTimezone: true, precision: 3 })
       .notNull()
       .defaultNow(),
   },

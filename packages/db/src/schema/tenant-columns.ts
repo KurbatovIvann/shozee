@@ -49,10 +49,16 @@ export function tenantCompanyId() {
  */
 export function timestampColumns() {
   return {
-    createdAt: timestamp("created_at", { withTimezone: true })
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+      precision: 3,
+    })
       .notNull()
       .defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
+    updatedAt: timestamp("updated_at", {
+      withTimezone: true,
+      precision: 3,
+    })
       .notNull()
       .defaultNow(),
   };

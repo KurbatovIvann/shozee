@@ -5,7 +5,22 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
+import { getTableColumns, getTableName, is } from "drizzle-orm";
+import { PgTable, PgTimestamp } from "drizzle-orm/pg-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import * as assistantSchema from "../schema/assistant.js";
+import * as catalogSchema from "../schema/catalog.js";
+import * as chatSchema from "../schema/chat.js";
+import * as companiesSchema from "../schema/companies.js";
+import * as customersSchema from "../schema/customers.js";
+import * as docGenerationSchema from "../schema/doc-generation.js";
+import * as docSigningSchema from "../schema/doc-signing.js";
+import * as documentsSchema from "../schema/documents.js";
+import * as filesSchema from "../schema/files.js";
+import * as invitesSchema from "../schema/invites.js";
+import * as ordersSchema from "../schema/orders.js";
+import * as pricingSchema from "../schema/pricing.js";
 
 const execFileAsync = promisify(execFile);
 const scripts = path.resolve(import.meta.dirname, "../../scripts");
@@ -248,5 +263,65 @@ describe("staff name FTS source (SHO-528)", () => {
     expect(generatedSql).toContain("simple");
     expect(generatedSql).toContain(", 'A')");
     expect(generatedSql).not.toMatch(/unaccent/i);
+  });
+});
+
+const MODULE_OWNED_SCHEMAS = [
+  assistantSchema,
+  catalogSchema,
+  chatSchema,
+  companiesSchema,
+  customersSchema,
+  docGenerationSchema,
+  docSigningSchema,
+  documentsSchema,
+  filesSchema,
+  invitesSchema,
+  ordersSchema,
+  pricingSchema,
+];
+
+const KEYSET_SORT_COLUMNS = ["created_at", "updated_at"];
+
+function moduleOwnedTables(): PgTable[] {
+  const tables: PgTable[] = [];
+  for (const schema of MODULE_OWNED_SCHEMAS) {
+    for (const exported of Object.values(schema)) {
+      if (is(exported, PgTable)) {
+        tables.push(exported);
+      }
+    }
+  }
+  return tables;
+}
+
+describe("keyset sort column precision", () => {
+  it("finds the module-owned tables to check", () => {
+    expect(moduleOwnedTables().length).toBeGreaterThan(20);
+  });
+
+  it("stores no more precision than a cursor can encode", () => {
+    const offenders: string[] = [];
+
+    for (const table of moduleOwnedTables()) {
+      for (const [, column] of Object.entries(getTableColumns(table))) {
+        if (!KEYSET_SORT_COLUMNS.includes(column.name)) {
+          continue;
+        }
+        if (!is(column, PgTimestamp)) {
+          offenders.push(
+            `${getTableName(table)}.${column.name} is not a timestamp`,
+          );
+          continue;
+        }
+        if (column.precision !== 3) {
+          offenders.push(
+            `${getTableName(table)}.${column.name} has precision ${String(column.precision)}`,
+          );
+        }
+      }
+    }
+
+    expect(offenders).toEqual([]);
   });
 });

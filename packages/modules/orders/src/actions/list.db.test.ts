@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 
 import { PermissionDeniedError, ValidationError } from "@showzy/core/errors";
+import { sql } from "drizzle-orm";
 import {
   createTestKit,
   crossTenantSuite,
@@ -31,6 +32,7 @@ const fixtures = {
   emptyCompany: randomUUID(),
   truncCompany: randomUUID(),
   linesCompany: randomUUID(),
+  tieCompany: randomUUID(),
   customerA: randomUUID(),
   customerExtra: randomUUID(),
   customerB: randomUUID(),
@@ -205,6 +207,12 @@ beforeAll(async () => {
       slug: "lines-orders-list-sho351",
       prefix: "O9",
     },
+    {
+      id: fixtures.tieCompany,
+      name: "Timestamp tie orders list",
+      slug: "tie-orders-list-sho588",
+      prefix: "O7",
+    },
   ]);
   await kit.db.runtime.db.insert(companyMembers).values([
     {
@@ -221,6 +229,12 @@ beforeAll(async () => {
     },
     {
       companyId: fixtures.linesCompany,
+      userId: kitIdentities.users.anna,
+      role: "owner",
+      permissions: { granted: [], denied: [] },
+    },
+    {
+      companyId: fixtures.tieCompany,
       userId: kitIdentities.users.anna,
       role: "owner",
       permissions: { granted: [], denied: [] },
@@ -696,6 +710,50 @@ describe("orders.list", () => {
       fixtures.orphaned,
     ]);
     expect(fourth.nextCursor).toBeNull();
+  });
+
+  it("pages rows that share one millisecond without skipping any", async () => {
+    const microsecondApart = [
+      "2026-06-01T00:00:00.123000Z",
+      "2026-06-01T00:00:00.123111Z",
+      "2026-06-01T00:00:00.123222Z",
+    ];
+    const tiedOrderIds = [randomUUID(), randomUUID(), randomUUID()];
+
+    await kit.db.runtime.db.insert(orders).values(
+      tiedOrderIds.map((orderId, index) => ({
+        id: orderId,
+        companyId: fixtures.tieCompany,
+        orderNumber: `O7-TIE${String(index)}`,
+        customerId: null,
+        customerNameSnapshot: UNLINKED_CUSTOMER_NAME_SNAPSHOT,
+        status: "new" as const,
+        totalNetMinor: 0n,
+        totalTaxMinor: 0n,
+        totalGrossMinor: 0n,
+        currency: "UAH",
+        createdAt: sql`${microsecondApart[index]}::timestamptz`,
+        updatedAt: sql`${microsecondApart[index]}::timestamptz`,
+      })),
+    );
+
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; page < tiedOrderIds.length; page += 1) {
+      const listed = asSummary(
+        await kit.invoke(
+          listOrders,
+          { kind: "page.summary", limit: 1, cursor },
+          { companyId: fixtures.tieCompany },
+        ),
+      );
+      expect(listed.items).toHaveLength(1);
+      seen.push(listed.items[0]?.orderId ?? "");
+      cursor = listed.nextCursor ?? undefined;
+    }
+
+    expect(cursor).toBeUndefined();
+    expect(seen).toEqual([...tiedOrderIds].sort().reverse());
   });
 
   it("does not include another company's orders or leak a foreign cursor", async () => {

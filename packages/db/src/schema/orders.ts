@@ -169,7 +169,7 @@ export const orderItems = pgTable(
     priceListId: uuid("price_list_id"),
     priceListEntryId: uuid("price_list_entry_id"),
     resolverVersion: integer("resolver_version").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
+    createdAt: timestamp("created_at", { withTimezone: true, precision: 3 })
       .notNull()
       .defaultNow(),
   },

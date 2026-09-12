@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { PermissionDeniedError, ValidationError } from "@showzy/core/errors";
+import { sql } from "drizzle-orm";
 import {
   createTestKit,
   crossTenantSuite,
@@ -9,7 +10,7 @@ import {
   type TestKit,
 } from "@showzy/core/testing";
 import { user } from "@showzy/db/schema/auth";
-import { companyMembers } from "@showzy/db/schema/companies";
+import { companies, companyMembers } from "@showzy/db/schema/companies";
 import {
   companyCustomers,
   counterparties,
@@ -31,6 +32,7 @@ const fixtures = {
   beta: randomUUID(),
   archived: randomUUID(),
   foreign: randomUUID(),
+  tieCompany: randomUUID(),
   groupVip: randomUUID(),
   groupBare: randomUUID(),
   groupForeign: randomUUID(),
@@ -146,6 +148,19 @@ beforeAll(async () => {
     role: "employee",
     permissions: { granted: [], denied: ["customers:view"] },
   });
+
+  await kit.db.runtime.db.insert(companies).values({
+    id: fixtures.tieCompany,
+    name: "Timestamp tie customers list",
+    slug: "tie-customers-list-sho588",
+    prefix: "C7",
+  });
+  await kit.db.runtime.db.insert(companyMembers).values({
+    companyId: fixtures.tieCompany,
+    userId: kitIdentities.users.anna,
+    role: "owner",
+    permissions: { granted: [], denied: [] },
+  });
 });
 
 afterAll(async () => {
@@ -256,6 +271,41 @@ describe("customers.listCustomers", () => {
 
     const missing = await kit.invoke(listCustomers, { groupId: randomUUID() });
     expect(missing).toEqual({ items: [], nextCursor: null });
+  });
+
+  it("pages rows that share one millisecond without skipping any", async () => {
+    const microsecondApart = [
+      "2026-06-01T00:00:00.123000Z",
+      "2026-06-01T00:00:00.123111Z",
+      "2026-06-01T00:00:00.123222Z",
+    ];
+    const tiedCustomerIds = [randomUUID(), randomUUID(), randomUUID()];
+
+    await kit.db.runtime.db.insert(companyCustomers).values(
+      tiedCustomerIds.map((customerId, index) => ({
+        id: customerId,
+        companyId: fixtures.tieCompany,
+        name: `Tie ${String(index)}`,
+        phone: `+38077000000${String(index)}`,
+        updatedAt: sql`${microsecondApart[index]}::timestamptz`,
+      })),
+    );
+
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; page < tiedCustomerIds.length; page += 1) {
+      const listed = await kit.invoke(
+        listCustomers,
+        { limit: 1, cursor },
+        { companyId: fixtures.tieCompany },
+      );
+      expect(listed.items).toHaveLength(1);
+      seen.push(listed.items[0]?.id ?? "");
+      cursor = listed.nextCursor ?? undefined;
+    }
+
+    expect(cursor).toBeUndefined();
+    expect(seen).toEqual([...tiedCustomerIds].sort().reverse());
   });
 
   it("paginates on updatedAt/id and stops at the last page", async () => {

@@ -442,6 +442,13 @@
       "when": 1789134248756,
       "tag": "0062_assistant_updated_at_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1789236899295,
+      "tag": "0063_daily_the_call",
+      "breakpoints": true
     }
   ]
 }
