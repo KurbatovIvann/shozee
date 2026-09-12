@@ -17,68 +17,40 @@ AI tools. Details: `.claude/rules/actions-and-ai.md` and
 
 ## How we work
 
-You are part of the team that builds and runs this system, not a service
-that closes tickets. The ticket is how the work is divided; the system is
-what we are responsible for. A green PR that makes the next three changes
-harder is not done. If the ticket, the card, or a rule looks wrong, say so
-with evidence — silent compliance and silent deviation are both failures.
+You build and run this system; the ticket only divides the work. A green
+PR that makes the next change harder is not done. If a ticket, card, or
+rule looks wrong, say so with evidence; silent compliance and silent
+deviation are both failures.
 
-**Think past the ticket.** Before changing something others depend on — a
-contract, a protocol, a schema, a shared package — find its readers and
-ask what the change makes true for them. Name consequences in the PR even
-when fixing them is out of scope. When two places derive the same fact,
-one will eventually disagree: prefer one source.
-
-**ADRs are dated decisions, not laws.** An ADR records what was right given
-its Context on its date. Follow it by default; do not reopen it on taste.
-Reopen it when you hold a fact its Context did not: the task cannot be done
-without working around it, the code shows its premise no longer holds, or
-a clearly better design requires changing it. Then stop and bring it to
-the human: which ADR, which sentence of its Context no longer holds, what
-you would otherwise have to build, and the alternative. That stop is a good
-outcome. Keeping an ADR's wording while defeating its purpose is not
-compliance.
-
-**Fix causes, not symptoms.** A workaround is code whose job is to
-compensate for a decision made elsewhere: reconstructing state that was
-never stored, a second copy of a protocol on a client, a flag that skips a
-check, a retry over a race. When a bug appears, find out why it is possible
-before fixing it, and fix it at the level of the cause. If the cause is a
-decision — an ADR, a contract, a schema shape — stop instead of patching
-around it. A second fix for the same class of defect means the problem is
-not the code in front of you.
-
-Judgment is not licence to redesign. Mechanics and taste inside the rules
-are yours to settle; decisions (ADRs, contracts, schemas, invariants) belong
-to the team and change through the human.
-
-Why this is written down: ADR-0034–0037 were all superseded by ADR-0038.
-Six of the eight commits after ADR-0037 shipped fixed one defect class, and
-none were bugs in the loop — they came from resume being a reconstruction
-and the client owning a copy of the protocol. Each fix was reasonable on
-its own; together they hid that the decision underneath was wrong.
+- **Think past the ticket.** Before changing a contract, protocol, schema,
+  or shared package, find its readers and name what the change makes true
+  for them (one `Consequences` line in the PR). Two derivations of one
+  fact will disagree: keep one source.
+- **ADRs are dated decisions.** Follow them by default; never reopen on
+  taste. Reopen when the task cannot be done without working around one,
+  the code shows its premise no longer holds, or a clearly better design
+  needs it — then STOP and report: the ADR, the sentence that no longer
+  holds, the workaround not written, the alternative. That stop is a good
+  outcome; keeping an ADR's wording while defeating its purpose is not.
+- **Fix causes, not symptoms.** A workaround compensates for a decision
+  made elsewhere (reconstructed state, a second copy of a protocol, a flag
+  that skips a check, a retry over a race). Find why a bug is possible
+  before fixing it; if the cause is an ADR, contract, or schema, STOP. A
+  second fix for the same defect class means the decision is wrong (this
+  is how ADR-0034–0037 were superseded by ADR-0038).
+- Mechanics and taste inside the rules are yours; decisions (ADRs,
+  contracts, schemas, invariants) change only through the human.
 
 ## No production yet
 
-There is no production environment: no production database and no deployed
-infrastructure (owner, 2026-09-11). The eventual database is created fresh
-and migrated from `0001`. Until that changes, do not spend a ticket on what
-only production would feel.
-
-- **Out of scope now:** Redis persistence and what a restart loses, deploy
-  drain and stop grace periods, backups and restore, ingress and proxy
-  settings, capacity, and backfills of existing data.
-- **Record, do not build.** When a change has a production consequence,
-  write it down as a requirement where the topic lives (`docs/specs/db.md`
-  §6, the feature's runbook in `docs/operations/`) and move on. Reviewers
-  and guardians report such an item as a production requirement, not as a
-  finding to fix, and it never blocks a merge.
-- **Still in scope, fully:** correctness, tenant isolation, idempotency,
-  security of the code and its data paths, and anything that fails in
-  development, CI or tests.
-
-When a production environment is being built, every recorded requirement is
-checked then.
+No production environment exists (owner, 2026-09-11); the eventual database
+is created fresh from migration `0001`. Do not spend a ticket on what only
+production would feel: Redis persistence, deploy drain and grace periods,
+backups and restore, ingress, capacity, backfills. **Record, do not build**
+— one requirement line where the topic lives (`docs/specs/db.md` §6 or the
+feature's runbook). Reviewers report such items as `[note]`, never as
+findings. Correctness, tenant isolation, idempotency, code security, and
+anything that fails in dev/CI stay fully in scope.
 
 ## Contract of this thread
 

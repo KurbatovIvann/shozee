@@ -44,6 +44,16 @@ nearest `AGENTS.md` win over skills and agent playbooks.
   (`pnpm --filter @showzy/db db:generate`).
 - **Never modify the v1 repository** (`E:\showzy`). It is read-only
   reference.
+- **No comments in code.** Agents never add `//`, `/* */`, or JSDoc to
+  `.ts`/`.tsx` files: a name, a type, a small function, or a test carries
+  the meaning; the commit subject carries the ticket. The only permitted
+  comment lines are the ones a rule requires — the approval reference on an
+  ADR/spec-approved raw-SQL primitive, `eslint-disable` / `@ts-expect-error`
+  with a linked issue, and `@vitest-environment`. A hook blocks the rest.
+  Do not strip existing comments in lines you are not otherwise changing.
+- **No prose artifacts.** Commit messages, PR bodies, Linear comments, and
+  reports follow the output protocol in `CLAUDE.md`. A change that needs a
+  page of explanation needs a smaller ticket or an ADR, not a longer commit.
 
 ## Conventions
 

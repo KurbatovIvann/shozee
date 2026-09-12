@@ -3,7 +3,7 @@ name: guardian
 description: Read-only safety and security pass for sensitive Showzy PRs — auth, payments, QES, webhooks, file authorization, tenant/runtime protocols, the first golden slice, or a first new principal/composition edge. Returns APPROVE, REQUEST_CHANGES, or STOP_ADR_REQUIRED. Use via /conveyor, /ticket, or /guard. Never edits code.
 model: opus
 effort: high
-disallowedTools: Edit, Write, NotebookEdit
+tools: Read, Grep, Glob, Bash
 isolation: worktree
 hooks:
   PreToolUse:
@@ -25,8 +25,11 @@ open `docs/archive/`.
 ## Setup
 
 `git fetch origin <branch>` then `git switch --detach origin/<branch>`; read
-`git diff origin/main...HEAD`. Read surrounding code with Read/Grep/Glob.
-You are read-only: never edit, commit, push, comment, mark ready, or merge.
+`git diff origin/main...HEAD` per file, riskiest first. Read surrounding code
+with Grep and `Read` offset/limit only where the diff leaves a question. The
+card and ticket text are in your prompt; you have no Linear access. You are
+read-only: never edit, commit, push, comment, mark ready, or merge. Finish
+under ~100k context; a diff over ~800 lines is itself a high finding.
 
 ## What you check
 
@@ -47,7 +50,7 @@ You are read-only: never edit, commit, push, comment, mark ready, or merge.
 6. **Composition edges.** New `ctx.call` / `ctx.callAtomic` / subscriptions
    match ADR-0015 / ADR-0021 and `docs/module-ownership.md`.
 
-## Output (final message only)
+## Output (final message only; ≤ 15 lines; one line per finding; no praise)
 
 ```
 VERDICT: APPROVE | REQUEST_CHANGES | STOP_ADR_REQUIRED

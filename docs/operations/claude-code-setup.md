@@ -49,11 +49,16 @@ project's own subagents. Vet any plugin like a dependency
 
 ## 4. Models
 
-- Planning, `/conveyor`, and sensitive `/ticket` sessions: `/model opus`.
-- Mechanical or routine `/ticket` sessions: `/model opusplan` (Opus while in
-  plan mode, Sonnet while implementing) or `/model sonnet`.
-- Subagent models are fixed in `.claude/agents/*.md`; the conveyor upgrades
-  the implementer to Opus for sensitive tickets.
+- Planning and `/conveyor` sessions: `/model opus`.
+- `/ticket` sessions (any lane): `/model opusplan` (Opus while in plan mode,
+  Sonnet while implementing) or `/model sonnet`.
+- Subagent models are fixed in `.claude/agents/*.md`: the implementer is
+  always Sonnet; reviewer and guardian are Opus. Do not pass model
+  overrides when launching agents.
+- Do not widen `pnpm install` in `.claude/settings.local.json`
+  (`Bash(pnpm install *)` also allows `--fix-lockfile`, which rewrote the
+  Expo tree in SHO-563); the team allow list already covers
+  `pnpm install --frozen-lockfile*`.
 
 Use `/context` to see what is loaded and `/usage` (or `/cost`) after a run.
 

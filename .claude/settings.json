@@ -54,6 +54,7 @@
       "Bash(gh auth status*)",
       "Bash(git worktree list*)",
       "Bash(git worktree remove *)",
+      "Bash(git worktree remove --force *)",
       "Bash(git worktree prune*)",
       "Bash(gh pr view*)",
       "Bash(gh pr list*)",
@@ -156,6 +157,11 @@
             "type": "command",
             "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-paths.mjs\"",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/no-comments.mjs\"",
+            "timeout": 10
           }
         ]
       }
@@ -166,6 +172,8 @@
     "EXPO_NO_TELEMETRY": "1",
     "NEXT_TELEMETRY_DISABLED": "1",
     "BASH_DEFAULT_TIMEOUT_MS": "900000",
-    "BASH_MAX_TIMEOUT_MS": "3600000"
+    "BASH_MAX_TIMEOUT_MS": "3600000",
+    "BASH_MAX_OUTPUT_LENGTH": "16000",
+    "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "1"
   }
 }

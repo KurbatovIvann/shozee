@@ -49,38 +49,62 @@ plus the tests in the definition of done.
 ## Models and token economy
 
 Working models on the Claude Max plan (ADR-0040). Quality anchors stay on
-Opus; volume work runs on Sonnet; log reading runs on Haiku.
+Opus; volume work runs on Sonnet; log reading runs on Haiku. **The writer is
+never Opus.**
 
 | Role | Model | Why |
 | --- | --- | --- |
-| Planner (`/feature`), orchestrator (`/conveyor`), sensitive `/ticket` | Opus (session model) | Product forks, sequencing, merge decisions |
-| Mechanical / routine `/ticket` session | `opusplan` (Opus plans, Sonnet edits) or Sonnet | Same split as the implementer |
-| `implementer` — mechanical / routine / UI | Sonnet (agent default) | Pattern-following implementation with a verify loop |
-| `implementer` — sensitive / first slice | Opus (override at launch) | Auth, money, tenant, QES, first golden |
-| `reviewer`, `guardian` | Opus, high effort | Independent gate; a different model than the routine writer |
-| `ci-triage` | Haiku | Reads failing logs so no one else has to |
-| Explore (built-in) | fast default | Context-pack research; skips `CLAUDE.md` |
+| Planner (`/feature`), orchestrator (`/conveyor`) | Opus (session model) | Product forks, sequencing, merge decisions — few turns, small context |
+| `/ticket` session (any lane) | `opusplan` (Opus plans, Sonnet edits) or Sonnet | Same split as the implementer |
+| `implementer` (every lane, incl. sensitive) | Sonnet, medium effort — no override | Pattern-following implementation; quality is gated by the Opus reviewer |
+| `reviewer`, `guardian` | Opus, high effort, no MCP | Independent gate; a different model than the writer |
+| `ci-triage` | Haiku, ≤ 15 turns | Reads failing logs so no one else has to |
 
-Rules that keep usage low without lowering quality:
+What the first conveyor run (2026-09-12, $550, 13 h API) showed: 99% Opus,
+the implementer 52% of usage, 84% of turns above 150k context, cache reads
+103M tokens. Cost is **context length × number of turns**, not output. The
+fixes below target exactly that.
 
-1. **Lazy context.** Only the constitution and `AGENTS.md` load at start.
-   Area rules load by path; package `AGENTS.md` loads via nested
-   `CLAUDE.md` when a file there is read; skills load only when invoked.
-2. **Compact tool output.** `verify.mjs` runs affected gates with
-   `--output-logs=errors-only` and prints a tail per failure; full logs stay
-   in `.claude/.verify/`. `merge-gate.mjs` prints a handful of lines.
-   CI logs go through `ci-triage`, never into the orchestrator.
-3. **Resume, don't relaunch.** Review and CI findings go back to the same
-   `implementer` via SendMessage — its context already holds the ticket and
-   the golden files.
-4. **Right-sized review.** Mechanical: CI only. Routine: `reviewer` in
+1. **Small tickets.** ≤ 400 changed lines, ≤ ~12 files (`/feature`). The
+   run's children were 2–3k lines; every read, verify, review, and fix
+   round scaled with that. An implementer that sees the ticket growing past
+   the cap reports STOPPED with a split instead of finishing.
+2. **Sonnet writes, Opus reviews.** No per-lane model override for the
+   implementer. Two STOPPED/FAILED reports on one ticket are a question for
+   the human, not a reason to switch models.
+3. **Read narrowly.** Grep first; `Read` with offset/limit; no whole files
+   over ~300 lines; test files by `describe` block; never re-read after an
+   edit; one verify run at the end (`--only` for retries). This is in
+   `CLAUDE.md` so every session and subagent carries it.
+4. **No prose.** Code has no comments (hook-enforced). Commits are a
+   subject and ≤ 3 bullets; PR bodies are the 6-line template; reports are
+   fixed formats ≤ 15 lines; Linear comments are one line; the orchestrator
+   sends status lines and PROBLEM/OPTIONS blocks only. Prose is written
+   once and then re-read on every later turn by every agent that sees it.
+5. **Fresh over resumed for real fixes.** Nits → resume the same
+   implementer (few turns). Blockers/majors, conflicts, second rounds → a
+   fresh `implementer` in `fix` mode (~20k context) instead of resuming a
+   150k+ history.
+6. **No MCP where it is not needed.** Reviewer, guardian, and ci-triage run
+   with an explicit tool list (no Linear, no Magic Patterns); the parent
+   passes the card and ticket text in the prompt. Subagents cannot spawn
+   subagents (`CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=1`).
+7. **Capped tool output.** `BASH_MAX_OUTPUT_LENGTH=16000`; `verify.mjs`
+   and `merge-gate.mjs` print summaries, logs stay on disk; noisy commands
+   are redirected to `.agent-tmp/`.
+8. **Right-sized review.** Mechanical: CI only. Routine: `reviewer` in
    `bugs` mode. UI: `reviewer` `full`. Sensitive: `reviewer` `full` +
    `guardian`. Nits-only fixes merge on green CI without a second review.
-5. **Research by subagent.** Wide searches and context packs run in Explore
-   subagents that return paths and one-line notes, not file dumps. Long
-   manuals are read by section.
-6. **Fresh sessions per unit of work.** One session per `/feature`, per
-   `/ticket`, per `/conveyor` run; `/clear` between unrelated tasks.
+   A diff over ~800 lines is itself a finding.
+9. **Lazy context.** Only the constitution, `AGENTS.md`, and `CLAUDE.md`
+   load at start; area rules by path; package `AGENTS.md` via nested
+   `CLAUDE.md`; skills on invocation. Keep `AGENTS.md` short — every line
+   is paid for on every turn of every agent.
+10. **Worktrees are cleaned after every merge** (`git worktree remove
+    --force`, then `prune`); each carries a `node_modules`.
+11. **Fresh sessions per unit of work.** One session per `/feature`, per
+    `/ticket`, per `/conveyor` run; `/clear` between unrelated tasks.
+    Check `/usage` after a run and record the cost per merged PR.
 
 ## Role reference
 

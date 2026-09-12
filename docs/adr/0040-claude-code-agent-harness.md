@@ -42,8 +42,9 @@ ADR-0023/ADR-0029 run through it:
 - Playbooks are skills: `/feature`, `/ticket`, `/conveyor`, `/verify`,
   `/review-pr`, `/guard`, `/scaffold`. `/implement` is retired (`/ticket`
   dispatches feature parents to `/conveyor`).
-- Roles are subagents: `implementer` (worktree, Sonnet by default, Opus for
-  sensitive/first-slice), `reviewer` and `guardian` (read-only, Opus; the
+- Roles are subagents: `implementer` (worktree, always Sonnet — amended
+  2026-09-12 after the first run: Opus executors were 52% of a $550 bill
+  with no review-visible quality gain), `reviewer` and `guardian` (read-only, Opus; the
   guardian absorbs security review), `ci-triage` (Haiku).
 - Conveyor mechanics: one background `implementer` per child in its own
   worktree; reviews launched by the parent; findings return to the **same**

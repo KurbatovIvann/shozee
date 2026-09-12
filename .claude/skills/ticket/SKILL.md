@@ -26,8 +26,10 @@ parent (its `$ARGUMENTS` placeholder means this id). Stop here.
 | UI | `apps/web` / `apps/mobile` product code (never mechanical) | analyze + canvas read → implement → verify → `reviewer` (mode `full`) |
 | sensitive | `sensitive` label, first golden slice, or first new principal / composition edge | full analyze → implement → verify → `reviewer` (mode `full`) + `guardian` |
 
-Session model: `/model opus` for sensitive; `opusplan` or `sonnet` is enough
-for mechanical and routine.
+Session model: `opusplan` (Opus plans, Sonnet edits) or `sonnet` for every
+lane; Opus is for the independent `reviewer` / `guardian`, not the writer.
+Output protocol (`CLAUDE.md`) applies: status lines, PROBLEM/OPTIONS for
+questions, the implementer's commit/PR templates, no comments in code.
 
 Refuse if a `blocked by` issue is not Done. Move the ticket to **In Progress**.
 
@@ -61,10 +63,10 @@ expanding scope.
 
 ## 5. Publish
 
-Commit, `git push -u origin <branch>`, `gh pr create --draft` titled
-`SHO-<n> <title>` (body via `--body-file`: ticket + card, tests, verify
-result, deviations). Do not mark the PR ready. Comment the PR URL on Linear
-and move the ticket to **In Review**.
+Commit (subject `SHO-<n> <title>`, ≤ 3 bullets), `git push -u origin
+<branch>`, `gh pr create --draft` titled `SHO-<n> <title>` with the 6-line
+PR body from `.claude/agents/implementer.md`. Do not mark the PR ready.
+One-line Linear comment with the PR URL; move the ticket to **In Review**.
 
 ## 6. Independent review (writer ≠ reviewer)
 

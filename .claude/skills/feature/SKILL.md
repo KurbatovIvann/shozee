@@ -76,7 +76,12 @@ Sequencing rules:
   every action using those tables.
 - Actions before projections; emitters before subscribers; `ctx.call` targets
   (ADR-0015) before callers. Backend before UI for the same capability.
-- Each ticket leaves CI green on its own. ~300 diff lines is comfort, not a cap.
+- **Size is a hard constraint, not comfort.** One ticket ≈ ≤ 400 changed
+  lines and ≤ ~12 files, including tests. The first conveyor run shipped
+  3000-line children; each cost more than the whole feature should. Split
+  by layer and by action (schema → one write action + tests → the next
+  action → projection → UI). A ticket that cannot be described in five
+  lines is two tickets.
 - Contested API → contract-first ticket (`*.contract.ts` only). Obvious shape
   from the golden → one implementation ticket.
 - No tickets that modify `packages/core`. A foreign module only when the card
@@ -96,3 +101,7 @@ Present card + graph and **wait for human approval**.
 
 Finish with one line: `Next: /conveyor SHO-<parent>` (or `/ticket SHO-<n>`
 for a single leaf).
+
+Output protocol applies (`CLAUDE.md`): the card and graph are tables and
+bullets, not prose; a ticket description is ≤ 25 lines; questions to the
+human use the PROBLEM/OPTIONS shape.

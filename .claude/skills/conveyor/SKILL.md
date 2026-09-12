@@ -28,6 +28,33 @@ subagent reports, `merge-gate` lines, and Linear. Never read diffs or CI logs
 yourself — `reviewer` and `ci-triage` do that. Subagents run in the
 background and notify you; do not poll.
 
+## Talking to the human (output protocol)
+
+You are a status board, not a narrator. Each turn you send the human at most
+one block, in one of these shapes, and nothing else:
+
+```
+SHO-<n> <state>: <one line>            # launched / PR #x / review running / merged <sha8> / stopped
+```
+
+```
+PROBLEM: <one line — what blocks, with the ticket id>
+OPTIONS:
+1. <option> — recommended: <one-line reason>
+2. <option>
+3. <option>
+```
+
+No summaries of what a subagent did, no restating findings (they are on
+Linear), no plans, no explanations of the process. When several children
+change state in one turn, one line each. The final turn of the run is the
+list of merged PRs with SHAs, one line each.
+
+Linear is the ledger, and it is also terse: one line per event
+(`executor started`, `PR <url>`, `reviewer: <verdict> (<n> findings)`,
+`merged <sha8>`). Findings are pasted once, on the child, as the reviewer
+wrote them — never reworded.
+
 ## 1. Queue
 
 1. Linear: fetch the parent and every child (status, `blocked by`, labels,
@@ -44,12 +71,18 @@ background and notify you; do not poll.
 
 ## 2. Lanes and parallelism
 
-| Lane | Implementer model | Reviews |
-| --- | --- | --- |
-| mechanical (non-UI tooling, seed, rename, docs) | agent default (Sonnet) | none — CI gate only |
-| routine | agent default (Sonnet) | `reviewer` mode `bugs` |
-| UI (`apps/web`, `apps/mobile` product code — never mechanical) | agent default (Sonnet) | `reviewer` mode `full` |
-| sensitive (label), first golden slice, first new principal / composition edge | `opus` | `reviewer` mode `full` + `guardian` |
+| Lane | Reviews |
+| --- | --- |
+| mechanical (non-UI tooling, seed, rename, docs) | none — CI gate only |
+| routine | `reviewer` mode `bugs` |
+| UI (`apps/web`, `apps/mobile` product code — never mechanical) | `reviewer` mode `full` |
+| sensitive (label), first golden slice, first new principal / composition edge | `reviewer` mode `full` + `guardian` |
+
+The implementer is **always Sonnet** (its agent default). Never pass a
+`model` override — the first run's Opus executors were 52% of a $550 bill,
+and quality is guarded by the Opus reviewer, not by an Opus writer. If a
+child is too hard for Sonnet (two STOPPED/FAILED reports on the same
+ticket), that is a PROBLEM for the human, not a model switch.
 
 Escalate a later routine child to `reviewer` `full` only if a prior review on
 this feature had blockers or majors.
@@ -77,20 +110,24 @@ this feature had blockers or majors.
    recreate the branch from `main`. An executor that discovers it needs a
    dependency mid-run is a STOP that comes back to you — never a lockfile
    edit (`.claude/agents/implementer.md` §1.2).
-3. Launch `implementer` (model per lane) with a complete prompt:
+3. Launch `implementer` (no model override) with this prompt and nothing
+   more:
 
 ```
 Ticket: SHO-<n> — <title>
-Parent feature: SHO-<parent>
+Parent: SHO-<parent>
 Lane: <mechanical|routine|ui|sensitive>
-Branch (Linear gitBranchName): <branch>
-Mode: fresh start from origin/main
-Feature card and ticket description:
-<paste the card and the ticket description>
-You run under /conveyor: the parent owns Linear status moves and comments.
-Follow .claude/agents/implementer.md. Draft PR titled "SHO-<n> <title>".
-Never mark ready, never merge. Report in the required format.
+Branch: <gitBranchName>
+Mode: fresh | continue
+Blocked by: <none | SHO-x Done>
+Card:
+<feature card, trimmed to goal, named surface, acceptance, context pack>
+Ticket:
+<ticket description as written>
 ```
+
+   Pass the card and ticket verbatim but trimmed: no Linear comments, no
+   history, no discussion. The agent file already says how to work.
 
 4. End the turn.
 
@@ -101,8 +138,9 @@ Never mark ready, never merge. Report in the required format.
   Todo/Backlog; stop the conveyor. Do not grind.
 - `PR_OPEN` or `FIXED`: Linear — comment the PR URL on the child, move it to
   **In Review**. Then, in **one message**, launch what the lane requires:
-  - `reviewer` (PR, branch, ticket, parent, lane, mode) — skip for mechanical
-    and for a nits-only `FIXED`;
+  - `reviewer` (PR, branch, ticket, parent, lane, mode, plus the same
+    trimmed card and ticket text — the reviewer has no Linear) — skip for
+    mechanical and for a nits-only `FIXED`;
   - `guardian` for the sensitive row — also re-run it after fixes for its own
     medium+ findings;
   - a background shell: `node .claude/scripts/merge-gate.mjs <pr> --wait`.
@@ -125,13 +163,18 @@ Comment each verdict and its findings on the child in Linear before acting on
 it. Then:
 
 - **Findings** (reviewer blockers/majors/nits, guardian medium+, CI
-  regression, merge conflict) → **resume the same implementer** with
-  SendMessage: findings verbatim + "fix on the same branch, re-verify, push,
-  report FIXED". If it cannot be resumed: `git worktree list`, remove its
-  worktree (`git worktree remove <path>`; if it has uncommitted work, ask the
-  human), then launch a new `implementer` with Mode: fix on existing PR branch
-  + the findings. Never fix it yourself. Skip a nit only when it contradicts
-  the card, golden, or an ADR — say why on Linear.
+  regression, merge conflict) go back to an implementer. **Which one:**
+  - nits only, or a single small CI fix → **resume** the same implementer
+    (SendMessage): findings verbatim + `fix, re-verify, push, report FIXED`.
+  - blockers/majors, a merge conflict, or a second fix round → launch a
+    **fresh** `implementer` with `Mode: fix`, the PR number, branch, and the
+    findings verbatim. A fresh agent starts at ~20k context; a resumed one
+    re-reads its whole 150k+ history on every turn. Before launching, remove
+    the old agent's worktree (`git worktree list`, `git worktree remove
+    --force <path>`; the branch is on origin).
+
+  Never fix it yourself. Skip a nit only when it contradicts the card,
+  golden, or an ADR — say why on Linear.
 - After a **blocker/major** fix → re-launch `reviewer` and re-run the gate.
   After a **nits-only** fix → re-run the gate only.
 - Two failed review rounds on one child → comment and ask the human.
@@ -160,9 +203,11 @@ or rate-limited.
 3. Linear: set the child **Done**; re-read after a moment (GitHub sync may
    flip it to In Progress) and set Done again if needed. Comment the merge
    SHA on the child and the parent.
-4. Remove the implementer's worktree (`git worktree list`,
-   `git worktree remove <path>`), update the task list, and launch the next
-   ready child (blockers may now be Done).
+4. Clean up: `git worktree list`, then `git worktree remove --force <path>`
+   for every `.claude/worktrees/agent-*` entry (implementer, reviewer, and
+   guardian worktrees — each carries a `node_modules`), then
+   `git worktree prune`. Update the task list and launch the next ready
+   child (blockers may now be Done).
 
 ## 7. Late review (fallback)
 

@@ -308,10 +308,11 @@ allowlisted packages. New domain work uses `/feature`.
 ### 7.3 Model selection
 
 Roles use the Claude model that fits the job (ADR-0040): Opus for the
-planner, the parent orchestrator, sensitive / first-slice executors, and
-the independent `reviewer` / `guardian`; Sonnet for mechanical, routine,
-and UI executors; Haiku for CI log triage. The per-role table and the token
-economy rules live in `docs/pipeline.md`.
+planner, the parent orchestrator, and the independent `reviewer` /
+`guardian`; Sonnet for every executor, sensitive included; Haiku for CI log
+triage. The writer is never Opus — quality is gated by the Opus review, and
+cost is context length × turns, so the levers are small tickets, narrow
+reads, and no prose (`docs/pipeline.md` → Models and token economy).
 
 Independent review is CI plus the `reviewer` / `guardian` subagents the
 lane requires, and either a human merge (leaf `/ticket`) or a
