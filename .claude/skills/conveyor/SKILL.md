@@ -66,7 +66,18 @@ this feature had blockers or majors.
 
 1. Linear: move the child to **In Progress**; comment "executor starting;
    parent merges on the gate".
-2. Launch `implementer` (model per lane) with a complete prompt:
+2. **An approved dependency lands before the executor starts.** `pnpm add` is
+   denied by the permission system, and that denial cannot tell an approved
+   dependency from an unapproved one, so an executor holding a legitimate
+   approval improvises instead (SHO-563: `pnpm install --fix-lockfile` moved
+   `@types/react` across the whole Expo tree, silently). When the ticket or
+   card names a dependency the human has approved: branch from `origin/main`
+   yourself, `pnpm add` it, commit, push, and launch with
+   `Mode: continue on the existing branch <branch>` so the executor does not
+   recreate the branch from `main`. An executor that discovers it needs a
+   dependency mid-run is a STOP that comes back to you — never a lockfile
+   edit (`.claude/agents/implementer.md` §1.2).
+3. Launch `implementer` (model per lane) with a complete prompt:
 
 ```
 Ticket: SHO-<n> — <title>
@@ -81,7 +92,7 @@ Follow .claude/agents/implementer.md. Draft PR titled "SHO-<n> <title>".
 Never mark ready, never merge. Report in the required format.
 ```
 
-3. End the turn.
+4. End the turn.
 
 ## 4. When an implementer reports
 
