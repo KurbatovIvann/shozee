@@ -124,6 +124,8 @@ Card:
 <feature card, trimmed to goal, named surface, acceptance, context pack>
 Ticket:
 <ticket description as written>
+Reminders: do not type a single comment into `.ts`/`.tsx`; 400 changed source
+lines is the ceiling, not a target — over it, STOP with a split.
 ```
 
    Pass the card and ticket verbatim but trimmed: no Linear comments, no

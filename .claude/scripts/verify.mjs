@@ -20,8 +20,8 @@
  *   --dry-run        Print the plan without running anything
  *   --tail <n>       Lines of failing output to print per step (default 60)
  *
- * Steps: format, typecheck, lint, test-unit, test-db, contract-check,
- *        migration-drift, bundle-probe, build-web, e2e-smoke
+ * Steps: diff-hygiene, format, typecheck, lint, test-unit, test-db,
+ *        contract-check, migration-drift, bundle-probe, build-web, e2e-smoke
  * Exit code: 0 when every executed step passed, 1 otherwise.
  */
 import { spawnSync } from "node:child_process";
@@ -30,6 +30,7 @@ import path from "node:path";
 
 const IS_WIN = process.platform === "win32";
 const STEPS = [
+  "diff-hygiene",
   "format",
   "typecheck",
   "lint",
@@ -155,6 +156,12 @@ function buildPlan(files, opts) {
   const want = (name, reason) => ({ name, reason });
   const skipped = (name, reason) => ({ name, skip: reason });
   const plan = [];
+
+  plan.push(
+    files.length > 0 || full
+      ? want("diff-hygiene", "comments and the source budget")
+      : skipped("diff-hygiene", "no changes"),
+  );
 
   const formatTargets = files.filter(
     (f) => !f.startsWith("docs/") && !f.startsWith(".claude/"),
@@ -289,6 +296,11 @@ function executeStep(step, ctx) {
   };
 
   switch (step.name) {
+    case "diff-hygiene":
+      push(
+        run("node", [".claude/scripts/diff-hygiene.mjs", "--base", ctx.base.sha], ctx),
+      );
+      break;
     case "format": {
       if (ctx.full) {
         push(pnpm(["format:check"], ctx));
