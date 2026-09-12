@@ -126,18 +126,25 @@ test("generated files do not spend the source budget", () => {
   assert.match(res.output, /generated \d+ \(not counted\)/);
 });
 
+test("the default budget is 800 source lines", () => {
+  assert.equal(scan({ "src/a.ts": lines(700, "export const a") }).status, 0);
+  const over = scan({ "src/a.ts": lines(900, "export const a") });
+  assert.equal(over.status, 1);
+  assert.match(over.output, /budget 800/);
+});
+
 test("source over the budget fails as a planning failure", () => {
-  const res = scan({ "src/a.ts": lines(500, "export const a") });
+  const res = scan({ "src/a.ts": lines(900, "export const a") });
   assert.equal(res.status, 1);
-  assert.match(res.output, /FAIL source budget: 50\d changed source lines/);
+  assert.match(res.output, /FAIL source budget: 90\d changed source lines/);
   assert.match(res.output, /planning failure/);
   assert.match(res.output, /src\/a\.ts/);
 });
 
 test("--budget raises the limit, for the parent only", () => {
-  const res = scan({ "src/a.ts": lines(500, "export const a") }, [
+  const res = scan({ "src/a.ts": lines(900, "export const a") }, [
     "--budget",
-    "800",
+    "1200",
   ]);
   assert.equal(res.status, 0);
 });

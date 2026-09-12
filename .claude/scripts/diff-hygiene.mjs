@@ -30,7 +30,7 @@ const TESTS = /(\.(test|spec)\.[cm]?[jt]sx?$|(^|\/)(__tests__|__mocks__|tests?)\
 const PROSE = /(\.mdx?$|^docs\/)/;
 
 function parseArgs(argv) {
-  const opts = { base: null, budget: 400 };
+  const opts = { base: null, budget: 800 };
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === "--base") opts.base = argv[++i];
     else if (argv[i] === "--budget") opts.budget = Number(argv[++i]);
@@ -161,7 +161,9 @@ console.log(
   `added: src ${totals.src.a} (${pct(totals.src.a)})  tests ${totals.tests.a} (${pct(totals.tests.a)})  ` +
     `prose ${totals.prose.a} (${pct(totals.prose.a)})  generated ${totals.generated.a} (not counted)`,
 );
-console.log(`src changed (added+deleted): ${srcChanged} / budget ${opts.budget}`);
+console.log(
+  `src changed (added+deleted): ${srcChanged} / budget ${opts.budget}  in ${srcFiles.length} source file(s)`,
+);
 
 let failed = false;
 

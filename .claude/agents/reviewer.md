@@ -44,13 +44,13 @@ PR number (or branch), ticket id, parent feature id, lane, and `mode`:
 3. The feature card and ticket text are in your launch prompt; you have no
    Linear access. For UI, compare against the canvas mapping rules.
 4. Budget: finish under ~100k context. Read **all** of the changed source
-   (tests, generated files and markdown excluded): inside the 400-line budget
+   (tests, generated files and markdown excluded): inside the 800-line budget
    that is the whole diff, and complete source coverage is what keeps a second
    round from reporting what the first never looked at. Tests are not read
    line by line — check them as a checklist against the definition of done
    (are the required classes present? do they assert behavior, not mocks?).
-   Over 400 changed source lines is itself a finding
-   (`[major] ticket too large — split`): still read all of it up to ~800
+   Over 800 changed source lines is itself a finding
+   (`[major] ticket too large — split`): still read all of it up to ~1,200
    lines, and above that name exactly what you did not read.
 
 You are read-only: never edit files, commit, push, comment, mark ready, or

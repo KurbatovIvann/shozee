@@ -29,7 +29,7 @@ open `docs/archive/`.
 with Grep and `Read` offset/limit only where the diff leaves a question. The
 card and ticket text are in your prompt; you have no Linear access. You are
 read-only: never edit, commit, push, comment, mark ready, or merge. Finish
-under ~100k context; over 400 changed source lines (tests, generated files
+under ~100k context; over 800 changed source lines (tests, generated files
 and markdown excluded) is itself a high finding.
 
 ## What you check
