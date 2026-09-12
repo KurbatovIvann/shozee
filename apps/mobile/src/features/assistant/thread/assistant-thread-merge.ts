@@ -57,8 +57,8 @@ const LATEST: AssistantChatWindowSource = { kind: "latest" };
 export type AssistantThreadState = {
   readonly thread: AssistantChatThread | null;
   readonly trackedTurn: string | null;
-  readonly finishedTurn: string | null;
-  readonly closedPause: AssistantClosedPause | null;
+  readonly finishedTurns: readonly string[];
+  readonly closedPauses: readonly AssistantClosedPause[];
 };
 
 export type AssistantClosedPause = {
@@ -66,13 +66,50 @@ export type AssistantClosedPause = {
   readonly revision: number;
 };
 
+const ENDINGS_REMEMBERED = 8;
+
 export function initialAssistantThreadState(): AssistantThreadState {
   return {
     thread: null,
     trackedTurn: null,
-    finishedTurn: null,
-    closedPause: null,
+    finishedTurns: [],
+    closedPauses: [],
   };
+}
+
+export function assistantPauseAnswered(
+  state: AssistantThreadState,
+  answered: AssistantClosedPause,
+): AssistantThreadState {
+  return {
+    ...state,
+    closedPauses: rememberClosed(state.closedPauses, answered),
+  };
+}
+
+function rememberFinished(
+  finished: readonly string[],
+  commandId: string,
+): readonly string[] {
+  return [commandId, ...finished.filter((id) => id !== commandId)].slice(
+    0,
+    ENDINGS_REMEMBERED,
+  );
+}
+
+function rememberClosed(
+  closed: readonly AssistantClosedPause[],
+  pause: AssistantClosedPause,
+): readonly AssistantClosedPause[] {
+  const held = closed.find(
+    (entry) => entry.interactionId === pause.interactionId,
+  );
+  const latest =
+    held !== undefined && held.revision > pause.revision ? held : pause;
+  return [
+    latest,
+    ...closed.filter((entry) => entry.interactionId !== pause.interactionId),
+  ].slice(0, ENDINGS_REMEMBERED);
 }
 
 export function assistantTurnActive(
@@ -114,8 +151,11 @@ function vouchedWindow(
   window: AssistantChatWindow,
 ): VouchedWindow {
   const restoresFinishedTurn =
-    window.turn !== null && window.turn.id === state.finishedTurn;
-  const reopensClosedPause = reopensClosed(state.closedPause, window.openPause);
+    window.turn !== null && state.finishedTurns.includes(window.turn.id);
+  const reopensClosedPause = reopensClosed(
+    state.closedPauses,
+    window.openPause,
+  );
   if (!restoresFinishedTurn && !reopensClosedPause) {
     return { window, rereadWindow: false };
   }
@@ -124,7 +164,7 @@ function vouchedWindow(
     window: {
       ...withHeldPause(held, window),
       turn: restoresFinishedTurn
-        ? turnStillRunning(held, state.finishedTurn)
+        ? turnStillRunning(held, state.finishedTurns)
         : window.turn,
     },
     rereadWindow: true,
@@ -132,14 +172,16 @@ function vouchedWindow(
 }
 
 function reopensClosed(
-  closed: AssistantClosedPause | null,
+  closed: readonly AssistantClosedPause[],
   openPause: AssistantChatWindow["openPause"],
 ): boolean {
   return (
-    closed !== null &&
     openPause !== null &&
-    openPause.interactionId === closed.interactionId &&
-    openPause.revision <= closed.revision
+    closed.some(
+      (entry) =>
+        entry.interactionId === openPause.interactionId &&
+        openPause.revision <= entry.revision,
+    )
   );
 }
 
@@ -152,10 +194,10 @@ function withHeldPause(
 
 function turnStillRunning(
   held: AssistantChatThread | null,
-  finishedTurn: string | null,
+  finished: readonly string[],
 ): AssistantChatWindow["turn"] {
   const turn = held?.turn ?? null;
-  return turn === null || turn.id === finishedTurn ? null : turn;
+  return turn === null || finished.includes(turn.id) ? null : turn;
 }
 
 function withPauseSeenClosed(
@@ -176,13 +218,10 @@ function withPauseSeenClosed(
   }
   return {
     ...applied,
-    state: {
-      ...applied.state,
-      closedPause: {
-        interactionId: closed.interactionId,
-        revision: closed.revision,
-      },
-    },
+    state: assistantPauseAnswered(applied.state, {
+      interactionId: closed.interactionId,
+      revision: closed.revision,
+    }),
   };
 }
 
@@ -316,7 +355,11 @@ function applyTurnFinished(
     // question — reading it as "no question" would hide a real one — so the
     // client goes and reads the window itself.
     return {
-      state: { ...state, trackedTurn: cleared, finishedTurn: event.commandId },
+      state: {
+        ...state,
+        trackedTurn: cleared,
+        finishedTurns: rememberFinished(state.finishedTurns, event.commandId),
+      },
       rereadWindow: true,
     };
   }
@@ -330,7 +373,11 @@ function applyTurnFinished(
     // read again to settle it.
     return {
       ...applyAssistantWindow(
-        { ...state, trackedTurn: cleared, finishedTurn: event.commandId },
+        {
+          ...state,
+          trackedTurn: cleared,
+          finishedTurns: rememberFinished(state.finishedTurns, event.commandId),
+        },
         withHeldPause(state.thread, event.window),
         LATEST,
       ),
@@ -343,7 +390,11 @@ function applyTurnFinished(
   return withPauseSeenClosed(
     state,
     applyAssistantWindow(
-      { ...state, trackedTurn: null, finishedTurn: event.commandId },
+      {
+        ...state,
+        trackedTurn: null,
+        finishedTurns: rememberFinished(state.finishedTurns, event.commandId),
+      },
       event.window,
       LATEST,
     ),

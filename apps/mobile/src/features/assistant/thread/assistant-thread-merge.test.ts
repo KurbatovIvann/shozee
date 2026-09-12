@@ -14,6 +14,7 @@ import type { AssistantStreamEvent } from "@showzy/validation/assistant-events";
 import {
   applyAssistantStreamEvent,
   applyAssistantWindow,
+  assistantPauseAnswered,
   assistantTurnActive,
   initialAssistantThreadState,
   type AssistantThreadState,
@@ -510,5 +511,45 @@ describe("a window that resolved after the thread moved past it", () => {
       OPEN_PAUSE.revision + 1,
     );
     expect(applied.rereadWindow).toBe(false);
+  });
+  it("does not bring back a turn that ended before the last one", () => {
+    const first = ended(windowOf({ text: "Готово.", revision: 4 }));
+    const second = apply(
+      apply(first, {
+        type: "turn.started",
+        conversationId: CONVERSATION,
+        kind: "chat",
+        commandId: OTHER_COMMAND,
+      }).state,
+      finished(windowOf({ text: "Готово.", revision: 5 }), OTHER_COMMAND),
+    ).state;
+
+    const applied = applyAssistantWindow(second, late, LATEST);
+
+    expect(assistantTurnActive(applied.state.thread)).toBe(false);
+    expect(applied.rereadWindow).toBe(true);
+  });
+
+  it("does not reopen a question this client answered itself", () => {
+    const asked = loaded(windowOf({ openPause: OPEN_PAUSE }));
+    const settled = applyAssistantWindow(
+      asked,
+      windowOf({ text: "Готово.", revision: 4 }),
+      LATEST,
+    ).state;
+    expect(settled.thread?.openPause).toBeNull();
+
+    const answered = assistantPauseAnswered(settled, {
+      interactionId: INTERACTION,
+      revision: OPEN_PAUSE.revision,
+    });
+    const applied = applyAssistantWindow(
+      answered,
+      windowOf({ openPause: OPEN_PAUSE }),
+      LATEST,
+    );
+
+    expect(applied.state.thread?.openPause).toBeNull();
+    expect(applied.rereadWindow).toBe(true);
   });
 });

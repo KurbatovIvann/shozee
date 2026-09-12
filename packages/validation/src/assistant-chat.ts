@@ -209,11 +209,6 @@ export type AssistantChatWindowSource =
  * One window joined to the thread a client holds — the only way a client
  * changes what it shows.
  *
- * - A latest window replaces the thread from its first message on, and keeps
- *   what was loaded before that. If that first message is not held, the
- *   conversation moved on further than one window since the client last looked
- *   — another device, a long absence — and the older pages it held join onto
- *   nothing, so they are dropped rather than shown with a gap.
  * - An older page goes in front, but only if it is the page before where the
  *   thread starts now. One asked for before a reset belongs to a thread that is
  *   gone.
