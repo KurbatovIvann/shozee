@@ -12,6 +12,11 @@
  * taking a second one, and a request gives back only what it took itself.
  * Since the switch a turn can be retried as often as the phone reconnects, and
  * without that key a run of failed accepts would spend a company's whole day.
+ *
+ * **Every store call goes through `askStore`.** A store that cannot answer has
+ * decided nothing about spend or about how often someone asked, so it denies
+ * with a `_store` reason and the error bound — never as the person's own limit.
+ * That is a type constraint rather than a convention: see `askStore`.
  */
 import { kyivCalendarDate, secondsUntilKyivMidnight } from "@showzy/ai";
 import type { RateLimitDecision, RateLimitStore } from "@showzy/core";
@@ -31,20 +36,26 @@ import {
   type AiBudgetTryAddDecision,
 } from "./stores/budget.js";
 
+/**
+ * A store this guard asks did not answer, so **nothing was decided** about
+ * spend or about how often this person has asked.
+ *
+ * Kept apart from the limit reasons deliberately, and split per subsystem
+ * rather than merged into one name. An outage logged as `company_budget` reads
+ * as a company having spent its Kyiv day — the one condition this guard's whole
+ * design is about — and an outage logged as `turn_limit` reads as a person
+ * asking too often. An operator must be able to tell either from "Redis is
+ * down" by the field they filter on, and to alert per subsystem; the shared
+ * `_store` suffix is the grep for the whole class.
+ */
+export type StaffAssistantBudgetStoreFailureReason =
+  "budget_store" | "rate_limit_store";
+
 export type StaffAssistantBudgetDenialReason =
   | "turn_limit"
   | "company_budget"
   | "global_budget"
-  /**
-   * The budget store could not answer, so nothing was decided about spend.
-   *
-   * Kept apart from the cap reasons deliberately: an outage logged as
-   * `company_budget` reads as a company having spent its Kyiv day, which is the
-   * one condition this guard's whole design is about. An operator must be able
-   * to tell "out of budget until midnight" from "Redis is down" by the field
-   * they filter on.
-   */
-  | "budget_store";
+  | StaffAssistantBudgetStoreFailureReason;
 
 export interface StaffAssistantBudgetLimits {
   readonly chatTurnsPerMinutePerUser: number;
@@ -122,9 +133,9 @@ export function logStaffAssistantBudgetDenial(options: {
   readonly companyId: string;
   readonly reason: StaffAssistantBudgetDenialReason;
   /**
-   * The store failure behind a `budget_store` denial. Logged so the outage is
-   * visible at all: without it the only record of a Redis failure is a line
-   * that looks like an ordinary cap denial (invariant 4).
+   * The failure behind a `_store` denial. Logged so the outage is visible at
+   * all: without it the only record of a Redis failure is a line that looks
+   * like an ordinary limit denial (invariant 4).
    */
   readonly err?: unknown;
 }): void {
@@ -137,6 +148,62 @@ export function logStaffAssistantBudgetDenial(options: {
     },
     "staff assistant budget denied",
   );
+}
+
+/** Logs one denial and builds the error to throw for it. */
+type RefuseDenial = (
+  reason: StaffAssistantBudgetDenialReason,
+  retryAfterSec: number,
+  err?: unknown,
+) => RateLimitError;
+
+function denialFor(context: {
+  readonly logger: Logger;
+  readonly requestId: string;
+  readonly companyId: string;
+}): RefuseDenial {
+  return (reason, retryAfterSec, err) => {
+    logStaffAssistantBudgetDenial({
+      logger: context.logger,
+      requestId: context.requestId,
+      companyId: context.companyId,
+      reason,
+      ...(err === undefined ? {} : { err }),
+    });
+    return new RateLimitError(retryAfterSec);
+  };
+}
+
+/**
+ * The one door every store call this guard makes goes through.
+ *
+ * Three hand-rolled `catch` blocks around three store calls produced three
+ * instances of one defect — an outage reported as the person's own limit —
+ * found in three separate review rounds. The fix is not three more careful
+ * catches: it is that asking a store and *classifying* the failure are no
+ * longer separable. `reason` is typed to the store-failure subset, so this call
+ * cannot yield `turn_limit`, `company_budget` or `global_budget` however it is
+ * used, and the error is always bound. A future store call added without this
+ * wrapper is the only way back to the old defect, and it is visible as a bare
+ * `try` around a store in a file that otherwise has none.
+ */
+async function askStore<T>(
+  call: () => Promise<T>,
+  unavailable: {
+    readonly reason: StaffAssistantBudgetStoreFailureReason;
+    readonly retryAfterSec: number;
+    readonly refuse: RefuseDenial;
+  },
+): Promise<T> {
+  try {
+    return await call();
+  } catch (error: unknown) {
+    throw unavailable.refuse(
+      unavailable.reason,
+      unavailable.retryAfterSec,
+      error,
+    );
+  }
 }
 
 export async function enforceStaffAssistantBudget(options: {
@@ -157,20 +224,29 @@ export async function enforceStaffAssistantBudget(options: {
   const companyId = canonicalizeAiBudgetCompanyId(options.companyId);
   const ref: StaffAssistantBudgetHoldRef = { ...options.turn, companyId };
 
+  const refuse = denialFor({
+    logger: options.logger,
+    requestId: options.requestId,
+    companyId,
+  });
+
   const reservation = await reserveStaffAssistantBudget({
     logger: options.logger,
     requestId: options.requestId,
     ref,
     kyivDate,
     retryAfterSec: secondsUntilKyivMidnight(now),
+    refuse,
     budgetStore: options.budgetStore,
     limits: options.limits,
   });
 
+  // Bound to a const so the narrowing survives into the closure below.
+  const rateLimitStore = options.rateLimitStore;
   if (
     options.skipTurnLimit ||
     options.limits.chatTurnsPerMinutePerUser <= 0 ||
-    options.rateLimitStore === undefined
+    rateLimitStore === undefined
   ) {
     return reservation;
   }
@@ -192,30 +268,32 @@ export async function enforceStaffAssistantBudget(options: {
 
   let decision: RateLimitDecision;
   try {
-    decision = await options.rateLimitStore.consume({
-      key: aiChatTurnLimitKey(options.userId),
-      limit: options.limits.chatTurnsPerMinutePerUser,
-      windowSec: AI_CHAT_TURN_WINDOW_SEC,
-    });
-  } catch {
+    decision = await askStore(
+      () =>
+        rateLimitStore.consume({
+          key: aiChatTurnLimitKey(options.userId),
+          limit: options.limits.chatTurnsPerMinutePerUser,
+          windowSec: AI_CHAT_TURN_WINDOW_SEC,
+        }),
+      {
+        // A bucket that cannot be read has not told us this person asked too
+        // often. It says nothing about them at all.
+        reason: "rate_limit_store",
+        retryAfterSec: AI_CHAT_TURN_WINDOW_SEC,
+        refuse,
+      },
+    );
+  } catch (error: unknown) {
+    // Already classified and logged. This catch only undoes what the request
+    // took; it decides nothing about why the request failed.
     await giveBackOwnReservation();
-    logStaffAssistantBudgetDenial({
-      logger: options.logger,
-      requestId: options.requestId,
-      companyId,
-      reason: "turn_limit",
-    });
-    throw new RateLimitError(AI_CHAT_TURN_WINDOW_SEC);
+    throw error;
   }
   if (!decision.allowed) {
+    // The bucket answered, and the answer was no. This one really is the
+    // person's own limit.
     await giveBackOwnReservation();
-    logStaffAssistantBudgetDenial({
-      logger: options.logger,
-      requestId: options.requestId,
-      companyId,
-      reason: "turn_limit",
-    });
-    throw new RateLimitError(decision.retryAfterSec);
+    throw refuse("turn_limit", decision.retryAfterSec);
   }
   return reservation;
 }
@@ -226,6 +304,7 @@ async function reserveStaffAssistantBudget(options: {
   readonly ref: StaffAssistantBudgetHoldRef;
   readonly kyivDate: string;
   readonly retryAfterSec: number;
+  readonly refuse: RefuseDenial;
   readonly budgetStore?: AiBudgetStore | undefined;
   readonly limits: StaffAssistantBudgetLimits;
 }): Promise<StaffAssistantBudgetReservation> {
@@ -246,20 +325,6 @@ async function reserveStaffAssistantBudget(options: {
     globalReservedUsd: 0,
     kyivDate: options.kyivDate,
   };
-  const refuse = (
-    reason: StaffAssistantBudgetDenialReason,
-    err?: unknown,
-  ): RateLimitError => {
-    logStaffAssistantBudgetDenial({
-      logger: options.logger,
-      requestId: options.requestId,
-      companyId: options.ref.companyId,
-      reason,
-      ...(err === undefined ? {} : { err }),
-    });
-    return new RateLimitError(options.retryAfterSec);
-  };
-
   try {
     if (options.limits.dailyBudgetUsdPerCompany > 0) {
       hold.companyReservedUsd = await reserveBudgetKey({
@@ -268,7 +333,8 @@ async function reserveStaffAssistantBudget(options: {
         capUsd: options.limits.dailyBudgetUsdPerCompany,
         reserveUsd: options.limits.unknownModelTurnUsd,
         capReason: "company_budget",
-        refuse,
+        retryAfterSec: options.retryAfterSec,
+        refuse: options.refuse,
       });
     }
     if (options.limits.dailyBudgetUsdGlobal > 0) {
@@ -278,7 +344,8 @@ async function reserveStaffAssistantBudget(options: {
         capUsd: options.limits.dailyBudgetUsdGlobal,
         reserveUsd: options.limits.unknownModelTurnUsd,
         capReason: "global_budget",
-        refuse,
+        retryAfterSec: options.retryAfterSec,
+        refuse: options.refuse,
       });
     }
   } catch (error: unknown) {
@@ -300,26 +367,31 @@ async function reserveStaffAssistantBudget(options: {
   // availability and expires with the Kyiv day; one never taken does not.
   let claim: AiBudgetHoldClaim;
   try {
-    claim = await store.claimHold(
-      aiBudgetHoldKey({ ...options.ref, kyivDate: options.kyivDate }),
-      encodeHold(hold),
-      AI_BUDGET_TTL_SEC,
+    claim = await askStore(
+      () =>
+        store.claimHold(
+          aiBudgetHoldKey({ ...options.ref, kyivDate: options.kyivDate }),
+          encodeHold(hold),
+          AI_BUDGET_TTL_SEC,
+        ),
+      {
+        // The store is not answering, so whether this turn already holds a
+        // reservation is unknown, and admitting could take a second one.
+        reason: "budget_store",
+        retryAfterSec: options.retryAfterSec,
+        refuse: options.refuse,
+      },
     );
   } catch (error: unknown) {
-    // The store is not answering, so whether this turn already holds a
-    // reservation is unknown. Refuse, and give back what this request took
-    // rather than leaving it to the Kyiv day.
-    //
-    // Reported as a store failure, never as a cap: this refusal looks to the
-    // person exactly like being out of budget, and an operator reading
-    // `company_budget` here would go looking for a company that spent its day
-    // instead of for the outage.
+    // Already classified and logged. This catch gives back what this request
+    // took rather than leaving it to the Kyiv day; it decides nothing about
+    // why.
     await subtractHold(options.logger, options.requestId, store, {
       companyKey,
       globalKey,
       hold,
     });
-    throw refuse("budget_store", error);
+    throw error;
   }
 
   if (claim.created) {
@@ -359,26 +431,26 @@ async function reserveBudgetKey(options: {
   readonly reserveUsd: number;
   /** How a denial reads when this counter is genuinely at its cap. */
   readonly capReason: StaffAssistantBudgetDenialReason;
-  readonly refuse: (
-    reason: StaffAssistantBudgetDenialReason,
-    err?: unknown,
-  ) => RateLimitError;
+  readonly retryAfterSec: number;
+  readonly refuse: RefuseDenial;
 }): Promise<number> {
-  let decision: AiBudgetTryAddDecision;
-  try {
-    decision = await options.store.tryAdd(
-      options.key,
-      options.reserveUsd,
-      options.capUsd,
-      AI_BUDGET_TTL_SEC,
-    );
-  } catch (error: unknown) {
-    // Same distinction the hold record makes: a store that cannot answer is not
-    // a company at its ceiling, and must not be logged as one.
-    throw options.refuse("budget_store", error);
-  }
+  const decision: AiBudgetTryAddDecision = await askStore(
+    () =>
+      options.store.tryAdd(
+        options.key,
+        options.reserveUsd,
+        options.capUsd,
+        AI_BUDGET_TTL_SEC,
+      ),
+    {
+      reason: "budget_store",
+      retryAfterSec: options.retryAfterSec,
+      refuse: options.refuse,
+    },
+  );
+  // The counter answered, and it is full. This one is a real ceiling.
   if (!decision.allowed) {
-    throw options.refuse(options.capReason);
+    throw options.refuse(options.capReason, options.retryAfterSec);
   }
   return options.reserveUsd;
 }

@@ -289,8 +289,9 @@ USD ceiling per company and globally, plus 20 turns/minute/user. The other
 routes call no model and are unguarded; the event stream has its own
 per-person limit instead, and never takes from the turn budget.
 
-Reserve, run, settle or release. A refusal never spends a turn slot, and a turn
-that produced nothing gives its reservation back. Answering an open question
+Reserve, run, and give the reservation back if nothing ran. A refusal never
+spends a turn slot, and a turn that produced nothing gives its reservation
+back. Answering an open question
 skips the per-minute bucket — it is finishing work already admitted — but not
 the money.
 
@@ -298,8 +299,9 @@ A refusal is `429` with `Retry-After` and `{ "error": { "code": "RATE_LIMITED" }
 "retryAfterSec": n }`. The app shows it as the rate-limit banner, not as a fault.
 
 Charged at the reservation (`AI_UNKNOWN_MODEL_TURN_USD`, default $0.10/turn)
-whatever the turn actually used — the previous path settled the same way, so
-this is the same coarseness, not a new one.
+whatever the turn actually used. The reservation **is** the charge: nothing
+reconciles it against real provider spend afterwards, so the counter is an
+admission threshold rather than a ledger (SHO-572).
 
 ```
 AI_CHAT_TURNS_PER_MINUTE_PER_USER=20

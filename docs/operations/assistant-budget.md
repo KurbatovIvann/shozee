@@ -68,13 +68,16 @@ or below, so a counter is never negative (SHO-561). A release that would
 have taken a non-zero counter below zero logs `staff assistant budget
 counter floored at zero` with the key, the counter and the delta.
 
-This is an admission threshold, not a hard cap on provider charges. An
-admitted turn may settle **above** its reservation; that overshoot is
-recorded in full. The next request is denied when the counter is at or
-over the cap.
+This is an admission threshold, not a record of provider charges. The
+counter holds **admission reservations only**. What a turn actually cost
+is never written here, so real spend above a reservation is recorded
+nowhere in Redis — a company whose turns each cost more than
+`AI_UNKNOWN_MODEL_TURN_USD` is admitted more often than its dollar limit
+would suggest. The next request is denied when the counter is at or over
+the cap.
 
 Answering an open question (`POST /assistant/kit/answer`) skips the turn
-bucket but still reserves and settles on both budget keys. That bucket
+bucket but still reserves on both budget keys. That bucket
 caps how often someone starts new work; answering is finishing work
 already admitted, and refusing it would strand a draft behind a limit the
 person cannot wait out.
@@ -101,8 +104,8 @@ finds no record subtracts nothing.
 
 ## Raise a company's budget for today
 
-Spend is the counter; the limit is env. In-flight `tryAdd` holds sit on
-the same key until settle or unused-hold release.
+Spend is the counter; the limit is env. In-flight reservations sit on the
+same key until the turn that owns them is released.
 
 Always inspect first:
 
@@ -176,6 +179,24 @@ error code.
 
 Turn-limit `retryAfterSec` is the token-bucket refill hint. Budget
 `retryAfterSec` is whole seconds until the next Europe/Kyiv midnight
-(at least 1). Denial logs: `reason` is `turn_limit` | `company_budget`
-| `global_budget`, plus `company_id` and `request_id`. Never the user
-message.
+(at least 1).
+
+## Denial logs
+
+Every refusal logs `staff assistant budget denied` with `company_id` and
+`request_id`. Never the user message. `reason` is one of:
+
+| `reason` | What happened |
+| --- | --- |
+| `turn_limit` | The bucket answered: this person has started too many turns this minute |
+| `company_budget` | The company's Kyiv-day counter is at or over its cap |
+| `global_budget` | The process-wide Kyiv-day counter is at or over its cap |
+| `rate_limit_store` | The turn bucket's store could not be read |
+| `budget_store` | A budget counter or hold record could not be read or written |
+
+**A `_store` reason means nothing was decided**, not that a limit was
+reached. The person sees the same `429` either way, so this field is the
+only thing that separates "out of budget until Kyiv midnight" from "Redis
+is down" — alert on the two `_store` reasons separately from the three
+limit reasons. A `_store` denial also carries `err` with the underlying
+store failure; a limit denial carries no `err`.

@@ -216,8 +216,9 @@ interface AcceptCommon {
    * (`releaseStaffAssistantBudgetHold`). The store calls it at most once, and
    * only when it knows no row holds this reservation: replayed, busy, wrong
    * owner, or a core refusal other than `INTERNAL` (`acceptProvedRollback`). Never after
-   * `accepted` (the row holds the hold and the worker or the reconciler settles
-   * it), and never after an unknown error, which may have followed COMMIT.
+   * `accepted` (the row holds the hold and the worker or the reconciler
+   * releases it), and never after an unknown error, which may have followed
+   * COMMIT.
    * Must not throw; the budget guard's release never does.
    */
   readonly releaseUnusedHold: () => Promise<void>;
@@ -276,8 +277,8 @@ export interface AssistantTurnStore {
   >;
   /**
    * `finished` hands back the hold this call took off the row, for the caller
-   * to settle or release; `already_finished` took nothing (SHO-561). Only one
-   * call ever gets a turn's hold.
+   * to release; `already_finished` took nothing (SHO-561). Only one call ever
+   * gets a turn's hold.
    */
   finish(
     ref: AssistantTurnRef,

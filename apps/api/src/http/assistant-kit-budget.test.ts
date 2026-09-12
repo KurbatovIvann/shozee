@@ -307,7 +307,7 @@ describe("the spend ceiling on the kit routes", () => {
   /**
    * The other direction, and the one that must fail closed. An `INTERNAL` may
    * have been raised after COMMIT, in which case the stored turn holds this
-   * reservation and the worker will settle it. Giving it back here would put
+   * reservation and the worker will release it. Giving it back here would put
    * the counter below real spend and lift the day's cap — and the turn's own
    * release would then give it back a second time.
    */

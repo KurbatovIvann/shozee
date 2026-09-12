@@ -1,7 +1,7 @@
 /**
  * The staff-assistant budget counters on Redis (SHO-505). Here rather than in
- * `apps/api` since SHO-561: a turn is settled or released by the worker too,
- * and it must move the same counters the accept reserved on.
+ * `apps/api` since SHO-561: a turn's hold is released by the worker too, and it
+ * must move the same counters the accept reserved on.
  *
  * It matches `createMemoryAiBudgetStore`, the reference store: `tryAdd` is an
  * increment-with-cap, `add` never leaves a counter below zero and says so when

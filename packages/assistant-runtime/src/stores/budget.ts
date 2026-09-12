@@ -1,8 +1,9 @@
 /**
  * Staff-assistant daily USD counters (SHO-505). `tryAdd` is an
- * increment-with-cap (the reservation before the model). `add` settles or
- * releases: it adds a signed amount, stops at zero, and deletes the key at zero
- * or below (SHO-561). `claimHold` / `dropHold` record one turn's reservation
+ * increment-with-cap (the reservation before the model). `add` releases: it
+ * adds a signed amount, stops at zero, and deletes the key at zero or below
+ * (SHO-561). Nothing settles a reservation against real spend — the
+ * reservation is the charge (SHO-572). `claimHold` / `dropHold` record one turn's reservation
  * under the turn's own identity, so a retry of the same command finds the
  * reservation rather than taking a second one, and two parties releasing one
  * hold cannot subtract it twice (SHO-572). In Redis all of them are Lua

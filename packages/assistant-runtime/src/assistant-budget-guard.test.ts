@@ -375,6 +375,72 @@ describe("enforceStaffAssistantBudget", () => {
   });
 
   /**
+   * The bucket's own store, which had no test at all: every other case in this
+   * file uses `createInMemoryRateLimitStore`, which cannot fail. It is the
+   * third of three store calls the guard makes, and the last one that could
+   * still report an outage as the person's own limit.
+   */
+  it("reports a rate-limit store failure as a store failure, and gives the reservation back", async () => {
+    const capturing = createCapturingLogger();
+    const budgetStore = createMemoryAiBudgetStore();
+    await expect(
+      enforceStaffAssistantBudget({
+        logger: capturing.logger,
+        requestId: "req-bucket-throw",
+        userId: USER_A,
+        companyId: COMPANY_A,
+        turn: turnFor(),
+        skipTurnLimit: false,
+        now: NOW,
+        rateLimitStore: {
+          consume: () => Promise.reject(new Error("bucket store down")),
+        },
+        budgetStore,
+        limits: DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+      }),
+    ).rejects.toBeInstanceOf(RateLimitError);
+    const denial = capturing.entries().find((row) => {
+      return row["msg"] === "staff assistant budget denied";
+    });
+    // Not `turn_limit`: nobody has told us this person asked too often.
+    expect(denial?.["reason"]).toBe("rate_limit_store");
+    expect(JSON.stringify(denial)).toContain("bucket store down");
+    // And the reservation taken a moment earlier does not stay behind.
+    expect(
+      await budgetStore.read(aiCompanyBudgetKey(COMPANY_A, KYIV_DATE)),
+    ).toBe(0);
+    expect(await budgetStore.read(aiGlobalBudgetKey(KYIV_DATE))).toBe(0);
+  });
+
+  /** The other side of that line: a bucket that answers "no" is still a limit. */
+  it("still reads a genuine bucket ceiling as turn_limit", async () => {
+    const capturing = createCapturingLogger();
+    const request = {
+      logger: capturing.logger,
+      requestId: "req-bucket-cap",
+      userId: USER_A,
+      companyId: COMPANY_A,
+      skipTurnLimit: false,
+      now: NOW,
+      rateLimitStore: createInMemoryRateLimitStore(),
+      limits: {
+        ...DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+        chatTurnsPerMinutePerUser: 1,
+      },
+    };
+    await enforceStaffAssistantBudget({ ...request, turn: turnFor() });
+    await expect(
+      enforceStaffAssistantBudget({ ...request, turn: turnFor() }),
+    ).rejects.toBeInstanceOf(RateLimitError);
+
+    const denial = capturing.entries().find((row) => {
+      return row["msg"] === "staff assistant budget denied";
+    });
+    expect(denial?.["reason"]).toBe("turn_limit");
+    expect(denial).not.toHaveProperty("err");
+  });
+
+  /**
    * A refused reservation looks the same to the person whichever way it went,
    * so the log line is the only thing that tells an operator whether to go
    * looking for a company that spent its day or for an outage.
