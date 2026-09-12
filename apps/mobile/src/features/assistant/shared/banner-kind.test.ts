@@ -25,7 +25,7 @@ const ALL = Object.keys({
   rejected: true,
   server: true,
   rate_limited: true,
-  aborted: true,
+  not_sent: true,
   interaction_open: true,
   turn_open: true,
   stale: true,
@@ -45,7 +45,7 @@ describe("bannerKindFor", () => {
   });
 
   it("says nothing when nothing went out", () => {
-    expect(bannerKindFor({ kind: "aborted" })).toBeNull();
+    expect(bannerKindFor({ kind: "not_sent" })).toBeNull();
   });
 
   it("names a refused write, because the card alone does not explain it", () => {

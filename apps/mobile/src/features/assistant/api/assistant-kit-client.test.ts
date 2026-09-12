@@ -141,6 +141,59 @@ describe("the assistant kit client", () => {
     });
   });
 
+  /**
+   * The switch (ADR-0039): the turn is stored and queued, and this is the
+   * window as the accept left it — the person's message and the placeholder the
+   * worker writes into. A client that rendered nothing for a `202` would show
+   * the thread without the message it had just sent.
+   */
+  it("returns the window of a turn that was accepted, not run", async () => {
+    respond(202, { status: "accepted", window: conversationWindow() });
+
+    const outcome = await postAssistantKitChat({
+      ...call,
+      conversationId: CONVERSATION,
+      commandId: COMMAND,
+      text: "привіт",
+    });
+
+    expect(outcome.failure).toBeNull();
+    expect(outcome.window?.messages).toHaveLength(1);
+  });
+
+  /**
+   * A replayed command answers `200 ok`, because `202` must mean "stored and
+   * queued" and a command that accepted no turn may not claim it (SHO-563).
+   * Both carry the conversation, and `ok` is emphatically not "nothing
+   * happened" — the first attempt's turn is in the window it brings.
+   */
+  it("treats a replayed command's ok as news, not as an empty outcome", async () => {
+    respond(200, { status: "ok", window: conversationWindow(OPEN_PAUSE) });
+
+    const outcome = await postAssistantKitChat({
+      ...call,
+      conversationId: CONVERSATION,
+      commandId: COMMAND,
+      text: "привіт",
+    });
+
+    expect(outcome.failure).toBeNull();
+    expect(outcome.window?.openPause?.interactionId).toBe(INTERACTION);
+  });
+
+  it("treats an accepted turn it cannot read as a fault", async () => {
+    respond(202, { status: "accepted", window: { messages: "nope" } });
+
+    const outcome = await postAssistantKitChat({
+      ...call,
+      conversationId: CONVERSATION,
+      commandId: COMMAND,
+      text: "привіт",
+    });
+
+    expect(outcome).toEqual({ window: null, failure: { kind: "unreadable" } });
+  });
+
   it("clips text to what the route accepts", () => {
     expect(clipAssistantKitText("  привіт  ")).toBe("привіт");
     expect(clipAssistantKitText("x".repeat(5000))).toHaveLength(

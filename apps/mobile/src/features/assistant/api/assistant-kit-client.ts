@@ -40,6 +40,11 @@ export const ASSISTANT_KIT_TEXT_MAX = 4000;
  * turn holds the conversation and this request did nothing at all.
  * `rate_limited` is the spend ceiling, which is a decision rather than a fault.
  * The rest are faults.
+ *
+ * `not_sent` means nothing left the phone: blank text, or a tap while another
+ * command was in flight. It was called `aborted` while this client could cancel
+ * a request, which made it read as "a turn was stopped" — the one thing it has
+ * never meant, and now cannot mean at all (ADR-0039).
  */
 export type AssistantKitFailureKind =
   | "unreachable"
@@ -49,7 +54,7 @@ export type AssistantKitFailureKind =
   | "rejected"
   | "server"
   | "rate_limited"
-  | "aborted"
+  | "not_sent"
   | "interaction_open"
   | "turn_open"
   | "stale"
@@ -79,14 +84,20 @@ const bodySchema = z.looseObject({
   error: z.looseObject({ code: z.string() }).optional(),
 });
 
+/**
+ * There is no `signal`. A phone must never cancel a turn: the turn runs off the
+ * request and outlives it, so cancelling the request would only hide a job that
+ * is still going (ADR-0039). A stop, if one is ever wanted, is an explicit
+ * route. The event stream has a signal of its own, which closes a read this
+ * client is doing and ends nothing on the server.
+ */
 export interface AssistantKitCall {
   readonly apiUrl: string;
   readonly getCookie: () => string | null;
   readonly getCompanyId: () => string | null;
-  readonly signal?: AbortSignal;
 }
 
-function url(apiUrl: string, path: string): string {
+export function assistantKitUrl(apiUrl: string, path: string): string {
   return `${apiUrl.replace(/\/+$/, "")}${path}`;
 }
 
@@ -118,9 +129,6 @@ function failureFromStatus(
   if (httpStatus === 429) {
     return "rate_limited";
   }
-  if (httpStatus === 499) {
-    return "aborted";
-  }
   if (httpStatus >= 500) {
     return "server";
   }
@@ -139,7 +147,7 @@ async function call(
 ): Promise<AssistantKitOutcome> {
   let response: Response;
   try {
-    response = await expoFetch(url(request.apiUrl, path), {
+    response = await expoFetch(assistantKitUrl(request.apiUrl, path), {
       method: init.method,
       credentials: "omit",
       headers: {
@@ -150,7 +158,6 @@ async function call(
         }),
       },
       ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
-      ...(request.signal === undefined ? {} : { signal: request.signal }),
     });
   } catch {
     // Nothing was learned about the conversation, so nothing is reported about
@@ -178,8 +185,18 @@ async function call(
   }
   const window = windowFrom(body.data.window);
 
-  if (response.ok && body.data.status === "ok") {
-    // A 200 whose window this build cannot read is a fault, not an empty
+  // The two answers that carry the conversation as the command left it.
+  // `accepted` (202) is a turn stored and queued; `ok` (200) is a command that
+  // accepted no turn — a replay of one already decided, or an answer whose
+  // second question needs no turn. They are not the same event, but they are
+  // the same news to a client: neither says "nothing happened", and the window
+  // each carries is the truth. Reading `ok` as an empty outcome would leave the
+  // thread showing a turn that had already finished (SHO-563).
+  if (
+    response.ok &&
+    (body.data.status === "ok" || body.data.status === "accepted")
+  ) {
+    // A 2xx whose window this build cannot read is a fault, not an empty
     // conversation: showing nothing would look like the turn never happened.
     return window === null
       ? { window: null, failure: { kind: "unreadable" } }

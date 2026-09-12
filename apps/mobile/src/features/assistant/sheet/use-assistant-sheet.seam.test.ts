@@ -32,6 +32,21 @@ const ROW_MODEL = readFileSync(
   "utf8",
 );
 
+const CLIENT = readFileSync(
+  new URL("../api/assistant-kit-client.ts", import.meta.url),
+  "utf8",
+);
+
+const CONVERSATION = readFileSync(
+  new URL("../thread/use-assistant-conversation.ts", import.meta.url),
+  "utf8",
+);
+
+const STREAM = readFileSync(
+  new URL("../thread/use-assistant-stream.ts", import.meta.url),
+  "utf8",
+);
+
 const RETIRED = [
   "use-assistant-chat",
   "use-assistant-choice",
@@ -138,6 +153,55 @@ describe("the assistant sheet's wiring", () => {
     expect(VIEW).toContain("onStartReached={model.loadOlder}");
     expect(VIEW).toContain("onContentSizeChange={followThread}");
     expect(VIEW).toContain("assistantThreadFollow(");
+  });
+
+  /**
+   * ADR-0039. A turn outlives the request that started it, so a phone must have
+   * no way to cancel one — and the `499 → aborted` mapping that used to decode
+   * such a cancellation was unreachable anyway, because an aborted fetch throws
+   * and never reads a status. Both are gone; the local kind that means "nothing
+   * left the phone" is named `not_sent` so it can no longer be read as "a turn
+   * was stopped".
+   *
+   * A source check because the failure would be a restored capability, not a
+   * wrong value: nothing would go red if a `signal` were threaded back through.
+   */
+  it("gives the commands no way to cancel a turn", () => {
+    // Code, not prose: both files explain at length what was removed and why,
+    // so a bare substring search would match the explanation and pass forever.
+    expect(CLIENT).not.toContain("readonly signal");
+    expect(CLIENT).not.toContain("request.signal");
+    expect(CLIENT).not.toContain("=== 499");
+    expect(CLIENT).not.toContain('"aborted"');
+    expect(CONVERSATION).not.toContain('"aborted"');
+    expect(CLIENT).toContain('"not_sent"');
+  });
+
+  /**
+   * The stream replaced polling, and the distinction that keeps it replaced is
+   * that every read is *caused*: an event arrived, or the app came back. A
+   * repeating timer here would be the thing ADR-0039 rejected, re-entering
+   * through the client.
+   */
+  it("reads on an event or a return, never on an interval", () => {
+    for (const source of [CONVERSATION, STREAM]) {
+      expect(source).not.toContain("setInterval");
+    }
+    // The one timer is the reconnection backoff, which fires once per break.
+    expect(STREAM).toContain("assistantStreamRetryDelayMs");
+    expect(STREAM).toContain("subscribeAssistantForeground");
+  });
+
+  /**
+   * Item 3 of SHO-573: one fact, one source. If `busy` were computed from a
+   * request being open, a turn running on another device would read as idle and
+   * the composer would invite a send the server refuses.
+   */
+  it("derives busy from the conversation's own active turn", () => {
+    expect(CONVERSATION).toContain("assistantTurnActive");
+    expect(CONVERSATION).toContain("busy: turnActive");
+    expect(SHEET).toContain("conversation.busy");
+    expect(SHEET).toContain("conversation.sending");
   });
 
   it("offers one answer callback, not one per kind of question", () => {

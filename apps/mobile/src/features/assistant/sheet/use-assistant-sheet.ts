@@ -118,6 +118,9 @@ export function useAssistantSheet(): AssistantSheetViewModel & {
     locale,
     call,
     tenantEpochRef,
+    // This hook exists only while the sheet's screen is mounted, which is
+    // exactly while the person is looking at it.
+    visible: true,
   });
 
   /**
@@ -142,6 +145,10 @@ export function useAssistantSheet(): AssistantSheetViewModel & {
         // Only if the person has not started typing something else since.
         setInput((current) => (current.length === 0 ? text : current));
       }
+      // `unknown` deliberately does not restore: the accept may have stored the
+      // message and queued the turn, and the retry that would settle it is the
+      // same command anyway (ADR-0039). The words stay visible as the echo
+      // until a window says what actually happened.
     });
   }, [conversation, input]);
 
@@ -152,7 +159,10 @@ export function useAssistantSheet(): AssistantSheetViewModel & {
     [push],
   );
 
-  const busy = conversation.busy || identity.resolving;
+  // A turn running anywhere on this conversation, this screen's own command in
+  // flight, or the conversation still being resolved. The composer is closed
+  // for all three; only the first is the server's state.
+  const busy = conversation.busy || conversation.sending || identity.resolving;
   const bannerKind = identity.failed
     ? "unavailable"
     : bannerKindFor(conversation.failure);

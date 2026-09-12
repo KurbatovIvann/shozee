@@ -54,11 +54,14 @@ export function bannerKindFor(
     // line saying why, the tap looks as though it did nothing at all.
     case "interaction_open":
       return "questionOpen";
-    // Nothing went out, or nobody is waiting for what came back: a tap while a
-    // request is in flight, blank text, or a 499 for a connection this phone had
-    // already closed. The thread is unchanged and the draft is back where it
-    // was, which is an accurate picture of what happened. Nothing to explain.
-    case "aborted":
+    // Nothing went out: a tap while another command was in flight, or blank
+    // text. The thread is unchanged and the draft is back where it was, which
+    // is an accurate picture of what happened. Nothing to explain.
+    //
+    // There is no longer a case where something went out and this phone stopped
+    // listening — the turn runs off the request, so a closed connection ends
+    // nothing (ADR-0039).
+    case "not_sent":
       return null;
     // Nothing on screen explains this one: the turn holding the conversation
     // is running on another device, so the thread looks idle.
