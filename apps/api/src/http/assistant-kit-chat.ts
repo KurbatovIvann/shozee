@@ -21,7 +21,6 @@
  * derivation that can disagree with the live one.
  */
 import { chatCursorSchema, type ChatWindow } from "@showzy/assistant-kit";
-import { acceptProvedRollback } from "@showzy/assistant-runtime";
 import type { Context } from "hono";
 import { z } from "zod";
 
@@ -154,18 +153,36 @@ export async function handleAssistantKitChat(
       releaseUnusedHold: () => budget.release(),
     });
   } catch (error) {
-    // The accept threw. The command goes back for the same reason `busy` gives
-    // it back: a receipt kept for a send that stored nothing answers the
-    // person's retry `202 accepted` with a window their own message is not in,
-    // for the receipt's whole lifetime.
+    // The command goes back on **any** failure here, including one that may
+    // have committed.
     //
-    // `acceptProvedRollback` is the predicate the store already uses to decide
-    // whether the budget reservation may be given back, so the receipt and the
-    // hold are released on exactly the same evidence — nothing was stored. An
-    // `INTERNAL` may have committed after all, so its receipt stays and the
-    // retry resolves against the turn row, which is the accept's own receipt.
-    if (acceptProvedRollback(error)) {
-      await runtime.commands.release(command);
+    // This is deliberately not what `/kit/answer` does, and the asymmetry is
+    // the point — do not "fix" the two routes into agreement. A chat accept is
+    // its own receipt: it is keyed by (kind, conversation, command), so a retry
+    // of a first attempt that did commit comes back `replayed`, writes nothing
+    // twice and simply re-enqueues the job. There is no double-run to protect
+    // against, so keeping the receipt buys nothing and costs everything — the
+    // retry never reaches the accept at all, because `takeCommand` above turns
+    // it into `202 accepted` with a window the person's own message is not in,
+    // for the receipt's full lifetime. An `INTERNAL` raised *before* COMMIT is
+    // at least as likely as one after it, and that one silently drops the
+    // message.
+    //
+    // The budget hold is the opposite case and is handled in the wrapper: a
+    // reservation a committed row may hold must not be given back, or the
+    // counter drops below real spend and the day's cap lifts.
+    const released = await Promise.allSettled([
+      runtime.commands.release(command),
+    ]);
+    for (const outcome of released) {
+      if (outcome.status === "rejected") {
+        // Logged, never rethrown: the accept's own error is the one worth
+        // surfacing, and a lost receipt heals on its own TTL.
+        runtime.logger.warn(
+          { request_id: requestId, err: outcome.reason },
+          "assistant command could not be given back after a failed accept",
+        );
+      }
     }
     throw error;
   }
@@ -210,8 +227,15 @@ export async function handleAssistantKitChat(
       ...priorMessages,
       { role: "user" as const, content: body.text },
     ]);
-    await enqueueAcceptedTurn(runtime, result.job, requestId);
   }
+
+  // Both `accepted` and `replayed` name the same job, and BullMQ refuses a
+  // second under one id — so a replay re-enqueues rather than duplicating. That
+  // matters for exactly one path: a first attempt that committed and then
+  // failed gave its command back (above), so the retry lands here as `replayed`
+  // and puts back the job that attempt never got to add, instead of leaving the
+  // turn for the reconciler an interval later.
+  await enqueueAcceptedTurn(runtime, result.job, requestId);
 
   return await accepted();
 }

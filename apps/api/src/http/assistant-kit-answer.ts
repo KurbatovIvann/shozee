@@ -355,10 +355,27 @@ export async function handleAssistantKitAnswer(
     // budget hold, so claim, command and reservation are all given back on one
     // piece of evidence: nothing was stored. The retry re-runs the action under
     // the same idempotency key, so the write replays rather than repeats
-    // (SHO-547). An `INTERNAL` may have committed, so it keeps both and the
-    // retry resolves against the turn row.
+    // (SHO-547).
+    //
+    // An `INTERNAL` may have committed, so this route keeps both — and that is
+    // where it deliberately differs from `/kit/chat`, which gives its command
+    // back on any failure. Do not make the two symmetric. A chat accept is its
+    // own receipt and a retry of a committed accept is merely `replayed`; this
+    // route's guard sits in front of a claim that is exactly-once, so a retry
+    // that got past the receipt would be told `gone` and the person would hold
+    // a card that can never be answered (SHO-547).
     if (acceptProvedRollback(error)) {
-      await Promise.all([release(), giveBackCommand()]);
+      // Settled, not `all`: a failed give-back must not replace the accept's
+      // own error, which is the one worth surfacing. Both still run.
+      const released = await Promise.allSettled([release(), giveBackCommand()]);
+      for (const outcome of released) {
+        if (outcome.status === "rejected") {
+          runtime.logger.warn(
+            { request_id: requestId, err: outcome.reason },
+            "assistant answer could not give back what its accept never used",
+          );
+        }
+      }
     }
     throw error;
   }
@@ -387,17 +404,22 @@ export async function handleAssistantKitAnswer(
 
   if (result.outcome === "accepted") {
     budget.keep();
-    await enqueueAcceptedTurn(runtime, result.job, requestId);
     // The worker runs an answer turn exactly as it runs a chat turn: from
     // history, with no answer-specific seed on the turn row. `resume` replaces
     // the paused call's output with the resolved one — the same payload
     // `continueHostTurn` used to hand the model inside the request. Saved only
-    // now, after the accept claimed the lease.
+    // after the accept claimed the lease, and **before the job exists**, the
+    // same order `/kit/chat` keeps: a worker that started between the enqueue
+    // and this save would load a transcript still ending in the unanswered
+    // paused call, and answer without knowing the action had been performed —
+    // re-issuing its tool call, and charged for it.
     await history.save(
       scope,
       kit.resume(claimed, resolvedOutcome.result).messages,
     );
   }
+
+  await enqueueAcceptedTurn(runtime, result.job, requestId);
 
   return json(
     202,

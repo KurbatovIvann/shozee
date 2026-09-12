@@ -21,6 +21,7 @@
  * outcome, a replayed command included, gives it back here.
  */
 import {
+  acceptProvedRollback,
   canonicalizeAiBudgetCompanyId,
   DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
   enforceStaffAssistantBudget,
@@ -161,6 +162,20 @@ export async function withAssistantKitBudget(
 
   try {
     return await handle();
+  } catch (error) {
+    // The handler threw. Unless the failure proves nothing was stored, a turn
+    // row may already hold this reservation, and giving it back would put the
+    // counter below real spend — lifting the day's cap instead of failing
+    // closed. That is the same reasoning, and the same predicate, the turn
+    // store applies to its own release.
+    //
+    // Who owns a hold after a failed accept is currently answered in three
+    // places — here, that predicate, and the turn row. Reconciling them is
+    // SHO-572's, not this slice's.
+    if (!acceptProvedRollback(error)) {
+      ticket.keep();
+    }
+    throw error;
   } finally {
     // A turn row owns it, or nobody does. The per-minute bucket above still
     // counted a replayed command: that one is admission control on how often a

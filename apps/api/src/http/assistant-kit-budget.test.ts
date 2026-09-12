@@ -35,6 +35,7 @@ import {
 } from "@showzy/assistant-runtime";
 import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
 import { createInMemoryRateLimitStore } from "@showzy/core";
+import { ConflictError, CoreInvariantError } from "@showzy/core/errors";
 import pino, { type Logger } from "pino";
 import { describe, expect, it } from "vitest";
 
@@ -77,11 +78,11 @@ const OK_RESOLVE = ({ value }: { value: unknown }) => {
 };
 
 /** An accept that fails the way a database incident fails one. */
-function brokenTurns(): AssistantTurnStore {
+function brokenTurns(failure: () => Error): AssistantTurnStore {
   return {
-    accept: () => Promise.reject(new Error("accept is down")),
-    start: () => Promise.reject(new Error("accept is down")),
-    finish: () => Promise.reject(new Error("accept is down")),
+    accept: () => Promise.reject(failure()),
+    start: () => Promise.reject(failure()),
+    finish: () => Promise.reject(failure()),
   };
 }
 
@@ -93,14 +94,23 @@ function harness(options?: {
     readonly unknownModelTurnUsd?: number;
   };
   readonly tools?: ToolSet;
-  /** The accept fails, so no turn row holds the reservation. */
-  readonly failAccept?: boolean;
+  /**
+   * The accept fails. `proven` is a core refusal, which cannot have committed,
+   * so no turn row holds the reservation; `unproven` is an `INTERNAL`, which
+   * may have committed after all.
+   */
+  readonly failAccept?: "proven" | "unproven";
 }) {
   const kit = createAssistantKit(testDeps(assistantInteractions));
+  const failAccept = options?.failAccept;
   const turns =
-    options?.failAccept === true
-      ? brokenTurns()
-      : memoryAssistantTurnStore(kit.messages);
+    failAccept === undefined
+      ? memoryAssistantTurnStore(kit.messages)
+      : brokenTurns(() =>
+          failAccept === "proven"
+            ? new ConflictError("the accept was rolled back")
+            : new CoreInvariantError("the accept was not acknowledged"),
+        );
   const history = memoryHistory();
   const budgetStore: AiBudgetStore = createMemoryAiBudgetStore();
   const app = createAssistantKitApp(
@@ -230,9 +240,9 @@ describe("the spend ceiling on the kit routes", () => {
    * no turn has to give it back. Without this, a database incident would spend
    * the day's budget as fast as successful turns do.
    */
-  it("gives the reservation back when no turn was stored", async () => {
+  it("gives the reservation back when the failure proves no turn was stored", async () => {
     const { app, budgetStore } = harness({
-      failAccept: true,
+      failAccept: "proven",
       limits: { unknownModelTurnUsd: 0.1 },
     });
 
@@ -240,6 +250,25 @@ describe("the spend ceiling on the kit routes", () => {
 
     expect(response.ok).toBe(false);
     expect(await spent(budgetStore)).toBe(0);
+  });
+
+  /**
+   * The other direction, and the one that must fail closed. An `INTERNAL` may
+   * have been raised after COMMIT, in which case the stored turn holds this
+   * reservation and the worker will settle it. Giving it back here would put
+   * the counter below real spend and lift the day's cap — and the turn's own
+   * release would then give it back a second time.
+   */
+  it("keeps the reservation when the failure does not prove nothing was stored", async () => {
+    const { app, budgetStore } = harness({
+      failAccept: "unproven",
+      limits: { unknownModelTurnUsd: 0.1 },
+    });
+
+    const response = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody());
+
+    expect(response.ok).toBe(false);
+    expect(await spent(budgetStore)).toBeCloseTo(0.1, 5);
   });
 
   it("does not spend a turn slot on a budget refusal", async () => {

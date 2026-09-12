@@ -83,7 +83,7 @@ the queue and the events.**
     `unresolvable`, `action_failed` and a second question are still
     immediate, and a committed write is stored before generation is attempted
     (SHO-546). The action's card is stored in Postgres, on the placeholder, as
-    the part already earned. Before it accepts, the answer route saves the
+    the part already earned. After it accepts, the answer route saves the
     messages `kit.resume` resumed as the conversation's history, so the worker
     runs an answer turn exactly as it runs a chat turn: from history. There is
     no answer seed on the turn row. Order: claim the pause, run the action,
