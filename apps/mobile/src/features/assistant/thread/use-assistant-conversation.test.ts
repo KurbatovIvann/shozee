@@ -1578,6 +1578,109 @@ describe("the conversation, live", () => {
     expect(view.latest().rows.map((row) => row.text)).toContain("ще одне");
   });
 
+  /**
+   * The echo guard in the **positive** direction, which nothing else covered:
+   * every other echo test asserts the words are kept.
+   *
+   * This branch is the only thing that un-doubles them after an undecided
+   * send — `unreachable` deliberately keeps the echo and `send` never clears
+   * it — so a condition that was permanently false would leave the echo
+   * sitting beside the stored message until the conversation changed, silently
+   * and forever green. Deleting the `if` body must fail this test.
+   */
+  it("clears the echo once a re-read brings back the stored message", async () => {
+    const SENT = "66666666-6666-4666-8666-666666666666";
+    const source = bodyStream();
+    const chat: { reject: ((reason: Error) => void) | null } = { reject: null };
+    let storedNow = false;
+    const withSent = () => ({
+      conversationId: CONVERSATION,
+      olderCursor: null,
+      messages: [
+        {
+          messageId: SENT,
+          role: "user",
+          createdAt: "2026-09-09T10:00:30.000Z",
+          parts: [{ kind: "text", text: "ще одне", status: "complete" }],
+          revision: 1,
+        },
+        {
+          messageId: MESSAGE,
+          role: "assistant",
+          createdAt: "2026-09-09T10:01:00.000Z",
+          parts: [{ kind: "text", text: "Готово.", status: "complete" }],
+          revision: 4,
+        },
+      ],
+      openPause: null,
+    });
+    fetchMock.mockImplementation((url: unknown) => {
+      const target = String(url);
+      if (target.includes("/assistant/kit/events")) {
+        return Promise.resolve({ ok: true, status: 200, body: source.body });
+      }
+      if (target.includes("/assistant/kit/chat")) {
+        return new Promise<Response>((_resolve, reject) => {
+          chat.reject = reject;
+        });
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            status: "ok",
+            window: storedNow ? withSent() : settledWindow("Готово."),
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      );
+    });
+
+    const view = mount({ visible: true });
+    await flush();
+
+    const sent: { outcome: unknown } = { outcome: null };
+    act(() => {
+      void view
+        .latest()
+        .send("ще одне")
+        .then((outcome) => {
+          sent.outcome = outcome;
+        });
+    });
+    await flush();
+
+    await act(async () => {
+      chat.reject?.(new Error("network is gone"));
+      await flush();
+    });
+    expect(sent.outcome).toEqual({
+      kind: "unknown",
+      failure: { kind: "unreachable" },
+    });
+    // Kept for now: the accept may well have stored it.
+    expect(view.latest().rows.map((row) => row.text)).toContain("ще одне");
+
+    // It had been stored. An untracked turn ending forces the re-read that
+    // finds it, and this one is issued with no send in flight.
+    storedNow = true;
+    act(() => {
+      source.send("turn.finished", {
+        type: "turn.finished",
+        kind: "chat",
+        commandId: COMMAND,
+        status: "done",
+        window: settledWindow("Готово."),
+      });
+    });
+    await flush();
+
+    // Once, not twice: the echo gave way to the stored message.
+    expect(view.latest().rows.map((row) => row.text)).toEqual([
+      "ще одне",
+      "Готово.",
+    ]);
+  });
+
   it("replaces stale state from the snapshot a reconnection opens with", async () => {
     const source = serve({ messages: [streamingWindow()] });
     const view = mount({ visible: true });

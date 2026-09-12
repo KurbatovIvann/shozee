@@ -275,10 +275,6 @@ describe("a stream that goes silent", () => {
   });
 
   /**
-   * The heartbeat carries no event, which is exactly why liveness has to be
-   * "bytes arrived" rather than "something parsed".
-   */
-  /**
    * The same death, one step earlier in the connection's life: the path dies
    * while the request is still outstanding, so `await expoFetch` never settles
    * and nothing downstream of it ever runs.
@@ -295,6 +291,10 @@ describe("a stream that goes silent", () => {
     expect(live.closed.count).toBe(1);
   });
 
+  /**
+   * The heartbeat carries no event, which is exactly why liveness has to be
+   * "bytes arrived" rather than "something parsed".
+   */
   it("is kept alive by heartbeats that carry no event at all", async () => {
     const source = bodyStream();
     respondWith(source.body);
