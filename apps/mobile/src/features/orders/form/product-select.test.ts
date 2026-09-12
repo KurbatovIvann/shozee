@@ -5,6 +5,7 @@ import { itemCountLabel } from "../shared/item-count";
 import {
   filterProductSelectRows,
   productPickerParentSubtitle,
+  resolveProductSelectListState,
   visibleProductSelectRows,
   type ProductSelectRow,
 } from "./product-select";
@@ -134,5 +135,79 @@ describe("visibleProductSelectRows", () => {
         serverFiltered: true,
       }),
     ).toEqual([]);
+  });
+});
+
+describe("resolveProductSelectListState", () => {
+  const products: ProductSelectRow[] = [
+    {
+      id: "11111111-1111-4111-8111-111111111111",
+      name: "Торт",
+      hasVariants: false,
+      variantsLabel: "Без варіантів",
+      thumbnailFileId: null,
+      thumbnailUrl: null,
+      thumbnailFailed: false,
+    },
+  ];
+
+  it("shows loading while the first page of a controlled query loads", () => {
+    expect(
+      resolveProductSelectListState({
+        products: [],
+        query: "торт",
+        sessionOpen: true,
+        serverFiltered: true,
+        loadingMore: true,
+      }),
+    ).toEqual({ kind: "loading" });
+  });
+
+  it("shows empty once a controlled query settles with no rows", () => {
+    expect(
+      resolveProductSelectListState({
+        products: [],
+        query: "торт",
+        sessionOpen: true,
+        serverFiltered: true,
+        loadingMore: false,
+      }),
+    ).toEqual({ kind: "empty" });
+  });
+
+  it("shows empty for an uncontrolled query even while loadingMore is true", () => {
+    expect(
+      resolveProductSelectListState({
+        products: [],
+        query: "торт",
+        sessionOpen: true,
+        serverFiltered: false,
+        loadingMore: true,
+      }),
+    ).toEqual({ kind: "empty" });
+  });
+
+  it("stays empty while the session is closed even when loading", () => {
+    expect(
+      resolveProductSelectListState({
+        products: [],
+        query: "",
+        sessionOpen: false,
+        serverFiltered: true,
+        loadingMore: true,
+      }),
+    ).toEqual({ kind: "empty" });
+  });
+
+  it("shows items once rows are visible regardless of loadingMore", () => {
+    expect(
+      resolveProductSelectListState({
+        products,
+        query: "",
+        sessionOpen: true,
+        serverFiltered: false,
+        loadingMore: true,
+      }),
+    ).toEqual({ kind: "items", items: products });
   });
 });

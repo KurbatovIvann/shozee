@@ -6,8 +6,8 @@ import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { SearchField } from "./search-field";
 import { Sheet } from "./sheet";
 import {
+  resolveOptionSelectListState,
   resolveQuerySelectMode,
-  visibleOptionSelectItems,
   type OptionSelectItem,
 } from "./option-select";
 
@@ -62,10 +62,11 @@ export function OptionSelectSheet(props: {
     setLocalQuery(text);
   }
 
-  const filtered = visibleOptionSelectItems({
+  const listState = resolveOptionSelectListState({
     options: props.options,
     query,
     serverFiltered,
+    loadingMore: props.loadingMore === true,
   });
   const emptyOptionLabel = props.emptyOptionLabel;
   const emptyLabel =
@@ -106,12 +107,17 @@ export function OptionSelectSheet(props: {
             }}
           />
         ) : null}
-        {filtered.length === 0 ? (
+        {listState.kind === "loading" ? (
+          <ActivityIndicator
+            accessibilityLabel={props.loadingMoreLabel}
+            color={theme.colors.mutedForeground}
+          />
+        ) : listState.kind === "empty" ? (
           emptyLabel !== null ? (
             <Text style={styles.empty}>{emptyLabel}</Text>
           ) : null
         ) : (
-          filtered.map((option) => (
+          listState.items.map((option) => (
             <OptionRow
               key={option.id}
               label={option.name}
@@ -128,13 +134,13 @@ export function OptionSelectSheet(props: {
             />
           ))
         )}
-        {filtered.length > 0 && props.loadingMore === true ? (
+        {listState.kind === "items" && props.loadingMore === true ? (
           <ActivityIndicator
             accessibilityLabel={props.loadingMoreLabel}
             color={theme.colors.mutedForeground}
           />
         ) : null}
-        {filtered.length > 0 &&
+        {listState.kind === "items" &&
         props.loadingMore !== true &&
         props.onEndReached !== undefined &&
         props.loadMoreLabel !== undefined ? (

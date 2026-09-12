@@ -19,8 +19,8 @@ describe("controlled query", () => {
     expect(SOURCE).toContain("onChangeText={handleQueryChange}");
   });
 
-  it("does not filter locally when server-filtered", () => {
-    expect(SOURCE).toContain("visibleProductSelectRows({");
+  it("derives what the list shows from resolveProductSelectListState", () => {
+    expect(SOURCE).toContain("resolveProductSelectListState({");
     expect(SOURCE).not.toContain("filterProductSelectRows(");
   });
 

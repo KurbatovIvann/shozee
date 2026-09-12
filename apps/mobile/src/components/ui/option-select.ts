@@ -60,6 +60,27 @@ export function flattenPages<T>(
   return pages.flatMap((page) => page.items);
 }
 
+export type OptionSelectListState =
+  | { readonly kind: "loading" }
+  | { readonly kind: "empty" }
+  | { readonly kind: "items"; readonly items: readonly OptionSelectItem[] };
+
+export function resolveOptionSelectListState(args: {
+  readonly options: readonly OptionSelectItem[];
+  readonly query: string;
+  readonly serverFiltered: boolean;
+  readonly loadingMore: boolean;
+}): OptionSelectListState {
+  const items = visibleOptionSelectItems(args);
+  if (items.length > 0) {
+    return { kind: "items", items };
+  }
+  if (args.serverFiltered && args.loadingMore) {
+    return { kind: "loading" };
+  }
+  return { kind: "empty" };
+}
+
 export type QuerySelectMode =
   | {
       readonly controlled: true;

@@ -4,6 +4,7 @@ import {
   filterOptionSelectItems,
   flattenPages,
   optionSelectItems,
+  resolveOptionSelectListState,
   resolveQuerySelectMode,
   visibleOptionSelectItems,
 } from "./option-select";
@@ -65,6 +66,56 @@ describe("visibleOptionSelectItems", () => {
         serverFiltered: false,
       }),
     ).toEqual([options[0]]);
+  });
+});
+
+describe("resolveOptionSelectListState", () => {
+  const options = optionSelectItems([
+    { id: "a", name: "Марія", description: "+38067" },
+  ]);
+
+  it("shows loading while the first page of a controlled query loads", () => {
+    expect(
+      resolveOptionSelectListState({
+        options: [],
+        query: "мар",
+        serverFiltered: true,
+        loadingMore: true,
+      }),
+    ).toEqual({ kind: "loading" });
+  });
+
+  it("shows empty once a controlled query settles with no rows", () => {
+    expect(
+      resolveOptionSelectListState({
+        options: [],
+        query: "мар",
+        serverFiltered: true,
+        loadingMore: false,
+      }),
+    ).toEqual({ kind: "empty" });
+  });
+
+  it("shows empty for an uncontrolled query even while loadingMore is true", () => {
+    expect(
+      resolveOptionSelectListState({
+        options: [],
+        query: "мар",
+        serverFiltered: false,
+        loadingMore: true,
+      }),
+    ).toEqual({ kind: "empty" });
+  });
+
+  it("shows items once rows are visible regardless of loadingMore", () => {
+    expect(
+      resolveOptionSelectListState({
+        options,
+        query: "",
+        serverFiltered: false,
+        loadingMore: true,
+      }),
+    ).toEqual({ kind: "items", items: options });
   });
 });
 

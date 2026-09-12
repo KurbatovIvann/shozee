@@ -58,8 +58,8 @@ describe("controlled query", () => {
     expect(SOURCE).toContain("onChangeText={handleQueryChange}");
   });
 
-  it("does not filter locally when server-filtered", () => {
-    expect(SOURCE).toContain("visibleOptionSelectItems({");
+  it("derives what the list shows from resolveOptionSelectListState", () => {
+    expect(SOURCE).toContain("resolveOptionSelectListState({");
     expect(SOURCE).not.toContain("filterOptionSelectItems(");
   });
 

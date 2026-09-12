@@ -12,7 +12,7 @@ import {
 import { interpolate } from "../../../i18n/locale";
 import { OrderThumbnail } from "../shared/order-thumbnail";
 import {
-  visibleProductSelectRows,
+  resolveProductSelectListState,
   type ProductSelectLevel,
   type ProductSelectRow,
   type ProductSelectVariantRow,
@@ -86,15 +86,22 @@ export function ProductSelectSheet(props: {
     setLocalQuery(text);
   }
 
-  const filtered = useMemo(
+  const listState = useMemo(
     () =>
-      visibleProductSelectRows({
+      resolveProductSelectListState({
         products: props.products,
         query,
         sessionOpen: props.sessionOpen,
         serverFiltered,
+        loadingMore: props.loadingMore === true,
       }),
-    [props.products, props.sessionOpen, query, serverFiltered],
+    [
+      props.products,
+      props.sessionOpen,
+      query,
+      serverFiltered,
+      props.loadingMore,
+    ],
   );
 
   return (
@@ -144,10 +151,15 @@ export function ProductSelectSheet(props: {
               maxLength={props.searchMaxLength}
             />
             <View style={styles.list}>
-              {filtered.length === 0 ? (
+              {listState.kind === "loading" ? (
+                <ActivityIndicator
+                  accessibilityLabel={props.loadingMoreLabel}
+                  color={theme.colors.mutedForeground}
+                />
+              ) : listState.kind === "empty" ? (
                 <Text style={styles.empty}>{props.emptyLabel}</Text>
               ) : (
-                filtered.map((product) => (
+                listState.items.map((product) => (
                   <ProductPickerRow
                     key={product.id}
                     id={product.id}
@@ -163,13 +175,13 @@ export function ProductSelectSheet(props: {
                   />
                 ))
               )}
-              {filtered.length > 0 && props.loadingMore === true ? (
+              {listState.kind === "items" && props.loadingMore === true ? (
                 <ActivityIndicator
                   accessibilityLabel={props.loadingMoreLabel}
                   color={theme.colors.mutedForeground}
                 />
               ) : null}
-              {filtered.length > 0 &&
+              {listState.kind === "items" &&
               props.loadingMore !== true &&
               props.onEndReached !== undefined &&
               props.loadMoreLabel !== undefined ? (
