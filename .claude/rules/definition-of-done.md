@@ -1,7 +1,7 @@
 # Definition of done
 
 A task (one branch = one PR) is done only when all of the following hold.
-The size budget is 400 changed source lines, tests and generated files and
+The size budget is 800 changed source lines, tests and generated files and
 markdown excluded (`CLAUDE.md` -> Ticket size).
 
 1. **Required tests** — tests-required, not tests-first-or-fail:

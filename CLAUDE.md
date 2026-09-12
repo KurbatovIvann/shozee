@@ -40,7 +40,7 @@ is a status, not an essay.
 - **Never paste logs.** Verify and merge-gate summaries only; CI logs go to
   `ci-triage`. Redirect noisy commands (`pnpm install`, builds) to a file
   under `.agent-tmp/` and print the exit code.
-- **Ticket size.** The budget is **400 changed source lines**. Tests,
+- **Ticket size.** The budget is **800 changed source lines**. Tests,
   generated files and markdown do not count: the definition of done makes
   tests 1.5-4x the source, so a budget over all changed lines is unmeetable
   and therefore gets ignored. The gate is

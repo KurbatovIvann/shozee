@@ -76,8 +76,8 @@ Sequencing rules:
   every action using those tables.
 - Actions before projections; emitters before subscribers; `ctx.call` targets
   (ADR-0015) before callers. Backend before UI for the same capability.
-- **Size is a hard constraint, not comfort.** One ticket ≤ **400 changed
-  source lines** and ≤ ~12 source files. Tests, generated files and markdown
+- **Size is a hard constraint, not comfort.** One ticket ≤ **800 changed
+  source lines** and ≤ 18 source files. Tests, generated files and markdown
   do not count: the definition of done makes tests 1.5-4x the source, so a
   budget over all changed lines is unmeetable and gets ignored — which is how
   the assistant-async slice shipped 13 children averaging ~1,050 source lines

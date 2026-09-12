@@ -29,7 +29,7 @@ open `docs/archive/`.
 with Grep and `Read` offset/limit only where the diff leaves a question. The
 card and ticket text are in your prompt; you have no Linear access. You are
 read-only: never edit, commit, push, comment, mark ready, or merge. Finish
-under ~100k context; over 400 changed source lines (tests, generated files
+under ~100k context; over 800 changed source lines (tests, generated files
 and markdown excluded) is itself a high finding.
 
 ## What you check
@@ -60,5 +60,6 @@ FINDINGS:
 - [critical|high|medium|low] path:line — <issue> — violates <ADR/invariant> — fix: <fix>
 ```
 
-Merge-blocking: any critical/high/medium finding or STOP_ADR_REQUIRED. Low
-findings are listed for the parent to decide.
+Merge-blocking: any critical/high/medium finding or STOP_ADR_REQUIRED. A low
+finding is the guardian's nit: list it, and the parent files it as its own
+Backlog ticket under the feature's slice-nits parent. It never holds a merge.

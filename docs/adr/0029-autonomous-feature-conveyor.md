@@ -1,6 +1,8 @@
 # ADR-0029: Autonomous parent conveyor
 
 - **Status**: Accepted (tooling mechanics amended by [ADR-0040](0040-claude-code-agent-harness.md): Claude Code subagents replace Cursor cloud Tasks; decisions unchanged)
+- **Amended**: 2026-09-12 — a nit is a ticket, not a same-branch fix, and a
+  child takes at most two fix rounds (see Amendment below)
 - **Date**: 2026-08-28
 - **Deciders**: owner (encoded from the SHO-183 staff price-lists run)
 
@@ -69,11 +71,9 @@ Launch isolated `/review` when the lane requires it (`sensitive`,
 first-slice, UI, or a prior REQUEST CHANGES on this feature). Do not
 launch it on mechanical or ordinary routine backend. **If it is
 launched, wait for the verdict before squash-merge.** REQUEST CHANGES
-with blockers/majors **and nits** are same-branch fixes (parent
-relaunches a cloud executor on that PR). After majors, `/review` again.
-After a nits-only apply, merge on green CI — do not start an infinite
-taste loop. Skip a nit only when it contradicts the card, golden, or an
-ADR. A verdict that arrives only **after** merge (hung agent, dropped
+with blockers/majors are same-branch fixes (parent relaunches a cloud
+executor on that PR). After majors, `/review` again. Nits do not hold the
+merge and are not applied on the branch (amended 2026-09-12). A verdict that arrives only **after** merge (hung agent, dropped
 notification) becomes a **new** child — fallback, not the happy path —
 including leftover nits, so they are not comments on Done.
 
@@ -109,8 +109,8 @@ merge itself.
   `main` (SHO-189 / SHO-190). Wait when `/review` is launched. Post-merge
   children are fallback only.
 - **Leave nits as Linear comments** — rejected by the owner: comments on
-  Done tickets are never seen. Fix nits on the same branch before merge.
-  After merge (fallback), nits get a follow-up child too.
+  Done tickets are never seen. Still rejected after the 2026-09-12
+  amendment: a nit becomes a *ticket*, which is read, not a comment.
 
 ## Consequences
 
@@ -121,8 +121,35 @@ merge itself.
   sequential; same-branch cloud relaunch for CI/Bugbot fixes.
 - `docs/pipeline.md` describes the optional parent conductor. ADR-0023’s
   four roles stay; this ADR adds who launches them on a whole feature.
-- When `/review` is launched, it is a merge gate. Nits are same-branch
-  fixes before merge, not comments and not happy-path tickets. Post-merge
-  findings (majors or nits) become a **new** child only as fallback;
-  never reopen Done.
+- When `/review` is launched, it is a merge gate for blockers and majors.
+  Nits are tickets (amended 2026-09-12). Post-merge majors become a **new**
+  child only as fallback; never reopen Done.
 - Process-gap tickets like SHO-197 are documentation, not module work.
+
+## Amendment, 2026-09-12 — a nit is a ticket, and two rounds is the cap
+
+**What no longer holds.** "REQUEST CHANGES with blockers/majors **and nits**
+are same-branch fixes" and "APPROVE means no blockers, no majors, and no
+nits" (`.claude/agents/reviewer.md`). Measured on the assistant-async slice
+(SHO-557): 12 PRs, 28 of 39 commits were fix rounds, and the reviewer's own
+budget told it to sample ("review the riskiest 800 lines") diffs of
+2,000-3,000 lines — so each round returned findings the previous round had
+never opened. An unbounded supply of nits against a zero-nit acceptance bar
+cannot terminate.
+
+**What now holds.**
+
+- `APPROVE` means no blockers and no majors. Nits are still reported.
+- A reviewer nit and a guardian `low` become **one Backlog ticket each**,
+  under a per-feature `<feature>: slice nits` parent created on first use.
+  One nit, one ticket: a list in a single ticket is read once.
+- A child takes **at most two fix rounds**. After the second the parent asks
+  the human; whatever is left that is not a blocker becomes a ticket.
+
+**Why not comments** (the alternative this ADR rejected in 2026-08): a
+comment on a Done ticket is never read again. A Backlog ticket is scheduled
+work, which is what the owner asked for.
+
+**Unchanged.** Writer ≠ reviewer; the parent waits for a launched review
+before squash-merge; blockers and majors are same-branch fixes; post-merge
+majors become a new child as fallback; never reopen Done.

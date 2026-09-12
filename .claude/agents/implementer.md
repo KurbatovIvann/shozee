@@ -47,7 +47,7 @@ the mode: `fresh` (branch from `origin/main`), `continue` (branch exists), or
 - Noisy commands go to a file: `pnpm install --frozen-lockfile --prefer-offline > .agent-tmp/install.log 2>&1; echo exit=$?`.
 - No Linear calls: the parent owns Linear. No Agent tool (you have none).
 - Stop early. A STOPPED report after 10 minutes beats a 3000-line PR after
-  three hours. Above **400 changed source lines** (tests, generated files and
+  three hours. Above **800 changed source lines** (tests, generated files and
   markdown excluded) the ticket is too big: report STOPPED with a proposed
   split instead of finishing it. Check with
   `node .claude/scripts/diff-hygiene.mjs` as soon as the shape is in place,
