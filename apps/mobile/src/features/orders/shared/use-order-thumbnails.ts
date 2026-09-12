@@ -8,7 +8,10 @@ import { useQueries } from "@tanstack/react-query";
 import { useRef } from "react";
 
 import type { ContractClient } from "../../../api/client";
-import { fileDownloadUrlsQueryOptions } from "../../../api/file-download-query";
+import {
+  fileDownloadUrlsQueryOptions,
+  type FileDownloadClient,
+} from "../../../api/file-download-query";
 import {
   failedPrimaryImageFileIds,
   mergeDownloadUrlPages,
@@ -16,6 +19,34 @@ import {
   retainStringSet,
   uniquePrimaryImageFileIds,
 } from "./order-thumbnails";
+
+export const ORDER_THUMBNAIL_RENDITION = "thumb" as const;
+
+export function orderThumbnailDownloadInput(fileIds: readonly string[]): {
+  readonly fileIds: string[];
+  readonly rendition: typeof ORDER_THUMBNAIL_RENDITION;
+} {
+  return { fileIds: [...fileIds], rendition: ORDER_THUMBNAIL_RENDITION };
+}
+
+export function orderThumbnailQueryOptions(args: {
+  readonly client: FileDownloadClient | null;
+  readonly companyId: string | null;
+  readonly getActiveCompany: () => string | null;
+  readonly fileIds: readonly string[];
+  readonly enabled: boolean;
+}) {
+  const options = fileDownloadUrlsQueryOptions({
+    client: args.client,
+    companyId: args.companyId,
+    getActiveCompany: args.getActiveCompany,
+    ...orderThumbnailDownloadInput(args.fileIds),
+  });
+  return {
+    ...options,
+    enabled: options.enabled && args.enabled,
+  };
+}
 
 export function useOrderThumbnails(args: {
   readonly client: ContractClient | null;
@@ -32,19 +63,15 @@ export function useOrderThumbnails(args: {
   readonly failedFileIds: ReadonlySet<string>;
 } {
   const thumbnailQueries = useQueries({
-    queries: args.pages.map((page) => {
-      const fileIds = uniquePrimaryImageFileIds(page.items);
-      const options = fileDownloadUrlsQueryOptions({
+    queries: args.pages.map((page) =>
+      orderThumbnailQueryOptions({
         client: args.client,
         companyId: args.companyId,
-        fileIds,
         getActiveCompany: args.getActiveCompany,
-      });
-      return {
-        ...options,
-        enabled: options.enabled && args.enabled,
-      };
-    }),
+        fileIds: uniquePrimaryImageFileIds(page.items),
+        enabled: args.enabled,
+      }),
+    ),
   });
   const nextUrls = mergeDownloadUrlPages(
     thumbnailQueries.map((query) => query.data),

@@ -6,6 +6,26 @@
  */
 
 /** First-seen unique `primaryImageFileId` values for one list page. */
+export type DraftLineThumbnailItem = {
+  readonly productId: string;
+  readonly primaryImageFileId: string | null;
+};
+
+export function draftLineThumbnailItems(
+  draftProductIds: readonly string[],
+  catalogProductIds: readonly string[],
+  imageFileIdsByIndex: ReadonlyArray<readonly string[] | undefined>,
+): readonly DraftLineThumbnailItem[] {
+  return draftProductIds.map((productId) => {
+    const index = catalogProductIds.indexOf(productId);
+    const imageFileIds = index < 0 ? undefined : imageFileIdsByIndex[index];
+    return {
+      productId,
+      primaryImageFileId: imageFileIds?.[0] ?? null,
+    };
+  });
+}
+
 export function uniquePrimaryImageFileIds(
   items: ReadonlyArray<{ readonly primaryImageFileId: string | null }>,
 ): string[] {

@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useQueries } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import {
   catalogFactsBlockSubmit,
@@ -18,19 +18,30 @@ import { useApiClient } from "../../../api/api-provider";
 import { useActiveCompany } from "../../../api/query-provider";
 import { useResolvedCompany } from "../../../company-resolution/resolved-company-provider";
 import { flattenPages, optionSelectItems } from "../../../components/ui";
-import { useDrainInfinitePages } from "../../../hooks/use-drain-pages";
+import { useDebouncedValue } from "../../../hooks/use-debounced-value";
 import {
   getOrderCatalogProductQueryOptions,
   listOrderProductsInfiniteOptions,
+  orderProductsLookupInput,
 } from "../api/order-catalog-query";
-import { listOrderCustomersInfiniteOptions } from "../api/order-customers-query";
+import {
+  listOrderCustomersInfiniteOptions,
+  orderCustomersLookupInput,
+} from "../api/order-customers-query";
+import {
+  normalizeOrderCustomerSearch,
+  normalizeOrderProductQuery,
+} from "../shared/order-caps";
 import { canFetchFileDownloadUrls } from "../shared/order-permissions";
 import {
+  draftLineThumbnailItems,
   orderThumbnailView,
   type OrderThumbnailView,
 } from "../shared/order-thumbnails";
 import { useOrderThumbnails } from "../shared/use-order-thumbnails";
 import type { ProductVariantsLoadStatus } from "./product-select";
+
+const LOOKUP_SEARCH_DEBOUNCE_MS = 300;
 
 export type OrderFormProductRow = {
   readonly id: string;
@@ -47,7 +58,15 @@ export function useOrderFormLookups(args: {
   readonly draftProductIds: readonly string[];
 }): {
   readonly customerOptions: ReturnType<typeof optionSelectItems>;
+  readonly customerQuery: string;
+  readonly onCustomerQueryChange: (value: string) => void;
+  readonly customersLoadingMore: boolean;
+  readonly onCustomersEndReached: () => void;
   readonly productRows: readonly OrderFormProductRow[];
+  readonly productQuery: string;
+  readonly onProductQueryChange: (value: string) => void;
+  readonly productsLoadingMore: boolean;
+  readonly onProductsEndReached: () => void;
   readonly variantOptions: ReturnType<typeof optionSelectItems>;
   readonly variantsStatus: ProductVariantsLoadStatus;
   readonly thumbnailsByProductId: ReadonlyMap<string, OrderFormThumbnail>;
@@ -66,35 +85,55 @@ export function useOrderFormLookups(args: {
     args.variantProductId,
   ]);
 
+  const [customerQuery, setCustomerQuery] = useState("");
+  const debouncedCustomerQuery = useDebouncedValue(
+    customerQuery,
+    LOOKUP_SEARCH_DEBOUNCE_MS,
+  );
+  const customerSearch = normalizeOrderCustomerSearch(debouncedCustomerQuery);
+
+  const [productQuery, setProductQuery] = useState("");
+  const debouncedProductQuery = useDebouncedValue(
+    productQuery,
+    LOOKUP_SEARCH_DEBOUNCE_MS,
+  );
+  const productSearch = normalizeOrderProductQuery(debouncedProductQuery);
+
   const customersQuery = useInfiniteQuery(
     listOrderCustomersInfiniteOptions({
       client: apiClient,
       companyId: activeCompanyId,
+      input: orderCustomersLookupInput(customerSearch),
       getActiveCompany,
       enabled,
     }),
   );
-  useDrainInfinitePages({
-    status: customersQuery.status,
-    hasNextPage: customersQuery.hasNextPage,
-    isFetchingNextPage: customersQuery.isFetchingNextPage,
-    fetchNextPage: customersQuery.fetchNextPage,
-  });
+  const customersHasNextPage = customersQuery.hasNextPage;
+  const customersFetchingNextPage = customersQuery.isFetchingNextPage;
+  const customersFetchNextPage = customersQuery.fetchNextPage;
+  const onCustomersEndReached = useCallback(() => {
+    if (customersHasNextPage && !customersFetchingNextPage) {
+      void customersFetchNextPage();
+    }
+  }, [customersFetchNextPage, customersFetchingNextPage, customersHasNextPage]);
 
   const productsQuery = useInfiniteQuery(
     listOrderProductsInfiniteOptions({
       client: apiClient,
       companyId: activeCompanyId,
+      input: orderProductsLookupInput(productSearch),
       getActiveCompany,
       enabled,
     }),
   );
-  useDrainInfinitePages({
-    status: productsQuery.status,
-    hasNextPage: productsQuery.hasNextPage,
-    isFetchingNextPage: productsQuery.isFetchingNextPage,
-    fetchNextPage: productsQuery.fetchNextPage,
-  });
+  const productsHasNextPage = productsQuery.hasNextPage;
+  const productsFetchingNextPage = productsQuery.isFetchingNextPage;
+  const productsFetchNextPage = productsQuery.fetchNextPage;
+  const onProductsEndReached = useCallback(() => {
+    if (productsHasNextPage && !productsFetchingNextPage) {
+      void productsFetchNextPage();
+    }
+  }, [productsFetchNextPage, productsFetchingNextPage, productsHasNextPage]);
 
   const productQueries = useQueries({
     queries: catalogProductIds.map((productId) => {
@@ -111,12 +150,23 @@ export function useOrderFormLookups(args: {
     }),
   });
 
+  const draftCatalogIds = uniqueProductIds(args.draftProductIds);
+  const draftThumbnailItems = useMemo(
+    () =>
+      draftLineThumbnailItems(
+        draftCatalogIds,
+        catalogProductIds,
+        productQueries.map((query) => query.data?.imageFileIds),
+      ),
+    [catalogProductIds, draftCatalogIds, productQueries],
+  );
+
   const productPages = productsQuery.data?.pages ?? [];
   const { urlsByFileId, failedFileIds } = useOrderThumbnails({
     client: apiClient,
     companyId: activeCompanyId,
     getActiveCompany,
-    pages: productPages,
+    pages: [...productPages, { items: draftThumbnailItems }],
     enabled: enabled && canFetchThumbnails,
   });
 
@@ -145,7 +195,6 @@ export function useOrderFormLookups(args: {
     return map;
   }, [catalogProductIds, productQueries]);
 
-  const draftCatalogIds = uniqueProductIds(args.draftProductIds);
   const catalogQueryByProductId = new Map<
     string,
     CatalogFactsQuerySnapshot | undefined
@@ -180,19 +229,30 @@ export function useOrderFormLookups(args: {
 
   const thumbnailsByProductId = useMemo(() => {
     const map = new Map<string, OrderFormThumbnail>();
+    const buildThumbnail = (rawFileId: string | null): OrderFormThumbnail => {
+      const fileId = canFetchThumbnails ? rawFileId : null;
+      return orderThumbnailView({
+        fileId,
+        url: fileId === null ? undefined : urlsByFileId.get(fileId),
+        downloadFailed: fileId !== null && failedFileIds.has(fileId),
+      });
+    };
     for (const row of productRows) {
-      const fileId = canFetchThumbnails ? row.primaryImageFileId : null;
-      map.set(
-        row.id,
-        orderThumbnailView({
-          fileId,
-          url: fileId === null ? undefined : urlsByFileId.get(fileId),
-          downloadFailed: fileId !== null && failedFileIds.has(fileId),
-        }),
-      );
+      map.set(row.id, buildThumbnail(row.primaryImageFileId));
+    }
+    for (const item of draftThumbnailItems) {
+      if (!map.has(item.productId)) {
+        map.set(item.productId, buildThumbnail(item.primaryImageFileId));
+      }
     }
     return map;
-  }, [canFetchThumbnails, failedFileIds, productRows, urlsByFileId]);
+  }, [
+    canFetchThumbnails,
+    draftThumbnailItems,
+    failedFileIds,
+    productRows,
+    urlsByFileId,
+  ]);
 
   const pickerIndex =
     args.variantProductId === null
@@ -216,7 +276,15 @@ export function useOrderFormLookups(args: {
 
   return {
     customerOptions,
+    customerQuery,
+    onCustomerQueryChange: setCustomerQuery,
+    customersLoadingMore: customersQuery.isFetching,
+    onCustomersEndReached,
     productRows,
+    productQuery,
+    onProductQueryChange: setProductQuery,
+    productsLoadingMore: productsQuery.isFetching,
+    onProductsEndReached,
     variantOptions,
     variantsStatus:
       args.variantProductId === null

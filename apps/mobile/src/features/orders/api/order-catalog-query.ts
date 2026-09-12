@@ -24,16 +24,44 @@ export type GetProductOutput = Awaited<
 >;
 export type GetProductVariant = GetProductOutput["variants"][number];
 
+export type OrderProductsListClient = {
+  readonly client: {
+    readonly catalog: {
+      readonly listProducts: ShowzyClient["client"]["catalog"]["listProducts"];
+    };
+  };
+};
+
+export type OrderCatalogProductClient = {
+  readonly client: {
+    readonly catalog: {
+      readonly getProduct: ShowzyClient["client"]["catalog"]["getProduct"];
+    };
+  };
+};
+
 export const ORDER_PRODUCTS_LOOKUP_INPUT = {
   status: "active" as const,
   limit: ORDER_LOOKUP_PAGE_SIZE,
 };
 
-export type ListOrderProductsPageInput = typeof ORDER_PRODUCTS_LOOKUP_INPUT;
+export type ListOrderProductsPageInput = typeof ORDER_PRODUCTS_LOOKUP_INPUT & {
+  readonly query?: string;
+};
+
+export function orderProductsLookupInput(
+  query: string | undefined,
+): ListOrderProductsPageInput {
+  return {
+    ...ORDER_PRODUCTS_LOOKUP_INPUT,
+    ...(query === undefined ? {} : { query }),
+  };
+}
 
 export function listOrderProductsInfiniteOptions(args: {
-  readonly client: ContractClient | null;
+  readonly client: OrderProductsListClient | null;
   readonly companyId: string | null;
+  readonly input: ListOrderProductsPageInput;
   readonly getActiveCompany: () => string | null;
   readonly enabled?: boolean;
 }) {
@@ -42,14 +70,14 @@ export function listOrderProductsInfiniteOptions(args: {
     ...contractInfiniteQueryOptions({
       actionName: LIST_PRODUCTS_ACTION,
       companyId: args.companyId,
-      input: ORDER_PRODUCTS_LOOKUP_INPUT,
+      input: args.input,
       getActiveCompany: args.getActiveCompany,
       queryFn: (cursor: string | null) => {
         if (client === null) {
           return Promise.reject(new TypeError("Failed to fetch"));
         }
         return client.client.catalog.listProducts({
-          ...ORDER_PRODUCTS_LOOKUP_INPUT,
+          ...args.input,
           ...(cursor === null ? {} : { cursor }),
         });
       },
@@ -61,7 +89,7 @@ export function listOrderProductsInfiniteOptions(args: {
 }
 
 export function getOrderCatalogProductQueryOptions(args: {
-  readonly client: ContractClient | null;
+  readonly client: OrderCatalogProductClient | null;
   readonly companyId: string | null;
   readonly productId: string | null;
   readonly getActiveCompany: () => string | null;

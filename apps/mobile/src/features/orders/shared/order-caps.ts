@@ -2,10 +2,30 @@
  * Create-form ceilings from `@showzy/validation/orders` (SHO-423). Same
  * numbers as `orders.create`. Mobile cannot import module contracts.
  */
+import { LIST_PRODUCTS_QUERY_MAX } from "@showzy/validation/catalog";
+import { LIST_CUSTOMERS_SEARCH_MAX } from "@showzy/validation/customers";
+
 export {
   CREATE_ORDER_COMMENT_MAX,
   CREATE_ORDER_MAX_ITEMS,
 } from "@showzy/validation/orders";
+export { LIST_CUSTOMERS_SEARCH_MAX, LIST_PRODUCTS_QUERY_MAX };
+
+export function normalizeOrderCustomerSearch(text: string): string | undefined {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+  return trimmed.slice(0, LIST_CUSTOMERS_SEARCH_MAX);
+}
+
+export function normalizeOrderProductQuery(text: string): string | undefined {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+  return trimmed.slice(0, LIST_PRODUCTS_QUERY_MAX);
+}
 
 /**
  * `LIST_ORDERS_QUERY_MAX` on `orders.list` (SHO-240). Same 100 cap as

@@ -85,6 +85,12 @@ export function OrderFormView(model: OrderFormModel) {
             model.pickCustomer(id);
           }
         }}
+        query={model.customerQuery}
+        onQueryChange={model.onCustomerQueryChange}
+        loadingMore={model.customersLoadingMore}
+        loadingMoreLabel={form.pickerLoadingMoreLabel}
+        onEndReached={model.onCustomersEndReached}
+        loadMoreLabel={form.pickerLoadMoreLabel}
       />
       <ProductSelectSheet
         visible={model.productSheetOpen}
@@ -114,6 +120,12 @@ export function OrderFormView(model: OrderFormModel) {
         onToggle={model.toggleProduct}
         onToggleVariant={model.pickVariant}
         onConfirm={model.confirmProductPicks}
+        query={model.productQuery}
+        onQueryChange={model.onProductQueryChange}
+        loadingMore={model.productsLoadingMore}
+        loadingMoreLabel={form.pickerLoadingMoreLabel}
+        onEndReached={model.onProductsEndReached}
+        loadMoreLabel={form.pickerLoadMoreLabel}
       />
     </SafeAreaView>
   );
