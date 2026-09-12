@@ -35,6 +35,7 @@ import { interactionResponseSchema } from "@showzy/assistant-kit";
 import {
   acceptProvedRollback,
   assistantTurnEarnedCard,
+  readAssistantChatWindow,
 } from "@showzy/assistant-runtime";
 import type { Context } from "hono";
 import { randomUUID } from "node:crypto";
@@ -96,7 +97,7 @@ export async function handleAssistantKitAbandon(
   }
   const conversationId = parsed.data.conversationId.toLowerCase();
 
-  const { kit } = runtime.forCaller({
+  const { kit, turns } = runtime.forCaller({
     userId: caller.userId,
     companySelector: caller.companySelector,
     requestId,
@@ -120,7 +121,7 @@ export async function handleAssistantKitAbandon(
     200,
     {
       status: "abandoned",
-      window: await kit.messages.read({
+      window: await readAssistantChatWindow(kit, turns, {
         conversationId,
         bind: caller.bind,
       }),
@@ -156,7 +157,7 @@ export async function handleAssistantKitAnswer(
     clientIp: c.get("clientIp"),
   });
   const scope = { conversationId: body.conversationId, bind: caller.bind };
-  const windowNow = () => kit.messages.read(scope);
+  const windowNow = () => readAssistantChatWindow(kit, turns, scope);
 
   // Before the claim, not after. The claim is exactly-once by design, so a
   // retry that reached it would be told `gone` — the answer *did* take, and the

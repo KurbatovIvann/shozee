@@ -65,12 +65,14 @@ function windowOf(options?: {
   readonly status?: "streaming" | "complete";
   readonly revision?: number;
   readonly openPause?: AssistantChatWindow["openPause"];
+  readonly turn?: AssistantChatWindow["turn"];
 }): AssistantChatWindow {
   return {
     conversationId: CONVERSATION,
     messages: [message(options)],
     olderCursor: null,
     openPause: options?.openPause ?? null,
+    turn: options?.turn ?? null,
   };
 }
 
@@ -103,12 +105,28 @@ function finished(
   };
 }
 
-describe("a turn's presence, read from the conversation", () => {
-  it("is the placeholder the accept stores, not a request in flight", () => {
+describe("a turn's presence, read from the window's own turn field", () => {
+  it("reports a running turn", () => {
+    expect(
+      assistantTurnActive(
+        loaded(
+          windowOf({
+            status: "streaming",
+            turn: { id: COMMAND, status: "running" },
+          }),
+        ).thread,
+      ),
+    ).toBe(true);
+  });
+
+  it("reports none once the turn has ended", () => {
     expect(assistantTurnActive(loaded(windowOf()).thread)).toBe(false);
+  });
+
+  it("reports none for a turn the reconciler ended for a removed author, even with a streaming placeholder still stored", () => {
     expect(
       assistantTurnActive(loaded(windowOf({ status: "streaming" })).thread),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("is false before anything has been read", () => {
@@ -360,7 +378,13 @@ describe("a reconnection", () => {
    */
   it("replaces stale state from the snapshot it opens with", () => {
     const stale = apply(
-      loaded(windowOf({ text: "Шукаю", status: "streaming" })),
+      loaded(
+        windowOf({
+          text: "Шукаю",
+          status: "streaming",
+          turn: { id: COMMAND, status: "running" },
+        }),
+      ),
       {
         type: "turn.started",
         conversationId: CONVERSATION,

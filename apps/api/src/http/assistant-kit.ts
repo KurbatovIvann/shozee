@@ -28,6 +28,11 @@ import {
   handleAssistantKitAnswer,
 } from "./assistant-kit-answer.js";
 import {
+  ASSISTANT_KIT_CONTINUE_PATH,
+  assistantKitContinueBodySchema,
+  handleAssistantKitContinue,
+} from "./assistant-kit-continue.js";
+import {
   ASSISTANT_KIT_EVENTS_PATH,
   handleAssistantKitEvents,
   type AssistantKitEvents,
@@ -50,6 +55,7 @@ export {
   ASSISTANT_KIT_ABANDON_PATH,
   ASSISTANT_KIT_ANSWER_PATH,
   ASSISTANT_KIT_CHAT_PATH,
+  ASSISTANT_KIT_CONTINUE_PATH,
   ASSISTANT_KIT_EVENTS_PATH,
   ASSISTANT_KIT_MESSAGES_PATH,
 };
@@ -131,6 +137,19 @@ export function createAssistantKitApp(
         namesTurn: interactionResponseSchema,
       },
       () => handleAssistantKitAnswer(c, runtime),
+    ),
+  );
+  app.post(ASSISTANT_KIT_CONTINUE_PATH, (c) =>
+    withAssistantKitBudget(
+      c,
+      runtime,
+      spend,
+      {
+        skipTurnLimit: true,
+        turnKind: "answer",
+        namesTurn: assistantKitContinueBodySchema,
+      },
+      () => handleAssistantKitContinue(c, runtime),
     ),
   );
   app.post(ASSISTANT_KIT_ABANDON_PATH, (c) =>

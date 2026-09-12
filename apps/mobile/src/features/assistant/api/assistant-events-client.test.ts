@@ -40,6 +40,7 @@ const WINDOW = {
   messages: [],
   olderCursor: null,
   openPause: null,
+  turn: null,
 };
 
 /** A body this test writes into, chunk by chunk, exactly as a network would. */

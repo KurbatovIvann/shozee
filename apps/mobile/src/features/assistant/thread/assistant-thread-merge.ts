@@ -36,6 +36,7 @@
 import {
   mergeAssistantChatWindow,
   type AssistantChatMessage,
+  type AssistantChatTextStatus,
   type AssistantChatThread,
   type AssistantChatWindow,
   type AssistantChatWindowSource,
@@ -62,29 +63,17 @@ export function initialAssistantThreadState(): AssistantThreadState {
   return { thread: null, trackedTurn: null };
 }
 
-/**
- * Whether a turn is running, according to the conversation itself.
- *
- * The accept stores an assistant placeholder whose text part is `streaming`,
- * and the worker writes into that message until the turn ends. So the
- * placeholder *is* the report of a live turn, and it arrives by the same path
- * as everything else. A request in flight is deliberately not part of this: a
- * turn started on another device must read as busy here, and this phone's own
- * request having returned does not mean the turn is over.
- */
 export function assistantTurnActive(
   thread: AssistantChatThread | null,
 ): boolean {
-  if (thread === null) {
-    return false;
-  }
-  return thread.messages.some(
-    (message) =>
-      message.role === "assistant" &&
-      message.parts.some(
-        (part) => part.kind === "text" && part.status === "streaming",
-      ),
-  );
+  return thread !== null && thread.turn !== null;
+}
+
+export function assistantTextPartStatus(
+  turn: AssistantChatThread["turn"] | null,
+  status: AssistantChatTextStatus,
+): AssistantChatTextStatus {
+  return status === "streaming" && turn === null ? "interrupted" : status;
 }
 
 /**

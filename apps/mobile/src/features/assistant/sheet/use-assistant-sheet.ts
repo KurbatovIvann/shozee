@@ -176,6 +176,7 @@ export function useAssistantSheet(): AssistantSheetViewModel & {
     send,
     answer: conversation.answer,
     dismiss: conversation.dismiss,
+    continueTurn: conversation.continueTurn,
     openHref,
     busy,
     thinking: busy,

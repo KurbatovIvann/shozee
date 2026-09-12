@@ -169,6 +169,10 @@ DEL ai-budget-hold:{companyId}:{yyyy-mm-dd}:{kind}:{conversationId}:{commandId}
 Every record expires on its own after 48 hours, so clearing one by hand
 is rarely necessary.
 
+Продовжити (`POST /assistant/kit/continue`, SHO-574) reserves under `kind:
+"answer"` — the `assistant_turns` row it starts is a db `answer` turn, so its
+hold key is `answer:{conversationId}:{commandId}`, never a `continue` key.
+
 ## 429 body
 
 Same wire shape as action-level `RATE_LIMITED` (`toWireError`). No new

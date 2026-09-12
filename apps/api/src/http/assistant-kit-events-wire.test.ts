@@ -66,8 +66,10 @@ describe("assistant event wire", () => {
 
     expect(latest?.revision).toBe(2);
     expect(
-      assistantSnapshotEventSchema.safeParse({ type: "snapshot", window })
-        .success,
+      assistantSnapshotEventSchema.safeParse({
+        type: "snapshot",
+        window: { ...window, turn: null },
+      }).success,
     ).toBe(true);
     expect(
       assistantMessageUpdatedEventSchema.safeParse({

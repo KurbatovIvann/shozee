@@ -671,3 +671,74 @@ export async function listStaleTurns(env: {
     })),
   };
 }
+
+export async function readStaffActiveTurn(env: {
+  readonly ctx: StaffCtx;
+  readonly conversationId: string;
+}): Promise<{
+  readonly turn: {
+    readonly id: string;
+    readonly status: "queued" | "running";
+  } | null;
+}> {
+  const conversationId = env.conversationId.toLowerCase();
+  await loadOwnConversation({
+    db: env.ctx.db,
+    companyId: env.ctx.companyId,
+    userId: env.ctx.userId,
+    conversationId,
+  });
+  const row = (
+    await env.ctx.db
+      .select({
+        commandId: assistantTurns.commandId,
+        status: assistantTurns.status,
+      })
+      .from(assistantTurns)
+      .where(
+        and(
+          eq(assistantTurns.companyId, env.ctx.companyId),
+          eq(assistantTurns.conversationId, conversationId),
+          isActive(),
+        ),
+      )
+      .limit(1)
+  )[0];
+  if (row === undefined) {
+    return { turn: null };
+  }
+  if (!isActiveStatus(row.status)) {
+    throw new CoreInvariantError(
+      `assistant turn ${row.commandId} matched isActive() with status ${row.status}`,
+    );
+  }
+  return { turn: { id: row.commandId, status: row.status } };
+}
+
+export async function readStaffLatestInterruptedTurn(env: {
+  readonly ctx: StaffCtx;
+  readonly conversationId: string;
+}): Promise<{ readonly commandId: string | null }> {
+  const conversationId = env.conversationId.toLowerCase();
+  await loadOwnConversation({
+    db: env.ctx.db,
+    companyId: env.ctx.companyId,
+    userId: env.ctx.userId,
+    conversationId,
+  });
+  const row = (
+    await env.ctx.db
+      .select({ commandId: assistantTurns.commandId })
+      .from(assistantTurns)
+      .where(
+        and(
+          eq(assistantTurns.companyId, env.ctx.companyId),
+          eq(assistantTurns.conversationId, conversationId),
+          eq(assistantTurns.status, "interrupted"),
+        ),
+      )
+      .orderBy(desc(assistantTurns.createdAt))
+      .limit(1)
+  )[0];
+  return { commandId: row?.commandId ?? null };
+}

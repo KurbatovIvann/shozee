@@ -563,9 +563,12 @@ describe("what a stream carries", () => {
     const { conversationId, commandId } = await conversationWithTurn();
     const publisher = createRedisAssistantEventPublisher(redis);
     const reader = await openStream(h, conversationId);
-    const window = await h.runtime
-      .forCaller(anna)
-      .kit.messages.read({ conversationId, bind: annaBind });
+    const window = {
+      ...(await h.runtime
+        .forCaller(anna)
+        .kit.messages.read({ conversationId, bind: annaBind })),
+      turn: null,
+    };
     const latest = window.messages.at(-1);
     if (latest === undefined) {
       throw new Error("an accepted turn stores messages");
@@ -613,9 +616,11 @@ describe("what a stream carries", () => {
     await nextEvent(reader);
 
     await updatePlaceholder(h, conversationId, placeholderId);
-    const window = await h.runtime
-      .forCaller(anna)
-      .kit.messages.read({ conversationId, bind: annaBind });
+    const scoped = h.runtime.forCaller(anna);
+    const window = {
+      ...(await scoped.kit.messages.read({ conversationId, bind: annaBind })),
+      turn: await scoped.turns.activeTurn({ conversationId }),
+    };
     const latest = window.messages.at(-1);
     if (latest === undefined) {
       throw new Error("an accepted turn stores messages");

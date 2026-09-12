@@ -217,7 +217,9 @@ describe("accepting a turn through the runtime", () => {
       bind: annaBind,
     });
     expect(chatWindowSchema.parse(window)).toEqual(window);
-    expect(assistantChatWindowSchema.safeParse(window).success).toBe(true);
+    expect(
+      assistantChatWindowSchema.safeParse({ ...window, turn: null }).success,
+    ).toBe(true);
     expect(window.messages).toEqual([
       {
         messageId: assistantTurnMessageId({ kind: "chat", commandId }, "user"),
@@ -300,7 +302,9 @@ describe("accepting a turn through the runtime", () => {
       conversationId,
       bind: annaBind,
     });
-    expect(assistantChatWindowSchema.safeParse(window).success).toBe(true);
+    expect(
+      assistantChatWindowSchema.safeParse({ ...window, turn: null }).success,
+    ).toBe(true);
     expect(window.messages.map((message) => message.parts)).toEqual([
       [card, { kind: "text", text: "", status: "streaming" }],
     ]);
@@ -431,10 +435,11 @@ describe("the budget reservation of an accept", () => {
 
     await expect(
       turns().accept({
-        ...chat(conversationId),
+        kind: "continue",
+        conversationId,
+        bind: annaBind,
+        sessionId: "session-anna",
         commandId,
-        // Nothing was interrupted, so there is nothing to continue.
-        continuesCommandId: randomUUID(),
         ...reserved,
       }),
     ).rejects.toBeInstanceOf(ConflictError);

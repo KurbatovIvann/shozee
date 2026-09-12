@@ -65,12 +65,14 @@ function choicePause(overrides?: Partial<AssistantPause>): AssistantPause {
 function threadOf(
   messages: readonly AssistantChatMessage[],
   openPause: AssistantPause | null = null,
+  turn: AssistantChatWindow["turn"] = null,
 ): AssistantChatWindow {
   return {
     conversationId: CONVERSATION,
     olderCursor: null,
     messages: [...messages],
     openPause,
+    turn,
   };
 }
 
@@ -267,7 +269,7 @@ describe("assistantThreadRows", () => {
     expect(result[1]?.text).toBe("");
   });
 
-  it("shows an interrupted turn as a stopped reply, keeping what it said", () => {
+  it("shows a stored interrupted turn as a stopped reply, keeping what it said", () => {
     const result = rows(
       threadOf([
         message(USER_MESSAGE, "user", [textPart("Порахуй")]),
@@ -278,8 +280,41 @@ describe("assistantThreadRows", () => {
     );
 
     expect(result).toHaveLength(2);
-    expect(result[1]?.failed).toBe(true);
+    expect(result[1]?.failed).toBe(false);
+    expect(result[1]?.interrupted).toBe(true);
     expect(result[1]?.text).toBe("Рахую");
+  });
+
+  it("renders a streaming placeholder as interrupted once the window reports no active turn", () => {
+    const result = rows(
+      threadOf([
+        message(USER_MESSAGE, "user", [textPart("Порахуй")]),
+        message(REPLY_MESSAGE, "assistant", [
+          { kind: "text", text: "", status: "streaming" },
+        ]),
+      ]),
+    );
+
+    expect(result[1]?.interrupted).toBe(true);
+    expect(result[1]?.failed).toBe(false);
+  });
+
+  it("keeps a streaming reply as in-progress while the window reports it as the active turn", () => {
+    const result = rows(
+      threadOf(
+        [
+          message(USER_MESSAGE, "user", [textPart("Порахуй")]),
+          message(REPLY_MESSAGE, "assistant", [
+            { kind: "text", text: "Рах", status: "streaming" },
+          ]),
+        ],
+        null,
+        { id: "55555555-5555-4555-8555-555555555555", status: "running" },
+      ),
+    );
+
+    expect(result[1]?.interrupted).toBe(false);
+    expect(result[1]?.text).toBe("Рах");
   });
 
   it("drops a message with nothing in it", () => {

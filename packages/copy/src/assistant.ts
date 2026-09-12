@@ -125,6 +125,8 @@ export type AssistantCopy = {
    * again is how one order becomes two.
    */
   readonly turnInterrupted: string;
+  readonly interruptedMessage: string;
+  readonly continueLabel: string;
   readonly waitIntervalMs: number;
   readonly waitLines: readonly [string, string, string, string, string];
   readonly jobs: AssistantJobsCopy;
@@ -258,6 +260,8 @@ const assistantEn: AssistantCopy = {
   choiceSelecting: "Selecting…",
   waitLabel: "Shozik is thinking",
   turnInterrupted: "The reply was cut short. Anything shown above was saved.",
+  interruptedMessage: "Shozik didn't get to finish.",
+  continueLabel: "Continue",
   waitIntervalMs: 2000,
   waitLines: [
     "Digging through the data",
@@ -336,6 +340,8 @@ const assistantUk: AssistantCopy = {
   choiceSelecting: "Обираю…",
   waitLabel: "Шозік думає",
   turnInterrupted: "Відповідь обірвалася. Те, що вище, вже збережено.",
+  interruptedMessage: "Шозік не встиг завершити.",
+  continueLabel: "Продовжити",
   waitIntervalMs: 2000,
   waitLines: [
     "Копаюсь у даних",

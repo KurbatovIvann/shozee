@@ -56,7 +56,10 @@ import {
   type AssistantTurnForJob,
   type VerifiedAssistantCaller,
 } from "./stores/assistant-turn-for-job.js";
-import { createPostgresAssistantTurnStore } from "./stores/assistant-turn-store.js";
+import {
+  createPostgresAssistantTurnStore,
+  type AssistantTurnActiveView,
+} from "./stores/assistant-turn-store.js";
 import type { AiBudgetStore } from "./stores/budget.js";
 
 export type AssistantTurnEndStatus = "done" | "failed" | "interrupted";
@@ -202,6 +205,7 @@ export function createAssistantTurnProcessor(
         scope: PauseScope,
         found: AssistantTurnForJob,
         status: AssistantTurnEndStatus,
+        turn: AssistantTurnActiveView | null,
       ): Promise<void> {
         const window = await read(kit, scope);
         if (window !== null) {
@@ -210,7 +214,7 @@ export function createAssistantTurnProcessor(
             kind: found.turn.kind,
             commandId: found.turn.commandId,
             status,
-            window,
+            window: { ...window, turn },
           });
         }
       },
@@ -469,7 +473,8 @@ export function createAssistantTurnProcessor(
       });
     }
     if (scope !== undefined) {
-      await events.finished(kit, scope, found, status);
+      const active = await turns.activeTurn(scope);
+      await events.finished(kit, scope, found, status, active);
     }
     return { kind: "finished", status, reachedModel };
   }

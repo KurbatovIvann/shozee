@@ -20,11 +20,12 @@
  */
 import { randomUUID } from "node:crypto";
 
-import type { ChatWindow } from "@showzy/assistant-kit";
 import {
   ASSISTANT_EVENTS_HEARTBEAT_MS,
   ASSISTANT_STREAM_IDLE_MS,
   ASSISTANT_STREAM_PENDING_WRITES_MAX,
+  readAssistantChatWindow,
+  type AssistantChatWindowWithTurn,
   type AssistantConversationAddress,
   type AssistantEventHub,
   type AssistantPresence,
@@ -216,7 +217,7 @@ export async function handleAssistantKitEvents(
     requestId,
     clientIp: c.get("clientIp"),
   };
-  const { kit } = runtime.forCaller(assistantCaller);
+  const { kit, turns } = runtime.forCaller(assistantCaller);
   const scope = { conversationId: conversationId.data, bind: caller.bind };
 
   // The author rule, and the same answer as the messages route: a foreign or
@@ -289,9 +290,9 @@ export async function handleAssistantKitEvents(
   // abandon from another device publishes nothing). Answering it is refused as
   // `stale`, so the harm is one refused tap; how a client merges a window that
   // arrives after a newer one is SHO-563's rule, not this route's.
-  let snapshot: ChatWindow;
+  let snapshot: AssistantChatWindowWithTurn;
   try {
-    snapshot = await kit.messages.read(scope);
+    snapshot = await readAssistantChatWindow(kit, turns, scope);
   } catch (error) {
     await subscription.close();
     await events.slots.release(caller.userId, streamId);
