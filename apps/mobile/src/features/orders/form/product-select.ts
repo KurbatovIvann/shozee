@@ -52,6 +52,21 @@ export function filterProductSelectRows(
  * Parent-row subtitle: variant count until the session has picks for
  * this product, then selected count · names (uk/en templates).
  */
+export function visibleProductSelectRows(args: {
+  readonly products: readonly ProductSelectRow[];
+  readonly query: string;
+  readonly sessionOpen: boolean;
+  readonly serverFiltered: boolean;
+}): readonly ProductSelectRow[] {
+  if (!args.sessionOpen) {
+    return EMPTY_PRODUCT_SELECT_ROWS;
+  }
+  if (args.serverFiltered) {
+    return args.products;
+  }
+  return filterProductSelectRows(args.products, args.query, args.sessionOpen);
+}
+
 export function productPickerParentSubtitle(args: {
   readonly variantCount: number;
   readonly selectedNames: readonly string[];

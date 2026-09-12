@@ -141,7 +141,7 @@ describe("order-form kit and sheet hygiene", () => {
     expect(hook).not.toContain("useUnsavedOrderGuard");
     expect(save).toContain("useFormSave");
     expect(saveLoop).toContain("runFormSave");
-    expect(sheet).toContain("filterProductSelectRows");
+    expect(sheet).toContain("visibleProductSelectRows");
     expect(sheet).toContain("memo(function ProductPickerRow");
     expect(sheet).toContain("{props.sessionOpen ? (");
     expect(sheet).toContain("onPress: (id: string) => void");

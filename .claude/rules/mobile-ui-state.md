@@ -55,4 +55,9 @@ Do not clone `catalog/products/form` save/guard/view chrome. Copy only
 the feature-specific slices: draft, plan, schema, copy, load, and
 fields that are not a `FormTextField`. Picker chrome
 (`OptionSelectSheet`, `SelectorRow`) lives in `src/components/ui`;
-lookup drain and sheet-hidden waiters live in `src/hooks`.
+sheet-hidden waiters live in `src/hooks`. Pickers over open-ended sets
+search the server with a debounced query and page on scroll (golden:
+`features/catalog/products/list/use-products-list.ts`); `useDrainInfinitePages`
+(also in `src/hooks`) is only for small bounded reference sets (groups,
+price lists, one customer's counterparties), not the lookup/picker
+default.

@@ -38,8 +38,12 @@ primitive, not convenience reach-through.
 
 Picker chrome (`OptionSelectSheet`, `SelectorRow`) and
 `optionSelectItems` / `filterOptionSelectItems` / `flattenPages` live in
-`src/components/ui/`. Lookup drain (`useDrainInfinitePages`) lives in
-`src/hooks/`. Consume those; do not copy them into this slice.
+`src/components/ui/`. Pickers over open-ended sets search the server with
+a debounced query and page on scroll (golden:
+`features/catalog/products/list/use-products-list.ts`); lookup drain
+(`useDrainInfinitePages`, in `src/hooks/`) is only for small bounded
+reference sets (groups, one customer's counterparties). Consume those; do
+not copy them into this slice.
 `selectorLookupValue` (CRM inherit display) stays in `shared/option-select.ts`
 and re-exports `optionSelectItems` for lookup hooks.
 

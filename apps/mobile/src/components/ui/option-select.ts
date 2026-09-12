@@ -43,6 +43,17 @@ export function filterOptionSelectItems(
   });
 }
 
+export function visibleOptionSelectItems(args: {
+  readonly options: readonly OptionSelectItem[];
+  readonly query: string;
+  readonly serverFiltered: boolean;
+}): readonly OptionSelectItem[] {
+  if (args.serverFiltered) {
+    return args.options;
+  }
+  return filterOptionSelectItems(args.options, args.query);
+}
+
 export function flattenPages<T>(
   pages: ReadonlyArray<{ readonly items: readonly T[] }>,
 ): readonly T[] {

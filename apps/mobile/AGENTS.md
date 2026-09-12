@@ -53,7 +53,12 @@ the same directory.
   folder — compose these and pass policy via props.
 - `src/hooks/` — shared hooks (`useDebouncedValue`, `useDrainInfinitePages`,
   `useSheetHiddenWaiter`) and the pure `shouldDrainNextPage` predicate.
-  Do not copy these into a feature folder.
+  Pickers over open-ended sets (customers, products, orders,
+  counterparties) search the server with a debounced query and page on
+  scroll — golden: `features/catalog/products/list/use-products-list.ts`.
+  `useDrainInfinitePages` is for small bounded reference sets only
+  (groups, price lists, one customer's counterparties); it is not the
+  lookup/picker default. Do not copy these into a feature folder.
 - `src/components/form-kit/` — **shared form stack** (SHO-300): `runFormSave`,
   `useFormSave` (on `useBoundContractMutation`), `useUnsavedGuard`,
   `FormScreenScaffold`, `FormTextField`. Import and compose. Do not clone

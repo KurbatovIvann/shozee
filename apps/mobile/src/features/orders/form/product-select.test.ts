@@ -5,6 +5,7 @@ import { itemCountLabel } from "../shared/item-count";
 import {
   filterProductSelectRows,
   productPickerParentSubtitle,
+  visibleProductSelectRows,
   type ProductSelectRow,
 } from "./product-select";
 
@@ -86,5 +87,52 @@ describe("filterProductSelectRows", () => {
     expect(
       filterProductSelectRows(products, "тор", true).map((row) => row.id),
     ).toEqual([products[0]?.id]);
+  });
+});
+
+describe("visibleProductSelectRows", () => {
+  const products: ProductSelectRow[] = [
+    {
+      id: "11111111-1111-4111-8111-111111111111",
+      name: "Торт",
+      hasVariants: false,
+      variantsLabel: "Без варіантів",
+      thumbnailFileId: null,
+      thumbnailUrl: null,
+      thumbnailFailed: false,
+    },
+  ];
+
+  it("returns the caller's rows untouched when server-filtered", () => {
+    expect(
+      visibleProductSelectRows({
+        products,
+        query: "торт",
+        sessionOpen: true,
+        serverFiltered: true,
+      }),
+    ).toBe(products);
+  });
+
+  it("filters locally when not server-filtered", () => {
+    expect(
+      visibleProductSelectRows({
+        products,
+        query: "кава",
+        sessionOpen: true,
+        serverFiltered: false,
+      }),
+    ).toEqual([]);
+  });
+
+  it("stays empty while the session is closed even when server-filtered", () => {
+    expect(
+      visibleProductSelectRows({
+        products,
+        query: "торт",
+        sessionOpen: false,
+        serverFiltered: true,
+      }),
+    ).toEqual([]);
   });
 });

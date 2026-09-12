@@ -4,6 +4,7 @@ import {
   filterOptionSelectItems,
   flattenPages,
   optionSelectItems,
+  visibleOptionSelectItems,
 } from "./option-select";
 
 describe("optionSelectItems", () => {
@@ -36,6 +37,33 @@ describe("filterOptionSelectItems", () => {
     expect(filterOptionSelectItems(options, "380")).toEqual([options[0]]);
     expect(filterOptionSelectItems(options, "12")).toEqual([options[2]]);
     expect(filterOptionSelectItems(options, "200")).toEqual([options[2]]);
+  });
+});
+
+describe("visibleOptionSelectItems", () => {
+  const options = optionSelectItems([
+    { id: "a", name: "Марія", description: "+38067" },
+    { id: "b", name: "Олег", description: null },
+  ]);
+
+  it("returns the caller's options untouched when server-filtered", () => {
+    expect(
+      visibleOptionSelectItems({
+        options,
+        query: "мар",
+        serverFiltered: true,
+      }),
+    ).toBe(options);
+  });
+
+  it("filters locally when not server-filtered", () => {
+    expect(
+      visibleOptionSelectItems({
+        options,
+        query: "мар",
+        serverFiltered: false,
+      }),
+    ).toEqual([options[0]]);
   });
 });
 

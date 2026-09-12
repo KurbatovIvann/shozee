@@ -1,0 +1,42 @@
+import { readFileSync } from "node:fs";
+
+import { describe, expect, it } from "vitest";
+
+const SOURCE = readFileSync(
+  new URL("./product-select-sheet.tsx", import.meta.url),
+  "utf8",
+);
+
+describe("controlled query", () => {
+  it("forwards typed text to onQueryChange instead of local state when controlled", () => {
+    expect(SOURCE).toContain("readonly query?: string | undefined;");
+    expect(SOURCE).toContain(
+      "readonly onQueryChange?: ((value: string) => void) | undefined;",
+    );
+    expect(SOURCE).toContain("props.onQueryChange(text);");
+    expect(SOURCE).toContain("onChangeText={handleQueryChange}");
+  });
+
+  it("does not filter locally when server-filtered", () => {
+    expect(SOURCE).toContain(
+      "const serverFiltered = props.query !== undefined;",
+    );
+    expect(SOURCE).toContain("visibleProductSelectRows({");
+    expect(SOURCE).not.toContain("filterProductSelectRows(");
+  });
+
+  it("only resets local query when the session ends and it is uncontrolled", () => {
+    expect(SOURCE).toContain("if (!props.sessionOpen && !serverFiltered) {");
+  });
+});
+
+describe("paged-result affordances", () => {
+  it("shows a loading indicator and a load-more affordance", () => {
+    expect(SOURCE).toContain("readonly loadingMore?: boolean | undefined;");
+    expect(SOURCE).toContain(
+      "readonly onEndReached?: (() => void) | undefined;",
+    );
+    expect(SOURCE).toContain("<ActivityIndicator");
+    expect(SOURCE).toContain("onPress={props.onEndReached}");
+  });
+});

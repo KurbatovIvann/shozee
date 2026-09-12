@@ -9,8 +9,11 @@ one-line re-exports. Feature code lives here, not under
 guard, scaffold, and `Controller`+`TextField` chrome live in
 `src/components/form-kit` (SHO-300). Picker chrome
 (`OptionSelectSheet`, `SelectorRow`, `option-select.ts`) lives in
-`src/components/ui/`; `useDrainInfinitePages` and `useSheetHiddenWaiter`
-live in `src/hooks/` (SHO-301).
+`src/components/ui/`; `useSheetHiddenWaiter` lives in `src/hooks/`
+(SHO-301). This list is the golden pattern for pickers over open-ended
+sets: server search with a debounced query, paging on scroll.
+`useDrainInfinitePages` is only for small bounded reference sets
+(groups, price lists), not the lookup/picker default.
 Copy only what is product-specific: draft/plan/schema/copy/load, the
 photos `useReducer` session, the variant sheet, and the multi-write
 save loop (`photos.flush`, `too_many_variants`).
