@@ -34,6 +34,7 @@ import {
 } from "../shared/order-caps";
 import { canFetchFileDownloadUrls } from "../shared/order-permissions";
 import {
+  draftLineThumbnailItems,
   orderThumbnailView,
   type OrderThumbnailView,
 } from "../shared/order-thumbnails";
@@ -149,12 +150,23 @@ export function useOrderFormLookups(args: {
     }),
   });
 
+  const draftCatalogIds = uniqueProductIds(args.draftProductIds);
+  const draftThumbnailItems = useMemo(
+    () =>
+      draftLineThumbnailItems(
+        draftCatalogIds,
+        catalogProductIds,
+        productQueries.map((query) => query.data?.imageFileIds),
+      ),
+    [catalogProductIds, draftCatalogIds, productQueries],
+  );
+
   const productPages = productsQuery.data?.pages ?? [];
   const { urlsByFileId, failedFileIds } = useOrderThumbnails({
     client: apiClient,
     companyId: activeCompanyId,
     getActiveCompany,
-    pages: productPages,
+    pages: [...productPages, { items: draftThumbnailItems }],
     enabled: enabled && canFetchThumbnails,
   });
 
@@ -183,7 +195,6 @@ export function useOrderFormLookups(args: {
     return map;
   }, [catalogProductIds, productQueries]);
 
-  const draftCatalogIds = uniqueProductIds(args.draftProductIds);
   const catalogQueryByProductId = new Map<
     string,
     CatalogFactsQuerySnapshot | undefined
@@ -218,19 +229,30 @@ export function useOrderFormLookups(args: {
 
   const thumbnailsByProductId = useMemo(() => {
     const map = new Map<string, OrderFormThumbnail>();
+    const buildThumbnail = (rawFileId: string | null): OrderFormThumbnail => {
+      const fileId = canFetchThumbnails ? rawFileId : null;
+      return orderThumbnailView({
+        fileId,
+        url: fileId === null ? undefined : urlsByFileId.get(fileId),
+        downloadFailed: fileId !== null && failedFileIds.has(fileId),
+      });
+    };
     for (const row of productRows) {
-      const fileId = canFetchThumbnails ? row.primaryImageFileId : null;
-      map.set(
-        row.id,
-        orderThumbnailView({
-          fileId,
-          url: fileId === null ? undefined : urlsByFileId.get(fileId),
-          downloadFailed: fileId !== null && failedFileIds.has(fileId),
-        }),
-      );
+      map.set(row.id, buildThumbnail(row.primaryImageFileId));
+    }
+    for (const item of draftThumbnailItems) {
+      if (!map.has(item.productId)) {
+        map.set(item.productId, buildThumbnail(item.primaryImageFileId));
+      }
     }
     return map;
-  }, [canFetchThumbnails, failedFileIds, productRows, urlsByFileId]);
+  }, [
+    canFetchThumbnails,
+    draftThumbnailItems,
+    failedFileIds,
+    productRows,
+    urlsByFileId,
+  ]);
 
   const pickerIndex =
     args.variantProductId === null

@@ -24,6 +24,22 @@ export type GetProductOutput = Awaited<
 >;
 export type GetProductVariant = GetProductOutput["variants"][number];
 
+export type OrderProductsListClient = {
+  readonly client: {
+    readonly catalog: {
+      readonly listProducts: ShowzyClient["client"]["catalog"]["listProducts"];
+    };
+  };
+};
+
+export type OrderCatalogProductClient = {
+  readonly client: {
+    readonly catalog: {
+      readonly getProduct: ShowzyClient["client"]["catalog"]["getProduct"];
+    };
+  };
+};
+
 export const ORDER_PRODUCTS_LOOKUP_INPUT = {
   status: "active" as const,
   limit: ORDER_LOOKUP_PAGE_SIZE,
@@ -43,7 +59,7 @@ export function orderProductsLookupInput(
 }
 
 export function listOrderProductsInfiniteOptions(args: {
-  readonly client: ContractClient | null;
+  readonly client: OrderProductsListClient | null;
   readonly companyId: string | null;
   readonly input: ListOrderProductsPageInput;
   readonly getActiveCompany: () => string | null;
@@ -73,7 +89,7 @@ export function listOrderProductsInfiniteOptions(args: {
 }
 
 export function getOrderCatalogProductQueryOptions(args: {
-  readonly client: ContractClient | null;
+  readonly client: OrderCatalogProductClient | null;
   readonly companyId: string | null;
   readonly productId: string | null;
   readonly getActiveCompany: () => string | null;

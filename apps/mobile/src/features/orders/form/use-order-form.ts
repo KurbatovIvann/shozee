@@ -81,6 +81,9 @@ export function useOrderForm() {
   });
   const { isDirty, errors, isSubmitted } = formState;
   const [localBanner, setLocalBanner] = useState<BannerKey | null>(null);
+  const [customerPhone, setCustomerPhone] = useState<string | undefined>(
+    undefined,
+  );
   const sheets = useOrderFormSheets();
   const clientReady = apiClient !== null && activeCompanyId !== null;
   const loadState = classifyOrderFormLoad({ canCreate, clientReady });
@@ -209,6 +212,7 @@ export function useOrderForm() {
     const option = lookups.customerOptions.find((row) => row.id === id);
     setValue("customerId", id, { shouldDirty: true });
     setValue("customerName", option?.name ?? "", { shouldDirty: true });
+    setCustomerPhone(option?.description);
     sheets.closeCustomerSheet();
     onFieldEdit();
   }
@@ -255,9 +259,6 @@ export function useOrderForm() {
 
   const customerId = watch("customerId");
   const customerName = watch("customerName");
-  const selectedCustomer = lookups.customerOptions.find(
-    (row) => row.id === customerId,
-  );
 
   return {
     copy,
@@ -280,7 +281,7 @@ export function useOrderForm() {
     fieldsEditable: resolved.fieldsEditable && loadState.kind === "ready",
     showSubmit,
     customerName: customerName.length > 0 ? customerName : undefined,
-    customerPhone: selectedCustomer?.description,
+    customerPhone,
     productsValue: presentProductsValue(
       items.length,
       formCopy.addProductsValue,

@@ -15,6 +15,14 @@ export type ListCustomersOutput = Awaited<
 >;
 export type OrderCustomerListItem = ListCustomersOutput["items"][number];
 
+export type OrderCustomersListClient = {
+  readonly client: {
+    readonly customers: {
+      readonly listCustomers: ShowzyClient["client"]["customers"]["listCustomers"];
+    };
+  };
+};
+
 export const ORDER_CUSTOMERS_LOOKUP_INPUT = {
   status: "active" as const,
   limit: ORDER_LOOKUP_PAGE_SIZE,
@@ -33,7 +41,7 @@ export function orderCustomersLookupInput(
 }
 
 export function listOrderCustomersInfiniteOptions(args: {
-  readonly client: ContractClient | null;
+  readonly client: OrderCustomersListClient | null;
   readonly companyId: string | null;
   readonly input: ListOrderCustomersPageInput;
   readonly getActiveCompany: () => string | null;
