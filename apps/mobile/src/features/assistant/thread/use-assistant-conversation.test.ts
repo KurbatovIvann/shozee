@@ -1710,4 +1710,202 @@ describe("the conversation, live", () => {
     expect(view.latest().rows.map((row) => row.text)).toEqual(["Готово."]);
     expect(view.latest().busy).toBe(false);
   });
+
+  it("keeps the finished reply when the accept of the send resolves after it", async () => {
+    const source = bodyStream();
+    let accept: (response: Response) => void = () => undefined;
+    let read = 0;
+    fetchMock.mockImplementation((url: unknown) => {
+      const path = String(url);
+      if (path.includes("/assistant/kit/events")) {
+        return Promise.resolve({ ok: true, status: 200, body: source.body });
+      }
+      if (path.includes("/assistant/kit/chat")) {
+        return new Promise<Response>((resolve) => {
+          accept = resolve;
+        });
+      }
+      read += 1;
+      if (read > 1) {
+        return new Promise<Response>(() => undefined);
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({ status: "ok", window: settledWindow("Готово.") }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      );
+    });
+    const view = mount({ visible: true });
+    await flush();
+    expect(messageReads()).toBe(1);
+
+    act(() => {
+      void view.latest().send("привіт");
+    });
+    await flush();
+
+    act(() => {
+      source.send("turn.started", {
+        type: "turn.started",
+        conversationId: CONVERSATION,
+        kind: "chat",
+        commandId: COMMAND,
+      });
+      source.send("message.updated", {
+        type: "message.updated",
+        conversationId: CONVERSATION,
+        message: settledWindow("Готово.").messages[0],
+      });
+      source.send("turn.finished", {
+        type: "turn.finished",
+        kind: "chat",
+        commandId: COMMAND,
+        status: "done",
+        window: settledWindow("Готово."),
+      });
+    });
+    await flush();
+    expect(view.latest().rows.map((row) => row.text)).toContain("Готово.");
+    expect(view.latest().busy).toBe(false);
+
+    act(() => {
+      accept(
+        new Response(
+          JSON.stringify({ status: "ok", window: streamingWindow() }),
+          { status: 202, headers: { "content-type": "application/json" } },
+        ),
+      );
+    });
+    await flush();
+
+    expect(view.latest().rows.map((row) => row.text)).toEqual(["Готово."]);
+    expect(view.latest().busy).toBe(false);
+    expect(messageReads()).toBe(2);
+  });
+  it("asks for one read when a window is refused, and none when that read is refused too", async () => {
+    const source = bodyStream();
+    let accept: (response: Response) => void = () => undefined;
+    fetchMock.mockImplementation((url: unknown) => {
+      const path = String(url);
+      if (path.includes("/assistant/kit/events")) {
+        return Promise.resolve({ ok: true, status: 200, body: source.body });
+      }
+      if (path.includes("/assistant/kit/chat")) {
+        return new Promise<Response>((resolve) => {
+          accept = resolve;
+        });
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({ status: "ok", window: streamingWindow() }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      );
+    });
+    const view = mount({ visible: true });
+    await flush();
+
+    act(() => {
+      void view.latest().send("ще одне");
+    });
+    await flush();
+
+    act(() => {
+      source.send("turn.started", {
+        type: "turn.started",
+        conversationId: CONVERSATION,
+        kind: "chat",
+        commandId: COMMAND,
+      });
+      source.send("turn.finished", {
+        type: "turn.finished",
+        kind: "chat",
+        commandId: COMMAND,
+        status: "done",
+        window: settledWindow("Готово."),
+      });
+    });
+    await flush();
+
+    act(() => {
+      accept(
+        new Response(
+          JSON.stringify({ status: "ok", window: streamingWindow() }),
+          { status: 202, headers: { "content-type": "application/json" } },
+        ),
+      );
+    });
+    await flush();
+
+    expect(view.latest().busy).toBe(false);
+    expect(messageReads()).toBe(2);
+  });
+
+  it("does not reopen a question it answered when a later window brings it back", async () => {
+    respond(200, {
+      status: "ok",
+      window: conversationWindow({ openPause: OPEN_PAUSE, asked: true }),
+    });
+    const view = mount();
+    await flush();
+
+    respond(200, {
+      status: "ok",
+      window: conversationWindow({ text: "Готово.", asked: true }),
+    });
+    act(() => {
+      view.latest().answer({ optionId: "opt-a" });
+    });
+    await flush();
+    expect(view.latest().interaction).toBeNull();
+
+    respond(202, {
+      status: "ok",
+      window: conversationWindow({ openPause: OPEN_PAUSE, asked: true }),
+    });
+    respond(200, {
+      status: "ok",
+      window: conversationWindow({ text: "Готово.", asked: true }),
+    });
+    act(() => {
+      void view.latest().send("ще одне");
+    });
+    await flush();
+
+    expect(view.latest().interaction).toBeNull();
+  });
+  it("does not reopen a question it dismissed when a later window brings it back", async () => {
+    respond(200, {
+      status: "ok",
+      window: conversationWindow({ openPause: OPEN_PAUSE, asked: true }),
+    });
+    const view = mount();
+    await flush();
+
+    respond(200, {
+      status: "ok",
+      window: conversationWindow({ text: "Готово.", asked: true }),
+    });
+    act(() => {
+      view.latest().dismiss();
+    });
+    await flush();
+    expect(view.latest().interaction).toBeNull();
+
+    respond(202, {
+      status: "ok",
+      window: conversationWindow({ openPause: OPEN_PAUSE, asked: true }),
+    });
+    respond(200, {
+      status: "ok",
+      window: conversationWindow({ text: "Готово.", asked: true }),
+    });
+    act(() => {
+      void view.latest().send("ще одне");
+    });
+    await flush();
+
+    expect(view.latest().interaction).toBeNull();
+  });
 });

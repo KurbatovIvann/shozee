@@ -21,13 +21,19 @@ const CONVERSATION = "33333333-3333-4333-8333-333333333333";
 const OTHER_CONVERSATION = "44444444-4444-4444-8444-444444444444";
 const LATEST = { kind: "latest" } as const;
 
-function message(n: number): AssistantChatMessage {
+function message(n: number, revision = 1): AssistantChatMessage {
   return {
     messageId: `77777777-7777-4777-8777-${n.toString(16).padStart(12, "0")}`,
     role: n % 2 === 1 ? "user" : "assistant",
     createdAt: "2026-09-10T10:00:00.000Z",
-    parts: [{ kind: "text", text: `message ${String(n)}`, status: "complete" }],
-    revision: 1,
+    parts: [
+      {
+        kind: "text",
+        text: `message ${String(n)} v${String(revision)}`,
+        status: "complete",
+      },
+    ],
+    revision,
   };
 }
 
@@ -59,6 +65,27 @@ function windowOf(
 function numbers(window: AssistantChatWindow | null): number[] {
   return (window?.messages ?? []).map((entry) =>
     Number.parseInt(entry.messageId.slice(-12), 16),
+  );
+}
+
+function revisions(window: AssistantChatWindow | null): Map<number, number> {
+  return new Map(
+    (window?.messages ?? []).map((entry) => [
+      Number.parseInt(entry.messageId.slice(-12), 16),
+      entry.revision,
+    ]),
+  );
+}
+
+function anchored(
+  held: AssistantChatThread | null,
+  window: AssistantChatWindow,
+): boolean {
+  const first = window.messages[0];
+  return (
+    held !== null &&
+    first !== undefined &&
+    held.messages.some((entry) => entry.messageId === first.messageId)
   );
 }
 
@@ -153,6 +180,39 @@ describe("mergeAssistantChatWindow", () => {
     expect(mergeAssistantChatWindow(held, foreign, LATEST)).toBe(foreign);
   });
 
+  it("keeps the copy it holds when a window carries an earlier revision of it", () => {
+    const written = log(3);
+    written[2] = message(3, 4);
+    const held = mergeAssistantChatWindow(null, windowOf(written, 3), LATEST);
+
+    const merged = mergeAssistantChatWindow(held, windowOf(log(3), 3), LATEST);
+
+    expect(numbers(merged)).toEqual([1, 2, 3]);
+    expect(merged?.messages[2]?.revision).toBe(4);
+  });
+
+  it("keeps the messages a window that ends before the thread does not carry", () => {
+    const held = mergeAssistantChatWindow(null, windowOf(log(5), 5), LATEST);
+
+    const merged = mergeAssistantChatWindow(held, windowOf(log(3), 3), LATEST);
+
+    expect(numbers(merged)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("takes the higher revision an older page carries for a message it holds", () => {
+    let held = mergeAssistantChatWindow(null, windowOf(log(5), 3), LATEST);
+    const written = log(5);
+    written[2] = message(3, 7);
+
+    held = mergeAssistantChatWindow(held, windowOf(written, 3, 4), {
+      kind: "older",
+      cursor: "3",
+    });
+
+    expect(numbers(held)).toEqual([1, 2, 3, 4, 5]);
+    expect(held?.messages[2]?.revision).toBe(7);
+  });
+
   it("takes an empty latest window as it is", () => {
     const held = mergeAssistantChatWindow(null, windowOf(log(4), 3), LATEST);
     const empty = windowOf([], 3);
@@ -171,18 +231,43 @@ describe("mergeAssistantChatWindow", () => {
     for (const size of [1, 3, 30]) {
       const stored = log(1 + random(5));
       let held = mergeAssistantChatWindow(null, windowOf(stored, size), LATEST);
+      let readEarlier: AssistantChatWindow | null = null;
 
       for (let step = 0; step < 300; step += 1) {
-        const action = random(4);
+        const action = random(5);
+        const before = revisions(held);
+        let sent: AssistantChatWindow;
         if (action === 0 && (held?.olderCursor ?? null) !== null) {
-          held = olderPage(stored, size, held);
+          const cursor = held?.olderCursor ?? "1";
+          sent = windowOf(stored, size, Number(cursor));
+          held = mergeAssistantChatWindow(held, sent, {
+            kind: "older",
+            cursor,
+          });
+        } else if (
+          action === 4 &&
+          readEarlier !== null &&
+          anchored(held, readEarlier)
+        ) {
+          sent = readEarlier;
+          readEarlier = null;
+          held = mergeAssistantChatWindow(held, sent, LATEST);
         } else {
+          if (readEarlier === null) {
+            readEarlier = windowOf(stored, size);
+            const written = 1 + random(stored.length);
+            stored[written - 1] = message(
+              written,
+              (stored[written - 1]?.revision ?? 1) + 1,
+            );
+          }
           // A request here adds one or two messages; another device, many.
           const added = action === 3 ? random(3 * size) : 1 + random(2);
           for (let n = 0; n < added; n += 1) {
             stored.push(message(stored.length + 1));
           }
-          held = mergeAssistantChatWindow(held, windowOf(stored, size), LATEST);
+          sent = windowOf(stored, size);
+          held = mergeAssistantChatWindow(held, sent, LATEST);
         }
 
         // Always an unbroken run that ends at the server's latest message, and
@@ -195,6 +280,13 @@ describe("mergeAssistantChatWindow", () => {
           ),
         );
         expect((held?.olderCursor ?? null) === null).toBe(shown[0] === 1);
+
+        const carried = revisions(sent);
+        for (const [n, revision] of revisions(held)) {
+          expect(revision).toBe(
+            Math.max(before.get(n) ?? 0, carried.get(n) ?? 0),
+          );
+        }
       }
 
       while ((held?.olderCursor ?? null) !== null) {

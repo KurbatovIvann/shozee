@@ -52,6 +52,7 @@ import {
 import {
   applyAssistantStreamEvent,
   applyAssistantWindow,
+  assistantPauseAnswered,
   assistantTurnActive,
   initialAssistantThreadState,
   type AssistantThreadState,
@@ -271,6 +272,7 @@ export function useAssistantConversation(args: {
    */
   const sendingRef = useRef(false);
   const ticketRef = useRef(0);
+  const askRereadRef = useRef<() => void>(() => undefined);
 
   /**
    * The token of an attempt whose fate the client does not know.
@@ -365,7 +367,15 @@ export function useAssistantConversation(args: {
           }
           const incoming = outcome.window;
           if (incoming !== null) {
-            commit(applyAssistantWindow(stateRef.current, incoming, LATEST));
+            const applied = applyAssistantWindow(
+              stateRef.current,
+              incoming,
+              LATEST,
+            );
+            commit(applied.state);
+            if (applied.rereadWindow) {
+              askRereadRef.current();
+            }
           }
           setFailure(outcome.failure);
           return { failure: outcome.failure, current: true };
@@ -402,17 +412,6 @@ export function useAssistantConversation(args: {
    *
    * Not `run`: this takes no command latch, so a re-read neither blocks a send
    * nor is blocked by one.
-   *
-   * **One at a time, but never dropped.** An ask that arrives while a read is
-   * on its way sets a flag and gets exactly one more read when that one
-   * settles. Dropping it instead would be wrong, not merely wasteful: the read
-   * in flight may have been *issued before* the event that asked for this one,
-   * so it can return state older than the regression it was meant to repair,
-   * and a finished turn publishes nothing further to try again. `revision` does
-   * not cover that gap — it orders `message.updated`, while an untracked
-   * `turn.finished` hands a whole window to a latest-merge, which replaces the
-   * thread from its first message on rather than comparing message by message.
-   * The re-arm is what makes "corrected on the next round trip" true.
    *
    * This is not polling. It has no interval: every read is caused by an event
    * that arrived, and when nothing arrives nothing is asked.
@@ -463,7 +462,7 @@ export function useAssistantConversation(args: {
           if (window === null) {
             return;
           }
-          commit(applyAssistantWindow(stateRef.current, window, LATEST));
+          commit(applyAssistantWindow(stateRef.current, window, LATEST).state);
           if (
             !sendingAtIssue &&
             !sendingRef.current &&
@@ -489,6 +488,7 @@ export function useAssistantConversation(args: {
     };
     start();
   }, [commit, epochRef]);
+  askRereadRef.current = reread;
 
   const onStreamEvent = useCallback(
     (event: Parameters<typeof applyAssistantStreamEvent>[1]) => {
@@ -598,11 +598,14 @@ export function useAssistantConversation(args: {
           revision: open.revision,
           answer: value,
         }),
-      ).then(({ failure }) => {
+      ).then(({ failure, current }) => {
         settleCommand(key, failure);
+        if (failure === null && current) {
+          commit(assistantPauseAnswered(stateRef.current, open));
+        }
       });
     },
-    [commandIdFor, run, settleCommand],
+    [commandIdFor, commit, run, settleCommand],
   );
 
   const dismiss = useCallback(() => {
@@ -616,8 +619,12 @@ export function useAssistantConversation(args: {
         conversationId,
         interactionId: open.interactionId,
       }),
-    );
-  }, [run]);
+    ).then(({ failure, current }) => {
+      if (failure === null && current) {
+        commit(assistantPauseAnswered(stateRef.current, open));
+      }
+    });
+  }, [commit, run]);
 
   const continueTurn = useCallback(() => {
     const key = "continue";
@@ -674,7 +681,7 @@ export function useAssistantConversation(args: {
             applyAssistantWindow(stateRef.current, page, {
               kind: "older",
               cursor,
-            }),
+            }).state,
           );
         }
         // Said, not swallowed. Success leaves the banner alone: it may be

@@ -57,10 +57,59 @@ const LATEST: AssistantChatWindowSource = { kind: "latest" };
 export type AssistantThreadState = {
   readonly thread: AssistantChatThread | null;
   readonly trackedTurn: string | null;
+  readonly finishedTurns: readonly string[];
+  readonly closedPauses: readonly AssistantClosedPause[];
 };
 
+export type AssistantClosedPause = {
+  readonly interactionId: string;
+  readonly revision: number;
+};
+
+const ENDINGS_REMEMBERED = 8;
+
 export function initialAssistantThreadState(): AssistantThreadState {
-  return { thread: null, trackedTurn: null };
+  return {
+    thread: null,
+    trackedTurn: null,
+    finishedTurns: [],
+    closedPauses: [],
+  };
+}
+
+export function assistantPauseAnswered(
+  state: AssistantThreadState,
+  answered: AssistantClosedPause,
+): AssistantThreadState {
+  return {
+    ...state,
+    closedPauses: rememberClosed(state.closedPauses, answered),
+  };
+}
+
+function rememberFinished(
+  finished: readonly string[],
+  commandId: string,
+): readonly string[] {
+  return [commandId, ...finished.filter((id) => id !== commandId)].slice(
+    0,
+    ENDINGS_REMEMBERED,
+  );
+}
+
+function rememberClosed(
+  closed: readonly AssistantClosedPause[],
+  pause: AssistantClosedPause,
+): readonly AssistantClosedPause[] {
+  const held = closed.find(
+    (entry) => entry.interactionId === pause.interactionId,
+  );
+  const latest =
+    held !== undefined && held.revision > pause.revision ? held : pause;
+  return [
+    latest,
+    ...closed.filter((entry) => entry.interactionId !== pause.interactionId),
+  ].slice(0, ENDINGS_REMEMBERED);
 }
 
 export function assistantTurnActive(
@@ -78,22 +127,105 @@ export function assistantTextPartStatus(
 
 /**
  * A window that came back from a request — a read, a turn, or a refusal.
- *
- * A window is authoritative for everything in it, so it is merged whole. It
- * also settles `trackedTurn`: if the conversation it describes has no turn
- * running, there is nothing left to follow, and holding an id past that would
- * let a much later `turn.finished` claim to be the one being watched.
  */
 export function applyAssistantWindow(
   state: AssistantThreadState,
   window: AssistantChatWindow,
   source: AssistantChatWindowSource,
-): AssistantThreadState {
-  const thread = mergeAssistantChatWindow(state.thread, window, source);
-  return settleTracked({ ...state, thread });
+): AssistantApplied {
+  const vouched = vouchedWindow(state, window);
+  const thread = mergeAssistantChatWindow(state.thread, vouched.window, source);
+  return {
+    state: settleTracked({ ...state, thread }),
+    rereadWindow: vouched.rereadWindow,
+  };
 }
 
-export type AssistantStreamApplied = {
+type VouchedWindow = {
+  readonly window: AssistantChatWindow;
+  readonly rereadWindow: boolean;
+};
+
+function vouchedWindow(
+  state: AssistantThreadState,
+  window: AssistantChatWindow,
+): VouchedWindow {
+  const restoresFinishedTurn =
+    window.turn !== null && state.finishedTurns.includes(window.turn.id);
+  const reopensClosedPause = reopensClosed(
+    state.closedPauses,
+    window.openPause,
+  );
+  if (!restoresFinishedTurn && !reopensClosedPause) {
+    return { window, rereadWindow: false };
+  }
+  const held = state.thread;
+  return {
+    window: {
+      ...withHeldPause(held, window),
+      turn: restoresFinishedTurn
+        ? turnStillRunning(held, state.finishedTurns)
+        : window.turn,
+    },
+    rereadWindow: true,
+  };
+}
+
+function reopensClosed(
+  closed: readonly AssistantClosedPause[],
+  openPause: AssistantChatWindow["openPause"],
+): boolean {
+  return (
+    openPause !== null &&
+    closed.some(
+      (entry) =>
+        entry.interactionId === openPause.interactionId &&
+        openPause.revision <= entry.revision,
+    )
+  );
+}
+
+function withHeldPause(
+  held: AssistantChatThread | null,
+  window: AssistantChatWindow,
+): AssistantChatWindow {
+  return held === null ? window : { ...window, openPause: held.openPause };
+}
+
+function turnStillRunning(
+  held: AssistantChatThread | null,
+  finished: readonly string[],
+): AssistantChatWindow["turn"] {
+  const turn = held?.turn ?? null;
+  return turn === null || finished.includes(turn.id) ? null : turn;
+}
+
+function withPauseSeenClosed(
+  before: AssistantThreadState,
+  applied: AssistantApplied,
+): AssistantApplied {
+  const closed = before.thread?.openPause ?? null;
+  if (closed === null) {
+    return applied;
+  }
+  const open = applied.state.thread?.openPause ?? null;
+  if (
+    open !== null &&
+    open.interactionId === closed.interactionId &&
+    open.revision >= closed.revision
+  ) {
+    return applied;
+  }
+  return {
+    ...applied,
+    state: assistantPauseAnswered(applied.state, {
+      interactionId: closed.interactionId,
+      revision: closed.revision,
+    }),
+  };
+}
+
+export type AssistantApplied = {
   readonly state: AssistantThreadState;
   /**
    * This event left the client holding something it cannot vouch for, and the
@@ -125,7 +257,7 @@ function elsewhere(requested: string, conversationId: string): boolean {
   return requested !== conversationId;
 }
 
-const UNCHANGED = (state: AssistantThreadState): AssistantStreamApplied => ({
+const UNCHANGED = (state: AssistantThreadState): AssistantApplied => ({
   state,
   rereadWindow: false,
 });
@@ -135,17 +267,14 @@ export function applyAssistantStreamEvent(
   event: AssistantStreamEvent,
   /** The conversation this client asked for — see `elsewhere`. */
   conversationId: string,
-): AssistantStreamApplied {
+): AssistantApplied {
   switch (event.type) {
     case "snapshot":
       // Every connection opens with one, and it is read as the conversation
       // now stands — the same standing as any window a request answers with.
       return elsewhere(conversationId, event.window.conversationId)
         ? UNCHANGED(state)
-        : {
-            state: applyAssistantWindow(state, event.window, LATEST),
-            rereadWindow: false,
-          };
+        : applyAssistantWindow(state, event.window, LATEST);
 
     case "turn.started":
       // Which turn is running. Whether one is remains the thread's answer.
@@ -175,7 +304,7 @@ export function applyAssistantStreamEvent(
 function applyMessageUpdated(
   state: AssistantThreadState,
   message: AssistantChatMessage,
-): AssistantStreamApplied {
+): AssistantApplied {
   const thread = state.thread;
   if (thread === null) {
     // Nothing to put it in, and where it belongs is not derivable from one
@@ -210,7 +339,7 @@ function applyMessageUpdated(
 function applyTurnFinished(
   state: AssistantThreadState,
   event: Extract<AssistantStreamEvent, { type: "turn.finished" }>,
-): AssistantStreamApplied {
+): AssistantApplied {
   const tracked = state.trackedTurn === event.commandId;
   // Whatever else this event is, the turn it names has ended, so it is no
   // longer the one being followed.
@@ -223,7 +352,11 @@ function applyTurnFinished(
     // question — reading it as "no question" would hide a real one — so the
     // client goes and reads the window itself.
     return {
-      state: { ...state, trackedTurn: cleared },
+      state: {
+        ...state,
+        trackedTurn: cleared,
+        finishedTurns: rememberFinished(state.finishedTurns, event.commandId),
+      },
       rereadWindow: true,
     };
   }
@@ -235,15 +368,14 @@ function applyTurnFinished(
     // server's own and merge safely by revision, but its `openPause` cannot be
     // ordered against the one held, so the held one stands and the window is
     // read again to settle it.
-    const held = state.thread;
-    const window =
-      held === null
-        ? event.window
-        : { ...event.window, openPause: held.openPause };
     return {
-      state: applyAssistantWindow(
-        { ...state, trackedTurn: cleared },
-        window,
+      ...applyAssistantWindow(
+        {
+          ...state,
+          trackedTurn: cleared,
+          finishedTurns: rememberFinished(state.finishedTurns, event.commandId),
+        },
+        withHeldPause(state.thread, event.window),
         LATEST,
       ),
       rereadWindow: true,
@@ -252,14 +384,18 @@ function applyTurnFinished(
 
   // The turn this client was following, ending now. Its window is the newest
   // thing anyone has said about this conversation, `openPause` included.
-  return {
-    state: applyAssistantWindow(
-      { ...state, trackedTurn: null },
+  return withPauseSeenClosed(
+    state,
+    applyAssistantWindow(
+      {
+        ...state,
+        trackedTurn: null,
+        finishedTurns: rememberFinished(state.finishedTurns, event.commandId),
+      },
       event.window,
       LATEST,
     ),
-    rereadWindow: false,
-  };
+  );
 }
 
 /**

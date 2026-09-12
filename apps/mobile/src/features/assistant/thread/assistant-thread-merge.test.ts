@@ -14,6 +14,7 @@ import type { AssistantStreamEvent } from "@showzy/validation/assistant-events";
 import {
   applyAssistantStreamEvent,
   applyAssistantWindow,
+  assistantPauseAnswered,
   assistantTurnActive,
   initialAssistantThreadState,
   type AssistantThreadState,
@@ -24,6 +25,10 @@ const COMMAND = "22222222-2222-4222-8222-222222222222";
 const OTHER_COMMAND = "99999999-9999-4999-8999-999999999999";
 const INTERACTION = "33333333-3333-4333-8333-333333333333";
 const REPLY = "44444444-4444-4444-8444-444444444444";
+
+function turnId(n: number): string {
+  return `66666666-6666-4666-8666-${String(n).padStart(12, "0")}`;
+}
 
 const LATEST = { kind: "latest" } as const;
 
@@ -77,7 +82,8 @@ function windowOf(options?: {
 }
 
 function loaded(window: AssistantChatWindow): AssistantThreadState {
-  return applyAssistantWindow(initialAssistantThreadState(), window, LATEST);
+  return applyAssistantWindow(initialAssistantThreadState(), window, LATEST)
+    .state;
 }
 
 /**
@@ -406,5 +412,218 @@ describe("a reconnection", () => {
     // The turn it was following is over, and the thread is what says so.
     expect(applied.state.trackedTurn).toBeNull();
     expect(applied.rereadWindow).toBe(false);
+  });
+});
+
+describe("a window that resolved after the thread moved past it", () => {
+  function ended(window: AssistantChatWindow): AssistantThreadState {
+    const started = apply(
+      loaded(
+        windowOf({
+          status: "streaming",
+          turn: { id: COMMAND, status: "running" },
+        }),
+      ),
+      {
+        type: "turn.started",
+        conversationId: CONVERSATION,
+        kind: "chat",
+        commandId: COMMAND,
+      },
+    ).state;
+    return apply(started, finished(window)).state;
+  }
+
+  const late = windowOf({
+    text: "",
+    status: "streaming",
+    turn: { id: COMMAND, status: "running" },
+  });
+
+  it("keeps the finished reply rather than the placeholder the window carries", () => {
+    const applied = applyAssistantWindow(
+      ended(windowOf({ text: "Готово.", revision: 4 })),
+      late,
+      LATEST,
+    );
+
+    expect(applied.state.thread?.messages[0]?.parts).toEqual([
+      { kind: "text", text: "Готово.", status: "complete" },
+    ]);
+  });
+
+  it("does not bring back a turn it has seen finish, and reads the window", () => {
+    const applied = applyAssistantWindow(
+      ended(windowOf({ text: "Готово.", revision: 4 })),
+      late,
+      LATEST,
+    );
+
+    expect(assistantTurnActive(applied.state.thread)).toBe(false);
+    expect(applied.rereadWindow).toBe(true);
+  });
+
+  it("keeps a question opened since, when it refuses that window's turn", () => {
+    const state = ended(
+      windowOf({
+        text: "Яку Катю?",
+        revision: 4,
+        openPause: OPEN_PAUSE,
+      }),
+    );
+    expect(state.thread?.openPause?.interactionId).toBe(INTERACTION);
+
+    const applied = applyAssistantWindow(state, late, LATEST);
+
+    expect(applied.state.thread?.openPause?.interactionId).toBe(INTERACTION);
+    expect(assistantTurnActive(applied.state.thread)).toBe(false);
+  });
+
+  function closedByTheTurnItWatched(): AssistantThreadState {
+    const asked = apply(
+      loaded(
+        windowOf({
+          openPause: OPEN_PAUSE,
+          turn: { id: COMMAND, status: "running" },
+        }),
+      ),
+      {
+        type: "turn.started",
+        conversationId: CONVERSATION,
+        kind: "chat",
+        commandId: COMMAND,
+      },
+    ).state;
+    return apply(asked, finished(windowOf({ text: "Готово.", revision: 4 })))
+      .state;
+  }
+
+  it("does not reopen a question the turn it watched ended without", () => {
+    const closed = closedByTheTurnItWatched();
+    expect(closed.thread?.openPause).toBeNull();
+
+    const applied = applyAssistantWindow(
+      closed,
+      windowOf({ openPause: OPEN_PAUSE }),
+      LATEST,
+    );
+
+    expect(applied.state.thread?.openPause).toBeNull();
+    expect(applied.rereadWindow).toBe(true);
+  });
+
+  it("takes a higher revision of the question it saw closed", () => {
+    const applied = applyAssistantWindow(
+      closedByTheTurnItWatched(),
+      windowOf({
+        revision: 5,
+        openPause: { ...OPEN_PAUSE, revision: OPEN_PAUSE.revision + 1 },
+      }),
+      LATEST,
+    );
+
+    expect(applied.state.thread?.openPause?.revision).toBe(
+      OPEN_PAUSE.revision + 1,
+    );
+    expect(applied.rereadWindow).toBe(false);
+  });
+
+  it("keeps a question a snapshot it cannot order does not carry", () => {
+    const asked = loaded(windowOf({ openPause: OPEN_PAUSE }));
+
+    const snapshot = apply(asked, {
+      type: "snapshot",
+      window: windowOf({ text: "Готово.", revision: 4 }),
+    }).state;
+    const applied = applyAssistantWindow(
+      snapshot,
+      windowOf({ openPause: OPEN_PAUSE }),
+      LATEST,
+    );
+
+    expect(applied.state.thread?.openPause?.interactionId).toBe(INTERACTION);
+    expect(applied.rereadWindow).toBe(false);
+  });
+
+  it("forgets the oldest turn it saw end once nine have ended", () => {
+    let state = loaded(windowOf());
+    for (let n = 0; n < 9; n += 1) {
+      state = apply(state, finished(undefined, turnId(n))).state;
+    }
+
+    const oldest = applyAssistantWindow(
+      state,
+      windowOf({ turn: { id: turnId(0), status: "running" } }),
+      LATEST,
+    );
+    const newest = applyAssistantWindow(
+      state,
+      windowOf({ turn: { id: turnId(8), status: "running" } }),
+      LATEST,
+    );
+
+    expect(assistantTurnActive(oldest.state.thread)).toBe(true);
+    expect(oldest.rereadWindow).toBe(false);
+    expect(assistantTurnActive(newest.state.thread)).toBe(false);
+    expect(newest.rereadWindow).toBe(true);
+  });
+
+  it("keeps the higher revision when the same question is recorded twice", () => {
+    const closed = assistantPauseAnswered(
+      assistantPauseAnswered(loaded(windowOf()), {
+        interactionId: INTERACTION,
+        revision: 5,
+      }),
+      { interactionId: INTERACTION, revision: 2 },
+    );
+
+    const applied = applyAssistantWindow(
+      closed,
+      windowOf({ openPause: { ...OPEN_PAUSE, revision: 5 } }),
+      LATEST,
+    );
+
+    expect(applied.state.thread?.openPause).toBeNull();
+    expect(applied.rereadWindow).toBe(true);
+  });
+  it("does not bring back a turn that ended before the last one", () => {
+    const first = ended(windowOf({ text: "Готово.", revision: 4 }));
+    const second = apply(
+      apply(first, {
+        type: "turn.started",
+        conversationId: CONVERSATION,
+        kind: "chat",
+        commandId: OTHER_COMMAND,
+      }).state,
+      finished(windowOf({ text: "Готово.", revision: 5 }), OTHER_COMMAND),
+    ).state;
+
+    const applied = applyAssistantWindow(second, late, LATEST);
+
+    expect(assistantTurnActive(applied.state.thread)).toBe(false);
+    expect(applied.rereadWindow).toBe(true);
+  });
+
+  it("does not reopen a question this client answered itself", () => {
+    const asked = loaded(windowOf({ openPause: OPEN_PAUSE }));
+    const settled = applyAssistantWindow(
+      asked,
+      windowOf({ text: "Готово.", revision: 4 }),
+      LATEST,
+    ).state;
+    expect(settled.thread?.openPause).toBeNull();
+
+    const answered = assistantPauseAnswered(settled, {
+      interactionId: INTERACTION,
+      revision: OPEN_PAUSE.revision,
+    });
+    const applied = applyAssistantWindow(
+      answered,
+      windowOf({ openPause: OPEN_PAUSE }),
+      LATEST,
+    );
+
+    expect(applied.state.thread?.openPause).toBeNull();
+    expect(applied.rereadWindow).toBe(true);
   });
 });
