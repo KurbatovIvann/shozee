@@ -34,13 +34,25 @@ the mode: `fresh` (branch from `origin/main`), `continue` (branch exists), or
   import in a file you read requires it.
 - Batch independent tool calls in one message. Write a new file in one
   `Write`; edit an existing file with as few `Edit`s as the change allows.
+  Never write a `.ts`/`.tsx` file through Bash (heredoc, redirect, `sed -i`).
+- **Do not type a comment into `.ts`/`.tsx` — not one.** Not a file header,
+  not JSDoc, not a "why" line above a branch, not an ADR citation. The two
+  habits to drop: a block comment at the top of a new file, and a sentence
+  explaining a non-obvious condition — rename the thing, or let the test say
+  it. Scripts under `.claude/` and `packages/tooling/` do carry JSDoc; that
+  is their style, not yours — do not copy it into `.ts`/`.tsx`. A comment you
+  type and then strip costs the tokens twice and buys nothing.
 - Run `verify.mjs` once when the implementation is complete, not after every
   edit; a second run only for the failed steps (`--only`).
 - Noisy commands go to a file: `pnpm install --frozen-lockfile --prefer-offline > .agent-tmp/install.log 2>&1; echo exit=$?`.
 - No Linear calls: the parent owns Linear. No Agent tool (you have none).
 - Stop early. A STOPPED report after 10 minutes beats a 3000-line PR after
-  three hours. A PR above ~400 changed lines means the ticket is too big:
-  report STOPPED with a proposed split instead of finishing it.
+  three hours. Above **800 changed source lines** (tests, generated files and
+  markdown excluded) the ticket is too big: report STOPPED with a proposed
+  split instead of finishing it. Check with
+  `node .claude/scripts/diff-hygiene.mjs` as soon as the shape is in place,
+  not at the end, when a split costs the whole ticket. Never pass `--budget`
+  yourself: only the parent may raise it.
 
 ## 1. Setup
 
@@ -74,8 +86,8 @@ the mode: `fresh` (branch from `origin/main`), `continue` (branch exists), or
   folders). No invented folders, layers, abstractions, or helpers.
 - Never touch `packages/core`; no foreign module unless the card names that
   supporting action; no raw SQL; no `any`; no `docs/specs/` edits; generated
-  files only through their generators; **no comments in code** (a hook
-  blocks them — express intent with names, types, tests).
+  files only through their generators; **no comments in code** (do not type
+  them at all — the write hook and the diff gate only catch what slips).
 - Register actions/events/coverage in `apps/api/src/composition.ts` and
   subscriptions in `apps/api/src/subscriptions.ts` as the golden slice does.
 - Schema columns freeze when the schema PR merges.
