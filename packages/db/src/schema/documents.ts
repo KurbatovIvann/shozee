@@ -165,7 +165,7 @@ export const documentItems = pgTable(
       mode: "bigint",
     }).notNull(),
     currency: char("currency", { length: 3 }).notNull().default("UAH"),
-    createdAt: timestamp("created_at", { withTimezone: true })
+    createdAt: timestamp("created_at", { withTimezone: true, precision: 3 })
       .notNull()
       .defaultNow(),
   },
@@ -282,7 +282,7 @@ export const documentShareTokens = pgTable(
     signedDownloadExpiresAt: timestamp("signed_download_expires_at", {
       withTimezone: true,
     }),
-    createdAt: timestamp("created_at", { withTimezone: true })
+    createdAt: timestamp("created_at", { withTimezone: true, precision: 3 })
       .notNull()
       .defaultNow(),
   },

@@ -47,6 +47,15 @@ describe("@showzy/validation/pagination", () => {
       });
     });
 
+    it("encodes exactly three fractional digits", () => {
+      const cursor = isoId.encode({
+        createdAt: new Date("2026-03-01T00:00:00.123Z"),
+        id: ID,
+      });
+
+      expect(cursor.split("|")[0]).toBe("2026-03-01T00:00:00.123Z");
+    });
+
     it("rejects tampered datetime/uuid cursors", () => {
       expect(isoId.decode("nope")).toBeUndefined();
       expect(isoId.decode("2026-03-01T00:00:00.000Z")).toBeUndefined();

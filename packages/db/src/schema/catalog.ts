@@ -133,7 +133,7 @@ export const productMedia = pgTable(
     productId: uuid("product_id").notNull(),
     fileId: uuid("file_id").notNull(),
     position: integer("position").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
+    createdAt: timestamp("created_at", { withTimezone: true, precision: 3 })
       .notNull()
       .defaultNow(),
   },
