@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { createShowzyQueryClient } from "../../../api/query-client";
 import {
+  counterpartyCustomersLookupInput,
   listCustomersInfiniteOptions,
   type CustomersListClient,
 } from "../api/customer.queries";
@@ -31,11 +32,10 @@ describe("counterparty form lookups server search", () => {
     const options = listCustomersInfiniteOptions({
       client,
       companyId: "company-a",
-      input: {
-        status: "active",
-        limit: CUSTOMERS_LOOKUP_PAGE_SIZE,
-        ...(search === undefined ? {} : { search }),
-      },
+      input: counterpartyCustomersLookupInput(
+        search,
+        CUSTOMERS_LOOKUP_PAGE_SIZE,
+      ),
       getActiveCompany: () => "company-a",
     });
     const queryClient = createShowzyQueryClient({ retryDelay: () => 0 });
@@ -59,11 +59,10 @@ describe("counterparty form lookups server search", () => {
     const options = listCustomersInfiniteOptions({
       client,
       companyId: "company-a",
-      input: {
-        status: "active",
-        limit: CUSTOMERS_LOOKUP_PAGE_SIZE,
-        ...(search === undefined ? {} : { search }),
-      },
+      input: counterpartyCustomersLookupInput(
+        search,
+        CUSTOMERS_LOOKUP_PAGE_SIZE,
+      ),
       getActiveCompany: () => "company-a",
     });
     const queryClient = createShowzyQueryClient({ retryDelay: () => 0 });

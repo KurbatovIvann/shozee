@@ -73,6 +73,17 @@ export const CUSTOMERS_PROBE_INPUT = {
   limit: 1,
 } as const;
 
+export function counterpartyCustomersLookupInput(
+  search: string | undefined,
+  limit: number,
+): ListCustomersPageInput {
+  return {
+    status: "active",
+    limit,
+    ...(search === undefined ? {} : { search }),
+  };
+}
+
 export function customersProbeQueryOptions(args: {
   readonly client: ContractClient | null;
   readonly companyId: string | null;

@@ -8,7 +8,10 @@ import {
   useDebouncedValue,
 } from "../../../hooks/use-debounced-value";
 import { getCustomerQueryOptions } from "../api/customer-detail-query";
-import { listCustomersInfiniteOptions } from "../api/customer.queries";
+import {
+  counterpartyCustomersLookupInput,
+  listCustomersInfiniteOptions,
+} from "../api/customer.queries";
 import {
   CUSTOMERS_LOOKUP_PAGE_SIZE,
   LIST_CUSTOMERS_SEARCH_MAX,
@@ -63,11 +66,10 @@ export function useCounterpartyFormLookups(args: {
     listCustomersInfiniteOptions({
       client: apiClient,
       companyId: activeCompanyId,
-      input: {
-        status: "active",
-        limit: CUSTOMERS_LOOKUP_PAGE_SIZE,
-        ...(customerSearch === undefined ? {} : { search: customerSearch }),
-      },
+      input: counterpartyCustomersLookupInput(
+        customerSearch,
+        CUSTOMERS_LOOKUP_PAGE_SIZE,
+      ),
       getActiveCompany,
       enabled: args.enabled,
     }),
