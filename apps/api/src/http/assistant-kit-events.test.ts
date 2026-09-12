@@ -247,14 +247,17 @@ function harness(options?: {
           },
         },
       },
-      forCaller: () => ({
-        kit,
-        history: {
+      forCaller: () => {
+        const history = {
           load: () => Promise.resolve([]),
           save: () => Promise.resolve(),
-        },
-        turns: memoryAssistantTurnStore(kit.messages),
-      }),
+        };
+        return {
+          kit,
+          history,
+          turns: memoryAssistantTurnStore(kit.messages, history),
+        };
+      },
       staffCompany: () => Promise.resolve(VERIFIED_COMPANY),
       model: stubTextModel("Готово."),
       tools: () => Promise.resolve({}),

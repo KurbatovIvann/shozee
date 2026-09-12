@@ -100,7 +100,7 @@ export async function handleAssistantKitChat(
   }
   // Before the receipt, the idempotency key, the turn row and its message ids.
   const body = canonicalCommandIds(parsed.data);
-  const { kit, history, turns } = runtime.forCaller({
+  const { kit, turns } = runtime.forCaller({
     userId: caller.userId,
     companySelector: caller.companySelector,
     requestId,
@@ -222,19 +222,6 @@ export async function handleAssistantKitChat(
 
   if (result.outcome === "accepted") {
     budget.keep();
-    // Both the read and the write happen inside the lease. Saving before the
-    // accept claimed it could overwrite a still-running turn's history, and
-    // reading before it would carry a stale transcript across that same window
-    // — a turn finishing its final save in between would be overwritten by
-    // what this request had already read (ADR-0039, amended by the SHO-569
-    // decision).
-    const priorMessages = await history.load(scope);
-    // Before the job, so the ordinary failure leaves no queued turn whose
-    // history lacks the person's message.
-    await history.save(scope, [
-      ...priorMessages,
-      { role: "user" as const, content: body.text },
-    ]);
   }
 
   // Both `accepted` and `replayed` name the same job. This is here for one

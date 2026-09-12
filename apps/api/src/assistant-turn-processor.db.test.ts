@@ -160,6 +160,8 @@ async function newConversation(userId: string): Promise<string> {
   return id;
 }
 
+const ASKED = "покажи клієнтів";
+
 interface Accepted {
   readonly job: AssistantTurnJob;
   readonly conversationId: string;
@@ -190,9 +192,11 @@ async function accepted(options: {
   const conversationId =
     options.conversationId ?? (await newConversation(userId));
   const bind = bindOf(userId);
-  await seedingRuntime()
-    .forCaller(caller)
-    .history.save({ conversationId, bind }, options.history);
+  if (options.continues === true) {
+    await seedingRuntime()
+      .forCaller(caller)
+      .history.save({ conversationId, bind }, options.history);
+  }
   const commandId = randomUUID();
   const budgetHold =
     options.budget === undefined
@@ -229,8 +233,13 @@ async function accepted(options: {
     options.continues === true
       ? { ...common, kind: "continue" }
       : options.answerEarned === undefined
-        ? { ...common, kind: "chat", text: "покажи клієнтів" }
-        : { ...common, kind: "answer", earned: options.answerEarned },
+        ? { ...common, kind: "chat", text: ASKED }
+        : {
+            ...common,
+            kind: "answer",
+            earned: options.answerEarned,
+            history: options.history,
+          },
   );
   if (result.outcome !== "accepted") {
     throw new Error(`expected an accepted turn, got ${result.outcome}`);
@@ -429,9 +438,7 @@ function modelThatMustNotRun() {
   };
 }
 
-const USER_ASKS: ModelMessage[] = [
-  { role: "user", content: "покажи клієнтів" },
-];
+const USER_ASKS: ModelMessage[] = [{ role: "user", content: ASKED }];
 
 describe("a turn the worker runs", () => {
   it("stores its card and reply, finishes done, keeps the hold as the charge, and publishes each event after its write", async () => {
@@ -746,7 +753,7 @@ describe("a turn the worker runs", () => {
     expect((await turnRow(turn.commandId)).status).toBe("interrupted");
   });
 
-  it("runs an answer turn from its seeded history exactly as a chat turn, after the card it earned", async () => {
+  it("runs an answer turn from the history its own accept stored, after the card it earned", async () => {
     const earned: ChatPart = {
       kind: "card",
       cardId: "customers-list:earned",
@@ -754,19 +761,39 @@ describe("a turn the worker runs", () => {
       type: "customers-list",
       payload: { rows: 1 },
     };
+    const resumed: ModelMessage[] = [
+      { role: "user", content: "видали Катю" },
+      { role: "assistant", content: "Видалено." },
+    ];
     const turn = await accepted({
-      history: [
-        { role: "user", content: "видали Катю" },
-        { role: "assistant", content: "Видалено." },
-      ],
+      history: resumed,
       answerEarned: [earned],
     });
-    const h = await harness(runtimeWith(stubModel([stubTextStep("Готово.")])));
+    const loaded: ModelMessage[][] = [];
+    const base = runtimeWith(stubModel([stubTextStep("Готово.")]));
+    const h = await harness({
+      ...base,
+      forCaller: (caller) => {
+        const scoped = base.forCaller(caller);
+        return {
+          ...scoped,
+          history: {
+            ...scoped.history,
+            load: async (scope) => {
+              const messages = await scoped.history.load(scope);
+              loaded.push(messages);
+              return messages;
+            },
+          },
+        };
+      },
+    });
 
     expect(await h.process(turn.job)).toMatchObject({
       kind: "finished",
       status: "done",
     });
+    expect(loaded[0]).toEqual(resumed);
     const stored = await placeholder(turn.placeholderId);
     expect(stored.parts).toEqual([
       earned,

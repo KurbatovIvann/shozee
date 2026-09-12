@@ -23,13 +23,6 @@
  * by the accept, before any generation is attempted, so a provider failure
  * cannot take a committed write down with the explanation (SHO-546). Only the
  * reply runs off the request.
- *
- * The order is the protocol, and it is the reverse of what ADR-0039 first
- * wrote: **claim, run the action, accept, then save the history.** Saving
- * history before the accept has claimed the lease could overwrite a
- * still-running turn's history, and a `busy` accept must mean nothing was
- * written. An accept refused as `busy` gives the claim back, so the card stays
- * answerable.
  */
 import { interactionResponseSchema } from "@showzy/assistant-kit";
 import {
@@ -150,7 +143,7 @@ export async function handleAssistantKitAnswer(
   }
   // Before the receipt, the idempotency key, the turn row and its message ids.
   const body = canonicalCommandIds(parsed.data);
-  const { kit, history, turns } = runtime.forCaller({
+  const { kit, turns } = runtime.forCaller({
     userId: caller.userId,
     companySelector: caller.companySelector,
     requestId,
@@ -339,6 +332,7 @@ export async function handleAssistantKitAnswer(
       conversationId: body.conversationId,
       commandId: body.commandId,
       earned: assistantTurnEarnedCard(resolvedOutcome.card),
+      history: kit.resume(claimed, resolvedOutcome.result).messages,
       bind: caller.bind,
       sessionId: caller.sessionId,
       budgetHold: budget.handOverToAccept(),
@@ -405,19 +399,6 @@ export async function handleAssistantKitAnswer(
 
   if (result.outcome === "accepted") {
     budget.keep();
-    // The worker runs an answer turn exactly as it runs a chat turn: from
-    // history, with no answer-specific seed on the turn row. `resume` replaces
-    // the paused call's output with the resolved one — the same payload
-    // `continueHostTurn` used to hand the model inside the request. Saved only
-    // after the accept claimed the lease, and **before the job exists**, the
-    // same order `/kit/chat` keeps: a worker that started between the enqueue
-    // and this save would load a transcript still ending in the unanswered
-    // paused call, and answer without knowing the action had been performed —
-    // re-issuing its tool call, and charged for it.
-    await history.save(
-      scope,
-      kit.resume(claimed, resolvedOutcome.result).messages,
-    );
   }
 
   await enqueueAcceptedTurn(runtime, result.job, requestId);

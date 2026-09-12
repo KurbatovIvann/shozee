@@ -213,7 +213,7 @@ function harness(options?: {
    */
   readonly acceptThrows?: "conflict" | "internal" | "internal-after-commit";
   /** The history cannot be saved: pins that the job is added only after it is. */
-  readonly brokenHistorySave?: boolean;
+  readonly brokenHistorySave?: "first" | "always";
   /**
    * Makes every message write refuse, as a message another writer changed under
    * this one does (SHO-570). The accept sees the refusal; this suite's own reads
@@ -238,16 +238,31 @@ function harness(options?: {
           },
         };
   const realHistory = memoryHistory();
+  let historySavesToFail =
+    options?.brokenHistorySave === "always"
+      ? Number.POSITIVE_INFINITY
+      : options?.brokenHistorySave === "first"
+        ? 1
+        : 0;
   const history =
-    options?.brokenHistorySave === true
-      ? {
+    options?.brokenHistorySave === undefined
+      ? realHistory
+      : {
           ...realHistory,
-          save: () => Promise.reject(new Error("history is down")),
-        }
-      : realHistory;
+          save: (
+            scope: Parameters<AssistantHistoryPort["save"]>[0],
+            messages: Parameters<AssistantHistoryPort["save"]>[1],
+          ) => {
+            if (historySavesToFail > 0) {
+              historySavesToFail -= 1;
+              return Promise.reject(new Error("history is down"));
+            }
+            return realHistory.save(scope, messages);
+          },
+        };
   const queue = memoryQueue({ broken: options?.brokenQueue === true });
   // Written through the served kit, so a refused write is a failed accept.
-  const accepting = memoryAssistantTurnStore(served.messages);
+  const accepting = memoryAssistantTurnStore(served.messages, history);
   const failAs = options?.acceptThrows;
   let acceptsToFail = failAs === undefined ? 0 : 1;
   const turns: AssistantTurnStore = {
@@ -750,9 +765,10 @@ describe("POST /assistant/kit/chat", () => {
       bind,
     });
     expect(window.messages).toEqual([]);
-    // Nothing was queued and no history was saved.
     expect(queue.added).toEqual([]);
-    expect(history.saved).toEqual([]);
+    expect(await history.load({ conversationId: CONVERSATION, bind })).toEqual(
+      [],
+    );
   });
 
   /**
@@ -819,8 +835,8 @@ describe("POST /assistant/kit/chat", () => {
    * the accept and is `replayed`. Nothing is written twice, and the job that
    * attempt never added goes on the queue now rather than an interval later.
    */
-  it("re-enqueues a replayed turn without writing anything twice", async () => {
-    const { app, kit, queue, bind } = harness({
+  it("re-enqueues a replayed turn without writing anything twice, from a history the committed accept already stored", async () => {
+    const { app, kit, queue, history, bind } = harness({
       acceptThrows: "internal-after-commit",
     });
 
@@ -840,16 +856,48 @@ describe("POST /assistant/kit/chat", () => {
     expect(
       window.messages.filter((message) => message.role === "user"),
     ).toHaveLength(1);
+    expect(await history.load({ conversationId: CONVERSATION, bind })).toEqual([
+      { role: "user", content: "створи" },
+    ]);
   });
 
-  it("queues the turn only after the person's message is in history", async () => {
-    const { app, queue } = harness({ brokenHistorySave: true });
+  it("stores nothing at all when the history the turn would run from cannot be written", async () => {
+    const { app, kit, queue, history, bind } = harness({
+      brokenHistorySave: "always",
+    });
 
     const failed = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("створи"));
 
     expect(failed.status).toBe(500);
-    // Nothing to run from a history the message never reached.
     expect(queue.added).toEqual([]);
+    expect(
+      (await kit.messages.read({ conversationId: CONVERSATION, bind }))
+        .messages,
+    ).toEqual([]);
+    expect(await history.load({ conversationId: CONVERSATION, bind })).toEqual(
+      [],
+    );
+  });
+
+  it("stores the person's message in history when the retry of a rolled-back accept succeeds", async () => {
+    const { app, kit, queue, history, bind } = harness({
+      brokenHistorySave: "first",
+    });
+
+    const failed = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("створи"));
+    expect(failed.status).toBe(500);
+
+    const retry = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("створи"));
+
+    expect(retry.status).toBe(202);
+    expect(queue.added).toHaveLength(1);
+    expect(
+      (await history.load({ conversationId: CONVERSATION, bind })).at(-1),
+    ).toEqual({ role: "user", content: "створи" });
+    expect(
+      (await kit.messages.read({ conversationId: CONVERSATION, bind })).messages
+        .length,
+    ).toBe(2);
   });
 
   it("treats a different draft as a different command", async () => {
@@ -1353,15 +1401,14 @@ describe("POST /assistant/kit/answer", () => {
     ).toEqual(["card-entity"]);
   });
 
-  /**
-   * The resumed history is saved before the job exists. A worker that started
-   * in between would load a transcript still ending in the unanswered paused
-   * call and answer without knowing the action had been performed — re-issuing
-   * its tool call, and charged for it. The same order `/kit/chat` keeps.
-   */
-  it("queues the turn only after the resumed history is saved", async () => {
-    const { kit, app, queue, bind } = harness({ brokenHistorySave: true });
+  it("accepts an answer turn and its resumed history together, or neither", async () => {
+    const { kit, app, queue, history, bind } = harness({
+      brokenHistorySave: "always",
+    });
     const pause = await openPause(kit, bind);
+    const before = (
+      await kit.messages.read({ conversationId: CONVERSATION, bind })
+    ).messages.flatMap((message) => message.parts);
 
     const response = await post(
       app,
@@ -1371,12 +1418,35 @@ describe("POST /assistant/kit/answer", () => {
 
     expect(response.status).toBe(500);
     expect(queue.added).toEqual([]);
-    // The action committed all the same, so its card is stored: the accept is
-    // what carries it, and it ran before this failure.
     const parts = (
       await kit.messages.read({ conversationId: CONVERSATION, bind })
     ).messages.flatMap((message) => message.parts);
-    expect(parts.filter((part) => part.kind === "card")).toHaveLength(1);
+    expect(parts.filter((part) => part.kind === "card")).toHaveLength(
+      before.filter((part) => part.kind === "card").length,
+    );
+    expect(await history.load({ conversationId: CONVERSATION, bind })).toEqual(
+      [],
+    );
+  });
+
+  it("runs an answer turn from the resumed history its own accept stored", async () => {
+    const { kit, app, queue, history, bind } = harness();
+    const pause = await openPause(kit, bind);
+
+    const response = await post(
+      app,
+      ASSISTANT_KIT_ANSWER_PATH,
+      answerBody(pause.interactionId, pause.revision),
+    );
+
+    expect(response.status).toBe(202);
+    expect(queue.added).toHaveLength(1);
+    const stored = await history.load({
+      conversationId: CONVERSATION,
+      bind,
+    });
+    expect(stored).not.toEqual([]);
+    expect(history.saved).toEqual([stored]);
   });
 
   it("does not run a duplicate answer that arrives while the first is resolving", async () => {

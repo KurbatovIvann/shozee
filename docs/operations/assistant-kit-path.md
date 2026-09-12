@@ -533,6 +533,16 @@ skipped — logged as `assistant message could not be read and was skipped` —
 instead of emptying it (SHO-555). The provider messages the next turn is built
 from are one value in `assistant_chat_state`, replaced whole.
 
+That value is written by the accept, in the accept's own transaction
+(SHO-575): a chat accept appends the person's message to it, an answer accept
+replaces it with the resumed transcript, and **Продовжити** writes nothing and
+runs from what is stored. So a turn row and the history that turn runs from
+exist together or not at all — a `queued` turn whose `history` does not end in
+the person's question is a state no route can produce, and finding one means
+something wrote the row outside `assistant.acceptTurn`. After the accept, only
+the worker writes it: once per finished step, and once more for a step that
+paused.
+
 Read and written through `assistant.readChatMessages` /
 `assistant.insertChatMessage` / `assistant.updateChatMessage` and
 `assistant.readChatState` / `assistant.writeChatState` as the caller, so the

@@ -145,7 +145,8 @@ function harness(options?: {
   const failAccept = options?.failAccept;
   const unproven = () =>
     new CoreInvariantError("the accept was not acknowledged");
-  const realTurns = memoryAssistantTurnStore(kit.messages);
+  const history = memoryHistory();
+  const realTurns = memoryAssistantTurnStore(kit.messages, history);
   const turns =
     failAccept === undefined
       ? realTurns
@@ -164,7 +165,6 @@ function harness(options?: {
             Promise.reject(new Error("the conversation could not be read")),
         }
       : kit;
-  const history = memoryHistory();
   const budgetStore: AiBudgetStore = createMemoryAiBudgetStore();
   const app = createAssistantKitApp(
     {
@@ -342,11 +342,14 @@ describe("the spend ceiling on the kit routes", () => {
                 }),
             },
           },
-          forCaller: () => ({
-            kit,
-            history: memoryHistory(),
-            turns: memoryAssistantTurnStore(kit.messages),
-          }),
+          forCaller: () => {
+            const scopedHistory = memoryHistory();
+            return {
+              kit,
+              history: scopedHistory,
+              turns: memoryAssistantTurnStore(kit.messages, scopedHistory),
+            };
+          },
           staffCompany: () => Promise.resolve(COMPANY),
           model: stubTextModel("Готово."),
           tools: () => Promise.resolve({}),

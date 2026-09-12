@@ -290,6 +290,7 @@ describe("accepting a turn through the runtime", () => {
       commandId: randomUUID(),
       bind: annaBind,
       earned: [card],
+      history: [{ role: "user", content: "підтверди" }],
       sessionId: "session-anna",
       ...nothingReserved,
     });

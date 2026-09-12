@@ -22,6 +22,7 @@ import {
 import {
   ASSISTANT_TURN_ACTIVE_STATUSES,
   assistantChatMessages,
+  assistantChatState,
   assistantConversations,
   assistantTurns,
   type AssistantTurnKind,
@@ -67,6 +68,7 @@ import type {
 } from "../actions/start-turn.contract.js";
 import type { assistantTurnBudgetHoldSchema } from "../actions/turn-record.contract.js";
 import { nextChatMessageSeq } from "./chat-messages.js";
+import { upsertChatState } from "./chat-state.js";
 import { loadOwnConversation } from "./load-conversation.js";
 import {
   requireWritable,
@@ -83,6 +85,7 @@ type SystemCtx = Extract<ActionCtx, { principal: "system" }>;
  */
 type WritableDb = WritableStaffDb;
 
+type AcceptTurnInput = z.output<typeof acceptTurnInputSchema>;
 type AcceptTurnOutput = z.output<typeof acceptTurnOutputSchema>;
 type BudgetHold = z.output<typeof assistantTurnBudgetHoldSchema>;
 
@@ -258,6 +261,40 @@ async function continuationRoot(
   return interrupted.continuesCommandId ?? interrupted.commandId;
 }
 
+async function storeAcceptedHistory(
+  db: WritableDb,
+  identity: TurnIdentity,
+  instruction: NonNullable<AcceptTurnInput["history"]>,
+): Promise<void> {
+  if (instruction.kind === "replace") {
+    await upsertChatState(db, {
+      companyId: identity.companyId,
+      conversationId: identity.conversationId,
+      history: instruction.history,
+    });
+    return;
+  }
+  const row = (
+    await db
+      .select({ history: assistantChatState.history })
+      .from(assistantChatState)
+      .where(
+        and(
+          eq(assistantChatState.companyId, identity.companyId),
+          eq(assistantChatState.conversationId, identity.conversationId),
+        ),
+      )
+      .limit(1)
+  )[0];
+  const current = row?.history;
+  const stored: readonly unknown[] = Array.isArray(current) ? current : [];
+  await upsertChatState(db, {
+    companyId: identity.companyId,
+    conversationId: identity.conversationId,
+    history: [...stored, instruction.message],
+  });
+}
+
 export async function acceptStaffTurn(env: {
   readonly ctx: StaffCtx;
   readonly input: z.output<typeof acceptTurnInputSchema>;
@@ -326,6 +363,9 @@ export async function acceptStaffTurn(env: {
         throw new CoreInvariantError(
           "assistant.acceptTurn insert returned no row",
         );
+      }
+      if (input.history !== undefined) {
+        await storeAcceptedHistory(tx, identity, input.history);
       }
       return {
         outcome: "accepted" as const,

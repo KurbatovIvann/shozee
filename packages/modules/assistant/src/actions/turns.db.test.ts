@@ -41,6 +41,8 @@ import { insertChatMessage } from "./insert-chat-message.js";
 import { interruptTurn } from "./interrupt-turn.js";
 import { listStaleTurns } from "./list-stale-turns.js";
 import { readChatMessages } from "./read-chat-messages.js";
+import { readChatState } from "./read-chat-state.js";
+import { writeChatState } from "./write-chat-state.js";
 import { readTurnForJob } from "./read-turn-for-job.js";
 import { startTurn } from "./start-turn.js";
 import { updateChatMessage } from "./update-chat-message.js";
@@ -170,8 +172,11 @@ function chatAccept(
       message: textMessage(placeholderId, "assistant", "", "streaming"),
     },
     budgetHold: HOLD,
+    history: { kind: "append" as const, message: ASKED },
   };
 }
+
+const ASKED = { role: "user", content: "привіт" };
 
 function ref(conversationId: string, commandId: string) {
   return { conversationId, kind: "chat" as const, commandId };
@@ -262,6 +267,11 @@ async function messageIds(conversationId: string): Promise<string[]> {
     {},
   );
   return page.records.map((record) => record.messageId);
+}
+
+async function historyOf(conversationId: string): Promise<unknown> {
+  const state = await kit.invoke(readChatState, { conversationId }, {});
+  return state.history;
 }
 
 beforeAll(async () => {
@@ -595,6 +605,7 @@ describe("accepting a turn", () => {
           message: placeholder,
         },
         budgetHold: HOLD,
+        history: { kind: "replace", history: [ASKED] },
       },
       {},
     );
@@ -647,6 +658,85 @@ describe("accepting a turn", () => {
 
     expect(await messageIds(conversationId)).toEqual([taken]);
     expect(await turnRows(conversationId)).toHaveLength(0);
+    expect(await historyOf(conversationId)).toBeNull();
+  });
+
+  it("appends the person's message to the history the turn will run from", async () => {
+    const conversationId = await newConversation();
+    const earlier = { role: "assistant", content: "Готово." };
+    await kit.invoke(
+      writeChatState,
+      { conversationId, history: [earlier] },
+      {},
+    );
+
+    await kit.invoke(acceptTurn, chatAccept(conversationId), {});
+
+    expect(await historyOf(conversationId)).toEqual([earlier, ASKED]);
+  });
+
+  it("appends onto an empty history when the conversation has none, or a value that is not a list", async () => {
+    const fresh = await newConversation();
+    await kit.invoke(acceptTurn, chatAccept(fresh), {});
+    expect(await historyOf(fresh)).toEqual([ASKED]);
+
+    const corrupt = await newConversation();
+    await kit.invoke(
+      writeChatState,
+      { conversationId: corrupt, history: { not: "a list" } },
+      {},
+    );
+    await kit.invoke(acceptTurn, chatAccept(corrupt), {});
+    expect(await historyOf(corrupt)).toEqual([ASKED]);
+  });
+
+  it("leaves the stored history alone for an accept that gives no instruction", async () => {
+    const conversationId = await newConversation();
+    const stored = [ASKED, { role: "assistant", content: "Готово." }];
+    await kit.invoke(writeChatState, { conversationId, history: stored }, {});
+    const placeholderId = randomUUID();
+
+    await kit.invoke(
+      acceptTurn,
+      {
+        conversationId,
+        kind: "answer",
+        commandId: randomUUID(),
+        sessionId: "session-anna",
+        placeholder: {
+          messageId: placeholderId,
+          bind: ANNA_BIND,
+          message: textMessage(placeholderId, "assistant", "", "streaming"),
+        },
+        budgetHold: HOLD,
+      },
+      {},
+    );
+
+    expect(await historyOf(conversationId)).toEqual(stored);
+  });
+
+  it("refuses a chat accept that appends nothing, and an answer accept that appends", async () => {
+    const conversationId = await newConversation();
+    const appending = chatAccept(conversationId);
+    const withoutHistory = { ...appending, history: undefined };
+
+    await expect(
+      kit.invoke(acceptTurn, withoutHistory, {}),
+    ).rejects.toBeInstanceOf(ValidationError);
+    await expect(
+      kit.invoke(
+        acceptTurn,
+        {
+          ...chatAccept(conversationId),
+          kind: "answer",
+          userMessage: undefined,
+        },
+        {},
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+    expect(await turnRows(conversationId)).toHaveLength(0);
+    expect(await historyOf(conversationId)).toBeNull();
   });
 
   it("continues under the command of the first interrupted turn of the chain", async () => {
