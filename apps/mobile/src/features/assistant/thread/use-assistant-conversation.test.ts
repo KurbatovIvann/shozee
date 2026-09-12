@@ -1875,4 +1875,37 @@ describe("the conversation, live", () => {
 
     expect(view.latest().interaction).toBeNull();
   });
+  it("does not reopen a question it dismissed when a later window brings it back", async () => {
+    respond(200, {
+      status: "ok",
+      window: conversationWindow({ openPause: OPEN_PAUSE, asked: true }),
+    });
+    const view = mount();
+    await flush();
+
+    respond(200, {
+      status: "ok",
+      window: conversationWindow({ text: "Готово.", asked: true }),
+    });
+    act(() => {
+      view.latest().dismiss();
+    });
+    await flush();
+    expect(view.latest().interaction).toBeNull();
+
+    respond(202, {
+      status: "ok",
+      window: conversationWindow({ openPause: OPEN_PAUSE, asked: true }),
+    });
+    respond(200, {
+      status: "ok",
+      window: conversationWindow({ text: "Готово.", asked: true }),
+    });
+    act(() => {
+      void view.latest().send("ще одне");
+    });
+    await flush();
+
+    expect(view.latest().interaction).toBeNull();
+  });
 });

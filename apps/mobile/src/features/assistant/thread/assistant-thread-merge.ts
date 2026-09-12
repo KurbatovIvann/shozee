@@ -274,10 +274,7 @@ export function applyAssistantStreamEvent(
       // now stands — the same standing as any window a request answers with.
       return elsewhere(conversationId, event.window.conversationId)
         ? UNCHANGED(state)
-        : withPauseSeenClosed(
-            state,
-            applyAssistantWindow(state, event.window, LATEST),
-          );
+        : applyAssistantWindow(state, event.window, LATEST);
 
     case "turn.started":
       // Which turn is running. Whether one is remains the thread's answer.
