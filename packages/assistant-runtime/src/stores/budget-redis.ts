@@ -5,9 +5,7 @@
  *
  * It matches `createMemoryAiBudgetStore`, the reference store: `tryAdd` is an
  * increment-with-cap, `add` never leaves a counter below zero and says so when
- * it had to stop there, and `claimHold` / `dropHold` are the set-if-absent and
- * compare-and-delete a turn's reservation is recorded and forgotten by
- * (SHO-572). All are Lua so each read-then-write is atomic, and the counters
+ * it had to stop there. All are Lua so each read-then-write is atomic, and the counters
  * store a plain decimal string an operator can GET, SET or DEL.
  */
 import { CoreInvariantError } from "@showzy/core/errors";

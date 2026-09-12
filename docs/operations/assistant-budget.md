@@ -91,6 +91,12 @@ give the hold back. A retry that found an earlier attempt's reservation
 gives nothing back: it took nothing, and that attempt's turn row may be
 holding it.
 
+If `claimHold` fails on the wire after Redis already stored the record, the
+counters are subtracted back for this request while the record survives; a
+retry then adopts that record and its finisher subtracts again (floored at
+zero), which can lift the day's effective cap by one reservation. Known and
+accepted for now — see SHO-572.
+
 A budget 429 does not consume a turn slot. A 503 (`AI_NOT_CONFIGURED`)
 does not consume a turn slot or reserve budget.
 

@@ -16,7 +16,6 @@
  * **Every store call goes through `askStore`.** A store that cannot answer has
  * decided nothing about spend or about how often someone asked, so it denies
  * with a `_store` reason and the error bound — never as the person's own limit.
- * That is a type constraint rather than a convention: see `askStore`.
  */
 import { kyivCalendarDate, secondsUntilKyivMidnight } from "@showzy/ai";
 import type { RateLimitDecision, RateLimitStore } from "@showzy/core";
@@ -183,10 +182,7 @@ function denialFor(context: {
  * catches: it is that asking a store and *classifying* the failure are no
  * longer separable. `reason` is typed to the store-failure subset, so this call
  * cannot yield `turn_limit`, `company_budget` or `global_budget` however it is
- * used, and the error is always bound. A future store call added without this
- * wrapper is the only way back to the old defect, and it is visible as a bare
- * `try` around a store in a file that otherwise has none.
- */
+ * used, and the error is always bound. */
 async function askStore<T>(
   call: () => Promise<T>,
   unavailable: {
@@ -430,7 +426,10 @@ async function reserveBudgetKey(options: {
   readonly capUsd: number;
   readonly reserveUsd: number;
   /** How a denial reads when this counter is genuinely at its cap. */
-  readonly capReason: StaffAssistantBudgetDenialReason;
+  readonly capReason: Exclude<
+    StaffAssistantBudgetDenialReason,
+    StaffAssistantBudgetStoreFailureReason
+  >;
   readonly retryAfterSec: number;
   readonly refuse: RefuseDenial;
 }): Promise<number> {

@@ -134,8 +134,8 @@ the queue and the events.**
   was removed, so "what settlement does today" names nothing: the reservation
   is the only charge, and a hold is either released or left standing. Read
   "settled or released" in this section as "released". At-most-once is now a
-  property of the hold record — a compare-and-delete — rather than of the two
-  paths being mutually exclusive.)*
+  property of the hold record — an unconditional delete that reports whether
+  it won — rather than of the two paths being mutually exclusive.)*
 - **Fail visibly, never twice.** A turn runs once (`attempts: 1`), and a job
   whose worker disappears fails instead of re-running (`maxStalledCount: 0`).
   The turn becomes `interrupted`: what it did stays, the message's text part

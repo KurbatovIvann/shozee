@@ -112,8 +112,7 @@ export interface AiBudgetStore {
   /**
    * Forget a recorded hold, and say whether this call is the one that did it.
    *
-   * Compare-and-delete: only the caller told `true` may subtract the hold from
-   * the counters. Two parties releasing one hold — the request and the turn
+   * Two parties releasing one hold — the request and the turn
    * row's finisher — therefore cannot subtract it twice, which is the way the
    * day's counter used to drift below real spend.
    */

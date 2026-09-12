@@ -79,7 +79,6 @@ export const interruptTurnOutputSchema = z.discriminatedUnion("outcome", [
     conversationId: z.uuid(),
     /** The status this call ended the turn from. */
     from: assistantTurnActiveStatusSchema,
-    /** The hold this call took off the row; the caller settles or releases it. */
     releasedHold: assistantTurnBudgetHoldSchema,
   }),
   z.strictObject({
