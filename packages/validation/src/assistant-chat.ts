@@ -209,11 +209,6 @@ export type AssistantChatWindowSource =
  * One window joined to the thread a client holds — the only way a client
  * changes what it shows.
  *
- * Not a splice. A message never changes once the request that wrote it ends, so
- * joining windows by message id copies the server's log rather than deriving a
- * second version of it: a client that merged every window it was sent and then
- * paged back to the start holds exactly what the server stores.
- *
  * - A latest window replaces the thread from its first message on, and keeps
  *   what was loaded before that. If that first message is not held, the
  *   conversation moved on further than one window since the client last looked
@@ -238,11 +233,14 @@ export function mergeAssistantChatWindow(
       return held;
     }
     const seen = new Set(held.messages.map((message) => message.messageId));
+    const sent = byMessageId(incoming.messages);
     return {
       ...held,
       messages: [
         ...incoming.messages.filter((message) => !seen.has(message.messageId)),
-        ...held.messages,
+        ...held.messages.map((message) =>
+          laterOf(message, sent.get(message.messageId)),
+        ),
       ],
       olderCursor: incoming.olderCursor,
     };
@@ -262,11 +260,32 @@ export function mergeAssistantChatWindow(
   if (at === -1) {
     return asThread(incoming);
   }
+  const sent = byMessageId(incoming.messages);
+  const heldIds = new Set(held.messages.map((message) => message.messageId));
   return asThread({
     ...incoming,
-    messages: [...held.messages.slice(0, at), ...incoming.messages],
+    messages: [
+      ...held.messages.slice(0, at),
+      ...held.messages
+        .slice(at)
+        .map((message) => laterOf(message, sent.get(message.messageId))),
+      ...incoming.messages.filter((message) => !heldIds.has(message.messageId)),
+    ],
     olderCursor: held.olderCursor,
   });
+}
+
+function byMessageId(
+  messages: readonly AssistantChatMessage[],
+): Map<string, AssistantChatMessage> {
+  return new Map(messages.map((message) => [message.messageId, message]));
+}
+
+function laterOf(
+  held: AssistantChatMessage,
+  sent: AssistantChatMessage | undefined,
+): AssistantChatMessage {
+  return sent !== undefined && sent.revision > held.revision ? sent : held;
 }
 
 /* ------------------------------------------------------------------ *

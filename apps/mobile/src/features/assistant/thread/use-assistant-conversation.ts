@@ -271,6 +271,7 @@ export function useAssistantConversation(args: {
    */
   const sendingRef = useRef(false);
   const ticketRef = useRef(0);
+  const askRereadRef = useRef<() => void>(() => undefined);
 
   /**
    * The token of an attempt whose fate the client does not know.
@@ -365,7 +366,15 @@ export function useAssistantConversation(args: {
           }
           const incoming = outcome.window;
           if (incoming !== null) {
-            commit(applyAssistantWindow(stateRef.current, incoming, LATEST));
+            const applied = applyAssistantWindow(
+              stateRef.current,
+              incoming,
+              LATEST,
+            );
+            commit(applied.state);
+            if (applied.rereadWindow) {
+              askRereadRef.current();
+            }
           }
           setFailure(outcome.failure);
           return { failure: outcome.failure, current: true };
@@ -463,7 +472,7 @@ export function useAssistantConversation(args: {
           if (window === null) {
             return;
           }
-          commit(applyAssistantWindow(stateRef.current, window, LATEST));
+          commit(applyAssistantWindow(stateRef.current, window, LATEST).state);
           if (
             !sendingAtIssue &&
             !sendingRef.current &&
@@ -489,6 +498,7 @@ export function useAssistantConversation(args: {
     };
     start();
   }, [commit, epochRef]);
+  askRereadRef.current = reread;
 
   const onStreamEvent = useCallback(
     (event: Parameters<typeof applyAssistantStreamEvent>[1]) => {
@@ -674,7 +684,7 @@ export function useAssistantConversation(args: {
             applyAssistantWindow(stateRef.current, page, {
               kind: "older",
               cursor,
-            }),
+            }).state,
           );
         }
         // Said, not swallowed. Success leaves the banner alone: it may be

@@ -77,7 +77,8 @@ function windowOf(options?: {
 }
 
 function loaded(window: AssistantChatWindow): AssistantThreadState {
-  return applyAssistantWindow(initialAssistantThreadState(), window, LATEST);
+  return applyAssistantWindow(initialAssistantThreadState(), window, LATEST)
+    .state;
 }
 
 /**
@@ -405,6 +406,109 @@ describe("a reconnection", () => {
     expect(assistantTurnActive(applied.state.thread)).toBe(false);
     // The turn it was following is over, and the thread is what says so.
     expect(applied.state.trackedTurn).toBeNull();
+    expect(applied.rereadWindow).toBe(false);
+  });
+});
+
+describe("a window that resolved after the thread moved past it", () => {
+  function ended(window: AssistantChatWindow): AssistantThreadState {
+    const started = apply(
+      loaded(
+        windowOf({
+          status: "streaming",
+          turn: { id: COMMAND, status: "running" },
+        }),
+      ),
+      {
+        type: "turn.started",
+        conversationId: CONVERSATION,
+        kind: "chat",
+        commandId: COMMAND,
+      },
+    ).state;
+    return apply(started, finished(window)).state;
+  }
+
+  const late = windowOf({
+    text: "",
+    status: "streaming",
+    turn: { id: COMMAND, status: "running" },
+  });
+
+  it("keeps the finished reply rather than the placeholder the window carries", () => {
+    const applied = applyAssistantWindow(
+      ended(windowOf({ text: "Готово.", revision: 4 })),
+      late,
+      LATEST,
+    );
+
+    expect(applied.state.thread?.messages[0]?.parts).toEqual([
+      { kind: "text", text: "Готово.", status: "complete" },
+    ]);
+  });
+
+  it("does not bring back a turn it has seen finish, and reads the window", () => {
+    const applied = applyAssistantWindow(
+      ended(windowOf({ text: "Готово.", revision: 4 })),
+      late,
+      LATEST,
+    );
+
+    expect(assistantTurnActive(applied.state.thread)).toBe(false);
+    expect(applied.rereadWindow).toBe(true);
+  });
+
+  it("keeps a question opened since, when it refuses that window's turn", () => {
+    const state = ended(
+      windowOf({
+        text: "Яку Катю?",
+        revision: 4,
+        openPause: OPEN_PAUSE,
+      }),
+    );
+    expect(state.thread?.openPause?.interactionId).toBe(INTERACTION);
+
+    const applied = applyAssistantWindow(state, late, LATEST);
+
+    expect(applied.state.thread?.openPause?.interactionId).toBe(INTERACTION);
+    expect(assistantTurnActive(applied.state.thread)).toBe(false);
+  });
+
+  it("does not reopen a question a snapshot showed closed", () => {
+    const closed = apply(loaded(windowOf({ openPause: OPEN_PAUSE })), {
+      type: "snapshot",
+      window: windowOf({ text: "Готово.", revision: 4 }),
+    }).state;
+    expect(closed.thread?.openPause).toBeNull();
+
+    const applied = applyAssistantWindow(
+      closed,
+      windowOf({ openPause: OPEN_PAUSE }),
+      LATEST,
+    );
+
+    expect(applied.state.thread?.openPause).toBeNull();
+    expect(applied.rereadWindow).toBe(true);
+  });
+
+  it("takes a higher revision of the question it saw closed", () => {
+    const closed = apply(loaded(windowOf({ openPause: OPEN_PAUSE })), {
+      type: "snapshot",
+      window: windowOf({ text: "Готово.", revision: 4 }),
+    }).state;
+
+    const applied = applyAssistantWindow(
+      closed,
+      windowOf({
+        revision: 5,
+        openPause: { ...OPEN_PAUSE, revision: OPEN_PAUSE.revision + 1 },
+      }),
+      LATEST,
+    );
+
+    expect(applied.state.thread?.openPause?.revision).toBe(
+      OPEN_PAUSE.revision + 1,
+    );
     expect(applied.rereadWindow).toBe(false);
   });
 });
