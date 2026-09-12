@@ -79,7 +79,7 @@ export function useDocumentFormLookups(args: {
       companyId: activeCompanyId,
       customerId,
       getActiveCompany,
-      enabled: enabled && customerId !== null,
+      enabled,
     }),
   );
   useDrainInfinitePages({
