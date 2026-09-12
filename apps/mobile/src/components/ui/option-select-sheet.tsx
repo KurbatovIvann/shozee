@@ -6,6 +6,7 @@ import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { SearchField } from "./search-field";
 import { Sheet } from "./sheet";
 import {
+  resolveQuerySelectMode,
   visibleOptionSelectItems,
   type OptionSelectItem,
 } from "./option-select";
@@ -40,8 +41,12 @@ export function OptionSelectSheet(props: {
 }) {
   const { theme } = useUnistyles();
   const [localQuery, setLocalQuery] = useState("");
-  const serverFiltered = props.query !== undefined;
-  const query = serverFiltered ? props.query : localQuery;
+  const queryMode = resolveQuerySelectMode({
+    query: props.query,
+    onQueryChange: props.onQueryChange,
+  });
+  const serverFiltered = queryMode.controlled;
+  const query = queryMode.controlled ? queryMode.query : localQuery;
 
   useEffect(() => {
     if (!props.visible && !serverFiltered) {
@@ -50,8 +55,8 @@ export function OptionSelectSheet(props: {
   }, [props.visible, serverFiltered]);
 
   function handleQueryChange(text: string): void {
-    if (props.onQueryChange !== undefined) {
-      props.onQueryChange(text);
+    if (queryMode.controlled) {
+      queryMode.onQueryChange(text);
       return;
     }
     setLocalQuery(text);

@@ -21,7 +21,9 @@ export {
   filterOptionSelectItems,
   flattenPages,
   optionSelectItems,
+  resolveQuerySelectMode,
   type OptionSelectItem,
+  type QuerySelectMode,
 } from "./option-select";
 export { OptionSelectSheet } from "./option-select-sheet";
 export { presentConfirmDialog } from "./present-confirm-dialog";

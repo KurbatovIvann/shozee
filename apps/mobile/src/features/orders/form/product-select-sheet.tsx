@@ -3,7 +3,12 @@ import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { CheckIcon, ChevronRightIcon } from "lucide-react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 
-import { Button, SearchField, Sheet } from "../../../components/ui";
+import {
+  Button,
+  resolveQuerySelectMode,
+  SearchField,
+  Sheet,
+} from "../../../components/ui";
 import { interpolate } from "../../../i18n/locale";
 import { OrderThumbnail } from "../shared/order-thumbnail";
 import {
@@ -60,8 +65,12 @@ export function ProductSelectSheet(props: {
   const { theme } = useUnistyles();
   const [localQuery, setLocalQuery] = useState("");
   const variantsOpen = props.level === "variants";
-  const serverFiltered = props.query !== undefined;
-  const query = serverFiltered ? props.query : localQuery;
+  const queryMode = resolveQuerySelectMode({
+    query: props.query,
+    onQueryChange: props.onQueryChange,
+  });
+  const serverFiltered = queryMode.controlled;
+  const query = queryMode.controlled ? queryMode.query : localQuery;
 
   useEffect(() => {
     if (!props.sessionOpen && !serverFiltered) {
@@ -70,8 +79,8 @@ export function ProductSelectSheet(props: {
   }, [props.sessionOpen, serverFiltered]);
 
   function handleQueryChange(text: string): void {
-    if (props.onQueryChange !== undefined) {
-      props.onQueryChange(text);
+    if (queryMode.controlled) {
+      queryMode.onQueryChange(text);
       return;
     }
     setLocalQuery(text);

@@ -4,6 +4,7 @@ import {
   filterOptionSelectItems,
   flattenPages,
   optionSelectItems,
+  resolveQuerySelectMode,
   visibleOptionSelectItems,
 } from "./option-select";
 
@@ -64,6 +65,35 @@ describe("visibleOptionSelectItems", () => {
         serverFiltered: false,
       }),
     ).toEqual([options[0]]);
+  });
+});
+
+describe("resolveQuerySelectMode", () => {
+  it("is uncontrolled when both props are absent", () => {
+    expect(
+      resolveQuerySelectMode({ query: undefined, onQueryChange: undefined }),
+    ).toEqual({ controlled: false });
+  });
+
+  it("is uncontrolled when only query is passed", () => {
+    expect(
+      resolveQuerySelectMode({ query: "мар", onQueryChange: undefined }),
+    ).toEqual({ controlled: false });
+  });
+
+  it("is uncontrolled when only onQueryChange is passed", () => {
+    expect(
+      resolveQuerySelectMode({ query: undefined, onQueryChange: () => {} }),
+    ).toEqual({ controlled: false });
+  });
+
+  it("is controlled only when both props are passed together", () => {
+    const onQueryChange = (): void => {};
+    expect(resolveQuerySelectMode({ query: "мар", onQueryChange })).toEqual({
+      controlled: true,
+      query: "мар",
+      onQueryChange,
+    });
   });
 });
 

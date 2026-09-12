@@ -8,19 +8,18 @@ const SOURCE = readFileSync(
 );
 
 describe("controlled query", () => {
-  it("forwards typed text to onQueryChange instead of local state when controlled", () => {
+  it("derives the query mode once from resolveQuerySelectMode", () => {
     expect(SOURCE).toContain("readonly query?: string | undefined;");
     expect(SOURCE).toContain(
       "readonly onQueryChange?: ((value: string) => void) | undefined;",
     );
-    expect(SOURCE).toContain("props.onQueryChange(text);");
+    expect(SOURCE).toContain("resolveQuerySelectMode({");
+    expect(SOURCE).toContain("const serverFiltered = queryMode.controlled;");
+    expect(SOURCE).toContain("queryMode.onQueryChange(text);");
     expect(SOURCE).toContain("onChangeText={handleQueryChange}");
   });
 
   it("does not filter locally when server-filtered", () => {
-    expect(SOURCE).toContain(
-      "const serverFiltered = props.query !== undefined;",
-    );
     expect(SOURCE).toContain("visibleProductSelectRows({");
     expect(SOURCE).not.toContain("filterProductSelectRows(");
   });

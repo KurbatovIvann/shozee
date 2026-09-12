@@ -59,3 +59,25 @@ export function flattenPages<T>(
 ): readonly T[] {
   return pages.flatMap((page) => page.items);
 }
+
+export type QuerySelectMode =
+  | {
+      readonly controlled: true;
+      readonly query: string;
+      readonly onQueryChange: (value: string) => void;
+    }
+  | { readonly controlled: false };
+
+export function resolveQuerySelectMode(props: {
+  readonly query: string | undefined;
+  readonly onQueryChange: ((value: string) => void) | undefined;
+}): QuerySelectMode {
+  if (props.query !== undefined && props.onQueryChange !== undefined) {
+    return {
+      controlled: true,
+      query: props.query,
+      onQueryChange: props.onQueryChange,
+    };
+  }
+  return { controlled: false };
+}
