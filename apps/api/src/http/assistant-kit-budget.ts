@@ -53,7 +53,6 @@ import { RateLimitError } from "@showzy/core/errors";
 import type { Context } from "hono";
 import type { Logger } from "pino";
 import { randomUUID } from "node:crypto";
-import { z } from "zod";
 
 import {
   json,
@@ -107,14 +106,27 @@ function rateLimitResponse(error: RateLimitError, requestId: string): Response {
 }
 
 /**
- * Just enough of the body to name the turn. The handler validates it properly
- * and answers 400; this only has to decide which reservation is being asked
- * for, so it is deliberately loose about everything else.
+ * The one thing this guard needs from a route's body: the turn being reserved
+ * for.
+ *
+ * The route hands over its **own** body schema rather than this file keeping a
+ * private copy. That is what makes a route which cannot name a turn a compile
+ * error instead of a silently unbounded reservation — a schema whose output
+ * lacks `commandId`/`conversationId` does not satisfy this type, so the mount
+ * point will not build. Structural rather than nominal, so the routes pass
+ * their existing Zod schemas unchanged.
  */
-const budgetTurnBodySchema = z.object({
-  commandId: z.uuid(),
-  conversationId: z.uuid(),
-});
+export interface AssistantKitTurnNaming {
+  safeParse(value: unknown):
+    | {
+        readonly success: true;
+        readonly data: {
+          readonly commandId: string;
+          readonly conversationId: string;
+        };
+      }
+    | { readonly success: false };
+}
 
 /**
  * Which turn this request is reserving for.
@@ -123,18 +135,20 @@ const budgetTurnBodySchema = z.object({
  * keys are case-sensitive and Postgres returns a `uuid` lowercase, so a retry
  * spelling its command differently has to reach the same reservation.
  *
- * A body that names no turn cannot become one — the handler is about to answer
- * 400 — so it reserves under an identity of its own that nothing else can
- * share, and the reservation is given back on the way out. Admission control is
- * unchanged by a malformed body, which is the point of the guard sitting here.
+ * A body that does not parse cannot become a turn — the handler is about to
+ * answer 400 — so it reserves under an identity of its own that nothing else
+ * can share, and the reservation is given back on the way out. Admission
+ * control is unchanged by a malformed body, which is the point of the guard
+ * sitting here.
  */
 async function budgetTurnIdentity(
   c: Context<AssistantKitAppEnv>,
   kind: "chat" | "answer",
+  namesTurn: AssistantKitTurnNaming,
 ): Promise<StaffAssistantTurnIdentity> {
   const raw = await readJson(c);
   const parsed = raw.ok
-    ? budgetTurnBodySchema.safeParse(raw.body)
+    ? namesTurn.safeParse(raw.body)
     : ({ success: false } as const);
   if (!parsed.success) {
     return { kind, conversationId: randomUUID(), commandId: randomUUID() };
@@ -163,6 +177,13 @@ export async function withAssistantKitBudget(
     readonly skipTurnLimit: boolean;
     /** Which turn this route accepts. Part of the reservation's identity. */
     readonly turnKind: "chat" | "answer";
+    /**
+     * The route's own body schema, which must name the turn. A route that
+     * cannot name one fails to compile here rather than quietly reserving under
+     * a fresh identity per attempt, which would lose the re-reservation bound
+     * with no test or type signal.
+     */
+    readonly namesTurn: AssistantKitTurnNaming;
   },
   handle: () => Promise<Response>,
 ): Promise<Response> {
@@ -176,7 +197,7 @@ export async function withAssistantKitBudget(
     return caller.response;
   }
   const companyId = canonicalizeAiBudgetCompanyId(caller.companySelector);
-  const turn = await budgetTurnIdentity(c, options.turnKind);
+  const turn = await budgetTurnIdentity(c, options.turnKind, options.namesTurn);
 
   let reservation;
   try {
@@ -204,6 +225,15 @@ export async function withAssistantKitBudget(
 
   // One mutable record rather than three captured flags: the handler runs
   // between the writes and the reads, so these are state, not constants.
+  //
+  // `kept` gates nothing a reachable path needs. `keep()` is only ever called
+  // after `handOverToAccept()`, and the store never calls `releaseUnusedHold`
+  // for an accepted turn, so no reachable sequence reaches `giveBack` with
+  // `kept` set. It stays as a latch because `release` is handed to the store as
+  // a callback and "never after accepted" is the store's rule to keep: if that
+  // were ever broken, this is what stops a reservation a committed row owns
+  // from being subtracted. A latch that can only refuse a release fails in the
+  // safe direction, so it is cheaper to keep than to rely on the rule alone.
   const fate = { handedOver: false, kept: false, given: false };
   const giveBack = async (): Promise<void> => {
     if (fate.kept || fate.given) {
@@ -224,7 +254,6 @@ export async function withAssistantKitBudget(
     });
   };
   const ticket: AssistantKitBudgetTicket = {
-    hold: reservation.hold,
     handOverToAccept: () => {
       fate.handedOver = true;
       return reservation.hold;

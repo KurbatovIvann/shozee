@@ -26,12 +26,25 @@ import {
   aiCompanyBudgetKey,
   aiGlobalBudgetKey,
   canonicalizeAiBudgetCompanyId,
+  type AiBudgetHoldClaim,
   type AiBudgetStore,
   type AiBudgetTryAddDecision,
 } from "./stores/budget.js";
 
 export type StaffAssistantBudgetDenialReason =
-  "turn_limit" | "company_budget" | "global_budget";
+  | "turn_limit"
+  | "company_budget"
+  | "global_budget"
+  /**
+   * The budget store could not answer, so nothing was decided about spend.
+   *
+   * Kept apart from the cap reasons deliberately: an outage logged as
+   * `company_budget` reads as a company having spent its Kyiv day, which is the
+   * one condition this guard's whole design is about. An operator must be able
+   * to tell "out of budget until midnight" from "Redis is down" by the field
+   * they filter on.
+   */
+  | "budget_store";
 
 export interface StaffAssistantBudgetLimits {
   readonly chatTurnsPerMinutePerUser: number;
@@ -108,12 +121,19 @@ export function logStaffAssistantBudgetDenial(options: {
   readonly requestId: string;
   readonly companyId: string;
   readonly reason: StaffAssistantBudgetDenialReason;
+  /**
+   * The store failure behind a `budget_store` denial. Logged so the outage is
+   * visible at all: without it the only record of a Redis failure is a line
+   * that looks like an ordinary cap denial (invariant 4).
+   */
+  readonly err?: unknown;
 }): void {
   options.logger.warn(
     {
       request_id: options.requestId,
       company_id: canonicalizeAiBudgetCompanyId(options.companyId),
       reason: options.reason,
+      ...(options.err === undefined ? {} : { err: options.err }),
     },
     "staff assistant budget denied",
   );
@@ -226,12 +246,16 @@ async function reserveStaffAssistantBudget(options: {
     globalReservedUsd: 0,
     kyivDate: options.kyivDate,
   };
-  const refuse = (reason: StaffAssistantBudgetDenialReason): RateLimitError => {
+  const refuse = (
+    reason: StaffAssistantBudgetDenialReason,
+    err?: unknown,
+  ): RateLimitError => {
     logStaffAssistantBudgetDenial({
       logger: options.logger,
       requestId: options.requestId,
       companyId: options.ref.companyId,
       reason,
+      ...(err === undefined ? {} : { err }),
     });
     return new RateLimitError(options.retryAfterSec);
   };
@@ -243,7 +267,8 @@ async function reserveStaffAssistantBudget(options: {
         key: companyKey,
         capUsd: options.limits.dailyBudgetUsdPerCompany,
         reserveUsd: options.limits.unknownModelTurnUsd,
-        refuse: () => refuse("company_budget"),
+        capReason: "company_budget",
+        refuse,
       });
     }
     if (options.limits.dailyBudgetUsdGlobal > 0) {
@@ -252,7 +277,8 @@ async function reserveStaffAssistantBudget(options: {
         key: globalKey,
         capUsd: options.limits.dailyBudgetUsdGlobal,
         reserveUsd: options.limits.unknownModelTurnUsd,
-        refuse: () => refuse("global_budget"),
+        capReason: "global_budget",
+        refuse,
       });
     }
   } catch (error: unknown) {
@@ -272,23 +298,28 @@ async function reserveStaffAssistantBudget(options: {
   // reserve for the length of one Redis round trip, and the loser gives its own
   // reservation straight back below. A reservation briefly held twice costs
   // availability and expires with the Kyiv day; one never taken does not.
-  let claim;
+  let claim: AiBudgetHoldClaim;
   try {
     claim = await store.claimHold(
       aiBudgetHoldKey({ ...options.ref, kyivDate: options.kyivDate }),
       encodeHold(hold),
       AI_BUDGET_TTL_SEC,
     );
-  } catch {
+  } catch (error: unknown) {
     // The store is not answering, so whether this turn already holds a
     // reservation is unknown. Refuse, and give back what this request took
     // rather than leaving it to the Kyiv day.
+    //
+    // Reported as a store failure, never as a cap: this refusal looks to the
+    // person exactly like being out of budget, and an operator reading
+    // `company_budget` here would go looking for a company that spent its day
+    // instead of for the outage.
     await subtractHold(options.logger, options.requestId, store, {
       companyKey,
       globalKey,
       hold,
     });
-    throw refuse("company_budget");
+    throw refuse("budget_store", error);
   }
 
   if (claim.created) {
@@ -326,7 +357,12 @@ async function reserveBudgetKey(options: {
   readonly key: string;
   readonly capUsd: number;
   readonly reserveUsd: number;
-  readonly refuse: () => RateLimitError;
+  /** How a denial reads when this counter is genuinely at its cap. */
+  readonly capReason: StaffAssistantBudgetDenialReason;
+  readonly refuse: (
+    reason: StaffAssistantBudgetDenialReason,
+    err?: unknown,
+  ) => RateLimitError;
 }): Promise<number> {
   let decision: AiBudgetTryAddDecision;
   try {
@@ -336,11 +372,13 @@ async function reserveBudgetKey(options: {
       options.capUsd,
       AI_BUDGET_TTL_SEC,
     );
-  } catch {
-    throw options.refuse();
+  } catch (error: unknown) {
+    // Same distinction the hold record makes: a store that cannot answer is not
+    // a company at its ceiling, and must not be logged as one.
+    throw options.refuse("budget_store", error);
   }
   if (!decision.allowed) {
-    throw options.refuse();
+    throw options.refuse(options.capReason);
   }
   return options.reserveUsd;
 }

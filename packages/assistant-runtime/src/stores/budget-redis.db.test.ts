@@ -13,6 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { AI_BUDGET_FLOORED_MESSAGE, AI_BUDGET_TTL_SEC } from "./budget.js";
 import { createRedisAiBudgetStore } from "./budget-redis.js";
+import { describeAiBudgetHoldContract } from "./budget-hold-contract.test-suite.js";
 
 let container: StartedRedisContainer;
 let redis: Redis;
@@ -114,68 +115,6 @@ describe("createRedisAiBudgetStore", () => {
     });
   });
 
-  /**
-   * The same cases `budget.test.ts` pins on the reference store (SHO-572). They
-   * matter more here: the memory store is serialized by a per-key lock in one
-   * process, while these have to hold across every API and worker process at
-   * once, which is what the Lua is for.
-   */
-  it("records a hold once and tells every later caller what stands", async () => {
-    const store = createRedisAiBudgetStore(redis);
-    const key = holdKey();
-
-    const first = await store.claimHold(
-      key,
-      "100000:100000",
-      AI_BUDGET_TTL_SEC,
-    );
-    const second = await store.claimHold(
-      key,
-      "999999:999999",
-      AI_BUDGET_TTL_SEC,
-    );
-
-    expect(first).toEqual({ created: true, value: "100000:100000" });
-    expect(second).toEqual({ created: false, value: "100000:100000" });
-
-    const ttl = await redis.ttl(key);
-    expect(ttl).toBeGreaterThan(47 * 60 * 60);
-    expect(ttl).toBeLessThanOrEqual(48 * 60 * 60);
-  });
-
-  it("lets exactly one of many overlapping claims create the hold", async () => {
-    const store = createRedisAiBudgetStore(redis);
-    const key = holdKey();
-
-    const claims = await Promise.all(
-      Array.from({ length: 8 }, (_unused, index) =>
-        store.claimHold(key, `${String(index)}:0`, AI_BUDGET_TTL_SEC),
-      ),
-    );
-
-    const created = claims.filter((claim) => claim.created);
-    expect(created).toHaveLength(1);
-    for (const claim of claims) {
-      expect(claim.value).toBe(created[0]?.value);
-    }
-  });
-
-  it("drops a hold for exactly one caller", async () => {
-    const store = createRedisAiBudgetStore(redis);
-    const key = holdKey();
-    await store.claimHold(key, "100000:0", AI_BUDGET_TTL_SEC);
-
-    expect(await store.dropHold(key)).toBe(true);
-    expect(await store.dropHold(key)).toBe(false);
-    expect(await redis.exists(key)).toBe(0);
-
-    await store.claimHold(key, "100000:0", AI_BUDGET_TTL_SEC);
-    const concurrent = await Promise.all(
-      Array.from({ length: 8 }, () => store.dropHold(key)),
-    );
-    expect(concurrent.filter(Boolean)).toHaveLength(1);
-  });
-
   it("floors concurrent releases at zero", async () => {
     const store = createRedisAiBudgetStore(redis);
     const key = budgetKey();
@@ -187,4 +126,25 @@ describe("createRedisAiBudgetStore", () => {
 
     expect(await store.read(key)).toBe(0);
   });
+});
+
+/**
+ * The same contract `budget.test.ts` runs on the reference store, from the same
+ * body (SHO-572). It matters more here: the memory store is serialized by a
+ * per-key lock inside one process, while these have to hold across every API
+ * and worker process at once, which is what the Lua is for.
+ */
+describeAiBudgetHoldContract({
+  name: "Redis store",
+  createStore: () => createRedisAiBudgetStore(redis),
+  newKey: holdKey,
+  concurrency: 8,
+  afterClaim: async (key) => {
+    const ttl = await redis.ttl(key);
+    expect(ttl).toBeGreaterThan(47 * 60 * 60);
+    expect(ttl).toBeLessThanOrEqual(48 * 60 * 60);
+  },
+  afterDrop: async (key) => {
+    expect(await redis.exists(key)).toBe(0);
+  },
 });

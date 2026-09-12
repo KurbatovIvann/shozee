@@ -6,6 +6,7 @@
  * cannot be added without deciding whether it calls the model — a new endpoint
  * that quietly spends is the failure this shape prevents.
  */
+import { interactionResponseSchema } from "@showzy/assistant-kit";
 import {
   AssistantKitConversationGoneError,
   createMemoryAiBudgetStore,
@@ -16,6 +17,7 @@ import { Hono } from "hono";
 import {
   ASSISTANT_KIT_CHAT_PATH,
   ASSISTANT_KIT_MESSAGES_PATH,
+  assistantKitChatBodySchema,
   handleAssistantKitChat,
   handleAssistantKitMessages,
 } from "./assistant-kit-chat.js";
@@ -109,7 +111,11 @@ export function createAssistantKitApp(
       c,
       runtime,
       spend,
-      { skipTurnLimit: false, turnKind: "chat" },
+      {
+        skipTurnLimit: false,
+        turnKind: "chat",
+        namesTurn: assistantKitChatBodySchema,
+      },
       () => handleAssistantKitChat(c, runtime),
     ),
   );
@@ -119,7 +125,11 @@ export function createAssistantKitApp(
       c,
       runtime,
       spend,
-      { skipTurnLimit: true, turnKind: "answer" },
+      {
+        skipTurnLimit: true,
+        turnKind: "answer",
+        namesTurn: interactionResponseSchema,
+      },
       () => handleAssistantKitAnswer(c, runtime),
     ),
   );

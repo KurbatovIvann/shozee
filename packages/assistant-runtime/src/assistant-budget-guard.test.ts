@@ -374,10 +374,16 @@ describe("enforceStaffAssistantBudget", () => {
     ).toBeCloseTo(0.1);
   });
 
-  it("fails closed when tryAdd throws", async () => {
+  /**
+   * A refused reservation looks the same to the person whichever way it went,
+   * so the log line is the only thing that tells an operator whether to go
+   * looking for a company that spent its day or for an outage.
+   */
+  it("fails closed when tryAdd throws, and says it was the store", async () => {
+    const capturing = createCapturingLogger();
     await expect(
       enforceStaffAssistantBudget({
-        logger: createCapturingLogger().logger,
+        logger: capturing.logger,
         requestId: "req-tryadd-throw",
         userId: USER_A,
         companyId: COMPANY_A,
@@ -390,6 +396,11 @@ describe("enforceStaffAssistantBudget", () => {
         limits: DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
       }),
     ).rejects.toBeInstanceOf(RateLimitError);
+    const denial = capturing.entries().find((row) => {
+      return row["msg"] === "staff assistant budget denied";
+    });
+    expect(denial?.["reason"]).toBe("budget_store");
+    expect(JSON.stringify(denial)).toContain("store down");
   });
 
   /**
@@ -399,9 +410,10 @@ describe("enforceStaffAssistantBudget", () => {
    */
   it("fails closed when the hold record cannot be written, and takes nothing", async () => {
     const memory = createMemoryAiBudgetStore();
+    const capturing = createCapturingLogger();
     await expect(
       enforceStaffAssistantBudget({
-        logger: createCapturingLogger().logger,
+        logger: capturing.logger,
         requestId: "req-claim-throw",
         userId: USER_A,
         companyId: COMPANY_A,
@@ -410,7 +422,7 @@ describe("enforceStaffAssistantBudget", () => {
         now: NOW,
         budgetStore: {
           ...memory,
-          claimHold: () => Promise.reject(new Error("store down")),
+          claimHold: () => Promise.reject(new Error("hold store down")),
         },
         limits: DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
       }),
@@ -418,6 +430,12 @@ describe("enforceStaffAssistantBudget", () => {
     // Refused, and the counters are back where they started.
     expect(await memory.read(aiCompanyBudgetKey(COMPANY_A, KYIV_DATE))).toBe(0);
     expect(await memory.read(aiGlobalBudgetKey(KYIV_DATE))).toBe(0);
+    // And an operator can tell this from a company that spent its Kyiv day.
+    const denial = capturing.entries().find((row) => {
+      return row["msg"] === "staff assistant budget denied";
+    });
+    expect(denial?.["reason"]).toBe("budget_store");
+    expect(JSON.stringify(denial)).toContain("hold store down");
   });
 
   it("admits through the atomic reservation and never reads first", async () => {

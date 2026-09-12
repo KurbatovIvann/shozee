@@ -27,28 +27,46 @@ Turn limit uses the existing token-bucket store:
 ai-chat:{userId}
 ```
 
-Daily USD (increment-with-cap reservation, then a floored add to settle or
-release, kept 48 hours):
+Daily USD (increment-with-cap reservation, then a floored add to release,
+kept 48 hours):
 
 ```
 ai-budget:{companyId}:{yyyy-mm-dd}
 ai-budget:global:{yyyy-mm-dd}
 ```
 
-The date is Europe/Kyiv, captured on the hold at admit time. Settle and
-unused-hold release use that date, not the wall clock at finish — a turn
-that reserves before Kyiv midnight and finishes after still writes the
-**reserve** day's keys. `{companyId}` is the lowercase UUID. Before the
-gate/model, the guard **reserves** `AI_UNKNOWN_MODEL_TURN_USD` on each
-enabled counter with an atomic increment-with-cap (Redis Lua; memory
-store serializes per key). After the turn, `add` settles the delta
-`(estimated − reserved)`, and a release adds `−reserved`. `add` is a Lua
-read-add-floor: it adds the signed amount, stops at zero, and deletes the
-key when the result is zero or below, so a counter is never negative
-(SHO-561). A release that would have taken a non-zero counter below zero
-logs `staff assistant budget counter floored at zero` with the key, the
-counter and the delta. Unknown-model `null` estimates stay at the
-reserved amount.
+One record per turn says that turn's reservation has been taken. It is
+what a release compare-and-deletes, and it is what stops a retry
+reserving twice (SHO-572). Same 48-hour TTL:
+
+```
+ai-budget-hold:{companyId}:{yyyy-mm-dd}:{kind}:{conversationId}:{commandId}
+```
+
+`{kind}` is `chat` or `answer`; every id is lowercase. The key is the
+turn's own identity — the same identity `assistant_turns` is keyed by —
+so a retry of the same command finds the reservation the first attempt
+took instead of taking another. The value is the two reserved amounts in
+millionths of a dollar, `{company}:{global}`.
+
+The date is Europe/Kyiv, captured on the hold at admit time. Release uses
+that date, not the wall clock at finish — a turn that reserves before
+Kyiv midnight and finishes after still writes the **reserve** day's keys.
+`{companyId}` is the lowercase UUID. Before the gate/model, the guard
+**reserves** `AI_UNKNOWN_MODEL_TURN_USD` on each enabled counter with an
+atomic increment-with-cap (Redis Lua; memory store serializes per key),
+and then records the hold. The counters move first on purpose: the other
+order would let a concurrent retry find a record whose reservation is not
+in the counters yet and run a turn nobody was charged for.
+
+**The reservation is the charge.** Since a turn runs off the request
+(ADR-0039) nothing settles it afterwards — the reservation travels onto
+the `assistant_turns` row, and whoever ends that turn releases it if the
+turn never reached the model. `add` is a Lua read-add-floor: it adds the
+signed amount, stops at zero, and deletes the key when the result is zero
+or below, so a counter is never negative (SHO-561). A release that would
+have taken a non-zero counter below zero logs `staff assistant budget
+counter floored at zero` with the key, the counter and the delta.
 
 This is an admission threshold, not a hard cap on provider charges. An
 admitted turn may settle **above** its reservation; that overshoot is
@@ -64,17 +82,22 @@ person cannot wait out.
 `POST /assistant/kit/abandon` and `GET /assistant/kit/messages` call no
 model, cost `$0`, and do not write Redis.
 
-Only a request that ran a turn is charged. A refusal (any non-2xx, e.g. a
-`409` for a stale or unresolvable answer) and a replayed command release
-the hold instead of settling it.
+Only a request that stored a turn is charged. A refusal (any non-2xx,
+e.g. a `409` for a stale or unresolvable answer) and a replayed command
+give the hold back. A retry that found an earlier attempt's reservation
+gives nothing back: it took nothing, and that attempt's turn row may be
+holding it.
 
 A budget 429 does not consume a turn slot. A 503 (`AI_NOT_CONFIGURED`)
 does not consume a turn slot or reserve budget.
 
-If a reserved turn never reaches settlement (a failed turn or
-a client that has already gone), the unused hold is released
-on the same Kyiv-date keys. Settlement and release are mutually
-exclusive for one turn (no double subtract).
+A turn that never reached the model has its hold released on the same
+Kyiv-date keys, by the worker or the reconciler, from the turn row.
+**At most one release per turn**, guaranteed by the hold record rather
+than by convention: the record is compare-and-deleted, and only the
+caller that removed it subtracts. The request and the row's finisher can
+both try, and the counter still moves once (SHO-572). A release that
+finds no record subtracts nothing.
 
 ## Raise a company's budget for today
 
@@ -88,14 +111,13 @@ GET ai-budget:{companyId}:{yyyy-mm-dd}
 ```
 
 Do not `DEL` or `SET 0` while chats that already reserved are still
-running. Those turns will still settle `(estimated − reserved)` or
-release `−reserved` against the key you just cleared. Settles and
-releases stop at zero, so the counter never goes negative, but today's
-spend then reads lower than what was really spent, and a later settle can
-look like a fresh charge. The floored releases show up as `staff assistant
-budget counter floored at zero` warnings. Wait until in-flight turns
-finish, or subtract only the remaining spend you intend to forgive after
-accounting for reserved USD still on the counter.
+running. Those turns will still release `−reserved` against the key you
+just cleared. Releases stop at zero, so the counter never goes negative,
+but today's spend then reads lower than what was really spent. The
+floored releases show up as `staff assistant budget counter floored at
+zero` warnings. Wait until in-flight turns finish, or subtract only the
+remaining spend you intend to forgive after accounting for reserved USD
+still on the counter.
 
 Then, to let one company continue today without raising every tenant:
 
@@ -110,6 +132,33 @@ EXPIRE ai-budget:{companyId}:{yyyy-mm-dd} 172800
 
 Same for `ai-budget:global:{yyyy-mm-dd}` when the global ceiling is the
 blocker. Do not put user text in Redis.
+
+### Hold records are not the money lever
+
+Clearing a counter does **not** clear hold records, and it does not need
+to: a record only decides whether a release subtracts. The counter is the
+spend. Two things to know before touching one:
+
+- A record outlives a cleared counter. That is harmless for the money —
+  the release it later authorises floors at zero as above.
+- Clear a record only for a turn that has already **ended**. For a turn
+  still queued or running, deleting its record means its later release
+  finds nothing and subtracts nothing, so that reservation stays on the
+  counter until the day's key expires. That fails closed — the cap is
+  reached early, never lifted — but it is the opposite of what clearing
+  looks like it does.
+
+```
+# every hold recorded for one company today
+SCAN 0 MATCH ai-budget-hold:{companyId}:{yyyy-mm-dd}:* COUNT 1000
+
+# the turn is named in the key: {kind}:{conversationId}:{commandId}
+# confirm that turn has ended before clearing
+DEL ai-budget-hold:{companyId}:{yyyy-mm-dd}:{kind}:{conversationId}:{commandId}
+```
+
+Every record expires on its own after 48 hours, so clearing one by hand
+is rarely necessary.
 
 ## 429 body
 

@@ -55,10 +55,15 @@ export type AssistantKitAppEnv = {
  * single answer: either a row holds it, or this request gives it back.
  */
 export interface AssistantKitBudgetTicket {
-  readonly hold: StaffAssistantBudgetHold;
   /**
    * Hand the reservation to an accept, and take it out of the wrapper's hands
    * (SHO-572).
+   *
+   * **The only way to obtain the reservation.** There is deliberately no plain
+   * `hold` field: one would hand a handler the reservation without recording
+   * that it left the wrapper, so the wrapper's `finally` would give back a hold
+   * a committed row already owns — the defect class this slice exists to end,
+   * and with no type error to catch it.
    *
    * The accept is the only thing that can put a reservation on a turn row, so
    * from here the turn store owns the decision: it releases what it can prove

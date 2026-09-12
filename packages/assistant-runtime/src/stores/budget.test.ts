@@ -1,5 +1,8 @@
+import { randomUUID } from "node:crypto";
+
 import { describe, expect, it } from "vitest";
 
+import { describeAiBudgetHoldContract } from "./budget-hold-contract.test-suite.js";
 import {
   AI_BUDGET_FLOORED_MESSAGE,
   AI_BUDGET_TTL_SEC,
@@ -88,64 +91,19 @@ describe("createMemoryAiBudgetStore", () => {
 });
 
 /**
- * The record a turn's reservation is kept under (SHO-572). The Redis store must
- * match this, and `budget-redis.db.test.ts` runs the same cases.
+ * The record a turn's reservation is kept under (SHO-572), on the reference
+ * store. `budget-redis.db.test.ts` runs the same contract against Redis, from
+ * the same body, so the two cannot drift apart while both stay green.
  */
+describeAiBudgetHoldContract({
+  name: "memory store",
+  createStore: () => createMemoryAiBudgetStore(),
+  newKey: () => `ai-budget-hold:c:2026-09-11:chat:conv:${randomUUID()}`,
+  concurrency: 5,
+});
+
 describe("hold records in the memory store", () => {
-  it("records a hold once and tells every later caller what stands", async () => {
-    const store = createMemoryAiBudgetStore();
-    const key = "ai-budget-hold:c:2026-09-11:chat:conv:cmd";
-
-    const first = await store.claimHold(
-      key,
-      "100000:100000",
-      AI_BUDGET_TTL_SEC,
-    );
-    const second = await store.claimHold(
-      key,
-      "999999:999999",
-      AI_BUDGET_TTL_SEC,
-    );
-
-    expect(first).toEqual({ created: true, value: "100000:100000" });
-    // Not the value this caller offered: what the owner recorded.
-    expect(second).toEqual({ created: false, value: "100000:100000" });
-  });
-
-  it("lets exactly one of many overlapping claims create the hold", async () => {
-    const store = createMemoryAiBudgetStore();
-    const key = "ai-budget-hold:c:2026-09-11:chat:conv:overlap";
-
-    const claims = await Promise.all(
-      Array.from({ length: 5 }, (_unused, index) =>
-        store.claimHold(key, `${String(index)}:0`, AI_BUDGET_TTL_SEC),
-      ),
-    );
-
-    const created = claims.filter((claim) => claim.created);
-    expect(created).toHaveLength(1);
-    // And every loser is told the winner's value, not its own.
-    for (const claim of claims) {
-      expect(claim.value).toBe(created[0]?.value);
-    }
-  });
-
-  /** Only the caller that deleted it may move the counters. */
-  it("drops a hold for exactly one caller", async () => {
-    const store = createMemoryAiBudgetStore();
-    const key = "ai-budget-hold:c:2026-09-11:chat:conv:drop";
-    await store.claimHold(key, "100000:0", AI_BUDGET_TTL_SEC);
-
-    expect(await store.dropHold(key)).toBe(true);
-    expect(await store.dropHold(key)).toBe(false);
-
-    await store.claimHold(key, "100000:0", AI_BUDGET_TTL_SEC);
-    const concurrent = await Promise.all(
-      Array.from({ length: 5 }, () => store.dropHold(key)),
-    );
-    expect(concurrent.filter(Boolean)).toHaveLength(1);
-  });
-
+  /** Only this store can be asked what happens after its clock moves. */
   it("forgets a hold once its ttl passes, so a new day reserves again", async () => {
     let nowMs = 1_000_000;
     const store = createMemoryAiBudgetStore({ now: () => nowMs });
