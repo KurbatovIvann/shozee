@@ -33,6 +33,22 @@ export const ASSISTANT_TURN_JOB_NAME = "runTurn";
 export const ASSISTANT_TURN_TIMEOUT_MS = 180_000;
 
 /**
+ * Why queue depth does not bound a turn, re-checked in SHO-563 where real depth
+ * first appears — the API is the producer from that slice on.
+ *
+ * One worker runs 4 turns at once, each up to this timeout, so it drains about
+ * 1.33 turns a minute at worst and a backlog of roughly twenty ages a healthy
+ * turn past the 15-minute abandon threshold. That arithmetic still does not
+ * bound anything, because the threshold can end only a turn the queue holds
+ * **no job** for, and a backlogged turn always has one waiting however deep the
+ * queue is. Age alone never ends a turn, so drain rate has to keep up with
+ * arrival rate for latency, never for correctness. Left as it is: raising
+ * concurrency or the threshold would change nothing for a backlogged turn, and
+ * a depth-aware bound would ask the queue a question the per-turn job check
+ * already answers.
+ */
+
+/**
  * Which accept produced the turn.
  *
  * `chat` stored the person's message and a placeholder; `answer` claimed a

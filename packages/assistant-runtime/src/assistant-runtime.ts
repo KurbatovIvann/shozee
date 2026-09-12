@@ -75,6 +75,7 @@ import {
   createPostgresAssistantKitMessageLog,
 } from "./stores/assistant-kit-postgres-stores.js";
 import { createRedisAssistantKitPauseStore } from "./stores/assistant-kit-stores.js";
+import { createPostgresAssistantTurnStore } from "./stores/assistant-turn-store.js";
 
 type RedisLike = Pick<Redis, "eval" | "get" | "set" | "del">;
 
@@ -250,6 +251,7 @@ export function createAssistantRuntime(
       return {
         kit,
         history: createPostgresAssistantKitHistoryStore(storeDeps, caller),
+        turns: createPostgresAssistantTurnStore(storeDeps, caller),
       };
     },
 

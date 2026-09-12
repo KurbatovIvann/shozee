@@ -7,20 +7,24 @@
  * company's Kyiv-day budget are the same quantities whichever route spent them.
  *
  * It wraps the handlers rather than living inside them. A route that calls the
- * model must be admitted before it runs and settled after, and putting that at
- * the mount point means a route cannot be added without a decision about which
- * it is — the failure mode being guarded against is a new endpoint that quietly
- * costs money.
+ * model must be admitted before it runs, and putting that at the mount point
+ * means a route cannot be added without a decision about which it is — the
+ * failure mode being guarded against is a new endpoint that quietly costs
+ * money.
  *
- * Reserve, then run, then settle or release. A budget refusal never spends a
- * turn slot, and a turn that did not produce a response gives its reservation
- * back.
+ * **Reserve, then accept or give it back (SHO-563).** Since the switch no turn
+ * runs inside the request, so there is nothing here to settle afterwards: the
+ * reservation *is* the charge, and it travels onto the turn row, which is why
+ * the reservation is handed to the handler as a ticket. A turn that is accepted
+ * keeps it — the worker releases it if the turn never reached the model, and
+ * the reconciler does the same for a turn that can never start. Every other
+ * outcome, a replayed command included, gives it back here.
  */
 import {
+  acceptProvedRollback,
   canonicalizeAiBudgetCompanyId,
   DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
   enforceStaffAssistantBudget,
-  recordStaffAssistantBudgetSpend,
   releaseStaffAssistantBudgetHold,
   type AiBudgetStore,
   type StaffAssistantBudgetLimits,
@@ -34,6 +38,7 @@ import {
   json,
   requireCaller,
   type AssistantKitAppEnv,
+  type AssistantKitBudgetTicket,
   type AssistantKitRuntime,
 } from "./assistant-kit-http.js";
 
@@ -129,43 +134,53 @@ export async function withAssistantKitBudget(
     throw error;
   }
 
-  let settled = false;
+  let kept = false;
+  let given = false;
+  const giveBack = async (): Promise<void> => {
+    if (kept || given) {
+      return;
+    }
+    given = true;
+    await releaseStaffAssistantBudgetHold({
+      logger: budget.logger,
+      requestId,
+      companyId,
+      hold,
+      ...(budget.budgetStore === undefined
+        ? {}
+        : { budgetStore: budget.budgetStore }),
+    });
+  };
+  const ticket: AssistantKitBudgetTicket = {
+    hold,
+    keep: () => {
+      kept = true;
+    },
+    release: giveBack,
+  };
+  c.set("assistantBudget", ticket);
+
   try {
-    const response = await handle();
-    // A replay re-read the conversation and called no model, so it is not
-    // charged. The per-minute bucket above still counted it: that one is
-    // admission control on how often a person may ask, it runs before the
-    // handler can know the command has already been seen, and a retry is an
-    // ask. Money is the quantity that must not double.
-    if (response.ok && c.get("replayedCommand") !== true) {
-      // Charged at the reservation. The previous path settled the same way —
-      // `estimatedCostUsd: null` — so a turn costs `unknownModelTurnUsd`
-      // whatever it actually used. Coarse, and the same coarseness as before.
-      await recordStaffAssistantBudgetSpend({
-        logger: budget.logger,
-        requestId,
-        companyId,
-        estimatedCostUsd: null,
-        hold,
-        ...(budget.budgetStore === undefined
-          ? {}
-          : { budgetStore: budget.budgetStore }),
-        limits: budget.limits,
-      });
-      settled = true;
+    return await handle();
+  } catch (error) {
+    // The handler threw. Unless the failure proves nothing was stored, a turn
+    // row may already hold this reservation, and giving it back would put the
+    // counter below real spend — lifting the day's cap instead of failing
+    // closed. That is the same reasoning, and the same predicate, the turn
+    // store applies to its own release.
+    //
+    // Who owns a hold after a failed accept is currently answered in three
+    // places — here, that predicate, and the turn row. Reconciling them is
+    // SHO-572's, not this slice's.
+    if (!acceptProvedRollback(error)) {
+      ticket.keep();
     }
-    return response;
+    throw error;
   } finally {
-    if (!settled) {
-      await releaseStaffAssistantBudgetHold({
-        logger: budget.logger,
-        requestId,
-        companyId,
-        hold,
-        ...(budget.budgetStore === undefined
-          ? {}
-          : { budgetStore: budget.budgetStore }),
-      });
-    }
+    // A turn row owns it, or nobody does. The per-minute bucket above still
+    // counted a replayed command: that one is admission control on how often a
+    // person may ask, and a retry is an ask. Money is the quantity that must
+    // not double, and a replay gives its reservation straight back.
+    await giveBack();
   }
 }

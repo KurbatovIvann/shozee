@@ -24,9 +24,9 @@ import {
   readChatMessages,
   startTurn,
 } from "@showzy/assistant";
-import type { ChatMessage, ChatPart } from "@showzy/assistant-kit";
+import type { ChatMessage, ChatPart, ToolOutcome } from "@showzy/assistant-kit";
 import { executeAction } from "@showzy/core";
-import { CoreError } from "@showzy/core/errors";
+import { CoreError, CoreInvariantError } from "@showzy/core/errors";
 
 import type { StaffAssistantBudgetHold } from "../assistant-budget-guard.js";
 import {
@@ -132,6 +132,31 @@ export function assistantTurnPlaceholder(options: {
       { kind: "text", text: "", status: "streaming" },
     ],
   };
+}
+
+/**
+ * What an answer's resolved action already earned, as the placeholder stores it
+ * (SHO-563).
+ *
+ * The same shape the kit writes for a card mid-turn, kept here because this
+ * file owns the placeholder an accept stores and the answer route has no other
+ * way to hand the card over: the action runs in the request, the reply runs in
+ * the worker, and the card must be stored before either can fail.
+ */
+export function assistantTurnEarnedCard(
+  card: NonNullable<Extract<ToolOutcome, { kind: "ok" }>["card"]> | undefined,
+): readonly ChatPart[] {
+  return card === undefined
+    ? []
+    : [
+        {
+          kind: "card",
+          cardId: card.cardId,
+          revision: 1,
+          type: card.type,
+          payload: card.payload,
+        },
+      ];
 }
 
 const MICRO_USD_PER_USD = 1_000_000;
@@ -392,8 +417,14 @@ export function createPostgresAssistantTurnStore(
         // releasing then would leave the counter below what the stored turn
         // holds, which lifts the cap instead of failing closed. Such a
         // reservation is left to expire with its Kyiv day: at most one turn's
-        // hold per failed attempt, so retries under the same command add up
-        // (SHO-563 must bound that).
+        // hold per failed attempt, so retries under the same command add up.
+        //
+        // Nothing bounds that today, and SHO-563 did not: `/kit/chat` gives its
+        // command back on any failed accept, which makes a retry the expected
+        // path rather than a rare one, so each pre-COMMIT `INTERNAL` strands one
+        // turn's reservation until the Kyiv-day key expires. That fails closed —
+        // the day's cap is reached early, never lifted — and bounding
+        // same-command re-reservation is SHO-572's.
         release = acceptProvedRollback(error);
         throw error;
       } finally {
@@ -435,6 +466,168 @@ export function createPostgresAssistantTurnStore(
             status: finished.status,
             releasedHold: null,
           };
+    },
+  };
+}
+
+/**
+ * The message log an accept writes through, as the memory store below needs it.
+ *
+ * Narrow on purpose: naming the kit's own type here would tie this file to the
+ * runtime types that already name this one.
+ */
+export interface AssistantTurnMessageWriter {
+  write(
+    scope: { readonly conversationId: string; readonly bind: string },
+    write: {
+      readonly kind: "append";
+      readonly messageId: string;
+      readonly role: ChatMessage["role"];
+      readonly parts: readonly ChatPart[];
+    },
+  ): Promise<{ readonly kind: string }>;
+}
+
+/**
+ * A turn store that lives in this process only.
+ *
+ * The same role `memoryAssistantKitCommands` plays for receipts: correct for a
+ * single-process run, and what the route tests accept turns through. It keeps
+ * the parts that decide how a route behaves — one unfinished turn holds a
+ * conversation, a repeated command is `replayed` and writes nothing, the
+ * message ids come from the command — and leaves durability to the Postgres
+ * store, which has its own test against a real database.
+ */
+export function memoryAssistantTurnStore(
+  messages: AssistantTurnMessageWriter,
+  clock: { now(): Date } = { now: () => new Date() },
+): AssistantTurnStore {
+  const byCommand = new Map<string, AssistantTurnView>();
+  const statuses = new Map<string, AssistantTurnView["status"]>();
+  const key = (ref: AssistantTurnRef): string =>
+    `${ref.kind}:${ref.conversationId.toLowerCase()}:${ref.commandId.toLowerCase()}`;
+
+  return {
+    async accept(input) {
+      const ref = {
+        conversationId: input.conversationId,
+        kind: input.kind,
+        commandId: input.commandId,
+      };
+      const replayed = byCommand.get(key(ref));
+      if (replayed !== undefined) {
+        await input.releaseUnusedHold();
+        return { outcome: "replayed", turn: replayed, job: jobOf(ref) };
+      }
+      const holder = [...byCommand.values()].find(
+        (turn) =>
+          turn.conversationId.toLowerCase() ===
+            input.conversationId.toLowerCase() &&
+          (statuses.get(key(turn)) === "queued" ||
+            statuses.get(key(turn)) === "running"),
+      );
+      if (holder !== undefined) {
+        await input.releaseUnusedHold();
+        return { outcome: "busy" };
+      }
+
+      const createdAt = clock.now().toISOString();
+      const scope = {
+        conversationId: input.conversationId,
+        bind: input.bind,
+      };
+      const placeholderMessageId = assistantTurnMessageId(input, "assistant");
+      let userMessageId: string | null = null;
+      if (input.kind === "chat") {
+        userMessageId = assistantTurnMessageId(input, "user");
+        const stored = await messages.write(scope, {
+          kind: "append",
+          messageId: userMessageId,
+          role: "user",
+          parts: [{ kind: "text", text: input.text, status: "complete" }],
+        });
+        if (stored.kind === "wrong_owner") {
+          await input.releaseUnusedHold();
+          return { outcome: "wrong_owner" };
+        }
+        if (stored.kind !== "written") {
+          // The real accept is one transaction: a refused write fails it, and
+          // nothing — no turn row, no placeholder — is stored.
+          throw new CoreInvariantError(
+            `assistant accept could not store the person's message: ${stored.kind}`,
+          );
+        }
+      }
+      const placeholder = await messages.write(scope, {
+        kind: "append",
+        messageId: placeholderMessageId,
+        role: "assistant",
+        parts: assistantTurnPlaceholder({
+          messageId: placeholderMessageId,
+          createdAt,
+          ...(input.kind === "answer" ? { earned: input.earned } : {}),
+        }).parts,
+      });
+      if (placeholder.kind === "wrong_owner") {
+        await input.releaseUnusedHold();
+        return { outcome: "wrong_owner" };
+      }
+      if (placeholder.kind !== "written") {
+        throw new CoreInvariantError(
+          `assistant accept could not store the placeholder: ${placeholder.kind}`,
+        );
+      }
+
+      const turn: AssistantTurnView = {
+        conversationId: input.conversationId,
+        kind: input.kind,
+        commandId: input.commandId,
+        status: "queued",
+        placeholderMessageId,
+        userMessageId,
+        continuesCommandId: input.continuesCommandId ?? null,
+      };
+      byCommand.set(key(ref), turn);
+      statuses.set(key(ref), "queued");
+      return { outcome: "accepted", turn, job: jobOf(ref) };
+    },
+
+    start(ref) {
+      const status = statuses.get(key(ref));
+      if (status !== "queued") {
+        return Promise.resolve({
+          outcome: "not_queued",
+          status: status ?? "missing",
+        });
+      }
+      statuses.set(key(ref), "running");
+      return Promise.resolve({
+        outcome: "started",
+        deadlineAt: new Date(
+          clock.now().getTime() + ASSISTANT_TURN_TIMEOUT_MS,
+        ).toISOString(),
+      });
+    },
+
+    finish(ref, status) {
+      const current = statuses.get(key(ref));
+      if (current !== "queued" && current !== "running") {
+        return Promise.resolve({
+          outcome: "already_finished",
+          status: current ?? "missing",
+          releasedHold: null,
+        });
+      }
+      statuses.set(key(ref), status);
+      return Promise.resolve({
+        outcome: "finished",
+        status,
+        releasedHold: {
+          companyReservedUsd: 0,
+          globalReservedUsd: 0,
+          kyivDate: "1970-01-01",
+        },
+      });
     },
   };
 }

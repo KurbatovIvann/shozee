@@ -49,6 +49,7 @@
     "@showzy/search": "workspace:*",
     "@showzy/validation": "workspace:*",
     "better-auth": "^1.6.30",
+    "bullmq": "6.2.0",
     "hono": "^4.13.3",
     "ioredis": "^6.0.0",
     "pino": "^10.3.1",
