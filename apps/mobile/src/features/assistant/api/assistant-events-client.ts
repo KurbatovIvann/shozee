@@ -20,6 +20,7 @@
  */
 import { fetch as expoFetch } from "expo/fetch";
 import {
+  ASSISTANT_EVENTS_HEARTBEAT_MS,
   parseAssistantStreamEvent,
   type AssistantStreamEvent,
 } from "@showzy/validation/assistant-events";
@@ -44,6 +45,29 @@ export function assistantStreamRetryDelayMs(attempt: number): number {
   return steps[capped - 1] ?? 20_000;
 }
 
+/**
+ * How long a stream may hear absolutely nothing before it is treated as dead.
+ *
+ * The server writes a comment line every `ASSISTANT_EVENTS_HEARTBEAT_MS`, and
+ * that constant's own documentation says a client hearing nothing for several
+ * of them may reconnect. This is the reader that makes it true — without one,
+ * the heartbeat is parsed and thrown away and nothing is any the wiser.
+ *
+ * Three intervals: long enough that one dropped beat or a slow network is not
+ * mistaken for a dead socket, short enough that a person is not left watching a
+ * spinner. The case this exists for is a connection that dies **without a
+ * FIN** — an ordinary carrier or NAT timeout — where the read below simply
+ * waits for ever, `onClosed` never fires, so the backoff never runs, and for an
+ * app that stayed in the foreground `AppState` never fires either. The turn's
+ * result would never land.
+ *
+ * This is not the polling ADR-0039 rejected. It asks the server nothing and
+ * sends nothing; it is a deadline on silence, and it is armed only while a
+ * connection is open.
+ */
+export const ASSISTANT_STREAM_SILENCE_LIMIT_MS =
+  ASSISTANT_EVENTS_HEARTBEAT_MS * 3;
+
 export interface AssistantEventStream {
   /** Idempotent. The stream reports nothing after this returns. */
   close(): void;
@@ -66,12 +90,37 @@ export function openAssistantEventStream(
 ): AssistantEventStream {
   const controller = new AbortController();
   let done = false;
+  let silence: ReturnType<typeof setTimeout> | null = null;
+  const clearSilence = (): void => {
+    if (silence !== null) {
+      clearTimeout(silence);
+      silence = null;
+    }
+  };
   const finish = (): void => {
     if (done) {
       return;
     }
     done = true;
+    clearSilence();
     request.onClosed();
+  };
+  /**
+   * Reset by **every** chunk that arrives, the heartbeat comment included —
+   * that is the point of it. Liveness is "bytes arrived", not "an event this
+   * build could parse arrived".
+   */
+  const armSilence = (): void => {
+    clearSilence();
+    if (done) {
+      return;
+    }
+    silence = setTimeout(() => {
+      // Abort so the socket is released; finish so the lifecycle above hears
+      // about it and reconnects on its backoff.
+      controller.abort();
+      finish();
+    }, ASSISTANT_STREAM_SILENCE_LIMIT_MS);
   };
 
   void (async () => {
@@ -98,10 +147,17 @@ export function openAssistantEventStream(
         finish();
         return;
       }
-      await readFrames(body, (event) => {
-        if (!done) {
-          request.onEvent(event);
-        }
+      // Armed before the first read: a connection that opens and then says
+      // nothing at all, not even a snapshot, is as dead as one that stops.
+      armSilence();
+      await readFrames(body, {
+        onEvent: (event) => {
+          if (!done) {
+            request.onEvent(event);
+          }
+        },
+        onChunk: armSilence,
+        stopped: () => done,
       });
     } catch {
       // A dropped connection, an abort, or a body that stopped mid-frame. All
@@ -132,16 +188,22 @@ export function openAssistantEventStream(
  */
 async function readFrames(
   body: ReadableStream<Uint8Array>,
-  emit: (event: AssistantStreamEvent) => void,
+  handlers: {
+    readonly onEvent: (event: AssistantStreamEvent) => void;
+    /** Bytes arrived — whatever they were. The liveness signal. */
+    readonly onChunk: () => void;
+    readonly stopped: () => boolean;
+  },
 ): Promise<void> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   for (;;) {
     const chunk = await reader.read();
-    if (chunk.done) {
+    if (chunk.done || handlers.stopped()) {
       return;
     }
+    handlers.onChunk();
     buffer += decoder
       .decode(chunk.value, { stream: true })
       .replaceAll("\r\n", "\n");
@@ -151,7 +213,7 @@ async function readFrames(
       buffer = buffer.slice(split + 2);
       const event = frameToEvent(frame);
       if (event !== null) {
-        emit(event);
+        handlers.onEvent(event);
       }
       split = buffer.indexOf("\n\n");
     }

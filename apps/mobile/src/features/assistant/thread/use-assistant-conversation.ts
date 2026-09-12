@@ -399,53 +399,85 @@ export function useAssistantConversation(args: {
    * not following, or a `message.updated` for a message it does not hold.
    *
    * Not `run`: this takes no command latch, so a re-read neither blocks a send
-   * nor is blocked by one. Single-flight, so a burst of such events costs one
-   * read rather than one each — the read asks for the conversation as it now
-   * stands, which is the same answer all of them wanted.
+   * nor is blocked by one.
    *
-   * This is not polling. It has no timer: every one of these is caused by an
-   * event that arrived, and when nothing arrives nothing is asked.
+   * **One at a time, but never dropped.** An ask that arrives while a read is
+   * on its way sets a flag and gets exactly one more read when that one
+   * settles. Dropping it instead would be wrong, not merely wasteful: the read
+   * in flight may have been *issued before* the event that asked for this one,
+   * so it can return state older than the regression it was meant to repair,
+   * and a finished turn publishes nothing further to try again. `revision` does
+   * not cover that gap — it orders `message.updated`, while an untracked
+   * `turn.finished` hands a whole window to a latest-merge, which replaces the
+   * thread from its first message on rather than comparing message by message.
+   * The re-arm is what makes "corrected on the next round trip" true.
+   *
+   * This is not polling. It has no interval: every read is caused by an event
+   * that arrived, and when nothing arrives nothing is asked.
    */
   const rereadRef = useRef<object | null>(null);
+  const rereadAgainRef = useRef(false);
   const reread = useCallback(() => {
-    const call = callRef.current;
-    const conversationId = conversationIdRef.current;
-    if (
-      call === null ||
-      conversationId === null ||
-      rereadRef.current !== null
-    ) {
+    if (rereadRef.current !== null) {
+      rereadAgainRef.current = true;
       return;
     }
-    const epoch = epochRef.current;
-    const request = {};
-    rereadRef.current = request;
-    void getAssistantKitWindow({ ...call, conversationId })
-      .then((outcome) => {
-        if (
-          rereadRef.current !== request ||
-          epochRef.current !== epoch ||
-          conversationIdRef.current !== conversationId
-        ) {
-          return;
-        }
-        const window = outcome.window;
-        if (window !== null) {
+    const start = (): void => {
+      // Read fresh each time: the second read belongs to whatever is on screen
+      // when it is issued, not to what was when the first was.
+      const call = callRef.current;
+      const conversationId = conversationIdRef.current;
+      if (call === null || conversationId === null) {
+        return;
+      }
+      const epoch = epochRef.current;
+      const request = {};
+      rereadRef.current = request;
+      void getAssistantKitWindow({ ...call, conversationId })
+        .then((outcome) => {
+          if (
+            rereadRef.current !== request ||
+            epochRef.current !== epoch ||
+            conversationIdRef.current !== conversationId
+          ) {
+            return;
+          }
+          const window = outcome.window;
+          if (window === null) {
+            return;
+          }
           commit(applyAssistantWindow(stateRef.current, window, LATEST));
-          // The words are in the thread now, or they were never stored. Either
-          // way the echo has been answered.
-          echoRef.current = null;
-          setPending(null);
-        }
-        // Silent on failure: this read is the client's own housekeeping, not
-        // something the person asked for, and the banner belongs to what they
-        // did ask for.
-      })
-      .finally(() => {
-        if (rereadRef.current === request) {
+          if (!sendingRef.current) {
+            // The echo belongs to the send that put it there, and only that
+            // send clears it while it is still in flight. This read takes no
+            // command latch, so its window can predate the accept of a send
+            // that is still running: clearing here would take the words off
+            // the screen, and if that send then ends undecided the draft is
+            // not restored either, so they would be in neither place
+            // (the SHO-552 class).
+            //
+            // With no send in flight the last one has settled, so the window
+            // just applied is the newest account of the conversation and the
+            // echo has been answered by it.
+            echoRef.current = null;
+            setPending(null);
+          }
+          // Silent on failure: this read is the client's own housekeeping, not
+          // something the person asked for, and the banner belongs to what they
+          // did ask for.
+        })
+        .finally(() => {
+          if (rereadRef.current !== request) {
+            return;
+          }
           rereadRef.current = null;
-        }
-      });
+          if (rereadAgainRef.current) {
+            rereadAgainRef.current = false;
+            start();
+          }
+        });
+    };
+    start();
   }, [commit, epochRef]);
 
   const onStreamEvent = useCallback(
@@ -642,6 +674,7 @@ export function useAssistantConversation(args: {
     sendingRef.current = false;
     olderRef.current = null;
     rereadRef.current = null;
+    rereadAgainRef.current = false;
     setLoadingOlder(false);
     reload();
   }, [args.conversationId, args.call, commit, reload]);

@@ -1355,6 +1355,145 @@ describe("the conversation, live", () => {
     expect(view.latest().interaction).toBeNull();
   });
 
+  /**
+   * Two reread-triggering events close together. The read already on its way
+   * may have been *issued before* the second event merged its stale window, so
+   * it can come back older than the regression it was meant to repair — and a
+   * finished turn publishes nothing further to try again. Dropping the second
+   * ask would leave the thread wrong until the next turn or a reconnect.
+   */
+  it("re-arms a re-read asked for while one was in flight", async () => {
+    const source = bodyStream();
+    const reads: ((window: unknown) => void)[] = [];
+    fetchMock.mockImplementation((url: unknown) => {
+      if (String(url).includes("/assistant/kit/events")) {
+        return Promise.resolve({ ok: true, status: 200, body: source.body });
+      }
+      return new Promise<Response>((resolve) => {
+        reads.push((window) => {
+          resolve(
+            new Response(JSON.stringify({ status: "ok", window }), {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            }),
+          );
+        });
+      });
+    });
+
+    const view = mount({ visible: true });
+    await flush();
+    act(() => {
+      reads[0]?.(streamingWindow());
+    });
+    await flush();
+    expect(reads).toHaveLength(1);
+
+    const ended = {
+      type: "turn.finished",
+      kind: "chat",
+      commandId: COMMAND,
+      status: "interrupted",
+    };
+
+    act(() => {
+      source.send("turn.finished", ended);
+    });
+    await flush();
+    expect(reads).toHaveLength(2);
+
+    // A second ask while that read is still on its way.
+    act(() => {
+      source.send("turn.finished", ended);
+    });
+    await flush();
+    expect(reads).toHaveLength(2);
+
+    // It settles — and the re-armed read follows rather than being lost.
+    act(() => {
+      reads[1]?.(streamingWindow());
+    });
+    await flush();
+    expect(reads).toHaveLength(3);
+
+    act(() => {
+      reads[2]?.(settledWindow("Готово."));
+    });
+    await flush();
+    expect(view.latest().rows.map((row) => row.text)).toEqual(["Готово."]);
+    expect(view.latest().busy).toBe(false);
+  });
+
+  /**
+   * The re-read takes no command latch, so its window can predate the accept of
+   * a send that is still in flight. Clearing the echo there took the words off
+   * the screen, and because an undecided send does not restore the draft
+   * either, they ended up in neither place — the SHO-552 class.
+   */
+  it("keeps the echo of a send that is still in flight, and does not lose the words", async () => {
+    const source = bodyStream();
+    const chat: { reject: ((reason: Error) => void) | null } = { reject: null };
+    fetchMock.mockImplementation((url: unknown) => {
+      const target = String(url);
+      if (target.includes("/assistant/kit/events")) {
+        return Promise.resolve({ ok: true, status: 200, body: source.body });
+      }
+      if (target.includes("/assistant/kit/chat")) {
+        return new Promise<Response>((_resolve, reject) => {
+          chat.reject = reject;
+        });
+      }
+      // Every read answers with a window from before this send's accept.
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({ status: "ok", window: settledWindow("Готово.") }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      );
+    });
+
+    const view = mount({ visible: true });
+    await flush();
+
+    const sent: { outcome: unknown } = { outcome: null };
+    act(() => {
+      void view
+        .latest()
+        .send("ще одне")
+        .then((outcome) => {
+          sent.outcome = outcome;
+        });
+    });
+    await flush();
+    expect(view.latest().rows.map((row) => row.text)).toContain("ще одне");
+
+    // Another device's turn ends: untracked, so a re-read is forced.
+    act(() => {
+      source.send("turn.finished", {
+        type: "turn.finished",
+        kind: "chat",
+        commandId: COMMAND,
+        status: "done",
+        window: settledWindow("Готово."),
+      });
+    });
+    await flush();
+    expect(view.latest().rows.map((row) => row.text)).toContain("ще одне");
+
+    await act(async () => {
+      chat.reject?.(new Error("network is gone"));
+      await flush();
+    });
+
+    expect(sent.outcome).toEqual({
+      kind: "unknown",
+      failure: { kind: "unreachable" },
+    });
+    // Still on screen. The sheet does not restore an undecided send's draft, so
+    // this echo is the only place the words exist.
+    expect(view.latest().rows.map((row) => row.text)).toContain("ще одне");
+  });
+
   it("replaces stale state from the snapshot a reconnection opens with", async () => {
     const source = serve({ messages: [streamingWindow()] });
     const view = mount({ visible: true });

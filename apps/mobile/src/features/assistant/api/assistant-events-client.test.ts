@@ -6,7 +6,7 @@
  * reader that assumed one chunk is one frame would drop a card silently and
  * only on a slow network.
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const fetchMock = vi.fn();
 
@@ -14,9 +14,13 @@ vi.mock("expo/fetch", () => ({
   fetch: (...args: unknown[]) => fetchMock(...args) as Promise<Response>,
 }));
 
-import type { AssistantStreamEvent } from "@showzy/validation/assistant-events";
+import {
+  ASSISTANT_EVENTS_HEARTBEAT_MS,
+  type AssistantStreamEvent,
+} from "@showzy/validation/assistant-events";
 
 import {
+  ASSISTANT_STREAM_SILENCE_LIMIT_MS,
   assistantStreamRetryDelayMs,
   openAssistantEventStream,
 } from "./assistant-events-client";
@@ -236,6 +240,74 @@ describe("the assistant event stream", () => {
     const live = open();
     await flush();
 
+    expect(live.closed.count).toBe(1);
+  });
+});
+
+/**
+ * The case that has no FIN: a carrier or NAT drops the path and the socket just
+ * stops. `reader.read()` waits for ever, so nothing else in this module ever
+ * runs — no close, so no backoff, and for an app that stayed in the foreground
+ * no `AppState` either. The turn's result would never land.
+ */
+describe("a stream that goes silent", () => {
+  beforeEach(() => {
+    fetchMock.mockReset();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("ends a connection that has heard nothing for several heartbeats", async () => {
+    const source = bodyStream();
+    respondWith(source.body);
+    const live = open();
+    await flush();
+    expect(live.closed.count).toBe(0);
+
+    vi.advanceTimersByTime(ASSISTANT_STREAM_SILENCE_LIMIT_MS - 1);
+    expect(live.closed.count).toBe(0);
+
+    vi.advanceTimersByTime(1);
+    expect(live.closed.count).toBe(1);
+  });
+
+  /**
+   * The heartbeat carries no event, which is exactly why liveness has to be
+   * "bytes arrived" rather than "something parsed".
+   */
+  it("is kept alive by heartbeats that carry no event at all", async () => {
+    const source = bodyStream();
+    respondWith(source.body);
+    const live = open();
+    await flush();
+
+    for (let beat = 0; beat < 5; beat += 1) {
+      vi.advanceTimersByTime(ASSISTANT_EVENTS_HEARTBEAT_MS);
+      source.push(": heartbeat\n\n");
+      await flush();
+    }
+
+    expect(live.closed.count).toBe(0);
+    expect(live.events).toEqual([]);
+
+    // And when the beats stop, so does the stream.
+    vi.advanceTimersByTime(ASSISTANT_STREAM_SILENCE_LIMIT_MS);
+    expect(live.closed.count).toBe(1);
+  });
+
+  it("does not leave the deadline armed after it closes", async () => {
+    const source = bodyStream();
+    respondWith(source.body);
+    const live = open();
+    await flush();
+
+    live.stream.close();
+    expect(live.closed.count).toBe(1);
+
+    vi.advanceTimersByTime(ASSISTANT_STREAM_SILENCE_LIMIT_MS * 2);
     expect(live.closed.count).toBe(1);
   });
 });

@@ -267,6 +267,67 @@ describe("a turn that finished", () => {
   });
 });
 
+/**
+ * Defense in depth for invariant 1. Unreachable through today's transport, and
+ * that is the point: `mergeAssistantChatWindow`'s latest branch replaces the
+ * thread wholesale when the ids differ, so the day a caller reuses one stream
+ * across conversations, the failure is a silently swapped thread.
+ */
+describe("an event about another conversation", () => {
+  const OTHER = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+
+  it("is ignored rather than swapping the thread", () => {
+    const state = loaded(windowOf({ text: "Наше" }));
+    const ours = { text: "Наше" };
+
+    const snapshot = applyAssistantStreamEvent(state, {
+      type: "snapshot",
+      window: { ...windowOf({ text: "Чуже" }), conversationId: OTHER },
+    });
+    expect(snapshot.state.thread?.messages[0]?.parts[0]).toMatchObject(ours);
+
+    const updated = applyAssistantStreamEvent(state, {
+      type: "message.updated",
+      conversationId: OTHER,
+      message: message({ text: "Чуже", revision: 9 }),
+    });
+    expect(updated.state.thread?.messages[0]?.parts[0]).toMatchObject(ours);
+    // Not ours to re-read for, either.
+    expect(updated.rereadWindow).toBe(false);
+
+    const started = applyAssistantStreamEvent(state, {
+      type: "turn.started",
+      conversationId: OTHER,
+      kind: "chat",
+      commandId: COMMAND,
+    });
+    expect(started.state.trackedTurn).toBeNull();
+
+    const ended = applyAssistantStreamEvent(state, {
+      type: "turn.finished",
+      kind: "chat",
+      commandId: COMMAND,
+      status: "done",
+      window: {
+        ...windowOf({ text: "Чуже", openPause: OPEN_PAUSE }),
+        conversationId: OTHER,
+      },
+    });
+    expect(ended.state.thread?.messages[0]?.parts[0]).toMatchObject(ours);
+    expect(ended.state.thread?.openPause).toBeNull();
+    expect(ended.rereadWindow).toBe(false);
+  });
+
+  it("accepts the first window, because a thread not yet read contradicts nothing", () => {
+    const applied = applyAssistantStreamEvent(initialAssistantThreadState(), {
+      type: "snapshot",
+      window: { ...windowOf({ text: "Перше" }), conversationId: OTHER },
+    });
+
+    expect(applied.state.thread?.conversationId).toBe(OTHER);
+  });
+});
+
 describe("a reconnection", () => {
   /**
    * Every connection opens with a snapshot, which is what makes a lost event

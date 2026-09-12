@@ -113,6 +113,35 @@ export type AssistantStreamApplied = {
   readonly rereadWindow: boolean;
 };
 
+/**
+ * Whether an event is about some other conversation than the one held.
+ *
+ * Unreachable today: the server subscribes a stream only after the author-rule
+ * read, and the client tears the connection down on any conversation change. It
+ * is here as defense in depth for invariant 1, because the cost of being wrong
+ * is severe and silent — `mergeAssistantChatWindow`'s latest branch replaces
+ * the thread **wholesale** when the ids differ, so a future caller that reused
+ * one stream across conversations would swap one thread for another with
+ * nothing to show for it. A guard that lives only in the transport is a guard
+ * that a later refactor removes without noticing.
+ *
+ * A thread not yet read contradicts nothing, so the first window is accepted
+ * however it arrives.
+ */
+function elsewhere(
+  state: AssistantThreadState,
+  conversationId: string,
+): boolean {
+  return (
+    state.thread !== null && state.thread.conversationId !== conversationId
+  );
+}
+
+const UNCHANGED = (state: AssistantThreadState): AssistantStreamApplied => ({
+  state,
+  rereadWindow: false,
+});
+
 export function applyAssistantStreamEvent(
   state: AssistantThreadState,
   event: AssistantStreamEvent,
@@ -121,23 +150,35 @@ export function applyAssistantStreamEvent(
     case "snapshot":
       // Every connection opens with one, and it is read as the conversation
       // now stands — the same standing as any window a request answers with.
-      return {
-        state: applyAssistantWindow(state, event.window, LATEST),
-        rereadWindow: false,
-      };
+      return elsewhere(state, event.window.conversationId)
+        ? UNCHANGED(state)
+        : {
+            state: applyAssistantWindow(state, event.window, LATEST),
+            rereadWindow: false,
+          };
 
     case "turn.started":
       // Which turn is running. Whether one is remains the thread's answer.
-      return {
-        state: { ...state, trackedTurn: event.commandId },
-        rereadWindow: false,
-      };
+      return elsewhere(state, event.conversationId)
+        ? UNCHANGED(state)
+        : {
+            state: { ...state, trackedTurn: event.commandId },
+            rereadWindow: false,
+          };
 
     case "message.updated":
-      return applyMessageUpdated(state, event.message);
+      return elsewhere(state, event.conversationId)
+        ? UNCHANGED(state)
+        : applyMessageUpdated(state, event.message);
 
     case "turn.finished":
-      return applyTurnFinished(state, event);
+      // The event carries no `conversationId` of its own; its window does. One
+      // without a window says only that some turn ended, and all it can cause
+      // is a re-read of *this* client's own conversation, which is harmless.
+      return event.window !== undefined &&
+        elsewhere(state, event.window.conversationId)
+        ? UNCHANGED(state)
+        : applyTurnFinished(state, event);
   }
 }
 
