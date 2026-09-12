@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   AI_BUDGET_FLOORED_MESSAGE,
   AI_BUDGET_TTL_SEC,
+  aiBudgetHoldKey,
   aiCompanyBudgetKey,
   createMemoryAiBudgetStore,
 } from "./budget.js";
@@ -83,6 +84,111 @@ describe("createMemoryAiBudgetStore", () => {
       current_usd: expect.closeTo(0.1) as number,
       delta_usd: -0.25,
     });
+  });
+});
+
+/**
+ * The record a turn's reservation is kept under (SHO-572). The Redis store must
+ * match this, and `budget-redis.db.test.ts` runs the same cases.
+ */
+describe("hold records in the memory store", () => {
+  it("records a hold once and tells every later caller what stands", async () => {
+    const store = createMemoryAiBudgetStore();
+    const key = "ai-budget-hold:c:2026-09-11:chat:conv:cmd";
+
+    const first = await store.claimHold(
+      key,
+      "100000:100000",
+      AI_BUDGET_TTL_SEC,
+    );
+    const second = await store.claimHold(
+      key,
+      "999999:999999",
+      AI_BUDGET_TTL_SEC,
+    );
+
+    expect(first).toEqual({ created: true, value: "100000:100000" });
+    // Not the value this caller offered: what the owner recorded.
+    expect(second).toEqual({ created: false, value: "100000:100000" });
+  });
+
+  it("lets exactly one of many overlapping claims create the hold", async () => {
+    const store = createMemoryAiBudgetStore();
+    const key = "ai-budget-hold:c:2026-09-11:chat:conv:overlap";
+
+    const claims = await Promise.all(
+      Array.from({ length: 5 }, (_unused, index) =>
+        store.claimHold(key, `${String(index)}:0`, AI_BUDGET_TTL_SEC),
+      ),
+    );
+
+    const created = claims.filter((claim) => claim.created);
+    expect(created).toHaveLength(1);
+    // And every loser is told the winner's value, not its own.
+    for (const claim of claims) {
+      expect(claim.value).toBe(created[0]?.value);
+    }
+  });
+
+  /** Only the caller that deleted it may move the counters. */
+  it("drops a hold for exactly one caller", async () => {
+    const store = createMemoryAiBudgetStore();
+    const key = "ai-budget-hold:c:2026-09-11:chat:conv:drop";
+    await store.claimHold(key, "100000:0", AI_BUDGET_TTL_SEC);
+
+    expect(await store.dropHold(key)).toBe(true);
+    expect(await store.dropHold(key)).toBe(false);
+
+    await store.claimHold(key, "100000:0", AI_BUDGET_TTL_SEC);
+    const concurrent = await Promise.all(
+      Array.from({ length: 5 }, () => store.dropHold(key)),
+    );
+    expect(concurrent.filter(Boolean)).toHaveLength(1);
+  });
+
+  it("forgets a hold once its ttl passes, so a new day reserves again", async () => {
+    let nowMs = 1_000_000;
+    const store = createMemoryAiBudgetStore({ now: () => nowMs });
+    const key = "ai-budget-hold:c:2026-09-11:chat:conv:ttl";
+
+    await store.claimHold(key, "100000:0", AI_BUDGET_TTL_SEC);
+    nowMs += AI_BUDGET_TTL_SEC * 1000 + 1;
+
+    expect(await store.dropHold(key)).toBe(false);
+    expect(
+      (await store.claimHold(key, "200000:0", AI_BUDGET_TTL_SEC)).created,
+    ).toBe(true);
+  });
+});
+
+describe("aiBudgetHoldKey", () => {
+  it("names one turn, in one casing, per company and Kyiv day", () => {
+    const base = {
+      companyId: "ABCDEF00-0000-4000-8000-00000000C001",
+      kyivDate: "2026-09-11",
+      kind: "chat",
+      conversationId: "11111111-1111-4111-8111-111111111111",
+      commandId: "22222222-2222-4222-8222-222222222222",
+    };
+    expect(aiBudgetHoldKey(base)).toBe(
+      "ai-budget-hold:abcdef00-0000-4000-8000-00000000c001:2026-09-11:chat:11111111-1111-4111-8111-111111111111:22222222-2222-4222-8222-222222222222",
+    );
+    // A retry spelling its ids differently must reach the same reservation.
+    expect(
+      aiBudgetHoldKey({
+        ...base,
+        conversationId: base.conversationId.toUpperCase(),
+        commandId: base.commandId.toUpperCase(),
+      }),
+    ).toBe(aiBudgetHoldKey(base));
+    // An answer and a send under one command token are two turns.
+    expect(aiBudgetHoldKey({ ...base, kind: "answer" })).not.toBe(
+      aiBudgetHoldKey(base),
+    );
+    // And a turn is charged on the day it was admitted.
+    expect(aiBudgetHoldKey({ ...base, kyivDate: "2026-09-12" })).not.toBe(
+      aiBudgetHoldKey(base),
+    );
   });
 });
 

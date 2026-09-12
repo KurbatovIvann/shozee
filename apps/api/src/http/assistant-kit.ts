@@ -105,14 +105,22 @@ export function createAssistantKitApp(
   });
 
   app.post(ASSISTANT_KIT_CHAT_PATH, (c) =>
-    withAssistantKitBudget(c, runtime, spend, { skipTurnLimit: false }, () =>
-      handleAssistantKitChat(c, runtime),
+    withAssistantKitBudget(
+      c,
+      runtime,
+      spend,
+      { skipTurnLimit: false, turnKind: "chat" },
+      () => handleAssistantKitChat(c, runtime),
     ),
   );
   // Finishing work already admitted. Budget applies; the turn bucket does not.
   app.post(ASSISTANT_KIT_ANSWER_PATH, (c) =>
-    withAssistantKitBudget(c, runtime, spend, { skipTurnLimit: true }, () =>
-      handleAssistantKitAnswer(c, runtime),
+    withAssistantKitBudget(
+      c,
+      runtime,
+      spend,
+      { skipTurnLimit: true, turnKind: "answer" },
+      () => handleAssistantKitAnswer(c, runtime),
     ),
   );
   app.post(ASSISTANT_KIT_ABANDON_PATH, (c) =>

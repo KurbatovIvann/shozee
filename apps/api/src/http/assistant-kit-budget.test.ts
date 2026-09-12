@@ -22,6 +22,7 @@ import {
 } from "@showzy/assistant-kit";
 import { stubTextModel, testDeps } from "@showzy/assistant-kit/testing";
 import {
+  acceptProvedRollback,
   aiCompanyBudgetKey,
   assistantInteractions,
   canonicalizeAiBudgetCompanyId,
@@ -77,12 +78,44 @@ const OK_RESOLVE = ({ value }: { value: unknown }) => {
   });
 };
 
-/** An accept that fails the way a database incident fails one. */
+/**
+ * An accept that fails the way a database incident fails one.
+ *
+ * It gives the reservation back on a failure that proves the accept rolled
+ * back, because that is the store's contract and not the route's: the real
+ * store does it in its own `finally`, and since SHO-572 the accept path is the
+ * only place that decision is made. The predicate is imported rather than
+ * restated, so this double cannot drift from the store it stands in for.
+ */
 function brokenTurns(failure: () => Error): AssistantTurnStore {
   return {
-    accept: () => Promise.reject(failure()),
+    accept: async (input) => {
+      const error = failure();
+      if (acceptProvedRollback(error)) {
+        await input.releaseUnusedHold();
+      }
+      throw error;
+    },
     start: () => Promise.reject(failure()),
     finish: () => Promise.reject(failure()),
+  };
+}
+
+/**
+ * One incident, then recovery: the first accept fails unprovably and every
+ * later one is the real store. What a person's retry actually meets.
+ */
+function failsFirstAccept(
+  real: AssistantTurnStore,
+  failure: () => Error,
+): AssistantTurnStore {
+  let attempts = 0;
+  return {
+    ...real,
+    accept: (input) => {
+      attempts += 1;
+      return attempts === 1 ? Promise.reject(failure()) : real.accept(input);
+    },
   };
 }
 
@@ -99,18 +132,37 @@ function harness(options?: {
    * so no turn row holds the reservation; `unproven` is an `INTERNAL`, which
    * may have committed after all.
    */
-  readonly failAccept?: "proven" | "unproven";
+  readonly failAccept?: "proven" | "unproven" | "first-unproven";
+  /**
+   * The handler throws on its way to the accept — the shape of a `kit.peek`,
+   * `kit.claim`, `runtime.tools` or `kit.open` failure. No turn row can ever
+   * own that request's reservation.
+   */
+  readonly failBeforeAccept?: boolean;
 }) {
   const kit = createAssistantKit(testDeps(assistantInteractions));
   const failAccept = options?.failAccept;
+  const unproven = () =>
+    new CoreInvariantError("the accept was not acknowledged");
+  const realTurns = memoryAssistantTurnStore(kit.messages);
   const turns =
     failAccept === undefined
-      ? memoryAssistantTurnStore(kit.messages)
-      : brokenTurns(() =>
-          failAccept === "proven"
-            ? new ConflictError("the accept was rolled back")
-            : new CoreInvariantError("the accept was not acknowledged"),
-        );
+      ? realTurns
+      : failAccept === "first-unproven"
+        ? failsFirstAccept(realTurns, unproven)
+        : brokenTurns(() =>
+            failAccept === "proven"
+              ? new ConflictError("the accept was rolled back")
+              : unproven(),
+          );
+  const scopedKit =
+    options?.failBeforeAccept === true
+      ? {
+          ...kit,
+          peek: () =>
+            Promise.reject(new Error("the conversation could not be read")),
+        }
+      : kit;
   const history = memoryHistory();
   const budgetStore: AiBudgetStore = createMemoryAiBudgetStore();
   const app = createAssistantKitApp(
@@ -126,7 +178,7 @@ function harness(options?: {
             }),
         },
       },
-      forCaller: () => ({ kit, history, turns }),
+      forCaller: () => ({ kit: scopedKit, history, turns }),
       staffCompany: () => Promise.resolve(COMPANY),
       model: stubTextModel("Готово."),
       tools: () => Promise.resolve(options?.tools ?? {}),
@@ -402,6 +454,96 @@ describe("the spend ceiling on the kit routes", () => {
  * it runs before the handler can know a command has already been seen, and a
  * retry is an ask. Money is the quantity that must not double, and it does not.
  */
+/**
+ * One turn, one reservation, however many times the phone asks for it
+ * (SHO-572).
+ *
+ * Since the switch the routes accept and return, so a person whose accept
+ * failed retries under the same command — and `/kit/chat` gives its command
+ * back on any failed accept, which makes the retry the expected path rather
+ * than a rare one. An `INTERNAL` may have committed, so the reservation is
+ * deliberately kept; before this slice each retry then took another, and a
+ * database incident would spend a company's whole Kyiv day in a few taps.
+ *
+ * The reservation is keyed by the turn — kind, conversation and command, the
+ * same identity `assistant_turns` is keyed by — so every retry finds the first
+ * attempt's reservation instead of taking one.
+ */
+describe("a retry of a command whose accept failed", () => {
+  it("leaves one reservation behind however many times it is retried", async () => {
+    const { app, budgetStore } = harness({
+      failAccept: "unproven",
+      limits: { unknownModelTurnUsd: 0.1 },
+    });
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const response = await post(
+        app,
+        ASSISTANT_KIT_CHAT_PATH,
+        chatBody("створи", COMMAND),
+      );
+      expect(response.ok).toBe(false);
+    }
+
+    // Kept, not released — an `INTERNAL` may have committed — but kept *once*.
+    expect(await spent(budgetStore)).toBeCloseTo(0.1, 5);
+  });
+
+  it("reserves nothing when the accept finally succeeds, and is answered with the conversation as it stands", async () => {
+    const { app, budgetStore } = harness({
+      failAccept: "first-unproven",
+      limits: { unknownModelTurnUsd: 0.1 },
+    });
+
+    const failed = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      chatBody("створи замовлення", COMMAND),
+    );
+    expect(failed.ok).toBe(false);
+    expect(await spent(budgetStore)).toBeCloseTo(0.1, 5);
+
+    const retry = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      chatBody("створи замовлення", COMMAND),
+    );
+
+    // The turn is accepted and the window holds the person's message, so the
+    // retry is not a tap that does nothing.
+    expect(retry.status).toBe(202);
+    const body = (await retry.json()) as {
+      status: string;
+      window: { messages: { role: string }[] };
+    };
+    expect(body.status).toBe("accepted");
+    expect(body.window.messages.some((each) => each.role === "user")).toBe(
+      true,
+    );
+    // The accepted turn holds the reservation the first attempt took. The
+    // retry took none of its own, so the day is charged once for one turn.
+    expect(await spent(budgetStore)).toBeCloseTo(0.1, 5);
+  });
+
+  /**
+   * The other half of "who owns the hold": a reservation that never reached an
+   * accept can belong to nothing, because the accept is the only thing that can
+   * put one on a turn row. It goes back rather than standing until Kyiv
+   * midnight.
+   */
+  it("gives the reservation back when the handler fails before any accept", async () => {
+    const { app, budgetStore } = harness({
+      failBeforeAccept: true,
+      limits: { unknownModelTurnUsd: 0.1 },
+    });
+
+    const response = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody());
+
+    expect(response.status).toBe(500);
+    expect(await spent(budgetStore)).toBe(0);
+  });
+});
+
 describe("a replayed command", () => {
   it("is not charged a second time", async () => {
     const { app, budgetStore } = harness({

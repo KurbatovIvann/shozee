@@ -2,9 +2,13 @@
  * Staff-assistant daily USD counters (SHO-505). `tryAdd` is an
  * increment-with-cap (the reservation before the model). `add` settles or
  * releases: it adds a signed amount, stops at zero, and deletes the key at zero
- * or below (SHO-561). In Redis both are Lua read-then-write scripts
- * (`budget-redis.ts`); here they are serialized per key. Tests use this
- * in-memory store. Never GETDEL — that stays confirmation's primitive.
+ * or below (SHO-561). `claimHold` / `dropHold` record one turn's reservation
+ * under the turn's own identity, so a retry of the same command finds the
+ * reservation rather than taking a second one, and two parties releasing one
+ * hold cannot subtract it twice (SHO-572). In Redis all of them are Lua
+ * read-then-write scripts (`budget-redis.ts`); here they are serialized per
+ * key. Tests use this in-memory store. Never GETDEL — that stays
+ * confirmation's primitive.
  */
 import { withKeyLock } from "@showzy/module-kit/key-lock";
 
@@ -37,9 +41,45 @@ export function aiGlobalBudgetKey(kyivDate: string): string {
   return `ai-budget:global:${kyivDate}`;
 }
 
+/**
+ * Where one turn's reservation is recorded, so a retry of the same command
+ * finds it instead of taking a second one (SHO-572).
+ *
+ * **The key is the turn's identity.** Kind, conversation and command are
+ * exactly what `assistant_turns` is keyed by; the company and the Kyiv day name
+ * the counters the reservation sits in, both of which the turn row already
+ * carries. So neither side stores a pointer to the other: the row, the accept
+ * and this key are all derived from the same facts, and cannot name different
+ * holds. That is what makes "who owns this reservation" one question with one
+ * answer instead of several that can disagree.
+ *
+ * Lowercased for the same reason the message ids are: Postgres hands a `uuid`
+ * back lowercase and Redis keys are case-sensitive, so `ABC…` and `abc…` must
+ * reach the same key or a retry would reserve again.
+ */
+export function aiBudgetHoldKey(hold: {
+  readonly companyId: string;
+  readonly kyivDate: string;
+  readonly kind: string;
+  readonly conversationId: string;
+  readonly commandId: string;
+}): string {
+  const company = canonicalizeAiBudgetCompanyId(hold.companyId);
+  const conversation = hold.conversationId.toLowerCase();
+  const command = hold.commandId.toLowerCase();
+  return `ai-budget-hold:${company}:${hold.kyivDate}:${hold.kind}:${conversation}:${command}`;
+}
+
 export interface AiBudgetTryAddDecision {
   readonly allowed: boolean;
   readonly spent: number;
+}
+
+export interface AiBudgetHoldClaim {
+  /** True when this call recorded the hold, false when one was already there. */
+  readonly created: boolean;
+  /** The hold that now stands: this call's `value`, or the one it found. */
+  readonly value: string;
 }
 
 export interface AiBudgetStore {
@@ -55,6 +95,28 @@ export interface AiBudgetStore {
     capUsd: number,
     ttlSec: number,
   ): Promise<AiBudgetTryAddDecision>;
+  /**
+   * Record this hold under `key` unless one is already there, and say which
+   * happened (SHO-572).
+   *
+   * Set-if-absent. The caller told `created` is the one that owns the
+   * reservation; every later caller under the same key is told what the owner
+   * recorded, and must not move the counters for it.
+   */
+  claimHold(
+    key: string,
+    value: string,
+    ttlSec: number,
+  ): Promise<AiBudgetHoldClaim>;
+  /**
+   * Forget a recorded hold, and say whether this call is the one that did it.
+   *
+   * Compare-and-delete: only the caller told `true` may subtract the hold from
+   * the counters. Two parties releasing one hold — the request and the turn
+   * row's finisher — therefore cannot subtract it twice, which is the way the
+   * day's counter used to drift below real spend.
+   */
+  dropHold(key: string): Promise<boolean>;
 }
 
 /**
@@ -96,6 +158,11 @@ interface MemoryBudgetEntry {
   expiresAtMs: number;
 }
 
+interface MemoryHoldEntry {
+  value: string;
+  expiresAtMs: number;
+}
+
 function parseSpent(raw: string | number | null): number {
   if (raw === null || raw === "") {
     return 0;
@@ -115,7 +182,17 @@ export function createMemoryAiBudgetStore(options?: {
 }): AiBudgetStore {
   const now = options?.now ?? Date.now;
   const entries = new Map<string, MemoryBudgetEntry>();
+  const holds = new Map<string, MemoryHoldEntry>();
   const tails = new Map<string, Promise<void>>();
+
+  function liveHold(key: string): string | null {
+    const entry = holds.get(key);
+    if (entry === undefined || entry.expiresAtMs <= now()) {
+      holds.delete(key);
+      return null;
+    }
+    return entry.value;
+  }
 
   function liveValue(key: string): number {
     const entry = entries.get(key);
@@ -171,6 +248,23 @@ export function createMemoryAiBudgetStore(options?: {
           spent: write(key, next, ttlSec),
         });
       });
+    },
+
+    claimHold(key, value, ttlSec) {
+      return withKeyLock(tails, key, (): Promise<AiBudgetHoldClaim> => {
+        const existing = liveHold(key);
+        if (existing !== null) {
+          return Promise.resolve({ created: false, value: existing });
+        }
+        holds.set(key, { value, expiresAtMs: now() + ttlSec * 1000 });
+        return Promise.resolve({ created: true, value });
+      });
+    },
+
+    dropHold(key) {
+      return withKeyLock(tails, key, () =>
+        Promise.resolve(liveHold(key) !== null && holds.delete(key)),
+      );
     },
   };
 }

@@ -17,25 +17,47 @@
  * reservation *is* the charge, and it travels onto the turn row, which is why
  * the reservation is handed to the handler as a ticket. A turn that is accepted
  * keeps it — the worker releases it if the turn never reached the model, and
- * the reconciler does the same for a turn that can never start. Every other
- * outcome, a replayed command included, gives it back here.
+ * the reconciler does the same for a turn that can never start.
+ *
+ * **The reservation belongs to the turn, not to this request (SHO-572).** It is
+ * keyed by the turn's own identity — kind, conversation and command, the same
+ * identity `assistant_turns` is keyed by — so a retry of a command whose first
+ * attempt failed finds that attempt's reservation and takes none of its own.
+ * Without that, a run of failed accepts during a database incident would strand
+ * one reservation per retry and lock a company out of the assistant until Kyiv
+ * midnight. Reading the command here is the only reason this wrapper parses the
+ * body at all; the handler parses it properly, from Hono's cache.
+ *
+ * **Who owns the hold, in one sentence:** a request gives back only a
+ * reservation it took itself and never handed to an accept. Once an accept has
+ * it, the turn store decides — it releases what it can prove no row took, and
+ * keeps what a commit may already own — and after that the row does, until
+ * whoever ends the turn releases it. This wrapper therefore asks no question
+ * about *why* a request failed; the accept is the only thing that can put a
+ * reservation on a row, so whether it got one is the whole answer. That also
+ * covers a throw before any accept was attempted — from `kit.peek`,
+ * `kit.claim`, `runtime.tools`, `resolveAnswer` or `kit.open` — which no turn
+ * row could ever own and which is now given back rather than stranded.
  */
 import {
-  acceptProvedRollback,
   canonicalizeAiBudgetCompanyId,
   DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
   enforceStaffAssistantBudget,
-  releaseStaffAssistantBudgetHold,
+  releaseUnusedReservation,
   type AiBudgetStore,
   type StaffAssistantBudgetLimits,
+  type StaffAssistantTurnIdentity,
 } from "@showzy/assistant-runtime";
 import type { RateLimitStore } from "@showzy/core";
 import { RateLimitError } from "@showzy/core/errors";
 import type { Context } from "hono";
 import type { Logger } from "pino";
+import { randomUUID } from "node:crypto";
+import { z } from "zod";
 
 import {
   json,
+  readJson,
   requireCaller,
   type AssistantKitAppEnv,
   type AssistantKitBudgetTicket,
@@ -85,6 +107,46 @@ function rateLimitResponse(error: RateLimitError, requestId: string): Response {
 }
 
 /**
+ * Just enough of the body to name the turn. The handler validates it properly
+ * and answers 400; this only has to decide which reservation is being asked
+ * for, so it is deliberately loose about everything else.
+ */
+const budgetTurnBodySchema = z.object({
+  commandId: z.uuid(),
+  conversationId: z.uuid(),
+});
+
+/**
+ * Which turn this request is reserving for.
+ *
+ * Lowercased here for the same reason the handlers lowercase at parse: Redis
+ * keys are case-sensitive and Postgres returns a `uuid` lowercase, so a retry
+ * spelling its command differently has to reach the same reservation.
+ *
+ * A body that names no turn cannot become one — the handler is about to answer
+ * 400 — so it reserves under an identity of its own that nothing else can
+ * share, and the reservation is given back on the way out. Admission control is
+ * unchanged by a malformed body, which is the point of the guard sitting here.
+ */
+async function budgetTurnIdentity(
+  c: Context<AssistantKitAppEnv>,
+  kind: "chat" | "answer",
+): Promise<StaffAssistantTurnIdentity> {
+  const raw = await readJson(c);
+  const parsed = raw.ok
+    ? budgetTurnBodySchema.safeParse(raw.body)
+    : ({ success: false } as const);
+  if (!parsed.success) {
+    return { kind, conversationId: randomUUID(), commandId: randomUUID() };
+  }
+  return {
+    kind,
+    conversationId: parsed.data.conversationId.toLowerCase(),
+    commandId: parsed.data.commandId.toLowerCase(),
+  };
+}
+
+/**
  * `skipTurnLimit` is for answering an open question.
  *
  * The per-minute bucket exists to cap how often a person can start new work.
@@ -97,7 +159,11 @@ export async function withAssistantKitBudget(
   c: Context<AssistantKitAppEnv>,
   runtime: AssistantKitRuntime,
   budget: AssistantKitBudget,
-  options: { readonly skipTurnLimit: boolean },
+  options: {
+    readonly skipTurnLimit: boolean;
+    /** Which turn this route accepts. Part of the reservation's identity. */
+    readonly turnKind: "chat" | "answer";
+  },
   handle: () => Promise<Response>,
 ): Promise<Response> {
   const requestId = c.get("requestId");
@@ -110,14 +176,16 @@ export async function withAssistantKitBudget(
     return caller.response;
   }
   const companyId = canonicalizeAiBudgetCompanyId(caller.companySelector);
+  const turn = await budgetTurnIdentity(c, options.turnKind);
 
-  let hold;
+  let reservation;
   try {
-    hold = await enforceStaffAssistantBudget({
+    reservation = await enforceStaffAssistantBudget({
       logger: budget.logger,
       requestId,
       userId: caller.userId,
       companyId,
+      turn,
       skipTurnLimit: options.skipTurnLimit,
       ...(budget.rateLimitStore === undefined
         ? {}
@@ -134,27 +202,35 @@ export async function withAssistantKitBudget(
     throw error;
   }
 
-  let kept = false;
-  let given = false;
+  // One mutable record rather than three captured flags: the handler runs
+  // between the writes and the reads, so these are state, not constants.
+  const fate = { handedOver: false, kept: false, given: false };
   const giveBack = async (): Promise<void> => {
-    if (kept || given) {
+    if (fate.kept || fate.given) {
       return;
     }
-    given = true;
-    await releaseStaffAssistantBudgetHold({
+    fate.given = true;
+    // Only what this request took: `releaseUnusedReservation` does nothing for
+    // a retry that found an earlier attempt's reservation, whose turn row may
+    // be holding it.
+    await releaseUnusedReservation({
       logger: budget.logger,
       requestId,
-      companyId,
-      hold,
+      ref: { ...turn, companyId },
+      reservation,
       ...(budget.budgetStore === undefined
         ? {}
         : { budgetStore: budget.budgetStore }),
     });
   };
   const ticket: AssistantKitBudgetTicket = {
-    hold,
+    hold: reservation.hold,
+    handOverToAccept: () => {
+      fate.handedOver = true;
+      return reservation.hold;
+    },
     keep: () => {
-      kept = true;
+      fate.kept = true;
     },
     release: giveBack,
   };
@@ -162,25 +238,14 @@ export async function withAssistantKitBudget(
 
   try {
     return await handle();
-  } catch (error) {
-    // The handler threw. Unless the failure proves nothing was stored, a turn
-    // row may already hold this reservation, and giving it back would put the
-    // counter below real spend — lifting the day's cap instead of failing
-    // closed. That is the same reasoning, and the same predicate, the turn
-    // store applies to its own release.
-    //
-    // Who owns a hold after a failed accept is currently answered in three
-    // places — here, that predicate, and the turn row. Reconciling them is
-    // SHO-572's, not this slice's.
-    if (!acceptProvedRollback(error)) {
-      ticket.keep();
-    }
-    throw error;
   } finally {
-    // A turn row owns it, or nobody does. The per-minute bucket above still
-    // counted a replayed command: that one is admission control on how often a
-    // person may ask, and a retry is an ask. Money is the quantity that must
-    // not double, and a replay gives its reservation straight back.
-    await giveBack();
+    // A reservation that never reached an accept can belong to nothing: no turn
+    // row names it, and no retry will find it useful, so it goes back. Once an
+    // accept has it the store has already decided — `releaseUnusedHold` for
+    // every outcome that stored no row, nothing at all for a failure that may
+    // have committed — and this must not decide again.
+    if (!fate.handedOver) {
+      await giveBack();
+    }
   }
 }

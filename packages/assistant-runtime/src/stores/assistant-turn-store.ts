@@ -416,15 +416,16 @@ export function createPostgresAssistantTurnStore(
         // reservation is on no row. An unknown error may have come after COMMIT;
         // releasing then would leave the counter below what the stored turn
         // holds, which lifts the cap instead of failing closed. Such a
-        // reservation is left to expire with its Kyiv day: at most one turn's
-        // hold per failed attempt, so retries under the same command add up.
+        // reservation is left to expire with its Kyiv day.
         //
-        // Nothing bounds that today, and SHO-563 did not: `/kit/chat` gives its
-        // command back on any failed accept, which makes a retry the expected
-        // path rather than a rare one, so each pre-COMMIT `INTERNAL` strands one
-        // turn's reservation until the Kyiv-day key expires. That fails closed —
-        // the day's cap is reached early, never lifted — and bounding
-        // same-command re-reservation is SHO-572's.
+        // That no longer accumulates across retries. `/kit/chat` gives its
+        // command back on any failed accept, so a retry is the expected path
+        // rather than a rare one — and the reservation is recorded under this
+        // turn's own identity (`aiBudgetHoldKey`), so every retry of this
+        // command finds the first attempt's reservation and takes none of its
+        // own. At most one turn's hold is stranded per command, and it expires
+        // with its Kyiv-day key: the day's cap is reached early, never lifted
+        // (SHO-572).
         release = acceptProvedRollback(error);
         throw error;
       } finally {

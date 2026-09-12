@@ -149,7 +149,7 @@ export async function handleAssistantKitChat(
       text: body.text,
       bind: caller.bind,
       sessionId: caller.sessionId,
-      budgetHold: budget.hold,
+      budgetHold: budget.handOverToAccept(),
       releaseUnusedHold: () => budget.release(),
     });
   } catch (error) {

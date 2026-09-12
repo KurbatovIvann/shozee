@@ -23,7 +23,7 @@ import {
   createPostgresAssistantTurnForJob,
   createPostgresAssistantTurnStore,
   enforceStaffAssistantBudget,
-  releaseStaffAssistantBudgetHold,
+  releaseUnusedReservation,
   type AiBudgetStore,
   type StaffAssistantBudgetHold,
 } from "@showzy/assistant-runtime";
@@ -137,27 +137,40 @@ async function storedHolds(
  * A real reservation against an in-memory budget, the way the route makes one,
  * and the release the store is handed for it.
  */
-async function reserve(budgetStore: AiBudgetStore): Promise<{
+async function reserve(
+  budgetStore: AiBudgetStore,
+  /**
+   * The turn this reservation is for. The same identity the accept below is
+   * given: since SHO-572 a reservation is recorded under the turn's own id, so
+   * a helper that reserved for a different turn than it accepted would be
+   * releasing someone else's record.
+   */
+  turn: { readonly conversationId: string; readonly commandId: string },
+): Promise<{
   readonly budgetHold: StaffAssistantBudgetHold;
   readonly releaseUnusedHold: () => Promise<void>;
 }> {
+  const identity = { kind: "chat" as const, ...turn };
   const reserved = await enforceStaffAssistantBudget({
     logger: kit.pipeline.logger,
     requestId: randomUUID(),
     userId: anna.userId,
     companyId: anna.companySelector,
+    turn: identity,
     skipTurnLimit: true,
     budgetStore,
     limits: DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
   });
   return {
-    budgetHold: reserved,
+    budgetHold: reserved.hold,
+    // Exactly what the route hands the store: a request gives back only a
+    // reservation it took itself.
     releaseUnusedHold: () =>
-      releaseStaffAssistantBudgetHold({
+      releaseUnusedReservation({
         logger: kit.pipeline.logger,
         requestId: randomUUID(),
-        companyId: anna.companySelector,
-        hold: reserved,
+        ref: { ...identity, companyId: anna.companySelector },
+        reservation: reserved,
         budgetStore,
       }),
   };
@@ -311,17 +324,25 @@ describe("the budget reservation of an accept", () => {
   it("is kept by the accepted turn and released when another turn is busy", async () => {
     const budget = createMemoryAiBudgetStore();
     const conversationId = await newConversation();
-    const first = await reserve(budget);
+    const acceptedCommandId = randomUUID();
+    const busyCommandId = randomUUID();
+    const first = await reserve(budget, {
+      conversationId,
+      commandId: acceptedCommandId,
+    });
 
     const accepted = await turns().accept({
       ...chat(conversationId),
-      commandId: randomUUID(),
+      commandId: acceptedCommandId,
       ...first,
     });
     const busy = await turns().accept({
       ...chat(conversationId),
-      commandId: randomUUID(),
-      ...(await reserve(budget)),
+      commandId: busyCommandId,
+      ...(await reserve(budget, {
+        conversationId,
+        commandId: busyCommandId,
+      })),
     });
 
     expect(accepted.outcome).toBe("accepted");
@@ -339,13 +360,16 @@ describe("the budget reservation of an accept", () => {
     const budget = createMemoryAiBudgetStore();
     const conversationId = await newConversation();
     const commandId = randomUUID();
-    const first = await reserve(budget);
+    const first = await reserve(budget, { conversationId, commandId });
     await turns().accept({ ...chat(conversationId), commandId, ...first });
 
+    // The retry is the same turn, so it finds the first attempt's reservation
+    // and takes none of its own (SHO-572) — and must not give back the one the
+    // accepted row is holding.
     const replayed = await turns().accept({
       ...chat(conversationId),
       commandId,
-      ...(await reserve(budget)),
+      ...(await reserve(budget, { conversationId, commandId })),
     });
 
     expect(replayed.outcome).toBe("replayed");
@@ -361,10 +385,14 @@ describe("the budget reservation of an accept", () => {
   it("is released when the log belongs to another owner token", async () => {
     const budget = createMemoryAiBudgetStore();
     const conversationId = await newConversation();
-    const first = await reserve(budget);
+    const acceptedCommandId = randomUUID();
+    const first = await reserve(budget, {
+      conversationId,
+      commandId: acceptedCommandId,
+    });
     const accepted = await turns().accept({
       ...chat(conversationId),
-      commandId: randomUUID(),
+      commandId: acceptedCommandId,
       ...first,
     });
     if (accepted.outcome !== "accepted") {
@@ -376,11 +404,15 @@ describe("the budget reservation of an accept", () => {
     const heldAfterFinish = await storedHolds(conversationId);
     expect(heldAfterFinish).toEqual([{ company: 0, global: 0 }]);
 
+    const refusedCommandId = randomUUID();
     const refused = await turns().accept({
       ...chat(conversationId),
       bind: "someone-else",
-      commandId: randomUUID(),
-      ...(await reserve(budget)),
+      commandId: refusedCommandId,
+      ...(await reserve(budget, {
+        conversationId,
+        commandId: refusedCommandId,
+      })),
     });
 
     expect(refused).toEqual({ outcome: "wrong_owner" });
@@ -394,12 +426,13 @@ describe("the budget reservation of an accept", () => {
   it("is released when the accept is refused as a conflict", async () => {
     const budget = createMemoryAiBudgetStore();
     const conversationId = await newConversation();
-    const reserved = await reserve(budget);
+    const commandId = randomUUID();
+    const reserved = await reserve(budget, { conversationId, commandId });
 
     await expect(
       turns().accept({
         ...chat(conversationId),
-        commandId: randomUUID(),
+        commandId,
         // Nothing was interrupted, so there is nothing to continue.
         continuesCommandId: randomUUID(),
         ...reserved,
@@ -421,11 +454,12 @@ describe("the budget reservation of an accept", () => {
     });
 
     for (const conversationId of [foreign, randomUUID()]) {
-      const reserved = await reserve(budget);
+      const commandId = randomUUID();
+      const reserved = await reserve(budget, { conversationId, commandId });
       await expect(
         turns().accept({
           ...chat(conversationId),
-          commandId: randomUUID(),
+          commandId,
           ...reserved,
         }),
       ).rejects.toBeInstanceOf(AssistantKitConversationGoneError);
