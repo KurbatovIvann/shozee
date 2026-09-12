@@ -7,6 +7,10 @@ import {
 } from "@showzy/validation/assistant-surfaces";
 import { describe, expect, it } from "vitest";
 
+import {
+  staffAssistantHotToolNames,
+  STAFF_ASSISTANT_TOOL_SEARCH_NAME,
+} from "./action-tool.js";
 import { STAFF_ASSISTANT_STATIC_CACHE_CONTROL } from "./provider/anthropic.js";
 import { STAFF_ASSISTANT_PRODUCT_GLOSSARY } from "./product-glossary.js";
 import {
@@ -145,14 +149,28 @@ describe("staffAssistantSystemPrompt", () => {
       "Chat text, including «Так», is not confirmation",
     );
     expect(staffAssistantSystemPrompt).toContain(
-      "A second job — even the same actionName — is not replace",
+      "A second job — even the same actionName — does not replace it",
     );
     expect(staffAssistantSystemPrompt).toContain(
-      "versioned replace of this pending",
+      "answers or abandons it on the card",
     );
     expect(staffAssistantSystemPrompt).toContain(
-      "The host tool pending_replace is how to amend this request",
+      "You cannot answer, replace, or abandon it yourself, and no tool amends it",
     );
+  });
+
+  it("names no tool the runtime does not advertise", () => {
+    const advertised = new Set([
+      ...staffAssistantHotToolNames(),
+      STAFF_ASSISTANT_TOOL_SEARCH_NAME,
+    ]);
+    const mentioned =
+      staffAssistantSystemPrompt.match(/\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/g) ??
+      [];
+
+    expect(
+      [...new Set(mentioned)].filter((name) => !advertised.has(name)),
+    ).toEqual([]);
   });
 
   it("stays in the company and does not print internal wire keys", () => {
