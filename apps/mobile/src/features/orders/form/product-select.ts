@@ -48,10 +48,6 @@ export function filterProductSelectRows(
   );
 }
 
-/**
- * Parent-row subtitle: variant count until the session has picks for
- * this product, then selected count · names (uk/en templates).
- */
 export function visibleProductSelectRows(args: {
   readonly products: readonly ProductSelectRow[];
   readonly query: string;
