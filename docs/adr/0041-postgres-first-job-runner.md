@@ -114,6 +114,13 @@ imports and signing follow-ups.
   block **Продовжити** behind a crashed job until expiry.
 - The deadline guard found in the spike (claim the row only while it is still
   `queued`; interrupt at the deadline) is part of the adapter, not of each job.
+- **Delayed start and declared retries** are port features, not adapter
+  accidents.
+  - `ctx.enqueue(job, payload, { startAfter })` defers a job to an instant
+    computed by the domain.
+  - A job definition may declare `retries: { limit, backoff }` (exponential,
+    with a cap). Retries are allowed only for jobs whose external effect is
+    idempotent (a provider idempotency key derived from the job id).
 
 **`scheduled`** — maintenance on pg-boss `schedule()`, starting now.
 - `cleanupExpiredIdempotencyKeys`, `sweepAbandonedUploads`,
@@ -143,7 +150,9 @@ imports and signing follow-ups.
     worker job host API and the scheduler;
   - the **runner conformance suite**: runner properties R1 (atomic enqueue),
     R3 (identity payload), R4 (deadline, no re-run), R7 (per-key serial when
-    opted in), R8 (drain) and R9 (failure visibility, explicit retry).
+    opted in), R8 (drain), R9 (failure visibility, explicit retry), plus
+    delayed start (`startAfter` honoured within the adapter's latency bound)
+    and declared retries (limit and backoff respected, none undeclared).
   - Every adapter must pass the suite. R2 and R6 are domain properties, tested
     by consumers.
   - The package owns no tables (ADR-0031's module-kit rule is not stretched).
@@ -163,7 +172,33 @@ imports and signing follow-ups.
   Application code never reads or writes `pgboss` tables. Queues are created
   idempotently at worker boot through the library API.
 
-### 4. The domain-event outbox is unchanged
+### 4. Patterns for long, batched and external work
+
+These are the sanctioned shapes. A feature that cannot fit one of them is a
+revisit, not a new ad-hoc mechanism.
+
+- **Chained pages.** Long work (a bank statement backfill, a reference-data
+  sync) is one job per page or chunk. The job commits the page's rows, its
+  cursor on the owning row, and `ctx.enqueue` of the next page in **one**
+  transaction. No job runs for minutes, and a crash resumes from the last
+  committed cursor.
+- **Fan-out / fan-in.** A batch (batch signing follow-ups, batch PDF
+  generation) is a parent row owned by the module, with one job per item.
+  - Each item job updates the parent's counters in its own transaction.
+  - The job that completes the last item moves the parent to its final state.
+  - Nothing waits: there is no durable wait and no polling parent job.
+- **Provider limits.** A per-credential rate or quota is domain state on the
+  credential row (for example `next_allowed_at`). A job that hits it commits
+  the new instant and re-enqueues itself with `startAfter`. The runner holds
+  no provider knowledge.
+- **Inbound webhooks.** The handler verifies the request, stores the raw event
+  with its provider id under a unique constraint, and enqueues processing in
+  the same transaction. A duplicate delivery is a no-op on the constraint.
+- **Write granularity.** Bulk work writes, bumps revisions (ADR-0042) and
+  notifies **per chunk transaction**, never per row. This keeps job churn,
+  aggregate-root lock hold time and NOTIFY volume proportional to chunks.
+
+### 5. The domain-event outbox is unchanged
 
 ADR-0012 and `core.md` §6 stand. Events are effects between modules; jobs are
 work.
@@ -257,8 +292,11 @@ the job tables. The queue Redis lines are removed. `apps/worker/AGENTS.md` and
   business p99 rises with job peaks.
 - **Commit latency** is attributable to NOTIFY load (jobs, outbox and `live`
   together).
-- **Durable waits become central** (multi-day approvals, mid-step resume):
-  re-evaluate DBOS or a durable-execution server.
+- **Durable waits become central** (multi-day approvals, mid-step resume), **or
+  sagas multiply.** One or two hand-written multi-step flows with compensation
+  are fine; acquiring → fiscalisation → document is the first of these. A
+  third, or any flow the §4 patterns cannot express, means re-evaluating DBOS
+  or a durable-execution server.
 - **A service outside this monorepo** must consume the same work: a broker
   behind a relay adapter.
 - **Event streaming with replay** is needed: relay the domain-event outbox to a
