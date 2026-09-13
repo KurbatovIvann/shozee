@@ -97,7 +97,7 @@ export function useDocumentFormLookups(args: {
       id: row.orderId,
       customerId: row.customer.linkedCustomerId,
       name: documentOrderOptionName(row, missingCustomer),
-      description: documentOrderOptionDescription(row, null),
+      description: documentOrderOptionDescription(row),
     }));
   }, [ordersQuery.data, missingCustomer]);
 
