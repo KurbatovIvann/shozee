@@ -47,6 +47,17 @@ export function mergePrefillCustomerName(
   return next;
 }
 
+export function pickedCustomerSnapshot(
+  id: string | null,
+  options: readonly OptionSelectItem[],
+): { readonly id: string; readonly name: string } | null {
+  if (id === null) {
+    return null;
+  }
+  const option = options.find((row) => row.id === id);
+  return option === undefined ? null : { id, name: option.name };
+}
+
 export function ensureLinkedCustomerOption(args: {
   readonly options: readonly OptionSelectItem[];
   readonly customerId: string | null;

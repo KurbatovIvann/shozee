@@ -10,18 +10,16 @@ import { useCallback, useRef } from "react";
 import type { ContractClient } from "../../../../api/client";
 import {
   fileDownloadUrlsQueryOptions,
+  LIST_THUMBNAIL_RENDITION,
   type FileDownloadClient,
 } from "../../../../api/file-download-query";
 import type { ProductListItem } from "../api/product.queries";
 
-/** Named catalog size for product list cells (SHO-244). */
-export const PRODUCT_LIST_RENDITION = "thumb" as const;
-
 export function productListDownloadInput(fileIds: readonly string[]): {
   readonly fileIds: string[];
-  readonly rendition: typeof PRODUCT_LIST_RENDITION;
+  readonly rendition: typeof LIST_THUMBNAIL_RENDITION;
 } {
-  return { fileIds: [...fileIds], rendition: PRODUCT_LIST_RENDITION };
+  return { fileIds: [...fileIds], rendition: LIST_THUMBNAIL_RENDITION };
 }
 
 /**

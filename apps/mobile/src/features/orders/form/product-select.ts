@@ -48,10 +48,6 @@ export function filterProductSelectRows(
   );
 }
 
-/**
- * Parent-row subtitle: variant count until the session has picks for
- * this product, then selected count · names (uk/en templates).
- */
 export function visibleProductSelectRows(args: {
   readonly products: readonly ProductSelectRow[];
   readonly query: string;
@@ -77,13 +73,13 @@ export function resolveProductSelectListState(args: {
   readonly query: string;
   readonly sessionOpen: boolean;
   readonly serverFiltered: boolean;
-  readonly loadingMore: boolean;
+  readonly loading: boolean;
 }): ProductSelectListState {
   const items = visibleProductSelectRows(args);
   if (items.length > 0) {
     return { kind: "items", items };
   }
-  if (args.sessionOpen && args.serverFiltered && args.loadingMore) {
+  if (args.sessionOpen && args.serverFiltered && args.loading) {
     return { kind: "loading" };
   }
   return { kind: "empty" };

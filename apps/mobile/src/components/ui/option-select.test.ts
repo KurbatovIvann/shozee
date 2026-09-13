@@ -80,7 +80,7 @@ describe("resolveOptionSelectListState", () => {
         options: [],
         query: "мар",
         serverFiltered: true,
-        loadingMore: true,
+        loading: true,
       }),
     ).toEqual({ kind: "loading" });
   });
@@ -91,29 +91,29 @@ describe("resolveOptionSelectListState", () => {
         options: [],
         query: "мар",
         serverFiltered: true,
-        loadingMore: false,
+        loading: false,
       }),
     ).toEqual({ kind: "empty" });
   });
 
-  it("shows empty for an uncontrolled query even while loadingMore is true", () => {
+  it("shows empty for an uncontrolled query even while loading is true", () => {
     expect(
       resolveOptionSelectListState({
         options: [],
         query: "мар",
         serverFiltered: false,
-        loadingMore: true,
+        loading: true,
       }),
     ).toEqual({ kind: "empty" });
   });
 
-  it("shows items once rows are visible regardless of loadingMore", () => {
+  it("shows items once rows are visible regardless of loading", () => {
     expect(
       resolveOptionSelectListState({
         options,
         query: "",
         serverFiltered: false,
-        loadingMore: true,
+        loading: true,
       }),
     ).toEqual({ kind: "items", items: options });
   });

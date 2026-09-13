@@ -158,7 +158,7 @@ describe("resolveProductSelectListState", () => {
         query: "торт",
         sessionOpen: true,
         serverFiltered: true,
-        loadingMore: true,
+        loading: true,
       }),
     ).toEqual({ kind: "loading" });
   });
@@ -170,19 +170,19 @@ describe("resolveProductSelectListState", () => {
         query: "торт",
         sessionOpen: true,
         serverFiltered: true,
-        loadingMore: false,
+        loading: false,
       }),
     ).toEqual({ kind: "empty" });
   });
 
-  it("shows empty for an uncontrolled query even while loadingMore is true", () => {
+  it("shows empty for an uncontrolled query even while loading is true", () => {
     expect(
       resolveProductSelectListState({
         products: [],
         query: "торт",
         sessionOpen: true,
         serverFiltered: false,
-        loadingMore: true,
+        loading: true,
       }),
     ).toEqual({ kind: "empty" });
   });
@@ -194,19 +194,19 @@ describe("resolveProductSelectListState", () => {
         query: "",
         sessionOpen: false,
         serverFiltered: true,
-        loadingMore: true,
+        loading: true,
       }),
     ).toEqual({ kind: "empty" });
   });
 
-  it("shows items once rows are visible regardless of loadingMore", () => {
+  it("shows items once rows are visible regardless of loading", () => {
     expect(
       resolveProductSelectListState({
         products,
         query: "",
         sessionOpen: true,
         serverFiltered: false,
-        loadingMore: true,
+        loading: true,
       }),
     ).toEqual({ kind: "items", items: products });
   });

@@ -15,7 +15,10 @@ import { customerEditorHref } from "../shared/customer-hrefs";
 import { customerIdFromParam } from "../shared/customer-id";
 import { canEditCustomers } from "../shared/customer-permissions";
 import { rhfPathsForFieldErrors } from "./counterparty-form-copy";
-import { mergePrefillCustomerName } from "./counterparty-form-options";
+import {
+  mergePrefillCustomerName,
+  pickedCustomerSnapshot,
+} from "./counterparty-form-options";
 import {
   cloneCounterpartyFormDraft,
   draftFromCounterparty,
@@ -233,7 +236,7 @@ export function useCounterpartyForm(args: {
     ...presented,
     customerQuery: lookups.customerQuery,
     onCustomerQueryChange: lookups.onCustomerQueryChange,
-    customersLoadingMore: lookups.customersLoadingMore,
+    customersLoading: lookups.customersLoading,
     onCustomersEndReached: lookups.onCustomersEndReached,
     onFieldEdit,
     requestLeave,
@@ -246,12 +249,7 @@ export function useCounterpartyForm(args: {
     },
     selectCustomer: (id: string | null) => {
       setValue("customerId", id, { shouldDirty: true });
-      if (id !== null) {
-        const option = lookups.customerOptions.find((row) => row.id === id);
-        setPickedCustomer(
-          option === undefined ? null : { id, name: option.name },
-        );
-      }
+      setPickedCustomer(pickedCustomerSnapshot(id, lookups.customerOptions));
       onFieldEdit();
     },
     openClient: () => {

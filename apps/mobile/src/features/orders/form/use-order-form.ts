@@ -87,14 +87,17 @@ export function useOrderForm() {
   const sheets = useOrderFormSheets();
   const clientReady = apiClient !== null && activeCompanyId !== null;
   const loadState = classifyOrderFormLoad({ canCreate, clientReady });
-  const draftProductIds = uniqueProductIds(
-    fields.map((field) => field.productId),
+  const draftProductIds = useMemo(
+    () => uniqueProductIds(fields.map((field) => field.productId)),
+    [fields],
   );
   const lookups = useOrderFormLookups({
     enabled: loadState.kind === "ready",
     variantProductId:
       sheets.picker.kind === "variants" ? sheets.picker.productId : null,
     draftProductIds,
+    customerSheetOpen: sheets.customerSheetOpen,
+    productSheetOpen: sheets.productSheetOpen,
   });
   const armLeaveRef = useRef(() => {});
   const saveApi = useOrderSave({
@@ -300,11 +303,11 @@ export function useOrderForm() {
     customerOptions: lookups.customerOptions,
     customerQuery: lookups.customerQuery,
     onCustomerQueryChange: lookups.onCustomerQueryChange,
-    customersLoadingMore: lookups.customersLoadingMore,
+    customersLoading: lookups.customersLoading,
     onCustomersEndReached: lookups.onCustomersEndReached,
     productQuery: lookups.productQuery,
     onProductQueryChange: lookups.onProductQueryChange,
-    productsLoadingMore: lookups.productsLoadingMore,
+    productsLoading: lookups.productsLoading,
     onProductsEndReached: lookups.onProductsEndReached,
     productSelectRows,
     variantSelectRows,

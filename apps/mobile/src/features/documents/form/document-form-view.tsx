@@ -71,8 +71,8 @@ export function DocumentFormView(model: DocumentFormModel) {
             searchMaxLength={LIST_ORDERS_QUERY_MAX}
             query={model.orderQuery}
             onQueryChange={model.onOrderQueryChange}
-            loadingMore={model.ordersLoadingMore}
-            loadingMoreLabel={form.pickerLoadingMoreLabel}
+            loading={model.ordersLoading}
+            loadingLabel={form.pickerLoadingLabel}
             onEndReached={model.onOrdersEndReached}
             onClose={model.closeOrderSheet}
             onChange={(id) => {

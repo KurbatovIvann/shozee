@@ -16,6 +16,7 @@ import { contractQueryOptions } from "./query-options";
 
 export const GET_DOWNLOAD_URL_ACTION = "files.getDownloadUrl";
 export const GET_DOWNLOAD_URLS_ACTION = "files.getDownloadUrls";
+export const LIST_THUMBNAIL_RENDITION = "thumb" as const;
 
 type ShowzyClient = ContractClient;
 type GetDownloadUrl = ShowzyClient["client"]["files"]["getDownloadUrl"];

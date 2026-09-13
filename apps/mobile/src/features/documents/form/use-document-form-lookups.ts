@@ -41,7 +41,7 @@ export function useDocumentFormLookups(args: {
   readonly orderRows: readonly DocumentFormOrderRow[];
   readonly orderQuery: string;
   readonly onOrderQueryChange: (value: string) => void;
-  readonly ordersLoadingMore: boolean;
+  readonly ordersLoading: boolean;
   readonly onOrdersEndReached: () => void;
   readonly counterpartyOptions: readonly OptionSelectItem[];
 } {
@@ -97,7 +97,7 @@ export function useDocumentFormLookups(args: {
       id: row.orderId,
       customerId: row.customer.linkedCustomerId,
       name: documentOrderOptionName(row, missingCustomer),
-      description: documentOrderOptionDescription(row, null),
+      description: documentOrderOptionDescription(row),
     }));
   }, [ordersQuery.data, missingCustomer]);
 
@@ -131,7 +131,7 @@ export function useDocumentFormLookups(args: {
     orderRows,
     orderQuery,
     onOrderQueryChange: setOrderQuery,
-    ordersLoadingMore: ordersQuery.isFetching,
+    ordersLoading: ordersQuery.isFetching,
     onOrdersEndReached,
     counterpartyOptions,
   };

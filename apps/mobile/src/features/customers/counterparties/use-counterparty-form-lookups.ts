@@ -45,7 +45,7 @@ export function useCounterpartyFormLookups(args: {
   readonly prefillCustomerName: string | null;
   readonly customerQuery: string;
   readonly onCustomerQueryChange: (value: string) => void;
-  readonly customersLoadingMore: boolean;
+  readonly customersLoading: boolean;
   readonly onCustomersEndReached: () => void;
 } {
   const apiClient = useApiClient();
@@ -131,7 +131,7 @@ export function useCounterpartyFormLookups(args: {
     prefillCustomerName,
     customerQuery,
     onCustomerQueryChange: setCustomerQuery,
-    customersLoadingMore: customersQuery.isFetching,
+    customersLoading: customersQuery.isFetching,
     onCustomersEndReached,
   };
 }

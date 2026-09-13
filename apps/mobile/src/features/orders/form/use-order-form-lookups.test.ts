@@ -12,8 +12,9 @@ import {
   type OrderCustomersListClient,
 } from "../api/order-customers-query";
 import {
-  normalizeOrderCustomerSearch,
-  normalizeOrderProductQuery,
+  LIST_CUSTOMERS_SEARCH_MAX,
+  LIST_PRODUCTS_QUERY_MAX,
+  normalizeOrderLookupSearch,
 } from "../shared/order-caps";
 import { draftLineThumbnailItems } from "../shared/order-thumbnails";
 
@@ -34,7 +35,10 @@ describe("order form lookups server search", () => {
         },
       },
     };
-    const search = normalizeOrderCustomerSearch("  Марія  ");
+    const search = normalizeOrderLookupSearch(
+      "  Марія  ",
+      LIST_CUSTOMERS_SEARCH_MAX,
+    );
     const options = listOrderCustomersInfiniteOptions({
       client,
       companyId: "company-a",
@@ -60,7 +64,10 @@ describe("order form lookups server search", () => {
         },
       },
     };
-    const query = normalizeOrderProductQuery("  торт  ");
+    const query = normalizeOrderLookupSearch(
+      "  торт  ",
+      LIST_PRODUCTS_QUERY_MAX,
+    );
     const options = listOrderProductsInfiniteOptions({
       client,
       companyId: "company-a",

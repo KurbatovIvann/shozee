@@ -22,36 +22,9 @@ export function documentOrderOptionName(
 
 export function documentOrderOptionDescription(
   order: DocumentOrderListItem,
-  counterpartyName: string | null,
 ): string {
   const total = formatMoneyMinor(order.totalGrossMinor, order.currency);
-  const number = `#${order.orderNumber}`;
-  if (
-    counterpartyName !== null &&
-    counterpartyName.length > 0 &&
-    counterpartyName !== order.customer.nameSnapshot
-  ) {
-    return `${counterpartyName} · ${number} · ${total}`;
-  }
-  return `${number} · ${total}`;
-}
-
-export function firstCounterpartyNameByCustomerId(
-  rows: ReadonlyArray<{
-    readonly customerId: string | null;
-    readonly name: string;
-  }>,
-): ReadonlyMap<string, string> {
-  const map = new Map<string, string>();
-  for (const row of rows) {
-    if (row.customerId === null) {
-      continue;
-    }
-    if (!map.has(row.customerId)) {
-      map.set(row.customerId, row.name);
-    }
-  }
-  return map;
+  return `#${order.orderNumber} · ${total}`;
 }
 
 export function documentCounterpartyOptionDescription(row: {

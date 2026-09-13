@@ -34,8 +34,8 @@ export function OptionSelectSheet(props: {
   readonly leading?: "user" | undefined;
   readonly query?: string | undefined;
   readonly onQueryChange?: ((value: string) => void) | undefined;
-  readonly loadingMore?: boolean | undefined;
-  readonly loadingMoreLabel?: string | undefined;
+  readonly loading?: boolean | undefined;
+  readonly loadingLabel?: string | undefined;
   readonly onEndReached?: (() => void) | undefined;
   readonly loadMoreLabel?: string | undefined;
 }) {
@@ -66,7 +66,7 @@ export function OptionSelectSheet(props: {
     options: props.options,
     query,
     serverFiltered,
-    loadingMore: props.loadingMore === true,
+    loading: props.loading === true,
   });
   const emptyOptionLabel = props.emptyOptionLabel;
   const emptyLabel =
@@ -109,7 +109,7 @@ export function OptionSelectSheet(props: {
         ) : null}
         {listState.kind === "loading" ? (
           <ActivityIndicator
-            accessibilityLabel={props.loadingMoreLabel}
+            accessibilityLabel={props.loadingLabel}
             color={theme.colors.mutedForeground}
           />
         ) : listState.kind === "empty" ? (
@@ -134,14 +134,14 @@ export function OptionSelectSheet(props: {
             />
           ))
         )}
-        {listState.kind === "items" && props.loadingMore === true ? (
+        {listState.kind === "items" && props.loading === true ? (
           <ActivityIndicator
-            accessibilityLabel={props.loadingMoreLabel}
+            accessibilityLabel={props.loadingLabel}
             color={theme.colors.mutedForeground}
           />
         ) : null}
         {listState.kind === "items" &&
-        props.loadingMore !== true &&
+        props.loading !== true &&
         props.onEndReached !== undefined &&
         props.loadMoreLabel !== undefined ? (
           <Pressable

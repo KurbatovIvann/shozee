@@ -57,8 +57,8 @@ export function ProductSelectSheet(props: {
   readonly onConfirm: () => void;
   readonly query?: string | undefined;
   readonly onQueryChange?: ((value: string) => void) | undefined;
-  readonly loadingMore?: boolean | undefined;
-  readonly loadingMoreLabel?: string | undefined;
+  readonly loading?: boolean | undefined;
+  readonly loadingLabel?: string | undefined;
   readonly onEndReached?: (() => void) | undefined;
   readonly loadMoreLabel?: string | undefined;
 }) {
@@ -93,15 +93,9 @@ export function ProductSelectSheet(props: {
         query,
         sessionOpen: props.sessionOpen,
         serverFiltered,
-        loadingMore: props.loadingMore === true,
+        loading: props.loading === true,
       }),
-    [
-      props.products,
-      props.sessionOpen,
-      query,
-      serverFiltered,
-      props.loadingMore,
-    ],
+    [props.products, props.sessionOpen, query, serverFiltered, props.loading],
   );
 
   return (
@@ -153,7 +147,7 @@ export function ProductSelectSheet(props: {
             <View style={styles.list}>
               {listState.kind === "loading" ? (
                 <ActivityIndicator
-                  accessibilityLabel={props.loadingMoreLabel}
+                  accessibilityLabel={props.loadingLabel}
                   color={theme.colors.mutedForeground}
                 />
               ) : listState.kind === "empty" ? (
@@ -175,14 +169,14 @@ export function ProductSelectSheet(props: {
                   />
                 ))
               )}
-              {listState.kind === "items" && props.loadingMore === true ? (
+              {listState.kind === "items" && props.loading === true ? (
                 <ActivityIndicator
-                  accessibilityLabel={props.loadingMoreLabel}
+                  accessibilityLabel={props.loadingLabel}
                   color={theme.colors.mutedForeground}
                 />
               ) : null}
               {listState.kind === "items" &&
-              props.loadingMore !== true &&
+              props.loading !== true &&
               props.onEndReached !== undefined &&
               props.loadMoreLabel !== undefined ? (
                 <Pressable

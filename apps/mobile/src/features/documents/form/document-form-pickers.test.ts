@@ -5,7 +5,6 @@ import {
   documentCounterpartyOptionDescription,
   documentOrderOptionDescription,
   documentOrderOptionName,
-  firstCounterpartyNameByCustomerId,
   UNLINKED_CUSTOMER_NAME_SNAPSHOT,
 } from "./document-form-pickers";
 
@@ -30,11 +29,11 @@ describe("document form pickers", () => {
     expect(documentOrderOptionName(ORDER, "Deleted customer")).toBe(
       "Customer A",
     );
-    expect(documentOrderOptionDescription(ORDER, null)).toContain("#KA-K7X2");
-    expect(documentOrderOptionDescription(ORDER, null)).toContain("₴");
+    expect(documentOrderOptionDescription(ORDER)).toContain("#KA-K7X2");
+    expect(documentOrderOptionDescription(ORDER)).toContain("₴");
   });
 
-  it("localizes the unlinked snapshot and appends a distinct counterparty", () => {
+  it("localizes the unlinked snapshot", () => {
     const unlinked = {
       ...ORDER,
       customer: {
@@ -45,22 +44,6 @@ describe("document form pickers", () => {
     expect(documentOrderOptionName(unlinked, "Клієнт видалений")).toBe(
       "Клієнт видалений",
     );
-    expect(documentOrderOptionDescription(ORDER, "ТОВ Альфа")).toContain(
-      "ТОВ Альфа",
-    );
-    expect(documentOrderOptionDescription(ORDER, "Customer A")).not.toContain(
-      "Customer A ·",
-    );
-  });
-
-  it("indexes the first counterparty name per customer", () => {
-    const map = firstCounterpartyNameByCustomerId([
-      { customerId: null, name: "Standalone" },
-      { customerId: ORDER_ID, name: "ТОВ Альфа" },
-      { customerId: ORDER_ID, name: "Later" },
-    ]);
-    expect(map.get(ORDER_ID)).toBe("ТОВ Альфа");
-    expect(map.size).toBe(1);
   });
 
   it("uses edrpou as the counterparty subtitle when present", () => {

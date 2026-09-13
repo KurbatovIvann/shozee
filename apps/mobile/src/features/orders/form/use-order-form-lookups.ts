@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useQueries } from "@tanstack/react-query";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   catalogFactsBlockSubmit,
@@ -18,7 +18,10 @@ import { useApiClient } from "../../../api/api-provider";
 import { useActiveCompany } from "../../../api/query-provider";
 import { useResolvedCompany } from "../../../company-resolution/resolved-company-provider";
 import { flattenPages, optionSelectItems } from "../../../components/ui";
-import { useDebouncedValue } from "../../../hooks/use-debounced-value";
+import {
+  SEARCH_DEBOUNCE_MS,
+  useDebouncedValue,
+} from "../../../hooks/use-debounced-value";
 import {
   getOrderCatalogProductQueryOptions,
   listOrderProductsInfiniteOptions,
@@ -29,8 +32,9 @@ import {
   orderCustomersLookupInput,
 } from "../api/order-customers-query";
 import {
-  normalizeOrderCustomerSearch,
-  normalizeOrderProductQuery,
+  LIST_CUSTOMERS_SEARCH_MAX,
+  LIST_PRODUCTS_QUERY_MAX,
+  normalizeOrderLookupSearch,
 } from "../shared/order-caps";
 import { canFetchFileDownloadUrls } from "../shared/order-permissions";
 import {
@@ -40,8 +44,6 @@ import {
 } from "../shared/order-thumbnails";
 import { useOrderThumbnails } from "../shared/use-order-thumbnails";
 import type { ProductVariantsLoadStatus } from "./product-select";
-
-const LOOKUP_SEARCH_DEBOUNCE_MS = 300;
 
 export type OrderFormProductRow = {
   readonly id: string;
@@ -56,16 +58,18 @@ export function useOrderFormLookups(args: {
   readonly enabled: boolean;
   readonly variantProductId: string | null;
   readonly draftProductIds: readonly string[];
+  readonly customerSheetOpen: boolean;
+  readonly productSheetOpen: boolean;
 }): {
   readonly customerOptions: ReturnType<typeof optionSelectItems>;
   readonly customerQuery: string;
   readonly onCustomerQueryChange: (value: string) => void;
-  readonly customersLoadingMore: boolean;
+  readonly customersLoading: boolean;
   readonly onCustomersEndReached: () => void;
   readonly productRows: readonly OrderFormProductRow[];
   readonly productQuery: string;
   readonly onProductQueryChange: (value: string) => void;
-  readonly productsLoadingMore: boolean;
+  readonly productsLoading: boolean;
   readonly onProductsEndReached: () => void;
   readonly variantOptions: ReturnType<typeof optionSelectItems>;
   readonly variantsStatus: ProductVariantsLoadStatus;
@@ -80,24 +84,41 @@ export function useOrderFormLookups(args: {
   const getActiveCompany = () => apiClient?.getActiveCompany() ?? null;
   const enabled = args.enabled;
   const canFetchThumbnails = canFetchFileDownloadUrls(membership);
-  const catalogProductIds = uniqueProductIds([
-    ...args.draftProductIds,
-    args.variantProductId,
-  ]);
+  const catalogProductIds = useMemo(
+    () => uniqueProductIds([...args.draftProductIds, args.variantProductId]),
+    [args.draftProductIds, args.variantProductId],
+  );
 
   const [customerQuery, setCustomerQuery] = useState("");
   const debouncedCustomerQuery = useDebouncedValue(
     customerQuery,
-    LOOKUP_SEARCH_DEBOUNCE_MS,
+    SEARCH_DEBOUNCE_MS,
   );
-  const customerSearch = normalizeOrderCustomerSearch(debouncedCustomerQuery);
+  const customerSearch = normalizeOrderLookupSearch(
+    debouncedCustomerQuery,
+    LIST_CUSTOMERS_SEARCH_MAX,
+  );
 
   const [productQuery, setProductQuery] = useState("");
   const debouncedProductQuery = useDebouncedValue(
     productQuery,
-    LOOKUP_SEARCH_DEBOUNCE_MS,
+    SEARCH_DEBOUNCE_MS,
   );
-  const productSearch = normalizeOrderProductQuery(debouncedProductQuery);
+  const productSearch = normalizeOrderLookupSearch(
+    debouncedProductQuery,
+    LIST_PRODUCTS_QUERY_MAX,
+  );
+
+  useEffect(() => {
+    if (!args.customerSheetOpen) {
+      setCustomerQuery("");
+    }
+  }, [args.customerSheetOpen]);
+  useEffect(() => {
+    if (!args.productSheetOpen) {
+      setProductQuery("");
+    }
+  }, [args.productSheetOpen]);
 
   const customersQuery = useInfiniteQuery(
     listOrderCustomersInfiniteOptions({
@@ -150,7 +171,10 @@ export function useOrderFormLookups(args: {
     }),
   });
 
-  const draftCatalogIds = uniqueProductIds(args.draftProductIds);
+  const draftCatalogIds = useMemo(
+    () => uniqueProductIds(args.draftProductIds),
+    [args.draftProductIds],
+  );
   const draftThumbnailItems = useMemo(
     () =>
       draftLineThumbnailItems(
@@ -278,12 +302,12 @@ export function useOrderFormLookups(args: {
     customerOptions,
     customerQuery,
     onCustomerQueryChange: setCustomerQuery,
-    customersLoadingMore: customersQuery.isFetching,
+    customersLoading: customersQuery.isFetching,
     onCustomersEndReached,
     productRows,
     productQuery,
     onProductQueryChange: setProductQuery,
-    productsLoadingMore: productsQuery.isFetching,
+    productsLoading: productsQuery.isFetching,
     onProductsEndReached,
     variantOptions,
     variantsStatus:
