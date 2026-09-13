@@ -191,7 +191,7 @@ export function useDocumentForm() {
     requestLeave,
     orderQuery: lookups.orderQuery,
     onOrderQueryChange: lookups.onOrderQueryChange,
-    ordersLoadingMore: lookups.ordersLoadingMore,
+    ordersLoading: lookups.ordersLoading,
     onOrdersEndReached: lookups.onOrdersEndReached,
     openOrderSheet: pickers.openOrderSheet,
     openCounterpartySheet: pickers.openCounterpartySheet,

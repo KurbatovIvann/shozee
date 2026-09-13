@@ -91,8 +91,8 @@ export function CounterpartyFormView(model: CounterpartyFormModel) {
           onChange={model.selectCustomer}
           query={model.customerQuery}
           onQueryChange={model.onCustomerQueryChange}
-          loadingMore={model.customersLoadingMore}
-          loadingMoreLabel={form.pickerLoadingMoreLabel}
+          loading={model.customersLoading}
+          loadingLabel={form.pickerLoadingLabel}
           onEndReached={model.onCustomersEndReached}
           loadMoreLabel={form.pickerLoadMoreLabel}
         />

@@ -62,12 +62,12 @@ export function useOrderFormLookups(args: {
   readonly customerOptions: ReturnType<typeof optionSelectItems>;
   readonly customerQuery: string;
   readonly onCustomerQueryChange: (value: string) => void;
-  readonly customersLoadingMore: boolean;
+  readonly customersLoading: boolean;
   readonly onCustomersEndReached: () => void;
   readonly productRows: readonly OrderFormProductRow[];
   readonly productQuery: string;
   readonly onProductQueryChange: (value: string) => void;
-  readonly productsLoadingMore: boolean;
+  readonly productsLoading: boolean;
   readonly onProductsEndReached: () => void;
   readonly variantOptions: ReturnType<typeof optionSelectItems>;
   readonly variantsStatus: ProductVariantsLoadStatus;
@@ -291,12 +291,12 @@ export function useOrderFormLookups(args: {
     customerOptions,
     customerQuery,
     onCustomerQueryChange: setCustomerQuery,
-    customersLoadingMore: customersQuery.isFetching,
+    customersLoading: customersQuery.isFetching,
     onCustomersEndReached,
     productRows,
     productQuery,
     onProductQueryChange: setProductQuery,
-    productsLoadingMore: productsQuery.isFetching,
+    productsLoading: productsQuery.isFetching,
     onProductsEndReached,
     variantOptions,
     variantsStatus:

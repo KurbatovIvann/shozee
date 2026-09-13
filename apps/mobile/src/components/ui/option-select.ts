@@ -69,13 +69,13 @@ export function resolveOptionSelectListState(args: {
   readonly options: readonly OptionSelectItem[];
   readonly query: string;
   readonly serverFiltered: boolean;
-  readonly loadingMore: boolean;
+  readonly loading: boolean;
 }): OptionSelectListState {
   const items = visibleOptionSelectItems(args);
   if (items.length > 0) {
     return { kind: "items", items };
   }
-  if (args.serverFiltered && args.loadingMore) {
+  if (args.serverFiltered && args.loading) {
     return { kind: "loading" };
   }
   return { kind: "empty" };

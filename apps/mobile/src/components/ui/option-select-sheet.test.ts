@@ -70,7 +70,7 @@ describe("controlled query", () => {
 
 describe("paged-result affordances", () => {
   it("shows a loading indicator and a load-more affordance", () => {
-    expect(SOURCE).toContain("readonly loadingMore?: boolean | undefined;");
+    expect(SOURCE).toContain("readonly loading?: boolean | undefined;");
     expect(SOURCE).toContain(
       "readonly onEndReached?: (() => void) | undefined;",
     );

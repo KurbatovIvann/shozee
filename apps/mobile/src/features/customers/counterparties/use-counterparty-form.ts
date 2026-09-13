@@ -236,7 +236,7 @@ export function useCounterpartyForm(args: {
     ...presented,
     customerQuery: lookups.customerQuery,
     onCustomerQueryChange: lookups.onCustomerQueryChange,
-    customersLoadingMore: lookups.customersLoadingMore,
+    customersLoading: lookups.customersLoading,
     onCustomersEndReached: lookups.onCustomersEndReached,
     onFieldEdit,
     requestLeave,

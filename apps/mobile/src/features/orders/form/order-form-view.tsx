@@ -87,8 +87,8 @@ export function OrderFormView(model: OrderFormModel) {
         }}
         query={model.customerQuery}
         onQueryChange={model.onCustomerQueryChange}
-        loadingMore={model.customersLoadingMore}
-        loadingMoreLabel={form.pickerLoadingMoreLabel}
+        loading={model.customersLoading}
+        loadingLabel={form.pickerLoadingLabel}
         onEndReached={model.onCustomersEndReached}
         loadMoreLabel={form.pickerLoadMoreLabel}
       />
@@ -122,8 +122,8 @@ export function OrderFormView(model: OrderFormModel) {
         onConfirm={model.confirmProductPicks}
         query={model.productQuery}
         onQueryChange={model.onProductQueryChange}
-        loadingMore={model.productsLoadingMore}
-        loadingMoreLabel={form.pickerLoadingMoreLabel}
+        loading={model.productsLoading}
+        loadingLabel={form.pickerLoadingLabel}
         onEndReached={model.onProductsEndReached}
         loadMoreLabel={form.pickerLoadMoreLabel}
       />
