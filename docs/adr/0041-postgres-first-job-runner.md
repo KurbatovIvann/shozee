@@ -71,8 +71,8 @@
    - the **conformance suite** every adapter must pass.
    It owns no tables. The `pgboss` schema is a foundation protocol schema,
    created by a drizzle-kit custom migration generated from the pinned
-   library. That migration and the library's own runtime statements are the
-   approved raw SQL.
+   library. That migration, and the statements pg-boss issues from inside
+   `@showzy/jobs`, are the approved raw SQL (J15).
 4. **The domain-event outbox is unchanged** (ADR-0012). Events are effects
    between modules; jobs are work.
 
@@ -97,21 +97,27 @@ spec detail.
   *Core tests.*
 - **J4 Only the root action of a transaction enqueues, and only its own
   module's jobs.** Enqueueing is refused in reads and in `ctx.call` and
-  `ctx.callAtomic` callees. *Contract check + ESLint.*
+  `ctx.callAtomic` callees. *Contract check + ESLint for ownership; core
+  runtime test for reads and callees.*
 
 **Scope and execution.**
 - **J5 Scope never comes from input.** The recorded company, actor, channel and
   correlation come from the verified enqueuing context.
+  - A job handler loads and claims every owning row filtered by the recorded
+    company, and fails closed on a miss.
   - A scheduled job that fans out tenant work takes each company from a row its
     module owns, read in the same transaction.
   - The worker's system context verifies that the company exists and is active,
     and fails closed.
   *Inherited cross-tenant suite: a payload naming a foreign row, or an inactive
   company, fails closed.*
-- **J6 Payloads are identity only, and job rows hold no personal data or
-  messages.** Handler failures are stored as typed codes; the library's own
-  constant strings are exempt. Secrets never enter payloads, job rows or logs.
-  *Conformance.*
+- **J6 Payloads are identity only, and job rows hold no free text.**
+  - Payload schemas contain only ids and discriminators.
+  - The runner's error and output columns hold a typed code or null, except
+    the library's fixed status strings, which the spec lists.
+  - Secrets never enter payloads, job rows or logs; provider credentials live
+    outside this protocol.
+  *Contract check on payload schemas; conformance on stored columns.*
 
 **Retries and claims.**
 - **J7 No undeclared re-run.** A job runs at most `1 + declared retries` times.
@@ -125,23 +131,36 @@ spec detail.
   *Domain tests per consumer, modelled in the spec.*
 - **J9 Exhausted work is visible.** When retries are exhausted, whether the
   last attempt threw or expired, a declared **on-exhausted** `system` action
-  marks the owning row failed. No row stays `running` or `queued` forever.
-  *Conformance: thrown and expired last attempts.*
+  marks the owning row failed.
+  - If that action fails, or its company is inactive (J5), a global sweep marks
+    the row failed with a typed reason.
+  - No owning row stays `running` or `queued` longer than its deadline plus
+    one sweep interval.
+  *Conformance: thrown and expired last attempts; a failing on-exhausted
+  action; an inactive company.*
 
 **External effects.**
 - **J10 Provider calls never run inside a transaction.** A claim commits, the
-  call runs, and a separate transaction records the result.
+  call runs, and a separate transaction records the result. *Integration test:
+  no open transaction exists on the job's connection during the stub provider
+  call.*
 - **J11 One opaque provider key per logical effect.**
-  - The key and our provider reference are generated once, when the item is
-    claimed, and committed **before** the first call.
-  - Every retry, resume or sweep reuses them.
-  - The key reveals no company, actor or job id.
-- **J12 An unknown outcome is a state, not a retry.** A crash between the call
-  and the record leaves the item `outcome_unknown`. Only a reconciliation lookup
-  against the provider, or a person, clears it. Money-moving and fiscal effects
-  are never repeated automatically. Other effects may retry only against
-  providers documented to deduplicate concurrent calls with the same key.
-  *Domain tests per integration.*
+  - The key and our provider reference are generated at the item's **first**
+    claim and committed **before** the first call.
+  - Every later attempt, resume or sweep reuses them.
+  - The key is random: it is not derived from the job id, company or actor.
+  *Integration test: attempt, retry, resume and sweep send the same key; the
+  key row is committed before the stub provider receives the request.*
+- **J12 An unknown outcome is a state, not a retry.**
+  - An item holds a committed provider key but no recorded result. On any
+    re-claim, whatever ended the previous attempt (a crash, a throw, a timeout,
+    an expiry), it moves to `outcome_unknown` and does **not** call.
+  - Only a reconciliation lookup against the provider, or a person, clears it.
+  - The single exception is an integration that declares
+    `dedupesConcurrentCalls` and proves it with a test against the provider's
+    sandbox. Money-moving and fiscal integrations cannot declare it.
+  *Integration test per provider: a timed-out attempt followed by a retry
+  makes exactly one call.*
 
 **Batches and inputs.**
 - **J13 Fan-in cannot stall or double-count.** Item state lives in item rows.
@@ -154,6 +173,19 @@ spec detail.
   transport, **before** `executeAction`. An unverified request can never
   reserve an idempotency key. *Transport test: a forged request leaves no key
   row.*
+
+**Boundaries and records.**
+- **J15 The runner's SQL stays inside the runner.**
+  - `pg-boss` is imported only in `@showzy/jobs`, and application code never
+    reads or writes `pgboss` tables.
+  - The library's migrator never runs; the schema comes only from the
+    drizzle-kit migration.
+  *ESLint; a boot test that the installed schema version equals the pinned
+  library's, with the migrator disabled.*
+- **J16 Business records never live only in job rows.** Fiscal receipts, bank
+  transactions, payment results and raw webhook events live in module rows
+  under their own retention. Deleting job rows loses no business record. *Per
+  integration: the recorded result survives job-row retention.*
 
 ## Alternatives considered
 
