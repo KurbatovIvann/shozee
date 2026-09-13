@@ -109,8 +109,13 @@ spec detail.
     module owns, read in the same transaction.
   - The worker's system context verifies that the company exists and is active,
     and fails closed.
-  *Inherited cross-tenant suite: a payload naming a foreign row, or an inactive
-  company, fails closed.*
+  - **The only exception** is a module's declared J9 sweep action. It may run
+    for an existing inactive company, only on that module's own overdue rows,
+    and only to mark them failed. The exception is a property of that declared
+    action, not a flag a caller can pass.
+  *Inherited cross-tenant suite: a payload naming a foreign row fails closed;
+  for an inactive company, every action except the declared sweep fails closed,
+  and the sweep fails closed on another module's rows or on any other write.*
 - **J6 Payloads are identity only, and job rows hold no free text.**
   - Payload schemas contain only ids and discriminators.
   - The runner's error and output columns hold a typed code or null, except
