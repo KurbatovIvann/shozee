@@ -59,4 +59,4 @@ humans) don't relitigate settled questions or silently deviate.
 | [0038](0038-assistant-is-a-stored-document.md) | The assistant is a stored document and a claimable pause | Accepted |
 | [0039](0039-assistant-turn-runs-off-the-request.md) | The assistant turn runs off the request | Accepted |
 | [0040](0040-claude-code-agent-harness.md) | Claude Code is the agent harness | Accepted |
-| [0041](0041-postgres-first-job-runner.md) | Background jobs are enqueued in the transaction and run from Postgres behind a runner port | Proposed |
+| [0041](0041-postgres-first-job-runner.md) | Background jobs are enqueued in the transaction and run from Postgres behind a runner port | Accepted |

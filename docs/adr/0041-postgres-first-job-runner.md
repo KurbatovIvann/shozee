@@ -1,6 +1,6 @@
 # ADR-0041: Background jobs are enqueued in the transaction and run from Postgres behind a runner port
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-13
 - **Deciders**: Ivan Kurbatov (human) (+ proposing agent)
 
@@ -56,7 +56,8 @@
      `executeAction`.
 2. **The runner is a plugin chosen per queue class.**
    - **`durable`** (user-visible or must-not-be-lost work) runs on a **pg-boss
-     adapter**, straight from Postgres.
+     adapter**, straight from Postgres. Workers pick jobs up by polling, not
+     LISTEN/NOTIFY, so jobs add no load to Postgres's notify queue (ADR-0042).
    - **`scheduled`** maintenance moves to pg-boss schedules now.
    - **`bulk`** (high-volume, recoverable) is **deferred**: a later ADR
      specifies a relay that keeps the `enqueue(tx)` contract.
@@ -235,7 +236,7 @@ spec detail.
     and queued-abandoned interrupts and the one-time hold release.
 
 **Core** (approved by this ADR):
-- `enqueues`, `ctx.enqueue`, the job port;
+- `enqueues`, `ctx.enqueue`, the job port, and on-exhausted declarations;
 - execution ids and job identity;
 - recorded scope;
 - contract checks and a job case in the inherited cross-tenant suite;
