@@ -84,10 +84,10 @@ export function useOrderFormLookups(args: {
   const getActiveCompany = () => apiClient?.getActiveCompany() ?? null;
   const enabled = args.enabled;
   const canFetchThumbnails = canFetchFileDownloadUrls(membership);
-  const catalogProductIds = uniqueProductIds([
-    ...args.draftProductIds,
-    args.variantProductId,
-  ]);
+  const catalogProductIds = useMemo(
+    () => uniqueProductIds([...args.draftProductIds, args.variantProductId]),
+    [args.draftProductIds, args.variantProductId],
+  );
 
   const [customerQuery, setCustomerQuery] = useState("");
   const debouncedCustomerQuery = useDebouncedValue(
@@ -171,7 +171,10 @@ export function useOrderFormLookups(args: {
     }),
   });
 
-  const draftCatalogIds = uniqueProductIds(args.draftProductIds);
+  const draftCatalogIds = useMemo(
+    () => uniqueProductIds(args.draftProductIds),
+    [args.draftProductIds],
+  );
   const draftThumbnailItems = useMemo(
     () =>
       draftLineThumbnailItems(

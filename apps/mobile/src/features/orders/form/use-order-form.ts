@@ -87,8 +87,9 @@ export function useOrderForm() {
   const sheets = useOrderFormSheets();
   const clientReady = apiClient !== null && activeCompanyId !== null;
   const loadState = classifyOrderFormLoad({ canCreate, clientReady });
-  const draftProductIds = uniqueProductIds(
-    fields.map((field) => field.productId),
+  const draftProductIds = useMemo(
+    () => uniqueProductIds(fields.map((field) => field.productId)),
+    [fields],
   );
   const lookups = useOrderFormLookups({
     enabled: loadState.kind === "ready",
