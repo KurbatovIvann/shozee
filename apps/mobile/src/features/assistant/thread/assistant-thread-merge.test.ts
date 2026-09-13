@@ -12,6 +12,7 @@ import type { AssistantChatWindow } from "@showzy/validation/assistant-chat";
 import type { AssistantStreamEvent } from "@showzy/validation/assistant-events";
 
 import {
+  applyAssistantReread,
   applyAssistantStreamEvent,
   applyAssistantWindow,
   assistantPauseAnswered,
@@ -528,7 +529,7 @@ describe("a window that resolved after the thread moved past it", () => {
     expect(applied.rereadWindow).toBe(false);
   });
 
-  it("keeps a question a snapshot it cannot order does not carry", () => {
+  it("does not reopen a question from a window older than the snapshot that closed it", () => {
     const asked = loaded(windowOf({ openPause: OPEN_PAUSE }));
 
     const snapshot = apply(asked, {
@@ -541,7 +542,88 @@ describe("a window that resolved after the thread moved past it", () => {
       LATEST,
     );
 
-    expect(applied.state.thread?.openPause?.interactionId).toBe(INTERACTION);
+    expect(applied.state.thread?.openPause).toBeNull();
+    expect(applied.rereadWindow).toBe(true);
+  });
+
+  it("does not bring back a turn a reconnect snapshot showed ended, and reads the window", () => {
+    const following = apply(initialAssistantThreadState(), {
+      type: "turn.started",
+      conversationId: CONVERSATION,
+      kind: "chat",
+      commandId: COMMAND,
+    }).state;
+    const snapshot = apply(following, {
+      type: "snapshot",
+      window: windowOf({ text: "Готово.", revision: 4 }),
+    }).state;
+
+    const applied = applyAssistantWindow(
+      snapshot,
+      windowOf({
+        text: "",
+        status: "streaming",
+        revision: 1,
+        turn: { id: COMMAND, status: "queued" },
+      }),
+      LATEST,
+    );
+
+    expect(applied.state.thread?.messages[0]?.revision).toBe(4);
+    expect(assistantTurnActive(applied.state.thread)).toBe(false);
+    expect(applied.rereadWindow).toBe(true);
+  });
+
+  it("keeps every message it holds when an empty snapshot read before them arrives late", () => {
+    const held = loaded(windowOf({ text: "Готово.", revision: 4 }));
+
+    const applied = apply(held, {
+      type: "snapshot",
+      window: { ...windowOf(), messages: [] },
+    });
+
+    expect(applied.state.thread?.messages).toEqual(held.thread?.messages);
+    expect(applied.rereadWindow).toBe(true);
+  });
+
+  it("does not bring back a turn from a window that carries nothing newer than the thread", () => {
+    const settled = loaded(windowOf({ text: "Готово.", revision: 4 }));
+
+    const applied = applyAssistantWindow(
+      settled,
+      windowOf({
+        text: "Готово.",
+        revision: 4,
+        turn: { id: COMMAND, status: "running" },
+      }),
+      LATEST,
+    );
+
+    expect(assistantTurnActive(applied.state.thread)).toBe(false);
+    expect(applied.rereadWindow).toBe(true);
+  });
+
+  it("takes a new turn whose window brings the message that started it", () => {
+    const settled = loaded(windowOf({ text: "Готово.", revision: 4 }));
+    const accepted = windowOf({
+      text: "Готово.",
+      revision: 4,
+      turn: { id: OTHER_COMMAND, status: "queued" },
+    });
+
+    const applied = applyAssistantWindow(
+      settled,
+      {
+        ...accepted,
+        messages: [
+          ...accepted.messages,
+          { ...message(), messageId: INTERACTION, role: "user" },
+        ],
+      },
+      LATEST,
+    );
+
+    expect(assistantTurnActive(applied.state.thread)).toBe(true);
     expect(applied.rereadWindow).toBe(false);
   });
 
@@ -553,12 +635,12 @@ describe("a window that resolved after the thread moved past it", () => {
 
     const oldest = applyAssistantWindow(
       state,
-      windowOf({ turn: { id: turnId(0), status: "running" } }),
+      windowOf({ revision: 2, turn: { id: turnId(0), status: "running" } }),
       LATEST,
     );
     const newest = applyAssistantWindow(
       state,
-      windowOf({ turn: { id: turnId(8), status: "running" } }),
+      windowOf({ revision: 2, turn: { id: turnId(8), status: "running" } }),
       LATEST,
     );
 
@@ -625,5 +707,157 @@ describe("a window that resolved after the thread moved past it", () => {
 
     expect(applied.state.thread?.openPause).toBeNull();
     expect(applied.rereadWindow).toBe(true);
+  });
+});
+
+describe("a question closed without a message being written", () => {
+  function asked(
+    openPause: AssistantChatWindow["openPause"],
+  ): AssistantChatWindow {
+    const window = windowOf({ text: "Яку Катю?", revision: 4, openPause });
+    return {
+      ...window,
+      messages: window.messages.map((entry) => ({
+        ...entry,
+        parts: [
+          ...entry.parts,
+          {
+            kind: "interaction" as const,
+            interactionId: INTERACTION,
+            revision: OPEN_PAUSE.revision,
+            pause: OPEN_PAUSE,
+          },
+        ],
+      })),
+    };
+  }
+
+  function abandonedElsewhere(): AssistantThreadState {
+    return applyAssistantWindow(loaded(asked(OPEN_PAUSE)), asked(null), LATEST)
+      .state;
+  }
+
+  it("does not reopen it from a window that carries nothing newer, and reads the window", () => {
+    const applied = applyAssistantWindow(
+      abandonedElsewhere(),
+      asked(OPEN_PAUSE),
+      LATEST,
+    );
+
+    expect(applied.state.thread?.openPause).toBeNull();
+    expect(applied.rereadWindow).toBe(true);
+  });
+
+  it("reopens it when a re-read issued after the last window says it is open", () => {
+    const state = abandonedElsewhere();
+
+    const applied = applyAssistantReread(
+      state,
+      asked(OPEN_PAUSE),
+      state.windowsApplied,
+    );
+
+    expect(applied.state.thread?.openPause?.interactionId).toBe(INTERACTION);
+    expect(applied.rereadWindow).toBe(false);
+  });
+
+  it("keeps the rules for a re-read answered after another window landed", () => {
+    const issued = abandonedElsewhere();
+    const landed = applyAssistantWindow(issued, asked(null), LATEST).state;
+
+    const applied = applyAssistantReread(
+      landed,
+      asked(OPEN_PAUSE),
+      issued.windowsApplied,
+    );
+
+    expect(applied.state.thread?.openPause).toBeNull();
+    expect(applied.rereadWindow).toBe(true);
+  });
+
+  it("takes a turn a re-read issued after the last window reports with the same messages", () => {
+    const state = loaded(windowOf({ text: "Готово.", revision: 4 }));
+
+    const applied = applyAssistantReread(
+      state,
+      windowOf({
+        text: "Готово.",
+        revision: 4,
+        turn: { id: COMMAND, status: "running" },
+      }),
+      state.windowsApplied,
+    );
+
+    expect(assistantTurnActive(applied.state.thread)).toBe(true);
+    expect(applied.rereadWindow).toBe(false);
+  });
+
+  it("takes a question opened before the message that asks it is written", () => {
+    const applied = applyAssistantWindow(
+      loaded(windowOf({ text: "Готово.", revision: 4 })),
+      windowOf({ text: "Готово.", revision: 4, openPause: OPEN_PAUSE }),
+      LATEST,
+    );
+
+    expect(applied.state.thread?.openPause?.interactionId).toBe(INTERACTION);
+    expect(applied.rereadWindow).toBe(false);
+  });
+
+  it("does not let a settling re-read reopen a question this client answered", () => {
+    const state = assistantPauseAnswered(abandonedElsewhere(), {
+      interactionId: INTERACTION,
+      revision: OPEN_PAUSE.revision,
+    });
+
+    const applied = applyAssistantReread(
+      state,
+      asked(OPEN_PAUSE),
+      state.windowsApplied,
+    );
+
+    expect(applied.state.thread?.openPause).toBeNull();
+    expect(applied.rereadWindow).toBe(false);
+  });
+
+  it("takes the turn and question of a settling re-read an event overtook, and keeps the event's message", () => {
+    const running = loaded(
+      windowOf({
+        text: "",
+        status: "streaming",
+        revision: 1,
+        turn: { id: COMMAND, status: "running" },
+      }),
+    );
+    const issuedAfter = running.windowsApplied;
+    const carded = apply(running, {
+      type: "message.updated",
+      conversationId: CONVERSATION,
+      message: message({ text: "Картка", revision: 2 }),
+    }).state;
+
+    const applied = applyAssistantReread(
+      carded,
+      windowOf({ text: "", status: "streaming", revision: 1 }),
+      issuedAfter,
+    );
+
+    expect(applied.state.thread?.messages[0]?.revision).toBe(2);
+    expect(assistantTurnActive(applied.state.thread)).toBe(false);
+    expect(applied.rereadWindow).toBe(false);
+  });
+
+  it("still settles a re-read when an older page landed while it was on its way", () => {
+    const state = abandonedElsewhere();
+    const issuedAfter = state.windowsApplied;
+    const paged = applyAssistantWindow(
+      state,
+      { ...asked(null), messages: [] },
+      { kind: "older", cursor: "1" },
+    ).state;
+
+    const applied = applyAssistantReread(paged, asked(OPEN_PAUSE), issuedAfter);
+
+    expect(applied.state.thread?.openPause?.interactionId).toBe(INTERACTION);
+    expect(applied.rereadWindow).toBe(false);
   });
 });

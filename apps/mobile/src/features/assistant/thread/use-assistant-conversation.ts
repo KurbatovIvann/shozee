@@ -51,6 +51,7 @@ import {
 } from "../api/assistant-kit-client";
 import {
   applyAssistantStreamEvent,
+  applyAssistantReread,
   applyAssistantWindow,
   assistantPauseAnswered,
   assistantTurnActive,
@@ -448,6 +449,7 @@ export function useAssistantConversation(args: {
        */
       const sendingAtIssue = sendingRef.current;
       const echoAtIssue = echoRef.current;
+      const windowsAtIssue = stateRef.current.windowsApplied;
       rereadRef.current = request;
       void getAssistantKitWindow({ ...call, conversationId })
         .then((outcome) => {
@@ -462,7 +464,15 @@ export function useAssistantConversation(args: {
           if (window === null) {
             return;
           }
-          commit(applyAssistantWindow(stateRef.current, window, LATEST).state);
+          const applied = applyAssistantReread(
+            stateRef.current,
+            window,
+            windowsAtIssue,
+          );
+          commit(applied.state);
+          if (applied.rereadWindow) {
+            rereadAgainRef.current = true;
+          }
           if (
             !sendingAtIssue &&
             !sendingRef.current &&

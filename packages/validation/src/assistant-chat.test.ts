@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   mergeAssistantChatWindow,
+  orderAssistantChatWindow,
   parseAssistantChatWindow,
   type AssistantChatMessage,
   type AssistantChatThread,
@@ -19,6 +20,7 @@ import {
 
 const CONVERSATION = "33333333-3333-4333-8333-333333333333";
 const OTHER_CONVERSATION = "44444444-4444-4444-8444-444444444444";
+const TURN = "66666666-6666-4666-8666-666666666666";
 const LATEST = { kind: "latest" } as const;
 
 function message(n: number, revision = 1): AssistantChatMessage {
@@ -213,11 +215,44 @@ describe("mergeAssistantChatWindow", () => {
     expect(held?.messages[2]?.revision).toBe(7);
   });
 
-  it("takes an empty latest window as it is", () => {
-    const held = mergeAssistantChatWindow(null, windowOf(log(4), 3), LATEST);
+  it("takes an empty latest window as it is when it holds nothing", () => {
+    const held = mergeAssistantChatWindow(null, windowOf([], 3), LATEST);
     const empty = windowOf([], 3);
 
     expect(mergeAssistantChatWindow(held, empty, LATEST)).toBe(empty);
+  });
+
+  it("keeps every message it holds when an empty window read before them arrives late", () => {
+    const held = mergeAssistantChatWindow(
+      null,
+      {
+        ...windowOf(log(4), 3),
+        openPause: PAUSE,
+        turn: { id: TURN, status: "running" },
+      },
+      LATEST,
+    );
+
+    const merged = mergeAssistantChatWindow(held, windowOf([], 3), LATEST);
+
+    expect(numbers(merged)).toEqual([2, 3, 4]);
+    expect(merged?.olderCursor).toBe("2");
+    expect(merged?.openPause).toEqual(PAUSE);
+    expect(merged?.turn).toEqual({ id: TURN, status: "running" });
+  });
+
+  it("keeps the newer messages, turn and cursor when a late page starts before the thread does", () => {
+    const held = mergeAssistantChatWindow(null, windowOf(log(22), 20), LATEST);
+
+    const merged = mergeAssistantChatWindow(
+      held,
+      { ...windowOf(log(20), 20), turn: { id: TURN, status: "queued" } },
+      LATEST,
+    );
+
+    expect(numbers(merged)).toEqual(numbers(held));
+    expect(merged?.olderCursor).toBe("3");
+    expect(merged?.turn).toBeNull();
   });
 
   it("holds exactly the server's log, in whatever order windows arrive", () => {
@@ -294,6 +329,64 @@ describe("mergeAssistantChatWindow", () => {
       }
       expect(numbers(held)).toEqual(stored.map((_, index) => index + 1));
     }
+  });
+});
+
+describe("orderAssistantChatWindow", () => {
+  function holding(stored: readonly AssistantChatMessage[]) {
+    const held = mergeAssistantChatWindow(null, windowOf(stored, 5), LATEST);
+    if (held === null) {
+      throw new TypeError("a first window always makes a thread");
+    }
+    return held;
+  }
+
+  it("is behind when it carries a lower revision of a message held", () => {
+    const written = log(3);
+    written[2] = message(3, 4);
+
+    expect(
+      orderAssistantChatWindow(holding(written), windowOf(log(3), 5)),
+    ).toBe("behind");
+  });
+
+  it("is behind when it lacks a message held after its last one", () => {
+    expect(orderAssistantChatWindow(holding(log(4)), windowOf(log(3), 5))).toBe(
+      "behind",
+    );
+  });
+
+  it("is behind when it is empty and the thread is not", () => {
+    expect(orderAssistantChatWindow(holding(log(2)), windowOf([], 5))).toBe(
+      "behind",
+    );
+  });
+
+  it("is ahead when it brings a message the thread does not hold", () => {
+    expect(orderAssistantChatWindow(holding(log(3)), windowOf(log(4), 5))).toBe(
+      "ahead",
+    );
+  });
+
+  it("is ahead when it brings a higher revision", () => {
+    const written = log(3);
+    written[1] = message(2, 3);
+
+    expect(
+      orderAssistantChatWindow(holding(log(3)), windowOf(written, 5)),
+    ).toBe("ahead");
+  });
+
+  it("is ahead when it shares nothing with the thread", () => {
+    expect(
+      orderAssistantChatWindow(holding(log(3)), windowOf(log(12), 5)),
+    ).toBe("ahead");
+  });
+
+  it("is the same when it carries exactly what is held", () => {
+    expect(orderAssistantChatWindow(holding(log(3)), windowOf(log(3), 5))).toBe(
+      "same",
+    );
   });
 });
 

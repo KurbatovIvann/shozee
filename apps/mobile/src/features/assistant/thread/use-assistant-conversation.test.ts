@@ -1435,6 +1435,44 @@ describe("the conversation, live", () => {
     expect(view.latest().busy).toBe(false);
   });
 
+  it("re-reads a question a same-looking window reopens, and shows it when the read says it is open", async () => {
+    const asked = (openPause: unknown) => {
+      const window = settledWindow("Яку Катю?", openPause);
+      return {
+        ...window,
+        messages: window.messages.map((message) => ({
+          ...message,
+          parts: [
+            ...message.parts,
+            {
+              kind: "interaction",
+              interactionId: INTERACTION,
+              revision: OPEN_PAUSE.revision,
+              pause: OPEN_PAUSE,
+            },
+          ],
+        })),
+      };
+    };
+    const source = serve({ messages: [asked(OPEN_PAUSE), asked(OPEN_PAUSE)] });
+    const view = mount({ visible: true });
+    await flush();
+
+    act(() => {
+      source.send("snapshot", { type: "snapshot", window: asked(null) });
+    });
+    await flush();
+    expect(view.latest().interaction).toBeNull();
+
+    act(() => {
+      source.send("snapshot", { type: "snapshot", window: asked(OPEN_PAUSE) });
+    });
+    await flush();
+
+    expect(messageReads()).toBe(2);
+    expect(view.latest().interaction?.interactionId).toBe(INTERACTION);
+  });
+
   /**
    * The re-read takes no command latch, so its window can predate the accept of
    * a send that is still in flight. Clearing the echo there took the words off

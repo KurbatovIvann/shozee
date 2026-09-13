@@ -205,10 +205,11 @@ export function createAssistantTurnProcessor(
         scope: PauseScope,
         found: AssistantTurnForJob,
         status: AssistantTurnEndStatus,
-        turn: AssistantTurnActiveView | null,
+        readTurn: () => Promise<AssistantTurnActiveView | null>,
       ): Promise<void> {
         const window = await read(kit, scope);
         if (window !== null) {
+          const turn = await readTurn();
           await publish({
             type: "turn.finished",
             kind: found.turn.kind,
@@ -473,8 +474,9 @@ export function createAssistantTurnProcessor(
       });
     }
     if (scope !== undefined) {
-      const active = await turns.activeTurn(scope);
-      await events.finished(kit, scope, found, status, active);
+      await events.finished(kit, scope, found, status, () =>
+        turns.activeTurn(scope),
+      );
     }
     return { kind: "finished", status, reachedModel };
   }
