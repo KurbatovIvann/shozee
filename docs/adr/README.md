@@ -25,7 +25,7 @@ humans) don't relitigate settled questions or silently deviate.
 | [0004](0004-orpc-api-contract.md) | oRPC for the API contract | Accepted |
 | [0005](0005-drizzle-orm.md) | Drizzle ORM + drizzle-kit | Accepted |
 | [0006](0006-better-auth.md) | better-auth for authentication | Accepted |
-| [0007](0007-bullmq-redis.md) | BullMQ + Redis for queues (pg-boss rejected) | Accepted |
+| [0007](0007-bullmq-redis.md) | BullMQ + Redis for queues (pg-boss rejected) | Superseded by ADR-0041 (background jobs) |
 | [0008](0008-action-registry.md) | Action registry as the single source of truth | Accepted |
 | [0009](0009-authorization-in-code-no-rls.md) | Authorization in code, no RLS | Accepted |
 | [0010](0010-mobile-first-client-strategy.md) | Mobile-first client strategy | Accepted |
@@ -57,6 +57,6 @@ humans) don't relitigate settled questions or silently deviate.
 | [0036](0036-assistant-speech-is-not-a-surface.md) | Assistant speech is not a surface | Superseded by ADR-0038 |
 | [0037](0037-assistant-host-is-one-tool-loop.md) | The staff assistant host is one tool loop | Superseded by ADR-0038 |
 | [0038](0038-assistant-is-a-stored-document.md) | The assistant is a stored document and a claimable pause | Accepted |
-| [0039](0039-assistant-turn-runs-off-the-request.md) | The assistant turn runs off the request | Accepted |
+| [0039](0039-assistant-turn-runs-off-the-request.md) | The assistant turn runs off the request | Accepted (amended by ADR-0041) |
 | [0040](0040-claude-code-agent-harness.md) | Claude Code is the agent harness | Accepted |
 | [0041](0041-postgres-first-job-runner.md) | Background jobs are enqueued in the transaction and run from Postgres behind a runner port | Accepted |
