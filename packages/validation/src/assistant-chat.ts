@@ -241,12 +241,20 @@ export function mergeAssistantChatWindow(
     };
   }
 
+  if (held === null || held.conversationId !== incoming.conversationId) {
+    return asThread(incoming);
+  }
+  if (orderAssistantChatWindow(held, incoming) === "behind") {
+    const sentEarlier = byMessageId(incoming.messages);
+    return {
+      ...held,
+      messages: held.messages.map((message) =>
+        laterOf(message, sentEarlier.get(message.messageId)),
+      ),
+    };
+  }
   const first = incoming.messages[0];
-  if (
-    held === null ||
-    held.conversationId !== incoming.conversationId ||
-    first === undefined
-  ) {
+  if (first === undefined) {
     return asThread(incoming);
   }
   const at = held.messages.findIndex(
@@ -268,6 +276,42 @@ export function mergeAssistantChatWindow(
     ],
     olderCursor: held.olderCursor,
   });
+}
+
+export type AssistantChatWindowOrder = "behind" | "same" | "ahead";
+
+export function orderAssistantChatWindow(
+  held: AssistantChatThread,
+  incoming: AssistantChatWindow,
+): AssistantChatWindowOrder {
+  const sent = byMessageId(incoming.messages);
+  let lastShared = -1;
+  let raised = false;
+  for (const [index, message] of held.messages.entries()) {
+    const copy = sent.get(message.messageId);
+    if (copy === undefined) {
+      continue;
+    }
+    if (copy.revision < message.revision) {
+      return "behind";
+    }
+    raised = raised || copy.revision > message.revision;
+    lastShared = index;
+  }
+  const newest = incoming.messages[incoming.messages.length - 1];
+  if (lastShared === -1) {
+    if (newest !== undefined) {
+      return "ahead";
+    }
+    return held.messages.length > 0 ? "behind" : "same";
+  }
+  if (lastShared < held.messages.length - 1) {
+    return "behind";
+  }
+  const brought =
+    newest !== undefined &&
+    !held.messages.some((message) => message.messageId === newest.messageId);
+  return raised || brought ? "ahead" : "same";
 }
 
 function byMessageId(

@@ -528,7 +528,7 @@ describe("a window that resolved after the thread moved past it", () => {
     expect(applied.rereadWindow).toBe(false);
   });
 
-  it("keeps a question a snapshot it cannot order does not carry", () => {
+  it("does not reopen a question from a window older than the snapshot that closed it", () => {
     const asked = loaded(windowOf({ openPause: OPEN_PAUSE }));
 
     const snapshot = apply(asked, {
@@ -541,7 +541,88 @@ describe("a window that resolved after the thread moved past it", () => {
       LATEST,
     );
 
-    expect(applied.state.thread?.openPause?.interactionId).toBe(INTERACTION);
+    expect(applied.state.thread?.openPause).toBeNull();
+    expect(applied.rereadWindow).toBe(true);
+  });
+
+  it("does not bring back a turn a reconnect snapshot showed ended, and reads the window", () => {
+    const following = apply(initialAssistantThreadState(), {
+      type: "turn.started",
+      conversationId: CONVERSATION,
+      kind: "chat",
+      commandId: COMMAND,
+    }).state;
+    const snapshot = apply(following, {
+      type: "snapshot",
+      window: windowOf({ text: "Готово.", revision: 4 }),
+    }).state;
+
+    const applied = applyAssistantWindow(
+      snapshot,
+      windowOf({
+        text: "",
+        status: "streaming",
+        revision: 1,
+        turn: { id: COMMAND, status: "queued" },
+      }),
+      LATEST,
+    );
+
+    expect(applied.state.thread?.messages[0]?.revision).toBe(4);
+    expect(assistantTurnActive(applied.state.thread)).toBe(false);
+    expect(applied.rereadWindow).toBe(true);
+  });
+
+  it("keeps every message it holds when an empty snapshot read before them arrives late", () => {
+    const held = loaded(windowOf({ text: "Готово.", revision: 4 }));
+
+    const applied = apply(held, {
+      type: "snapshot",
+      window: { ...windowOf(), messages: [] },
+    });
+
+    expect(applied.state.thread?.messages).toEqual(held.thread?.messages);
+    expect(applied.rereadWindow).toBe(true);
+  });
+
+  it("does not bring back a turn from a window that carries nothing newer than the thread", () => {
+    const settled = loaded(windowOf({ text: "Готово.", revision: 4 }));
+
+    const applied = applyAssistantWindow(
+      settled,
+      windowOf({
+        text: "Готово.",
+        revision: 4,
+        turn: { id: COMMAND, status: "running" },
+      }),
+      LATEST,
+    );
+
+    expect(assistantTurnActive(applied.state.thread)).toBe(false);
+    expect(applied.rereadWindow).toBe(true);
+  });
+
+  it("takes a new turn whose window brings the message that started it", () => {
+    const settled = loaded(windowOf({ text: "Готово.", revision: 4 }));
+    const accepted = windowOf({
+      text: "Готово.",
+      revision: 4,
+      turn: { id: OTHER_COMMAND, status: "queued" },
+    });
+
+    const applied = applyAssistantWindow(
+      settled,
+      {
+        ...accepted,
+        messages: [
+          ...accepted.messages,
+          { ...message(), messageId: INTERACTION, role: "user" },
+        ],
+      },
+      LATEST,
+    );
+
+    expect(assistantTurnActive(applied.state.thread)).toBe(true);
     expect(applied.rereadWindow).toBe(false);
   });
 
@@ -553,12 +634,12 @@ describe("a window that resolved after the thread moved past it", () => {
 
     const oldest = applyAssistantWindow(
       state,
-      windowOf({ turn: { id: turnId(0), status: "running" } }),
+      windowOf({ revision: 2, turn: { id: turnId(0), status: "running" } }),
       LATEST,
     );
     const newest = applyAssistantWindow(
       state,
-      windowOf({ turn: { id: turnId(8), status: "running" } }),
+      windowOf({ revision: 2, turn: { id: turnId(8), status: "running" } }),
       LATEST,
     );
 

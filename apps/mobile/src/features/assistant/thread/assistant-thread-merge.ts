@@ -35,6 +35,7 @@
  */
 import {
   mergeAssistantChatWindow,
+  orderAssistantChatWindow,
   type AssistantChatMessage,
   type AssistantChatTextStatus,
   type AssistantChatThread,
@@ -150,8 +151,19 @@ function vouchedWindow(
   state: AssistantThreadState,
   window: AssistantChatWindow,
 ): VouchedWindow {
+  const held = state.thread;
+  const order =
+    held === null || held.conversationId !== window.conversationId
+      ? "ahead"
+      : orderAssistantChatWindow(held, window);
+  if (order === "behind") {
+    return { window, rereadWindow: true };
+  }
+  const revivesTurn =
+    order === "same" && held?.turn === null && window.turn !== null;
   const restoresFinishedTurn =
-    window.turn !== null && state.finishedTurns.includes(window.turn.id);
+    revivesTurn ||
+    (window.turn !== null && state.finishedTurns.includes(window.turn.id));
   const reopensClosedPause = reopensClosed(
     state.closedPauses,
     window.openPause,
@@ -159,7 +171,6 @@ function vouchedWindow(
   if (!restoresFinishedTurn && !reopensClosedPause) {
     return { window, rereadWindow: false };
   }
-  const held = state.thread;
   return {
     window: {
       ...withHeldPause(held, window),
