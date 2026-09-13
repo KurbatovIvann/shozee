@@ -4,10 +4,10 @@ import { createShowzyQueryClient } from "../../../api/query-client";
 import { contractQueryKey } from "../../../api/query-options";
 import {
   GET_DOWNLOAD_URLS_ACTION,
+  LIST_THUMBNAIL_RENDITION,
   type FileDownloadClient,
 } from "../../../api/file-download-query";
 import {
-  ORDER_THUMBNAIL_RENDITION,
   orderThumbnailDownloadInput,
   orderThumbnailQueryOptions,
 } from "./use-order-thumbnails";
@@ -35,7 +35,7 @@ function stubDownloadUrlsClient(
 
 describe("orderThumbnailQueryOptions signing rendition", () => {
   it("signs the list rendition instead of the full-size original", async () => {
-    expect(ORDER_THUMBNAIL_RENDITION).toBe("thumb");
+    expect(LIST_THUMBNAIL_RENDITION).toBe("thumb");
     expect(orderThumbnailDownloadInput([FILE_A, FILE_B])).toEqual({
       fileIds: [FILE_A, FILE_B],
       rendition: "thumb",

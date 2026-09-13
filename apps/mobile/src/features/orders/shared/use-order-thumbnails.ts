@@ -10,6 +10,7 @@ import { useRef } from "react";
 import type { ContractClient } from "../../../api/client";
 import {
   fileDownloadUrlsQueryOptions,
+  LIST_THUMBNAIL_RENDITION,
   type FileDownloadClient,
 } from "../../../api/file-download-query";
 import {
@@ -20,13 +21,11 @@ import {
   uniquePrimaryImageFileIds,
 } from "./order-thumbnails";
 
-export const ORDER_THUMBNAIL_RENDITION = "thumb" as const;
-
 export function orderThumbnailDownloadInput(fileIds: readonly string[]): {
   readonly fileIds: string[];
-  readonly rendition: typeof ORDER_THUMBNAIL_RENDITION;
+  readonly rendition: typeof LIST_THUMBNAIL_RENDITION;
 } {
-  return { fileIds: [...fileIds], rendition: ORDER_THUMBNAIL_RENDITION };
+  return { fileIds: [...fileIds], rendition: LIST_THUMBNAIL_RENDITION };
 }
 
 export function orderThumbnailQueryOptions(args: {

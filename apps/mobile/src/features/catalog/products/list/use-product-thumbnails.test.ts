@@ -4,13 +4,13 @@ import { createShowzyQueryClient } from "../../../../api/query-client";
 import { contractQueryKey } from "../../../../api/query-options";
 import {
   GET_DOWNLOAD_URLS_ACTION,
+  LIST_THUMBNAIL_RENDITION,
   type FileDownloadClient,
 } from "../../../../api/file-download-query";
 import { canFetchFileDownloadUrls } from "../shared/product-permissions";
 import {
   failedPrimaryImageFileIds,
   mergeDownloadUrlPages,
-  PRODUCT_LIST_RENDITION,
   productListDownloadInput,
   productListThumbnailQueryOptions,
   resolveProductThumbnail,
@@ -68,7 +68,7 @@ describe("productListThumbnailQueryOptions", () => {
       item(FILE_B),
       item(FILE_A),
     ]);
-    expect(PRODUCT_LIST_RENDITION).toBe("thumb");
+    expect(LIST_THUMBNAIL_RENDITION).toBe("thumb");
     expect(productListDownloadInput(fileIds)).toEqual({
       fileIds: [FILE_A, FILE_B],
       rendition: "thumb",
