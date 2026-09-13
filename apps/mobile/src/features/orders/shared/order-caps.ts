@@ -11,20 +11,15 @@ export {
 } from "@showzy/validation/orders";
 export { LIST_CUSTOMERS_SEARCH_MAX, LIST_PRODUCTS_QUERY_MAX };
 
-export function normalizeOrderCustomerSearch(text: string): string | undefined {
+export function normalizeOrderLookupSearch(
+  text: string,
+  maxLength: number,
+): string | undefined {
   const trimmed = text.trim();
   if (trimmed.length === 0) {
     return undefined;
   }
-  return trimmed.slice(0, LIST_CUSTOMERS_SEARCH_MAX);
-}
-
-export function normalizeOrderProductQuery(text: string): string | undefined {
-  const trimmed = text.trim();
-  if (trimmed.length === 0) {
-    return undefined;
-  }
-  return trimmed.slice(0, LIST_PRODUCTS_QUERY_MAX);
+  return trimmed.slice(0, maxLength);
 }
 
 /**

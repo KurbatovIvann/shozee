@@ -29,8 +29,9 @@ import {
   orderCustomersLookupInput,
 } from "../api/order-customers-query";
 import {
-  normalizeOrderCustomerSearch,
-  normalizeOrderProductQuery,
+  LIST_CUSTOMERS_SEARCH_MAX,
+  LIST_PRODUCTS_QUERY_MAX,
+  normalizeOrderLookupSearch,
 } from "../shared/order-caps";
 import { canFetchFileDownloadUrls } from "../shared/order-permissions";
 import {
@@ -92,14 +93,20 @@ export function useOrderFormLookups(args: {
     customerQuery,
     LOOKUP_SEARCH_DEBOUNCE_MS,
   );
-  const customerSearch = normalizeOrderCustomerSearch(debouncedCustomerQuery);
+  const customerSearch = normalizeOrderLookupSearch(
+    debouncedCustomerQuery,
+    LIST_CUSTOMERS_SEARCH_MAX,
+  );
 
   const [productQuery, setProductQuery] = useState("");
   const debouncedProductQuery = useDebouncedValue(
     productQuery,
     LOOKUP_SEARCH_DEBOUNCE_MS,
   );
-  const productSearch = normalizeOrderProductQuery(debouncedProductQuery);
+  const productSearch = normalizeOrderLookupSearch(
+    debouncedProductQuery,
+    LIST_PRODUCTS_QUERY_MAX,
+  );
 
   useEffect(() => {
     if (!args.customerSheetOpen) {
