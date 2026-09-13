@@ -1,0 +1,27 @@
+{
+  "name": "spike-operations-runner",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:bullmq": "vitest run bullmq",
+    "test:postgres-queue": "vitest run postgres-queue",
+    "test:dbos": "vitest run dbos",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@dbos-inc/dbos-sdk": "^4.27.6",
+    "bullmq": "6.2.0",
+    "drizzle-orm": "^0.45.2",
+    "graphile-worker": "^0.18.0",
+    "ioredis": "^6.0.0",
+    "pg": "^8.23.0",
+    "pg-boss": "^12.31.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.23.0",
+    "tsx": "^4.20.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10"
+  }
+}
