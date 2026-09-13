@@ -65,62 +65,105 @@ and the answer starts a new turn (ADR-0038).
 
 ### 1. Jobs are a declared protocol of the action pipeline
 
-- **Declaring.**
-  - An action contract declares `enqueues: string[]`, job **names** only,
-    exactly like `emits`. Contract files never import the runner.
-  - A job definition (name, payload schema, queue class, options) lives in the
-    owning module's `jobs/` folder. It is registered in the composition root as
-    events are; the contract check verifies that every declared name has a
-    definition.
-- **Enqueueing.**
-  - `ctx.enqueue(job, payload)` buffers like `ctx.emit`.
-  - Core writes the buffer inside the execution transaction, next to the
-    outbox write (`execute-action.ts` step 9), through the **job port** — a
-    protocol hook filled by the app composition as the idempotency, audit and
-    confirmation hooks are.
-  - It is refused in `risk: "read"` actions and inside `ctx.call`.
-- **Replays and redeliveries.** Enqueueing is a transaction effect.
-  - An idempotency replay (`core.md` §5) returns the stored result and enqueues
-    nothing, as it emits nothing.
-  - An event delivery that enqueues commits the job with its `processed` mark,
-    so only an uncommitted delivery is re-run.
-  - Job ids derive from the action's idempotency key and the job name, so a
-    duplicate send is a no-op.
-- **Payload and execution.**
-  - A payload is identity only. Core records the enqueuing context's
-    `companyId`, `requestId` and `correlationId` beside it; they are never
-    taken from input.
-  - A job is bound to an internal **`system` action**
-    (`defineJobHandler(job, action)`, the same shape as `defineEventHandler`).
-    The worker runs it through `executeAction` with a `system` principal scoped
-    to the recorded company, `channel: "system"`, and the recorded
-    request/correlation ids. Audit follows the action's metadata.
-  - A job that must act as a person derives that caller from the owning row,
-    as `assistant-turn-for-job.ts` does today (ADR-0039).
+**Declaring.**
+- An action contract declares `enqueues: string[]`, job **names** only, exactly
+  like `emits`. Contract files never import the runner.
+- A job definition lives in the **enqueuing module's** `jobs/` folder:
+  - name, payload schema, queue class, deadline, retries;
+  - the payload fields that identify one send (its **discriminator**).
+- It is registered in the composition root as events are. The contract check
+  verifies that every declared job has a definition **owned by the declaring
+  module**, and ESLint forbids importing another module's `jobs/`. Work for
+  another module goes through events (ADR-0015), never through its jobs.
+
+**Enqueueing.**
+- `ctx.enqueue(job, payload, { startAfter? })` buffers like `ctx.emit`.
+- Core writes the buffer inside the execution transaction, next to the outbox
+  write (`execute-action.ts` step 9), through the **job port**. The port is a
+  protocol hook filled by the app composition, as the idempotency, audit and
+  confirmation hooks are.
+- It is refused in `risk: "read"` actions and in `ctx.call` and
+  `ctx.callAtomic` callees; only the root action of a transaction enqueues.
+- `startAfter` is computed from the database clock (a value the transaction
+  reads from Postgres), never from the Node clock.
+
+**Job identity.** A job id is UUIDv5 over:
+- the enqueuing module, the job name, and the scope key (company id, or
+  `global`);
+- the **origin**:
+  - an idempotent action: its full idempotency tuple (`core.md` §5:
+    principal key, scope, action, key);
+  - a non-idempotent action: its `requestId`;
+  - an event delivery: consumer + event id;
+  - a job action enqueuing a follow-up: the parent job id;
+- the discriminator values (an item id, a page cursor).
+
+Two sends with the same id in one transaction throw, so a fan-out that forgets
+its discriminator fails in its first test instead of silently dropping items.
+
+**Replays and redeliveries.** Enqueueing is a transaction effect.
+- An idempotency replay returns the stored result and enqueues nothing, as it
+  emits nothing.
+- An event delivery commits its jobs with its `processed` mark.
+- A duplicate id at the runner is a no-op.
+
+**Execution.**
+- A payload is identity only. Core records the enqueuing context's `companyId`,
+  actor id, channel, `requestId` and `correlationId` beside it, never from
+  input.
+- A job is bound to an internal **`system` action**
+  (`defineJobHandler(job, action)`, the same shape as `defineEventHandler`).
+- The worker runs it through `executeAction` with:
+  - a `system` principal scoped to the recorded company;
+  - `channel: "system"`;
+  - the recorded ids;
+  - the enqueuing actor and channel in its log fields.
+- Audit follows the action's metadata and correlates by `correlationId`.
+- **The handler loads every owning row filtered by the recorded company and
+  fails closed on a miss.** A payload id never reaches another tenant's row.
+- A job that must act as a person derives that caller from such a row, as
+  `assistant-turn-for-job.ts` does (ADR-0039).
+- Scheduled jobs run with global system scope. Per-tenant work is fanned out
+  as tenant-scoped jobs.
+- The inherited cross-tenant suite gains a job case: a payload naming a foreign
+  row must fail closed.
+
+**Claims are domain code.**
+- The runner cannot know module rows. A job action starts by claiming its row
+  with a conditional update (`UPDATE … SET status = 'running', attempt =
+  attempt + 1 WHERE id = $id AND company_id = $company AND <claimable>
+  RETURNING …`).
+- `<claimable>` admits `queued`, and admits `running` only when the job
+  declares retries and the previous attempt's deadline has passed.
+- A job without retries that finds its row already claimed does nothing. That
+  claim, not the runner, is what makes "no re-run" hold.
 
 ### 2. The runner is a plugin chosen per queue class
 
 **`durable`** — user-visible or must-not-be-lost work: assistant turns; later
 imports and signing follow-ups.
-- Runs on the **pg-boss adapter**. Its settings, all enforced by the adapter:
-  - `retryLimit` set on every queue, `0` unless the job definition declares
-    retries (pg-boss defaults to 2);
-  - `expireInSeconds` = the job's declared deadline plus its drain margin;
+- Runs on the **pg-boss adapter**, which enforces:
+  - `retryLimit` set on every queue from the job definition, `0` by default
+    (pg-boss itself defaults to 2);
+  - `retryDelay`/`retryBackoff`/`retryDelayMax` from the declared backoff;
+  - `expireInSeconds` = the declared deadline plus its drain margin, where an
+    expired attempt counts as a failed attempt and consumes a retry;
   - supervise interval ≤ 60 s;
-  - `notify: false` on queues with delayed jobs.
-- `singleton` + `singletonKey` is **opt-in per job**, for work with no domain
-  uniqueness guard. The assistant turn does not use it: its partial unique
-  index already allows one active turn per conversation, and a singleton would
-  block **Продовжити** behind a crashed job until expiry.
-- The deadline guard found in the spike (claim the row only while it is still
-  `queued`; interrupt at the deadline) is part of the adapter, not of each job.
-- **Delayed start and declared retries** are port features, not adapter
-  accidents.
-  - `ctx.enqueue(job, payload, { startAfter })` defers a job to an instant
-    computed by the domain.
-  - A job definition may declare `retries: { limit, backoff }` (exponential,
-    with a cap). Retries are allowed only for jobs whose external effect is
-    idempotent (a provider idempotency key derived from the job id).
+  - LISTEN/NOTIFY **off** (`useListenNotify: false`): jobs are fetched by
+    polling at ≤ 1 s. This also removes the delayed-job wake-up gap the spike
+    found.
+- **Declared retries** are allowed only for work whose effects are idempotent:
+  - its database effects, through the claim and a cursor;
+  - its external effects, through a provider idempotency key derived from the
+    job id (§4).
+- **`singleton` + `singletonKey`** is **opt-in per job**, for work with no
+  domain uniqueness guard. The assistant turn does not use it: its partial
+  unique index already allows one active turn per conversation, and a
+  singleton would block **Продовжити** behind a crashed job until expiry.
+- **Failure output.** The adapter stores no error message, stack or return
+  value in `pgboss` rows, only a typed error code. Messages go to logs under
+  the redaction policy (`security-operations.md` §4). Completed jobs are kept
+  7 days and failed jobs 30 days, as `db.md` §6 policy values.
 
 **`scheduled`** — maintenance on pg-boss `schedule()`, starting now.
 - `cleanupExpiredIdempotencyKeys`, `sweepAbandonedUploads`,
@@ -132,8 +175,8 @@ imports and signing follow-ups.
 **`bulk`** — high-volume, recoverable work (push fan-out, renditions at scale).
 - **Deferred, not specified.** No adapter, table or delivery guarantee is
   decided here. When a criterion under "Revisit when" fires, a new ADR
-  specifies a relay that keeps the `enqueue(tx)` contract (job row in
-  Postgres, relay to a broker).
+  specifies a relay that keeps the `enqueue(tx)` contract (job row in Postgres,
+  relay to a broker).
 
 **Removed.**
 - The `pdf` BullMQ queue is deleted: it has no producer, and PDF rendering stays
@@ -146,58 +189,109 @@ imports and signing follow-ups.
 
 ### 3. Ownership and raw SQL
 
-- **`@showzy/jobs`** (server-only platform package) holds:
+**`@showzy/jobs`** (server-only platform package).
+- Holds:
   - the job definition type, the port interface, the pg-boss adapter, the
     worker job host API and the scheduler;
-  - the **runner conformance suite**: runner properties R1 (atomic enqueue),
-    R3 (identity payload), R4 (deadline, no re-run), R7 (per-key serial when
-    opted in), R8 (drain), R9 (failure visibility, explicit retry), plus
-    delayed start (`startAfter` honoured within the adapter's latency bound)
-    and declared retries (limit and backoff respected, none undeclared).
-  - Every adapter must pass the suite. R2 and R6 are domain properties, tested
-    by consumers.
-  - The package owns no tables (ADR-0031's module-kit rule is not stretched).
-- **The `pgboss` schema is a foundation protocol schema**, like `domain_events`
-  (`db.md` §7).
-  - It is created by a drizzle-kit custom migration generated from pg-boss's
-    `getConstructionPlans()` for the pinned version; upgrades regenerate from
-    `getMigrationPlans()`.
-  - It is not modelled in Drizzle. The drift check excludes the `pgboss` schema
-    by name, and a CI test asserts that the installed schema version equals
-    the pinned library's.
-  - The library's migrator never runs (`migrate: false`, `createSchema: false`).
-- **Approved raw SQL:**
-  - that migration;
-  - the statements pg-boss itself issues through the adapter at runtime
-    (send, fetch, complete, supervise, queue creation).
-  Application code never reads or writes `pgboss` tables. Queues are created
-  idempotently at worker boot through the library API.
+  - the **runner conformance suite**:
+    - atomic enqueue (R1) and identity-only payload (R3);
+    - no redelivery beyond the declared retries (R4);
+    - per-key serial execution when opted in (R7);
+    - drain (R8) and failure visibility with explicit retry (R9);
+    - `startAfter` honoured within the polling bound;
+    - declared retry limits and backoff respected, and no undeclared retry;
+    - failure rows holding no message, stack or output;
+    - duplicate ids being no-ops.
+- Every adapter must pass the suite. Claims (R2) and snapshots (R6) are domain
+  properties, tested by consumers.
+- The package owns no tables (ADR-0031's module-kit rule is not stretched).
+- ESLint allows importing `pg-boss` only inside `@showzy/jobs`.
+
+**The `pgboss` schema is a foundation protocol schema,** like `domain_events`
+(`db.md` §7).
+- A drizzle-kit custom migration creates it from pg-boss's
+  `getConstructionPlans()` for the pinned version. The migration file carries
+  the approval comment citing this ADR. Upgrades regenerate it from
+  `getMigrationPlans()`.
+- It is not modelled in Drizzle. The drift check excludes the `pgboss` schema
+  by name, and a CI test asserts that the installed schema version equals the
+  pinned library's.
+- The library's migrator never runs (`migrate: false`, `createSchema: false`).
+
+**Approved raw SQL:**
+- that migration;
+- the statements pg-boss itself issues through the adapter at runtime (send,
+  fetch, complete, supervise, queue creation).
+
+Application code never reads or writes `pgboss` tables. Queues are created
+idempotently at worker boot through the library API.
 
 ### 4. Patterns for long, batched and external work
 
 These are the sanctioned shapes. A feature that cannot fit one of them is a
 revisit, not a new ad-hoc mechanism.
 
-- **Chained pages.** Long work (a bank statement backfill, a reference-data
-  sync) is one job per page or chunk. The job commits the page's rows, its
-  cursor on the owning row, and `ctx.enqueue` of the next page in **one**
-  transaction. No job runs for minutes, and a crash resumes from the last
-  committed cursor.
-- **Fan-out / fan-in.** A batch (batch signing follow-ups, batch PDF
-  generation) is a parent row owned by the module, with one job per item.
-  - Each item job updates the parent's counters in its own transaction.
-  - The job that completes the last item moves the parent to its final state.
-  - Nothing waits: there is no durable wait and no polling parent job.
-- **Provider limits.** A per-credential rate or quota is domain state on the
-  credential row (for example `next_allowed_at`). A job that hits it commits
-  the new instant and re-enqueues itself with `startAfter`. The runner holds
-  no provider knowledge.
-- **Inbound webhooks.** The handler verifies the request, stores the raw event
-  with its provider id under a unique constraint, and enqueues processing in
-  the same transaction. A duplicate delivery is a no-op on the constraint.
-- **Write granularity.** Bulk work writes, bumps revisions (ADR-0042) and
-  notifies **per chunk transaction**, never per row. This keeps job churn,
-  aggregate-root lock hold time and NOTIFY volume proportional to chunks.
+**External calls: claim, commit, call, record.** A call to a provider
+(Monobank, QES services, PRRO fiscalisation, push) never runs inside an
+`executeAction` transaction, because it would hold row and revision locks for
+the provider's latency.
+1. A transaction claims the item and commits.
+2. The job calls the provider with an idempotency key derived from the job id,
+   the same key on every attempt.
+3. A second transaction records the result.
+
+A crash between 2 and 3 retries with the same key. A provider without
+idempotency keys gets no retries: before any repeat, the job asks the provider
+by our reference whether the call already happened.
+
+**Chained pages.** Long work (a bank statement backfill, a reference-data sync)
+is one job per page or chunk.
+- A page job claims the owning row and fetches the page (an external call, as
+  above).
+- In **one** transaction it commits the page's rows, the new cursor and
+  `ctx.enqueue` of the next page. The discriminator is the cursor.
+- Page jobs declare retries: a crashed or expired attempt re-runs from the last
+  committed cursor, and re-applying a page is idempotent on its natural keys.
+- When the retries are exhausted, the job's failure handler marks the owning
+  row `failed` with the cursor it stopped at. A person or a scheduled sweep may
+  resume it explicitly.
+
+**Fan-out / fan-in.** A batch (batch signing follow-ups, batch PDF generation)
+is a parent row and **one item row per item**, both owned by the module, with
+one job per item (discriminator: the item id).
+- An item job claims its item row, does its work, and records the item's final
+  state.
+- In the same transaction it runs one conditional finalise: `UPDATE parent SET
+  status = … WHERE id = $id AND status = 'running' AND NOT EXISTS (open
+  items)`.
+- Progress is counted from item rows, never incremented, so a retried item
+  cannot double-count.
+- A crashed item without retries is marked `failed` by the deadline sweep,
+  which runs the same finalise.
+- Nothing waits: there is no durable wait and no polling parent job.
+- The parent is the ADR-0042 revision root: item transactions are short and
+  bounded by worker concurrency, and hints coalesce.
+
+**Provider limits.** A per-credential rate or quota is domain state on the
+credential row (`next_allowed_at`).
+- A job takes a slot with a conditional update (`… SET next_allowed_at =
+  now() + interval WHERE credential_id = $id AND next_allowed_at <= now()
+  RETURNING …`) before calling.
+- A job that gets no slot re-enqueues itself with `startAfter` at the returned
+  instant. Concurrent chains on one credential therefore never race to a 429.
+
+**Inbound webhooks** (`security-operations.md` §4). The webhook action:
+- verifies the signature over the raw body, and the provider timestamp within a
+  replay window, before any system context exists;
+- checks that the event belongs to a connected provider account;
+- deduplicates through core idempotency with the provider delivery id as the
+  key, so a duplicate replays and enqueues nothing;
+- stores the raw event under a declared retention;
+- enqueues processing in the same transaction.
+
+**Write granularity.** A single job that writes many rows (a page of
+transactions) commits them, bumps revisions (ADR-0042) and notifies **per chunk
+transaction**, never per row.
 
 ### 5. The domain-event outbox is unchanged
 
@@ -248,8 +342,12 @@ work.
   adapter.
 
 **Core** (a declared core change, approved by this ADR):
-- `enqueues` metadata, `ctx.enqueue`, the job port hook;
-- a contract-check rule;
+- `enqueues` metadata, `ctx.enqueue` with `startAfter`, the job port hook;
+- job identity derivation and duplicate-id detection;
+- recording actor, channel and correlation beside the job;
+- contract-check rules (a definition exists and is owned by the declaring
+  module; no enqueue from reads or callees);
+- a job case in the inherited cross-tenant suite;
 - a `core.md` §6 subsection on jobs next to the outbox.
 
 **Dependencies.**
@@ -267,9 +365,10 @@ work.
   replaces BullMQ's `removeOnComplete` and `removeOnFail`.
 - Testcontainers migrations include the `pgboss` schema.
 
-**Notify.** pg-boss LISTEN/NOTIFY shares Postgres's commit-time notify queue
-with the `domain_events` trigger and ADR-0042's `live` trigger. The combined
-rate is a revisit criterion below.
+**Notify.** pg-boss runs without LISTEN/NOTIFY, so jobs add no notify load. The
+commit-time notify queue carries only the `domain_events` trigger and
+ADR-0042's `live` trigger. Job pickup latency is the polling interval (≤ 1 s),
+which is acceptable for work that takes seconds or more.
 
 **Operations, recorded, not built** (`db.md` §6): retention and autovacuum for
 the job tables. The queue Redis lines are removed. `apps/worker/AGENTS.md` and
@@ -291,8 +390,9 @@ the job tables. The queue Redis lines are removed. `apps/worker/AGENTS.md` and
 - **A `bulk` class is needed** (new ADR for the relay): a queue class sustains
   thousands of jobs per second, job-table bloat outpaces autovacuum, or
   business p99 rises with job peaks.
-- **Commit latency** is attributable to NOTIFY load (jobs, outbox and `live`
-  together).
+- **Polling at ≤ 1 s** becomes a visible latency for some queue class:
+  enable pg-boss notify for that class and count it in ADR-0042's notify
+  budget.
 - **Durable waits become central** (multi-day approvals, mid-step resume), **or
   sagas multiply.** One or two hand-written multi-step flows with compensation
   are fine; acquiring → fiscalisation → document is the first of these. A
