@@ -5,6 +5,7 @@ import {
   ensureLinkedCustomerOption,
   linkedCustomerName,
   mergePrefillCustomerName,
+  pickedCustomerSnapshot,
 } from "./counterparty-form-options";
 
 const CUSTOMER_ID = "0f0e2d5c-4a1b-4c3d-9e8f-102938475601";
@@ -102,5 +103,24 @@ describe("linkedCustomerName / mergePrefillCustomerName", () => {
         unnamedFallback: "Assigned",
       }),
     ).toEqual([{ id: CUSTOMER_ID, name: "Марія" }]);
+  });
+});
+
+describe("pickedCustomerSnapshot", () => {
+  const options = [{ id: CUSTOMER_ID, name: "Марія" }];
+
+  it("snapshots the picked customer's name at pick time", () => {
+    expect(pickedCustomerSnapshot(CUSTOMER_ID, options)).toEqual({
+      id: CUSTOMER_ID,
+      name: "Марія",
+    });
+  });
+
+  it("clears the snapshot when the staff picks no client", () => {
+    expect(pickedCustomerSnapshot(null, options)).toBeNull();
+  });
+
+  it("clears the snapshot when the id is not in the loaded options", () => {
+    expect(pickedCustomerSnapshot("missing", options)).toBeNull();
   });
 });
