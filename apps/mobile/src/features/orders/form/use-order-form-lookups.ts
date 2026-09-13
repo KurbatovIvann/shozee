@@ -18,7 +18,10 @@ import { useApiClient } from "../../../api/api-provider";
 import { useActiveCompany } from "../../../api/query-provider";
 import { useResolvedCompany } from "../../../company-resolution/resolved-company-provider";
 import { flattenPages, optionSelectItems } from "../../../components/ui";
-import { useDebouncedValue } from "../../../hooks/use-debounced-value";
+import {
+  SEARCH_DEBOUNCE_MS,
+  useDebouncedValue,
+} from "../../../hooks/use-debounced-value";
 import {
   getOrderCatalogProductQueryOptions,
   listOrderProductsInfiniteOptions,
@@ -41,8 +44,6 @@ import {
 } from "../shared/order-thumbnails";
 import { useOrderThumbnails } from "../shared/use-order-thumbnails";
 import type { ProductVariantsLoadStatus } from "./product-select";
-
-const LOOKUP_SEARCH_DEBOUNCE_MS = 300;
 
 export type OrderFormProductRow = {
   readonly id: string;
@@ -91,7 +92,7 @@ export function useOrderFormLookups(args: {
   const [customerQuery, setCustomerQuery] = useState("");
   const debouncedCustomerQuery = useDebouncedValue(
     customerQuery,
-    LOOKUP_SEARCH_DEBOUNCE_MS,
+    SEARCH_DEBOUNCE_MS,
   );
   const customerSearch = normalizeOrderLookupSearch(
     debouncedCustomerQuery,
@@ -101,7 +102,7 @@ export function useOrderFormLookups(args: {
   const [productQuery, setProductQuery] = useState("");
   const debouncedProductQuery = useDebouncedValue(
     productQuery,
-    LOOKUP_SEARCH_DEBOUNCE_MS,
+    SEARCH_DEBOUNCE_MS,
   );
   const productSearch = normalizeOrderLookupSearch(
     debouncedProductQuery,
