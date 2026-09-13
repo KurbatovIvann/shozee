@@ -1,6 +1,6 @@
 # ADR-0007: BullMQ + Redis for queues (pg-boss rejected)
 
-- **Status**: Accepted
+- **Status**: Superseded by ADR-0041 (background jobs)
 - **Date**: 2026-08-16
 
 ## Context
