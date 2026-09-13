@@ -819,16 +819,45 @@ describe("a question closed without a message being written", () => {
     expect(applied.rereadWindow).toBe(false);
   });
 
-  it("does not ask again when a settling re-read is behind what it holds", () => {
-    const state = loaded(windowOf({ text: "Готово.", revision: 4 }));
+  it("takes the turn and question of a settling re-read an event overtook, and keeps the event's message", () => {
+    const running = loaded(
+      windowOf({
+        text: "",
+        status: "streaming",
+        revision: 1,
+        turn: { id: COMMAND, status: "running" },
+      }),
+    );
+    const issuedAfter = running.windowsApplied;
+    const carded = apply(running, {
+      type: "message.updated",
+      conversationId: CONVERSATION,
+      message: message({ text: "Картка", revision: 2 }),
+    }).state;
 
     const applied = applyAssistantReread(
-      state,
+      carded,
       windowOf({ text: "", status: "streaming", revision: 1 }),
-      state.windowsApplied,
+      issuedAfter,
     );
 
-    expect(applied.state.thread?.messages[0]?.revision).toBe(4);
+    expect(applied.state.thread?.messages[0]?.revision).toBe(2);
+    expect(assistantTurnActive(applied.state.thread)).toBe(false);
+    expect(applied.rereadWindow).toBe(false);
+  });
+
+  it("still settles a re-read when an older page landed while it was on its way", () => {
+    const state = abandonedElsewhere();
+    const issuedAfter = state.windowsApplied;
+    const paged = applyAssistantWindow(
+      state,
+      { ...asked(null), messages: [] },
+      { kind: "older", cursor: "1" },
+    ).state;
+
+    const applied = applyAssistantReread(paged, asked(OPEN_PAUSE), issuedAfter);
+
+    expect(applied.state.thread?.openPause?.interactionId).toBe(INTERACTION);
     expect(applied.rereadWindow).toBe(false);
   });
 });

@@ -156,12 +156,23 @@ function joinWindow(
   settles: boolean,
 ): AssistantApplied {
   const vouched = vouchedWindow(state, window, settles);
-  const thread = mergeAssistantChatWindow(state.thread, vouched.window, source);
+  const merged = mergeAssistantChatWindow(state.thread, vouched.window, source);
+  const thread =
+    vouched.standsOverMessages && merged !== null
+      ? {
+          ...merged,
+          turn: vouched.window.turn,
+          openPause: vouched.window.openPause,
+        }
+      : merged;
   return {
     state: settleTracked({
       ...state,
       thread,
-      windowsApplied: state.windowsApplied + 1,
+      windowsApplied:
+        source.kind === "latest"
+          ? state.windowsApplied + 1
+          : state.windowsApplied,
     }),
     rereadWindow: vouched.rereadWindow,
   };
@@ -170,6 +181,7 @@ function joinWindow(
 type VouchedWindow = {
   readonly window: AssistantChatWindow;
   readonly rereadWindow: boolean;
+  readonly standsOverMessages: boolean;
 };
 
 function vouchedWindow(
@@ -182,9 +194,10 @@ function vouchedWindow(
     held === null || held.conversationId !== window.conversationId
       ? "ahead"
       : orderAssistantChatWindow(held, window);
-  if (order === "behind") {
-    return { window, rereadWindow: true };
+  if (order === "behind" && !settles) {
+    return { window, rereadWindow: true, standsOverMessages: false };
   }
+  const standsOverMessages = order === "behind";
   const doubted = order === "same" && !settles && held !== null;
   const revivesTurn = doubted && held.turn === null && window.turn !== null;
   const restoresFinishedTurn =
@@ -194,7 +207,7 @@ function vouchedWindow(
     reopensClosed(state.closedPauses, window.openPause) ||
     (doubted && reopensAsked(held, window.openPause));
   if (!restoresFinishedTurn && !reopensClosedPause) {
-    return { window, rereadWindow: false };
+    return { window, rereadWindow: false, standsOverMessages };
   }
   return {
     window: {
@@ -204,6 +217,7 @@ function vouchedWindow(
         : window.turn,
     },
     rereadWindow: true,
+    standsOverMessages,
   };
 }
 
