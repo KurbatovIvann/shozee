@@ -141,7 +141,8 @@ imports and signing follow-ups.
 - BullMQ and the queue Redis are removed once the assistant and maintenance
   queues have moved.
 - The shared Redis stays for sessions, rate limits, confirmation challenges,
-  presence and stream slots.
+  presence and stream slots, and — when built — ADR-0042's best-effort
+  ephemeral frames. It holds nothing that cannot be lost.
 
 ### 3. Ownership and raw SQL
 
