@@ -132,12 +132,18 @@ spec detail.
 - **J9 Exhausted work is visible.** When retries are exhausted, whether the
   last attempt threw or expired, a declared **on-exhausted** `system` action
   marks the owning row failed.
-  - If that action fails, or its company is inactive (J5), a global sweep marks
-    the row failed with a typed reason.
+  - If that action fails, or its company is inactive (J5), the **owning
+    module's** scheduled sweep catches the row.
+    - The sweep fans out one tenant-scoped `system` action per company, taken
+      from its own overdue rows (J5).
+    - That action may only move `running` or `queued` rows to failed with a
+      typed reason, and is audited with the row's company.
+    - It is the one transition allowed for an inactive company.
   - No owning row stays `running` or `queued` longer than its deadline plus
     one sweep interval.
   *Conformance: thrown and expired last attempts; a failing on-exhausted
-  action; an inactive company.*
+  action; an inactive company; a cross-tenant case in which the sweep's
+  tenant action cannot touch another company's row.*
 
 **External effects.**
 - **J10 Provider calls never run inside a transaction.** A claim commits, the
@@ -159,8 +165,9 @@ spec detail.
   - The single exception is an integration that declares
     `dedupesConcurrentCalls` and proves it with a test against the provider's
     sandbox. Money-moving and fiscal integrations cannot declare it.
-  *Integration test per provider: a timed-out attempt followed by a retry
-  makes exactly one call.*
+  *Integration test per provider: a timed-out attempt followed by a re-claim
+  makes no second call. For a declared `dedupesConcurrentCalls` integration, a
+  retry yields exactly one provider-side effect.*
 
 **Batches and inputs.**
 - **J13 Fan-in cannot stall or double-count.** Item state lives in item rows.
