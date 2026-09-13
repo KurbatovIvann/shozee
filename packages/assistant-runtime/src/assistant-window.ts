@@ -11,14 +11,12 @@ export interface AssistantChatWindowWithTurn extends ChatWindow {
 }
 
 export async function readAssistantChatWindow(
-  kit: Pick<AssistantKitFor, "messages">,
+  kit: { readonly messages: Pick<AssistantKitFor["messages"], "read"> },
   turns: Pick<AssistantTurnStore, "activeTurn">,
   scope: PauseScope,
   options?: { readonly before?: string },
 ): Promise<AssistantChatWindowWithTurn> {
-  const [window, turn] = await Promise.all([
-    kit.messages.read(scope, options),
-    turns.activeTurn(scope),
-  ]);
+  const window = await kit.messages.read(scope, options);
+  const turn = await turns.activeTurn(scope);
   return { ...window, turn };
 }
