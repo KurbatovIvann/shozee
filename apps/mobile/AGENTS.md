@@ -53,8 +53,8 @@ the same directory.
   folder — compose these and pass policy via props.
 - `src/hooks/` — shared hooks (`useDebouncedValue`, `useDrainInfinitePages`,
   `useSheetHiddenWaiter`) and the pure `shouldDrainNextPage` predicate.
-  Pickers over open-ended sets (customers, products, orders,
-  counterparties) search the server with a debounced query and page on
+  Pickers over open-ended sets (customers, products, orders, all of the
+  company's counterparties) search the server with a debounced query and page on
   scroll — golden: `features/catalog/products/list/use-products-list.ts`.
   `useDrainInfinitePages` is for small bounded reference sets only
   (groups, price lists, one customer's counterparties); it is not the
