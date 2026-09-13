@@ -60,6 +60,7 @@ export type AssistantThreadState = {
   readonly trackedTurn: string | null;
   readonly finishedTurns: readonly string[];
   readonly closedPauses: readonly AssistantClosedPause[];
+  readonly windowsApplied: number;
 };
 
 export type AssistantClosedPause = {
@@ -75,6 +76,7 @@ export function initialAssistantThreadState(): AssistantThreadState {
     trackedTurn: null,
     finishedTurns: [],
     closedPauses: [],
+    windowsApplied: 0,
   };
 }
 
@@ -134,10 +136,33 @@ export function applyAssistantWindow(
   window: AssistantChatWindow,
   source: AssistantChatWindowSource,
 ): AssistantApplied {
-  const vouched = vouchedWindow(state, window);
+  return joinWindow(state, window, source, false);
+}
+
+export function applyAssistantReread(
+  state: AssistantThreadState,
+  window: AssistantChatWindow,
+  issuedAfter: number,
+): AssistantApplied {
+  const settles = state.windowsApplied === issuedAfter;
+  const applied = joinWindow(state, window, LATEST, settles);
+  return settles ? { ...applied, rereadWindow: false } : applied;
+}
+
+function joinWindow(
+  state: AssistantThreadState,
+  window: AssistantChatWindow,
+  source: AssistantChatWindowSource,
+  settles: boolean,
+): AssistantApplied {
+  const vouched = vouchedWindow(state, window, settles);
   const thread = mergeAssistantChatWindow(state.thread, vouched.window, source);
   return {
-    state: settleTracked({ ...state, thread }),
+    state: settleTracked({
+      ...state,
+      thread,
+      windowsApplied: state.windowsApplied + 1,
+    }),
     rereadWindow: vouched.rereadWindow,
   };
 }
@@ -150,6 +175,7 @@ type VouchedWindow = {
 function vouchedWindow(
   state: AssistantThreadState,
   window: AssistantChatWindow,
+  settles: boolean,
 ): VouchedWindow {
   const held = state.thread;
   const order =
@@ -159,15 +185,14 @@ function vouchedWindow(
   if (order === "behind") {
     return { window, rereadWindow: true };
   }
-  const revivesTurn =
-    order === "same" && held?.turn === null && window.turn !== null;
+  const doubted = order === "same" && !settles && held !== null;
+  const revivesTurn = doubted && held.turn === null && window.turn !== null;
   const restoresFinishedTurn =
     revivesTurn ||
     (window.turn !== null && state.finishedTurns.includes(window.turn.id));
-  const reopensClosedPause = reopensClosed(
-    state.closedPauses,
-    window.openPause,
-  );
+  const reopensClosedPause =
+    reopensClosed(state.closedPauses, window.openPause) ||
+    (doubted && reopensAsked(held, window.openPause));
   if (!restoresFinishedTurn && !reopensClosedPause) {
     return { window, rereadWindow: false };
   }
@@ -180,6 +205,23 @@ function vouchedWindow(
     },
     rereadWindow: true,
   };
+}
+
+function reopensAsked(
+  held: AssistantChatThread,
+  openPause: AssistantChatWindow["openPause"],
+): boolean {
+  return (
+    held.openPause === null &&
+    openPause !== null &&
+    held.messages.some((message) =>
+      message.parts.some(
+        (part) =>
+          part.kind === "interaction" &&
+          part.interactionId === openPause.interactionId,
+      ),
+    )
+  );
 }
 
 function reopensClosed(
