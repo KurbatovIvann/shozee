@@ -141,4 +141,20 @@ describe("drain-pages boundary composed with customers boundaries (SHO-596)", ()
     );
     expect(messages).toHaveLength(0);
   });
+
+  it("still enforces the customers subdomain boundary on an allowlisted caller", async () => {
+    const messages = await restrictedForRealConfig(
+      "src/features/customers/list/use-customer-lookups.ts",
+      'import { X } from "../form/x";\n',
+    );
+    expect(messages).toHaveLength(1);
+  });
+
+  it("does not flag an allowlisted non-customers caller", async () => {
+    const messages = await restrictedForRealConfig(
+      "src/features/documents/form/use-document-form-lookups.ts",
+      'import { useDrainInfinitePages } from "../../../hooks/use-drain-pages";\n',
+    );
+    expect(messages).toHaveLength(0);
+  });
 });

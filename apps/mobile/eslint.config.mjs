@@ -35,6 +35,7 @@ const customersBoundaryFiles = customersBoundaryConfigs.flatMap(
 
 export default [
   ...showzyEslintConfig({ tsconfigRootDir: import.meta.dirname }),
+  ...customersBoundaryConfigs,
   ...customersBoundaryConfigs.map(withDrainPagesRestriction),
   {
     ...drainInfinitePagesBoundaryConfig,
