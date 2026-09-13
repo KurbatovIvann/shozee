@@ -95,6 +95,8 @@ export function useOrderForm() {
     variantProductId:
       sheets.picker.kind === "variants" ? sheets.picker.productId : null,
     draftProductIds,
+    customerSheetOpen: sheets.customerSheetOpen,
+    productSheetOpen: sheets.productSheetOpen,
   });
   const armLeaveRef = useRef(() => {});
   const saveApi = useOrderSave({

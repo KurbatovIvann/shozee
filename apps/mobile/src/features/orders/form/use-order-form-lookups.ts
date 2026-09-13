@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useQueries } from "@tanstack/react-query";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   catalogFactsBlockSubmit,
@@ -56,6 +56,8 @@ export function useOrderFormLookups(args: {
   readonly enabled: boolean;
   readonly variantProductId: string | null;
   readonly draftProductIds: readonly string[];
+  readonly customerSheetOpen: boolean;
+  readonly productSheetOpen: boolean;
 }): {
   readonly customerOptions: ReturnType<typeof optionSelectItems>;
   readonly customerQuery: string;
@@ -98,6 +100,17 @@ export function useOrderFormLookups(args: {
     LOOKUP_SEARCH_DEBOUNCE_MS,
   );
   const productSearch = normalizeOrderProductQuery(debouncedProductQuery);
+
+  useEffect(() => {
+    if (!args.customerSheetOpen) {
+      setCustomerQuery("");
+    }
+  }, [args.customerSheetOpen]);
+  useEffect(() => {
+    if (!args.productSheetOpen) {
+      setProductQuery("");
+    }
+  }, [args.productSheetOpen]);
 
   const customersQuery = useInfiniteQuery(
     listOrderCustomersInfiniteOptions({
