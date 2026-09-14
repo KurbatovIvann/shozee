@@ -45,6 +45,7 @@ bound by `implementAction`. All fields are required unless noted:
 | `systemScope` | `tenant` \| `global`, **system only** | Tenant-scoped system actions require `ctx.companyId`; `global` is reserved for genuinely global jobs |
 | `aiExposure` | `exposed` \| `internal` | `exposed` requires `transport: client`; `internal` never becomes an AI tool |
 | `risk` | `read` \| `draft` \| `write` \| `high` | `read` handlers/resolvers receive a `ReadTx` capability; top-level reads also use a DB read-only transaction |
+| `consistency` | optional `snapshot`, **`risk: read` only** | ADR-0042 L1: every statement of the action, including nested `ctx.call` reads, sees one `REPEATABLE READ` snapshot (§4 step 7); rejected at define time on `draft`/`write`/`high` |
 | `requiresConfirmation` | boolean | Required for human-invoked `risk: high` (staff, customer, account — not share); triggers the confirmation protocol (§7) |
 | `confirmationSummary` | server fn, conditional | Required when `requiresConfirmation: true`; returns a redacted, human-readable summary from validated input + resolved target |
 | `idempotent` | boolean | Write actions with `true` participate in the idempotency protocol (§5) |
@@ -306,7 +307,10 @@ Fixed order, no per-action variation:
    re-runs `resolveTarget` like public-target). Bind a
    public-global handler to its declared projection-only DB capability, set
    the transaction-local DB statement timeout, then run the handler with the
-   remaining deadline/abort signal.
+   remaining deadline/abort signal. A `consistency: snapshot` read opens it
+   `READ ONLY, ISOLATION LEVEL REPEATABLE READ`, so authorization, the
+   handler, and its nested `ctx.call` reads share one snapshot; every other
+   action keeps the default isolation.
 8. **Validate output** with the declared Zod schema before any commit; a
    mismatch is `CoreInvariantError` (server bug), never a client validation
    error.
@@ -752,6 +756,7 @@ does not apply — fails the check.
 
 | Date | Change | Why | Reported by |
 | --- | --- | --- | --- |
+| 2026-09-14 | §2/§4: `consistency: snapshot` read metadata; step 7 opens the execution transaction `REPEATABLE READ` for it | ADR-0042: a live screen needs one consistent read across its statements | SHO-623 |
 | 2026-09-05 | §2/§3: a handler's `ctx` is the `ActionCtx` arm matching the contract's declared `principal` (`ActionCtxFor`), not the seven-mode union; runtime construction unchanged | SHO-416: 109 handlers opened with a principal guard the pipeline made unreachable — it existed only to narrow a type | SHO-416 |
 | 2026-09-05 | §6: `findClaimableDeliveries` selects due aggregate heads before LIMIT | SHO-435: blocked successors filled the bounded batch and starved independent deliveries | SHO-435 |
 | 2026-09-05 | §5: takeover CAS re-checks status/lease/retention; a lost race reloads for replay/conflict/retry | SHO-434: stale expired `in_progress` read could reopen a concurrently completed attempt | SHO-434 |

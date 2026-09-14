@@ -123,6 +123,7 @@ export interface ActionContractDefinition<
   /** Whole-pipeline deadline in milliseconds, shared with nested calls. */
   readonly timeout: number;
   readonly rateLimit?: ActionRateLimit;
+  readonly consistency?: "snapshot";
 }
 
 declare const actionContractBrand: unique symbol;

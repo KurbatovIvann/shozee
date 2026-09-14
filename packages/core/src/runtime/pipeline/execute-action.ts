@@ -668,7 +668,9 @@ async function runExecutionTransaction<
     },
     // 10. Commit — and the database-level read-only mode for reads, so a
     //     runtime write fails even if a capability facade were sidestepped.
-    { accessMode: contract.risk === "read" ? "read only" : "read write" },
+    contract.consistency === "snapshot"
+      ? { accessMode: "read only", isolationLevel: "repeatable read" }
+      : { accessMode: contract.risk === "read" ? "read only" : "read write" },
   );
 }
 
