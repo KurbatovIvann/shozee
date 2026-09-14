@@ -15,7 +15,11 @@ packages — that is the point of this stage. New domain features use
 or `packages/db/migrations/` is guarded by design: approve the prompt in the
 main checkout, or start a worktree session with `SHOWZY_ALLOW_CORE_EDIT=1` /
 `SHOWZY_ALLOW_MIGRATION_EDIT=1` (e.g. in `.claude/settings.local.json` `env`)
-only for scaffold work.
+only for scaffold work. An ADR-approved core ticket runs from a worktree
+without the variable: the human lists it in
+`.claude/core-edit-approvals.json` on the main checkout
+(`{ "SHO-<n>": "ADR-<nnnn>" }`), and a worktree whose branch names that
+ticket may edit `packages/core`. Worktree sessions never edit that file.
 
 ## Allowlist — create/modify ONLY
 
