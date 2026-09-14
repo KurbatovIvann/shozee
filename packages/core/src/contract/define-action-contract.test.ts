@@ -250,6 +250,40 @@ describe("defineActionContract — valid descriptors per principal mode", () => 
   });
 });
 
+describe("defineActionContract — consistency", () => {
+  it("accepts a snapshot read", () => {
+    const contract = defineActionContract({
+      ...staffWriteDefinition(),
+      name: "orders.getBoard",
+      risk: "read",
+      idempotent: false,
+      emits: [],
+      audit: false,
+      consistency: "snapshot",
+    });
+    expect(contract.consistency).toBe("snapshot");
+  });
+
+  it.each([
+    { risk: "write", requiresConfirmation: false },
+    { risk: "draft", requiresConfirmation: false },
+    { risk: "high", requiresConfirmation: true },
+  ] as const)(
+    "rejects consistency on risk $risk",
+    ({ risk, requiresConfirmation }) => {
+      const error = defineExpectingError({
+        ...staffWriteDefinition(),
+        risk,
+        requiresConfirmation,
+        consistency: "snapshot",
+      });
+      expect(error.problems).toEqual([
+        'consistency "snapshot" requires risk: "read"',
+      ]);
+    },
+  );
+});
+
 describe("defineActionContract — define-time rejections", () => {
   it("rejects a name that is not <module>.<verb>", () => {
     expectProblem(

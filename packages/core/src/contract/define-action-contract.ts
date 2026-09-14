@@ -125,6 +125,10 @@ function collectDefinitionProblems(
   }
   validateConfirmation(definition, problems);
 
+  if (definition.consistency !== undefined && definition.risk !== "read") {
+    problems.push('consistency "snapshot" requires risk: "read"');
+  }
+
   if (
     (definition.risk === "write" || definition.risk === "high") &&
     !definition.audit
