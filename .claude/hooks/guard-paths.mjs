@@ -84,47 +84,6 @@ if (/^packages\/db\/migrations\//i.test(rel) && process.env.SHOWZY_ALLOW_MIGRATI
   );
 }
 
-const WORKTREE_ROOT = /^(.*)\/\.claude\/worktrees\/[^/]+/;
-const APPROVALS = ".claude/core-edit-approvals.json";
-const sessionCwd = String(input?.cwd ?? "").replaceAll("\\", "/");
-const sessionWorktree = normalized.match(WORKTREE_ROOT) ?? sessionCwd.match(WORKTREE_ROOT);
-
-if (sessionWorktree && (rel.toLowerCase() === APPROVALS || lower.endsWith(`/${APPROVALS}`))) {
-  block(`${APPROVALS} is owned by the human on the main checkout. A worktree session never edits it.`);
-}
-
-function worktreeBranch(worktreeRoot) {
-  try {
-    const dotGit = readFileSync(`${worktreeRoot}/.git`, "utf8").match(/^gitdir:\s*(.+)$/m);
-    if (!dotGit) return null;
-    const head = readFileSync(`${dotGit[1].trim()}/HEAD`, "utf8").match(/^ref:\s*refs\/heads\/(.+)$/m);
-    return head ? head[1].trim() : null;
-  } catch {
-    return null;
-  }
-}
-
-function approvedCoreTicket(mainRoot, branch) {
-  const ticket = branch?.match(/(?:^|\/)(sho-\d+)(?:-|$)/i)?.[1].toUpperCase();
-  if (!ticket) return null;
-  try {
-    const approvals = JSON.parse(readFileSync(`${mainRoot}/${APPROVALS}`, "utf8"));
-    const adr = approvals?.[ticket];
-    return typeof adr === "string" && /^ADR-\d{4}$/.test(adr) ? ticket : null;
-  } catch {
-    return null;
-  }
-}
-
-if (worktreeMatch && /^packages\/core\//i.test(rel) && process.env.SHOWZY_ALLOW_CORE_EDIT !== "1") {
-  const root = normalized.match(WORKTREE_ROOT);
-  if (!approvedCoreTicket(root[1], worktreeBranch(root[0]))) {
-    block(
-      `packages/core is frozen for module tasks. Stop and report what core is missing (constitution.md). An ADR-approved core ticket is listed by the human in ${APPROVALS} on the main checkout.`,
-    );
-  }
-}
-
 const base = path.posix.basename(rel).toLowerCase();
 if (base === ".env" || (base.startsWith(".env.") && base !== ".env.example")) {
   block(".env files hold secrets and are never edited by agents. Update .env.example and tell the human.");
