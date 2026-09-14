@@ -7,9 +7,13 @@ export type RevisionTable = PgTable & {
   readonly companyId: AnyPgColumn<{ data: string; notNull: true }>;
 };
 
-export interface RevisionRoot<TTable extends RevisionTable = RevisionTable> {
+export interface RevisionRoot<TTable extends RevisionTable> {
   readonly table: TTable;
-  readonly keyColumn: AnyPgColumn<{ data: string; notNull: true }>;
+  readonly keyColumn: AnyPgColumn<{
+    data: string;
+    notNull: true;
+    tableName: TTable["_"]["name"];
+  }>;
 }
 
 export interface RevisionTarget {
@@ -18,15 +22,15 @@ export interface RevisionTarget {
 }
 
 export interface RevisionBump extends RevisionTarget {
-  readonly root: RevisionRoot;
+  readonly root: RevisionRoot<RevisionTable>;
 }
 
-export async function bumpRevision(
+export async function bumpRevision<TTable extends RevisionTable>(
   tx: Tx,
-  root: RevisionRoot,
+  root: RevisionRoot<TTable>,
   target: RevisionTarget,
 ): Promise<number | undefined> {
-  const { table, keyColumn } = root;
+  const { table, keyColumn }: RevisionRoot<RevisionTable> = root;
   const rows = await tx
     .update(table)
     .set({ revision: sql`${table.revision} + 1` })

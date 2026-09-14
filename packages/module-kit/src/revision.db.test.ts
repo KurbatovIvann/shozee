@@ -25,8 +25,14 @@ const betaTable = pgTable("revision_probe_beta", {
   revision: integer("revision").notNull().default(1),
 });
 
-const alphaRoot: RevisionRoot = { table: alphaTable, keyColumn: alphaTable.id };
-const betaRoot: RevisionRoot = { table: betaTable, keyColumn: betaTable.id };
+const alphaRoot: RevisionRoot<typeof alphaTable> = {
+  table: alphaTable,
+  keyColumn: alphaTable.id,
+};
+const betaRoot: RevisionRoot<typeof betaTable> = {
+  table: betaTable,
+  keyColumn: betaTable.id,
+};
 
 const companyId = randomUUID();
 const foreignCompanyId = randomUUID();
