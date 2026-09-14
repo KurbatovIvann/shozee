@@ -12,6 +12,7 @@ export const insertChatMessage = implementAction(insertChatMessageContract, {
       messageId: input.messageId,
       bind: input.bind,
       message: input.message,
+      claim: input.claim,
     });
     return { conversationId: input.conversationId, seq };
   },

@@ -13,6 +13,7 @@ import { assistantChatState } from "@showzy/db/schema/assistant";
 import { and, eq } from "drizzle-orm";
 
 import { loadOwnConversation } from "./load-conversation.js";
+import { holdTurnClaim, type TurnClaim } from "./turn-claim.js";
 import { requireWritable, type WritableStaffDb } from "./writable.js";
 
 type StaffCtx = Extract<ActionCtx, { principal: "staff" }>;
@@ -55,6 +56,7 @@ export async function writeStaffChatState(env: {
   readonly ctx: StaffCtx;
   readonly conversationId: string;
   readonly history: unknown;
+  readonly claim: TurnClaim | undefined;
 }): Promise<void> {
   await loadOwnConversation({
     db: env.ctx.db,
@@ -63,6 +65,11 @@ export async function writeStaffChatState(env: {
     conversationId: env.conversationId,
   });
   const db = requireWritable(env.ctx.db);
+  await holdTurnClaim(db, {
+    companyId: env.ctx.companyId,
+    conversationId: env.conversationId,
+    claim: env.claim,
+  });
 
   await upsertChatState(db, {
     companyId: env.ctx.companyId,

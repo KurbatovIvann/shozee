@@ -59,6 +59,11 @@ export function callTargetProblems(
       'only risk: "read" actions are callable cross-module (core.md §9, ADR-0015)',
     );
   }
+  if (callee.consistency === "snapshot" && caller.consistency !== "snapshot") {
+    problems.push(
+      'a consistency: "snapshot" callee runs on its caller\'s transaction, so its caller must declare consistency: "snapshot" too (core.md §9, ADR-0042 L1)',
+    );
+  }
   if (caller.publicScope === "globalProjection") {
     problems.push(
       "public-global actions cannot use ctx.call — their read capability is limited to the declared projection grant (core.md §9)",

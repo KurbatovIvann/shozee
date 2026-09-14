@@ -54,3 +54,30 @@ and is left untouched. Proof: `src/pgboss-schema.db.test.ts`.
 - `showzy_app` runs no DDL, so a queue with `partition: true` (which creates a
   table) cannot be provisioned by the runtime role; unpartitioned queues are
   one `pgboss.queue` row.
+
+## 5. Fenced writes (J8): the assistant turn
+
+- A turn's history (`assistant_chat_state`) has two legitimate writers.
+  `assistant.acceptTurn` writes the initial history and the placeholder in
+  its own transaction while the turn is `queued`; the active-turn index
+  serialises it (SHO-575). The worker writes everything after that under the
+  turn's claim.
+- The claim is the turn row itself: `running`, this conversation, kind and
+  command id. A turn starts at most once, so the identity is never reused.
+- Every worker write carries the claim: `assistant.writeChatState`,
+  `assistant.insertChatMessage` and `assistant.updateChatMessage` take
+  `claim: { kind, commandId }` and, in the same transaction, lock the turn row
+  `FOR SHARE` where it is still `running` before they write. No row is
+  `CONFLICT` and nothing is stored. The runtime passes it through
+  `AssistantRuntime.forCaller(caller, claim)`; only the turn processor does.
+- The terminal transition (`finishTurn`, `interruptTurn`) locks the same row
+  `FOR UPDATE`, so a writer that holds the claim commits before the end, and
+  a writer that asks after the end finds no running row. A status read
+  without the lock would let an ended worker overwrite a later accept.
+- `finishTurn` is fenced by its own statement: it ends only an active row it
+  has locked, and a turn ended first answers `already_finished`.
+- Writes without a claim (the API's synchronous paths, the reconciler
+  settling an interrupted placeholder) are unchanged.
+- Proof: `packages/modules/assistant/src/actions/turn-claim.db.test.ts`
+  (forced interleaving of a history save, a card write and a finish against
+  an interrupt followed by a new accept).

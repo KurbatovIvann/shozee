@@ -13,6 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import { defineActionContract } from "../../contract/define-action-contract.js";
+import { CoreInvariantError } from "../../errors/index.js";
 import { createAuditHook } from "../audit/create-audit-hook.js";
 import type { ActionCtxFor } from "../context/types.js";
 import {
@@ -240,6 +241,51 @@ describe("consistency: snapshot", () => {
       after: "Renamed",
       viaCall: "Renamed",
     });
+  });
+
+  it("rejects a snapshot callee reached through ctx.call from a default read", async () => {
+    let calleeRan = 0;
+    const snapshotCallee = implementAction(
+      defineActionContract({
+        ...contractDefaults,
+        name: "snapshotCallee.readLive",
+        description: "Snapshot read that a default caller cannot compose.",
+        input: productInput,
+        output: z.object({ name: z.string() }),
+        permissions: ["snapshotCallee:read"],
+        audit: false,
+        consistency: "snapshot",
+      }),
+      {
+        handler: async (input, ctx) => {
+          calleeRan += 1;
+          return { name: await productName(ctx.db, input.productId) };
+        },
+      },
+    );
+    const defaultCaller = implementAction(
+      defineActionContract({
+        ...contractDefaults,
+        name: "snapshotRoot.callSnapshot",
+        description: "Default read that calls a snapshot read.",
+        input: productInput,
+        output: z.object({ name: z.string() }),
+        permissions: ["snapshotRoot:read"],
+        audit: false,
+      }),
+      {
+        handler: (input, ctx) =>
+          ctx.call(snapshotCallee, { productId: input.productId }),
+      },
+    );
+
+    const outcome = invoke(defaultCaller, await seedProduct());
+
+    await expect(outcome).rejects.toBeInstanceOf(CoreInvariantError);
+    await expect(outcome).rejects.toThrow(
+      'its caller must declare consistency: "snapshot" too',
+    );
+    expect(calleeRan).toBe(0);
   });
 
   it("still writes the post-commit audit row of an audited snapshot read", async () => {
