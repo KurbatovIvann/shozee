@@ -216,8 +216,45 @@ test("showzy/import-boundaries", () => {
           import type { ActionContract } from "@showzy/core/contract";
         `,
       },
+      {
+        filename: file("packages/jobs/src/pgboss-schema.ts"),
+        code: `import { PgBoss } from "pg-boss";`,
+      },
+      {
+        filename: file("packages/jobs/src/pgboss-schema.db.test.ts"),
+        code: `import pgBossPackage from "pg-boss/package.json" with { type: "json" };`,
+      },
+      {
+        filename: file("apps/worker/src/boot.ts"),
+        code: `import { assertPgBossSchema } from "@showzy/jobs";`,
+      },
     ],
     invalid: [
+      {
+        filename: file("apps/worker/src/boot.ts"),
+        code: `import { PgBoss } from "pg-boss";`,
+        errors: [{ messageId: "pgBossOutsideJobs" }],
+      },
+      {
+        filename: file("apps/api/src/boot.ts"),
+        code: `export { fromDrizzle } from "pg-boss";`,
+        errors: [{ messageId: "pgBossOutsideJobs" }],
+      },
+      {
+        filename: file("packages/modules/orders/src/actions/create.ts"),
+        code: `const boss = await import("pg-boss");`,
+        errors: [{ messageId: "pgBossOutsideJobs" }],
+      },
+      {
+        filename: file("packages/core/src/runtime/jobs.db.test.ts"),
+        code: `import type { Job } from "pg-boss/dist/types.js";`,
+        errors: [{ messageId: "pgBossOutsideJobs" }],
+      },
+      {
+        filename: file("packages/validation/src/jobs.ts"),
+        code: `import { assertPgBossSchema } from "@showzy/jobs";`,
+        errors: [{ messageId: "clientSafeServerOnly" }],
+      },
       {
         filename: file("packages/modules/orders/actions/create.contract.ts"),
         code: `import { users } from "@showzy/db";`,

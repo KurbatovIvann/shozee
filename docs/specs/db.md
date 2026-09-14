@@ -271,6 +271,11 @@ aggregate revisions and are out of this convention.
   (`showzy_migrate`): DDL, used only by CI/deploy migration step. Local dev
   may use one superuser, but CI runs tests under the runtime role so grant
   gaps surface early.
+- **`pgboss` schema grants** (ADR-0041): `showzy_app` has `USAGE` on the
+  schema and DML on its tables (send, fetch, completion), never `CREATE` or
+  `TRUNCATE`; the grants live in the generated `pgboss` migration
+  (`jobs.md` §4). Recorded, not built: job retention and autovacuum, and
+  production credentials for the schema.
 - **Maintenance role** (`showzy_maintenance`): no application login and no
   general DDL; narrowly used by scheduled archival/retention/repair jobs
   (including audit expiry) with separate credentials and audit trail.
@@ -336,9 +341,11 @@ aggregate revisions and are out of this convention.
    on composite tenant FKs — ADR-0025, and the customers `BEFORE DELETE ON
    "user"` trigger that stamps a placeholder email so
    `company_customers.user_id` `ON DELETE SET NULL` cannot fail
-   `company_customers_contact_check`). Each exception carries a
-   comment referencing ADR-0012, ADR-0025, or this approved spec; domain
-   queries remain Drizzle-only.
+   `company_customers_contact_check`), and the `pgboss` schema migration
+   generated from the pinned pg-boss library plus the statements pg-boss
+   issues from inside `@showzy/jobs` (ADR-0041 J15, `jobs.md` §2). Each
+   exception carries a comment referencing ADR-0012, ADR-0025, ADR-0041, or
+   this approved spec; domain queries remain Drizzle-only.
 
 ## 8. Test harness (`src/testing`)
 

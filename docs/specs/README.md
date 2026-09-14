@@ -15,6 +15,7 @@ Agents must not open that tree unless a human names a file (ADR-0033).
 | `core.md` | `packages/core` action runtime |
 | `contract.md` | `@showzy/contract` client/server boundary |
 | `db.md` | `packages/db` schema conventions, roles, capabilities |
+| `jobs.md` | `@showzy/jobs` runner boundary, `pgboss` schema, grants |
 | `money.md` | Money snapshot rules |
 | `security-operations.md` | Auth, logging, backups, rate-limit numbers |
 | `companies-foundation.md` | Companies/RBAC foundation slice |
