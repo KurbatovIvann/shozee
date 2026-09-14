@@ -149,7 +149,9 @@ describe("bumpRevisions", () => {
   it("commits concurrent transactions over the same roots in opposite argument orders", async () => {
     const alphaId = await seed(alphaTable, 1);
     const betaId = await seed(betaTable, 1);
-    const forward: RevisionBump[] = [
+    const forward: (
+      RevisionBump<typeof alphaTable> | RevisionBump<typeof betaTable>
+    )[] = [
       { root: alphaRoot, companyId, key: alphaId },
       { root: betaRoot, companyId, key: betaId },
     ];
