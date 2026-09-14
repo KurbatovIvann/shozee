@@ -28,6 +28,9 @@
     "drizzle-orm": "^0.45.2",
     "zod": "^4.4.3"
   },
+  "peerDependencies": {
+    "@showzy/db": "workspace:*"
+  },
   "devDependencies": {
     "@showzy/db": "workspace:*",
     "@showzy/tooling": "workspace:*",
