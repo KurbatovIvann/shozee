@@ -1,7 +1,7 @@
 ---
 name: reviewer
 description: Independent read-only verifier for a Showzy PR (writer ≠ reviewer). Checks the diff against the feature card, constitution, ADRs, golden files, and definition of done, and returns APPROVE or REQUEST_CHANGES with severity-tagged findings. Use after an implementer opens or updates a PR, or via /review-pr. Never edits code.
-model: opus
+model: claude-opus-5
 effort: high
 tools: Read, Grep, Glob, Bash
 isolation: worktree

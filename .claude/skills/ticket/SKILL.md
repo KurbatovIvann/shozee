@@ -26,8 +26,8 @@ parent (its `$ARGUMENTS` placeholder means this id). Stop here.
 | UI | `apps/web` / `apps/mobile` product code (never mechanical) | analyze + canvas read → implement → verify → `reviewer` (mode `full`) |
 | sensitive | `sensitive` label, first golden slice, or first new principal / composition edge | full analyze → implement → verify → `reviewer` (mode `full`) + `guardian` |
 
-Session model: `opusplan` (Opus plans, Sonnet edits) or `sonnet` for every
-lane; Opus is for the independent `reviewer` / `guardian`, not the writer.
+Session model: Opus 5, high effort, for every lane (project settings);
+writer ≠ reviewer still holds through separate agents, not separate models.
 Output protocol (`CLAUDE.md`) applies: status lines, PROBLEM/OPTIONS for
 questions, the implementer's commit/PR templates, no comments in code.
 

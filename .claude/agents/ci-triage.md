@@ -1,7 +1,8 @@
 ---
 name: ci-triage
 description: Reads failing GitHub Actions logs for a Showzy PR and returns a short root-cause summary (regression in this PR vs flake vs infra) with the exact failing test/file and a suggested fix. Use whenever merge-gate reports RED, instead of reading CI logs in the main conversation.
-model: haiku
+model: claude-opus-5
+effort: high
 tools: Bash, Read, Grep, Glob
 maxTurns: 15
 color: yellow

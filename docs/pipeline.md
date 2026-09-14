@@ -48,17 +48,16 @@ plus the tests in the definition of done.
 
 ## Models and token economy
 
-Working models on the Claude Max plan (ADR-0040). Quality anchors stay on
-Opus; volume work runs on Sonnet; log reading runs on Haiku. **The writer is
-never Opus.**
+Working models on the Claude Max plan (ADR-0040, amended 2026-09-14). **Every
+role runs on Opus 5 (`claude-opus-5`), high effort**; no Sonnet, no Haiku, no
+per-role override. Writer ≠ reviewer is kept by separate agents.
 
 | Role | Model | Why |
 | --- | --- | --- |
-| Planner (`/feature`), orchestrator (`/conveyor`) | Opus (session model) | Product forks, sequencing, merge decisions — few turns, small context |
-| `/ticket` session (any lane) | `opusplan` (Opus plans, Sonnet edits) or Sonnet | Same split as the implementer |
-| `implementer` (every lane, incl. sensitive) | Sonnet, medium effort — no override | Pattern-following implementation; quality is gated by the Opus reviewer |
-| `reviewer`, `guardian` | Opus, high effort, no MCP | Independent gate; a different model than the writer |
-| `ci-triage` | Haiku, ≤ 15 turns | Reads failing logs so no one else has to |
+| Planner (`/feature`), orchestrator (`/conveyor`), `/ticket` session | Opus 5, high (project `settings.json`) | One model everywhere (owner, 2026-09-14) |
+| `implementer` (every lane, incl. sensitive) | Opus 5, high — no override | Same |
+| `reviewer`, `guardian` | Opus 5, high, no MCP | Independent gate by agent, not by model |
+| `ci-triage` | Opus 5, high, ≤ 15 turns | Reads failing logs so no one else has to |
 
 What the first conveyor run (2026-09-12, $550, 13 h API) showed: 99% Opus,
 the implementer 52% of usage, 84% of turns above 150k context, cache reads
@@ -69,9 +68,8 @@ fixes below target exactly that.
    run's children were 2–3k lines; every read, verify, review, and fix
    round scaled with that. An implementer that sees the ticket growing past
    the cap reports STOPPED with a split instead of finishing.
-2. **Sonnet writes, Opus reviews.** No per-lane model override for the
-   implementer. Two STOPPED/FAILED reports on one ticket are a question for
-   the human, not a reason to switch models.
+2. **One model, separate agents.** No per-lane model or effort override.
+   Two STOPPED/FAILED reports on one ticket are a question for the human.
 3. **Read narrowly.** Grep first; `Read` with offset/limit; no whole files
    over ~300 lines; test files by `describe` block; never re-read after an
    edit; one verify run at the end (`--only` for retries). This is in

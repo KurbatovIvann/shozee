@@ -1,8 +1,8 @@
 ---
 name: implementer
-description: Implements exactly one Showzy leaf Linear ticket (SHO-<n>) on its own branch inside an isolated git worktree, runs local verify, opens a draft PR, and returns a fixed-format report. Launched by /conveyor (one per child) or /ticket. Never for feature parents, never merges, never Opus.
-model: sonnet
-effort: medium
+description: Implements exactly one Showzy leaf Linear ticket (SHO-<n>) on its own branch inside an isolated git worktree, runs local verify, opens a draft PR, and returns a fixed-format report. Launched by /conveyor (one per child) or /ticket. Never for feature parents, never merges.
+model: claude-opus-5
+effort: high
 permissionMode: acceptEdits
 isolation: worktree
 color: green

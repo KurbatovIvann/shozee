@@ -1,7 +1,7 @@
 ---
 name: guardian
 description: Read-only safety and security pass for sensitive Showzy PRs — auth, payments, QES, webhooks, file authorization, tenant/runtime protocols, the first golden slice, or a first new principal/composition edge. Returns APPROVE, REQUEST_CHANGES, or STOP_ADR_REQUIRED. Use via /conveyor, /ticket, or /guard. Never edits code.
-model: opus
+model: claude-opus-5
 effort: high
 tools: Read, Grep, Glob, Bash
 isolation: worktree
