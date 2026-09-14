@@ -75,7 +75,7 @@ nearest `AGENTS.md` win over skills and agent playbooks.
   - `events/` — emitted event definitions and subscriptions that bind
     consumed events to internal idempotent system actions; no arbitrary DB
     handler logic.
-  - `index.ts` — exports **only** actions and events.
+  - `index.ts` — exports **only** actions, events and jobs (`defineJob`).
   - `index.contract.ts` — exports only client-safe action descriptors for
     `packages/contract`.
   - Owned tables live in `packages/db/src/schema/<module>.ts` (ADR-0014); a

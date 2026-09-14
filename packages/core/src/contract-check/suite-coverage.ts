@@ -40,6 +40,7 @@ export interface SuiteCoverageManifest {
     readonly caller: string;
     readonly callee: string;
   }[];
+  readonly jobIsolation?: readonly string[];
 }
 
 /** Explicit empty coverage — the CI stage uses this until modules exist. */
@@ -52,6 +53,7 @@ export const emptySuiteCoverage: SuiteCoverageManifest = {
   idempotency: [],
   events: [],
   atomic: [],
+  jobIsolation: [],
 };
 
 export function collectSuiteCoverageProblems(

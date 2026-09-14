@@ -284,6 +284,54 @@ describe("defineActionContract — consistency", () => {
   );
 });
 
+describe("defineActionContract — enqueues", () => {
+  it("accepts a write action that enqueues its own module's job, and no enqueues at all", () => {
+    const contract = defineActionContract({
+      ...staffWriteDefinition(),
+      enqueues: ["orders.generateInvoice"],
+    });
+    expect(contract.enqueues).toEqual(["orders.generateInvoice"]);
+    expect(
+      defineActionContract(staffWriteDefinition()).enqueues,
+    ).toBeUndefined();
+  });
+
+  it("rejects a job of another module", () => {
+    const error = defineExpectingError({
+      ...staffWriteDefinition(),
+      enqueues: ["assistant.runTurn"],
+    });
+    expect(error.problems).toEqual([
+      'enqueued job "assistant.runTurn" must belong to this action\'s module "orders" — a module enqueues only its own jobs (ADR-0041 J4)',
+    ]);
+  });
+
+  it("rejects enqueues on a read action", () => {
+    const error = defineExpectingError({
+      ...staffWriteDefinition(),
+      risk: "read",
+      idempotent: false,
+      emits: [],
+      audit: false,
+      enqueues: ["orders.generateInvoice"],
+    });
+    expect(error.problems).toEqual([
+      'enqueues requires a writable action — risk: "read" never enqueues (ADR-0041 J4)',
+    ]);
+  });
+
+  it("rejects a malformed job name and duplicates", () => {
+    const error = defineExpectingError({
+      ...staffWriteDefinition(),
+      enqueues: ["generate-invoice", "orders.sync", "orders.sync"],
+    });
+    expect(error.problems).toEqual([
+      'enqueued job "generate-invoice" must be named "<module>.<name>"',
+      "enqueues must not contain duplicates",
+    ]);
+  });
+});
+
 describe("defineActionContract — define-time rejections", () => {
   it("rejects a name that is not <module>.<verb>", () => {
     expectProblem(

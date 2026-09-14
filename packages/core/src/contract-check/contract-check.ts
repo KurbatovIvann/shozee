@@ -32,6 +32,7 @@ import {
   collectAssistantSurfaceBindingProblems,
   type AssistantSurfaceBindingRef,
 } from "./assistant-surfaces.js";
+import { collectJobProblems, type JobDefinitionRef } from "./jobs.js";
 import {
   collectRecordProvenanceProblems,
   type SchemaTableRef,
@@ -41,7 +42,7 @@ import {
   type SuiteCoverageManifest,
 } from "./suite-coverage.js";
 
-export type { AssistantSurfaceBindingRef, SchemaTableRef };
+export type { AssistantSurfaceBindingRef, JobDefinitionRef, SchemaTableRef };
 
 /**
  * Thrown by `assertContractCheck` with every collected violation. Like the
@@ -169,6 +170,7 @@ export interface ContractCheckInput {
    * are valid tool bindings.
    */
   readonly assistantFacadeToolNames: readonly string[];
+  readonly jobs: readonly JobDefinitionRef[];
 }
 
 export interface ContractCheckResult {
@@ -223,6 +225,12 @@ export function runContractCheck(
     contracts,
     input.assistantSurfaces,
     input.assistantFacadeToolNames,
+    problems,
+  );
+  collectJobProblems(
+    input.jobs,
+    contracts,
+    input.suiteCoverage.jobIsolation ?? [],
     problems,
   );
 

@@ -137,6 +137,7 @@ function collectDefinitionProblems(
   }
 
   validateEmits(definition, problems);
+  validateEnqueues(definition, problems);
   validateErrors(definition, problems);
   validateAtomicEdges(definition, problems);
 
@@ -347,6 +348,34 @@ function validateEmits(
   }
   if (hasDuplicates(definition.emits)) {
     problems.push("emits must not contain duplicates");
+  }
+}
+
+function validateEnqueues(
+  definition: ActionContractDefinition,
+  problems: string[],
+): void {
+  const { enqueues } = definition;
+  if (enqueues === undefined) {
+    return;
+  }
+  const module = moduleOf(definition.name);
+  for (const job of enqueues) {
+    if (!ACTION_NAME_PATTERN.test(job)) {
+      problems.push(`enqueued job "${job}" must be named "<module>.<name>"`);
+    } else if (moduleOf(job) !== module) {
+      problems.push(
+        `enqueued job "${job}" must belong to this action's module "${module}" — a module enqueues only its own jobs (ADR-0041 J4)`,
+      );
+    }
+  }
+  if (hasDuplicates(enqueues)) {
+    problems.push("enqueues must not contain duplicates");
+  }
+  if (enqueues.length > 0 && definition.risk === "read") {
+    problems.push(
+      'enqueues requires a writable action — risk: "read" never enqueues (ADR-0041 J4)',
+    );
   }
 }
 

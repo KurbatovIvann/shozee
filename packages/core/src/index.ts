@@ -30,6 +30,7 @@ export type {
   DeclaredCallEdge,
   EventDefinitionRef,
   EventSubscriptionRef,
+  JobDefinitionRef,
   ProjectionGrantLookup,
   ReadModelGrantRef,
   SchemaImportRef,
@@ -45,6 +46,13 @@ export type {
   SchemaColumnRef,
   SchemaTableRef,
 } from "./contract-check/record-provenance.js";
+export { defineJob, JobDefinitionError } from "./jobs/define-job.js";
+export type {
+  Job,
+  JobDefinition,
+  JobLifecycle,
+  JobScope,
+} from "./jobs/define-job.js";
 export { schemaTablesFromModules } from "./contract-check/schema-tables.js";
 export { emptySuiteCoverage } from "./contract-check/suite-coverage.js";
 export type { SuiteCoverageManifest } from "./contract-check/suite-coverage.js";

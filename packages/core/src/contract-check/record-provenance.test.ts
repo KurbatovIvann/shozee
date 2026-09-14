@@ -143,6 +143,7 @@ function checkInput(
     schemaTables: [],
     assistantSurfaces: [],
     assistantFacadeToolNames: [],
+    jobs: [],
     ...overrides,
   };
   return {

@@ -46,6 +46,7 @@ bound by `implementAction`. All fields are required unless noted:
 | `aiExposure` | `exposed` \| `internal` | `exposed` requires `transport: client`; `internal` never becomes an AI tool |
 | `risk` | `read` \| `draft` \| `write` \| `high` | `read` handlers/resolvers receive a `ReadTx` capability; top-level reads also use a DB read-only transaction |
 | `consistency` | optional `snapshot`, **`risk: read` only** | ADR-0042 L1: every statement of the action, including nested `ctx.call` reads, sees one `REPEATABLE READ` snapshot (§4 step 7); rejected at define time on `draft`/`write`/`high` |
+| `enqueues` | optional job names, **not on `risk: read`** | ADR-0041: `<module>.<name>` jobs of this action's own module, no duplicates; each must be a registered non-`periodic` job (§6 Jobs) |
 | `requiresConfirmation` | boolean | Required for human-invoked `risk: high` (staff, customer, account — not share); triggers the confirmation protocol (§7) |
 | `confirmationSummary` | server fn, conditional | Required when `requiresConfirmation: true`; returns a redacted, human-readable summary from validated input + resolved target |
 | `idempotent` | boolean | Write actions with `true` participate in the idempotency protocol (§5) |
@@ -462,6 +463,33 @@ Envelope (stored in `domain_events`, spec'd in db.md):
 - **Retention**: processed outbox rows are kept (they are the audit-grade
   event history) and partitioned/archived post-MVP if volume demands.
 
+### Jobs (ADR-0041)
+
+Jobs are work, not effects between modules; the outbox above is unchanged.
+A job is declared once with `defineJob` (`@showzy/core`); the runner reads its
+runner settings from the same declaration (`docs/specs/jobs.md`).
+
+- **Declaration.** `name` (`<module>.<name>`), `scope` (`tenant` | `global`),
+  `payload` (a Zod object), `discriminator` (payload fields that tell fan-out
+  jobs of one origin apart), `lifecycle` (`expires` | `periodic`), `retries`
+  (non-negative integer), `attemptTimeoutMs` (positive integer). `expires`
+  requires `onExhausted`, an action of the same module, and forbids `cron`;
+  `periodic` requires a 5- or 6-field `cron` and forbids `onExhausted`.
+  There is no `recoverable` lifecycle yet.
+- **Identity-only payload (J6).** Each payload field is an id string format
+  (`uuid`, `guid`, `ulid`, `cuid`, `cuid2`, `nanoid`), an enum or literal, or
+  an integer. Free text, optional, nested, boolean and fractional fields are
+  refused at define time.
+- **Contract check.** Every `enqueues` name is a registered job of the
+  action's module and is not `periodic`; job names are unique; an `expires`
+  job's `onExhausted` is a registered `system` action of the same module with
+  `risk` other than `read` and a `systemScope` equal to the job's `scope`;
+  a module that defines jobs appears in `suiteCoverage.jobIsolation` (§12),
+  and every listed module defines a job. Composition passes every job
+  declaration as `jobs`.
+- Enqueueing (`ctx.enqueue`, the job port, identity and execution) arrives
+  with jobs-T3 and later tickets.
+
 ## 7. Confirmation protocol (`requiresConfirmation`)
 
 Two-step, single-use, channel-agnostic (same for UI and AI — ADR-0008):
@@ -671,7 +699,8 @@ Every registered action must appear in `isolation` (and in
 suites apply). Every idempotent mutation that is not an event-consumer
 binding must appear in `idempotency`. Every module that emits or
 subscribes must appear in `events`. Every mutually declared atomic edge
-must appear in `atomic`. Omission — or listing an action in a suite that
+must appear in `atomic`. Every module that defines a job must appear in
+`jobIsolation` (optional on a module's manifest; §6 Jobs). Omission — or listing an action in a suite that
 does not apply — fails the check.
 
 ## 13. Acceptance criteria
@@ -756,6 +785,7 @@ does not apply — fails the check.
 
 | Date | Change | Why | Reported by |
 | --- | --- | --- | --- |
+| 2026-09-14 | §2/§6/§12: `defineJob`, optional `enqueues`, job contract-check rules and `jobIsolation` coverage | ADR-0041 §3, §5, J4, J6 | SHO-644 |
 | 2026-09-14 | §2/§4: `consistency: snapshot` read metadata; step 7 opens the execution transaction `REPEATABLE READ` for it | ADR-0042: a live screen needs one consistent read across its statements | SHO-623 |
 | 2026-09-05 | §2/§3: a handler's `ctx` is the `ActionCtx` arm matching the contract's declared `principal` (`ActionCtxFor`), not the seven-mode union; runtime construction unchanged | SHO-416: 109 handlers opened with a principal guard the pipeline made unreachable — it existed only to narrow a type | SHO-416 |
 | 2026-09-05 | §6: `findClaimableDeliveries` selects due aggregate heads before LIMIT | SHO-435: blocked successors filled the bounded batch and starved independent deliveries | SHO-435 |
