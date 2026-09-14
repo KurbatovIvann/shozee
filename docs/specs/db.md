@@ -252,6 +252,18 @@ transitions, denormalization into projections — all via actions/events.
 The default for any v1 trigger not explicitly kept is: moved to code or
 dropped, recorded in the owning module's spec §7 (v1 migration notes).
 
+**Aggregate revisions (ADR-0042 L2/L3)** are code, not triggers. An
+observable aggregate root carries `revision integer NOT NULL`, scoped by
+`company_id` and a uuid key; the INSERT that creates the root writes
+revision 1 and counts as that transaction's bump. Every later transaction
+that changes the aggregate raises it exactly once, through
+`@showzy/module-kit/revision` (`bumpRevision`, or `bumpRevisions` for
+several roots, which locks in a fixed order: table name, then key), as its
+first write to that aggregate. Revisions never decrease and keys are never
+reused. Bulk work bumps per chunk, never per row. Per-row write counters
+(`assistant_chat_messages.revision`, `order_cards.revision`) are not
+aggregate revisions and are out of this convention.
+
 ## 6. Roles and safety
 
 - **Runtime role** (`showzy_app`): DML on all tables except DDL; no

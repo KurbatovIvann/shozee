@@ -12,6 +12,7 @@
     "./parse-db-enum": "./src/parse-db-enum.ts",
     "./postgres-unique": "./src/postgres-unique.ts",
     "./require": "./src/require.ts",
+    "./revision": "./src/revision.ts",
     "./sha256": "./src/sha256.ts",
     "./unique-ids": "./src/unique-ids.ts",
     "./writable": "./src/writable.ts"
@@ -24,9 +25,11 @@
   },
   "dependencies": {
     "@showzy/core": "workspace:*",
+    "drizzle-orm": "^0.45.2",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@showzy/db": "workspace:*",
     "@showzy/tooling": "workspace:*",
     "@types/node": "^22.20.1",
     "eslint": "^10.8.1",
