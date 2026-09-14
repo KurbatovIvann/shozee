@@ -228,10 +228,14 @@ export function createAssistantRuntime(
      * transcript and the history be read and written as the person asking,
      * through the same pipeline as every other action.
      */
-    forCaller(caller) {
+    forCaller(caller, claim) {
       const kit: AssistantKit<AssistantInteractionTypes> = createAssistantKit({
         pauses,
-        messages: createPostgresAssistantKitMessageLog(storeDeps, caller),
+        messages: createPostgresAssistantKitMessageLog(
+          storeDeps,
+          caller,
+          claim,
+        ),
         clock: { now: () => new Date() },
         ids: { uuid: () => randomUUID() },
         interactions: assistantInteractions,
@@ -250,7 +254,11 @@ export function createAssistantRuntime(
       });
       return {
         kit,
-        history: createPostgresAssistantKitHistoryStore(storeDeps, caller),
+        history: createPostgresAssistantKitHistoryStore(
+          storeDeps,
+          caller,
+          claim,
+        ),
         turns: createPostgresAssistantTurnStore(storeDeps, caller),
       };
     },

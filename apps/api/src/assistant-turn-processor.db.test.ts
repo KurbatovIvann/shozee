@@ -39,9 +39,11 @@ import {
   type AssistantTurnJobOutcome,
   type StaffAssistantBudgetHold,
 } from "@showzy/assistant-runtime";
+import { interruptTurn } from "@showzy/assistant";
 import {
   createConfirmationHook,
   createInMemoryConfirmationStore,
+  executeAction,
   type ActionPipelineDeps,
 } from "@showzy/core";
 import { PermissionDeniedError } from "@showzy/core/errors";
@@ -63,7 +65,7 @@ import {
   RedisContainer,
   type StartedRedisContainer,
 } from "@testcontainers/redis";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { Redis } from "ioredis";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
@@ -1055,5 +1057,62 @@ describe("a tool action's client address", () => {
         .filter((entry) => entry.action === "customers.listCustomers")
         .map((entry) => entry.clientIp),
     ).toEqual(["203.0.113.7"]);
+  });
+});
+
+describe("a worker whose turn the sweep ended", () => {
+  it("stores nothing after the end, so the continuation's history stands", async () => {
+    const turn = await accepted({ history: USER_ASKS });
+    const continuation: { current?: Accepted } = {};
+    const runtime = afterTool(
+      runtimeWith(
+        stubModel([
+          stubToolCallStep("toolu_list", LIST_TOOL, {}),
+          stubTextStep("Готово."),
+        ]),
+      ),
+      LIST_TOOL,
+      async () => {
+        await kit.db.runtime.db
+          .update(assistantTurns)
+          .set({ deadlineAt: sql`now() - interval '1 second'` })
+          .where(eq(assistantTurns.commandId, turn.commandId));
+        const requestId = randomUUID();
+        await executeAction(pipeline, {
+          action: interruptTurn,
+          input: {
+            conversationId: turn.conversationId,
+            kind: "chat",
+            commandId: turn.commandId,
+          },
+          request: { requestId, correlationId: requestId, channel: "system" },
+          principal: {
+            mode: "system",
+            serviceName: "assistant-reconciler",
+            scope: { scope: "tenant", companyId: COMPANY },
+          },
+        });
+        continuation.current = await accepted({
+          history: USER_ASKS,
+          conversationId: turn.conversationId,
+        });
+      },
+    );
+    const h = await harness(runtime);
+
+    expect(await h.process(turn.job)).toEqual({
+      kind: "already_finished",
+      status: "interrupted",
+    });
+    expect(JSON.parse(await historyOf(turn))).toEqual([
+      { role: "user", content: ASKED },
+      { role: "user", content: ASKED },
+    ]);
+    const next = continuation.current;
+    if (next === undefined) {
+      throw new Error("expected the continuation to be accepted");
+    }
+    expect(await turnRow(next.commandId)).toMatchObject({ status: "queued" });
+    expect((await placeholder(next.placeholderId)).revision).toBe(1);
   });
 });

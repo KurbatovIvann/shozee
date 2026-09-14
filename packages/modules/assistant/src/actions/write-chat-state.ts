@@ -10,6 +10,7 @@ export const writeChatState = implementAction(writeChatStateContract, {
       ctx,
       conversationId: input.conversationId,
       history: input.history,
+      claim: input.claim,
     });
     return { conversationId: input.conversationId };
   },

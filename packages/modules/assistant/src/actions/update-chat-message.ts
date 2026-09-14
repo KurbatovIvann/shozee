@@ -13,6 +13,7 @@ export const updateChatMessage = implementAction(updateChatMessageContract, {
       messageId: input.messageId,
       revision: input.revision,
       message: input.message,
+      claim: input.claim,
     });
     return {
       conversationId: input.conversationId,

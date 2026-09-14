@@ -32,7 +32,10 @@ import { executeAction } from "@showzy/core";
 import { CoreError } from "@showzy/core/errors";
 
 import { assistantHistoryWindow } from "../assistant-kit-history-window.js";
-import type { AssistantHistoryPort } from "../runtime-types.js";
+import type {
+  AssistantHistoryPort,
+  AssistantTurnClaim,
+} from "../runtime-types.js";
 import {
   asCaller,
   asJson,
@@ -55,9 +58,16 @@ export {
  * page read and every write alike. The sequence number and the refusal of a
  * repeated message id are the module's; the kit relies on both.
  */
+function claimInput(claim: AssistantTurnClaim | undefined) {
+  return claim === undefined
+    ? {}
+    : { claim: { kind: claim.kind, commandId: claim.commandId } };
+}
+
 export function createPostgresAssistantKitMessageLog(
   deps: AssistantKitStoreDeps,
   caller: AssistantKitCaller,
+  claim?: AssistantTurnClaim,
 ): MessageLogStore {
   const call = callFor(caller);
   return {
@@ -86,6 +96,7 @@ export function createPostgresAssistantKitMessageLog(
             messageId: record.messageId,
             bind: record.bind,
             message: asJsonObject(record.message),
+            ...claimInput(claim),
           },
           ...call,
         });
@@ -112,6 +123,7 @@ export function createPostgresAssistantKitMessageLog(
             messageId: record.messageId,
             revision: record.revision,
             message: asJsonObject(record.message),
+            ...claimInput(claim),
           },
           ...call,
         });
@@ -136,6 +148,7 @@ export function createPostgresAssistantKitMessageLog(
 export function createPostgresAssistantKitHistoryStore(
   deps: AssistantKitStoreDeps,
   caller: AssistantKitCaller,
+  claim?: AssistantTurnClaim,
 ): AssistantHistoryPort {
   const call = callFor(caller);
   return {
@@ -164,6 +177,7 @@ export function createPostgresAssistantKitHistoryStore(
           input: {
             conversationId: scope.conversationId,
             history: asJson(messages),
+            ...claimInput(claim),
           },
           ...call,
         });

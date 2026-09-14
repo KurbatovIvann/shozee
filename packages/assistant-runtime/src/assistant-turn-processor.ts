@@ -358,7 +358,10 @@ export function createAssistantTurnProcessor(
       commandId: found.turn.commandId,
     });
 
-    const { kit, history } = deps.runtime.forCaller(caller);
+    const { kit, history } = deps.runtime.forCaller(caller, {
+      kind: found.turn.kind,
+      commandId: found.turn.commandId,
+    });
     const writer = publishing(kit, events, found.placeholderMessageId);
     let reachedModel = false;
     let scope: PauseScope | undefined;
