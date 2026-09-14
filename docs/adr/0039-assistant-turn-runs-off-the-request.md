@@ -91,6 +91,12 @@ the queue and the events.**
   in front of it, because `/kit/answer` claims the pause before it accepts and
   a claim is exactly-once, so the accept's own `replayed` outcome cannot guard
   a retry that never reaches it.)*
+  *(Amended 2026-09-14, ADR-0041: the accept writes the job itself, through
+  `ctx.enqueue` in its own transaction, so the turn has its job at the moment
+  the accept commits, and a rolled-back accept leaves none. The runner may
+  delete that job later, through retention; ADR-0041 J9 covers that case. A
+  `replayed` accept enqueues nothing, and the job id follows ADR-0041 J2, not
+  the command.)*
   - The turn row carries what the worker and the reconciler need and the
     request would otherwise take with it: the accept's kind (`chat` |
     `answer`) and the turn's `commandId`, the placeholder's message id, the
@@ -102,7 +108,9 @@ the queue and the events.**
     also listed the session id and an answer's earned seed as what the worker
     needs. It needs neither: the actor is `user_id`, and an answer runs from
     history. The session id stays on an active row; the worker does not read
-    it.)*
+    it.)* *(Amended 2026-09-14, ADR-0041: nothing derives a job id from these
+    columns any more; the kind stays on the row as part of the turn's
+    identity.)*
   - **An answer keeps its synchronous half.** The pause is claimed and the
     resolved action runs in the request, exactly as today, so `stale`,
     `unresolvable`, `action_failed` and a second question are still
@@ -168,11 +176,24 @@ the queue and the events.**
   "settled or released" in this section as "released". At-most-once is now a
   property of the hold record — an unconditional delete that reports whether
   it won — rather than of the two paths being mutually exclusive.)*
+  *(Amended 2026-09-14, ADR-0041: the turn runs from a pg-boss `durable` queue
+  through `@showzy/jobs`, and the assistant module declares its job once; no
+  queue contract lives in the runtime package. The worker reads the turn
+  filtered by the job's recorded company (ADR-0041 J5), not through a global
+  read, and the actor is still the row's `user_id`. No job is rebuilt from the
+  row: the accept commits the turn together with its job, and a job the runner
+  deletes later leaves a turn that the J9 sweep ends.)*
 - **Fail visibly, never twice.** A turn runs once (`attempts: 1`), and a job
   whose worker disappears fails instead of re-running (`maxStalledCount: 0`).
   The turn becomes `interrupted`: what it did stays, the message's text part
   gets the status `interrupted`, and **Продовжити** starts a new turn from
-  the saved history.
+  the saved history. *(Amended 2026-09-14, ADR-0041: zero declared retries
+  replace `attempts: 1` and `maxStalledCount: 0`. A thrown or expired last
+  attempt runs the turn's on-exhausted action, which ends the turn in
+  `interrupted` (J9). Every history save, card write and finish checks that
+  the turn's claim still holds (J8), so an abandoned worker can no longer
+  overwrite what a later accept stored: the residue the SHO-575 amendment above
+  left to "whatever stops an abandoned worker's writes".)*
   - **Продовжити runs under the original command.** History is saved per
     finished step, so a turn that died inside a tool keeps the card of the
     write but not the model's memory of it. A continuation with its own
@@ -225,6 +246,30 @@ the queue and the events.**
     and the job check is exactly what stops that. Raising concurrency or the
     threshold would change nothing for a backlogged turn; it would only delay
     ending a turn that can never start.)*
+    *(Amended 2026-09-14, ADR-0041: the turn's job has the `expires`
+    lifecycle, and the reconciler is the assistant's J9 sweep. It never
+    re-enqueues: the accept commits the turn together with its job, and a turn
+    whose job the runner deletes later is ended at its deadline like any other.
+    The job check and the re-enqueue backoff are gone; the sweep fans out one
+    tenant-scoped action per company and keeps the stale-running interrupt.
+    Waiting and running are separate limits. A turn must start within its
+    start deadline, 15 minutes as an initial setting to revisit against real
+    load; a started turn is bound only by the turn timeout. `startTurn` and the
+    sweep both check the deadline atomically against the row's current state,
+    so a job that arrives after the sweep ended its turn starts no model,
+    writes nothing and cannot touch a continuation.
+    This reverses the SHO-570 and SHO-563 rule that a backlog never ends a
+    healthy queued turn: an accepted turn may now end before it starts. At the
+    worst-case turn length that happens to a turn with more than about twenty
+    turns ahead of it on one worker. Accepted by the owner as a product change.
+    A turn that never reached the model has its hold released at most once,
+    whichever of the worker and the sweep ends it; a crash between the end and
+    the release leaves the hold standing until its Kyiv day ends, which fails
+    safe. The person is told the reply did not start, and the cards and
+    results already stored stay visible, because an answer's action may have
+    run before its turn was queued. **Продовжити** starts a new turn with a new
+    reservation from the stored history, and its tools keep the interrupted
+    turn's idempotency keys.)*
   - After a worker crash the interruption becomes visible only when the
     reconciler passes the deadline — up to the turn timeout plus one
     reconciler interval. Accepted, and stated so nobody reads it as a hang.
@@ -255,6 +300,8 @@ the queue and the events.**
     identity only, so no person, session, company or client IP is written to
     the append-only file. Removing a job only appends a delete to that file,
     so retention cannot be the reason a field is safe there.
+  *(Superseded 2026-09-14 by ADR-0041: there is no queue Redis. Jobs live in
+  Postgres beside the turn, and the shared Redis stays non-persistent.)*
 - **Deliver as events.** `GET /assistant/kit/events` streams server-sent
   events under the same session, company and author rule as the other routes.
   - Every connection begins with a `snapshot` of the latest window, then
@@ -295,13 +342,15 @@ Starting values (policy, changed with a proving test):
 | --- | --- |
 | Turn timeout | 180 s |
 | Queue concurrency per worker | 4 |
-| Job lock | 60 s, renewed |
-| Reconciler interval | 60 s |
-| Queued-turn abandon threshold | 15 min (SHO-570) |
-| Re-enqueue backoff | 60 s, doubling per attempt, capped at 8 min (SHO-570) |
+| Sweep interval | 60 s |
+| Queued-turn start deadline | 15 min, initial (ADR-0041 §5) |
 | Worker drain bound | turn timeout + 30 s (SHO-570) |
 | SSE heartbeat | 15 s |
-| Job retention | removed on completion and on failure |
+
+*(Amended 2026-09-14, ADR-0041: the job lock, re-enqueue backoff and job
+retention rows are gone, because runner settings live in `docs/specs/jobs.md`.
+The reconciler interval is the sweep interval, and the abandon threshold is the
+queued turn's start deadline.)*
 
 ## Alternatives considered
 
@@ -316,7 +365,7 @@ Starting values (policy, changed with a proving test):
 - **A Postgres queue** (pg-boss, graphile-worker, or a claim loop over a turns
   table). Rejected by ADR-0007, and the BullMQ host already exists. Postgres
   keeps the part that must not be lost, the accepted turn, without also
-  becoming the queue.
+  becoming the queue. *(Reversed by ADR-0041.)*
 - **The domain-event outbox.** Rejected: wrong principal, wrong transaction
   model, and retry semantics built for fast idempotent effects (`core.md` §6).
 - **A durable-execution engine** (Temporal, Inngest, Restate, DBOS). Rejected
@@ -356,6 +405,9 @@ Starting values (policy, changed with a proving test):
 - **The API becomes a producer.** It gains BullMQ as a dependency, for the
   `Queue` only; it never processes jobs. Both processes gain a connection to
   the queue Redis, configured separately from `REDIS_URL` (SHO-561, SHO-563).
+  *(Amended 2026-09-14, ADR-0041: there is no BullMQ producer and no queue
+  Redis. The accept writes the job through `ctx.enqueue`, and `db.md` §6 and
+  `apps/worker/AGENTS.md` lose the queue Redis.)*
 - **The message wire grows two fields:** a `revision` on every message
   (SHO-562) and the text status `interrupted` (SHO-561, SHO-563); the strict
   wire test pins them. *(Amended 2026-09-11, SHO-562: an earlier wording

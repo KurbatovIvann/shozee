@@ -1,6 +1,10 @@
 # ADR-0041: Background jobs are enqueued in the transaction and run from Postgres behind a runner port
 
 - **Status**: Accepted
+- **Amended**: 2026-09-14 — a job orchestrates actions and declares its time
+  limits and lifecycle (`expires` and `periodic` now, `recoverable` planned),
+  every protected write is fenced, there is no "active" company, and external
+  I/O includes storage (see Amendment below)
 - **Date**: 2026-09-13
 - **Deciders**: Ivan Kurbatov (human) (+ proposing agent)
 
@@ -52,8 +56,15 @@
    - An action declares `enqueues` (job names, like `emits`) and calls
      `ctx.enqueue`. Core writes the job inside the execution transaction,
      beside the outbox, through a **job port** filled by the app composition.
-   - A job runs as an internal `system` action bound to its definition, through
-     `executeAction`.
+   - **A job orchestrates actions; it is not one.** Every read and write of
+     domain state it makes goes through `executeAction`: a claim, then any
+     external I/O outside every transaction (J10), then a separate action that
+     records the result. A job with no external I/O may be a single `system`
+     action. Each action keeps the principal its contract declares, so the
+     assistant turn's business actions still run as its author and are checked
+     like any staff request. *(Amended 2026-09-14: the earlier wording made
+     every job one `system` action, which `core.md` §4 runs inside its
+     transaction, so no job with external I/O could meet J10.)*
 2. **The runner is a plugin chosen per queue class.**
    - **`durable`** (user-visible or must-not-be-lost work) runs on a **pg-boss
      adapter**, straight from Postgres. Workers pick jobs up by polling, not
@@ -63,19 +74,67 @@
      specifies a relay that keeps the `enqueue(tx)` contract.
    - The `pdf` queue is deleted. BullMQ and the queue Redis are removed once
      the assistant and maintenance queues have moved.
-   - The shared Redis keeps only losable data: sessions, rate limits,
-     confirmation challenges, presence, stream slots and ADR-0042's ephemeral
-     frames.
-3. **`@showzy/jobs`** (server-only platform package) holds:
-   - the job definition type, the port, the pg-boss adapter, the worker host and
-     the scheduler;
-   - the **conformance suite** every adapter must pass.
-   It owns no tables. The `pgboss` schema is a foundation protocol schema,
-   created by a drizzle-kit custom migration generated from the pinned
+   - The shared Redis keeps only losable data: sessions, rate limits, AI budget
+     counters, confirmation challenges, presence, stream slots and ADR-0042's
+     ephemeral frames.
+   - Each job type runs on its own queue with its own concurrency, so one load
+     cannot starve another. Fairness between companies inside one queue is
+     recorded, not built. *(Amended 2026-09-14.)*
+3. **A job is declared once.** Core owns what the pipeline reads from that
+   declaration (name, scope, identity-only payload, discriminator, lifecycle,
+   on-exhausted action) and the job port. **`@showzy/jobs`** (server-only
+   platform package) reads the declaration's runner settings (retries, attempt
+   timeout) and holds the pg-boss adapter, the worker host, the scheduler and
+   the **conformance suite** every adapter must pass. No field is declared
+   twice.
+   *(Amended 2026-09-14: the earlier wording gave "the port" and the definition
+   type to both core and this package, and core cannot import it.)*
+   The package owns no tables. The `pgboss` schema is a foundation protocol
+   schema, created by a drizzle-kit custom migration generated from the pinned
    library. That migration, and the statements pg-boss issues from inside
    `@showzy/jobs`, are the approved raw SQL (J15).
 4. **The domain-event outbox is unchanged** (ADR-0012). Events are effects
    between modules; jobs are work.
+5. **Every job declares its time limits and its lifecycle.** *(Added
+   2026-09-14.)*
+   - **Time.**
+     - *Attempt timeout*, required: how long one claimed attempt may run (per
+       chunk for chunked work). It is the runner's expiry plus an in-process
+       abort (J7).
+     - *Start deadline*, optional: after it the work may no longer start. It
+       is a fact on the owning row, checked atomically by the claim and by the
+       sweep (J9).
+     - *Expected start*, optional: a soft threshold that makes a delay visible
+       and never ends work. Alerting on it is recorded, not built.
+     - *Runner retention*: when the runner deletes its own records. It never
+       decides a business outcome.
+   - **Lifecycle**, from the implemented set `expires | periodic`. It also
+     picks the runner class (§2): `periodic` runs from schedules, `expires` on
+     the durable adapter.
+     - `expires`: an owning row with a start deadline. Work that cannot start
+       in time, or whose attempts are exhausted, ends in the row's domain
+       terminal outcome. First consumer: the assistant turn.
+     - `periodic`: no owning row. A failed run is visible in the runner and the
+       logs, and the next run picks up what is left. First consumers: the
+       maintenance tasks.
+   - **`recoverable` is planned, not implemented.** Its semantics are fixed
+     here; its tests come with its first consumer (PDF generation, imports).
+     - The owning row keeps the intent. Attempts retry under the declared
+       policy, then the row stays visibly failed until an explicit retry.
+     - Automatic recovery is allowed only when the domain row proves the work
+       never started. Started work recovers through its claim (J8) and the
+       external-effect rules (J10–J12). A missing runner record proves
+       nothing: it may have been deleted after an attempt that had an effect.
+     - A stable job id stops a second enqueue only while the runner still
+       holds the record. Whether the id comes from a J2 origin or is stored on
+       the row is chosen with the first consumer.
+     - Acceptance scenarios for that consumer: a row that never started is
+       re-enqueued once; a row that started is never re-run blindly; exhausted
+       retries leave a visible failure that only an explicit retry reopens; a
+       re-enqueue while the original job exists adds no job, and after the
+       record is gone the claim still lets one attempt run.
+   - Whether an external effect happened is not a lifecycle property: J11 and
+     J12 decide it for every lifecycle.
 
 ### Invariants
 
@@ -108,15 +167,16 @@ spec detail.
     company, and fails closed on a miss.
   - A scheduled job that fans out tenant work takes each company from a row its
     module owns, read in the same transaction.
-  - The worker's system context verifies that the company exists and is active,
-    and fails closed.
-  - **The only exception** is a module's declared J9 sweep action. It may run
-    for an existing inactive company, only on that module's own overdue rows,
-    and only to mark them failed. The exception is a property of that declared
-    action, not a flag a caller can pass.
-  *Inherited cross-tenant suite: a payload naming a foreign row fails closed;
-  for an inactive company, every action except the declared sweep fails closed,
-  and the sweep fails closed on another module's rows or on any other write.*
+  - The worker verifies that the recorded company exists, and fails closed.
+    Every action the job runs applies the access rules it already has: a staff
+    actor's membership is checked exactly as on a request.
+  - Companies have no status. Deactivating a company is a separate
+    product change, and it decides what deactivation stops, jobs included.
+  *Inherited cross-tenant suite: a payload naming a foreign row fails closed; a
+  job whose recorded company does not exist fails closed; a job whose staff
+  actor lost membership is refused at its first staff action.*
+  *(Amended 2026-09-14: the earlier wording checked an "active" company and let
+  the J9 sweep act for an inactive one; `companies` has no such state.)*
 - **J6 Payloads are identity only, and job rows hold no free text.**
   - Payload schemas contain only ids and discriminators.
   - The runner's error and output columns hold a typed code or null, except
@@ -131,38 +191,89 @@ spec detail.
   queue's stored settings equal its definition, because pg-boss ignores changed
   options on an existing queue. *Conformance, including a changed-definition
   boot test.*
-- **J8 Claims are domain code and fenced by attempt.** A job action claims its
-  row for a specific runner attempt. A stale attempt can neither claim nor
-  record, and a retry of a thrown attempt is not refused as "already running".
-  *Domain tests per consumer, modelled in the spec.*
-- **J9 Exhausted work is visible.** When retries are exhausted, whether the
-  last attempt threw or expired, a declared **on-exhausted** `system` action
-  marks the owning row failed.
-  - If that action fails, or its company is inactive (J5), the **owning
-    module's** scheduled sweep catches the row.
-    - The sweep fans out one tenant-scoped `system` action per company, taken
-      from its own overdue rows (J5).
-    - That action may only move `running` or `queued` rows to failed with a
-      typed reason, and is audited with the row's company.
-    - It is the one transition allowed for an inactive company.
-  - No owning row stays `running` or `queued` longer than its deadline plus
-    one sweep interval.
+- **J8 Claims are domain code, and every protected write is fenced.**
+  - A job claims its owning row under a claim identity that is never reused:
+    the row's own id when the row is claimed at most once, otherwise an attempt
+    id.
+  - Every write made under the claim (results, history, cards, the terminal
+    transition) checks atomically that the claim still holds. A worker whose
+    row was ended or claimed again can neither claim nor record, and a retry of
+    a thrown attempt is not refused as "already running".
+  - Zero retries do not remove the fence: a sweep can end a row while its
+    worker still runs, and a continuation can start before that worker returns.
+  - The claim also serialises work per subject (one active row), not a runner
+    singleton. Cancelling is a domain transition that ends the claim, so the
+    runner needs no cancel call.
+  *Domain tests per consumer: a worker keeps running, the sweep ends its row, a
+  continuation starts, and each of the worker's later writes is refused.*
+  *(Amended 2026-09-14: the earlier wording tied the fence to runner attempts,
+  which read as unneeded for a job with zero retries; ADR-0039's SHO-575
+  amendment records the overwrite it must stop.)*
+- **J9 Exhausted or overdue work is never silently stuck.** The job's declared
+  lifecycle (§5) decides what happens, and runner state never does.
+  - **`expires`.** When retries are exhausted, whether the last attempt threw
+    or expired, a declared **on-exhausted** `system` action moves the owning
+    row to its domain terminal outcome with a typed reason (`interrupted` for
+    an assistant turn). The claim refuses a row past its start deadline. If
+    the on-exhausted action fails, or the runner drops a job without failing
+    it, the **owning module's** scheduled sweep catches the row:
+    - it fans out one tenant-scoped `system` action per company, taken from
+      its own overdue rows (J5);
+    - that action may only move `running` or `queued` rows to their terminal
+      outcome with a typed reason, and is audited with the row's company;
+    - no row stays `queued` past its start deadline, or `running` past its
+      attempt timeout, by more than one sweep interval.
+  - **`periodic`.** A failed run leaves a typed code in the runner and a log
+    line, and the next run covers the remainder. Runs that overlap must be
+    safe.
+  - Runner retention only cleans the queue: pg-boss can still start a job past
+    its retention until a maintenance pass deletes it, and that deletion sends
+    nothing to a dead letter.
   *Conformance: thrown and expired last attempts; a failing on-exhausted
-  action; an inactive company; a cross-tenant case in which the sweep's
-  tenant action cannot touch another company's row.*
+  action; a job dropped by retention; overlapping `periodic` runs; a
+  cross-tenant case in which the sweep's tenant action cannot touch another
+  company's row. Domain tests per `expires` consumer: a claim refused past the
+  start deadline, and a late job that finds its row ended starts nothing and
+  writes nothing.*
+  *(Amended 2026-09-14: the earlier wording treated every job alike, marked
+  rows `failed`, gave the sweep an inactive-company exception, and left a
+  queued row's deadline undefined.)*
 
 **External effects.**
-- **J10 Provider calls never run inside a transaction.** A claim commits, the
-  call runs, and a separate transaction records the result. *Integration test:
-  no open transaction exists on the job's connection during the stub provider
-  call.*
-- **J11 One opaque provider key per logical effect.**
+- **J10 A new job's external I/O never runs inside a transaction.** External
+  I/O is any call outside Postgres: a model, a payment or fiscal provider, a
+  carrier, object storage. A claim commits, the call runs, and a separate
+  transaction records the result. Being safe to repeat does not exempt a call:
+  the transaction still waits on it and holds its locks and connection, and a
+  rollback does not undo it.
+  - **Named temporary exception.** `files.sweepAbandonedUploads` and
+    `files.backfillCatalogRenditions` write object storage inside their action
+    transaction and move to schedules as they are. Each leaves this list
+    through its own migration, which must keep the guarantee its row lock gives
+    today, as `files.finalizeUpload` writes the catalog key only while it holds
+    the `pending` row (SHO-113, SHO-118). Nothing joins this list.
+  *Integration test: no open transaction exists on the job's connection during
+  the stub call.* *(Amended 2026-09-14: "provider call" was undefined, and two
+  maintenance workflows already broke the rule.)*
+- **J11 and J12 are rules of the effect, for every lifecycle.** They bind
+  effects that are unsafe to repeat: money, fiscal records, messages, carrier
+  orders, model calls. What an attempt leaves depends on what is known: a
+  request refused before the call, or refused unambiguously by the provider,
+  is a known failure; a request that may have run but whose answer was lost is
+  `outcome_unknown` (J12). An effect that is safe to repeat (a storage write
+  under a fixed key, an idempotent delete) needs neither a provider key nor
+  `outcome_unknown`. A provider that accepts no key, such as a model, is never
+  re-run: its job declares zero retries. *(Amended 2026-09-14.)*
+- **J11 One opaque provider key per logical effect, for a provider that accepts
+  one.** A provider that accepts no key gets none; its job declares zero
+  retries instead (see above). *(Amended 2026-09-14.)*
   - The key and our provider reference are generated at the item's **first**
     claim and committed **before** the first call.
   - Every later attempt, resume or sweep reuses them.
   - The key is random: it is not derived from the job id, company or actor.
-  *Integration test: attempt, retry, resume and sweep send the same key; the
-  key row is committed before the stub provider receives the request.*
+  *Integration test per keyed provider: attempt, retry, resume and sweep send
+  the same key; the key row is committed before the stub provider receives the
+  request.*
 - **J12 An unknown outcome is a state, not a retry.**
   - An item holds a committed provider key but no recorded result. On any
     re-claim, whatever ended the previous attempt (a crash, a throw, a timeout,
@@ -228,35 +339,62 @@ spec detail.
 
 **Superseded and amended.**
 - **ADR-0007** is superseded for background jobs.
-- **ADR-0039** is amended:
-  - the turn job is enqueued through `ctx.enqueue` in `assistant.acceptTurn`;
-  - a `replayed` accept enqueues nothing;
-  - the queue Redis and its AOF policy are removed;
-  - the reconciler loses its re-enqueue branch, but keeps the stale-running
-    and queued-abandoned interrupts and the one-time hold release.
+- **ADR-0039** is amended *(completed 2026-09-14; each change is also noted
+  where ADR-0039 states the old rule)*:
+  - the turn job is enqueued through `ctx.enqueue` in `assistant.acceptTurn`; a
+    `replayed` accept enqueues nothing, and the job id follows J2, not the
+    command;
+  - company scope comes from the job's recorded company (J5): the worker reads
+    the turn filtered by it, not through a global read;
+  - a turn ends in `interrupted` through its on-exhausted action or the sweep
+    (J9), and every history save, card write and finish is fenced by the turn's
+    claim (J8), which closes ADR-0039's SHO-575 residue;
+  - the turn's job has the `expires` lifecycle: a turn must start within its
+    start deadline, which `startTurn` and the sweep check atomically. This
+    replaces the job-presence check, and an accepted turn may now end before it
+    starts, a product change accepted with this amendment;
+  - the reconciler becomes the assistant's J9 sweep: no re-enqueue and no job
+    check, but the stale-running interrupt and the one-time hold release stay;
+  - the queue Redis and its AOF policy are removed.
 
 **Core** (approved by this ADR):
-- `enqueues`, `ctx.enqueue`, the job port, and on-exhausted declarations;
+- the declaration fields the pipeline reads (§3), `enqueues`, `ctx.enqueue`
+  and the job port;
 - execution ids and job identity;
 - recorded scope;
 - contract checks and a job case in the inherited cross-tenant suite;
 - a `core.md` §6 subsection.
 
-**Spec.** `docs/specs/jobs.md` is written with the first implementing feature.
-It holds:
-- claim and finalise shapes;
-- the chained-page, fan-out, provider-limit and webhook patterns;
+**Spec.** `docs/specs/jobs.md` is written with the first implementing feature
+and holds only what that feature's tests prove:
+- the claim, fenced-write and terminal-outcome shapes of `expires`;
+- the sweep's per-company fan-out, and `periodic` runs;
 - pg-boss settings (polling, supervise, expiry, retention);
 - queue provisioning, which must exist before the API's first send.
+
+`recoverable` and the chained-page, provider-limit, batch and webhook
+patterns are written with their first consumer, each with the test that proves
+it. *(Amended 2026-09-14: the earlier list put the patterns in the first
+feature, where no test could prove them.)*
+
+**Later, with `recoverable`.** Slow work leaves outbox deliveries: a
+subscription records the intent and enqueues a job, and the job's lifecycle
+owns its retries. PDF generation, which renders inside a delivery today
+(`apps/worker/src/pdf-delivery.ts`), is the expected first consumer.
 
 It changes via ADR or a same-PR patch when a test proves it wrong.
 
 **Dependencies.** `pg-boss` is added (MIT; one maintainer, mitigated by the port
 and the suite), and `bullmq` is removed. Accepting this ADR approves both.
 
+**Grants are built.** The `pgboss` migration grants `showzy_app` what enqueue,
+fetch and completion need, because CI runs tests under that role (`db.md` §6).
+*(Amended 2026-09-14: the earlier wording listed the grants as recorded, not
+built.)*
+
 **Operations, recorded, not built** (`db.md` §6):
 - job retention and autovacuum;
-- `pgboss` schema grants;
+- production credentials for the `pgboss` schema;
 - the worker stop grace ≥ the assistant drain bound;
 - the queue Redis lines are removed.
 
@@ -280,3 +418,35 @@ are not free.
 - **Event streaming with replay** is needed: relay the outbox to a log. That is
   a different contract.
 - **pg-boss** is unmaintained, or fails the conformance suite: swap the adapter.
+
+## Amendment, 2026-09-14 — contradictions found planning the first feature
+
+Found while planning `@showzy/jobs` against the code, then corrected by the
+owner against pg-boss 12.31.0, `files.finalizeUpload` and the work other
+workers will carry.
+
+**What no longer holds.**
+- "A job runs as an internal `system` action": `core.md` §4 runs every handler
+  inside its transaction, so a job with external I/O could not meet J10.
+- "The company exists and is active": `companies` has no status column.
+- A fence tied to runner attempts: with zero retries, an abandoned worker still
+  writes after the sweep ends its row.
+- One J9 for every job: an assistant turn, a PDF and a maintenance run need
+  different answers when work cannot run, and "marks the owning row failed"
+  fits none of them exactly.
+- An undefined "provider call", while two maintenance workflows write object
+  storage inside their transaction.
+- "The port" owned by both core and `@showzy/jobs`.
+- A reconciler that "keeps the queued-abandoned interrupt", whose ADR-0039 rule
+  needs the BullMQ job check this ADR removes, while J9 demanded a deadline no
+  rule defined.
+- `pgboss` grants recorded but not built, while CI runs as `showzy_app`.
+- A spec holding patterns that no test in the first feature can prove, and a
+  shared Redis list without the AI budget counters.
+
+**What now holds.** §1, §2, §3, §5, J5, J8, J9, J10–J12 and the Consequences
+above, each marked where it changed. `recoverable` is planned: its semantics
+and acceptance scenarios are in §5, and it has no implementation or test yet.
+
+**Unchanged.** J1–J4, J6, J7, J13–J16, the outbox, and the choice of
+pg-boss.
