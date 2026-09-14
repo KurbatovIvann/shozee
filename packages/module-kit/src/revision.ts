@@ -48,18 +48,43 @@ function compareBumps(left: RevisionBump, right: RevisionBump): number {
   return left.key < right.key ? -1 : 1;
 }
 
+function rootIdentity(bump: RevisionBump): string {
+  return JSON.stringify([
+    getTableName(bump.root.table),
+    bump.companyId.toLowerCase(),
+    bump.key.toLowerCase(),
+  ]);
+}
+
+interface MergedBump {
+  readonly bump: RevisionBump;
+  readonly indexes: number[];
+}
+
+function mergeEqualRoots(bumps: readonly RevisionBump[]): MergedBump[] {
+  const merged = new Map<string, MergedBump>();
+  bumps.forEach((bump, index) => {
+    const identity = rootIdentity(bump);
+    const existing = merged.get(identity);
+    if (existing) existing.indexes.push(index);
+    else merged.set(identity, { bump, indexes: [index] });
+  });
+  return [...merged.values()];
+}
+
 export async function bumpRevisions(
   tx: Tx,
   bumps: readonly RevisionBump[],
 ): Promise<(number | undefined)[]> {
-  const ordered = bumps
-    .map((bump, index) => ({ bump, index }))
-    .sort((left, right) => compareBumps(left.bump, right.bump));
+  const ordered = mergeEqualRoots(bumps).sort((left, right) =>
+    compareBumps(left.bump, right.bump),
+  );
   const revisions: (number | undefined)[] = Array.from({
     length: bumps.length,
   });
-  for (const { bump, index } of ordered) {
-    revisions[index] = await bumpRevision(tx, bump.root, bump);
+  for (const { bump, indexes } of ordered) {
+    const revision = await bumpRevision(tx, bump.root, bump);
+    for (const index of indexes) revisions[index] = revision;
   }
   return revisions;
 }

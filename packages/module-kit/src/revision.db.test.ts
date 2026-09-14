@@ -252,4 +252,36 @@ describe("bumpRevisions", () => {
     expect(await holder).toBe(2);
     expect(await waiting).toEqual([3, 3]);
   });
+
+  it("raises a root passed twice once and returns that revision at every matching index", async () => {
+    const repeatedId = await seed(alphaTable, 4);
+    const otherId = await seed(betaTable, 7);
+
+    const revisions = await database.runtime.db.transaction((tx) =>
+      bumpRevisions(tx, [
+        { root: alphaRoot, companyId, key: repeatedId },
+        { root: betaRoot, companyId, key: otherId },
+        { root: alphaRoot, companyId, key: repeatedId.toUpperCase() },
+        { root: alphaRoot, companyId, key: repeatedId },
+      ]),
+    );
+
+    expect(revisions).toEqual([5, 8, 5, 5]);
+    expect(await revisionOf(alphaTable, repeatedId)).toBe(5);
+    expect(await revisionOf(betaTable, otherId)).toBe(8);
+  });
+
+  it("keeps a repeated key under a foreign company apart from the owned root", async () => {
+    const id = await seed(alphaTable, 2);
+
+    const revisions = await database.runtime.db.transaction((tx) =>
+      bumpRevisions(tx, [
+        { root: alphaRoot, companyId: foreignCompanyId, key: id },
+        { root: alphaRoot, companyId, key: id },
+      ]),
+    );
+
+    expect(revisions).toEqual([undefined, 3]);
+    expect(await revisionOf(alphaTable, id)).toBe(3);
+  });
 });
