@@ -22,6 +22,7 @@ import {
   chatMessageSeqSchema,
 } from "./chat-message-record.contract.js";
 import { STAFF_CONVERSATION_AUTHOR_INVARIANT } from "./conversation-view.contract.js";
+import { assistantTurnClaimSchema } from "./turn-record.contract.js";
 
 export const updateChatMessageInputSchema = z.strictObject({
   conversationId: z.uuid(),
@@ -30,6 +31,7 @@ export const updateChatMessageInputSchema = z.strictObject({
   /** The revision the caller read; the update lands only while it still holds. */
   revision: chatMessageRevisionSchema,
   message: chatMessagePayloadSchema,
+  claim: assistantTurnClaimSchema.optional(),
 });
 
 export const updateChatMessageOutputSchema = z.strictObject({
@@ -41,7 +43,7 @@ export const updateChatMessageOutputSchema = z.strictObject({
 
 export const updateChatMessageContract = defineActionContract({
   name: "assistant.updateChatMessage",
-  description: `${STAFF_CONVERSATION_AUTHOR_INVARIANT} Replace the stored payload of one message, named by its sequence number and its message id together, and raise its revision by one, only while the message still has the revision the caller read; otherwise nothing is stored and it is a conflict. The payload is opaque and owned by the assistant runtime. A pair that names no stored message is not-found, as is a conversation belonging to another author or another company. Company id is never input.`,
+  description: `${STAFF_CONVERSATION_AUTHOR_INVARIANT} Replace the stored payload of one message, named by its sequence number and its message id together, and raise its revision by one, only while the message still has the revision the caller read; otherwise nothing is stored and it is a conflict. With a claim (kind and command id), the update is stored only while that turn of this conversation is running, and is a conflict otherwise; the check locks the turn row, so it serialises with the turn's end. The payload is opaque and owned by the assistant runtime. A pair that names no stored message is not-found, as is a conversation belonging to another author or another company. Company id is never input.`,
   principal: "staff",
   transport: "internal",
   input: updateChatMessageInputSchema,

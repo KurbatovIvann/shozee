@@ -38,6 +38,11 @@ export const assistantTurnRefShape = {
   commandId: z.uuid(),
 } as const;
 
+export const assistantTurnClaimSchema = z.strictObject({
+  kind: assistantTurnKindSchema,
+  commandId: z.uuid(),
+});
+
 export const assistantTurnViewSchema = z.strictObject({
   conversationId: z.uuid(),
   kind: assistantTurnKindSchema,

@@ -20,12 +20,14 @@ import {
   chatMessageSeqSchema,
 } from "./chat-message-record.contract.js";
 import { STAFF_CONVERSATION_AUTHOR_INVARIANT } from "./conversation-view.contract.js";
+import { assistantTurnClaimSchema } from "./turn-record.contract.js";
 
 export const insertChatMessageInputSchema = z.strictObject({
   conversationId: z.uuid(),
   messageId: z.uuid(),
   bind: chatMessageBindSchema,
   message: chatMessagePayloadSchema,
+  claim: assistantTurnClaimSchema.optional(),
 });
 
 export const insertChatMessageOutputSchema = z.strictObject({
@@ -35,7 +37,7 @@ export const insertChatMessageOutputSchema = z.strictObject({
 
 export const insertChatMessageContract = defineActionContract({
   name: "assistant.insertChatMessage",
-  description: `${STAFF_CONVERSATION_AUTHOR_INVARIANT} Append one message to a conversation's stored log and return the sequence number it was given. The message is an opaque payload owned by the assistant runtime. A message id the conversation already holds is a conflict, never an update; so is a concurrent insert that took the same sequence number. A conversation belonging to another author or another company is not-found. Company id is never input.`,
+  description: `${STAFF_CONVERSATION_AUTHOR_INVARIANT} Append one message to a conversation's stored log and return the sequence number it was given. The message is an opaque payload owned by the assistant runtime. A message id the conversation already holds is a conflict, never an update; so is a concurrent insert that took the same sequence number. With a claim (kind and command id), the message is stored only while that turn of this conversation is running, and is a conflict otherwise; the check locks the turn row, so it serialises with the turn's end. A conversation belonging to another author or another company is not-found. Company id is never input.`,
   principal: "staff",
   transport: "internal",
   input: insertChatMessageInputSchema,

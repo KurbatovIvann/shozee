@@ -18,6 +18,7 @@ import type {
 import type { Logger } from "pino";
 
 import type { AssistantInteractionTypes } from "./assistant-interactions.js";
+import type { AssistantTurnKind } from "./queue.js";
 import type { AssistantTurnStore } from "./stores/assistant-turn-store.js";
 
 /**
@@ -135,10 +136,18 @@ export interface AssistantCaller {
   readonly clientIp?: string;
 }
 
+export interface AssistantTurnClaim {
+  readonly kind: AssistantTurnKind;
+  readonly commandId: string;
+}
+
 export interface AssistantRuntime {
   /** The pipeline's logger. Used for spend refusals, which are operational. */
   readonly logger: Logger;
-  readonly forCaller: (caller: AssistantCaller) => AssistantKitScoped;
+  readonly forCaller: (
+    caller: AssistantCaller,
+    claim?: AssistantTurnClaim,
+  ) => AssistantKitScoped;
   /**
    * The company the staff context verified this caller's membership in, read
    * as the caller. Not the selector they sent: a selector names a company, the

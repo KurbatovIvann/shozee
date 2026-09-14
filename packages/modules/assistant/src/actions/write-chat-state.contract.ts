@@ -11,11 +11,13 @@ import { defineActionContract } from "@showzy/core/contract";
 import { z } from "zod";
 
 import { STAFF_CONVERSATION_AUTHOR_INVARIANT } from "./conversation-view.contract.js";
+import { assistantTurnClaimSchema } from "./turn-record.contract.js";
 
 export const writeChatStateInputSchema = z.strictObject({
   conversationId: z.uuid(),
   /** An explicit `null` clears it. */
   history: z.unknown(),
+  claim: assistantTurnClaimSchema.optional(),
 });
 
 export const writeChatStateOutputSchema = z.strictObject({
@@ -24,7 +26,7 @@ export const writeChatStateOutputSchema = z.strictObject({
 
 export const writeChatStateContract = defineActionContract({
   name: "assistant.writeChatState",
-  description: `${STAFF_CONVERSATION_AUTHOR_INVARIANT} Replace the stored provider history for one conversation. The value is whole, never a delta, and is an opaque payload owned by the assistant runtime; null clears it. A conversation belonging to another author or another company is not-found. Company id is never input. Last write wins: a whole-value upsert with no attempt identity to key on, so retrying stores the payload again rather than replaying an earlier one.`,
+  description: `${STAFF_CONVERSATION_AUTHOR_INVARIANT} Replace the stored provider history for one conversation. The value is whole, never a delta, and is an opaque payload owned by the assistant runtime; null clears it. A conversation belonging to another author or another company is not-found. Company id is never input. Last write wins: a whole-value upsert with no attempt identity to key on, so retrying stores the payload again rather than replaying an earlier one. With a claim (kind and command id), the write is stored only while that turn of this conversation is running, and is a conflict otherwise; the check locks the turn row, so it serialises with the turn's end.`,
   principal: "staff",
   transport: "internal",
   input: writeChatStateInputSchema,
@@ -42,7 +44,7 @@ export const writeChatStateContract = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
-  errors: ["VALIDATION", "NOT_FOUND"],
+  errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
   audit: true,
   timeout: 5_000,
 });

@@ -18,6 +18,7 @@ import { postgresError } from "@showzy/module-kit/postgres-unique";
 import { and, desc, eq, lt, sql } from "drizzle-orm";
 
 import { loadOwnConversation } from "./load-conversation.js";
+import { holdTurnClaim, type TurnClaim } from "./turn-claim.js";
 import { requireWritable } from "./writable.js";
 
 type StaffCtx = Extract<ActionCtx, { principal: "staff" }>;
@@ -127,6 +128,7 @@ export async function insertStaffChatMessage(env: {
   readonly messageId: string;
   readonly bind: string;
   readonly message: Record<string, unknown>;
+  readonly claim: TurnClaim | undefined;
 }): Promise<number> {
   await loadOwnConversation({
     db: env.ctx.db,
@@ -135,6 +137,11 @@ export async function insertStaffChatMessage(env: {
     conversationId: env.conversationId,
   });
   const db = requireWritable(env.ctx.db);
+  await holdTurnClaim(db, {
+    companyId: env.ctx.companyId,
+    conversationId: env.conversationId,
+    claim: env.claim,
+  });
 
   // One past the last, in the same statement as the insert.
   const next = nextChatMessageSeq({
@@ -183,6 +190,7 @@ export async function updateStaffChatMessage(env: {
   /** The revision the caller read. */
   readonly revision: number;
   readonly message: Record<string, unknown>;
+  readonly claim: TurnClaim | undefined;
 }): Promise<{ readonly seq: number; readonly revision: number }> {
   await loadOwnConversation({
     db: env.ctx.db,
@@ -191,6 +199,11 @@ export async function updateStaffChatMessage(env: {
     conversationId: env.conversationId,
   });
   const db = requireWritable(env.ctx.db);
+  await holdTurnClaim(db, {
+    companyId: env.ctx.companyId,
+    conversationId: env.conversationId,
+    claim: env.claim,
+  });
 
   // Both, never one: a sequence number alone could name a message the caller
   // did not read, and a message id alone could name an old one.
