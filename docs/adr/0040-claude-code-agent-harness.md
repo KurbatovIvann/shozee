@@ -42,10 +42,11 @@ ADR-0023/ADR-0029 run through it:
 - Playbooks are skills: `/feature`, `/ticket`, `/conveyor`, `/verify`,
   `/review-pr`, `/guard`, `/scaffold`. `/implement` is retired (`/ticket`
   dispatches feature parents to `/conveyor`).
-- Roles are subagents: `implementer` (worktree, always Sonnet — amended
-  2026-09-12 after the first run: Opus executors were 52% of a $550 bill
-  with no review-visible quality gain), `reviewer` and `guardian` (read-only, Opus; the
-  guardian absorbs security review), `ci-triage` (Haiku).
+- Roles are subagents: `implementer` (worktree), `reviewer` and `guardian`
+  (read-only; the guardian absorbs security review), `ci-triage`. Amended
+  2026-09-14 by the owner: every role and session runs on Opus 5, high
+  effort; Sonnet and Haiku are removed (supersedes the 2026-09-12
+  Sonnet-implementer amendment).
 - Conveyor mechanics: one background `implementer` per child in its own
   worktree; reviews launched by the parent; findings return to the **same**
   implementer via resume; merge on `merge-gate.mjs` GREEN + launched review
@@ -68,9 +69,9 @@ become new children, a human closes the parent) are unchanged.
   cloud agents) — deferred: needs a cloud environment with Docker for the
   Testcontainers suite; local worktrees reuse the owner's Docker and pnpm
   store. Revisit when parallel capacity matters more than setup cost.
-- **One model for every role** — rejected: Opus for implementation of
-  routine tickets spends limits without a measurable quality gain once an
-  independent Opus reviewer gates merge; Haiku is sufficient for log triage.
+- **Mixed models per role** (Sonnet implementer, Haiku triage) — used
+  2026-09-12 to 2026-09-14, then dropped by the owner for one model
+  (Opus 5, high) everywhere.
 - **Per-edit formatting hook** — rejected: one prettier pass in
   `verify.mjs` over changed files is cheaper and avoids stale-read edits.
 - **GitHub MCP for PR operations** — rejected: `gh` output is smaller and

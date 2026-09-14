@@ -78,11 +78,9 @@ wrote them — never reworded.
 | UI (`apps/web`, `apps/mobile` product code — never mechanical) | `reviewer` mode `full` |
 | sensitive (label), first golden slice, first new principal / composition edge | `reviewer` mode `full` + `guardian` |
 
-The implementer is **always Sonnet** (its agent default). Never pass a
-`model` override — the first run's Opus executors were 52% of a $550 bill,
-and quality is guarded by the Opus reviewer, not by an Opus writer. If a
-child is too hard for Sonnet (two STOPPED/FAILED reports on the same
-ticket), that is a PROBLEM for the human, not a model switch.
+Every role runs on Opus 5, high effort (agent defaults). Never pass a
+`model` or `effort` override. Two STOPPED/FAILED reports on the same ticket
+are a PROBLEM for the human.
 
 Escalate a later routine child to `reviewer` `full` only if a prior review on
 this feature had blockers or majors.
