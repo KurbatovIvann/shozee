@@ -25,8 +25,14 @@ const betaTable = pgTable("revision_probe_beta", {
   revision: integer("revision").notNull().default(1),
 });
 
-const alphaRoot: RevisionRoot = { table: alphaTable, keyColumn: alphaTable.id };
-const betaRoot: RevisionRoot = { table: betaTable, keyColumn: betaTable.id };
+const alphaRoot: RevisionRoot<typeof alphaTable> = {
+  table: alphaTable,
+  keyColumn: alphaTable.id,
+};
+const betaRoot: RevisionRoot<typeof betaTable> = {
+  table: betaTable,
+  keyColumn: betaTable.id,
+};
 
 const companyId = randomUUID();
 const foreignCompanyId = randomUUID();
@@ -143,7 +149,9 @@ describe("bumpRevisions", () => {
   it("commits concurrent transactions over the same roots in opposite argument orders", async () => {
     const alphaId = await seed(alphaTable, 1);
     const betaId = await seed(betaTable, 1);
-    const forward: RevisionBump[] = [
+    const forward: (
+      RevisionBump<typeof alphaTable> | RevisionBump<typeof betaTable>
+    )[] = [
       { root: alphaRoot, companyId, key: alphaId },
       { root: betaRoot, companyId, key: betaId },
     ];
