@@ -27,6 +27,7 @@ const PLATFORM_PACKAGES = new Set([
   "core",
   "db",
   "document-signing",
+  "jobs",
   "money",
   "module-kit",
   "tooling",
@@ -39,7 +40,7 @@ const PLATFORM_PACKAGES = new Set([
  * into mobile and web, so they may not import these even where platform
  * packages are otherwise allowed (`packages/contract`).
  */
-const SERVER_ONLY_PACKAGES = new Set(["ai", "assistant-runtime"]);
+const SERVER_ONLY_PACKAGES = new Set(["ai", "assistant-runtime", "jobs"]);
 
 /** Projection modules may import foreign schemas; contract-check enforces grants. */
 const PROJECTION_MODULES = new Set(["search", "analytics"]);
@@ -66,7 +67,16 @@ const WORKER_API_SUBPATHS = new Set(["subscriptions", "registry"]);
 
 /** Platform packages whose own source is checked for `@showzy/api` imports. */
 const PLATFORM_SOURCE_RE =
-  /\/packages\/(assistant-kit|assistant-runtime|config|core|db|document-signing|module-kit|money)\//;
+  /\/packages\/(assistant-kit|assistant-runtime|config|core|db|document-signing|jobs|module-kit|money)\//;
+
+const JOBS_PACKAGE_RE = /\/packages\/jobs\//;
+
+/**
+ * @param {string} spec
+ */
+function isPgBossSpecifier(spec) {
+  return spec === "pg-boss" || spec.startsWith("pg-boss/");
+}
 
 /**
  * @param {string} filename
@@ -500,7 +510,9 @@ export const importBoundariesRule = {
       contractModules:
         "packages/contract may import only a module's index.contract.ts barrel (@showzy/<module>/contract) (ADR-0016).",
       clientSafeServerOnly:
-        "Client-safe packages (packages/contract, packages/validation, packages/ui) ship into mobile and web and may not import @showzy/ai or @showzy/assistant-runtime (server-only, ADR-0032, ADR-0039).",
+        "Client-safe packages (packages/contract, packages/validation, packages/ui) ship into mobile and web and may not import @showzy/ai, @showzy/assistant-runtime or @showzy/jobs (server-only, ADR-0032, ADR-0039, ADR-0041).",
+      pgBossOutsideJobs:
+        "pg-boss is imported only inside packages/jobs; everything else uses @showzy/jobs (ADR-0041 J15).",
       clientApp:
         "Client apps may import only @showzy/contract, @showzy/validation, @showzy/copy, @showzy/ui, and @showzy/document-signing (native/web adapters; never /node) (contract.md §2, SHO-251, SHO-414).",
       copyLeaf:
@@ -523,15 +535,20 @@ export const importBoundariesRule = {
   },
   create(context) {
     const from = classify(context.filename);
-    if (from.kind === "skip") {
-      return {};
-    }
+    const insideJobs = JOBS_PACKAGE_RE.test(toPosix(context.filename));
 
     /**
      * @param {import("estree").Node} node
      * @param {string} spec
      */
     function reportIfNeeded(node, spec) {
+      if (!insideJobs && isPgBossSpecifier(spec)) {
+        context.report({ node, messageId: "pgBossOutsideJobs" });
+        return;
+      }
+      if (from.kind === "skip") {
+        return;
+      }
       const result = violation(from, spec, isTypeOnly(node));
       if (result !== null) {
         context.report({
@@ -556,6 +573,16 @@ export const importBoundariesRule = {
       ExportAllDeclaration(node) {
         if (typeof node.source.value === "string") {
           reportIfNeeded(node, node.source.value);
+        }
+      },
+      ImportExpression(node) {
+        if (
+          !insideJobs &&
+          node.source.type === "Literal" &&
+          typeof node.source.value === "string" &&
+          isPgBossSpecifier(node.source.value)
+        ) {
+          context.report({ node, messageId: "pgBossOutsideJobs" });
         }
       },
     };

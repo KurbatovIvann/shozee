@@ -22,6 +22,7 @@
 | --- | --- | --- |
 | `packages/db` / better-auth | users, sessions, accounts, verification/OTP tables | Identity only; company authorization belongs to `companies` |
 | `packages/core` protocol (physical schema in `db/foundation.ts`) | domain events/deliveries, idempotency keys, audit log | No domain state; module tasks may not change these tables |
+| `packages/jobs` (pg-boss 12.31.0; schema from the generated `pgboss` migration) | the `pgboss` schema: job, queue, schedule and runner bookkeeping tables | No domain state and no business records (ADR-0041 J16); only `@showzy/jobs` touches these tables (`docs/specs/jobs.md`) |
 
 ## V2 launch domain ownership
 

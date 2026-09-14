@@ -1,0 +1,34 @@
+{
+  "name": "@showzy/jobs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Server-only job runner port over pg-boss (ADR-0041).",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:unit": "vitest run --project unit",
+    "test:db": "vitest run --project db",
+    "pgboss:generate": "node --experimental-strip-types --import ../db/scripts/ts-resolve-register.mjs scripts/generate-pgboss-migration.ts"
+  },
+  "dependencies": {
+    "@showzy/core": "workspace:*",
+    "drizzle-orm": "^0.45.2",
+    "pg-boss": "12.31.0"
+  },
+  "peerDependencies": {
+    "@showzy/db": "workspace:*"
+  },
+  "devDependencies": {
+    "@showzy/db": "workspace:*",
+    "@showzy/tooling": "workspace:*",
+    "@types/node": "^22.20.1",
+    "eslint": "^10.8.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10"
+  }
+}
