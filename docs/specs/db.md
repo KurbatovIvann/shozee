@@ -252,6 +252,30 @@ transitions, denormalization into projections — all via actions/events.
 The default for any v1 trigger not explicitly kept is: moved to code or
 dropped, recorded in the owning module's spec §7 (v1 migration notes).
 
+### Revision convention (ADR-0042 L2/L3)
+
+An aggregate root a client orders or observes carries an integer
+`revision` column, raised only through `@showzy/module-kit/revision`
+(`bumpRevision` / `bumpRevisions`), never by a trigger or hand-written
+`UPDATE`.
+
+- **Create = revision 1.** The creating INSERT sets `revision` to `1`;
+  it counts as that transaction's one bump.
+- **One bump per transaction, first write.** A transaction that changes
+  an observable aggregate raises its revision exactly once, before
+  writing any other row that depends on the new revision being visible.
+  Bumping several roots in one transaction uses `bumpRevisions`, which
+  orders them by table name then key so concurrent transactions over the
+  same roots always acquire row locks in the same order.
+- **Monotonic, never reused.** Revisions never decrease and a key, once
+  used, is never reused for a different logical root.
+- **Per chunk for bulk work.** A bulk writer bumps once per chunk it
+  commits, never once per row; independent writers never share a root
+  only to get a shared counter.
+- **Per-row counters are out of scope.** `assistant_chat_messages` and
+  `order_cards` keep their existing per-row sequence columns; those are
+  not aggregate revisions and this convention does not apply to them.
+
 ## 6. Roles and safety
 
 - **Runtime role** (`showzy_app`): DML on all tables except DDL; no

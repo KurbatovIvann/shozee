@@ -12,6 +12,7 @@
     "./parse-db-enum": "./src/parse-db-enum.ts",
     "./postgres-unique": "./src/postgres-unique.ts",
     "./require": "./src/require.ts",
+    "./revision": "./src/revision.ts",
     "./sha256": "./src/sha256.ts",
     "./unique-ids": "./src/unique-ids.ts",
     "./writable": "./src/writable.ts"
@@ -20,7 +21,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:unit": "vitest run"
+    "test:unit": "vitest run --project unit"
   },
   "dependencies": {
     "@showzy/core": "workspace:*",
