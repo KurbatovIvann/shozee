@@ -682,6 +682,51 @@ describe("contract check — ctx.call edges (core.md §9, ADR-0015)", () => {
     ]);
   });
 
+  it("rejects a snapshot callee reached from a caller without a snapshot", () => {
+    const registry = buildRegistry(
+      fixtureContract({ name: "chat.listThreads" }),
+      fixtureContract({ name: "orders.readBoard", consistency: "snapshot" }),
+    );
+    const problems = problemsOf(
+      checkInput(registry, {
+        callEdges: [{ caller: "chat.listThreads", callee: "orders.readBoard" }],
+      }),
+    );
+    expect(problems).toEqual([
+      expect.stringContaining(
+        'its caller must declare consistency: "snapshot" too',
+      ),
+    ]);
+  });
+
+  it("accepts a snapshot callee reached from a snapshot caller", () => {
+    const registry = buildRegistry(
+      fixtureContract({ name: "chat.readLive", consistency: "snapshot" }),
+      fixtureContract({ name: "orders.readBoard", consistency: "snapshot" }),
+    );
+    const result = runContractCheck(
+      checkInput(registry, {
+        callEdges: [{ caller: "chat.readLive", callee: "orders.readBoard" }],
+      }),
+    );
+    expect(result.problems).toEqual([]);
+  });
+
+  it("accepts a default callee reached from a snapshot caller", () => {
+    const registry = buildRegistry(
+      fixtureContract({ name: "chat.readLive", consistency: "snapshot" }),
+      staffRead,
+    );
+    const result = runContractCheck(
+      checkInput(registry, {
+        callEdges: [
+          { caller: "chat.readLive", callee: "pricing.resolvePrices" },
+        ],
+      }),
+    );
+    expect(result.problems).toEqual([]);
+  });
+
   it("rejects a same-module edge (services/, not ctx.call)", () => {
     const registry = buildRegistry(
       staffCaller,
