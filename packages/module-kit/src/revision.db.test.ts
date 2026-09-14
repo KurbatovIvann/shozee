@@ -49,8 +49,8 @@ function createGate(): Gate {
 async function seed(
   table: typeof alphaTable | typeof betaTable,
   revision: number,
+  id: string = randomUUID(),
 ): Promise<string> {
-  const id = randomUUID();
   await database.runtime.db.insert(table).values({ id, companyId, revision });
   return id;
 }
@@ -219,6 +219,36 @@ describe("bumpRevisions", () => {
     release.open();
 
     expect(betaBump).toBe(2);
+    expect(await holder).toBe(2);
+    expect(await waiting).toEqual([3, 3]);
+  });
+
+  it("locks keys by their lower-cased value, whatever case each caller sends", async () => {
+    const lowerId = await seed(alphaTable, 1, `a${randomUUID().slice(1)}`);
+    const upperId = await seed(alphaTable, 1, `b${randomUUID().slice(1)}`);
+    const release = createGate();
+    const locked = createGate();
+
+    const holder = holdInTransaction(
+      (tx) => bumpRevision(tx, alphaRoot, { companyId, key: lowerId }),
+      release.opened,
+      locked,
+    );
+    await locked.opened;
+    const waiting = database.runtime.db.transaction((tx) =>
+      bumpRevisions(tx, [
+        { root: alphaRoot, companyId, key: upperId.toUpperCase() },
+        { root: alphaRoot, companyId, key: lowerId },
+      ]),
+    );
+    await untilLockWaiters(1);
+
+    const upperBump = await database.runtime.db.transaction((tx) =>
+      bumpRevision(tx, alphaRoot, { companyId, key: upperId }),
+    );
+    release.open();
+
+    expect(upperBump).toBe(2);
     expect(await holder).toBe(2);
     expect(await waiting).toEqual([3, 3]);
   });

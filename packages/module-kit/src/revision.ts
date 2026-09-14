@@ -41,6 +41,9 @@ function compareBumps(left: RevisionBump, right: RevisionBump): number {
   const leftTable = getTableName(left.root.table);
   const rightTable = getTableName(right.root.table);
   if (leftTable !== rightTable) return leftTable < rightTable ? -1 : 1;
+  const leftKey = left.key.toLowerCase();
+  const rightKey = right.key.toLowerCase();
+  if (leftKey !== rightKey) return leftKey < rightKey ? -1 : 1;
   if (left.key === right.key) return 0;
   return left.key < right.key ? -1 : 1;
 }
