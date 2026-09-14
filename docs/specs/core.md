@@ -567,6 +567,10 @@ by default (hash-only); it is populated only when the action binds an
   mismatch is `CoreInvariantError`. Timeout budget is shared; audit gets a
   child entry only if the callee itself declares `audit: true` (rare for
   reads); logs/spans always nest via `correlationId`.
+- A `consistency: snapshot` callee has no transaction of its own, so its
+  snapshot is its caller's: only a `consistency: snapshot` caller may invoke
+  it (runtime assert + CI check, ADR-0042 L1). A snapshot caller may invoke
+  default reads; they share its snapshot.
 - Depth limit 3, cycle detection by action name — exceeding either is a
   `CoreInvariantError` (a bug, not a user error).
 
@@ -756,6 +760,7 @@ does not apply — fails the check.
 
 | Date | Change | Why | Reported by |
 | --- | --- | --- | --- |
+| 2026-09-14 | §9: a `consistency: snapshot` `ctx.call` callee requires a snapshot caller | ADR-0042 L1: a callee runs on its caller's transaction, so a default caller silently dropped the snapshot | SHO-631 |
 | 2026-09-14 | §2/§4: `consistency: snapshot` read metadata; step 7 opens the execution transaction `REPEATABLE READ` for it | ADR-0042: a live screen needs one consistent read across its statements | SHO-623 |
 | 2026-09-05 | §2/§3: a handler's `ctx` is the `ActionCtx` arm matching the contract's declared `principal` (`ActionCtxFor`), not the seven-mode union; runtime construction unchanged | SHO-416: 109 handlers opened with a principal guard the pipeline made unreachable — it existed only to narrow a type | SHO-416 |
 | 2026-09-05 | §6: `findClaimableDeliveries` selects due aggregate heads before LIMIT | SHO-435: blocked successors filled the bounded batch and starved independent deliveries | SHO-435 |
