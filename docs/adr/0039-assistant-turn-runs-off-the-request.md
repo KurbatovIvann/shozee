@@ -92,9 +92,11 @@ the queue and the events.**
   a claim is exactly-once, so the accept's own `replayed` outcome cannot guard
   a retry that never reaches it.)*
   *(Amended 2026-09-14, ADR-0041: the accept writes the job itself, through
-  `ctx.enqueue` in its own transaction, so a committed turn always has its job
-  and a rolled-back accept has none. A `replayed` accept enqueues nothing, and
-  the job id follows ADR-0041 J2, not the command.)*
+  `ctx.enqueue` in its own transaction, so the turn has its job at the moment
+  the accept commits, and a rolled-back accept leaves none. The runner may
+  delete that job later, through retention; ADR-0041 J9 covers that case. A
+  `replayed` accept enqueues nothing, and the job id follows ADR-0041 J2, not
+  the command.)*
   - The turn row carries what the worker and the reconciler need and the
     request would otherwise take with it: the accept's kind (`chat` |
     `answer`) and the turn's `commandId`, the placeholder's message id, the
@@ -179,7 +181,8 @@ the queue and the events.**
   queue contract lives in the runtime package. The worker reads the turn
   filtered by the job's recorded company (ADR-0041 J5), not through a global
   read, and the actor is still the row's `user_id`. No job is rebuilt from the
-  row, because a committed turn cannot lack one.)*
+  row: the accept commits the turn together with its job, and a job the runner
+  deletes later leaves a turn that the J9 sweep ends.)*
 - **Fail visibly, never twice.** A turn runs once (`attempts: 1`), and a job
   whose worker disappears fails instead of re-running (`maxStalledCount: 0`).
   The turn becomes `interrupted`: what it did stays, the message's text part
@@ -245,9 +248,10 @@ the queue and the events.**
     ending a turn that can never start.)*
     *(Amended 2026-09-14, ADR-0041: the turn's job has the `expires`
     lifecycle, and the reconciler is the assistant's J9 sweep. It never
-    re-enqueues, because a committed turn always has its job, so the job check
-    and the re-enqueue backoff are gone; it fans out one tenant-scoped action
-    per company and keeps the stale-running interrupt.
+    re-enqueues: the accept commits the turn together with its job, and a turn
+    whose job the runner deletes later is ended at its deadline like any other.
+    The job check and the re-enqueue backoff are gone; the sweep fans out one
+    tenant-scoped action per company and keeps the stale-running interrupt.
     Waiting and running are separate limits. A turn must start within its
     start deadline, 15 minutes as an initial setting to revisit against real
     load; a started turn is bound only by the turn timeout. `startTurn` and the

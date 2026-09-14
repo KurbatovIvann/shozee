@@ -264,13 +264,16 @@ spec detail.
   under a fixed key, an idempotent delete) needs neither a provider key nor
   `outcome_unknown`. A provider that accepts no key, such as a model, is never
   re-run: its job declares zero retries. *(Amended 2026-09-14.)*
-- **J11 One opaque provider key per logical effect.**
+- **J11 One opaque provider key per logical effect, for a provider that accepts
+  one.** A provider that accepts no key gets none; its job declares zero
+  retries instead (see above). *(Amended 2026-09-14.)*
   - The key and our provider reference are generated at the item's **first**
     claim and committed **before** the first call.
   - Every later attempt, resume or sweep reuses them.
   - The key is random: it is not derived from the job id, company or actor.
-  *Integration test: attempt, retry, resume and sweep send the same key; the
-  key row is committed before the stub provider receives the request.*
+  *Integration test per keyed provider: attempt, retry, resume and sweep send
+  the same key; the key row is committed before the stub provider receives the
+  request.*
 - **J12 An unknown outcome is a state, not a retry.**
   - An item holds a committed provider key but no recorded result. On any
     re-claim, whatever ended the previous attempt (a crash, a throw, a timeout,
