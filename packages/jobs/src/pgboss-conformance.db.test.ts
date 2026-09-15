@@ -11,6 +11,7 @@ describeJobRunnerConformance({
         onError: (error) => {
           throw error;
         },
+        intervals: { pollingSeconds: 0.5, superviseSeconds: 1, cronSeconds: 1 },
       },
       role,
     ),
@@ -20,5 +21,31 @@ describeJobRunnerConformance({
       [name, id],
     );
     return result.rows[0]?.data;
+  },
+  async readJobs(database, name) {
+    const result = await database.admin.query<{
+      id: string;
+      state: string;
+      output: unknown;
+      sourceId: string | null;
+      createdOn: Date;
+    }>(
+      `SELECT id, state, output, source_id AS "sourceId", created_on AS "createdOn"
+       FROM pgboss.job WHERE name = $1`,
+      [name],
+    );
+    return result.rows;
+  },
+  async abandonAttempt(database, name, id) {
+    await database.admin.query(
+      "UPDATE pgboss.job SET state = 'active', started_on = now() WHERE name = $1 AND id = $2",
+      [name, id],
+    );
+  },
+  async passRetention(database, name, id) {
+    await database.admin.query(
+      "UPDATE pgboss.job SET keep_until = now() - interval '1 second' WHERE name = $1 AND id = $2",
+      [name, id],
+    );
   },
 });
