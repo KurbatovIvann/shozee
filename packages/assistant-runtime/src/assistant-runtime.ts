@@ -67,8 +67,11 @@ import {
 import { assistantKitTurnTools } from "./assistant-kit-tools.js";
 import {
   ASSISTANT_CHAT_WINDOW_MESSAGES,
+  type AssistantCaller,
+  type AssistantKitScoped,
   type AssistantRuntime,
   type AssistantToolContext,
+  type AssistantTurnClaim,
 } from "./runtime-types.js";
 import {
   createPostgresAssistantKitHistoryStore,
@@ -218,50 +221,40 @@ export function createAssistantRuntime(
       confirmed: { idempotencyKey, challengeId },
     });
 
+  const scopedKit = (
+    caller: AssistantCaller,
+    claim: AssistantTurnClaim | undefined,
+  ): AssistantKitScoped => {
+    const kit: AssistantKit<AssistantInteractionTypes> = createAssistantKit({
+      pauses,
+      messages: createPostgresAssistantKitMessageLog(storeDeps, caller, claim),
+      clock: { now: () => new Date() },
+      ids: { uuid: () => randomUUID() },
+      interactions: assistantInteractions,
+      window: { messages: ASSISTANT_CHAT_WINDOW_MESSAGES },
+      onUnreadableMessage: ({ conversationId, seq }) => {
+        options.pipeline.logger.warn(
+          {
+            request_id: caller.requestId,
+            conversation_id: conversationId,
+            seq,
+          },
+          "assistant message could not be read and was skipped",
+        );
+      },
+    });
+    return {
+      kit,
+      history: createPostgresAssistantKitHistoryStore(storeDeps, caller, claim),
+      turns: createPostgresAssistantTurnStore(storeDeps, caller),
+    };
+  };
+
   return {
     logger: options.pipeline.logger,
 
-    /**
-     * A kit per request, sharing one pause store.
-     *
-     * Cheap — a bundle of closures — and the only shape that lets the
-     * transcript and the history be read and written as the person asking,
-     * through the same pipeline as every other action.
-     */
-    forCaller(caller, claim) {
-      const kit: AssistantKit<AssistantInteractionTypes> = createAssistantKit({
-        pauses,
-        messages: createPostgresAssistantKitMessageLog(
-          storeDeps,
-          caller,
-          claim,
-        ),
-        clock: { now: () => new Date() },
-        ids: { uuid: () => randomUUID() },
-        interactions: assistantInteractions,
-        window: { messages: ASSISTANT_CHAT_WINDOW_MESSAGES },
-        onUnreadableMessage: ({ conversationId, seq }) => {
-          // Where it is, never what it said: it is a staff member's words.
-          options.pipeline.logger.warn(
-            {
-              request_id: caller.requestId,
-              conversation_id: conversationId,
-              seq,
-            },
-            "assistant message could not be read and was skipped",
-          );
-        },
-      });
-      return {
-        kit,
-        history: createPostgresAssistantKitHistoryStore(
-          storeDeps,
-          caller,
-          claim,
-        ),
-        turns: createPostgresAssistantTurnStore(storeDeps, caller),
-      };
-    },
+    forCaller: (caller) => scopedKit(caller, undefined),
+    forTurn: (caller, claim) => scopedKit(caller, claim),
 
     model: options.model,
     resolveAnswer: createResolveAnswer({ runConfirmed }),

@@ -69,7 +69,9 @@ and is left untouched. Proof: `src/pgboss-schema.db.test.ts`.
   `claim: { kind, commandId }` and, in the same transaction, lock the turn row
   `FOR SHARE` where it is still `running` before they write. No row is
   `CONFLICT` and nothing is stored. The runtime passes it through
-  `AssistantRuntime.forCaller(caller, claim)`; only the turn processor does.
+  `AssistantRuntime.forTurn(caller, claim)`, whose claim is required; only the
+  turn processor calls it. `forCaller(caller)` takes no claim and serves the
+  API and the reconciler (SHO-663).
 - The terminal transition (`finishTurn`, `interruptTurn`) locks the same row
   `FOR UPDATE`, so a writer that holds the claim commits before the end, and
   a writer that asks after the end finds no running row. A status read

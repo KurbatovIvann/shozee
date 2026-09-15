@@ -144,9 +144,10 @@ export interface AssistantTurnClaim {
 export interface AssistantRuntime {
   /** The pipeline's logger. Used for spend refusals, which are operational. */
   readonly logger: Logger;
-  readonly forCaller: (
+  readonly forCaller: (caller: AssistantCaller) => AssistantKitScoped;
+  readonly forTurn: (
     caller: AssistantCaller,
-    claim?: AssistantTurnClaim,
+    claim: AssistantTurnClaim,
   ) => AssistantKitScoped;
   /**
    * The company the staff context verified this caller's membership in, read

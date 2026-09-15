@@ -88,7 +88,7 @@ export type AssistantTurnDeadline = (
 ) => () => void;
 
 export interface AssistantTurnProcessorDeps {
-  readonly runtime: AssistantRuntime;
+  readonly runtime: Omit<AssistantRuntime, "forCaller">;
   readonly pipeline: ActionPipelineDeps;
   /** The T4 publisher, on the shared Redis. */
   readonly publisher: AssistantEventPublisher;
@@ -358,7 +358,7 @@ export function createAssistantTurnProcessor(
       commandId: found.turn.commandId,
     });
 
-    const { kit, history } = deps.runtime.forCaller(caller, {
+    const { kit, history } = deps.runtime.forTurn(caller, {
       kind: found.turn.kind,
       commandId: found.turn.commandId,
     });

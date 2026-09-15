@@ -185,7 +185,7 @@ export async function enqueueAcceptedTurn(
  * is asking, whether this command was already taken, and the queue this process
  * produces onto are the API's business.
  */
-export interface AssistantKitRuntime extends AssistantRuntime {
+export interface AssistantKitRuntime extends Omit<AssistantRuntime, "forTurn"> {
   /**
    * One attempt, once — the guard in front of the answer route's claim.
    */
