@@ -14,11 +14,6 @@ import { catalogObjectKey, catalogRenditionObjectKey } from "./object-key.js";
 import { getFilesObjectStore, type FilesObjectStore } from "./s3-port.js";
 import { requireWritable } from "./writable.js";
 
-/**
- * Same 5-minute cadence as the worker Job Scheduler
- * (`BACKFILL_CATALOG_RENDITIONS_INTERVAL_MS` in `apps/worker`). Duplicated
- * here so this module does not import `apps/worker`.
- */
 export const BACKFILL_CATALOG_RENDITIONS_INTERVAL_MS = 5 * 60 * 1_000;
 
 let nowMsForTest: number | undefined;

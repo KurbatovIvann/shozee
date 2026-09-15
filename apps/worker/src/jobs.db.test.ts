@@ -10,7 +10,13 @@ import {
   enqueueAssistantTurn,
 } from "@showzy/assistant-runtime";
 import { createProcessLogger, loadServerConfig } from "@showzy/config";
-import { defineJob, type ImplementedAction, type Job } from "@showzy/core";
+import {
+  defineJob,
+  executeAction,
+  type ImplementedAction,
+  type Job,
+} from "@showzy/core";
+import { CoreInvariantError, ValidationError } from "@showzy/core/errors";
 import {
   createTestKit,
   crossTenantSuite,
@@ -284,6 +290,55 @@ describe("worker.cleanupIdempotencyKeys", () => {
     expect(await remainingKeys([pair.expiredKey, pair.liveKey])).toEqual([
       pair.liveKey,
     ]);
+  });
+
+  it("refuses a tenant-scoped system call and a staff call without deleting any key", async () => {
+    await expect(
+      executeAction(kit.pipeline, {
+        action: cleanupIdempotencyKeys,
+        input: {},
+        request: {
+          requestId: randomUUID(),
+          correlationId: randomUUID(),
+          channel: "system",
+        },
+        principal: {
+          mode: "system",
+          serviceName: "test.cleanup",
+          scope: { scope: "tenant", companyId: kit.identities.companies.a },
+        },
+      }),
+    ).rejects.toBeInstanceOf(CoreInvariantError);
+    await expect(
+      executeAction(kit.pipeline, {
+        action: cleanupIdempotencyKeys,
+        input: {},
+        request: {
+          requestId: randomUUID(),
+          correlationId: randomUUID(),
+          channel: "ui",
+        },
+        principal: {
+          mode: "staff",
+          session: { userId: kit.identities.users.anna },
+          companySelector: kit.identities.companies.a,
+        },
+      }),
+    ).rejects.toBeInstanceOf(CoreInvariantError);
+
+    expect(
+      [...(await remainingKeys([pair.expiredKey, pair.liveKey]))].sort(),
+    ).toEqual([pair.expiredKey, pair.liveKey].sort());
+  });
+
+  it("rejects a payload with unknown fields as VALIDATION without deleting any key", async () => {
+    await expect(
+      kit.invoke(cleanupIdempotencyKeys, { olderThanDays: 1 }),
+    ).rejects.toBeInstanceOf(ValidationError);
+
+    expect(
+      [...(await remainingKeys([pair.expiredKey, pair.liveKey]))].sort(),
+    ).toEqual([pair.expiredKey, pair.liveKey].sort());
   });
 });
 

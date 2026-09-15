@@ -19,7 +19,7 @@ import {
 import { defineActionContract } from "@showzy/core/contract";
 import { CoreInvariantError } from "@showzy/core/errors";
 import { createTestKit, type TestKit } from "@showzy/core/testing";
-import { domainEvents, eventDeliveries, idempotencyKeys } from "@showzy/db";
+import { domainEvents, eventDeliveries } from "@showzy/db";
 import { and, asc, eq } from "drizzle-orm";
 import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -381,55 +381,6 @@ describe("apps/worker outbox loop (core.md §6)", () => {
         logger: silent,
       }),
     ).toThrow(CoreInvariantError);
-  });
-
-  it("cleanup removes expired idempotency keys only", async () => {
-    const expiredKey = randomUUID();
-    const liveKey = randomUUID();
-    const nowMs = Date.now();
-    await kit.db.runtime.db.insert(idempotencyKeys).values([
-      {
-        principalKey: `staff:${kit.identities.users.anna}`,
-        scopeKey: `company:${kit.identities.companies.a}`,
-        companyId: kit.identities.companies.a,
-        action: "workerFixture.place",
-        key: expiredKey,
-        requestHash: "a".repeat(64),
-        status: "completed",
-        attemptId: randomUUID(),
-        leaseExpiresAt: new Date(nowMs),
-        expiresAt: new Date(nowMs - 1_000),
-      },
-      {
-        principalKey: `staff:${kit.identities.users.anna}`,
-        scopeKey: `company:${kit.identities.companies.a}`,
-        companyId: kit.identities.companies.a,
-        action: "workerFixture.place",
-        key: liveKey,
-        requestHash: "b".repeat(64),
-        status: "completed",
-        attemptId: randomUUID(),
-        leaseExpiresAt: new Date(nowMs + 30_000),
-        expiresAt: new Date(nowMs + 48 * 3_600_000),
-      },
-    ]);
-
-    const worker = createOutboxWorker({
-      db: kit.db.runtime.db,
-      pipeline: kit.pipeline,
-      subscriptions: [cardSubscription],
-      workerId: "worker-cleanup",
-      logger: silent,
-      now: () => nowMs,
-    });
-    expect(await worker.cleanup()).toBeGreaterThanOrEqual(1);
-
-    const remaining = await kit.db.runtime.db
-      .select({ key: idempotencyKeys.key })
-      .from(idempotencyKeys)
-      .where(eq(idempotencyKeys.action, "workerFixture.place"));
-    expect(remaining.map((row) => row.key)).toEqual([liveKey]);
-    await worker.stop();
   });
 });
 

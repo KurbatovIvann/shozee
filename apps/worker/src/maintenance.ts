@@ -46,7 +46,7 @@ export const cleanupIdempotencyKeys = implementAction(
     idempotent: false,
     audit: true,
     emits: [],
-    errors: [],
+    errors: ["VALIDATION"],
     timeout: 30_000,
     input: jobPayload({}),
     output: jobPayload({ removed: jobField.integer({ min: 0 }) }),

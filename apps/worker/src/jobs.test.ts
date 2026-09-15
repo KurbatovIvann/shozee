@@ -33,6 +33,10 @@ describe("worker job policy", () => {
     expect(jobsSource).not.toContain("@showzy/files");
   });
 
+  it("runs idempotency cleanup only through the worker.cleanupIdempotencyKeys action, never on the outbox loop", () => {
+    expect(source("loop.ts")).not.toContain("cleanupExpiredIdempotencyKeys");
+  });
+
   it("schedules maintenance from the job declarations: sweep and backfill every 5 minutes, cleanup hourly", () => {
     expect(sweepAbandonedUploadsJob.cron).toBe("*/5 * * * *");
     expect(backfillCatalogRenditionsJob.cron).toBe("*/5 * * * *");

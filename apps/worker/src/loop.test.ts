@@ -85,7 +85,6 @@ describe("createWorkerLoop", () => {
       },
       findDue: () => Promise.resolve([]),
       execute: () => Promise.resolve({ status: "processed" }),
-      cleanup: () => Promise.resolve(0),
     });
 
     const first = loop.tick();
@@ -129,7 +128,6 @@ describe("createWorkerLoop", () => {
           release = resolve;
         });
       },
-      cleanup: () => Promise.resolve(0),
     });
 
     const ticking = loop.tick();
@@ -170,7 +168,6 @@ describe("createWorkerLoop", () => {
         executed += 1;
         return Promise.resolve({ status: "processed" });
       },
-      cleanup: () => Promise.resolve(0),
     });
 
     await loop.stop();
@@ -197,7 +194,6 @@ describe("createWorkerLoop", () => {
       },
       findDue: () => Promise.resolve([]),
       execute: () => Promise.resolve({ status: "processed" }),
-      cleanup: () => Promise.resolve(0),
     });
 
     // The failure resolves (never rejects) and logs with backoff metadata.
@@ -251,7 +247,6 @@ describe("createWorkerLoop", () => {
       dispatch: () => Promise.reject(new Error("still down")),
       findDue: () => Promise.resolve([]),
       execute: () => Promise.resolve({ status: "processed" }),
-      cleanup: () => Promise.resolve(0),
     });
 
     await loop.tick(); // 20 000 (uncapped first step)
@@ -297,7 +292,6 @@ describe("createWorkerLoop", () => {
         completed.push(delivery.consumer);
         return Promise.resolve({ status: "processed" });
       },
-      cleanup: () => Promise.resolve(0),
     });
 
     const ticking = loop.tick();
@@ -334,34 +328,11 @@ describe("createWorkerLoop", () => {
         order.push(delivery.consumer);
         return Promise.resolve({ status: "processed" });
       },
-      cleanup: () => Promise.resolve(0),
     });
 
     const result = await loop.tick();
     expect(result.processed).toBe(3);
     expect(order).toEqual(["fixture.a", "fixture.b", "fixture.c"]);
-    await loop.stop();
-  });
-
-  it("does not run idempotency cleanup from the outbox loop", async () => {
-    let cleanups = 0;
-    const loop = createWorkerLoop({
-      workerId: "no-cleanup-timer",
-      logger: silent,
-      pollIntervalMs: 60_000,
-      dispatch: () =>
-        Promise.resolve({ claimedEvents: 0, createdDeliveries: 0 }),
-      findDue: () => Promise.resolve([]),
-      execute: () => Promise.resolve({ status: "processed" }),
-      cleanup: () => {
-        cleanups += 1;
-        return Promise.resolve(0);
-      },
-    });
-
-    await loop.start();
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(cleanups).toBe(0);
     await loop.stop();
   });
 });

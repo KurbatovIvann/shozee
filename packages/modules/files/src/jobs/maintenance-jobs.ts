@@ -4,6 +4,12 @@ import { BACKFILL_CATALOG_RENDITIONS_INTERVAL_MS } from "../services/backfill-ca
 
 const MINUTE_MS = 60_000;
 
+const SWEEP_ABANDONED_UPLOADS_INTERVAL_MS = 5 * MINUTE_MS;
+
+function everyIntervalCron(intervalMs: number): string {
+  return `*/${String(intervalMs / MINUTE_MS)} * * * *`;
+}
+
 const globalPeriodic = {
   scope: "global",
   payload: jobPayload({}),
@@ -16,11 +22,11 @@ const globalPeriodic = {
 export const sweepAbandonedUploadsJob = defineJob({
   ...globalPeriodic,
   name: "files.sweepAbandonedUploads",
-  cron: "*/5 * * * *",
+  cron: everyIntervalCron(SWEEP_ABANDONED_UPLOADS_INTERVAL_MS),
 });
 
 export const backfillCatalogRenditionsJob = defineJob({
   ...globalPeriodic,
   name: "files.backfillCatalogRenditions",
-  cron: `*/${String(BACKFILL_CATALOG_RENDITIONS_INTERVAL_MS / MINUTE_MS)} * * * *`,
+  cron: everyIntervalCron(BACKFILL_CATALOG_RENDITIONS_INTERVAL_MS),
 });

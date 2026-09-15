@@ -34,21 +34,23 @@ import { describe, expect, it } from "vitest";
 import { buildContractCheckInput } from "./composition.js";
 import { createActionRegistry, registeredJobs } from "./registry.js";
 
-const BARREL_EXPORTS: readonly Readonly<Record<string, unknown>>[] = [
-  assistantBarrel,
-  catalogBarrel,
-  chatBarrel,
-  companiesBarrel,
-  customersBarrel,
-  docGenerationBarrel,
-  docSigningBarrel,
-  documentsBarrel,
-  filesBarrel,
-  invitesBarrel,
-  ordersBarrel,
-  pricingBarrel,
-  searchBarrel,
-];
+const BARRELS: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
+  "@showzy/assistant": assistantBarrel,
+  "@showzy/catalog": catalogBarrel,
+  "@showzy/chat": chatBarrel,
+  "@showzy/companies": companiesBarrel,
+  "@showzy/customers": customersBarrel,
+  "@showzy/doc-generation": docGenerationBarrel,
+  "@showzy/doc-signing": docSigningBarrel,
+  "@showzy/documents": documentsBarrel,
+  "@showzy/files": filesBarrel,
+  "@showzy/invites": invitesBarrel,
+  "@showzy/orders": ordersBarrel,
+  "@showzy/pricing": pricingBarrel,
+  "@showzy/search": searchBarrel,
+};
+
+const BARREL_EXPORTS = Object.values(BARRELS);
 
 function isJobDeclaration(value: unknown): value is { readonly name: string } {
   return (
@@ -61,21 +63,7 @@ function isJobDeclaration(value: unknown): value is { readonly name: string } {
   );
 }
 
-const MODULE_BARRELS = new Set([
-  "@showzy/assistant",
-  "@showzy/catalog",
-  "@showzy/chat",
-  "@showzy/companies",
-  "@showzy/customers",
-  "@showzy/doc-generation",
-  "@showzy/doc-signing",
-  "@showzy/documents",
-  "@showzy/files",
-  "@showzy/invites",
-  "@showzy/orders",
-  "@showzy/pricing",
-  "@showzy/search",
-]);
+const MODULE_BARRELS = new Set(Object.keys(BARRELS));
 
 function source(file: string): string {
   return readFileSync(join(import.meta.dirname, file), "utf8");

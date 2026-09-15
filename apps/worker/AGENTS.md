@@ -23,7 +23,7 @@ wakeup, polling fallback, graceful drain, and the job host.
 - `src/maintenance.ts` — maintenance on pg-boss (`docs/specs/jobs.md` §12).
   The worker-owned job and action `worker.cleanupIdempotencyKeys` (hourly,
   internal system/global audited write calling core's
-  `cleanupExpiredIdempotencyKeys` in its own transaction); `workerJobs`
+  `cleanupExpiredIdempotencyKeys` in its action transaction); `workerJobs`
   (`registeredJobs` from `@showzy/api/registry` plus worker-owned jobs,
   duplicates refused); `createWorkerActionRegistry` (the API registry plus
   worker-owned actions); `maintenanceHandlers` for `files.sweepAbandonedUploads`,
