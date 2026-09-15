@@ -305,11 +305,15 @@ export function describeJobRunnerConformance(
     });
 
     afterEach(async () => {
-      for (const runner of [...opened]) {
-        await close(runner);
-      }
+      const closing = await Promise.allSettled([...opened].map(close));
       const reported = runnerErrors.splice(0);
-      expect(reported).toEqual([]);
+      const closeFailures: unknown[] = closing
+        .filter((result) => result.status === "rejected")
+        .map((result): unknown => result.reason);
+      expect({ reported, closeFailures }).toEqual({
+        reported: [],
+        closeFailures: [],
+      });
     });
 
     afterAll(async () => {
