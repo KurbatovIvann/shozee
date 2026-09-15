@@ -45,29 +45,10 @@ import { z } from "zod";
 import {
   assistantTurnActiveStatusSchema,
   assistantTurnBudgetHoldSchema,
+  assistantTurnEndReasonSchema,
   assistantTurnRefShape,
   assistantTurnStatusSchema,
 } from "./turn-record.contract.js";
-
-/**
- * How long a queued turn that has **no job** may stay queued before the
- * reconciler ends it (SHO-570, ADR-0039 as amended).
- *
- * Age alone does not mean abandoned, and this threshold must not be read as if
- * it did. At the declared starting values one worker runs 4 turns at once, each
- * up to 180 s, so it drains about 1.33 turns a minute at worst: a backlog of
- * roughly twenty turns puts a perfectly healthy queued turn past fifteen
- * minutes. What separates the two is the job. A backlogged turn has one
- * waiting, however deep the queue; a turn that can never start has none,
- * because its job completed and was removed (`removeOnComplete`) after being
- * refused at start. The caller checks that — this statement decides only the
- * age — and a caller can therefore only narrow what is ended here, never widen
- * it.
- *
- * Fifteen minutes is then the bound on how long such a turn holds its author's
- * conversation and its reservation. A policy value, changed with a proving test.
- */
-export const ASSISTANT_QUEUED_TURN_ABANDON_MS = 15 * 60 * 1000;
 
 export const interruptTurnInputSchema = z.strictObject({
   ...assistantTurnRefShape,
@@ -79,6 +60,7 @@ export const interruptTurnOutputSchema = z.discriminatedUnion("outcome", [
     conversationId: z.uuid(),
     /** The status this call ended the turn from. */
     from: assistantTurnActiveStatusSchema,
+    endReason: assistantTurnEndReasonSchema,
     releasedHold: assistantTurnBudgetHoldSchema,
   }),
   z.strictObject({
@@ -96,7 +78,7 @@ export const interruptTurnOutputSchema = z.discriminatedUnion("outcome", [
 export const interruptTurnContract = defineActionContract({
   name: "assistant.interruptTurn",
   description:
-    "Interrupt a staff assistant turn of this company, named by its conversation, kind and command, that is running past its deadline or has stayed queued, never started, for longer than the abandon threshold: it becomes interrupted, stops holding its conversation, and gives up the budget hold it stored, which is returned with the status it was ended from. Any other queued or running turn is left as it is and reported as not_stale with its status. A turn that already ended keeps its status and reports it as already_finished. Neither returns a hold. A turn that does not exist in this company is not-found. Company id is never input.",
+    "Interrupt a staff assistant turn of this company, named by its conversation, kind and command, that is running past its deadline or has stayed queued, never started, past its start deadline: it becomes interrupted with end reason timeout or not_started, stops holding its conversation, and gives up the budget hold it stored, which is returned with the status it was ended from. Any other queued or running turn is left as it is and reported as not_stale with its status. A turn that already ended keeps its status and reports it as already_finished. Neither returns a hold. A turn that does not exist in this company is not-found. Company id is never input.",
   principal: "system",
   systemScope: "tenant",
   transport: "internal",

@@ -23,6 +23,7 @@ const window = {
   olderCursor: null,
   openPause: null,
   turn: null,
+  interruptedTurn: { id: COMMAND, endReason: "not_started" },
 };
 
 const events = {
@@ -43,6 +44,7 @@ const events = {
     kind: "chat",
     commandId: COMMAND,
     status: "done",
+    endReason: null,
     window,
   },
 } as const;
@@ -108,6 +110,7 @@ describe("reading an assistant stream event", () => {
       kind: "chat",
       commandId: COMMAND,
       status: "interrupted",
+      endReason: "not_started",
     };
 
     expect(
@@ -122,6 +125,20 @@ describe("reading an assistant stream event", () => {
         "turn.finished",
         JSON.stringify({ ...withoutWindow, window: { messages: [] } }),
       ),
+    ).toBeNull();
+  });
+
+  it("refuses an end reason outside the stored ones, and a finish that omits it", () => {
+    const finished = events["turn.finished"];
+    expect(
+      parseAssistantStreamEvent(
+        "turn.finished",
+        JSON.stringify({ ...finished, endReason: "cancelled" }),
+      ),
+    ).toBeNull();
+    const { endReason: _omitted, ...withoutReason } = finished;
+    expect(
+      parseAssistantStreamEvent("turn.finished", JSON.stringify(withoutReason)),
     ).toBeNull();
   });
 

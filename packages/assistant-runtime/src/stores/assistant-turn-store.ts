@@ -33,6 +33,10 @@ import type {
   ToolOutcome,
 } from "@showzy/assistant-kit";
 import { executeAction } from "@showzy/core";
+import type {
+  AssistantChatInterruptedTurn,
+  AssistantTurnEndReason,
+} from "@showzy/validation/assistant-chat";
 import {
   ConflictError,
   CoreError,
@@ -333,6 +337,9 @@ export interface AssistantTurnStore {
   activeTurn(scope: {
     readonly conversationId: string;
   }): Promise<AssistantTurnActiveView | null>;
+  latestInterrupted(scope: {
+    readonly conversationId: string;
+  }): Promise<AssistantChatInterruptedTurn | null>;
 }
 
 export interface AssistantTurnActiveView {
@@ -555,6 +562,18 @@ export function createPostgresAssistantTurnStore(
           ...call,
         });
         return read.turn;
+      }),
+
+    latestInterrupted: async (scope) =>
+      asCaller(async () => {
+        const read = await executeAction(deps.pipeline, {
+          action: readLatestInterruptedTurn,
+          input: { conversationId: scope.conversationId },
+          ...call,
+        });
+        return read.commandId === null
+          ? null
+          : { id: read.commandId, endReason: read.endReason };
       }),
   };
 }
@@ -798,6 +817,22 @@ export function memoryAssistantTurnStore(
       }
       return Promise.resolve(null);
     },
+
+    latestInterrupted(scope) {
+      const interrupted = [...byCommand.values()]
+        .filter(
+          (turn) =>
+            turn.conversationId.toLowerCase() ===
+              scope.conversationId.toLowerCase() &&
+            statuses.get(key(turn)) === "interrupted",
+        )
+        .at(-1);
+      return Promise.resolve(
+        interrupted === undefined
+          ? null
+          : { id: interrupted.commandId, endReason: null },
+      );
+    },
   };
 }
 
@@ -827,6 +862,7 @@ export type AssistantTurnInterruption =
   | {
       readonly outcome: "interrupted";
       readonly from: "queued" | "running";
+      readonly endReason: AssistantTurnEndReason;
       readonly releasedHold: StaffAssistantBudgetHold;
     }
   | {
@@ -884,6 +920,7 @@ export function createPostgresAssistantStaleTurns(
         ? {
             outcome: "interrupted",
             from: ended.from,
+            endReason: ended.endReason,
             releasedHold: assistantBudgetHoldFromStored(ended.releasedHold),
           }
         : { outcome: ended.outcome, status: ended.status };

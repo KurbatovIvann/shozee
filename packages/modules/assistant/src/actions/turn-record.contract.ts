@@ -31,6 +31,14 @@ export const assistantTurnFinalStatusSchema = z.enum([
   "interrupted",
 ]);
 
+export const assistantTurnEndReasonSchema = z.enum([
+  "not_started",
+  "job_exhausted",
+  "timeout",
+]);
+
+export const ASSISTANT_TURN_START_DEADLINE_MS = 15 * 60 * 1000;
+
 /** The identity a job carries. Any casing; stored and compared lowercase. */
 export const assistantTurnRefShape = {
   conversationId: z.uuid(),

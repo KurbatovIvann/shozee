@@ -18,6 +18,7 @@ import { z } from "zod";
 import {
   assistantChatMessageSchema,
   assistantChatWindowSchema,
+  assistantTurnEndReasonSchema,
 } from "./assistant-chat.js";
 
 /**
@@ -75,6 +76,7 @@ export const assistantTurnFinishedEventSchema = z.strictObject({
   kind: assistantStreamTurnKindSchema,
   commandId: z.uuid(),
   status: assistantStreamTurnStatusSchema,
+  endReason: assistantTurnEndReasonSchema.nullable(),
   window: assistantChatWindowSchema.optional(),
 });
 

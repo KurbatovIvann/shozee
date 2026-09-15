@@ -164,6 +164,15 @@ export const ASSISTANT_TURN_FINAL_STATUSES = [
   "interrupted",
 ] as const satisfies readonly AssistantTurnStatus[];
 
+export const ASSISTANT_TURN_END_REASONS = [
+  "not_started",
+  "job_exhausted",
+  "timeout",
+] as const;
+
+export type AssistantTurnEndReason =
+  (typeof ASSISTANT_TURN_END_REASONS)[number];
+
 function sqlInList(values: readonly string[]) {
   return sql.raw(values.map((value) => `'${value}'`).join(", "));
 }
@@ -239,6 +248,7 @@ export const assistantTurns = pgTable(
     startedAt: timestamp("started_at", { withTimezone: true }),
     deadlineAt: timestamp("deadline_at", { withTimezone: true }),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
+    endReason: text("end_reason").$type<AssistantTurnEndReason>(),
     ...timestampColumns(),
   },
   (table) => [
@@ -267,6 +277,12 @@ export const assistantTurns = pgTable(
       sql`(${table.status} = 'queued' AND ${table.startedAt} IS NULL AND ${table.deadlineAt} IS NULL AND ${table.finishedAt} IS NULL)
         OR (${table.status} = 'running' AND ${table.startedAt} IS NOT NULL AND ${table.deadlineAt} IS NOT NULL AND ${table.finishedAt} IS NULL)
         OR (${table.status} IN (${sqlInList(ASSISTANT_TURN_FINAL_STATUSES)}) AND ${table.finishedAt} IS NOT NULL)`,
+    ),
+    check(
+      "assistant_turns_end_reason_check",
+      sql`${table.endReason} IS NULL
+        OR (${table.endReason} IN (${sqlInList(ASSISTANT_TURN_END_REASONS)}) AND ${table.status} = 'interrupted'
+          AND (${table.endReason} <> 'not_started' OR ${table.startedAt} IS NULL))`,
     ),
     check(
       "assistant_turns_session_check",

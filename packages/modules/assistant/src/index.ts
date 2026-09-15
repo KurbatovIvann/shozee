@@ -5,6 +5,7 @@ import { getStaffActor } from "./actions/get-staff-actor.js";
 import { insertChatMessage } from "./actions/insert-chat-message.js";
 import { interruptTurn } from "./actions/interrupt-turn.js";
 import { listConversations } from "./actions/list-conversations.js";
+import { listOverdueTurns } from "./actions/list-overdue-turns.js";
 import { listStaleTurns } from "./actions/list-stale-turns.js";
 import { readActiveTurn } from "./actions/read-active-turn.js";
 import { readChatMessages } from "./actions/read-chat-messages.js";
@@ -12,6 +13,7 @@ import { readChatState } from "./actions/read-chat-state.js";
 import { readLatestInterruptedTurn } from "./actions/read-latest-interrupted-turn.js";
 import { readTurnForJob } from "./actions/read-turn-for-job.js";
 import { startTurn } from "./actions/start-turn.js";
+import { sweepOverdueTurns } from "./actions/sweep-overdue-turns.js";
 import { updateChatMessage } from "./actions/update-chat-message.js";
 import { writeChatState } from "./actions/write-chat-state.js";
 
@@ -22,6 +24,7 @@ export { getStaffActor };
 export { insertChatMessage };
 export { interruptTurn };
 export { listConversations };
+export { listOverdueTurns };
 export { listStaleTurns };
 export { readActiveTurn };
 export { readChatMessages };
@@ -29,6 +32,7 @@ export { readChatState };
 export { readLatestInterruptedTurn };
 export { readTurnForJob };
 export { startTurn };
+export { sweepOverdueTurns };
 export { updateChatMessage };
 export { writeChatState };
 
@@ -47,6 +51,8 @@ export const assistantActions = [
   listStaleTurns,
   readTurnForJob,
   interruptTurn,
+  listOverdueTurns,
+  sweepOverdueTurns,
   readActiveTurn,
   readLatestInterruptedTurn,
 ] as const;
