@@ -792,21 +792,14 @@ function jobRunInCompany(
   });
   return {
     requestId: envelope.requestId,
-    run: async () => {
-      const checkpoint = kit.jobs.checkpoint();
-      try {
-        return await executeJobAction(kit.pipeline, {
-          job: c.job,
-          envelope,
-          action: c.action,
-          input: envelope.payload,
-          ...(tenantJob ? {} : { fanOutCompanyId: companyId }),
-        });
-      } catch (error) {
-        kit.jobs.discardRun(checkpoint, envelope.requestId);
-        throw error;
-      }
-    },
+    run: () =>
+      executeJobAction(kit.pipeline, {
+        job: c.job,
+        envelope,
+        action: c.action,
+        input: envelope.payload,
+        ...(tenantJob ? {} : { fanOutCompanyId: companyId }),
+      }),
   };
 }
 

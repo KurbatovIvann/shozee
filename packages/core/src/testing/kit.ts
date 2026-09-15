@@ -7,6 +7,7 @@
  * Construction of an `ActionCtx` still goes through the seven principal
  * factories — the kit never assembles a context by hand.
  */
+import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -30,7 +31,7 @@ import { pino, type Logger } from "pino";
 import type { z } from "zod";
 
 import type { ActionPrincipal, PublicScope } from "../contract/types.js";
-import { NotFoundError } from "../errors/index.js";
+import { CoreInvariantError, NotFoundError } from "../errors/index.js";
 import type { Job } from "../jobs/define-job.js";
 import { createAuditHook } from "../runtime/audit/create-audit-hook.js";
 import {
@@ -53,6 +54,7 @@ import type { JobEnvelope, JobPort } from "../runtime/jobs/enqueue.js";
 import { executeAction } from "../runtime/pipeline/execute-action.js";
 import type {
   ActionPipelineDeps,
+  ActionTransactionRunner,
   PipelineHooks,
   PipelineRequestMeta,
   PrincipalInvocation,
@@ -129,8 +131,7 @@ const KIT_IP_HMAC_SECRET = "test-kit-ip-hmac-secret";
 export interface RecordingJobPort extends JobPort {
   readonly sent: readonly JobEnvelope[];
   clear(): void;
-  checkpoint(): number;
-  discardRun(checkpoint: number, requestId: string): void;
+  commitBound(db: ActionTransactionRunner): ActionTransactionRunner;
 }
 
 export function buildJobEnvelope(
@@ -156,22 +157,34 @@ export function buildJobEnvelope(
 
 export function createRecordingJobPort(): RecordingJobPort {
   const sent: JobEnvelope[] = [];
+  const openTransaction = new AsyncLocalStorage<JobEnvelope[]>();
   return {
     sent,
     clear() {
       sent.length = 0;
     },
-    checkpoint() {
-      return sent.length;
-    },
-    discardRun(checkpoint, requestId) {
-      const kept = sent
-        .slice(checkpoint)
-        .filter((envelope) => envelope.requestId !== requestId);
-      sent.splice(checkpoint, sent.length - checkpoint, ...kept);
+    commitBound(db) {
+      return {
+        async transaction(run, config) {
+          const pending: JobEnvelope[] = [];
+          const result = await openTransaction.run(pending, () =>
+            db.transaction(run, config),
+          );
+          sent.push(...pending);
+          return result;
+        },
+      };
     },
     enqueue(_tx, envelopes) {
-      sent.push(...envelopes);
+      const pending = openTransaction.getStore();
+      if (pending === undefined) {
+        return Promise.reject(
+          new CoreInvariantError(
+            "the recording job port was sent envelopes outside a commit-bound transaction; run the pipeline on kit.jobs.commitBound(db)",
+          ),
+        );
+      }
+      pending.push(...envelopes);
       return Promise.resolve();
     },
   };
@@ -353,7 +366,7 @@ export async function createTestKit(db?: TestDatabase): Promise<TestKit> {
 
   const jobs = createRecordingJobPort();
   const pipeline: ActionPipelineDeps = {
-    db: database.runtime.db,
+    db: jobs.commitBound(database.runtime.db),
     logger: silentLogger,
     projectionGrants: createProjectionGrantManifest([fixtureDiscoveryGrant]),
     hooks: kitProtocolHooks(database, jobs),
@@ -489,7 +502,6 @@ export async function invokeAction<
       : {}),
     ...options.request,
   };
-  const checkpoint = kit.jobs.checkpoint();
   try {
     return await executeAction(options.deps ?? kit.pipeline, {
       action,
@@ -498,7 +510,6 @@ export async function invokeAction<
       principal: principalInvocation(contract.principal, actor, contract),
     });
   } catch (error) {
-    kit.jobs.discardRun(checkpoint, request.requestId);
     checkInvokeActionError(contract, error);
     throw error;
   }

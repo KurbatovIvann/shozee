@@ -13,7 +13,11 @@ import {
 } from "../../errors/index.js";
 import { defineJob } from "../../jobs/define-job.js";
 import { jobField, jobPayload } from "../../jobs/job-payload.js";
-import { createTestKit, type TestKit } from "../../testing/kit.js";
+import {
+  buildJobEnvelope,
+  createTestKit,
+  type TestKit,
+} from "../../testing/kit.js";
 import { defineEventHandler } from "../events/define-event-handler.js";
 import { defineEvent } from "../events/define-event.js";
 import { dispatchOutboxBatch, executeDelivery } from "../events/delivery.js";
@@ -323,6 +327,19 @@ async function expectRefused(
   expect(error instanceof CoreError ? error.message : "").toContain(detail);
 }
 
+function signal(): { readonly fired: Promise<void>; fire(): void } {
+  let settle = (): void => undefined;
+  const fired = new Promise<void>((resolve) => {
+    settle = resolve;
+  });
+  return {
+    fired,
+    fire() {
+      settle();
+    },
+  };
+}
+
 async function emitNoted(turnId: string): Promise<string> {
   const requestId = randomUUID();
   await kit.invoke(
@@ -384,7 +401,7 @@ describe("ctx.enqueue commit and rollback (J1)", () => {
     expect(kit.jobs.sent).toHaveLength(0);
   });
 
-  it("drops the envelopes kit.invoke recorded when a hook fails after the send", async () => {
+  it("records nothing from a run whose hook fails after the send", async () => {
     const keptTurnId = randomUUID();
     await kit.invoke(noteAction, { turnId: keptTurnId });
     const hooks = {
@@ -410,15 +427,48 @@ describe("ctx.enqueue commit and rollback (J1)", () => {
     ]);
   });
 
-  it("keeps a committed run's envelopes when a later run with the same request id fails after the send", async () => {
+  it("keeps a committed run's envelopes while an overlapping run with the same request id fails after the send", async () => {
     const keptTurnId = randomUUID();
     const requestId = randomUUID();
+    const failingReachedAudit = signal();
+    const committedRunDone = signal();
+    const hooks = {
+      ...kit.pipeline.hooks,
+      audit: {
+        recordSuccess: async () => {
+          failingReachedAudit.fire();
+          await committedRunDone.fired;
+          throw new CoreInvariantError("injected audit failure");
+        },
+        recordFailure: () => Promise.resolve(),
+      },
+    };
+
+    const failing = kit.invoke(
+      noteAction,
+      { turnId: randomUUID() },
+      {},
+      { request: { requestId }, deps: { ...kit.pipeline, hooks } },
+    );
+    await failingReachedAudit.fired;
     await kit.invoke(
       noteAction,
       { turnId: keptTurnId },
       {},
       { request: { requestId } },
     );
+    expect(kit.jobs.sent.map((envelope) => envelope.payload)).toEqual([
+      { turnId: keptTurnId },
+    ]);
+    committedRunDone.fire();
+
+    await expect(failing).rejects.toBeInstanceOf(CoreInvariantError);
+    expect(kit.jobs.sent.map((envelope) => envelope.payload)).toEqual([
+      { turnId: keptTurnId },
+    ]);
+  });
+
+  it("records only the committed runs among concurrent failing and committing invokes", async () => {
     const hooks = {
       ...kit.pipeline.hooks,
       audit: {
@@ -427,19 +477,38 @@ describe("ctx.enqueue commit and rollback (J1)", () => {
         recordFailure: () => Promise.resolve(),
       },
     };
+    const committedTurnIds = [randomUUID(), randomUUID(), randomUUID()];
+
+    const outcomes = await Promise.allSettled(
+      committedTurnIds.flatMap((turnId) => [
+        kit.invoke(
+          noteAction,
+          { turnId: randomUUID() },
+          {},
+          { deps: { ...kit.pipeline, hooks } },
+        ),
+        kit.invoke(noteAction, { turnId }),
+      ]),
+    );
+
+    expect(outcomes.map((outcome) => outcome.status)).toEqual(
+      committedTurnIds.flatMap(() => ["rejected", "fulfilled"]),
+    );
+    expect(
+      kit.jobs.sent.map((envelope) => envelope.payload["turnId"]).sort(),
+    ).toEqual([...committedTurnIds].sort());
+  });
+
+  it("refuses a send outside a commit-bound transaction", async () => {
+    const envelope = buildJobEnvelope(runTurn, {
+      companyId: kit.identities.companies.a,
+      payload: { turnId: randomUUID() },
+    });
 
     await expect(
-      kit.invoke(
-        noteAction,
-        { turnId: randomUUID() },
-        {},
-        { request: { requestId }, deps: { ...kit.pipeline, hooks } },
-      ),
+      kit.db.runtime.db.transaction((tx) => kit.jobs.enqueue(tx, [envelope])),
     ).rejects.toBeInstanceOf(CoreInvariantError);
-
-    expect(kit.jobs.sent.map((envelope) => envelope.payload)).toEqual([
-      { turnId: keptTurnId },
-    ]);
+    expect(kit.jobs.sent).toHaveLength(0);
   });
 
   it("fails closed when an action declaring enqueues has no job port", async () => {

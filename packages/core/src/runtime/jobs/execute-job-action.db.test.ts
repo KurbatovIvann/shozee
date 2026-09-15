@@ -34,6 +34,7 @@ import {
 import { defineEvent } from "../events/define-event.js";
 import { implementAction } from "../implement-action.js";
 import type { ActionPipelineDeps } from "../pipeline/types.js";
+import type { JobEnvelope, JobPort } from "./enqueue.js";
 import {
   executeJobAction,
   type JobActionInvocation,
@@ -592,17 +593,40 @@ describe("executeJobAction runs in the recorded scope (J5)", () => {
         input: { customerId: sentinelId() },
       });
 
-    await expect(run(failingAuditDeps())).rejects.toBeInstanceOf(
-      CoreInvariantError,
-    );
+    const attempted: JobEnvelope[] = [];
+    const failing = failingAuditDeps();
+    const attemptPort: JobPort = {
+      enqueue(_tx, envelopes) {
+        attempted.push(...envelopes);
+        return Promise.resolve();
+      },
+    };
+
+    await expect(
+      run({ ...failing, hooks: { ...failing.hooks, jobs: attemptPort } }),
+    ).rejects.toBeInstanceOf(CoreInvariantError);
     await run(kit.pipeline);
-    const [failedAttempt, retry] = kit.jobs.sent;
-    expect(kit.jobs.sent).toHaveLength(2);
-    expect(retry?.id).toBe(failedAttempt?.id);
+    expect(attempted).toHaveLength(1);
+    expect(kit.jobs.sent).toHaveLength(1);
+    expect(kit.jobs.sent[0]?.id).toBe(attempted[0]?.id);
 
     await run(kit.pipeline);
     expect(runs.touch).toBe(2);
-    expect(kit.jobs.sent).toHaveLength(2);
+    expect(kit.jobs.sent).toHaveLength(1);
+  });
+
+  it("leaves nothing at the port when a direct job run rolls back after the send", async () => {
+    await expect(
+      executeJobAction(failingAuditDeps(), {
+        job: touchJob,
+        envelope: touchEnvelope(),
+        action: touchCustomer,
+        input: { customerId: sentinelId() },
+      }),
+    ).rejects.toBeInstanceOf(CoreInvariantError);
+
+    expect(runs.touch).toBe(1);
+    expect(kit.jobs.sent).toHaveLength(0);
   });
 
   it("fails closed when the recorded company does not exist", async () => {
@@ -808,7 +832,7 @@ describe("executeJobAction runs in the recorded scope (J5)", () => {
     const { logger } = createCapturingLogger();
     const deps: ActionPipelineDeps = {
       ...kit.pipeline,
-      db: single.db,
+      db: kit.jobs.commitBound(single.db),
       hooks: {
         ...kit.pipeline.hooks,
         audit: createAuditHook({ db: single.db, logger }),

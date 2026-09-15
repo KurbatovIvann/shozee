@@ -539,12 +539,16 @@ runner settings from the same declaration (`docs/specs/jobs.md`).
   the pipeline. There is no company status check. Staff actions keep their
   own paths; this entrypoint produces no staff caller.
 - **Test kit.** `createTestKit` composes `createRecordingJobPort()` as
-  `kit.jobs`; it records what reached the port at step 9. `kit.invoke` and
-  `jobIsolationSuite` drop the envelopes their own rejected run recorded (later
-  than a checkpoint and carrying that run's `requestId`); a direct
-  `executeAction`/`executeJobAction` caller still sees a rolled-back run's
-  envelopes. Commit-time
-  atomicity of a real runner is the adapter conformance suite's proof.
+  `kit.jobs`. Recording is commit-bound: the kit pipeline's `db` is
+  `kit.jobs.commitBound(db)`, which holds the envelopes sent at step 9 pending
+  for the transaction that is open in that async context (savepoints included)
+  and moves them into `kit.jobs.sent` only when that transaction commits; a
+  rollback drops them. `kit.jobs.sent` therefore holds only committed
+  envelopes for every entry point — `kit.invoke`, `jobIsolationSuite`, direct
+  `executeAction`/`executeJobAction`/`executeDelivery` calls, concurrent runs,
+  and overlapping runs sharing a `requestId`. A send outside a commit-bound
+  transaction is a `CoreInvariantError`. Commit-time atomicity of a real
+  runner is the adapter conformance suite's proof.
 
 ## 7. Confirmation protocol (`requiresConfirmation`)
 
@@ -754,9 +758,8 @@ Exported from `packages/core/testing`, used by every module (this is how
   action takes the company from its scope. `buildJobEnvelope` builds the
   test envelope. Cases assume the action input equals the payload: a
   `JobHandler.handle` that maps the payload to a different input is not
-  covered by the suite and belongs to `packages/jobs` conformance. Envelopes
-  that a refused run recorded are dropped from `kit.jobs.sent`, as for a
-  rejected `kit.invoke`.
+  covered by the suite and belongs to `packages/jobs` conformance. A refused
+  run's envelopes never reach `kit.jobs.sent` (§6 test kit).
 - `idempotencySuite(action)` — replay, conflict, concurrent-retry cases.
 - `eventSuite(module)` — declared events emitted transactionally (rollback
   removes them), consumer dedup respected.
