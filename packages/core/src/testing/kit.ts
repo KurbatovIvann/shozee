@@ -31,6 +31,7 @@ import type { z } from "zod";
 
 import type { ActionPrincipal, PublicScope } from "../contract/types.js";
 import { NotFoundError } from "../errors/index.js";
+import type { Job } from "../jobs/define-job.js";
 import { createAuditHook } from "../runtime/audit/create-audit-hook.js";
 import {
   createAccountContext,
@@ -45,7 +46,7 @@ import {
   type SessionPrincipal,
   type SystemScopeInput,
 } from "../runtime/context/factories.js";
-import type { ActionCtx } from "../runtime/context/types.js";
+import type { ActionChannel, ActionCtx } from "../runtime/context/types.js";
 import { createIdempotencyHook } from "../runtime/idempotency/create-idempotency-hook.js";
 import type { ImplementedAction } from "../runtime/implement-action.js";
 import type { JobEnvelope, JobPort } from "../runtime/jobs/enqueue.js";
@@ -128,6 +129,27 @@ const KIT_IP_HMAC_SECRET = "test-kit-ip-hmac-secret";
 export interface RecordingJobPort extends JobPort {
   readonly sent: readonly JobEnvelope[];
   clear(): void;
+}
+
+export function buildJobEnvelope(
+  job: Job,
+  options: {
+    readonly companyId: string | null;
+    readonly payload: Readonly<Record<string, unknown>>;
+    readonly channel?: ActionChannel;
+  },
+): JobEnvelope {
+  return {
+    id: randomUUID(),
+    name: job.name,
+    companyId: options.companyId,
+    actor: { type: "system", id: DEFAULT_SERVICE },
+    channel: options.channel ?? "system",
+    requestId: randomUUID(),
+    correlationId: randomUUID(),
+    executionId: randomUUID(),
+    payload: job.payload.parse(options.payload),
+  };
 }
 
 export function createRecordingJobPort(): RecordingJobPort {

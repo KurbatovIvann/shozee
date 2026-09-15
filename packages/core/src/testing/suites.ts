@@ -20,7 +20,9 @@ import {
   PermissionDeniedError,
   RateLimitError,
 } from "../errors/index.js";
+import type { Job } from "../jobs/define-job.js";
 import type { ImplementedAction } from "../runtime/implement-action.js";
+import { executeJobAction } from "../runtime/jobs/execute-job-action.js";
 import type { RateLimitHook } from "../runtime/pipeline/types.js";
 import {
   createRateLimitHook,
@@ -35,6 +37,7 @@ import {
 } from "./inspect.js";
 import { kitIdentities } from "./identities.js";
 import {
+  buildJobEnvelope,
   createCapturingLogger,
   invokeAction,
   type IsolationActor,
@@ -732,6 +735,83 @@ export async function runShareIsolationCase(
   throw new Error(
     `"${action.contract.name}" did not fail closed when the rate-limit store was down`,
   );
+}
+
+export interface JobIsolationInvocation {
+  readonly payload: Readonly<Record<string, unknown>>;
+  readonly input: unknown;
+}
+
+export interface JobIsolationCase {
+  readonly job: Job;
+  readonly action: SuiteAction;
+  readonly own: JobIsolationInvocation;
+  readonly foreign: JobIsolationInvocation;
+}
+
+export function jobIsolationCase<
+  TInput extends z.ZodType,
+  TOutput extends z.ZodType,
+  TTarget,
+>(
+  job: Job,
+  action: ImplementedAction<TInput, TOutput, TTarget>,
+  own: JobIsolationInvocation,
+  foreign: JobIsolationInvocation,
+): JobIsolationCase {
+  return { job, action, own, foreign };
+}
+
+async function runJobInCompany(
+  kit: TestKit,
+  c: JobIsolationCase,
+  call: JobIsolationInvocation,
+  companyId: string,
+): Promise<unknown> {
+  const tenantJob = c.job.scope === "tenant";
+  return executeJobAction(kit.pipeline, {
+    envelope: buildJobEnvelope(c.job, {
+      companyId: tenantJob ? companyId : null,
+      payload: call.payload,
+    }),
+    action: c.action,
+    input: call.input,
+    ...(tenantJob ? {} : { fanOutCompanyId: companyId }),
+  });
+}
+
+export async function runJobIsolationCase(
+  kit: TestKit,
+  c: JobIsolationCase,
+): Promise<void> {
+  const actionName = c.action.contract.name;
+  if (c.action.contract.systemScope !== "tenant") {
+    throw new Error(
+      `jobIsolationCase "${c.job.name}" runs "${actionName}", which is not a tenant system action`,
+    );
+  }
+  await runJobInCompany(kit, c, c.own, kitIdentities.companies.a);
+  await expectForeignDenied(
+    `${actionName} from job ${c.job.name} with a payload naming another company's row`,
+    () => runJobInCompany(kit, c, c.foreign, kitIdentities.companies.a),
+  );
+  await expectForeignDenied(
+    `${actionName} from job ${c.job.name} for a company that does not exist`,
+    () => runJobInCompany(kit, c, c.own, randomUUID()),
+  );
+}
+
+export function jobIsolationSuite(
+  getKit: () => TestKit,
+  cases: readonly JobIsolationCase[],
+): void {
+  describe("jobIsolationSuite", () => {
+    for (const c of cases) {
+      it(`${c.job.name} runs ${c.action.contract.name} only in its recorded company and fails closed on a foreign row or a missing company`, async () => {
+        await runJobIsolationCase(getKit(), c);
+      });
+    }
+  });
 }
 
 export function shareIsolationSuite(
