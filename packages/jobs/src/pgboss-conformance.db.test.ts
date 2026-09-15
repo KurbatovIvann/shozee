@@ -1,4 +1,7 @@
-import { describeJobRunnerConformance } from "./conformance.js";
+import {
+  describeJobRunnerConformance,
+  type ScheduledRuns,
+} from "./conformance.js";
 import { openJobRunner } from "./job-runner.js";
 
 describeJobRunnerConformance({
@@ -32,13 +35,23 @@ describeJobRunnerConformance({
       state: string;
       output: unknown;
       sourceId: string | null;
-      createdOn: Date;
     }>(
-      `SELECT id, state, output, source_id AS "sourceId", created_on AS "createdOn"
+      `SELECT id, state, output, source_id AS "sourceId"
        FROM pgboss.job WHERE name = $1`,
       [name],
     );
     return result.rows;
+  },
+  async readScheduledRuns(database, name) {
+    const result = await database.admin.query<ScheduledRuns>(
+      `SELECT
+         COALESCE((SELECT json_agg(json_build_object('id', id, 'state', state, 'output', output, 'sourceId', source_id))
+                   FROM pgboss.job WHERE name = $1), '[]') AS jobs,
+         COALESCE((SELECT json_agg(json_build_object('slot', singleton_on, 'state', state))
+                   FROM pgboss.job WHERE name = '__pgboss__send-it' AND data->>'name' = $1), '[]') AS ticks`,
+      [name],
+    );
+    return result.rows[0] ?? { jobs: [], ticks: [] };
   },
   async abandonAttempt(database, name, id) {
     await database.admin.query(

@@ -28,7 +28,16 @@ export interface RunnerJobRecord {
   readonly state: string;
   readonly output: unknown;
   readonly sourceId: string | null;
-  readonly createdOn: Date;
+}
+
+export interface ScheduledTick {
+  readonly slot: string;
+  readonly state: string;
+}
+
+export interface ScheduledRuns {
+  readonly jobs: readonly RunnerJobRecord[];
+  readonly ticks: readonly ScheduledTick[];
 }
 
 export interface JobRunnerConformanceTarget {
@@ -54,6 +63,10 @@ export interface JobRunnerConformanceTarget {
     database: TestDatabase,
     name: string,
   ): Promise<readonly RunnerJobRecord[]>;
+  readScheduledRuns(
+    database: TestDatabase,
+    name: string,
+  ): Promise<ScheduledRuns>;
   abandonAttempt(
     database: TestDatabase,
     name: string,
@@ -742,18 +755,23 @@ export function describeJobRunnerConformance(
         );
         await delay(3_000);
 
-        const { jobs, ranIds } = await eventually(
+        const { jobs, ticks, ranIds } = await eventually(
           async () => {
-            const rows = await target.readJobs(database, job.name);
-            return { jobs: rows, ranIds: runs.map(({ id }) => id) };
+            const ranBeforeRead = runs.map(({ id }) => id);
+            const scheduled = await target.readScheduledRuns(
+              database,
+              job.name,
+            );
+            return { ...scheduled, ranIds: ranBeforeRead };
           },
-          ({ jobs: rows }) => rows.every(({ state }) => state === "completed"),
+          (read) =>
+            read.jobs.every(({ state }) => state === "completed") &&
+            read.ticks.every(({ state }) => state === "completed") &&
+            read.ranIds.length === read.jobs.length,
         );
         expect(ranIds.length).toBeGreaterThan(0);
-        const minutes = jobs.map(({ createdOn }) =>
-          Math.floor(createdOn.getTime() / 60_000),
-        );
-        expect(new Set(minutes).size).toBe(jobs.length);
+        expect(new Set(ticks.map(({ slot }) => slot)).size).toBe(ticks.length);
+        expect(jobs).toHaveLength(ticks.length);
         expect(new Set(ranIds).size).toBe(ranIds.length);
         expect([...ranIds].sort()).toEqual(jobs.map(({ id }) => id).sort());
         expect(runs.every(({ scope }) => scope === "global")).toBe(true);
