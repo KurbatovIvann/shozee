@@ -355,7 +355,7 @@ export function mergeSuiteCoverage(
     idempotency: manifests.flatMap((manifest) => manifest.idempotency),
     events: manifests.flatMap((manifest) => manifest.events),
     atomic: manifests.flatMap((manifest) => manifest.atomic),
-    jobIsolation: manifests.flatMap((manifest) => manifest.jobIsolation ?? []),
+    jobIsolation: manifests.flatMap((manifest) => manifest.jobIsolation),
   };
 }
 

@@ -1,10 +1,12 @@
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, expect, expectTypeOf, it } from "vitest";
 import { z } from "zod";
 
+import type { SystemScope } from "../contract/types.js";
 import {
   defineJob,
   JobDefinitionError,
   type JobDefinition,
+  type JobScope,
 } from "./define-job.js";
 import { type JobField, jobField, jobPayload } from "./job-payload.js";
 
@@ -219,6 +221,36 @@ describe("defineJob — define-time refusals", () => {
     ).toEqual(['discriminator "turnId" is not a payload field']);
   });
 
+  it("refuses a discriminator naming an inherited property of the shape", () => {
+    expect(
+      problemsOf({
+        ...expiringJob(),
+        discriminator: ["turnId", "toString"],
+      }),
+    ).toEqual(['discriminator "toString" is not a payload field']);
+  });
+
+  it("refuses an enum field whose values array lies about its contents", () => {
+    const values: [string, ...string[]] = ["reply"];
+    values.push(7 as never);
+    Object.defineProperty(values, "every", { value: () => true });
+    expect(
+      problemsOf({
+        ...expiringJob(),
+        payload: jobPayload({
+          turnId: jobField.uuid(),
+          kind: jobField.enum(values),
+        }),
+      }),
+    ).toEqual([
+      'payload field "kind" must be a jobField (uuid, enum, literal, integer) used as built — payloads are identity only (ADR-0041 J6)',
+    ]);
+  });
+
+  it("names the job scope by the system scope type", () => {
+    expectTypeOf<JobScope>().toEqualTypeOf<SystemScope>();
+  });
+
   it("refuses duplicate discriminator fields", () => {
     expect(
       problemsOf({ ...expiringJob(), discriminator: ["turnId", "turnId"] }),
@@ -241,6 +273,33 @@ describe("defineJob — define-time refusals", () => {
     expect(problemsOf({ ...periodicJob(), cron: "every hour" })).toEqual(
       expected,
     );
+  });
+
+  it.each([
+    "a b c d e",
+    "60 * * * *",
+    "* 24 * * *",
+    "* * 0 * *",
+    "* * * 13 *",
+    "* * * * 8",
+    "*/0 * * * *",
+    "10-5 * * * *",
+    "1,,2 * * * *",
+    "* * * FOO *",
+    "60 * * * * *",
+  ])("refuses the malformed cron %s", (cron) => {
+    expect(problemsOf({ ...periodicJob(), cron })).toEqual([
+      'lifecycle "periodic" requires cron, a 5- or 6-field cron expression',
+    ]);
+  });
+
+  it.each([
+    "0 3 * * *",
+    "*/15 0-6,18-23 1 jan-DEC MON-FRI",
+    "0 0 1,15 * 0/2",
+    "30 */5 * * * *",
+  ])("accepts the cron %s", (cron) => {
+    expect(defineJob({ ...periodicJob(), cron }).cron).toBe(cron);
   });
 
   it("refuses an expiring job without an on-exhausted action, or with a cron", () => {

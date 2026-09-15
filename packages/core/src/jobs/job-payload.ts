@@ -49,11 +49,13 @@ export const jobField = Object.freeze({
   uuid: (): JobField<z.ZodUUID> => field(z.uuid(), true),
   enum: <const TValues extends readonly [string, ...string[]]>(
     values: TValues,
-  ): JobField<z.ZodEnum<{ [K in TValues[number]]: K }>> =>
-    field(
-      z.enum(values),
-      values.every((value) => typeof value === "string"),
-    ),
+  ): JobField<z.ZodEnum<{ [K in TValues[number]]: K }>> => {
+    const schema = z.enum(values);
+    return field(
+      schema,
+      schema.options.every((value: unknown) => typeof value === "string"),
+    );
+  },
   literal: <const TValue extends string>(
     value: TValue,
   ): JobField<z.ZodLiteral<TValue>> =>

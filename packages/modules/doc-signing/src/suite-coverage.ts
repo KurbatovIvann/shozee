@@ -26,4 +26,5 @@ export const docSigningSuiteCoverage = {
       callee: "files.recordSigningObject",
     },
   ],
+  jobIsolation: [],
 } as const satisfies SuiteCoverageManifest;

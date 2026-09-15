@@ -785,7 +785,7 @@ suites apply). Every idempotent mutation that is not an event-consumer
 binding must appear in `idempotency`. Every module that emits or
 subscribes must appear in `events`. Every mutually declared atomic edge
 must appear in `atomic`. Every module that defines a job must appear in
-`jobIsolation` (optional on a module's manifest; §6 Jobs). Omission — or listing an action in a suite that
+`jobIsolation` (required on every manifest, `[]` when the module defines no job; §6 Jobs). Omission — or listing an action in a suite that
 does not apply — fails the check.
 
 ## 13. Acceptance criteria

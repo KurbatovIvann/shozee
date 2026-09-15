@@ -40,7 +40,7 @@ export interface SuiteCoverageManifest {
     readonly caller: string;
     readonly callee: string;
   }[];
-  readonly jobIsolation?: readonly string[];
+  readonly jobIsolation: readonly string[];
 }
 
 /** Explicit empty coverage — the CI stage uses this until modules exist. */

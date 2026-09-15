@@ -24,4 +24,5 @@ export const ordersSuiteCoverage = {
   ],
   events: ["orders"],
   atomic: [],
+  jobIsolation: [],
 } as const satisfies SuiteCoverageManifest;

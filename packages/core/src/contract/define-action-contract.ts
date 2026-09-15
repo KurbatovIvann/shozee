@@ -372,7 +372,7 @@ function validateEnqueues(
   if (hasDuplicates(enqueues)) {
     problems.push("enqueues must not contain duplicates");
   }
-  if (enqueues.length > 0 && definition.risk === "read") {
+  if (definition.risk === "read") {
     problems.push(
       'enqueues requires a writable action — risk: "read" never enqueues (ADR-0041 J4)',
     );

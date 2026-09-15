@@ -94,6 +94,10 @@ and is left untouched. Proof: `src/pgboss-schema.db.test.ts`.
   `actor`, `channel`, `requestId`, `correlationId`, `executionId` and the
   identity-only `payload`. Every value is an id, a uuid or a fixed enum; no
   free text reaches a job row (J6, SHO-659).
+- J6 assumes trusted, reviewed in-process module code: registered schemas
+  must not be mutated; payload and envelope data remain untrusted and must be
+  validated at runtime boundaries, while deliberate replacement or mutation
+  of validators by module code is outside J6's threat model.
 - A send whose id the runner still holds (pg-boss answers `null`) throws
   `CoreInvariantError` and rolls the enqueuing transaction back; it is never
   dropped silently. That happens only when an idempotency key is reused
@@ -197,6 +201,10 @@ and is left untouched. Proof: `src/pgboss-schema.db.test.ts`.
   Runs of one job can still overlap (a run longer than the interval); handlers
   must be safe to overlap. A removed declaration's schedule is not
   unscheduled: recorded, not built.
+- `defineJob` accepts a stricter cron subset than pg-boss's cron-parser: 5 or
+  6 fields of `*`, numbers or three-letter month/day names, ranges, `/` steps
+  and `,` lists, each within its field's range; `?`, `L`, `W`, `#` and `@`
+  macros are refused at define time.
 - Tuning: `openJobRunner({ intervals: { pollingSeconds, superviseSeconds,
   cronSeconds } })`; absent, the library defaults apply.
 - Proof: the conformance suite's J7 (thrown attempts, in-process timeout), J9

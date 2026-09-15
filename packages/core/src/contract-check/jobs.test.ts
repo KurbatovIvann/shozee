@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import { z } from "zod";
 
 import type {
@@ -12,7 +12,18 @@ import { ActionRegistry } from "../runtime/action-registry.js";
 import { implementAction } from "../runtime/implement-action.js";
 import { runContractCheck } from "./contract-check.js";
 import type { JobDefinitionRef } from "./jobs.js";
-import { emptySuiteCoverage } from "./suite-coverage.js";
+import {
+  emptySuiteCoverage,
+  type SuiteCoverageManifest,
+} from "./suite-coverage.js";
+
+describe("suiteCoverage.jobIsolation", () => {
+  it("is a required list on every manifest, like the other suites", () => {
+    expectTypeOf<Pick<SuiteCoverageManifest, "jobIsolation">>().toEqualTypeOf<{
+      readonly jobIsolation: readonly string[];
+    }>();
+  });
+});
 
 const io = z.object({});
 

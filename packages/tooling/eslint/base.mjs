@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 
 import js from "@eslint/js";
 import prettierConfig from "eslint-config-prettier";
@@ -8,7 +8,10 @@ import tseslint from "typescript-eslint";
 
 import { importBoundariesRule } from "./import-boundaries.mjs";
 import { recordVerificationAggregatesRule } from "./record-verification-aggregates.mjs";
-import { SHOWZY_RESTRICTED_SYNTAX } from "./restricted-syntax.mjs";
+import {
+  SHOWZY_RESTRICTED_SYNTAX,
+  showzyRestrictedProperties,
+} from "./restricted-syntax.mjs";
 
 /**
  * Walk from a package's eslint config directory to the monorepo root so
@@ -255,6 +258,9 @@ export const showzyBoundaryDependencyOptions = {
  */
 export function showzyEslintConfig({ tsconfigRootDir }) {
   const repoRoot = findRepoRoot(tsconfigRootDir);
+  const packageDirectory = relative(repoRoot, tsconfigRootDir)
+    .split(sep)
+    .join("/");
   return tseslint.config(
     {
       ignores: [
@@ -297,6 +303,10 @@ export function showzyEslintConfig({ tsconfigRootDir }) {
         // No `x as unknown as Y` escape hatch (prohibitions.mdc), and no
         // assertion to `VerifiedAssistantCaller` (SHO-561).
         "no-restricted-syntax": ["error", ...SHOWZY_RESTRICTED_SYNTAX],
+        "no-restricted-properties": [
+          "error",
+          ...showzyRestrictedProperties(packageDirectory),
+        ],
         // Typed error classes only (conventions.mdc); allowing only classes
         // that extend Error still permits `packages/core/errors` subclasses.
         "@typescript-eslint/only-throw-error": "error",

@@ -20,4 +20,5 @@ export const docGenerationSuiteCoverage = {
       callee: "files.recordGeneratedObject",
     },
   ],
+  jobIsolation: [],
 } as const satisfies SuiteCoverageManifest;

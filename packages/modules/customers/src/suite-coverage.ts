@@ -44,4 +44,5 @@ export const customersSuiteCoverage = {
   ],
   events: [],
   atomic: [],
+  jobIsolation: [],
 } as const satisfies SuiteCoverageManifest;

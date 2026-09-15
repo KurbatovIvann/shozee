@@ -15,4 +15,5 @@ export const invitesSuiteCoverage = {
   idempotency: ["invites.accept", "invites.create", "invites.revoke"],
   events: ["invites"],
   atomic: [{ caller: "invites.accept", callee: "customers.applyInviteCrm" }],
+  jobIsolation: [],
 } as const satisfies SuiteCoverageManifest;

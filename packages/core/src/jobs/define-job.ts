@@ -1,9 +1,10 @@
 import type { z } from "zod";
 
 import { moduleOf } from "../contract/module-of.js";
+import type { SystemScope } from "../contract/types.js";
 import { isCoreJobField, isCoreJobPayload } from "./job-payload.js";
 
-export type JobScope = "tenant" | "global";
+export type JobScope = SystemScope;
 
 export type JobLifecycle = "expires" | "periodic";
 
@@ -42,7 +43,97 @@ export class JobDefinitionError extends Error {
 
 const QUALIFIED_NAME_PATTERN = /^[a-z][a-zA-Z0-9]*\.[a-z][a-zA-Z0-9]*$/;
 
-const CRON_FIELD_COUNTS: ReadonlySet<number> = new Set([5, 6]);
+interface CronFieldRange {
+  readonly min: number;
+  readonly max: number;
+  readonly names?: readonly string[];
+}
+
+const CRON_SECONDS: CronFieldRange = { min: 0, max: 59 };
+
+const CRON_FIVE_FIELDS: readonly CronFieldRange[] = [
+  { min: 0, max: 59 },
+  { min: 0, max: 23 },
+  { min: 1, max: 31 },
+  {
+    min: 1,
+    max: 12,
+    names: [
+      "JAN",
+      "FEB",
+      "MAR",
+      "APR",
+      "MAY",
+      "JUN",
+      "JUL",
+      "AUG",
+      "SEP",
+      "OCT",
+      "NOV",
+      "DEC",
+    ],
+  },
+  {
+    min: 0,
+    max: 7,
+    names: ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"],
+  },
+];
+
+const CRON_TERM_PATTERN =
+  /^(?:\*|([0-9]+|[A-Za-z]{3})(?:-([0-9]+|[A-Za-z]{3}))?)(?:\/([0-9]+))?$/;
+
+function cronValue(token: string, range: CronFieldRange): number | undefined {
+  if (/^[0-9]+$/.test(token)) {
+    const value = Number(token);
+    return value >= range.min && value <= range.max ? value : undefined;
+  }
+  const index = range.names?.indexOf(token.toUpperCase()) ?? -1;
+  return index === -1 ? undefined : index + (range.min === 1 ? 1 : 0);
+}
+
+function isCronTerm(term: string, range: CronFieldRange): boolean {
+  const match = CRON_TERM_PATTERN.exec(term);
+  if (match === null) {
+    return false;
+  }
+  const [, start, end, step] = match;
+  if (step !== undefined && Number(step) < 1) {
+    return false;
+  }
+  if (start === undefined) {
+    return true;
+  }
+  const from = cronValue(start, range);
+  if (from === undefined) {
+    return false;
+  }
+  if (end === undefined) {
+    return true;
+  }
+  const to = cronValue(end, range);
+  return to !== undefined && from <= to;
+}
+
+function isCronExpression(cron: string): boolean {
+  const fields = cron.trim().split(/\s+/);
+  const ranges =
+    fields.length === 6
+      ? [CRON_SECONDS, ...CRON_FIVE_FIELDS]
+      : fields.length === 5
+        ? CRON_FIVE_FIELDS
+        : undefined;
+  if (ranges === undefined) {
+    return false;
+  }
+  return fields.every((field, index) => {
+    const range = ranges[index];
+    return (
+      range !== undefined &&
+      field.split(",").every((term) => isCronTerm(term, range))
+    );
+  });
+}
 
 export function defineJob<const T extends JobDefinition>(
   definition: T,
@@ -99,7 +190,7 @@ function validatePayload(definition: JobDefinition, problems: string[]): void {
     }
   }
   for (const key of definition.discriminator) {
-    if (!(key in shape)) {
+    if (!Object.hasOwn(shape, key)) {
       problems.push(`discriminator "${key}" is not a payload field`);
     }
   }
@@ -135,10 +226,7 @@ function validateExpiring(definition: JobDefinition, problems: string[]): void {
 
 function validatePeriodic(definition: JobDefinition, problems: string[]): void {
   const { cron } = definition;
-  if (
-    cron === undefined ||
-    !CRON_FIELD_COUNTS.has(cron.trim().split(/\s+/).length)
-  ) {
+  if (cron === undefined || !isCronExpression(cron)) {
     problems.push(
       'lifecycle "periodic" requires cron, a 5- or 6-field cron expression',
     );
