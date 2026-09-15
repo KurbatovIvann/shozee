@@ -108,7 +108,30 @@
       "mcp__claude_ai_Magic_Patterns__get_editor_id_from_url",
       "mcp__claude_ai_Magic_Patterns__read_artifact_files",
       "mcp__claude_ai_Magic_Patterns__get_artifact",
-      "mcp__claude_ai_Magic_Patterns__read_design_system_files"
+      "mcp__claude_ai_Magic_Patterns__read_design_system_files",
+      "Bash(cd *)",
+      "Bash(node .claude/scripts/diff-hygiene.mjs*)",
+      "Bash(git switch -C *)",
+      "mcp__7ef8b7a8-4d0a-4464-bc42-d43057ca5477__get_issue",
+      "mcp__7ef8b7a8-4d0a-4464-bc42-d43057ca5477__list_issues",
+      "mcp__7ef8b7a8-4d0a-4464-bc42-d43057ca5477__list_comments",
+      "mcp__7ef8b7a8-4d0a-4464-bc42-d43057ca5477__save_comment",
+      "mcp__7ef8b7a8-4d0a-4464-bc42-d43057ca5477__save_issue",
+      "mcp__7ef8b7a8-4d0a-4464-bc42-d43057ca5477__list_issue_statuses",
+      "mcp__7ef8b7a8-4d0a-4464-bc42-d43057ca5477__get_issue_status",
+      "mcp__7ef8b7a8-4d0a-4464-bc42-d43057ca5477__list_issue_labels",
+      "mcp__7ef8b7a8-4d0a-4464-bc42-d43057ca5477__list_teams",
+      "mcp__7ef8b7a8-4d0a-4464-bc42-d43057ca5477__get_team",
+      "mcp__7ef8b7a8-4d0a-4464-bc42-d43057ca5477__list_projects",
+      "mcp__7ef8b7a8-4d0a-4464-bc42-d43057ca5477__get_project",
+      "mcp__7ef8b7a8-4d0a-4464-bc42-d43057ca5477__list_milestones",
+      "mcp__7ef8b7a8-4d0a-4464-bc42-d43057ca5477__get_document",
+      "mcp__7ef8b7a8-4d0a-4464-bc42-d43057ca5477__extract_images",
+      "mcp__a17634a3-abe7-4d4e-a2e8-3284312df760__get_design_status",
+      "mcp__a17634a3-abe7-4d4e-a2e8-3284312df760__get_editor_id_from_url",
+      "mcp__a17634a3-abe7-4d4e-a2e8-3284312df760__read_artifact_files",
+      "mcp__a17634a3-abe7-4d4e-a2e8-3284312df760__get_artifact",
+      "mcp__a17634a3-abe7-4d4e-a2e8-3284312df760__read_design_system_files"
     ],
     "ask": [
       "Read(./docs/archive/**)",
@@ -148,7 +171,10 @@
       "Bash(gh run rerun*)",
       "mcp__claude_ai_Linear__delete_comment",
       "mcp__claude_ai_Linear__delete_attachment",
-      "mcp__claude_ai_Linear__delete_status_update"
+      "mcp__claude_ai_Linear__delete_status_update",
+      "mcp__7ef8b7a8-4d0a-4464-bc42-d43057ca5477__delete_comment",
+      "mcp__7ef8b7a8-4d0a-4464-bc42-d43057ca5477__delete_attachment",
+      "mcp__7ef8b7a8-4d0a-4464-bc42-d43057ca5477__delete_status_update"
     ]
   },
   "hooks": {
