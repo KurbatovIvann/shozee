@@ -230,7 +230,7 @@ export function runContractCheck(
   collectJobProblems(
     input.jobs,
     contracts,
-    input.suiteCoverage.jobIsolation ?? [],
+    input.suiteCoverage.jobIsolation,
     problems,
   );
 

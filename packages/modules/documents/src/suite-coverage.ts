@@ -31,4 +31,5 @@ export const documentsSuiteCoverage = {
   ],
   events: ["documents"],
   atomic: [],
+  jobIsolation: [],
 } as const satisfies SuiteCoverageManifest;

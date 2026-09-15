@@ -23,3 +23,18 @@ export const SHOWZY_RESTRICTED_SYNTAX = [
     message: `A VerifiedAssistantCaller comes only from reading the turn a job names (${VERIFIED_ASSISTANT_CALLER_PRODUCER}), never from a type assertion (SHO-561).`,
   },
 ];
+
+export const ZOD_INTERNALS_OWNER = "packages/core";
+
+export const SHOWZY_RESTRICTED_PROPERTIES = [
+  {
+    property: "_zod",
+    message: `Zod internals (\`_zod\`) are read only inside ${ZOD_INTERNALS_OWNER}; mutating a registered job payload or field bypasses ADR-0041 J6 (SHO-677).`,
+  },
+];
+
+export function showzyRestrictedProperties(packageDirectory) {
+  return packageDirectory === ZOD_INTERNALS_OWNER
+    ? []
+    : SHOWZY_RESTRICTED_PROPERTIES;
+}

@@ -14,4 +14,5 @@ export const chatSuiteCoverage = {
   idempotency: [],
   events: ["chat"],
   atomic: [],
+  jobIsolation: [],
 } as const satisfies SuiteCoverageManifest;

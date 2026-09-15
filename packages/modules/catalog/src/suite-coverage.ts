@@ -35,4 +35,5 @@ export const catalogSuiteCoverage = {
   ],
   events: [],
   atomic: [],
+  jobIsolation: [],
 } as const satisfies SuiteCoverageManifest;

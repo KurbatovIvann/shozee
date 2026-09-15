@@ -116,6 +116,7 @@ function coverageFor(
         callee,
       })),
     ),
+    jobIsolation: [],
   };
 }
 

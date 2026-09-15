@@ -320,6 +320,42 @@ describe("defineActionContract — enqueues", () => {
     ]);
   });
 
+  it("rejects an empty enqueues list on a read action", () => {
+    const error = defineExpectingError({
+      ...staffWriteDefinition(),
+      risk: "read",
+      idempotent: false,
+      emits: [],
+      audit: false,
+      enqueues: [],
+    });
+    expect(error.problems).toEqual([
+      'enqueues requires a writable action — risk: "read" never enqueues (ADR-0041 J4)',
+    ]);
+  });
+
+  it.each([[[]], [["orders.generateInvoice"]]])(
+    "rejects enqueues %j on a public action at define time, before any anonymous flush",
+    (enqueues: string[]) => {
+      const error = defineExpectingError({
+        ...staffWriteDefinition(),
+        name: "orders.getPublicRequest",
+        principal: "public",
+        publicScope: "target",
+        permissions: [],
+        aiExposure: "internal",
+        risk: "read",
+        idempotent: false,
+        emits: [],
+        audit: false,
+        enqueues,
+      });
+      expect(error.problems).toEqual([
+        'enqueues requires a writable action — risk: "read" never enqueues (ADR-0041 J4)',
+      ]);
+    },
+  );
+
   it("rejects a malformed job name and duplicates", () => {
     const error = defineExpectingError({
       ...staffWriteDefinition(),

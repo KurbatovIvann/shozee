@@ -32,4 +32,5 @@ export const pricingSuiteCoverage = {
   ],
   events: [],
   atomic: [],
+  jobIsolation: [],
 } as const satisfies SuiteCoverageManifest;

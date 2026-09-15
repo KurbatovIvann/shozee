@@ -14,4 +14,5 @@ export const searchSuiteCoverage = {
   idempotency: [],
   events: [],
   atomic: [],
+  jobIsolation: [],
 } as const satisfies SuiteCoverageManifest;

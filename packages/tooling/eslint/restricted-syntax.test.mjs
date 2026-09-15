@@ -1,10 +1,15 @@
+import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { RuleTester } from "eslint";
 import { builtinRules } from "eslint/use-at-your-own-risk";
 import tseslint from "typescript-eslint";
 
-import { SHOWZY_RESTRICTED_SYNTAX } from "./restricted-syntax.mjs";
+import {
+  SHOWZY_RESTRICTED_PROPERTIES,
+  SHOWZY_RESTRICTED_SYNTAX,
+  showzyRestrictedProperties,
+} from "./restricted-syntax.mjs";
 
 const rule = builtinRules.get("no-restricted-syntax");
 if (rule === undefined) {
@@ -66,6 +71,40 @@ test("no-restricted-syntax refuses a double assertion and any assertion to Verif
         code: "declare const job: unknown; export const c = job as unknown as AssistantKitCaller;",
         options: SHOWZY_RESTRICTED_SYNTAX,
         errors: [{ message: doubleAssertion?.message }],
+      },
+    ],
+  });
+});
+
+const propertiesRule = builtinRules.get("no-restricted-properties");
+if (propertiesRule === undefined) {
+  throw new Error("ESLint no longer ships no-restricted-properties");
+}
+
+test("no-restricted-properties refuses Zod internals outside packages/core", () => {
+  const outsideCore = showzyRestrictedProperties("packages/modules/orders");
+  assert.deepEqual(outsideCore, SHOWZY_RESTRICTED_PROPERTIES);
+  assert.deepEqual(showzyRestrictedProperties("packages/core"), []);
+  tester.run("no-restricted-properties", propertiesRule, {
+    valid: [
+      {
+        name: "a public schema API",
+        code: "declare const schema: { shape: object }; export const s = schema.shape;",
+        options: outsideCore,
+      },
+    ],
+    invalid: [
+      {
+        name: "mutating a registered field definition",
+        code: "declare const field: { _zod: { def: { checks: unknown[] } } }; field._zod.def.checks = [];",
+        options: outsideCore,
+        errors: [{ messageId: "restrictedProperty" }],
+      },
+      {
+        name: "destructuring the internals",
+        code: "declare const field: { _zod: object }; export const { _zod } = field;",
+        options: outsideCore,
+        errors: [{ messageId: "restrictedProperty" }],
       },
     ],
   });

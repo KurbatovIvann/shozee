@@ -15,4 +15,5 @@ export const companiesSuiteCoverage = {
   idempotency: ["companies.create", "companies.updateLegal"],
   events: [],
   atomic: [],
+  jobIsolation: [],
 } as const satisfies SuiteCoverageManifest;
