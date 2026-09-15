@@ -1,11 +1,15 @@
+import { fileURLToPath } from "node:url";
+
 import {
   type AnyPgColumn,
   integer,
+  pgSchema,
   pgTable,
   text,
   uuid,
 } from "drizzle-orm/pg-core";
-import { describe, expectTypeOf, it } from "vitest";
+import ts from "typescript";
+import { beforeAll, describe, expect, expectTypeOf, it } from "vitest";
 
 import type {
   bumpRevision,
@@ -20,6 +24,7 @@ const alphaTable = pgTable("revision_type_alpha", {
   id: uuid("id").primaryKey(),
   slug: text("slug").notNull(),
   note: text("note"),
+  customerId: uuid("customer_id").notNull(),
   companyId: uuid("company_id").notNull(),
   revision: integer("revision").notNull().default(1),
 });
@@ -30,19 +35,51 @@ const betaTable = pgTable("revision_type_beta", {
   revision: integer("revision").notNull().default(1),
 });
 
+const alphaTwinTable = pgSchema("revision_type_twin").table(
+  "revision_type_alpha",
+  {
+    id: uuid("id").primaryKey(),
+    companyId: uuid("company_id").notNull(),
+    revision: integer("revision").notNull().default(1),
+  },
+);
+
+const textCompanyTable = pgTable("revision_type_text_company", {
+  id: uuid("id").primaryKey(),
+  companyId: text("company_id").notNull(),
+  revision: integer("revision").notNull().default(1),
+});
+
 type AlphaKeyColumn = RevisionRoot<typeof alphaTable>["keyColumn"];
 
 describe("RevisionRoot", () => {
-  it("accepts a non-null string column of its own table as the key", () => {
+  it("accepts the primary-key uuid column of its own table as the key", () => {
     expectTypeOf(alphaTable.id).toExtend<AlphaKeyColumn>();
-    expectTypeOf(alphaTable.slug).toExtend<AlphaKeyColumn>();
+  });
+
+  it("rejects the company column as the key", () => {
+    expectTypeOf(alphaTable.companyId).not.toExtend<AlphaKeyColumn>();
+  });
+
+  it("rejects a non-key uuid column of its own table as the key", () => {
+    expectTypeOf(alphaTable.customerId).not.toExtend<AlphaKeyColumn>();
   });
 
   it("rejects a key column of another table", () => {
     expectTypeOf(betaTable.id).not.toExtend<AlphaKeyColumn>();
   });
 
-  it("rejects a nullable or non-string key column", () => {
+  it("accepts the key column of a same-named table in another schema, because column types carry no schema", () => {
+    expectTypeOf(alphaTwinTable).toExtend<RevisionTable>();
+    expectTypeOf(alphaTwinTable.id).toExtend<AlphaKeyColumn>();
+  });
+
+  it("rejects a table whose company column is not a uuid", () => {
+    expectTypeOf(textCompanyTable).not.toExtend<RevisionTable>();
+  });
+
+  it("rejects a text, nullable, or non-string key column", () => {
+    expectTypeOf(alphaTable.slug).not.toExtend<AlphaKeyColumn>();
     expectTypeOf(alphaTable.note).not.toExtend<AlphaKeyColumn>();
     expectTypeOf(alphaTable.revision).not.toExtend<AlphaKeyColumn>();
   });
@@ -78,7 +115,12 @@ type MismatchedBump = {
 type WidenedBump = RevisionTarget & {
   readonly root: {
     readonly table: RevisionTable;
-    readonly keyColumn: AnyPgColumn<{ data: string; notNull: true }>;
+    readonly keyColumn: AnyPgColumn<{
+      data: string;
+      notNull: true;
+      columnType: "PgUUID";
+      isPrimaryKey: true;
+    }>;
   };
 };
 
@@ -118,5 +160,102 @@ describe("bumpRevisions", () => {
   it("rejects a root whose table type is widened", () => {
     type Widened = readonly [WidenedBump];
     expectTypeOf<Widened>().not.toExtend<BumpList<Widened>>();
+  });
+});
+
+const packageRoot = fileURLToPath(new URL("..", import.meta.url));
+
+function callSiteSource(keyColumn: string): string {
+  return [
+    'import type { Tx } from "@showzy/db";',
+    'import { integer, pgTable, uuid } from "drizzle-orm/pg-core";',
+    'import { bumpRevisions } from "./revision.js";',
+    "declare const tx: Tx;",
+    'const alphaTable = pgTable("call_site_alpha", { id: uuid("id").primaryKey(), companyId: uuid("company_id").notNull(), revision: integer("revision").notNull() });',
+    'const betaTable = pgTable("call_site_beta", { id: uuid("id").primaryKey(), companyId: uuid("company_id").notNull(), revision: integer("revision").notNull() });',
+    `export const probe = bumpRevisions(tx, [{ root: { table: alphaTable, keyColumn: ${keyColumn} }, companyId: "company", key: "key" }]);`,
+    "export const tables = [alphaTable, betaTable];",
+  ].join("\n");
+}
+
+interface CallSiteDiagnostic {
+  readonly at: string | undefined;
+  readonly message: string;
+}
+
+function inlineCallDiagnostics(
+  probes: Record<string, string>,
+): Record<string, readonly CallSiteDiagnostic[]> {
+  const configPath = ts.findConfigFile(packageRoot, (path) =>
+    ts.sys.fileExists(path),
+  );
+  if (!configPath) throw new RangeError("module-kit tsconfig not found");
+  const config = ts.parseJsonConfigFileContent(
+    ts.readConfigFile(configPath, (path) => ts.sys.readFile(path)).config,
+    ts.sys,
+    packageRoot,
+  );
+  const probeFiles = new Map(
+    Object.entries(probes).map(([name, source]) => [
+      ts.sys.resolvePath(`${packageRoot}src/${name}.ts`).replaceAll("\\", "/"),
+      source,
+    ]),
+  );
+  const host = ts.createCompilerHost(config.options);
+  const readFile = host.readFile.bind(host);
+  const fileExists = host.fileExists.bind(host);
+  const probeSource = (fileName: string): string | undefined =>
+    probeFiles.get(fileName.replaceAll("\\", "/"));
+  host.readFile = (fileName) => probeSource(fileName) ?? readFile(fileName);
+  host.fileExists = (fileName) =>
+    probeSource(fileName) !== undefined || fileExists(fileName);
+  const program = ts.createProgram(
+    [...probeFiles.keys()],
+    config.options,
+    host,
+  );
+  return Object.fromEntries(
+    [...probeFiles.keys()].map((fileName, index) => {
+      const sourceFile = program.getSourceFile(fileName);
+      const diagnostics = sourceFile
+        ? program.getSemanticDiagnostics(sourceFile)
+        : [];
+      return [
+        Object.keys(probes)[index] ?? fileName,
+        diagnostics.map((diagnostic) => ({
+          at: sourceFile?.text.slice(
+            diagnostic.start,
+            (diagnostic.start ?? 0) + (diagnostic.length ?? 0),
+          ),
+          message: ts.flattenDiagnosticMessageText(
+            diagnostic.messageText,
+            "\n",
+          ),
+        })),
+      ];
+    }),
+  );
+}
+
+describe("bumpRevisions at an inline call site", () => {
+  let diagnostics: Record<string, readonly CallSiteDiagnostic[]>;
+
+  beforeAll(() => {
+    diagnostics = inlineCallDiagnostics({
+      "revision-call-site-own-key": callSiteSource("alphaTable.id"),
+      "revision-call-site-foreign-key": callSiteSource("betaTable.id"),
+    });
+  }, 120_000);
+
+  it("compiles a root keyed by its own table's column", () => {
+    expect(diagnostics["revision-call-site-own-key"]).toEqual([]);
+  });
+
+  it("rejects a root keyed by another table's column", () => {
+    const rejected = diagnostics["revision-call-site-foreign-key"] ?? [];
+    expect(rejected.map((diagnostic) => diagnostic.at)).toEqual(["keyColumn"]);
+    expect(rejected[0]?.message).toContain(
+      `Type '"call_site_beta"' is not assignable to type '"call_site_alpha"'`,
+    );
   });
 });

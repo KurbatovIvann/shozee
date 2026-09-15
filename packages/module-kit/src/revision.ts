@@ -1,24 +1,33 @@
 import type { Tx } from "@showzy/db";
-import { and, eq, getTableName, sql } from "drizzle-orm";
+import { and, eq, getTableUniqueName, sql } from "drizzle-orm";
 import type { AnyPgColumn, PgTable } from "drizzle-orm/pg-core";
 
 export type RevisionTable = PgTable & {
   readonly revision: AnyPgColumn<{ data: number; notNull: true }>;
-  readonly companyId: AnyPgColumn<{ data: string; notNull: true }>;
+  readonly companyId: AnyPgColumn<{
+    data: string;
+    notNull: true;
+    columnType: "PgUUID";
+  }>;
 };
 
-type LiteralTableName<TTable extends RevisionTable> =
-  string extends TTable["_"]["name"] ? never : TTable["_"]["name"];
+type UuidKeyColumn = AnyPgColumn<{
+  data: string;
+  notNull: true;
+  columnType: "PgUUID";
+  isPrimaryKey: true;
+}>;
+
+type OwnUuidKeyColumn<TTable extends RevisionTable> = Extract<
+  TTable["_"]["columns"][keyof TTable["_"]["columns"]],
+  UuidKeyColumn
+>;
 
 export type RevisionRoot<TTable extends RevisionTable> =
   TTable extends RevisionTable
     ? {
         readonly table: TTable;
-        readonly keyColumn: AnyPgColumn<{
-          data: string;
-          notNull: true;
-          tableName: LiteralTableName<TTable>;
-        }>;
+        readonly keyColumn: OwnUuidKeyColumn<TTable>;
       }
     : never;
 
@@ -33,7 +42,7 @@ export type RevisionBump<TTable extends RevisionTable> = RevisionTarget & {
 
 interface UncheckedRevisionRoot {
   readonly table: RevisionTable;
-  readonly keyColumn: AnyPgColumn<{ data: string; notNull: true }>;
+  readonly keyColumn: UuidKeyColumn;
 }
 
 interface UncheckedRevisionBump extends RevisionTarget {
@@ -69,30 +78,39 @@ export function bumpRevision<TTable extends RevisionTable>(
   return raiseRevision(tx, root, target);
 }
 
-function compareBumps(
-  left: UncheckedRevisionBump,
-  right: UncheckedRevisionBump,
-): number {
-  const leftTable = getTableName(left.root.table);
-  const rightTable = getTableName(right.root.table);
-  if (leftTable !== rightTable) return leftTable < rightTable ? -1 : 1;
-  const leftKey = left.key.toLowerCase();
-  const rightKey = right.key.toLowerCase();
-  if (leftKey !== rightKey) return leftKey < rightKey ? -1 : 1;
-  if (left.key === right.key) return 0;
-  return left.key < right.key ? -1 : 1;
+type LockOrderIdentity = readonly [
+  table: string,
+  key: string,
+  companyId: string,
+];
+
+function lockOrderIdentity(bump: UncheckedRevisionBump): LockOrderIdentity {
+  return [
+    getTableUniqueName(bump.root.table),
+    bump.key.toLowerCase(),
+    bump.companyId.toLowerCase(),
+  ];
 }
 
-function rootIdentity(bump: UncheckedRevisionBump): string {
-  return JSON.stringify([
-    getTableName(bump.root.table),
-    bump.companyId.toLowerCase(),
-    bump.key.toLowerCase(),
-  ]);
+function compareParts(left: string, right: string): number {
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
+}
+
+function compareIdentities(
+  [leftTable, leftKey, leftCompany]: LockOrderIdentity,
+  [rightTable, rightKey, rightCompany]: LockOrderIdentity,
+): number {
+  return (
+    compareParts(leftTable, rightTable) ||
+    compareParts(leftKey, rightKey) ||
+    compareParts(leftCompany, rightCompany)
+  );
 }
 
 interface MergedBump {
   readonly bump: UncheckedRevisionBump;
+  readonly identity: LockOrderIdentity;
   readonly indexes: number[];
 }
 
@@ -101,10 +119,11 @@ function mergeEqualRoots(
 ): MergedBump[] {
   const merged = new Map<string, MergedBump>();
   bumps.forEach((bump, index) => {
-    const identity = rootIdentity(bump);
-    const existing = merged.get(identity);
+    const identity = lockOrderIdentity(bump);
+    const identityKey = JSON.stringify(identity);
+    const existing = merged.get(identityKey);
     if (existing) existing.indexes.push(index);
-    else merged.set(identity, { bump, indexes: [index] });
+    else merged.set(identityKey, { bump, identity, indexes: [index] });
   });
   return [...merged.values()];
 }
@@ -118,7 +137,7 @@ export async function bumpRevisions<
   },
 ): Promise<(number | undefined)[]> {
   const ordered = mergeEqualRoots(bumps).sort((left, right) =>
-    compareBumps(left.bump, right.bump),
+    compareIdentities(left.identity, right.identity),
   );
   const revisions: (number | undefined)[] = Array.from({
     length: bumps.length,
