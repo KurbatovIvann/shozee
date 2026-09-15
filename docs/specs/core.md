@@ -738,11 +738,14 @@ Exported from `packages/core/testing`, used by every module (this is how
   tokens are `NotFoundError`; co-sign (and any other share write) MUST NOT
   create CRM rows; raw token is absent from logs/audit/events.
 - `jobIsolationSuite(cases)` with `jobIsolationCase(job, action, own,
-  foreign?)` — runs the action through `executeJobAction` in company A (a
-  global periodic job fans out to A): the own payload succeeds, a payload naming
-  another company's row is `NotFoundError`/`PermissionDeniedError`, and the own
-  payload in an existing company without owned rows and in a company that does
-  not exist fails closed, committing no audit success or event. `foreign` is
+  foreign?, effect?)` — runs the action through `executeJobAction` in company A
+  (a global periodic job fans out to A) with the envelope payload as its input:
+  the own payload succeeds and commits an ok audit row in company A (or passes
+  the case's `effect` assertion), a payload naming another company's row is
+  `NotFoundError`/`PermissionDeniedError`, and the own payload in an existing
+  company without owned rows fails closed, committing no audit success or
+  event. A company that does not exist is refused by core for every job action
+  and is proven in core's own tests, not per case. `foreign` is
   required for a tenant job and may be omitted for a periodic fan-out whose
   action takes the company from its scope. `buildJobEnvelope` builds the
   test envelope.

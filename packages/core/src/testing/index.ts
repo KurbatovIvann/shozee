@@ -56,7 +56,9 @@ export type {
   CrossTenantCase,
   IsolationInvocation,
   JobIsolationCase,
+  JobIsolationEffect,
   JobIsolationInvocation,
+  JobIsolationOwnRun,
   ShareIsolationCase,
   SuiteAction,
 } from "./suites.js";

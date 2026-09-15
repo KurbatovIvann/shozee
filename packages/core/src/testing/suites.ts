@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 
 import { auditLog, companies, domainEvents } from "@showzy/db";
 import { readCrmSentinel } from "@showzy/db/testing/fixtures";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { describe, it } from "vitest";
 import type { z } from "zod";
 
@@ -739,14 +739,24 @@ export async function runShareIsolationCase(
 
 export interface JobIsolationInvocation {
   readonly payload: Readonly<Record<string, unknown>>;
-  readonly input: unknown;
 }
+
+export interface JobIsolationOwnRun {
+  readonly requestId: string;
+  readonly companyId: string;
+}
+
+export type JobIsolationEffect = (
+  kit: TestKit,
+  run: JobIsolationOwnRun,
+) => Promise<void>;
 
 export interface JobIsolationCase {
   readonly job: Job;
   readonly action: SuiteAction;
   readonly own: JobIsolationInvocation;
   readonly foreign?: JobIsolationInvocation;
+  readonly effect?: JobIsolationEffect;
 }
 
 export function jobIsolationCase<
@@ -758,10 +768,15 @@ export function jobIsolationCase<
   action: ImplementedAction<TInput, TOutput, TTarget>,
   own: JobIsolationInvocation,
   foreign?: JobIsolationInvocation,
+  effect?: JobIsolationEffect,
 ): JobIsolationCase {
-  return foreign === undefined
-    ? { job, action, own }
-    : { job, action, own, foreign };
+  return {
+    job,
+    action,
+    own,
+    ...(foreign === undefined ? {} : { foreign }),
+    ...(effect === undefined ? {} : { effect }),
+  };
 }
 
 function jobRunInCompany(
@@ -782,10 +797,28 @@ function jobRunInCompany(
         job: c.job,
         envelope,
         action: c.action,
-        input: call.input,
+        input: envelope.payload,
         ...(tenantJob ? {} : { fanOutCompanyId: companyId }),
       }),
   };
+}
+
+async function expectOkAuditInCompany(
+  kit: TestKit,
+  subject: string,
+  run: JobIsolationOwnRun,
+): Promise<void> {
+  const committed = await kit.db.runtime.db
+    .select({ companyId: auditLog.companyId })
+    .from(auditLog)
+    .where(
+      and(eq(auditLog.requestId, run.requestId), eq(auditLog.outcome, "ok")),
+    );
+  if (!committed.some((row) => row.companyId === run.companyId)) {
+    throw new Error(
+      `${subject} committed no ok audit row in company ${run.companyId}; supply an effect assertion for an unaudited action`,
+    );
+  }
 }
 
 async function insertCompanyWithoutOwnedRows(kit: TestKit): Promise<string> {
@@ -840,7 +873,15 @@ export async function runJobIsolationCase(
       `jobIsolationCase "${c.job.name}" is a tenant job and needs a foreign payload`,
     );
   }
-  await jobRunInCompany(kit, c, c.own, kitIdentities.companies.a).run();
+  const ownRun = jobRunInCompany(kit, c, c.own, kitIdentities.companies.a);
+  await ownRun.run();
+  const ownResult = {
+    requestId: ownRun.requestId,
+    companyId: kitIdentities.companies.a,
+  };
+  await (c.effect === undefined
+    ? expectOkAuditInCompany(kit, subject, ownResult)
+    : c.effect(kit, ownResult));
   if (c.foreign !== undefined) {
     await expectJobFailsClosedWithoutChange(
       kit,
@@ -857,13 +898,6 @@ export async function runJobIsolationCase(
     c.own,
     await insertCompanyWithoutOwnedRows(kit),
   );
-  await expectJobFailsClosedWithoutChange(
-    kit,
-    `${subject} for a company that does not exist`,
-    c,
-    c.own,
-    randomUUID(),
-  );
 }
 
 export function jobIsolationSuite(
@@ -872,7 +906,7 @@ export function jobIsolationSuite(
 ): void {
   describe("jobIsolationSuite", () => {
     for (const c of cases) {
-      it(`${c.job.name} runs ${c.action.contract.name} only in its recorded company and fails closed on a foreign row, a company without owned rows, or a missing company`, async () => {
+      it(`${c.job.name} runs ${c.action.contract.name} with an effect in its recorded company and fails closed on a foreign row or a company without owned rows`, async () => {
         await runJobIsolationCase(getKit(), c);
       });
     }

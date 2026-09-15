@@ -58,10 +58,14 @@ import {
   type ContextRuntime,
 } from "../context/factories.js";
 import { assertDeclaredPermissions } from "../context/permissions.js";
-import type { ActionCtx } from "../context/types.js";
+import type { ActionCtx, CtxEnqueue } from "../context/types.js";
 import { createEmitBuffer, type EmitBuffer } from "../events/emit.js";
 import { uuidv7 } from "../events/uuidv7.js";
-import { createEnqueueBuffer, type EnqueueBuffer } from "../jobs/enqueue.js";
+import {
+  createEnqueueBuffer,
+  type EnqueueBuffer,
+  rejectPreflightEnqueue,
+} from "../jobs/enqueue.js";
 import { jobOriginFor } from "../jobs/job-identity.js";
 import type { ImplementedAction } from "../implement-action.js";
 import type {
@@ -104,6 +108,7 @@ interface RunEnv<TInput extends z.ZodType, TOutput extends z.ZodType, TTarget> {
   readonly principal: PrincipalInvocation;
   readonly input: z.output<TInput>;
   readonly makeRuntime: <TDb>(db: TDb) => ContextRuntime<TDb>;
+  readonly makePreflightRuntime: <TDb>(db: TDb) => ContextRuntime<TDb>;
 }
 
 /**
@@ -390,6 +395,18 @@ function buildRunEnv<
     path: [contract.name],
   });
 
+  const runtimeWith =
+    (enqueue: CtxEnqueue) =>
+    <TDb>(db: TDb): ContextRuntime<TDb> => ({
+      db,
+      logger: deps.logger,
+      deadline,
+      signal: options.controller.signal,
+      emit: emitBuffer.emit,
+      enqueue,
+      call: ctxCall,
+      callAtomic: ctxCallAtomic,
+    });
   const env: RunEnv<TInput, TOutput, TTarget> = {
     deps,
     action: invocation.action,
@@ -397,16 +414,8 @@ function buildRunEnv<
     request,
     principal: invocation.principal,
     input,
-    makeRuntime: <TDb>(db: TDb): ContextRuntime<TDb> => ({
-      db,
-      logger: deps.logger,
-      deadline,
-      signal: options.controller.signal,
-      emit: emitBuffer.emit,
-      enqueue: enqueueBuffer.enqueue,
-      call: ctxCall,
-      callAtomic: ctxCallAtomic,
-    }),
+    makeRuntime: runtimeWith(enqueueBuffer.enqueue),
+    makePreflightRuntime: runtimeWith(rejectPreflightEnqueue(contract.name)),
   };
   const hookEnv: PipelineHookEnv = {
     contract,
@@ -970,7 +979,7 @@ async function runAuthorizationPreflight<
         async (tx) => {
           const ctx = await createStaffContext({
             request,
-            runtime: env.makeRuntime(createReadTx(tx)),
+            runtime: env.makePreflightRuntime(createReadTx(tx)),
             session: principal.session,
             companySelector: principal.companySelector,
           });
@@ -984,7 +993,7 @@ async function runAuthorizationPreflight<
         async (tx) => {
           const ctx = await createCustomerContext({
             request,
-            runtime: env.makeRuntime(createReadTx(tx)),
+            runtime: env.makePreflightRuntime(createReadTx(tx)),
             session: principal.session,
             input: env.input,
             resolveTarget: requireResolver(env),
@@ -1022,7 +1031,7 @@ async function runAuthorizationPreflight<
         async (tx) => {
           const ctx = await createShareContext({
             request,
-            runtime: env.makeRuntime(createReadTx(tx)),
+            runtime: env.makePreflightRuntime(createReadTx(tx)),
             input: env.input,
             resolveTarget: requireResolver(env),
           });

@@ -20,6 +20,7 @@ import { dispatchOutboxBatch, executeDelivery } from "../events/delivery.js";
 import { eventEnvelopeSchema } from "../events/envelope.js";
 import { implementAction } from "../implement-action.js";
 import { UUID_PATTERN } from "../patterns.js";
+import { rejectPreflightEnqueue } from "./enqueue.js";
 
 let kit: TestKit;
 
@@ -384,6 +385,32 @@ describe("ctx.enqueue commit and rollback (J1)", () => {
     expect(kit.jobs.sent).toHaveLength(0);
   });
 
+  it("drops the envelopes kit.invoke recorded when a hook fails after the send", async () => {
+    const keptTurnId = randomUUID();
+    await kit.invoke(noteAction, { turnId: keptTurnId });
+    const hooks = {
+      ...kit.pipeline.hooks,
+      audit: {
+        recordSuccess: () =>
+          Promise.reject(new CoreInvariantError("injected audit failure")),
+        recordFailure: () => Promise.resolve(),
+      },
+    };
+
+    await expect(
+      kit.invoke(
+        noteAction,
+        { turnId: randomUUID() },
+        {},
+        { deps: { ...kit.pipeline, hooks } },
+      ),
+    ).rejects.toBeInstanceOf(CoreInvariantError);
+
+    expect(kit.jobs.sent.map((envelope) => envelope.payload)).toEqual([
+      { turnId: keptTurnId },
+    ]);
+  });
+
   it("fails closed when an action declaring enqueues has no job port", async () => {
     const hooks = { ...kit.pipeline.hooks, jobs: undefined };
 
@@ -558,5 +585,16 @@ describe("only the root writable action enqueues (J4)", () => {
       'nested callee "jobKitCallee.hold"',
     );
     expect(kit.jobs.sent).toHaveLength(0);
+  });
+
+  it("refuses an enqueue from an authorization preflight context", () => {
+    const enqueue = rejectPreflightEnqueue("jobKit.note");
+
+    expect(() => {
+      enqueue(runTurn, { turnId: randomUUID() });
+    }).toThrow(CoreInvariantError);
+    expect(() => {
+      enqueue(runTurn, { turnId: randomUUID() });
+    }).toThrow(/authorization preflight/);
   });
 });
