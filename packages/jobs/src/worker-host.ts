@@ -7,8 +7,9 @@ import {
 } from "@showzy/core";
 import { CoreError, CoreInvariantError } from "@showzy/core/errors";
 import type { JobResult, JobWithMetadata, PgBoss } from "pg-boss";
+import { z } from "zod";
 
-import type { StoredJobData } from "./pgboss-job-port.js";
+import { storedJobDataSchema } from "./pgboss-job-port.js";
 import { exhaustedQueueName } from "./queue-provisioning.js";
 
 export type JobFailureCode =
@@ -43,7 +44,7 @@ export interface JobWorker {
   drain(): Promise<void>;
 }
 
-type StoredJob = JobWithMetadata<StoredJobData | null>;
+type StoredJob = JobWithMetadata<unknown>;
 
 const drainSettleMs = 5_000;
 
@@ -119,7 +120,7 @@ export async function createJobWorker(
       localConcurrency,
       pollingIntervalSeconds,
     } as const;
-    await boss.work<StoredJobData | null, unknown, typeof workOptions>(
+    await boss.work<unknown, unknown, typeof workOptions>(
       name,
       workOptions,
       (jobs) => Promise.all(jobs.map((stored) => attempt(stored))),
@@ -219,7 +220,13 @@ function recordedEnvelope(job: Job, stored: StoredJob): JobEnvelope {
       `job ${id} ("${job.name}") has no recorded envelope`,
     );
   }
-  return { ...stored.data, id, name: job.name };
+  const recorded = storedJobDataSchema.safeParse(stored.data);
+  if (!recorded.success) {
+    throw new CoreInvariantError(
+      `job ${id} ("${job.name}") has a malformed recorded envelope: ${z.prettifyError(recorded.error)}`,
+    );
+  }
+  return { ...recorded.data, id, name: job.name };
 }
 
 function failureCodeOf(error: unknown): JobFailureCode {

@@ -44,6 +44,12 @@ export interface JobRunnerConformanceTarget {
     name: string,
     id: string,
   ): Promise<unknown>;
+  rewriteStoredJobData(
+    database: TestDatabase,
+    name: string,
+    id: string,
+    data: unknown,
+  ): Promise<void>;
   readJobs(
     database: TestDatabase,
     name: string,
@@ -209,6 +215,18 @@ async function eventually<T>(
     }
     await delay(250);
   }
+}
+
+function wellFormedStoredData(envelope: JobEnvelope): Record<string, unknown> {
+  return {
+    companyId: envelope.companyId,
+    actor: envelope.actor,
+    channel: envelope.channel,
+    requestId: envelope.requestId,
+    correlationId: envelope.correlationId,
+    executionId: envelope.executionId,
+    payload: envelope.payload,
+  };
 }
 
 const hang = (): Promise<void> => new Promise<void>(() => undefined);
@@ -405,15 +423,7 @@ export function describeJobRunnerConformance(
           job.name,
           envelope.id,
         );
-        expect(stored).toEqual({
-          companyId: envelope.companyId,
-          actor: envelope.actor,
-          channel: envelope.channel,
-          requestId: envelope.requestId,
-          correlationId: envelope.correlationId,
-          executionId: envelope.executionId,
-          payload: envelope.payload,
-        });
+        expect(stored).toEqual(wellFormedStoredData(envelope));
         const fixedValues = new Set([
           envelope.channel,
           envelope.actor.type,
@@ -423,6 +433,79 @@ export function describeJobRunnerConformance(
           expect(UUID.test(leaf) || fixedValues.has(leaf)).toBe(true);
         }
       });
+
+      const malformations: readonly {
+        readonly label: string;
+        readonly jobName: string;
+        readonly malform: (envelope: JobEnvelope) => Record<string, unknown>;
+      }[] = [
+        {
+          label: "an unknown actor type",
+          jobName: "j6MalformedActorType",
+          malform: (envelope) => ({
+            ...wellFormedStoredData(envelope),
+            actor: { type: "robot", id: envelope.actor.id },
+          }),
+        },
+        {
+          label: "an unknown top-level key",
+          jobName: "j6MalformedTopKey",
+          malform: (envelope) => ({
+            ...wellFormedStoredData(envelope),
+            scope: "tenant",
+          }),
+        },
+        {
+          label: "an unknown actor key",
+          jobName: "j6MalformedActorKey",
+          malform: (envelope) => ({
+            ...wellFormedStoredData(envelope),
+            actor: { ...envelope.actor, role: "owner" },
+          }),
+        },
+      ];
+
+      it.each(malformations)(
+        "a stored envelope with $label fails both queues with a typed code before any handler runs",
+        async ({ jobName, malform }) => {
+          const job = conformanceJob(jobName);
+          const runner = await open([job], "worker");
+          const { envelope, subjectId } = await enqueueSubject(runner, job);
+          await target.rewriteStoredJobData(
+            database,
+            job.name,
+            envelope.id,
+            malform(envelope),
+          );
+          let runs = 0;
+
+          await work(runner, [
+            handlerFor(job, () => {
+              runs += 1;
+              return Promise.resolve();
+            }),
+          ]);
+
+          await expect(
+            eventually(
+              () => jobRecord(job.name, envelope.id),
+              (record) => record?.state === "failed",
+            ),
+          ).resolves.toMatchObject({
+            state: "failed",
+            output: { code: "INTERNAL" },
+          });
+          const exhausted = await eventually(
+            () => exhaustedRecords(job),
+            (records) => records.some(({ state }) => state === "failed"),
+          );
+          expect(exhausted).toMatchObject([
+            { state: "failed", output: { code: "INTERNAL" } },
+          ]);
+          expect(runs).toBe(0);
+          await expect(subjectName(subjectId)).resolves.toBe("running");
+        },
+      );
     });
 
     describe("J7 declared queue settings", () => {
@@ -571,9 +654,14 @@ export function describeJobRunnerConformance(
         await expect(jobRecord(job.name, envelope.id)).resolves.toMatchObject({
           state: "failed",
         });
-        await expect(exhaustedRecords(job)).resolves.toMatchObject([
-          { state: "completed" },
-        ]);
+        await expect(
+          eventually(
+            () => exhaustedRecords(job),
+            (records) =>
+              records.length > 0 &&
+              records.every(({ state }) => state === "completed"),
+          ),
+        ).resolves.toMatchObject([{ state: "completed" }]);
       });
 
       it("a failing on-exhausted action leaves the row for its module's sweep", async () => {

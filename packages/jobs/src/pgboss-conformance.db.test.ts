@@ -20,6 +20,12 @@ describeJobRunnerConformance({
     );
     return result.rows[0]?.data;
   },
+  async rewriteStoredJobData(database, name, id, data) {
+    await database.admin.query(
+      "UPDATE pgboss.job SET data = $3 WHERE name = $1 AND id = $2",
+      [name, id, JSON.stringify(data)],
+    );
+  },
   async readJobs(database, name) {
     const result = await database.admin.query<{
       id: string;
