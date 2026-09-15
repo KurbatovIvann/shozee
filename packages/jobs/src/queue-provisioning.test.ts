@@ -2,6 +2,7 @@ import { defineJob, jobField, jobPayload } from "@showzy/core";
 import { describe, expect, it } from "vitest";
 
 import {
+  attemptExpiryMarginSeconds,
   queueDeclarations,
   runnerRetentionSeconds,
 } from "./queue-provisioning.js";
@@ -50,7 +51,7 @@ describe("queueDeclarations", () => {
         settings: {
           ...unchanging,
           retryLimit: 0,
-          expireInSeconds: 91,
+          expireInSeconds: 96,
           deadLetter: null,
         },
       },
@@ -59,7 +60,7 @@ describe("queueDeclarations", () => {
         settings: {
           ...unchanging,
           retryLimit: 1,
-          expireInSeconds: 91,
+          expireInSeconds: 96,
           deadLetter: "assistant.runTurn.exhausted",
         },
       },
@@ -73,10 +74,18 @@ describe("queueDeclarations", () => {
         settings: {
           ...unchanging,
           retryLimit: 0,
-          expireInSeconds: 60,
+          expireInSeconds: 65,
           deadLetter: null,
         },
       },
     ]);
+  });
+
+  it("expires a whole-second attempt a fixed margin after its in-process timeout", () => {
+    const [queue] = queueDeclarations([cleanup]);
+    expect(attemptExpiryMarginSeconds).toBeGreaterThan(0);
+    expect(queue?.settings.expireInSeconds).toBe(
+      cleanup.attemptTimeoutMs / 1000 + attemptExpiryMarginSeconds,
+    );
   });
 });
