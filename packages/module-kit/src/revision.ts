@@ -14,7 +14,7 @@ type UuidKeyColumn = AnyPgColumn<{
 }>;
 
 type OwnUuidKeyColumn<TTable extends RevisionTable> = Extract<
-  TTable["_"]["columns"][keyof TTable["_"]["columns"]],
+  TTable["_"]["columns"][Exclude<keyof TTable["_"]["columns"], "companyId">],
   UuidKeyColumn
 >;
 
@@ -77,7 +77,6 @@ function lockOrderIdentity(bump: UncheckedRevisionBump): readonly string[] {
   return [
     getTableUniqueName(bump.root.table),
     bump.key.toLowerCase(),
-    bump.root.keyColumn.name,
     bump.companyId.toLowerCase(),
   ];
 }

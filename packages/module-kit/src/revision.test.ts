@@ -45,7 +45,10 @@ type AlphaKeyColumn = RevisionRoot<typeof alphaTable>["keyColumn"];
 describe("RevisionRoot", () => {
   it("accepts a non-null uuid column of its own table as the key", () => {
     expectTypeOf(alphaTable.id).toExtend<AlphaKeyColumn>();
-    expectTypeOf(alphaTable.companyId).toExtend<AlphaKeyColumn>();
+  });
+
+  it("rejects the company column as the key", () => {
+    expectTypeOf(alphaTable.companyId).not.toExtend<AlphaKeyColumn>();
   });
 
   it("rejects a key column of another table", () => {
@@ -155,9 +158,14 @@ function callSiteSource(keyColumn: string): string {
   ].join("\n");
 }
 
+interface CallSiteDiagnostic {
+  readonly at: string | undefined;
+  readonly message: string;
+}
+
 function inlineCallDiagnostics(
   probes: Record<string, string>,
-): Record<string, readonly string[]> {
+): Record<string, readonly CallSiteDiagnostic[]> {
   const configPath = ts.findConfigFile(packageRoot, (path) =>
     ts.sys.fileExists(path),
   );
@@ -194,16 +202,23 @@ function inlineCallDiagnostics(
         : [];
       return [
         Object.keys(probes)[index] ?? fileName,
-        diagnostics.map((diagnostic) =>
-          ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"),
-        ),
+        diagnostics.map((diagnostic) => ({
+          at: sourceFile?.text.slice(
+            diagnostic.start,
+            (diagnostic.start ?? 0) + (diagnostic.length ?? 0),
+          ),
+          message: ts.flattenDiagnosticMessageText(
+            diagnostic.messageText,
+            "\n",
+          ),
+        })),
       ];
     }),
   );
 }
 
 describe("bumpRevisions at an inline call site", () => {
-  let diagnostics: Record<string, readonly string[]>;
+  let diagnostics: Record<string, readonly CallSiteDiagnostic[]>;
 
   beforeAll(() => {
     diagnostics = inlineCallDiagnostics({
@@ -217,6 +232,10 @@ describe("bumpRevisions at an inline call site", () => {
   });
 
   it("rejects a root keyed by another table's column", () => {
-    expect(diagnostics["revision-call-site-foreign-key"]).toHaveLength(1);
+    const rejected = diagnostics["revision-call-site-foreign-key"] ?? [];
+    expect(rejected.map((diagnostic) => diagnostic.at)).toEqual(["keyColumn"]);
+    expect(rejected[0]?.message).toContain(
+      `Type '"call_site_beta"' is not assignable to type '"call_site_alpha"'`,
+    );
   });
 });

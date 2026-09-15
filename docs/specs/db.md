@@ -254,11 +254,14 @@ dropped, recorded in the owning module's spec §7 (v1 migration notes).
 
 **Aggregate revisions (ADR-0042 L2/L3)** are code, not triggers. An
 observable aggregate root carries `revision integer NOT NULL`, scoped by
-`company_id` and a uuid key; the INSERT that creates the root writes
-revision 1 and counts as that transaction's bump. Every later transaction
-that changes the aggregate raises it exactly once, through
-`@showzy/module-kit/revision` (`bumpRevision`, or `bumpRevisions` for
-several roots, which locks in a fixed order: table name, then key), as its
+`company_id` and a uuid key; a root table has exactly one key column, so
+every bump of a row reaches it through the same column. The INSERT that
+creates the root writes revision 1 and counts as that transaction's bump.
+Every later transaction that changes the aggregate raises it exactly once,
+through `@showzy/module-kit/revision` (`bumpRevision`, or `bumpRevisions`
+for several roots, which merges equal roots and locks in a fixed order:
+schema-qualified table name, then lower-cased key, then lower-cased
+company), as its
 first write to that aggregate. Revisions never decrease and keys are never
 reused. Bulk work bumps per chunk, never per row. Per-row write counters
 (`assistant_chat_messages.revision`, `order_cards.revision`) are not
