@@ -34,6 +34,7 @@ import {
 import { defineEvent } from "../events/define-event.js";
 import { implementAction } from "../implement-action.js";
 import type { ActionPipelineDeps } from "../pipeline/types.js";
+import type { JobEnvelope, JobPort } from "./enqueue.js";
 import {
   executeJobAction,
   type JobActionInvocation,
@@ -132,6 +133,7 @@ function requireWritable(capability: ReadTx | Tx): Tx {
 
 const customerInput = z.object({ customerId: z.uuid() });
 const auditTarget = () => ({ type: "customer", id: "fixture" });
+const touchedOutput = z.object({ touched: z.boolean() });
 
 const touchCustomer = implementAction(
   defineActionContract({
@@ -174,6 +176,47 @@ const touchCustomer = implementAction(
       return { touched: true };
     },
     auditTarget,
+  },
+);
+
+const enqueueThenTouch = implementAction(
+  defineActionContract({
+    ...systemWrite,
+    name: "jobRun.enqueueThenTouch",
+    description:
+      "Enqueues a follow-up and refuses a missing customer in its audit step.",
+    input: customerInput,
+    output: touchedOutput,
+    idempotent: true,
+    audit: true,
+    emits: [],
+    enqueues: ["jobRun.followUp"],
+    errors: ["NOT_FOUND"],
+  }),
+  {
+    handler: async (input, ctx) => {
+      if (ctx.scope !== "tenant") {
+        throw new CoreInvariantError("fixture expected a tenant scope");
+      }
+      ctx.enqueue(followUpJob, { customerId: input.customerId });
+      const updated = await requireWritable(ctx.db)
+        .update(fixtureCrmCustomers)
+        .set({ displayName: "touched after enqueue" })
+        .where(
+          and(
+            eq(fixtureCrmCustomers.id, input.customerId),
+            eq(fixtureCrmCustomers.companyId, ctx.companyId),
+          ),
+        )
+        .returning({ id: fixtureCrmCustomers.id });
+      return { touched: updated.length > 0 };
+    },
+    auditTarget: ({ output }) => {
+      if (touchedOutput.safeParse(output).data?.touched !== true) {
+        throw new NotFoundError();
+      }
+      return auditTarget();
+    },
   },
 );
 
@@ -397,6 +440,41 @@ const snapshotReadCustomers = implementAction(
   },
 );
 
+const noteRecordedCompany = implementAction(
+  defineActionContract({
+    ...systemWrite,
+    name: "jobRun.noteRecordedCompany",
+    description: "Returns the recorded company without loading a row.",
+    input: customerInput,
+    output: z.object({ companyId: z.uuid() }),
+    idempotent: false,
+    audit: true,
+    emits: [],
+    errors: [],
+  }),
+  {
+    handler: (_input, ctx) => {
+      if (ctx.scope !== "tenant") {
+        throw new CoreInvariantError("fixture expected a tenant scope");
+      }
+      return Promise.resolve({ companyId: ctx.companyId });
+    },
+    auditTarget,
+  },
+);
+
+const peekNothing = implementAction(
+  defineActionContract({
+    ...systemRead,
+    name: "jobRun.peekNothing",
+    description: "Unaudited read that does nothing.",
+    input: customerInput,
+    output: z.object({ ok: z.boolean() }),
+    errors: [],
+  }),
+  { handler: () => Promise.resolve({ ok: true }) },
+);
+
 const nonIdempotentEnqueuer = implementAction(
   defineActionContract({
     ...systemWrite,
@@ -515,17 +593,40 @@ describe("executeJobAction runs in the recorded scope (J5)", () => {
         input: { customerId: sentinelId() },
       });
 
-    await expect(run(failingAuditDeps())).rejects.toBeInstanceOf(
-      CoreInvariantError,
-    );
+    const attempted: JobEnvelope[] = [];
+    const failing = failingAuditDeps();
+    const attemptPort: JobPort = {
+      enqueue(_tx, envelopes) {
+        attempted.push(...envelopes);
+        return Promise.resolve();
+      },
+    };
+
+    await expect(
+      run({ ...failing, hooks: { ...failing.hooks, jobs: attemptPort } }),
+    ).rejects.toBeInstanceOf(CoreInvariantError);
     await run(kit.pipeline);
-    const [failedAttempt, retry] = kit.jobs.sent;
-    expect(kit.jobs.sent).toHaveLength(2);
-    expect(retry?.id).toBe(failedAttempt?.id);
+    expect(attempted).toHaveLength(1);
+    expect(kit.jobs.sent).toHaveLength(1);
+    expect(kit.jobs.sent[0]?.id).toBe(attempted[0]?.id);
 
     await run(kit.pipeline);
     expect(runs.touch).toBe(2);
-    expect(kit.jobs.sent).toHaveLength(2);
+    expect(kit.jobs.sent).toHaveLength(1);
+  });
+
+  it("leaves nothing at the port when a direct job run rolls back after the send", async () => {
+    await expect(
+      executeJobAction(failingAuditDeps(), {
+        job: touchJob,
+        envelope: touchEnvelope(),
+        action: touchCustomer,
+        input: { customerId: sentinelId() },
+      }),
+    ).rejects.toBeInstanceOf(CoreInvariantError);
+
+    expect(runs.touch).toBe(1);
+    expect(kit.jobs.sent).toHaveLength(0);
   });
 
   it("fails closed when the recorded company does not exist", async () => {
@@ -542,6 +643,37 @@ describe("executeJobAction runs in the recorded scope (J5)", () => {
 
     expect(runs.touch).toBe(0);
     expect(await displayNameOf(sentinelId())).toBe(before);
+  });
+
+  it("refuses a missing recorded company before an action that needs no row runs", async () => {
+    const run = (companyId: string) => {
+      const envelope = touchEnvelope({ companyId });
+      return executeJobAction(kit.pipeline, {
+        job: touchJob,
+        envelope,
+        action: noteRecordedCompany,
+        input: envelope.payload,
+      });
+    };
+
+    await expect(run(companyA())).resolves.toEqual({ companyId: companyA() });
+    await expect(run(randomUUID())).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it("refuses a missing fan-out company before an action that needs no row runs", async () => {
+    const fanOut = (fanOutCompanyId: string) =>
+      executeJobAction(kit.pipeline, {
+        job: sweepJob,
+        envelope: sweepEnvelope(),
+        action: noteRecordedCompany,
+        input: { customerId: sentinelId() },
+        fanOutCompanyId,
+      });
+
+    await expect(fanOut(companyA())).resolves.toEqual({
+      companyId: companyA(),
+    });
+    await expect(fanOut(randomUUID())).rejects.toBeInstanceOf(NotFoundError);
   });
 
   it("runs a global action of a periodic job with no company", async () => {
@@ -700,7 +832,7 @@ describe("executeJobAction runs in the recorded scope (J5)", () => {
     const { logger } = createCapturingLogger();
     const deps: ActionPipelineDeps = {
       ...kit.pipeline,
-      db: single.db,
+      db: kit.jobs.commitBound(single.db),
       hooks: {
         ...kit.pipeline.hooks,
         audit: createAuditHook({ db: single.db, logger }),
@@ -801,14 +933,34 @@ describe("executeJobAction runs in the recorded scope (J5)", () => {
 });
 
 describe("jobIsolationCase", () => {
-  const own = {
-    payload: { customerId: kitIdentities.crmSentinel },
-    input: { customerId: kitIdentities.crmSentinel },
-  };
-  const foreign = {
-    payload: { customerId: foreignCustomerId },
-    input: { customerId: foreignCustomerId },
-  };
+  const own = { payload: { customerId: kitIdentities.crmSentinel } };
+  const foreign = { payload: { customerId: foreignCustomerId } };
+
+  it("fails an action whose own run commits no ok audit row in the recorded company", async () => {
+    await expect(
+      runJobIsolationCase(
+        kit,
+        jobIsolationCase(touchJob, peekNothing, own, foreign),
+      ),
+    ).rejects.toThrow(/committed no ok audit row in company/);
+  });
+
+  it("runs the case's effect assertion on the own run instead of the audit check", async () => {
+    const seen: { requestId: string; companyId: string }[] = [];
+
+    await expect(
+      runJobIsolationCase(
+        kit,
+        jobIsolationCase(touchJob, peekNothing, own, foreign, (_kit, run) => {
+          seen.push(run);
+          return Promise.reject(new Error("peekNothing changed nothing"));
+        }),
+      ),
+    ).rejects.toThrow(/peekNothing changed nothing/);
+    expect(seen).toEqual([
+      { requestId: expect.any(String) as string, companyId: companyA() },
+    ]);
+  });
 
   it("passes an action that loads rows by the recorded company", async () => {
     await runJobIsolationCase(
@@ -816,6 +968,18 @@ describe("jobIsolationCase", () => {
       jobIsolationCase(touchJob, touchCustomer, own, foreign),
     );
     expect(await displayNameOf(foreignCustomerId)).toBe("Company B customer");
+  });
+
+  it("keeps only the own run's envelopes when the failing runs enqueued before they were refused", async () => {
+    await runJobIsolationCase(
+      kit,
+      jobIsolationCase(touchJob, enqueueThenTouch, own, foreign),
+    );
+
+    expect(kit.jobs.sent).toHaveLength(1);
+    expect(kit.jobs.sent[0]?.payload).toEqual({
+      customerId: kitIdentities.crmSentinel,
+    });
   });
 
   it("fails an action that loads a payload's row by id alone", async () => {
@@ -840,7 +1004,6 @@ describe("jobIsolationCase", () => {
       kit,
       jobIsolationCase(sweepJob, renameForCompany, {
         payload: { kind: "daily" },
-        input: {},
       }),
     );
 
@@ -854,7 +1017,6 @@ describe("jobIsolationCase", () => {
         kit,
         jobIsolationCase(sweepJob, leakyRenameForCompany, {
           payload: { kind: "daily" },
-          input: {},
         }),
       ),
     ).rejects.toThrow(/without owned rows.*to be denied/);

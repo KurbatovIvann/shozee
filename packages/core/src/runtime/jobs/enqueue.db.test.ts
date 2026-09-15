@@ -1,8 +1,16 @@
 import { randomUUID } from "node:crypto";
 
-import { domainEvents, eventDeliveries } from "@showzy/db";
+import { domainEvents, eventDeliveries, type Tx } from "@showzy/db";
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  expectTypeOf,
+  it,
+} from "vitest";
 import { z } from "zod";
 
 import { defineActionContract } from "../../contract/define-action-contract.js";
@@ -13,13 +21,19 @@ import {
 } from "../../errors/index.js";
 import { defineJob } from "../../jobs/define-job.js";
 import { jobField, jobPayload } from "../../jobs/job-payload.js";
-import { createTestKit, type TestKit } from "../../testing/kit.js";
+import {
+  buildJobEnvelope,
+  createTestKit,
+  type TestKit,
+} from "../../testing/kit.js";
 import { defineEventHandler } from "../events/define-event-handler.js";
 import { defineEvent } from "../events/define-event.js";
 import { dispatchOutboxBatch, executeDelivery } from "../events/delivery.js";
 import { eventEnvelopeSchema } from "../events/envelope.js";
 import { implementAction } from "../implement-action.js";
 import { UUID_PATTERN } from "../patterns.js";
+import type { ActionTransactionRunner } from "../pipeline/types.js";
+import type { JobPort } from "./enqueue.js";
 
 let kit: TestKit;
 
@@ -323,6 +337,19 @@ async function expectRefused(
   expect(error instanceof CoreError ? error.message : "").toContain(detail);
 }
 
+function signal(): { readonly fired: Promise<void>; fire(): void } {
+  let settle = (): void => undefined;
+  const fired = new Promise<void>((resolve) => {
+    settle = resolve;
+  });
+  return {
+    fired,
+    fire() {
+      settle();
+    },
+  };
+}
+
 async function emitNoted(turnId: string): Promise<string> {
   const requestId = randomUUID();
   await kit.invoke(
@@ -381,6 +408,183 @@ describe("ctx.enqueue commit and rollback (J1)", () => {
       kit.invoke(noteAction, { turnId: randomUUID(), mode: "throw" }),
     ).rejects.toBeInstanceOf(ConflictError);
 
+    expect(kit.jobs.sent).toHaveLength(0);
+  });
+
+  it("records nothing from a run whose hook fails after the send", async () => {
+    const keptTurnId = randomUUID();
+    await kit.invoke(noteAction, { turnId: keptTurnId });
+    const hooks = {
+      ...kit.pipeline.hooks,
+      audit: {
+        recordSuccess: () =>
+          Promise.reject(new CoreInvariantError("injected audit failure")),
+        recordFailure: () => Promise.resolve(),
+      },
+    };
+
+    await expect(
+      kit.invoke(
+        noteAction,
+        { turnId: randomUUID() },
+        {},
+        { deps: { ...kit.pipeline, hooks } },
+      ),
+    ).rejects.toBeInstanceOf(CoreInvariantError);
+
+    expect(kit.jobs.sent.map((envelope) => envelope.payload)).toEqual([
+      { turnId: keptTurnId },
+    ]);
+  });
+
+  it("keeps a committed run's envelopes while an overlapping run with the same request id fails after the send", async () => {
+    const keptTurnId = randomUUID();
+    const requestId = randomUUID();
+    const failingReachedAudit = signal();
+    const committedRunDone = signal();
+    const hooks = {
+      ...kit.pipeline.hooks,
+      audit: {
+        recordSuccess: async () => {
+          failingReachedAudit.fire();
+          await committedRunDone.fired;
+          throw new CoreInvariantError("injected audit failure");
+        },
+        recordFailure: () => Promise.resolve(),
+      },
+    };
+
+    const failing = kit.invoke(
+      noteAction,
+      { turnId: randomUUID() },
+      {},
+      { request: { requestId }, deps: { ...kit.pipeline, hooks } },
+    );
+    await failingReachedAudit.fired;
+    await kit.invoke(
+      noteAction,
+      { turnId: keptTurnId },
+      {},
+      { request: { requestId } },
+    );
+    expect(kit.jobs.sent.map((envelope) => envelope.payload)).toEqual([
+      { turnId: keptTurnId },
+    ]);
+    committedRunDone.fire();
+
+    await expect(failing).rejects.toBeInstanceOf(CoreInvariantError);
+    expect(kit.jobs.sent.map((envelope) => envelope.payload)).toEqual([
+      { turnId: keptTurnId },
+    ]);
+  });
+
+  it("records only the committed runs while failing runs hold their sends open across those commits", async () => {
+    const committedTurnIds = [randomUUID(), randomUUID(), randomUUID()];
+    const allFailingReachedAudit = signal();
+    const committedRunsDone = signal();
+    let failingAtAudit = 0;
+    const hooks = {
+      ...kit.pipeline.hooks,
+      audit: {
+        recordSuccess: async () => {
+          failingAtAudit += 1;
+          if (failingAtAudit === committedTurnIds.length) {
+            allFailingReachedAudit.fire();
+          }
+          await committedRunsDone.fired;
+          throw new CoreInvariantError("injected audit failure");
+        },
+        recordFailure: () => Promise.resolve(),
+      },
+    };
+
+    const failing = committedTurnIds.map(() =>
+      kit.invoke(
+        noteAction,
+        { turnId: randomUUID() },
+        {},
+        { deps: { ...kit.pipeline, hooks } },
+      ),
+    );
+    await allFailingReachedAudit.fired;
+    const committed = await Promise.allSettled(
+      committedTurnIds.map((turnId) => kit.invoke(noteAction, { turnId })),
+    );
+    expect(
+      kit.jobs.sent.map((envelope) => envelope.payload["turnId"]).sort(),
+    ).toEqual([...committedTurnIds].sort());
+    committedRunsDone.fire();
+    const failed = await Promise.allSettled(failing);
+
+    expect(committed.map((outcome) => outcome.status)).toEqual(
+      committedTurnIds.map(() => "fulfilled"),
+    );
+    expect(failed.map((outcome) => outcome.status)).toEqual(
+      committedTurnIds.map(() => "rejected"),
+    );
+    expect(
+      kit.jobs.sent.map((envelope) => envelope.payload["turnId"]).sort(),
+    ).toEqual([...committedTurnIds].sort());
+  });
+
+  it("hands the port the execution transaction the runner opened, while it is open", async () => {
+    const openTransactions = new Set<Tx>();
+    const runner: ActionTransactionRunner = {
+      transaction: (run, config) =>
+        kit.db.runtime.db.transaction(async (tx) => {
+          openTransactions.add(tx);
+          try {
+            return await run(tx);
+          } finally {
+            openTransactions.delete(tx);
+          }
+        }, config),
+    };
+    const sends: {
+      readonly onOpenRunnerTx: boolean;
+      readonly count: number;
+    }[] = [];
+    const port: JobPort = {
+      enqueue(tx, envelopes) {
+        sends.push({
+          onOpenRunnerTx: openTransactions.has(tx),
+          count: envelopes.length,
+        });
+        return Promise.resolve();
+      },
+    };
+
+    await kit.invoke(
+      noteAction,
+      { turnId: randomUUID() },
+      {},
+      {
+        deps: {
+          ...kit.pipeline,
+          db: runner,
+          hooks: { ...kit.pipeline.hooks, jobs: port },
+        },
+      },
+    );
+
+    expect(sends).toEqual([{ onOpenRunnerTx: true, count: 1 }]);
+  });
+
+  it("wraps only a whole-database runner, never an open transaction", () => {
+    type CommitBoundSource = Parameters<TestKit["jobs"]["commitBound"]>[0];
+    type TxIsAccepted = Tx extends CommitBoundSource ? true : false;
+    expectTypeOf<TxIsAccepted>().toEqualTypeOf<false>();
+  });
+
+  it("refuses a send outside a commit-bound transaction", async () => {
+    const envelope = buildJobEnvelope(runTurn, {
+      companyId: kit.identities.companies.a,
+      payload: { turnId: randomUUID() },
+    });
+
+    await expect(
+      kit.db.runtime.db.transaction((tx) => kit.jobs.enqueue(tx, [envelope])),
+    ).rejects.toBeInstanceOf(CoreInvariantError);
     expect(kit.jobs.sent).toHaveLength(0);
   });
 

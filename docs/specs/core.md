@@ -539,8 +539,22 @@ runner settings from the same declaration (`docs/specs/jobs.md`).
   the pipeline. There is no company status check. Staff actions keep their
   own paths; this entrypoint produces no staff caller.
 - **Test kit.** `createTestKit` composes `createRecordingJobPort()` as
-  `kit.jobs`; it records what reached the port at step 9. Commit-time
-  atomicity of a real runner is the adapter conformance suite's proof.
+  `kit.jobs`. Recording is commit-bound: the kit pipeline's `db` is
+  `kit.jobs.commitBound(db)`, which holds the envelopes sent at step 9 pending
+  for the runner transaction open in that async context and moves them into
+  `kit.jobs.sent` only when that transaction commits; a rollback drops them.
+  Only a whole-database runner may be wrapped (the type refuses a `Tx`), so a
+  pending envelope belongs to a top-level transaction, never to a savepoint:
+  a savepoint that rolls back inside a committing transaction keeps its
+  envelopes. No path does that today — J4 lets only the root action enqueue,
+  and a failed delivery rethrows, rolling back the whole delivery
+  transaction. The pipeline hands the port the execution transaction's own
+  `tx` (`enqueue.db.test.ts`). `kit.jobs.sent` therefore holds only committed
+  envelopes for every entry point — `kit.invoke`, `jobIsolationSuite`, direct
+  `executeAction`/`executeJobAction`/`executeDelivery` calls, concurrent runs,
+  and overlapping runs sharing a `requestId`. A send outside a commit-bound
+  transaction is a `CoreInvariantError`. Commit-time atomicity of a real
+  runner is the adapter conformance suite's proof.
 
 ## 7. Confirmation protocol (`requiresConfirmation`)
 
@@ -738,14 +752,20 @@ Exported from `packages/core/testing`, used by every module (this is how
   tokens are `NotFoundError`; co-sign (and any other share write) MUST NOT
   create CRM rows; raw token is absent from logs/audit/events.
 - `jobIsolationSuite(cases)` with `jobIsolationCase(job, action, own,
-  foreign?)` — runs the action through `executeJobAction` in company A (a
-  global periodic job fans out to A): the own payload succeeds, a payload naming
-  another company's row is `NotFoundError`/`PermissionDeniedError`, and the own
-  payload in an existing company without owned rows and in a company that does
-  not exist fails closed, committing no audit success or event. `foreign` is
+  foreign?, effect?)` — runs the action through `executeJobAction` in company A
+  (a global periodic job fans out to A) with the envelope payload as its input:
+  the own payload succeeds and commits an ok audit row in company A (or passes
+  the case's `effect` assertion), a payload naming another company's row is
+  `NotFoundError`/`PermissionDeniedError`, and the own payload in an existing
+  company without owned rows fails closed, committing no audit success or
+  event. A company that does not exist is refused by core for every job action
+  and is proven in core's own tests, not per case. `foreign` is
   required for a tenant job and may be omitted for a periodic fan-out whose
   action takes the company from its scope. `buildJobEnvelope` builds the
-  test envelope.
+  test envelope. Cases assume the action input equals the payload: a
+  `JobHandler.handle` that maps the payload to a different input is not
+  covered by the suite and belongs to `packages/jobs` conformance. A refused
+  run's envelopes never reach `kit.jobs.sent` (§6 test kit).
 - `idempotencySuite(action)` — replay, conflict, concurrent-retry cases.
 - `eventSuite(module)` — declared events emitted transactionally (rollback
   removes them), consumer dedup respected.
