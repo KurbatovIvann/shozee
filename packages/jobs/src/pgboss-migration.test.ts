@@ -9,6 +9,7 @@ import {
   pinnedPgBossSchemaVersion,
   pinnedPgBossVersion,
 } from "./pgboss-migration.js";
+import { pgBossWithoutMigrator } from "./pgboss-schema.js";
 
 const migrationsDir = path.resolve(import.meta.dirname, "../../db/migrations");
 
@@ -57,16 +58,29 @@ describe("pgboss migration", () => {
     expect(sqlText).toMatch(/^CREATE SCHEMA IF NOT EXISTS pgboss;$/m);
   });
 
-  it("keeps the version row out of reach of showzy_app inserts and deletes", () => {
+  it("keeps the version row out of reach of showzy_app except its maintenance stamps", () => {
     const sqlText = pgBossMigrationSql();
     const grant = sqlText.indexOf(
       "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA pgboss TO showzy_app;",
     );
     const revoke = sqlText.indexOf(
-      "REVOKE INSERT, DELETE ON pgboss.version FROM showzy_app;",
+      "REVOKE INSERT, UPDATE, DELETE ON pgboss.version FROM showzy_app;",
+    );
+    const stamps = sqlText.indexOf(
+      "GRANT UPDATE (cron_on, bam_on, flow_on, reindex_on, monitor_backoff_on) ON pgboss.version TO showzy_app;",
     );
     expect(grant).toBeGreaterThan(-1);
     expect(revoke).toBeGreaterThan(grant);
+    expect(stamps).toBeGreaterThan(revoke);
+  });
+
+  it("builds every pg-boss instance without the migrator or persisted queue stats", () => {
+    expect(pgBossWithoutMigrator).toEqual({
+      schema: "pgboss",
+      migrate: false,
+      createSchema: false,
+      persistQueueStats: false,
+    });
   });
 
   it("grants showzy_app DML on pgboss and nothing that creates objects", () => {

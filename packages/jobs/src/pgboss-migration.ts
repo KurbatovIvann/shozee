@@ -16,10 +16,19 @@ const librarySessionSettings = [
   /^SELECT pg_advisory_xact_lock\(.+\);$/,
 ];
 
+export const pgBossMaintenanceStampColumns = [
+  "cron_on",
+  "bam_on",
+  "flow_on",
+  "reindex_on",
+  "monitor_backoff_on",
+] as const;
+
 const runtimeGrants = [
   `GRANT USAGE ON SCHEMA ${PGBOSS_SCHEMA} TO showzy_app;`,
   `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ${PGBOSS_SCHEMA} TO showzy_app;`,
-  `REVOKE INSERT, DELETE ON ${PGBOSS_SCHEMA}.version FROM showzy_app;`,
+  `REVOKE INSERT, UPDATE, DELETE ON ${PGBOSS_SCHEMA}.version FROM showzy_app;`,
+  `GRANT UPDATE (${pgBossMaintenanceStampColumns.join(", ")}) ON ${PGBOSS_SCHEMA}.version TO showzy_app;`,
   `ALTER DEFAULT PRIVILEGES IN SCHEMA ${PGBOSS_SCHEMA} GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO showzy_app;`,
 ];
 

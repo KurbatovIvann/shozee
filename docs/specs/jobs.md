@@ -60,9 +60,10 @@ and is left untouched. Proof: `src/pgboss-schema.db.test.ts`.
 - The migration grants `showzy_app` `USAGE` on schema `pgboss`, `SELECT`,
   `INSERT`, `UPDATE`, `DELETE` on its tables, and the same on tables later
   created in it by the migrating role. No `CREATE`, no `TRUNCATE`.
-- `INSERT` and `DELETE` on `pgboss.version` are revoked, so the runtime role
-  cannot install or remove the version row the boot check reads; `UPDATE`
-  stays because the runner stamps its maintenance columns.
+- `INSERT`, `UPDATE` and `DELETE` on `pgboss.version` are revoked, so the
+  runtime role cannot install, change or remove the version the boot check
+  reads; `UPDATE` is granted back only on the maintenance stamps the runner
+  writes (`cron_on`, `bam_on`, `flow_on`, `reindex_on`, `monitor_backoff_on`).
 - That is what send, fetch and completion need; proof: the same db test sends,
   fetches and completes a job as the runtime role.
 - `showzy_app` runs no DDL, so a queue with `partition: true` (which creates a

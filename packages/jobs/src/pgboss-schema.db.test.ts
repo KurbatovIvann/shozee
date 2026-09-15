@@ -4,7 +4,10 @@ import { sql } from "drizzle-orm";
 import { fromDrizzle, PgBoss } from "pg-boss";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { pinnedPgBossSchemaVersion } from "./pgboss-migration.js";
+import {
+  pgBossMaintenanceStampColumns,
+  pinnedPgBossSchemaVersion,
+} from "./pgboss-migration.js";
 import { assertPgBossSchema, pgBossWithoutMigrator } from "./pgboss-schema.js";
 
 let database: TestDatabase;
@@ -87,26 +90,40 @@ describe("showzy_app grants on pgboss", () => {
     expect(result.rows[0]?.allowed).toBe(false);
   });
 
-  it("may not insert or delete the pgboss version row", async () => {
+  it("may not insert, delete or change the pgboss version row", async () => {
     const result = await database.runtime.pool.query<{
       canInsert: boolean;
       canDelete: boolean;
-      canUpdate: boolean;
+      canUpdateVersion: boolean;
     }>(
       `SELECT has_table_privilege('pgboss.version', 'INSERT') AS "canInsert",
               has_table_privilege('pgboss.version', 'DELETE') AS "canDelete",
-              has_table_privilege('pgboss.version', 'UPDATE') AS "canUpdate"`,
+              has_column_privilege('pgboss.version', 'version', 'UPDATE') AS "canUpdateVersion"`,
     );
     expect(result.rows[0]).toEqual({
       canInsert: false,
       canDelete: false,
-      canUpdate: true,
+      canUpdateVersion: false,
     });
     await expect(
       database.runtime.pool.query("DELETE FROM pgboss.version"),
     ).rejects.toThrow(/permission denied/);
+    await expect(
+      database.runtime.pool.query("UPDATE pgboss.version SET version = 0"),
+    ).rejects.toThrow(/permission denied/);
     await expect(installedVersion()).resolves.toBe(pinnedPgBossSchemaVersion);
   });
+
+  it.each(pgBossMaintenanceStampColumns)(
+    "may stamp the %s maintenance column",
+    async (column) => {
+      const result = await database.runtime.pool.query<{ allowed: boolean }>(
+        "SELECT has_column_privilege('pgboss.version', $1, 'UPDATE') AS allowed",
+        [column],
+      );
+      expect(result.rows[0]?.allowed).toBe(true);
+    },
+  );
 
   it("runs a supervise and monitor pass as the runtime role", async () => {
     const errors: unknown[] = [];

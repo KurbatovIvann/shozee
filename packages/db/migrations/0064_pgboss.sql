@@ -416,5 +416,6 @@ INSERT INTO pgboss.version(version) VALUES ('41');
 -- showzy_app grants for send, fetch and completion (ADR-0041, db.md §6).
 GRANT USAGE ON SCHEMA pgboss TO showzy_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA pgboss TO showzy_app;
-REVOKE INSERT, DELETE ON pgboss.version FROM showzy_app;
+REVOKE INSERT, UPDATE, DELETE ON pgboss.version FROM showzy_app;
+GRANT UPDATE (cron_on, bam_on, flow_on, reindex_on, monitor_backoff_on) ON pgboss.version TO showzy_app;
 ALTER DEFAULT PRIVILEGES IN SCHEMA pgboss GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO showzy_app;
