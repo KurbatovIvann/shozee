@@ -4,7 +4,10 @@ import { sql } from "drizzle-orm";
 import { fromDrizzle, PgBoss } from "pg-boss";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { pinnedPgBossSchemaVersion } from "./pgboss-migration.js";
+import {
+  pgBossMaintenanceStampColumns,
+  pinnedPgBossSchemaVersion,
+} from "./pgboss-migration.js";
 import { assertPgBossSchema, pgBossWithoutMigrator } from "./pgboss-schema.js";
 
 let database: TestDatabase;
@@ -85,6 +88,64 @@ describe("showzy_app grants on pgboss", () => {
       "SELECT has_schema_privilege('pgboss', 'CREATE') AS allowed",
     );
     expect(result.rows[0]?.allowed).toBe(false);
+  });
+
+  it("may not insert, delete or change the pgboss version row", async () => {
+    const result = await database.runtime.pool.query<{
+      canInsert: boolean;
+      canDelete: boolean;
+      canUpdateVersion: boolean;
+    }>(
+      `SELECT has_table_privilege('pgboss.version', 'INSERT') AS "canInsert",
+              has_table_privilege('pgboss.version', 'DELETE') AS "canDelete",
+              has_column_privilege('pgboss.version', 'version', 'UPDATE') AS "canUpdateVersion"`,
+    );
+    expect(result.rows[0]).toEqual({
+      canInsert: false,
+      canDelete: false,
+      canUpdateVersion: false,
+    });
+    await expect(
+      database.runtime.pool.query("DELETE FROM pgboss.version"),
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      database.runtime.pool.query("UPDATE pgboss.version SET version = 0"),
+    ).rejects.toThrow(/permission denied/);
+    await expect(installedVersion()).resolves.toBe(pinnedPgBossSchemaVersion);
+  });
+
+  it.each(pgBossMaintenanceStampColumns)(
+    "may stamp the %s maintenance column",
+    async (column) => {
+      const result = await database.runtime.pool.query<{ allowed: boolean }>(
+        "SELECT has_column_privilege('pgboss.version', $1, 'UPDATE') AS allowed",
+        [column],
+      );
+      expect(result.rows[0]?.allowed).toBe(true);
+    },
+  );
+
+  it("runs a supervise and monitor pass as the runtime role", async () => {
+    const errors: unknown[] = [];
+    const boss = new PgBoss({
+      ...pgBossWithoutMigrator,
+      db: fromDrizzle(database.runtime.db, sql),
+      supervise: false,
+      schedule: false,
+    });
+    boss.on("error", (error) => errors.push(error));
+    await boss.start();
+    try {
+      const queue = "sho-657-supervise";
+      await boss.createQueue(queue);
+      await boss.send(queue, { probe: true });
+      await expect(boss.supervise(queue)).resolves.toBeUndefined();
+      const cached = await boss.getQueue(queue);
+      expect(cached?.queuedCount).toBe(1);
+    } finally {
+      await boss.stop({ graceful: false, close: false });
+    }
+    expect(errors).toEqual([]);
   });
 
   it("sends, fetches and completes a job as the runtime role", async () => {

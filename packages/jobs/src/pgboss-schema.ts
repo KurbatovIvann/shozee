@@ -13,6 +13,7 @@ export const pgBossWithoutMigrator = {
   schema: PGBOSS_SCHEMA,
   migrate: false,
   createSchema: false,
+  persistQueueStats: false,
 } as const;
 
 export async function assertPgBossSchema(db: Database): Promise<void> {
