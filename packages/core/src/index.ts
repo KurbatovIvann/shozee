@@ -59,6 +59,7 @@ export type {
   JobIntegerBounds,
   JobPayloadShape,
 } from "./jobs/job-payload.js";
+export type { JobEnvelope, JobPort } from "./runtime/jobs/enqueue.js";
 export { schemaTablesFromModules } from "./contract-check/schema-tables.js";
 export { emptySuiteCoverage } from "./contract-check/suite-coverage.js";
 export type { SuiteCoverageManifest } from "./contract-check/suite-coverage.js";
@@ -223,6 +224,7 @@ export type {
   CtxCall,
   CtxCallAtomic,
   CtxEmit,
+  CtxEnqueue,
   CustomerCtx,
   PublicCtx,
   PublicGlobalCtx,

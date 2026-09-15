@@ -40,6 +40,7 @@ import type {
   CtxCall,
   CtxCallAtomic,
   CtxEmit,
+  CtxEnqueue,
   CustomerCtx,
   PublicGlobalCtx,
   PublicTargetCtx,
@@ -80,6 +81,7 @@ export interface ContextRuntime<TDb> {
   readonly deadline: number;
   readonly signal: AbortSignal;
   readonly emit: CtxEmit;
+  readonly enqueue: CtxEnqueue;
   readonly call: CtxCall;
   readonly callAtomic: CtxCallAtomic;
 }
@@ -175,6 +177,7 @@ function buildBase<TDb>(options: {
     signal: runtime.signal,
     log,
     emit: runtime.emit,
+    enqueue: runtime.enqueue,
     call: runtime.call,
     callAtomic: runtime.callAtomic,
   };

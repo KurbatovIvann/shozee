@@ -30,6 +30,7 @@ import type {
 } from "../context/types.js";
 import type { z } from "zod";
 
+import type { JobPort } from "../jobs/enqueue.js";
 import type { AuditSnapshotFn, AuditTargetFn, MaybePromise } from "../types.js";
 
 /**
@@ -257,6 +258,7 @@ export interface PipelineHooks {
   readonly confirmation?: ConfirmationHook | undefined;
   readonly idempotency?: IdempotencyHook | undefined;
   readonly audit?: AuditHook | undefined;
+  readonly jobs?: JobPort | undefined;
 }
 
 /** Correlation fields opening one action span (blueprint §9). */

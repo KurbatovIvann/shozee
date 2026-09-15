@@ -160,6 +160,7 @@ type BaseCtx<TDb extends ReadTx = Tx> = {
   signal: AbortSignal;     // shared with nested calls/external clients
   log: Logger;            // pino child bound to request/actor/company/action
   emit: (event: DomainEvent) => void;   // outbox insert, same tx (§6)
+  enqueue: <J>(job: J, payload: PayloadOf<J>) => void; // job port, same tx (§6 Jobs)
   call: <A>(action: A, input: In<A>) => Promise<Out<A>>; // ADR-0015 (§9)
   callAtomic: TDb extends Tx
     ? <A extends AtomicTarget>(action: A, input: In<A>) => Promise<Out<A>>
@@ -315,8 +316,9 @@ Fixed order, no per-action variation:
 8. **Validate output** with the declared Zod schema before any commit; a
    mismatch is `CoreInvariantError` (server bug), never a client validation
    error.
-9. Inside the same transaction: outbox inserts from `ctx.emit`, successful
-   audit record (§8), idempotency finalize (§5).
+9. Inside the same transaction: outbox inserts from `ctx.emit`, job port
+   sends from `ctx.enqueue` (§6 Jobs), successful audit record (§8),
+   idempotency finalize (§5).
 10. **Commit**. Failures roll back handler/outbox/audit/finalization, then
     record the failed audit outcome and mark the idempotency key `failed` in
     a separate short transaction.
@@ -491,8 +493,33 @@ runner settings from the same declaration (`docs/specs/jobs.md`).
   a module that defines jobs appears in `suiteCoverage.jobIsolation` (§12),
   and every listed module defines a job. Composition passes every job
   declaration as `jobs`.
-- Enqueueing (`ctx.enqueue`, the job port, identity and execution) arrives
-  with jobs-T3 and later tickets.
+- **Enqueue.** `ctx.enqueue(job, payload)` is buffered like `ctx.emit`: the
+  call checks that the job is in the contract's `enqueues` and parses the
+  payload with the job's `jobPayload` schema, and the pipeline sends the
+  buffer at §4 step 9, right after the outbox, through
+  `PipelineHooks.jobs` (`JobPort.enqueue(tx, envelopes)`) in the execution
+  transaction. An action that declares `enqueues` fails closed without the
+  port. Enqueueing is refused in `risk: read` actions and in `ctx.call` and
+  `ctx.callAtomic` callees (J4); only the root action of a transaction
+  enqueues.
+- **Envelope (J5 source).** `id`, `name`, `companyId` (the verified company
+  for `tenant` jobs, null for `global`), `actor` (user/system; share maps to
+  `system`/`share`), `channel`, `requestId`, `correlationId`, `executionId`
+  and the identity-only `payload`.
+- **Execution id.** Core mints one UUIDv7 per `executeAction`. A
+  client-supplied request id is never an origin.
+- **Identity (J2).** The job id is a version-8 UUID over SHA-256 of the
+  RFC 8785 canonical JSON of module, job name, envelope company, origin and
+  the discriminator values. The origin is the idempotency tuple
+  (principal key, scope key, action, key — §5) when the invocation holds a
+  reservation, otherwise the execution id. An event delivery's reservation
+  is its `(consumer, eventId)` row, so its jobs derive from that tuple and
+  commit with the `processed` mark; a replay runs no handler and enqueues
+  nothing (J3). Two sends with one id in one invocation throw, so fanning a
+  job out needs a discriminator.
+- **Test kit.** `createTestKit` composes `createRecordingJobPort()` as
+  `kit.jobs`; it records what reached the port at step 9. Commit-time
+  atomicity of a real runner is the adapter conformance suite's proof.
 
 ## 7. Confirmation protocol (`requiresConfirmation`)
 

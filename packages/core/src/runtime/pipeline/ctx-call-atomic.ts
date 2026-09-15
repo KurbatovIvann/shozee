@@ -48,6 +48,7 @@ import {
 } from "../context/factories.js";
 import type { ActionCtx, CtxCallAtomic } from "../context/types.js";
 import { createEmitBuffer } from "../events/emit.js";
+import { rejectNestedEnqueue } from "../jobs/enqueue.js";
 import type { ImplementedAction } from "../implement-action.js";
 import {
   constructCalleeContext,
@@ -177,6 +178,7 @@ export function createCtxCallAtomic(env: CtxCallAtomicEnv): CtxCallAtomic {
         deadline: env.deadline,
         signal: env.signal,
         emit: emitBuffer.emit,
+        enqueue: rejectNestedEnqueue(callee.name),
         call: createCtxCall({
           deps: env.deps,
           callerContract: callee,

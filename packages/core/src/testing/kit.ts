@@ -48,6 +48,7 @@ import {
 import type { ActionCtx } from "../runtime/context/types.js";
 import { createIdempotencyHook } from "../runtime/idempotency/create-idempotency-hook.js";
 import type { ImplementedAction } from "../runtime/implement-action.js";
+import type { JobEnvelope, JobPort } from "../runtime/jobs/enqueue.js";
 import { executeAction } from "../runtime/pipeline/execute-action.js";
 import type {
   ActionPipelineDeps,
@@ -102,6 +103,7 @@ export interface TestKit {
   readonly db: TestDatabase;
   readonly identities: KitIdentities;
   readonly pipeline: ActionPipelineDeps;
+  readonly jobs: RecordingJobPort;
   buildTestContext(
     mode: ActionPrincipal,
     overrides?: BuildTestContextOverrides,
@@ -123,8 +125,31 @@ const DEFAULT_CLIENT_IP = "203.0.113.7";
 const DEFAULT_SERVICE = "test-kit";
 const KIT_IP_HMAC_SECRET = "test-kit-ip-hmac-secret";
 
-function kitProtocolHooks(database: TestDatabase): PipelineHooks {
+export interface RecordingJobPort extends JobPort {
+  readonly sent: readonly JobEnvelope[];
+  clear(): void;
+}
+
+export function createRecordingJobPort(): RecordingJobPort {
+  const sent: JobEnvelope[] = [];
   return {
+    sent,
+    clear() {
+      sent.length = 0;
+    },
+    enqueue(_tx, envelopes) {
+      sent.push(...envelopes);
+      return Promise.resolve();
+    },
+  };
+}
+
+function kitProtocolHooks(
+  database: TestDatabase,
+  jobs: RecordingJobPort,
+): PipelineHooks {
+  return {
+    jobs,
     audit: createAuditHook({ db: database.runtime.db, logger: silentLogger }),
     idempotency: createIdempotencyHook({ db: database.runtime.db }),
     rateLimit: createRateLimitHook({
@@ -224,6 +249,9 @@ function runtimeFor<TDb>(
     emit: () => {
       throw new Error("test-kit contexts cannot emit — use kit.invoke");
     },
+    enqueue: () => {
+      throw new Error("test-kit contexts cannot enqueue — use kit.invoke");
+    },
     call: () => {
       throw new Error("test-kit contexts cannot call — use kit.invoke");
     },
@@ -290,17 +318,19 @@ export async function createTestKit(db?: TestDatabase): Promise<TestKit> {
   const database = db ?? (await createTestDatabase());
   await seedTestKit(database);
 
+  const jobs = createRecordingJobPort();
   const pipeline: ActionPipelineDeps = {
     db: database.runtime.db,
     logger: silentLogger,
     projectionGrants: createProjectionGrantManifest([fixtureDiscoveryGrant]),
-    hooks: kitProtocolHooks(database),
+    hooks: kitProtocolHooks(database, jobs),
   };
 
   const kit: TestKit = {
     db: database,
     identities: kitIdentities,
     pipeline,
+    jobs,
     buildTestContext(mode, overrides = {}) {
       return buildTestContext(kit, mode, overrides);
     },

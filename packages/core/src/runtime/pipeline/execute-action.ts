@@ -59,6 +59,9 @@ import {
 import { assertDeclaredPermissions } from "../context/permissions.js";
 import type { ActionCtx } from "../context/types.js";
 import { createEmitBuffer, type EmitBuffer } from "../events/emit.js";
+import { uuidv7 } from "../events/uuidv7.js";
+import { createEnqueueBuffer, type EnqueueBuffer } from "../jobs/enqueue.js";
+import { jobOriginFor } from "../jobs/job-identity.js";
 import type { ImplementedAction } from "../implement-action.js";
 import type {
   AuditTargetFn,
@@ -230,7 +233,7 @@ export async function executeAction<
     assertAuthenticated(principal);
     assertRequiredProtocolHooks(contract, deps.hooks);
 
-    const { env, hookEnv, emitBuffer } = buildRunEnv({
+    const { env, hookEnv, emitBuffer, enqueueBuffer } = buildRunEnv({
       deps,
       invocation,
       input,
@@ -280,6 +283,7 @@ export async function executeAction<
       env,
       state,
       emitBuffer,
+      enqueueBuffer,
       deadline,
       controller,
       startedAt,
@@ -335,9 +339,14 @@ function buildRunEnv<
   readonly env: RunEnv<TInput, TOutput, TTarget>;
   readonly hookEnv: PipelineHookEnv;
   readonly emitBuffer: EmitBuffer;
+  readonly enqueueBuffer: EnqueueBuffer;
 } {
   const { deps, invocation, input, request, state, deadline, now } = options;
   const { contract } = invocation.action;
+  const enqueueBuffer = createEnqueueBuffer({
+    contract,
+    executionId: uuidv7(now()),
+  });
 
   // One emission buffer per invocation (fnd-T16): `ctx.emit` validates and
   // buffers synchronously; the buffer flushes into the outbox in step 9,
@@ -393,6 +402,7 @@ function buildRunEnv<
       deadline,
       signal: options.controller.signal,
       emit: emitBuffer.emit,
+      enqueue: enqueueBuffer.enqueue,
       call: ctxCall,
       callAtomic: ctxCallAtomic,
     }),
@@ -403,7 +413,7 @@ function buildRunEnv<
     principal: invocation.principal,
     input,
   };
-  return { env, hookEnv, emitBuffer };
+  return { env, hookEnv, emitBuffer, enqueueBuffer };
 }
 
 /** The strongest identity evidence available for the finish log line. */
@@ -590,6 +600,7 @@ async function runExecutionTransaction<
   readonly env: RunEnv<TInput, TOutput, TTarget>;
   readonly state: RunState;
   readonly emitBuffer: EmitBuffer;
+  readonly enqueueBuffer: EnqueueBuffer;
   readonly deadline: number;
   readonly controller: AbortController;
   readonly startedAt: number;
@@ -636,6 +647,24 @@ async function runExecutionTransaction<
         tx,
         ctx,
         causationId: env.request.causationId ?? env.request.requestId,
+      });
+      await options.enqueueBuffer.flush({
+        tx,
+        ctx,
+        port: deps.hooks?.jobs,
+        origin: jobOriginFor({
+          executionId: options.enqueueBuffer.executionId,
+          reservedIdentity:
+            state.reserved === undefined || state.authorization === undefined
+              ? undefined
+              : {
+                  contract,
+                  request: env.request,
+                  principal: env.principal,
+                  input: env.input,
+                  authorization: state.authorization,
+                },
+        }),
       });
       if (
         contract.audit &&
@@ -805,6 +834,11 @@ function assertRequiredProtocolHooks(
   if (contract.requiresConfirmation && hooks?.confirmation === undefined) {
     throw new CoreInvariantError(
       `"${contract.name}" requires confirmation but no confirmation hook is composed — high-risk execution cannot proceed`,
+    );
+  }
+  if ((contract.enqueues ?? []).length > 0 && hooks?.jobs === undefined) {
+    throw new CoreInvariantError(
+      `"${contract.name}" declares enqueues but no job port is composed`,
     );
   }
 }
