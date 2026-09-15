@@ -98,8 +98,9 @@ fixes below target exactly that.
    load at start; area rules by path; package `AGENTS.md` via nested
    `CLAUDE.md`; skills on invocation. Keep `AGENTS.md` short — every line
    is paid for on every turn of every agent.
-10. **Worktrees are cleaned after every merge** (`git worktree remove
-    --force`, then `prune`); each carries a `node_modules`.
+10. **Worktrees are cleaned after every merge**
+    (`node .claude/scripts/remove-worktrees.mjs <agent-id>... --orphans`);
+    each carries a `node_modules`, and locked worktrees are skipped.
 11. **Fresh sessions per unit of work.** One session per `/feature`, per
     `/ticket`, per `/conveyor` run; `/clear` between unrelated tasks.
     Check `/usage` after a run and record the cost per merged PR.

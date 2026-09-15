@@ -55,6 +55,7 @@
       "Bash(pnpm --filter * exec drizzle-kit *)",
       "Bash(gh auth status*)",
       "Bash(git worktree list*)",
+      "Bash(node .claude/scripts/remove-worktrees.mjs*)",
       "Bash(git worktree remove *)",
       "Bash(git worktree remove --force *)",
       "Bash(git worktree prune*)",
