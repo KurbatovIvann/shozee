@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { executeAction } from "@showzy/core";
-import { ConflictError } from "@showzy/core/errors";
+import { ConflictError, NotFoundError } from "@showzy/core/errors";
 import {
   createTestKit,
   kitIdentities,
@@ -39,6 +39,15 @@ const CLAIM_READ = /from "assistant_turns".* for share/s;
 const TURN_END = 'update "assistant_turns"';
 
 type Deps = Parameters<typeof executeAction>[0];
+
+const annaInA = {
+  userId: kitIdentities.users.anna,
+  companyId: kitIdentities.companies.a,
+};
+const borisInB = {
+  userId: kitIdentities.users.boris,
+  companyId: kitIdentities.companies.b,
+};
 
 let kit: TestKit;
 
@@ -93,21 +102,23 @@ function deferred() {
   return { promise, resolve };
 }
 
-async function staleRunningTurn() {
+async function staleRunningTurn(
+  author: { readonly userId: string; readonly companyId: string } = annaInA,
+) {
   const conversationId = randomUUID();
   await kit.db.runtime.db.insert(assistantConversations).values({
     id: conversationId,
-    companyId: kitIdentities.companies.a,
-    userId: kitIdentities.users.anna,
+    companyId: author.companyId,
+    userId: author.userId,
   });
   const accept = chatAccept(conversationId, FIRST);
-  await kit.invoke(acceptTurn, accept, {});
+  await kit.invoke(acceptTurn, accept, author);
   const turn = {
     conversationId,
     kind: "chat" as const,
     commandId: accept.commandId,
   };
-  await kit.invoke(startTurn, { ...turn, timeoutMs: 180_000 }, {});
+  await kit.invoke(startTurn, { ...turn, timeoutMs: 180_000 }, author);
   await kit.db.runtime.db
     .update(assistantTurns)
     .set({ deadlineAt: sql`now() - interval '1 second'` })
@@ -288,6 +299,34 @@ describe("worker writes are fenced by the turn claim", () => {
       ),
     ).rejects.toBeInstanceOf(ConflictError);
     expect(await storedHistory(other.turn.conversationId)).toEqual([FIRST]);
+  });
+
+  it("refuses a company-A caller whose claim names a running turn of company B", async () => {
+    const own = await staleRunningTurn(annaInA);
+    const foreign = await staleRunningTurn(borisInB);
+    const save = (conversationId: string) =>
+      kit.invoke(
+        writeChatState,
+        { conversationId, history: [OLD_REPLY], claim: foreign.claim },
+        annaInA,
+      );
+
+    await expect(save(own.turn.conversationId)).rejects.toBeInstanceOf(
+      ConflictError,
+    );
+    await expect(save(foreign.turn.conversationId)).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
+    expect(await storedHistory(own.turn.conversationId)).toEqual([FIRST]);
+    expect(
+      (
+        await kit.invoke(
+          readChatState,
+          { conversationId: foreign.turn.conversationId },
+          borisInB,
+        )
+      ).history,
+    ).toEqual([FIRST]);
   });
 
   it("refuses a claim that is not a turn kind", () => {

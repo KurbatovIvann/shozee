@@ -30,6 +30,7 @@ import type {
 } from "@showzy/assistant-kit";
 import { executeAction } from "@showzy/core";
 import { CoreError } from "@showzy/core/errors";
+import { ASSISTANT_TURN_CLAIM_LOST_MESSAGE } from "@showzy/validation/assistant-turn-claim";
 
 import { assistantHistoryWindow } from "../assistant-kit-history-window.js";
 import type {
@@ -58,6 +59,14 @@ export {
  * page read and every write alike. The sequence number and the refusal of a
  * repeated message id are the module's; the kit relies on both.
  */
+function isStaleRevision(error: unknown): boolean {
+  return (
+    error instanceof CoreError &&
+    error.code === "CONFLICT" &&
+    error.clientMessage !== ASSISTANT_TURN_CLAIM_LOST_MESSAGE
+  );
+}
+
 function claimInput(claim: AssistantTurnClaim | undefined) {
   return claim === undefined
     ? {}
@@ -129,7 +138,7 @@ export function createPostgresAssistantKitMessageLog(
         });
         return true;
       } catch (error) {
-        if (error instanceof CoreError && error.code === "CONFLICT") {
+        if (isStaleRevision(error)) {
           return false;
         }
         throw error;
