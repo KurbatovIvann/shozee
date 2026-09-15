@@ -171,8 +171,8 @@ it. Then:
     **fresh** `implementer` with `Mode: fix`, the PR number, branch, and the
     findings verbatim. A fresh agent starts at ~20k context; a resumed one
     re-reads its whole 150k+ history on every turn. Before launching, remove
-    the old agent's worktree (`git worktree list`, `git worktree remove
-    --force <path>`; the branch is on origin).
+    the old agent's worktree (`node .claude/scripts/remove-worktrees.mjs
+    <agent-id>`; the branch is on origin).
 
   Never fix it yourself.
 - After a **blocker/major** fix → re-launch `reviewer` and re-run the gate.
@@ -222,10 +222,11 @@ never read again, a Backlog ticket is.
 3. Linear: set the child **Done**; re-read after a moment (GitHub sync may
    flip it to In Progress) and set Done again if needed. Comment the merge
    SHA on the child and the parent.
-4. Clean up: `git worktree list`, then `git worktree remove --force <path>`
-   for every `.claude/worktrees/agent-*` entry (implementer, reviewer, and
-   guardian worktrees — each carries a `node_modules`), then
-   `git worktree prune`. Update the task list and launch the next ready
+4. Clean up: `node .claude/scripts/remove-worktrees.mjs <agent-id>... --orphans`
+   with the agent ids of **this run's** implementer, reviewer, and guardian
+   (from their task notifications). It skips `locked` worktrees (another
+   session's running agent), deletes the leftover `node_modules` git cannot,
+   and prunes. Never `git worktree remove` or `rm -rf` by hand. Update the task list and launch the next ready
    child (blockers may now be Done).
 
 ## 7. Late review (fallback)
