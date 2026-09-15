@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import {
   auditLog,
   companies,
+  createDbClient,
   domainEvents,
   type ReadTx,
   type Tx,
@@ -18,9 +19,12 @@ import { defineJob } from "../../jobs/define-job.js";
 import { jobField, jobPayload } from "../../jobs/job-payload.js";
 import {
   buildJobEnvelope,
+  createCapturingLogger,
   createTestKit,
   type TestKit,
 } from "../../testing/kit.js";
+import { createAuditHook } from "../audit/create-audit-hook.js";
+import { createIdempotencyHook } from "../idempotency/create-idempotency-hook.js";
 import { kitIdentities } from "../../testing/identities.js";
 import {
   jobIsolationCase,
@@ -30,7 +34,10 @@ import {
 import { defineEvent } from "../events/define-event.js";
 import { implementAction } from "../implement-action.js";
 import type { ActionPipelineDeps } from "../pipeline/types.js";
-import { executeJobAction } from "./execute-job-action.js";
+import {
+  executeJobAction,
+  type JobActionInvocation,
+} from "./execute-job-action.js";
 
 let kit: TestKit;
 
@@ -88,6 +95,12 @@ const sweepJob = defineJob({
   cron: "*/5 * * * *",
   retries: 0,
   attemptTimeoutMs: 1_000,
+});
+const globalExpiringJob = defineJob({
+  ...expiring,
+  scope: "global",
+  name: "jobRun.purge",
+  payload: jobPayload({ companyHint: jobField.uuid() }),
 });
 
 const touched = defineEvent({
@@ -210,6 +223,9 @@ const renameForCompany = implementAction(
         .set({ displayName: "swept" })
         .where(eq(fixtureCrmCustomers.companyId, ctx.companyId))
         .returning({ id: fixtureCrmCustomers.id });
+      if (changed.length === 0) {
+        throw new NotFoundError();
+      }
       return { changed: changed.length };
     },
     auditTarget,
@@ -321,6 +337,24 @@ function touchEnvelope(
   });
 }
 
+function sweepEnvelope() {
+  return buildJobEnvelope(sweepJob, {
+    companyId: null,
+    payload: { kind: "daily" },
+  });
+}
+
+async function insertEmptyCompany(): Promise<string> {
+  const id = randomUUID();
+  await kit.db.runtime.db.insert(companies).values({
+    id,
+    name: "Empty company",
+    slug: `empty-${id}`,
+    prefix: "EM",
+  });
+  return id;
+}
+
 async function displayNameOf(customerId: string): Promise<string | undefined> {
   const rows = await kit.db.runtime.db
     .select({ displayName: fixtureCrmCustomers.displayName })
@@ -349,6 +383,7 @@ describe("executeJobAction runs in the recorded scope (J5)", () => {
 
     await expect(
       executeJobAction(kit.pipeline, {
+        job: touchJob,
         envelope,
         action: touchCustomer,
         input: { customerId: sentinelId() },
@@ -382,6 +417,7 @@ describe("executeJobAction runs in the recorded scope (J5)", () => {
     const envelope = touchEnvelope();
     const run = (deps: ActionPipelineDeps) =>
       executeJobAction(deps, {
+        job: touchJob,
         envelope,
         action: touchCustomer,
         input: { customerId: sentinelId() },
@@ -405,6 +441,7 @@ describe("executeJobAction runs in the recorded scope (J5)", () => {
 
     await expect(
       executeJobAction(kit.pipeline, {
+        job: touchJob,
         envelope: touchEnvelope({ companyId: randomUUID() }),
         action: touchCustomer,
         input: { customerId: sentinelId() },
@@ -418,52 +455,186 @@ describe("executeJobAction runs in the recorded scope (J5)", () => {
   it("runs a global action of a periodic job with no company", async () => {
     await expect(
       executeJobAction(kit.pipeline, {
-        envelope: buildJobEnvelope(sweepJob, {
-          companyId: null,
-          payload: { kind: "daily" },
-        }),
+        job: sweepJob,
+        envelope: sweepEnvelope(),
         action: sweepGlobal,
         input: {},
       }),
     ).resolves.toEqual({ scope: "global" });
   });
 
-  it("fans a periodic job out to a company without rows and changes nothing", async () => {
-    const sentinelBefore = await displayNameOf(sentinelId());
+  it("fans a periodic job out to a company whose owned rows it loads in the execution transaction", async () => {
     const foreignBefore = await displayNameOf(foreignCustomerId);
-    const emptyCompany = randomUUID();
-    await kit.db.runtime.db.insert(companies).values({
-      id: emptyCompany,
-      name: "Empty company",
-      slug: `empty-${emptyCompany}`,
-      prefix: "EM",
+
+    const result = await executeJobAction(kit.pipeline, {
+      job: sweepJob,
+      envelope: sweepEnvelope(),
+      action: renameForCompany,
+      input: {},
+      fanOutCompanyId: companyA(),
     });
 
-    await expect(
-      executeJobAction(kit.pipeline, {
-        envelope: buildJobEnvelope(sweepJob, {
-          companyId: null,
-          payload: { kind: "daily" },
-        }),
-        action: renameForCompany,
-        input: {},
-        fanOutCompanyId: emptyCompany,
-      }),
-    ).resolves.toEqual({ changed: 0 });
-
-    expect(await displayNameOf(sentinelId())).toBe(sentinelBefore);
+    expect(result.changed).toBeGreaterThan(0);
+    expect(await displayNameOf(sentinelId())).toBe("swept");
     expect(await displayNameOf(foreignCustomerId)).toBe(foreignBefore);
   });
+
+  it.each<[string, () => Promise<string>]>([
+    ["an existing company without an owned row", insertEmptyCompany],
+    ["a company that does not exist", () => Promise.resolve(randomUUID())],
+  ])(
+    "fails closed when a periodic job fans out to %s and changes nothing",
+    async (_label, companyFor) => {
+      const sentinelBefore = await displayNameOf(sentinelId());
+      const foreignBefore = await displayNameOf(foreignCustomerId);
+      const envelope = sweepEnvelope();
+
+      await expect(
+        executeJobAction(kit.pipeline, {
+          job: sweepJob,
+          envelope,
+          action: renameForCompany,
+          input: {},
+          fanOutCompanyId: await companyFor(),
+        }),
+      ).rejects.toBeInstanceOf(NotFoundError);
+
+      expect(await displayNameOf(sentinelId())).toBe(sentinelBefore);
+      expect(await displayNameOf(foreignCustomerId)).toBe(foreignBefore);
+      const audits = await kit.db.runtime.db
+        .select({ outcome: auditLog.outcome })
+        .from(auditLog)
+        .where(eq(auditLog.requestId, envelope.requestId));
+      expect(audits.every((row) => row.outcome !== "ok")).toBe(true);
+    },
+  );
 
   it("refuses to fan a tenant job out to another company", async () => {
     await expect(
       executeJobAction(kit.pipeline, {
+        job: touchJob,
         envelope: touchEnvelope(),
         action: renameForCompany,
         input: {},
         fanOutCompanyId: companyB(),
       }),
     ).rejects.toBeInstanceOf(CoreInvariantError);
+  });
+
+  it("refuses to fan a global expires job out to a company its payload names", async () => {
+    const before = await displayNameOf(foreignCustomerId);
+
+    await expect(
+      executeJobAction(kit.pipeline, {
+        job: globalExpiringJob,
+        envelope: buildJobEnvelope(globalExpiringJob, {
+          companyId: null,
+          payload: { companyHint: companyB() },
+        }),
+        action: renameForCompany,
+        input: {},
+        fanOutCompanyId: companyB(),
+      }),
+    ).rejects.toBeInstanceOf(CoreInvariantError);
+
+    expect(await displayNameOf(foreignCustomerId)).toBe(before);
+  });
+
+  it.each<[string, () => JobActionInvocation<z.ZodType, z.ZodType, unknown>]>([
+    [
+      "an envelope naming another job",
+      () => ({
+        job: followUpJob,
+        envelope: touchEnvelope(),
+        action: touchCustomer,
+        input: { customerId: sentinelId() },
+      }),
+    ],
+    [
+      "a tenant job's envelope without a company",
+      () => ({
+        job: touchJob,
+        envelope: buildJobEnvelope(touchJob, {
+          companyId: null,
+          payload: { customerId: sentinelId() },
+        }),
+        action: touchCustomer,
+        input: { customerId: sentinelId() },
+      }),
+    ],
+    [
+      "a tenant job's envelope without a company that asks to fan out",
+      () => ({
+        job: touchJob,
+        envelope: buildJobEnvelope(touchJob, {
+          companyId: null,
+          payload: { customerId: sentinelId() },
+        }),
+        action: renameForCompany,
+        input: {},
+        fanOutCompanyId: companyA(),
+      }),
+    ],
+    [
+      "a global job's envelope with a company",
+      () => ({
+        job: sweepJob,
+        envelope: buildJobEnvelope(sweepJob, {
+          companyId: companyA(),
+          payload: { kind: "daily" },
+        }),
+        action: renameForCompany,
+        input: {},
+      }),
+    ],
+  ])("refuses %s before running anything", async (_label, invocation) => {
+    const before = await displayNameOf(sentinelId());
+
+    await expect(
+      executeJobAction(kit.pipeline, invocation()),
+    ).rejects.toBeInstanceOf(CoreInvariantError);
+
+    expect(runs.touch).toBe(0);
+    expect(await displayNameOf(sentinelId())).toBe(before);
+    expect(kit.jobs.sent).toHaveLength(0);
+  });
+
+  it("holds no connection around the pipeline, so a pool of one connection runs jobs", async () => {
+    const single = createDbClient({
+      databaseUrl: String(kit.db.runtime.pool.options.connectionString),
+      max: 1,
+      connectionTimeoutMillis: 2_000,
+    });
+    const { logger } = createCapturingLogger();
+    const deps: ActionPipelineDeps = {
+      ...kit.pipeline,
+      db: single.db,
+      hooks: {
+        ...kit.pipeline.hooks,
+        audit: createAuditHook({ db: single.db, logger }),
+        idempotency: createIdempotencyHook({ db: single.db }),
+      },
+    };
+    try {
+      await expect(
+        executeJobAction(deps, {
+          job: touchJob,
+          envelope: touchEnvelope(),
+          action: touchCustomer,
+          input: { customerId: sentinelId() },
+        }),
+      ).resolves.toEqual({ touched: true });
+      await expect(
+        executeJobAction(deps, {
+          job: touchJob,
+          envelope: touchEnvelope({ companyId: randomUUID() }),
+          action: touchCustomer,
+          input: { customerId: sentinelId() },
+        }),
+      ).rejects.toBeInstanceOf(NotFoundError);
+    } finally {
+      await single.pool.end();
+    }
   });
 
   it.each<[string, SuiteAction]>([
@@ -474,6 +645,7 @@ describe("executeJobAction runs in the recorded scope (J5)", () => {
   ])("refuses %s", async (_label, action) => {
     await expect(
       executeJobAction(kit.pipeline, {
+        job: touchJob,
         envelope: touchEnvelope(),
         action,
         input: { customerId: sentinelId() },

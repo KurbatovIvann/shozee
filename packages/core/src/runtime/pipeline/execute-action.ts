@@ -49,6 +49,7 @@ import {
   createAccountContext,
   createConsumerContext,
   createCustomerContext,
+  createExistingCompanySystemContext,
   createPublicContext,
   createShareContext,
   createStaffContext,
@@ -1100,10 +1101,16 @@ async function constructPrincipalContext<
       });
     }
     case "system":
-      return createSystemContext(principal.serviceName, principal.scope, {
-        request,
-        runtime: env.makeRuntime(capability),
-      });
+      return principal.companyMustExist === true
+        ? await createExistingCompanySystemContext(
+            principal.serviceName,
+            principal.scope,
+            { request, runtime: env.makeRuntime(capability) },
+          )
+        : createSystemContext(principal.serviceName, principal.scope, {
+            request,
+            runtime: env.makeRuntime(capability),
+          });
     case "consumer":
       return createConsumerContext({
         request,

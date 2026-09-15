@@ -1,13 +1,11 @@
-import { companies, type Tx } from "@showzy/db";
-import { eq } from "drizzle-orm";
 import type { z } from "zod";
 
 import { moduleOf } from "../../contract/module-of.js";
-import { CoreInvariantError, NotFoundError } from "../../errors/index.js";
+import { CoreInvariantError } from "../../errors/index.js";
+import type { Job } from "../../jobs/define-job.js";
 import type { AnyActionContract } from "../action-registry.js";
 import type { SystemScopeInput } from "../context/factories.js";
 import type { ImplementedAction } from "../implement-action.js";
-import { UUID_PATTERN } from "../patterns.js";
 import { executeAction } from "../pipeline/execute-action.js";
 import type {
   ActionPipelineDeps,
@@ -20,6 +18,7 @@ export interface JobActionInvocation<
   TOutput extends z.ZodType,
   TTarget,
 > {
+  readonly job: Job;
   readonly envelope: JobEnvelope;
   readonly action: ImplementedAction<TInput, TOutput, TTarget>;
   readonly input: unknown;
@@ -36,8 +35,7 @@ export async function executeJobAction<
 ): Promise<z.output<TOutput>> {
   const { envelope, action } = invocation;
   const { contract } = action;
-  assertRunnableByJob(envelope, contract);
-  const scope = recordedScope(invocation);
+  refuseUnlessRunnable(invocation.job, envelope, contract);
   const request: PipelineRequestMeta = {
     requestId: envelope.requestId,
     correlationId: envelope.correlationId,
@@ -45,35 +43,44 @@ export async function executeJobAction<
     channel: envelope.channel,
     ...(contract.idempotent ? { idempotencyKey: envelope.id } : {}),
   };
-  return await deps.db.transaction(async (tx) => {
-    if (scope.scope === "tenant") {
-      await lockRecordedCompany(tx, scope.companyId, envelope, contract);
-    }
-    return await executeAction(
-      { ...deps, db: tx },
-      {
-        action,
-        input: invocation.input,
-        request,
-        principal: { mode: "system", serviceName: envelope.name, scope },
-      },
-    );
+  return await executeAction(deps, {
+    action,
+    input: invocation.input,
+    request,
+    principal: {
+      mode: "system",
+      serviceName: envelope.name,
+      scope: recordedScope(invocation),
+      companyMustExist: true,
+    },
   });
 }
 
-function assertRunnableByJob(
+function refuseUnlessRunnable(
+  job: Job,
   envelope: JobEnvelope,
   contract: AnyActionContract,
 ): void {
-  const refusal = jobRefusal(envelope, contract);
+  const refusal =
+    envelopeRefusal(job, envelope) ?? actionRefusal(envelope, contract);
   if (refusal !== undefined) {
     throw new CoreInvariantError(
-      `job "${envelope.name}" cannot run "${contract.name}": ${refusal}`,
+      `job ${envelope.id} ("${envelope.name}") cannot run "${contract.name}": ${refusal}`,
     );
   }
 }
 
-function jobRefusal(
+function envelopeRefusal(job: Job, envelope: JobEnvelope): string | undefined {
+  if (envelope.name !== job.name) {
+    return `the envelope names job "${envelope.name}", not the declared job "${job.name}"`;
+  }
+  if ((envelope.companyId === null) !== (job.scope === "global")) {
+    return `a ${job.scope} job's envelope must ${job.scope === "global" ? "carry no company" : "carry its recorded company"}`;
+  }
+  return undefined;
+}
+
+function actionRefusal(
   envelope: JobEnvelope,
   contract: AnyActionContract,
 ): string | undefined {
@@ -97,39 +104,16 @@ function recordedScope<
   TOutput extends z.ZodType,
   TTarget,
 >(invocation: JobActionInvocation<TInput, TOutput, TTarget>): SystemScopeInput {
-  const { envelope, fanOutCompanyId } = invocation;
-  if (envelope.companyId !== null) {
-    if (fanOutCompanyId !== undefined) {
-      throw new CoreInvariantError(
-        `tenant job "${envelope.name}" cannot fan out to company ${fanOutCompanyId} — it runs only in its recorded company`,
-      );
-    }
-    return { scope: "tenant", companyId: envelope.companyId };
+  const { job, envelope, fanOutCompanyId } = invocation;
+  if (fanOutCompanyId === undefined) {
+    return envelope.companyId === null
+      ? { scope: "global" }
+      : { scope: "tenant", companyId: envelope.companyId };
   }
-  return fanOutCompanyId === undefined
-    ? { scope: "global" }
-    : { scope: "tenant", companyId: fanOutCompanyId };
-}
-
-async function lockRecordedCompany(
-  tx: Tx,
-  companyId: string,
-  envelope: JobEnvelope,
-  contract: AnyActionContract,
-): Promise<void> {
-  if (!UUID_PATTERN.test(companyId)) {
+  if (job.scope !== "global" || job.lifecycle !== "periodic") {
     throw new CoreInvariantError(
-      `job ${envelope.id} ("${envelope.name}") ran "${contract.name}" with a malformed companyId`,
+      `job ${envelope.id} ("${envelope.name}") cannot fan out to company ${fanOutCompanyId}: only a global periodic job fans out tenant work`,
     );
   }
-  const rows = await tx
-    .select({ id: companies.id })
-    .from(companies)
-    .where(eq(companies.id, companyId))
-    .for("key share");
-  if (rows.length === 0) {
-    throw new NotFoundError(undefined, {
-      internalMessage: `job ${envelope.id} ("${envelope.name}") ran "${contract.name}" for company ${companyId}, which does not exist`,
-    });
-  }
+  return { scope: "tenant", companyId: fanOutCompanyId };
 }

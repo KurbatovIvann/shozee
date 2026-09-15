@@ -770,6 +770,7 @@ async function runJobInCompany(
 ): Promise<unknown> {
   const tenantJob = c.job.scope === "tenant";
   return executeJobAction(kit.pipeline, {
+    job: c.job,
     envelope: buildJobEnvelope(c.job, {
       companyId: tenantJob ? companyId : null,
       payload: call.payload,

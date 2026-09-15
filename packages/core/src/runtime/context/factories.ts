@@ -13,6 +13,7 @@
  *  - returns the frozen, fully typed context of that mode.
  */
 import {
+  companies,
   companyMembers,
   rolePermissionDefaults,
   createProjectionReadTx,
@@ -25,6 +26,7 @@ import type { Logger } from "pino";
 
 import {
   CoreInvariantError,
+  NotFoundError,
   PermissionDeniedError,
 } from "../../errors/index.js";
 import { UUID_PATTERN } from "../patterns.js";
@@ -480,6 +482,31 @@ export function createSystemContext<TDb extends ReadTx>(
     serviceName,
     scope: "global" as const,
   });
+}
+
+export async function createExistingCompanySystemContext<TDb extends ReadTx>(
+  serviceName: string,
+  scope: SystemScopeInput,
+  options: {
+    readonly request: ActionRequestMeta;
+    readonly runtime: ContextRuntime<TDb>;
+  },
+): Promise<SystemCtx<TDb>> {
+  const ctx = createSystemContext(serviceName, scope, options);
+  if (scope.scope === "global") {
+    return ctx;
+  }
+  const rows = await options.runtime.db
+    .select({ id: companies.id })
+    .from(companies)
+    .where(eq(companies.id, scope.companyId))
+    .for("key share");
+  if (rows.length === 0) {
+    throw new NotFoundError(undefined, {
+      internalMessage: `system:${serviceName} ran "${options.request.action}" for company ${scope.companyId}, which does not exist`,
+    });
+  }
+  return ctx;
 }
 
 /**

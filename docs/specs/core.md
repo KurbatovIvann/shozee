@@ -518,19 +518,24 @@ runner settings from the same declaration (`docs/specs/jobs.md`).
   nothing (J3). Two sends with one id in one invocation throw, so fanning a
   job out needs a discriminator.
 - **Recorded scope (J5).** A worker runs a job's actions only through
-  `executeJobAction(deps, { envelope, action, input, fanOutCompanyId? })`. It
-  runs a `system` action of the job's module with `risk` other than `read`,
-  as `system:<job name>`, with the envelope's request id, correlation id and
-  channel; the job id is the causation id and, for an idempotent action, the
-  idempotency key, so a retry derives the same child job ids (an action that
-  enqueues from a job must be idempotent). A tenant job runs in its recorded
-  company; a job with a null company runs a global action, or fans out a
-  tenant action to `fanOutCompanyId`, a company its module read from its own
-  rows. A tenant job cannot fan out. One transaction locks the company row
-  (`FOR KEY SHARE`) and nests the pipeline's execution transaction; a missing
-  company is `NotFoundError` before any protocol row. There is no company
-  status check. Staff actions keep their own paths; this entrypoint produces
-  no staff caller.
+  `executeJobAction(deps, { job, envelope, action, input, fanOutCompanyId? })`.
+  The envelope must name `job` and carry a company exactly when `job.scope` is
+  `tenant`; otherwise `CoreInvariantError`. It runs a `system` action of the
+  job's module with `risk` other than `read`, as `system:<job name>`, with the
+  envelope's request id, correlation id and channel; the job id is the
+  causation id and, for an idempotent action, the idempotency key, so a retry
+  derives the same child job ids (an action that enqueues from a job must be
+  idempotent). A tenant job runs in its recorded company; a global job runs a
+  global action. A scheduled job that fans out tenant work takes each company
+  from a row its module owns, read in the same transaction: only a `global`
+  `periodic` job passes `fanOutCompanyId`, and the tenant action loads its
+  owning rows filtered by that company inside its execution transaction and
+  fails closed on a miss. The worker verifies that the recorded company
+  exists, and fails closed: the system context built at step 7 locks the
+  company row (`FOR KEY SHARE`) in the execution transaction and throws
+  `NotFoundError` on a miss. No wrapper transaction holds a connection around
+  the pipeline. There is no company status check. Staff actions keep their
+  own paths; this entrypoint produces no staff caller.
 - **Test kit.** `createTestKit` composes `createRecordingJobPort()` as
   `kit.jobs`; it records what reached the port at step 9. Commit-time
   atomicity of a real runner is the adapter conformance suite's proof.
@@ -732,7 +737,7 @@ Exported from `packages/core/testing`, used by every module (this is how
   create CRM rows; raw token is absent from logs/audit/events.
 - `jobIsolationSuite(cases)` with `jobIsolationCase(job, action, own,
   foreign)` — runs the action through `executeJobAction` in company A (a
-  global job fans out to A): the own payload succeeds, a payload naming
+  global periodic job fans out to A): the own payload succeeds, a payload naming
   another company's row is `NotFoundError`/`PermissionDeniedError`, and a
   company that does not exist fails closed. `buildJobEnvelope` builds the
   test envelope.
