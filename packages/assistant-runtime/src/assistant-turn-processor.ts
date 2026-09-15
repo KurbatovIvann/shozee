@@ -88,7 +88,7 @@ export type AssistantTurnDeadline = (
 ) => () => void;
 
 export interface AssistantTurnProcessorDeps {
-  readonly runtime: AssistantRuntime;
+  readonly runtime: Omit<AssistantRuntime, "forCaller">;
   readonly pipeline: ActionPipelineDeps;
   /** The T4 publisher, on the shared Redis. */
   readonly publisher: AssistantEventPublisher;
