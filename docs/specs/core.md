@@ -541,9 +541,15 @@ runner settings from the same declaration (`docs/specs/jobs.md`).
 - **Test kit.** `createTestKit` composes `createRecordingJobPort()` as
   `kit.jobs`. Recording is commit-bound: the kit pipeline's `db` is
   `kit.jobs.commitBound(db)`, which holds the envelopes sent at step 9 pending
-  for the transaction that is open in that async context (savepoints included)
-  and moves them into `kit.jobs.sent` only when that transaction commits; a
-  rollback drops them. `kit.jobs.sent` therefore holds only committed
+  for the runner transaction open in that async context and moves them into
+  `kit.jobs.sent` only when that transaction commits; a rollback drops them.
+  Only a whole-database runner may be wrapped (the type refuses a `Tx`), so a
+  pending envelope belongs to a top-level transaction, never to a savepoint:
+  a savepoint that rolls back inside a committing transaction keeps its
+  envelopes. No path does that today — J4 lets only the root action enqueue,
+  and a failed delivery rethrows, rolling back the whole delivery
+  transaction. The pipeline hands the port the execution transaction's own
+  `tx` (`enqueue.db.test.ts`). `kit.jobs.sent` therefore holds only committed
   envelopes for every entry point — `kit.invoke`, `jobIsolationSuite`, direct
   `executeAction`/`executeJobAction`/`executeDelivery` calls, concurrent runs,
   and overlapping runs sharing a `requestId`. A send outside a commit-bound

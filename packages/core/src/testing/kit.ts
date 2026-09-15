@@ -131,8 +131,12 @@ const KIT_IP_HMAC_SECRET = "test-kit-ip-hmac-secret";
 export interface RecordingJobPort extends JobPort {
   readonly sent: readonly JobEnvelope[];
   clear(): void;
-  commitBound(db: ActionTransactionRunner): ActionTransactionRunner;
+  commitBound(db: WholeDatabaseRunner): ActionTransactionRunner;
 }
+
+type WholeDatabaseRunner = ActionTransactionRunner & {
+  readonly rollback?: never;
+};
 
 export function buildJobEnvelope(
   job: Job,
