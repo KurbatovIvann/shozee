@@ -1,9 +1,3 @@
-/**
- * Worker integration (fnd-T27): emit → dispatch → consumer processed;
- * LISTEN wakeup vs polling fallback; expired-claim reclaim exactly once;
- * one consumer id delivering two events (SHO-95); idempotency cleanup
- * removes expired keys only.
- */
 import { randomUUID } from "node:crypto";
 
 import {
