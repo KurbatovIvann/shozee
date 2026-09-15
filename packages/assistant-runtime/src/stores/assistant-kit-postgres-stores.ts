@@ -67,7 +67,7 @@ function claimInput(claim: AssistantTurnClaim | undefined) {
 export function createPostgresAssistantKitMessageLog(
   deps: AssistantKitStoreDeps,
   caller: AssistantKitCaller,
-  claim?: AssistantTurnClaim,
+  claim: AssistantTurnClaim | undefined,
 ): MessageLogStore {
   const call = callFor(caller);
   return {
@@ -148,7 +148,7 @@ export function createPostgresAssistantKitMessageLog(
 export function createPostgresAssistantKitHistoryStore(
   deps: AssistantKitStoreDeps,
   caller: AssistantKitCaller,
-  claim?: AssistantTurnClaim,
+  claim: AssistantTurnClaim | undefined,
 ): AssistantHistoryPort {
   const call = callFor(caller);
   return {

@@ -358,7 +358,7 @@ export function createAssistantTurnProcessor(
       commandId: found.turn.commandId,
     });
 
-    const { kit, history } = deps.runtime.forCaller(caller, {
+    const { kit, history } = deps.runtime.forTurn(caller, {
       kind: found.turn.kind,
       commandId: found.turn.commandId,
     });

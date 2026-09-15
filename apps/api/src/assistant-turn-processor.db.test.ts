@@ -35,6 +35,7 @@ import {
   enforceStaffAssistantBudget,
   type AiBudgetStore,
   type AssistantRuntime,
+  type AssistantTurnClaim,
   type AssistantTurnJob,
   type AssistantTurnJobOutcome,
   type StaffAssistantBudgetHold,
@@ -692,8 +693,8 @@ describe("a turn the worker runs", () => {
     );
     const runtime: AssistantRuntime = {
       ...base,
-      forCaller: (caller) => {
-        const scoped = base.forCaller(caller);
+      forTurn: (caller, claim) => {
+        const scoped = base.forTurn(caller, claim);
         return {
           ...scoped,
           history: {
@@ -726,8 +727,8 @@ describe("a turn the worker runs", () => {
     );
     const runtime: AssistantRuntime = {
       ...base,
-      forCaller: (caller) => {
-        const scoped = base.forCaller(caller);
+      forTurn: (caller, claim) => {
+        const scoped = base.forTurn(caller, claim);
         return {
           ...scoped,
           kit: {
@@ -772,11 +773,16 @@ describe("a turn the worker runs", () => {
       answerEarned: [earned],
     });
     const loaded: ModelMessage[][] = [];
+    const claims: AssistantTurnClaim[] = [];
     const base = runtimeWith(stubModel([stubTextStep("Готово.")]));
     const h = await harness({
       ...base,
-      forCaller: (caller) => {
-        const scoped = base.forCaller(caller);
+      forCaller: () => {
+        throw new Error("a worker turn must write under its claim");
+      },
+      forTurn: (caller, claim) => {
+        claims.push(claim);
+        const scoped = base.forTurn(caller, claim);
         return {
           ...scoped,
           history: {
@@ -796,6 +802,7 @@ describe("a turn the worker runs", () => {
       status: "done",
     });
     expect(loaded[0]).toEqual(resumed);
+    expect(claims).toEqual([{ kind: "answer", commandId: turn.commandId }]);
     const stored = await placeholder(turn.placeholderId);
     expect(stored.parts).toEqual([
       earned,

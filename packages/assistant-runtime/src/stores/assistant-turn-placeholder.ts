@@ -23,7 +23,7 @@ export async function readTurnPlaceholderBind(
   },
 ): Promise<string | null> {
   const latest = (
-    await createPostgresAssistantKitMessageLog(deps, caller).page(
+    await createPostgresAssistantKitMessageLog(deps, caller, undefined).page(
       turn.conversationId,
       { limit: 1 },
     )
