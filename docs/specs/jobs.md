@@ -2,8 +2,7 @@
 
 Decision: [ADR-0041](../adr/0041-postgres-first-job-runner.md). This manual
 records how the runner package is built; the ADR's invariants (J1–J16) are the
-contract. Later sections arrive with the tickets that build them (job port,
-queue provisioning, worker host, scheduler, conformance suite).
+contract. Later sections arrive with the tickets that build them.
 
 ## 1. Package boundary
 
@@ -127,8 +126,16 @@ and is left untouched. Proof: `src/pgboss-schema.db.test.ts`.
   app's Drizzle pool with the migrator off (§2), `useListenNotify: false`
   (workers poll, ADR-0041 §2), and `supervise`/`schedule` on only for the
   `worker` role. The `api` role is send-only.
-- The declared jobs are `registeredJobs` in `apps/api/src/registry.ts`, the
-  one list composition checks and both apps open the runner with.
+- Jobs have two declaration sources, each job declared once. Module jobs are
+  `registeredJobs` in `apps/api/src/registry.ts`, spread from each module
+  barrel's `<module>Jobs` export like its actions (`registry.test.ts` fails on
+  a barrel job that is not registered); API composition checks them and the
+  API opens its runner with them. The worker opens its runner with
+  `workerJobs` (`apps/worker/src/maintenance.ts`): `registeredJobs` plus the
+  worker-owned jobs, merged by `mergeJobDeclarations`, which refuses a name
+  both sources declare. Worker-owned jobs, actions and coverage go through
+  `runContractCheck` in `pnpm --filter @showzy/worker contract:check` (a CI
+  step). The API never depends on `apps/worker`.
 - One queue per job, named after the job. Stored settings derive from the
   declaration: `retryLimit` = `retries`, `expireInSeconds` =
   `ceil(attemptTimeoutMs / 1000) + 5` (the margin lets the in-process timeout
@@ -225,3 +232,33 @@ and is left untouched. Proof: `src/pgboss-schema.db.test.ts`.
 - Proof: the conformance suite's J7 (thrown attempts, in-process timeout), J9
   (expired last attempt, failing on-exhausted, retention drop), periodic (two
   workers, one tick) and drain cases, run by `src/pgboss-conformance.db.test.ts`.
+
+## 12. Maintenance jobs
+
+All maintenance runs from `periodic`, `global` pg-boss schedules with zero
+retries; a failed run waits for the next tick. The worker boots the runner
+(`openJobRunner(..., "worker")`), then `work` with `maintenanceHandlers`,
+whose handlers only run the declared action with the empty payload and log
+its counts; drain waits `JOB_DRAIN_TIMEOUT_MS` (30 s).
+
+| Job | Cron (UTC) | Action | Owner |
+| --- | --- | --- | --- |
+| `files.sweepAbandonedUploads` | `*/5 * * * *` | `files.sweepAbandonedUploads` | files module |
+| `files.backfillCatalogRenditions` | every `BACKFILL_CATALOG_RENDITIONS_INTERVAL_MS` (5 min) | `files.backfillCatalogRenditions` | files module |
+| `worker.cleanupIdempotencyKeys` | `0 * * * *` | `worker.cleanupIdempotencyKeys` | `apps/worker` |
+
+- The two files actions run unchanged, under ADR-0041 J10's named storage
+  exception. Overlapping runs are safe: the sweep locks rows `FOR UPDATE SKIP
+  LOCKED`, the backfill writes fixed keys.
+- `worker.cleanupIdempotencyKeys` is app infrastructure: an internal
+  `system`/`global` audited write whose handler passes its execution
+  transaction to core's `cleanupExpiredIdempotencyKeys` (typed
+  `Pick<Database, "delete">`), so no second transaction or global client.
+- The BullMQ `pdf` queue is deleted. The assistant reconciler stays on the
+  BullMQ `maintenance` queue until jobs-T11.
+- Proof: `apps/worker/src/jobs.db.test.ts` (two workers provision each queue
+  and schedule once; one tick runs each action once, audit rows per run and
+  one send-it slot per occurrence; cleanup deletes only expired keys), the
+  files job cases and overlapping runs in
+  `packages/modules/files/src/actions/files.db.test.ts`, and
+  `apps/api/src/boot.db.test.ts` (an API booted before the worker fails fast).

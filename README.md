@@ -187,11 +187,12 @@ pnpm --filter @showzy/db db:migrate
 Runtime configuration is validated at boot by `packages/config`. Invalid or
 incomplete configuration fails fast without logging secret values.
 
-Start the runtime in separate terminals:
+Start the runtime in separate terminals, the worker first: it provisions the
+job queues, and an API booted before them fails fast.
 
 ```bash
-pnpm --filter @showzy/api start
 pnpm --filter @showzy/worker start
+pnpm --filter @showzy/api start
 pnpm --filter @showzy/web dev
 ```
 

@@ -46,7 +46,6 @@ import {
 } from "./policy.js";
 
 const silent = pino({ enabled: false });
-const LONG_INTERVAL_MS = 60 * 60 * 1_000;
 
 let kit: TestKit;
 let container: StartedRedisContainer;
@@ -128,25 +127,8 @@ function hostWith(
 ): JobHost {
   return createJobHost({
     redisUrl: sharedUrl,
-    db: kit.db.runtime.db,
     logger: silent,
     workerId: `assistant-${randomUUID()}`,
-    cleanupIntervalMs: LONG_INTERVAL_MS,
-    sweepIntervalMs: LONG_INTERVAL_MS,
-    backfillIntervalMs: LONG_INTERVAL_MS,
-    cleanup: () => Promise.resolve(0),
-    sweep: () =>
-      Promise.resolve({
-        leftoverStagingDeleted: 0,
-        abandonedPendingDeleted: 0,
-      }),
-    backfill: () =>
-      Promise.resolve({
-        filled: 0,
-        alreadyComplete: 0,
-        skippedMissingOriginal: 0,
-        skippedUndecodable: 0,
-      }),
     assistant: { redisUrl: queueUrl, process, ...seams },
   });
 }
@@ -229,25 +211,8 @@ describe("the reconciler on the maintenance scheduler", () => {
   it("is not scheduled by a worker that runs no turns", async () => {
     const host = createJobHost({
       redisUrl: sharedUrl,
-      db: kit.db.runtime.db,
       logger: silent,
       workerId: `assistant-${randomUUID()}`,
-      cleanupIntervalMs: LONG_INTERVAL_MS,
-      sweepIntervalMs: LONG_INTERVAL_MS,
-      backfillIntervalMs: LONG_INTERVAL_MS,
-      cleanup: () => Promise.resolve(0),
-      sweep: () =>
-        Promise.resolve({
-          leftoverStagingDeleted: 0,
-          abandonedPendingDeleted: 0,
-        }),
-      backfill: () =>
-        Promise.resolve({
-          filled: 0,
-          alreadyComplete: 0,
-          skippedMissingOriginal: 0,
-          skippedUndecodable: 0,
-        }),
     });
     await host.start();
     try {
@@ -319,25 +284,8 @@ describe("shutdown drains the turns this worker is running", () => {
     let entered = false;
     const host = createJobHost({
       redisUrl: sharedUrl,
-      db: kit.db.runtime.db,
       logger,
       workerId: `assistant-${randomUUID()}`,
-      cleanupIntervalMs: LONG_INTERVAL_MS,
-      sweepIntervalMs: LONG_INTERVAL_MS,
-      backfillIntervalMs: LONG_INTERVAL_MS,
-      cleanup: () => Promise.resolve(0),
-      sweep: () =>
-        Promise.resolve({
-          leftoverStagingDeleted: 0,
-          abandonedPendingDeleted: 0,
-        }),
-      backfill: () =>
-        Promise.resolve({
-          filled: 0,
-          alreadyComplete: 0,
-          skippedMissingOriginal: 0,
-          skippedUndecodable: 0,
-        }),
       assistant: {
         redisUrl: queueUrl,
         drainTimeoutMs: 300,

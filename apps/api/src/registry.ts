@@ -19,7 +19,7 @@ import { customersActions } from "@showzy/customers";
 import { docGenerationActions } from "@showzy/doc-generation";
 import { docSigningActions } from "@showzy/doc-signing";
 import { documentsActions } from "@showzy/documents";
-import { filesActions } from "@showzy/files";
+import { filesActions, filesJobs } from "@showzy/files";
 import { invitesActions } from "@showzy/invites";
 import { ordersActions } from "@showzy/orders";
 import { pricingActions } from "@showzy/pricing";
@@ -55,4 +55,4 @@ export function createActionRegistry(): ActionRegistry {
   return registry;
 }
 
-export const registeredJobs: readonly Job[] = [];
+export const registeredJobs: readonly Job[] = [...filesJobs];

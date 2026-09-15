@@ -11,11 +11,7 @@ import {
 } from "@showzy/assistant-runtime";
 import { describe, expect, it } from "vitest";
 
-import {
-  BULLMQ_PREFIX,
-  MAINTENANCE_QUEUE_NAME,
-  PDF_QUEUE_NAME,
-} from "./policy.js";
+import { BULLMQ_PREFIX, MAINTENANCE_QUEUE_NAME } from "./policy.js";
 
 describe("assistant queue contract against the job host", () => {
   it("puts the assistant queue under the job host's BullMQ prefix", () => {
@@ -23,8 +19,6 @@ describe("assistant queue contract against the job host", () => {
   });
 
   it("does not reuse a queue name the job host already owns", () => {
-    expect([MAINTENANCE_QUEUE_NAME, PDF_QUEUE_NAME]).not.toContain(
-      ASSISTANT_QUEUE_NAME,
-    );
+    expect([MAINTENANCE_QUEUE_NAME]).not.toContain(ASSISTANT_QUEUE_NAME);
   });
 });

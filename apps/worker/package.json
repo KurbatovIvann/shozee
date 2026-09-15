@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:unit": "vitest run --project unit",
+    "contract:check": "vitest run --project unit src/contract-check.test.ts",
     "start": "node --experimental-strip-types --import ../../packages/db/scripts/ts-resolve-register.mjs --env-file=../../.env src/index.ts"
   },
   "dependencies": {

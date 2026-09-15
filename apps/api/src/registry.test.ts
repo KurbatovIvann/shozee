@@ -16,26 +16,54 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import * as assistantBarrel from "@showzy/assistant";
+import * as catalogBarrel from "@showzy/catalog";
+import * as chatBarrel from "@showzy/chat";
+import * as companiesBarrel from "@showzy/companies";
+import * as customersBarrel from "@showzy/customers";
+import * as docGenerationBarrel from "@showzy/doc-generation";
+import * as docSigningBarrel from "@showzy/doc-signing";
+import * as documentsBarrel from "@showzy/documents";
+import * as filesBarrel from "@showzy/files";
+import * as invitesBarrel from "@showzy/invites";
+import * as ordersBarrel from "@showzy/orders";
+import * as pricingBarrel from "@showzy/pricing";
+import * as searchBarrel from "@showzy/search";
 import { describe, expect, it } from "vitest";
 
 import { buildContractCheckInput } from "./composition.js";
-import { createActionRegistry } from "./registry.js";
+import { createActionRegistry, registeredJobs } from "./registry.js";
 
-const MODULE_BARRELS = new Set([
-  "@showzy/assistant",
-  "@showzy/catalog",
-  "@showzy/chat",
-  "@showzy/companies",
-  "@showzy/customers",
-  "@showzy/doc-generation",
-  "@showzy/doc-signing",
-  "@showzy/documents",
-  "@showzy/files",
-  "@showzy/invites",
-  "@showzy/orders",
-  "@showzy/pricing",
-  "@showzy/search",
-]);
+const BARRELS: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
+  "@showzy/assistant": assistantBarrel,
+  "@showzy/catalog": catalogBarrel,
+  "@showzy/chat": chatBarrel,
+  "@showzy/companies": companiesBarrel,
+  "@showzy/customers": customersBarrel,
+  "@showzy/doc-generation": docGenerationBarrel,
+  "@showzy/doc-signing": docSigningBarrel,
+  "@showzy/documents": documentsBarrel,
+  "@showzy/files": filesBarrel,
+  "@showzy/invites": invitesBarrel,
+  "@showzy/orders": ordersBarrel,
+  "@showzy/pricing": pricingBarrel,
+  "@showzy/search": searchBarrel,
+};
+
+const BARREL_EXPORTS = Object.values(BARRELS);
+
+function isJobDeclaration(value: unknown): value is { readonly name: string } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    "lifecycle" in value &&
+    "attemptTimeoutMs" in value &&
+    "discriminator" in value
+  );
+}
+
+const MODULE_BARRELS = new Set(Object.keys(BARRELS));
 
 function source(file: string): string {
   return readFileSync(join(import.meta.dirname, file), "utf8");
@@ -116,6 +144,21 @@ describe("@showzy/api/registry", () => {
       }
     }
     expect(findings).toEqual([]);
+  });
+
+  it("registers every job a module barrel exports, each once, so none skips the contract check", () => {
+    const exported = new Set(
+      BARREL_EXPORTS.flatMap((barrel) => Object.values(barrel)).filter(
+        isJobDeclaration,
+      ),
+    );
+
+    const registered = new Set<unknown>(registeredJobs);
+
+    expect(exported.size).toBeGreaterThan(0);
+    expect([...exported].filter((job) => !registered.has(job))).toEqual([]);
+    expect(registered.size).toBe(registeredJobs.length);
+    expect(registeredJobs.every((job) => exported.has(job))).toBe(true);
   });
 
   it("exports createActionRegistry, registeredJobs and nothing else", () => {

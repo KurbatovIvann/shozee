@@ -5,7 +5,6 @@
  * Core owns the libraries; this owns the outbox process.
  */
 import {
-  cleanupExpiredIdempotencyKeys,
   dispatchOutboxBatch,
   executeDelivery,
   findClaimableDeliveries,
@@ -48,7 +47,6 @@ const EMPTY_TICK: TickResult = {
 export interface WorkerLoop {
   readonly workerId: string;
   tick(): Promise<TickResult>;
-  cleanup(): Promise<number>;
   start(): Promise<void>;
   stop(): Promise<void>;
 }
@@ -70,7 +68,6 @@ export interface WorkerLoopDeps {
   dispatch(): Promise<OutboxDispatchResult>;
   findDue(): Promise<ClaimableDelivery[]>;
   execute(delivery: ClaimableDelivery): Promise<DeliveryOutcome>;
-  cleanup(): Promise<number>;
 }
 
 export function createWorkerLoop(deps: WorkerLoopDeps): WorkerLoop {
@@ -251,26 +248,9 @@ export function createWorkerLoop(deps: WorkerLoopDeps): WorkerLoop {
     void tick();
   }
 
-  async function cleanup(): Promise<number> {
-    if (state.stopping) {
-      return 0;
-    }
-    return serialized(async () => {
-      const removed = await deps.cleanup();
-      if (removed > 0) {
-        deps.logger.info(
-          { worker_id: deps.workerId, removed_keys: removed },
-          "expired idempotency keys cleaned",
-        );
-      }
-      return removed;
-    });
-  }
-
   return {
     workerId: deps.workerId,
     tick,
-    cleanup,
     async start() {
       if (state.started || state.stopping) {
         return;
@@ -416,10 +396,6 @@ export function createOutboxWorker(
       });
       return outcome;
     },
-    cleanup: () =>
-      options.now === undefined
-        ? cleanupExpiredIdempotencyKeys(options.db)
-        : cleanupExpiredIdempotencyKeys(options.db, options.now),
   });
 }
 

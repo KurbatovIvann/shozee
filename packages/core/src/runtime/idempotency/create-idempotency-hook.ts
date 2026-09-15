@@ -301,7 +301,7 @@ export function createIdempotencyHook(
  * job log line.
  */
 export async function cleanupExpiredIdempotencyKeys(
-  db: Database,
+  db: Pick<Database, "delete">,
   now: () => number = Date.now,
 ): Promise<number> {
   const removed = await db

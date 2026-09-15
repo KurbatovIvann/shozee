@@ -1,12 +1,7 @@
-/**
- * BullMQ job host (fnd-T29 / SHO-120 / SHO-248): maintenance scheduler
- * ticks, abandoned-upload sweep, catalog rendition backfill,
- * single-flight across replicas, drain on shutdown, log hygiene,
- * re-upsert after flush.
- */
 import { existsSync, readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -15,29 +10,41 @@ import {
   enqueueAssistantTurn,
 } from "@showzy/assistant-runtime";
 import { createProcessLogger, loadServerConfig } from "@showzy/config";
-import { CoreInvariantError } from "@showzy/core/errors";
+import {
+  defineJob,
+  executeAction,
+  type ImplementedAction,
+  type Job,
+} from "@showzy/core";
+import { CoreInvariantError, ValidationError } from "@showzy/core/errors";
 import {
   createTestKit,
-  kitIdentities,
+  crossTenantSuite,
+  isolationCase,
+  jobIsolationCase,
+  jobIsolationSuite,
   type TestKit,
 } from "@showzy/core/testing";
-import { idempotencyKeys } from "@showzy/db";
-import { files } from "@showzy/db/schema/files";
+import { auditLog, idempotencyKeys } from "@showzy/db";
 import {
-  closeFilesObjectStore,
+  backfillCatalogRenditions,
+  backfillCatalogRenditionsJob,
+  sweepAbandonedUploads,
+  sweepAbandonedUploadsJob,
+} from "@showzy/files";
+import {
   configureFilesObjectStore,
-  getFilesObjectStore,
   probeFilesObjectStore,
 } from "@showzy/files/storage";
-import { waitForObjectVisibility } from "@showzy/files/testing";
+import { openJobRunner, type JobHandler, type JobRunner } from "@showzy/jobs";
 import {
   RedisContainer,
   type StartedRedisContainer,
 } from "@testcontainers/redis";
-import { Queue, QueueEvents } from "bullmq";
-import { eq, inArray } from "drizzle-orm";
+import { Queue } from "bullmq";
+import { and, eq, gte, inArray } from "drizzle-orm";
 import { Redis } from "ioredis";
-import { pino, type Logger } from "pino";
+import { pino } from "pino";
 import {
   GenericContainer,
   Wait,
@@ -47,40 +54,25 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { bootWorker } from "./boot.js";
 import {
-  createJobHost,
-  type BackfillTickResult,
-  type SweepTickResult,
-} from "./jobs.js";
-import {
-  BACKFILL_CATALOG_RENDITIONS_INTERVAL_MS,
-  BACKFILL_CATALOG_RENDITIONS_JOB_NAME,
-  BULLMQ_PREFIX,
-  IDEMPOTENCY_CLEANUP_JOB_NAME,
-  MAINTENANCE_QUEUE_NAME,
-  PDF_JOB_NAME,
-  PDF_QUEUE_NAME,
-  SWEEP_ABANDONED_UPLOADS_JOB_NAME,
-  SWEEP_INTERVAL_MS,
-} from "./policy.js";
-import { createProcessShutdown } from "./shutdown.js";
+  cleanupIdempotencyKeys,
+  cleanupIdempotencyKeysJob,
+  maintenanceHandler,
+} from "./maintenance.js";
+import { BULLMQ_PREFIX, MAINTENANCE_QUEUE_NAME } from "./policy.js";
 
 const silent = pino({ enabled: false });
 const REDIS_PASSWORD = "REDIS_TICK_SECRET";
-const TICK_INTERVAL_MS = 400;
-const SINGLE_FLIGHT_INTERVAL_MS = 5_000;
-const ABANDONED_PENDING_TTL_MS = 60 * 60 * 1_000;
-const LONG_INTERVAL_MS = 60 * 60 * 1_000;
 
-/** Same pin as docker-compose.yml (ADR-0027). */
 const GARAGE_IMAGE = "dxflrs/garage:v2.3.0";
 const GARAGE_BUCKET = "showzy";
 const GARAGE_ACCESS_KEY = "showzy-local";
 const GARAGE_SECRET_KEY = "showzy-local-secret";
 
-const jpegBytes = Uint8Array.from([
-  0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01,
-  0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xff, 0xd9,
-]);
+const MAINTENANCE_JOB_NAMES = [
+  sweepAbandonedUploadsJob.name,
+  backfillCatalogRenditionsJob.name,
+  cleanupIdempotencyKeysJob.name,
+];
 
 let kit: TestKit;
 let redisContainer: StartedRedisContainer;
@@ -132,14 +124,10 @@ afterAll(async () => {
   await garage.stop();
 });
 
-async function flushRedis(): Promise<void> {
+beforeEach(async () => {
   const admin = new Redis(redisUrl);
   await admin.flushdb();
   await admin.quit();
-}
-
-beforeEach(async () => {
-  await flushRedis();
   configureFilesObjectStore(garageS3Config());
 });
 
@@ -172,7 +160,7 @@ async function waitForBucket(): Promise<void> {
       await probeFilesObjectStore();
       return;
     } catch {
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      await delay(250);
     }
   }
   throw new Error("Garage bucket did not become ready");
@@ -207,22 +195,6 @@ function testConfig() {
   return loadServerConfig(testEnv());
 }
 
-function stubSweep(): Promise<SweepTickResult> {
-  return Promise.resolve({
-    leftoverStagingDeleted: 0,
-    abandonedPendingDeleted: 0,
-  });
-}
-
-function stubBackfill(): Promise<BackfillTickResult> {
-  return Promise.resolve({
-    filled: 0,
-    alreadyComplete: 0,
-    skippedMissingOriginal: 0,
-    skippedUndecodable: 0,
-  });
-}
-
 async function waitUntil(
   check: () => Promise<boolean>,
   timeoutMs = 10_000,
@@ -232,71 +204,8 @@ async function waitUntil(
     if (Date.now() - started > timeoutMs) {
       throw new Error("timed out waiting for job-host condition");
     }
-    await new Promise((resolve) => setTimeout(resolve, 25));
+    await delay(25);
   }
-}
-
-async function withMaintenanceQueue<T>(
-  run: (queue: Queue) => Promise<T>,
-): Promise<T> {
-  const connection = new Redis(redisUrl);
-  const queue = new Queue(MAINTENANCE_QUEUE_NAME, {
-    connection,
-    prefix: BULLMQ_PREFIX,
-  });
-  try {
-    return await run(queue);
-  } finally {
-    await queue.close();
-    await connection.quit();
-  }
-}
-
-async function enqueueMaintenanceJob(
-  jobName: string,
-  jobId: string,
-): Promise<void> {
-  const connection = new Redis(redisUrl, { maxRetriesPerRequest: null });
-  const eventsConnection = new Redis(redisUrl, {
-    maxRetriesPerRequest: null,
-  });
-  const queue = new Queue(MAINTENANCE_QUEUE_NAME, {
-    connection,
-    prefix: BULLMQ_PREFIX,
-  });
-  const events = new QueueEvents(MAINTENANCE_QUEUE_NAME, {
-    connection: eventsConnection,
-    prefix: BULLMQ_PREFIX,
-  });
-  await events.waitUntilReady();
-  try {
-    const job = await queue.add(
-      jobName,
-      {},
-      {
-        jobId,
-        removeOnComplete: true,
-        removeOnFail: 50,
-      },
-    );
-    await job.waitUntilFinished(events, 30_000);
-  } finally {
-    await events.close();
-    await queue.close();
-    await connection.quit();
-    await eventsConnection.quit();
-  }
-}
-
-function requireScheduler(
-  schedulers: Awaited<ReturnType<Queue["getJobSchedulers"]>>,
-  name: string,
-) {
-  const match = schedulers.find((scheduler) => scheduler.name === name);
-  if (match === undefined) {
-    throw new Error(`expected scheduler ${name}`);
-  }
-  return match;
 }
 
 async function insertKeyPair(): Promise<{
@@ -307,27 +216,26 @@ async function insertKeyPair(): Promise<{
   const liveKey = randomUUID();
   const nowMs = Date.now();
   const action = `workerJobs.cleanup.${randomUUID()}`;
+  const row = {
+    principalKey: `staff:${kit.identities.users.anna}`,
+    scopeKey: `company:${kit.identities.companies.a}`,
+    companyId: kit.identities.companies.a,
+    action,
+    status: "completed" as const,
+  };
   await kit.db.runtime.db.insert(idempotencyKeys).values([
     {
-      principalKey: `staff:${kit.identities.users.anna}`,
-      scopeKey: `company:${kit.identities.companies.a}`,
-      companyId: kit.identities.companies.a,
-      action,
+      ...row,
       key: expiredKey,
       requestHash: "c".repeat(64),
-      status: "completed",
       attemptId: randomUUID(),
       leaseExpiresAt: new Date(nowMs),
       expiresAt: new Date(nowMs - 1_000),
     },
     {
-      principalKey: `staff:${kit.identities.users.anna}`,
-      scopeKey: `company:${kit.identities.companies.a}`,
-      companyId: kit.identities.companies.a,
-      action,
+      ...row,
       key: liveKey,
       requestHash: "d".repeat(64),
-      status: "completed",
       attemptId: randomUUID(),
       leaseExpiresAt: new Date(nowMs + 30_000),
       expiresAt: new Date(nowMs + 48 * 3_600_000),
@@ -346,808 +254,232 @@ async function remainingKeys(
   return rows.map((row) => row.key);
 }
 
-function catalogKey(companyId: string, fileId: string): string {
-  return `${companyId}/catalog/${fileId}`;
-}
+describe("worker.cleanupIdempotencyKeys", () => {
+  let pair = { expiredKey: "", liveKey: "" };
 
-function catalogRenditionKey(
-  companyId: string,
-  fileId: string,
-  rendition: "thumb" | "card" | "hero" | "full",
-): string {
-  return `${companyId}/catalog/${fileId}/${rendition}`;
-}
-
-function stagingKey(companyId: string, fileId: string): string {
-  return `${companyId}/uploads/${fileId}`;
-}
-
-/** 1×1 RGB PNG (IHDR + 1-pixel IDAT). Sharp-decodable for backfill ticks. */
-const pngBytes = Uint8Array.from(
-  Buffer.from(
-    "89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000c49444154789c63606060000000040001f61738550000000049454e44ae426082",
-    "hex",
-  ),
-);
-
-async function insertFileRow(values: {
-  readonly id: string;
-  readonly companyId: string;
-  readonly uploadedByUserId: string;
-  readonly status: "pending" | "ready";
-  readonly createdAt?: Date;
-  readonly updatedAt?: Date;
-  readonly stagingPurgedAt?: Date;
-  readonly mimeType?: "image/jpeg" | "image/png";
-  readonly byteSize?: number;
-}): Promise<void> {
-  await kit.db.runtime.db.insert(files).values({
-    id: values.id,
-    companyId: values.companyId,
-    uploadedByUserId: values.uploadedByUserId,
-    purpose: "catalog",
-    objectKey: catalogKey(values.companyId, values.id),
-    mimeType: values.mimeType ?? "image/jpeg",
-    byteSize: BigInt(values.byteSize ?? jpegBytes.byteLength),
-    checksumSha256: "a".repeat(64),
-    status: values.status,
-    ...(values.createdAt !== undefined ? { createdAt: values.createdAt } : {}),
-    ...(values.updatedAt !== undefined ? { updatedAt: values.updatedAt } : {}),
-    ...(values.stagingPurgedAt !== undefined
-      ? { stagingPurgedAt: values.stagingPurgedAt }
-      : {}),
+  beforeEach(async () => {
+    pair = await insertKeyPair();
   });
-}
 
-async function putStoreObject(
-  key: string,
-  bytes: Uint8Array = jpegBytes,
-  mimeType: "image/jpeg" | "image/png" = "image/jpeg",
-): Promise<void> {
-  const store = getFilesObjectStore();
-  await store.putObject({
-    key,
-    mimeType,
-    bytes,
+  crossTenantSuite(
+    () => kit,
+    [isolationCase(cleanupIdempotencyKeys, { input: {} }, { input: {} })],
+  );
+
+  jobIsolationSuite(
+    () => kit,
+    [
+      jobIsolationCase(
+        cleanupIdempotencyKeysJob,
+        cleanupIdempotencyKeys,
+        { payload: {} },
+        undefined,
+        async () => {
+          expect(await remainingKeys([pair.expiredKey, pair.liveKey])).toEqual([
+            pair.liveKey,
+          ]);
+        },
+      ),
+    ],
+  );
+
+  it("deletes only expired idempotency keys and reports how many", async () => {
+    const output = await kit.invoke(cleanupIdempotencyKeys, {});
+
+    expect(output.removed).toBeGreaterThanOrEqual(1);
+    expect(await remainingKeys([pair.expiredKey, pair.liveKey])).toEqual([
+      pair.liveKey,
+    ]);
   });
-  // Garage can acknowledge PutObject before HeadObject sees the key.
-  // Sweep treats a missing HEAD as "already purged" and would skip delete.
-  await waitForObjectVisibility(store, key, "present");
-}
 
-async function fileRow(id: string): Promise<
-  | {
-      readonly status: string;
-      readonly updatedAt: Date;
-      readonly stagingPurgedAt: Date | null;
-    }
-  | undefined
-> {
-  const rows = await kit.db.runtime.db
-    .select({
-      status: files.status,
-      updatedAt: files.updatedAt,
-      stagingPurgedAt: files.stagingPurgedAt,
-    })
-    .from(files)
-    .where(eq(files.id, id));
-  return rows[0];
-}
+  it("refuses a tenant-scoped system call and a staff call without deleting any key", async () => {
+    await expect(
+      executeAction(kit.pipeline, {
+        action: cleanupIdempotencyKeys,
+        input: {},
+        request: {
+          requestId: randomUUID(),
+          correlationId: randomUUID(),
+          channel: "system",
+        },
+        principal: {
+          mode: "system",
+          serviceName: "test.cleanup",
+          scope: { scope: "tenant", companyId: kit.identities.companies.a },
+        },
+      }),
+    ).rejects.toBeInstanceOf(CoreInvariantError);
+    await expect(
+      executeAction(kit.pipeline, {
+        action: cleanupIdempotencyKeys,
+        input: {},
+        request: {
+          requestId: randomUUID(),
+          correlationId: randomUUID(),
+          channel: "ui",
+        },
+        principal: {
+          mode: "staff",
+          session: { userId: kit.identities.users.anna },
+          companySelector: kit.identities.companies.a,
+        },
+      }),
+    ).rejects.toBeInstanceOf(CoreInvariantError);
 
-describe("apps/worker BullMQ job host (fnd-T29)", () => {
-  it("boots, registers three maintenance schedulers, and a tick deletes expired keys only", async () => {
-    const { expiredKey, liveKey } = await insertKeyPair();
-    const booted = await bootWorker(testConfig(), {
+    expect(
+      [...(await remainingKeys([pair.expiredKey, pair.liveKey]))].sort(),
+    ).toEqual([pair.expiredKey, pair.liveKey].sort());
+  });
+
+  it("rejects a payload with unknown fields as VALIDATION without deleting any key", async () => {
+    await expect(
+      kit.invoke(cleanupIdempotencyKeys, { olderThanDays: 1 }),
+    ).rejects.toBeInstanceOf(ValidationError);
+
+    expect(
+      [...(await remainingKeys([pair.expiredKey, pair.liveKey]))].sort(),
+    ).toEqual([pair.expiredKey, pair.liveKey].sort());
+  });
+});
+
+describe("apps/worker maintenance jobs on pg-boss (SHO-650)", () => {
+  async function schedules(): Promise<{ name: string; cron: string }[]> {
+    const result = await kit.db.admin.query<{ name: string; cron: string }>(
+      "SELECT name, cron FROM pgboss.schedule WHERE name = ANY($1) ORDER BY name",
+      [MAINTENANCE_JOB_NAMES],
+    );
+    return result.rows;
+  }
+
+  it("two booted workers provision each maintenance queue and schedule once and leave no BullMQ maintenance or pdf work", async () => {
+    const first = await bootWorker(testConfig(), {
       logger: silent,
       pollIntervalMs: 60_000,
-      cleanupIntervalMs: TICK_INTERVAL_MS,
-      sweepIntervalMs: LONG_INTERVAL_MS,
-      backfillIntervalMs: LONG_INTERVAL_MS,
+    });
+    const second = await bootWorker(testConfig(), {
+      logger: silent,
+      pollIntervalMs: 60_000,
     });
     try {
-      const schedulers = await withMaintenanceQueue((queue) =>
-        queue.getJobSchedulers(),
+      expect(await schedules()).toEqual(
+        [
+          sweepAbandonedUploadsJob,
+          backfillCatalogRenditionsJob,
+          cleanupIdempotencyKeysJob,
+        ]
+          .map(({ name, cron }) => ({ name, cron }))
+          .toSorted((a, b) => a.name.localeCompare(b.name)),
       );
-      expect(schedulers).toHaveLength(3);
-      expect(
-        requireScheduler(schedulers, IDEMPOTENCY_CLEANUP_JOB_NAME).every,
-      ).toBe(TICK_INTERVAL_MS);
-      expect(
-        requireScheduler(schedulers, SWEEP_ABANDONED_UPLOADS_JOB_NAME).every,
-      ).toBe(LONG_INTERVAL_MS);
-      expect(
-        requireScheduler(schedulers, BACKFILL_CATALOG_RENDITIONS_JOB_NAME)
-          .every,
-      ).toBe(LONG_INTERVAL_MS);
+      const queues = await kit.db.admin.query<{ name: string }>(
+        "SELECT name FROM pgboss.queue WHERE name = ANY($1)",
+        [MAINTENANCE_JOB_NAMES],
+      );
+      expect(queues.rows.map(({ name }) => name).toSorted()).toEqual(
+        [...MAINTENANCE_JOB_NAMES].toSorted(),
+      );
 
-      await waitUntil(async () => {
-        const remaining = await remainingKeys([expiredKey, liveKey]);
-        return remaining.length === 1 && remaining[0] === liveKey;
+      const connection = new Redis(redisUrl, { maxRetriesPerRequest: null });
+      const queue = new Queue(MAINTENANCE_QUEUE_NAME, {
+        connection,
+        prefix: BULLMQ_PREFIX,
       });
-      expect(await remainingKeys([expiredKey, liveKey])).toEqual([liveKey]);
-    } finally {
-      await booted.close();
-    }
-  });
-
-  it("processes a given scheduled tick once across two hosts sharing Redis", async () => {
-    let runs = 0;
-    const hostA = createJobHost({
-      redisUrl,
-      db: kit.db.runtime.db,
-      logger: silent,
-      workerId: "jobs-replica-a",
-      cleanupIntervalMs: SINGLE_FLIGHT_INTERVAL_MS,
-      sweepIntervalMs: LONG_INTERVAL_MS,
-      backfillIntervalMs: LONG_INTERVAL_MS,
-      cleanup: () => {
-        runs += 1;
-        return Promise.resolve(0);
-      },
-      sweep: stubSweep,
-      backfill: stubBackfill,
-    });
-    const hostB = createJobHost({
-      redisUrl,
-      db: kit.db.runtime.db,
-      logger: silent,
-      workerId: "jobs-replica-b",
-      cleanupIntervalMs: SINGLE_FLIGHT_INTERVAL_MS,
-      sweepIntervalMs: LONG_INTERVAL_MS,
-      backfillIntervalMs: LONG_INTERVAL_MS,
-      cleanup: () => {
-        runs += 1;
-        return Promise.resolve(0);
-      },
-      sweep: stubSweep,
-      backfill: stubBackfill,
-    });
-    await hostA.start();
-    await hostB.start();
-    try {
-      const schedulers = await withMaintenanceQueue((queue) =>
-        queue.getJobSchedulers(),
-      );
-      expect(schedulers).toHaveLength(3);
-      await waitUntil(() => Promise.resolve(runs >= 1), 15_000);
-      await hostA.close();
-      await hostB.close();
-      await new Promise((resolve) => setTimeout(resolve, TICK_INTERVAL_MS * 2));
-      expect(runs).toBe(1);
-    } finally {
-      await hostA.close();
-      await hostB.close();
-    }
-  });
-
-  it("drains an in-flight maintenance job then ignores a second shutdown", async () => {
-    let release: (() => void) | undefined;
-    let entered = false;
-    const host = createJobHost({
-      redisUrl,
-      db: kit.db.runtime.db,
-      logger: silent,
-      workerId: "jobs-drain",
-      cleanupIntervalMs: 60_000,
-      sweepIntervalMs: LONG_INTERVAL_MS,
-      backfillIntervalMs: LONG_INTERVAL_MS,
-      cleanup: () => {
-        entered = true;
-        return new Promise((resolve) => {
-          release = () => {
-            resolve(0);
-          };
-        });
-      },
-      sweep: stubSweep,
-      backfill: stubBackfill,
-    });
-    await host.start();
-    let closes = 0;
-    const shutdown = createProcessShutdown({
-      logger: silent,
-      close: () => {
-        closes += 1;
-        return host.close();
-      },
-      flush: () => Promise.resolve(),
-    });
-    try {
-      await withMaintenanceQueue((queue) =>
-        queue.add(IDEMPOTENCY_CLEANUP_JOB_NAME, {}),
-      );
-      await waitUntil(() => Promise.resolve(entered));
-      const first = shutdown.run();
-      const second = shutdown.run();
-      await new Promise((resolve) => setTimeout(resolve, 40));
-      expect(closes).toBe(1);
-      if (release === undefined) {
-        throw new Error("expected an in-flight maintenance job");
+      try {
+        expect(await queue.getJobSchedulers()).toEqual([]);
+        expect(await connection.keys(`${BULLMQ_PREFIX}:pdf:*`)).toEqual([]);
+      } finally {
+        await queue.close();
+        await connection.quit();
       }
-      release();
-      await Promise.all([first, second]);
-      expect(closes).toBe(1);
     } finally {
-      if (release !== undefined) {
-        release();
-      }
-      await shutdown.run();
-    }
-  });
-
-  it("does not write secrets or the Redis URL in tick logs", async () => {
-    const lines: string[] = [];
-    const logger = createProcessLogger({
-      name: "worker-jobs-logs",
-      destination: {
-        write(chunk: string) {
-          lines.push(chunk);
-        },
-      },
-    });
-    const { expiredKey, liveKey } = await insertKeyPair();
-    const host = createJobHost({
-      redisUrl,
-      db: kit.db.runtime.db,
-      logger,
-      workerId: "jobs-logs",
-      cleanupIntervalMs: TICK_INTERVAL_MS,
-      sweepIntervalMs: LONG_INTERVAL_MS,
-      backfillIntervalMs: LONG_INTERVAL_MS,
-      sweep: stubSweep,
-      backfill: stubBackfill,
-    });
-    await host.start();
-    try {
-      await waitUntil(async () => {
-        const remaining = await remainingKeys([expiredKey, liveKey]);
-        return remaining.length === 1 && remaining[0] === liveKey;
-      });
-      const payload = lines.join("\n");
-      expect(payload).toContain("expired idempotency keys cleaned");
-      expect(payload).not.toContain(REDIS_PASSWORD);
-      expect(payload).not.toContain(redisUrl);
-    } finally {
-      await host.close();
-    }
-  });
-
-  it("re-upserts three schedulers after flushing BullMQ keys so the next tick still runs", async () => {
-    const first = createJobHost({
-      redisUrl,
-      db: kit.db.runtime.db,
-      logger: silent,
-      workerId: "jobs-flush-1",
-      cleanupIntervalMs: TICK_INTERVAL_MS,
-      sweepIntervalMs: LONG_INTERVAL_MS,
-      backfillIntervalMs: LONG_INTERVAL_MS,
-      sweep: stubSweep,
-      backfill: stubBackfill,
-    });
-    await first.start();
-    await waitUntil(async () => {
-      const schedulers = await withMaintenanceQueue((queue) =>
-        queue.getJobSchedulers(),
-      );
-      return schedulers.length === 3;
-    });
-    await first.close();
-
-    const admin = new Redis(redisUrl);
-    await admin.flushdb();
-    await admin.quit();
-
-    const afterFlush = await withMaintenanceQueue((queue) =>
-      queue.getJobSchedulers(),
-    );
-    expect(afterFlush).toHaveLength(0);
-
-    const { expiredKey, liveKey } = await insertKeyPair();
-    const second = createJobHost({
-      redisUrl,
-      db: kit.db.runtime.db,
-      logger: silent,
-      workerId: "jobs-flush-2",
-      cleanupIntervalMs: TICK_INTERVAL_MS,
-      sweepIntervalMs: LONG_INTERVAL_MS,
-      backfillIntervalMs: LONG_INTERVAL_MS,
-      sweep: stubSweep,
-      backfill: stubBackfill,
-    });
-    await second.start();
-    try {
-      const restored = await withMaintenanceQueue((queue) =>
-        queue.getJobSchedulers(),
-      );
-      expect(restored).toHaveLength(3);
-      expect(
-        requireScheduler(restored, IDEMPOTENCY_CLEANUP_JOB_NAME).name,
-      ).toBe(IDEMPOTENCY_CLEANUP_JOB_NAME);
-      expect(
-        requireScheduler(restored, SWEEP_ABANDONED_UPLOADS_JOB_NAME).name,
-      ).toBe(SWEEP_ABANDONED_UPLOADS_JOB_NAME);
-      expect(
-        requireScheduler(restored, BACKFILL_CATALOG_RENDITIONS_JOB_NAME).name,
-      ).toBe(BACKFILL_CATALOG_RENDITIONS_JOB_NAME);
-      await waitUntil(async () => {
-        const remaining = await remainingKeys([expiredKey, liveKey]);
-        return remaining.length === 1 && remaining[0] === liveKey;
-      });
-    } finally {
+      await first.close();
       await second.close();
     }
   });
-});
 
-describe("apps/worker sweepAbandonedUploads scheduler (SHO-120)", () => {
-  async function bootSweepHost(logger: Logger = silent) {
-    return bootWorker(testConfig(), {
-      logger,
-      pollIntervalMs: 60_000,
-      cleanupIntervalMs: LONG_INTERVAL_MS,
-      sweepIntervalMs: LONG_INTERVAL_MS,
-      backfillIntervalMs: LONG_INTERVAL_MS,
-    });
-  }
-
-  it("configures the object store so a worker-shaped sweep does not throw not-configured", async () => {
-    closeFilesObjectStore();
-    expect(() => getFilesObjectStore()).toThrow(CoreInvariantError);
-    expect(() => getFilesObjectStore()).toThrow(
-      /object store is not configured/,
+  it("one tick runs each maintenance action once across two workers", async () => {
+    const everyMinute = (job: Job) => defineJob({ ...job, cron: "* * * * *" });
+    const jobs: readonly [Job, ImplementedAction][] = [
+      [everyMinute(sweepAbandonedUploadsJob), sweepAbandonedUploads],
+      [everyMinute(backfillCatalogRenditionsJob), backfillCatalogRenditions],
+      [everyMinute(cleanupIdempotencyKeysJob), cleanupIdempotencyKeys],
+    ];
+    const { expiredKey, liveKey } = await insertKeyPair();
+    const startedAt = await kit.db.admin.query<{ now: Date }>(
+      "SELECT now() AS now",
     );
-
-    const booted = await bootSweepHost();
-    try {
-      expect(getFilesObjectStore()).toBeDefined();
-      const dueId = randomUUID();
-      await insertFileRow({
-        id: dueId,
-        companyId: kitIdentities.companies.a,
-        uploadedByUserId: kitIdentities.users.anna,
-        status: "pending",
-        createdAt: new Date(Date.now() - ABANDONED_PENDING_TTL_MS - 1_000),
-      });
-      await enqueueMaintenanceJob(
-        SWEEP_ABANDONED_UPLOADS_JOB_NAME,
-        randomUUID(),
-      );
-      expect(await fileRow(dueId)).toBeUndefined();
-    } finally {
-      await booted.close();
-    }
-  });
-
-  it("deletes a due pending row and leaves a young pending row (SHO-116)", async () => {
-    const dueId = randomUUID();
-    const youngId = randomUUID();
-    await putStoreObject(stagingKey(kitIdentities.companies.a, dueId));
-    await putStoreObject(catalogKey(kitIdentities.companies.a, dueId));
-    await putStoreObject(stagingKey(kitIdentities.companies.a, youngId));
-    await insertFileRow({
-      id: dueId,
-      companyId: kitIdentities.companies.a,
-      uploadedByUserId: kitIdentities.users.anna,
-      status: "pending",
-      createdAt: new Date(Date.now() - ABANDONED_PENDING_TTL_MS - 1_000),
-    });
-    await insertFileRow({
-      id: youngId,
-      companyId: kitIdentities.companies.a,
-      uploadedByUserId: kitIdentities.users.anna,
-      status: "pending",
-    });
-    const booted = await bootSweepHost();
-    try {
-      await enqueueMaintenanceJob(
-        SWEEP_ABANDONED_UPLOADS_JOB_NAME,
-        randomUUID(),
-      );
-
-      expect(await fileRow(dueId)).toBeUndefined();
-      expect(await fileRow(youngId)).toMatchObject({ status: "pending" });
-      const store = getFilesObjectStore();
-      const dueStaging = stagingKey(kitIdentities.companies.a, dueId);
-      const dueCatalog = catalogKey(kitIdentities.companies.a, dueId);
-      await waitForObjectVisibility(store, dueStaging, "missing");
-      await waitForObjectVisibility(store, dueCatalog, "missing");
-      expect(await store.headObject(dueStaging)).toBe("missing");
-      expect(await store.headObject(dueCatalog)).toBe("missing");
-      expect(
-        await store.headObject(stagingKey(kitIdentities.companies.a, youngId)),
-      ).not.toBe("missing");
-    } finally {
-      await booted.close();
-    }
-  });
-
-  it("deletes leftover staging, keeps catalog bytes, and skips already-purged rows", async () => {
-    const leftoverId = randomUUID();
-    const purgedId = randomUUID();
-    // Seed bytes before the worker: a boot scheduler tick can mark a ready
-    // row purged on a staging HEAD miss, then a later PUT leaves orphans.
-    await putStoreObject(catalogKey(kitIdentities.companies.a, leftoverId));
-    await putStoreObject(stagingKey(kitIdentities.companies.a, leftoverId));
-    await putStoreObject(catalogKey(kitIdentities.companies.a, purgedId));
-    await insertFileRow({
-      id: leftoverId,
-      companyId: kitIdentities.companies.a,
-      uploadedByUserId: kitIdentities.users.anna,
-      status: "ready",
-      updatedAt: new Date(0),
-    });
-    await insertFileRow({
-      id: purgedId,
-      companyId: kitIdentities.companies.a,
-      uploadedByUserId: kitIdentities.users.anna,
-      status: "ready",
-      updatedAt: new Date(0),
-      stagingPurgedAt: new Date(0),
-    });
-    const booted = await bootSweepHost();
-    try {
-      await enqueueMaintenanceJob(
-        SWEEP_ABANDONED_UPLOADS_JOB_NAME,
-        randomUUID(),
-      );
-
-      const store = getFilesObjectStore();
-      const leftoverStaging = stagingKey(kitIdentities.companies.a, leftoverId);
-      const afterFirst = await fileRow(leftoverId);
-      const purgedAfterFirst = await fileRow(purgedId);
-      if (afterFirst === undefined || purgedAfterFirst === undefined) {
-        throw new Error("expected ready rows to remain");
-      }
-      expect(afterFirst.stagingPurgedAt).not.toBeNull();
-      await waitForObjectVisibility(store, leftoverStaging, "missing");
-      expect(await store.headObject(leftoverStaging)).toBe("missing");
-      expect(
-        await store.headObject(
-          catalogKey(kitIdentities.companies.a, leftoverId),
-        ),
-      ).not.toBe("missing");
-      expect(
-        await store.headObject(catalogKey(kitIdentities.companies.a, purgedId)),
-      ).not.toBe("missing");
-      expect(purgedAfterFirst.stagingPurgedAt?.getTime()).toBe(0);
-      expect(purgedAfterFirst.updatedAt.getTime()).toBe(0);
-
-      await enqueueMaintenanceJob(
-        SWEEP_ABANDONED_UPLOADS_JOB_NAME,
-        randomUUID(),
-      );
-      const afterSecond = await fileRow(leftoverId);
-      const purgedAfterSecond = await fileRow(purgedId);
-      expect(afterSecond?.stagingPurgedAt?.getTime()).toBe(
-        afterFirst.stagingPurgedAt?.getTime(),
-      );
-      expect(afterSecond?.updatedAt.getTime()).toBe(
-        afterFirst.updatedAt.getTime(),
-      );
-      expect(purgedAfterSecond?.updatedAt.getTime()).toBe(0);
-    } finally {
-      await booted.close();
-    }
-  });
-
-  it("does not delete another company's catalog while sweeping as system/global", async () => {
-    const abandonedId = randomUUID();
-    const foreignReadyId = randomUUID();
-    await putStoreObject(stagingKey(kitIdentities.companies.a, abandonedId));
-    await putStoreObject(catalogKey(kitIdentities.companies.b, foreignReadyId));
-    await insertFileRow({
-      id: abandonedId,
-      companyId: kitIdentities.companies.a,
-      uploadedByUserId: kitIdentities.users.anna,
-      status: "pending",
-      createdAt: new Date(Date.now() - ABANDONED_PENDING_TTL_MS - 1_000),
-    });
-    await insertFileRow({
-      id: foreignReadyId,
-      companyId: kitIdentities.companies.b,
-      uploadedByUserId: kitIdentities.users.boris,
-      status: "ready",
-      updatedAt: new Date(0),
-      stagingPurgedAt: new Date(0),
-    });
-    const booted = await bootSweepHost();
-    try {
-      await enqueueMaintenanceJob(
-        SWEEP_ABANDONED_UPLOADS_JOB_NAME,
-        randomUUID(),
-      );
-
-      expect(await fileRow(abandonedId)).toBeUndefined();
-      expect(await fileRow(foreignReadyId)).toMatchObject({ status: "ready" });
-      const store = getFilesObjectStore();
-      await waitForObjectVisibility(
-        store,
-        stagingKey(kitIdentities.companies.a, abandonedId),
-        "missing",
-      );
-      expect(
-        await store.headObject(
-          catalogKey(kitIdentities.companies.b, foreignReadyId),
-        ),
-      ).not.toBe("missing");
-    } finally {
-      await booted.close();
-    }
-  });
-
-  it("logs counts only — no URL or object key", async () => {
-    const lines: string[] = [];
-    const logger = createProcessLogger({
-      name: "worker-sweep-logs",
-      destination: {
-        write(chunk: string) {
-          lines.push(chunk);
+    const since = startedAt.rows[0]?.now ?? new Date(0);
+    const runs = new Map<string, string[]>(
+      MAINTENANCE_JOB_NAMES.map((name) => [name, []]),
+    );
+    const handlers: JobHandler[] = jobs.map(([job, action]) => {
+      const bound = maintenanceHandler(job, action, silent);
+      return {
+        job,
+        async handle(attempt) {
+          runs.get(job.name)?.push(attempt.envelope.id);
+          await bound.handle(attempt);
         },
-      },
+      };
     });
-    const dueId = randomUUID();
-    await putStoreObject(stagingKey(kitIdentities.companies.a, dueId));
-    await insertFileRow({
-      id: dueId,
-      companyId: kitIdentities.companies.a,
-      uploadedByUserId: kitIdentities.users.anna,
-      status: "pending",
-      createdAt: new Date(Date.now() - ABANDONED_PENDING_TTL_MS - 1_000),
-    });
-    const booted = await bootSweepHost(logger);
+    const runners: JobRunner[] = [];
     try {
-      await enqueueMaintenanceJob(
-        SWEEP_ABANDONED_UPLOADS_JOB_NAME,
-        randomUUID(),
-      );
-      const payload = lines.join("\n");
-      expect(payload).toContain("abandoned uploads swept");
-      expect(payload).toContain("abandoned_pending_deleted");
-      expect(payload).toContain("leftover_staging_deleted");
-      expect(payload).not.toContain(dueId);
-      expect(payload).not.toMatch(/\/catalog\//);
-      expect(payload).not.toMatch(/\/uploads\//);
-      expect(payload).not.toContain(garageEndpoint);
-      expect(payload).not.toContain(GARAGE_SECRET_KEY);
-    } finally {
-      await booted.close();
-    }
-  });
-
-  it("replays one idempotency key without extra deletes; a fresh key continues", async () => {
-    const firstId = randomUUID();
-    await putStoreObject(stagingKey(kitIdentities.companies.a, firstId));
-    await insertFileRow({
-      id: firstId,
-      companyId: kitIdentities.companies.a,
-      uploadedByUserId: kitIdentities.users.anna,
-      status: "pending",
-      createdAt: new Date(Date.now() - ABANDONED_PENDING_TTL_MS - 1_000),
-    });
-    const booted = await bootSweepHost();
-    try {
-      const replayKey = randomUUID();
-      await enqueueMaintenanceJob(SWEEP_ABANDONED_UPLOADS_JOB_NAME, replayKey);
-      expect(await fileRow(firstId)).toBeUndefined();
-      await waitForObjectVisibility(
-        getFilesObjectStore(),
-        stagingKey(kitIdentities.companies.a, firstId),
-        "missing",
-      );
-
-      const secondId = randomUUID();
-      await putStoreObject(stagingKey(kitIdentities.companies.a, secondId));
-      await insertFileRow({
-        id: secondId,
-        companyId: kitIdentities.companies.a,
-        uploadedByUserId: kitIdentities.users.anna,
-        status: "pending",
-        createdAt: new Date(Date.now() - ABANDONED_PENDING_TTL_MS - 1_000),
-      });
-      await enqueueMaintenanceJob(SWEEP_ABANDONED_UPLOADS_JOB_NAME, replayKey);
-      expect(await fileRow(secondId)).toMatchObject({ status: "pending" });
-
-      await enqueueMaintenanceJob(
-        SWEEP_ABANDONED_UPLOADS_JOB_NAME,
-        randomUUID(),
-      );
-      expect(await fileRow(secondId)).toBeUndefined();
-      await waitForObjectVisibility(
-        getFilesObjectStore(),
-        stagingKey(kitIdentities.companies.a, secondId),
-        "missing",
-      );
-    } finally {
-      await booted.close();
-    }
-  });
-
-  it("processes a given sweep tick once across two hosts sharing Redis", async () => {
-    let runs = 0;
-    const hostA = createJobHost({
-      redisUrl,
-      db: kit.db.runtime.db,
-      logger: silent,
-      workerId: "jobs-sweep-replica-a",
-      cleanupIntervalMs: LONG_INTERVAL_MS,
-      sweepIntervalMs: SINGLE_FLIGHT_INTERVAL_MS,
-      backfillIntervalMs: LONG_INTERVAL_MS,
-      cleanup: () => Promise.resolve(0),
-      sweep: () => {
-        runs += 1;
-        return Promise.resolve({
-          leftoverStagingDeleted: 0,
-          abandonedPendingDeleted: 0,
-        });
-      },
-      backfill: stubBackfill,
-    });
-    const hostB = createJobHost({
-      redisUrl,
-      db: kit.db.runtime.db,
-      logger: silent,
-      workerId: "jobs-sweep-replica-b",
-      cleanupIntervalMs: LONG_INTERVAL_MS,
-      sweepIntervalMs: SINGLE_FLIGHT_INTERVAL_MS,
-      backfillIntervalMs: LONG_INTERVAL_MS,
-      cleanup: () => Promise.resolve(0),
-      sweep: () => {
-        runs += 1;
-        return Promise.resolve({
-          leftoverStagingDeleted: 0,
-          abandonedPendingDeleted: 0,
-        });
-      },
-      backfill: stubBackfill,
-    });
-    await hostA.start();
-    await hostB.start();
-    try {
-      await waitUntil(() => Promise.resolve(runs >= 1), 15_000);
-      await hostA.close();
-      await hostB.close();
-      await new Promise((resolve) => setTimeout(resolve, TICK_INTERVAL_MS * 2));
-      expect(runs).toBe(1);
-    } finally {
-      await hostA.close();
-      await hostB.close();
-    }
-  });
-
-  it("keeps the default sweep and backfill intervals at 5 minutes when boot omits an override", async () => {
-    const booted = await bootWorker(testConfig(), {
-      logger: silent,
-      pollIntervalMs: 60_000,
-      cleanupIntervalMs: LONG_INTERVAL_MS,
-    });
-    try {
-      const schedulers = await withMaintenanceQueue((queue) =>
-        queue.getJobSchedulers(),
-      );
-      expect(
-        requireScheduler(schedulers, SWEEP_ABANDONED_UPLOADS_JOB_NAME).every,
-      ).toBe(SWEEP_INTERVAL_MS);
-      expect(
-        requireScheduler(schedulers, BACKFILL_CATALOG_RENDITIONS_JOB_NAME)
-          .every,
-      ).toBe(BACKFILL_CATALOG_RENDITIONS_INTERVAL_MS);
-    } finally {
-      await booted.close();
-    }
-  });
-});
-
-describe("apps/worker backfillCatalogRenditions scheduler (SHO-248)", () => {
-  async function bootBackfillHost(logger: Logger = silent) {
-    return bootWorker(testConfig(), {
-      logger,
-      pollIntervalMs: 60_000,
-      cleanupIntervalMs: LONG_INTERVAL_MS,
-      sweepIntervalMs: LONG_INTERVAL_MS,
-      backfillIntervalMs: LONG_INTERVAL_MS,
-    });
-  }
-
-  it("schedules the job on maintenance and fills missing catalog renditions", async () => {
-    const fileId = randomUUID();
-    await putStoreObject(
-      catalogKey(kitIdentities.companies.a, fileId),
-      pngBytes,
-      "image/png",
-    );
-    await insertFileRow({
-      id: fileId,
-      companyId: kitIdentities.companies.a,
-      uploadedByUserId: kitIdentities.users.anna,
-      status: "ready",
-      mimeType: "image/png",
-      byteSize: pngBytes.byteLength,
-      stagingPurgedAt: new Date(0),
-      createdAt: new Date("1900-01-01T00:00:00.000Z"),
-    });
-    const booted = await bootBackfillHost();
-    try {
-      await enqueueMaintenanceJob(
-        BACKFILL_CATALOG_RENDITIONS_JOB_NAME,
-        randomUUID(),
-      );
-      const store = getFilesObjectStore();
-      for (const rendition of ["thumb", "card", "hero", "full"] as const) {
-        const key = catalogRenditionKey(
-          kitIdentities.companies.a,
-          fileId,
-          rendition,
+      for (let index = 0; index < 2; index += 1) {
+        const runner = await openJobRunner(
+          {
+            db: kit.db.runtime.db,
+            jobs: jobs.map(([job]) => job),
+            onError: () => undefined,
+            intervals: {
+              pollingSeconds: 0.5,
+              superviseSeconds: 1,
+              cronSeconds: 1,
+            },
+          },
+          "worker",
         );
-        await waitForObjectVisibility(store, key, "present");
-        expect(await store.headObject(key)).not.toBe("missing");
+        runners.push(runner);
+        await runner.work({
+          deps: kit.pipeline,
+          handlers,
+          drainTimeoutMs: 5_000,
+        });
       }
-      const original = await store.getObject(
-        catalogKey(kitIdentities.companies.a, fileId),
-      );
-      expect(original).not.toBe("missing");
-      if (original === "missing") {
-        throw new Error("expected original catalog object after backfill");
-      }
-      expect(original.byteSize).toBe(pngBytes.byteLength);
-      expect(original.bytes).toEqual(pngBytes);
-    } finally {
-      await booted.close();
-    }
-  });
 
-  it("logs counts only — no URL, object key, or file id", async () => {
-    const lines: string[] = [];
-    const logger = createProcessLogger({
-      name: "worker-backfill-logs",
-      destination: {
-        write(chunk: string) {
-          lines.push(chunk);
-        },
-      },
-    });
-    const fileId = randomUUID();
-    await putStoreObject(
-      catalogKey(kitIdentities.companies.a, fileId),
-      pngBytes,
-      "image/png",
-    );
-    await insertFileRow({
-      id: fileId,
-      companyId: kitIdentities.companies.a,
-      uploadedByUserId: kitIdentities.users.anna,
-      status: "ready",
-      mimeType: "image/png",
-      byteSize: pngBytes.byteLength,
-      stagingPurgedAt: new Date(0),
-      createdAt: new Date("1900-01-01T00:00:00.000Z"),
-    });
-    const booted = await bootBackfillHost(logger);
-    try {
-      await enqueueMaintenanceJob(
-        BACKFILL_CATALOG_RENDITIONS_JOB_NAME,
-        randomUUID(),
+      await waitUntil(
+        () =>
+          Promise.resolve([...runs.values()].every((ids) => ids.length > 0)),
+        90_000,
       );
-      const payload = lines.join("\n");
-      expect(payload).toContain("catalog renditions backfilled");
-      expect(payload).toContain("filled");
-      expect(payload).toContain("already_complete");
-      expect(payload).not.toContain(fileId);
-      expect(payload).not.toMatch(/\/catalog\//);
-      expect(payload).not.toContain(garageEndpoint);
-      expect(payload).not.toContain(GARAGE_SECRET_KEY);
+      await delay(3_000);
     } finally {
-      await booted.close();
+      for (const runner of runners) {
+        await runner.close();
+      }
     }
-  });
+
+    expect(await schedules()).toHaveLength(MAINTENANCE_JOB_NAMES.length);
+    for (const [name, ids] of runs) {
+      expect(new Set(ids).size).toBe(ids.length);
+      const audits = await kit.db.runtime.db
+        .select({ requestId: auditLog.requestId })
+        .from(auditLog)
+        .where(and(eq(auditLog.actorId, name), gte(auditLog.createdAt, since)));
+      expect(audits.map(({ requestId }) => requestId).toSorted()).toEqual(
+        [...ids].toSorted(),
+      );
+      const slots = await kit.db.admin.query<{ slot: string }>(
+        `SELECT singleton_on::text AS slot FROM pgboss.job
+         WHERE name = '__pgboss__send-it' AND data->>'name' = $1`,
+        [name],
+      );
+      const slotValues = slots.rows.map(({ slot }) => slot);
+      expect(new Set(slotValues).size).toBe(slotValues.length);
+      expect(ids.length).toBeLessThanOrEqual(slotValues.length);
+    }
+    expect(await remainingKeys([expiredKey, liveKey])).toEqual([liveKey]);
+  }, 150_000);
 });
 
-/**
- * SHO-569. Boot mounts the assistant queue on the API's rule, on the queue
- * Redis. The shared and the queue Redis are two logical databases of the test
- * container, so a key on the wrong one is visible. The job names no turn: the
- * boot-composed processor reads Postgres, answers `no_turn`, and never reaches
- * a model (the configured key is never used).
- */
 describe("apps/worker assistant queue at boot (SHO-569)", () => {
   const queueUrl = () => `${redisUrl}/1`;
 
@@ -1192,9 +524,6 @@ describe("apps/worker assistant queue at boot (SHO-569)", () => {
     const booted = await bootWorker(assistantConfig(true), {
       logger: capturingLogger(lines),
       pollIntervalMs: 60_000,
-      cleanupIntervalMs: LONG_INTERVAL_MS,
-      sweepIntervalMs: LONG_INTERVAL_MS,
-      backfillIntervalMs: LONG_INTERVAL_MS,
     });
     try {
       await withAssistantQueue(async (queue) => {
@@ -1241,9 +570,6 @@ describe("apps/worker assistant queue at boot (SHO-569)", () => {
     const booted = await bootWorker(assistantConfig(false), {
       logger: capturingLogger(lines),
       pollIntervalMs: 60_000,
-      cleanupIntervalMs: LONG_INTERVAL_MS,
-      sweepIntervalMs: LONG_INTERVAL_MS,
-      backfillIntervalMs: LONG_INTERVAL_MS,
     });
     try {
       await withAssistantQueue(async (queue) => {
@@ -1252,52 +578,6 @@ describe("apps/worker assistant queue at boot (SHO-569)", () => {
       expect(lines.join("\n")).toMatch(
         /"enabled":false,"mounted":false[^\n]*"assistant-kit path"/,
       );
-    } finally {
-      await booted.close();
-    }
-  });
-});
-
-describe("apps/worker pdf queue (SHO-236)", () => {
-  it("starts the pdf queue and the thin processor rejects a non-envelope", async () => {
-    const booted = await bootWorker(testConfig(), {
-      logger: silent,
-      pollIntervalMs: 60_000,
-      cleanupIntervalMs: LONG_INTERVAL_MS,
-      sweepIntervalMs: LONG_INTERVAL_MS,
-      backfillIntervalMs: LONG_INTERVAL_MS,
-    });
-    try {
-      const connection = new Redis(redisUrl, { maxRetriesPerRequest: null });
-      const eventsConnection = new Redis(redisUrl, {
-        maxRetriesPerRequest: null,
-      });
-      const queue = new Queue(PDF_QUEUE_NAME, {
-        connection,
-        prefix: BULLMQ_PREFIX,
-      });
-      const events = new QueueEvents(PDF_QUEUE_NAME, {
-        connection: eventsConnection,
-        prefix: BULLMQ_PREFIX,
-      });
-      await events.waitUntilReady();
-      try {
-        const job = await queue.add(
-          PDF_JOB_NAME,
-          { companyId: kitIdentities.companies.a },
-          {
-            jobId: randomUUID(),
-            removeOnComplete: true,
-            removeOnFail: 50,
-          },
-        );
-        await expect(job.waitUntilFinished(events, 30_000)).rejects.toThrow();
-      } finally {
-        await events.close();
-        await queue.close();
-        await connection.quit();
-        await eventsConnection.quit();
-      }
     } finally {
       await booted.close();
     }

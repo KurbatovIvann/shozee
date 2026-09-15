@@ -337,7 +337,9 @@ function executeStep(step, ctx) {
       break;
     }
     case "contract-check":
-      push(pnpm(["--filter", "@showzy/api", "contract:check"], ctx));
+      if (push(pnpm(["--filter", "@showzy/api", "contract:check"], ctx)).ok) {
+        push(pnpm(["--filter", "@showzy/worker", "contract:check"], ctx));
+      }
       break;
     case "migration-drift":
       if (push(pnpm(["--filter", "@showzy/db", "db:check"], ctx)).ok) {
