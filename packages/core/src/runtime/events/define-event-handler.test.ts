@@ -141,6 +141,7 @@ describe("defineEventHandler — valid bindings", () => {
       schemaTables: [],
       assistantSurfaces: [],
       assistantFacadeToolNames: [],
+      jobs: [],
       suiteCoverage: {
         ...emptySuiteCoverage,
         isolation: ["handlerFixtureChat.upsertCard"],

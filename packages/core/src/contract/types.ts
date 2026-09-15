@@ -124,6 +124,7 @@ export interface ActionContractDefinition<
   readonly timeout: number;
   readonly rateLimit?: ActionRateLimit;
   readonly consistency?: "snapshot";
+  readonly enqueues?: readonly string[];
 }
 
 declare const actionContractBrand: unique symbol;

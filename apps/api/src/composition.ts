@@ -57,6 +57,7 @@ import {
   type DeclaredCallEdge,
   type EventDefinitionRef,
   type ImplementedAction,
+  type JobDefinitionRef,
   type ReadModelGrantRef,
   type SchemaImportRef,
   type SuiteCoverageManifest,
@@ -299,6 +300,8 @@ const callEdges: readonly DeclaredCallEdge[] = [
   },
 ];
 
+const jobs: readonly JobDefinitionRef[] = [];
+
 const readModelGrants: readonly ReadModelGrantRef[] = [
   // Projection owners record spec-declared grants here (ADR-0015).
 ];
@@ -352,6 +355,7 @@ export function mergeSuiteCoverage(
     idempotency: manifests.flatMap((manifest) => manifest.idempotency),
     events: manifests.flatMap((manifest) => manifest.events),
     atomic: manifests.flatMap((manifest) => manifest.atomic),
+    jobIsolation: manifests.flatMap((manifest) => manifest.jobIsolation ?? []),
   };
 }
 
@@ -377,5 +381,6 @@ export function buildContractCheckInput(): ContractCheckInput {
       toolNames: surface.toolNames,
     })),
     assistantFacadeToolNames: STAFF_ASSISTANT_FACADE_TOOL_NAMES,
+    jobs,
   };
 }
