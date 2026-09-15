@@ -539,7 +539,11 @@ runner settings from the same declaration (`docs/specs/jobs.md`).
   the pipeline. There is no company status check. Staff actions keep their
   own paths; this entrypoint produces no staff caller.
 - **Test kit.** `createTestKit` composes `createRecordingJobPort()` as
-  `kit.jobs`; it records what reached the port at step 9. Commit-time
+  `kit.jobs`; it records what reached the port at step 9. `kit.invoke` and
+  `jobIsolationSuite` drop the envelopes their own rejected run recorded (later
+  than a checkpoint and carrying that run's `requestId`); a direct
+  `executeAction`/`executeJobAction` caller still sees a rolled-back run's
+  envelopes. Commit-time
   atomicity of a real runner is the adapter conformance suite's proof.
 
 ## 7. Confirmation protocol (`requiresConfirmation`)

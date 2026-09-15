@@ -129,7 +129,8 @@ const KIT_IP_HMAC_SECRET = "test-kit-ip-hmac-secret";
 export interface RecordingJobPort extends JobPort {
   readonly sent: readonly JobEnvelope[];
   clear(): void;
-  discardRequest(requestId: string): void;
+  checkpoint(): number;
+  discardRun(checkpoint: number, requestId: string): void;
 }
 
 export function buildJobEnvelope(
@@ -160,9 +161,14 @@ export function createRecordingJobPort(): RecordingJobPort {
     clear() {
       sent.length = 0;
     },
-    discardRequest(requestId) {
-      const kept = sent.filter((envelope) => envelope.requestId !== requestId);
-      sent.splice(0, sent.length, ...kept);
+    checkpoint() {
+      return sent.length;
+    },
+    discardRun(checkpoint, requestId) {
+      const kept = sent
+        .slice(checkpoint)
+        .filter((envelope) => envelope.requestId !== requestId);
+      sent.splice(checkpoint, sent.length - checkpoint, ...kept);
     },
     enqueue(_tx, envelopes) {
       sent.push(...envelopes);
@@ -483,6 +489,7 @@ export async function invokeAction<
       : {}),
     ...options.request,
   };
+  const checkpoint = kit.jobs.checkpoint();
   try {
     return await executeAction(options.deps ?? kit.pipeline, {
       action,
@@ -491,7 +498,7 @@ export async function invokeAction<
       principal: principalInvocation(contract.principal, actor, contract),
     });
   } catch (error) {
-    kit.jobs.discardRequest(request.requestId);
+    kit.jobs.discardRun(checkpoint, request.requestId);
     checkInvokeActionError(contract, error);
     throw error;
   }

@@ -793,6 +793,7 @@ function jobRunInCompany(
   return {
     requestId: envelope.requestId,
     run: async () => {
+      const checkpoint = kit.jobs.checkpoint();
       try {
         return await executeJobAction(kit.pipeline, {
           job: c.job,
@@ -802,7 +803,7 @@ function jobRunInCompany(
           ...(tenantJob ? {} : { fanOutCompanyId: companyId }),
         });
       } catch (error) {
-        kit.jobs.discardRequest(envelope.requestId);
+        kit.jobs.discardRun(checkpoint, envelope.requestId);
         throw error;
       }
     },

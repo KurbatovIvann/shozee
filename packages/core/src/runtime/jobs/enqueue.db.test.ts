@@ -410,6 +410,38 @@ describe("ctx.enqueue commit and rollback (J1)", () => {
     ]);
   });
 
+  it("keeps a committed run's envelopes when a later run with the same request id fails after the send", async () => {
+    const keptTurnId = randomUUID();
+    const requestId = randomUUID();
+    await kit.invoke(
+      noteAction,
+      { turnId: keptTurnId },
+      {},
+      { request: { requestId } },
+    );
+    const hooks = {
+      ...kit.pipeline.hooks,
+      audit: {
+        recordSuccess: () =>
+          Promise.reject(new CoreInvariantError("injected audit failure")),
+        recordFailure: () => Promise.resolve(),
+      },
+    };
+
+    await expect(
+      kit.invoke(
+        noteAction,
+        { turnId: randomUUID() },
+        {},
+        { request: { requestId }, deps: { ...kit.pipeline, hooks } },
+      ),
+    ).rejects.toBeInstanceOf(CoreInvariantError);
+
+    expect(kit.jobs.sent.map((envelope) => envelope.payload)).toEqual([
+      { turnId: keptTurnId },
+    ]);
+  });
+
   it("fails closed when an action declaring enqueues has no job port", async () => {
     const hooks = { ...kit.pipeline.hooks, jobs: undefined };
 
