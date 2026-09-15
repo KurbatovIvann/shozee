@@ -17,7 +17,7 @@ import type { ReadTx, Tx } from "@showzy/db";
 import { createTestDatabase, type TestDatabase } from "@showzy/db/testing";
 import { fixtureCrmCustomers } from "@showzy/db/testing/fixtures";
 import { and, eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import type { JobRunner, JobRunnerRole } from "./job-runner.js";
 import { exhaustedQueueName } from "./queue-provisioning.js";
@@ -37,6 +37,7 @@ export interface JobRunnerConformanceTarget {
     database: TestDatabase,
     jobs: readonly Job[],
     role: JobRunnerRole,
+    onError: (error: Error) => void,
   ): Promise<JobRunner>;
   readStoredJobData(
     database: TestDatabase,
@@ -228,7 +229,8 @@ export function describeJobRunnerConformance(
   describe(`job runner conformance: ${target.adapter}`, () => {
     let database: TestDatabase;
     let kit: TestKit;
-    const opened: JobRunner[] = [];
+    const opened = new Set<JobRunner>();
+    const runnerErrors: Error[] = [];
 
     async function subjectRow(): Promise<string> {
       const id = randomUUID();
@@ -285,9 +287,16 @@ export function describeJobRunnerConformance(
       jobs: readonly Job[],
       role: JobRunnerRole,
     ): Promise<JobRunner> {
-      const runner = await target.open(database, jobs, role);
-      opened.push(runner);
+      const runner = await target.open(database, jobs, role, (error) => {
+        runnerErrors.push(error);
+      });
+      opened.add(runner);
       return runner;
+    }
+
+    async function close(runner: JobRunner): Promise<void> {
+      opened.delete(runner);
+      await runner.close();
     }
 
     beforeAll(async () => {
@@ -295,10 +304,19 @@ export function describeJobRunnerConformance(
       kit = await createTestKit(database);
     });
 
+    afterEach(async () => {
+      const closing = await Promise.allSettled([...opened].map(close));
+      const reported = runnerErrors.splice(0);
+      const closeFailures: unknown[] = closing
+        .filter((result) => result.status === "rejected")
+        .map((result): unknown => result.reason);
+      expect({ reported, closeFailures }).toEqual({
+        reported: [],
+        closeFailures: [],
+      });
+    });
+
     afterAll(async () => {
-      for (const runner of opened) {
-        await runner.close();
-      }
       await database.close();
     });
 
@@ -410,14 +428,14 @@ export function describeJobRunnerConformance(
     describe("J7 declared queue settings", () => {
       it("a worker boot provisions the declaration and a second boot accepts it", async () => {
         const job = conformanceJob("j7Stable", 1);
-        await open([job], "worker");
+        await close(await open([job], "worker"));
         await expect(open([job], "worker")).resolves.toBeDefined();
         await expect(open([job], "api")).resolves.toBeDefined();
       });
 
       it("a changed declaration refuses boot in both roles", async () => {
         const job = conformanceJob("j7Changed", 1);
-        await open([job], "worker");
+        await close(await open([job], "worker"));
         const changed = conformanceJob("j7Changed", 2);
 
         await expect(open([changed], "worker")).rejects.toBeInstanceOf(
@@ -681,7 +699,7 @@ export function describeJobRunnerConformance(
           () => Promise.resolve(started.size),
           (size) => size === 2,
         );
-        await runner.close();
+        await close(runner);
 
         await expect(
           jobRecord(quick.name, quickJob.envelope.id),
