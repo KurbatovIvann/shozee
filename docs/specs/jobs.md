@@ -128,3 +128,72 @@ and is left untouched. Proof: `src/pgboss-schema.db.test.ts`.
   `src/pgboss-conformance.db.test.ts`: J1 rollback and commit, a held id
   refused, J6 stored data, J7 changed declaration and unprovisioned API
   boot. Declarations: `src/queue-provisioning.test.ts`.
+
+## 8. Worker host
+
+- `runner.work({ deps, handlers, drainTimeoutMs })` on a `worker`-role runner
+  (`createJobWorker`, `src/worker-host.ts`) registers one pg-boss `work` per
+  handler (`perJobResults`, `includeMetadata`, `batchSize: 1`, polling). An
+  `api` runner, a second `work` call, a handler for an undeclared job, a
+  declared job without a handler, a duplicate handler, an `onExhausted` binding whose action name differs from
+  the declaration, or a non-global `periodic` job throw `CoreInvariantError`.
+- A handler receives `{ envelope, signal, run(action, input, fanOutCompanyId?) }`.
+  `run` is `executeJobAction` with the handler's job and recorded envelope, so
+  every step is a claim, external I/O outside any transaction, or a recording
+  action (ADR-0041 §1, J10); the host opens no transaction of its own.
+- The envelope is the stored job data plus the job id (for a dead-letter job,
+  its `sourceId`, the original id). A `periodic` run has no stored data: its
+  envelope is global, actor `system:<job name>`, channel `system`, and the run's
+  pg-boss id as request, correlation and execution id.
+
+## 9. Typed failures (J6)
+
+- The host never throws into pg-boss; a throw there would store the error's
+  message and stack. Every attempt settles as `completed` (output null) or
+  `failed` with output `{ code }`: a `CoreError` code, `INTERNAL` for any other
+  throw, `ATTEMPT_TIMEOUT`, `DRAINED`, or `ABORTED` (pg-boss aborted the
+  attempt). The error itself goes to the log line only.
+- A failure returned as success (the BullMQ host's `"errored"`) is not a
+  settlement: it would skip retries, the dead letter and on-exhausted.
+- The library's fixed status strings that can still reach `output`:
+  `{ value: { message: "job timed out" } }` (supervisor expiry) and
+  `{ value: "pg-boss shut down while active" }` (stop after the drain bound
+  plus settle margin).
+- pg-boss re-inserts a failed job without `source_id`, so a dead-letter job
+  loses its source id once it fails; dead letters have zero retries, so that
+  job never runs again.
+
+## 10. Attempt timeout and exhaustion (J7, J9)
+
+- An attempt is abandoned in process after `attemptTimeoutMs` (the signal
+  aborts and the attempt fails with `ATTEMPT_TIMEOUT`); the queue's
+  `expireInSeconds` covers a dead worker, whose attempt the supervisor fails.
+  Both count as an attempt, so a job runs at most `1 + retries` times.
+  Abandoning does not stop the handler's promise: its later writes are refused
+  by the owning row's claim (J8).
+- An `expires` job whose last attempt failed or expired moves to
+  `<job>.exhausted`. Its worker runs the declared on-exhausted action through
+  `executeJobAction` with the payload as input, in the recorded scope. A
+  failing on-exhausted action leaves the dead-letter job `failed` with its code
+  and the row to the module's sweep.
+- Retention deletion sends nothing to the dead letter, and pg-boss may still
+  start a job past `keep_until` until that pass deletes it; the domain row
+  decides, never the runner record.
+
+## 11. Drain and `periodic` schedules
+
+- `runner.close()` on a worker stops fetching and waits for running attempts
+  up to `drainTimeoutMs`; attempts still running then fail with `DRAINED`, and
+  pg-boss gets a 5 s settle margin before it fails what is left. The platform
+  grace period must exceed that sum: recorded, not configured (no production).
+- `work` schedules each `periodic` handler from its declaration
+  (`schedule(name, cron, null, { tz: "UTC" })`). pg-boss files one occurrence
+  per minute slot under a singleton key, so one tick runs once across workers.
+  Runs of one job can still overlap (a run longer than the interval); handlers
+  must be safe to overlap. A removed declaration's schedule is not
+  unscheduled: recorded, not built.
+- Tuning: `openJobRunner({ intervals: { pollingSeconds, superviseSeconds,
+  cronSeconds } })`; absent, the library defaults apply.
+- Proof: the conformance suite's J7 (thrown attempts, in-process timeout), J9
+  (expired last attempt, failing on-exhausted, retention drop), periodic (two
+  workers, one tick) and drain cases, run by `src/pgboss-conformance.db.test.ts`.
