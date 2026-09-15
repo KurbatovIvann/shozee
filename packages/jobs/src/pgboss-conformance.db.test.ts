@@ -3,14 +3,12 @@ import { openJobRunner } from "./job-runner.js";
 
 describeJobRunnerConformance({
   adapter: "pg-boss",
-  open: (database, jobs, role) =>
+  open: (database, jobs, role, onError) =>
     openJobRunner(
       {
         db: database.runtime.db,
         jobs,
-        onError: (error) => {
-          throw error;
-        },
+        onError,
         intervals: { pollingSeconds: 0.5, superviseSeconds: 1, cronSeconds: 1 },
       },
       role,
