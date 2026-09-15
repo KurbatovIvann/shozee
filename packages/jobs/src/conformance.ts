@@ -725,7 +725,7 @@ export function describeJobRunnerConformance(
     });
 
     describe("periodic schedules", () => {
-      it("two workers run one tick once, in the global scope", async () => {
+      it("two workers: no two send-its share a slot, each send-it gives one job, each job runs once, in the global scope", async () => {
         const job = defineJob({
           name: "conformance.j9Tick",
           scope: "global",
