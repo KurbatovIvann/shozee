@@ -18,6 +18,7 @@ export {
   UndeclaredActionError,
 } from "./declared-errors.js";
 export {
+  buildJobEnvelope,
   buildTestContext,
   createCapturingLogger,
   createRecordingJobPort,
@@ -38,10 +39,13 @@ export {
   consumerIsolationSuite,
   crossTenantSuite,
   isolationCase,
+  jobIsolationCase,
+  jobIsolationSuite,
   publicProjectionSuite,
   runAccountIsolationCase,
   runConsumerIsolationCase,
   runCrossTenantCase,
+  runJobIsolationCase,
   runPublicProjectionCase,
   runShareIsolationCase,
   shareIsolationCase,
@@ -51,6 +55,8 @@ export type {
   BrowseCase,
   CrossTenantCase,
   IsolationInvocation,
+  JobIsolationCase,
+  JobIsolationInvocation,
   ShareIsolationCase,
   SuiteAction,
 } from "./suites.js";

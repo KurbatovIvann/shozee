@@ -60,6 +60,8 @@ export type {
   JobPayloadShape,
 } from "./jobs/job-payload.js";
 export type { JobEnvelope, JobPort } from "./runtime/jobs/enqueue.js";
+export { executeJobAction } from "./runtime/jobs/execute-job-action.js";
+export type { JobActionInvocation } from "./runtime/jobs/execute-job-action.js";
 export { schemaTablesFromModules } from "./contract-check/schema-tables.js";
 export { emptySuiteCoverage } from "./contract-check/suite-coverage.js";
 export type { SuiteCoverageManifest } from "./contract-check/suite-coverage.js";

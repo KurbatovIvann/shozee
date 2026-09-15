@@ -86,6 +86,7 @@ export type PrincipalInvocation =
       readonly mode: "system";
       readonly serviceName: string;
       readonly scope: SystemScopeInput;
+      readonly companyMustExist?: boolean;
     }
   | { readonly mode: "consumer"; readonly session: SessionPrincipal | null }
   | { readonly mode: "account"; readonly session: SessionPrincipal | null }

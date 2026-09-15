@@ -517,6 +517,27 @@ runner settings from the same declaration (`docs/specs/jobs.md`).
   commit with the `processed` mark; a replay runs no handler and enqueues
   nothing (J3). Two sends with one id in one invocation throw, so fanning a
   job out needs a discriminator.
+- **Recorded scope (J5).** A worker runs a job's actions only through
+  `executeJobAction(deps, { job, envelope, action, input, fanOutCompanyId? })`.
+  The envelope must name `job` and carry a company exactly when `job.scope` is
+  `tenant`; otherwise `CoreInvariantError`. It runs a `system` action of the
+  job's module, as `system:<job name>`, with the
+  envelope's request id, correlation id and channel; the job id is the
+  causation id and, for an idempotent action, the idempotency key, so a retry
+  derives the same child job ids (an action that enqueues from a job must be
+  idempotent). A tenant job runs in its recorded company; a global job runs a
+  global action. A scheduled job that fans out tenant work takes each company
+  from a row its module owns, read in the same transaction: only a `global`
+  `periodic` job passes `fanOutCompanyId`, and the tenant action loads its
+  owning rows filtered by that company inside its execution transaction and
+  fails closed on a miss. The worker verifies that the recorded company
+  exists, and fails closed: the system context built at step 7 reads the
+  company row in the execution transaction (`FOR KEY SHARE` for a mutation, a
+  plain `SELECT` in a read's read-only transaction) and throws `NotFoundError`
+  on a miss. A `risk: read` action keeps its `ReadTx`, read-only transaction and
+  `consistency`, and still cannot enqueue (J4). No wrapper transaction holds a connection around
+  the pipeline. There is no company status check. Staff actions keep their
+  own paths; this entrypoint produces no staff caller.
 - **Test kit.** `createTestKit` composes `createRecordingJobPort()` as
   `kit.jobs`; it records what reached the port at step 9. Commit-time
   atomicity of a real runner is the adapter conformance suite's proof.
@@ -716,6 +737,15 @@ Exported from `packages/core/testing`, used by every module (this is how
   cannot read or write token B's resource; expired, revoked, and mismatched
   tokens are `NotFoundError`; co-sign (and any other share write) MUST NOT
   create CRM rows; raw token is absent from logs/audit/events.
+- `jobIsolationSuite(cases)` with `jobIsolationCase(job, action, own,
+  foreign?)` — runs the action through `executeJobAction` in company A (a
+  global periodic job fans out to A): the own payload succeeds, a payload naming
+  another company's row is `NotFoundError`/`PermissionDeniedError`, and the own
+  payload in an existing company without owned rows and in a company that does
+  not exist fails closed, committing no audit success or event. `foreign` is
+  required for a tenant job and may be omitted for a periodic fan-out whose
+  action takes the company from its scope. `buildJobEnvelope` builds the
+  test envelope.
 - `idempotencySuite(action)` — replay, conflict, concurrent-retry cases.
 - `eventSuite(module)` — declared events emitted transactionally (rollback
   removes them), consumer dedup respected.
