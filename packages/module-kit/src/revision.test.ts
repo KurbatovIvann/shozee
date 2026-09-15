@@ -23,6 +23,7 @@ const alphaTable = pgTable("revision_type_alpha", {
   id: uuid("id").primaryKey(),
   slug: text("slug").notNull(),
   note: text("note"),
+  customerId: uuid("customer_id").notNull(),
   companyId: uuid("company_id").notNull(),
   revision: integer("revision").notNull().default(1),
 });
@@ -43,12 +44,16 @@ const alphaTwinTable = pgTable("revision_type_alpha", {
 type AlphaKeyColumn = RevisionRoot<typeof alphaTable>["keyColumn"];
 
 describe("RevisionRoot", () => {
-  it("accepts a non-null uuid column of its own table as the key", () => {
+  it("accepts the primary-key uuid column of its own table as the key", () => {
     expectTypeOf(alphaTable.id).toExtend<AlphaKeyColumn>();
   });
 
   it("rejects the company column as the key", () => {
     expectTypeOf(alphaTable.companyId).not.toExtend<AlphaKeyColumn>();
+  });
+
+  it("rejects a non-key uuid column of its own table as the key", () => {
+    expectTypeOf(alphaTable.customerId).not.toExtend<AlphaKeyColumn>();
   });
 
   it("rejects a key column of another table", () => {
@@ -100,6 +105,7 @@ type WidenedBump = RevisionTarget & {
       data: string;
       notNull: true;
       columnType: "PgUUID";
+      isPrimaryKey: true;
     }>;
   };
 };

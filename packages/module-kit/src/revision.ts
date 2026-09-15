@@ -11,10 +11,11 @@ type UuidKeyColumn = AnyPgColumn<{
   data: string;
   notNull: true;
   columnType: "PgUUID";
+  isPrimaryKey: true;
 }>;
 
 type OwnUuidKeyColumn<TTable extends RevisionTable> = Extract<
-  TTable["_"]["columns"][Exclude<keyof TTable["_"]["columns"], "companyId">],
+  TTable["_"]["columns"][keyof TTable["_"]["columns"]],
   UuidKeyColumn
 >;
 
