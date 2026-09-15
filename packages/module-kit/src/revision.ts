@@ -4,7 +4,11 @@ import type { AnyPgColumn, PgTable } from "drizzle-orm/pg-core";
 
 export type RevisionTable = PgTable & {
   readonly revision: AnyPgColumn<{ data: number; notNull: true }>;
-  readonly companyId: AnyPgColumn<{ data: string; notNull: true }>;
+  readonly companyId: AnyPgColumn<{
+    data: string;
+    notNull: true;
+    columnType: "PgUUID";
+  }>;
 };
 
 type UuidKeyColumn = AnyPgColumn<{
@@ -74,7 +78,13 @@ export function bumpRevision<TTable extends RevisionTable>(
   return raiseRevision(tx, root, target);
 }
 
-function lockOrderIdentity(bump: UncheckedRevisionBump): readonly string[] {
+type LockOrderIdentity = readonly [
+  table: string,
+  key: string,
+  companyId: string,
+];
+
+function lockOrderIdentity(bump: UncheckedRevisionBump): LockOrderIdentity {
   return [
     getTableUniqueName(bump.root.table),
     bump.key.toLowerCase(),
@@ -82,20 +92,25 @@ function lockOrderIdentity(bump: UncheckedRevisionBump): readonly string[] {
   ];
 }
 
+function compareParts(left: string, right: string): number {
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
+}
+
 function compareIdentities(
-  left: readonly string[],
-  right: readonly string[],
+  [leftTable, leftKey, leftCompany]: LockOrderIdentity,
+  [rightTable, rightKey, rightCompany]: LockOrderIdentity,
 ): number {
-  for (const [index, part] of left.entries()) {
-    const other = right[index] ?? "";
-    if (part !== other) return part < other ? -1 : 1;
-  }
-  return 0;
+  return (
+    compareParts(leftTable, rightTable) ||
+    compareParts(leftKey, rightKey) ||
+    compareParts(leftCompany, rightCompany)
+  );
 }
 
 interface MergedBump {
   readonly bump: UncheckedRevisionBump;
-  readonly identity: readonly string[];
+  readonly identity: LockOrderIdentity;
   readonly indexes: number[];
 }
 

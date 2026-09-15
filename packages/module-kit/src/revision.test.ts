@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import {
   type AnyPgColumn,
   integer,
+  pgSchema,
   pgTable,
   text,
   uuid,
@@ -34,10 +35,18 @@ const betaTable = pgTable("revision_type_beta", {
   revision: integer("revision").notNull().default(1),
 });
 
-const alphaTwinTable = pgTable("revision_type_alpha", {
+const alphaTwinTable = pgSchema("revision_type_twin").table(
+  "revision_type_alpha",
+  {
+    id: uuid("id").primaryKey(),
+    companyId: uuid("company_id").notNull(),
+    revision: integer("revision").notNull().default(1),
+  },
+);
+
+const textCompanyTable = pgTable("revision_type_text_company", {
   id: uuid("id").primaryKey(),
-  externalId: uuid("external_id").notNull(),
-  companyId: uuid("company_id").notNull(),
+  companyId: text("company_id").notNull(),
   revision: integer("revision").notNull().default(1),
 });
 
@@ -60,8 +69,13 @@ describe("RevisionRoot", () => {
     expectTypeOf(betaTable.id).not.toExtend<AlphaKeyColumn>();
   });
 
-  it("rejects a key column of a same-named table that its own table lacks", () => {
-    expectTypeOf(alphaTwinTable.externalId).not.toExtend<AlphaKeyColumn>();
+  it("accepts the key column of a same-named table in another schema, because column types carry no schema", () => {
+    expectTypeOf(alphaTwinTable).toExtend<RevisionTable>();
+    expectTypeOf(alphaTwinTable.id).toExtend<AlphaKeyColumn>();
+  });
+
+  it("rejects a table whose company column is not a uuid", () => {
+    expectTypeOf(textCompanyTable).not.toExtend<RevisionTable>();
   });
 
   it("rejects a text, nullable, or non-string key column", () => {
