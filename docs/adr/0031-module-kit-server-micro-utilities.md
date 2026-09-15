@@ -2,6 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-08-31
+- **Amended**: 2026-09-15 — `./revision` dependency exception: ADR-0042, SHO-622
 - **Deciders**: Ivan Kurbatov (human) (+ proposing agent)
 
 ## Context
@@ -54,5 +55,8 @@ and money **wire** schemas remain `@showzy/validation` (SHO-284).
   No client-app exception. No domain-module → domain-module service holes.
 - Allowed kit dependencies: `@showzy/core`, `@showzy/core/errors`, `zod`,
   `node:crypto`. No new third-party npm.
+  Exception (2026-09-15, ADR-0042, SHO-622): the `./revision` subpath also
+  depends on `drizzle-orm` and on `@showzy/db` (peer + dev dependency). The
+  rest of the kit stays within the list above.
 - Follow-up consolidations of other server copies use this package; they
   do not reopen the home decision.
