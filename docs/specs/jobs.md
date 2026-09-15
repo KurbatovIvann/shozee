@@ -81,3 +81,50 @@ and is left untouched. Proof: `src/pgboss-schema.db.test.ts`.
 - Proof: `packages/modules/assistant/src/actions/turn-claim.db.test.ts`
   (forced interleaving of a history save, a card write and a finish against
   an interrupt followed by a new accept).
+
+## 6. Job data and the job port
+
+- `createPgBossJobPort(boss)` implements core's `JobPort`. `enqueue(tx,
+  envelopes)` sends each envelope with pg-boss `send` through
+  `fromDrizzle(tx)`, so the job row commits or rolls back with the
+  enqueuing transaction (J1). The pg-boss job id is the envelope id (J2).
+- Stored job data is the envelope without `id` and `name`: `companyId`,
+  `actor`, `channel`, `requestId`, `correlationId`, `executionId` and the
+  identity-only `payload`. Every value is an id, a uuid or a fixed enum; no
+  free text reaches a job row (J6, SHO-659).
+- A send whose id the runner still holds (pg-boss answers `null`) throws
+  `CoreInvariantError` and rolls the enqueuing transaction back; it is never
+  dropped silently. That happens only when an idempotency key is reused
+  after its idempotency record expired while pg-boss still retains the job
+  (SHO-681). Retention is not matched to the idempotency TTL: two stores
+  with one number are not synchronised, and the domain row stays the source
+  of truth.
+
+## 7. Runner settings and queue provisioning
+
+- `openJobRunner({ db, jobs, onError }, role)` builds one `PgBoss` over the
+  app's Drizzle pool with the migrator off (§2), `useListenNotify: false`
+  (workers poll, ADR-0041 §2), and `supervise`/`schedule` on only for the
+  `worker` role. The `api` role is send-only.
+- The declared jobs are `registeredJobs` in `apps/api/src/registry.ts`, the
+  one list composition checks and both apps open the runner with.
+- One queue per job, named after the job. Stored settings derive from the
+  declaration: `retryLimit` = `retries`, `expireInSeconds` =
+  `ceil(attemptTimeoutMs / 1000)`, policy `standard`, `partition: false`,
+  `notify: false`, no retry delay or backoff, no heartbeat,
+  `retentionSeconds` and `deleteAfterSeconds` one day. Concurrency is a
+  worker-host `work` option, not a stored setting.
+- An `expires` job also gets a dead letter `<job>.exhausted` (zero retries,
+  same expiry), provisioned before its queue; `periodic` jobs have none.
+- The `worker` role creates missing queues (`createQueue`: one
+  `pgboss.queue` row under an advisory transaction lock, no DDL, so
+  `showzy_app` suffices). Both roles then compare every stored setting with
+  the declaration and throw `CoreInvariantError` on a missing queue or any
+  difference, before `start()`: pg-boss ignores changed options on an
+  existing queue, so boot refuses instead (J7). The `api` role never creates
+  a queue; an API booted before the worker provisioned fails fast.
+- Proof: the conformance suite `@showzy/jobs/conformance`
+  (`describeJobRunnerConformance`), run against pg-boss by
+  `src/pgboss-conformance.db.test.ts`: J1 rollback and commit, a held id
+  refused, J6 stored data, J7 changed declaration and unprovisioned API
+  boot. Declarations: `src/queue-provisioning.test.ts`.

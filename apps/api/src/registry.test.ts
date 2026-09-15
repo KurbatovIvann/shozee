@@ -118,12 +118,12 @@ describe("@showzy/api/registry", () => {
     expect(findings).toEqual([]);
   });
 
-  it("exports createActionRegistry and nothing else", () => {
+  it("exports createActionRegistry, registeredJobs and nothing else", () => {
     expect(
       [...source("registry.ts").matchAll(/^export\s+\S+\s+(\w+)/gm)].map(
         (match) => match[1],
       ),
-    ).toEqual(["createActionRegistry"]);
+    ).toEqual(["createActionRegistry", "registeredJobs"]);
   });
 
   it("is the registry the contract check walks and the API boots", () => {

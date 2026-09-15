@@ -6,6 +6,7 @@
  */
 import { randomUUID } from "node:crypto";
 
+import { registeredJobs } from "@showzy/api/registry";
 import type { ServerConfig } from "@showzy/config";
 import { createDbClient } from "@showzy/db";
 import {
@@ -13,6 +14,7 @@ import {
   configureFilesObjectStore,
   probeFilesObjectStore,
 } from "@showzy/files/storage";
+import { openJobRunner } from "@showzy/jobs";
 import { Redis } from "ioredis";
 import type { Logger } from "pino";
 
@@ -82,6 +84,17 @@ export async function bootWorker(
       },
     });
     releases.push(() => db.pool.end());
+    const jobRunner = await openJobRunner(
+      {
+        db: db.db,
+        jobs: registeredJobs,
+        onError: (error) => {
+          logger.error({ err: error }, "job runner error");
+        },
+      },
+      "worker",
+    );
+    releases.push(() => jobRunner.close());
     const redis = new Redis(config.redis.url);
     releases.push(async () => {
       await redis.quit();
@@ -92,6 +105,7 @@ export async function bootWorker(
       db: db.db,
       logger,
       telemetry,
+      jobs: jobRunner.port,
       rateLimitStore: createRedisRateLimitStore(redis),
       confirmationStore: createRedisConfirmationStore(redis),
       ipHmacSecret: config.rateLimit.ipHmacSecret,
@@ -159,6 +173,7 @@ export async function bootWorker(
         await loop.stop();
         closeFilesObjectStore();
         await redis.quit();
+        await jobRunner.close();
         await db.pool.end();
       },
     };
