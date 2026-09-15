@@ -14,7 +14,7 @@ import { assistantActions } from "@showzy/assistant";
 import { catalogActions } from "@showzy/catalog";
 import { chatActions } from "@showzy/chat";
 import { companiesActions } from "@showzy/companies";
-import { ActionRegistry, type ImplementedAction } from "@showzy/core";
+import { ActionRegistry, type ImplementedAction, type Job } from "@showzy/core";
 import { customersActions } from "@showzy/customers";
 import { docGenerationActions } from "@showzy/doc-generation";
 import { docSigningActions } from "@showzy/doc-signing";
@@ -54,3 +54,5 @@ export function createActionRegistry(): ActionRegistry {
   registerActions(registry, searchActions);
   return registry;
 }
+
+export const registeredJobs: readonly Job[] = [];
