@@ -50,6 +50,7 @@ import {
 import { assertDeclaredPermissions } from "../context/permissions.js";
 import type { ActionCtx, CtxCall, CtxCallAtomic } from "../context/types.js";
 import { createEmitBuffer } from "../events/emit.js";
+import { rejectNestedEnqueue } from "../jobs/enqueue.js";
 import type { ImplementedAction } from "../implement-action.js";
 import type { TargetResolver } from "../types.js";
 import {
@@ -185,6 +186,7 @@ export function createCtxCall(env: CtxCallEnv): CtxCall {
         // Only reads are callable, so any emit throws the precise §4
         // read-action message; the buffer is never flushed.
         emit: createEmitBuffer({ contract: callee, now: env.now }).emit,
+        enqueue: rejectNestedEnqueue(callee.name),
         call: createCtxCall({
           ...env,
           callerContract: callee,

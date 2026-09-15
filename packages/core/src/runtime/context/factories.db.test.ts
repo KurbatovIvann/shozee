@@ -130,6 +130,9 @@ function runtimeFor<TDb>(
     emit: () => {
       throw new Error("fixture contexts cannot emit");
     },
+    enqueue: () => {
+      throw new Error("fixture contexts cannot enqueue");
+    },
     call: () => {
       throw new Error("fixture contexts cannot call");
     },

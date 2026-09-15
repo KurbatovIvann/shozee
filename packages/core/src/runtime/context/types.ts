@@ -12,6 +12,7 @@ import type { ProjectionGrant, ProjectionReadTx, ReadTx, Tx } from "@showzy/db";
 import type { Logger } from "pino";
 import type { z } from "zod";
 
+import type { Job } from "../../jobs/define-job.js";
 import type { EventDefinition, EventEmission } from "../events/define-event.js";
 // Type-only and erased at compile time — no runtime import cycle exists.
 import type { ImplementedAction } from "../implement-action.js";
@@ -66,6 +67,11 @@ export interface StaffMembership {
 export type CtxEmit = <TPayload extends z.ZodType>(
   event: EventDefinition<TPayload>,
   emission: EventEmission<TPayload>,
+) => void;
+
+export type CtxEnqueue = <TPayload extends z.ZodObject>(
+  job: Job<TPayload>,
+  payload: z.input<TPayload>,
 ) => void;
 
 /**
@@ -135,6 +141,7 @@ export interface BaseCtx<TDb> {
   /** pino child bound to request/actor/company/action (security-ops §6). */
   readonly log: Logger;
   readonly emit: CtxEmit;
+  readonly enqueue: CtxEnqueue;
   readonly call: CtxCall;
   readonly callAtomic: CtxCallAtomic;
 }

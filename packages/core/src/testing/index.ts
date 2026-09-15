@@ -20,6 +20,7 @@ export {
 export {
   buildTestContext,
   createCapturingLogger,
+  createRecordingJobPort,
   createTestKit,
   invokeAction,
   seedTestKit,
@@ -28,6 +29,7 @@ export type {
   BuildTestContextOverrides,
   InvokeOptions,
   IsolationActor,
+  RecordingJobPort,
   TestKit,
 } from "./kit.js";
 export {
