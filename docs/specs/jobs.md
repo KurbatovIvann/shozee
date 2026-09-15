@@ -135,7 +135,7 @@ and is left untouched. Proof: `src/pgboss-schema.db.test.ts`.
   (`createJobWorker`, `src/worker-host.ts`) registers one pg-boss `work` per
   handler (`perJobResults`, `includeMetadata`, `batchSize: 1`, polling). An
   `api` runner, a second `work` call, a handler for an undeclared job, a
-  duplicate handler, an `onExhausted` binding whose action name differs from
+  declared job without a handler, a duplicate handler, an `onExhausted` binding whose action name differs from
   the declaration, or a non-global `periodic` job throw `CoreInvariantError`.
 - A handler receives `{ envelope, signal, run(action, input, fanOutCompanyId?) }`.
   `run` is `executeJobAction` with the handler's job and recorded envelope, so

@@ -608,15 +608,20 @@ export function describeJobRunnerConformance(
         );
         await delay(3_000);
 
-        const jobs = await target.readJobs(database, job.name);
+        const { jobs, ranIds } = await eventually(
+          async () => {
+            const rows = await target.readJobs(database, job.name);
+            return { jobs: rows, ranIds: runs.map(({ id }) => id) };
+          },
+          ({ jobs: rows }) => rows.every(({ state }) => state === "completed"),
+        );
+        expect(ranIds.length).toBeGreaterThan(0);
         const minutes = jobs.map(({ createdOn }) =>
           Math.floor(createdOn.getTime() / 60_000),
         );
         expect(new Set(minutes).size).toBe(jobs.length);
-        expect(new Set(runs.map(({ id }) => id)).size).toBe(runs.length);
-        expect(runs.map(({ id }) => id).sort()).toEqual(
-          jobs.map(({ id }) => id).sort(),
-        );
+        expect(new Set(ranIds).size).toBe(ranIds.length);
+        expect([...ranIds].sort()).toEqual(jobs.map(({ id }) => id).sort());
         expect(runs.every(({ scope }) => scope === "global")).toBe(true);
       });
     });
@@ -669,6 +674,16 @@ export function describeJobRunnerConformance(
         await expect(
           work(api, [handlerFor(job, () => Promise.resolve())]),
         ).rejects.toBeInstanceOf(CoreInvariantError);
+      });
+
+      it("a worker refuses to boot when a declared job has no handler", async () => {
+        const handled = conformanceJob("handledJob");
+        const unhandled = conformanceJob("unhandledJob");
+        const runner = await open([handled, unhandled], "worker");
+
+        await expect(
+          work(runner, [handlerFor(handled, () => Promise.resolve())]),
+        ).rejects.toThrow(/declared job "[^"]*unhandledJob" has no handler/);
       });
     });
   });

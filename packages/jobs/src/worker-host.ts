@@ -246,6 +246,11 @@ function assertHandlersMatchDeclarations(
       );
     }
   }
+  for (const { name } of declared) {
+    if (!seen.has(name)) {
+      problems.push(`declared job "${name}" has no handler`);
+    }
+  }
   if (problems.length > 0) {
     throw new CoreInvariantError(
       `job handlers do not match their declarations:\n${problems.join("\n")}`,
