@@ -90,9 +90,6 @@ function actionRefusal(
   if (moduleOf(contract.name) !== moduleOf(envelope.name)) {
     return `a job runs actions of its own module "${moduleOf(envelope.name)}"`;
   }
-  if (contract.risk === "read") {
-    return "a job runs mutations; a read runs through ctx.call inside one";
-  }
   if ((contract.enqueues ?? []).length > 0 && !contract.idempotent) {
     return "an action that enqueues from a job must be idempotent, so a retry derives the same job ids from the job id";
   }

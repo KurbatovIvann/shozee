@@ -1105,7 +1105,11 @@ async function constructPrincipalContext<
         ? await createExistingCompanySystemContext(
             principal.serviceName,
             principal.scope,
-            { request, runtime: env.makeRuntime(capability) },
+            {
+              request,
+              runtime: env.makeRuntime(capability),
+              readOnly: contract.risk === "read",
+            },
           )
         : createSystemContext(principal.serviceName, principal.scope, {
             request,

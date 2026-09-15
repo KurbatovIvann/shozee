@@ -9,7 +9,7 @@ import {
   type Tx,
 } from "@showzy/db";
 import { fixtureCrmCustomers } from "@showzy/db/testing/fixtures";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
@@ -232,6 +232,34 @@ const renameForCompany = implementAction(
   },
 );
 
+const leakyRenameForCompany = implementAction(
+  defineActionContract({
+    ...systemWrite,
+    name: "jobRun.leakyRenameForCompany",
+    description: "Renames customers of one company without requiring any.",
+    input: z.object({}),
+    output: z.object({ changed: z.number() }),
+    idempotent: true,
+    audit: true,
+    emits: [],
+    errors: [],
+  }),
+  {
+    handler: async (_input, ctx) => {
+      if (ctx.scope !== "tenant") {
+        throw new CoreInvariantError("fixture expected a tenant scope");
+      }
+      const changed = await requireWritable(ctx.db)
+        .update(fixtureCrmCustomers)
+        .set({ displayName: "swept" })
+        .where(eq(fixtureCrmCustomers.companyId, ctx.companyId))
+        .returning({ id: fixtureCrmCustomers.id });
+      return { changed: changed.length };
+    },
+    auditTarget,
+  },
+);
+
 const sweepGlobal = implementAction(
   defineActionContract({
     ...systemWrite,
@@ -289,20 +317,84 @@ const foreignModuleTouch = implementAction(
   { handler: () => Promise.resolve({ ok: true }), auditTarget },
 );
 
-const readTouch = implementAction(
+const systemRead = {
+  ...systemWrite,
+  risk: "read",
+  idempotent: false,
+  audit: false,
+  emits: [],
+} as const;
+
+const readCustomer = implementAction(
   defineActionContract({
-    ...systemWrite,
-    risk: "read",
-    name: "jobRun.readTouch",
-    description: "Read fixture.",
+    ...systemRead,
+    name: "jobRun.readCustomer",
+    description: "Reads one customer of the recorded company.",
+    input: customerInput,
+    output: z.object({ displayName: z.string(), writable: z.boolean() }),
+    errors: ["NOT_FOUND"],
+  }),
+  {
+    handler: async (input, ctx) => {
+      if (ctx.scope !== "tenant") {
+        throw new CoreInvariantError("fixture expected a tenant scope");
+      }
+      const [row] = await ctx.db
+        .select({ displayName: fixtureCrmCustomers.displayName })
+        .from(fixtureCrmCustomers)
+        .where(
+          and(
+            eq(fixtureCrmCustomers.id, input.customerId),
+            eq(fixtureCrmCustomers.companyId, ctx.companyId),
+          ),
+        );
+      if (row === undefined) {
+        throw new NotFoundError();
+      }
+      return { displayName: row.displayName, writable: "insert" in ctx.db };
+    },
+  },
+);
+
+const snapshotReadCustomers = implementAction(
+  defineActionContract({
+    ...systemRead,
+    consistency: "snapshot",
+    name: "jobRun.snapshotReadCustomers",
+    description: "Reads the recorded company's customers in one snapshot.",
     input: z.object({}),
-    output: z.object({ ok: z.boolean() }),
-    idempotent: false,
-    audit: true,
-    emits: [],
+    output: z.object({
+      customers: z.number(),
+      isolation: z.string(),
+      readOnly: z.string(),
+      writable: z.boolean(),
+    }),
     errors: [],
   }),
-  { handler: () => Promise.resolve({ ok: true }), auditTarget },
+  {
+    handler: async (_input, ctx) => {
+      if (ctx.scope !== "tenant") {
+        throw new CoreInvariantError("fixture expected a tenant scope");
+      }
+      const rows = await ctx.db
+        .select({
+          isolation: sql<string>`current_setting('transaction_isolation')`,
+          readOnly: sql<string>`current_setting('transaction_read_only')`,
+        })
+        .from(fixtureCrmCustomers)
+        .where(eq(fixtureCrmCustomers.companyId, ctx.companyId));
+      const [first] = rows;
+      if (first === undefined) {
+        throw new NotFoundError();
+      }
+      return {
+        customers: rows.length,
+        isolation: first.isolation,
+        readOnly: first.readOnly,
+        writable: "insert" in ctx.db,
+      };
+    },
+  },
 );
 
 const nonIdempotentEnqueuer = implementAction(
@@ -637,10 +729,63 @@ describe("executeJobAction runs in the recorded scope (J5)", () => {
     }
   });
 
+  it("runs a system read of a tenant job in the recorded company on a read-only capability", async () => {
+    await expect(
+      executeJobAction(kit.pipeline, {
+        job: touchJob,
+        envelope: touchEnvelope(),
+        action: readCustomer,
+        input: { customerId: sentinelId() },
+      }),
+    ).resolves.toEqual({
+      displayName: await displayNameOf(sentinelId()),
+      writable: false,
+    });
+  });
+
+  it.each<[string, () => { companyId: string; customerId: string }]>([
+    [
+      "a payload naming another company's row",
+      () => ({ companyId: companyA(), customerId: foreignCustomerId }),
+    ],
+    [
+      "a recorded company that does not exist",
+      () => ({ companyId: randomUUID(), customerId: sentinelId() }),
+    ],
+  ])("fails a system read job action closed on %s", async (_label, target) => {
+    const { companyId, customerId } = target();
+    await expect(
+      executeJobAction(kit.pipeline, {
+        job: touchJob,
+        envelope: buildJobEnvelope(touchJob, {
+          companyId,
+          payload: { customerId },
+        }),
+        action: readCustomer,
+        input: { customerId },
+      }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it("runs a snapshot read job action in one read-only repeatable-read transaction", async () => {
+    await expect(
+      executeJobAction(kit.pipeline, {
+        job: touchJob,
+        envelope: touchEnvelope(),
+        action: snapshotReadCustomers,
+        input: {},
+      }),
+    ).resolves.toEqual({
+      customers: expect.any(Number) as number,
+      isolation: "repeatable read",
+      readOnly: "on",
+      writable: false,
+    });
+  });
+
   it.each<[string, SuiteAction]>([
     ["a staff action", staffTouch],
     ["another module's action", foreignModuleTouch],
-    ["a read action", readTouch],
     ["a non-idempotent action that enqueues", nonIdempotentEnqueuer],
   ])("refuses %s", async (_label, action) => {
     await expect(
@@ -680,5 +825,38 @@ describe("jobIsolationCase", () => {
         jobIsolationCase(touchJob, leakyTouch, own, foreign),
       ),
     ).rejects.toThrow(/to be denied/);
+  });
+
+  it("refuses a tenant job case without a foreign payload", async () => {
+    await expect(
+      runJobIsolationCase(kit, jobIsolationCase(touchJob, touchCustomer, own)),
+    ).rejects.toThrow(/needs a foreign payload/);
+  });
+
+  it("passes a periodic fan-out action that loads the fan-out company's owned rows", async () => {
+    const foreignBefore = await displayNameOf(foreignCustomerId);
+
+    await runJobIsolationCase(
+      kit,
+      jobIsolationCase(sweepJob, renameForCompany, {
+        payload: { kind: "daily" },
+        input: {},
+      }),
+    );
+
+    expect(await displayNameOf(sentinelId())).toBe("swept");
+    expect(await displayNameOf(foreignCustomerId)).toBe(foreignBefore);
+  });
+
+  it("fails a periodic fan-out action that succeeds for a company without owned rows", async () => {
+    await expect(
+      runJobIsolationCase(
+        kit,
+        jobIsolationCase(sweepJob, leakyRenameForCompany, {
+          payload: { kind: "daily" },
+          input: {},
+        }),
+      ),
+    ).rejects.toThrow(/without owned rows.*to be denied/);
   });
 });

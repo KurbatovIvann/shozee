@@ -490,17 +490,20 @@ export async function createExistingCompanySystemContext<TDb extends ReadTx>(
   options: {
     readonly request: ActionRequestMeta;
     readonly runtime: ContextRuntime<TDb>;
+    readonly readOnly: boolean;
   },
 ): Promise<SystemCtx<TDb>> {
   const ctx = createSystemContext(serviceName, scope, options);
   if (scope.scope === "global") {
     return ctx;
   }
-  const rows = await options.runtime.db
+  const companyRow = options.runtime.db
     .select({ id: companies.id })
     .from(companies)
-    .where(eq(companies.id, scope.companyId))
-    .for("key share");
+    .where(eq(companies.id, scope.companyId));
+  const rows = options.readOnly
+    ? await companyRow
+    : await companyRow.for("key share");
   if (rows.length === 0) {
     throw new NotFoundError(undefined, {
       internalMessage: `system:${serviceName} ran "${options.request.action}" for company ${scope.companyId}, which does not exist`,

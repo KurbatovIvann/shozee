@@ -521,7 +521,7 @@ runner settings from the same declaration (`docs/specs/jobs.md`).
   `executeJobAction(deps, { job, envelope, action, input, fanOutCompanyId? })`.
   The envelope must name `job` and carry a company exactly when `job.scope` is
   `tenant`; otherwise `CoreInvariantError`. It runs a `system` action of the
-  job's module with `risk` other than `read`, as `system:<job name>`, with the
+  job's module, as `system:<job name>`, with the
   envelope's request id, correlation id and channel; the job id is the
   causation id and, for an idempotent action, the idempotency key, so a retry
   derives the same child job ids (an action that enqueues from a job must be
@@ -531,9 +531,11 @@ runner settings from the same declaration (`docs/specs/jobs.md`).
   `periodic` job passes `fanOutCompanyId`, and the tenant action loads its
   owning rows filtered by that company inside its execution transaction and
   fails closed on a miss. The worker verifies that the recorded company
-  exists, and fails closed: the system context built at step 7 locks the
-  company row (`FOR KEY SHARE`) in the execution transaction and throws
-  `NotFoundError` on a miss. No wrapper transaction holds a connection around
+  exists, and fails closed: the system context built at step 7 reads the
+  company row in the execution transaction (`FOR KEY SHARE` for a mutation, a
+  plain `SELECT` in a read's read-only transaction) and throws `NotFoundError`
+  on a miss. A `risk: read` action keeps its `ReadTx`, read-only transaction and
+  `consistency`, and still cannot enqueue (J4). No wrapper transaction holds a connection around
   the pipeline. There is no company status check. Staff actions keep their
   own paths; this entrypoint produces no staff caller.
 - **Test kit.** `createTestKit` composes `createRecordingJobPort()` as
@@ -736,10 +738,13 @@ Exported from `packages/core/testing`, used by every module (this is how
   tokens are `NotFoundError`; co-sign (and any other share write) MUST NOT
   create CRM rows; raw token is absent from logs/audit/events.
 - `jobIsolationSuite(cases)` with `jobIsolationCase(job, action, own,
-  foreign)` — runs the action through `executeJobAction` in company A (a
+  foreign?)` — runs the action through `executeJobAction` in company A (a
   global periodic job fans out to A): the own payload succeeds, a payload naming
-  another company's row is `NotFoundError`/`PermissionDeniedError`, and a
-  company that does not exist fails closed. `buildJobEnvelope` builds the
+  another company's row is `NotFoundError`/`PermissionDeniedError`, and the own
+  payload in an existing company without owned rows and in a company that does
+  not exist fails closed, committing no audit success or event. `foreign` is
+  required for a tenant job and may be omitted for a periodic fan-out whose
+  action takes the company from its scope. `buildJobEnvelope` builds the
   test envelope.
 - `idempotencySuite(action)` — replay, conflict, concurrent-retry cases.
 - `eventSuite(module)` — declared events emitted transactionally (rollback
