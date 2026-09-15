@@ -499,7 +499,12 @@ describe("the message log", () => {
         },
         {},
       ),
-    ).toEqual({ conversationId: fixtures.log, seq: 3, revision: 2 });
+    ).toEqual({
+      outcome: "updated",
+      conversationId: fixtures.log,
+      seq: 3,
+      revision: 2,
+    });
 
     const page = await kit.invoke(
       readChatMessages,

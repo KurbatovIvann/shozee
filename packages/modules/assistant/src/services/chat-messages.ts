@@ -191,7 +191,7 @@ export async function updateStaffChatMessage(env: {
   readonly revision: number;
   readonly message: Record<string, unknown>;
   readonly claim: TurnClaim | undefined;
-}): Promise<{ readonly seq: number; readonly revision: number }> {
+}): Promise<{ readonly seq: number; readonly revision: number } | "stale"> {
   await loadOwnConversation({
     db: env.ctx.db,
     companyId: env.ctx.companyId,
@@ -240,7 +240,5 @@ export async function updateStaffChatMessage(env: {
   if (exists.length === 0) {
     throw new NotFoundError();
   }
-  throw new ConflictError(
-    "This message changed after it was read; read it again.",
-  );
+  return "stale";
 }

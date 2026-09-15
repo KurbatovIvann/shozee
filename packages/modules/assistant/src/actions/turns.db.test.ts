@@ -2040,7 +2040,12 @@ describe("a message's revision", () => {
         },
         {},
       );
-      expect(updated).toEqual({ conversationId, seq: 2, revision: expected });
+      expect(updated).toEqual({
+        outcome: "updated",
+        conversationId,
+        seq: 2,
+        revision: expected,
+      });
     }
 
     const page = await kit.invoke(
@@ -2063,7 +2068,7 @@ describe("a message's revision", () => {
    * update from a revision the message no longer has must store nothing rather
    * than erase what it never read.
    */
-  it("refuses an update from a revision the message has moved past, and stores nothing", async () => {
+  it("answers stale, not a conflict, for a revision the message has moved past, and stores nothing", async () => {
     const conversationId = await newConversation();
     const input = chatAccept(conversationId);
     await kit.invoke(acceptTurn, input, {});
@@ -2079,8 +2084,8 @@ describe("a message's revision", () => {
       {},
     );
 
-    await expect(
-      kit.invoke(
+    expect(
+      await kit.invoke(
         updateChatMessage,
         {
           ...placeholder,
@@ -2089,7 +2094,7 @@ describe("a message's revision", () => {
         },
         {},
       ),
-    ).rejects.toBeInstanceOf(ConflictError);
+    ).toEqual({ outcome: "stale", conversationId, seq: 2 });
 
     const stored = await kit.db.runtime.db
       .select({
@@ -2107,7 +2112,7 @@ describe("a message's revision", () => {
         { ...placeholder, revision: 2, message: input.placeholder.message },
         {},
       ),
-    ).toEqual({ conversationId, seq: 2, revision: 3 });
+    ).toEqual({ outcome: "updated", conversationId, seq: 2, revision: 3 });
   });
 
   it("is not-found, not a conflict, for a pair that names no message", async () => {
