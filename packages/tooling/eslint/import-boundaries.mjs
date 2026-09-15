@@ -585,6 +585,20 @@ export const importBoundariesRule = {
           context.report({ node, messageId: "pgBossOutsideJobs" });
         }
       },
+      CallExpression(node) {
+        const [first] = node.arguments;
+        if (
+          !insideJobs &&
+          node.callee.type === "Identifier" &&
+          node.callee.name === "require" &&
+          first !== undefined &&
+          first.type === "Literal" &&
+          typeof first.value === "string" &&
+          isPgBossSpecifier(first.value)
+        ) {
+          context.report({ node, messageId: "pgBossOutsideJobs" });
+        }
+      },
     };
   },
 };

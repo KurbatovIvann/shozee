@@ -228,6 +228,14 @@ test("showzy/import-boundaries", () => {
         filename: file("apps/worker/src/boot.ts"),
         code: `import { assertPgBossSchema } from "@showzy/jobs";`,
       },
+      {
+        filename: file("packages/jobs/scripts/probe.cjs"),
+        code: `const { PgBoss } = require("pg-boss");`,
+      },
+      {
+        filename: file("apps/worker/src/boot.cjs"),
+        code: `const pg = require("pg"); const name = load("pg-boss");`,
+      },
     ],
     invalid: [
       {
@@ -243,6 +251,16 @@ test("showzy/import-boundaries", () => {
       {
         filename: file("packages/modules/orders/src/actions/create.ts"),
         code: `const boss = await import("pg-boss");`,
+        errors: [{ messageId: "pgBossOutsideJobs" }],
+      },
+      {
+        filename: file("apps/worker/src/boot.cjs"),
+        code: `const { PgBoss } = require("pg-boss");`,
+        errors: [{ messageId: "pgBossOutsideJobs" }],
+      },
+      {
+        filename: file("apps/api/src/boot.ts"),
+        code: `const plans = require("pg-boss/dist/plans.js");`,
         errors: [{ messageId: "pgBossOutsideJobs" }],
       },
       {

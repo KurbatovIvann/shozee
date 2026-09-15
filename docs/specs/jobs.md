@@ -12,8 +12,8 @@ queue provisioning, worker host, scheduler, conformance suite).
   (`packages/tooling/eslint`, `SERVER_ONLY_PACKAGES`).
 - `pg-boss` is pinned to exactly `12.31.0` and is imported only inside
   `packages/jobs`. `showzy/import-boundaries` refuses a static, re-export or
-  dynamic import of `pg-boss` or any `pg-boss/*` subpath anywhere else,
-  tests and scripts included (J15).
+  dynamic import, or a literal `require`, of `pg-boss` or any `pg-boss/*`
+  subpath anywhere else, tests and scripts included (J15).
 - The package owns no tables. Application code never reads or writes
   `pgboss` tables; the SQL pg-boss issues from inside the package is approved
   raw SQL (J15).
@@ -29,13 +29,24 @@ queue provisioning, worker host, scheduler, conformance suite).
   plans in `BEGIN`/`COMMIT`; the generator drops exactly that framing, because
   the drizzle migrator already runs every pending migration in one
   transaction and a nested `COMMIT` would end it. A library whose plans lose
-  that framing fails generation instead of being edited.
+  that framing fails generation instead of being edited. It also drops the
+  `SET LOCAL` lock and idle timeouts and the advisory lock the plans open with,
+  which would otherwise hold for every later migration in that transaction;
+  plans that stop opening with exactly those three statements fail generation.
+- The schema keeps the stock Postgres layout (`job` and `queue_stats` are
+  partitioned): 12.31.0 derives `noTablePartitioning` only from `backend`,
+  and the runtime must use the layout the schema was built with. Nothing the
+  runtime role runs creates a partition while queues stay `partition: false`
+  and `persistQueueStats` stays off; proof: the db test runs a supervise and
+  monitor pass as `showzy_app`.
 - Drift: `src/pgboss-migration.test.ts` regenerates the SQL and requires the
   committed file to match byte for byte, and the tag to be in the journal.
 - The library migrator never runs. Every pg-boss instance is built with
   `migrate: false` and `createSchema: false`. Upgrading pg-boss is a new
-  migration generated from `getMigrationPlans`, never `start()`; the drift
-  test and the pinned version change in that same PR.
+  migration generated from `getMigrationPlans`, never `start()`. That PR
+  pins the drift check of `0064` to the old library's plan, checks the new
+  migration against `getMigrationPlans` separately, and changes the pinned
+  version.
 
 ## 3. Boot check
 
@@ -49,6 +60,9 @@ and is left untouched. Proof: `src/pgboss-schema.db.test.ts`.
 - The migration grants `showzy_app` `USAGE` on schema `pgboss`, `SELECT`,
   `INSERT`, `UPDATE`, `DELETE` on its tables, and the same on tables later
   created in it by the migrating role. No `CREATE`, no `TRUNCATE`.
+- `INSERT` and `DELETE` on `pgboss.version` are revoked, so the runtime role
+  cannot install or remove the version row the boot check reads; `UPDATE`
+  stays because the runner stamps its maintenance columns.
 - That is what send, fetch and completion need; proof: the same db test sends,
   fetches and completes a job as the runtime role.
 - `showzy_app` runs no DDL, so a queue with `partition: true` (which creates a

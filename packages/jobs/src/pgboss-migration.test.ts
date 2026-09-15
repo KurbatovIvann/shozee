@@ -50,6 +50,25 @@ describe("pgboss migration", () => {
     );
   });
 
+  it("leaves no library lock or timeout setting in the migrator's transaction", () => {
+    const sqlText = pgBossMigrationSql();
+    expect(sqlText).not.toMatch(/^\s*SET LOCAL/m);
+    expect(sqlText).not.toMatch(/^\s*SELECT pg_advisory_xact_lock/m);
+    expect(sqlText).toMatch(/^CREATE SCHEMA IF NOT EXISTS pgboss;$/m);
+  });
+
+  it("keeps the version row out of reach of showzy_app inserts and deletes", () => {
+    const sqlText = pgBossMigrationSql();
+    const grant = sqlText.indexOf(
+      "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA pgboss TO showzy_app;",
+    );
+    const revoke = sqlText.indexOf(
+      "REVOKE INSERT, DELETE ON pgboss.version FROM showzy_app;",
+    );
+    expect(grant).toBeGreaterThan(-1);
+    expect(revoke).toBeGreaterThan(grant);
+  });
+
   it("grants showzy_app DML on pgboss and nothing that creates objects", () => {
     const sqlText = pgBossMigrationSql();
     expect(sqlText).toContain("GRANT USAGE ON SCHEMA pgboss TO showzy_app;");
