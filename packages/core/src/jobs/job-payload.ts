@@ -16,10 +16,31 @@ export interface JobIntegerBounds {
 const coreFields = new WeakSet<z.ZodType>();
 const corePayloads = new WeakSet<z.ZodType>();
 
+function isPlainContainer(value: unknown): value is object {
+  return (
+    Array.isArray(value) ||
+    (typeof value === "object" &&
+      value !== null &&
+      Object.getPrototypeOf(value) === Object.prototype)
+  );
+}
+
+function freezeDefinition<TSchema extends z.ZodType>(schema: TSchema): TSchema {
+  const { def } = schema;
+  for (const value of Object.values(def)) {
+    if (isPlainContainer(value)) {
+      Object.freeze(value);
+    }
+  }
+  Object.freeze(def);
+  return schema;
+}
+
 function field<TSchema extends z.ZodType>(
   schema: TSchema,
   jsonSafe: boolean,
 ): JobField<TSchema> {
+  freezeDefinition(schema);
   if (jsonSafe) {
     coreFields.add(schema);
   }
@@ -66,7 +87,7 @@ export const jobField = Object.freeze({
 export function jobPayload<const TShape extends JobPayloadShape>(
   shape: TShape,
 ): z.ZodObject<{ -readonly [K in keyof TShape]: TShape[K] }, z.core.$strict> {
-  const payload = z.strictObject({ ...shape });
+  const payload = freezeDefinition(z.strictObject({ ...shape }));
   corePayloads.add(payload);
   return payload;
 }

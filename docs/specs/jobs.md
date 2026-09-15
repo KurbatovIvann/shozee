@@ -197,6 +197,10 @@ and is left untouched. Proof: `src/pgboss-schema.db.test.ts`.
   Runs of one job can still overlap (a run longer than the interval); handlers
   must be safe to overlap. A removed declaration's schedule is not
   unscheduled: recorded, not built.
+- `defineJob` accepts a stricter cron subset than pg-boss's cron-parser: 5 or
+  6 fields of `*`, numbers or three-letter month/day names, ranges, `/` steps
+  and `,` lists, each within its field's range; `?`, `L`, `W`, `#` and `@`
+  macros are refused at define time.
 - Tuning: `openJobRunner({ intervals: { pollingSeconds, superviseSeconds,
   cronSeconds } })`; absent, the library defaults apply.
 - Proof: the conformance suite's J7 (thrown attempts, in-process timeout), J9

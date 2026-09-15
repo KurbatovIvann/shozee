@@ -140,10 +140,6 @@ describe("defineJob — valid declarations", () => {
       z.object({ step: z.number().int(neverChecks) }),
     ],
     [
-      "a core payload rewritten by overwrite",
-      jobPayload({ turnId: jobField.uuid() }).overwrite((payload) => payload),
-    ],
-    [
       "a core payload rebuilt by extend",
       jobPayload({ turnId: jobField.uuid() }).extend({ note: z.string() }),
     ],
@@ -155,6 +151,53 @@ describe("defineJob — valid declarations", () => {
       ).toEqual([
         "payload must be built by jobPayload from jobField constructors — payloads are identity only (ADR-0041 J6)",
       ]);
+    },
+  );
+
+  it("keeps a registered payload from being widened after defineJob (J6)", () => {
+    const payload = jobPayload({
+      turnId: jobField.uuid(),
+      step: jobField.integer(),
+      kind: jobField.enum(["reply", "retry"]),
+      version: jobField.literal("v1"),
+    });
+    defineJob({ ...expiringJob(), payload });
+    const { turnId, kind } = payload.shape;
+    expect(Reflect.set(payload.shape, "note", z.string())).toBe(false);
+    expect(Reflect.deleteProperty(payload.shape, "turnId")).toBe(false);
+    expect(Reflect.set(payload.def, "catchall", z.string())).toBe(false);
+    expect(Reflect.set(payload.def, "shape", { note: z.string() })).toBe(false);
+    expect(Reflect.set(turnId.def, "pattern", /^[\s\S]*$/)).toBe(false);
+    expect(Reflect.set(kind.def.entries, "other", "other")).toBe(false);
+    const valid = {
+      turnId: "0190a5b2-7c3d-7e4f-8a1b-2c3d4e5f6a7b",
+      step: 1,
+      kind: "reply",
+      version: "v1",
+    };
+    expect(payload.parse(valid)).toEqual(valid);
+    expect(payload.safeParse({ ...valid, note: "free text" }).success).toBe(
+      false,
+    );
+    expect(payload.safeParse({ ...valid, turnId: "free text" }).success).toBe(
+      false,
+    );
+    expect(payload.safeParse({ ...valid, kind: "other" }).success).toBe(false);
+  });
+
+  it.each([
+    [
+      "a core payload rewritten by overwrite",
+      () => jobPayload({ turnId: jobField.uuid() }).overwrite((value) => value),
+    ],
+    [
+      "a core integer rewritten by overwrite",
+      () => jobField.integer().overwrite((value) => value + 1),
+    ],
+  ])(
+    "refuses to rebuild %s over its frozen definition (J6)",
+    (_label, build) => {
+      expect(build).toThrow(TypeError);
     },
   );
 
@@ -186,10 +229,6 @@ describe("defineJob — define-time refusals", () => {
     [
       "an overwritten core uuid",
       jobField.uuid().overwrite(() => "Ivan +380 secret"),
-    ],
-    [
-      "an overwritten core integer",
-      jobField.integer().overwrite((value) => value + 1),
     ],
     [
       "an overwritten core enum",

@@ -101,6 +101,12 @@ test("no-restricted-properties refuses Zod internals outside packages/core", () 
         errors: [{ messageId: "restrictedProperty" }],
       },
       {
+        name: "mutating a registered field definition through bracket access",
+        code: 'declare const field: { _zod: { def: object } }; field["_zod"].def = {};',
+        options: outsideCore,
+        errors: [{ messageId: "restrictedProperty" }],
+      },
+      {
         name: "destructuring the internals",
         code: "declare const field: { _zod: object }; export const { _zod } = field;",
         options: outsideCore,
