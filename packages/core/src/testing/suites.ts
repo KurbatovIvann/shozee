@@ -743,7 +743,7 @@ export interface JobIsolationInvocation {
 
 export interface JobIsolationOwnRun {
   readonly requestId: string;
-  readonly companyId: string;
+  readonly companyId: string | null;
 }
 
 export type JobIsolationEffect = (
@@ -806,7 +806,7 @@ function jobRunInCompany(
 async function expectOkAuditInCompany(
   kit: TestKit,
   subject: string,
-  run: JobIsolationOwnRun,
+  run: JobIsolationOwnRun & { readonly companyId: string },
 ): Promise<void> {
   const committed = await kit.db.runtime.db
     .select({ companyId: auditLog.companyId })
@@ -857,15 +857,91 @@ async function expectJobFailsClosedWithoutChange(
   }
 }
 
+async function expectGlobalAudit(
+  kit: TestKit,
+  subject: string,
+  c: JobIsolationCase,
+  requestId: string,
+): Promise<void> {
+  const committed = await kit.db.runtime.db
+    .select({
+      action: auditLog.action,
+      actorType: auditLog.actorType,
+      actorId: auditLog.actorId,
+      companyId: auditLog.companyId,
+      outcome: auditLog.outcome,
+    })
+    .from(auditLog)
+    .where(eq(auditLog.requestId, requestId));
+  const expected = {
+    action: c.action.contract.name,
+    actorType: "system",
+    actorId: c.job.name,
+    companyId: null,
+    outcome: "ok",
+  };
+  if (
+    committed.length !== 1 ||
+    JSON.stringify(committed[0]) !== JSON.stringify(expected)
+  ) {
+    throw new Error(
+      `${subject} committed audit rows ${JSON.stringify(committed)}, expected one ${JSON.stringify(expected)}`,
+    );
+  }
+}
+
+async function runGlobalJobCase(
+  kit: TestKit,
+  c: JobIsolationCase,
+  subject: string,
+): Promise<void> {
+  const actionName = c.action.contract.name;
+  if (c.job.scope !== "global") {
+    throw new Error(
+      `jobIsolationCase "${c.job.name}" is a tenant job and cannot run global action "${actionName}"`,
+    );
+  }
+  if (c.foreign !== undefined) {
+    throw new Error(
+      `jobIsolationCase "${c.job.name}" runs global action "${actionName}", which has no foreign company to refuse`,
+    );
+  }
+  if (!c.action.contract.audit && c.effect === undefined) {
+    throw new Error(
+      `jobIsolationCase "${c.job.name}" runs unaudited global action "${actionName}"; supply an effect assertion`,
+    );
+  }
+  const envelope = buildJobEnvelope(c.job, {
+    companyId: null,
+    payload: c.own.payload,
+  });
+  await executeJobAction(kit.pipeline, {
+    job: c.job,
+    envelope,
+    action: c.action,
+    input: envelope.payload,
+  });
+  if (c.action.contract.audit) {
+    await expectGlobalAudit(kit, subject, c, envelope.requestId);
+  }
+  if (c.effect !== undefined) {
+    await c.effect(kit, { requestId: envelope.requestId, companyId: null });
+  }
+}
+
 export async function runJobIsolationCase(
   kit: TestKit,
   c: JobIsolationCase,
 ): Promise<void> {
   const actionName = c.action.contract.name;
   const subject = `${actionName} from job ${c.job.name}`;
+  if (c.action.contract.systemScope === "global") {
+    await runGlobalJobCase(kit, c, subject);
+    return;
+  }
   if (c.action.contract.systemScope !== "tenant") {
     throw new Error(
-      `jobIsolationCase "${c.job.name}" runs "${actionName}", which is not a tenant system action`,
+      `jobIsolationCase "${c.job.name}" runs "${actionName}", which is not a system action`,
     );
   }
   if (c.job.scope === "tenant" && c.foreign === undefined) {
@@ -904,9 +980,13 @@ export function jobIsolationSuite(
   getKit: () => TestKit,
   cases: readonly JobIsolationCase[],
 ): void {
-  describe("jobIsolationSuite", () => {
+  describe("jobIsolationSuite: job execution scope", () => {
     for (const c of cases) {
-      it(`${c.job.name} runs ${c.action.contract.name} with an effect in its recorded company and fails closed on a foreign row or a company without owned rows`, async () => {
+      const proof =
+        c.action.contract.systemScope === "global"
+          ? "in the global scope with no company, its effect and audit holding"
+          : "in its recorded or fan-out company and fails closed on a foreign row or a company without owned rows";
+      it(`${c.job.name} runs ${c.action.contract.name} ${proof}`, async () => {
         await runJobIsolationCase(getKit(), c);
       });
     }

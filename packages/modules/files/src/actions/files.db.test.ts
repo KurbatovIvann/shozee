@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { executeAction } from "@showzy/core";
+import { executeAction, executeJobAction } from "@showzy/core";
 import {
   ConflictError,
   CoreInvariantError,
@@ -12,11 +12,14 @@ import {
   ValidationError,
 } from "@showzy/core/errors";
 import {
+  buildJobEnvelope,
   createCapturingLogger,
   createTestKit,
   crossTenantSuite,
   idempotencySuite,
   isolationCase,
+  jobIsolationCase,
+  jobIsolationSuite,
   kitIdentities,
   type TestKit,
 } from "@showzy/core/testing";
@@ -25,7 +28,7 @@ import { user } from "@showzy/db/schema/auth";
 import { companyMembers } from "@showzy/db/schema/companies";
 import { files } from "@showzy/db/schema/files";
 import { sha256Hex } from "@showzy/module-kit/sha256";
-import { and, count, eq, isNull } from "drizzle-orm";
+import { and, count, eq, inArray, isNull } from "drizzle-orm";
 import sharp from "sharp";
 import {
   GenericContainer,
@@ -60,6 +63,10 @@ import { recordSigningObject } from "./record-signing-object.js";
 import { readPendingSigningObject } from "./read-pending-signing-object.js";
 import { requestSigningUpload } from "./request-signing-upload.js";
 import { requestUpload } from "./request-upload.js";
+import {
+  backfillCatalogRenditionsJob,
+  sweepAbandonedUploadsJob,
+} from "../jobs/maintenance-jobs.js";
 import { sweepAbandonedUploads } from "./sweep-abandoned-uploads.js";
 import { ABANDONED_PENDING_TTL_MS } from "./sweep-abandoned-uploads.contract.js";
 import {
@@ -2806,6 +2813,83 @@ describe("files.sweepAbandonedUploads", () => {
       requireKit().invoke(sweepAbandonedUploads, { limit: 21 }),
     ).rejects.toBeInstanceOf(ValidationError);
   });
+
+  describe("files.sweepAbandonedUploads periodic job", () => {
+    let dueId = "";
+    let youngId = "";
+
+    beforeEach(async () => {
+      await drainAbandonedPending();
+      dueId = randomUUID();
+      youngId = randomUUID();
+      await insertFileRow({
+        id: dueId,
+        companyId: kitIdentities.companies.a,
+        uploadedByUserId: kitIdentities.users.anna,
+        status: "pending",
+        createdAt: new Date(Date.now() - ABANDONED_PENDING_TTL_MS - 1_000),
+      });
+      await insertFileRow({
+        id: youngId,
+        companyId: kitIdentities.companies.a,
+        uploadedByUserId: kitIdentities.users.anna,
+        status: "pending",
+      });
+      await putStoreObject(stagingObjectKey(kitIdentities.companies.a, dueId));
+      await putStoreObject(
+        stagingObjectKey(kitIdentities.companies.a, youngId),
+      );
+    });
+
+    async function expectOnlyDueRowSwept(): Promise<void> {
+      const remaining = await requireKit()
+        .db.runtime.db.select({ id: files.id })
+        .from(files)
+        .where(inArray(files.id, [dueId, youngId]));
+      expect(remaining).toEqual([{ id: youngId }]);
+      const store = getFilesObjectStore();
+      await waitForObjectVisibility(
+        store,
+        stagingObjectKey(kitIdentities.companies.a, dueId),
+        "missing",
+      );
+      expect(
+        await store.headObject(
+          stagingObjectKey(kitIdentities.companies.a, youngId),
+        ),
+      ).not.toBe("missing");
+    }
+
+    jobIsolationSuite(requireKit, [
+      jobIsolationCase(
+        sweepAbandonedUploadsJob,
+        sweepAbandonedUploads,
+        { payload: {} },
+        undefined,
+        expectOnlyDueRowSwept,
+      ),
+    ]);
+
+    it("two overlapping runs delete the due row once and keep the young row", async () => {
+      const run = () =>
+        executeJobAction(requireKit().pipeline, {
+          job: sweepAbandonedUploadsJob,
+          envelope: buildJobEnvelope(sweepAbandonedUploadsJob, {
+            companyId: null,
+            payload: {},
+          }),
+          action: sweepAbandonedUploads,
+          input: {},
+        });
+
+      const [first, second] = await Promise.all([run(), run()]);
+
+      expect(
+        first.abandonedPendingDeleted + second.abandonedPendingDeleted,
+      ).toBe(1);
+      await expectOnlyDueRowSwept();
+    });
+  });
 });
 
 describe("files.backfillCatalogRenditions", () => {
@@ -3376,6 +3460,73 @@ describe("files.backfillCatalogRenditions", () => {
         },
       }),
     ).rejects.toBeInstanceOf(CoreInvariantError);
+  });
+
+  describe("files.backfillCatalogRenditions periodic job", () => {
+    let readyId = "";
+    let pendingId = "";
+
+    beforeEach(async () => {
+      await drainInspectPage();
+      readyId = await seedReadyCatalogOriginal({
+        companyId: kitIdentities.companies.a,
+        uploadedByUserId: kitIdentities.users.anna,
+      });
+      pendingId = randomUUID();
+      await insertFileRow({
+        id: pendingId,
+        companyId: kitIdentities.companies.a,
+        uploadedByUserId: kitIdentities.users.anna,
+        status: "pending",
+      });
+      await putStoreObject(
+        catalogObjectKey(kitIdentities.companies.a, pendingId),
+      );
+    });
+
+    async function expectOnlyReadyFileFilled(): Promise<void> {
+      await expectCatalogRenditions(
+        kitIdentities.companies.a,
+        readyId,
+        "present",
+      );
+      await expectCatalogRenditions(
+        kitIdentities.companies.a,
+        pendingId,
+        "missing",
+      );
+      expect((await catalogRow(readyId)).status).toBe("ready");
+      expect((await catalogRow(pendingId)).status).toBe("pending");
+    }
+
+    jobIsolationSuite(requireKit, [
+      jobIsolationCase(
+        backfillCatalogRenditionsJob,
+        backfillCatalogRenditions,
+        { payload: {} },
+        undefined,
+        expectOnlyReadyFileFilled,
+      ),
+    ]);
+
+    it("two overlapping runs both finish, fill the ready file and lose no row", async () => {
+      const run = () =>
+        executeJobAction(requireKit().pipeline, {
+          job: backfillCatalogRenditionsJob,
+          envelope: buildJobEnvelope(backfillCatalogRenditionsJob, {
+            companyId: null,
+            payload: {},
+          }),
+          action: backfillCatalogRenditions,
+          input: {},
+        });
+
+      const outcomes = await Promise.all([run(), run()]);
+
+      expect(outcomes).toHaveLength(2);
+      expect(outcomes.some(({ filled }) => filled >= 1)).toBe(true);
+      await expectOnlyReadyFileFilled();
+    });
   });
 });
 

@@ -280,6 +280,8 @@ jobs:
         # (core library) enforces the registry-wide rule matrix. Module tasks
         # register here — never in packages/core.
         run: time -p pnpm --filter @showzy/api contract:check
+      - name: Worker-owned jobs and actions contract check (SHO-650)
+        run: time -p pnpm --filter @showzy/worker contract:check
       - name: Publish job timing
         if: always()
         env:

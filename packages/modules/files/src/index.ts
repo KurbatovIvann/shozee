@@ -16,6 +16,17 @@ import { recordSigningObject } from "./actions/record-signing-object.js";
 import { requestSigningUpload } from "./actions/request-signing-upload.js";
 import { requestUpload } from "./actions/request-upload.js";
 import { sweepAbandonedUploads } from "./actions/sweep-abandoned-uploads.js";
+import {
+  backfillCatalogRenditionsJob,
+  sweepAbandonedUploadsJob,
+} from "./jobs/maintenance-jobs.js";
+
+export { backfillCatalogRenditionsJob, sweepAbandonedUploadsJob };
+
+export const filesJobs = [
+  sweepAbandonedUploadsJob,
+  backfillCatalogRenditionsJob,
+] as const;
 
 export { backfillCatalogRenditions };
 export { finalizeUpload };

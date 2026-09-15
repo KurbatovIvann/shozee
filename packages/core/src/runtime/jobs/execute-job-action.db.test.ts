@@ -946,7 +946,7 @@ describe("jobIsolationCase", () => {
   });
 
   it("runs the case's effect assertion on the own run instead of the audit check", async () => {
-    const seen: { requestId: string; companyId: string }[] = [];
+    const seen: { requestId: string; companyId: string | null }[] = [];
 
     await expect(
       runJobIsolationCase(
@@ -1020,5 +1020,97 @@ describe("jobIsolationCase", () => {
         }),
       ),
     ).rejects.toThrow(/without owned rows.*to be denied/);
+  });
+
+  describe("global branch: execution scope", () => {
+    const daily = { payload: { kind: "daily" } };
+
+    it("runs a global job's global action with no company and checks its audit row", async () => {
+      const seen: { requestId: string; companyId: string | null }[] = [];
+
+      await runJobIsolationCase(
+        kit,
+        jobIsolationCase(
+          sweepJob,
+          sweepGlobal,
+          daily,
+          undefined,
+          (_kit, run) => {
+            seen.push(run);
+            return Promise.resolve();
+          },
+        ),
+      );
+
+      expect(seen).toEqual([
+        { requestId: expect.any(String) as string, companyId: null },
+      ]);
+      const [audit] = await kit.db.runtime.db
+        .select({
+          companyId: auditLog.companyId,
+          actorId: auditLog.actorId,
+          outcome: auditLog.outcome,
+        })
+        .from(auditLog)
+        .where(eq(auditLog.requestId, seen[0]?.requestId ?? ""));
+      expect(audit).toEqual({
+        companyId: null,
+        actorId: sweepJob.name,
+        outcome: "ok",
+      });
+    });
+
+    it("fails a global case whose effect does not hold", async () => {
+      await expect(
+        runJobIsolationCase(
+          kit,
+          jobIsolationCase(sweepJob, sweepGlobal, daily, undefined, () =>
+            Promise.reject(new Error("nothing swept")),
+          ),
+        ),
+      ).rejects.toThrow(/nothing swept/);
+    });
+
+    it("refuses a tenant job that runs a global action", async () => {
+      await expect(
+        runJobIsolationCase(
+          kit,
+          jobIsolationCase(touchJob, sweepGlobal, {
+            payload: { customerId: kitIdentities.crmSentinel },
+          }),
+        ),
+      ).rejects.toThrow(/is a tenant job and cannot run global action/);
+    });
+
+    it("refuses an unaudited global action without an effect assertion", async () => {
+      const quietGlobal = implementAction(
+        defineActionContract({
+          ...systemRead,
+          systemScope: "global",
+          name: "jobRun.quietGlobal",
+          description: "Unaudited global read fixture.",
+          input: z.object({}),
+          output: z.object({ ok: z.boolean() }),
+          errors: [],
+        }),
+        { handler: () => Promise.resolve({ ok: true }) },
+      );
+
+      await expect(
+        runJobIsolationCase(
+          kit,
+          jobIsolationCase(sweepJob, quietGlobal, daily),
+        ),
+      ).rejects.toThrow(/unaudited global action.*supply an effect assertion/);
+    });
+
+    it("refuses a global case that names a foreign payload", async () => {
+      await expect(
+        runJobIsolationCase(
+          kit,
+          jobIsolationCase(sweepJob, sweepGlobal, daily, daily),
+        ),
+      ).rejects.toThrow(/no foreign company to refuse/);
+    });
   });
 });

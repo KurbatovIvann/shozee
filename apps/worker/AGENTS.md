@@ -1,7 +1,7 @@
 # @showzy/worker — Agent Instructions
 
-Outbox dispatcher, delivery executor, and BullMQ execution-job host
-(fnd-T27 / fnd-T29). Core exposes libraries only (`dispatchOutboxBatch`,
+Outbox dispatcher, delivery executor, pg-boss maintenance jobs, and the BullMQ
+assistant job host (fnd-T27 / fnd-T29 / SHO-650). Core exposes libraries only (`dispatchOutboxBatch`,
 `findClaimableDeliveries`, `executeDelivery`,
 `cleanupExpiredIdempotencyKeys`); this package owns the loops, LISTEN/NOTIFY
 wakeup, polling fallback, graceful drain, and the job host.
@@ -16,29 +16,30 @@ wakeup, polling fallback, graceful drain, and the job host.
 - `src/boot.ts` — binds the files object store from validated `config.s3`
   (same as the API; do not import API internals), opens Postgres + Redis
   (confirmation/rate-limit) plus a **dedicated** BullMQ Redis connection,
-  composes the action pipeline, starts the job host, LISTENs on
-  `domain_events`, starts the outbox loop. Close the object store after
-  draining jobs.
-- `src/jobs.ts` — BullMQ job host. Prefix `showzy`, queues `maintenance`
-  and `pdf`. On boot, upserts Job Schedulers for
-  `cleanupExpiredIdempotencyKeys` (`CLEANUP_INTERVAL_MS`, 1 h),
-  `sweepAbandonedUploads` (`SWEEP_INTERVAL_MS`, 5 min, action batch
-  default 20), and `backfillCatalogRenditions`
-  (`BACKFILL_CATALOG_RENDITIONS_INTERVAL_MS`, 5 min, action batch
-  default 20). The sweep processor invokes `files.sweepAbandonedUploads`
-  as system/global with a fresh idempotency key per `job.id`. The
-  backfill processor invokes `files.backfillCatalogRenditions` the same
-  way. The pdf
-  processor invokes `docGeneration.renderPdf` as system/tenant from the
-  envelope `companyId` (`executeAction` only — no domain SQL). When the
+  composes the action pipeline, opens the pg-boss runner with `workerJobs`
+  (provisioning queues and schedules) and works `maintenanceHandlers`, starts
+  the BullMQ job host, LISTENs on `domain_events`, starts the outbox loop.
+  Close the object store after draining both job runners.
+- `src/maintenance.ts` — maintenance on pg-boss (`docs/specs/jobs.md` §12).
+  The worker-owned job and action `worker.cleanupIdempotencyKeys` (hourly,
+  internal system/global audited write calling core's
+  `cleanupExpiredIdempotencyKeys` in its own transaction); `workerJobs`
+  (`registeredJobs` from `@showzy/api/registry` plus worker-owned jobs,
+  duplicates refused); `createWorkerActionRegistry` (the API registry plus
+  worker-owned actions); `maintenanceHandlers` for `files.sweepAbandonedUploads`,
+  `files.backfillCatalogRenditions` (both every 5 min) and the cleanup. A
+  handler only runs its action and logs counts. A new worker-owned job adds
+  its handler here, its coverage to `src/suite-coverage.ts`, and passes
+  `pnpm --filter @showzy/worker contract:check`.
+- `src/jobs.ts` — BullMQ job host until jobs-T11: prefix `showzy`, the
+  `maintenance` queue for the assistant reconciler only, and the assistant
+  queue. There is no `pdf` queue. When the
   assistant is mounted it also upserts `reconcileAssistantTurns`
   (`ASSISTANT_RECONCILE_INTERVAL_MS`, 60 s), and removes that scheduler when it
   is not: the reconciler's pass is a maintenance job like any other (safe to
   miss, safe to run again), and it is handed this host's assistant queue so a
   turn it re-enqueues is added exactly as an accept adds it (SHO-570).
-  Production
-  `documents.created` delivery still runs through the outbox (chat
-  golden), so this host does not enqueue durable one-shot PDF jobs. Do not
+  `documents.created` PDF delivery runs through the outbox (chat golden). Do not
   pre-create email / push / sms / sync queues. Processors stay thin (no
   domain SQL, no module service imports). Named exception: the `assistant`
   processor (SHO-561) runs a whole turn through `@showzy/assistant-runtime`,
@@ -71,8 +72,8 @@ wakeup, polling fallback, graceful drain, and the job host.
   logger + optional Sentry). Keep in lockstep with
   `apps/api/src/observability.ts`. `flushProcessObservability` drains
   Sentry on shutdown.
-- `src/policy.ts` — poll/cleanup/sweep/backfill intervals, notify channel,
-  BullMQ prefix and queue name. Values change only through an ADR or a
+- `src/policy.ts` — poll interval, job drain timeout, notify channel,
+  BullMQ prefix and queue name. Maintenance cadence is each job's `cron`. Values change only through an ADR or a
   protocol-manual patch with a proving test.
 
 ## Rules
@@ -81,13 +82,13 @@ wakeup, polling fallback, graceful drain, and the job host.
   never reads `process.env` except inside `loadServerConfig`.
 - Do not query `domain_events` / `event_deliveries` directly — go
   through the core libraries.
-- Domain event delivery is not BullMQ (ADR-0007/ADR-0012). BullMQ is the
-  execution job host (maintenance and PDF today; email, push, sync later).
-  Outbox stays on core libraries.
+- Domain event delivery is not a job runner (ADR-0007/ADR-0012). Maintenance
+  runs on pg-boss (ADR-0041); BullMQ keeps only the assistant turn queue and
+  its reconciler until jobs-T11. Outbox stays on core libraries.
 - Two Redis instances (db.md §6, ADR-0039). The shared Redis (`REDIS_URL`)
   never persists: it holds plaintext OTP codes among other short-lived state.
-  The maintenance and pdf queues stay on it and stay safe to miss and re-run;
-  re-upsert the schedulers on every boot. **Durable assistant-turn jobs** live
+  The BullMQ `maintenance` queue (the reconciler's pass) stays on it and stays
+  safe to miss and re-run; re-upsert its scheduler on every boot. **Durable assistant-turn jobs** live
   on the dedicated queue Redis (AOF `appendfsync everysec` on a volume,
   `maxmemory-policy noeviction`): an accepted turn is a Postgres row, and the
   assistant reconciler rebuilds a lost job from it. Never put a durable job on

@@ -12,7 +12,6 @@
  * is on the shared Redis given here, never on the queue Redis the job host's
  * BullMQ connection uses.
  */
-import { createActionRegistry } from "@showzy/api/registry";
 import {
   ASSISTANT_QUEUE_NAME,
   createAssistantRuntime,
@@ -32,8 +31,9 @@ import type { ActionPipelineDeps } from "@showzy/core";
 import type { Redis } from "ioredis";
 import type { Logger } from "pino";
 
-/** The registry builder the worker runs turns against: the API's, not a copy. */
-export const workerActionRegistry = createActionRegistry;
+import { createWorkerActionRegistry } from "./maintenance.js";
+
+export const workerActionRegistry = createWorkerActionRegistry;
 
 /** What the mount log names for this process. */
 export const ASSISTANT_WORKER_PATHS: readonly string[] = [

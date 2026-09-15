@@ -16,10 +16,50 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import * as assistantBarrel from "@showzy/assistant";
+import * as catalogBarrel from "@showzy/catalog";
+import * as chatBarrel from "@showzy/chat";
+import * as companiesBarrel from "@showzy/companies";
+import * as customersBarrel from "@showzy/customers";
+import * as docGenerationBarrel from "@showzy/doc-generation";
+import * as docSigningBarrel from "@showzy/doc-signing";
+import * as documentsBarrel from "@showzy/documents";
+import * as filesBarrel from "@showzy/files";
+import * as invitesBarrel from "@showzy/invites";
+import * as ordersBarrel from "@showzy/orders";
+import * as pricingBarrel from "@showzy/pricing";
+import * as searchBarrel from "@showzy/search";
 import { describe, expect, it } from "vitest";
 
 import { buildContractCheckInput } from "./composition.js";
-import { createActionRegistry } from "./registry.js";
+import { createActionRegistry, registeredJobs } from "./registry.js";
+
+const BARREL_EXPORTS: readonly Readonly<Record<string, unknown>>[] = [
+  assistantBarrel,
+  catalogBarrel,
+  chatBarrel,
+  companiesBarrel,
+  customersBarrel,
+  docGenerationBarrel,
+  docSigningBarrel,
+  documentsBarrel,
+  filesBarrel,
+  invitesBarrel,
+  ordersBarrel,
+  pricingBarrel,
+  searchBarrel,
+];
+
+function isJobDeclaration(value: unknown): value is { readonly name: string } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    "lifecycle" in value &&
+    "attemptTimeoutMs" in value &&
+    "discriminator" in value
+  );
+}
 
 const MODULE_BARRELS = new Set([
   "@showzy/assistant",
@@ -116,6 +156,21 @@ describe("@showzy/api/registry", () => {
       }
     }
     expect(findings).toEqual([]);
+  });
+
+  it("registers every job a module barrel exports, each once, so none skips the contract check", () => {
+    const exported = new Set(
+      BARREL_EXPORTS.flatMap((barrel) => Object.values(barrel)).filter(
+        isJobDeclaration,
+      ),
+    );
+
+    const registered = new Set<unknown>(registeredJobs);
+
+    expect(exported.size).toBeGreaterThan(0);
+    expect([...exported].filter((job) => !registered.has(job))).toEqual([]);
+    expect(registered.size).toBe(registeredJobs.length);
+    expect(registeredJobs.every((job) => exported.has(job))).toBe(true);
   });
 
   it("exports createActionRegistry, registeredJobs and nothing else", () => {

@@ -492,7 +492,9 @@ runner settings from the same declaration (`docs/specs/jobs.md`).
   `risk` other than `read` and a `systemScope` equal to the job's `scope`;
   a module that defines jobs appears in `suiteCoverage.jobIsolation` (§12),
   and every listed module defines a job. Composition passes every job
-  declaration as `jobs`.
+  declaration as `jobs`: module jobs through the API composition, app-owned
+  jobs (the worker's `worker.*`) through that app's own contract check
+  (`docs/specs/jobs.md` §7).
 - **Enqueue.** `ctx.enqueue(job, payload)` is buffered like `ctx.emit`: the
   call checks that the job is in the contract's `enqueues` and parses the
   payload with the job's `jobPayload` schema, and the pipeline sends the
@@ -752,7 +754,12 @@ Exported from `packages/core/testing`, used by every module (this is how
   tokens are `NotFoundError`; co-sign (and any other share write) MUST NOT
   create CRM rows; raw token is absent from logs/audit/events.
 - `jobIsolationSuite(cases)` with `jobIsolationCase(job, action, own,
-  foreign?, effect?)` — runs the action through `executeJobAction` in company A
+  foreign?, effect?)` proves execution scope. A global action (only from a
+  global job; no `foreign`) runs through `executeJobAction` with
+  `companyId: null`: the `effect` holds (required when the action is
+  unaudited) and an audited action commits exactly one ok audit row with null
+  company, action name and actor `system:<job name>`. The rest applies to a
+  tenant action: it runs through `executeJobAction` in company A
   (a global periodic job fans out to A) with the envelope payload as its input:
   the own payload succeeds and commits an ok audit row in company A (or passes
   the case's `effect` assertion), a payload naming another company's row is
@@ -870,6 +877,7 @@ does not apply — fails the check.
 
 | Date | Change | Why | Reported by |
 | --- | --- | --- | --- |
+| 2026-09-15 | §6/§12: `jobIsolationCase` global branch (global job → global action, no company, effect and audit); `cleanupExpiredIdempotencyKeys` takes `Pick<Database, "delete">`; job declarations from module barrels plus app-owned jobs | Owner decision: a global job without fan-out had no suite case, and cleanup must run in its action's transaction | SHO-650 |
 | 2026-09-14 | §2/§6/§12: `defineJob`, optional `enqueues`, job contract-check rules and `jobIsolation` coverage | ADR-0041 §3, §5, J4, J6 | SHO-644 |
 | 2026-09-14 | §9: a `consistency: snapshot` `ctx.call` callee requires a snapshot caller | ADR-0042 L1: a callee runs on its caller's transaction, so a default caller silently dropped the snapshot | SHO-631 |
 | 2026-09-14 | §2/§4: `consistency: snapshot` read metadata; step 7 opens the execution transaction `REPEATABLE READ` for it | ADR-0042: a live screen needs one consistent read across its statements | SHO-623 |

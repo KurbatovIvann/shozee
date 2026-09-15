@@ -6,7 +6,6 @@
  */
 import { randomUUID } from "node:crypto";
 
-import { registeredJobs } from "@showzy/api/registry";
 import type { ServerConfig } from "@showzy/config";
 import { createDbClient } from "@showzy/db";
 import {
@@ -14,7 +13,7 @@ import {
   configureFilesObjectStore,
   probeFilesObjectStore,
 } from "@showzy/files/storage";
-import { openJobRunner } from "@showzy/jobs";
+import { openJobRunner, type JobRunnerIntervals } from "@showzy/jobs";
 import { Redis } from "ioredis";
 import type { Logger } from "pino";
 
@@ -22,8 +21,10 @@ import { composeAssistantTurns } from "./assistant.js";
 import { createJobHost, type JobHost } from "./jobs.js";
 import { createOutboxListener } from "./listen.js";
 import { createOutboxWorker, type WorkerLoop } from "./loop.js";
+import { maintenanceHandlers, workerJobs } from "./maintenance.js";
 import { createProcessObservability } from "./observability.js";
 import { createActionPipeline } from "./pipeline.js";
+import { JOB_DRAIN_TIMEOUT_MS } from "./policy.js";
 import {
   createRedisConfirmationStore,
   createRedisRateLimitStore,
@@ -42,10 +43,8 @@ export interface BootWorkerOptions {
   readonly logger?: Logger;
   readonly workerId?: string;
   readonly pollIntervalMs?: number;
-  readonly cleanupIntervalMs?: number;
-  readonly sweepIntervalMs?: number;
-  readonly backfillIntervalMs?: number;
   readonly now?: () => number;
+  readonly jobIntervals?: JobRunnerIntervals;
 }
 
 export async function bootWorker(
@@ -87,10 +86,13 @@ export async function bootWorker(
     const jobRunner = await openJobRunner(
       {
         db: db.db,
-        jobs: registeredJobs,
+        jobs: workerJobs,
         onError: (error) => {
           logger.error({ err: error }, "job runner error");
         },
+        ...(options.jobIntervals === undefined
+          ? {}
+          : { intervals: options.jobIntervals }),
       },
       "worker",
     );
@@ -118,9 +120,13 @@ export async function bootWorker(
       sharedRedis: redis,
       logger,
     });
+    await jobRunner.work({
+      deps: pipeline,
+      handlers: maintenanceHandlers(logger),
+      drainTimeoutMs: JOB_DRAIN_TIMEOUT_MS,
+    });
     const jobHostOptions = {
       redisUrl: config.redis.url,
-      db: db.db,
       logger,
       workerId,
       pipeline,
@@ -133,16 +139,6 @@ export async function bootWorker(
             },
           }
         : {}),
-      ...(options.cleanupIntervalMs !== undefined
-        ? { cleanupIntervalMs: options.cleanupIntervalMs }
-        : {}),
-      ...(options.sweepIntervalMs !== undefined
-        ? { sweepIntervalMs: options.sweepIntervalMs }
-        : {}),
-      ...(options.backfillIntervalMs !== undefined
-        ? { backfillIntervalMs: options.backfillIntervalMs }
-        : {}),
-      ...(options.now !== undefined ? { now: options.now } : {}),
     };
     const jobs = createJobHost(jobHostOptions);
     releases.push(() => jobs.close());
@@ -171,9 +167,9 @@ export async function bootWorker(
       async close() {
         await jobs.close();
         await loop.stop();
+        await jobRunner.close();
         closeFilesObjectStore();
         await redis.quit();
-        await jobRunner.close();
         await db.pool.end();
       },
     };
