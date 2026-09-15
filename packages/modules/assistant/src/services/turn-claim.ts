@@ -3,7 +3,6 @@ import {
   assistantTurns,
   type AssistantTurnKind,
 } from "@showzy/db/schema/assistant";
-import { ASSISTANT_TURN_CLAIM_LOST_MESSAGE } from "@showzy/validation/assistant-turn-claim";
 import { and, eq } from "drizzle-orm";
 
 import type { WritableStaffDb } from "./writable.js";
@@ -39,6 +38,6 @@ export async function holdTurnClaim(
     .limit(1)
     .for("share");
   if (held.length === 0) {
-    throw new ConflictError(ASSISTANT_TURN_CLAIM_LOST_MESSAGE);
+    throw new ConflictError("This turn no longer holds its claim.");
   }
 }

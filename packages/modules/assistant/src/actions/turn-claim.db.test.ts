@@ -366,12 +366,16 @@ describe("worker writes are fenced by the turn claim", () => {
       );
 
     const whileRunning = await update(true, stored.revision);
+    if (whileRunning.outcome !== "updated") {
+      throw new Error("expected the running turn's update to land");
+    }
     await interrupt(turn);
 
     await expect(update(true, whileRunning.revision)).rejects.toBeInstanceOf(
       ConflictError,
     );
     expect(await update(false, whileRunning.revision)).toMatchObject({
+      outcome: "updated",
       revision: whileRunning.revision + 1,
     });
   });

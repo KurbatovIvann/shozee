@@ -8,7 +8,6 @@ import {
   type TestKit,
 } from "@showzy/core/testing";
 import { assistantConversations } from "@showzy/db/schema/assistant";
-import { ASSISTANT_TURN_CLAIM_LOST_MESSAGE } from "@showzy/validation/assistant-turn-claim";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createPostgresAssistantKitMessageLog } from "./assistant-kit-postgres-stores.js";
@@ -129,8 +128,5 @@ describe("a claimed message update", () => {
       );
 
     expect(refused).toBeInstanceOf(ConflictError);
-    expect(refused).toMatchObject({
-      clientMessage: ASSISTANT_TURN_CLAIM_LOST_MESSAGE,
-    });
   });
 });

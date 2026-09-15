@@ -15,7 +15,15 @@ export const updateChatMessage = implementAction(updateChatMessageContract, {
       message: input.message,
       claim: input.claim,
     });
+    if (updated === "stale") {
+      return {
+        outcome: "stale" as const,
+        conversationId: input.conversationId,
+        seq: input.seq,
+      };
+    }
     return {
+      outcome: "updated" as const,
       conversationId: input.conversationId,
       seq: updated.seq,
       revision: updated.revision,
