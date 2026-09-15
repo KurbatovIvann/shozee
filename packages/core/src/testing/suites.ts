@@ -792,14 +792,20 @@ function jobRunInCompany(
   });
   return {
     requestId: envelope.requestId,
-    run: () =>
-      executeJobAction(kit.pipeline, {
-        job: c.job,
-        envelope,
-        action: c.action,
-        input: envelope.payload,
-        ...(tenantJob ? {} : { fanOutCompanyId: companyId }),
-      }),
+    run: async () => {
+      try {
+        return await executeJobAction(kit.pipeline, {
+          job: c.job,
+          envelope,
+          action: c.action,
+          input: envelope.payload,
+          ...(tenantJob ? {} : { fanOutCompanyId: companyId }),
+        });
+      } catch (error) {
+        kit.jobs.discardRequest(envelope.requestId);
+        throw error;
+      }
+    },
   };
 }
 

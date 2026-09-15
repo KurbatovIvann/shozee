@@ -20,7 +20,6 @@ import { dispatchOutboxBatch, executeDelivery } from "../events/delivery.js";
 import { eventEnvelopeSchema } from "../events/envelope.js";
 import { implementAction } from "../implement-action.js";
 import { UUID_PATTERN } from "../patterns.js";
-import { rejectPreflightEnqueue } from "./enqueue.js";
 
 let kit: TestKit;
 
@@ -585,16 +584,5 @@ describe("only the root writable action enqueues (J4)", () => {
       'nested callee "jobKitCallee.hold"',
     );
     expect(kit.jobs.sent).toHaveLength(0);
-  });
-
-  it("refuses an enqueue from an authorization preflight context", () => {
-    const enqueue = rejectPreflightEnqueue("jobKit.note");
-
-    expect(() => {
-      enqueue(runTurn, { turnId: randomUUID() });
-    }).toThrow(CoreInvariantError);
-    expect(() => {
-      enqueue(runTurn, { turnId: randomUUID() });
-    }).toThrow(/authorization preflight/);
   });
 });

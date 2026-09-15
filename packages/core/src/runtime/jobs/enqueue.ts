@@ -60,14 +60,6 @@ export function rejectNestedEnqueue(calleeName: string): CtxEnqueue {
   };
 }
 
-export function rejectPreflightEnqueue(actionName: string): CtxEnqueue {
-  return (job) => {
-    throw new CoreInvariantError(
-      `"${actionName}" called ctx.enqueue("${job.name}") from an authorization preflight context — jobs are enqueued only while the handler runs`,
-    );
-  };
-}
-
 export function createEnqueueBuffer(options: {
   readonly contract: AnyActionContract;
   readonly executionId: string;

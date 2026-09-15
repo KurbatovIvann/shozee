@@ -748,7 +748,11 @@ Exported from `packages/core/testing`, used by every module (this is how
   and is proven in core's own tests, not per case. `foreign` is
   required for a tenant job and may be omitted for a periodic fan-out whose
   action takes the company from its scope. `buildJobEnvelope` builds the
-  test envelope.
+  test envelope. Cases assume the action input equals the payload: a
+  `JobHandler.handle` that maps the payload to a different input is not
+  covered by the suite and belongs to `packages/jobs` conformance. Envelopes
+  that a refused run recorded are dropped from `kit.jobs.sent`, as for a
+  rejected `kit.invoke`.
 - `idempotencySuite(action)` — replay, conflict, concurrent-retry cases.
 - `eventSuite(module)` — declared events emitted transactionally (rollback
   removes them), consumer dedup respected.
