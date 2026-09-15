@@ -471,8 +471,8 @@ export function describeJobRunnerConformance(
         expect(JSON.stringify([stored, exhausted])).not.toContain(secret);
       });
 
-      it("an attempt past its timeout is aborted in process and counts as an attempt", async () => {
-        const job = conformanceJob("j7Timeout");
+      it("an attempt past a whole-second timeout is aborted in process and stores ATTEMPT_TIMEOUT", async () => {
+        const job = conformanceJob("j7Timeout", 0, undefined, 2_000);
         const runner = await open([job], "worker");
         let aborted = false;
         const { envelope, subjectId } = await enqueueSubject(runner, job);
@@ -497,6 +497,34 @@ export function describeJobRunnerConformance(
           state: "failed",
           output: { code: "ATTEMPT_TIMEOUT" },
         });
+      });
+
+      it("an abandoned attempt starts no further action", async () => {
+        const job = conformanceJob("j7Abandoned");
+        const runner = await open([job], "worker");
+        let late: unknown;
+        const { envelope } = await enqueueSubject(runner, job);
+
+        await work(runner, [
+          handlerFor(job, async (attempt) => {
+            await new Promise<void>((resolve) => {
+              attempt.signal.addEventListener("abort", () => {
+                resolve();
+              });
+            });
+            late = await attempt.run(interrupt, envelope.payload).then(
+              () => "ran",
+              (error: unknown) => error,
+            );
+          }),
+        ]);
+
+        await expect(
+          eventually(
+            () => Promise.resolve(late),
+            (value) => value !== undefined,
+          ),
+        ).resolves.toBeInstanceOf(CoreInvariantError);
       });
     });
 
@@ -684,6 +712,87 @@ export function describeJobRunnerConformance(
         await expect(
           work(runner, [handlerFor(handled, () => Promise.resolve())]),
         ).rejects.toThrow(/declared job "[^"]*unhandledJob" has no handler/);
+      });
+
+      it("a worker refuses a handler for an undeclared job", async () => {
+        const declared = conformanceJob("declaredOnly");
+        const undeclared = conformanceJob("undeclaredJob");
+        const runner = await open([declared], "worker");
+
+        await expect(
+          work(runner, [
+            handlerFor(declared, () => Promise.resolve()),
+            handlerFor(undeclared, () => Promise.resolve()),
+          ]),
+        ).rejects.toThrow(/job "[^"]*undeclaredJob" is not a declared job/);
+      });
+
+      it("a worker refuses a handler bound to a definition other than the declared one", async () => {
+        const declared = conformanceJob("redefinedJob");
+        const redefined = conformanceJob("redefinedJob", 3);
+        const runner = await open([declared], "worker");
+
+        await expect(
+          work(runner, [handlerFor(redefined, () => Promise.resolve())]),
+        ).rejects.toThrow(
+          /job "[^"]*redefinedJob" binds a definition other than the declared one/,
+        );
+      });
+
+      it("a worker refuses a duplicate handler", async () => {
+        const job = conformanceJob("duplicateJob");
+        const runner = await open([job], "worker");
+
+        await expect(
+          work(runner, [
+            handlerFor(job, () => Promise.resolve()),
+            handlerFor(job, () => Promise.resolve()),
+          ]),
+        ).rejects.toThrow(/job "[^"]*duplicateJob" has more than one handler/);
+      });
+
+      it("a worker refuses an on-exhausted binding other than the declaration", async () => {
+        const job = conformanceJob("mismatchedExhaust");
+        const runner = await open([job], "worker");
+
+        await expect(
+          work(runner, [
+            handlerFor(job, () => Promise.resolve(), interruptFails),
+          ]),
+        ).rejects.toThrow(
+          /declares on-exhausted "conformance.interrupt" but its handler binds "conformance.interruptFails"/,
+        );
+      });
+
+      it("a worker refuses a periodic job outside the global scope", async () => {
+        const job = defineJob({
+          name: "conformance.tenantTick",
+          scope: "tenant",
+          payload: noOutput,
+          discriminator: [],
+          lifecycle: "periodic",
+          cron: "* * * * *",
+          retries: 0,
+          attemptTimeoutMs: 1_500,
+        });
+        const runner = await open([job], "worker");
+
+        await expect(
+          work(runner, [handlerFor(job, () => Promise.resolve(), null)]),
+        ).rejects.toThrow(
+          /periodic job "conformance.tenantTick" must be global/,
+        );
+      });
+
+      it("a worker refuses a second work call", async () => {
+        const job = conformanceJob("secondWork");
+        const runner = await open([job], "worker");
+        const handlers = [handlerFor(job, () => Promise.resolve())];
+        await work(runner, handlers);
+
+        await expect(work(runner, handlers)).rejects.toThrow(
+          /already works its handlers/,
+        );
       });
     });
   });

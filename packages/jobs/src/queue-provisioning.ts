@@ -4,6 +4,8 @@ import type { PgBoss, Queue } from "pg-boss";
 
 export const runnerRetentionSeconds = 24 * 60 * 60;
 
+export const attemptExpiryMarginSeconds = 5;
+
 export interface QueueSettings {
   readonly policy: "standard";
   readonly partition: false;
@@ -54,7 +56,8 @@ export function queueDeclarations(
       retryDelay: 0,
       retryBackoff: false,
       retryDelayMax: null,
-      expireInSeconds: Math.ceil(job.attemptTimeoutMs / 1000),
+      expireInSeconds:
+        Math.ceil(job.attemptTimeoutMs / 1000) + attemptExpiryMarginSeconds,
       retentionSeconds: runnerRetentionSeconds,
       deleteAfterSeconds: runnerRetentionSeconds,
       heartbeatSeconds: null,

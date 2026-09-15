@@ -112,7 +112,8 @@ and is left untouched. Proof: `src/pgboss-schema.db.test.ts`.
   one list composition checks and both apps open the runner with.
 - One queue per job, named after the job. Stored settings derive from the
   declaration: `retryLimit` = `retries`, `expireInSeconds` =
-  `ceil(attemptTimeoutMs / 1000)`, policy `standard`, `partition: false`,
+  `ceil(attemptTimeoutMs / 1000) + 5` (the margin lets the in-process timeout
+  settle first, so a timed-out attempt stores `ATTEMPT_TIMEOUT`), policy `standard`, `partition: false`,
   `notify: false`, no retry delay or backoff, no heartbeat,
   `retentionSeconds` and `deleteAfterSeconds` one day. Concurrency is a
   worker-host `work` option, not a stored setting.
@@ -137,6 +138,7 @@ and is left untouched. Proof: `src/pgboss-schema.db.test.ts`.
   (`createJobWorker`, `src/worker-host.ts`) registers one pg-boss `work` per
   handler (`perJobResults`, `includeMetadata`, `batchSize: 1`, polling). An
   `api` runner, a second `work` call, a handler for an undeclared job, a
+  handler whose job is not the declared definition object, a
   declared job without a handler, a duplicate handler, an `onExhausted` binding whose action name differs from
   the declaration, or a non-global `periodic` job throw `CoreInvariantError`.
 - A handler receives `{ envelope, signal, run(action, input, fanOutCompanyId?) }`.
@@ -171,8 +173,9 @@ and is left untouched. Proof: `src/pgboss-schema.db.test.ts`.
   aborts and the attempt fails with `ATTEMPT_TIMEOUT`); the queue's
   `expireInSeconds` covers a dead worker, whose attempt the supervisor fails.
   Both count as an attempt, so a job runs at most `1 + retries` times.
-  Abandoning does not stop the handler's promise: its later writes are refused
-  by the owning row's claim (J8).
+  Abandoning does not stop the handler's promise: once the signal aborted,
+  `run` throws `CoreInvariantError` before starting an action, and writes
+  already started are refused by the owning row's claim (J8).
 - An `expires` job whose last attempt failed or expired moves to
   `<job>.exhausted`. Its worker runs the declared on-exhausted action through
   `executeJobAction` with the payload as input, in the recorded scope. A

@@ -182,14 +182,20 @@ function attemptFor(
   return {
     envelope,
     signal,
-    run: (action, input, fanOutCompanyId) =>
-      executeJobAction(deps, {
+    run: async (action, input, fanOutCompanyId) => {
+      if (signal.aborted) {
+        throw new CoreInvariantError(
+          `job ${envelope.id} ("${job.name}") was abandoned; its attempt starts no further action "${action.contract.name}"`,
+        );
+      }
+      return await executeJobAction(deps, {
         job,
         envelope,
         action,
         input,
         ...(fanOutCompanyId === undefined ? {} : { fanOutCompanyId }),
-      }),
+      });
+    },
   };
 }
 
@@ -230,6 +236,10 @@ function assertHandlersMatchDeclarations(
   for (const { job, onExhausted } of handlers) {
     if (!declaredNames.has(job.name)) {
       problems.push(`job "${job.name}" is not a declared job of this runner`);
+    } else if (!declared.includes(job)) {
+      problems.push(
+        `job "${job.name}" binds a definition other than the declared one`,
+      );
     }
     if (seen.has(job.name)) {
       problems.push(`job "${job.name}" has more than one handler`);
