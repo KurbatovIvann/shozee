@@ -6,6 +6,11 @@ import {
   JobDefinitionError,
   type JobDefinition,
 } from "./define-job.js";
+import { type JobField, jobField, jobPayload } from "./job-payload.js";
+
+function smuggled(schema: z.ZodType): JobField {
+  return schema as JobField;
+}
 
 function expiringJob(): JobDefinition {
   return {
@@ -18,11 +23,11 @@ function expiringJobWithoutOnExhausted(): JobDefinition {
   return {
     name: "assistant.runTurn",
     scope: "tenant",
-    payload: z.object({
-      turnId: z.uuid(),
-      step: z.int(),
-      kind: z.enum(["reply", "retry"]),
-      version: z.literal(1),
+    payload: jobPayload({
+      turnId: jobField.uuid(),
+      step: jobField.integer(),
+      kind: jobField.enum(["reply", "retry"]),
+      version: jobField.literal("v1"),
     }),
     discriminator: ["turnId"],
     lifecycle: "expires",
@@ -39,7 +44,7 @@ function periodicJobWithoutCron(): JobDefinition {
   return {
     name: "files.sweepAbandonedUploads",
     scope: "global",
-    payload: z.object({}),
+    payload: jobPayload({}),
     discriminator: [],
     lifecycle: "periodic",
     retries: 2,
@@ -48,6 +53,8 @@ function periodicJobWithoutCron(): JobDefinition {
 }
 
 const anyTextPattern = { abort: false, pattern: /^[\s\S]*$/ };
+
+const neverChecks = { abort: false, when: () => false };
 
 function problemsOf(definition: JobDefinition): readonly string[] {
   try {
@@ -69,37 +76,85 @@ describe("defineJob — valid declarations", () => {
     expect(Object.isFrozen(job)).toBe(true);
   });
 
-  it("accepts stock id formats, bounded integers and a strict object", () => {
-    const job = defineJob({
-      ...expiringJob(),
-      payload: z.strictObject({
-        turnId: z.uuidv7(),
-        uploadId: z.nanoid(),
-        attempt: z.number().int().min(0).max(10),
-        page: z.int32().nonnegative(),
-      }),
+  it("accepts bounded integers and a payload that parses only JSON-safe identity", () => {
+    const payload = jobPayload({
+      turnId: jobField.uuid(),
+      attempt: jobField.integer({ min: 0, max: 10 }),
+      kind: jobField.enum(["reply", "retry"]),
     });
-    expect(job.name).toBe("assistant.runTurn");
+    const job = defineJob({ ...expiringJob(), payload });
+    expect(job.payload).toBe(payload);
+    const turnId = "0190a5b2-7c3d-7e4f-8a1b-2c3d4e5f6a7b";
+    expect(payload.parse({ turnId, attempt: 3, kind: "reply" })).toEqual({
+      turnId,
+      attempt: 3,
+      kind: "reply",
+    });
+    expect(
+      payload.safeParse({ turnId, attempt: 3, kind: "reply", note: "x" })
+        .success,
+    ).toBe(false);
+    expect(
+      payload.safeParse({ turnId, attempt: 1.5, kind: "reply" }).success,
+    ).toBe(false);
+    expect(
+      payload.safeParse({ turnId, attempt: 11, kind: "reply" }).success,
+    ).toBe(false);
+    expect(
+      payload.safeParse({
+        turnId: "Ivan Petrenko +380501234567",
+        attempt: 1,
+        kind: "reply",
+      }).success,
+    ).toBe(false);
   });
 
-  it("refuses a payload object that accepts unknown keys or rewrites itself (J6)", () => {
-    const loose = z.looseObject({ turnId: z.uuid() });
-    const catchall = z.object({ turnId: z.uuid() }).catchall(z.string());
-    const overwritten = z
-      .object({ turnId: z.uuid() })
-      .overwrite((payload) => ({ ...payload, turnId: "Ivan +380 secret" }));
-    const unknownKeys =
-      "payload must not accept unknown keys (no looseObject or catchall) — payloads are identity only (ADR-0041 J6)";
-    expect(problemsOf({ ...expiringJob(), payload: loose })).toEqual([
-      unknownKeys,
-    ]);
-    expect(problemsOf({ ...expiringJob(), payload: catchall })).toEqual([
-      unknownKeys,
-    ]);
-    expect(problemsOf({ ...expiringJob(), payload: overwritten })).toEqual([
-      "payload object must not carry refinements or overwrites — payloads are identity only (ADR-0041 J6)",
-    ]);
-  });
+  it.each([
+    ["a loose object", z.looseObject({ turnId: z.uuid() })],
+    ["a catchall object", z.object({ turnId: z.uuid() }).catchall(z.string())],
+    [
+      "an overwritten object",
+      z
+        .object({ turnId: z.uuid() })
+        .overwrite((payload) => ({ ...payload, turnId: "Ivan +380 secret" })),
+    ],
+    [
+      "a strict object of stock fields",
+      z.strictObject({ turnId: z.uuid(), step: z.int() }),
+    ],
+    [
+      "a custom string format",
+      z.object({ turnId: z.stringFormat("uuid", () => true) }),
+    ],
+    [
+      "a uuid with a custom pattern",
+      z.object({ turnId: z.uuid(anyTextPattern) }),
+    ],
+    ["a refined uuid", z.object({ turnId: z.uuid().refine(() => true) })],
+    ["a uuid that never checks", z.object({ turnId: z.uuid(neverChecks) })],
+    ["an int that never checks", z.object({ step: z.int(neverChecks) })],
+    [
+      "a number int that never checks",
+      z.object({ step: z.number().int(neverChecks) }),
+    ],
+    [
+      "a core payload rewritten by overwrite",
+      jobPayload({ turnId: jobField.uuid() }).overwrite((payload) => payload),
+    ],
+    [
+      "a core payload rebuilt by extend",
+      jobPayload({ turnId: jobField.uuid() }).extend({ note: z.string() }),
+    ],
+  ])(
+    "refuses a payload object that jobPayload did not build: %s (J6)",
+    (_label, payload) => {
+      expect(
+        problemsOf({ ...expiringJob(), payload, discriminator: [] }),
+      ).toEqual([
+        "payload must be built by jobPayload from jobField constructors — payloads are identity only (ADR-0041 J6)",
+      ]);
+    },
+  );
 
   it("accepts a periodic job with a cron schedule", () => {
     const job = defineJob(periodicJob());
@@ -116,38 +171,41 @@ describe("defineJob — define-time refusals", () => {
   });
 
   it.each([
-    ["free text", z.string()],
-    ["an email", z.email()],
-    ["a fractional number", z.number()],
-    ["a boolean", z.boolean()],
-    ["a nested object", z.object({ id: z.uuid() })],
-    ["an optional id", z.uuid().optional()],
-    ["a custom string format", z.stringFormat("uuid", () => true)],
-    ["a guid with a custom pattern", z.guid(anyTextPattern)],
-    ["a nanoid with a custom pattern", z.nanoid(anyTextPattern)],
-    ["a cuid2 with a custom pattern", z.cuid2(anyTextPattern)],
-    ["a ulid with a custom pattern", z.ulid(anyTextPattern)],
+    ["free text", smuggled(z.string())],
+    ["a boolean", smuggled(z.boolean())],
+    ["a stock uuid", smuggled(z.uuid())],
+    ["a uuid that never checks", smuggled(z.uuid(neverChecks))],
+    ["an int that never checks", smuggled(z.int(neverChecks))],
+    ["a custom string format", smuggled(z.stringFormat("uuid", () => true))],
+    ["a uuid with a custom pattern", smuggled(z.uuid(anyTextPattern))],
+    ["a nested core payload", smuggled(jobPayload({ id: jobField.uuid() }))],
+    ["an optional core uuid", smuggled(jobField.uuid().optional())],
+    ["a refined core uuid", jobField.uuid().refine(() => true)],
     [
-      "a stock ulid pattern with extra flags",
-      z.ulid({
-        abort: false,
-        pattern: new RegExp(z.ulid()._zod.def.pattern ?? /$^/, "m"),
-      }),
+      "an overwritten core uuid",
+      jobField.uuid().overwrite(() => "Ivan +380 secret"),
     ],
-    ["an id format outside the allowlist", z.xid()],
-    ["an overwritten uuid", z.uuid().overwrite(() => "Ivan +380 secret")],
-    ["a refined uuid", z.uuid().refine(() => true)],
-    ["an overwritten integer", z.int().overwrite((value) => value + 1)],
-    ["an overwritten enum", z.enum(["a", "b"]).overwrite(() => "a")],
-    ["a float-format number", z.float32()],
+    [
+      "an overwritten core integer",
+      jobField.integer().overwrite((value) => value + 1),
+    ],
+    [
+      "an overwritten core enum",
+      jobField.enum(["a", "b"]).overwrite(() => "a"),
+    ],
+    ["an integer with a fractional bound", jobField.integer({ min: 0.5 })],
+    [
+      "an integer with an unsafe bound",
+      jobField.integer({ max: Number.MAX_VALUE }),
+    ],
   ])("refuses a payload field holding %s (J6)", (_label, schema) => {
     expect(
       problemsOf({
         ...expiringJob(),
-        payload: z.object({ turnId: z.uuid(), note: schema }),
+        payload: jobPayload({ turnId: jobField.uuid(), note: schema }),
       }),
     ).toEqual([
-      'payload field "note" must be an id (uuid, guid, ulid, cuid2, nanoid), an enum or literal, or an integer — payloads are identity only (ADR-0041 J6)',
+      'payload field "note" must be a jobField (uuid, enum, literal, integer) used as built — payloads are identity only (ADR-0041 J6)',
     ]);
   });
 
@@ -155,7 +213,7 @@ describe("defineJob — define-time refusals", () => {
     expect(
       problemsOf({
         ...expiringJob(),
-        payload: z.object({}),
+        payload: jobPayload({}),
         discriminator: ["turnId"],
       }),
     ).toEqual(['discriminator "turnId" is not a payload field']);

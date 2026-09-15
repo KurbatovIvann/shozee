@@ -7,6 +7,7 @@ import type {
 } from "../contract/index.js";
 import { defineActionContract } from "../contract/index.js";
 import { defineJob, type JobDefinition } from "../jobs/define-job.js";
+import { jobField, jobPayload } from "../jobs/job-payload.js";
 import { ActionRegistry } from "../runtime/action-registry.js";
 import { implementAction } from "../runtime/implement-action.js";
 import { runContractCheck } from "./contract-check.js";
@@ -44,7 +45,7 @@ function job(overrides: Partial<JobDefinition> = {}) {
   return defineJob({
     name: "assistant.runTurn",
     scope: "tenant",
-    payload: z.object({ turnId: z.uuid() }),
+    payload: jobPayload({ turnId: jobField.uuid() }),
     discriminator: ["turnId"],
     lifecycle: "expires",
     onExhausted: "assistant.interruptTurn",
@@ -58,7 +59,7 @@ function periodic(name: string) {
   return defineJob({
     name,
     scope: "global",
-    payload: io,
+    payload: jobPayload({}),
     discriminator: [],
     lifecycle: "periodic",
     retries: 0,

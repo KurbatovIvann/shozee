@@ -470,18 +470,20 @@ A job is declared once with `defineJob` (`@showzy/core`); the runner reads its
 runner settings from the same declaration (`docs/specs/jobs.md`).
 
 - **Declaration.** `name` (`<module>.<name>`), `scope` (`tenant` | `global`),
-  `payload` (a Zod object), `discriminator` (payload fields that tell fan-out
+  `payload` (built by `jobPayload`), `discriminator` (payload fields that tell fan-out
   jobs of one origin apart), `lifecycle` (`expires` | `periodic`), `retries`
   (non-negative integer), `attemptTimeoutMs` (positive integer). `expires`
   requires `onExhausted`, an action of the same module, and forbids `cron`;
   `periodic` requires a 5- or 6-field `cron` and forbids `onExhausted`.
   There is no `recoverable` lifecycle yet.
-- **Identity-only payload (J6).** Each payload field is a stock id string
-  format (`uuid`, `guid`, `ulid`, `cuid2`, `nanoid`) with Zod's own pattern,
-  an enum or literal, or an integer with at most bound checks. Free text,
-  optional, nested, boolean and fractional fields, custom formats or
-  patterns, refinements, overwrites, and loose or catchall payload objects
-  are refused at define time.
+- **Identity-only payload (J6).** Core owns the payload constructors:
+  `jobPayload(shape)` builds a strict object from `jobField.uuid()`,
+  `jobField.enum([...strings])`, `jobField.literal(string)` and
+  `jobField.integer({ min?, max? })` (safe-integer bounds), and takes no Zod
+  options. `defineJob` accepts only a payload object and fields those
+  constructors built, checked by identity, never by reading Zod internals: a
+  hand-built Zod object or field, and any schema derived from a core one
+  (`refine`, `overwrite`, `optional`, `extend`), is refused at define time.
 - **Contract check.** Every `enqueues` name is a registered job of the
   action's module and is not `periodic`; job names are unique; an `expires`
   job's `onExhausted` is a registered `system` action of the same module with
