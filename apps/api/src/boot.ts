@@ -20,6 +20,7 @@ import type { ServerConfig } from "@showzy/config";
 import { contractModules } from "@showzy/contract";
 import { createDbClient } from "@showzy/db";
 import { configureDocumentShareOrigin } from "@showzy/documents/share-origin";
+import { openJobRunner, type JobRunner } from "@showzy/jobs";
 import {
   closeFilesObjectStore,
   configureFilesObjectStore,
@@ -38,7 +39,7 @@ import { createApp, type AuthInstance } from "./http/app.js";
 import { authInstanceFrom } from "./http/auth-instance.js";
 import { createProcessObservability } from "./observability.js";
 import { createActionPipeline } from "./pipeline.js";
-import { createActionRegistry } from "./registry.js";
+import { createActionRegistry, registeredJobs } from "./registry.js";
 import {
   createRedisAuthRateLimitStore,
   createRedisConfirmationStore,
@@ -89,6 +90,23 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
       logger.error({ err: error }, "idle postgres pool client error");
     },
   });
+  let jobRunner: JobRunner;
+  try {
+    jobRunner = await openJobRunner(
+      {
+        db: db.db,
+        jobs: registeredJobs,
+        onError: (error) => {
+          logger.error({ err: error }, "job runner error");
+        },
+      },
+      "api",
+    );
+  } catch (error) {
+    closeFilesObjectStore();
+    await db.pool.end();
+    throw error;
+  }
   const redis = new Redis(config.redis.url);
   await redis.ping();
   const secondary = createRedisSecondaryStorage(redis);
@@ -121,6 +139,7 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
     db: db.db,
     logger,
     telemetry,
+    jobs: jobRunner.port,
     rateLimitStore,
     confirmationStore: createRedisConfirmationStore(redis),
     ipHmacSecret: config.rateLimit.ipHmacSecret,
@@ -220,6 +239,7 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
       await assistantQueue?.close();
       await queueRedis?.quit();
       await redis.quit();
+      await jobRunner.close();
       await db.pool.end();
     },
   };

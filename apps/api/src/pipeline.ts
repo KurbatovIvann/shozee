@@ -11,6 +11,7 @@ import {
   type ActionPipelineDeps,
   type ActionTelemetry,
   type ConfirmationStore,
+  type JobPort,
   type RateLimitStore,
 } from "@showzy/core";
 import type { Database } from "@showzy/db";
@@ -19,6 +20,7 @@ import type { Logger } from "pino";
 export interface CreateActionPipelineOptions {
   readonly db: Database;
   readonly logger: Logger;
+  readonly jobs: JobPort;
   readonly telemetry?: ActionTelemetry;
   readonly rateLimitStore: RateLimitStore;
   readonly confirmationStore: ConfirmationStore;
@@ -52,6 +54,7 @@ export function createActionPipeline(
         ...clock,
       }),
       audit: createAuditHook({ db: options.db, logger: options.logger }),
+      jobs: options.jobs,
     },
     ...clock,
   };

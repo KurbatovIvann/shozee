@@ -66,7 +66,7 @@ import { ownedSchemaModules, projectionGrants } from "@showzy/db";
 import { ASSISTANT_SURFACE_REGISTRY } from "@showzy/validation/assistant-surfaces";
 import type { z } from "zod";
 
-import { createActionRegistry } from "./registry.js";
+import { createActionRegistry, registeredJobs } from "./registry.js";
 import { registeredEventSubscriptions } from "./subscriptions.js";
 
 /**
@@ -300,7 +300,7 @@ const callEdges: readonly DeclaredCallEdge[] = [
   },
 ];
 
-const jobs: readonly JobDefinitionRef[] = [];
+const jobs: readonly JobDefinitionRef[] = registeredJobs;
 
 const readModelGrants: readonly ReadModelGrantRef[] = [
   // Projection owners record spec-declared grants here (ADR-0015).

@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Server-only job runner port over pg-boss (ADR-0041).",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./conformance": "./src/conformance.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
