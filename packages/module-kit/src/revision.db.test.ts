@@ -25,6 +25,13 @@ const betaTable = pgTable("revision_probe_beta", {
   revision: integer("revision").notNull().default(1),
 });
 
+const gammaTable = pgTable("revision_probe_gamma", {
+  id: uuid("id").primaryKey(),
+  externalId: uuid("external_id").notNull(),
+  companyId: uuid("company_id").notNull(),
+  revision: integer("revision").notNull().default(1),
+});
+
 const alphaRoot: RevisionRoot<typeof alphaTable> = {
   table: alphaTable,
   keyColumn: alphaTable.id,
@@ -108,6 +115,9 @@ beforeAll(async () => {
       `CREATE TABLE ${name} (id uuid PRIMARY KEY, company_id uuid NOT NULL, revision integer NOT NULL DEFAULT 1)`,
     );
   }
+  await database.admin.query(
+    "CREATE TABLE revision_probe_gamma (id uuid PRIMARY KEY, external_id uuid NOT NULL, company_id uuid NOT NULL, revision integer NOT NULL DEFAULT 1)",
+  );
 });
 
 afterAll(async () => {
@@ -291,5 +301,41 @@ describe("bumpRevisions", () => {
 
     expect(revisions).toEqual([undefined, 3]);
     expect(await revisionOf(alphaTable, id)).toBe(3);
+  });
+
+  it("keeps roots on one table keyed by different columns apart when their keys are equal", async () => {
+    const sharedKey = randomUUID();
+    const byExternalId = randomUUID();
+    await database.runtime.db.insert(gammaTable).values([
+      { id: sharedKey, externalId: randomUUID(), companyId, revision: 1 },
+      { id: byExternalId, externalId: sharedKey, companyId, revision: 5 },
+    ]);
+
+    const revisions = await database.runtime.db.transaction((tx) =>
+      bumpRevisions(tx, [
+        {
+          root: { table: gammaTable, keyColumn: gammaTable.id },
+          companyId,
+          key: sharedKey,
+        },
+        {
+          root: { table: gammaTable, keyColumn: gammaTable.externalId },
+          companyId,
+          key: sharedKey,
+        },
+      ]),
+    );
+
+    const rows = await database.runtime.db
+      .select({ id: gammaTable.id, revision: gammaTable.revision })
+      .from(gammaTable)
+      .where(eq(gammaTable.companyId, companyId));
+    expect(revisions).toEqual([2, 6]);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        { id: sharedKey, revision: 2 },
+        { id: byExternalId, revision: 6 },
+      ]),
+    );
   });
 });
