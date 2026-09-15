@@ -19,7 +19,8 @@
   "dependencies": {
     "@showzy/core": "workspace:*",
     "drizzle-orm": "^0.45.2",
-    "pg-boss": "12.31.0"
+    "pg-boss": "12.31.0",
+    "zod": "^4.4.3"
   },
   "peerDependencies": {
     "@showzy/db": "workspace:*"

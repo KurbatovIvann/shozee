@@ -1009,6 +1009,9 @@ importers:
       pg-boss:
         specifier: 12.31.0
         version: 12.31.0
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@showzy/db':
         specifier: workspace:*

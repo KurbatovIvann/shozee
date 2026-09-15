@@ -44,6 +44,12 @@ export interface JobRunnerConformanceTarget {
     name: string,
     id: string,
   ): Promise<unknown>;
+  rewriteStoredJobData(
+    database: TestDatabase,
+    name: string,
+    id: string,
+    data: unknown,
+  ): Promise<void>;
   readJobs(
     database: TestDatabase,
     name: string,
@@ -423,6 +429,41 @@ export function describeJobRunnerConformance(
           expect(UUID.test(leaf) || fixedValues.has(leaf)).toBe(true);
         }
       });
+
+      it("a malformed stored envelope fails the attempt with a typed code before the handler runs", async () => {
+        const job = conformanceJob("j6Malformed");
+        const runner = await open([job], "worker");
+        const { envelope, subjectId } = await enqueueSubject(runner, job);
+        await target.rewriteStoredJobData(database, job.name, envelope.id, {
+          companyId: envelope.companyId,
+          actor: { type: "robot", id: envelope.actor.id },
+          channel: envelope.channel,
+          requestId: envelope.requestId,
+          correlationId: envelope.correlationId,
+          executionId: envelope.executionId,
+          payload: envelope.payload,
+        });
+        let runs = 0;
+
+        await work(runner, [
+          handlerFor(job, () => {
+            runs += 1;
+            return Promise.resolve();
+          }),
+        ]);
+
+        await expect(
+          eventually(
+            () => jobRecord(job.name, envelope.id),
+            (record) => record?.state === "failed",
+          ),
+        ).resolves.toMatchObject({
+          state: "failed",
+          output: { code: "INTERNAL" },
+        });
+        expect(runs).toBe(0);
+        await expect(subjectName(subjectId)).resolves.toBe("running");
+      });
     });
 
     describe("J7 declared queue settings", () => {
@@ -571,9 +612,14 @@ export function describeJobRunnerConformance(
         await expect(jobRecord(job.name, envelope.id)).resolves.toMatchObject({
           state: "failed",
         });
-        await expect(exhaustedRecords(job)).resolves.toMatchObject([
-          { state: "completed" },
-        ]);
+        await expect(
+          eventually(
+            () => exhaustedRecords(job),
+            (records) =>
+              records.length > 0 &&
+              records.every(({ state }) => state === "completed"),
+          ),
+        ).resolves.toMatchObject([{ state: "completed" }]);
       });
 
       it("a failing on-exhausted action leaves the row for its module's sweep", async () => {
