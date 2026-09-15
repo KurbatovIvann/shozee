@@ -476,10 +476,12 @@ runner settings from the same declaration (`docs/specs/jobs.md`).
   requires `onExhausted`, an action of the same module, and forbids `cron`;
   `periodic` requires a 5- or 6-field `cron` and forbids `onExhausted`.
   There is no `recoverable` lifecycle yet.
-- **Identity-only payload (J6).** Each payload field is an id string format
-  (`uuid`, `guid`, `ulid`, `cuid`, `cuid2`, `nanoid`), an enum or literal, or
-  an integer. Free text, optional, nested, boolean and fractional fields are
-  refused at define time.
+- **Identity-only payload (J6).** Each payload field is a stock id string
+  format (`uuid`, `guid`, `ulid`, `cuid2`, `nanoid`) with Zod's own pattern,
+  an enum or literal, or an integer with at most bound checks. Free text,
+  optional, nested, boolean and fractional fields, custom formats or
+  patterns, refinements, overwrites, and loose or catchall payload objects
+  are refused at define time.
 - **Contract check.** Every `enqueues` name is a registered job of the
   action's module and is not `periodic`; job names are unique; an `expires`
   job's `onExhausted` is a registered `system` action of the same module with

@@ -45,15 +45,38 @@ const ID_STRING_FORMATS: ReadonlySet<string> = new Set([
   "uuid",
   "guid",
   "ulid",
-  "cuid",
   "cuid2",
   "nanoid",
 ]);
+
+const STOCK_ID_PATTERNS: ReadonlyMap<string, readonly RegExp[]> = new Map(
+  [
+    z.uuid(),
+    z.uuidv4(),
+    z.uuidv6(),
+    z.uuidv7(),
+    z.guid(),
+    z.ulid(),
+    z.cuid2(),
+    z.nanoid(),
+  ].reduce<Map<string, RegExp[]>>((patterns, schema) => {
+    const { format, pattern } = schema._zod.def;
+    if (pattern !== undefined) {
+      patterns.set(format, [...(patterns.get(format) ?? []), pattern]);
+    }
+    return patterns;
+  }, new Map()),
+);
 
 const INTEGER_FORMATS: ReadonlySet<string> = new Set([
   "safeint",
   "int32",
   "uint32",
+]);
+
+const INTEGER_BOUND_CHECKS: ReadonlySet<string> = new Set([
+  "greater_than",
+  "less_than",
 ]);
 
 const CRON_FIELD_COUNTS: ReadonlySet<number> = new Set([5, 6]);
@@ -102,6 +125,20 @@ function validatePayload(definition: JobDefinition, problems: string[]): void {
     problems.push("payload must be a Zod object schema");
     return;
   }
+  const payloadDef = definition.payload._zod.def;
+  if (
+    payloadDef.catchall !== undefined &&
+    !(payloadDef.catchall instanceof z.ZodNever)
+  ) {
+    problems.push(
+      "payload must not accept unknown keys (no looseObject or catchall) — payloads are identity only (ADR-0041 J6)",
+    );
+  }
+  if (hasChecks(definition.payload)) {
+    problems.push(
+      "payload object must not carry refinements or overwrites — payloads are identity only (ADR-0041 J6)",
+    );
+  }
   const shape: Readonly<Record<string, unknown>> = definition.payload.shape;
   for (const [field, schema] of Object.entries(shape)) {
     if (!isIdentityField(schema)) {
@@ -122,17 +159,49 @@ function validatePayload(definition: JobDefinition, problems: string[]): void {
   }
 }
 
+function hasChecks(schema: z.ZodType): boolean {
+  return (schema._zod.def.checks ?? []).length > 0;
+}
+
 function isIdentityField(schema: unknown): boolean {
   if (schema instanceof z.ZodEnum || schema instanceof z.ZodLiteral) {
-    return true;
+    return !hasChecks(schema);
   }
   if (schema instanceof z.ZodNumber) {
-    return schema.format !== null && INTEGER_FORMATS.has(schema.format);
+    return isStockInteger(schema);
   }
   if (schema instanceof z.ZodStringFormat) {
-    return schema.format !== null && ID_STRING_FORMATS.has(schema.format);
+    return isStockIdString(schema);
   }
   return false;
+}
+
+function isStockInteger(schema: z.ZodNumber): boolean {
+  if (schema.format === null || !INTEGER_FORMATS.has(schema.format)) {
+    return false;
+  }
+  return (schema._zod.def.checks ?? []).every(
+    (check) =>
+      INTEGER_BOUND_CHECKS.has(check._zod.def.check) ||
+      (check instanceof z.core.$ZodCheckNumberFormat &&
+        INTEGER_FORMATS.has(check._zod.def.format)),
+  );
+}
+
+function isStockIdString(schema: z.ZodStringFormat): boolean {
+  const def = schema._zod.def;
+  if (!ID_STRING_FORMATS.has(def.format) || "fn" in def || hasChecks(schema)) {
+    return false;
+  }
+  const { pattern } = def;
+  const stockPatterns = STOCK_ID_PATTERNS.get(def.format) ?? [];
+  return (
+    pattern !== undefined &&
+    stockPatterns.some(
+      (stock) =>
+        stock.source === pattern.source && stock.flags === pattern.flags,
+    )
+  );
 }
 
 function validateExpiring(definition: JobDefinition, problems: string[]): void {
