@@ -94,6 +94,10 @@ and is left untouched. Proof: `src/pgboss-schema.db.test.ts`.
   `actor`, `channel`, `requestId`, `correlationId`, `executionId` and the
   identity-only `payload`. Every value is an id, a uuid or a fixed enum; no
   free text reaches a job row (J6, SHO-659).
+- J6 assumes trusted, reviewed in-process module code: registered schemas
+  must not be mutated; payload and envelope data remain untrusted and must be
+  validated at runtime boundaries, while deliberate replacement or mutation
+  of validators by module code is outside J6's threat model.
 - A send whose id the runner still holds (pg-boss answers `null`) throws
   `CoreInvariantError` and rolls the enqueuing transaction back; it is never
   dropped silently. That happens only when an idempotency key is reused
