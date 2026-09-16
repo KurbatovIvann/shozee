@@ -2,10 +2,22 @@
 
 The pg-boss job runner (ADR-0041, SHO-650/SHO-651). This package owns the
 only `pg-boss` import in the repository, the `pgboss` schema migration
-generator, queue provisioning, and the worker host that turns one pg-boss job
-into one `executeAction` attempt. It owns no tables of its own and no domain
-logic: jobs are declared by modules with `defineJob`, bound by `apps/worker`,
-and sent by handlers through `ctx.enqueue`.
+generator, queue provisioning, and the worker host that runs one claimed job
+attempt. It owns no tables of its own and no domain logic: jobs are declared
+by modules with `defineJob`, bound by `apps/worker`, and sent by action
+handlers through `ctx.enqueue`.
+
+**An attempt is not an action and not a transaction.** The host hands the
+bound `JobHandler` a `JobAttempt`; the handler orchestrates as many
+`executeAction` calls as the job needs — a claim, external I/O outside their
+transactions, a separate action that records the result (ADR-0041 §1, J10;
+the two `files` maintenance jobs J10 names are the only exceptions). The
+steps live with the job, not here: `sweepOverdueAssistantTurns`
+(`packages/assistant-runtime/src/assistant-overdue-sweep.ts`, bound in
+`apps/worker/src/assistant-jobs.ts`) is one attempt that runs
+`assistant.listOverdueTurns` once per page and, inside each page, one
+`assistant.sweepOverdueTurns` per company followed by the recovery of each
+turn that sweep ended, before it asks for the next page.
 
 Protocol manual: [`docs/specs/jobs.md`](../../docs/specs/jobs.md). That file
 is the contract; this one is how to work in the package.
@@ -25,10 +37,13 @@ is the contract; this one is how to work in the package.
   provisions and verifies queues against the declarations, starts, and hands
   back the `JobPort` core enqueues through. The `api` role only sends; only
   the `worker` role works jobs.
-- `worker-host.ts` — one attempt: the envelope, the `AbortSignal`, the drain
-  latch, the failure classification, the `boss.schedule` a periodic job's cron
-  is registered through, and the exhausted queue that runs a job's
-  `onExhausted` action and its `afterExhausted` hook.
+- `worker-host.ts` — one attempt: the `JobAttempt` the handler runs actions
+  through (each `run` is one `executeAction`, optionally fanned out to one
+  company, and throws instead of starting another once the attempt is
+  abandoned), the envelope, the `AbortSignal`, the drain latch, the failure
+  classification, the `boss.schedule` a periodic job's cron is registered
+  through, and the exhausted queue — the one path that is fixed at a single
+  action, a job's `onExhausted`, plus its `afterExhausted` hook.
 - `pgboss-job-port.ts` — core's `JobPort` over pg-boss `send` through
   `fromDrizzle(tx)`, so the job row commits with the enqueuing transaction.
   `storedJobDataSchema` is what a stored job may carry: ids only.
@@ -50,9 +65,10 @@ is the contract; this one is how to work in the package.
   and requires a byte-for-byte match.
 - **A job row commits with the write that justified it.** The port enqueues
   on the caller's transaction; never open a second connection to send.
-- **Stored job data is identity only** — company, actor, channel, request and
-  correlation ids, and an identity-only payload. Postgres is the source of
-  everything else; a job payload is never a caller or an access grant.
+- **Stored job data is identity only** — company, actor, channel, request,
+  correlation and execution ids, and an identity-only payload. Postgres is the
+  source of everything else; a job payload is never a caller or an access
+  grant.
 - **Server-only.** Client apps and the client-safe packages (`contract`,
   `validation`, `ui`) may not import this package; only `apps/api` and
   `apps/worker` do.
