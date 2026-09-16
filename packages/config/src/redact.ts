@@ -158,14 +158,26 @@ export function redactText(value: string): string {
   return redactPresignedQuery(next);
 }
 
-function redactError(error: Error): Error {
-  const redacted = new Error(redactText(error.message));
+function redactErrorShell(error: Error, seen: WeakSet<object>): Error {
+  const message = redactText(error.message);
+  if (error instanceof AggregateError) {
+    const nestedErrors: readonly unknown[] = error.errors;
+    return new AggregateError(
+      nestedErrors.map((nested) => redactWalk(nested, seen)),
+      message,
+    );
+  }
+  return new Error(message);
+}
+
+function redactError(error: Error, seen: WeakSet<object>): Error {
+  const redacted = redactErrorShell(error, seen);
   redacted.name = error.name;
   if (error.stack !== undefined) {
     redacted.stack = redactText(error.stack);
   }
   if (error.cause !== undefined) {
-    redacted.cause = redactUnknown(error.cause);
+    redacted.cause = redactWalk(error.cause, seen);
   }
   return redacted;
 }
@@ -185,13 +197,13 @@ function redactWalk(value: unknown, seen: WeakSet<object>): unknown {
   if (value === null || typeof value !== "object") {
     return value;
   }
-  if (value instanceof Error) {
-    return redactError(value);
-  }
   if (seen.has(value)) {
     return REDACTED;
   }
   seen.add(value);
+  if (value instanceof Error) {
+    return redactError(value, seen);
+  }
   if (Array.isArray(value)) {
     return value.map((entry) => redactWalk(entry, seen));
   }
