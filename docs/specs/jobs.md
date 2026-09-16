@@ -213,6 +213,13 @@ and is left untouched. Proof: `src/pgboss-schema.db.test.ts`.
   `executeJobAction` with the payload as input, in the recorded scope. A
   failing on-exhausted action leaves the dead-letter job `failed` with its code
   and the row to the module's sweep.
+- A handler may bind `afterExhausted` next to its on-exhausted action: a
+  post-commit callback the host calls with the recorded envelope and the
+  action's validated output, only after `executeJobAction` committed. It never
+  replaces the mandatory action and is not called when that action fails. A
+  hook that throws fails its dead-letter job like any attempt; the terminal
+  state it was told about is already committed and is not undone. A hook bound
+  without an on-exhausted action is refused when the worker starts.
 - Retention deletion sends nothing to the dead letter, and pg-boss may still
   start a job past `keep_until` until that pass deletes it; the domain row
   decides, never the runner record.
@@ -236,7 +243,8 @@ and is left untouched. Proof: `src/pgboss-schema.db.test.ts`.
 - Tuning: `openJobRunner({ intervals: { pollingSeconds, superviseSeconds,
   cronSeconds } })`; absent, the library defaults apply.
 - Proof: the conformance suite's J7 (thrown attempts, in-process timeout), J9
-  (expired last attempt, failing on-exhausted, retention drop), periodic (two
+  (expired last attempt, failing on-exhausted, the post-commit hook and a
+  failing one, retention drop), periodic (two
   workers, one tick) and drain cases, run by `src/pgboss-conformance.db.test.ts`.
 
 ## 12. Maintenance jobs
