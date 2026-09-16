@@ -193,7 +193,14 @@ const SPAWNS_TURBO_BINARY =
   /(?:^|[\s;&|()"'`/])turbo(?=$|[\s;&|()"'`<>@])|\b(?:pnpm|npx|yarn)\s+(?:exec\s+|dlx\s+)?turbo\b/;
 
 const ROOT_SCRIPT_FLAG =
-  "(?!-r\\b|--recursive\\b|-F\\b|--filter|-C\\b|--dir\\b)-{1,2}[A-Za-z][\\w-]*(?:=\\S+)?";
+  "(?!-r\\b|--recursive\\b|-F\\b|--filter|-C\\b|--dir\\b)-{1,2}[A-Za-z][\\w-]*(?:=\\S+|\\s+(?!-)[^\\s;&|()\"']+)?";
+
+const LIFECYCLE_SHORTCUTS = new Map([
+  ["test", "test|tst|t"],
+  ["start", "start"],
+  ["stop", "stop"],
+  ["restart", "restart"],
+]);
 
 /**
  * @param {string} text
@@ -204,16 +211,23 @@ function escapeRegExp(text) {
 
 /**
  * A command that runs the root `package.json` script `name`, with optional
- * flags before and after `run`. Package selectors (`-r`, `--filter`, `--dir`)
- * run a workspace package's script, not the root one, and do not match.
+ * flags (`--flag=value` or `--flag value`) before and after `run`, through
+ * `npm run-script` or a lifecycle shortcut (`npm test`, `pnpm t`). Package
+ * selectors (`-r`, `--filter`, `--dir`) run a workspace package's script, not
+ * the root one, and do not match.
  * @param {string} name
  */
 function rootScriptInvocation(name) {
-  const script = `${escapeRegExp(name)}(?=$|[\\s;&|)"'])`;
+  const script = escapeRegExp(name);
+  const shortcuts = LIFECYCLE_SHORTCUTS.get(name);
+  const direct = shortcuts ? `${script}|${shortcuts}` : script;
+  const npmDirect = shortcuts ? `|${shortcuts}` : "";
   const flags = `(?:\\s+${ROOT_SCRIPT_FLAG})*`;
-  return new RegExp(
-    `\\b(?:(?:pnpm|yarn)${flags}\\s+(?:run${flags}\\s+)?|npm${flags}\\s+run${flags}\\s+)${script}`,
-  );
+  const launchers = [
+    `(?:pnpm|yarn)${flags}\\s+(?:run${flags}\\s+${script}|${direct})`,
+    `npm${flags}\\s+(?:(?:run|run-script|rum|urn)${flags}\\s+${script}${npmDirect})`,
+  ];
+  return new RegExp(`\\b(?:${launchers.join("|")})(?=$|[\\s;&|)"'])`);
 }
 
 /**
@@ -576,6 +590,18 @@ test("the turbo guard flags a root package.json script that starts turbo, taken 
       - run: pnpm -r test:unit
       - run: pnpm --recursive run typecheck
       - run: pnpm --dir=apps/web check
+      - run: pnpm --reporter append-only test:unit
+      - run: pnpm -w --reporter append-only run --if-present check
+      - run: pnpm t
+      - run: npm test
+      - run: npm --silent t
+      - run: npm run-script typecheck
+      - run: npm tst
+      - run: pnpm --reporter append-only --filter @showzy/web typecheck
+      - run: pnpm --silent -C apps/web check
+      - run: pnpm run t
+      - run: npm typecheck
+      - run: npm run test:db
 `,
     },
     (root) => {
@@ -591,6 +617,13 @@ test("the turbo guard flags a root package.json script that starts turbo, taken 
           "pnpm -w --reporter=append-only run --if-present check",
           "npm run --silent typecheck",
           "yarn --silent test",
+          "pnpm --reporter append-only test:unit",
+          "pnpm -w --reporter append-only run --if-present check",
+          "pnpm t",
+          "npm test",
+          "npm --silent t",
+          "npm run-script typecheck",
+          "npm tst",
         ],
       );
     },
