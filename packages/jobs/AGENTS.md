@@ -15,7 +15,8 @@ is the contract; this one is how to work in the package.
 - `index.ts` — the public surface: `openJobRunner` with its config and role
   types, `exhaustedQueueName`, and the handler types `apps/worker` writes
   against (`JobAttempt`, `JobHandler`, `JobExhaustedHook`,
-  `JobWorkerOptions`). Everything else is internal. `createPgBossJobPort`,
+  `JobWorkerOptions`). The only other export path is `./conformance`;
+  everything else is internal. `createPgBossJobPort`,
   `assertPgBossSchema` and `JobFailureCode` are **not** exported: the runner
   is the one mount path, and a second way to build a port or to check the
   schema is a second protocol (SHO-706).
@@ -25,13 +26,14 @@ is the contract; this one is how to work in the package.
   back the `JobPort` core enqueues through. The `api` role only sends; only
   the `worker` role works jobs.
 - `worker-host.ts` — one attempt: the envelope, the `AbortSignal`, the drain
-  latch, the failure classification, and the exhausted queue that runs a job's
+  latch, the failure classification, the `boss.schedule` a periodic job's cron
+  is registered through, and the exhausted queue that runs a job's
   `onExhausted` action and its `afterExhausted` hook.
 - `pgboss-job-port.ts` — core's `JobPort` over pg-boss `send` through
   `fromDrizzle(tx)`, so the job row commits with the enqueuing transaction.
   `storedJobDataSchema` is what a stored job may carry: ids only.
 - `queue-provisioning.ts` — queue declarations derived from `defineJob`,
-  provisioning, the schedule, and `exhaustedQueueName`.
+  provisioning, and `exhaustedQueueName`.
 - `pgboss-schema.ts` / `pgboss-migration.ts` — the boot version check and the
   generator behind `pnpm --filter @showzy/jobs pgboss:generate`.
 - `conformance.ts` — the shared suite a port implementation must pass.

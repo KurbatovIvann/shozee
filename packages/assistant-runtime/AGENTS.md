@@ -48,7 +48,8 @@ registry is injected into `createAssistantRuntime`; this package never imports
     `releaseUnusedHold` is called at most once, only for a replay, a busy
     conversation, a wrong owner or a core refusal other than `INTERNAL`
     (`acceptProvedRollback`) — never after `accepted`, where the row holds it
-    until the recovery helper releases it, and never after an unknown error,
+    until the worker's processor or the recovery helper releases it, and
+    never after an unknown error,
     which may have followed COMMIT. It must not throw.
 - `stores/assistant-turn-for-job.ts` — the **company-scoped** system read of
   the turn a job names, and the only producer of `VerifiedAssistantCaller` (the row's

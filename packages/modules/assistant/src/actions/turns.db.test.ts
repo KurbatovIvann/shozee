@@ -117,7 +117,7 @@ function interruptAs(
         : { requestId, correlationId: requestId, channel: "system" as const },
     principal: {
       mode: "system",
-      serviceName: "assistant-recovery",
+      serviceName: assistantTurnJob.name,
       scope: { scope: "tenant", companyId },
     },
   });
@@ -1745,7 +1745,7 @@ describe("a finish and an interrupt, the second waiting on the first", () => {
         request: systemRequest(),
         principal: {
           mode: "system",
-          serviceName: "assistant-recovery",
+          serviceName: assistantTurnJob.name,
           scope: { scope: "global" },
         },
       }),

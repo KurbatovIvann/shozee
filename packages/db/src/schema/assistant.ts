@@ -177,18 +177,6 @@ function sqlInList(values: readonly string[]) {
   return sql.raw(values.map((value) => `'${value}'`).join(", "));
 }
 
-/**
- * - **The receipt.** `(conversation, kind, command)` is unique and the row is
- *   kept after the turn ends, so a repeated command finds its turn whenever it
- *   arrives. A send and an answer are different attempts under one client
- *   token, which is why the kind is part of it.
- * The budget hold is integer micro-USD. Floats are refused on schema files
- * (`db.md` §3), and a reservation is a small decimal of dollars that a
- * million-fold integer holds exactly.
- *
- * ON DELETE: the conversation, its messages and the company CASCADE, as the
- * rest of the conversation does; the staff user is RESTRICT.
- */
 export const assistantTurns = pgTable(
   "assistant_turns",
   {
