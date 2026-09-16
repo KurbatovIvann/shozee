@@ -257,6 +257,12 @@ function wellFormedStoredData(envelope: JobEnvelope): Record<string, unknown> {
 
 const hang = (): Promise<void> => new Promise<void>(() => undefined);
 
+const terminalJobStates: ReadonlySet<string> = new Set([
+  "completed",
+  "failed",
+  "cancelled",
+]);
+
 function stringLeaves(value: unknown): string[] {
   if (typeof value === "string") {
     return [value];
@@ -586,15 +592,19 @@ export function describeJobRunnerConformance(
             (name) => name === "interrupted",
           ),
         ).resolves.toBe("interrupted");
-        await delay(1_500);
+        const exhausted = await eventually(
+          () => exhaustedRecords(job),
+          (records) =>
+            records.length > 0 &&
+            records.every(({ state }) => terminalJobStates.has(state)),
+        );
+        expect(exhausted).toMatchObject([{ state: "completed" }]);
         expect(runs).toBe(2);
         const stored = await jobRecord(job.name, envelope.id);
         expect(stored).toMatchObject({
           state: "failed",
           output: { code: "INTERNAL" },
         });
-        const exhausted = await exhaustedRecords(job);
-        expect(exhausted).toMatchObject([{ state: "completed" }]);
         expect(JSON.stringify([stored, exhausted])).not.toContain(secret);
       });
 
