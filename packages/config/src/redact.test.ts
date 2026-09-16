@@ -225,6 +225,36 @@ describe("redactUnknown", () => {
     expect(redacted.message).not.toContain(DB_PASSWORD);
     expect(redacted.message).toContain(REDACTED);
   });
+
+  it("keeps AggregateError.errors and redacts credentials inside each nested error", () => {
+    const error = new AggregateError(
+      [
+        new Error(
+          `pool close failed: postgresql://showzy:${DB_PASSWORD}@localhost:5432/showzy`,
+        ),
+        new Error("boss stop failed"),
+      ],
+      "worker close failed",
+    );
+    const redacted = redactUnknown(error);
+    expect(redacted).toBeInstanceOf(AggregateError);
+    expect(redacted.name).toBe("AggregateError");
+    expect(redacted.message).toBe("worker close failed");
+    const nestedErrors: readonly unknown[] = redacted.errors;
+    const originalErrors: readonly unknown[] = error.errors;
+    expect(nestedErrors).toHaveLength(2);
+    const [first, second] = nestedErrors;
+    if (!(first instanceof Error) || !(second instanceof Error)) {
+      throw new TypeError(
+        "nested errors were not preserved as Error instances",
+      );
+    }
+    expect(first).not.toBe(originalErrors[0]);
+    expect(first.message).not.toContain(DB_PASSWORD);
+    expect(first.message).toContain(REDACTED);
+    expect(first.stack).not.toContain(DB_PASSWORD);
+    expect(second.message).toBe("boss stop failed");
+  });
 });
 
 describe("scrubTelemetryEvent", () => {

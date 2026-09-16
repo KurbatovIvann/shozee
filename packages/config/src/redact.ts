@@ -158,8 +158,20 @@ export function redactText(value: string): string {
   return redactPresignedQuery(next);
 }
 
+function redactErrorShell(error: Error): Error {
+  const message = redactText(error.message);
+  if (error instanceof AggregateError) {
+    const nestedErrors: readonly unknown[] = error.errors;
+    return new AggregateError(
+      nestedErrors.map((nested) => redactUnknown(nested)),
+      message,
+    );
+  }
+  return new Error(message);
+}
+
 function redactError(error: Error): Error {
-  const redacted = new Error(redactText(error.message));
+  const redacted = redactErrorShell(error);
   redacted.name = error.name;
   if (error.stack !== undefined) {
     redacted.stack = redactText(error.stack);
