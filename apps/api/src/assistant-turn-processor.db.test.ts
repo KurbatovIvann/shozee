@@ -40,7 +40,7 @@ import {
   type AssistantTurnJobOutcome,
   type StaffAssistantBudgetHold,
 } from "@showzy/assistant-runtime";
-import { interruptTurn } from "@showzy/assistant";
+import { assistantTurnJob, interruptTurn } from "@showzy/assistant";
 import {
   createConfirmationHook,
   createInMemoryConfirmationStore,
@@ -1165,7 +1165,7 @@ describe("a worker whose turn the sweep ended", () => {
           request: { requestId, correlationId: requestId, channel: "system" },
           principal: {
             mode: "system",
-            serviceName: "assistant-recovery",
+            serviceName: assistantTurnJob.name,
             scope: { scope: "tenant", companyId: COMPANY },
           },
         });
