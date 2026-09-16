@@ -253,7 +253,9 @@ All maintenance runs from `periodic`, `global` pg-boss schedules with zero
 retries; a failed run waits for the next tick. The worker boots the runner
 (`openJobRunner(..., "worker")`), then `work` with `maintenanceHandlers`,
 whose handlers only run the declared action with the empty payload and log
-its counts; drain waits `JOB_DRAIN_TIMEOUT_MS` (30 s).
+its counts; the one shared runner's drain waits `JOB_DRAIN_TIMEOUT_MS` =
+`ASSISTANT_TURN_ATTEMPT_TIMEOUT_MS` (210 s), so a maintenance run shares the
+bound the assistant turn sets.
 
 | Job | Cron (UTC) | Action | Owner |
 | --- | --- | --- | --- |

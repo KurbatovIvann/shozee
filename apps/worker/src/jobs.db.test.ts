@@ -5,8 +5,13 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 import {
+  AI_BUDGET_TTL_SEC,
+  aiBudgetHoldKey,
+  aiCompanyBudgetKey,
+  aiGlobalBudgetKey,
   assistantSweepOverdueTurnsJob,
   assistantTurnJob,
+  createRedisAiBudgetStore,
 } from "@showzy/assistant-runtime";
 import { createProcessLogger, loadServerConfig } from "@showzy/config";
 import {
@@ -61,6 +66,7 @@ import {
   type StartedTestContainer,
 } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import { bootWorker } from "./boot.js";
 import {
@@ -511,6 +517,26 @@ describe("apps/worker assistant jobs at boot (SHO-651)", () => {
     return rows.rows.map(({ name }) => name).toSorted();
   }
 
+  const BUDGET_KYIV_DATE = "2026-09-16";
+  const PLACEHOLDER_CREATED_AT = "2026-09-16T09:00:00.000Z";
+  const MICRO_USD_PER_USD = 1_000_000;
+  const HOLD = {
+    companyReservedMicroUsd: 250_000,
+    globalReservedMicroUsd: 125_000,
+  };
+  const COMPANY_SPENT_USD = 1;
+  const GLOBAL_SPENT_USD = 2;
+
+  const placeholderSchema = z.object({
+    parts: z.array(
+      z.object({
+        kind: z.string(),
+        text: z.string().optional(),
+        status: z.string().optional(),
+      }),
+    ),
+  });
+
   async function seedQueuedTurn() {
     const companyId = kitIdentities.companies.a;
     const userId = kitIdentities.users.anna;
@@ -529,7 +555,8 @@ describe("apps/worker assistant jobs at boot (SHO-651)", () => {
       message: {
         messageId: placeholderMessageId,
         role: "assistant",
-        parts: [],
+        createdAt: PLACEHOLDER_CREATED_AT,
+        parts: [{ kind: "text", text: "", status: "streaming" }],
       },
     });
     await kit.db.runtime.db.insert(assistantTurns).values({
@@ -544,11 +571,11 @@ describe("apps/worker assistant jobs at boot (SHO-651)", () => {
       userMessageId: null,
       placeholderMessageId,
       continuesCommandId: null,
-      companyReservedMicroUsd: 0,
-      globalReservedMicroUsd: 0,
-      budgetKyivDate: "2026-09-16",
+      companyReservedMicroUsd: HOLD.companyReservedMicroUsd,
+      globalReservedMicroUsd: HOLD.globalReservedMicroUsd,
+      budgetKyivDate: BUDGET_KYIV_DATE,
     });
-    return { companyId, conversationId, commandId };
+    return { companyId, conversationId, commandId, placeholderMessageId };
   }
 
   async function sendTurnJob(seeded: {
@@ -590,6 +617,16 @@ describe("apps/worker assistant jobs at boot (SHO-651)", () => {
     )[0];
   }
 
+  async function placeholderParts(placeholderMessageId: string) {
+    const row = (
+      await kit.db.runtime.db
+        .select({ message: assistantChatMessages.message })
+        .from(assistantChatMessages)
+        .where(eq(assistantChatMessages.messageId, placeholderMessageId))
+    )[0];
+    return row === undefined ? [] : placeholderSchema.parse(row.message).parts;
+  }
+
   it("provisions the turn queue, its exhaustion queue and the global sweep schedule", async () => {
     const lines: string[] = [];
     const booted = await bootWorker(assistantConfig(true), {
@@ -615,9 +652,23 @@ describe("apps/worker assistant jobs at boot (SHO-651)", () => {
     }
   }, 150_000);
 
-  it("boots with no model and closes a leftover queued turn as not_started through its exhaustion", async () => {
+  it("boots with no model, closes a leftover queued turn as not_started through its exhaustion, settles its placeholder and gives its hold back", async () => {
     const lines: string[] = [];
     const seeded = await seedQueuedTurn();
+    const redis = new Redis(redisUrl);
+    const budget = createRedisAiBudgetStore(redis);
+    const companyKey = aiCompanyBudgetKey(seeded.companyId, BUDGET_KYIV_DATE);
+    const globalKey = aiGlobalBudgetKey(BUDGET_KYIV_DATE);
+    const holdKey = aiBudgetHoldKey({
+      companyId: seeded.companyId,
+      kyivDate: BUDGET_KYIV_DATE,
+      kind: "answer",
+      conversationId: seeded.conversationId,
+      commandId: seeded.commandId,
+    });
+    await budget.add(companyKey, COMPANY_SPENT_USD, AI_BUDGET_TTL_SEC);
+    await budget.add(globalKey, GLOBAL_SPENT_USD, AI_BUDGET_TTL_SEC);
+    await budget.claimHold(holdKey, seeded.commandId, AI_BUDGET_TTL_SEC);
     const booted = await bootWorker(assistantConfig(false), {
       logger: capturingLogger(lines),
       pollIntervalMs: 60_000,
@@ -631,16 +682,30 @@ describe("apps/worker assistant jobs at boot (SHO-651)", () => {
       );
 
       await sendTurnJob(seeded);
-      await waitUntil(async () => {
-        const row = await turnRow(seeded.commandId);
-        return row?.status === "interrupted";
-      });
+      await waitUntil(async () =>
+        (await placeholderParts(seeded.placeholderMessageId)).some(
+          (part) => part.status === "interrupted",
+        ),
+      );
       expect(await turnRow(seeded.commandId)).toEqual({
         status: "interrupted",
         endReason: "not_started",
       });
+      expect(await placeholderParts(seeded.placeholderMessageId)).toEqual([
+        { kind: "text", text: "", status: "interrupted" },
+      ]);
+      expect(await redis.get(holdKey)).toBeNull();
+      expect(await budget.read(companyKey)).toBeCloseTo(
+        COMPANY_SPENT_USD - HOLD.companyReservedMicroUsd / MICRO_USD_PER_USD,
+        6,
+      );
+      expect(await budget.read(globalKey)).toBeCloseTo(
+        GLOBAL_SPENT_USD - HOLD.globalReservedMicroUsd / MICRO_USD_PER_USD,
+        6,
+      );
     } finally {
       await booted.close();
+      await redis.quit();
     }
   }, 150_000);
 });
