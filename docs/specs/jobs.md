@@ -149,11 +149,14 @@ and is left untouched. Proof: `src/pgboss-schema.db.test.ts`.
   `notify: false`, no retry delay or backoff, no heartbeat,
   `retentionSeconds` and `deleteAfterSeconds` one day. Concurrency is a
   worker-host `work` option, not a stored setting: the host passes the
-  declaration's `concurrency` as pg-boss `localConcurrency`, for the job's
-  queue and for its dead letter, so one worker process runs that many attempts
-  of the job at once. The declared numbers are `assistant.turn` 4 (SHO-703:
-  one turn at a time made a second staff turn wait up to the 180 s attempt
-  timeout, and a backlog past `createdAt + 15 min` reaches the overdue sweep)
+  declaration's `concurrency` as pg-boss `localConcurrency` for the job's own
+  queue, so one worker process runs that many attempts of the job at once. A
+  dead letter always runs at 1 (`exhaustedQueueConcurrency`, a host constant,
+  not the declaration): the on-exhausted action is a small idempotent system
+  write and nothing about it asks for parallel pollers. The declared numbers
+  are `assistant.turn` 4 (SHO-703: one turn at a time made a second staff turn
+  wait out the running attempt — up to `ASSISTANT_TURN_ATTEMPT_TIMEOUT_MS`,
+  210 s — and a backlog past `createdAt + 15 min` reaches the overdue sweep)
   and 1 for every periodic job, whose ticks are meant to be serial. More
   processes still multiply the number; sizing that is a capacity question and
   there is no deployment yet.
@@ -180,8 +183,8 @@ and is left untouched. Proof: `src/pgboss-schema.db.test.ts`.
 - `runner.work({ deps, handlers, drainTimeoutMs })` on a `worker`-role runner
   (`createJobWorker`, `src/worker-host.ts`) registers one pg-boss `work` per
   handler (`perJobResults`, `includeMetadata`, `batchSize: 1`, polling,
-  `localConcurrency` from `job.concurrency` — a handler cannot state a number
-  of its own). An
+  `localConcurrency` from `job.concurrency`, and 1 for the job's dead letter
+  — a handler cannot state a number of its own). An
   `api` runner, a second `work` call, a handler for an undeclared job, a
   handler whose job is not the declared definition object, a
   declared job without a handler, a duplicate handler, an `onExhausted` binding whose action name differs from

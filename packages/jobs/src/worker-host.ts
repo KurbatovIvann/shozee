@@ -53,6 +53,8 @@ type StoredJob = JobWithMetadata<unknown>;
 
 const drainSettleMs = 5_000;
 
+const exhaustedQueueConcurrency = 1;
+
 export async function createJobWorker(
   boss: PgBoss,
   declared: readonly Job[],
@@ -135,7 +137,7 @@ export async function createJobWorker(
   for (const handler of options.handlers) {
     const { job, onExhausted, afterExhausted } = handler;
     if (onExhausted !== undefined) {
-      await work(exhaustedQueueName(job), job.concurrency, (stored) =>
+      await work(exhaustedQueueName(job), exhaustedQueueConcurrency, (stored) =>
         settle(stored, job.attemptTimeoutMs, async () => {
           const envelope = recordedEnvelope(job, stored);
           const output = await executeJobAction(deps, {

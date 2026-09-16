@@ -869,11 +869,13 @@ export function describeJobRunnerConformance(
       async function peakAttempts(job: Job, enqueued: number): Promise<number> {
         const runner = await open([job], "worker");
         const holding = new Set<() => void>();
+        let started = 0;
         let active = 0;
         let peak = 0;
 
         await work(runner, [
           handlerFor(job, async () => {
+            started += 1;
             active += 1;
             peak = Math.max(peak, active);
             await new Promise<void>((release) => holding.add(release));
@@ -884,10 +886,19 @@ export function describeJobRunnerConformance(
           await enqueueSubject(runner, job);
         }
         await eventually(
-          () => Promise.resolve(peak),
+          () => Promise.resolve(started),
           (value) => value >= job.concurrency,
         );
-        await delay(2_000);
+        for (const release of holding) {
+          holding.delete(release);
+          release();
+          break;
+        }
+        const startedAfterSlotFreed = await eventually(
+          () => Promise.resolve(started),
+          (value) => value > job.concurrency,
+        );
+        expect(startedAfterSlotFreed).toBe(job.concurrency + 1);
         for (const release of holding) {
           release();
         }
