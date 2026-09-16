@@ -35,15 +35,15 @@ export interface RunnerJobRecord {
 }
 
 export interface ScheduledTick {
-  readonly slot: string;
+  readonly slotMs: number;
+  readonly createdMs: number;
   readonly state: string;
-  readonly passedAgainInSlot: boolean;
 }
 
 export interface ScheduledRuns {
   readonly jobs: readonly RunnerJobRecord[];
   readonly ticks: readonly ScheduledTick[];
-  readonly lastPassOn: string | null;
+  readonly lastPassMs: number | null;
 }
 
 export interface JobRunnerConformanceTarget {
@@ -246,6 +246,22 @@ async function eventually<T>(
     }
     await delay(250);
   }
+}
+
+function slotPassedAgainBeforeLaterSlot(
+  ticks: readonly ScheduledTick[],
+  observedPassesMs: ReadonlySet<number>,
+): boolean {
+  const slotsMs = ticks.map(({ slotMs }) => slotMs).sort((a, b) => a - b);
+  return ticks.some(({ slotMs, createdMs }) => {
+    const laterSlotMs = slotsMs.find((otherMs) => otherMs > slotMs);
+    return (
+      laterSlotMs !== undefined &&
+      [...observedPassesMs].some(
+        (passMs) => passMs > createdMs && passMs < laterSlotMs,
+      )
+    );
+  });
 }
 
 function wellFormedStoredData(envelope: JobEnvelope): Record<string, unknown> {
@@ -826,7 +842,7 @@ export function describeJobRunnerConformance(
     });
 
     describe("periodic schedules", () => {
-      it("two workers: no two send-its share a slot, each send-it gives one job, each job runs once, in the global scope", async () => {
+      it("a later schedule pass in the same slot, seen before a pass in a later slot, sends no second send-it; each send-it gives one job, each job runs once, in the global scope", async () => {
         const job = defineJob({
           name: "conformance.j9Tick",
           scope: "global",
@@ -850,8 +866,8 @@ export function describeJobRunnerConformance(
         await work(await open([job], "worker"), [tick]);
         await work(await open([job], "worker"), [tick]);
 
-        let slotPassedAgainOn: string | null = null;
-        const { jobs, ticks, ranIds, passedSinceSlotPassedAgain } =
+        const observedPassesMs = new Set<number>();
+        const { jobs, ticks, ranIds, passedAgainBeforeLaterSlot } =
           await eventually(
             async () => {
               const ranBeforeRead = runs.map(({ id }) => id);
@@ -859,33 +875,30 @@ export function describeJobRunnerConformance(
                 database,
                 job.name,
               );
-              const passedSince =
-                slotPassedAgainOn !== null &&
-                scheduled.lastPassOn !== slotPassedAgainOn;
-              if (
-                slotPassedAgainOn === null &&
-                scheduled.ticks.some(
-                  ({ passedAgainInSlot }) => passedAgainInSlot,
-                )
-              ) {
-                slotPassedAgainOn = scheduled.lastPassOn;
+              if (scheduled.lastPassMs !== null) {
+                observedPassesMs.add(scheduled.lastPassMs);
               }
               return {
                 ...scheduled,
                 ranIds: ranBeforeRead,
-                passedSinceSlotPassedAgain: passedSince,
+                passedAgainBeforeLaterSlot: slotPassedAgainBeforeLaterSlot(
+                  scheduled.ticks,
+                  observedPassesMs,
+                ),
               };
             },
             (read) =>
-              read.passedSinceSlotPassedAgain &&
+              read.passedAgainBeforeLaterSlot &&
               read.jobs.every(({ state }) => state === "completed") &&
               read.ticks.every(({ state }) => state === "completed") &&
               read.ranIds.length === read.jobs.length,
             100_000,
           );
-        expect(passedSinceSlotPassedAgain).toBe(true);
+        expect(passedAgainBeforeLaterSlot).toBe(true);
         expect(ranIds.length).toBeGreaterThan(0);
-        expect(new Set(ticks.map(({ slot }) => slot)).size).toBe(ticks.length);
+        expect(new Set(ticks.map(({ slotMs }) => slotMs)).size).toBe(
+          ticks.length,
+        );
         expect(jobs).toHaveLength(ticks.length);
         expect(new Set(ranIds).size).toBe(ranIds.length);
         expect([...ranIds].sort()).toEqual(jobs.map(({ id }) => id).sort());

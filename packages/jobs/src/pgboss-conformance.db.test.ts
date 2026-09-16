@@ -48,19 +48,14 @@ describeJobRunnerConformance({
          COALESCE((SELECT json_agg(json_build_object('id', id, 'state', state, 'output', output, 'sourceId', source_id))
                    FROM pgboss.job WHERE name = $1), '[]') AS jobs,
          COALESCE((SELECT json_agg(json_build_object(
-                     'slot', tick.singleton_on,
-                     'state', tick.state,
-                     'passedAgainInSlot', COALESCE(
-                       pass.cron_on > tick.created_on
-                       AND 'epoch'::timestamp + '60s'::interval * floor(date_part('epoch', pass.cron_on) / 60) = tick.singleton_on,
-                       false)))
-                   FROM pgboss.job tick
-                   WHERE tick.name = '__pgboss__send-it' AND tick.data->>'name' = $1), '[]') AS ticks,
-         pass.cron_on::text AS "lastPassOn"
-       FROM pgboss.version pass`,
+                     'slotMs', extract(epoch FROM singleton_on) * 1000,
+                     'createdMs', extract(epoch FROM created_on) * 1000,
+                     'state', state))
+                   FROM pgboss.job WHERE name = '__pgboss__send-it' AND data->>'name' = $1), '[]') AS ticks,
+         (SELECT (extract(epoch FROM cron_on) * 1000)::float8 FROM pgboss.version) AS "lastPassMs"`,
       [name],
     );
-    return result.rows[0] ?? { jobs: [], ticks: [], lastPassOn: null };
+    return result.rows[0] ?? { jobs: [], ticks: [], lastPassMs: null };
   },
   async abandonAttempt(database, name, id) {
     await database.admin.query(
