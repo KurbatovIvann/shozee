@@ -59,15 +59,15 @@ export const turnForJobSchema = z.strictObject({
 });
 
 export const readTurnForJobOutputSchema = z.strictObject({
-  turn: turnForJobSchema.nullable(),
+  turn: turnForJobSchema,
 });
 
 export const readTurnForJobContract = defineActionContract({
   name: "assistant.readTurnForJob",
   description:
-    "Read the staff assistant turn a queued job names by its conversation, kind and command, in any casing, across companies. Returns the turn's company, conversation, kind, command, the staff user it acts as, the request id its actions are audited under, its status, placeholder message, deadline, the budget hold the row still holds, and the command its tools derive idempotency keys from; or null when no such turn exists. No message content and no session. Company id is never input.",
+    "Read the staff assistant turn of this company that a job names by its conversation, kind and command, in any casing. Returns the turn's company, conversation, kind, command, the staff user it acts as, the request id its actions are audited under, its status, placeholder message, deadline, the budget hold the row still holds, and the command its tools derive idempotency keys from. A turn that does not exist in this company is not-found. No message content and no session. Company id is never input: it is the recorded company of the job's own scope.",
   principal: "system",
-  systemScope: "global",
+  systemScope: "tenant",
   transport: "internal",
   input: readTurnForJobInputSchema,
   output: readTurnForJobOutputSchema,
@@ -79,7 +79,7 @@ export const readTurnForJobContract = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
-  errors: ["VALIDATION"],
+  errors: ["VALIDATION", "NOT_FOUND"],
   audit: false,
   timeout: 5_000,
 });

@@ -17,14 +17,14 @@
 import { createHash } from "node:crypto";
 
 import {
+  ASSISTANT_TURN_TIMEOUT_MS,
   acceptTurn,
   finishTurn,
-  interruptTurn,
-  listStaleTurns,
   readActiveTurn,
   readChatMessages,
   readLatestInterruptedTurn,
   startTurn,
+  type AssistantTurnKind,
 } from "@showzy/assistant";
 import type {
   ChatMessage,
@@ -33,10 +33,7 @@ import type {
   ToolOutcome,
 } from "@showzy/assistant-kit";
 import { executeAction } from "@showzy/core";
-import type {
-  AssistantChatInterruptedTurn,
-  AssistantTurnEndReason,
-} from "@showzy/validation/assistant-chat";
+import type { AssistantChatInterruptedTurn } from "@showzy/validation/assistant-chat";
 import {
   ConflictError,
   CoreError,
@@ -44,12 +41,6 @@ import {
 } from "@showzy/core/errors";
 
 import type { StaffAssistantBudgetHold } from "../assistant-budget-guard.js";
-import {
-  ASSISTANT_TURN_TIMEOUT_MS,
-  assistantTurnJobSchema,
-  type AssistantTurnJob,
-  type AssistantTurnKind,
-} from "../queue.js";
 import {
   AssistantKitConversationGoneError,
   asCaller,
@@ -83,15 +74,7 @@ export function acceptProvedRollback(error: unknown): boolean {
   return error instanceof CoreError && error.code !== "INTERNAL";
 }
 
-/**
- * How long a turn may sit accepted and unstarted before the reconciler treats
- * its job as lost. One reconciler interval: a job that exists is picked up in
- * well under that, and a lost one costs at most two intervals to notice.
- */
-export const ASSISTANT_TURN_QUEUED_STALE_MS = 60_000;
-
-/** The system service name the reconciler's reads are logged under. */
-export const ASSISTANT_RECONCILER_SERVICE = "assistant-reconciler";
+export const ASSISTANT_RECOVERY_SERVICE = "assistant-recovery";
 
 const TURN_MESSAGE_NAMESPACE = "showzy.assistant.turn-message";
 
@@ -290,7 +273,6 @@ export type AssistantTurnAcceptResult =
        */
       readonly outcome: "accepted" | "replayed";
       readonly turn: AssistantTurnView;
-      readonly job: AssistantTurnJob;
     }
   /** Another turn holds the conversation. Nothing was written. */
   | { readonly outcome: "busy" }
@@ -313,6 +295,7 @@ export interface AssistantTurnStore {
   ): Promise<
     | { readonly outcome: "started"; readonly deadlineAt: string }
     | { readonly outcome: "not_queued"; readonly status: string }
+    | { readonly outcome: "expired" }
   >;
   /**
    * `finished` hands back the hold this call took off the row, for the caller
@@ -358,15 +341,6 @@ function identityOf(ref: AssistantTurnRef): AssistantTurnRef {
     kind: ref.kind,
     commandId: ref.commandId,
   };
-}
-
-function jobOf(turn: AssistantTurnRef): AssistantTurnJob {
-  return assistantTurnJobSchema.parse({
-    version: 1,
-    kind: turn.kind,
-    conversationId: turn.conversationId,
-    commandId: turn.commandId,
-  });
 }
 
 async function resolveContinuation(
@@ -485,11 +459,7 @@ export function createPostgresAssistantTurnStore(
             if (accepted.outcome === "busy") {
               return { outcome: "busy" };
             }
-            return {
-              outcome: accepted.outcome,
-              turn: accepted.turn,
-              job: jobOf(accepted.turn),
-            };
+            return { outcome: accepted.outcome, turn: accepted.turn };
           },
         );
         // Replayed, busy and wrong owner stored nothing: the row, if any, holds
@@ -530,8 +500,11 @@ export function createPostgresAssistantTurnStore(
         },
         ...call,
       });
-      return started.outcome === "started"
-        ? { outcome: "started", deadlineAt: started.deadlineAt }
+      if (started.outcome === "started") {
+        return { outcome: "started", deadlineAt: started.deadlineAt };
+      }
+      return started.outcome === "expired"
+        ? { outcome: "expired" }
         : { outcome: "not_queued", status: started.status };
     },
 
@@ -639,7 +612,7 @@ export function memoryAssistantTurnStore(
       const replayed = byCommand.get(key(ref));
       if (replayed !== undefined) {
         await input.releaseUnusedHold();
-        return { outcome: "replayed", turn: replayed, job: jobOf(ref) };
+        return { outcome: "replayed", turn: replayed };
       }
       const holder = [...byCommand.values()].find(
         (turn) =>
@@ -761,7 +734,7 @@ export function memoryAssistantTurnStore(
       };
       byCommand.set(key(ref), turn);
       statuses.set(key(ref), "queued");
-      return { outcome: "accepted", turn, job: jobOf(ref) };
+      return { outcome: "accepted", turn };
     },
 
     start(ref) {
@@ -832,132 +805,6 @@ export function memoryAssistantTurnStore(
           ? null
           : { id: interrupted.commandId, endReason: null },
       );
-    },
-  };
-}
-
-export interface AssistantStaleTurn {
-  readonly companyId: string;
-  /**
-   * What the reconciler does with it: re-enqueue a `queued_without_start`,
-   * interrupt the other two. Decided by the module, by the same predicates its
-   * interrupt ends a turn by, so the reconciler holds no threshold of its own.
-   */
-  readonly staleness:
-    "queued_without_start" | "queued_abandoned" | "running_past_deadline";
-  readonly turn: AssistantTurnRef;
-  readonly placeholderMessageId: string;
-  /**
-   * Rebuilt from the row alone: what the reconciler re-enqueues, and the id it
-   * asks the queue about.
-   */
-  readonly job: AssistantTurnJob;
-}
-
-/**
- * What one interrupt did: ended the turn from the status named, handing over
- * the hold it zeroed, or left it alone.
- */
-export type AssistantTurnInterruption =
-  | {
-      readonly outcome: "interrupted";
-      readonly from: "queued" | "running";
-      readonly endReason: AssistantTurnEndReason;
-      readonly releasedHold: StaffAssistantBudgetHold;
-    }
-  | {
-      readonly outcome: "not_stale" | "already_finished";
-      readonly status: string;
-    };
-
-/**
- * The reconciler's read and write, as the system (ADR-0039). No caller: the
- * turns it finds were left behind by a worker that has no request any more.
- *
- * The list is global — a stale turn belongs to any company — and the interrupt
- * runs inside the company the listed row named, so it cannot reach another's.
- */
-export function createPostgresAssistantStaleTurns(
-  deps: AssistantKitStoreDeps,
-): {
-  list(options: {
-    /** The reconciler run's own request id. */
-    readonly requestId: string;
-    readonly limit?: number;
-  }): Promise<readonly AssistantStaleTurn[]>;
-  /**
-   * Ends one listed turn, if the database still judges it stale. Staleness is
-   * re-decided inside that statement, so a turn started, finished or renewed
-   * since it was listed is left alone.
-   */
-  interrupt(options: {
-    readonly companyId: string;
-    readonly turn: AssistantTurnRef;
-    readonly requestId: string;
-  }): Promise<AssistantTurnInterruption>;
-} {
-  return {
-    async interrupt(options) {
-      const ended = await executeAction(deps.pipeline, {
-        action: interruptTurn,
-        input: {
-          conversationId: options.turn.conversationId,
-          kind: options.turn.kind,
-          commandId: options.turn.commandId,
-        },
-        request: {
-          requestId: options.requestId,
-          correlationId: options.requestId,
-          channel: "system",
-        },
-        principal: {
-          mode: "system",
-          serviceName: ASSISTANT_RECONCILER_SERVICE,
-          scope: { scope: "tenant", companyId: options.companyId },
-        },
-      });
-      return ended.outcome === "interrupted"
-        ? {
-            outcome: "interrupted",
-            from: ended.from,
-            endReason: ended.endReason,
-            releasedHold: assistantBudgetHoldFromStored(ended.releasedHold),
-          }
-        : { outcome: ended.outcome, status: ended.status };
-    },
-
-    async list(options) {
-      const page = await executeAction(deps.pipeline, {
-        action: listStaleTurns,
-        input: {
-          queuedStaleAfterMs: ASSISTANT_TURN_QUEUED_STALE_MS,
-          limit: options.limit ?? 100,
-        },
-        request: {
-          requestId: options.requestId,
-          correlationId: options.requestId,
-          channel: "system",
-        },
-        principal: {
-          mode: "system",
-          serviceName: ASSISTANT_RECONCILER_SERVICE,
-          scope: { scope: "global" },
-        },
-      });
-      return page.turns.map((row) => {
-        const turn = {
-          conversationId: row.conversationId,
-          kind: row.kind,
-          commandId: row.commandId,
-        };
-        return {
-          companyId: row.companyId,
-          staleness: row.staleness,
-          turn,
-          placeholderMessageId: row.placeholderMessageId,
-          job: jobOf(turn),
-        };
-      });
     },
   };
 }

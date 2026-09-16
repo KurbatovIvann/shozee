@@ -64,11 +64,6 @@ export const interruptTurnOutputSchema = z.discriminatedUnion("outcome", [
     releasedHold: assistantTurnBudgetHoldSchema,
   }),
   z.strictObject({
-    outcome: z.literal("not_stale"),
-    conversationId: z.uuid(),
-    status: assistantTurnActiveStatusSchema,
-  }),
-  z.strictObject({
     outcome: z.literal("already_finished"),
     conversationId: z.uuid(),
     status: assistantTurnStatusSchema,
@@ -78,7 +73,7 @@ export const interruptTurnOutputSchema = z.discriminatedUnion("outcome", [
 export const interruptTurnContract = defineActionContract({
   name: "assistant.interruptTurn",
   description:
-    "Interrupt a staff assistant turn of this company, named by its conversation, kind and command, that is running past its deadline or has stayed queued, never started, past its start deadline: it becomes interrupted with end reason timeout or not_started, stops holding its conversation, and gives up the budget hold it stored, which is returned with the status it was ended from. Any other queued or running turn is left as it is and reported as not_stale with its status. A turn that already ended keeps its status and reports it as already_finished. Neither returns a hold. A turn that does not exist in this company is not-found. Company id is never input.",
+    "End a staff assistant turn of this company whose job is exhausted, named by its conversation, kind and command. A turn still queued or running becomes interrupted whether or not any deadline elapsed, with end reason not_started when it never started and job_exhausted when it was running; it stops holding its conversation and gives up the budget hold it stored, which is returned with the status it was ended from. A turn that already ended keeps its status, reports it as already_finished and returns no hold. A turn that does not exist in this company is not-found. Company id is never input.",
   principal: "system",
   systemScope: "tenant",
   transport: "internal",

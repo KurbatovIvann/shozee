@@ -15,10 +15,10 @@ import type {
   ToolOutcome,
   ToolSet,
 } from "@showzy/assistant-kit";
+import type { AssistantTurnKind } from "@showzy/assistant";
 import type { Logger } from "pino";
 
 import type { AssistantInteractionTypes } from "./assistant-interactions.js";
-import type { AssistantTurnKind } from "./queue.js";
 import type { AssistantTurnStore } from "./stores/assistant-turn-store.js";
 
 /**

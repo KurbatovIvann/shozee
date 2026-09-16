@@ -36,7 +36,6 @@ import { z } from "zod";
 
 import {
   canonicalCommandIds,
-  enqueueAcceptedTurn,
   goneResponse,
   json,
   readJson,
@@ -400,8 +399,6 @@ export async function handleAssistantKitAnswer(
   if (result.outcome === "accepted") {
     budget.keep();
   }
-
-  await enqueueAcceptedTurn(runtime, result.job, requestId);
 
   return json(
     202,

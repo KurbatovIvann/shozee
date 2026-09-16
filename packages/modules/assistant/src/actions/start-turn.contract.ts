@@ -38,11 +38,15 @@ export const startTurnOutputSchema = z.discriminatedUnion("outcome", [
     conversationId: z.uuid(),
     status: assistantTurnStatusSchema,
   }),
+  z.strictObject({
+    outcome: z.literal("expired"),
+    conversationId: z.uuid(),
+  }),
 ]);
 
 export const startTurnContract = defineActionContract({
   name: "assistant.startTurn",
-  description: `${STAFF_CONVERSATION_AUTHOR_INVARIANT} Start an accepted turn, named by its conversation, kind and command: a queued turn becomes running with a deadline of timeoutMs from now. A turn that is no longer queued is left as it is and its status returned as not_queued. A turn that does not exist, or a conversation belonging to another author or another company, is not-found. Company id is never input.`,
+  description: `${STAFF_CONVERSATION_AUTHOR_INVARIANT} Start an accepted turn, named by its conversation, kind and command: a queued turn becomes running with a deadline of timeoutMs from now. A queued turn whose start deadline has passed is refused as expired and left queued for its job's exhaustion to end. A turn that is no longer queued is left as it is and its status returned as not_queued. A turn that does not exist, or a conversation belonging to another author or another company, is not-found. Company id is never input.`,
   principal: "staff",
   transport: "internal",
   input: startTurnInputSchema,

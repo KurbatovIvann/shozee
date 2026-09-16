@@ -55,7 +55,11 @@ export function createAssistantTurnRecovery(
     fields: Record<string, string>,
   ): Promise<void> {
     try {
-      const author = await authors.read({ turn: ended.turn, requestId });
+      const author = await authors.read({
+        companyId: ended.companyId,
+        turn: ended.turn,
+        requestId,
+      });
       const bind =
         author === null
           ? null

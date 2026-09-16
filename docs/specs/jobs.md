@@ -253,13 +253,30 @@ All maintenance runs from `periodic`, `global` pg-boss schedules with zero
 retries; a failed run waits for the next tick. The worker boots the runner
 (`openJobRunner(..., "worker")`), then `work` with `maintenanceHandlers`,
 whose handlers only run the declared action with the empty payload and log
-its counts; drain waits `JOB_DRAIN_TIMEOUT_MS` (30 s).
+its counts; the one shared runner's drain waits `JOB_DRAIN_TIMEOUT_MS` =
+`ASSISTANT_TURN_ATTEMPT_TIMEOUT_MS` (210 s), so a maintenance run shares the
+bound the assistant turn sets.
 
 | Job | Cron (UTC) | Action | Owner |
 | --- | --- | --- | --- |
 | `files.sweepAbandonedUploads` | `*/5 * * * *` | `files.sweepAbandonedUploads` | files module |
 | `files.backfillCatalogRenditions` | every `BACKFILL_CATALOG_RENDITIONS_INTERVAL_MS` (5 min) | `files.backfillCatalogRenditions` | files module |
 | `worker.cleanupIdempotencyKeys` | `0 * * * *` | `worker.cleanupIdempotencyKeys` | `apps/worker` |
+| `assistant.sweepOverdueTurns` | `* * * * *` | `assistant.listOverdueTurns` then `assistant.sweepOverdueTurns` per company | assistant module |
+
+- The overdue sweep is a global periodic job that fans out tenant work. Its
+  attempt **fails** when `AssistantSweepSummary.failedCompanies` or
+  `failedTurns` is above zero: a turn the sweep ended is no longer overdue, so
+  no later pass would find it again, and a dropped recovery would strand that
+  turn's hold and its placeholder for ever. `assertAssistantSweepRecovered`
+  is that rule, and the failure is what makes the next tick the retry.
+- `assistant.turn` is the one `expires` job: tenant scope, zero retries,
+  identity-only payload (`kind`, `conversationId`, `commandId`), attempt
+  timeout `ASSISTANT_TURN_ATTEMPT_TIMEOUT_MS` (the 180 s turn timeout plus
+  30 s for its final writes), `onExhausted: assistant.interruptTurn`, and a
+  post-commit hook that runs the shared recovery helper on the interrupt's
+  own output. `assistant.acceptTurn` sends it with `ctx.enqueue` in the
+  accepting transaction, and only for an `accepted` outcome.
 
 - The two files actions run unchanged, under ADR-0041 J10's named storage
   exception. Overlapping runs are safe: the sweep locks rows `FOR UPDATE SKIP
@@ -268,8 +285,11 @@ its counts; drain waits `JOB_DRAIN_TIMEOUT_MS` (30 s).
   `system`/`global` audited write whose handler passes its execution
   transaction to core's `cleanupExpiredIdempotencyKeys` (typed
   `Pick<Database, "delete">`), so no second transaction or global client.
-- The BullMQ `pdf` queue is deleted. The assistant reconciler stays on the
-  BullMQ `maintenance` queue until jobs-T11.
+- BullMQ is gone (SHO-651): the assistant turn and the overdue sweep are
+  pg-boss jobs like every other, and the worker's one job runner drains for
+  `JOB_DRAIN_TIMEOUT_MS` = `ASSISTANT_TURN_ATTEMPT_TIMEOUT_MS` (210 s), so a
+  normal 180 s turn and its final writes finish before shutdown closes the
+  database, Redis and the object store.
 - Proof: `apps/worker/src/jobs.db.test.ts` (two workers provision each queue
   and schedule once; one tick runs each action once, audit rows per run and
   one send-it slot per occurrence; cleanup deletes only expired keys), the

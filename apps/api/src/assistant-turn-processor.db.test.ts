@@ -36,7 +36,7 @@ import {
   type AiBudgetStore,
   type AssistantRuntime,
   type AssistantTurnClaim,
-  type AssistantTurnJob,
+  type AssistantTurnRef,
   type AssistantTurnJobOutcome,
   type StaffAssistantBudgetHold,
 } from "@showzy/assistant-runtime";
@@ -166,7 +166,7 @@ async function newConversation(userId: string): Promise<string> {
 const ASKED = "покажи клієнтів";
 
 interface Accepted {
-  readonly job: AssistantTurnJob;
+  readonly job: AssistantTurnRef;
   readonly conversationId: string;
   readonly commandId: string;
   readonly placeholderId: string;
@@ -248,7 +248,11 @@ async function accepted(options: {
     throw new Error(`expected an accepted turn, got ${result.outcome}`);
   }
   return {
-    job: result.job,
+    job: {
+      kind: result.turn.kind,
+      conversationId: result.turn.conversationId,
+      commandId: result.turn.commandId,
+    },
     conversationId,
     commandId,
     placeholderId: result.turn.placeholderMessageId,
@@ -279,7 +283,10 @@ async function counters(store: AiBudgetStore) {
 }
 
 interface Harness {
-  readonly process: (job: AssistantTurnJob) => Promise<AssistantTurnJobOutcome>;
+  readonly process: (
+    turn: AssistantTurnRef,
+    signal?: AbortSignal,
+  ) => Promise<AssistantTurnJobOutcome>;
   readonly published: Published[];
   readonly budget: AiBudgetStore;
   /** The turn's deadline, fired now. */
@@ -294,7 +301,7 @@ async function harness(
   const budget = provided ?? (await seededBudget());
   const published: Published[] = [];
   let fire: (() => void) | undefined;
-  const process = createAssistantTurnProcessor({
+  const runTurn = createAssistantTurnProcessor({
     runtime,
     pipeline,
     budgetStore: budget,
@@ -334,7 +341,13 @@ async function harness(
     },
   });
   return {
-    process,
+    process: (turn, signal) =>
+      runTurn({
+        companyId: COMPANY,
+        turn,
+        requestId: randomUUID(),
+        signal: signal ?? new AbortController().signal,
+      }),
     published,
     budget,
     fireDeadline: () => {
@@ -867,7 +880,7 @@ describe("a turn the worker runs", () => {
     expect(h.published).toHaveLength(published);
   });
 
-  it("runs and writes nothing for an author who lost membership: core refuses the start and the turn stays queued", async () => {
+  it("runs and writes nothing for an author who lost membership: the refused start fails the job and the turn stays queued", async () => {
     const marta = randomUUID();
     await kit.db.runtime.db.insert(user).values({
       id: marta,
@@ -893,9 +906,10 @@ describe("a turn the worker runs", () => {
     const h = await harness(runtimeWith(never.model));
     const before = await placeholder(turn.placeholderId);
 
-    const outcome = await h.process(turn.job);
+    await expect(h.process(turn.job)).rejects.toBeInstanceOf(
+      PermissionDeniedError,
+    );
 
-    expect(outcome).toMatchObject({ kind: "refused" });
     expect(never.calls.count).toBe(0);
     expect((await turnRow(turn.commandId)).status).toBe("queued");
     expect(await placeholder(turn.placeholderId)).toEqual(before);

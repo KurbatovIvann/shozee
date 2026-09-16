@@ -18,9 +18,12 @@ import {
   ValidationError,
 } from "@showzy/core/errors";
 import {
+  createRecordingJobPort,
   createTestKit,
   crossTenantSuite,
   isolationCase,
+  jobIsolationCase,
+  jobIsolationSuite,
   kitIdentities,
   type TestKit,
 } from "@showzy/core/testing";
@@ -38,6 +41,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { acceptTurn } from "./accept-turn.js";
 import { finishTurn } from "./finish-turn.js";
 import { insertChatMessage } from "./insert-chat-message.js";
+import { assistantTurnJob } from "../jobs.js";
 import { interruptTurn } from "./interrupt-turn.js";
 import { listStaleTurns } from "./list-stale-turns.js";
 import { readChatMessages } from "./read-chat-messages.js";
@@ -75,6 +79,8 @@ const isolation = {
   finishCommand: randomUUID(),
   interrupt: randomUUID(),
   interruptCommand: randomUUID(),
+  job: randomUUID(),
+  jobCommand: randomUUID(),
   foreign: randomUUID(),
   /** A turn of company B, so a foreign interrupt has a real row to miss. */
   foreignCommand: randomUUID(),
@@ -120,7 +126,10 @@ function interruptAs(
 }
 
 /** The worker's read of the turn its job names. */
-function readForJob(turn: TurnRef) {
+function readForJob(
+  turn: TurnRef,
+  companyId: string = kitIdentities.companies.a,
+) {
   return executeAction(kit.pipeline, {
     action: readTurnForJob,
     input: turn,
@@ -128,7 +137,7 @@ function readForJob(turn: TurnRef) {
     principal: {
       mode: "system",
       serviceName: "assistant-worker",
-      scope: { scope: "global" },
+      scope: { scope: "tenant", companyId },
     },
   });
 }
@@ -308,6 +317,7 @@ beforeAll(async () => {
   await newConversation(undefined, isolation.start);
   await newConversation(undefined, isolation.finish);
   await newConversation(undefined, isolation.interrupt);
+  await newConversation(undefined, isolation.job);
   await newConversation(borisInB, isolation.foreign);
   await kit.invoke(
     acceptTurn,
@@ -322,6 +332,11 @@ beforeAll(async () => {
   await kit.invoke(
     acceptTurn,
     chatAccept(isolation.interrupt, isolation.interruptCommand),
+    {},
+  );
+  await kit.invoke(
+    acceptTurn,
+    chatAccept(isolation.job, isolation.jobCommand),
     {},
   );
   await kit.invoke(
@@ -397,6 +412,57 @@ crossTenantSuite(
     ),
   ],
 );
+
+jobIsolationSuite(
+  () => kit,
+  [
+    jobIsolationCase(
+      assistantTurnJob,
+      interruptTurn,
+      { payload: ref(isolation.job, isolation.jobCommand) },
+      { payload: ref(isolation.foreign, isolation.foreignCommand) },
+    ),
+  ],
+);
+
+describe("the job an accepted turn sends", () => {
+  it("commits with the turn row, and no other outcome sends one", async () => {
+    const conversationId = await newConversation();
+    const input = chatAccept(conversationId);
+    kit.jobs.clear();
+
+    expect((await kit.invoke(acceptTurn, input, {})).outcome).toBe("accepted");
+
+    expect(kit.jobs.sent).toHaveLength(1);
+    expect(kit.jobs.sent[0]).toMatchObject({
+      name: assistantTurnJob.name,
+      companyId: kitIdentities.companies.a,
+      actor: { type: "user", id: kitIdentities.users.anna },
+      payload: {
+        kind: "chat",
+        conversationId,
+        commandId: input.commandId,
+      },
+    });
+
+    kit.jobs.clear();
+    expect((await kit.invoke(acceptTurn, input, {})).outcome).toBe("replayed");
+    expect(
+      (await kit.invoke(acceptTurn, chatAccept(conversationId), {})).outcome,
+    ).toBe("busy");
+    expect(kit.jobs.sent).toEqual([]);
+  });
+
+  it("sends nothing when the accept is rolled back", async () => {
+    kit.jobs.clear();
+
+    await expect(
+      kit.invoke(acceptTurn, chatAccept(randomUUID()), {}),
+    ).rejects.toBeInstanceOf(NotFoundError);
+
+    expect(kit.jobs.sent).toEqual([]);
+  });
+});
 
 describe("accepting a turn", () => {
   it("stores the person's message, the placeholder and the turn together", async () => {
@@ -1026,8 +1092,13 @@ function gatedPipeline(gate: (text: string) => Promise<void>) {
       },
     });
   });
+  const jobs = createRecordingJobPort();
   return {
-    deps: { ...kit.pipeline, db: client.db },
+    deps: {
+      ...kit.pipeline,
+      db: jobs.commitBound(client.db),
+      hooks: { ...kit.pipeline.hooks, jobs },
+    },
     close: () => client.pool.end(),
   };
 }
@@ -1314,7 +1385,7 @@ describe("ending a turn takes its hold off the row", () => {
       outcome: "interrupted",
       conversationId,
       from: "running",
-      endReason: "timeout",
+      endReason: "job_exhausted",
       releasedHold: HOLD,
     });
     expect(second).toEqual({
@@ -1349,22 +1420,10 @@ describe("ending a turn takes its hold off the row", () => {
     ).toBe("accepted");
   });
 
-  /**
-   * Only a server-side timeout ends a started turn early, and only the abandon
-   * threshold ends a queued one (ADR-0039 as amended, SHO-570). A turn the
-   * reconciler listed as queued too long may have been started by a late worker
-   * since; interrupting it would free the conversation under that worker and
-   * release a hold the model is still spending.
-   */
-  it("leaves a queued turn inside the abandon threshold and a running turn inside its deadline as they are", async () => {
+  it("ends a young queued turn as not_started and a running turn inside its deadline as job_exhausted", async () => {
     const queued = await newConversation();
     const queuedInput = chatAccept(queued);
     await kit.invoke(acceptTurn, queuedInput, {});
-    // Stale enough for the reconciler to re-enqueue, far from abandoned.
-    await kit.db.runtime.db
-      .update(assistantTurns)
-      .set({ createdAt: sql`now() - interval '5 minutes'` })
-      .where(eq(assistantTurns.conversationId, queued));
 
     const running = await newConversation();
     const runningInput = chatAccept(running);
@@ -1379,31 +1438,30 @@ describe("ending a turn takes its hold off the row", () => {
         ref(queued, queuedInput.commandId),
       ),
     ).toEqual({
-      outcome: "not_stale",
+      outcome: "interrupted",
       conversationId: queued,
-      status: "queued",
+      from: "queued",
+      endReason: "not_started",
+      releasedHold: HOLD,
     });
     expect(await interruptAs(kitIdentities.companies.a, runningTurn)).toEqual({
-      outcome: "not_stale",
+      outcome: "interrupted",
       conversationId: running,
-      status: "running",
+      from: "running",
+      endReason: "job_exhausted",
+      releasedHold: HOLD,
     });
 
-    for (const [conversationId, status] of [
-      [queued, "queued"],
-      [running, "running"],
-    ] as const) {
+    for (const conversationId of [queued, running]) {
       expect((await turnRows(conversationId))[0]).toMatchObject({
-        status,
-        sessionId: "session-anna",
-        finishedAt: null,
-        companyReservedMicroUsd: HOLD.companyReservedMicroUsd,
-        globalReservedMicroUsd: HOLD.globalReservedMicroUsd,
+        status: "interrupted",
+        sessionId: null,
+        companyReservedMicroUsd: 0,
+        globalReservedMicroUsd: 0,
       });
-      // Still holding its conversation.
       expect(
         (await kit.invoke(acceptTurn, chatAccept(conversationId), {})).outcome,
-      ).toBe("busy");
+      ).toBe("accepted");
     }
   });
 
@@ -1440,23 +1498,49 @@ describe("ending a turn takes its hold off the row", () => {
     ).toBe("accepted");
   });
 
-  /** The start is a compare-and-set on `queued`, so the interrupt lost it. */
-  it("leaves an abandoned turn a worker started first alone", async () => {
+  it("ends a turn a worker started first from running, not as never started", async () => {
+    const conversationId = await newConversation();
+    const input = chatAccept(conversationId);
+    const turn = ref(conversationId, input.commandId);
+    await kit.invoke(acceptTurn, input, {});
+    await kit.invoke(startTurn, { ...turn, timeoutMs: TIMEOUT_MS }, {});
+
+    expect(await interruptAs(kitIdentities.companies.a, turn)).toEqual({
+      outcome: "interrupted",
+      conversationId,
+      from: "running",
+      endReason: "job_exhausted",
+      releasedHold: HOLD,
+    });
+    expect((await turnRows(conversationId))[0]).toMatchObject({
+      status: "interrupted",
+      endReason: "job_exhausted",
+      companyReservedMicroUsd: 0,
+    });
+  });
+
+  it("refuses to start a queued turn past its start deadline and ends it as never started", async () => {
     const conversationId = await newConversation();
     const input = chatAccept(conversationId);
     const turn = ref(conversationId, input.commandId);
     await kit.invoke(acceptTurn, input, {});
     await ageQueuedTurn(conversationId, "16 minutes");
-    await kit.invoke(startTurn, { ...turn, timeoutMs: TIMEOUT_MS }, {});
+
+    expect(
+      await kit.invoke(startTurn, { ...turn, timeoutMs: TIMEOUT_MS }, {}),
+    ).toEqual({ outcome: "expired", conversationId });
+    expect((await turnRows(conversationId))[0]).toMatchObject({
+      status: "queued",
+      startedAt: null,
+      deadlineAt: null,
+    });
 
     expect(await interruptAs(kitIdentities.companies.a, turn)).toEqual({
-      outcome: "not_stale",
+      outcome: "interrupted",
       conversationId,
-      status: "running",
-    });
-    expect((await turnRows(conversationId))[0]).toMatchObject({
-      status: "running",
-      companyReservedMicroUsd: HOLD.companyReservedMicroUsd,
+      from: "queued",
+      endReason: "not_started",
+      releasedHold: HOLD,
     });
   });
 
@@ -1769,33 +1853,44 @@ describe("the worker's read of the turn a job names", () => {
     });
   });
 
-  it("returns no turn for an identity nobody accepted, including another kind", async () => {
+  it("is not-found for an identity nobody accepted, including another kind", async () => {
     const conversationId = await newConversation();
     const input = chatAccept(conversationId);
     await kit.invoke(acceptTurn, input, {});
 
-    expect(await readForJob(ref(randomUUID(), input.commandId))).toEqual({
-      turn: null,
-    });
-    expect(
-      await readForJob({
+    await expect(
+      readForJob(ref(randomUUID(), input.commandId)),
+    ).rejects.toBeInstanceOf(NotFoundError);
+    await expect(
+      readForJob({
         conversationId,
         kind: "answer",
         commandId: input.commandId,
       }),
-    ).toEqual({ turn: null });
+    ).rejects.toBeInstanceOf(NotFoundError);
   });
 
-  it("reads a turn of any company", async () => {
+  it("is not-found for a turn of another company, and reads it inside its own", async () => {
+    await expect(
+      readForJob(
+        ref(isolation.foreign, isolation.foreignCommand),
+        kitIdentities.companies.a,
+      ),
+    ).rejects.toBeInstanceOf(NotFoundError);
     expect(
-      (await readForJob(ref(isolation.foreign, isolation.foreignCommand))).turn,
+      (
+        await readForJob(
+          ref(isolation.foreign, isolation.foreignCommand),
+          kitIdentities.companies.b,
+        )
+      ).turn,
     ).toMatchObject({
       companyId: kitIdentities.companies.b,
       userId: kitIdentities.users.boris,
     });
   });
 
-  it("is refused to a staff caller and to a tenant-scoped system caller", async () => {
+  it("is refused to a staff caller and to a global system caller", async () => {
     const turn = ref(isolation.start, isolation.startCommand);
 
     await expect(
@@ -1818,7 +1913,7 @@ describe("the worker's read of the turn a job names", () => {
         principal: {
           mode: "system",
           serviceName: "assistant-worker",
-          scope: { scope: "tenant", companyId: kitIdentities.companies.a },
+          scope: { scope: "global" },
         },
       }),
     ).rejects.toBeInstanceOf(CoreInvariantError);
@@ -1839,7 +1934,7 @@ describe("the worker's read of the turn a job names", () => {
         principal: {
           mode: "system",
           serviceName: "assistant-worker",
-          scope: { scope: "global" },
+          scope: { scope: "tenant", companyId: kitIdentities.companies.a },
         },
       }),
     ).rejects.toBeInstanceOf(ValidationError);
@@ -2149,7 +2244,6 @@ describe("a start and a queued turn's interrupt, the second waiting on the first
     const input = chatAccept(conversationId);
     const turn = ref(conversationId, input.commandId);
     await kit.invoke(acceptTurn, input, {});
-    await ageQueuedTurn(conversationId, "16 minutes");
 
     const held = deferred();
     const release = deferred();
@@ -2204,18 +2298,21 @@ describe("a start and a queued turn's interrupt, the second waiting on the first
     }
   }
 
-  it("a start holding the row leaves the waiting interrupt nothing", async () => {
+  it("a start holding the row leaves the waiting interrupt a running turn to exhaust", async () => {
     const race = await holdThenWait("start");
 
     expect(race.holder).toMatchObject({ outcome: "started" });
     expect(race.waiter).toEqual({
-      outcome: "not_stale",
+      outcome: "interrupted",
       conversationId: race.conversationId,
-      status: "running",
+      from: "running",
+      endReason: "job_exhausted",
+      releasedHold: HOLD,
     });
     expect((await turnRows(race.conversationId))[0]).toMatchObject({
-      status: "running",
-      companyReservedMicroUsd: HOLD.companyReservedMicroUsd,
+      status: "interrupted",
+      endReason: "job_exhausted",
+      companyReservedMicroUsd: 0,
     });
   });
 

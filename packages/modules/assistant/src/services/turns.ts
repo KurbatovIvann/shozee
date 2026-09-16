@@ -437,15 +437,24 @@ export async function startStaffTurn(env: {
         startedAt: sql`now()`,
         deadlineAt: nowPlusMs(env.input.timeoutMs),
       })
-      .where(and(byIdentity(identity), eq(assistantTurns.status, "queued")))
+      .where(
+        and(
+          byIdentity(identity),
+          eq(assistantTurns.status, "queued"),
+          sql`not ${overdue()}`,
+        ),
+      )
       .returning({ deadlineAt: assistantTurns.deadlineAt })
   )[0];
   if (started === undefined) {
-    return {
-      outcome: "not_queued",
-      conversationId: identity.conversationId,
-      status: await currentStatus(db, identity),
-    };
+    const status = await currentStatus(db, identity);
+    return status === "queued"
+      ? { outcome: "expired", conversationId: identity.conversationId }
+      : {
+          outcome: "not_queued",
+          conversationId: identity.conversationId,
+          status,
+        };
   }
   if (started.deadlineAt === null) {
     throw new CoreInvariantError("assistant.startTurn set no deadline");
@@ -596,22 +605,15 @@ export async function interruptSystemTurn(env: {
     db,
     identity,
     "interrupted",
-    overdue(),
-    "timeout",
+    isActive(),
+    "job_exhausted",
   );
   if (ended === null) {
-    const status = await currentStatus(db, identity);
-    return isActiveStatus(status)
-      ? {
-          outcome: "not_stale",
-          conversationId: identity.conversationId,
-          status,
-        }
-      : {
-          outcome: "already_finished",
-          conversationId: identity.conversationId,
-          status,
-        };
+    return {
+      outcome: "already_finished",
+      conversationId: identity.conversationId,
+      status: await currentStatus(db, identity),
+    };
   }
   const recovered = recoveredTurn(ended, "assistant.interruptTurn");
   return {
@@ -711,6 +713,7 @@ export async function sweepSystemOverdueTurns(env: {
  */
 export async function readTurnForJob(env: {
   readonly ctx: SystemCtx;
+  readonly companyId: string;
   readonly input: z.output<typeof readTurnForJobInputSchema>;
 }): Promise<z.output<typeof readTurnForJobOutputSchema>> {
   const row = (
@@ -740,6 +743,7 @@ export async function readTurnForJob(env: {
       )
       .where(
         and(
+          eq(assistantTurns.companyId, env.companyId),
           eq(assistantConversations.id, env.input.conversationId.toLowerCase()),
           eq(assistantTurns.kind, env.input.kind),
           eq(assistantTurns.commandId, env.input.commandId.toLowerCase()),
@@ -748,7 +752,7 @@ export async function readTurnForJob(env: {
       .limit(1)
   )[0];
   if (row === undefined) {
-    return { turn: null };
+    throw new NotFoundError();
   }
   return {
     turn: {

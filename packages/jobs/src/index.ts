@@ -13,4 +13,5 @@ export type {
   JobWorkerOptions,
 } from "./worker-host.js";
 export { createPgBossJobPort } from "./pgboss-job-port.js";
+export { exhaustedQueueName } from "./queue-provisioning.js";
 export { assertPgBossSchema } from "./pgboss-schema.js";

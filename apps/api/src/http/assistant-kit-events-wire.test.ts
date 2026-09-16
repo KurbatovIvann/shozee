@@ -7,12 +7,10 @@
  * again. `apps/api` sees all three, so the agreement is proven here — one value
  * added on the server side fails this test rather than a phone.
  */
+import { assistantTurnKindSchema } from "@showzy/assistant";
 import { createAssistantKit } from "@showzy/assistant-kit";
 import { testDeps } from "@showzy/assistant-kit/testing";
-import {
-  assistantInteractions,
-  assistantTurnKindSchema,
-} from "@showzy/assistant-runtime";
+import { assistantInteractions } from "@showzy/assistant-runtime";
 import {
   ASSISTANT_TURN_END_REASONS,
   ASSISTANT_TURN_FINAL_STATUSES,

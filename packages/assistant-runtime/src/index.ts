@@ -4,6 +4,7 @@
  */
 export * from "./assistant-budget-guard.js";
 export * from "./assistant-interactions.js";
+export * from "./assistant-jobs.js";
 export * from "./assistant-invocation.js";
 export * from "./assistant-kit-confirmation.js";
 export * from "./assistant-kit-history-window.js";
@@ -11,14 +12,11 @@ export * from "./assistant-kit-resolve.js";
 export * from "./assistant-kit-tools.js";
 export * from "./assistant-model.js";
 export * from "./assistant-overdue-sweep.js";
-export * from "./assistant-queue-producer.js";
 export * from "./assistant-runtime.js";
 export * from "./assistant-turn-processor.js";
-export * from "./assistant-turn-reconciler.js";
 export * from "./assistant-turn-recovery.js";
 export * from "./assistant-window.js";
 export * from "./events.js";
-export * from "./queue.js";
 export * from "./runtime-types.js";
 export * from "./stores/assistant-events-redis.js";
 export * from "./stores/assistant-kit-postgres-stores.js";

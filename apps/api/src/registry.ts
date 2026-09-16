@@ -10,7 +10,7 @@
  * import (`registry.test.ts`): whoever imports this subpath must not also get
  * the API's HTTP, auth, stores, config or provider.
  */
-import { assistantActions } from "@showzy/assistant";
+import { assistantActions, assistantJobs } from "@showzy/assistant";
 import { catalogActions } from "@showzy/catalog";
 import { chatActions } from "@showzy/chat";
 import { companiesActions } from "@showzy/companies";
@@ -55,4 +55,4 @@ export function createActionRegistry(): ActionRegistry {
   return registry;
 }
 
-export const registeredJobs: readonly Job[] = [...filesJobs];
+export const registeredJobs: readonly Job[] = [...assistantJobs, ...filesJobs];

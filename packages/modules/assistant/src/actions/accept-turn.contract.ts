@@ -125,7 +125,7 @@ export const acceptTurnOutputSchema = z.discriminatedUnion("outcome", [
 
 export const acceptTurnContract = defineActionContract({
   name: "assistant.acceptTurn",
-  description: `${STAFF_CONVERSATION_AUTHOR_INVARIANT} Accept one turn of a conversation in a single transaction: the turn row, the person's message for a chat accept, the assistant's placeholder message, and the provider history the turn will run from commit together. A chat accept appends the person's message to the stored history; an answer accept replaces it whole; a continuation gives no instruction and runs from what is stored. The outcome is accepted when the command is new and no other turn holds the conversation; replayed, with nothing written, when this command was accepted before; busy, with nothing written, when another turn is queued or running. A continuation names an interrupted turn's command, and a command that is not an interrupted turn of this conversation is a conflict. Message payloads are opaque and owned by the assistant runtime. A conversation belonging to another author or another company is not-found. Company id is never input.`,
+  description: `${STAFF_CONVERSATION_AUTHOR_INVARIANT} Accept one turn of a conversation in a single transaction: the turn row, the person's message for a chat accept, the assistant's placeholder message, and the provider history the turn will run from commit together. A chat accept appends the person's message to the stored history; an answer accept replaces it whole; a continuation gives no instruction and runs from what is stored. The outcome is accepted when the command is new and no other turn holds the conversation; replayed, with nothing written, when this command was accepted before; busy, with nothing written, when another turn is queued or running. An accepted turn's run job is enqueued in the same transaction; replayed and busy enqueue nothing. A continuation names an interrupted turn's command, and a command that is not an interrupted turn of this conversation is a conflict. Message payloads are opaque and owned by the assistant runtime. A conversation belonging to another author or another company is not-found. Company id is never input.`,
   principal: "staff",
   transport: "internal",
   input: acceptTurnInputSchema,
@@ -136,6 +136,7 @@ export const acceptTurnContract = defineActionContract({
   requiresConfirmation: false,
   idempotent: false,
   emits: [],
+  enqueues: ["assistant.turn"],
   atomicCalls: [],
   atomicCallers: [],
   errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],

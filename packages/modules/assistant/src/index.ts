@@ -36,6 +36,18 @@ export { sweepOverdueTurns };
 export { updateChatMessage };
 export { writeChatState };
 
+export {
+  assistantJobs,
+  assistantSweepOverdueTurnsJob,
+  assistantTurnJob,
+} from "./jobs.js";
+export {
+  ASSISTANT_TURN_ATTEMPT_TIMEOUT_MS,
+  ASSISTANT_TURN_TIMEOUT_MS,
+  assistantTurnKindSchema,
+  type AssistantTurnKind,
+} from "./actions/turn-record.contract.js";
+
 export const assistantActions = [
   createConversation,
   listConversations,

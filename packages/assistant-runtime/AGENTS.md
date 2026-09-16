@@ -40,12 +40,12 @@ registry is injected into `createAssistantRuntime`; this package never imports
   through `executeAction` as the caller. `stores/caller.ts` is how every
   Postgres store acts as the caller; internal.
 - `stores/assistant-turn-store.ts` — accept, start and finish a turn as the
-  caller, and the reconciler's global read (SHO-560). Owns the ids of a turn's
+  caller (SHO-560). Owns the ids of a turn's
   messages (derived from the command), the placeholder's shape and the budget
   hold's micro-USD form; the module stores them as given. Finishing a turn
   returns the hold it took off the row, once (SHO-561).
-- `stores/assistant-turn-for-job.ts` — the global system read of the turn a job
-  names, and the only producer of `VerifiedAssistantCaller` (the row's
+- `stores/assistant-turn-for-job.ts` — the **company-scoped** system read of
+  the turn a job names, and the only producer of `VerifiedAssistantCaller` (the row's
   `user_id`, `company_id` and `request_id`; no client IP), for a queued turn
   only. A job payload is never a caller. The session is not read (ADR-0039,
   amended SHO-561). The same file also produces the caller that settles an
@@ -59,32 +59,25 @@ registry is injected into `createAssistantRuntime`; this package never imports
     or a generic cast helper gets past it.
   - Any other way of producing a `VerifiedAssistantCaller` is a review
     blocker.
-- `queue.ts` — the assistant queue contract: name, BullMQ prefix, job payload
-  schema, `jobId` derivation. Pure constants and a schema. The payload is the
-  turn's identity only (kind, conversation id, command id, lowercased);
-  Postgres is the source of everything else, and the reconciler rebuilds a
-  job from the turn row.
-- `assistant-queue-producer.ts` — `enqueueAssistantTurn` (taking a BullMQ
-  `Queue` through `AssistantTurnQueue`) and the options every turn's job
-  carries (`attempts: 1`, removed on completion and on failure). The only way
-  to add a turn's job (SHO-569).
+- `assistant-jobs.ts` — the one re-export of the assistant module's job
+  declarations (`assistant.turn`, `assistant.sweepOverdueTurns`), its turn
+  timeouts and `interruptAssistantTurn`, so `apps/worker` binds the declared
+  definitions without depending on `@showzy/assistant` directly. The payload
+  is the turn's identity only (kind, conversation id, command id); Postgres is
+  the source of everything else. There is no queue contract and no producer
+  here: `assistant.acceptTurn` sends the job with `ctx.enqueue` in its own
+  transaction (SHO-651).
 - `assistant-turn-processor.ts` — `createAssistantTurnProcessor`: what the
-  worker does with a job (SHO-569). Reads the turn, starts it as its author,
-  runs the host from history with the 180 s deadline as the only abort, ends
-  the placeholder's text, finishes the turn, releases the returned hold only
-  when the model was never reached, and publishes each event after its write.
-  A turn that is not queued, or whose start core refuses, runs nothing and
-  writes nothing.
-- `assistant-turn-reconciler.ts` — `createAssistantTurnReconciler`: one pass
-  over `assistant.listStaleTurns` (SHO-570). A queued turn with no job is
-  enqueued again from the row alone, with a per-turn backoff held in the
-  process; a turn the database calls stale is ended through
-  `assistant.interruptTurn`, and the hold that statement handed back is released
-  only for a turn that never started. **Staleness is never judged here**: this
-  file holds no threshold and no clock of its own. The placeholder's text is
-  settled as the turn's author, never as the system, and the pass publishes no
-  more than the interrupted status — it read no window as the person whose
-  conversation it is.
+  worker does with one `assistant.turn` attempt (SHO-651). Takes the recorded
+  company, the turn identity, the job's request id and the attempt's
+  `AbortSignal`; reads the turn through the company-scoped
+  `assistant.readTurnForJob`, starts it as its author, runs the host from
+  history with the turn deadline **and** the attempt signal as the aborts,
+  ends the placeholder's text, finishes the turn, releases the returned hold
+  only when the model was never reached, and publishes each event after its
+  write. A turn that is not queued is a no-op. A refused or expired start
+  throws, so the attempt fails, the job is exhausted and
+  `assistant.interruptTurn` closes the turn.
 - `assistant-turn-recovery.ts` — `createAssistantTurnRecovery`: the work that
   follows a turn's terminal transition, wherever that transition was made
   (SHO-698). Releases exactly the hold the winning statement handed back, and
@@ -99,11 +92,15 @@ registry is injected into `createAssistantRuntime`; this package never imports
   through the tenant `assistant.sweepOverdueTurns` on the job attempt's own
   `run`, each ended turn handed to the recovery helper. Pages are drained while
   the attempt is live, keyed on the last identity of a full page; a company
-  whose page or turn fails is logged and the rest go on. The job declaration
-  and its schedule are SHO-651's.
+  whose page or turn fails is logged and the rest go on.
+  **`assertAssistantSweepRecovered` decides the attempt**: a pass with
+  `failedCompanies` or `failedTurns` above zero fails the job. A turn this pass
+  already ended is no longer overdue, so no later pass would find it; without
+  that failure its hold and its placeholder would never be retried. The job is
+  `assistant.sweepOverdueTurns`, global periodic, every 60 seconds.
 - `stores/assistant-turn-placeholder.ts` — the one answer to "which message is
   this turn's, and under which owner token", used by both the processor and the
-  reconciler.
+  recovery helper.
 - `events.ts` — the event channel contract (SHO-562): the per-conversation
   channel and presence key (company then conversation, lowercased), the stream
   slot key, the heartbeat, presence ttl, per-person stream limit and idle
@@ -126,10 +123,10 @@ registry is injected into `createAssistantRuntime`; this package never imports
   `apps/api`.
 - Every domain call goes through `executeAction` as the staff member with
   `channel: "ai"`. No DB access, no module service imports.
-- No `bullmq` dependency. The producer takes the app's `Queue` through
-  `AssistantTurnQueue`: `bullmq` has peer dependencies, and a package with a
-  different peer set gets a second copy whose `Queue` is a different type
-  (SHO-569). No `Worker` here: processing jobs is the worker app's job host.
-  Queue contract values change only with ADR-0039 and a proving test.
+- No queue client of any kind here. Jobs are declared by the assistant module
+  and bound by `apps/worker` through `@showzy/jobs`; this package contributes
+  the processor, the recovery helper and the sweep pass, each taking the job
+  attempt structurally (SHO-651). Turn timeouts change only with ADR-0039 or
+  ADR-0041 and a proving test.
 - Tests that need the API's action registry (`createActionRegistry`) stay in
   `apps/api`; unit and Redis tests of this package's own code live here.

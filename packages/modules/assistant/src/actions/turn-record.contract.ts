@@ -39,6 +39,13 @@ export const assistantTurnEndReasonSchema = z.enum([
 
 export const ASSISTANT_TURN_START_DEADLINE_MS = 15 * 60 * 1000;
 
+export const ASSISTANT_TURN_TIMEOUT_MS = 180_000;
+
+export const ASSISTANT_TURN_ATTEMPT_TIMEOUT_MS =
+  ASSISTANT_TURN_TIMEOUT_MS + 30_000;
+
+export type AssistantTurnKind = z.output<typeof assistantTurnKindSchema>;
+
 /** The identity a job carries. Any casing; stored and compared lowercase. */
 export const assistantTurnRefShape = {
   conversationId: z.uuid(),
