@@ -1150,6 +1150,10 @@ describe("the conversation, live", () => {
   function streamingWindow(options?: {
     readonly openPause?: unknown;
     readonly turn?: { readonly id: string; readonly status: string } | null;
+    readonly interruptedTurn?: {
+      readonly id: string;
+      readonly endReason: string | null;
+    } | null;
   }) {
     return {
       conversationId: CONVERSATION,
@@ -1168,7 +1172,7 @@ describe("the conversation, live", () => {
         options !== undefined && "turn" in options
           ? options.turn
           : { id: COMMAND, status: "running" },
-      interruptedTurn: null,
+      interruptedTurn: options?.interruptedTurn ?? null,
     };
   }
 
@@ -1230,6 +1234,27 @@ describe("the conversation, live", () => {
 
     expect(view.latest().busy).toBe(true);
     expect(view.latest().sending).toBe(false);
+  });
+
+  it("shows the stored reason for a turn that never started, and again after a reconnect", async () => {
+    const neverStarted = streamingWindow({
+      turn: null,
+      interruptedTurn: { id: COMMAND, endReason: "not_started" },
+    });
+    const source = serve({ messages: [neverStarted] });
+    const view = mount({ visible: true });
+    await flush();
+
+    expect(view.latest().busy).toBe(false);
+    expect(view.latest().rows[0]?.interrupted).toBe(true);
+    expect(view.latest().rows[0]?.interruptedReason).toBe("not_started");
+
+    act(() => {
+      source.send("snapshot", { type: "snapshot", window: neverStarted });
+    });
+    await flush();
+
+    expect(view.latest().rows[0]?.interruptedReason).toBe("not_started");
   });
 
   it("merges a message the stream updates, and ignores an older revision", async () => {

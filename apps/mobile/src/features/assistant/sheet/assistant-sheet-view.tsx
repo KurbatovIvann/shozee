@@ -12,6 +12,7 @@ import { StyleSheet, useUnistyles } from "react-native-unistyles";
 
 import { AppHeader, Banner, EmptyState } from "../../../components/ui";
 import type { AssistantCopy } from "../../../i18n/assistant";
+import { assistantInterruptedNotice } from "../shared/interrupted-notice";
 import type { AssistantThreadRow } from "../thread/thread-rows";
 import {
   assistantShozikPose,
@@ -106,7 +107,10 @@ export function AssistantSheetView(model: AssistantSheetViewModel) {
         failed={item.failed}
         failedLabel={copy.turnInterrupted}
         interrupted={item.interrupted}
-        interruptedLabel={copy.interruptedMessage}
+        interruptedLabel={assistantInterruptedNotice(
+          item.interruptedReason,
+          copy,
+        )}
         continueLabel={copy.continueLabel}
         onContinue={model.continueTurn}
         onOpenHref={model.openHref}

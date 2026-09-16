@@ -126,6 +126,7 @@ export type AssistantCopy = {
    */
   readonly turnInterrupted: string;
   readonly interruptedMessage: string;
+  readonly interruptedNotStarted: string;
   readonly continueLabel: string;
   readonly waitIntervalMs: number;
   readonly waitLines: readonly [string, string, string, string, string];
@@ -261,6 +262,7 @@ const assistantEn: AssistantCopy = {
   waitLabel: "Shozik is thinking",
   turnInterrupted: "The reply was cut short. Anything shown above was saved.",
   interruptedMessage: "Shozik didn't get to finish.",
+  interruptedNotStarted: "Shozik didn't get to start the reply.",
   continueLabel: "Continue",
   waitIntervalMs: 2000,
   waitLines: [
@@ -341,6 +343,7 @@ const assistantUk: AssistantCopy = {
   waitLabel: "Шозік думає",
   turnInterrupted: "Відповідь обірвалася. Те, що вище, вже збережено.",
   interruptedMessage: "Шозік не встиг завершити.",
+  interruptedNotStarted: "Шозік не встиг розпочати відповідь.",
   continueLabel: "Продовжити",
   waitIntervalMs: 2000,
   waitLines: [
