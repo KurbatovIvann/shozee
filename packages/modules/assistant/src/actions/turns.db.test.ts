@@ -102,7 +102,6 @@ function systemRequest() {
   return { requestId, correlationId: requestId, channel: "system" as const };
 }
 
-/** The reconciler's interrupt, inside one company. */
 function interruptAs(
   companyId: string,
   turn: TurnRef,
@@ -118,7 +117,7 @@ function interruptAs(
         : { requestId, correlationId: requestId, channel: "system" as const },
     principal: {
       mode: "system",
-      serviceName: "assistant-reconciler",
+      serviceName: "assistant-recovery",
       scope: { scope: "tenant", companyId },
     },
   });
@@ -507,7 +506,6 @@ describe("accepting a turn", () => {
       },
     ]);
 
-    // What the worker and the reconciler read instead of a request.
     const rows = await turnRows(conversationId);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
@@ -1320,11 +1318,6 @@ describe("starting and finishing a turn", () => {
   });
 });
 
-/**
- * A hold leaves its row once. The worker's finish and the reconciler's
- * interrupt each zero it in the statement that ends the turn, and only that
- * call is handed it, so nobody can settle or release it twice (SHO-561).
- */
 describe("ending a turn takes its hold off the row", () => {
   async function storedHold(conversationId: string) {
     const row = (await turnRows(conversationId))[0];
@@ -1752,7 +1745,7 @@ describe("a finish and an interrupt, the second waiting on the first", () => {
         request: systemRequest(),
         principal: {
           mode: "system",
-          serviceName: "assistant-reconciler",
+          serviceName: "assistant-recovery",
           scope: { scope: "global" },
         },
       }),
@@ -1975,12 +1968,6 @@ describe("a message's revision", () => {
     expect(stored).toEqual([{ revision: 3 }]);
   });
 
-  /**
-   * A turn's message has two writers once the reconciler can end a turn the
-   * worker is still writing (SHO-570). Each stores a whole payload, so an
-   * update from a revision the message no longer has must store nothing rather
-   * than erase what it never read.
-   */
   it("answers stale, not a conflict, for a revision the message has moved past, and stores nothing", async () => {
     const conversationId = await newConversation();
     const input = chatAccept(conversationId);

@@ -1366,11 +1366,6 @@ describe("the conversation, live", () => {
     expect(messageReads()).toBe(readsBefore);
   });
 
-  /**
-   * The reconciler ends a turn while acting for no person and cannot read a
-   * window as a user it cannot act as (SHO-570). The absence is not "no open
-   * question" — the client goes and reads the authority, exactly once.
-   */
   it("re-reads the window exactly once when a turn ends without one", async () => {
     const source = serve({
       messages: [

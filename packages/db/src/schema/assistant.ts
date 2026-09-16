@@ -178,27 +178,10 @@ function sqlInList(values: readonly string[]) {
 }
 
 /**
- * One accepted turn per row (SHO-560, ADR-0039): the lease, the command
- * receipt, and everything a worker or the reconciler needs to run or end the
- * turn with no request in hand.
- *
- * - **The lease.** A turn in an active status holds its conversation; the
- *   partial unique index allows one per conversation. `finish` moves it to a
- *   final status, which frees the conversation. The status and its deadline
- *   are Postgres facts, so the reconciler compares them to Postgres `now()`.
  * - **The receipt.** `(conversation, kind, command)` is unique and the row is
  *   kept after the turn ends, so a repeated command finds its turn whenever it
  *   arrives. A send and an answer are different attempts under one client
  *   token, which is why the kind is part of it.
- * - **The request it replaces.** The BullMQ job carries only the turn's
- *   identity (`kind`, conversation, command), so the row carries the rest: the
- *   company, the author (`user_id`, the turn's only actor), the accepting
- *   session (recorded, not read), the request id the
- *   turn's actions are audited under, the placeholder the worker writes into,
- *   the budget hold, and a continuation's original command. No client IP: it
- *   is transport-only (`security-operations.md` §3), and core does not need it
- *   for a staff action.
- *
  * The budget hold is integer micro-USD. Floats are refused on schema files
  * (`db.md` §3), and a reservation is a small decimal of dollars that a
  * million-fold integer holds exactly.

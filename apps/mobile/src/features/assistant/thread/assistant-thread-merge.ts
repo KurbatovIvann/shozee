@@ -413,11 +413,6 @@ function applyTurnFinished(
   const cleared = tracked ? null : state.trackedTurn;
 
   if (event.window === undefined) {
-    // The reconciler ended this turn. It acts for no person, and a conversation
-    // is read as the person whose conversation it is, so it has no window to
-    // send (ADR-0039, SHO-570). The absence says nothing about the open
-    // question — reading it as "no question" would hide a real one — so the
-    // client goes and reads the window itself.
     return {
       state: {
         ...state,

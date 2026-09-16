@@ -142,7 +142,7 @@ function interrupt(turn: {
     request: { requestId, correlationId: requestId, channel: "system" },
     principal: {
       mode: "system",
-      serviceName: "assistant-reconciler",
+      serviceName: "assistant-recovery",
       scope: { scope: "tenant", companyId: kitIdentities.companies.a },
     },
   });

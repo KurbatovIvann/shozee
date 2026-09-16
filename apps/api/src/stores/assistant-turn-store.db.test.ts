@@ -1,13 +1,3 @@
-/**
- * The turn store against a real database, read back through the kit a client
- * is served by (SHO-560, ADR-0039).
- *
- * What this proves that the module's own suite cannot: the messages the runtime
- * builds for an accept are ones the kit's window and the client's schema read;
- * the job the accept names is the job the reconciler rebuilds from the row
- * alone, whatever casing the request carried; and a request that stored no
- * turn gives its budget reservation back.
- */
 import { randomUUID } from "node:crypto";
 
 import { chatWindowSchema } from "@showzy/assistant-kit";
@@ -103,11 +93,6 @@ async function newConversation(
   return id;
 }
 
-/**
- * Makes a conversation's turn look accepted ten minutes ago — a job that was
- * lost. The interval is Postgres's own, so the reconciler's comparison never
- * meets a host clock.
- */
 async function ageTurn(conversationId: string): Promise<void> {
   const aged = await kit.db.runtime.db
     .update(assistantTurns)
@@ -355,11 +340,6 @@ describe("accepting a turn through the runtime", () => {
   });
 });
 
-/**
- * Every accept is preceded by a reservation. Only a stored turn keeps it — the
- * row then holds it for the worker or the reconciler. Every other outcome gives
- * it back, and leaves the stored turn's hold as it was.
- */
 describe("the budget reservation of an accept", () => {
   const chat = (conversationId: string) => ({
     kind: "chat" as const,

@@ -102,12 +102,7 @@ describe("reading an assistant stream event", () => {
     ).toBeNull();
   });
 
-  /**
-   * The reconciler ends a turn the process running it no longer can, and it
-   * acts for no person, so it has no window to send (SHO-570). A client reads
-   * the conversation itself after one of these.
-   */
-  it("reads a finish with no window: the reconciler ended that turn", () => {
+  it("reads a finish with no window: something acting for no person ended that turn, so a client reads the conversation itself", () => {
     const withoutWindow = {
       type: "turn.finished",
       kind: "chat",

@@ -132,7 +132,7 @@ describe("a turn's presence, read from the window's own turn field", () => {
     expect(assistantTurnActive(loaded(windowOf()).thread)).toBe(false);
   });
 
-  it("reports none for a turn the reconciler ended for a removed author, even with a streaming placeholder still stored", () => {
+  it("reports none for a turn ended for a removed author, even with a streaming placeholder still stored", () => {
     expect(
       assistantTurnActive(loaded(windowOf({ status: "streaming" })).thread),
     ).toBe(false);
@@ -286,12 +286,7 @@ describe("a turn that finished", () => {
     expect(applied.state.trackedTurn).toBeNull();
   });
 
-  /**
-   * The reconciler ends a turn while acting for no person, so it has no window
-   * to send (ADR-0039, SHO-570). Reading that absence as "no open question"
-   * would hide a real one.
-   */
-  it("reads the window when the event carries none", () => {
+  it("reads the window when the event carries none, rather than reading the absence as no open question", () => {
     const state = loaded(
       windowOf({ status: "streaming", openPause: OPEN_PAUSE }),
     );

@@ -1,17 +1,3 @@
-/**
- * Staff write: record how a turn ended, and free its conversation (SHO-560).
- *
- * Compare-and-set from an active status to a final one. A turn that has
- * already ended keeps the status it ended with — a late `done` from a worker
- * cannot overwrite the reconciler's `interrupted` — and reports it as
- * `already_finished`.
- *
- * The same statement zeroes the budget hold the row stored and returns what it
- * zeroed (SHO-561). Only the call that ended the turn gets the hold, so a
- * worker and the reconciler cannot both release it.
- *
- * Mechanical: `timeout: 5000` is one update by unique key.
- */
 import { defineActionContract } from "@showzy/core/contract";
 import { z } from "zod";
 

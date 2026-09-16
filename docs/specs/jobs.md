@@ -85,7 +85,8 @@ and is left untouched. Proof: `src/pgboss-schema.db.test.ts`.
   `CONFLICT` and nothing is stored. The runtime passes it through
   `AssistantRuntime.forTurn(caller, claim)`, whose claim is required; only the
   turn processor calls it. `forCaller(caller)` takes no claim and serves the
-  API and the reconciler (SHO-663).
+  API and the recovery helper
+  (`packages/assistant-runtime/src/assistant-turn-recovery.ts`, SHO-663).
 - The terminal transition (`finishTurn`, `interruptTurn`, `sweepOverdueTurns`)
   locks the same row
   `FOR UPDATE`, so a writer that holds the claim commits before the end, and
@@ -98,8 +99,9 @@ and is left untouched. Proof: `src/pgboss-schema.db.test.ts`.
   `not_started`, a running turn past its deadline `timeout`. A queued turn is
   overdue at `created_at + 15 minutes` (`ASSISTANT_TURN_START_DEADLINE_MS`),
   the one predicate both the sweep and the start claim read.
-- Writes without a claim (the API's synchronous paths, the reconciler
-  settling an interrupted placeholder) are unchanged.
+- Writes without a claim (the API's synchronous paths, the recovery helper
+  settling an interrupted placeholder from the `afterExhausted` hook or the
+  overdue sweep) are unchanged.
 - Proof: `packages/modules/assistant/src/actions/turn-claim.db.test.ts`
   (forced interleaving of a history save, a card write and a finish against
   an interrupt followed by a new accept).
