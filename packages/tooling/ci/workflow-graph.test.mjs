@@ -184,7 +184,16 @@ function runStepCommands(source) {
   return commands;
 }
 
-const SPAWNS_TURBO_BINARY = /(?:^|[\s;&|("'/])turbo(?=$|[\s;&|)"'])/;
+/**
+ * A bare or path-qualified `turbo` word (a version suffix like `turbo@2`
+ * included), or any launcher form the earlier launcher-only guard caught, so
+ * this matcher stays a strict superset of it.
+ */
+const SPAWNS_TURBO_BINARY =
+  /(?:^|[\s;&|()"'`/])turbo(?=$|[\s;&|()"'`<>@])|\b(?:pnpm|npx|yarn)\s+(?:exec\s+|dlx\s+)?turbo\b/;
+
+const ROOT_SCRIPT_FLAG =
+  "(?!-r\\b|--recursive\\b|-F\\b|--filter|-C\\b|--dir\\b)-{1,2}[A-Za-z][\\w-]*(?:=\\S+)?";
 
 /**
  * @param {string} text
@@ -194,13 +203,16 @@ function escapeRegExp(text) {
 }
 
 /**
- * A command that runs the root `package.json` script `name`.
+ * A command that runs the root `package.json` script `name`, with optional
+ * flags before and after `run`. Package selectors (`-r`, `--filter`, `--dir`)
+ * run a workspace package's script, not the root one, and do not match.
  * @param {string} name
  */
 function rootScriptInvocation(name) {
   const script = `${escapeRegExp(name)}(?=$|[\\s;&|)"'])`;
+  const flags = `(?:\\s+${ROOT_SCRIPT_FLAG})*`;
   return new RegExp(
-    `\\b(?:(?:pnpm|yarn)\\s+(?:(?:-w|--workspace-root)\\s+)?(?:run\\s+)?|npm\\s+run\\s+)${script}`,
+    `\\b(?:(?:pnpm|yarn)${flags}\\s+(?:run${flags}\\s+)?|npm${flags}\\s+run${flags}\\s+)${script}`,
   );
 }
 
@@ -555,6 +567,15 @@ test("the turbo guard flags a root package.json script that starts turbo, taken 
       - run: pnpm test:db
       - run: pnpm format:check
       - run: pnpm --filter @showzy/web typecheck
+      - run: pnpm --silent test:unit
+      - run: pnpm run --silent test
+      - run: pnpm -w --reporter=append-only run --if-present check
+      - run: npm run --silent typecheck
+      - run: yarn --silent test
+      - run: pnpm --filter=@showzy/web typecheck
+      - run: pnpm -r test:unit
+      - run: pnpm --recursive run typecheck
+      - run: pnpm --dir=apps/web check
 `,
     },
     (root) => {
@@ -565,9 +586,46 @@ test("the turbo guard flags a root package.json script that starts turbo, taken 
           "pnpm run typecheck",
           "pnpm check",
           "pnpm test",
+          "pnpm --silent test:unit",
+          "pnpm run --silent test",
+          "pnpm -w --reporter=append-only run --if-present check",
+          "npm run --silent typecheck",
+          "yarn --silent test",
         ],
       );
     },
+  );
+});
+
+test("the turbo guard flags every turbo spawn the launcher-only guard on main caught, version suffixes included", () => {
+  const spawns = [
+    "npx turbo@2 run test:unit",
+    "pnpm exec turbo@2.5 run lint",
+    "pnpm dlx turbo@latest run typecheck",
+    "pnpm turbo run lint",
+    "yarn turbo run lint",
+    "yarn exec turbo run lint",
+    "npx turbo run build",
+    "pnpm exec turbo.cmd run lint",
+    "pnpm exec turbo>turbo.log",
+    "echo `turbo run lint`",
+    "result=$(turbo run lint)",
+    "node_modules/.bin/turbo run lint",
+    "turbo run lint",
+  ];
+  assert.deepEqual(
+    spawns.filter((command) => !SPAWNS_TURBO_BINARY.test(command)),
+    [],
+  );
+  const notSpawns = [
+    "node packages/tooling/ci/run-turbo.mjs test:unit",
+    'echo "base fetch failed; run-turbo will use full execution"',
+    "rm -rf .turbo",
+    "cat turbo.json",
+  ];
+  assert.deepEqual(
+    notSpawns.filter((command) => SPAWNS_TURBO_BINARY.test(command)),
+    [],
   );
 });
 
@@ -582,8 +640,8 @@ test("the turbo guard reads composite actions, multi-line plain and folded scala
       - name: Backslash
         run: |
           echo building
-          pnpm exec \\
-            turbo run test:unit
+          pnpm \\
+            test:unit
       - name: Folded
         run: >
           pnpm
@@ -594,7 +652,7 @@ test("the turbo guard reads composite actions, multi-line plain and folded scala
   assert.deepEqual(runStepCommands(workflowSource), [
     "pnpm exec turbo run typecheck",
     "echo building",
-    "pnpm exec turbo run test:unit",
+    "pnpm test:unit",
     "pnpm exec turbo run build",
   ]);
   withSyntheticRepo(
@@ -624,7 +682,7 @@ runs:
         {
           file: ".github/workflows/ci.yml",
           rule: "turbo-outside-run-turbo",
-          command: "pnpm exec turbo run test:unit",
+          command: "pnpm test:unit",
         },
         {
           file: ".github/workflows/ci.yml",
