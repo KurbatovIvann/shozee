@@ -36,7 +36,6 @@ export interface JobHandler {
   readonly job: Job;
   readonly onExhausted?: ImplementedAction;
   readonly afterExhausted?: JobExhaustedHook;
-  readonly localConcurrency?: number;
   handle(attempt: JobAttempt): Promise<void>;
 }
 
@@ -53,6 +52,8 @@ export interface JobWorker {
 type StoredJob = JobWithMetadata<unknown>;
 
 const drainSettleMs = 5_000;
+
+const exhaustedQueueConcurrency = 1;
 
 export async function createJobWorker(
   boss: PgBoss,
@@ -135,9 +136,8 @@ export async function createJobWorker(
 
   for (const handler of options.handlers) {
     const { job, onExhausted, afterExhausted } = handler;
-    const concurrency = handler.localConcurrency ?? 1;
     if (onExhausted !== undefined) {
-      await work(exhaustedQueueName(job), concurrency, (stored) =>
+      await work(exhaustedQueueName(job), exhaustedQueueConcurrency, (stored) =>
         settle(stored, job.attemptTimeoutMs, async () => {
           const envelope = recordedEnvelope(job, stored);
           const output = await executeJobAction(deps, {
@@ -152,7 +152,7 @@ export async function createJobWorker(
         }),
       );
     }
-    await work(job.name, concurrency, (stored) =>
+    await work(job.name, job.concurrency, (stored) =>
       settle(stored, job.attemptTimeoutMs, (signal) =>
         handler.handle(
           attemptFor(deps, job, recordedEnvelope(job, stored), signal),

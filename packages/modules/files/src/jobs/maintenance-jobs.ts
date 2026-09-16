@@ -17,6 +17,7 @@ const globalPeriodic = {
   lifecycle: "periodic",
   retries: 0,
   attemptTimeoutMs: 60_000,
+  concurrency: 1,
 } as const;
 
 export const sweepAbandonedUploadsJob = defineJob({

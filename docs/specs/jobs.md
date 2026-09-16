@@ -148,7 +148,18 @@ and is left untouched. Proof: `src/pgboss-schema.db.test.ts`.
   settle first, so a timed-out attempt stores `ATTEMPT_TIMEOUT`), policy `standard`, `partition: false`,
   `notify: false`, no retry delay or backoff, no heartbeat,
   `retentionSeconds` and `deleteAfterSeconds` one day. Concurrency is a
-  worker-host `work` option, not a stored setting.
+  worker-host `work` option, not a stored setting: the host passes the
+  declaration's `concurrency` as pg-boss `localConcurrency` for the job's own
+  queue, so one worker process runs that many attempts of the job at once. A
+  dead letter always runs at 1 (`exhaustedQueueConcurrency`, a host constant,
+  not the declaration): the on-exhausted action is a small idempotent system
+  write and nothing about it asks for parallel pollers. The declared numbers
+  are `assistant.turn` 4 (SHO-703: one turn at a time made a second staff turn
+  wait out the running attempt — up to `ASSISTANT_TURN_ATTEMPT_TIMEOUT_MS`,
+  210 s — and a backlog past `createdAt + 15 min` reaches the overdue sweep)
+  and 1 for every periodic job, whose ticks are meant to be serial. More
+  processes still multiply the number; sizing that is a capacity question and
+  there is no deployment yet.
 - An `expires` job also gets a dead letter `<job>.exhausted` (zero retries,
   same expiry), provisioned before its queue; `periodic` jobs have none.
 - The `worker` role creates missing queues (`createQueue`: one
@@ -162,13 +173,18 @@ and is left untouched. Proof: `src/pgboss-schema.db.test.ts`.
   (`describeJobRunnerConformance`), run against pg-boss by
   `src/pgboss-conformance.db.test.ts`: J1 rollback and commit, a held id
   refused, J6 stored data, J7 changed declaration and unprovisioned API
-  boot. Declarations: `src/queue-provisioning.test.ts`.
+  boot, and the declared concurrency (a job declaring three runs three attempts
+  at once and no more; one declaring one runs them one at a time).
+  Declarations: `src/queue-provisioning.test.ts`; the number each worker job
+  states: `apps/worker/src/contract-check.test.ts`.
 
 ## 8. Worker host
 
 - `runner.work({ deps, handlers, drainTimeoutMs })` on a `worker`-role runner
   (`createJobWorker`, `src/worker-host.ts`) registers one pg-boss `work` per
-  handler (`perJobResults`, `includeMetadata`, `batchSize: 1`, polling). An
+  handler (`perJobResults`, `includeMetadata`, `batchSize: 1`, polling,
+  `localConcurrency` from `job.concurrency`, and 1 for the job's dead letter
+  — a handler cannot state a number of its own). An
   `api` runner, a second `work` call, a handler for an undeclared job, a
   handler whose job is not the declared definition object, a
   declared job without a handler, a duplicate handler, an `onExhausted` binding whose action name differs from
@@ -257,12 +273,12 @@ its counts; the one shared runner's drain waits `JOB_DRAIN_TIMEOUT_MS` =
 `ASSISTANT_TURN_ATTEMPT_TIMEOUT_MS` (210 s), so a maintenance run shares the
 bound the assistant turn sets.
 
-| Job | Cron (UTC) | Action | Owner |
-| --- | --- | --- | --- |
-| `files.sweepAbandonedUploads` | `*/5 * * * *` | `files.sweepAbandonedUploads` | files module |
-| `files.backfillCatalogRenditions` | every `BACKFILL_CATALOG_RENDITIONS_INTERVAL_MS` (5 min) | `files.backfillCatalogRenditions` | files module |
-| `worker.cleanupIdempotencyKeys` | `0 * * * *` | `worker.cleanupIdempotencyKeys` | `apps/worker` |
-| `assistant.sweepOverdueTurns` | `* * * * *` | `assistant.listOverdueTurns` then `assistant.sweepOverdueTurns` per company | assistant module |
+| Job | Cron (UTC) | Concurrency | Action | Owner |
+| --- | --- | --- | --- | --- |
+| `files.sweepAbandonedUploads` | `*/5 * * * *` | 1 | `files.sweepAbandonedUploads` | files module |
+| `files.backfillCatalogRenditions` | every `BACKFILL_CATALOG_RENDITIONS_INTERVAL_MS` (5 min) | 1 | `files.backfillCatalogRenditions` | files module |
+| `worker.cleanupIdempotencyKeys` | `0 * * * *` | 1 | `worker.cleanupIdempotencyKeys` | `apps/worker` |
+| `assistant.sweepOverdueTurns` | `* * * * *` | 1 | `assistant.listOverdueTurns` then `assistant.sweepOverdueTurns` per company | assistant module |
 
 - The overdue sweep is a global periodic job that fans out tenant work. Its
   attempt **fails** when `AssistantSweepSummary.failedCompanies` or
@@ -273,7 +289,8 @@ bound the assistant turn sets.
 - `assistant.turn` is the one `expires` job: tenant scope, zero retries,
   identity-only payload (`kind`, `conversationId`, `commandId`), attempt
   timeout `ASSISTANT_TURN_ATTEMPT_TIMEOUT_MS` (the 180 s turn timeout plus
-  30 s for its final writes), `onExhausted: assistant.interruptTurn`, and a
+  30 s for its final writes), `concurrency: 4` (§7),
+  `onExhausted: assistant.interruptTurn`, and a
   post-commit hook that runs the shared recovery helper on the interrupt's
   own output. `assistant.acceptTurn` sends it with `ctx.enqueue` in the
   accepting transaction, and only for an `accepted` outcome.

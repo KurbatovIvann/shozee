@@ -74,6 +74,20 @@ describe("worker contract check", () => {
     );
   });
 
+  it("states the concurrency of every job it runs, four for the assistant turn", () => {
+    expect(
+      Object.fromEntries(
+        workerJobs.map(({ name, concurrency }) => [name, concurrency]),
+      ),
+    ).toEqual({
+      "assistant.turn": 4,
+      "assistant.sweepOverdueTurns": 1,
+      "files.sweepAbandonedUploads": 1,
+      "files.backfillCatalogRenditions": 1,
+      "worker.cleanupIdempotencyKeys": 1,
+    });
+  });
+
   it("refuses a job declared by both sources", () => {
     expect(() =>
       mergeJobDeclarations(registeredJobs, [

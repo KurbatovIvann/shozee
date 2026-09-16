@@ -97,6 +97,7 @@ function conformanceJob(
   retries = 0,
   onExhausted = "conformance.interrupt",
   attemptTimeoutMs = 1_500,
+  concurrency = 1,
 ): Job {
   return defineJob({
     name: `conformance.${name}`,
@@ -107,6 +108,7 @@ function conformanceJob(
     onExhausted,
     retries,
     attemptTimeoutMs,
+    concurrency,
   });
 }
 
@@ -819,6 +821,7 @@ export function describeJobRunnerConformance(
           cron: "* * * * *",
           retries: 0,
           attemptTimeoutMs: 1_500,
+          concurrency: 1,
         });
         const runs: { id: string; scope: string }[] = [];
         const tick = handlerFor(
@@ -859,6 +862,127 @@ export function describeJobRunnerConformance(
         expect(new Set(ranIds).size).toBe(ranIds.length);
         expect([...ranIds].sort()).toEqual(jobs.map(({ id }) => id).sort());
         expect(runs.every(({ scope }) => scope === "global")).toBe(true);
+      });
+    });
+
+    describe("declared concurrency", () => {
+      async function peakAttempts(job: Job, enqueued: number): Promise<number> {
+        const runner = await open([job], "worker");
+        const holding = new Set<() => void>();
+        let started = 0;
+        let active = 0;
+        let peak = 0;
+
+        await work(runner, [
+          handlerFor(job, async () => {
+            started += 1;
+            active += 1;
+            peak = Math.max(peak, active);
+            await new Promise<void>((release) => holding.add(release));
+            active -= 1;
+          }),
+        ]);
+        for (let index = 0; index < enqueued; index += 1) {
+          await enqueueSubject(runner, job);
+        }
+        await eventually(
+          () => Promise.resolve(started),
+          (value) => value >= job.concurrency,
+        );
+        for (const release of holding) {
+          holding.delete(release);
+          release();
+          break;
+        }
+        const startedAfterSlotFreed = await eventually(
+          () => Promise.resolve(started),
+          (value) => value > job.concurrency,
+        );
+        expect(startedAfterSlotFreed).toBe(job.concurrency + 1);
+        for (const release of holding) {
+          release();
+        }
+        await close(runner);
+        return peak;
+      }
+
+      it("runs as many attempts at once as the job declares, and no more", async () => {
+        const job = conformanceJob("concurrentThree", 0, undefined, 30_000, 3);
+
+        await expect(peakAttempts(job, 5)).resolves.toBe(3);
+      });
+
+      it("runs one attempt at a time for a job that declares one", async () => {
+        const job = conformanceJob("concurrentOne", 0, undefined, 30_000, 1);
+
+        await expect(peakAttempts(job, 3)).resolves.toBe(1);
+      });
+
+      async function peakExhaustedRuns(
+        job: Job,
+        enqueued: number,
+      ): Promise<number> {
+        const runner = await open([job], "worker");
+        const holding: (() => void)[] = [];
+        let started = 0;
+        let active = 0;
+        let peak = 0;
+
+        for (let index = 0; index < enqueued; index += 1) {
+          const { envelope } = await enqueueSubject(runner, job);
+          await target.abandonAttempt(database, job.name, envelope.id);
+        }
+        const deadLettered = await eventually(
+          () => exhaustedRecords(job),
+          (records) => records.length === enqueued,
+        );
+        expect(deadLettered).toHaveLength(enqueued);
+        await work(runner, [
+          handlerFor(
+            job,
+            () => Promise.resolve(),
+            interrupt,
+            async () => {
+              started += 1;
+              active += 1;
+              peak = Math.max(peak, active);
+              await new Promise<void>((release) => {
+                holding.push(release);
+              });
+              active -= 1;
+            },
+          ),
+        ]);
+        for (let held = 1; held < enqueued; held += 1) {
+          const startedBeforeSlotFreed = await eventually(
+            () => Promise.resolve(started),
+            (value) => value >= held,
+          );
+          expect(startedBeforeSlotFreed).toBeGreaterThanOrEqual(held);
+          holding.shift()?.();
+          const startedAfterSlotFreed = await eventually(
+            () => Promise.resolve(started),
+            (value) => value > held,
+          );
+          expect(startedAfterSlotFreed).toBe(held + 1);
+        }
+        for (const release of holding.splice(0)) {
+          release();
+        }
+        await close(runner);
+        return peak;
+      }
+
+      it("runs one exhausted job at a time whatever the job declares", async () => {
+        const job = conformanceJob(
+          "exhaustedSerial",
+          0,
+          "conformance.interrupt",
+          10_000,
+          3,
+        );
+
+        await expect(peakExhaustedRuns(job, 3)).resolves.toBe(1);
       });
     });
 
@@ -969,6 +1093,7 @@ export function describeJobRunnerConformance(
           cron: "* * * * *",
           retries: 0,
           attemptTimeoutMs: 1_500,
+          concurrency: 1,
         });
         const runner = await open([job], "worker");
 
@@ -1008,6 +1133,7 @@ export function describeJobRunnerConformance(
           cron: "* * * * *",
           retries: 0,
           attemptTimeoutMs: 1_500,
+          concurrency: 1,
         });
         const runner = await open([job], "worker");
 

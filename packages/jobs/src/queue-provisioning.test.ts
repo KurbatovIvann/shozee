@@ -18,6 +18,7 @@ const runTurn = defineJob({
   onExhausted: "assistant.interruptTurn",
   retries: 1,
   attemptTimeoutMs: 90_500,
+  concurrency: 2,
 });
 
 const cleanup = defineJob({
@@ -29,6 +30,7 @@ const cleanup = defineJob({
   cron: "*/5 * * * *",
   retries: 0,
   attemptTimeoutMs: 60_000,
+  concurrency: 1,
 });
 
 const unchanging = {

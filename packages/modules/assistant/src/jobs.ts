@@ -15,6 +15,7 @@ export const assistantTurnJob = defineJob({
   onExhausted: "assistant.interruptTurn",
   retries: 0,
   attemptTimeoutMs: ASSISTANT_TURN_ATTEMPT_TIMEOUT_MS,
+  concurrency: 4,
 });
 
 export const assistantSweepOverdueTurnsJob = defineJob({
@@ -26,6 +27,7 @@ export const assistantSweepOverdueTurnsJob = defineJob({
   cron: "* * * * *",
   retries: 0,
   attemptTimeoutMs: 60_000,
+  concurrency: 1,
 });
 
 export const assistantJobs = [

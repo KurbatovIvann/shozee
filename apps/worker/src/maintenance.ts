@@ -68,6 +68,7 @@ export const cleanupIdempotencyKeysJob = defineJob({
   cron: "0 * * * *",
   retries: 0,
   attemptTimeoutMs: 60_000,
+  concurrency: 1,
 });
 
 export const workerOwnedJobs: readonly Job[] = [cleanupIdempotencyKeysJob];

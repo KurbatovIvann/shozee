@@ -475,7 +475,8 @@ runner settings from the same declaration (`docs/specs/jobs.md`).
 - **Declaration.** `name` (`<module>.<name>`), `scope` (`tenant` | `global`),
   `payload` (built by `jobPayload`), `discriminator` (payload fields that tell fan-out
   jobs of one origin apart), `lifecycle` (`expires` | `periodic`), `retries`
-  (non-negative integer), `attemptTimeoutMs` (positive integer). `expires`
+  (non-negative integer), `attemptTimeoutMs` (positive integer), `concurrency`
+  (positive integer: attempts one worker process runs at once). `expires`
   requires `onExhausted`, an action of the same module, and forbids `cron`;
   `periodic` requires a 5- or 6-field `cron` and forbids `onExhausted`.
   There is no `recoverable` lifecycle yet.

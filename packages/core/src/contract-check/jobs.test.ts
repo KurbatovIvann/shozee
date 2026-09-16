@@ -62,6 +62,7 @@ function job(overrides: Partial<JobDefinition> = {}) {
     onExhausted: "assistant.interruptTurn",
     retries: 0,
     attemptTimeoutMs: 120_000,
+    concurrency: 1,
     ...overrides,
   });
 }
@@ -75,6 +76,7 @@ function periodic(name: string) {
     lifecycle: "periodic",
     retries: 0,
     attemptTimeoutMs: 60_000,
+    concurrency: 1,
     cron: "0 * * * *",
   });
 }
