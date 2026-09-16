@@ -865,3 +865,71 @@ describe("a question closed without a message being written", () => {
     expect(applied.rereadWindow).toBe(false);
   });
 });
+
+describe("a turn that ended without ever starting", () => {
+  it("takes the ending the window of the turn it was following carries", () => {
+    const running = apply(
+      loaded(
+        windowOf({
+          text: "",
+          status: "streaming",
+          turn: { id: COMMAND, status: "running" },
+        }),
+      ),
+      {
+        type: "turn.started",
+        conversationId: CONVERSATION,
+        kind: "chat",
+        commandId: COMMAND,
+      },
+    ).state;
+
+    const applied = apply(running, {
+      type: "turn.finished",
+      kind: "chat",
+      commandId: COMMAND,
+      status: "interrupted",
+      endReason: "not_started",
+      window: windowOf({
+        text: "",
+        status: "streaming",
+        interruptedTurn: { id: COMMAND, endReason: "not_started" },
+      }),
+    });
+
+    expect(applied.state.thread?.interruptedTurn).toEqual({
+      id: COMMAND,
+      endReason: "not_started",
+    });
+    expect(assistantTurnActive(applied.state.thread)).toBe(false);
+  });
+
+  it("keeps the running turn and its ending when an older turn's event lands late", () => {
+    const held = loaded(
+      windowOf({
+        text: "",
+        status: "streaming",
+        revision: 2,
+        turn: { id: COMMAND, status: "running" },
+      }),
+    );
+
+    const applied = apply(held, {
+      type: "turn.finished",
+      kind: "chat",
+      commandId: OTHER_COMMAND,
+      status: "interrupted",
+      endReason: "not_started",
+      window: windowOf({
+        text: "",
+        status: "streaming",
+        revision: 1,
+        interruptedTurn: { id: OTHER_COMMAND, endReason: "not_started" },
+      }),
+    });
+
+    expect(applied.state.thread?.interruptedTurn).toBeNull();
+    expect(assistantTurnActive(applied.state.thread)).toBe(true);
+    expect(applied.rereadWindow).toBe(true);
+  });
+});

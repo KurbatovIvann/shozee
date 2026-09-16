@@ -24,6 +24,10 @@ const CONVERSATION = "33333333-3333-4333-8333-333333333333";
 const USER_MESSAGE = "11111111-1111-4111-8111-111111111111";
 const REPLY_MESSAGE = "22222222-2222-4222-8222-222222222222";
 const INTERACTION = "44444444-4444-4444-8444-444444444444";
+const SECOND_USER_MESSAGE = "55555555-5555-4555-8555-111111111111";
+const SECOND_REPLY_MESSAGE = "66666666-6666-4666-8666-222222222222";
+const TURN = "77777777-7777-4777-8777-333333333333";
+const OLDER_TURN = "88888888-8888-4888-8888-444444444444";
 
 function textPart(text: string): AssistantChatPart {
   return { kind: "text", text, status: "complete" };
@@ -66,6 +70,7 @@ function threadOf(
   messages: readonly AssistantChatMessage[],
   openPause: AssistantPause | null = null,
   turn: AssistantChatWindow["turn"] = null,
+  interruptedTurn: AssistantChatWindow["interruptedTurn"] = null,
 ): AssistantChatWindow {
   return {
     conversationId: CONVERSATION,
@@ -73,7 +78,7 @@ function threadOf(
     messages: [...messages],
     openPause,
     turn,
-    interruptedTurn: null,
+    interruptedTurn,
   };
 }
 
@@ -298,6 +303,106 @@ describe("assistantThreadRows", () => {
 
     expect(result[1]?.interrupted).toBe(true);
     expect(result[1]?.failed).toBe(false);
+  });
+
+  it("names the stored reason on the reply of a turn that never started", () => {
+    const result = rows(
+      threadOf(
+        [
+          message(USER_MESSAGE, "user", [textPart("Порахуй")]),
+          message(REPLY_MESSAGE, "assistant", [
+            { kind: "text", text: "", status: "streaming" },
+          ]),
+        ],
+        null,
+        null,
+        { id: TURN, endReason: "not_started" },
+      ),
+    );
+
+    expect(result[1]?.interrupted).toBe(true);
+    expect(result[1]?.interruptedReason).toBe("not_started");
+  });
+
+  it("keeps a card the turn already earned above its notice", () => {
+    const result = rows(
+      threadOf(
+        [
+          message(USER_MESSAGE, "user", [textPart("Так")]),
+          message(REPLY_MESSAGE, "assistant", [
+            ORDER_CARD,
+            { kind: "text", text: "", status: "streaming" },
+          ]),
+        ],
+        null,
+        null,
+        { id: TURN, endReason: "not_started" },
+      ),
+    );
+
+    expect(result[1]?.surfaces).toHaveLength(1);
+    expect(result[1]?.interruptedReason).toBe("not_started");
+  });
+
+  it("leaves an earlier stopped reply on the generic notice", () => {
+    const result = rows(
+      threadOf(
+        [
+          message(USER_MESSAGE, "user", [textPart("Порахуй")]),
+          message(REPLY_MESSAGE, "assistant", [
+            { kind: "text", text: "Рахую", status: "interrupted" },
+          ]),
+          message(SECOND_USER_MESSAGE, "user", [textPart("Ще раз")]),
+          message(SECOND_REPLY_MESSAGE, "assistant", [
+            { kind: "text", text: "", status: "streaming" },
+          ]),
+        ],
+        null,
+        null,
+        { id: TURN, endReason: "not_started" },
+      ),
+    );
+
+    expect(result[1]?.interruptedReason).toBeNull();
+    expect(result[3]?.interruptedReason).toBe("not_started");
+  });
+
+  it("reports no reason for a turn interrupted before reasons were stored", () => {
+    const result = rows(
+      threadOf(
+        [
+          message(USER_MESSAGE, "user", [textPart("Порахуй")]),
+          message(REPLY_MESSAGE, "assistant", [
+            { kind: "text", text: "", status: "streaming" },
+          ]),
+        ],
+        null,
+        null,
+        { id: TURN, endReason: null },
+      ),
+    );
+
+    expect(result[1]?.interrupted).toBe(true);
+    expect(result[1]?.interruptedReason).toBeNull();
+  });
+
+  it("puts no notice on a reply the window still reports as running", () => {
+    const result = rows(
+      threadOf(
+        [
+          message(USER_MESSAGE, "user", [textPart("Порахуй")]),
+          message(REPLY_MESSAGE, "assistant", [
+            { kind: "text", text: "", status: "streaming" },
+          ]),
+        ],
+        null,
+        { id: TURN, status: "running" },
+        { id: OLDER_TURN, endReason: "not_started" },
+      ),
+    );
+
+    expect(result.every((row) => !row.interrupted)).toBe(true);
+    expect(result.every((row) => row.interruptedReason === null)).toBe(true);
   });
 
   it("keeps a streaming reply as in-progress while the window reports it as the active turn", () => {

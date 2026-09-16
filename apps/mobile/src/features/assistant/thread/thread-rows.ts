@@ -26,6 +26,7 @@ import {
   type AssistantChatTurn,
   type AssistantInteraction,
   type AssistantPause,
+  type AssistantTurnEndReason,
 } from "@showzy/validation/assistant-chat";
 
 import { assistantTextPartStatus } from "./assistant-thread-merge";
@@ -53,6 +54,7 @@ export type AssistantThreadRow = {
   readonly interaction: AssistantInteraction | null;
   readonly failed: boolean;
   readonly interrupted: boolean;
+  readonly interruptedReason: AssistantTurnEndReason | null;
   readonly waiting: boolean;
 };
 
@@ -149,8 +151,24 @@ function interactionHost(
   return null;
 }
 
+function interruptedHost(
+  messages: readonly AssistantChatMessage[],
+  turn: AssistantChatTurn | null,
+): string | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message !== undefined && interruptedIn(message, turn)) {
+      return message.messageId;
+    }
+  }
+  return null;
+}
+
 export function assistantThreadRows(input: {
-  readonly thread: Pick<AssistantChatThread, "messages" | "openPause" | "turn">;
+  readonly thread: Pick<
+    AssistantChatThread,
+    "messages" | "openPause" | "turn" | "interruptedTurn"
+  >;
   readonly locale: Locale;
   /** A request is in flight. Adds one trailing row; hides nothing. */
   readonly waiting: boolean;
@@ -166,13 +184,16 @@ export function assistantThreadRows(input: {
    */
   readonly pending?: string | null;
 }): readonly AssistantThreadRow[] {
-  const { messages, openPause, turn } = input.thread;
+  const { messages, openPause, turn, interruptedTurn } = input.thread;
   const interaction =
     openPause === null ? null : assistantInteractionFromPause(openPause);
   const hostId =
     openPause === null || interaction === null
       ? null
       : interactionHost(messages, openPause);
+  const endReason = interruptedTurn?.endReason ?? null;
+  const endReasonHostId =
+    endReason === null ? null : interruptedHost(messages, turn);
 
   const rows: AssistantThreadRow[] = [];
   for (const message of messages) {
@@ -187,6 +208,8 @@ export function assistantThreadRows(input: {
       interaction: message.messageId === hostId ? interaction : null,
       failed: failedIn(message),
       interrupted: interruptedIn(message, turn),
+      interruptedReason:
+        message.messageId === endReasonHostId ? endReason : null,
       waiting: false,
     };
     if (!isEmpty(row)) {
@@ -204,6 +227,7 @@ export function assistantThreadRows(input: {
       interaction,
       failed: false,
       interrupted: false,
+      interruptedReason: null,
       waiting: false,
     });
   }
@@ -218,6 +242,7 @@ export function assistantThreadRows(input: {
       interaction: null,
       failed: false,
       interrupted: false,
+      interruptedReason: null,
       waiting: false,
     });
   }
@@ -231,6 +256,7 @@ export function assistantThreadRows(input: {
       interaction: null,
       failed: false,
       interrupted: false,
+      interruptedReason: null,
       waiting: true,
     });
   }
