@@ -30,11 +30,7 @@ import {
   type ResolveAnswer,
 } from "@showzy/assistant-runtime";
 import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
-import {
-  parseAssistantStreamEvent,
-  type AssistantPublishedEvent,
-  type AssistantStreamEvent,
-} from "@showzy/validation/assistant-events";
+import { type AssistantPublishedEvent } from "@showzy/validation/assistant-events";
 import pino from "pino";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -48,6 +44,7 @@ import {
   type AssistantKitEvents,
   type AssistantKitStreamTimers,
 } from "./assistant-kit-events.js";
+import { eventReader, nextEvent } from "./assistant-kit-events.test-reader.js";
 
 const USER = "user-1";
 const COMPANY = "11111111-1111-4111-8111-1111111111aa";
@@ -343,41 +340,6 @@ describe("the stream's policy defaults", () => {
   });
 });
 
-function streamEvents(response: Response): () => Promise<AssistantStreamEvent> {
-  if (response.body === null) {
-    throw new Error("an event stream has a body");
-  }
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  return async () => {
-    for (;;) {
-      const end = buffer.indexOf("\n\n");
-      if (end !== -1) {
-        const lines = buffer.slice(0, end).split("\n");
-        buffer = buffer.slice(end + 2);
-        const field = (name: string): string | undefined =>
-          lines
-            .find((line) => line.startsWith(`${name}: `))
-            ?.slice(name.length + 2);
-        const event = parseAssistantStreamEvent(
-          field("event") ?? "",
-          field("data") ?? "",
-        );
-        if (event === null) {
-          throw new Error(`unreadable frame: ${lines.join("\\n")}`);
-        }
-        return event;
-      }
-      const chunk = await reader.read();
-      if (chunk.done) {
-        throw new Error("the stream ended");
-      }
-      buffer += decoder.decode(chunk.value as Uint8Array, { stream: true });
-    }
-  };
-}
-
 describe("a turn that recovery ended", () => {
   it("keeps its recorded end reason and its own placeholder in the snapshot and in the read after a windowless turn.finished", async () => {
     const placeholderId = assistantTurnMessageId(
@@ -416,8 +378,8 @@ describe("a turn that recovery ended", () => {
       endReason: "not_started",
     };
 
-    const next = streamEvents(await request(h));
-    const snapshot = await next();
+    const reader = eventReader(await request(h));
+    const snapshot = await nextEvent(reader);
     expect(snapshot.type === "snapshot" && snapshot.window).toMatchObject({
       interruptedTurn,
       messages: [{ messageId: placeholderId }],
@@ -429,7 +391,7 @@ describe("a turn that recovery ended", () => {
       commandId: COMMAND,
       status: "interrupted",
     });
-    expect(await next()).toEqual({
+    expect(await nextEvent(reader)).toEqual({
       type: "turn.finished",
       kind: "chat",
       commandId: COMMAND,

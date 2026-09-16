@@ -578,9 +578,15 @@ export interface AssistantTurnHistoryWriter {
   ): Promise<void>;
 }
 
-export type MemoryStoredAssistantTurn = AssistantTurnView & {
-  readonly endReason: AssistantTurnEndReason | null;
-};
+export type MemoryStoredAssistantTurn =
+  | (AssistantTurnView & {
+      readonly status: "interrupted";
+      readonly endReason: AssistantTurnEndReason | null;
+    })
+  | (AssistantTurnView & {
+      readonly status: Exclude<AssistantTurnView["status"], "interrupted">;
+      readonly endReason: null;
+    });
 
 export function memoryAssistantTurnStore(
   messages: AssistantTurnMessageWriter,
