@@ -17,6 +17,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { acceptTurn } from "./accept-turn.js";
 import { finishTurn } from "./finish-turn.js";
+import { assistantTurnJob } from "../jobs.js";
 import { insertChatMessage } from "./insert-chat-message.js";
 import { interruptTurn } from "./interrupt-turn.js";
 import { readChatMessages } from "./read-chat-messages.js";
@@ -142,7 +143,7 @@ function interrupt(turn: {
     request: { requestId, correlationId: requestId, channel: "system" },
     principal: {
       mode: "system",
-      serviceName: "assistant-recovery",
+      serviceName: assistantTurnJob.name,
       scope: { scope: "tenant", companyId: kitIdentities.companies.a },
     },
   });
