@@ -15,8 +15,9 @@ the two `files` maintenance jobs J10 names are the only exceptions). The
 steps live with the job, not here: `sweepOverdueAssistantTurns`
 (`packages/assistant-runtime/src/assistant-overdue-sweep.ts`, bound in
 `apps/worker/src/assistant-jobs.ts`) is one attempt that runs
-`assistant.listOverdueTurns`, then one `assistant.sweepOverdueTurns` per
-company, then the recovery of each ended turn.
+`assistant.listOverdueTurns` once per page and, inside each page, one
+`assistant.sweepOverdueTurns` per company followed by the recovery of each
+turn that sweep ended, before it asks for the next page.
 
 Protocol manual: [`docs/specs/jobs.md`](../../docs/specs/jobs.md). That file
 is the contract; this one is how to work in the package.
@@ -64,9 +65,10 @@ is the contract; this one is how to work in the package.
   and requires a byte-for-byte match.
 - **A job row commits with the write that justified it.** The port enqueues
   on the caller's transaction; never open a second connection to send.
-- **Stored job data is identity only** — company, actor, channel, request and
-  correlation ids, and an identity-only payload. Postgres is the source of
-  everything else; a job payload is never a caller or an access grant.
+- **Stored job data is identity only** — company, actor, channel, request,
+  correlation and execution ids, and an identity-only payload. Postgres is the
+  source of everything else; a job payload is never a caller or an access
+  grant.
 - **Server-only.** Client apps and the client-safe packages (`contract`,
   `validation`, `ui`) may not import this package; only `apps/api` and
   `apps/worker` do.
