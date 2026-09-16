@@ -60,16 +60,6 @@ export const assistantMessageUpdatedEventSchema = z.strictObject({
   message: assistantChatMessageSchema,
 });
 
-/**
- * The turn's outcome and the window after it. The window is there, not only the
- * last message, because its `openPause` is the authority on which question is
- * answerable, and no single message can say that.
- *
- * It is absent when the reconciler ended the turn rather than the process that
- * ran it (SHO-570): that pass acts for no person, and a conversation is read as
- * the person whose conversation it is. A client that receives one without a
- * window has been told the turn ended and reads the conversation itself.
- */
 export const assistantTurnFinishedEventSchema = z.strictObject({
   type: z.literal("turn.finished"),
   kind: assistantStreamTurnKindSchema,

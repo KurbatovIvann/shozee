@@ -80,5 +80,4 @@ export const assistantTurnBudgetHoldSchema = z.strictObject({
   kyivDate: z.iso.date(),
 });
 
-/** Longest a running turn may be given before the reconciler interrupts it. */
 export const ASSISTANT_TURN_TIMEOUT_MAX_MS = 15 * 60 * 1000;

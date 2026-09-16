@@ -65,28 +65,12 @@ export interface AssistantTurnForJob {
   readonly caller: VerifiedAssistantCaller | null;
 }
 
-/** The author of a turn the reconciler has just interrupted, and its message. */
 export interface InterruptedTurnAuthor {
   readonly companyId: string;
   readonly placeholderMessageId: string;
   readonly caller: VerifiedAssistantCaller;
 }
 
-/**
- * Who ends the message of a turn the reconciler interrupted (SHO-570).
- *
- * The placeholder's `streaming` text has to be settled, and a message is domain
- * content: a system job may not write it. So the write is made as the turn's
- * author — the row's `user_id`, exactly as the worker runs the turn — and the
- * caller is produced here, from the row, like every other one. Only for a turn
- * that has already ended as `interrupted`: nothing that is still running can be
- * written to through this, and the reconciler asks only after its own
- * interrupt.
- *
- * Core checks that person's membership on the write, as it does for every
- * action of a turn. An author who has since been removed cannot be acted as,
- * and the placeholder keeps the status it has.
- */
 export function createPostgresInterruptedTurnAuthor(
   deps: AssistantKitStoreDeps,
 ): {

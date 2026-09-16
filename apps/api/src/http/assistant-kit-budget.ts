@@ -12,13 +12,6 @@
  * failure mode being guarded against is a new endpoint that quietly costs
  * money.
  *
- * **Reserve, then accept or give it back (SHO-563).** Since the switch no turn
- * runs inside the request, so there is nothing here to settle afterwards: the
- * reservation *is* the charge, and it travels onto the turn row, which is why
- * the reservation is handed to the handler as a ticket. A turn that is accepted
- * keeps it — the worker releases it if the turn never reached the model, and
- * the reconciler does the same for a turn that can never start.
- *
  * **The reservation belongs to the turn, not to this request (SHO-572).** It is
  * keyed by the turn's own identity — kind, conversation and command, the same
  * identity `assistant_turns` is keyed by — so a retry of a command whose first

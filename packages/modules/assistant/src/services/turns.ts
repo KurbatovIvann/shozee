@@ -127,11 +127,6 @@ function runningPastDeadline(): SQL {
   return sql`(${eq(assistantTurns.status, "running")} and ${lt(assistantTurns.deadlineAt, sql`now()`)})`;
 }
 
-/**
- * Queued, and accepted longer than the abandon threshold ago: a turn that can
- * never start (ADR-0039 as amended by SHO-570). A queued turn inside it is
- * never ended — a worker, or the reconciler's re-enqueue, may still start it.
- */
 function queuedPastStartDeadline(): SQL {
   return sql`(${eq(assistantTurns.status, "queued")} and ${lt(
     assistantTurns.createdAt,

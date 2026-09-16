@@ -1,37 +1,3 @@
-/**
- * What the worker does with an accepted turn (ADR-0039, SHO-569).
- *
- * A job names a turn and nothing else, so everything here starts from the turn
- * row: `assistant.readTurnForJob` gives the company, the author, the request the
- * turn is audited under, the placeholder it writes into, and — only while the
- * turn is still queued — the caller it runs as. No session is read; core checks
- * the author's membership again on every action the turn runs.
- *
- * The order is the protocol:
- *
- * 1. A turn that is not queued, or whose start core refuses, runs nothing and
- *    writes nothing. A replayed or duplicate job lands here, and so does a turn
- *    whose author lost membership: it stays queued. How such a turn is closed
- *    is an open owner question (SHO-569), not something this file decides.
- * 2. Started, the turn runs from its conversation's history — a chat turn and
- *    an answer turn alike — with its own 180 s deadline as the only abort. Its
- *    tools derive idempotency keys from the continuation root's command, so
- *    Продовжити replays a write the dead turn committed (SHO-547).
- * 3. The placeholder's `streaming` text is always ended: by the host's own end
- *    write, or here when the turn produced no text. The turn's status is read
- *    back from what was stored, so the message and the turn row cannot say two
- *    different things about how it ended.
- * 4. Anything that throws once the turn has started ends it `interrupted`, with
- *    what it stored standing. A started turn is never run again.
- * 5. `finishTurn` hands back the hold it took off the row. That hold is released
- *    only when the model was never reached; otherwise the reservation stands as
- *    the charge.
- *
- * Every event is published after the write it reports, read back as the turn's
- * author, so `message.updated` carries the stored revision. A lost event costs
- * nothing — every stream starts from a snapshot — so a publish never fails the
- * turn.
- */
 import { ASSISTANT_TURN_TIMEOUT_MS } from "@showzy/assistant";
 import {
   MessageWriteRefusedError,
@@ -273,15 +239,6 @@ export function createAssistantTurnProcessor(
     return bind;
   }
 
-  /**
-   * Ends the placeholder's text if it is still `streaming` — a turn that paused
-   * or replied with no text left it so — and returns the status stored.
-   *
-   * The settle and the check that there is something to settle are one write
-   * (SHO-570): the turn's message has a second writer, the reconciler, and a
-   * read followed by an append could store a second text part beside the one it
-   * had just been beaten to.
-   */
   async function endText(
     kit: AssistantKitFor,
     scope: PauseScope,

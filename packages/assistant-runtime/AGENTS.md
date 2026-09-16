@@ -44,11 +44,19 @@ registry is injected into `createAssistantRuntime`; this package never imports
   messages (derived from the command), the placeholder's shape and the budget
   hold's micro-USD form; the module stores them as given. Finishing a turn
   returns the hold it took off the row, once (SHO-561).
+  - The store, not each caller, gives back a reservation no row holds:
+    `releaseUnusedHold` is called at most once, only for a replay, a busy
+    conversation, a wrong owner or a core refusal other than `INTERNAL`
+    (`acceptProvedRollback`) — never after `accepted`, where the row holds it
+    until the worker's processor or the recovery helper releases it, and
+    never after an unknown error,
+    which may have followed COMMIT. It must not throw.
 - `stores/assistant-turn-for-job.ts` — the **company-scoped** system read of
   the turn a job names, and the only producer of `VerifiedAssistantCaller` (the row's
-  `user_id`, `company_id` and `request_id`; no client IP), for a queued turn
-  only. A job payload is never a caller. The session is not read (ADR-0039,
-  amended SHO-561). The same file also produces the caller that settles an
+  `user_id`, `company_id` and `request_id`; no client IP — it is transport-only,
+  `security-operations.md` §3, and core does not need it for a staff action),
+  for a queued turn only. A job payload is never a caller. The accepting
+  session is recorded on the row and never read (ADR-0039, amended SHO-561). The same file also produces the caller that settles an
   **already interrupted** turn's placeholder (SHO-570) — a message is domain
   content, so it is written as the turn's author and core re-checks that
   membership; nothing running can be written to through it.
@@ -78,12 +86,29 @@ registry is injected into `createAssistantRuntime`; this package never imports
   only when the model was never reached, and publishes each event after its
   write. A turn that is not queued is a no-op. A refused or expired start
   throws, so the attempt fails, the job is exhausted and
-  `assistant.interruptTurn` closes the turn.
+  `assistant.interruptTurn` closes the turn — including a turn whose author
+  lost membership, which is how that turn ends (SHO-569 closed; pinned by
+  `apps/api/src/assistant-turn-processor.db.test.ts`).
+  - A started turn is never run again: anything that throws after the start
+    ends it `interrupted`, with what it stored standing.
+  - Its tools derive idempotency keys from the continuation root's command, so
+    Продовжити replays a write the dead turn committed (SHO-547).
+  - Ending the placeholder's text and the check that there is something to end
+    are one write (SHO-570): the message has a second writer, so a read
+    followed by an append could store a second text part beside the one it was
+    beaten to.
+  - Every event is published after the write it reports, read back as the
+    turn's author, so `message.updated` carries the stored revision. A lost
+    event costs nothing — every stream starts from a snapshot — so a publish
+    never fails the turn.
 - `assistant-turn-recovery.ts` — `createAssistantTurnRecovery`: the work that
   follows a turn's terminal transition, wherever that transition was made
   (SHO-698). Releases exactly the hold the winning statement handed back, and
   only for a turn that never started; settles that turn's own placeholder as
-  its author; publishes the ended status after the commit. At-most-once through
+  its author; publishes the ended status after the commit. That `turn.finished`
+  carries **no** window: the helper acts for no person and a conversation is
+  read as the person whose conversation it is, so a client that receives one
+  without a window re-reads the conversation itself. At-most-once through
   the store's `dropHold`, not exactly-once: a crash between the two stores
   leaves the reservation until its Kyiv-day TTL. A missing membership costs the
   message write and nothing else. Every step runs whatever the others did, and
@@ -103,7 +128,10 @@ registry is injected into `createAssistantRuntime`; this package never imports
   job is `assistant.sweepOverdueTurns`, global periodic, every 60 seconds.
 - `stores/assistant-turn-placeholder.ts` — the one answer to "which message is
   this turn's, and under which owner token", used by both the processor and the
-  recovery helper.
+  recovery helper; two readings of it would be two answers waiting to disagree.
+  A turn writes under the token the accept stored rather than deriving one
+  again, and the placeholder must still be the conversation's latest message —
+  only the latest message can be written to.
 - `events.ts` — the event channel contract (SHO-562): the per-conversation
   channel and presence key (company then conversation, lowercased), the stream
   slot key, the heartbeat, presence ttl, per-person stream limit and idle

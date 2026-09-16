@@ -208,16 +208,6 @@ interface AcceptCommon {
   /** The accepting request's better-auth session id. */
   readonly sessionId: string;
   readonly budgetHold: StaffAssistantBudgetHold;
-  /**
-   * Gives back the budget reservation this request made for the turn
-   * (`releaseStaffAssistantBudgetHold`). The store calls it at most once, and
-   * only when it knows no row holds this reservation: replayed, busy, wrong
-   * owner, or a core refusal other than `INTERNAL` (`acceptProvedRollback`). Never after
-   * `accepted` (the row holds the hold and the worker or the reconciler
-   * releases it), and never after an unknown error, which may have followed
-   * COMMIT.
-   * Must not throw; the budget guard's release never does.
-   */
   readonly releaseUnusedHold: () => Promise<void>;
 }
 
@@ -364,10 +354,6 @@ export function createPostgresAssistantTurnStore(
   const call = callFor(caller);
   return {
     accept: async (input) => {
-      // The store, not each caller, owns giving back a reservation that no row
-      // holds: after the switch every reconnect replays its command, and a
-      // forgotten release would strand the reservation until the Kyiv day ends
-      // where no reconciler can see it.
       let release = false;
       try {
         const result = await asCaller(

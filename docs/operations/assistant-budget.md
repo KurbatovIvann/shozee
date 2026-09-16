@@ -101,7 +101,10 @@ A budget 429 does not consume a turn slot. A 503 (`AI_NOT_CONFIGURED`)
 does not consume a turn slot or reserve budget.
 
 A turn that never reached the model has its hold released on the same
-Kyiv-date keys, by the worker or the reconciler, from the turn row.
+Kyiv-date keys, from the turn row, by whichever writer ended the turn: the
+worker's processor, inline once its own attempt finished the turn, or the
+recovery helper that follows an interrupt (`afterExhausted` and the overdue
+sweep), for a turn ended while still queued.
 **At most one release per turn**, guaranteed by the hold record rather
 than by convention: the record is compare-and-deleted, and only the
 caller that removed it subtracts. The request and the row's finisher can

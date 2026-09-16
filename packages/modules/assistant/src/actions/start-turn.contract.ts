@@ -1,17 +1,3 @@
-/**
- * Staff write: move an accepted turn from queued to running (SHO-560).
- *
- * Compare-and-set on the status, so of two workers handed the same turn only
- * one starts it; the other is told `not_queued` with the status it found. The
- * deadline is Postgres `now()` plus `timeoutMs`, so the reconciler compares it
- * with the same clock that set it.
- *
- * `timeoutMs` is input rather than a constant here: the turn timeout is the
- * queue contract's policy value (ADR-0039), and the worker that enforces it is
- * the one that passes it.
- *
- * Mechanical: `timeout: 5000` is one update by unique key.
- */
 import { defineActionContract } from "@showzy/core/contract";
 import { z } from "zod";
 

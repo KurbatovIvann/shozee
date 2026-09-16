@@ -520,8 +520,6 @@ describe("a turn the worker runs", () => {
       commandId: turn.commandId,
     });
     if (finished?.event.type === "turn.finished") {
-      // The worker read the window as the turn's author, so it travels with the
-      // finish; only the reconciler publishes a status without one (SHO-570).
       expect(finished.event.window?.messages.at(-1)?.revision).toBe(
         stored.revision,
       );
@@ -1049,7 +1047,7 @@ describe("a turn that broke rather than stopped", () => {
 });
 
 describe("an author removed while the turn runs", () => {
-  it("is refused at the next action: nothing is created, nothing reads as done, and the turn is left to the reconciler", async () => {
+  it("is refused at the next action: nothing is created, nothing reads as done, and the turn is left for exhaustion to close", async () => {
     const member = randomUUID();
     await kit.db.runtime.db.insert(user).values({
       id: member,
@@ -1167,7 +1165,7 @@ describe("a worker whose turn the sweep ended", () => {
           request: { requestId, correlationId: requestId, channel: "system" },
           principal: {
             mode: "system",
-            serviceName: "assistant-reconciler",
+            serviceName: "assistant-recovery",
             scope: { scope: "tenant", companyId: COMPANY },
           },
         });
