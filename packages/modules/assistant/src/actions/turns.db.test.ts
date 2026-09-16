@@ -43,7 +43,6 @@ import { finishTurn } from "./finish-turn.js";
 import { insertChatMessage } from "./insert-chat-message.js";
 import { assistantTurnJob } from "../jobs.js";
 import { interruptTurn } from "./interrupt-turn.js";
-import { listStaleTurns } from "./list-stale-turns.js";
 import { readChatMessages } from "./read-chat-messages.js";
 import { readChatState } from "./read-chat-state.js";
 import { writeChatState } from "./write-chat-state.js";
@@ -394,11 +393,6 @@ crossTenantSuite(
           status: "done",
         },
       },
-    ),
-    isolationCase(
-      listStaleTurns,
-      { input: { queuedStaleAfterMs: 60_000, limit: 10 } },
-      { input: { queuedStaleAfterMs: 60_000, limit: 10 } },
     ),
     isolationCase(
       readTurnForJob,
@@ -1938,184 +1932,6 @@ describe("the worker's read of the turn a job names", () => {
         },
       }),
     ).rejects.toBeInstanceOf(ValidationError);
-  });
-});
-
-describe("the reconciler's read", () => {
-  /**
-   * The isolation suite runs a global system action only in the scope it has,
-   * so the refusal of every other caller is proven here.
-   */
-  it("is refused to a staff caller and to a tenant-scoped system caller", async () => {
-    const input = { queuedStaleAfterMs: 60_000, limit: 10 };
-    const request = () => ({
-      requestId: randomUUID(),
-      correlationId: randomUUID(),
-      channel: "system" as const,
-    });
-
-    await expect(
-      executeAction(kit.pipeline, {
-        action: listStaleTurns,
-        input,
-        request: { ...request(), channel: "ui" as const },
-        principal: {
-          mode: "staff",
-          session: { userId: kitIdentities.users.anna },
-          companySelector: kitIdentities.companies.a,
-        },
-      }),
-    ).rejects.toBeInstanceOf(CoreInvariantError);
-    await expect(
-      executeAction(kit.pipeline, {
-        action: listStaleTurns,
-        input,
-        request: request(),
-        principal: {
-          mode: "system",
-          serviceName: "assistant-reconciler",
-          scope: { scope: "tenant", companyId: kitIdentities.companies.a },
-        },
-      }),
-    ).rejects.toBeInstanceOf(CoreInvariantError);
-  });
-
-  it("returns exactly the stale turns, across companies, oldest first", async () => {
-    const ageTurn = async (conversationId: string, age: string) => {
-      await kit.db.runtime.db
-        .update(assistantTurns)
-        .set({ createdAt: sql`now() - ${age}::interval` })
-        .where(eq(assistantTurns.conversationId, conversationId));
-    };
-
-    // Company A: accepted ten minutes ago and never started — its job is lost.
-    const queuedOld = await newConversation();
-    const queuedOldInput = chatAccept(queuedOld);
-    await kit.invoke(acceptTurn, queuedOldInput, {});
-    await ageTurn(queuedOld, "10 minutes");
-
-    // Company B: running past its deadline — its worker is gone.
-    const runningPast = await newConversation(borisInB);
-    const runningPastInput = chatAccept(runningPast, randomUUID(), BORIS_BIND);
-    await kit.invoke(acceptTurn, runningPastInput, borisInB);
-    await kit.invoke(
-      startTurn,
-      {
-        ...ref(runningPast, runningPastInput.commandId),
-        timeoutMs: TIMEOUT_MS,
-      },
-      borisInB,
-    );
-    await kit.db.runtime.db
-      .update(assistantTurns)
-      .set({
-        createdAt: sql`now() - interval '5 minutes'`,
-        deadlineAt: sql`now() - interval '1 second'`,
-      })
-      .where(eq(assistantTurns.conversationId, runningPast));
-
-    // Company A: queued past the abandon threshold — it can never start.
-    const queuedAbandoned = await newConversation();
-    const queuedAbandonedInput = chatAccept(queuedAbandoned);
-    await kit.invoke(acceptTurn, queuedAbandonedInput, {});
-    await ageTurn(queuedAbandoned, "20 minutes");
-
-    // Not stale: accepted just now; running in time; old but finished.
-    const queuedFresh = await newConversation();
-    await kit.invoke(acceptTurn, chatAccept(queuedFresh), {});
-    const runningInTime = await newConversation();
-    const runningInTimeInput = chatAccept(runningInTime);
-    await kit.invoke(acceptTurn, runningInTimeInput, {});
-    await kit.invoke(
-      startTurn,
-      {
-        ...ref(runningInTime, runningInTimeInput.commandId),
-        timeoutMs: TIMEOUT_MS,
-      },
-      {},
-    );
-    await ageTurn(runningInTime, "20 minutes");
-    const finishedOld = await newConversation();
-    const finishedOldInput = chatAccept(finishedOld);
-    await kit.invoke(acceptTurn, finishedOldInput, {});
-    await kit.invoke(
-      finishTurn,
-      { ...ref(finishedOld, finishedOldInput.commandId), status: "done" },
-      {},
-    );
-    await ageTurn(finishedOld, "30 minutes");
-
-    const fixtures = new Set([
-      queuedOld,
-      queuedAbandoned,
-      runningPast,
-      queuedFresh,
-      runningInTime,
-      finishedOld,
-    ]);
-    const stale = await kit.invoke(
-      listStaleTurns,
-      { queuedStaleAfterMs: 60_000, limit: 100 },
-      {},
-    );
-
-    expect(
-      stale.turns.filter((turn) => fixtures.has(turn.conversationId)),
-    ).toEqual([
-      // Oldest first: abandoned at twenty minutes, then the one whose job was
-      // lost ten minutes ago, then the running turn accepted five minutes ago.
-      {
-        companyId: kitIdentities.companies.a,
-        conversationId: queuedAbandoned,
-        kind: "chat",
-        commandId: queuedAbandonedInput.commandId,
-        status: "queued",
-        placeholderMessageId: queuedAbandonedInput.placeholder.messageId,
-        staleness: "queued_abandoned",
-      },
-      {
-        companyId: kitIdentities.companies.a,
-        conversationId: queuedOld,
-        kind: "chat",
-        commandId: queuedOldInput.commandId,
-        status: "queued",
-        placeholderMessageId: queuedOldInput.placeholder.messageId,
-        staleness: "queued_without_start",
-      },
-      {
-        companyId: kitIdentities.companies.b,
-        conversationId: runningPast,
-        kind: "chat",
-        commandId: runningPastInput.commandId,
-        status: "running",
-        placeholderMessageId: runningPastInput.placeholder.messageId,
-        staleness: "running_past_deadline",
-      },
-    ]);
-  });
-
-  it("stops at the limit it was given", async () => {
-    for (let n = 0; n < 3; n += 1) {
-      const conversationId = await newConversation();
-      await kit.invoke(acceptTurn, chatAccept(conversationId), {});
-      await kit.db.runtime.db
-        .update(assistantTurns)
-        .set({ createdAt: sql`now() - interval '2 hours'` })
-        .where(
-          and(
-            eq(assistantTurns.conversationId, conversationId),
-            eq(assistantTurns.status, "queued"),
-          ),
-        );
-    }
-
-    const page = await kit.invoke(
-      listStaleTurns,
-      { queuedStaleAfterMs: 60_000, limit: 2 },
-      {},
-    );
-
-    expect(page.turns).toHaveLength(2);
   });
 });
 

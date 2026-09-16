@@ -69,9 +69,10 @@ registry is injected into `createAssistantRuntime`; this package never imports
   transaction (SHO-651).
 - `assistant-turn-processor.ts` — `createAssistantTurnProcessor`: what the
   worker does with one `assistant.turn` attempt (SHO-651). Takes the recorded
-  company, the turn identity, the job's request id and the attempt's
-  `AbortSignal`; reads the turn through the company-scoped
-  `assistant.readTurnForJob`, starts it as its author, runs the host from
+  company, the turn identity, the recorded actor, the job's request id and the
+  attempt's `AbortSignal`; reads the turn through the company-scoped
+  `assistant.readTurnForJob`, refuses before the start unless that actor is the
+  turn's author, starts it as its author, runs the host from
   history with the turn deadline **and** the attempt signal as the aborts,
   ends the placeholder's text, finishes the turn, releases the returned hold
   only when the model was never reached, and publishes each event after its

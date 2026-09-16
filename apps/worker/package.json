@@ -25,7 +25,6 @@
     "@showzy/documents": "workspace:*",
     "@showzy/files": "workspace:*",
     "@showzy/jobs": "workspace:*",
-    "bullmq": "6.2.0",
     "ioredis": "^6.0.0",
     "pg": "^8.23.0",
     "pino": "^10.3.1"

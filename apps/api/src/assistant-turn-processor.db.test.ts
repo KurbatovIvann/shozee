@@ -46,6 +46,7 @@ import {
   createInMemoryConfirmationStore,
   executeAction,
   type ActionPipelineDeps,
+  type JobEnvelope,
 } from "@showzy/core";
 import { PermissionDeniedError } from "@showzy/core/errors";
 import {
@@ -286,6 +287,7 @@ interface Harness {
   readonly process: (
     turn: AssistantTurnRef,
     signal?: AbortSignal,
+    actor?: JobEnvelope["actor"],
   ) => Promise<AssistantTurnJobOutcome>;
   readonly published: Published[];
   readonly budget: AiBudgetStore;
@@ -341,10 +343,11 @@ async function harness(
     },
   });
   return {
-    process: (turn, signal) =>
+    process: (turn, signal, actor) =>
       runTurn({
         companyId: COMPANY,
         turn,
+        actor: actor ?? { type: "user", id: ANNA },
         requestId: randomUUID(),
         signal: signal ?? new AbortController().signal,
       }),
@@ -906,9 +909,9 @@ describe("a turn the worker runs", () => {
     const h = await harness(runtimeWith(never.model));
     const before = await placeholder(turn.placeholderId);
 
-    await expect(h.process(turn.job)).rejects.toBeInstanceOf(
-      PermissionDeniedError,
-    );
+    await expect(
+      h.process(turn.job, undefined, { type: "user", id: marta }),
+    ).rejects.toBeInstanceOf(PermissionDeniedError);
 
     expect(never.calls.count).toBe(0);
     expect((await turnRow(turn.commandId)).status).toBe("queued");
@@ -919,6 +922,61 @@ describe("a turn the worker runs", () => {
       company: COUNTER_BEFORE,
       global: COUNTER_BEFORE,
     });
+  });
+
+  it("refuses a job whose recorded user actor is not the turn's author, and runs and writes nothing", async () => {
+    const turn = await accepted({ history: USER_ASKS });
+    const never = modelThatMustNotRun();
+    const h = await harness(runtimeWith(never.model));
+    const before = await placeholder(turn.placeholderId);
+
+    await expect(
+      h.process(turn.job, undefined, {
+        type: "user",
+        id: kitIdentities.users.boris,
+      }),
+    ).rejects.toBeInstanceOf(PermissionDeniedError);
+
+    expect(never.calls.count).toBe(0);
+    expect((await turnRow(turn.commandId)).status).toBe("queued");
+    expect(await placeholder(turn.placeholderId)).toEqual(before);
+    expect(h.published).toEqual([]);
+  });
+
+  it("refuses a job recorded for a system actor, since no producer enqueues a turn as system, and runs and writes nothing", async () => {
+    const turn = await accepted({ history: USER_ASKS });
+    const never = modelThatMustNotRun();
+    const h = await harness(runtimeWith(never.model));
+    const before = await placeholder(turn.placeholderId);
+
+    await expect(
+      h.process(turn.job, undefined, { type: "system", id: "assistant" }),
+    ).rejects.toBeInstanceOf(PermissionDeniedError);
+
+    expect(never.calls.count).toBe(0);
+    expect((await turnRow(turn.commandId)).status).toBe("queued");
+    expect(await placeholder(turn.placeholderId)).toEqual(before);
+    expect(h.published).toEqual([]);
+  });
+
+  it("reaches no model when the attempt was aborted before the turn was claimed", async () => {
+    const turn = await accepted({ history: USER_ASKS });
+    const never = modelThatMustNotRun();
+    const h = await harness(runtimeWith(never.model));
+    const drained = new AbortController();
+    drained.abort();
+
+    expect(await h.process(turn.job, drained.signal)).toEqual({
+      kind: "finished",
+      status: "interrupted",
+      reachedModel: false,
+    });
+
+    expect(never.calls.count).toBe(0);
+    expect((await turnRow(turn.commandId)).status).toBe("interrupted");
+    expect(texts((await placeholder(turn.placeholderId)).parts)).toEqual([
+      { text: "", status: "interrupted" },
+    ]);
   });
 });
 
@@ -1036,9 +1094,9 @@ describe("an author removed while the turn runs", () => {
     );
 
     // Core refuses even the finish as this person; the job host catches it.
-    await expect(h.process(turn.job)).rejects.toBeInstanceOf(
-      PermissionDeniedError,
-    );
+    await expect(
+      h.process(turn.job, undefined, { type: "user", id: member }),
+    ).rejects.toBeInstanceOf(PermissionDeniedError);
 
     const created = await kit.db.runtime.db
       .select({ id: companyCustomers.id })
