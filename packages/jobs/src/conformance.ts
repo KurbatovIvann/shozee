@@ -917,6 +917,72 @@ export function describeJobRunnerConformance(
 
         await expect(peakAttempts(job, 3)).resolves.toBe(1);
       });
+
+      async function peakExhaustedRuns(
+        job: Job,
+        enqueued: number,
+      ): Promise<number> {
+        const runner = await open([job], "worker");
+        const holding: (() => void)[] = [];
+        let started = 0;
+        let active = 0;
+        let peak = 0;
+
+        for (let index = 0; index < enqueued; index += 1) {
+          const { envelope } = await enqueueSubject(runner, job);
+          await target.abandonAttempt(database, job.name, envelope.id);
+        }
+        const deadLettered = await eventually(
+          () => exhaustedRecords(job),
+          (records) => records.length === enqueued,
+        );
+        expect(deadLettered).toHaveLength(enqueued);
+        await work(runner, [
+          handlerFor(
+            job,
+            () => Promise.resolve(),
+            interrupt,
+            async () => {
+              started += 1;
+              active += 1;
+              peak = Math.max(peak, active);
+              await new Promise<void>((release) => {
+                holding.push(release);
+              });
+              active -= 1;
+            },
+          ),
+        ]);
+        for (let held = 1; held < enqueued; held += 1) {
+          await eventually(
+            () => Promise.resolve(started),
+            (value) => value >= held,
+          );
+          holding.shift()?.();
+          const startedAfterSlotFreed = await eventually(
+            () => Promise.resolve(started),
+            (value) => value > held,
+          );
+          expect(startedAfterSlotFreed).toBe(held + 1);
+        }
+        for (const release of holding.splice(0)) {
+          release();
+        }
+        await close(runner);
+        return peak;
+      }
+
+      it("runs one exhausted job at a time whatever the job declares", async () => {
+        const job = conformanceJob(
+          "exhaustedSerial",
+          0,
+          "conformance.interrupt",
+          10_000,
+          3,
+        );
+
+        await expect(peakExhaustedRuns(job, 3)).resolves.toBe(1);
+      });
     });
 
     describe("drain", () => {
