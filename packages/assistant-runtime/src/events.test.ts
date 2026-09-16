@@ -36,6 +36,7 @@ const window = {
   olderCursor: null,
   openPause: null,
   turn: null,
+  interruptedTurn: null,
 };
 
 const published: readonly AssistantPublishedEvent[] = [
@@ -51,6 +52,7 @@ const published: readonly AssistantPublishedEvent[] = [
     kind: "answer",
     commandId: COMMAND,
     status: "interrupted",
+    endReason: "timeout",
     window,
   },
 ];

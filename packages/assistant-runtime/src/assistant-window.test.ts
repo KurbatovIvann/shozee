@@ -8,6 +8,10 @@ const SCOPE = {
 };
 
 const TURN = { id: "9e8d7c6b-5a49-4382-b716-a5f4e3d2c1b0", status: "queued" };
+const INTERRUPTED = {
+  id: "33333333-3333-4333-8333-333333333333",
+  endReason: "not_started" as const,
+};
 
 describe("readAssistantChatWindow", () => {
   it("reads the turn only after the messages, so the turn is never older than them", async () => {
@@ -37,6 +41,10 @@ describe("readAssistantChatWindow", () => {
           reads.push("turn");
           return Promise.resolve({ id: TURN.id, status: "queued" as const });
         },
+        latestInterrupted: () => {
+          reads.push("interrupted");
+          return Promise.resolve(INTERRUPTED);
+        },
       },
       SCOPE,
     );
@@ -47,7 +55,13 @@ describe("readAssistantChatWindow", () => {
     settleMessages();
     const window = await reading;
 
-    expect(reads).toEqual(["messages", "messages settled", "turn"]);
+    expect(reads).toEqual([
+      "messages",
+      "messages settled",
+      "turn",
+      "interrupted",
+    ]);
     expect(window.turn).toEqual(TURN);
+    expect(window.interruptedTurn).toEqual(INTERRUPTED);
   });
 });

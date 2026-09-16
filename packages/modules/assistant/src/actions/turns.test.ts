@@ -1,5 +1,6 @@
 import {
   ASSISTANT_TURN_ACTIVE_STATUSES,
+  ASSISTANT_TURN_END_REASONS,
   ASSISTANT_TURN_FINAL_STATUSES,
   ASSISTANT_TURN_KINDS,
   ASSISTANT_TURN_STATUSES,
@@ -18,7 +19,6 @@ import {
   finishTurnOutputSchema,
 } from "./finish-turn.contract.js";
 import {
-  ASSISTANT_QUEUED_TURN_ABANDON_MS,
   interruptTurnContract,
   interruptTurnInputSchema,
   interruptTurnOutputSchema,
@@ -36,7 +36,13 @@ import {
   startTurnInputSchema,
 } from "./start-turn.contract.js";
 import {
+  sweepOverdueTurnsContract,
+  sweepOverdueTurnsInputSchema,
+} from "./sweep-overdue-turns.contract.js";
+import {
+  ASSISTANT_TURN_START_DEADLINE_MS,
   assistantTurnActiveStatusSchema,
+  assistantTurnEndReasonSchema,
   assistantTurnFinalStatusSchema,
   assistantTurnKindSchema,
   assistantTurnStatusSchema,
@@ -133,8 +139,8 @@ describe("the turn contracts", () => {
    * day for most turns (SHO-570 conveyor decision). Moving it is a policy
    * change: the runbook and ADR-0039 name this value.
    */
-  it("abandon a queued turn after fifteen minutes", () => {
-    expect(ASSISTANT_QUEUED_TURN_ABANDON_MS).toBe(15 * 60 * 1000);
+  it("give a queued turn fifteen minutes to start", () => {
+    expect(ASSISTANT_TURN_START_DEADLINE_MS).toBe(15 * 60 * 1000);
   });
 
   it("hand back a hold only with the call that ended the turn", () => {
@@ -158,16 +164,29 @@ describe("the turn contracts", () => {
         releasedHold: hold,
       }).success,
     ).toBe(false);
-    for (const from of ["queued", "running"]) {
+    for (const [from, endReason] of [
+      ["queued", "not_started"],
+      ["running", "timeout"],
+    ]) {
       expect(
         interruptTurnOutputSchema.safeParse({
           outcome: "interrupted",
           conversationId: CONVERSATION,
           from,
+          endReason,
           releasedHold: hold,
         }).success,
       ).toBe(true);
     }
+    expect(
+      interruptTurnOutputSchema.safeParse({
+        outcome: "interrupted",
+        conversationId: CONVERSATION,
+        from: "queued",
+        endReason: null,
+        releasedHold: hold,
+      }).success,
+    ).toBe(false);
     // Which state it ended the turn from decides who keeps the hold.
     expect(
       interruptTurnOutputSchema.safeParse({
@@ -400,5 +419,46 @@ describe("the turn contracts", () => {
     expect(assistantTurnActiveStatusSchema.options).toEqual([
       ...ASSISTANT_TURN_ACTIVE_STATUSES,
     ]);
+    expect(assistantTurnEndReasonSchema.options).toEqual([
+      ...ASSISTANT_TURN_END_REASONS,
+    ]);
+  });
+});
+
+describe("the overdue recovery contracts", () => {
+  it("sweep a company's own turns as an audited tenant write that is not replayed", () => {
+    expect(sweepOverdueTurnsContract).toMatchObject({
+      principal: "system",
+      systemScope: "tenant",
+      transport: "internal",
+      aiExposure: "internal",
+      risk: "write",
+      permissions: [],
+      audit: true,
+      idempotent: false,
+      emits: [],
+    });
+    expect(sweepOverdueTurnsContract.errors).toContain("NOT_FOUND");
+  });
+
+  it("take turn identities and never a company", () => {
+    const turn = {
+      conversationId: CONVERSATION,
+      kind: "chat",
+      commandId: CONVERSATION,
+    };
+    expect(sweepOverdueTurnsInputSchema.safeParse({ turns: [] }).success).toBe(
+      true,
+    );
+    expect(
+      sweepOverdueTurnsInputSchema.safeParse({
+        turns: [{ ...turn, companyId: CONVERSATION }],
+      }).success,
+    ).toBe(false);
+    expect(
+      sweepOverdueTurnsInputSchema.safeParse({
+        turns: Array.from({ length: 101 }, () => turn),
+      }).success,
+    ).toBe(false);
   });
 });

@@ -47,6 +47,7 @@
 import { randomUUID } from "node:crypto";
 
 import { CoreError } from "@showzy/core/errors";
+import type { AssistantTurnEndReason } from "@showzy/validation/assistant-chat";
 import type { Logger } from "pino";
 
 import { releaseStaffAssistantBudgetHold } from "./assistant-budget-guard.js";
@@ -231,6 +232,7 @@ export function createAssistantTurnReconciler(
 
   async function publishInterrupted(
     stale: AssistantStaleTurn,
+    endReason: AssistantTurnEndReason,
     fields: Record<string, string>,
   ): Promise<void> {
     const address: AssistantConversationAddress = {
@@ -245,6 +247,7 @@ export function createAssistantTurnReconciler(
         kind: stale.turn.kind,
         commandId: stale.turn.commandId,
         status: "interrupted",
+        endReason,
       });
     } catch (error) {
       logger.warn(
@@ -288,7 +291,7 @@ export function createAssistantTurnReconciler(
       "assistant turn interrupted by the reconciler",
     );
     await endPlaceholder(stale, requestId, fields);
-    await publishInterrupted(stale, fields);
+    await publishInterrupted(stale, ended.endReason, fields);
     return ended.from === "queued" ? "released" : "interrupted";
   }
 

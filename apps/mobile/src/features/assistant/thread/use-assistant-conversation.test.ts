@@ -61,6 +61,10 @@ function conversationWindow(options?: {
   readonly openPause?: unknown;
   readonly asked?: boolean;
   readonly turn?: { readonly id: string; readonly status: string } | null;
+  readonly interruptedTurn?: {
+    readonly id: string;
+    readonly endReason: string | null;
+  } | null;
 }) {
   const parts: unknown[] = [
     { kind: "text", text: options?.text ?? "Яку Катю?", status: "complete" },
@@ -87,6 +91,7 @@ function conversationWindow(options?: {
     ],
     openPause: options?.openPause ?? null,
     turn: options?.turn ?? null,
+    interruptedTurn: options?.interruptedTurn ?? null,
   };
 }
 
@@ -920,6 +925,7 @@ describe("a conversation longer than one window", () => {
       olderCursor: from > 1 ? String(from) : null,
       openPause: null,
       turn: null,
+      interruptedTurn: null,
     };
   }
 
@@ -1162,6 +1168,7 @@ describe("the conversation, live", () => {
         options !== undefined && "turn" in options
           ? options.turn
           : { id: COMMAND, status: "running" },
+      interruptedTurn: null,
     };
   }
 
@@ -1180,6 +1187,7 @@ describe("the conversation, live", () => {
       ],
       openPause,
       turn: null,
+      interruptedTurn: null,
     };
   }
 
@@ -1286,6 +1294,7 @@ describe("the conversation, live", () => {
         kind: "chat",
         commandId: COMMAND,
         status: "done",
+        endReason: null,
         window: settledWindow("Яку Катю?", OPEN_PAUSE),
       });
     });
@@ -1319,6 +1328,7 @@ describe("the conversation, live", () => {
         kind: "chat",
         commandId: COMMAND,
         status: "interrupted",
+        endReason: "timeout",
       });
     });
     await flush();
@@ -1356,6 +1366,7 @@ describe("the conversation, live", () => {
         kind: "chat",
         commandId: COMMAND,
         status: "done",
+        endReason: null,
         window: settledWindow("Яку Катю?", OPEN_PAUSE),
       });
     });
@@ -1405,6 +1416,7 @@ describe("the conversation, live", () => {
       kind: "chat",
       commandId: COMMAND,
       status: "interrupted",
+      endReason: "timeout",
     };
 
     act(() => {
@@ -1523,6 +1535,7 @@ describe("the conversation, live", () => {
         kind: "chat",
         commandId: COMMAND,
         status: "done",
+        endReason: null,
         window: settledWindow("Готово."),
       });
     });
@@ -1602,6 +1615,7 @@ describe("the conversation, live", () => {
         kind: "chat",
         commandId: COMMAND,
         status: "done",
+        endReason: null,
         window: settledWindow("Готово."),
       });
     });
@@ -1663,6 +1677,7 @@ describe("the conversation, live", () => {
       ],
       openPause: null,
       turn: null,
+      interruptedTurn: null,
     });
     fetchMock.mockImplementation((url: unknown) => {
       const target = String(url);
@@ -1719,6 +1734,7 @@ describe("the conversation, live", () => {
         kind: "chat",
         commandId: COMMAND,
         status: "done",
+        endReason: null,
         window: settledWindow("Готово."),
       });
     });
@@ -1800,6 +1816,7 @@ describe("the conversation, live", () => {
         kind: "chat",
         commandId: COMMAND,
         status: "done",
+        endReason: null,
         window: settledWindow("Готово."),
       });
     });
@@ -1861,6 +1878,7 @@ describe("the conversation, live", () => {
         kind: "chat",
         commandId: COMMAND,
         status: "done",
+        endReason: null,
         window: settledWindow("Готово."),
       });
     });

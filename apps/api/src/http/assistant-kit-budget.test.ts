@@ -99,6 +99,7 @@ function brokenTurns(failure: () => Error): AssistantTurnStore {
     start: () => Promise.reject(failure()),
     finish: () => Promise.reject(failure()),
     activeTurn: () => Promise.resolve(null),
+    latestInterrupted: () => Promise.resolve(null),
   };
 }
 

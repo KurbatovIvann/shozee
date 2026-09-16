@@ -125,12 +125,32 @@ export const assistantChatTurnSchema = z.strictObject({
 
 export type AssistantChatTurn = z.output<typeof assistantChatTurnSchema>;
 
+export const assistantTurnEndReasonSchema = z.enum([
+  "not_started",
+  "job_exhausted",
+  "timeout",
+]);
+
+export const assistantChatInterruptedTurnSchema = z.strictObject({
+  id: z.uuid(),
+  endReason: assistantTurnEndReasonSchema.nullable(),
+});
+
+export type AssistantTurnEndReason = z.output<
+  typeof assistantTurnEndReasonSchema
+>;
+
+export type AssistantChatInterruptedTurn = z.output<
+  typeof assistantChatInterruptedTurnSchema
+>;
+
 export const assistantChatWindowSchema = z.strictObject({
   conversationId: z.uuid(),
   messages: z.array(assistantChatMessageSchema),
   olderCursor: z.string().min(1).nullable(),
   openPause: assistantPauseSchema.nullable(),
   turn: assistantChatTurnSchema.nullable(),
+  interruptedTurn: assistantChatInterruptedTurnSchema.nullable(),
 });
 
 export type AssistantChatWindow = z.output<typeof assistantChatWindowSchema>;

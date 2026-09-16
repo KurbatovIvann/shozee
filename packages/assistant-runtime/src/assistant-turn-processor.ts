@@ -58,7 +58,7 @@ import {
 } from "./stores/assistant-turn-for-job.js";
 import {
   createPostgresAssistantTurnStore,
-  type AssistantTurnActiveView,
+  type AssistantTurnStore,
 } from "./stores/assistant-turn-store.js";
 import type { AiBudgetStore } from "./stores/budget.js";
 
@@ -205,17 +205,19 @@ export function createAssistantTurnProcessor(
         scope: PauseScope,
         found: AssistantTurnForJob,
         status: AssistantTurnEndStatus,
-        readTurn: () => Promise<AssistantTurnActiveView | null>,
+        turns: Pick<AssistantTurnStore, "activeTurn" | "latestInterrupted">,
       ): Promise<void> {
         const window = await read(kit, scope);
         if (window !== null) {
-          const turn = await readTurn();
+          const turn = await turns.activeTurn(scope);
+          const interruptedTurn = await turns.latestInterrupted(scope);
           await publish({
             type: "turn.finished",
             kind: found.turn.kind,
             commandId: found.turn.commandId,
             status,
-            window: { ...window, turn },
+            endReason: null,
+            window: { ...window, turn, interruptedTurn },
           });
         }
       },
@@ -477,9 +479,7 @@ export function createAssistantTurnProcessor(
       });
     }
     if (scope !== undefined) {
-      await events.finished(kit, scope, found, status, () =>
-        turns.activeTurn(scope),
-      );
+      await events.finished(kit, scope, found, status, turns);
     }
     return { kind: "finished", status, reachedModel };
   }

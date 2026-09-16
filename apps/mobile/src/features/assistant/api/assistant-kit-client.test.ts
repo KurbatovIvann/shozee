@@ -55,6 +55,7 @@ function conversationWindow(openPause: unknown = null) {
     ],
     openPause,
     turn: null,
+    interruptedTurn: null,
   };
 }
 

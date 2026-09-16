@@ -143,7 +143,7 @@ describe("assistant.readLatestInterruptedTurn", () => {
       {},
     );
 
-    expect(result).toEqual({ commandId: null });
+    expect(result).toEqual({ commandId: null, endReason: null });
   });
 
   it("reads the interrupted turn's own command", async () => {
@@ -162,7 +162,7 @@ describe("assistant.readLatestInterruptedTurn", () => {
       {},
     );
 
-    expect(result).toEqual({ commandId });
+    expect(result).toEqual({ commandId, endReason: null });
   });
 
   it("reads the most recent interrupted turn when more than one exists", async () => {
@@ -193,7 +193,7 @@ describe("assistant.readLatestInterruptedTurn", () => {
       {},
     );
 
-    expect(result).toEqual({ commandId: second });
+    expect(result).toEqual({ commandId: second, endReason: null });
   });
 });
 

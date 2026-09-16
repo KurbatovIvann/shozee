@@ -25,6 +25,7 @@ import {
   assistantChatState,
   assistantConversations,
   assistantTurns,
+  type AssistantTurnEndReason,
   type AssistantTurnKind,
 } from "@showzy/db/schema/assistant";
 import { postgresError } from "@showzy/module-kit/postgres-unique";
@@ -49,10 +50,9 @@ import type {
   finishTurnInputSchema,
   finishTurnOutputSchema,
 } from "../actions/finish-turn.contract.js";
-import {
-  ASSISTANT_QUEUED_TURN_ABANDON_MS,
-  type interruptTurnInputSchema,
-  type interruptTurnOutputSchema,
+import type {
+  interruptTurnInputSchema,
+  interruptTurnOutputSchema,
 } from "../actions/interrupt-turn.contract.js";
 import type {
   listStaleTurnsInputSchema,
@@ -66,7 +66,14 @@ import type {
   startTurnInputSchema,
   startTurnOutputSchema,
 } from "../actions/start-turn.contract.js";
-import type { assistantTurnBudgetHoldSchema } from "../actions/turn-record.contract.js";
+import type {
+  sweepOverdueTurnsInputSchema,
+  sweepOverdueTurnsOutputSchema,
+} from "../actions/sweep-overdue-turns.contract.js";
+import {
+  ASSISTANT_TURN_START_DEADLINE_MS,
+  type assistantTurnBudgetHoldSchema,
+} from "../actions/turn-record.contract.js";
 import { nextChatMessageSeq } from "./chat-messages.js";
 import { upsertChatState } from "./chat-state.js";
 import { loadOwnConversation } from "./load-conversation.js";
@@ -133,11 +140,15 @@ function runningPastDeadline(): SQL {
  * never start (ADR-0039 as amended by SHO-570). A queued turn inside it is
  * never ended — a worker, or the reconciler's re-enqueue, may still start it.
  */
-function queuedPastAbandon(): SQL {
+function queuedPastStartDeadline(): SQL {
   return sql`(${eq(assistantTurns.status, "queued")} and ${lt(
     assistantTurns.createdAt,
-    sql`now() - (${ASSISTANT_QUEUED_TURN_ABANDON_MS}::integer * interval '1 millisecond')`,
+    sql`now() - (${ASSISTANT_TURN_START_DEADLINE_MS}::integer * interval '1 millisecond')`,
   )})`;
+}
+
+function overdue(): SQL {
+  return sql`(${runningPastDeadline()} or ${queuedPastStartDeadline()})`;
 }
 
 function byIdentity(identity: TurnIdentity) {
@@ -459,9 +470,12 @@ async function finaliseTurn(
   identity: TurnIdentity,
   status: "done" | "failed" | "interrupted",
   eligible: SQL,
+  runningEndReason: Exclude<AssistantTurnEndReason, "not_started"> | null,
 ): Promise<{
   readonly hold: BudgetHold;
   readonly from: (typeof assistantTurns.$inferSelect)["status"];
+  readonly endReason: AssistantTurnEndReason | null;
+  readonly placeholderMessageId: string;
 } | null> {
   const held = db
     .select({
@@ -485,11 +499,17 @@ async function finaliseTurn(
         sessionId: null,
         companyReservedMicroUsd: 0,
         globalReservedMicroUsd: 0,
+        endReason:
+          runningEndReason === null
+            ? null
+            : sql<AssistantTurnEndReason>`case when ${held.status} = 'queued' then 'not_started' else ${runningEndReason}::text end`,
       })
       .from(held)
       .where(eq(assistantTurns.id, held.id))
       .returning({
         from: held.status,
+        endReason: assistantTurns.endReason,
+        placeholderMessageId: assistantTurns.placeholderMessageId,
         companyReservedMicroUsd: held.companyReservedMicroUsd,
         globalReservedMicroUsd: held.globalReservedMicroUsd,
         kyivDate: held.budgetKyivDate,
@@ -500,6 +520,8 @@ async function finaliseTurn(
   }
   return {
     from: finished.from,
+    endReason: finished.endReason,
+    placeholderMessageId: finished.placeholderMessageId,
     hold: {
       companyReservedMicroUsd: finished.companyReservedMicroUsd,
       globalReservedMicroUsd: finished.globalReservedMicroUsd,
@@ -515,7 +537,13 @@ export async function finishStaffTurn(env: {
   const identity = await ownTurnIdentity(env.ctx, env.input);
   const db = requireWritable(env.ctx.db);
 
-  const ended = await finaliseTurn(db, identity, env.input.status, isActive());
+  const ended = await finaliseTurn(
+    db,
+    identity,
+    env.input.status,
+    isActive(),
+    null,
+  );
   if (ended === null) {
     return {
       outcome: "already_finished",
@@ -564,7 +592,8 @@ export async function interruptSystemTurn(env: {
     db,
     identity,
     "interrupted",
-    sql`(${runningPastDeadline()} or ${queuedPastAbandon()})`,
+    overdue(),
+    "timeout",
   );
   if (ended === null) {
     const status = await currentStatus(db, identity);
@@ -580,17 +609,94 @@ export async function interruptSystemTurn(env: {
           status,
         };
   }
-  if (!isActiveStatus(ended.from)) {
-    throw new CoreInvariantError(
-      "assistant.interruptTurn ended a turn that was not active",
-    );
-  }
+  const recovered = recoveredTurn(ended, "assistant.interruptTurn");
   return {
     outcome: "interrupted",
     conversationId: identity.conversationId,
-    from: ended.from,
+    from: recovered.from,
+    endReason: recovered.endReason,
     releasedHold: ended.hold,
   };
+}
+
+function recoveredTurn(
+  ended: NonNullable<Awaited<ReturnType<typeof finaliseTurn>>>,
+  action: string,
+): {
+  readonly from: (typeof ASSISTANT_TURN_ACTIVE_STATUSES)[number];
+  readonly endReason: AssistantTurnEndReason;
+} {
+  if (!isActiveStatus(ended.from) || ended.endReason === null) {
+    throw new CoreInvariantError(
+      `${action} ended a turn that was not active, or stored no end reason`,
+    );
+  }
+  return { from: ended.from, endReason: ended.endReason };
+}
+
+export async function sweepSystemOverdueTurns(env: {
+  readonly ctx: SystemCtx;
+  readonly input: z.output<typeof sweepOverdueTurnsInputSchema>;
+}): Promise<z.output<typeof sweepOverdueTurnsOutputSchema>> {
+  if (env.ctx.scope !== "tenant") {
+    throw new CoreInvariantError(
+      "assistant.sweepOverdueTurns expects tenant system",
+    );
+  }
+  const db = requireWritableSystem(env.ctx.db);
+  const companyId = env.ctx.companyId;
+  const identities = [
+    ...new Map(
+      env.input.turns.map((turn) => {
+        const identity: TurnIdentity = {
+          companyId,
+          conversationId: turn.conversationId.toLowerCase(),
+          kind: turn.kind,
+          commandId: turn.commandId.toLowerCase(),
+        };
+        return [
+          `${identity.conversationId}:${identity.kind}:${identity.commandId}`,
+          identity,
+        ] as const;
+      }),
+    ),
+  ]
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+    .map(([, identity]) => identity);
+  if (identities.length === 0) {
+    return { ended: [] };
+  }
+  const own = await db
+    .select({ id: assistantTurns.id })
+    .from(assistantTurns)
+    .where(or(...identities.map(byIdentity)));
+  if (own.length !== identities.length) {
+    throw new NotFoundError();
+  }
+  const ended: z.output<typeof sweepOverdueTurnsOutputSchema>["ended"] = [];
+  for (const identity of identities) {
+    const finished = await finaliseTurn(
+      db,
+      identity,
+      "interrupted",
+      overdue(),
+      "timeout",
+    );
+    if (finished === null) {
+      continue;
+    }
+    const recovered = recoveredTurn(finished, "assistant.sweepOverdueTurns");
+    ended.push({
+      conversationId: identity.conversationId,
+      kind: identity.kind,
+      commandId: identity.commandId,
+      placeholderMessageId: finished.placeholderMessageId,
+      from: recovered.from,
+      endReason: recovered.endReason,
+      releasedHold: finished.hold,
+    });
+  }
+  return { ended };
 }
 
 /**
@@ -677,7 +783,7 @@ export async function listStaleTurns(env: {
       // reconciler never judges a threshold of its own.
       staleness: sql<
         "queued_without_start" | "queued_abandoned" | "running_past_deadline"
-      >`case when ${runningPastDeadline()} then 'running_past_deadline' when ${queuedPastAbandon()} then 'queued_abandoned' else 'queued_without_start' end`,
+      >`case when ${runningPastDeadline()} then 'running_past_deadline' when ${queuedPastStartDeadline()} then 'queued_abandoned' else 'queued_without_start' end`,
     })
     .from(assistantTurns)
     .where(
@@ -691,8 +797,7 @@ export async function listStaleTurns(env: {
               sql`now() - (${env.input.queuedStaleAfterMs}::integer * interval '1 millisecond')`,
             ),
           ),
-          queuedPastAbandon(),
-          runningPastDeadline(),
+          overdue(),
         ),
       ),
     )
@@ -758,7 +863,10 @@ export async function readStaffActiveTurn(env: {
 export async function readStaffLatestInterruptedTurn(env: {
   readonly ctx: StaffCtx;
   readonly conversationId: string;
-}): Promise<{ readonly commandId: string | null }> {
+}): Promise<{
+  readonly commandId: string | null;
+  readonly endReason: AssistantTurnEndReason | null;
+}> {
   const conversationId = env.conversationId.toLowerCase();
   await loadOwnConversation({
     db: env.ctx.db,
@@ -768,7 +876,10 @@ export async function readStaffLatestInterruptedTurn(env: {
   });
   const row = (
     await env.ctx.db
-      .select({ commandId: assistantTurns.commandId })
+      .select({
+        commandId: assistantTurns.commandId,
+        endReason: assistantTurns.endReason,
+      })
       .from(assistantTurns)
       .where(
         and(
@@ -780,5 +891,8 @@ export async function readStaffLatestInterruptedTurn(env: {
       .orderBy(desc(assistantTurns.createdAt))
       .limit(1)
   )[0];
-  return { commandId: row?.commandId ?? null };
+  return {
+    commandId: row?.commandId ?? null,
+    endReason: row?.endReason ?? null,
+  };
 }

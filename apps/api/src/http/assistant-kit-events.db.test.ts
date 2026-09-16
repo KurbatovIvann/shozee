@@ -568,6 +568,7 @@ describe("what a stream carries", () => {
         .forCaller(anna)
         .kit.messages.read({ conversationId, bind: annaBind })),
       turn: null,
+      interruptedTurn: null,
     };
     const latest = window.messages.at(-1);
     if (latest === undefined) {
@@ -590,6 +591,7 @@ describe("what a stream carries", () => {
       kind: "chat",
       commandId,
       status: "done",
+      endReason: null,
       window,
     });
 
@@ -620,6 +622,7 @@ describe("what a stream carries", () => {
     const window = {
       ...(await scoped.kit.messages.read({ conversationId, bind: annaBind })),
       turn: await scoped.turns.activeTurn({ conversationId }),
+      interruptedTurn: await scoped.turns.latestInterrupted({ conversationId }),
     };
     const latest = window.messages.at(-1);
     if (latest === undefined) {
@@ -635,6 +638,7 @@ describe("what a stream carries", () => {
       kind: "chat",
       commandId,
       status: "done",
+      endReason: null,
       window,
     });
 
@@ -650,6 +654,7 @@ describe("what a stream carries", () => {
       kind: "chat",
       commandId,
       status: "done",
+      endReason: null,
       window: await messagesWindow(h, conversationId),
     });
   });

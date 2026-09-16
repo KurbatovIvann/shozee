@@ -16,6 +16,7 @@ export const assistantSuiteCoverage = {
     "assistant.listStaleTurns",
     "assistant.readTurnForJob",
     "assistant.interruptTurn",
+    "assistant.sweepOverdueTurns",
     "assistant.readActiveTurn",
     "assistant.readLatestInterruptedTurn",
   ],

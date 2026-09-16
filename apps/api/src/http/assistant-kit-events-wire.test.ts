@@ -14,9 +14,11 @@ import {
   assistantTurnKindSchema,
 } from "@showzy/assistant-runtime";
 import {
+  ASSISTANT_TURN_END_REASONS,
   ASSISTANT_TURN_FINAL_STATUSES,
   ASSISTANT_TURN_KINDS,
 } from "@showzy/db/schema/assistant";
+import { assistantTurnEndReasonSchema } from "@showzy/validation/assistant-chat";
 import {
   assistantMessageUpdatedEventSchema,
   assistantSnapshotEventSchema,
@@ -45,6 +47,12 @@ describe("assistant event wire", () => {
     );
   });
 
+  it("names the same end reasons as the turn row", () => {
+    expect([...assistantTurnEndReasonSchema.options].sort()).toEqual(
+      [...ASSISTANT_TURN_END_REASONS].sort(),
+    );
+  });
+
   it("reads a window the kit wrote, with the revision of a message it updated, as a snapshot and as message.updated", async () => {
     const kit = createAssistantKit(testDeps(assistantInteractions));
     const scope = { conversationId: CONVERSATION, bind: BIND };
@@ -68,7 +76,7 @@ describe("assistant event wire", () => {
     expect(
       assistantSnapshotEventSchema.safeParse({
         type: "snapshot",
-        window: { ...window, turn: null },
+        window: { ...window, turn: null, interruptedTurn: null },
       }).success,
     ).toBe(true);
     expect(

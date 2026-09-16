@@ -1314,6 +1314,7 @@ describe("ending a turn takes its hold off the row", () => {
       outcome: "interrupted",
       conversationId,
       from: "running",
+      endReason: "timeout",
       releasedHold: HOLD,
     });
     expect(second).toEqual({
@@ -1423,6 +1424,7 @@ describe("ending a turn takes its hold off the row", () => {
       outcome: "interrupted",
       conversationId,
       from: "queued",
+      endReason: "not_started",
       releasedHold: HOLD,
     });
 
@@ -2224,6 +2226,7 @@ describe("a start and a queued turn's interrupt, the second waiting on the first
       outcome: "interrupted",
       conversationId: race.conversationId,
       from: "queued",
+      endReason: "not_started",
       releasedHold: HOLD,
     });
     expect(race.waiter).toEqual({

@@ -61,6 +61,7 @@ function windowOf(
     olderCursor: start > 0 ? String(start + 1) : null,
     openPause: null,
     turn: null,
+    interruptedTurn: null,
   };
 }
 

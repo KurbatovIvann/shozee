@@ -468,6 +468,7 @@ describe("a turn whose worker is gone", () => {
         kind: "chat",
         commandId: turn.commandId,
         status: "interrupted",
+        endReason: "timeout",
       },
     ]);
     expect(enqueuedIds(pass, turn)).toEqual([]);
@@ -566,6 +567,7 @@ describe("a queued turn that can never start", () => {
         kind: "chat",
         commandId: turn.commandId,
         status: "interrupted",
+        endReason: "not_started",
       },
     ]);
 
@@ -752,6 +754,7 @@ describe("a turn whose author is no longer a member", () => {
         kind: "chat",
         commandId: turn.commandId,
         status: "interrupted",
+        endReason: "not_started",
       },
     ]);
 

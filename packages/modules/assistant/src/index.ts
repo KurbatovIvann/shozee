@@ -12,6 +12,7 @@ import { readChatState } from "./actions/read-chat-state.js";
 import { readLatestInterruptedTurn } from "./actions/read-latest-interrupted-turn.js";
 import { readTurnForJob } from "./actions/read-turn-for-job.js";
 import { startTurn } from "./actions/start-turn.js";
+import { sweepOverdueTurns } from "./actions/sweep-overdue-turns.js";
 import { updateChatMessage } from "./actions/update-chat-message.js";
 import { writeChatState } from "./actions/write-chat-state.js";
 
@@ -29,6 +30,7 @@ export { readChatState };
 export { readLatestInterruptedTurn };
 export { readTurnForJob };
 export { startTurn };
+export { sweepOverdueTurns };
 export { updateChatMessage };
 export { writeChatState };
 
@@ -47,6 +49,7 @@ export const assistantActions = [
   listStaleTurns,
   readTurnForJob,
   interruptTurn,
+  sweepOverdueTurns,
   readActiveTurn,
   readLatestInterruptedTurn,
 ] as const;
