@@ -943,6 +943,22 @@ describe("a turn the worker runs", () => {
     expect(h.published).toEqual([]);
   });
 
+  it("refuses a job recorded for a system actor, since no producer enqueues a turn as system, and runs and writes nothing", async () => {
+    const turn = await accepted({ history: USER_ASKS });
+    const never = modelThatMustNotRun();
+    const h = await harness(runtimeWith(never.model));
+    const before = await placeholder(turn.placeholderId);
+
+    await expect(
+      h.process(turn.job, undefined, { type: "system", id: "assistant" }),
+    ).rejects.toBeInstanceOf(PermissionDeniedError);
+
+    expect(never.calls.count).toBe(0);
+    expect((await turnRow(turn.commandId)).status).toBe("queued");
+    expect(await placeholder(turn.placeholderId)).toEqual(before);
+    expect(h.published).toEqual([]);
+  });
+
   it("reaches no model when the attempt was aborted before the turn was claimed", async () => {
     const turn = await accepted({ history: USER_ASKS });
     const never = modelThatMustNotRun();

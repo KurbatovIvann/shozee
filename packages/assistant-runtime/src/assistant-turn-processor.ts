@@ -515,7 +515,7 @@ export function createAssistantTurnProcessor(
     if (found.caller === null) {
       return { kind: "not_queued", status: found.status };
     }
-    if (run.actor.type === "user" && run.actor.id !== found.caller.userId) {
+    if (run.actor.type !== "user" || run.actor.id !== found.caller.userId) {
       throw new PermissionDeniedError(
         "This assistant job was recorded for someone who is not the turn's author.",
       );
