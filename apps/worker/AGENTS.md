@@ -20,7 +20,10 @@ wakeup, polling fallback, graceful drain, and the job handlers.
   runner with `workerJobs` (provisioning queues and schedules) and works
   `maintenanceHandlers` together with `composeAssistantJobs`, LISTENs on
   `domain_events`, starts the outbox loop. Close the object store after
-  draining the job runner.
+  draining the job runner. `close()` and a failed boot release through one
+  ordered list (drain jobs, stop the loop, object store, Redis, database),
+  skipping what was never acquired and attempting every release even when one
+  fails; a failed boot rethrows its own error.
 - `src/maintenance.ts` — maintenance on pg-boss (`docs/specs/jobs.md` §12).
   The worker-owned job and action `worker.cleanupIdempotencyKeys` (hourly,
   internal system/global audited write calling core's

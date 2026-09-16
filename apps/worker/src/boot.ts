@@ -1,13 +1,17 @@
 import { randomUUID } from "node:crypto";
 
 import type { ServerConfig } from "@showzy/config";
-import { createDbClient } from "@showzy/db";
+import { createDbClient, type DbClient } from "@showzy/db";
 import {
   closeFilesObjectStore,
   configureFilesObjectStore,
   probeFilesObjectStore,
 } from "@showzy/files/storage";
-import { openJobRunner, type JobRunnerIntervals } from "@showzy/jobs";
+import {
+  openJobRunner,
+  type JobRunner,
+  type JobRunnerIntervals,
+} from "@showzy/jobs";
 import { Redis } from "ioredis";
 import type { Logger } from "pino";
 
@@ -39,29 +43,49 @@ export interface BootWorkerOptions {
   readonly jobIntervals?: JobRunnerIntervals;
 }
 
+interface AcquiredWorkerResources {
+  objectStore: boolean;
+  db?: DbClient;
+  jobRunner?: JobRunner;
+  redis?: Redis;
+  loop?: WorkerLoop;
+}
+
+async function releaseInDependencyOrder(
+  acquired: AcquiredWorkerResources,
+): Promise<readonly unknown[]> {
+  const { objectStore, db, jobRunner, redis, loop } = acquired;
+  const releases: readonly (() => unknown)[] = [
+    () => jobRunner?.close(),
+    () => loop?.stop(),
+    () => {
+      if (objectStore) {
+        closeFilesObjectStore();
+      }
+    },
+    () => redis?.quit(),
+    () => db?.pool.end(),
+  ];
+  const failures: unknown[] = [];
+  for (const release of releases) {
+    try {
+      await release();
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  return failures;
+}
+
 export async function bootWorker(
   config: ServerConfig,
   options: BootWorkerOptions = {},
 ): Promise<BootedWorker> {
-  // Every acquired resource registers its release; a failing later boot
-  // step unwinds in reverse so nothing leaks (SHO-279).
-  const releases: (() => Promise<void> | void)[] = [];
-  async function unwind(): Promise<void> {
-    for (const release of releases.reverse()) {
-      try {
-        await release();
-      } catch {
-        // Best-effort teardown of a failed boot — the original boot error
-        // is what the caller must see.
-      }
-    }
-  }
+  const acquired: AcquiredWorkerResources = { objectStore: false };
 
   try {
     configureFilesObjectStore(config.s3);
-    releases.push(() => {
-      closeFilesObjectStore();
-    });
+    acquired.objectStore = true;
     await probeFilesObjectStore();
     const { logger: processLogger, telemetry } = createProcessObservability({
       name: "worker",
@@ -74,7 +98,7 @@ export async function bootWorker(
         logger.error({ err: error }, "idle postgres pool client error");
       },
     });
-    releases.push(() => db.pool.end());
+    acquired.db = db;
     const jobRunner = await openJobRunner(
       {
         db: db.db,
@@ -88,11 +112,9 @@ export async function bootWorker(
       },
       "worker",
     );
-    releases.push(() => jobRunner.close());
+    acquired.jobRunner = jobRunner;
     const redis = new Redis(config.redis.url);
-    releases.push(async () => {
-      await redis.quit();
-    });
+    acquired.redis = redis;
     await redis.ping();
     const workerId = options.workerId ?? randomUUID();
     const pipeline = createActionPipeline({
@@ -132,21 +154,20 @@ export async function bootWorker(
         : {}),
       ...(options.now !== undefined ? { now: options.now } : {}),
     });
-    releases.push(() => loop.stop());
+    acquired.loop = loop;
     await loop.start();
     return {
       loop,
       logger,
       async close() {
-        await jobRunner.close();
-        await loop.stop();
-        closeFilesObjectStore();
-        await redis.quit();
-        await db.pool.end();
+        const failures = await releaseInDependencyOrder(acquired);
+        if (failures.length > 0) {
+          throw failures[0];
+        }
       },
     };
   } catch (error) {
-    await unwind();
+    await releaseInDependencyOrder(acquired);
     throw error;
   }
 }
