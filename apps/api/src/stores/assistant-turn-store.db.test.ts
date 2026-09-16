@@ -245,6 +245,43 @@ describe("accepting a turn through the runtime", () => {
     ]);
   });
 
+  it("names the interrupted turn's own placeholder, not the conversation's latest message", async () => {
+    const conversationId = await newConversation();
+    const interrupted = randomUUID();
+    const store = turns();
+    await store.accept({
+      kind: "chat",
+      conversationId,
+      commandId: interrupted,
+      bind: annaBind,
+      text: "порахуй",
+      sessionId: "session-anna",
+      ...nothingReserved,
+    });
+    await store.finish(
+      { conversationId, kind: "chat", commandId: interrupted },
+      "interrupted",
+    );
+    await store.accept({
+      kind: "chat",
+      conversationId,
+      commandId: randomUUID(),
+      bind: annaBind,
+      text: "ще раз",
+      sessionId: "session-anna",
+      ...nothingReserved,
+    });
+
+    await expect(store.latestInterrupted({ conversationId })).resolves.toEqual({
+      id: interrupted,
+      messageId: assistantTurnMessageId(
+        { kind: "chat", commandId: interrupted },
+        "assistant",
+      ),
+      endReason: null,
+    });
+  });
+
   it("replays a repeated command in another casing, names the same job, and writes nothing", async () => {
     const conversationId = await newConversation();
     const commandId = randomUUID();

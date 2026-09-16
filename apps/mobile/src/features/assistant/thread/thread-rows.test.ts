@@ -28,6 +28,7 @@ const SECOND_USER_MESSAGE = "55555555-5555-4555-8555-111111111111";
 const SECOND_REPLY_MESSAGE = "66666666-6666-4666-8666-222222222222";
 const TURN = "77777777-7777-4777-8777-333333333333";
 const OLDER_TURN = "88888888-8888-4888-8888-444444444444";
+const OLDER_REPLY_MESSAGE = "99999999-9999-4999-8999-555555555555";
 
 function textPart(text: string): AssistantChatPart {
   return { kind: "text", text, status: "complete" };
@@ -316,7 +317,7 @@ describe("assistantThreadRows", () => {
         ],
         null,
         null,
-        { id: TURN, endReason: "not_started" },
+        { id: TURN, messageId: REPLY_MESSAGE, endReason: "not_started" },
       ),
     );
 
@@ -336,7 +337,7 @@ describe("assistantThreadRows", () => {
         ],
         null,
         null,
-        { id: TURN, endReason: "not_started" },
+        { id: TURN, messageId: REPLY_MESSAGE, endReason: "not_started" },
       ),
     );
 
@@ -359,12 +360,62 @@ describe("assistantThreadRows", () => {
         ],
         null,
         null,
-        { id: TURN, endReason: "not_started" },
+        { id: TURN, messageId: SECOND_REPLY_MESSAGE, endReason: "not_started" },
       ),
     );
 
     expect(result[1]?.interruptedReason).toBeNull();
     expect(result[3]?.interruptedReason).toBe("not_started");
+  });
+
+  it("names the reason on the interrupted turn's own reply, not on the last stopped one", () => {
+    const result = rows(
+      threadOf(
+        [
+          message(USER_MESSAGE, "user", [textPart("Порахуй")]),
+          message(REPLY_MESSAGE, "assistant", [
+            { kind: "text", text: "Рахую", status: "interrupted" },
+          ]),
+          message(SECOND_USER_MESSAGE, "user", [textPart("Ще раз")]),
+          message(SECOND_REPLY_MESSAGE, "assistant", [
+            { kind: "text", text: "", status: "interrupted" },
+          ]),
+        ],
+        null,
+        null,
+        { id: TURN, messageId: REPLY_MESSAGE, endReason: "timeout" },
+      ),
+    );
+
+    expect(result[1]?.interruptedReason).toBe("timeout");
+    expect(result[3]?.interruptedReason).toBeNull();
+  });
+
+  it("leaves an unsettled older reply on the generic notice while a newer turn runs", () => {
+    const result = rows(
+      threadOf(
+        [
+          message(USER_MESSAGE, "user", [textPart("Порахуй")]),
+          message(REPLY_MESSAGE, "assistant", [
+            { kind: "text", text: "", status: "interrupted" },
+          ]),
+          message(SECOND_USER_MESSAGE, "user", [textPart("Ще раз")]),
+          message(SECOND_REPLY_MESSAGE, "assistant", [
+            { kind: "text", text: "", status: "streaming" },
+          ]),
+        ],
+        null,
+        { id: TURN, status: "running" },
+        {
+          id: OLDER_TURN,
+          messageId: OLDER_REPLY_MESSAGE,
+          endReason: "not_started",
+        },
+      ),
+    );
+
+    expect(result[1]?.interrupted).toBe(true);
+    expect(result.every((row) => row.interruptedReason === null)).toBe(true);
   });
 
   it("reports no reason for a turn interrupted before reasons were stored", () => {
@@ -378,7 +429,7 @@ describe("assistantThreadRows", () => {
         ],
         null,
         null,
-        { id: TURN, endReason: null },
+        { id: TURN, messageId: REPLY_MESSAGE, endReason: null },
       ),
     );
 
@@ -397,7 +448,11 @@ describe("assistantThreadRows", () => {
         ],
         null,
         { id: TURN, status: "running" },
-        { id: OLDER_TURN, endReason: "not_started" },
+        {
+          id: OLDER_TURN,
+          messageId: OLDER_REPLY_MESSAGE,
+          endReason: "not_started",
+        },
       ),
     );
 

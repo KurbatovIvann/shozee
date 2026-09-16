@@ -441,7 +441,11 @@ describe("sweeping overdue turns", () => {
         { conversationId: turn.conversationId },
         actorOf(anna),
       ),
-    ).resolves.toEqual({ commandId: turn.commandId, endReason: "not_started" });
+    ).resolves.toEqual({
+      commandId: turn.commandId,
+      messageId: turn.placeholderMessageId,
+      endReason: "not_started",
+    });
   });
 });
 

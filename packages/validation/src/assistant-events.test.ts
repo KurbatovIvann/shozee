@@ -23,7 +23,11 @@ const window = {
   olderCursor: null,
   openPause: null,
   turn: null,
-  interruptedTurn: { id: COMMAND, endReason: "not_started" },
+  interruptedTurn: {
+    id: COMMAND,
+    messageId: message.messageId,
+    endReason: "not_started",
+  },
 };
 
 const events = {

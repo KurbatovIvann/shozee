@@ -151,19 +151,6 @@ function interactionHost(
   return null;
 }
 
-function interruptedHost(
-  messages: readonly AssistantChatMessage[],
-  turn: AssistantChatTurn | null,
-): string | null {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message !== undefined && interruptedIn(message, turn)) {
-      return message.messageId;
-    }
-  }
-  return null;
-}
-
 export function assistantThreadRows(input: {
   readonly thread: Pick<
     AssistantChatThread,
@@ -192,8 +179,7 @@ export function assistantThreadRows(input: {
       ? null
       : interactionHost(messages, openPause);
   const endReason = interruptedTurn?.endReason ?? null;
-  const endReasonHostId =
-    endReason === null ? null : interruptedHost(messages, turn);
+  const interruptedMessageId = interruptedTurn?.messageId ?? null;
 
   const rows: AssistantThreadRow[] = [];
   for (const message of messages) {
@@ -209,7 +195,7 @@ export function assistantThreadRows(input: {
       failed: failedIn(message),
       interrupted: interruptedIn(message, turn),
       interruptedReason:
-        message.messageId === endReasonHostId ? endReason : null,
+        message.messageId === interruptedMessageId ? endReason : null,
       waiting: false,
     };
     if (!isEmpty(row)) {

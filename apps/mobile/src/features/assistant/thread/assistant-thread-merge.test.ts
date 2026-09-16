@@ -893,12 +893,17 @@ describe("a turn that ended without ever starting", () => {
       window: windowOf({
         text: "",
         status: "streaming",
-        interruptedTurn: { id: COMMAND, endReason: "not_started" },
+        interruptedTurn: {
+          id: COMMAND,
+          messageId: REPLY,
+          endReason: "not_started",
+        },
       }),
     });
 
     expect(applied.state.thread?.interruptedTurn).toEqual({
       id: COMMAND,
+      messageId: REPLY,
       endReason: "not_started",
     });
     expect(assistantTurnActive(applied.state.thread)).toBe(false);
@@ -924,7 +929,11 @@ describe("a turn that ended without ever starting", () => {
         text: "",
         status: "streaming",
         revision: 1,
-        interruptedTurn: { id: OTHER_COMMAND, endReason: "not_started" },
+        interruptedTurn: {
+          id: OTHER_COMMAND,
+          messageId: REPLY,
+          endReason: "not_started",
+        },
       }),
     });
 
