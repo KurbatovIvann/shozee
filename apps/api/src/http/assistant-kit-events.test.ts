@@ -18,6 +18,7 @@ import {
   ASSISTANT_STREAM_PENDING_WRITES_MAX,
   assistantConversationChannel,
   assistantInteractions,
+  assistantTurnMessageId,
   memoryAssistantKitCommands,
   memoryAssistantTurnStore,
   type AssistantConversationAddress,
@@ -25,15 +26,21 @@ import {
   type AssistantEventListener,
   type AssistantPresence,
   type AssistantStreamSlots,
+  type MemoryStoredAssistantTurn,
   type ResolveAnswer,
 } from "@showzy/assistant-runtime";
 import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
-import type { AssistantPublishedEvent } from "@showzy/validation/assistant-events";
+import {
+  parseAssistantStreamEvent,
+  type AssistantPublishedEvent,
+  type AssistantStreamEvent,
+} from "@showzy/validation/assistant-events";
 import pino from "pino";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
   ASSISTANT_KIT_EVENTS_PATH,
+  ASSISTANT_KIT_MESSAGES_PATH,
   createAssistantKitApp,
 } from "./assistant-kit.js";
 import {
@@ -201,6 +208,7 @@ afterEach(async () => {
 function harness(options?: {
   readonly pendingWritesMax?: number;
   readonly holdPresence?: Promise<void>;
+  readonly storedTurns?: readonly MemoryStoredAssistantTurn[];
 }) {
   const kit = createAssistantKit(testDeps(assistantInteractions));
   const hub = memoryHub();
@@ -255,7 +263,9 @@ function harness(options?: {
         return {
           kit,
           history,
-          turns: memoryAssistantTurnStore(kit.messages, history),
+          turns: memoryAssistantTurnStore(kit.messages, history, {
+            stored: options?.storedTurns ?? [],
+          }),
         };
       },
       staffCompany: () => Promise.resolve(VERIFIED_COMPANY),
@@ -270,6 +280,7 @@ function harness(options?: {
 
   return {
     app,
+    kit,
     events,
     timers,
     hub,
@@ -329,6 +340,111 @@ describe("the stream's policy defaults", () => {
     expect(h.slots.held.size).toBe(0);
     expect(h.presence.live.size).toBe(0);
     expect(h.hub.channels()).toEqual([]);
+  });
+});
+
+function streamEvents(response: Response): () => Promise<AssistantStreamEvent> {
+  if (response.body === null) {
+    throw new Error("an event stream has a body");
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  return async () => {
+    for (;;) {
+      const end = buffer.indexOf("\n\n");
+      if (end !== -1) {
+        const lines = buffer.slice(0, end).split("\n");
+        buffer = buffer.slice(end + 2);
+        const field = (name: string): string | undefined =>
+          lines
+            .find((line) => line.startsWith(`${name}: `))
+            ?.slice(name.length + 2);
+        const event = parseAssistantStreamEvent(
+          field("event") ?? "",
+          field("data") ?? "",
+        );
+        if (event === null) {
+          throw new Error(`unreadable frame: ${lines.join("\\n")}`);
+        }
+        return event;
+      }
+      const chunk = await reader.read();
+      if (chunk.done) {
+        throw new Error("the stream ended");
+      }
+      buffer += decoder.decode(chunk.value as Uint8Array, { stream: true });
+    }
+  };
+}
+
+describe("a turn that recovery ended", () => {
+  it("keeps its recorded end reason and its own placeholder in the snapshot and in the read after a windowless turn.finished", async () => {
+    const placeholderId = assistantTurnMessageId(
+      { kind: "chat", commandId: COMMAND },
+      "assistant",
+    );
+    const h = harness({
+      storedTurns: [
+        {
+          conversationId: CONVERSATION,
+          kind: "chat",
+          commandId: COMMAND,
+          status: "interrupted",
+          placeholderMessageId: placeholderId,
+          userMessageId: assistantTurnMessageId(
+            { kind: "chat", commandId: COMMAND },
+            "user",
+          ),
+          continuesCommandId: null,
+          endReason: "not_started",
+        },
+      ],
+    });
+    await h.kit.messages.write(
+      { conversationId: CONVERSATION, bind: `${USER}:${COMPANY}` },
+      {
+        kind: "append",
+        messageId: placeholderId,
+        role: "assistant",
+        parts: [{ kind: "text", text: "", status: "interrupted" }],
+      },
+    );
+    const interruptedTurn = {
+      id: COMMAND,
+      messageId: placeholderId,
+      endReason: "not_started",
+    };
+
+    const next = streamEvents(await request(h));
+    const snapshot = await next();
+    expect(snapshot.type === "snapshot" && snapshot.window).toMatchObject({
+      interruptedTurn,
+      messages: [{ messageId: placeholderId }],
+    });
+
+    h.hub.publish({
+      type: "turn.finished",
+      kind: "chat",
+      commandId: COMMAND,
+      status: "interrupted",
+    });
+    expect(await next()).toEqual({
+      type: "turn.finished",
+      kind: "chat",
+      commandId: COMMAND,
+      status: "interrupted",
+    });
+
+    const reread = await h.app.request(
+      `${ASSISTANT_KIT_MESSAGES_PATH}?conversationId=${CONVERSATION}`,
+      { headers: { [COMPANY_SELECTOR_HEADER]: COMPANY } },
+    );
+    expect(reread.status).toBe(200);
+    const body = (await reread.json()) as {
+      readonly window: { readonly interruptedTurn: unknown };
+    };
+    expect(body.window.interruptedTurn).toEqual(interruptedTurn);
   });
 });
 
