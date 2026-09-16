@@ -144,7 +144,6 @@ describe("the assistant event stream", () => {
       kind: "chat",
       commandId: COMMAND,
       status: "done",
-      endReason: null,
     });
     source.push(`event: turn.fini`);
     source.push(`shed\ndata: ${data.slice(0, 20)}`);

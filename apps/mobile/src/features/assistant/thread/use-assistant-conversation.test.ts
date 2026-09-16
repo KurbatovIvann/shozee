@@ -1263,6 +1263,36 @@ describe("the conversation, live", () => {
     expect(view.latest().rows[0]?.interruptedReason).toBe("not_started");
   });
 
+  it("learns the reason from the window it re-reads, the finish carrying none", async () => {
+    const exhausted = streamingWindow({
+      turn: null,
+      interruptedTurn: {
+        id: COMMAND,
+        messageId: MESSAGE,
+        endReason: "job_exhausted",
+      },
+    });
+    const source = serve({ messages: [streamingWindow(), exhausted] });
+    const view = mount({ visible: true });
+    await flush();
+
+    expect(view.latest().rows[0]?.interruptedReason).toBeNull();
+
+    act(() => {
+      source.send("turn.finished", {
+        type: "turn.finished",
+        kind: "chat",
+        commandId: COMMAND,
+        status: "interrupted",
+      });
+    });
+    await flush();
+
+    expect(messageReads()).toBe(2);
+    expect(view.latest().rows[0]?.interrupted).toBe(true);
+    expect(view.latest().rows[0]?.interruptedReason).toBe("job_exhausted");
+  });
+
   it("merges a message the stream updates, and ignores an older revision", async () => {
     const source = serve({ messages: [streamingWindow({ turn: null })] });
     const view = mount({ visible: true });
@@ -1325,7 +1355,6 @@ describe("the conversation, live", () => {
         kind: "chat",
         commandId: COMMAND,
         status: "done",
-        endReason: null,
         window: settledWindow("Яку Катю?", OPEN_PAUSE),
       });
     });
@@ -1359,7 +1388,6 @@ describe("the conversation, live", () => {
         kind: "chat",
         commandId: COMMAND,
         status: "interrupted",
-        endReason: "timeout",
       });
     });
     await flush();
@@ -1397,7 +1425,6 @@ describe("the conversation, live", () => {
         kind: "chat",
         commandId: COMMAND,
         status: "done",
-        endReason: null,
         window: settledWindow("Яку Катю?", OPEN_PAUSE),
       });
     });
@@ -1447,7 +1474,6 @@ describe("the conversation, live", () => {
       kind: "chat",
       commandId: COMMAND,
       status: "interrupted",
-      endReason: "timeout",
     };
 
     act(() => {
@@ -1566,7 +1592,6 @@ describe("the conversation, live", () => {
         kind: "chat",
         commandId: COMMAND,
         status: "done",
-        endReason: null,
         window: settledWindow("Готово."),
       });
     });
@@ -1646,7 +1671,6 @@ describe("the conversation, live", () => {
         kind: "chat",
         commandId: COMMAND,
         status: "done",
-        endReason: null,
         window: settledWindow("Готово."),
       });
     });
@@ -1765,7 +1789,6 @@ describe("the conversation, live", () => {
         kind: "chat",
         commandId: COMMAND,
         status: "done",
-        endReason: null,
         window: settledWindow("Готово."),
       });
     });
@@ -1847,7 +1870,6 @@ describe("the conversation, live", () => {
         kind: "chat",
         commandId: COMMAND,
         status: "done",
-        endReason: null,
         window: settledWindow("Готово."),
       });
     });
@@ -1909,7 +1931,6 @@ describe("the conversation, live", () => {
         kind: "chat",
         commandId: COMMAND,
         status: "done",
-        endReason: null,
         window: settledWindow("Готово."),
       });
     });

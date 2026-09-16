@@ -226,7 +226,6 @@ export function createAssistantTurnProcessor(
             kind: found.turn.kind,
             commandId: found.turn.commandId,
             status,
-            endReason: null,
             window: { ...window, turn, interruptedTurn },
           });
         }

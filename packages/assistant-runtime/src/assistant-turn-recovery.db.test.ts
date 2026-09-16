@@ -254,7 +254,6 @@ describe("the post-terminal recovery of a turn nobody is running", () => {
           kind: "chat",
           commandId: recovered.turn.commandId,
           status: "interrupted",
-          endReason: "not_started",
         },
       },
     ]);
