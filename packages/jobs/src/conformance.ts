@@ -954,10 +954,11 @@ export function describeJobRunnerConformance(
           ),
         ]);
         for (let held = 1; held < enqueued; held += 1) {
-          await eventually(
+          const startedBeforeSlotFreed = await eventually(
             () => Promise.resolve(started),
             (value) => value >= held,
           );
+          expect(startedBeforeSlotFreed).toBeGreaterThanOrEqual(held);
           holding.shift()?.();
           const startedAfterSlotFreed = await eventually(
             () => Promise.resolve(started),
