@@ -27,6 +27,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 const IS_WIN = process.platform === "win32";
 const STEPS = [
@@ -276,17 +277,52 @@ function chunk(list, size) {
   return out;
 }
 
-function executeStep(step, ctx) {
-  const turboFilter = ctx.full
+/**
+ * Build the `pnpm exec turbo` arguments for an affected-package gate.
+ *
+ * `--filter=...[base]` selects changed packages *and their dependents*, so a
+ * dependent like `@showzy/mobile` is in scope when only `@showzy/validation`
+ * changed. Selection alone is not enough: this workspace is cyclic, so no task
+ * declares `^task` edges, and a package task hash therefore covers only that
+ * package's own files. A dependent keeps its previous hash when a dependency's
+ * source changes and Turbo replays the stale pass. `--cache=local:w` writes the
+ * cache but never reads it, so a selected package's tests actually run (SHO-699).
+ *
+ * @param {string} task
+ * @param {{ full: boolean, baseSha: string, files: string[], extra?: string[] }} opts
+ */
+export function buildTurboArgs(task, opts) {
+  const filters = opts.full
     ? []
     : [
-        `--filter=...[${ctx.base.sha}]`,
+        `--filter=...[${opts.baseSha}]`,
         // Workflow/CI script changes are proven by @showzy/tooling tests.
-        ...(ctx.files.some((f) => f.startsWith(".github/")) ? ["--filter=@showzy/tooling"] : []),
+        ...(opts.files.some((f) => f.startsWith(".github/"))
+          ? ["--filter=@showzy/tooling"]
+          : []),
       ];
+  return [
+    "exec",
+    "turbo",
+    "run",
+    task,
+    ...filters,
+    "--cache=local:w",
+    "--continue",
+    "--output-logs=errors-only",
+    ...(opts.extra ?? []),
+  ];
+}
+
+function executeStep(step, ctx) {
   const turbo = (task, extra = []) =>
     pnpm(
-      ["exec", "turbo", "run", task, ...turboFilter, "--continue", "--output-logs=errors-only", ...extra],
+      buildTurboArgs(task, {
+        full: ctx.full,
+        baseSha: ctx.base.sha,
+        files: ctx.files,
+        extra,
+      }),
       ctx,
     );
   const results = [];
@@ -430,9 +466,15 @@ function main() {
   return failed.length === 0 ? 0 : 1;
 }
 
-try {
-  process.exitCode = main();
-} catch (error) {
-  console.error(`verify: ${error instanceof Error ? error.message : String(error)}`);
-  process.exitCode = 2;
+const invoked =
+  process.argv[1] !== undefined &&
+  pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
+
+if (invoked) {
+  try {
+    process.exitCode = main();
+  } catch (error) {
+    console.error(`verify: ${error instanceof Error ? error.message : String(error)}`);
+    process.exitCode = 2;
+  }
 }
