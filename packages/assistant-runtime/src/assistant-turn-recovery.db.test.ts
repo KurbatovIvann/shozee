@@ -8,8 +8,14 @@ import {
   type TestKit,
 } from "@showzy/core/testing";
 import { assistantConversations } from "@showzy/db/schema/assistant";
+import {
+  RedisContainer,
+  type StartedRedisContainer,
+} from "@testcontainers/redis";
+import { Redis } from "ioredis";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { createAssistantCallerKits } from "./assistant-runtime.js";
 import {
   createAssistantTurnRecovery,
   type AssistantRecoveredTurn,
@@ -35,12 +41,18 @@ const HOLD = {
 };
 
 let kit: TestKit;
+let container: StartedRedisContainer;
+let redis: Redis;
 
 beforeAll(async () => {
   kit = await createTestKit();
+  container = await new RedisContainer("redis:8-alpine").start();
+  redis = new Redis(container.getConnectionUrl());
 }, 180_000);
 
 afterAll(async () => {
+  await redis.quit();
+  await container.stop();
   await kit.db.close();
 });
 
@@ -245,6 +257,44 @@ describe("the post-terminal recovery of a turn nobody is running", () => {
     expect(recovered.endReason).toBe("timeout");
     expect(await counters(budgetStore)).toEqual([0.2, 0.1]);
     expect(written).toHaveLength(1);
+    expect(published).toHaveLength(1);
+  });
+
+  it("settles the placeholder through the package's own caller kits, with no model mounted", async () => {
+    const { recovered, placeholderMessageId } = await endedTurn("queued");
+    const published: unknown[] = [];
+    const forCaller = createAssistantCallerKits({
+      pipeline: kit.pipeline,
+      redis,
+    });
+    const recover = createAssistantTurnRecovery({
+      pipeline: kit.pipeline,
+      logger: createCapturingLogger().logger,
+      forCaller,
+      publisher: {
+        publish: (_address, event) => {
+          published.push(event);
+          return Promise.resolve();
+        },
+      },
+    });
+
+    await recover(recovered, randomUUID());
+
+    const read = await forCaller({
+      userId: kitIdentities.users.anna,
+      companySelector: COMPANY,
+      requestId: randomUUID(),
+    }).kit.messages.read({
+      conversationId: recovered.turn.conversationId,
+      bind: BIND,
+    });
+    const settled = read.messages.find(
+      (message) => message.messageId === placeholderMessageId,
+    );
+    expect(settled?.parts).toEqual([
+      { kind: "text", text: "", status: "interrupted" },
+    ]);
     expect(published).toHaveLength(1);
   });
 

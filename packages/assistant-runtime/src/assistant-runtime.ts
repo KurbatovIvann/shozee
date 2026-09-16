@@ -155,7 +155,7 @@ export function createAssistantCallerKits(options: {
   readonly redis: RedisLike;
 }): (
   caller: AssistantCaller,
-  claim: AssistantTurnClaim | undefined,
+  claim?: AssistantTurnClaim,
 ) => AssistantKitScoped {
   // One pause store for the process: a deadline and an atomic claim are Redis
   // work and need no principal. The durable half is built per caller below.
@@ -259,7 +259,7 @@ export function createAssistantRuntime(
   return {
     logger: options.pipeline.logger,
 
-    forCaller: (caller) => scopedKit(caller, undefined),
+    forCaller: (caller) => scopedKit(caller),
     forTurn: (caller, claim) => scopedKit(caller, claim),
 
     model: options.model,

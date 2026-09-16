@@ -1,5 +1,6 @@
 import { listOverdueTurns, sweepOverdueTurns } from "@showzy/assistant";
 import type { ImplementedAction } from "@showzy/core";
+import { CoreInvariantError } from "@showzy/core/errors";
 import type { Logger } from "pino";
 import type { z } from "zod";
 
@@ -20,6 +21,7 @@ export interface AssistantSweepSummary {
   readonly pages: number;
   readonly ended: number;
   readonly failedCompanies: number;
+  readonly failedTurns: number;
 }
 
 const overduePage = listOverdueTurns.contract.output;
@@ -27,8 +29,17 @@ const sweptTurns = sweepOverdueTurns.contract.output;
 
 type OverdueTurn = z.output<typeof overduePage>["turns"][number];
 
-export const ASSISTANT_OVERDUE_SWEEP_PAGE =
-  listOverdueTurns.contract.input.shape.limit.maxValue ?? 1;
+function contractPageSize(): number {
+  const bound = listOverdueTurns.contract.input.shape.limit.maxValue;
+  if (typeof bound !== "number") {
+    throw new CoreInvariantError(
+      "assistant.listOverdueTurns no longer bounds its page size",
+    );
+  }
+  return bound;
+}
+
+export const ASSISTANT_OVERDUE_SWEEP_PAGE = contractPageSize();
 
 function byCompany(
   turns: readonly OverdueTurn[],
@@ -58,6 +69,7 @@ export async function sweepOverdueAssistantTurns(
   let pages = 0;
   let ended = 0;
   let failedCompanies = 0;
+  let failedTurns = 0;
   let after: OverdueTurn | null = null;
   do {
     const page = overduePage.parse(
@@ -84,20 +96,33 @@ export async function sweepOverdueAssistantTurns(
         );
         for (const turn of swept.ended) {
           ended += 1;
-          await deps.recover(
-            {
-              companyId,
-              turn: {
-                conversationId: turn.conversationId,
-                kind: turn.kind,
-                commandId: turn.commandId,
+          try {
+            await deps.recover(
+              {
+                companyId,
+                turn: {
+                  conversationId: turn.conversationId,
+                  kind: turn.kind,
+                  commandId: turn.commandId,
+                },
+                from: turn.from,
+                endReason: turn.endReason,
+                releasedHold: assistantBudgetHoldFromStored(turn.releasedHold),
               },
-              from: turn.from,
-              endReason: turn.endReason,
-              releasedHold: assistantBudgetHoldFromStored(turn.releasedHold),
-            },
-            requestId,
-          );
+              requestId,
+            );
+          } catch (error) {
+            failedTurns += 1;
+            deps.logger.error(
+              {
+                request_id: requestId,
+                company_id: companyId,
+                conversation_id: turn.conversationId,
+                err: error,
+              },
+              "an ended assistant turn was not recovered",
+            );
+          }
         }
       } catch (error) {
         failedCompanies += 1;
@@ -109,5 +134,5 @@ export async function sweepOverdueAssistantTurns(
     }
     after = page.next;
   } while (after !== null && !attempt.signal.aborted);
-  return { pages, ended, failedCompanies };
+  return { pages, ended, failedCompanies, failedTurns };
 }

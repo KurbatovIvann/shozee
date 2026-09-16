@@ -132,7 +132,12 @@ describe("the overdue sweep executor", () => {
       pageSize: 3,
     });
 
-    expect(summary).toEqual({ pages: 2, ended: 4, failedCompanies: 0 });
+    expect(summary).toEqual({
+      pages: 2,
+      ended: 4,
+      failedCompanies: 0,
+      failedTurns: 0,
+    });
     expect(recorded.listed).toEqual([
       { limit: 3 },
       { limit: 3, after: first[2] },
@@ -186,7 +191,12 @@ describe("the overdue sweep executor", () => {
       pageSize: 2,
     });
 
-    expect(summary).toEqual({ pages: 2, ended: 2, failedCompanies: 1 });
+    expect(summary).toEqual({
+      pages: 2,
+      ended: 2,
+      failedCompanies: 1,
+      failedTurns: 0,
+    });
     expect(recorded.swept.map(({ companyId }) => companyId)).toEqual([
       companyA,
       companyB,
@@ -195,10 +205,12 @@ describe("the overdue sweep executor", () => {
     expect(taken.map((ended) => ended.companyId)).toEqual([companyB, companyC]);
   });
 
-  it("does not starve the other companies when one turn's recovery fails", async () => {
+  it("recovers the siblings of a turn whose own recovery fails, and the other companies", async () => {
     const companyA = randomUUID();
     const companyB = randomUUID();
-    const first = [turnOf(companyA), turnOf(companyB)];
+    const doomed = turnOf(companyA);
+    const sibling = turnOf(companyA);
+    const first = [doomed, sibling, turnOf(companyB)];
     const { attempt } = attemptOf([page(first, false)], (companyId, turns) => ({
       ended: turns.map((turn) => ({
         ...endedOf(turnOf(companyId)),
@@ -210,16 +222,21 @@ describe("the overdue sweep executor", () => {
     const summary = await sweepOverdueAssistantTurns(attempt, {
       logger,
       recover: (ended) => {
-        if (ended.companyId === companyA) {
+        if (ended.turn.commandId === doomed.commandId) {
           return Promise.reject(new Error("recovery failed"));
         }
-        taken.push(ended.companyId);
+        taken.push(ended.turn.commandId);
         return Promise.resolve();
       },
     });
 
-    expect(summary).toMatchObject({ pages: 1, failedCompanies: 1 });
-    expect(taken).toEqual([companyB]);
+    expect(summary).toEqual({
+      pages: 1,
+      ended: 3,
+      failedCompanies: 0,
+      failedTurns: 1,
+    });
+    expect(taken).toEqual([sibling.commandId, first[2]?.commandId]);
   });
 
   it("stops after the page it is in once the attempt is abandoned", async () => {
