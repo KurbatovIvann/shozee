@@ -14,9 +14,11 @@ import {
   assistantTurnKindSchema,
 } from "@showzy/assistant-runtime";
 import {
+  ASSISTANT_TURN_END_REASONS,
   ASSISTANT_TURN_FINAL_STATUSES,
   ASSISTANT_TURN_KINDS,
 } from "@showzy/db/schema/assistant";
+import { assistantTurnEndReasonSchema } from "@showzy/validation/assistant-chat";
 import {
   assistantMessageUpdatedEventSchema,
   assistantSnapshotEventSchema,
@@ -42,6 +44,12 @@ describe("assistant event wire", () => {
   it("names the same final statuses as the turn row", () => {
     expect([...assistantStreamTurnStatusSchema.options].sort()).toEqual(
       [...ASSISTANT_TURN_FINAL_STATUSES].sort(),
+    );
+  });
+
+  it("names the same end reasons as the turn row", () => {
+    expect([...assistantTurnEndReasonSchema.options].sort()).toEqual(
+      [...ASSISTANT_TURN_END_REASONS].sort(),
     );
   });
 

@@ -55,10 +55,6 @@ import type {
   interruptTurnOutputSchema,
 } from "../actions/interrupt-turn.contract.js";
 import type {
-  listOverdueTurnsInputSchema,
-  listOverdueTurnsOutputSchema,
-} from "../actions/list-overdue-turns.contract.js";
-import type {
   listStaleTurnsInputSchema,
   listStaleTurnsOutputSchema,
 } from "../actions/list-stale-turns.contract.js";
@@ -663,8 +659,10 @@ export async function sweepSystemOverdueTurns(env: {
           identity,
         ] as const;
       }),
-    ).values(),
-  ];
+    ),
+  ]
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+    .map(([, identity]) => identity);
   if (identities.length === 0) {
     return { ended: [] };
   }
@@ -699,41 +697,6 @@ export async function sweepSystemOverdueTurns(env: {
     });
   }
   return { ended };
-}
-
-export async function listOverdueTurnRows(env: {
-  readonly ctx: SystemCtx;
-  readonly input: z.output<typeof listOverdueTurnsInputSchema>;
-}): Promise<z.output<typeof listOverdueTurnsOutputSchema>> {
-  const { after, limit } = env.input;
-  const rows = await env.ctx.db
-    .select({
-      companyId: assistantTurns.companyId,
-      conversationId: assistantTurns.conversationId,
-      kind: assistantTurns.kind,
-      commandId: assistantTurns.commandId,
-    })
-    .from(assistantTurns)
-    .where(
-      and(
-        overdue(),
-        after === undefined
-          ? undefined
-          : sql`(${assistantTurns.companyId}, ${assistantTurns.conversationId}, ${assistantTurns.kind}, ${assistantTurns.commandId}) > (${after.companyId.toLowerCase()}::uuid, ${after.conversationId.toLowerCase()}::uuid, ${after.kind}::text, ${after.commandId.toLowerCase()}::uuid)`,
-      ),
-    )
-    .orderBy(
-      asc(assistantTurns.companyId),
-      asc(assistantTurns.conversationId),
-      asc(assistantTurns.kind),
-      asc(assistantTurns.commandId),
-    )
-    .limit(limit);
-  const last = rows.at(-1);
-  return {
-    turns: rows,
-    next: rows.length === limit && last !== undefined ? last : null,
-  };
 }
 
 /**

@@ -5,7 +5,6 @@ import { getStaffActor } from "./actions/get-staff-actor.js";
 import { insertChatMessage } from "./actions/insert-chat-message.js";
 import { interruptTurn } from "./actions/interrupt-turn.js";
 import { listConversations } from "./actions/list-conversations.js";
-import { listOverdueTurns } from "./actions/list-overdue-turns.js";
 import { listStaleTurns } from "./actions/list-stale-turns.js";
 import { readActiveTurn } from "./actions/read-active-turn.js";
 import { readChatMessages } from "./actions/read-chat-messages.js";
@@ -24,7 +23,6 @@ export { getStaffActor };
 export { insertChatMessage };
 export { interruptTurn };
 export { listConversations };
-export { listOverdueTurns };
 export { listStaleTurns };
 export { readActiveTurn };
 export { readChatMessages };
@@ -51,7 +49,6 @@ export const assistantActions = [
   listStaleTurns,
   readTurnForJob,
   interruptTurn,
-  listOverdueTurns,
   sweepOverdueTurns,
   readActiveTurn,
   readLatestInterruptedTurn,

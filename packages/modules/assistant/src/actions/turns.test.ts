@@ -27,7 +27,6 @@ import {
   listStaleTurnsContract,
   listStaleTurnsInputSchema,
 } from "./list-stale-turns.contract.js";
-import { listOverdueTurnsContract } from "./list-overdue-turns.contract.js";
 import {
   readTurnForJobContract,
   readTurnForJobInputSchema,
@@ -427,18 +426,6 @@ describe("the turn contracts", () => {
 });
 
 describe("the overdue recovery contracts", () => {
-  it("discover overdue turns as a global internal read with no audit", () => {
-    expect(listOverdueTurnsContract).toMatchObject({
-      principal: "system",
-      systemScope: "global",
-      transport: "internal",
-      aiExposure: "internal",
-      risk: "read",
-      permissions: [],
-      audit: false,
-    });
-  });
-
   it("sweep a company's own turns as an audited tenant write that is not replayed", () => {
     expect(sweepOverdueTurnsContract).toMatchObject({
       principal: "system",

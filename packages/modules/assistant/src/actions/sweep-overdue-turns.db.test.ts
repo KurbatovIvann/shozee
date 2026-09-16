@@ -13,6 +13,7 @@ import {
   kitIdentities,
   type TestKit,
 } from "@showzy/core/testing";
+import { auditLog } from "@showzy/db";
 import {
   assistantConversations,
   assistantTurns,
@@ -22,7 +23,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { acceptTurn } from "./accept-turn.js";
 import { finishTurn } from "./finish-turn.js";
-import { listOverdueTurns } from "./list-overdue-turns.js";
 import { readLatestInterruptedTurn } from "./read-latest-interrupted-turn.js";
 import { startTurn } from "./start-turn.js";
 import { sweepOverdueTurns } from "./sweep-overdue-turns.js";
@@ -177,8 +177,7 @@ async function running(
   return turn;
 }
 
-function systemRequest() {
-  const requestId = randomUUID();
+function systemRequest(requestId: string = randomUUID()) {
   return { requestId, correlationId: requestId, channel: "system" as const };
 }
 
@@ -206,19 +205,6 @@ function isTurn(value: unknown): value is Turn {
     value !== null &&
     "placeholderMessageId" in value
   );
-}
-
-function listOverdue(input: { limit: number; after?: unknown }) {
-  return executeAction(kit.pipeline, {
-    action: listOverdueTurns,
-    input,
-    request: systemRequest(),
-    principal: {
-      mode: "system",
-      serviceName: "assistant.sweepOverdueTurns",
-      scope: { scope: "global" },
-    },
-  });
 }
 
 async function row(turn: Turn) {
@@ -251,11 +237,6 @@ crossTenantSuite(
   () => kit,
   [
     isolationCase(
-      listOverdueTurns,
-      { input: { limit: 10 } },
-      { input: { limit: 10 } },
-    ),
-    isolationCase(
       sweepOverdueTurns,
       { input: { turns: [isolation.own] } },
       { input: { turns: [isolation.foreign] } },
@@ -271,16 +252,8 @@ describe("the start deadline and the running deadline", () => {
     const runningPast = await running("passed");
     const fixtures = [queuedInside, queuedPast, runningInside, runningPast];
 
-    const listed = await listOverdue({ limit: 100 });
     const swept = await sweepAs(anna.companyId, fixtures);
 
-    const mine = new Set(fixtures.map((turn) => turn.conversationId));
-    expect(
-      listed.turns
-        .filter((turn) => mine.has(turn.conversationId))
-        .map((turn) => turn.conversationId)
-        .sort(),
-    ).toEqual([queuedPast.conversationId, runningPast.conversationId].sort());
     expect(
       [...swept.ended].sort((a, b) =>
         a.conversationId.localeCompare(b.conversationId),
@@ -327,6 +300,35 @@ describe("the start deadline and the running deadline", () => {
 });
 
 describe("sweeping overdue turns", () => {
+  it("audits the pass under its own request id, not a shared name", async () => {
+    const turn = await acceptedAgo("16 minutes");
+    const requestId = randomUUID();
+
+    await executeAction(kit.pipeline, {
+      action: sweepOverdueTurns,
+      input: { turns: [identity(turn)] },
+      request: systemRequest(requestId),
+      principal: {
+        mode: "system",
+        serviceName: "assistant.sweepOverdueTurns",
+        scope: { scope: "tenant", companyId: anna.companyId },
+      },
+    });
+
+    const rows = await kit.db.runtime.db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.requestId, requestId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      action: "assistant.sweepOverdueTurns",
+      companyId: anna.companyId,
+      targetType: "assistant_turns_sweep",
+      targetId: requestId,
+      outcome: "ok",
+    });
+  });
+
   it("hands a hold out once: a replay of the batch ends nothing", async () => {
     const turn = await acceptedAgo("16 minutes");
 
@@ -440,62 +442,6 @@ describe("sweeping overdue turns", () => {
         actorOf(anna),
       ),
     ).resolves.toEqual({ commandId: turn.commandId, endReason: "not_started" });
-  });
-});
-
-describe("discovering overdue turns", () => {
-  it("pages by company and identity until every overdue turn was seen once", async () => {
-    const fixtures = [
-      await acceptedAgo("16 minutes"),
-      await acceptedAgo("16 minutes", boris),
-      await running("passed", boris),
-      await acceptedAgo("16 minutes"),
-    ];
-    const mine = new Set(fixtures.map((turn) => turn.conversationId));
-
-    const seen: string[] = [];
-    let pages = 0;
-    let after: unknown;
-    do {
-      const page = await listOverdue({
-        limit: 2,
-        ...(after === undefined ? {} : { after }),
-      });
-      pages += 1;
-      seen.push(
-        ...page.turns
-          .map((turn) => turn.conversationId)
-          .filter((id) => mine.has(id)),
-      );
-      after = page.next ?? undefined;
-    } while (after !== undefined);
-
-    expect(pages).toBeGreaterThan(1);
-    expect([...seen].sort()).toEqual([...mine].sort());
-    const listed = await listOverdue({ limit: 100 });
-    expect(
-      listed.turns
-        .filter((turn) => mine.has(turn.conversationId))
-        .map((turn) => turn.companyId)
-        .sort(),
-    ).toEqual(
-      [anna.companyId, anna.companyId, boris.companyId, boris.companyId].sort(),
-    );
-  });
-
-  it("is refused to a tenant system caller", async () => {
-    await expect(
-      executeAction(kit.pipeline, {
-        action: listOverdueTurns,
-        input: { limit: 1 },
-        request: systemRequest(),
-        principal: {
-          mode: "system",
-          serviceName: "assistant.sweepOverdueTurns",
-          scope: { scope: "tenant", companyId: anna.companyId },
-        },
-      }),
-    ).rejects.toBeInstanceOf(CoreInvariantError);
   });
 });
 

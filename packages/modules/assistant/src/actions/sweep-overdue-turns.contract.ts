@@ -1,7 +1,6 @@
 import { defineActionContract } from "@showzy/core/contract";
 import { z } from "zod";
 
-import { OVERDUE_TURNS_PAGE_MAX } from "./list-overdue-turns.contract.js";
 import {
   assistantTurnActiveStatusSchema,
   assistantTurnBudgetHoldSchema,
@@ -9,10 +8,12 @@ import {
   assistantTurnRefShape,
 } from "./turn-record.contract.js";
 
+export const OVERDUE_TURNS_BATCH_MAX = 100;
+
 export const sweepOverdueTurnsInputSchema = z.strictObject({
   turns: z
     .array(z.strictObject({ ...assistantTurnRefShape }))
-    .max(OVERDUE_TURNS_PAGE_MAX),
+    .max(OVERDUE_TURNS_BATCH_MAX),
 });
 
 export const sweptTurnSchema = z.strictObject({
