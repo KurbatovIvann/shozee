@@ -18,6 +18,7 @@ import {
   ASSISTANT_STREAM_PENDING_WRITES_MAX,
   assistantConversationChannel,
   assistantInteractions,
+  assistantTurnMessageId,
   memoryAssistantKitCommands,
   memoryAssistantTurnStore,
   type AssistantConversationAddress,
@@ -25,15 +26,17 @@ import {
   type AssistantEventListener,
   type AssistantPresence,
   type AssistantStreamSlots,
+  type MemoryStoredAssistantTurn,
   type ResolveAnswer,
 } from "@showzy/assistant-runtime";
 import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
-import type { AssistantPublishedEvent } from "@showzy/validation/assistant-events";
+import { type AssistantPublishedEvent } from "@showzy/validation/assistant-events";
 import pino from "pino";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
   ASSISTANT_KIT_EVENTS_PATH,
+  ASSISTANT_KIT_MESSAGES_PATH,
   createAssistantKitApp,
 } from "./assistant-kit.js";
 import {
@@ -41,6 +44,7 @@ import {
   type AssistantKitEvents,
   type AssistantKitStreamTimers,
 } from "./assistant-kit-events.js";
+import { eventReader, nextEvent } from "./assistant-kit-events.test-reader.js";
 
 const USER = "user-1";
 const COMPANY = "11111111-1111-4111-8111-1111111111aa";
@@ -201,6 +205,7 @@ afterEach(async () => {
 function harness(options?: {
   readonly pendingWritesMax?: number;
   readonly holdPresence?: Promise<void>;
+  readonly storedTurns?: readonly MemoryStoredAssistantTurn[];
 }) {
   const kit = createAssistantKit(testDeps(assistantInteractions));
   const hub = memoryHub();
@@ -255,7 +260,9 @@ function harness(options?: {
         return {
           kit,
           history,
-          turns: memoryAssistantTurnStore(kit.messages, history),
+          turns: memoryAssistantTurnStore(kit.messages, history, {
+            stored: options?.storedTurns ?? [],
+          }),
         };
       },
       staffCompany: () => Promise.resolve(VERIFIED_COMPANY),
@@ -270,6 +277,7 @@ function harness(options?: {
 
   return {
     app,
+    kit,
     events,
     timers,
     hub,
@@ -329,6 +337,76 @@ describe("the stream's policy defaults", () => {
     expect(h.slots.held.size).toBe(0);
     expect(h.presence.live.size).toBe(0);
     expect(h.hub.channels()).toEqual([]);
+  });
+});
+
+describe("a turn that recovery ended", () => {
+  it("keeps its recorded end reason and its own placeholder in the snapshot and in the read after a windowless turn.finished", async () => {
+    const placeholderId = assistantTurnMessageId(
+      { kind: "chat", commandId: COMMAND },
+      "assistant",
+    );
+    const h = harness({
+      storedTurns: [
+        {
+          conversationId: CONVERSATION,
+          kind: "chat",
+          commandId: COMMAND,
+          status: "interrupted",
+          placeholderMessageId: placeholderId,
+          userMessageId: assistantTurnMessageId(
+            { kind: "chat", commandId: COMMAND },
+            "user",
+          ),
+          continuesCommandId: null,
+          endReason: "not_started",
+        },
+      ],
+    });
+    await h.kit.messages.write(
+      { conversationId: CONVERSATION, bind: `${USER}:${COMPANY}` },
+      {
+        kind: "append",
+        messageId: placeholderId,
+        role: "assistant",
+        parts: [{ kind: "text", text: "", status: "interrupted" }],
+      },
+    );
+    const interruptedTurn = {
+      id: COMMAND,
+      messageId: placeholderId,
+      endReason: "not_started",
+    };
+
+    const reader = eventReader(await request(h));
+    const snapshot = await nextEvent(reader);
+    expect(snapshot.type === "snapshot" && snapshot.window).toMatchObject({
+      interruptedTurn,
+      messages: [{ messageId: placeholderId }],
+    });
+
+    h.hub.publish({
+      type: "turn.finished",
+      kind: "chat",
+      commandId: COMMAND,
+      status: "interrupted",
+    });
+    expect(await nextEvent(reader)).toEqual({
+      type: "turn.finished",
+      kind: "chat",
+      commandId: COMMAND,
+      status: "interrupted",
+    });
+
+    const reread = await h.app.request(
+      `${ASSISTANT_KIT_MESSAGES_PATH}?conversationId=${CONVERSATION}`,
+      { headers: { [COMPANY_SELECTOR_HEADER]: COMPANY } },
+    );
+    expect(reread.status).toBe(200);
+    const body = (await reread.json()) as {
+      readonly window: { readonly interruptedTurn: unknown };
+    };
+    expect(body.window.interruptedTurn).toEqual(interruptedTurn);
   });
 });
 

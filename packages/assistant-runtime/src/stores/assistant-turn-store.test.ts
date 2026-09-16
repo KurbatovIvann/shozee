@@ -9,9 +9,63 @@ import {
   assistantBudgetHoldToStored,
   assistantTurnMessageId,
   assistantTurnPlaceholder,
+  memoryAssistantTurnStore,
+  type MemoryStoredAssistantTurn,
 } from "./assistant-turn-store.js";
 
 const COMMAND = "0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0";
+const CONVERSATION = "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
+const OTHER_CONVERSATION = "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e";
+const EARLIER_COMMAND = "3c4d5e6f-7a8b-4c9d-8e0f-2a3b4c5d6e7f";
+
+function storedInterrupted(
+  commandId: string,
+  endReason: MemoryStoredAssistantTurn["endReason"],
+  conversationId = CONVERSATION,
+): MemoryStoredAssistantTurn {
+  return {
+    conversationId,
+    kind: "chat",
+    commandId,
+    status: "interrupted",
+    placeholderMessageId: assistantTurnMessageId(
+      { kind: "chat", commandId },
+      "assistant",
+    ),
+    userMessageId: assistantTurnMessageId({ kind: "chat", commandId }, "user"),
+    continuesCommandId: null,
+    endReason,
+  };
+}
+
+function memoryStore(stored: readonly MemoryStoredAssistantTurn[] = []) {
+  return memoryAssistantTurnStore(
+    { write: () => Promise.resolve({ kind: "written" }) },
+    { load: () => Promise.resolve([]), save: () => Promise.resolve() },
+    { stored },
+  );
+}
+
+async function acceptChat(
+  store: ReturnType<typeof memoryStore>,
+  commandId: string,
+): Promise<void> {
+  const accepted = await store.accept({
+    kind: "chat",
+    text: "створи",
+    conversationId: CONVERSATION,
+    commandId,
+    bind: "owner",
+    sessionId: "session-1",
+    budgetHold: {
+      companyReservedUsd: 0,
+      globalReservedUsd: 0,
+      kyivDate: "2026-09-16",
+    },
+    releaseUnusedHold: () => Promise.resolve(),
+  });
+  expect(accepted.outcome).toBe("accepted");
+}
 
 describe("a turn's message ids", () => {
   /**
@@ -109,5 +163,64 @@ describe("the turn kind", () => {
    */
   it("is the same list on the queue and in the turn table", () => {
     expect(assistantTurnKindSchema.options).toEqual([...ASSISTANT_TURN_KINDS]);
+  });
+});
+
+describe("the memory store's latest interrupted turn", () => {
+  it("carries no end reason for a turn its own finish interrupted", async () => {
+    const store = memoryStore();
+    await acceptChat(store, COMMAND);
+    await store.finish(
+      { conversationId: CONVERSATION, kind: "chat", commandId: COMMAND },
+      "interrupted",
+    );
+
+    await expect(
+      store.latestInterrupted({ conversationId: CONVERSATION }),
+    ).resolves.toEqual({
+      id: COMMAND,
+      messageId: assistantTurnMessageId(
+        { kind: "chat", commandId: COMMAND },
+        "assistant",
+      ),
+      endReason: null,
+    });
+  });
+
+  it("returns a stored turn's recorded end reason and its own placeholder", async () => {
+    const stored = storedInterrupted(COMMAND, "not_started");
+    const store = memoryStore([stored]);
+
+    await expect(
+      store.latestInterrupted({ conversationId: CONVERSATION.toUpperCase() }),
+    ).resolves.toEqual({
+      id: COMMAND,
+      messageId: stored.placeholderMessageId,
+      endReason: "not_started",
+    });
+  });
+
+  it("picks the conversation's latest interrupted turn, as the Postgres store orders by creation", async () => {
+    const store = memoryStore([
+      storedInterrupted(EARLIER_COMMAND, "timeout"),
+      storedInterrupted(COMMAND, "job_exhausted", OTHER_CONVERSATION),
+    ]);
+
+    await expect(
+      store.latestInterrupted({ conversationId: CONVERSATION }),
+    ).resolves.toMatchObject({ id: EARLIER_COMMAND, endReason: "timeout" });
+
+    await acceptChat(store, COMMAND);
+    await store.finish(
+      { conversationId: CONVERSATION, kind: "chat", commandId: COMMAND },
+      "interrupted",
+    );
+
+    await expect(
+      store.latestInterrupted({ conversationId: CONVERSATION }),
+    ).resolves.toMatchObject({ id: COMMAND, endReason: null });
+    await expect(
+      store.latestInterrupted({ conversationId: OTHER_CONVERSATION }),
+    ).resolves.toMatchObject({ id: COMMAND, endReason: "job_exhausted" });
   });
 });

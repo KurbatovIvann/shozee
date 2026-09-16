@@ -33,7 +33,10 @@ import type {
   ToolOutcome,
 } from "@showzy/assistant-kit";
 import { executeAction } from "@showzy/core";
-import type { AssistantChatInterruptedTurn } from "@showzy/validation/assistant-chat";
+import type {
+  AssistantChatInterruptedTurn,
+  AssistantTurnEndReason,
+} from "@showzy/validation/assistant-chat";
 import {
   ConflictError,
   CoreError,
@@ -575,15 +578,35 @@ export interface AssistantTurnHistoryWriter {
   ): Promise<void>;
 }
 
+export type MemoryStoredAssistantTurn =
+  | (AssistantTurnView & {
+      readonly status: "interrupted";
+      readonly endReason: AssistantTurnEndReason | null;
+    })
+  | (AssistantTurnView & {
+      readonly status: Exclude<AssistantTurnView["status"], "interrupted">;
+      readonly endReason: null;
+    });
+
 export function memoryAssistantTurnStore(
   messages: AssistantTurnMessageWriter,
   history: AssistantTurnHistoryWriter,
-  clock: { now(): Date } = { now: () => new Date() },
+  options: {
+    readonly clock?: { now(): Date };
+    readonly stored?: readonly MemoryStoredAssistantTurn[];
+  } = {},
 ): AssistantTurnStore {
+  const clock = options.clock ?? { now: () => new Date() };
   const byCommand = new Map<string, AssistantTurnView>();
   const statuses = new Map<string, AssistantTurnView["status"]>();
+  const endReasons = new Map<string, AssistantTurnEndReason | null>();
   const key = (ref: AssistantTurnRef): string =>
     `${ref.kind}:${ref.conversationId.toLowerCase()}:${ref.commandId.toLowerCase()}`;
+  for (const { endReason, ...turn } of options.stored ?? []) {
+    byCommand.set(key(turn), turn);
+    statuses.set(key(turn), turn.status);
+    endReasons.set(key(turn), endReason);
+  }
 
   return {
     async accept(input) {
@@ -749,6 +772,7 @@ export function memoryAssistantTurnStore(
         });
       }
       statuses.set(key(ref), status);
+      endReasons.set(key(ref), null);
       return Promise.resolve({
         outcome: "finished",
         status,
@@ -791,7 +815,7 @@ export function memoryAssistantTurnStore(
           : {
               id: interrupted.commandId,
               messageId: interrupted.placeholderMessageId,
-              endReason: null,
+              endReason: endReasons.get(key(interrupted)) ?? null,
             },
       );
     },
