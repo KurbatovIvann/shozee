@@ -47,11 +47,20 @@ describeJobRunnerConformance({
       `SELECT
          COALESCE((SELECT json_agg(json_build_object('id', id, 'state', state, 'output', output, 'sourceId', source_id))
                    FROM pgboss.job WHERE name = $1), '[]') AS jobs,
-         COALESCE((SELECT json_agg(json_build_object('slot', singleton_on, 'state', state))
-                   FROM pgboss.job WHERE name = '__pgboss__send-it' AND data->>'name' = $1), '[]') AS ticks`,
+         COALESCE((SELECT json_agg(json_build_object(
+                     'slot', tick.singleton_on,
+                     'state', tick.state,
+                     'passedAgainInSlot', COALESCE(
+                       pass.cron_on > tick.created_on
+                       AND 'epoch'::timestamp + '60s'::interval * floor(date_part('epoch', pass.cron_on) / 60) = tick.singleton_on,
+                       false)))
+                   FROM pgboss.job tick
+                   WHERE tick.name = '__pgboss__send-it' AND tick.data->>'name' = $1), '[]') AS ticks,
+         pass.cron_on::text AS "lastPassOn"
+       FROM pgboss.version pass`,
       [name],
     );
-    return result.rows[0] ?? { jobs: [], ticks: [] };
+    return result.rows[0] ?? { jobs: [], ticks: [], lastPassOn: null };
   },
   async abandonAttempt(database, name, id) {
     await database.admin.query(

@@ -37,11 +37,13 @@ export interface RunnerJobRecord {
 export interface ScheduledTick {
   readonly slot: string;
   readonly state: string;
+  readonly passedAgainInSlot: boolean;
 }
 
 export interface ScheduledRuns {
   readonly jobs: readonly RunnerJobRecord[];
   readonly ticks: readonly ScheduledTick[];
+  readonly lastPassOn: string | null;
 }
 
 export interface JobRunnerConformanceTarget {
@@ -848,27 +850,40 @@ export function describeJobRunnerConformance(
         await work(await open([job], "worker"), [tick]);
         await work(await open([job], "worker"), [tick]);
 
-        await eventually(
-          () => Promise.resolve(runs.length),
-          (count) => count > 0,
-          75_000,
-        );
-        await delay(3_000);
-
-        const { jobs, ticks, ranIds } = await eventually(
-          async () => {
-            const ranBeforeRead = runs.map(({ id }) => id);
-            const scheduled = await target.readScheduledRuns(
-              database,
-              job.name,
-            );
-            return { ...scheduled, ranIds: ranBeforeRead };
-          },
-          (read) =>
-            read.jobs.every(({ state }) => state === "completed") &&
-            read.ticks.every(({ state }) => state === "completed") &&
-            read.ranIds.length === read.jobs.length,
-        );
+        let slotPassedAgainOn: string | null = null;
+        const { jobs, ticks, ranIds, passedSinceSlotPassedAgain } =
+          await eventually(
+            async () => {
+              const ranBeforeRead = runs.map(({ id }) => id);
+              const scheduled = await target.readScheduledRuns(
+                database,
+                job.name,
+              );
+              const passedSince =
+                slotPassedAgainOn !== null &&
+                scheduled.lastPassOn !== slotPassedAgainOn;
+              if (
+                slotPassedAgainOn === null &&
+                scheduled.ticks.some(
+                  ({ passedAgainInSlot }) => passedAgainInSlot,
+                )
+              ) {
+                slotPassedAgainOn = scheduled.lastPassOn;
+              }
+              return {
+                ...scheduled,
+                ranIds: ranBeforeRead,
+                passedSinceSlotPassedAgain: passedSince,
+              };
+            },
+            (read) =>
+              read.passedSinceSlotPassedAgain &&
+              read.jobs.every(({ state }) => state === "completed") &&
+              read.ticks.every(({ state }) => state === "completed") &&
+              read.ranIds.length === read.jobs.length,
+            100_000,
+          );
+        expect(passedSinceSlotPassedAgain).toBe(true);
         expect(ranIds.length).toBeGreaterThan(0);
         expect(new Set(ticks.map(({ slot }) => slot)).size).toBe(ticks.length);
         expect(jobs).toHaveLength(ticks.length);
