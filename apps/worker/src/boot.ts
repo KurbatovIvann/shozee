@@ -1,9 +1,3 @@
-/**
- * Process boot: load validated config, bind the files object store, open
- * Postgres + Redis, compose the action pipeline and — when the assistant is
- * mounted — the assistant turn processor, start the BullMQ job host, LISTEN
- * on the outbox channel, start the loop.
- */
 import { randomUUID } from "node:crypto";
 
 import type { ServerConfig } from "@showzy/config";

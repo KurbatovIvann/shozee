@@ -39,7 +39,6 @@ function apiConfig() {
     NODE_ENV: "test",
     DATABASE_URL: databaseUrl,
     REDIS_URL: "redis://127.0.0.1:1",
-    REDIS_QUEUE_URL: "redis://127.0.0.1:1",
     S3_ENDPOINT: `http://127.0.0.1:${String(port)}`,
     S3_ACCESS_KEY_ID: "showzy-local",
     S3_SECRET_ACCESS_KEY: "showzy-local-secret",

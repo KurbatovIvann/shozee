@@ -461,8 +461,8 @@ action the turn runs. So:
 ## Reading the state directly
 
 The open question is Redis — the shared, non-persistent instance (`db.md` §6);
-the conversation is Postgres. The assistant queue (ADR-0039, from SHO-561) will
-live on the separate queue Redis and hold only pointers to turns.
+the conversation is Postgres. The turn's job is a pg-boss row in Postgres too
+(ADR-0041, SHO-651), carrying only the turn's identity.
 
 ```
 kit:pause:<conversationId>      the open interaction, if any

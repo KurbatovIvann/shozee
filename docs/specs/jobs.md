@@ -189,8 +189,8 @@ and is left untouched. Proof: `src/pgboss-schema.db.test.ts`.
   `failed` with output `{ code }`: a `CoreError` code, `INTERNAL` for any other
   throw, `ATTEMPT_TIMEOUT`, `DRAINED`, or `ABORTED` (pg-boss aborted the
   attempt). The error itself goes to the log line only.
-- A failure returned as success (the BullMQ host's `"errored"`) is not a
-  settlement: it would skip retries, the dead letter and on-exhausted.
+- A failure returned as success is not a settlement: it would skip retries,
+  the dead letter and on-exhausted.
 - The library's fixed status strings that can still reach `output`:
   `{ value: { message: "job timed out" } }` (supervisor expiry) and
   `{ value: "pg-boss shut down while active" }` (stop after the drain bound

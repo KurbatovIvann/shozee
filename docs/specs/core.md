@@ -21,8 +21,9 @@ principal contexts, permission evaluation, the execution pipeline
 `ctx.call`, declared `ctx.callAtomic`, `ctx.emit`, the event bus with consumer registration, the
 confirmation protocol for `requiresConfirmation` actions, typed errors, rate
 limiting, and the module test kit every module inherits. It explicitly does
-NOT own: HTTP transport (apps/api + packages/contract), queues for execution
-jobs (BullMQ in apps/worker), any domain logic, any domain tables.
+NOT own: HTTP transport (apps/api + packages/contract), the job runner that
+executes jobs (pg-boss in `@showzy/jobs`, hosted by apps/worker — ADR-0041),
+any domain logic, any domain tables.
 
 ## 2. The action contract
 

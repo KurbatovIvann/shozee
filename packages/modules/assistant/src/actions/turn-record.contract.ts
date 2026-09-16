@@ -1,10 +1,6 @@
 /**
  * The shapes shared by the turn actions (SHO-560, ADR-0039).
  *
- * A turn is addressed by what its BullMQ job carries — the conversation, the
- * accept's kind and the command — and never by a row id, so a worker and the
- * reconciler name the same turn the accept stored.
- *
  * The enums repeat `ASSISTANT_TURN_KINDS` / `ASSISTANT_TURN_STATUSES` from the
  * owned schema, because a contract file may not import `@showzy/db`. A unit test
  * pins them equal.

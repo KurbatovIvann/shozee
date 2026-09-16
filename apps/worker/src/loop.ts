@@ -1,9 +1,3 @@
-/**
- * Worker loop (fnd-T27 — core.md §6): dispatch undispatched outbox rows,
- * execute due deliveries, drain in-flight claims on shutdown. Idempotency
- * key expiry is the BullMQ maintenance scheduler (fnd-T29), not this loop.
- * Core owns the libraries; this owns the outbox process.
- */
 import {
   dispatchOutboxBatch,
   executeDelivery,

@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Outbox poller, delivery executor, and BullMQ maintenance job host (fnd-T27 / fnd-T29 / SHO-120).",
+  "description": "Outbox poller, delivery executor, and pg-boss job host (fnd-T27 / fnd-T29 / SHO-120 / SHO-651).",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",

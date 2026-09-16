@@ -33,7 +33,7 @@ flowchart TB
   Modules["packages/modules/*<br/>domain actions, services, events"]
   Postgres[("PostgreSQL 17<br/>Drizzle schemas + transactional outbox")]
   Worker["apps/worker<br/>outbox delivery + background jobs"]
-  Redis[("Redis 8<br/>BullMQ, rate limits, cache")]
+  Redis[("Redis 8<br/>rate limits, cache, assistant events")]
   Storage[("S3-compatible storage<br/>Garage locally · R2 in production")]
 
   Web --> RPC
@@ -108,7 +108,7 @@ flowchart TB
 ```text
 apps/
   api/                 Hono transport, auth, oRPC, OpenAPI, AI SSE
-  worker/              Outbox delivery and BullMQ jobs
+  worker/              Outbox delivery and pg-boss jobs
   mobile/              Expo mobile application
   web/                 Vite staff-panel SPA
 packages/
@@ -132,8 +132,8 @@ docs/                  Architecture, decisions, protocols, design, operations
 - **API and contracts:** Hono 4, oRPC 1, Zod 4, better-auth 1.6, generated
   OpenAPI aliases, Pino 10, Sentry 10.
 - **Data and background work:** PostgreSQL 17, Drizzle ORM 0.45 and
-  drizzle-kit 0.31, Redis 8, BullMQ 6, transactional outbox with PostgreSQL
-  `LISTEN`/`NOTIFY`.
+  drizzle-kit 0.31, Redis 8, pg-boss 12 for background jobs (ADR-0041),
+  transactional outbox with PostgreSQL `LISTEN`/`NOTIFY`.
 - **Object storage and files:** S3-compatible API, Garage 2.3 locally,
   Cloudflare R2 in production, Sharp 0.35 for image processing.
 - **AI:** Vercel AI SDK 7 with the Anthropic provider, streamed through Hono
