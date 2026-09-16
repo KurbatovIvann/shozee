@@ -205,7 +205,7 @@ describe("the overdue sweep executor", () => {
     expect(taken.map((ended) => ended.companyId)).toEqual([companyB, companyC]);
   });
 
-  it("recovers the siblings of a turn whose own recovery fails, and the other companies", async () => {
+  it("counts a turn whose own recovery fails, recovers its siblings and the other companies, and still returns the pass", async () => {
     const companyA = randomUUID();
     const companyB = randomUUID();
     const doomed = turnOf(companyA);

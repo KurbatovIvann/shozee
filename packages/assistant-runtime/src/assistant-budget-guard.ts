@@ -483,6 +483,8 @@ export async function releaseUnusedReservation(options: {
   });
 }
 
+export type StaffAssistantBudgetHoldRelease = "released" | "failed";
+
 /**
  * Gives a reservation back to the day's counters, at most once.
  *
@@ -501,10 +503,10 @@ export async function releaseStaffAssistantBudgetHold(options: {
   readonly ref: StaffAssistantBudgetHoldRef;
   readonly hold: StaffAssistantBudgetHold;
   readonly budgetStore?: AiBudgetStore | undefined;
-}): Promise<void> {
+}): Promise<StaffAssistantBudgetHoldRelease> {
   const store = options.budgetStore;
   if (store === undefined) {
-    return;
+    return "released";
   }
   const companyId = canonicalizeAiBudgetCompanyId(options.ref.companyId);
   const kyivDate = options.hold.kyivDate;
@@ -513,7 +515,7 @@ export async function releaseStaffAssistantBudgetHold(options: {
       aiBudgetHoldKey({ ...options.ref, companyId, kyivDate }),
     );
     if (!dropped) {
-      return;
+      return "released";
     }
     await addBudgetDelta(
       store,
@@ -525,6 +527,7 @@ export async function releaseStaffAssistantBudgetHold(options: {
       aiGlobalBudgetKey(kyivDate),
       -options.hold.globalReservedUsd,
     );
+    return "released";
   } catch (error: unknown) {
     options.logger.error(
       {
@@ -534,6 +537,7 @@ export async function releaseStaffAssistantBudgetHold(options: {
       },
       "staff assistant budget reservation release failed",
     );
+    return "failed";
   }
 }
 

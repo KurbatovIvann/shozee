@@ -29,6 +29,7 @@ import {
   aiCompanyBudgetKey,
   aiGlobalBudgetKey,
   createMemoryAiBudgetStore,
+  type AiBudgetStore,
 } from "./stores/budget.js";
 
 const COMPANY = kitIdentities.companies.a;
@@ -134,8 +135,22 @@ interface Written {
   readonly userId: string;
 }
 
-function harness(refuse = false) {
+function harness(
+  options: {
+    readonly refuse?: boolean;
+    readonly budgetFails?: boolean;
+    readonly writeRefusal?: "wrong_owner" | "conflict";
+  } = {},
+) {
+  const refuse = options.refuse ?? false;
   const budgetStore = createMemoryAiBudgetStore();
+  const mounted: AiBudgetStore =
+    options.budgetFails === true
+      ? {
+          ...budgetStore,
+          dropHold: () => Promise.reject(new Error("budget store is down")),
+        }
+      : budgetStore;
   const written: Written[] = [];
   const published: unknown[] = [];
   const publisher: AssistantEventPublisher = {
@@ -153,6 +168,9 @@ function harness(refuse = false) {
           if (refuse) {
             return Promise.reject(new Error("membership is gone"));
           }
+          if (options.writeRefusal !== undefined) {
+            return Promise.resolve({ kind: options.writeRefusal });
+          }
           written.push({
             conversationId: scope.conversationId,
             messageId: action.messageId,
@@ -169,7 +187,7 @@ function harness(refuse = false) {
     logger: createCapturingLogger().logger,
     forCaller,
     publisher,
-    budgetStore,
+    budgetStore: mounted,
   });
   return { recover, budgetStore, written, published };
 }
@@ -298,15 +316,79 @@ describe("the post-terminal recovery of a turn nobody is running", () => {
     expect(published).toHaveLength(1);
   });
 
-  it("still ends the turn's budget and publishes its status when the author write is refused", async () => {
+  it("still ends the turn's budget and publishes its status when the author write fails, and says the text was dropped", async () => {
     const { recovered } = await endedTurn("queued");
-    const { recover, budgetStore, written, published } = harness(true);
+    const { recover, budgetStore, written, published } = harness({
+      refuse: true,
+    });
     await reserve(budgetStore, recovered);
 
-    await recover(recovered, randomUUID());
+    await expect(recover(recovered, randomUUID())).rejects.toThrow(
+      /dropped turn text: the turn stays ended, and no later pass/,
+    );
 
     expect(written).toEqual([]);
     expect(await counters(budgetStore)).toEqual([0.1, 0.05]);
     expect(published).toHaveLength(1);
+  });
+
+  it("says the text was dropped when the placeholder write is refused as a conflict", async () => {
+    const { recovered } = await endedTurn("queued");
+    const { recover, budgetStore, written, published } = harness({
+      writeRefusal: "conflict",
+    });
+    await reserve(budgetStore, recovered);
+
+    await expect(recover(recovered, randomUUID())).rejects.toThrow(
+      /dropped turn text/,
+    );
+
+    expect(written).toEqual([]);
+    expect(await counters(budgetStore)).toEqual([0.1, 0.05]);
+    expect(published).toHaveLength(1);
+  });
+
+  it("drops nothing when the placeholder is another owner's to end", async () => {
+    const { recovered } = await endedTurn("queued");
+    const { recover, budgetStore, written, published } = harness({
+      writeRefusal: "wrong_owner",
+    });
+    await reserve(budgetStore, recovered);
+
+    await expect(recover(recovered, randomUUID())).resolves.toBeUndefined();
+
+    expect(written).toEqual([]);
+    expect(await counters(budgetStore)).toEqual([0.1, 0.05]);
+    expect(published).toHaveLength(1);
+  });
+
+  it("says the hold was dropped when the budget store fails, and leaves the turn ended with its reservation standing", async () => {
+    const { recovered, placeholderMessageId } = await endedTurn("queued");
+    const { recover, budgetStore, written, published } = harness({
+      budgetFails: true,
+    });
+    await reserve(budgetStore, recovered);
+
+    await expect(recover(recovered, randomUUID())).rejects.toThrow(
+      /dropped budget hold: .*reservation stays wholly or partly held/,
+    );
+
+    expect(await counters(budgetStore)).toEqual([0.2, 0.1]);
+    expect(written).toEqual([
+      {
+        conversationId: recovered.turn.conversationId,
+        messageId: placeholderMessageId,
+        status: "interrupted",
+        userId: kitIdentities.users.anna,
+      },
+    ]);
+    expect(published).toHaveLength(1);
+    expect(
+      await kit.invoke(
+        finishTurn,
+        { ...recovered.turn, status: "interrupted" },
+        {},
+      ),
+    ).toMatchObject({ outcome: "already_finished" });
   });
 });

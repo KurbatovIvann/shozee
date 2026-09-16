@@ -1,5 +1,5 @@
 import type { ActionPipelineDeps } from "@showzy/core";
-import { CoreError } from "@showzy/core/errors";
+import { CoreError, CoreInvariantError } from "@showzy/core/errors";
 import type { AssistantTurnEndReason } from "@showzy/validation/assistant-chat";
 import type { Logger } from "pino";
 
@@ -42,6 +42,8 @@ export type AssistantTurnRecovery = (
   requestId: string,
 ) => Promise<void>;
 
+type AssistantRecoveryStep = "budget hold" | "turn text" | "turn.finished";
+
 export function createAssistantTurnRecovery(
   deps: AssistantTurnRecoveryDeps,
 ): AssistantTurnRecovery {
@@ -53,7 +55,7 @@ export function createAssistantTurnRecovery(
     ended: AssistantRecoveredTurn,
     requestId: string,
     fields: Record<string, string>,
-  ): Promise<void> {
+  ): Promise<"settled" | "dropped"> {
     try {
       const author = await authors.read({
         companyId: ended.companyId,
@@ -69,7 +71,7 @@ export function createAssistantTurnRecovery(
             });
       if (author === null || bind === null) {
         logger.warn(fields, "assistant turn text was not ended");
-        return;
+        return "settled";
       }
       const written = await deps.forCaller(author.caller).kit.messages.write(
         { conversationId: ended.turn.conversationId, bind },
@@ -79,12 +81,20 @@ export function createAssistantTurnRecovery(
           status: "interrupted",
         },
       );
-      if (written.kind !== "written" && written.kind !== "unchanged") {
+      if (written.kind === "conflict") {
         logger.warn(
           { ...fields, refusal: written.kind },
           "assistant turn text was not ended",
         );
+        return "dropped";
       }
+      if (written.kind === "wrong_owner") {
+        logger.warn(
+          { ...fields, refusal: written.kind },
+          "assistant turn text is owned by someone else",
+        );
+      }
+      return "settled";
     } catch (error) {
       logger.warn(
         {
@@ -93,6 +103,7 @@ export function createAssistantTurnRecovery(
         },
         "assistant turn text was not ended",
       );
+      return "dropped";
     }
   }
 
@@ -103,16 +114,22 @@ export function createAssistantTurnRecovery(
       turn_kind: ended.turn.kind,
       end_reason: ended.endReason,
     };
+    const dropped: AssistantRecoveryStep[] = [];
     if (ended.from === "queued") {
-      await releaseStaffAssistantBudgetHold({
+      const release = await releaseStaffAssistantBudgetHold({
         logger,
         requestId,
         ref: { companyId: ended.companyId, ...ended.turn },
         hold: ended.releasedHold,
         budgetStore: deps.budgetStore,
       });
+      if (release === "failed") {
+        dropped.push("budget hold");
+      }
     }
-    await settlePlaceholder(ended, requestId, fields);
+    if ((await settlePlaceholder(ended, requestId, fields)) === "dropped") {
+      dropped.push("turn text");
+    }
     try {
       await deps.publisher.publish(
         {
@@ -131,6 +148,15 @@ export function createAssistantTurnRecovery(
       logger.warn(
         { ...fields, err: error },
         "assistant event was not published",
+      );
+      dropped.push("turn.finished");
+    }
+    if (dropped.length > 0) {
+      const strandedReservation = dropped.includes("budget hold")
+        ? ", this turn's reservation stays wholly or partly held until its Kyiv-day key expires"
+        : "";
+      throw new CoreInvariantError(
+        `assistant turn recovery dropped ${dropped.join(", ")}: the turn stays ended${strandedReservation}, and no later pass finds this turn again`,
       );
     }
   };
