@@ -81,10 +81,17 @@ export function createAssistantTurnRecovery(
           status: "interrupted",
         },
       );
-      if (written.kind !== "written" && written.kind !== "unchanged") {
+      if (written.kind === "conflict") {
         logger.warn(
           { ...fields, refusal: written.kind },
           "assistant turn text was not ended",
+        );
+        return "dropped";
+      }
+      if (written.kind === "wrong_owner") {
+        logger.warn(
+          { ...fields, refusal: written.kind },
+          "assistant turn text is owned by someone else",
         );
       }
       return "settled";
@@ -145,8 +152,11 @@ export function createAssistantTurnRecovery(
       dropped.push("turn.finished");
     }
     if (dropped.length > 0) {
+      const strandedReservation = dropped.includes("budget hold")
+        ? ", this turn's reservation stays wholly or partly held until its Kyiv-day key expires"
+        : "";
       throw new CoreInvariantError(
-        `assistant turn recovery dropped ${dropped.join(", ")}: the turn stays ended, a held reservation waits for its Kyiv-day ttl, and no later pass finds this turn again`,
+        `assistant turn recovery dropped ${dropped.join(", ")}: the turn stays ended${strandedReservation}, and no later pass finds this turn again`,
       );
     }
   };

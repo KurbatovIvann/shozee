@@ -136,7 +136,11 @@ interface Written {
 }
 
 function harness(
-  options: { readonly refuse?: boolean; readonly budgetFails?: boolean } = {},
+  options: {
+    readonly refuse?: boolean;
+    readonly budgetFails?: boolean;
+    readonly writeRefusal?: "wrong_owner" | "conflict";
+  } = {},
 ) {
   const refuse = options.refuse ?? false;
   const budgetStore = createMemoryAiBudgetStore();
@@ -163,6 +167,9 @@ function harness(
         write: (scope, action) => {
           if (refuse) {
             return Promise.reject(new Error("membership is gone"));
+          }
+          if (options.writeRefusal !== undefined) {
+            return Promise.resolve({ kind: options.writeRefusal });
           }
           written.push({
             conversationId: scope.conversationId,
@@ -317,8 +324,38 @@ describe("the post-terminal recovery of a turn nobody is running", () => {
     await reserve(budgetStore, recovered);
 
     await expect(recover(recovered, randomUUID())).rejects.toThrow(
+      /dropped turn text: the turn stays ended, and no later pass/,
+    );
+
+    expect(written).toEqual([]);
+    expect(await counters(budgetStore)).toEqual([0.1, 0.05]);
+    expect(published).toHaveLength(1);
+  });
+
+  it("says the text was dropped when the placeholder write is refused as a conflict", async () => {
+    const { recovered } = await endedTurn("queued");
+    const { recover, budgetStore, written, published } = harness({
+      writeRefusal: "conflict",
+    });
+    await reserve(budgetStore, recovered);
+
+    await expect(recover(recovered, randomUUID())).rejects.toThrow(
       /dropped turn text/,
     );
+
+    expect(written).toEqual([]);
+    expect(await counters(budgetStore)).toEqual([0.1, 0.05]);
+    expect(published).toHaveLength(1);
+  });
+
+  it("drops nothing when the placeholder is another owner's to end", async () => {
+    const { recovered } = await endedTurn("queued");
+    const { recover, budgetStore, written, published } = harness({
+      writeRefusal: "wrong_owner",
+    });
+    await reserve(budgetStore, recovered);
+
+    await expect(recover(recovered, randomUUID())).resolves.toBeUndefined();
 
     expect(written).toEqual([]);
     expect(await counters(budgetStore)).toEqual([0.1, 0.05]);
@@ -333,7 +370,7 @@ describe("the post-terminal recovery of a turn nobody is running", () => {
     await reserve(budgetStore, recovered);
 
     await expect(recover(recovered, randomUUID())).rejects.toThrow(
-      /dropped budget hold/,
+      /dropped budget hold: .*reservation stays wholly or partly held/,
     );
 
     expect(await counters(budgetStore)).toEqual([0.2, 0.1]);

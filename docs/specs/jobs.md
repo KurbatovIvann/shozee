@@ -266,7 +266,9 @@ and is left untouched. Proof: `src/pgboss-schema.db.test.ts`.
 ## 12. Maintenance jobs
 
 All maintenance runs from `periodic`, `global` pg-boss schedules with zero
-retries; a failed run waits for the next tick. The worker boots the runner
+retries; a failed run is not retried, and the next tick is a fresh pass over
+whatever is still due by then — never a second attempt at work a pass already
+finished. The worker boots the runner
 (`openJobRunner(..., "worker")`), then `work` with `maintenanceHandlers`,
 whose handlers only run the declared action with the empty payload and log
 its counts; the one shared runner's drain waits `JOB_DRAIN_TIMEOUT_MS` =
@@ -288,9 +290,10 @@ bound the assistant turn sets.
   `AssistantSweepSummary.failedTurns` (a company whose group failed to end
   counts in `failedCompanies`), logs it with the turn's identity, and carries
   on with that turn's siblings and the other companies. A dropped budget
-  release leaves the reservation standing until its Kyiv-day key expires — a
-  lost refund is the safe direction — and an unsettled placeholder keeps its
-  streaming part until the person reloads the conversation.
+  release leaves that turn's reservation wholly or partly stranded until its
+  Kyiv-day key expires — a lost refund is the safe direction — and an unsettled
+  placeholder keeps its streaming part until the person reloads the
+  conversation.
 - `assistant.turn` is the one `expires` job: tenant scope, zero retries,
   identity-only payload (`kind`, `conversationId`, `commandId`), attempt
   timeout `ASSISTANT_TURN_ATTEMPT_TIMEOUT_MS` (the 180 s turn timeout plus
@@ -300,8 +303,9 @@ bound the assistant turn sets.
   own output. `assistant.acceptTurn` sends it with `ctx.enqueue` in the
   accepting transaction, and only for an `accepted` outcome. A recovery that
   drops a step throws out of that hook: the dead-letter job is `failed`, the
-  interrupt it was told about stays committed, and the hold waits for its
-  Kyiv-day ttl — zero retries mean nothing runs the recovery again.
+  interrupt it was told about stays committed, and a dropped budget release
+  leaves its reservation for the Kyiv-day ttl — zero retries mean nothing runs
+  the recovery again.
 
 - The two files actions run unchanged, under ADR-0041 J10's named storage
   exception. Overlapping runs are safe: the sweep locks rows `FOR UPDATE SKIP
