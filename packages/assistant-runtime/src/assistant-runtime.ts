@@ -150,13 +150,48 @@ function staffPrincipal(
   };
 }
 
-export function createAssistantRuntime(
-  options: CreateAssistantRuntimeOptions,
-): AssistantRuntime {
+export function createAssistantCallerKits(options: {
+  readonly pipeline: ActionPipelineDeps;
+  readonly redis: RedisLike;
+}): (
+  caller: AssistantCaller,
+  claim?: AssistantTurnClaim,
+) => AssistantKitScoped {
   // One pause store for the process: a deadline and an atomic claim are Redis
   // work and need no principal. The durable half is built per caller below.
   const pauses = createRedisAssistantKitPauseStore(options.redis);
   const storeDeps = { pipeline: options.pipeline };
+  return (caller, claim) => {
+    const kit: AssistantKit<AssistantInteractionTypes> = createAssistantKit({
+      pauses,
+      messages: createPostgresAssistantKitMessageLog(storeDeps, caller, claim),
+      clock: { now: () => new Date() },
+      ids: { uuid: () => randomUUID() },
+      interactions: assistantInteractions,
+      window: { messages: ASSISTANT_CHAT_WINDOW_MESSAGES },
+      onUnreadableMessage: ({ conversationId, seq }) => {
+        options.pipeline.logger.warn(
+          {
+            request_id: caller.requestId,
+            conversation_id: conversationId,
+            seq,
+          },
+          "assistant message could not be read and was skipped",
+        );
+      },
+    });
+    return {
+      kit,
+      history: createPostgresAssistantKitHistoryStore(storeDeps, caller, claim),
+      turns: createPostgresAssistantTurnStore(storeDeps, caller),
+    };
+  };
+}
+
+export function createAssistantRuntime(
+  options: CreateAssistantRuntimeOptions,
+): AssistantRuntime {
+  const scopedKit = createAssistantCallerKits(options);
 
   const provider = options.provider ?? anthropicStaffProvider;
 
@@ -221,39 +256,10 @@ export function createAssistantRuntime(
       confirmed: { idempotencyKey, challengeId },
     });
 
-  const scopedKit = (
-    caller: AssistantCaller,
-    claim: AssistantTurnClaim | undefined,
-  ): AssistantKitScoped => {
-    const kit: AssistantKit<AssistantInteractionTypes> = createAssistantKit({
-      pauses,
-      messages: createPostgresAssistantKitMessageLog(storeDeps, caller, claim),
-      clock: { now: () => new Date() },
-      ids: { uuid: () => randomUUID() },
-      interactions: assistantInteractions,
-      window: { messages: ASSISTANT_CHAT_WINDOW_MESSAGES },
-      onUnreadableMessage: ({ conversationId, seq }) => {
-        options.pipeline.logger.warn(
-          {
-            request_id: caller.requestId,
-            conversation_id: conversationId,
-            seq,
-          },
-          "assistant message could not be read and was skipped",
-        );
-      },
-    });
-    return {
-      kit,
-      history: createPostgresAssistantKitHistoryStore(storeDeps, caller, claim),
-      turns: createPostgresAssistantTurnStore(storeDeps, caller),
-    };
-  };
-
   return {
     logger: options.pipeline.logger,
 
-    forCaller: (caller) => scopedKit(caller, undefined),
+    forCaller: (caller) => scopedKit(caller),
     forTurn: (caller, claim) => scopedKit(caller, claim),
 
     model: options.model,

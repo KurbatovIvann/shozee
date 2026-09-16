@@ -21,7 +21,11 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import type { JobRunner, JobRunnerRole } from "./job-runner.js";
 import { exhaustedQueueName } from "./queue-provisioning.js";
-import type { JobAttempt, JobHandler } from "./worker-host.js";
+import type {
+  JobAttempt,
+  JobExhaustedHook,
+  JobHandler,
+} from "./worker-host.js";
 
 export interface RunnerJobRecord {
   readonly id: string;
@@ -141,6 +145,7 @@ const systemWrite = {
 } as const;
 
 const noOutput = jobPayload({});
+const endedPayload = jobPayload({ subjectId: jobField.uuid() });
 const auditTarget = () => ({ type: "customer", id: "conformance" });
 
 function writable(db: ReadTx | Tx): Tx {
@@ -156,7 +161,7 @@ const interrupt = implementAction(
     name: "conformance.interrupt",
     description: "Ends the fixture row of an exhausted conformance job.",
     input: subjectPayload,
-    output: noOutput,
+    output: endedPayload,
     errors: [],
   }),
   {
@@ -173,7 +178,7 @@ const interrupt = implementAction(
             eq(fixtureCrmCustomers.companyId, ctx.companyId),
           ),
         );
-      return {};
+      return { subjectId: input.subjectId };
     },
     auditTarget,
   },
@@ -211,8 +216,14 @@ function handlerFor(
   job: Job,
   handle: (attempt: JobAttempt) => Promise<void>,
   onExhausted: ImplementedAction | null = interrupt,
+  afterExhausted?: JobExhaustedHook,
 ): JobHandler {
-  return onExhausted === null ? { job, handle } : { job, onExhausted, handle };
+  if (onExhausted === null) {
+    return { job, handle };
+  }
+  return afterExhausted === undefined
+    ? { job, onExhausted, handle }
+    : { job, onExhausted, afterExhausted, handle };
 }
 
 async function eventually<T>(
@@ -677,6 +688,73 @@ export function describeJobRunnerConformance(
         ).resolves.toMatchObject([{ state: "completed" }]);
       });
 
+      it("a bound hook runs after the on-exhausted action commits, with its output", async () => {
+        const job = conformanceJob("j9Hook");
+        const runner = await open([job], "worker");
+        const { envelope, subjectId } = await enqueueSubject(runner, job);
+        await target.abandonAttempt(database, job.name, envelope.id);
+        const hooked: {
+          envelopeId: string;
+          output: unknown;
+          nameAtHook: string | undefined;
+        }[] = [];
+
+        await work(runner, [
+          handlerFor(
+            job,
+            () => Promise.resolve(),
+            interrupt,
+            async (settled) => {
+              hooked.push({
+                envelopeId: settled.envelope.id,
+                output: settled.output,
+                nameAtHook: await subjectName(subjectId),
+              });
+            },
+          ),
+        ]);
+
+        await expect(
+          eventually(
+            () => exhaustedRecords(job),
+            (records) => records.some(({ state }) => state === "completed"),
+          ),
+        ).resolves.toMatchObject([{ state: "completed" }]);
+        expect(hooked).toEqual([
+          {
+            envelopeId: envelope.id,
+            output: { subjectId },
+            nameAtHook: "interrupted",
+          },
+        ]);
+      });
+
+      it("a failing hook fails its dead-letter job and leaves the committed end standing", async () => {
+        const job = conformanceJob("j9HookFails");
+        const runner = await open([job], "worker");
+        const { envelope, subjectId } = await enqueueSubject(runner, job);
+        await target.abandonAttempt(database, job.name, envelope.id);
+
+        await work(runner, [
+          handlerFor(
+            job,
+            () => Promise.resolve(),
+            interrupt,
+            () => Promise.reject(new CoreInvariantError("hook failed")),
+          ),
+        ]);
+
+        await expect(
+          eventually(
+            () => exhaustedRecords(job),
+            (records) => records.some(({ state }) => state === "failed"),
+          ),
+        ).resolves.toMatchObject([
+          { state: "failed", output: { code: "INTERNAL" } },
+        ]);
+        await expect(subjectName(subjectId)).resolves.toBe("interrupted");
+      });
+
       it("a failing on-exhausted action leaves the row for its module's sweep", async () => {
         const job = conformanceJob(
           "j9ExhaustFails",
@@ -685,12 +763,17 @@ export function describeJobRunnerConformance(
         );
         const runner = await open([job], "worker");
         const { subjectId } = await enqueueSubject(runner, job);
+        let hookRuns = 0;
 
         await work(runner, [
           handlerFor(
             job,
             () => Promise.reject(new CoreInvariantError("attempt failed")),
             interruptFails,
+            () => {
+              hookRuns += 1;
+              return Promise.resolve();
+            },
           ),
         ]);
 
@@ -702,6 +785,7 @@ export function describeJobRunnerConformance(
           { state: "failed", output: { code: "NOT_FOUND" } },
         ]);
         await expect(subjectName(subjectId)).resolves.toBe("running");
+        expect(hookRuns).toBe(0);
       });
 
       it("a job dropped by retention sends nothing to the dead letter", async () => {
@@ -873,6 +957,32 @@ export function describeJobRunnerConformance(
             handlerFor(job, () => Promise.resolve()),
           ]),
         ).rejects.toThrow(/job "[^"]*duplicateJob" has more than one handler/);
+      });
+
+      it("a worker refuses a post-exhaustion hook bound without an on-exhausted action", async () => {
+        const job = defineJob({
+          name: "conformance.hookWithoutExhaust",
+          scope: "global",
+          payload: noOutput,
+          discriminator: [],
+          lifecycle: "periodic",
+          cron: "* * * * *",
+          retries: 0,
+          attemptTimeoutMs: 1_500,
+        });
+        const runner = await open([job], "worker");
+
+        await expect(
+          work(runner, [
+            {
+              job,
+              afterExhausted: () => Promise.resolve(),
+              handle: () => Promise.resolve(),
+            },
+          ]),
+        ).rejects.toThrow(
+          /job "[^"]*hookWithoutExhaust" binds a post-exhaustion hook without an on-exhausted action/,
+        );
       });
 
       it("a worker refuses an on-exhausted binding other than the declaration", async () => {

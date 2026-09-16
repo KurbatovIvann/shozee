@@ -13,6 +13,9 @@ registry is injected into `createAssistantRuntime`; this package never imports
 - `assistant-runtime.ts` — `createAssistantRuntime`: tools per caller, the
   resolved-answer runner, the system prompt, and the per-caller kit and history
   stores. `assistantKitIdempotencyKey` derives a tool's key from the command.
+  `createAssistantCallerKits` is the per-caller kit, history and turn stores on
+  their own, built without a provider or a language model, so recovery work can
+  act as a turn's author with no model mounted (SHO-698).
 - `runtime-types.ts` — `AssistantRuntime` and the ports a turn uses
   (`AssistantToolContext`, `AssistantHistoryPort`, `ResolveAnswer`,
   `AssistantTurnPrompt`), and `ASSISTANT_CHAT_WINDOW_MESSAGES`.
@@ -82,6 +85,22 @@ registry is injected into `createAssistantRuntime`; this package never imports
   settled as the turn's author, never as the system, and the pass publishes no
   more than the interrupted status — it read no window as the person whose
   conversation it is.
+- `assistant-turn-recovery.ts` — `createAssistantTurnRecovery`: the work that
+  follows a turn's terminal transition, wherever that transition was made
+  (SHO-698). Releases exactly the hold the winning statement handed back, and
+  only for a turn that never started; settles that turn's own placeholder as
+  its author; publishes the ended status after the commit. At-most-once through
+  the store's `dropHold`, not exactly-once: a crash between the two stores
+  leaves the reservation until its Kyiv-day TTL. A missing membership costs the
+  message write and nothing else. No model, no Redis or model I/O inside a
+  domain transaction.
+- `assistant-overdue-sweep.ts` — `sweepOverdueAssistantTurns`: one bounded pass
+  over `assistant.listOverdueTurns`, grouped by company, each group ended
+  through the tenant `assistant.sweepOverdueTurns` on the job attempt's own
+  `run`, each ended turn handed to the recovery helper. Pages are drained while
+  the attempt is live, keyed on the last identity of a full page; a company
+  whose page or turn fails is logged and the rest go on. The job declaration
+  and its schedule are SHO-651's.
 - `stores/assistant-turn-placeholder.ts` — the one answer to "which message is
   this turn's, and under which owner token", used by both the processor and the
   reconciler.

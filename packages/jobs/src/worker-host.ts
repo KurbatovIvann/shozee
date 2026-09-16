@@ -27,9 +27,15 @@ export interface JobAttempt {
   ): ReturnType<typeof executeJobAction<TInput, TOutput, TTarget>>;
 }
 
+export type JobExhaustedHook = (settled: {
+  readonly envelope: JobEnvelope;
+  readonly output: unknown;
+}) => Promise<void>;
+
 export interface JobHandler {
   readonly job: Job;
   readonly onExhausted?: ImplementedAction;
+  readonly afterExhausted?: JobExhaustedHook;
   readonly localConcurrency?: number;
   handle(attempt: JobAttempt): Promise<void>;
 }
@@ -128,18 +134,21 @@ export async function createJobWorker(
   }
 
   for (const handler of options.handlers) {
-    const { job, onExhausted } = handler;
+    const { job, onExhausted, afterExhausted } = handler;
     const concurrency = handler.localConcurrency ?? 1;
     if (onExhausted !== undefined) {
       await work(exhaustedQueueName(job), concurrency, (stored) =>
         settle(stored, job.attemptTimeoutMs, async () => {
           const envelope = recordedEnvelope(job, stored);
-          await executeJobAction(deps, {
+          const output = await executeJobAction(deps, {
             job,
             envelope,
             action: onExhausted,
             input: envelope.payload,
           });
+          if (afterExhausted !== undefined) {
+            await afterExhausted({ envelope, output });
+          }
         }),
       );
     }
@@ -240,7 +249,7 @@ function assertHandlersMatchDeclarations(
   const declaredNames = new Set(declared.map(({ name }) => name));
   const seen = new Set<string>();
   const problems: string[] = [];
-  for (const { job, onExhausted } of handlers) {
+  for (const { job, onExhausted, afterExhausted } of handlers) {
     if (!declaredNames.has(job.name)) {
       problems.push(`job "${job.name}" is not a declared job of this runner`);
     } else if (!declared.includes(job)) {
@@ -255,6 +264,11 @@ function assertHandlersMatchDeclarations(
     if (onExhausted?.contract.name !== job.onExhausted) {
       problems.push(
         `job "${job.name}" declares on-exhausted "${job.onExhausted ?? "none"}" but its handler binds "${onExhausted?.contract.name ?? "none"}"`,
+      );
+    }
+    if (afterExhausted !== undefined && onExhausted === undefined) {
+      problems.push(
+        `job "${job.name}" binds a post-exhaustion hook without an on-exhausted action`,
       );
     }
     if (job.lifecycle === "periodic" && job.scope !== "global") {

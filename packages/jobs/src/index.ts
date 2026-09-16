@@ -7,6 +7,7 @@ export {
 } from "./job-runner.js";
 export type {
   JobAttempt,
+  JobExhaustedHook,
   JobFailureCode,
   JobHandler,
   JobWorkerOptions,

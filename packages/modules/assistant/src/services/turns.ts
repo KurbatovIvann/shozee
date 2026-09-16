@@ -55,6 +55,10 @@ import type {
   interruptTurnOutputSchema,
 } from "../actions/interrupt-turn.contract.js";
 import type {
+  listOverdueTurnsInputSchema,
+  listOverdueTurnsOutputSchema,
+} from "../actions/list-overdue-turns.contract.js";
+import type {
   listStaleTurnsInputSchema,
   listStaleTurnsOutputSchema,
 } from "../actions/list-stale-turns.contract.js";
@@ -764,6 +768,49 @@ export async function readTurnForJob(env: {
       },
       continuationRootCommandId: row.continuationRootCommandId,
     },
+  };
+}
+
+export async function listOverdueTurns(env: {
+  readonly ctx: SystemCtx;
+  readonly input: z.output<typeof listOverdueTurnsInputSchema>;
+}): Promise<z.output<typeof listOverdueTurnsOutputSchema>> {
+  const after = env.input.after;
+  const rows = await env.ctx.db
+    .select({
+      companyId: assistantTurns.companyId,
+      conversationId: assistantTurns.conversationId,
+      kind: assistantTurns.kind,
+      commandId: assistantTurns.commandId,
+    })
+    .from(assistantTurns)
+    .where(
+      and(
+        overdue(),
+        ...(after === undefined
+          ? []
+          : [
+              sql`(${assistantTurns.companyId}, ${assistantTurns.conversationId}, ${assistantTurns.kind}, ${assistantTurns.commandId}) > (${after.companyId.toLowerCase()}::uuid, ${after.conversationId.toLowerCase()}::uuid, ${after.kind}::text, ${after.commandId.toLowerCase()}::uuid)`,
+            ]),
+      ),
+    )
+    .orderBy(
+      asc(assistantTurns.companyId),
+      asc(assistantTurns.conversationId),
+      asc(assistantTurns.kind),
+      asc(assistantTurns.commandId),
+    )
+    .limit(env.input.limit);
+  const turns = rows.map((row) => ({
+    companyId: row.companyId,
+    conversationId: row.conversationId,
+    kind: row.kind,
+    commandId: row.commandId,
+  }));
+  const last = turns.at(-1);
+  return {
+    turns,
+    next: turns.length < env.input.limit || last === undefined ? null : last,
   };
 }
 
