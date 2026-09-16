@@ -56,16 +56,6 @@ function byCompany(
   return grouped;
 }
 
-export function assertAssistantSweepRecovered(
-  summary: AssistantSweepSummary,
-): void {
-  if (summary.failedCompanies > 0 || summary.failedTurns > 0) {
-    throw new CoreInvariantError(
-      `assistant overdue sweep left ${String(summary.failedCompanies)} company page(s) unswept and ${String(summary.failedTurns)} ended turn(s) unrecovered: their holds and placeholders are no longer overdue and no later pass would find them`,
-    );
-  }
-}
-
 export async function sweepOverdueAssistantTurns(
   attempt: AssistantSweepAttempt,
   deps: {
