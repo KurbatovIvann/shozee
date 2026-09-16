@@ -43,7 +43,11 @@ test("pull_request with a resolved merge-base uses Turbo affected + graph", () =
     "--ui=stream",
     "--affected",
   ]);
-  const env = buildTurboRunEnv(decision, { PATH: "/bin" });
+  const env = buildTurboRunEnv(decision, {
+    PATH: "/bin",
+    TURBO_SCM_BASE: "stale-inherited-base",
+    TURBO_SCM_HEAD: "stale-inherited-head",
+  });
   assert.equal(env.TURBO_SCM_BASE, "merge-base-sha");
   assert.equal(env.TURBO_SCM_HEAD, "HEAD");
 });
@@ -67,8 +71,14 @@ test("unresolved or shallow PR base falls back to a full run", () => {
       "--filter=@showzy/web",
     ],
   );
-  const env = buildTurboRunEnv(decision, { PATH: "/bin" });
-  assert.equal(env.TURBO_SCM_BASE, undefined);
+  const env = buildTurboRunEnv(decision, {
+    PATH: "/bin",
+    TURBO_SCM_BASE: "stale-inherited-base",
+    TURBO_SCM_HEAD: "stale-inherited-head",
+  });
+  assert.equal(env.PATH, "/bin");
+  assert.ok(!("TURBO_SCM_BASE" in env));
+  assert.ok(!("TURBO_SCM_HEAD" in env));
 });
 
 test("workflow_dispatch and throwaway pushes are full, not affected-only", () => {

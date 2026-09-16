@@ -157,7 +157,10 @@ export function buildTurboRunArgs(task, decision, extraArgs = []) {
  */
 export function buildTurboRunEnv(decision, env = process.env) {
   if (decision.mode !== "affected" || !decision.scmBase) {
-    return { ...env };
+    const fullEnv = { ...env };
+    delete fullEnv.TURBO_SCM_BASE;
+    delete fullEnv.TURBO_SCM_HEAD;
+    return fullEnv;
   }
   return {
     ...env,

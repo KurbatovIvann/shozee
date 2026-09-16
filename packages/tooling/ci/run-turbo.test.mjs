@@ -12,6 +12,11 @@ import {
 
 const script = fileURLToPath(new URL("./run-turbo.mjs", import.meta.url));
 
+const inheritedAffectedScmEnv = {
+  TURBO_SCM_BASE: "5257f3dfc634343bf861715ee5e04d75fc323c72",
+  TURBO_SCM_HEAD: "stale-inherited-head",
+};
+
 /**
  * One comparison SHA that exists in this clone and equals production `scmBase`.
  *
@@ -98,6 +103,7 @@ test("--always-full runs the whole workspace even when a PR base resolves", () =
       encoding: "utf8",
       env: {
         ...process.env,
+        ...inheritedAffectedScmEnv,
         GITHUB_EVENT_NAME: "pull_request",
         GITHUB_REF: "refs/pull/1/merge",
         GITHUB_BASE_REF: "main",
@@ -117,6 +123,7 @@ test("--always-full runs the whole workspace even when a PR base resolves", () =
   assert.equal(payload.reason, "always-full-uncacheable-task");
   assert.ok(!payload.args.includes("--affected"));
   assert.equal(payload.scmBase, null);
+  assert.equal(payload.scmHead, null);
 });
 
 test("a --cache in extra args is refused so it cannot outrank the helper", () => {
@@ -167,6 +174,7 @@ test("CLI print-only on push to main is full (no --affected)", () => {
     encoding: "utf8",
     env: {
       ...process.env,
+      ...inheritedAffectedScmEnv,
       GITHUB_EVENT_NAME: "push",
       GITHUB_REF: "refs/heads/main",
       GITHUB_BASE_REF: "",
@@ -186,6 +194,8 @@ test("CLI print-only on push to main is full (no --affected)", () => {
   assert.equal(payload.mode, "full");
   assert.ok(payload.args.includes("--cache=local:w"));
   assert.ok(!payload.args.includes("--affected"));
+  assert.equal(payload.scmBase, null);
+  assert.equal(payload.scmHead, null);
 });
 
 test("CLI print-only on pull_request with a resolvable origin/main uses affected", () => {
@@ -194,6 +204,7 @@ test("CLI print-only on pull_request with a resolvable origin/main uses affected
     encoding: "utf8",
     env: {
       ...process.env,
+      ...inheritedAffectedScmEnv,
       GITHUB_EVENT_NAME: "pull_request",
       GITHUB_REF: "refs/pull/9/merge",
       GITHUB_BASE_REF: "main",
@@ -226,6 +237,7 @@ test("CLI print-only on pull_request with an unresolvable SHA is full", () => {
       encoding: "utf8",
       env: {
         ...process.env,
+        ...inheritedAffectedScmEnv,
         GITHUB_EVENT_NAME: "pull_request",
         GITHUB_REF: "refs/pull/9/merge",
         GITHUB_BASE_REF: "this-base-ref-does-not-exist",
@@ -244,4 +256,6 @@ test("CLI print-only on pull_request with an unresolvable SHA is full", () => {
   const payload = JSON.parse(jsonLine);
   assert.equal(payload.mode, "full");
   assert.ok(!payload.args.includes("--affected"));
+  assert.equal(payload.scmBase, null);
+  assert.equal(payload.scmHead, null);
 });
