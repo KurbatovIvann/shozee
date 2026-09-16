@@ -266,11 +266,6 @@ export interface AssistantTurnView {
 
 export type AssistantTurnAcceptResult =
   | {
-      /**
-       * `accepted`: stored now. `replayed`: this command was accepted before and
-       * nothing was written. Either way the job is the one to enqueue — BullMQ
-       * refuses a second job under its id.
-       */
       readonly outcome: "accepted" | "replayed";
       readonly turn: AssistantTurnView;
     }

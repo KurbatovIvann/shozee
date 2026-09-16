@@ -1,10 +1,3 @@
-/**
- * Worker loop and job-host parameters (fnd-T27 / fnd-T29). The notify
- * channel is the db.md §4 trigger contract; BullMQ prefix/queue and
- * intervals are operational defaults, not product knobs — change them
- * only through an ADR or a protocol-manual patch with a proving test.
- */
-
 import { ASSISTANT_TURN_ATTEMPT_TIMEOUT_MS } from "@showzy/assistant-runtime";
 
 /** Postgres NOTIFY channel fired on `domain_events` INSERT. */

@@ -1,12 +1,4 @@
 /**
- * Narrow outbox integration for SHO-436 / SHO-452: when
- * `docGeneration.pdf-renderer` exhausts the existing delivery retry budget,
- * persist a durable failed job via `docGeneration.markFailed` in a
- * **separate** executeAction so the mark cannot roll back with the thrown
- * render. Production PDF retry is this outbox path (five attempts,
- * 1s/2s/4s/8s). The BullMQ `pdf` processor does not enqueue durable one-shot
- * work (db.md §6).
- *
  * Scope comes from `PdfGenerationRetryableError` or from validated
  * event-bound invocation context captured after `getForGeneration`, so a
  * pipeline `TimeoutError` can still finalize. Unwrapped `NotFoundError` /
