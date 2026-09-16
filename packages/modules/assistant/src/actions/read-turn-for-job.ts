@@ -6,11 +6,11 @@ import { readTurnForJobContract } from "./read-turn-for-job.contract.js";
 
 export const readTurnForJob = implementAction(readTurnForJobContract, {
   handler: (input, ctx) => {
-    if (ctx.scope !== "global") {
+    if (ctx.scope !== "tenant") {
       throw new CoreInvariantError(
-        "assistant.readTurnForJob expects global system",
+        "assistant.readTurnForJob expects tenant system",
       );
     }
-    return readTurnRow({ ctx, input });
+    return readTurnRow({ ctx, companyId: ctx.companyId, input });
   },
 });

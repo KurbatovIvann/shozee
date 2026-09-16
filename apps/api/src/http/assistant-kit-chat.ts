@@ -30,7 +30,6 @@ import { z } from "zod";
 
 import {
   canonicalCommandIds,
-  enqueueAcceptedTurn,
   goneResponse,
   json,
   readJson,
@@ -238,7 +237,6 @@ export async function handleAssistantKitChat(
   // the worker, not the queue: `readTurnForJob` produces a caller for a
   // **queued** turn only, so such a job is refused at the start and runs and
   // writes nothing.
-  await enqueueAcceptedTurn(runtime, result.job, requestId);
 
   return await accepted();
 }

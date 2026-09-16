@@ -14,11 +14,11 @@
  */
 import { readTurnForJob } from "@showzy/assistant";
 import { executeAction } from "@showzy/core";
+import { CoreError } from "@showzy/core/errors";
 
 import type { StaffAssistantBudgetHold } from "../assistant-budget-guard.js";
-import type { AssistantTurnJob } from "../queue.js";
 import {
-  ASSISTANT_RECONCILER_SERVICE,
+  ASSISTANT_RECOVERY_SERVICE,
   assistantBudgetHoldFromStored,
   type AssistantTurnRef,
   type AssistantTurnView,
@@ -29,6 +29,13 @@ import type { AssistantKitCaller, AssistantKitStoreDeps } from "./caller.js";
 export const ASSISTANT_WORKER_SERVICE = "assistant-worker";
 
 const verifiedCaller: unique symbol = Symbol("VerifiedAssistantCaller");
+
+function noTurnOfThisCompany(error: unknown): null {
+  if (error instanceof CoreError && error.code === "NOT_FOUND") {
+    return null;
+  }
+  throw error;
+}
 
 /**
  * Who a worker-run turn acts as: the turn row's `user_id`, in its `company_id`,
@@ -84,13 +91,14 @@ export function createPostgresInterruptedTurnAuthor(
   deps: AssistantKitStoreDeps,
 ): {
   read(options: {
+    readonly companyId: string;
     readonly turn: AssistantTurnRef;
     readonly requestId: string;
   }): Promise<InterruptedTurnAuthor | null>;
 } {
   return {
     async read(options) {
-      const { turn } = await executeAction(deps.pipeline, {
+      const found = await executeAction(deps.pipeline, {
         action: readTurnForJob,
         input: {
           conversationId: options.turn.conversationId,
@@ -104,10 +112,11 @@ export function createPostgresInterruptedTurnAuthor(
         },
         principal: {
           mode: "system",
-          serviceName: ASSISTANT_RECONCILER_SERVICE,
-          scope: { scope: "global" },
+          serviceName: ASSISTANT_RECOVERY_SERVICE,
+          scope: { scope: "tenant", companyId: options.companyId },
         },
-      });
+      }).catch(noTurnOfThisCompany);
+      const turn = found?.turn ?? null;
       if (turn === null || turn.status !== "interrupted") {
         return null;
       }
@@ -135,19 +144,20 @@ export function createPostgresAssistantTurnForJob(
    * job nobody accepted.
    */
   read(options: {
-    readonly job: AssistantTurnJob;
+    readonly companyId: string;
+    readonly turn: AssistantTurnRef;
     /** The worker's own request id for this read. */
     readonly requestId: string;
   }): Promise<AssistantTurnForJob | null>;
 } {
   return {
     async read(options) {
-      const { turn } = await executeAction(deps.pipeline, {
+      const found = await executeAction(deps.pipeline, {
         action: readTurnForJob,
         input: {
-          conversationId: options.job.conversationId,
-          kind: options.job.kind,
-          commandId: options.job.commandId,
+          conversationId: options.turn.conversationId,
+          kind: options.turn.kind,
+          commandId: options.turn.commandId,
         },
         request: {
           requestId: options.requestId,
@@ -157,12 +167,13 @@ export function createPostgresAssistantTurnForJob(
         principal: {
           mode: "system",
           serviceName: ASSISTANT_WORKER_SERVICE,
-          scope: { scope: "global" },
+          scope: { scope: "tenant", companyId: options.companyId },
         },
-      });
-      if (turn === null) {
+      }).catch(noTurnOfThisCompany);
+      if (found === null) {
         return null;
       }
+      const { turn } = found;
       return {
         companyId: turn.companyId,
         turn: {

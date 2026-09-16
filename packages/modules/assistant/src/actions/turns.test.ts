@@ -107,9 +107,9 @@ describe("the turn contracts", () => {
     expect(listStaleTurnsContract.audit).toBe(false);
   });
 
-  it("read the turn a job names only as a global system job nobody else can reach", () => {
+  it("read the turn a job names only as a tenant system job nobody else can reach", () => {
     expect(readTurnForJobContract.principal).toBe("system");
-    expect(readTurnForJobContract.systemScope).toBe("global");
+    expect(readTurnForJobContract.systemScope).toBe("tenant");
     expect(readTurnForJobContract.transport).toBe("internal");
     expect(readTurnForJobContract.aiExposure).toBe("internal");
     expect(readTurnForJobContract.risk).toBe("read");
@@ -211,29 +211,31 @@ describe("the turn contracts", () => {
         releasedHold: hold,
       }).success,
     ).toBe(false);
-    // A turn left running or queued names its status and hands out no hold.
     expect(
       interruptTurnOutputSchema.safeParse({
         outcome: "not_stale",
         conversationId: CONVERSATION,
         status: "running",
+      }).success,
+    ).toBe(false);
+    expect(
+      interruptTurnOutputSchema.safeParse({
+        outcome: "interrupted",
+        conversationId: CONVERSATION,
+        from: "queued",
+        endReason: "not_started",
+        releasedHold: hold,
       }).success,
     ).toBe(true);
     expect(
       interruptTurnOutputSchema.safeParse({
-        outcome: "not_stale",
+        outcome: "interrupted",
         conversationId: CONVERSATION,
-        status: "running",
+        from: "running",
+        endReason: "job_exhausted",
         releasedHold: hold,
       }).success,
-    ).toBe(false);
-    expect(
-      interruptTurnOutputSchema.safeParse({
-        outcome: "not_stale",
-        conversationId: CONVERSATION,
-        status: "done",
-      }).success,
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("never take a company id", () => {

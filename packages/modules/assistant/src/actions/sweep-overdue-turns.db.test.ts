@@ -159,7 +159,7 @@ async function running(
   deadline: "passed" | "ahead",
   owner: Owner = anna,
 ): Promise<Turn> {
-  const turn = await acceptedAgo("20 minutes", owner);
+  const turn = await accepted(owner);
   await kit.invoke(
     startTurn,
     { ...identity(turn), timeoutMs: 180_000 },

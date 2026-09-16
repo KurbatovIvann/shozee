@@ -17,8 +17,7 @@ import { openJobRunner, type JobRunnerIntervals } from "@showzy/jobs";
 import { Redis } from "ioredis";
 import type { Logger } from "pino";
 
-import { composeAssistantTurns } from "./assistant.js";
-import { createJobHost, type JobHost } from "./jobs.js";
+import { composeAssistantJobs } from "./assistant-jobs.js";
 import { createOutboxListener } from "./listen.js";
 import { createOutboxWorker, type WorkerLoop } from "./loop.js";
 import { maintenanceHandlers, workerJobs } from "./maintenance.js";
@@ -33,7 +32,6 @@ import { workerSubscriptions } from "./subscriptions.js";
 
 export interface BootedWorker {
   readonly loop: WorkerLoop;
-  readonly jobs: JobHost;
   /** The single process logger — the entrypoint reuses it (one identity). */
   readonly logger: Logger;
   close(): Promise<void>;
@@ -112,36 +110,19 @@ export async function bootWorker(
       confirmationStore: createRedisConfirmationStore(redis),
       ipHmacSecret: config.rateLimit.ipHmacSecret,
     });
-    // Mounted on the API's rule. The turn's pauses, budget and events use the
-    // shared Redis; only the queue is on the queue Redis (ADR-0039).
-    const assistantTurns = composeAssistantTurns({
-      ai: config.ai,
-      pipeline,
-      sharedRedis: redis,
-      logger,
-    });
     await jobRunner.work({
       deps: pipeline,
-      handlers: maintenanceHandlers(logger),
+      handlers: [
+        ...maintenanceHandlers(logger),
+        ...composeAssistantJobs({
+          ai: config.ai,
+          pipeline,
+          sharedRedis: redis,
+          logger,
+        }),
+      ],
       drainTimeoutMs: JOB_DRAIN_TIMEOUT_MS,
     });
-    const jobHostOptions = {
-      redisUrl: config.redis.url,
-      logger,
-      workerId,
-      pipeline,
-      ...(assistantTurns !== undefined
-        ? {
-            assistant: {
-              redisUrl: config.queueRedis.url,
-              process: assistantTurns.process,
-              reconcile: assistantTurns.reconcile,
-            },
-          }
-        : {}),
-    };
-    const jobs = createJobHost(jobHostOptions);
-    releases.push(() => jobs.close());
     const loop = createOutboxWorker({
       db: db.db,
       pipeline,
@@ -158,16 +139,13 @@ export async function bootWorker(
       ...(options.now !== undefined ? { now: options.now } : {}),
     });
     releases.push(() => loop.stop());
-    await jobs.start();
     await loop.start();
     return {
       loop,
-      jobs,
       logger,
       async close() {
-        await jobs.close();
-        await loop.stop();
         await jobRunner.close();
+        await loop.stop();
         closeFilesObjectStore();
         await redis.quit();
         await db.pool.end();

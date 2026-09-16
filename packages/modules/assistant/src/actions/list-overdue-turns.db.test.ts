@@ -212,14 +212,13 @@ describe("the overdue discovery read", () => {
   it("returns overdue turns of every company, and neither a fresh queued turn nor a running one inside its deadline", async () => {
     const queuedFresh = await accepted(anna);
     const queuedOverdue = await age(await accepted(anna), "16 minutes");
-    const runningAhead = await started(
-      await age(await accepted(anna), "20 minutes"),
-      "ahead",
+    const runningAhead = await age(
+      await started(await accepted(anna), "ahead"),
+      "20 minutes",
     );
-    const runningPast = await started(
-      await age(await accepted(boris), "20 minutes"),
-      "passed",
-      boris,
+    const runningPast = await age(
+      await started(await accepted(boris), "passed", boris),
+      "20 minutes",
     );
 
     const found = new Set((await everyPage(100)).map(key));

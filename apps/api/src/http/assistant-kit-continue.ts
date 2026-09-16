@@ -5,7 +5,6 @@ import { readAssistantChatWindow } from "@showzy/assistant-runtime";
 
 import {
   canonicalCommandIds,
-  enqueueAcceptedTurn,
   goneResponse,
   json,
   readJson,
@@ -127,8 +126,6 @@ export async function handleAssistantKitContinue(
   if (result.outcome === "accepted") {
     budget.keep();
   }
-
-  await enqueueAcceptedTurn(runtime, result.job, requestId);
 
   return await accepted();
 }

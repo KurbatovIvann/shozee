@@ -1,9 +1,9 @@
+import { assistantTurnKindSchema } from "@showzy/assistant";
 import { chatMessageSchema } from "@showzy/assistant-kit";
 import { ASSISTANT_TURN_KINDS } from "@showzy/db/schema/assistant";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { assistantTurnKindSchema } from "../queue.js";
 import {
   assistantBudgetHoldFromStored,
   assistantBudgetHoldToStored,

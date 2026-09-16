@@ -5,9 +5,8 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 import {
-  ASSISTANT_QUEUE_NAME,
-  ASSISTANT_QUEUE_PREFIX,
-  enqueueAssistantTurn,
+  assistantSweepOverdueTurnsJob,
+  assistantTurnJob,
 } from "@showzy/assistant-runtime";
 import { createProcessLogger, loadServerConfig } from "@showzy/config";
 import {
@@ -18,14 +17,21 @@ import {
 } from "@showzy/core";
 import { CoreInvariantError, ValidationError } from "@showzy/core/errors";
 import {
+  buildJobEnvelope,
   createTestKit,
   crossTenantSuite,
   isolationCase,
   jobIsolationCase,
   jobIsolationSuite,
+  kitIdentities,
   type TestKit,
 } from "@showzy/core/testing";
 import { auditLog, idempotencyKeys } from "@showzy/db";
+import {
+  assistantChatMessages,
+  assistantConversations,
+  assistantTurns,
+} from "@showzy/db/schema/assistant";
 import {
   backfillCatalogRenditions,
   backfillCatalogRenditionsJob,
@@ -36,12 +42,16 @@ import {
   configureFilesObjectStore,
   probeFilesObjectStore,
 } from "@showzy/files/storage";
-import { openJobRunner, type JobHandler, type JobRunner } from "@showzy/jobs";
+import {
+  exhaustedQueueName,
+  openJobRunner,
+  type JobHandler,
+  type JobRunner,
+} from "@showzy/jobs";
 import {
   RedisContainer,
   type StartedRedisContainer,
 } from "@testcontainers/redis";
-import { Queue } from "bullmq";
 import { and, eq, gte, inArray } from "drizzle-orm";
 import { Redis } from "ioredis";
 import { pino } from "pino";
@@ -57,8 +67,8 @@ import {
   cleanupIdempotencyKeys,
   cleanupIdempotencyKeysJob,
   maintenanceHandler,
+  workerJobs,
 } from "./maintenance.js";
-import { BULLMQ_PREFIX, MAINTENANCE_QUEUE_NAME } from "./policy.js";
 
 const silent = pino({ enabled: false });
 const REDIS_PASSWORD = "REDIS_TICK_SECRET";
@@ -351,7 +361,7 @@ describe("apps/worker maintenance jobs on pg-boss (SHO-650)", () => {
     return result.rows;
   }
 
-  it("two booted workers provision each maintenance queue and schedule once and leave no BullMQ maintenance or pdf work", async () => {
+  it("two booted workers provision each maintenance queue and schedule once", async () => {
     const first = await bootWorker(testConfig(), {
       logger: silent,
       pollIntervalMs: 60_000,
@@ -377,19 +387,6 @@ describe("apps/worker maintenance jobs on pg-boss (SHO-650)", () => {
       expect(queues.rows.map(({ name }) => name).toSorted()).toEqual(
         [...MAINTENANCE_JOB_NAMES].toSorted(),
       );
-
-      const connection = new Redis(redisUrl, { maxRetriesPerRequest: null });
-      const queue = new Queue(MAINTENANCE_QUEUE_NAME, {
-        connection,
-        prefix: BULLMQ_PREFIX,
-      });
-      try {
-        expect(await queue.getJobSchedulers()).toEqual([]);
-        expect(await connection.keys(`${BULLMQ_PREFIX}:pdf:*`)).toEqual([]);
-      } finally {
-        await queue.close();
-        await connection.quit();
-      }
     } finally {
       await first.close();
       await second.close();
@@ -480,13 +477,10 @@ describe("apps/worker maintenance jobs on pg-boss (SHO-650)", () => {
   }, 150_000);
 });
 
-describe("apps/worker assistant queue at boot (SHO-569)", () => {
-  const queueUrl = () => `${redisUrl}/1`;
-
+describe("apps/worker assistant jobs at boot (SHO-651)", () => {
   function assistantConfig(enabled: boolean) {
     return loadServerConfig({
       ...testEnv(),
-      REDIS_QUEUE_URL: queueUrl(),
       AI_ASSISTANT_KIT: enabled ? "1" : "0",
       ANTHROPIC_API_KEY: "ANTHROPIC_KEY_NEVER_CALLED_IN_TESTS",
     });
@@ -503,83 +497,150 @@ describe("apps/worker assistant queue at boot (SHO-569)", () => {
     });
   }
 
-  async function withAssistantQueue<T>(
-    run: (queue: Queue) => Promise<T>,
-  ): Promise<T> {
-    const connection = new Redis(queueUrl(), { maxRetriesPerRequest: null });
-    const queue = new Queue(ASSISTANT_QUEUE_NAME, {
-      connection,
-      prefix: ASSISTANT_QUEUE_PREFIX,
+  const assistantQueueNames = [
+    assistantTurnJob.name,
+    exhaustedQueueName(assistantTurnJob),
+    assistantSweepOverdueTurnsJob.name,
+  ];
+
+  async function provisioned(names: readonly string[]) {
+    const rows = await kit.db.admin.query<{ name: string }>(
+      "SELECT name FROM pgboss.queue WHERE name = ANY($1)",
+      [[...names]],
+    );
+    return rows.rows.map(({ name }) => name).toSorted();
+  }
+
+  async function seedQueuedTurn() {
+    const companyId = kitIdentities.companies.a;
+    const userId = kitIdentities.users.anna;
+    const conversationId = randomUUID();
+    const commandId = randomUUID();
+    const placeholderMessageId = randomUUID();
+    await kit.db.runtime.db
+      .insert(assistantConversations)
+      .values({ id: conversationId, companyId, userId });
+    await kit.db.runtime.db.insert(assistantChatMessages).values({
+      companyId,
+      conversationId,
+      seq: 1,
+      messageId: placeholderMessageId,
+      bind: `${userId}:${companyId}`,
+      message: {
+        messageId: placeholderMessageId,
+        role: "assistant",
+        parts: [],
+      },
     });
+    await kit.db.runtime.db.insert(assistantTurns).values({
+      companyId,
+      conversationId,
+      kind: "answer",
+      commandId,
+      status: "queued",
+      userId,
+      sessionId: "session-leftover",
+      requestId: randomUUID(),
+      userMessageId: null,
+      placeholderMessageId,
+      continuesCommandId: null,
+      companyReservedMicroUsd: 0,
+      globalReservedMicroUsd: 0,
+      budgetKyivDate: "2026-09-16",
+    });
+    return { companyId, conversationId, commandId };
+  }
+
+  async function sendTurnJob(seeded: {
+    readonly companyId: string;
+    readonly conversationId: string;
+    readonly commandId: string;
+  }) {
+    const runner = await openJobRunner(
+      { db: kit.db.runtime.db, jobs: workerJobs, onError: () => undefined },
+      "api",
+    );
     try {
-      return await run(queue);
+      await kit.db.runtime.db.transaction(async (tx) => {
+        await runner.port.enqueue(tx, [
+          buildJobEnvelope(assistantTurnJob, {
+            companyId: seeded.companyId,
+            payload: {
+              kind: "answer",
+              conversationId: seeded.conversationId,
+              commandId: seeded.commandId,
+            },
+          }),
+        ]);
+      });
     } finally {
-      await queue.close();
-      await connection.quit();
+      await runner.close();
     }
   }
 
-  it("processes a turn's job from the queue Redis and puts no queue key on the shared Redis", async () => {
+  async function turnRow(commandId: string) {
+    return (
+      await kit.db.runtime.db
+        .select({
+          status: assistantTurns.status,
+          endReason: assistantTurns.endReason,
+        })
+        .from(assistantTurns)
+        .where(eq(assistantTurns.commandId, commandId))
+    )[0];
+  }
+
+  it("provisions the turn queue, its exhaustion queue and the global sweep schedule", async () => {
     const lines: string[] = [];
     const booted = await bootWorker(assistantConfig(true), {
       logger: capturingLogger(lines),
       pollIntervalMs: 60_000,
     });
     try {
-      await withAssistantQueue(async (queue) => {
-        expect(await queue.getWorkersCount()).toBeGreaterThan(0);
-        await enqueueAssistantTurn(queue, {
-          version: 1,
-          kind: "chat",
-          conversationId: randomUUID(),
-          commandId: randomUUID(),
-        });
-        await waitUntil(() =>
-          Promise.resolve(
-            lines.some((line) => line.includes("assistant job processed")),
-          ),
-        );
-        // The processor logs before BullMQ records the job as completed.
-        await waitUntil(async () =>
-          Object.values(await queue.getJobCounts()).every(
-            (count) => count === 0,
-          ),
-        );
-        const counts = await queue.getJobCounts();
-        expect(Object.values(counts).every((count) => count === 0)).toBe(true);
-      });
-
+      expect(await provisioned(assistantQueueNames)).toEqual(
+        [...assistantQueueNames].toSorted(),
+      );
+      const scheduled = await kit.db.admin.query<{ cron: string }>(
+        "SELECT cron FROM pgboss.schedule WHERE name = $1",
+        [assistantSweepOverdueTurnsJob.name],
+      );
+      expect(scheduled.rows).toEqual([
+        { cron: assistantSweepOverdueTurnsJob.cron },
+      ]);
       const log = lines.join("\n");
-      expect(log).toContain('"outcome":"no_turn"');
       expect(log).toMatch(/"mounted":true[^\n]*"assistant-kit path"/);
       expect(log).not.toContain("ANTHROPIC_KEY_NEVER_CALLED_IN_TESTS");
-
-      const shared = new Redis(redisUrl);
-      const onShared = await shared.keys(
-        `${ASSISTANT_QUEUE_PREFIX}:${ASSISTANT_QUEUE_NAME}:*`,
-      );
-      await shared.quit();
-      expect(onShared).toEqual([]);
     } finally {
       await booted.close();
     }
-  });
+  }, 150_000);
 
-  it("does not start the assistant queue when the assistant is off", async () => {
+  it("boots with no model and closes a leftover queued turn as not_started through its exhaustion", async () => {
     const lines: string[] = [];
+    const seeded = await seedQueuedTurn();
     const booted = await bootWorker(assistantConfig(false), {
       logger: capturingLogger(lines),
       pollIntervalMs: 60_000,
     });
     try {
-      await withAssistantQueue(async (queue) => {
-        expect(await queue.getWorkersCount()).toBe(0);
-      });
+      expect(await provisioned(assistantQueueNames)).toEqual(
+        [...assistantQueueNames].toSorted(),
+      );
       expect(lines.join("\n")).toMatch(
         /"enabled":false,"mounted":false[^\n]*"assistant-kit path"/,
       );
+
+      await sendTurnJob(seeded);
+      await waitUntil(async () => {
+        const row = await turnRow(seeded.commandId);
+        return row?.status === "interrupted";
+      });
+      expect(await turnRow(seeded.commandId)).toEqual({
+        status: "interrupted",
+        endReason: "not_started",
+      });
     } finally {
       await booted.close();
     }
-  });
+  }, 150_000);
 });

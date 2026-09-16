@@ -33,14 +33,11 @@ import { stubTextModel, testDeps } from "@showzy/assistant-kit/testing";
 import {
   ASSISTANT_CHAT_WINDOW_MESSAGES,
   assistantInteractions,
-  assistantTurnJobId,
   assistantTurnMessageId,
   memoryAssistantKitCommands,
   memoryAssistantTurnStore,
   type AssistantHistoryPort,
   type AssistantInteractionTypes,
-  type AssistantTurnJob,
-  type AssistantTurnQueue,
   type AssistantTurnStore,
   type ChoiceResolution,
   type ResolveAnswer,
@@ -89,28 +86,28 @@ function memoryHistory(): AssistantHistoryPort & {
   };
 }
 
-/** The jobs this process put on the queue, in order. */
-function memoryQueue(options?: {
-  readonly broken?: boolean;
-}): AssistantTurnQueue & {
-  readonly added: AssistantTurnJob[];
-  readonly ids: string[];
+function recordingAccepts(store: AssistantTurnStore): {
+  readonly store: AssistantTurnStore;
+  readonly added: { kind: string; conversationId: string; commandId: string }[];
 } {
-  const added: AssistantTurnJob[] = [];
-  const ids: string[] = [];
+  const added: { kind: string; conversationId: string; commandId: string }[] =
+    [];
   return {
     added,
-    ids,
-    add: (_name, data, opts) => {
-      if (options?.broken === true) {
-        return Promise.reject(new Error("queue is unreachable"));
-      }
-      added.push(data);
-      ids.push(opts.jobId);
-      return Promise.resolve(undefined);
+    store: {
+      ...store,
+      accept: async (input) => {
+        const accepted = await store.accept(input);
+        if (accepted.outcome === "accepted") {
+          added.push({
+            kind: accepted.turn.kind,
+            conversationId: accepted.turn.conversationId,
+            commandId: accepted.turn.commandId,
+          });
+        }
+        return accepted;
+      },
     },
-    getJob: (jobId) =>
-      Promise.resolve(ids.includes(jobId) ? { id: jobId } : undefined),
   };
 }
 
@@ -186,7 +183,7 @@ interface Harness {
   readonly kit: Kit;
   readonly app: ReturnType<typeof createAssistantKitApp>;
   readonly history: ReturnType<typeof memoryHistory>;
-  readonly queue: ReturnType<typeof memoryQueue>;
+  readonly queue: { readonly added: unknown[] };
   readonly turns: AssistantTurnStore;
   readonly bind: string;
 }
@@ -198,9 +195,6 @@ function harness(options?: {
   readonly tools?: ToolSet;
   /** Held open to keep an answer's synchronous half in flight. */
   readonly toolsGate?: Promise<unknown>;
-  /** No queue at all: the turn is still accepted, for the reconciler to enqueue. */
-  readonly noQueue?: boolean;
-  readonly brokenQueue?: boolean;
   /**
    * How the first accept fails.
    *
@@ -260,9 +254,11 @@ function harness(options?: {
             return realHistory.save(scope, messages);
           },
         };
-  const queue = memoryQueue({ broken: options?.brokenQueue === true });
   // Written through the served kit, so a refused write is a failed accept.
-  const accepting = memoryAssistantTurnStore(served.messages, history);
+  const queue = recordingAccepts(
+    memoryAssistantTurnStore(served.messages, history),
+  );
+  const accepting = queue.store;
   const failAs = options?.acceptThrows;
   let acceptsToFail = failAs === undefined ? 0 : 1;
   const turns: AssistantTurnStore = {
@@ -285,7 +281,6 @@ function harness(options?: {
   const app = createAssistantKitApp({
     logger: options?.logger ?? silentLogger(),
     commands: memoryAssistantKitCommands(),
-    ...(options?.noQueue === true ? {} : { queue }),
     auth: {
       api: {
         getSession: () =>
@@ -499,7 +494,6 @@ describe("POST /assistant/kit/chat", () => {
     // The job names the turn, and history is what the worker will run from.
     expect(queue.added).toEqual([
       {
-        version: 1,
         kind: "chat",
         conversationId: CONVERSATION,
         commandId: COMMAND,
@@ -627,13 +621,6 @@ describe("POST /assistant/kit/chat", () => {
     });
     expect(window.messages).toHaveLength(2);
     expect(queue.added).toHaveLength(1);
-    expect(queue.ids).toEqual([
-      assistantTurnJobId({
-        kind: "chat",
-        conversationId: CONVERSATION,
-        commandId: COMMAND,
-      }),
-    ]);
     // The message ids are the ones the lowercase command derives.
     expect(window.messages[0]?.messageId).toBe(
       assistantTurnMessageId({ kind: "chat", commandId: COMMAND }, "user"),
@@ -722,32 +709,6 @@ describe("POST /assistant/kit/chat", () => {
   });
 
   /**
-   * The turn is a Postgres row before the job exists, and the reconciler
-   * enqueues a turn that never got one. Failing the request would tell the
-   * person nothing happened while their message is stored and their turn is
-   * about to run.
-   */
-  it("still accepts when the queue cannot be reached", async () => {
-    const { app, kit, bind } = harness({ brokenQueue: true });
-
-    const response = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody());
-
-    expect(response.status).toBe(202);
-    expect(
-      (await kit.messages.read({ conversationId: CONVERSATION, bind }))
-        .messages,
-    ).toHaveLength(2);
-  });
-
-  it("still accepts in a composition with no queue at all", async () => {
-    const { app } = harness({ noQueue: true });
-
-    expect((await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody())).status).toBe(
-      202,
-    );
-  });
-
-  /**
    * A write result is a union, not a formality. The accept is one transaction:
    * if the person's message cannot be stored, no turn row and no placeholder
    * are either, and the send fails rather than queueing a turn whose
@@ -832,19 +793,14 @@ describe("POST /assistant/kit/chat", () => {
     expect(queue.added).toHaveLength(1);
   });
 
-  /**
-   * The other half of that: the first attempt did commit, so the retry reaches
-   * the accept and is `replayed`. Nothing is written twice, and the job that
-   * attempt never added goes on the queue now rather than an interval later.
-   */
-  it("re-enqueues a replayed turn without writing anything twice, from a history the committed accept already stored", async () => {
+  it("enqueues nothing for a replayed turn whose committed accept already sent its job, and writes nothing twice", async () => {
     const { app, kit, queue, history, bind } = harness({
       acceptThrows: "internal-after-commit",
     });
 
     const failed = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("створи"));
     expect(failed.status).toBe(500);
-    expect(queue.added).toEqual([]);
+    expect(queue.added).toHaveLength(1);
 
     const retry = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("створи"));
 
@@ -1096,7 +1052,6 @@ describe("POST /assistant/kit/answer", () => {
     expect(await kit.peek({ conversationId: CONVERSATION, bind })).toBeNull();
     expect(queue.added).toEqual([
       {
-        version: 1,
         kind: "answer",
         conversationId: CONVERSATION,
         commandId: COMMAND,

@@ -20,11 +20,8 @@ import type {
   AssistantKitCommands,
   AssistantRuntime,
   AssistantToolContext,
-  AssistantTurnJob,
-  AssistantTurnQueue,
   StaffAssistantBudgetHold,
 } from "@showzy/assistant-runtime";
-import { enqueueAssistantTurn } from "@showzy/assistant-runtime";
 import type { AssistantChatWindowWithTurn } from "@showzy/assistant-runtime";
 import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
 import { CoreInvariantError } from "@showzy/core/errors";
@@ -141,42 +138,6 @@ export async function takeCommand(
 }
 
 /**
- * Puts an accepted turn on the queue.
- *
- * A failure here is logged and nothing more: the turn is already a Postgres
- * row, and the reconciler enqueues a turn that never got a job (ADR-0039).
- * Failing the request instead would tell the person nothing happened while
- * their message and their placeholder are stored and their turn is about to
- * run.
- */
-export async function enqueueAcceptedTurn(
-  runtime: AssistantKitRuntime,
-  job: AssistantTurnJob,
-  requestId: string,
-): Promise<void> {
-  if (runtime.queue === undefined) {
-    runtime.logger.warn(
-      { request_id: requestId, conversation_id: job.conversationId },
-      "assistant turn accepted with no queue configured",
-    );
-    return;
-  }
-  try {
-    await enqueueAssistantTurn(runtime.queue, job);
-  } catch (error) {
-    runtime.logger.error(
-      {
-        request_id: requestId,
-        conversation_id: job.conversationId,
-        turn_kind: job.kind,
-        err: error,
-      },
-      "assistant turn was accepted but not enqueued",
-    );
-  }
-}
-
-/**
  * The assistant as the routes see it: the shared runtime (ADR-0039) plus the
  * things only a request-serving process has.
  *
@@ -190,13 +151,6 @@ export interface AssistantKitRuntime extends Omit<AssistantRuntime, "forTurn"> {
    * One attempt, once — the guard in front of the answer route's claim.
    */
   readonly commands: AssistantKitCommands;
-  /**
-   * The assistant queue, on the dedicated queue Redis (`REDIS_QUEUE_URL`),
-   * never the shared one, which holds OTP codes and does not persist
-   * (`db.md` §6). Absent in a composition without a queue: the turn is still
-   * accepted and the reconciler enqueues it.
-   */
-  readonly queue?: AssistantTurnQueue;
   readonly auth: {
     readonly api: {
       readonly getSession: (args: {

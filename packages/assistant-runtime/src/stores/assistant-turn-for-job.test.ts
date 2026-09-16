@@ -6,7 +6,7 @@
  */
 import { describe, expectTypeOf, it } from "vitest";
 
-import type { AssistantTurnJob } from "../queue.js";
+import type { AssistantTurnRef } from "./assistant-turn-store.js";
 import type {
   AssistantTurnForJob,
   VerifiedAssistantCaller,
@@ -15,9 +15,9 @@ import type { AssistantKitCaller } from "./caller.js";
 
 describe("VerifiedAssistantCaller", () => {
   it("is not constructible from a job payload", () => {
-    expectTypeOf<AssistantTurnJob>().not.toExtend<VerifiedAssistantCaller>();
+    expectTypeOf<AssistantTurnRef>().not.toExtend<VerifiedAssistantCaller>();
     expectTypeOf<
-      AssistantTurnJob & AssistantKitCaller
+      AssistantTurnRef & AssistantKitCaller
     >().not.toExtend<VerifiedAssistantCaller>();
   });
 

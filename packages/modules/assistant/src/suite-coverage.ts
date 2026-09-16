@@ -28,5 +28,5 @@ export const assistantSuiteCoverage = {
   idempotency: ["assistant.createConversation"],
   events: [],
   atomic: [],
-  jobIsolation: [],
+  jobIsolation: ["assistant"],
 } as const satisfies SuiteCoverageManifest;

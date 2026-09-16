@@ -32,8 +32,7 @@
  * nothing — every stream starts from a snapshot — so a publish never fails the
  * turn.
  */
-import { randomUUID } from "node:crypto";
-
+import { ASSISTANT_TURN_TIMEOUT_MS } from "@showzy/assistant";
 import {
   MessageWriteRefusedError,
   runHostTurn,
@@ -42,12 +41,11 @@ import {
   type PauseScope,
 } from "@showzy/assistant-kit";
 import type { ActionPipelineDeps } from "@showzy/core";
-import { CoreError, CoreInvariantError } from "@showzy/core/errors";
+import { ConflictError, CoreInvariantError } from "@showzy/core/errors";
 import type { AssistantPublishedEvent } from "@showzy/validation/assistant-events";
 
 import { releaseStaffAssistantBudgetHold } from "./assistant-budget-guard.js";
 import type { AssistantConversationAddress } from "./events.js";
-import { ASSISTANT_TURN_TIMEOUT_MS, type AssistantTurnJob } from "./queue.js";
 import type { AssistantKitFor, AssistantRuntime } from "./runtime-types.js";
 import type { AssistantEventPublisher } from "./stores/assistant-events-redis.js";
 import { readTurnPlaceholderBind } from "./stores/assistant-turn-placeholder.js";
@@ -58,6 +56,7 @@ import {
 } from "./stores/assistant-turn-for-job.js";
 import {
   createPostgresAssistantTurnStore,
+  type AssistantTurnRef,
   type AssistantTurnStore,
 } from "./stores/assistant-turn-store.js";
 import type { AiBudgetStore } from "./stores/budget.js";
@@ -99,17 +98,24 @@ export interface AssistantTurnProcessorDeps {
   readonly budgetStore: AiBudgetStore;
   readonly timeoutMs?: number;
   readonly deadline?: AssistantTurnDeadline;
-  /** The worker's own request id for reading the turn. */
-  readonly newRequestId?: () => string;
 }
+
+export interface AssistantTurnRun {
+  readonly companyId: string;
+  readonly turn: AssistantTurnRef;
+  readonly requestId: string;
+  readonly signal: AbortSignal;
+}
+
+export type AssistantTurnProcess = (
+  run: AssistantTurnRun,
+) => Promise<AssistantTurnJobOutcome>;
 
 export type AssistantTurnJobOutcome =
   /** No turn has this identity. */
   | { readonly kind: "no_turn" }
   /** Running or ended already: a replayed or duplicate job. Nothing ran. */
   | { readonly kind: "not_queued"; readonly status: string }
-  /** Core refused to start it as its author. Nothing ran; it stays queued. */
-  | { readonly kind: "refused"; readonly code: string }
   | {
       readonly kind: "finished";
       readonly status: AssistantTurnEndStatus;
@@ -137,13 +143,12 @@ function lastTextStatus(
 
 export function createAssistantTurnProcessor(
   deps: AssistantTurnProcessorDeps,
-): (job: AssistantTurnJob) => Promise<AssistantTurnJobOutcome> {
+): AssistantTurnProcess {
   const storeDeps = { pipeline: deps.pipeline };
   const forJob = createPostgresAssistantTurnForJob(storeDeps);
   const logger = deps.runtime.logger;
   const timeoutMs = deps.timeoutMs ?? ASSISTANT_TURN_TIMEOUT_MS;
   const deadline = deps.deadline ?? armTimer;
-  const newRequestId = deps.newRequestId ?? (() => randomUUID());
 
   /** Log fields that name the turn and never what anyone wrote. */
   function fieldsOf(found: AssistantTurnForJob, requestId: string) {
@@ -316,35 +321,26 @@ export function createAssistantTurnProcessor(
   async function runQueued(
     found: AssistantTurnForJob,
     caller: VerifiedAssistantCaller,
+    attemptSignal: AbortSignal,
   ): Promise<AssistantTurnJobOutcome> {
     const fields = fieldsOf(found, caller.requestId);
     const turns = createPostgresAssistantTurnStore(storeDeps, caller);
 
-    let started: Awaited<ReturnType<typeof turns.start>>;
-    try {
-      started = await turns.start(found.turn, { timeoutMs });
-    } catch (error) {
-      // Core would not act as this person — most often a membership that ended
-      // after the accept. Nothing has run and nothing is written; the turn stays
-      // queued. Closing it is an open owner question (SHO-569).
-      if (error instanceof CoreError && error.code !== "INTERNAL") {
-        logger.warn(
-          { ...fields, code: error.code },
-          "assistant turn refused at start and left queued",
-        );
-        return { kind: "refused", code: error.code };
-      }
-      throw error;
-    }
+    const started = await turns.start(found.turn, { timeoutMs });
     if (started.outcome === "not_queued") {
       return { kind: "not_queued", status: started.status };
     }
-    // Armed as soon as the row's deadline is, so the worker's timer is never
-    // later than the one the reconciler reads.
+    if (started.outcome === "expired") {
+      throw new ConflictError(
+        "This assistant turn was not started within its start deadline.",
+      );
+    }
     const controller = new AbortController();
-    const disarm = deadline(() => {
+    const abort = (): void => {
       controller.abort();
-    }, timeoutMs);
+    };
+    const disarm = deadline(abort, timeoutMs);
+    attemptSignal.addEventListener("abort", abort, { once: true });
 
     const events = eventsFor(
       {
@@ -383,6 +379,11 @@ export function createAssistantTurnProcessor(
         requestId: caller.requestId,
       });
       const prompt = deps.runtime.prompt();
+      if (controller.signal.aborted) {
+        throw new CoreInvariantError(
+          "assistant turn was abandoned before its model was reached",
+        );
+      }
 
       reachedModel = true;
       const turn = await runHostTurn({
@@ -457,6 +458,7 @@ export function createAssistantTurnProcessor(
       }
     } finally {
       disarm();
+      attemptSignal.removeEventListener("abort", abort);
     }
 
     const finished = await turns.finish(found.turn, status);
@@ -484,18 +486,26 @@ export function createAssistantTurnProcessor(
     return { kind: "finished", status, reachedModel };
   }
 
-  return async (job) => {
-    const found = await forJob.read({ job, requestId: newRequestId() });
+  return async (run) => {
+    const found = await forJob.read({
+      companyId: run.companyId,
+      turn: run.turn,
+      requestId: run.requestId,
+    });
     if (found === null) {
       logger.warn(
-        { conversation_id: job.conversationId, turn_kind: job.kind },
-        "assistant job names no turn and was dropped",
+        {
+          request_id: run.requestId,
+          conversation_id: run.turn.conversationId,
+          turn_kind: run.turn.kind,
+        },
+        "assistant job names no turn of its recorded company and was dropped",
       );
       return { kind: "no_turn" };
     }
     if (found.caller === null) {
       return { kind: "not_queued", status: found.status };
     }
-    return runQueued(found, found.caller);
+    return runQueued(found, found.caller, run.signal);
   };
 }

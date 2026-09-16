@@ -1,10 +1,11 @@
 # @showzy/worker — Agent Instructions
 
-Outbox dispatcher, delivery executor, pg-boss maintenance jobs, and the BullMQ
-assistant job host (fnd-T27 / fnd-T29 / SHO-650). Core exposes libraries only (`dispatchOutboxBatch`,
+Outbox dispatcher, delivery executor, and every pg-boss job — maintenance, the
+assistant turn and the overdue sweep (fnd-T27 / fnd-T29 / SHO-650 / SHO-651).
+There is no BullMQ. Core exposes libraries only (`dispatchOutboxBatch`,
 `findClaimableDeliveries`, `executeDelivery`,
 `cleanupExpiredIdempotencyKeys`); this package owns the loops, LISTEN/NOTIFY
-wakeup, polling fallback, graceful drain, and the job host.
+wakeup, polling fallback, graceful drain, and the job handlers.
 
 ## Layout
 
@@ -12,14 +13,14 @@ wakeup, polling fallback, graceful drain, and the job host.
   command runs the worker; `replay-deliveries --consumer <id>` is the
   fnd-T18 admin replay CLI. An invalid environment crashes before work
   starts. Shutdown is latched (second SIGINT/SIGTERM is a no-op): drain
-  in-flight BullMQ jobs, then the outbox close latch, then flush Sentry.
+  in-flight jobs, then the outbox close latch, then flush Sentry.
 - `src/boot.ts` — binds the files object store from validated `config.s3`
   (same as the API; do not import API internals), opens Postgres + Redis
-  (confirmation/rate-limit) plus a **dedicated** BullMQ Redis connection,
-  composes the action pipeline, opens the pg-boss runner with `workerJobs`
-  (provisioning queues and schedules) and works `maintenanceHandlers`, starts
-  the BullMQ job host, LISTENs on `domain_events`, starts the outbox loop.
-  Close the object store after draining both job runners.
+  (confirmation/rate-limit), composes the action pipeline, opens the pg-boss
+  runner with `workerJobs` (provisioning queues and schedules) and works
+  `maintenanceHandlers` together with `composeAssistantJobs`, LISTENs on
+  `domain_events`, starts the outbox loop. Close the object store after
+  draining the job runner.
 - `src/maintenance.ts` — maintenance on pg-boss (`docs/specs/jobs.md` §12).
   The worker-owned job and action `worker.cleanupIdempotencyKeys` (hourly,
   internal system/global audited write calling core's
@@ -31,20 +32,21 @@ wakeup, polling fallback, graceful drain, and the job host.
   handler only runs its action and logs counts. A new worker-owned job adds
   its handler here, its coverage to `src/suite-coverage.ts`, and passes
   `pnpm --filter @showzy/worker contract:check`.
-- `src/jobs.ts` — BullMQ job host until jobs-T11: prefix `showzy`, the
-  `maintenance` queue for the assistant reconciler only, and the assistant
-  queue. There is no `pdf` queue. When the
-  assistant is mounted it also upserts `reconcileAssistantTurns`
-  (`ASSISTANT_RECONCILE_INTERVAL_MS`, 60 s), and removes that scheduler when it
-  is not: the reconciler's pass is a maintenance job like any other (safe to
-  miss, safe to run again), and it is handed this host's assistant queue so a
-  turn it re-enqueues is added exactly as an accept adds it (SHO-570).
-  `documents.created` PDF delivery runs through the outbox (chat golden). Do not
-  pre-create email / push / sms / sync queues. Processors stay thin (no
-  domain SQL, no module service imports). Named exception: the `assistant`
-  processor (SHO-561) runs a whole turn through `@showzy/assistant-runtime`,
-  because the turn is the work — still only `executeAction` as the staff
-  member, never domain SQL.
+- `src/assistant-jobs.ts` — `composeAssistantJobs`: the two assistant
+  `JobHandler`s this worker binds, on the API's rule (`staffAssistantMount`)
+  for the log line only. Both are bound whether or not a model is configured,
+  because recovery and maintenance are model-free (SHO-698): the
+  `assistant.turn` handler refuses before it starts anything when there is no
+  model (a typed `CONFLICT`), so the attempt fails, the job is exhausted and
+  `assistant.interruptTurn` closes the turn as `not_started` with its hold
+  refunded. The runtime runs against the worker pipeline and the API's registry
+  (`@showzy/api/registry`, `assertPaired()` at boot); its pauses, budget
+  counters and published events use the shared Redis. One composition builds
+  the processor, the recovery helper and the sweep, so a turn and the recovery
+  that closes it share one runtime, publisher and budget store. The turn
+  handler binds `onExhausted: assistant.interruptTurn` and an `afterExhausted`
+  hook that hands that action's own output to the recovery helper; the sweep
+  handler fails its attempt when the pass left a company or a turn unrecovered.
 - `src/loop.ts` — `createOutboxWorker` / `createWorkerLoop`: one tick
   dispatches then executes due deliveries; shutdown waits for in-flight
   work and does not claim further. Executor lookup is keyed by
@@ -63,7 +65,7 @@ wakeup, polling fallback, graceful drain, and the job host.
   as `apps/api`).
 - `src/stores/redis.ts` — confirmation `GETDEL` and Lua token-bucket
   stores. Must stay behaviorally identical to `apps/api/src/stores/redis.ts`.
-  Never reuse this client as the blocking BullMQ connection.
+  Never reuse this client for a blocking command.
 - `src/subscriptions.ts` — re-exports `@showzy/api/subscriptions`.
   Register subscriptions once in `apps/api/src/subscriptions.ts`; both
   API contract checks and worker delivery derive from that array. Do not
@@ -72,9 +74,9 @@ wakeup, polling fallback, graceful drain, and the job host.
   logger + optional Sentry). Keep in lockstep with
   `apps/api/src/observability.ts`. `flushProcessObservability` drains
   Sentry on shutdown.
-- `src/policy.ts` — poll interval, job drain timeout, notify channel,
-  BullMQ prefix and queue name. Maintenance cadence is each job's `cron`. Values change only through an ADR or a
-  protocol-manual patch with a proving test.
+- `src/policy.ts` — poll interval, the job drain timeout and the notify
+  channel. Job cadence is each job's `cron`. Values change only through an ADR
+  or a protocol-manual patch with a proving test.
 
 ## Rules
 
@@ -82,59 +84,42 @@ wakeup, polling fallback, graceful drain, and the job host.
   never reads `process.env` except inside `loadServerConfig`.
 - Do not query `domain_events` / `event_deliveries` directly — go
   through the core libraries.
-- Domain event delivery is not a job runner (ADR-0007/ADR-0012). Maintenance
-  runs on pg-boss (ADR-0041); BullMQ keeps only the assistant turn queue and
-  its reconciler until jobs-T11. Outbox stays on core libraries.
-- Two Redis instances (db.md §6, ADR-0039). The shared Redis (`REDIS_URL`)
-  never persists: it holds plaintext OTP codes among other short-lived state.
-  The BullMQ `maintenance` queue (the reconciler's pass) stays on it and stays
-  safe to miss and re-run; re-upsert its scheduler on every boot. **Durable assistant-turn jobs** live
-  on the dedicated queue Redis (AOF `appendfsync everysec` on a volume,
-  `maxmemory-policy noeviction`): an accepted turn is a Postgres row, and the
-  assistant reconciler rebuilds a lost job from it. Never put a durable job on
-  the shared Redis. Any other durable one-shot job needs its own ticket and
-  its own recovery story — AOF alone is not one. The queue Redis is
-  `config.queueRedis.url` (`REDIS_QUEUE_URL`); the job host opens its own
-  BullMQ connection to it only when the assistant is mounted (SHO-569). Worker-side queue policy (concurrency 4, lock 60 s,
-  `maxStalledCount: 0`) lives in `policy.ts`; the job options a turn is
-  enqueued with (`attempts: 1`, removed on completion and on failure) live
-  with the producer, `enqueueAssistantTurn` in `@showzy/assistant-runtime`.
-- **Shutdown drains turns.** `close()` waits for the assistant worker first,
-  and for at most `ASSISTANT_DRAIN_TIMEOUT_MS` (the turn timeout plus room for
-  a stopped turn's last writes). Past it the process logs
-  `assistant turns still running at the drain timeout` and goes; that turn's
-  row is then the reconciler's to interrupt. BullMQ keeps one close per worker,
-  so the bound is a race against that close, never a second forced one.
+- Domain event delivery is not a job runner (ADR-0007/ADR-0012). Every job —
+  maintenance, the assistant turn, the overdue sweep — runs on pg-boss in
+  Postgres (ADR-0041, SHO-651). Outbox stays on core libraries. There is no
+  BullMQ and no queue Redis: an accepted turn and its job commit in the same
+  transaction, so the job is as durable as the row.
+- One Redis (db.md §6): the shared, non-persistent `REDIS_URL` for the
+  assistant's pauses, budget counters, published events, confirmations and
+  rate limits. Nothing durable goes on it. (`REDIS_QUEUE_URL` is unused
+  residue that SHO-655 removes.)
+- **Shutdown drains jobs.** `close()` drains the one job runner first, for at
+  most `JOB_DRAIN_TIMEOUT_MS` = `ASSISTANT_TURN_ATTEMPT_TIMEOUT_MS` (210 s:
+  the 180 s turn timeout plus room for a stopped turn's last writes), before
+  the outbox loop stops and the object store, Redis and the database close.
+  The runner stops accepting new work first and keeps its own settle margin.
+  Past the bound an in-flight turn's row is the overdue sweep's to interrupt,
+  as any crashed worker's is.
   **Requirement for when infrastructure exists:** the stop grace period the
-  platform gives this process must be at least `ASSISTANT_DRAIN_TIMEOUT_MS`,
-  or a deploy kills turns the drain was waiting for (ADR-0039; no production
+  platform gives this process must be at least `JOB_DRAIN_TIMEOUT_MS`, or a
+  deploy kills turns the drain was waiting for (ADR-0039; no production
   environment yet, so this is recorded, not configured).
-- The assistant processor is `createAssistantTurnProcessor` and the reconciler
-  `createAssistantTurnReconciler`, both from
-  `@showzy/assistant-runtime`, composed in `src/assistant.ts` and mounted by
-  boot on the API's rule (`staffAssistantMount`: `AI_ASSISTANT_KIT` on and a
-  language model configured), with the same `assistant-kit path` log line.
-  The runtime runs against the worker pipeline and the API's registry
-  (`@showzy/api/registry`, `assertPaired()` at boot); its pauses, budget
-  counters and published events use the shared Redis, never the queue Redis.
-  One `composeAssistantTurns` builds both, so a turn and the reconciler that
-  recovers it share one runtime, publisher and budget store. The reconciler is
-  held for the life of the process: its re-enqueue backoff is its memory.
-  The job host only parses the payload and hands it over. A payload that does
-  not parse is dropped, never retried. Whatever the processor throws is logged
-  and the job completes as `errored`: a thrown message would be stored as
-  `failedReason` on the queue Redis, and can name a person or a company.
+- The assistant processor, the recovery helper and the overdue sweep pass come
+  from `@showzy/assistant-runtime`, composed in `src/assistant-jobs.ts` and
+  bound by boot together with `maintenanceHandlers`. A failure reaches pg-boss:
+  the handler throws, the attempt fails with its typed code, and on exhaustion
+  `assistant.interruptTurn` ends the turn and the post-commit hook recovers it.
+  Nothing is swallowed and logged as a successful outcome.
 - The worker is an AI process for assistant turns (ADR-0039): it may import
   `@showzy/assistant-runtime` (and through it `@showzy/ai` and
   `@showzy/assistant-kit`), and from the API only the approved
   `@showzy/api/subscriptions` and `@showzy/api/registry` subpaths — never API
   runtime internals, and nothing provider-related through the API
-  (`showzy/import-boundaries`). The queue name, prefix, payload schema and
-  `jobId` derivation come from the runtime package;
-  `assistant-queue-contract.test.ts` pins its prefix to `BULLMQ_PREFIX`. The
-  payload is the turn's identity only: the processor reads the turn and its
-  company from Postgres, and the actor is the turn's `user_id`. The stop grace
-  period is the drain bullet above; it is stated there and nowhere else.
+  (`showzy/import-boundaries`). The job declarations come from the assistant
+  module through the runtime package's `assistant-jobs.ts` re-export. The
+  payload is the turn's identity only: the processor reads the turn in the
+  job's **recorded company**, and the actor is the turn's `user_id`. The stop
+  grace period is the drain bullet above; it is stated there and nowhere else.
 - OTP codes, tokens, and secrets never reach logs. Process loggers are
   `createProcessLogger` from `@showzy/config`. Sentry is initialized
   only when `SENTRY_DSN` is set; `beforeSend` scrubs the event. Do not

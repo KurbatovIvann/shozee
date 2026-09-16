@@ -16,10 +16,8 @@ import {
   DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
   aiCompanyBudgetKey,
   aiGlobalBudgetKey,
-  assistantTurnJobId,
   assistantTurnMessageId,
   createMemoryAiBudgetStore,
-  createPostgresAssistantStaleTurns,
   createPostgresAssistantTurnForJob,
   createPostgresAssistantTurnStore,
   enforceStaffAssistantBudget,
@@ -113,7 +111,7 @@ async function newConversation(
 async function ageTurn(conversationId: string): Promise<void> {
   const aged = await kit.db.runtime.db
     .update(assistantTurns)
-    .set({ createdAt: sql`now() - interval '10 minutes'` })
+    .set({ createdAt: sql`now() - interval '20 minutes'` })
     .where(eq(assistantTurns.conversationId, conversationId))
     .returning({ id: assistantTurns.id });
   expect(aged.length).toBe(1);
@@ -271,7 +269,7 @@ describe("accepting a turn through the runtime", () => {
     ) {
       return;
     }
-    expect(assistantTurnJobId(again.job)).toBe(assistantTurnJobId(first.job));
+    expect(again.turn).toEqual(first.turn);
     expect(
       (await kitFor().messages.read({ conversationId, bind: annaBind }))
         .messages,
@@ -486,84 +484,6 @@ describe("the budget reservation of an accept", () => {
   });
 });
 
-describe("the reconciler", () => {
-  /**
-   * The job payload is the turn's identity and nothing else, so a lost job is
-   * rebuilt from the row. If the row's kind or command disagreed with what the
-   * accept derived, one turn would have two job ids and run twice.
-   */
-  it("rebuilds from the row alone the job id the accept derived", async () => {
-    const conversationId = await newConversation();
-    const commandId = randomUUID();
-    const request = {
-      kind: "chat" as const,
-      conversationId: conversationId.toUpperCase(),
-      commandId: commandId.toUpperCase(),
-    };
-    const derivedAtAccept = assistantTurnJobId(request);
-
-    const accepted = await turns().accept({
-      ...request,
-      bind: annaBind,
-      text: "привіт",
-      sessionId: "session-anna",
-      ...nothingReserved,
-    });
-    if (accepted.outcome !== "accepted") {
-      throw new Error(`expected accepted, got ${accepted.outcome}`);
-    }
-    // The job was lost and the turn never started.
-    await ageTurn(conversationId);
-
-    const stale = (
-      await createPostgresAssistantStaleTurns({ pipeline: kit.pipeline }).list({
-        requestId: randomUUID(),
-      })
-    ).find((row) => row.turn.conversationId === conversationId);
-
-    expect(stale).toMatchObject({
-      companyId: kitIdentities.companies.a,
-      staleness: "queued_without_start",
-      turn: { kind: "chat", conversationId, commandId },
-    });
-    expect(assistantTurnJobId(accepted.job)).toBe(derivedAtAccept);
-    expect(stale === undefined ? null : assistantTurnJobId(stale.job)).toBe(
-      derivedAtAccept,
-    );
-  });
-
-  it("stops listing a turn once it has started and finished", async () => {
-    const conversationId = await newConversation();
-    const accepted = await turns().accept({
-      kind: "chat",
-      conversationId,
-      commandId: randomUUID(),
-      bind: annaBind,
-      text: "привіт",
-      sessionId: "session-anna",
-      ...nothingReserved,
-    });
-    if (accepted.outcome !== "accepted") {
-      throw new Error(`expected accepted, got ${accepted.outcome}`);
-    }
-    await ageTurn(conversationId);
-
-    expect((await turns().start(accepted.turn)).outcome).toBe("started");
-    expect(await turns().finish(accepted.turn, "interrupted")).toEqual({
-      outcome: "finished",
-      status: "interrupted",
-      releasedHold: hold,
-    });
-
-    const listed = await createPostgresAssistantStaleTurns({
-      pipeline: kit.pipeline,
-    }).list({ requestId: randomUUID() });
-    expect(
-      listed.some((row) => row.turn.conversationId === conversationId),
-    ).toBe(false);
-  });
-});
-
 /**
  * What the worker will do with a job: read the turn it names, and run the
  * turn's actions as the caller that read produced — the row's user, company
@@ -589,7 +509,8 @@ describe("the turn a job names", () => {
     });
 
     const found = await forJob.read({
-      job: accepted.job,
+      companyId: kitIdentities.companies.a,
+      turn: accepted.turn,
       requestId: randomUUID(),
     });
 
@@ -623,7 +544,11 @@ describe("the turn a job names", () => {
     expect((await asTurn.start(found.turn)).outcome).toBe("started");
     // A started turn gives no caller: only a queued turn is started from one.
     expect(
-      await forJob.read({ job: accepted.job, requestId: randomUUID() }),
+      await forJob.read({
+        companyId: kitIdentities.companies.a,
+        turn: accepted.turn,
+        requestId: randomUUID(),
+      }),
     ).toMatchObject({ status: "running", caller: null });
     expect(await asTurn.finish(found.turn, "done")).toEqual({
       outcome: "finished",
@@ -636,7 +561,11 @@ describe("the turn a job names", () => {
       releasedHold: null,
     });
     expect(
-      await forJob.read({ job: accepted.job, requestId: randomUUID() }),
+      await forJob.read({
+        companyId: kitIdentities.companies.a,
+        turn: accepted.turn,
+        requestId: randomUUID(),
+      }),
     ).toMatchObject({
       status: "done",
       budgetHold: { companyReservedUsd: 0, globalReservedUsd: 0 },
@@ -693,14 +622,14 @@ describe("the turn a job names", () => {
         throw new Error(`expected accepted, got ${accepted.outcome}`);
       }
       const found = await forJob.read({
-        job: accepted.job,
+        companyId: kitIdentities.companies.a,
+        turn: accepted.turn,
         requestId: randomUUID(),
       });
       if (found === null || found.caller === null) {
         throw new Error("expected a verified caller for a queued turn");
       }
       return {
-        job: accepted.job,
         turn: found.turn,
         asTurn: createPostgresAssistantTurnStore(
           { pipeline: kit.pipeline },
@@ -725,19 +654,54 @@ describe("the turn a job names", () => {
       running.asTurn.finish(running.turn, "done"),
     ).rejects.toBeInstanceOf(PermissionDeniedError);
     expect(
-      await forJob.read({ job: queued.job, requestId: randomUUID() }),
+      await forJob.read({
+        companyId: kitIdentities.companies.a,
+        turn: queued.turn,
+        requestId: randomUUID(),
+      }),
     ).toMatchObject({ status: "queued", budgetHold: hold });
     expect(
-      await forJob.read({ job: running.job, requestId: randomUUID() }),
+      await forJob.read({
+        companyId: kitIdentities.companies.a,
+        turn: running.turn,
+        requestId: randomUUID(),
+      }),
     ).toMatchObject({ status: "running", budgetHold: hold });
+  });
+
+  it("refuses to start a queued turn past its start deadline, and leaves it queued", async () => {
+    const conversationId = await newConversation();
+    const accepted = await turns().accept({
+      kind: "chat",
+      conversationId,
+      commandId: randomUUID(),
+      bind: annaBind,
+      text: "привіт",
+      sessionId: "session-anna",
+      ...nothingReserved,
+    });
+    if (accepted.outcome !== "accepted") {
+      throw new Error(`expected accepted, got ${accepted.outcome}`);
+    }
+    await ageTurn(conversationId);
+
+    expect(await turns().start(accepted.turn)).toEqual({ outcome: "expired" });
+
+    expect(
+      await createPostgresAssistantTurnForJob({ pipeline: kit.pipeline }).read({
+        companyId: kitIdentities.companies.a,
+        turn: accepted.turn,
+        requestId: randomUUID(),
+      }),
+    ).toMatchObject({ status: "queued", budgetHold: hold });
   });
 
   it("finds nothing for a job nobody accepted", async () => {
     expect(
       await createPostgresAssistantTurnForJob({ pipeline: kit.pipeline }).read({
-        job: {
-          version: 1,
-          kind: "chat",
+        companyId: kitIdentities.companies.a,
+        turn: {
+          kind: "chat" as const,
           conversationId: randomUUID(),
           commandId: randomUUID(),
         },
