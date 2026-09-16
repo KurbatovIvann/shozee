@@ -11,12 +11,15 @@ import {
   aiGlobalBudgetKey,
   assistantSweepOverdueTurnsJob,
   assistantTurnJob,
+  createPostgresAssistantTurnStore,
   createRedisAiBudgetStore,
+  type staffAssistantMount,
 } from "@showzy/assistant-runtime";
 import { createProcessLogger, loadServerConfig } from "@showzy/config";
 import {
   defineJob,
   executeAction,
+  type ActionPipelineDeps,
   type ImplementedAction,
   type Job,
 } from "@showzy/core";
@@ -84,6 +87,61 @@ import {
   maintenanceHandler,
   workerJobs,
 } from "./maintenance.js";
+import { createActionPipeline } from "./pipeline.js";
+import {
+  createRedisConfirmationStore,
+  createRedisRateLimitStore,
+} from "./stores/redis.js";
+
+type AssistantModel = NonNullable<
+  ReturnType<typeof staffAssistantMount>["model"]
+>;
+type StreamingModel = Extract<
+  AssistantModel,
+  { readonly specificationVersion: "v4" }
+>;
+type ModelStreamPart =
+  Awaited<
+    ReturnType<StreamingModel["doStream"]>
+  >["stream"] extends ReadableStream<infer Part>
+    ? Part
+    : never;
+
+const poolScenario = vi.hoisted(() => ({
+  armed: undefined as
+    | {
+        readonly model: unknown;
+        onWorkerDbClient(client: { readonly pool: unknown }): void;
+      }
+    | undefined,
+}));
+
+vi.mock("@showzy/db", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@showzy/db")>();
+  return {
+    ...actual,
+    createDbClient: (options: Parameters<typeof actual.createDbClient>[0]) => {
+      const client = actual.createDbClient(options);
+      poolScenario.armed?.onWorkerDbClient(client);
+      return client;
+    },
+  };
+});
+
+vi.mock("@showzy/assistant-runtime", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@showzy/assistant-runtime")>();
+  return {
+    ...actual,
+    staffAssistantMount: (
+      ai: Parameters<typeof actual.staffAssistantMount>[0],
+    ) => {
+      const mount = actual.staffAssistantMount(ai);
+      const armed = poolScenario.armed;
+      return armed === undefined ? mount : { ...mount, model: armed.model };
+    },
+  };
+});
 
 interface ArmedFailedBoot {
   listenerStart(): Promise<void>;
@@ -911,6 +969,375 @@ describe("apps/worker assistant jobs at boot (SHO-651)", () => {
       );
     } finally {
       await booted.close();
+      await redis.quit();
+    }
+  }, 150_000);
+});
+
+describe("apps/worker one pool under concurrent assistant turns (SHO-709)", () => {
+  const TURNS = assistantTurnJob.concurrency;
+  const PARALLEL_TOOL_CALLS = 4;
+  const TOOL_STEPS = 2;
+  const LIST_TOOL = "customers_list_customers";
+  const STUB_USAGE = {
+    inputTokens: { total: 10, noCache: 10, cacheRead: 0, cacheWrite: 0 },
+    outputTokens: { total: 5, text: 5, reasoning: 0 },
+  };
+
+  interface PoolObservation {
+    checkouts: number;
+    peakCheckedOut: number;
+    peakOpenTransactions: number;
+    longestCheckoutMs: number;
+    queuedCheckouts: number;
+    longestQueuedMs: number;
+    transactionsAtPeak: number;
+    readonly checkoutFailures: string[];
+  }
+
+  type PoolCheckoutCallback = (
+    error: Error | undefined,
+    client: pg.PoolClient | undefined,
+    release: (releaseError?: Error | boolean) => void,
+  ) => void;
+
+  function meterPool(pool: pg.Pool): PoolObservation {
+    const seen: PoolObservation = {
+      checkouts: 0,
+      peakCheckedOut: 0,
+      peakOpenTransactions: 0,
+      longestCheckoutMs: 0,
+      queuedCheckouts: 0,
+      longestQueuedMs: 0,
+      transactionsAtPeak: 0,
+      checkoutFailures: [],
+    };
+    let openTransactions = 0;
+    const connect = pool.connect.bind(pool);
+    const poolIsExhausted = () =>
+      pool.idleCount === 0 && pool.totalCount >= pool.options.max;
+    const granted = (startedAt: number, queued: boolean) => {
+      const waitedMs = performance.now() - startedAt;
+      seen.checkouts += 1;
+      seen.longestCheckoutMs = Math.max(seen.longestCheckoutMs, waitedMs);
+      if (queued) {
+        seen.queuedCheckouts += 1;
+        seen.longestQueuedMs = Math.max(seen.longestQueuedMs, waitedMs);
+      }
+      const checkedOut = pool.totalCount - pool.idleCount;
+      if (checkedOut > seen.peakCheckedOut) {
+        seen.peakCheckedOut = checkedOut;
+        seen.transactionsAtPeak = openTransactions;
+      }
+    };
+    const failed = (error: unknown) => {
+      seen.checkoutFailures.push(String(error));
+    };
+    Reflect.set(pool, "connect", (callback?: PoolCheckoutCallback) => {
+      const startedAt = performance.now();
+      const queued = poolIsExhausted();
+      if (callback !== undefined) {
+        connect((error, client, release) => {
+          if (error === undefined) {
+            granted(startedAt, queued);
+          } else {
+            failed(error);
+          }
+          callback(error, client, release);
+        });
+        return undefined;
+      }
+      return connect().then(
+        (client) => {
+          openTransactions += 1;
+          granted(startedAt, queued);
+          seen.peakOpenTransactions = Math.max(
+            seen.peakOpenTransactions,
+            openTransactions,
+          );
+          const release = client.release.bind(client);
+          client.release = (releaseError?: Error | boolean) => {
+            openTransactions -= 1;
+            release(releaseError);
+          };
+          return client;
+        },
+        (error: unknown) => {
+          failed(error);
+          throw error;
+        },
+      );
+    });
+    return seen;
+  }
+
+  function streamOf(
+    parts: readonly ModelStreamPart[],
+  ): ReadableStream<ModelStreamPart> {
+    return new ReadableStream({
+      start(controller) {
+        for (const part of parts) {
+          controller.enqueue(part);
+        }
+        controller.close();
+      },
+    });
+  }
+
+  function parallelToolCallStep(step: number): ModelStreamPart[] {
+    const calls = Array.from({ length: PARALLEL_TOOL_CALLS }, (_, call) => {
+      const id = `toolu_s${String(step)}c${String(call)}`;
+      const parts: ModelStreamPart[] = [
+        { type: "tool-input-start", id, toolName: LIST_TOOL },
+        { type: "tool-input-delta", id, delta: "{}" },
+        { type: "tool-input-end", id },
+        { type: "tool-call", toolCallId: id, toolName: LIST_TOOL, input: "{}" },
+      ];
+      return parts;
+    });
+    return [
+      { type: "stream-start", warnings: [] },
+      ...calls.flat(),
+      {
+        type: "finish",
+        finishReason: { unified: "tool-calls", raw: "tool_use" },
+        usage: STUB_USAGE,
+      },
+    ];
+  }
+
+  function replyStep(): ModelStreamPart[] {
+    return [
+      { type: "stream-start", warnings: [] },
+      { type: "text-start", id: "t1" },
+      { type: "text-delta", id: "t1", delta: "Ось клієнти." },
+      { type: "text-end", id: "t1" },
+      {
+        type: "finish",
+        finishReason: { unified: "stop", raw: "end_turn" },
+        usage: STUB_USAGE,
+      },
+    ];
+  }
+
+  function turnsInStepTogether(parties: number) {
+    const waiting = new Map<number, (() => void)[]>();
+    return (step: number) =>
+      new Promise<void>((resolve) => {
+        const arrived = [...(waiting.get(step) ?? []), resolve];
+        waiting.set(step, arrived);
+        if (arrived.length === parties) {
+          for (const release of arrived) {
+            release();
+          }
+        }
+      });
+  }
+
+  function parallelToolModel(repliedAfter: unknown[][]): StreamingModel {
+    const together = turnsInStepTogether(TURNS);
+    return {
+      specificationVersion: "v4",
+      provider: "sho-709-scenario",
+      modelId: "parallel-tool-calls",
+      supportedUrls: {},
+      doGenerate: () =>
+        Promise.reject(new Error("the assistant turn only streams")),
+      async doStream(options) {
+        const step = options.prompt.filter(
+          (message) => message.role === "tool",
+        ).length;
+        await together(step);
+        if (step >= TOOL_STEPS) {
+          repliedAfter.push(
+            options.prompt.flatMap((message) =>
+              message.role === "tool"
+                ? message.content.flatMap((part) =>
+                    part.type === "tool-result" ? [part.output] : [],
+                  )
+                : [],
+            ),
+          );
+        }
+        return {
+          stream: streamOf(
+            step < TOOL_STEPS ? parallelToolCallStep(step) : replyStep(),
+          ),
+        };
+      },
+    };
+  }
+
+  async function acceptChatTurn(pipeline: ActionPipelineDeps) {
+    const companyId = kitIdentities.companies.a;
+    const userId = kitIdentities.users.anna;
+    const conversationId = randomUUID();
+    const commandId = randomUUID();
+    await kit.db.runtime.db
+      .insert(assistantConversations)
+      .values({ id: conversationId, companyId, userId });
+    const result = await createPostgresAssistantTurnStore(
+      { pipeline },
+      {
+        userId,
+        companySelector: companyId,
+        requestId: randomUUID(),
+        clientIp: "127.0.0.1",
+      },
+    ).accept({
+      kind: "chat",
+      text: "покажи клієнтів",
+      conversationId,
+      commandId,
+      bind: `${userId}:${companyId}`,
+      sessionId: `session-${commandId}`,
+      budgetHold: {
+        companyReservedUsd: 0.1,
+        globalReservedUsd: 0.1,
+        kyivDate: "2026-09-16",
+      },
+      releaseUnusedHold: () => Promise.resolve(),
+    });
+    if (result.outcome !== "accepted") {
+      throw new Error(`expected an accepted turn, got ${result.outcome}`);
+    }
+    return commandId;
+  }
+
+  async function turnStatus(commandId: string) {
+    const row = (
+      await kit.db.runtime.db
+        .select({ status: assistantTurns.status })
+        .from(assistantTurns)
+        .where(eq(assistantTurns.commandId, commandId))
+    )[0];
+    return row?.status;
+  }
+
+  async function jobStates(maintenanceIds: readonly string[], since: Date) {
+    const result = await kit.db.admin.query<{ name: string; state: string }>(
+      `SELECT name, state FROM pgboss.job
+       WHERE id = ANY($1::uuid[]) OR (name = $2 AND created_on >= $3)`,
+      [[...maintenanceIds], assistantTurnJob.name, since],
+    );
+    return result.rows;
+  }
+
+  it("runs four turns of parallel tool calls with maintenance on the default pool: no checkout fails and every queue completes", async () => {
+    const lines: string[] = [];
+    const logger = createProcessLogger({
+      name: "worker-pool-scenario",
+      destination: {
+        write(chunk: string) {
+          lines.push(chunk);
+        },
+      },
+    });
+    const observations: PoolObservation[] = [];
+    const repliedAfter: unknown[][] = [];
+    poolScenario.armed = {
+      model: parallelToolModel(repliedAfter),
+      onWorkerDbClient(client) {
+        if (client.pool instanceof pg.Pool) {
+          observations.push(meterPool(client.pool));
+        }
+      },
+    };
+    const config = loadServerConfig({
+      ...testEnv(),
+      AI_ASSISTANT_KIT: "1",
+      ANTHROPIC_API_KEY: "ANTHROPIC_KEY_NEVER_CALLED_IN_TESTS",
+    });
+    const since = (
+      await kit.db.admin.query<{ now: Date }>("SELECT now() AS now")
+    ).rows[0]?.now;
+    if (since === undefined) {
+      throw new Error("database clock unavailable");
+    }
+    const redis = new Redis(redisUrl);
+    let booted: Awaited<ReturnType<typeof bootWorker>> | undefined;
+    let apiRunner: JobRunner | undefined;
+    try {
+      booted = await bootWorker(config, {
+        logger,
+        pollIntervalMs: 100,
+        jobIntervals: {
+          pollingSeconds: 0.5,
+          superviseSeconds: 1,
+          cronSeconds: 1,
+        },
+      });
+      poolScenario.armed = undefined;
+      const [observed] = observations;
+      expect(observations).toHaveLength(1);
+      if (observed === undefined) {
+        return;
+      }
+      const sender = await openJobRunner(
+        { db: kit.db.runtime.db, jobs: workerJobs, onError: () => undefined },
+        "api",
+      );
+      apiRunner = sender;
+
+      const acceptPipeline = createActionPipeline({
+        db: kit.db.runtime.db,
+        logger: silent,
+        jobs: sender.port,
+        rateLimitStore: createRedisRateLimitStore(redis),
+        confirmationStore: createRedisConfirmationStore(redis),
+        ipHmacSecret: "dev-only-ip-hmac-secret-change-me-00",
+      });
+      const maintenance = MAINTENANCE_JOB_NAMES.map((name) => {
+        const job = workerJobs.find((declared) => declared.name === name);
+        if (job === undefined) {
+          throw new Error(`${name} is not a worker job`);
+        }
+        return buildJobEnvelope(job, { companyId: null, payload: {} });
+      });
+      await kit.db.runtime.db.transaction(async (tx) => {
+        await sender.port.enqueue(tx, maintenance);
+      });
+      const turns = await Promise.all(
+        Array.from({ length: TURNS }, () => acceptChatTurn(acceptPipeline)),
+      );
+
+      await waitUntil(async () => {
+        const statuses = await Promise.all(turns.map(turnStatus));
+        return statuses.every(
+          (status) => status === "done" || status === "failed",
+        );
+      }, 120_000);
+      await waitUntil(async () => {
+        const states = await jobStates(
+          maintenance.map(({ id }) => id),
+          since,
+        );
+        return (
+          states.length === MAINTENANCE_JOB_NAMES.length + TURNS &&
+          states.every(({ state }) => state === "completed")
+        );
+      }, 60_000);
+
+      expect(await Promise.all(turns.map(turnStatus))).toEqual(
+        turns.map(() => "done"),
+      );
+      expect(repliedAfter).toEqual(
+        turns.map(() =>
+          Array.from(
+            { length: PARALLEL_TOOL_CALLS * TOOL_STEPS },
+            (): unknown => expect.objectContaining({ type: "json" }),
+          ),
+        ),
+      );
+      expect(observed.checkoutFailures).toEqual([]);
+      expect(observed.peakCheckedOut).toBeGreaterThan(TURNS);
+      expect(lines.join("\n")).not.toMatch(
+        /job runner error|idle postgres pool client error/,
+      );
+    } finally {
+      poolScenario.armed = undefined;
+      await booted?.close();
+      await apiRunner?.close();
       await redis.quit();
     }
   }, 150_000);
