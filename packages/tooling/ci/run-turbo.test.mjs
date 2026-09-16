@@ -12,6 +12,11 @@ import {
 
 const script = fileURLToPath(new URL("./run-turbo.mjs", import.meta.url));
 
+const inheritedAffectedScmEnv = {
+  TURBO_SCM_BASE: "5257f3dfc634343bf861715ee5e04d75fc323c72",
+  TURBO_SCM_HEAD: "stale-inherited-head",
+};
+
 /**
  * One comparison SHA that exists in this clone and equals production `scmBase`.
  *
@@ -57,9 +62,10 @@ function existingPrComparisonSha() {
   return headSha;
 }
 
-test("parseRunTurboArgv strips --print-only and keeps extra turbo args", () => {
+test("parseRunTurboArgv strips its own flags and keeps extra turbo args", () => {
   assert.deepEqual(parseRunTurboArgv(["typecheck", "--print-only"]), {
     printOnly: true,
+    alwaysFull: false,
     task: "typecheck",
     extraArgs: [],
   });
@@ -67,10 +73,79 @@ test("parseRunTurboArgv strips --print-only and keeps extra turbo args", () => {
     parseRunTurboArgv(["build", "--filter=@showzy/web", "--print-only"]),
     {
       printOnly: true,
+      alwaysFull: false,
       task: "build",
       extraArgs: ["--filter=@showzy/web"],
     },
   );
+  assert.deepEqual(
+    parseRunTurboArgv([
+      "e2e-smoke",
+      "--always-full",
+      "--filter=@showzy/web",
+      "--print-only",
+    ]),
+    {
+      printOnly: true,
+      alwaysFull: true,
+      task: "e2e-smoke",
+      extraArgs: ["--filter=@showzy/web"],
+    },
+  );
+});
+
+test("--always-full runs the whole workspace even when a PR base resolves", () => {
+  const baseSha = existingPrComparisonSha();
+  const result = spawnSync(
+    process.execPath,
+    [script, "e2e-smoke", "--always-full", "--print-only"],
+    {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        ...inheritedAffectedScmEnv,
+        GITHUB_EVENT_NAME: "pull_request",
+        GITHUB_REF: "refs/pull/1/merge",
+        GITHUB_BASE_REF: "main",
+        TURBO_PR_BASE_SHA: baseSha,
+        GITHUB_STEP_SUMMARY: "",
+      },
+    },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(
+    result.stdout
+      .trim()
+      .split("\n")
+      .find((line) => line.startsWith("{")) ?? "{}",
+  );
+  assert.equal(payload.mode, "full");
+  assert.equal(payload.reason, "always-full-uncacheable-task");
+  assert.ok(!payload.args.includes("--affected"));
+  assert.equal(payload.scmBase, null);
+  assert.equal(payload.scmHead, null);
+});
+
+test("a --cache in extra args is refused so it cannot outrank the helper", () => {
+  for (const override of ["--cache=local:rw", "--cache"]) {
+    const result = spawnSync(
+      process.execPath,
+      [script, "test:unit", override, "--print-only"],
+      {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          GITHUB_EVENT_NAME: "push",
+          GITHUB_REF: "refs/heads/main",
+          GITHUB_BASE_REF: "",
+          TURBO_PR_BASE_SHA: "",
+          GITHUB_STEP_SUMMARY: "",
+        },
+      },
+    );
+    assert.equal(result.status, 2, result.stdout);
+    assert.match(result.stderr, /owns the turbo cache mode/);
+  }
 });
 
 test("runTurboCli print-only: PR with missing objects falls back to full", () => {
@@ -99,6 +174,7 @@ test("CLI print-only on push to main is full (no --affected)", () => {
     encoding: "utf8",
     env: {
       ...process.env,
+      ...inheritedAffectedScmEnv,
       GITHUB_EVENT_NAME: "push",
       GITHUB_REF: "refs/heads/main",
       GITHUB_BASE_REF: "",
@@ -116,8 +192,10 @@ test("CLI print-only on push to main is full (no --affected)", () => {
   assert.ok(jsonLine);
   const payload = JSON.parse(jsonLine);
   assert.equal(payload.mode, "full");
-  assert.ok(payload.args.includes("--cache=local:rw"));
+  assert.ok(payload.args.includes("--cache=local:w"));
   assert.ok(!payload.args.includes("--affected"));
+  assert.equal(payload.scmBase, null);
+  assert.equal(payload.scmHead, null);
 });
 
 test("CLI print-only on pull_request with a resolvable origin/main uses affected", () => {
@@ -126,6 +204,7 @@ test("CLI print-only on pull_request with a resolvable origin/main uses affected
     encoding: "utf8",
     env: {
       ...process.env,
+      ...inheritedAffectedScmEnv,
       GITHUB_EVENT_NAME: "pull_request",
       GITHUB_REF: "refs/pull/9/merge",
       GITHUB_BASE_REF: "main",
@@ -158,6 +237,7 @@ test("CLI print-only on pull_request with an unresolvable SHA is full", () => {
       encoding: "utf8",
       env: {
         ...process.env,
+        ...inheritedAffectedScmEnv,
         GITHUB_EVENT_NAME: "pull_request",
         GITHUB_REF: "refs/pull/9/merge",
         GITHUB_BASE_REF: "this-base-ref-does-not-exist",
@@ -176,4 +256,6 @@ test("CLI print-only on pull_request with an unresolvable SHA is full", () => {
   const payload = JSON.parse(jsonLine);
   assert.equal(payload.mode, "full");
   assert.ok(!payload.args.includes("--affected"));
+  assert.equal(payload.scmBase, null);
+  assert.equal(payload.scmHead, null);
 });

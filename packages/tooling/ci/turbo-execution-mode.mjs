@@ -8,9 +8,21 @@
  * and Turbo refuses `#topo` / `^build` walks on that graph. Pushes to `main`
  * and any unresolved/shallow base run the full workspace suite. Remote cache
  * is never required.
+ *
+ * CI never reads a cache entry (SHO-708). Because the graph is cyclic and no
+ * task declares `^task` edges, a task hash covers only its own package's
+ * files: a dependent keeps its hash when a dependency's source changes, so a
+ * readable cache replays a stale pass and reports green while the dependent is
+ * red. `local:w` writes entries and reads none, which is the same mode the
+ * local gate uses (`.claude/scripts/verify.mjs`, SHO-699).
+ *
+ * A task whose turbo.json entry is `cache: false` (e2e-smoke) must never be
+ * narrowed by `--affected`: it is a required gate, and an empty selection exits
+ * 0. `alwaysFullExecution()` states that explicitly instead of relying on the
+ * job's shallow checkout leaving the comparison base unresolved.
  */
 
-export const TURBO_LOCAL_CACHE = "local:rw";
+export const TURBO_LOCAL_CACHE = "local:w";
 
 /**
  * @typedef {"full" | "affected"} TurboExecutionMode
@@ -39,6 +51,27 @@ export function isMainRef(ref) {
 }
 
 /**
+ * @returns {TurboExecutionDecision}
+ */
+export function alwaysFullExecution() {
+  return { mode: "full", reason: "always-full-uncacheable-task" };
+}
+
+/**
+ * A `--cache=` in extra args is appended after the helper's own flag and wins,
+ * which is how a readable cache drifts back into CI.
+ *
+ * @param {string[]} extraArgs
+ * @returns {string | null}
+ */
+export function findCacheOverride(extraArgs) {
+  return (
+    extraArgs.find((arg) => arg === "--cache" || arg.startsWith("--cache=")) ??
+    null
+  );
+}
+
+/**
  * @param {TurboExecutionInput} input
  * @returns {TurboExecutionDecision}
  */
@@ -62,27 +95,6 @@ export function resolveTurboExecutionMode(input) {
   }
 
   return { mode: "full", reason: "non-pr-event" };
-}
-
-/**
- * GitHub Actions cache for `.turbo` uses `github.token`. Do not restore or
- * save on untrusted fork PRs (no extra cache credentials, no TURBO_TOKEN).
- *
- * @param {{
- *   eventName: string | undefined,
- *   headRepo: string | undefined,
- *   originRepo: string | undefined,
- * }} input
- */
-export function shouldPersistTurboCache(input) {
-  if (input.eventName === "pull_request") {
-    return (
-      Boolean(input.headRepo) &&
-      Boolean(input.originRepo) &&
-      input.headRepo === input.originRepo
-    );
-  }
-  return true;
 }
 
 /**
@@ -145,7 +157,10 @@ export function buildTurboRunArgs(task, decision, extraArgs = []) {
  */
 export function buildTurboRunEnv(decision, env = process.env) {
   if (decision.mode !== "affected" || !decision.scmBase) {
-    return { ...env };
+    const fullEnv = { ...env };
+    delete fullEnv.TURBO_SCM_BASE;
+    delete fullEnv.TURBO_SCM_HEAD;
+    return fullEnv;
   }
   return {
     ...env,

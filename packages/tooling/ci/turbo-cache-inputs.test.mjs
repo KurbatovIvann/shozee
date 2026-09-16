@@ -13,10 +13,7 @@ const repoRoot = path.resolve(
 const turbo = JSON.parse(
   fs.readFileSync(path.join(repoRoot, "turbo.json"), "utf8"),
 );
-const cacheAction = fs.readFileSync(
-  path.join(repoRoot, ".github/actions/turbo-local-cache/action.yml"),
-  "utf8",
-);
+const workflowDir = path.join(repoRoot, ".github");
 
 const REQUIRED_GLOBAL_INPUTS = [
   "pnpm-lock.yaml",
@@ -140,16 +137,16 @@ test("turbo build and export:web dry-run succeed with existing package cycles", 
   }
 });
 
-test(".turbo GitHub cache is keyed on lockfile/turbo/tooling and skips forks", () => {
-  assert.match(cacheAction, /path:\s+\.turbo/);
-  assert.match(cacheAction, /hashFiles\('pnpm-lock\.yaml'/);
-  assert.match(cacheAction, /turbo\.json/);
-  assert.match(cacheAction, /packages\/tooling\/tsconfig\/base\.json/);
-  assert.match(cacheAction, /packages\/tooling\/eslint\/base\.mjs/);
-  assert.match(
-    cacheAction,
-    /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/,
-  );
-  assert.doesNotMatch(cacheAction, /path:\s*node_modules/);
-  assert.doesNotMatch(cacheAction, /TURBO_TOKEN:/);
+test("no GitHub Actions cache carries .turbo into a CI run", () => {
+  const sources = fs
+    .readdirSync(workflowDir, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".yml"))
+    .map((entry) =>
+      fs.readFileSync(path.join(entry.parentPath, entry.name), "utf8"),
+    );
+  assert.ok(sources.length > 0);
+  for (const source of sources) {
+    assert.doesNotMatch(source, /path:\s+\.turbo/);
+    assert.doesNotMatch(source, /TURBO_TOKEN:/);
+  }
 });

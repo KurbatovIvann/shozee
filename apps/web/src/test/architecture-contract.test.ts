@@ -250,14 +250,14 @@ describe("CI smoke contract (SHO-331)", () => {
     // Inspect the e2e-smoke job body. Whole-file `/echo/` is too broad:
     // T1 records JOB_START_EPOCH with echo on every job, including this one.
     const e2eSmoke = extractJob(ci, "e2e-smoke");
-    expect(e2eSmoke).toContain("turbo run e2e-smoke");
+    expect(e2eSmoke).toContain("run-turbo.mjs e2e-smoke");
     expect(e2eSmoke).toContain("playwright install");
     expect(e2eSmoke).not.toMatch(/Placeholder — phase-aware e2e/);
     const smokeCommand = e2eSmoke
       .split("\n")
       .find((line) => /run:/.test(line) && /e2e-smoke/.test(line));
     expect(smokeCommand).toBeDefined();
-    expect(smokeCommand).toMatch(/turbo run e2e-smoke/);
+    expect(smokeCommand).toMatch(/run-turbo\.mjs e2e-smoke/);
     expect(smokeCommand).not.toMatch(/echo/);
 
     expect(protection).not.toMatch(/placeholder until fnd-T51/);

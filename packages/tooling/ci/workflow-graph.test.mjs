@@ -113,16 +113,46 @@ function jobIds(source) {
   );
 }
 
-const turboCacheActionPath = path.join(
-  repoRoot,
-  ".github/actions/turbo-local-cache/action.yml",
-);
+/**
+ * Every shell command a workflow runs, including the lines of a `run: |` block
+ * scalar — a guard that only reads single-line `run:` steps is evaded by one.
+ * @param {string} source
+ * @returns {string[]}
+ */
+function runStepCommands(source) {
+  const lines = source.split("\n");
+  /** @type {string[]} */
+  const commands = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const match = lines[index].match(/^(\s*)(?:- )?run:\s*(.*)$/);
+    if (!match) {
+      continue;
+    }
+    const indent = match[1].length;
+    const inline = match[2].trim();
+    if (!inline.startsWith("|") && !inline.startsWith(">")) {
+      commands.push(inline);
+      continue;
+    }
+    for (let body = index + 1; body < lines.length; body += 1) {
+      const line = lines[body];
+      if (line.trim() === "") {
+        continue;
+      }
+      if ((line.match(/^\s*/)?.[0].length ?? 0) <= indent) {
+        break;
+      }
+      commands.push(line.trim());
+      index = body;
+    }
+  }
+  return commands;
+}
 
 const TURBO_TASK_JOBS = ["typecheck", "lint", "test-unit", "build-smoke"];
 
 const workflow = fs.readFileSync(workflowPath, "utf8");
 const setupAction = fs.readFileSync(setupActionPath, "utf8");
-const turboCacheAction = fs.readFileSync(turboCacheActionPath, "utf8");
 
 test("CI workflow keeps concurrency cancellation and has no retries", () => {
   assert.match(workflow, /group:\s+ci-\$\{\{ github\.ref \}\}/);
@@ -219,7 +249,7 @@ test("secret-scan and the other named gates remain independent workers", () => {
   assert.match(extractJob(workflow, "bundle-probe"), /bundle:probe/);
   const e2eSmoke = extractJob(workflow, "e2e-smoke");
   assert.match(e2eSmoke, /playwright install --with-deps chromium/);
-  assert.match(e2eSmoke, /e2e-smoke --filter=@showzy\/web/);
+  assert.match(e2eSmoke, /e2e-smoke --always-full --filter=@showzy\/web/);
   assert.doesNotMatch(e2eSmoke, /Placeholder/);
 });
 
@@ -283,30 +313,75 @@ test("setup action caches the pnpm store and not node_modules", () => {
   assert.doesNotMatch(setupAction, /actions\/cache@/);
 });
 
-test("Turbo jobs persist keyed .turbo cache and use affected-or-full helper", () => {
+test("Turbo jobs use the affected-or-full helper and restore no .turbo cache", () => {
   for (const name of TURBO_TASK_JOBS) {
     const block = extractJob(workflow, name);
     assert.match(block, /fetch-depth:\s+0/);
     assert.match(block, /Fetch PR base for Turbo affected/);
-    assert.match(block, /uses:\s+\.\/\.github\/actions\/turbo-local-cache/);
     assert.match(block, /run-turbo\.mjs/);
     assert.match(block, /TURBO_PR_BASE_SHA/);
   }
 
   const format = extractJob(workflow, "format");
   assert.doesNotMatch(format, /run-turbo\.mjs/);
-  assert.doesNotMatch(format, /turbo-local-cache/);
 
   const e2eSmoke = extractJob(workflow, "e2e-smoke");
-  assert.doesNotMatch(e2eSmoke, /run-turbo\.mjs/);
-  assert.doesNotMatch(e2eSmoke, /turbo-local-cache/);
-  assert.match(e2eSmoke, /turbo run e2e-smoke --filter=@showzy\/web/);
+  assert.match(
+    e2eSmoke,
+    /run-turbo\.mjs e2e-smoke --always-full --filter=@showzy\/web/,
+    "a cache: false required gate must state full execution, not inherit it from an unresolved base",
+  );
 
   assert.doesNotMatch(workflow, /TURBO_TOKEN:/);
   assert.doesNotMatch(workflow, /secrets\.TURBO_TOKEN/);
-  assert.match(turboCacheAction, /path:\s+\.turbo/);
-  assert.doesNotMatch(turboCacheAction, /path:\s*node_modules/);
+  assert.doesNotMatch(workflow, /turbo-local-cache/);
   assert.doesNotMatch(setupAction, /path:\s+\.turbo/);
+  assert.doesNotMatch(workflow, /actions:\s+write/);
+});
+
+test("no CI step spawns turbo outside the one execution-mode helper", () => {
+  const commands = runStepCommands(workflow);
+  assert.ok(commands.some((command) => command.includes("run-turbo.mjs")));
+  const directSpawns = commands.filter((command) =>
+    /\b(?:pnpm|npx|yarn)\s+(?:exec\s+)?turbo\b/.test(command),
+  );
+  assert.deepEqual(
+    directSpawns,
+    [],
+    "a turbo step outside run-turbo.mjs can drift back to a readable cache",
+  );
+  const cacheOverrides = commands.filter(
+    (command) => command.includes("run-turbo.mjs") && /--cache\b/.test(command),
+  );
+  assert.deepEqual(
+    cacheOverrides,
+    [],
+    "run-turbo.mjs owns the cache mode; an extra --cache would win",
+  );
+});
+
+test("the turbo guard reads block scalars, not only single-line run steps", () => {
+  const evasion = `  sneak:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build
+        run: |
+          echo building
+          pnpm exec turbo run test:unit --cache=local:rw
+      - name: After
+        run: echo done
+`;
+  const commands = runStepCommands(evasion);
+  assert.deepEqual(commands, [
+    "echo building",
+    "pnpm exec turbo run test:unit --cache=local:rw",
+    "echo done",
+  ]);
+  assert.ok(
+    commands.some((command) =>
+      /\b(?:pnpm|npx|yarn)\s+(?:exec\s+)?turbo\b/.test(command),
+    ),
+  );
 });
 
 test("publish-job-timing writes a duration summary without failing", () => {
