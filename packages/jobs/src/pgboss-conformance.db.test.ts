@@ -65,4 +65,14 @@ describeJobRunnerConformance({
       [name, id],
     );
   },
+  async refuseScheduleRegistration(database) {
+    await database.admin.query(
+      "REVOKE INSERT ON pgboss.schedule FROM showzy_app",
+    );
+    return async () => {
+      await database.admin.query(
+        "GRANT INSERT ON pgboss.schedule TO showzy_app",
+      );
+    };
+  },
 });

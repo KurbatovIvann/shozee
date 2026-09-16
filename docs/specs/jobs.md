@@ -217,6 +217,10 @@ and is left untouched. Proof: `src/pgboss-schema.db.test.ts`.
   handler whose job is not the declared definition object, a
   declared job without a handler, a duplicate handler, an `onExhausted` binding whose action name differs from
   the declaration, or a non-global `periodic` job throw `CoreInvariantError`.
+- A declaration mismatch throws before registration begins, so `work` may be
+  called again; a `work` that failed after registration began refuses every
+  later `work` call, and the runner must be closed, which drains what did
+  register.
 - A handler receives `{ envelope, signal, run(action, input, fanOutCompanyId?) }`.
   `run` is `executeJobAction` with the handler's job and recorded envelope, so
   every step is a claim, external I/O outside any transaction, or a recording
