@@ -461,6 +461,73 @@ action the turn runs. So:
   charged;
 - signing out ends that person's event streams within 15 s, but not the turn.
 
+## pg-boss acceptance (SHO-715)
+
+The worker path's device scenarios, carried over from the canceled SHO-565
+without its Redis/BullMQ queue operations. A stub-model or database test below
+is technical evidence; it is **not** device acceptance. Every device row is
+**pending owner acceptance** until someone runs it on a phone and fills it in.
+A real defect found here gets its own bounded ticket.
+
+Checked commit `34aaf15c`. CI on `main` at that commit:
+[run 35142355827](https://github.com/KurbatovIvann/shozee/actions/runs/35142355827),
+all 13 jobs green. A push to `main` runs every Turbo task in full (no
+`--affected`), and since SHO-708 the Turbo cache is write-only
+(`--cache=local:w`): that run reports `0 cached` for `typecheck` (29 tasks),
+`lint` (30) and `test-unit` (30), and `test-db` runs the whole DB suite in one
+Vitest process. The one step skipped by selection is `dependency-audit`'s
+`pnpm audit`, which runs only when a push changes a lockfile or manifest.
+
+### Automated evidence
+
+Paths are repository-relative; the quoted name is the `it(...)` title.
+
+| Scenario | Tests | Not covered |
+| --- | --- | --- |
+| 1. Lock, background or force-close mid-turn, reopen | `apps/api/src/http/assistant-kit-events.db.test.ts`: "starts with a snapshot equal to GET /assistant/kit/messages", "shows the current state on a reconnect after an event it missed"; `apps/mobile/src/features/assistant/thread/assistant-thread-merge.test.ts`: "replaces stale state from the snapshot it opens with", "does not bring back a turn a reconnect snapshot showed ended, and reads the window"; `apps/mobile/src/features/assistant/api/assistant-events-client.test.ts`: "ends a connection that has heard nothing for several heartbeats" | No automated test drives the app lifecycle (lock, background, force-close) |
+| 2. Airplane mode, reconnect, same-command retry | `apps/mobile/src/features/assistant/thread/use-assistant-conversation.test.ts`: "sends the same command token, so the server can replay it"; `apps/api/src/http/assistant-kit.test.ts`: "enqueues nothing for a replayed turn whose committed accept already sent its job, and writes nothing twice"; `apps/api/src/stores/assistant-turn-store.db.test.ts`: "replays a repeated command in another casing, names the same job, and writes nothing"; `packages/modules/assistant/src/actions/turns.db.test.ts`: "of the same command: one is accepted and the other replays it", "replays a command whose turn has already ended, rather than running it again"; `apps/api/src/http/assistant-kit-confirmation.db.test.ts`: "replays rather than running again when a confirmed answer is retried" | No automated test toggles the network |
+| 3. Stop or kill a worker mid-turn | `packages/modules/assistant/src/actions/turns.db.test.ts`: "interrupts a running turn past its deadline once, audited in its company"; `packages/assistant-runtime/src/assistant-overdue-sweep.test.ts`: "drains page after page, keyed on the last identity, and sweeps each company once"; `apps/api/src/assistant-turn-processor.db.test.ts`: "stores \`interrupted\` when its deadline fires, and keeps the card committed before it", "replays a write the interrupted turn committed when its continuation repeats it: one customer, not two", "stores nothing after the end, so the continuation's history stands" | No test kills a worker process; the tests start the rows a dead worker leaves |
+| 4. Queued chat and answer turns past the start deadline | `packages/modules/assistant/src/actions/turns.db.test.ts`: "refuses to start a queued turn past its start deadline and ends it as never started", "never ends a turn that already ended, whichever of the two came first"; `packages/modules/assistant/src/actions/sweep-overdue-turns.db.test.ts`: "stores not_started on an answer turn and a snapshot read returns it with the continuation's command", "are distinct: a queued turn is overdue fifteen minutes after its accept, a running one only past its own deadline"; `apps/api/src/stores/assistant-turn-store.db.test.ts`: "names the interrupted turn's own placeholder, not the conversation's latest message"; `apps/api/src/assistant-turn-processor.db.test.ts`: "runs nothing for a job whose turn has already started"; `apps/mobile/src/features/assistant/thread/use-assistant-conversation.test.ts`: "shows the stored reason for a turn that never started, and again after a reconnect" | — |
+| 5. Worker with no model; author membership removed | `apps/worker/src/jobs.db.test.ts`: "boots with no model, closes a leftover queued turn as not_started through its exhaustion, settles its placeholder and gives its hold back"; `apps/api/src/assistant-turn-processor.db.test.ts`: "runs and writes nothing for an author who lost membership: the refused start fails the job and the turn stays queued", "is refused at the next action: nothing is created, nothing reads as done, and the turn is left for exhaustion to close"; `apps/mobile/src/features/assistant/thread/assistant-thread-merge.test.ts`: "reports none for a turn ended for a removed author, even with a streaming placeholder still stored" | — |
+| 6. Failed post-terminal recovery | `packages/assistant-runtime/src/assistant-turn-recovery.db.test.ts`: "says the hold was dropped when the budget store fails, and leaves the turn ended with its reservation standing", "still ends the turn's budget and publishes its status when the author write fails, and says the text was dropped"; `packages/assistant-runtime/src/assistant-overdue-sweep.test.ts`: "counts a turn whose own recovery fails, recovers its siblings and the other companies, and still returns the pass"; `packages/assistant-runtime/src/assistant-budget-guard.test.ts`: "says the release failed when the store is down, leaving the reservation to its ttl"; `packages/assistant-runtime/src/stores/budget.test.ts`: "forgets a hold once its ttl passes, so a new day reserves again" | — |
+| 7. Failed boot with a running job (SHO-714) | `apps/worker/src/jobs.db.test.ts`: "keeps a running job's database, Redis and object store open until its drain settles when only the listener fails to start"; `apps/worker/src/boot.test.ts`: "keeps the boot error, still attempts every release and logs each cleanup failure" | Not a device scenario |
+
+Scenario 6 is best effort by decision: a dropped refund is logged, never
+retried, and the reservation stands until its Kyiv-day key expires; a dropped
+placeholder text keeps its streaming part until the conversation is reloaded
+(see [The overdue sweep](#the-overdue-sweep)).
+
+### Device checklist
+
+Run against a local API and worker. Record each run as a row.
+
+1. **Lock, background, force-close.** Send a chat that calls tools; mid-turn
+   lock the phone, then background the app, then force-close it; reopen.
+   Expect every committed message and card still shown and the window matching
+   `messages` for that conversation.
+2. **Airplane mode.** Send a chat, enable airplane mode before the reply,
+   disable it and let the app retry. Expect one `assistant_turns` row for the
+   command and one business write.
+3. **Kill the worker.** Start a write-heavy turn, stop the worker process after
+   the first card. Expect the turn `interrupted` (`timeout`) within 180 s + 60 s
+   once a worker runs again, the conversation free, the card kept, and
+   **Продовжити** not repeating the committed write.
+4. **Start deadline.** With the worker stopped, send a chat and, in another
+   conversation, answer an open question; wait past 15 minutes; start the
+   worker. Expect both `interrupted` + `not_started` on their own placeholders,
+   **Продовжити** offered on the answer turn, and no work from the late jobs.
+5. **No model, removed member.** Start the worker with no model and send a
+   chat; separately remove the author's membership mid-turn. Expect no
+   unauthorized write and each turn ended by exhaustion or the sweep.
+
+| # | Device / build | Commit | Expected | Actual | Result |
+| --- | --- | --- | --- | --- | --- |
+| 1 | | | as above | | pending owner acceptance |
+| 2 | | | as above | | pending owner acceptance |
+| 3 | | | as above | | pending owner acceptance |
+| 4 | | | as above | | pending owner acceptance |
+| 5 | | | as above | | pending owner acceptance |
+
 ## Reading the state directly
 
 The open question is Redis — the shared, non-persistent instance (`db.md` §6);
