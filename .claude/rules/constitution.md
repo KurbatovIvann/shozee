@@ -54,9 +54,11 @@ nearest `AGENTS.md` win over skills and agent playbooks.
   issue, and `@vitest-environment`. Two gates block the rest: the
   `Edit|Write` hook `.claude/hooks/no-comments.mjs`, and
   `.claude/scripts/diff-hygiene.mjs` over the branch diff — the gate that
-  holds, because no writing tool can route around it. Both judge only the
-  comment lines a change **adds**: deleting a comment, or keeping one an edit
-  does not touch, always passes, so a comment that has gone stale is removable.
+  holds, because no writing tool can route around it. An `Edit`/`Write` is
+  judged only on the comment lines it **adds** — deleting one, or keeping one
+  the edit does not touch, passes, so a stale comment is removable; a Bash
+  write and the branch-diff gate judge every comment line they emit, so a
+  re-indented or moved comment still counts as added there.
   Do not strip existing comments in lines you are not otherwise changing.
 - **No prose artifacts.** Commit messages, PR bodies, Linear comments, and
   reports follow the output protocol in `CLAUDE.md`. A change that needs a

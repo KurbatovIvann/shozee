@@ -129,6 +129,20 @@ test("a Write keeping the file's existing comments is allowed, adding one is not
   });
 });
 
+test("a Write creating a new file has no baseline, so its comments are added", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "no-comments-"));
+  try {
+    const res = run({
+      file_path: path.join(dir, "fresh.ts"),
+      content: `${BLOCK}\nexport const DRAIN_MS = 210_000;\n`,
+    });
+    assert.equal(res.status, 2);
+    assert.match(res.stderr, /Queued turns wait for the runner/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("still blocks a heredoc that writes a comment into a .ts file", () => {
   const res = run({
     command:
