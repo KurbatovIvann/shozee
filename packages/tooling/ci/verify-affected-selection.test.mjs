@@ -63,16 +63,20 @@ test("a selected package misses the Turbo cache under the flags verify builds", 
   const primed = runTurbo(
     `pnpm exec turbo run ${PROOF_TASK} --filter=${PROOF_PACKAGE} --cache=local:rw --output-logs=errors-only`,
   );
-  if (primed.error || primed.status === null) {
+  const timedOut = primed.error?.code === "ETIMEDOUT";
+  const turboNotFound = primed.error?.code === "ENOENT";
+  if (turboNotFound || (primed.status === null && !timedOut)) {
     t.skip(
-      `turbo could not be spawned here: ${primed.error?.message ?? primed.signal ?? ""}`,
+      turboNotFound
+        ? "turbo is not installed here"
+        : `turbo could not be spawned here: ${primed.error?.message ?? primed.signal ?? "no exit status"}`,
     );
     return;
   }
   assert.equal(
     primed.status,
     0,
-    `priming run failed:\n${primed.stdout ?? ""}\n${primed.stderr ?? ""}`,
+    `priming run ${timedOut ? `timed out after ${TURBO_TIMEOUT_MS} ms` : `exited with ${primed.status}`}:\n${primed.stdout ?? ""}\n${primed.stderr ?? ""}`,
   );
   const args = buildTurboArgs(PROOF_TASK, {
     full: false,
