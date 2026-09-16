@@ -58,6 +58,7 @@ const expiring = {
   lifecycle: "expires",
   retries: 0,
   attemptTimeoutMs: 1_000,
+  concurrency: 1,
 } as const;
 
 const runTurn = defineJob({

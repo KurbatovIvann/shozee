@@ -18,6 +18,7 @@ const sendReminder = defineJob({
   onExhausted: "jobKit.dropReminder",
   retries: 0,
   attemptTimeoutMs: 1_000,
+  concurrency: 1,
 });
 
 const companyId = randomUUID();

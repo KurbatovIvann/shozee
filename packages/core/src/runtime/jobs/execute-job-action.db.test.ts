@@ -74,6 +74,7 @@ const expiring = {
   lifecycle: "expires",
   retries: 2,
   attemptTimeoutMs: 1_000,
+  concurrency: 1,
   onExhausted: "jobRun.dropTouch",
 } as const;
 
@@ -96,6 +97,7 @@ const sweepJob = defineJob({
   cron: "*/5 * * * *",
   retries: 0,
   attemptTimeoutMs: 1_000,
+  concurrency: 1,
 });
 const globalExpiringJob = defineJob({
   ...expiring,

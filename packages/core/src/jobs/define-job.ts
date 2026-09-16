@@ -17,6 +17,7 @@ export interface JobDefinition<TPayload extends z.ZodObject = z.ZodObject> {
   readonly onExhausted?: string;
   readonly retries: number;
   readonly attemptTimeoutMs: number;
+  readonly concurrency: number;
   readonly cron?: string;
 }
 
@@ -164,6 +165,11 @@ function collectJobDefinitionProblems(definition: JobDefinition): string[] {
   ) {
     problems.push(
       "attemptTimeoutMs must be a positive integer of milliseconds",
+    );
+  }
+  if (!Number.isInteger(definition.concurrency) || definition.concurrency < 1) {
+    problems.push(
+      "concurrency must be a positive integer of attempts one worker process runs at once",
     );
   }
   if (definition.lifecycle === "expires") {

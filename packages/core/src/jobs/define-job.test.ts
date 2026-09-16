@@ -35,6 +35,7 @@ function expiringJobWithoutOnExhausted(): JobDefinition {
     lifecycle: "expires",
     retries: 0,
     attemptTimeoutMs: 120_000,
+    concurrency: 1,
   };
 }
 
@@ -51,6 +52,7 @@ function periodicJobWithoutCron(): JobDefinition {
     lifecycle: "periodic",
     retries: 2,
     attemptTimeoutMs: 60_000,
+    concurrency: 1,
   };
 }
 
@@ -76,6 +78,10 @@ describe("defineJob — valid declarations", () => {
     expect(job.name).toBe("assistant.runTurn");
     expect(job.onExhausted).toBe("assistant.interruptTurn");
     expect(Object.isFrozen(job)).toBe(true);
+  });
+
+  it("carries the declared concurrency of one worker process", () => {
+    expect(defineJob({ ...expiringJob(), concurrency: 4 }).concurrency).toBe(4);
   });
 
   it("accepts bounded integers and a payload that parses only JSON-safe identity", () => {
@@ -334,6 +340,19 @@ describe("defineJob — define-time refusals", () => {
     ).toEqual([
       "retries must be a non-negative integer",
       "attemptTimeoutMs must be a positive integer of milliseconds",
+    ]);
+  });
+
+  it("refuses a missing, fractional or non-positive concurrency", () => {
+    const { concurrency, ...withoutConcurrency } = expiringJob();
+    const problem =
+      "concurrency must be a positive integer of attempts one worker process runs at once";
+
+    expect(concurrency).toBe(1);
+    expect(problemsOf(withoutConcurrency as JobDefinition)).toEqual([problem]);
+    expect(problemsOf({ ...expiringJob(), concurrency: 0 })).toEqual([problem]);
+    expect(problemsOf({ ...expiringJob(), concurrency: 2.5 })).toEqual([
+      problem,
     ]);
   });
 });

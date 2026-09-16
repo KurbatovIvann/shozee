@@ -97,6 +97,7 @@ function conformanceJob(
   retries = 0,
   onExhausted = "conformance.interrupt",
   attemptTimeoutMs = 1_500,
+  concurrency = 1,
 ): Job {
   return defineJob({
     name: `conformance.${name}`,
@@ -107,6 +108,7 @@ function conformanceJob(
     onExhausted,
     retries,
     attemptTimeoutMs,
+    concurrency,
   });
 }
 
@@ -819,6 +821,7 @@ export function describeJobRunnerConformance(
           cron: "* * * * *",
           retries: 0,
           attemptTimeoutMs: 1_500,
+          concurrency: 1,
         });
         const runs: { id: string; scope: string }[] = [];
         const tick = handlerFor(
@@ -859,6 +862,49 @@ export function describeJobRunnerConformance(
         expect(new Set(ranIds).size).toBe(ranIds.length);
         expect([...ranIds].sort()).toEqual(jobs.map(({ id }) => id).sort());
         expect(runs.every(({ scope }) => scope === "global")).toBe(true);
+      });
+    });
+
+    describe("declared concurrency", () => {
+      async function peakAttempts(job: Job, enqueued: number): Promise<number> {
+        const runner = await open([job], "worker");
+        const holding = new Set<() => void>();
+        let active = 0;
+        let peak = 0;
+
+        await work(runner, [
+          handlerFor(job, async () => {
+            active += 1;
+            peak = Math.max(peak, active);
+            await new Promise<void>((release) => holding.add(release));
+            active -= 1;
+          }),
+        ]);
+        for (let index = 0; index < enqueued; index += 1) {
+          await enqueueSubject(runner, job);
+        }
+        await eventually(
+          () => Promise.resolve(peak),
+          (value) => value >= job.concurrency,
+        );
+        await delay(2_000);
+        for (const release of holding) {
+          release();
+        }
+        await close(runner);
+        return peak;
+      }
+
+      it("runs as many attempts at once as the job declares, and no more", async () => {
+        const job = conformanceJob("concurrentThree", 0, undefined, 30_000, 3);
+
+        await expect(peakAttempts(job, 5)).resolves.toBe(3);
+      });
+
+      it("runs one attempt at a time for a job that declares one", async () => {
+        const job = conformanceJob("concurrentOne", 0, undefined, 30_000, 1);
+
+        await expect(peakAttempts(job, 3)).resolves.toBe(1);
       });
     });
 
@@ -969,6 +1015,7 @@ export function describeJobRunnerConformance(
           cron: "* * * * *",
           retries: 0,
           attemptTimeoutMs: 1_500,
+          concurrency: 1,
         });
         const runner = await open([job], "worker");
 
@@ -1008,6 +1055,7 @@ export function describeJobRunnerConformance(
           cron: "* * * * *",
           retries: 0,
           attemptTimeoutMs: 1_500,
+          concurrency: 1,
         });
         const runner = await open([job], "worker");
 
