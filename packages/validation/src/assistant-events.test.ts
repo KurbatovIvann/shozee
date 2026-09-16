@@ -136,7 +136,9 @@ describe("reading an assistant stream event", () => {
         JSON.stringify({ ...finished, endReason: "cancelled" }),
       ),
     ).toBeNull();
-    const { endReason: _omitted, ...withoutReason } = finished;
+    const withoutReason = Object.fromEntries(
+      Object.entries(finished).filter(([field]) => field !== "endReason"),
+    );
     expect(
       parseAssistantStreamEvent("turn.finished", JSON.stringify(withoutReason)),
     ).toBeNull();

@@ -42,8 +42,12 @@ function withTurn(
     readonly id: string;
     readonly status: "queued" | "running";
   } | null = null,
+  interruptedTurn: {
+    readonly id: string;
+    readonly endReason: "not_started" | "job_exhausted" | "timeout" | null;
+  } | null = null,
 ) {
-  return { ...window, turn };
+  return { ...window, turn, interruptedTurn };
 }
 
 const pausingInput = z.object({ label: z.string() });
@@ -253,7 +257,12 @@ describe("the window a server writes and the window a client reads", () => {
 
     expect(window.messages).toHaveLength(1);
     expect(chatWindowSchema.safeParse(window).success).toBe(true);
-    const client = assistantChatWindowSchema.safeParse(withTurn(window));
+    const client = assistantChatWindowSchema.safeParse(
+      withTurn(window, null, {
+        id: "66666666-6666-4666-8666-666666666666",
+        endReason: "not_started",
+      }),
+    );
     expect(client.success).toBe(true);
     expect(
       client.success &&
@@ -261,6 +270,9 @@ describe("the window a server writes and the window a client reads", () => {
           part.kind === "text" ? part.status : part.kind,
         ),
     ).toEqual(["card", "interrupted"]);
+    expect(client.success && client.data.interruptedTurn?.endReason).toBe(
+      "not_started",
+    );
   });
 
   /**
@@ -287,6 +299,7 @@ describe("the window a server writes and the window a client reads", () => {
       olderCursor: null,
       openPause: null,
       turn: null,
+      interruptedTurn: null,
     };
     const body: AssistantKitResponse = { status: "accepted", window };
 

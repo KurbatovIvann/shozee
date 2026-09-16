@@ -41,6 +41,7 @@ const WINDOW = {
   olderCursor: null,
   openPause: null,
   turn: null,
+  interruptedTurn: null,
 };
 
 /** A body this test writes into, chunk by chunk, exactly as a network would. */
@@ -143,6 +144,7 @@ describe("the assistant event stream", () => {
       kind: "chat",
       commandId: COMMAND,
       status: "done",
+      endReason: null,
     });
     source.push(`event: turn.fini`);
     source.push(`shed\ndata: ${data.slice(0, 20)}`);

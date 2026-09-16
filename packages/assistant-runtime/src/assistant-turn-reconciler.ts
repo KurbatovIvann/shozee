@@ -46,17 +46,22 @@
  */
 import { randomUUID } from "node:crypto";
 
+import { CoreError } from "@showzy/core/errors";
+import type { AssistantTurnEndReason } from "@showzy/validation/assistant-chat";
 import type { Logger } from "pino";
 
+import { releaseStaffAssistantBudgetHold } from "./assistant-budget-guard.js";
 import {
   assistantTurnJobPending,
   enqueueAssistantTurn,
   type AssistantTurnQueue,
 } from "./assistant-queue-producer.js";
-import { createAssistantTurnRecovery } from "./assistant-turn-recovery.js";
+import type { AssistantConversationAddress } from "./events.js";
 import { assistantTurnJobId } from "./queue.js";
 import type { AssistantRuntime } from "./runtime-types.js";
 import type { AssistantEventPublisher } from "./stores/assistant-events-redis.js";
+import { createPostgresInterruptedTurnAuthor } from "./stores/assistant-turn-for-job.js";
+import { readTurnPlaceholderBind } from "./stores/assistant-turn-placeholder.js";
 import {
   ASSISTANT_TURN_QUEUED_STALE_MS,
   createPostgresAssistantStaleTurns,
@@ -131,16 +136,10 @@ export function createAssistantTurnReconciler(
 ): (queue: AssistantTurnQueue) => Promise<AssistantReconcileSummary> {
   const storeDeps = { pipeline: deps.pipeline };
   const staleTurns = createPostgresAssistantStaleTurns(storeDeps);
+  const authors = createPostgresInterruptedTurnAuthor(storeDeps);
   const logger: Logger = deps.runtime.logger;
   const now = deps.now ?? (() => Date.now());
   const newRequestId = deps.newRequestId ?? (() => randomUUID());
-  const recover = createAssistantTurnRecovery({
-    pipeline: deps.pipeline,
-    logger,
-    forCaller: deps.runtime.forCaller,
-    publisher: deps.publisher,
-    budgetStore: deps.budgetStore,
-  });
   const backoff = new Map<string, Backoff>();
 
   /** Log fields that name a turn and never what anyone wrote. */
@@ -179,6 +178,85 @@ export function createAssistantTurnReconciler(
     return "reenqueued";
   }
 
+  /**
+   * Settles the interrupted turn's placeholder as its author. Best effort by
+   * design: the turn has ended either way, and the one reason this fails in
+   * practice — an author who is no longer a member — is not a fault to retry.
+   */
+  async function endPlaceholder(
+    stale: AssistantStaleTurn,
+    requestId: string,
+    fields: Record<string, string>,
+  ): Promise<void> {
+    try {
+      const author = await authors.read({ turn: stale.turn, requestId });
+      if (author === null) {
+        logger.warn({ ...fields }, "assistant turn text was not ended");
+        return;
+      }
+      const bind = await readTurnPlaceholderBind(storeDeps, author.caller, {
+        conversationId: stale.turn.conversationId,
+        placeholderMessageId: author.placeholderMessageId,
+      });
+      if (bind === null) {
+        // The conversation moved on between the interrupt and this write.
+        logger.warn({ ...fields }, "assistant turn text was not ended");
+        return;
+      }
+      const written = await deps.runtime
+        .forCaller(author.caller)
+        .kit.messages.write(
+          { conversationId: stale.turn.conversationId, bind },
+          {
+            kind: "end_text",
+            messageId: author.placeholderMessageId,
+            status: "interrupted",
+          },
+        );
+      if (written.kind !== "written" && written.kind !== "unchanged") {
+        logger.warn(
+          { ...fields, refusal: written.kind },
+          "assistant turn text was not ended",
+        );
+      }
+    } catch (error) {
+      logger.warn(
+        {
+          ...fields,
+          ...(error instanceof CoreError ? { code: error.code } : {}),
+        },
+        "assistant turn text was not ended",
+      );
+    }
+  }
+
+  async function publishInterrupted(
+    stale: AssistantStaleTurn,
+    endReason: AssistantTurnEndReason,
+    fields: Record<string, string>,
+  ): Promise<void> {
+    const address: AssistantConversationAddress = {
+      companyId: stale.companyId,
+      conversationId: stale.turn.conversationId,
+    };
+    try {
+      // The status, and nothing of the conversation: this pass read no window
+      // as the person whose conversation it is.
+      await deps.publisher.publish(address, {
+        type: "turn.finished",
+        kind: stale.turn.kind,
+        commandId: stale.turn.commandId,
+        status: "interrupted",
+        endReason,
+      });
+    } catch (error) {
+      logger.warn(
+        { ...fields, err: error },
+        "assistant event was not published",
+      );
+    }
+  }
+
   async function interrupt(
     stale: AssistantStaleTurn,
     requestId: string,
@@ -196,20 +274,24 @@ export function createAssistantTurnReconciler(
       );
       return "left";
     }
+    // Exactly the hold that statement took off the row, and only when the turn
+    // never started: a started turn may have reached the model.
+    if (ended.from === "queued") {
+      await releaseStaffAssistantBudgetHold({
+        logger,
+        requestId,
+        // The stale row's own identity names the reservation it took (SHO-572).
+        ref: { companyId: stale.companyId, ...stale.turn },
+        hold: ended.releasedHold,
+        budgetStore: deps.budgetStore,
+      });
+    }
     logger.info(
       { ...fields, from: ended.from },
       "assistant turn interrupted by the reconciler",
     );
-    await recover(
-      {
-        companyId: stale.companyId,
-        turn: stale.turn,
-        from: ended.from,
-        endReason: ended.endReason,
-        releasedHold: ended.releasedHold,
-      },
-      requestId,
-    );
+    await endPlaceholder(stale, requestId, fields);
+    await publishInterrupted(stale, ended.endReason, fields);
     return ended.from === "queued" ? "released" : "interrupted";
   }
 

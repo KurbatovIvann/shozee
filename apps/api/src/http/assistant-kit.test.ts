@@ -493,6 +493,7 @@ describe("POST /assistant/kit/chat", () => {
     expect(body.window).toEqual({
       ...window,
       turn: { id: COMMAND, status: "queued" },
+      interruptedTurn: null,
     });
 
     // The job names the turn, and history is what the worker will run from.
@@ -597,6 +598,7 @@ describe("POST /assistant/kit/chat", () => {
     expect(((await retry.json()) as KitBody).window).toEqual({
       ...window,
       turn: { id: COMMAND, status: "queued" },
+      interruptedTurn: null,
     });
   });
 

@@ -72,6 +72,7 @@ function windowOf(options?: {
   readonly revision?: number;
   readonly openPause?: AssistantChatWindow["openPause"];
   readonly turn?: AssistantChatWindow["turn"];
+  readonly interruptedTurn?: AssistantChatWindow["interruptedTurn"];
 }): AssistantChatWindow {
   return {
     conversationId: CONVERSATION,
@@ -79,6 +80,7 @@ function windowOf(options?: {
     olderCursor: null,
     openPause: options?.openPause ?? null,
     turn: options?.turn ?? null,
+    interruptedTurn: options?.interruptedTurn ?? null,
   };
 }
 
@@ -108,6 +110,7 @@ function finished(
     kind: "chat",
     commandId,
     status: "done",
+    endReason: null,
     ...(window === undefined ? {} : { window }),
   };
 }
@@ -342,6 +345,7 @@ describe("an event about another conversation", () => {
       kind: "chat",
       commandId: COMMAND,
       status: "done",
+      endReason: null,
       window: {
         ...windowOf({ text: "Чуже", openPause: OPEN_PAUSE }),
         conversationId: OTHER,

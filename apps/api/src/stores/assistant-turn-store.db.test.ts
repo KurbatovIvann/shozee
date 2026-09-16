@@ -218,7 +218,11 @@ describe("accepting a turn through the runtime", () => {
     });
     expect(chatWindowSchema.parse(window)).toEqual(window);
     expect(
-      assistantChatWindowSchema.safeParse({ ...window, turn: null }).success,
+      assistantChatWindowSchema.safeParse({
+        ...window,
+        turn: null,
+        interruptedTurn: null,
+      }).success,
     ).toBe(true);
     expect(window.messages).toEqual([
       {
@@ -304,7 +308,11 @@ describe("accepting a turn through the runtime", () => {
       bind: annaBind,
     });
     expect(
-      assistantChatWindowSchema.safeParse({ ...window, turn: null }).success,
+      assistantChatWindowSchema.safeParse({
+        ...window,
+        turn: null,
+        interruptedTurn: null,
+      }).success,
     ).toBe(true);
     expect(window.messages.map((message) => message.parts)).toEqual([
       [card, { kind: "text", text: "", status: "streaming" }],

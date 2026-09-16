@@ -165,16 +165,29 @@ describe("the turn contracts", () => {
         releasedHold: hold,
       }).success,
     ).toBe(false);
-    for (const from of ["queued", "running"]) {
+    for (const [from, endReason] of [
+      ["queued", "not_started"],
+      ["running", "timeout"],
+    ]) {
       expect(
         interruptTurnOutputSchema.safeParse({
           outcome: "interrupted",
           conversationId: CONVERSATION,
           from,
+          endReason,
           releasedHold: hold,
         }).success,
       ).toBe(true);
     }
+    expect(
+      interruptTurnOutputSchema.safeParse({
+        outcome: "interrupted",
+        conversationId: CONVERSATION,
+        from: "queued",
+        endReason: null,
+        releasedHold: hold,
+      }).success,
+    ).toBe(false);
     // Which state it ended the turn from decides who keeps the hold.
     expect(
       interruptTurnOutputSchema.safeParse({

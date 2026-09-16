@@ -73,6 +73,7 @@ function threadOf(
     messages: [...messages],
     openPause,
     turn,
+    interruptedTurn: null,
   };
 }
 

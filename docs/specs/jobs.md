@@ -86,12 +86,18 @@ and is left untouched. Proof: `src/pgboss-schema.db.test.ts`.
   `AssistantRuntime.forTurn(caller, claim)`, whose claim is required; only the
   turn processor calls it. `forCaller(caller)` takes no claim and serves the
   API and the reconciler (SHO-663).
-- The terminal transition (`finishTurn`, `interruptTurn`) locks the same row
+- The terminal transition (`finishTurn`, `interruptTurn`, `sweepOverdueTurns`)
+  locks the same row
   `FOR UPDATE`, so a writer that holds the claim commits before the end, and
   a writer that asks after the end finds no running row. A status read
   without the lock would let an ended worker overwrite a later accept.
 - `finishTurn` is fenced by its own statement: it ends only an active row it
   has locked, and a turn ended first answers `already_finished`.
+- The interrupting transitions classify from the locked row and store
+  `assistant_turns.end_reason`: a queued turn that never started ends
+  `not_started`, a running turn past its deadline `timeout`. A queued turn is
+  overdue at `created_at + 15 minutes` (`ASSISTANT_TURN_START_DEADLINE_MS`),
+  the one predicate both the sweep and the start claim read.
 - Writes without a claim (the API's synchronous paths, the reconciler
   settling an interrupted placeholder) are unchanged.
 - Proof: `packages/modules/assistant/src/actions/turn-claim.db.test.ts`

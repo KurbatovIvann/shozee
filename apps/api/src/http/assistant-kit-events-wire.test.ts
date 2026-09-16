@@ -68,7 +68,7 @@ describe("assistant event wire", () => {
     expect(
       assistantSnapshotEventSchema.safeParse({
         type: "snapshot",
-        window: { ...window, turn: null },
+        window: { ...window, turn: null, interruptedTurn: null },
       }).success,
     ).toBe(true);
     expect(
