@@ -70,7 +70,7 @@ export async function openJobRunner(
       }
       if (jobWorker !== undefined) {
         throw new CoreInvariantError(
-          "this job runner already works its handlers",
+          "this job runner already began registering its handlers, even if that start failed; close it instead of calling work again",
         );
       }
       jobWorker = createJobWorker(

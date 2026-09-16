@@ -1214,7 +1214,7 @@ export function describeJobRunnerConformance(
         await work(runner, handlers);
 
         await expect(work(runner, handlers)).rejects.toThrow(
-          /already works its handlers/,
+          /already began registering its handlers/,
         );
       });
     });
