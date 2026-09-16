@@ -59,10 +59,6 @@ import type {
   listOverdueTurnsOutputSchema,
 } from "../actions/list-overdue-turns.contract.js";
 import type {
-  listStaleTurnsInputSchema,
-  listStaleTurnsOutputSchema,
-} from "../actions/list-stale-turns.contract.js";
-import type {
   readTurnForJobInputSchema,
   readTurnForJobOutputSchema,
 } from "../actions/read-turn-for-job.contract.js";
@@ -127,14 +123,6 @@ function isActiveStatus(
   return (ASSISTANT_TURN_ACTIVE_STATUSES as readonly string[]).includes(status);
 }
 
-/**
- * The two definitions of a turn the reconciler may end, each by Postgres's own
- * clock against a time Postgres set. `listStaleTurns` finds turns by them and
- * `interruptTurn` ends them by them, so the two cannot disagree.
- *
- * Running past the deadline set when it started: a server-side timeout is the
- * only thing that ends a started turn early (ADR-0039).
- */
 function runningPastDeadline(): SQL {
   return sql`(${eq(assistantTurns.status, "running")} and ${lt(assistantTurns.deadlineAt, sql`now()`)})`;
 }
@@ -572,18 +560,6 @@ export async function finishStaffTurn(env: {
   };
 }
 
-/**
- * The reconciler's interrupt, inside the company the stale turn belongs to. No
- * author rule: a system job acts for no person, and the company scope is the
- * whole of its reach.
- *
- * Staleness is part of the same statement, so a turn the reconciler listed as
- * stale but a worker started since is `not_stale`, never ended under it: ending
- * it would free the conversation while the worker still writes, and release a
- * hold the model is still spending. The same holds the other way round: a start
- * that waits on this statement's row lock re-reads an interrupted row and finds
- * nothing queued to start.
- */
 export async function interruptSystemTurn(env: {
   readonly ctx: SystemCtx;
   readonly input: z.output<typeof interruptTurnInputSchema>;
@@ -815,56 +791,6 @@ export async function listOverdueTurns(env: {
   return {
     turns,
     next: turns.length < env.input.limit || last === undefined ? null : last,
-  };
-}
-
-export async function listStaleTurns(env: {
-  readonly ctx: SystemCtx;
-  readonly input: z.output<typeof listStaleTurnsInputSchema>;
-}): Promise<z.output<typeof listStaleTurnsOutputSchema>> {
-  const rows = await env.ctx.db
-    .select({
-      companyId: assistantTurns.companyId,
-      conversationId: assistantTurns.conversationId,
-      kind: assistantTurns.kind,
-      commandId: assistantTurns.commandId,
-      status: assistantTurns.status,
-      placeholderMessageId: assistantTurns.placeholderMessageId,
-      // Decided here, by the predicates the interrupt ends a turn by, so the
-      // reconciler never judges a threshold of its own.
-      staleness: sql<
-        "queued_without_start" | "queued_abandoned" | "running_past_deadline"
-      >`case when ${runningPastDeadline()} then 'running_past_deadline' when ${queuedPastStartDeadline()} then 'queued_abandoned' else 'queued_without_start' end`,
-    })
-    .from(assistantTurns)
-    .where(
-      and(
-        isActive(),
-        or(
-          and(
-            eq(assistantTurns.status, "queued"),
-            lt(
-              assistantTurns.createdAt,
-              sql`now() - (${env.input.queuedStaleAfterMs}::integer * interval '1 millisecond')`,
-            ),
-          ),
-          overdue(),
-        ),
-      ),
-    )
-    .orderBy(asc(assistantTurns.createdAt), asc(assistantTurns.id))
-    .limit(env.input.limit);
-
-  return {
-    turns: rows.map((row) => ({
-      companyId: row.companyId,
-      conversationId: row.conversationId,
-      kind: row.kind,
-      commandId: row.commandId,
-      status: row.status,
-      placeholderMessageId: row.placeholderMessageId,
-      staleness: row.staleness,
-    })),
   };
 }
 

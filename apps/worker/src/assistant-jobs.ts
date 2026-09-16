@@ -101,6 +101,7 @@ export function composeAssistantJobs(
         const outcome = await process({
           companyId,
           turn: turnOf(attempt.envelope.payload),
+          actor: attempt.envelope.actor,
           requestId: attempt.envelope.requestId,
           signal: attempt.signal,
         });

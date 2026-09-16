@@ -24,10 +24,6 @@ import {
   interruptTurnOutputSchema,
 } from "./interrupt-turn.contract.js";
 import {
-  listStaleTurnsContract,
-  listStaleTurnsInputSchema,
-} from "./list-stale-turns.contract.js";
-import {
   readTurnForJobContract,
   readTurnForJobInputSchema,
 } from "./read-turn-for-job.contract.js";
@@ -95,16 +91,6 @@ describe("the turn contracts", () => {
       );
     }
     expect(acceptTurnContract.errors).toContain("CONFLICT");
-  });
-
-  it("read stale turns only as a global system job nobody else can reach", () => {
-    expect(listStaleTurnsContract.principal).toBe("system");
-    expect(listStaleTurnsContract.systemScope).toBe("global");
-    expect(listStaleTurnsContract.transport).toBe("internal");
-    expect(listStaleTurnsContract.aiExposure).toBe("internal");
-    expect(listStaleTurnsContract.risk).toBe("read");
-    expect(listStaleTurnsContract.permissions).toEqual([]);
-    expect(listStaleTurnsContract.audit).toBe(false);
   });
 
   it("read the turn a job names only as a tenant system job nobody else can reach", () => {
@@ -256,13 +242,6 @@ describe("the turn contracts", () => {
     expect(
       finishTurnInputSchema.safeParse({ ...ref, status: "done", companyId })
         .success,
-    ).toBe(false);
-    expect(
-      listStaleTurnsInputSchema.safeParse({
-        queuedStaleAfterMs: 60_000,
-        limit: 10,
-        companyId,
-      }).success,
     ).toBe(false);
     expect(
       readTurnForJobInputSchema.safeParse({ ...ref, companyId }).success,

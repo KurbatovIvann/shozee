@@ -40,8 +40,12 @@ import {
   type ChatWindowMessage,
   type PauseScope,
 } from "@showzy/assistant-kit";
-import type { ActionPipelineDeps } from "@showzy/core";
-import { ConflictError, CoreInvariantError } from "@showzy/core/errors";
+import type { ActionPipelineDeps, JobEnvelope } from "@showzy/core";
+import {
+  ConflictError,
+  CoreInvariantError,
+  PermissionDeniedError,
+} from "@showzy/core/errors";
 import type { AssistantPublishedEvent } from "@showzy/validation/assistant-events";
 
 import { releaseStaffAssistantBudgetHold } from "./assistant-budget-guard.js";
@@ -103,6 +107,7 @@ export interface AssistantTurnProcessorDeps {
 export interface AssistantTurnRun {
   readonly companyId: string;
   readonly turn: AssistantTurnRef;
+  readonly actor: JobEnvelope["actor"];
   readonly requestId: string;
   readonly signal: AbortSignal;
 }
@@ -340,7 +345,11 @@ export function createAssistantTurnProcessor(
       controller.abort();
     };
     const disarm = deadline(abort, timeoutMs);
-    attemptSignal.addEventListener("abort", abort, { once: true });
+    if (attemptSignal.aborted) {
+      abort();
+    } else {
+      attemptSignal.addEventListener("abort", abort, { once: true });
+    }
 
     const events = eventsFor(
       {
@@ -505,6 +514,11 @@ export function createAssistantTurnProcessor(
     }
     if (found.caller === null) {
       return { kind: "not_queued", status: found.status };
+    }
+    if (run.actor.type === "user" && run.actor.id !== found.caller.userId) {
+      throw new PermissionDeniedError(
+        "This assistant job was recorded for someone who is not the turn's author.",
+      );
     }
     return runQueued(found, found.caller, run.signal);
   };
