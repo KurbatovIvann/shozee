@@ -53,6 +53,7 @@ interface AcquiredWorkerResources {
 
 async function releaseInDependencyOrder(
   acquired: AcquiredWorkerResources,
+  logger: Logger,
 ): Promise<readonly unknown[]> {
   const { objectStore, db, jobRunner, redis, loop } = acquired;
   const releases: readonly (() => unknown)[] = [
@@ -71,6 +72,7 @@ async function releaseInDependencyOrder(
     try {
       await release();
     } catch (error) {
+      logger.error({ err: error }, "worker release failed");
       failures.push(error);
     }
   }
@@ -81,17 +83,17 @@ export async function bootWorker(
   config: ServerConfig,
   options: BootWorkerOptions = {},
 ): Promise<BootedWorker> {
+  const { logger: processLogger, telemetry } = createProcessObservability({
+    name: "worker",
+    sentryDsn: config.sentry.dsn,
+  });
+  const logger = options.logger ?? processLogger;
   const acquired: AcquiredWorkerResources = { objectStore: false };
 
   try {
     configureFilesObjectStore(config.s3);
     acquired.objectStore = true;
     await probeFilesObjectStore();
-    const { logger: processLogger, telemetry } = createProcessObservability({
-      name: "worker",
-      sentryDsn: config.sentry.dsn,
-    });
-    const logger = options.logger ?? processLogger;
     const db = createDbClient({
       databaseUrl: config.database.url,
       onPoolError: (error) => {
@@ -160,14 +162,17 @@ export async function bootWorker(
       loop,
       logger,
       async close() {
-        const failures = await releaseInDependencyOrder(acquired);
-        if (failures.length > 0) {
+        const failures = await releaseInDependencyOrder(acquired, logger);
+        if (failures.length > 1) {
+          throw new AggregateError(failures, "worker close failed");
+        }
+        if (failures.length === 1) {
           throw failures[0];
         }
       },
     };
   } catch (error) {
-    await releaseInDependencyOrder(acquired);
+    await releaseInDependencyOrder(acquired, logger);
     throw error;
   }
 }

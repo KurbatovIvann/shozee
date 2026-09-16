@@ -59,13 +59,22 @@ import {
 } from "@testcontainers/redis";
 import { and, eq, gte, inArray } from "drizzle-orm";
 import { Redis } from "ioredis";
+import pg from "pg";
 import { pino } from "pino";
 import {
   GenericContainer,
   Wait,
   type StartedTestContainer,
 } from "testcontainers";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { z } from "zod";
 
 import { bootWorker } from "./boot.js";
@@ -75,6 +84,92 @@ import {
   maintenanceHandler,
   workerJobs,
 } from "./maintenance.js";
+
+interface ArmedFailedBoot {
+  listenerStart(): Promise<void>;
+  holdCleanupJob(run: () => Promise<void>): Promise<void>;
+  drainStarted(): void;
+  drainSettled(): void;
+  storageClosed(): void;
+}
+
+const failedBoot = vi.hoisted(() => ({
+  armed: undefined as ArmedFailedBoot | undefined,
+}));
+
+vi.mock("./listen.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./listen.js")>();
+  return {
+    ...actual,
+    createOutboxListener: (
+      options: Parameters<typeof actual.createOutboxListener>[0],
+    ) => {
+      const armed = failedBoot.armed;
+      return armed === undefined
+        ? actual.createOutboxListener(options)
+        : {
+            start: () => armed.listenerStart(),
+            stop: () => Promise.resolve(),
+          };
+    },
+  };
+});
+
+vi.mock("./maintenance.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./maintenance.js")>();
+  return {
+    ...actual,
+    maintenanceHandlers: (
+      logger: Parameters<typeof actual.maintenanceHandlers>[0],
+    ) =>
+      actual.maintenanceHandlers(logger).map((handler) => {
+        const armed = failedBoot.armed;
+        return armed === undefined ||
+          handler.job.name !== actual.cleanupIdempotencyKeysJob.name
+          ? handler
+          : {
+              ...handler,
+              handle: (attempt: Parameters<typeof handler.handle>[0]) =>
+                armed.holdCleanupJob(() => handler.handle(attempt)),
+            };
+      }),
+  };
+});
+
+vi.mock("@showzy/jobs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@showzy/jobs")>();
+  return {
+    ...actual,
+    openJobRunner: async (...args: Parameters<typeof actual.openJobRunner>) => {
+      const runner = await actual.openJobRunner(...args);
+      const armed = failedBoot.armed;
+      if (armed === undefined || args[1] !== "worker") {
+        return runner;
+      }
+      return {
+        port: runner.port,
+        work: (options: Parameters<typeof runner.work>[0]) =>
+          runner.work(options),
+        async close() {
+          armed.drainStarted();
+          await runner.close();
+          armed.drainSettled();
+        },
+      };
+    },
+  };
+});
+
+vi.mock("@showzy/files/storage", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@showzy/files/storage")>();
+  return {
+    ...actual,
+    closeFilesObjectStore: () => {
+      failedBoot.armed?.storageClosed();
+      actual.closeFilesObjectStore();
+    },
+  };
+});
 
 const silent = pino({ enabled: false });
 const REDIS_PASSWORD = "REDIS_TICK_SECRET";
@@ -479,6 +574,118 @@ describe("apps/worker maintenance jobs on pg-boss (SHO-650)", () => {
       expect(ids.length).toBeLessThanOrEqual(slotValues.length);
     }
     expect(await remainingKeys([expiredKey, liveKey])).toEqual([liveKey]);
+  }, 150_000);
+});
+
+describe("apps/worker failed boot on live Postgres, Redis and Garage (SHO-714)", () => {
+  function latch() {
+    let open: () => void = () => undefined;
+    const opened = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    return {
+      opened,
+      open() {
+        open();
+      },
+    };
+  }
+
+  async function pingWorkerRedisAgain(
+    contexts: readonly unknown[],
+  ): Promise<void> {
+    const [pinged] = contexts;
+    if (!(pinged instanceof Redis)) {
+      throw new Error("the booting worker never pinged Redis");
+    }
+    await pinged.ping();
+  }
+
+  function firstCall(mock: {
+    readonly mock: { readonly invocationCallOrder: readonly number[] };
+  }): number {
+    return Math.min(...mock.mock.invocationCallOrder);
+  }
+
+  async function enqueueCleanup(): Promise<void> {
+    const runner = await openJobRunner(
+      { db: kit.db.runtime.db, jobs: workerJobs, onError: () => undefined },
+      "api",
+    );
+    try {
+      await kit.db.runtime.db.transaction(async (tx) => {
+        await runner.port.enqueue(tx, [
+          buildJobEnvelope(cleanupIdempotencyKeysJob, {
+            companyId: null,
+            payload: {},
+          }),
+        ]);
+      });
+    } finally {
+      await runner.close();
+    }
+  }
+
+  it("keeps a running job's database, Redis and object store open until its drain settles when only the listener fails to start", async () => {
+    const { expiredKey, liveKey } = await insertKeyPair();
+    await enqueueCleanup();
+    const jobStarted = latch();
+    const drainStarted = latch();
+    const listenerRefused = new Error("outbox listener refused to start");
+    const ping = vi.spyOn(Redis.prototype, "ping");
+    const quit = vi.spyOn(Redis.prototype, "quit");
+    const poolEnd = vi.spyOn(pg.Pool.prototype, "end");
+    const reachedDependenciesWhileDraining = vi.fn();
+    const drainSettled = vi.fn();
+    const storageClosed = vi.fn();
+    failedBoot.armed = {
+      async listenerStart() {
+        await jobStarted.opened;
+        throw listenerRefused;
+      },
+      async holdCleanupJob(run) {
+        jobStarted.open();
+        await drainStarted.opened;
+        await run();
+        await probeFilesObjectStore();
+        await pingWorkerRedisAgain(ping.mock.contexts);
+        reachedDependenciesWhileDraining();
+      },
+      drainStarted: () => {
+        drainStarted.open();
+      },
+      drainSettled,
+      storageClosed,
+    };
+    try {
+      await expect(
+        bootWorker(testConfig(), {
+          logger: silent,
+          pollIntervalMs: 60_000,
+          jobIntervals: {
+            pollingSeconds: 0.5,
+            superviseSeconds: 1,
+            cronSeconds: 1,
+          },
+        }),
+      ).rejects.toBe(listenerRefused);
+
+      expect(reachedDependenciesWhileDraining).toHaveBeenCalled();
+      expect(await remainingKeys([expiredKey, liveKey])).toEqual([liveKey]);
+      const settledAt = firstCall(drainSettled);
+      expect(settledAt).toBeGreaterThan(
+        Math.max(...reachedDependenciesWhileDraining.mock.invocationCallOrder),
+      );
+      for (const closed of [storageClosed, quit, poolEnd]) {
+        expect(closed).toHaveBeenCalled();
+        expect(firstCall(closed)).toBeGreaterThan(settledAt);
+      }
+    } finally {
+      failedBoot.armed = undefined;
+      ping.mockRestore();
+      quit.mockRestore();
+      poolEnd.mockRestore();
+    }
   }, 150_000);
 });
 

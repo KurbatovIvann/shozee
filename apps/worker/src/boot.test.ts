@@ -1,5 +1,5 @@
 import { loadServerConfig } from "@showzy/config";
-import { pino } from "pino";
+import { pino, type Logger } from "pino";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { bootWorker } from "./boot.js";
@@ -215,10 +215,31 @@ function workerConfig() {
   });
 }
 
-function boot() {
+function boot(logger: Logger = silent) {
   return bootWorker(workerConfig(), {
-    logger: silent,
+    logger,
     pollIntervalMs: 60_000,
+  });
+}
+
+function capturingLogger(lines: string[]): Logger {
+  return pino(
+    {},
+    {
+      write(chunk: string) {
+        lines.push(chunk);
+      },
+    },
+  );
+}
+
+function releaseFailuresLogged(lines: readonly string[]): readonly string[] {
+  return lines.flatMap((line) => {
+    const logged =
+      /"err":\{[^\n]*"message":"([^"]+)"[^\n]*"msg":"worker release failed"/.exec(
+        line,
+      );
+    return logged?.[1] === undefined ? [] : [logged[1]];
   });
 }
 
@@ -274,13 +295,33 @@ describe("bootWorker teardown after a failed boot", () => {
     expect(world.state.released).toEqual(["storage"]);
   });
 
-  it("keeps the boot error and still attempts every release when cleanups fail", async () => {
+  it("keeps the boot error, still attempts every release and logs each cleanup failure", async () => {
     world.state.failBootAt = "listen";
     world.state.failRelease = new Set(["jobs", "redis"]);
+    const lines: string[] = [];
 
-    await expect(boot()).rejects.toBe(world.state.bootError);
+    await expect(boot(capturingLogger(lines))).rejects.toBe(
+      world.state.bootError,
+    );
 
     expect(world.state.released).toEqual(DEPENDENCY_ORDER);
+    expect(releaseFailuresLogged(lines)).toEqual([
+      "jobs close failed",
+      "redis close failed",
+    ]);
+    expect(lines.join("\n")).not.toContain("showzy-local-secret");
+  });
+
+  it("logs a cleanup failure when the first boot step fails", async () => {
+    world.state.failBootAt = "probe";
+    world.state.failRelease = new Set(["storage"]);
+    const lines: string[] = [];
+
+    await expect(boot(capturingLogger(lines))).rejects.toBe(
+      world.state.bootError,
+    );
+
+    expect(releaseFailuresLogged(lines)).toEqual(["storage close failed"]);
   });
 });
 
@@ -305,12 +346,43 @@ describe("BootedWorker.close", () => {
     expect(world.state.released).toEqual(DEPENDENCY_ORDER);
   });
 
-  it("attempts every release and reports the first failure", async () => {
-    const booted = await boot();
+  it("attempts every release and rethrows a single failure as itself", async () => {
+    const lines: string[] = [];
+    const booted = await boot(capturingLogger(lines));
     world.state.failRelease = new Set(["jobs"]);
 
-    await expect(booted.close()).rejects.toThrow("jobs close failed");
+    const failure = await booted.close().then(
+      () => undefined,
+      (error: unknown) => error,
+    );
 
+    expect(failure).not.toBeInstanceOf(AggregateError);
+    expect(failure).toEqual(new Error("jobs close failed"));
     expect(world.state.released).toEqual(DEPENDENCY_ORDER);
+    expect(releaseFailuresLogged(lines)).toEqual(["jobs close failed"]);
+  });
+
+  it("reports every failure as one AggregateError when several releases fail", async () => {
+    const lines: string[] = [];
+    const booted = await boot(capturingLogger(lines));
+    world.state.failRelease = new Set(["jobs", "storage", "db"]);
+
+    const failure = await booted.close().then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect(failure instanceof AggregateError ? failure.errors : []).toEqual([
+      new Error("jobs close failed"),
+      new Error("storage close failed"),
+      new Error("db close failed"),
+    ]);
+    expect(world.state.released).toEqual(DEPENDENCY_ORDER);
+    expect(releaseFailuresLogged(lines)).toEqual([
+      "jobs close failed",
+      "storage close failed",
+      "db close failed",
+    ]);
   });
 });
