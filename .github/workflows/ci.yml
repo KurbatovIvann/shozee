@@ -7,9 +7,10 @@
 # smoke against the built `apps/web` bundle (SHO-331). Maestro mobile e2e
 # remains a later phase (fnd-T51). SHO-334 split the former serial `checks`
 # body into independent jobs; the job named `checks` is now the fail-closed
-# aggregator and must keep that name. SHO-335 persists `.turbo` via GitHub
-# Actions cache (not Vercel remote cache) and runs Turbo `--affected` on pull
+# aggregator and must keep that name. SHO-335 runs Turbo `--affected` on pull
 # requests when the comparison base resolves; `main` stays a full suite.
+# SHO-708 removed the `.turbo` GitHub cache: CI runs `--cache=local:w`, so a
+# restored entry could only replay a stale pass, never save work.
 # SHO-336 splits Vitest into `test-unit` (Turbo/affected, no Postgres) and
 # `test-db` (one Vitest process, one PostgreSQL template per job).
 #
@@ -33,9 +34,6 @@ permissions:
   contents: read
   # gitleaks-action lists PR commits via the GitHub API on pull_request events.
   pull-requests: read
-  # Persist `.turbo` with actions/cache (SHO-335). Fork PRs still skip the
-  # cache step; this does not introduce a Vercel remote-cache token.
-  actions: write
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -85,8 +83,6 @@ jobs:
         run: git fetch --no-tags origin "${{ github.base_ref }}" || echo "base fetch failed; run-turbo will use full execution"
       - name: Setup CI workspace
         uses: ./.github/actions/setup-ci-workspace
-      - name: Turbo local cache
-        uses: ./.github/actions/turbo-local-cache
       - name: Typecheck (tsc --noEmit)
         run: time -p node packages/tooling/ci/run-turbo.mjs typecheck
       - name: Publish job timing
@@ -111,8 +107,6 @@ jobs:
         run: git fetch --no-tags origin "${{ github.base_ref }}" || echo "base fetch failed; run-turbo will use full execution"
       - name: Setup CI workspace
         uses: ./.github/actions/setup-ci-workspace
-      - name: Turbo local cache
-        uses: ./.github/actions/turbo-local-cache
       - name: ESLint
         run: time -p node packages/tooling/ci/run-turbo.mjs lint
       - name: Publish job timing
@@ -137,8 +131,6 @@ jobs:
         run: git fetch --no-tags origin "${{ github.base_ref }}" || echo "base fetch failed; run-turbo will use full execution"
       - name: Setup CI workspace
         uses: ./.github/actions/setup-ci-workspace
-      - name: Turbo local cache
-        uses: ./.github/actions/turbo-local-cache
       - name: Vitest unit
         run: time -p node packages/tooling/ci/run-turbo.mjs test:unit --concurrency=2
       - name: Publish job timing
@@ -191,8 +183,6 @@ jobs:
         run: git fetch --no-tags origin "${{ github.base_ref }}" || echo "base fetch failed; run-turbo will use full execution"
       - name: Setup CI workspace
         uses: ./.github/actions/setup-ci-workspace
-      - name: Turbo local cache
-        uses: ./.github/actions/turbo-local-cache
       - name: Expo export smoke (fnd-T48)
         run: time -p node packages/tooling/ci/run-turbo.mjs export:web --filter=@showzy/mobile
         env:
@@ -345,7 +335,7 @@ jobs:
       - name: Install Playwright Chromium
         run: time -p pnpm --filter @showzy/web exec playwright install --with-deps chromium
       - name: Web Playwright smoke (SHO-331)
-        run: time -p pnpm turbo run e2e-smoke --filter=@showzy/web
+        run: time -p node packages/tooling/ci/run-turbo.mjs e2e-smoke --filter=@showzy/web
       - name: Upload Playwright artifacts
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

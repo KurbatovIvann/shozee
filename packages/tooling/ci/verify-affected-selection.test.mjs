@@ -6,6 +6,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { buildTurboArgs } from "../../../.claude/scripts/verify.mjs";
+import { buildTurboRunArgs } from "./turbo-execution-mode.mjs";
 
 const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -59,7 +60,7 @@ test("affected gates select changed packages and their dependents", () => {
   }
 });
 
-test("a selected package misses the Turbo cache under the flags verify builds", (t) => {
+test("a selected package misses the Turbo cache under the flags verify and CI build", (t) => {
   const primed = runTurbo(
     `pnpm exec turbo run ${PROOF_TASK} --filter=${PROOF_PACKAGE} --cache=local:rw --output-logs=errors-only`,
   );
@@ -98,6 +99,19 @@ test("a selected package misses the Turbo cache under the flags verify builds", 
     dryRunCacheStatus(args, taskId),
     "MISS",
     "verify must re-run a selected package instead of replaying its cached pass",
+  );
+
+  const ciArgs = [
+    "exec",
+    "turbo",
+    ...buildTurboRunArgs(PROOF_TASK, { mode: "full", reason: "proof" }, [
+      `--filter=${PROOF_PACKAGE}`,
+    ]),
+  ];
+  assert.equal(
+    dryRunCacheStatus(ciArgs, taskId),
+    "MISS",
+    "CI must re-run a selected package instead of replaying its cached pass",
   );
 });
 

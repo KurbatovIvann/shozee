@@ -5,8 +5,9 @@
  * Resolves PR comparison history, then runs either `turbo --affected` or a
  * full `turbo run`. `--affected` walks the package graph’s dependents; a
  * synthetic `topo` or `^build` task graph is not used (this workspace is
- * cyclic). Always uses the local filesystem cache (`local:rw`) so GitHub's
- * `.turbo` cache is sufficient and TURBO_TOKEN is never required.
+ * cyclic). The cache mode comes from `TURBO_LOCAL_CACHE` — write-only, never
+ * read (SHO-708) — so no run can replay a stale pass and TURBO_TOKEN is never
+ * required.
  */
 import { spawnSync } from "node:child_process";
 import { appendFileSync } from "node:fs";

@@ -116,7 +116,7 @@ test("CLI print-only on push to main is full (no --affected)", () => {
   assert.ok(jsonLine);
   const payload = JSON.parse(jsonLine);
   assert.equal(payload.mode, "full");
-  assert.ok(payload.args.includes("--cache=local:rw"));
+  assert.ok(payload.args.includes("--cache=local:w"));
   assert.ok(!payload.args.includes("--affected"));
 });
 

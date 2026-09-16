@@ -7,7 +7,6 @@ import {
   buildTurboRunEnv,
   resolveComparisonBase,
   resolveTurboExecutionMode,
-  shouldPersistTurboCache,
 } from "./turbo-execution-mode.mjs";
 
 test("push to main always runs the full workspace suite", () => {
@@ -152,37 +151,29 @@ test("resolveComparisonBase falls back through origin/baseRef then full miss", (
   );
 });
 
-test("Turbo cache persist skips untrusted fork PRs and allows same-repo / push", () => {
-  assert.equal(
-    shouldPersistTurboCache({
-      eventName: "pull_request",
-      headRepo: "outsider/showzy-v2",
-      originRepo: "KurbatovIvann/showzy-v2",
-    }),
-    false,
-  );
-  assert.equal(
-    shouldPersistTurboCache({
-      eventName: "pull_request",
-      headRepo: "KurbatovIvann/showzy-v2",
-      originRepo: "KurbatovIvann/showzy-v2",
-    }),
-    true,
-  );
-  assert.equal(
-    shouldPersistTurboCache({
-      eventName: "push",
-      headRepo: undefined,
-      originRepo: "KurbatovIvann/showzy-v2",
-    }),
-    true,
-  );
-  assert.equal(
-    shouldPersistTurboCache({
-      eventName: "pull_request",
-      headRepo: undefined,
-      originRepo: "KurbatovIvann/showzy-v2",
-    }),
-    false,
-  );
+test("every CI task carries the one cache mode, in both execution modes", () => {
+  const cacheFlag = (args) => args.find((arg) => arg.startsWith("--cache="));
+  for (const task of ["typecheck", "lint", "test:unit", "e2e-smoke"]) {
+    assert.equal(
+      cacheFlag(buildTurboRunArgs(task, { mode: "full", reason: "proof" })),
+      `--cache=${TURBO_LOCAL_CACHE}`,
+      `${task} must use the single CI cache mode`,
+    );
+    assert.equal(
+      cacheFlag(
+        buildTurboRunArgs(
+          task,
+          {
+            mode: "affected",
+            reason: "pull-request",
+            scmBase: "merge-base-sha",
+            scmHead: "HEAD",
+          },
+          ["--filter=@showzy/web"],
+        ),
+      ),
+      `--cache=${TURBO_LOCAL_CACHE}`,
+      `${task} must use the single CI cache mode when affected`,
+    );
+  }
 });

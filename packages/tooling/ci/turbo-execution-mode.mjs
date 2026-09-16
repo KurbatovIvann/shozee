@@ -8,9 +8,16 @@
  * and Turbo refuses `#topo` / `^build` walks on that graph. Pushes to `main`
  * and any unresolved/shallow base run the full workspace suite. Remote cache
  * is never required.
+ *
+ * CI never reads a cache entry (SHO-708). Because the graph is cyclic and no
+ * task declares `^task` edges, a task hash covers only its own package's
+ * files: a dependent keeps its hash when a dependency's source changes, so a
+ * readable cache replays a stale pass and reports green while the dependent is
+ * red. `local:w` writes entries and reads none, which is the same mode the
+ * local gate uses (`.claude/scripts/verify.mjs`, SHO-699).
  */
 
-export const TURBO_LOCAL_CACHE = "local:rw";
+export const TURBO_LOCAL_CACHE = "local:w";
 
 /**
  * @typedef {"full" | "affected"} TurboExecutionMode
@@ -62,27 +69,6 @@ export function resolveTurboExecutionMode(input) {
   }
 
   return { mode: "full", reason: "non-pr-event" };
-}
-
-/**
- * GitHub Actions cache for `.turbo` uses `github.token`. Do not restore or
- * save on untrusted fork PRs (no extra cache credentials, no TURBO_TOKEN).
- *
- * @param {{
- *   eventName: string | undefined,
- *   headRepo: string | undefined,
- *   originRepo: string | undefined,
- * }} input
- */
-export function shouldPersistTurboCache(input) {
-  if (input.eventName === "pull_request") {
-    return (
-      Boolean(input.headRepo) &&
-      Boolean(input.originRepo) &&
-      input.headRepo === input.originRepo
-    );
-  }
-  return true;
 }
 
 /**
