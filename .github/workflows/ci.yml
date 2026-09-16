@@ -335,7 +335,7 @@ jobs:
       - name: Install Playwright Chromium
         run: time -p pnpm --filter @showzy/web exec playwright install --with-deps chromium
       - name: Web Playwright smoke (SHO-331)
-        run: time -p node packages/tooling/ci/run-turbo.mjs e2e-smoke --filter=@showzy/web
+        run: time -p node packages/tooling/ci/run-turbo.mjs e2e-smoke --always-full --filter=@showzy/web
       - name: Upload Playwright artifacts
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

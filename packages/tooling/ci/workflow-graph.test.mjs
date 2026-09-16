@@ -113,6 +113,42 @@ function jobIds(source) {
   );
 }
 
+/**
+ * Every shell command a workflow runs, including the lines of a `run: |` block
+ * scalar — a guard that only reads single-line `run:` steps is evaded by one.
+ * @param {string} source
+ * @returns {string[]}
+ */
+function runStepCommands(source) {
+  const lines = source.split("\n");
+  /** @type {string[]} */
+  const commands = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const match = lines[index].match(/^(\s*)(?:- )?run:\s*(.*)$/);
+    if (!match) {
+      continue;
+    }
+    const indent = match[1].length;
+    const inline = match[2].trim();
+    if (!inline.startsWith("|") && !inline.startsWith(">")) {
+      commands.push(inline);
+      continue;
+    }
+    for (let body = index + 1; body < lines.length; body += 1) {
+      const line = lines[body];
+      if (line.trim() === "") {
+        continue;
+      }
+      if ((line.match(/^\s*/)?.[0].length ?? 0) <= indent) {
+        break;
+      }
+      commands.push(line.trim());
+      index = body;
+    }
+  }
+  return commands;
+}
+
 const TURBO_TASK_JOBS = ["typecheck", "lint", "test-unit", "build-smoke"];
 
 const workflow = fs.readFileSync(workflowPath, "utf8");
@@ -213,7 +249,7 @@ test("secret-scan and the other named gates remain independent workers", () => {
   assert.match(extractJob(workflow, "bundle-probe"), /bundle:probe/);
   const e2eSmoke = extractJob(workflow, "e2e-smoke");
   assert.match(e2eSmoke, /playwright install --with-deps chromium/);
-  assert.match(e2eSmoke, /e2e-smoke --filter=@showzy\/web/);
+  assert.match(e2eSmoke, /e2e-smoke --always-full --filter=@showzy\/web/);
   assert.doesNotMatch(e2eSmoke, /Placeholder/);
 });
 
@@ -290,7 +326,11 @@ test("Turbo jobs use the affected-or-full helper and restore no .turbo cache", (
   assert.doesNotMatch(format, /run-turbo\.mjs/);
 
   const e2eSmoke = extractJob(workflow, "e2e-smoke");
-  assert.match(e2eSmoke, /run-turbo\.mjs e2e-smoke --filter=@showzy\/web/);
+  assert.match(
+    e2eSmoke,
+    /run-turbo\.mjs e2e-smoke --always-full --filter=@showzy\/web/,
+    "a cache: false required gate must state full execution, not inherit it from an unresolved base",
+  );
 
   assert.doesNotMatch(workflow, /TURBO_TOKEN:/);
   assert.doesNotMatch(workflow, /secrets\.TURBO_TOKEN/);
@@ -300,17 +340,47 @@ test("Turbo jobs use the affected-or-full helper and restore no .turbo cache", (
 });
 
 test("no CI step spawns turbo outside the one execution-mode helper", () => {
-  const helperSteps = [...workflow.matchAll(/^ +run:.*run-turbo\.mjs.*$/gm)];
-  assert.ok(helperSteps.length > 0);
-  const directSpawns = [
-    ...workflow.matchAll(
-      /^ +run:.*\b(?:pnpm|npx|yarn)\s+(?:exec\s+)?turbo\b.*$/gm,
-    ),
-  ].map((match) => match[0].trim());
+  const commands = runStepCommands(workflow);
+  assert.ok(commands.some((command) => command.includes("run-turbo.mjs")));
+  const directSpawns = commands.filter((command) =>
+    /\b(?:pnpm|npx|yarn)\s+(?:exec\s+)?turbo\b/.test(command),
+  );
   assert.deepEqual(
     directSpawns,
     [],
     "a turbo step outside run-turbo.mjs can drift back to a readable cache",
+  );
+  const cacheOverrides = commands.filter(
+    (command) => command.includes("run-turbo.mjs") && /--cache\b/.test(command),
+  );
+  assert.deepEqual(
+    cacheOverrides,
+    [],
+    "run-turbo.mjs owns the cache mode; an extra --cache would win",
+  );
+});
+
+test("the turbo guard reads block scalars, not only single-line run steps", () => {
+  const evasion = `  sneak:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build
+        run: |
+          echo building
+          pnpm exec turbo run test:unit --cache=local:rw
+      - name: After
+        run: echo done
+`;
+  const commands = runStepCommands(evasion);
+  assert.deepEqual(commands, [
+    "echo building",
+    "pnpm exec turbo run test:unit --cache=local:rw",
+    "echo done",
+  ]);
+  assert.ok(
+    commands.some((command) =>
+      /\b(?:pnpm|npx|yarn)\s+(?:exec\s+)?turbo\b/.test(command),
+    ),
   );
 });
 

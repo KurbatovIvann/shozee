@@ -29,6 +29,8 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { TURBO_LOCAL_CACHE } from "../../packages/tooling/ci/turbo-execution-mode.mjs";
+
 const IS_WIN = process.platform === "win32";
 const STEPS = [
   "diff-hygiene",
@@ -285,8 +287,9 @@ function chunk(list, size) {
  * changed. Selection alone is not enough: this workspace is cyclic, so no task
  * declares `^task` edges, and a package task hash therefore covers only that
  * package's own files. A dependent keeps its previous hash when a dependency's
- * source changes and Turbo replays the stale pass. `--cache=local:w` writes the
- * cache but never reads it, so a selected package's tests actually run (SHO-699).
+ * source changes and Turbo replays the stale pass. `TURBO_LOCAL_CACHE` — the one
+ * constant CI also derives its cache mode from — writes the cache but never
+ * reads it, so a selected package's tests actually run (SHO-699, SHO-708).
  *
  * `filters` replaces that affected selection for a gate that targets one fixed
  * package (`build-web`), which needs the same cache mode for the same reason.
@@ -312,7 +315,7 @@ export function buildTurboArgs(task, opts) {
     "run",
     task,
     ...filters,
-    "--cache=local:w",
+    `--cache=${TURBO_LOCAL_CACHE}`,
     "--continue",
     "--output-logs=errors-only",
     ...(opts.extra ?? []),

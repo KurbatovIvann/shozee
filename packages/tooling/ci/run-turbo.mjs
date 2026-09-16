@@ -15,21 +15,26 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import {
+  alwaysFullExecution,
   buildTurboRunArgs,
   buildTurboRunEnv,
+  findCacheOverride,
   resolveComparisonBase,
   resolveTurboExecutionMode,
 } from "./turbo-execution-mode.mjs";
+
+const OWN_FLAGS = ["--print-only", "--always-full"];
 
 /**
  * @param {string[]} argv
  */
 export function parseRunTurboArgv(argv) {
   const printOnly = argv.includes("--print-only");
-  const rest = argv.filter((arg) => arg !== "--print-only");
+  const alwaysFull = argv.includes("--always-full");
+  const rest = argv.filter((arg) => !OWN_FLAGS.includes(arg));
   const task = rest[0];
   const extraArgs = rest.slice(1);
-  return { printOnly, task, extraArgs };
+  return { printOnly, alwaysFull, task, extraArgs };
 }
 
 /**
@@ -104,13 +109,28 @@ function writeSummary(lines, summaryPath) {
  * @returns {number}
  */
 export function runTurboCli(argv, env = process.env, io = {}) {
-  const { printOnly, task, extraArgs } = parseRunTurboArgv(argv);
+  const { printOnly, alwaysFull, task, extraArgs } = parseRunTurboArgv(argv);
   if (!task) {
-    console.error("usage: run-turbo.mjs <task> [...turbo args] [--print-only]");
+    console.error(
+      "usage: run-turbo.mjs <task> [...turbo args] [--always-full] [--print-only]",
+    );
     return 2;
   }
 
-  const { comparison, decision } = decideTurboRun(env, io);
+  const cacheOverride = findCacheOverride(extraArgs);
+  if (cacheOverride) {
+    console.error(
+      `run-turbo.mjs owns the turbo cache mode; remove ${cacheOverride}`,
+    );
+    return 2;
+  }
+
+  const { comparison, decision } = alwaysFull
+    ? {
+        comparison: { ok: false, reason: "always-full" },
+        decision: alwaysFullExecution(),
+      }
+    : decideTurboRun(env, io);
   const args = buildTurboRunArgs(task, decision, extraArgs);
   const turboEnv = buildTurboRunEnv(decision, env);
 
