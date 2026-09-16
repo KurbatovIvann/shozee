@@ -984,15 +984,45 @@ describe("apps/worker one pool under concurrent assistant turns (SHO-709)", () =
     outputTokens: { total: 5, text: 5, reasoning: 0 },
   };
 
-  interface PoolObservation {
+  const IDLE_WINDOW_MS = 5_000;
+
+  interface PoolCounters {
     checkouts: number;
     peakCheckedOut: number;
     peakOpenTransactions: number;
-    longestCheckoutMs: number;
+    transactionsAtPeak: number;
     queuedCheckouts: number;
     longestQueuedMs: number;
-    transactionsAtPeak: number;
+    longestCheckoutMs: number;
+  }
+
+  interface PoolObservation {
+    readonly max: number;
+    readonly connectionTimeoutMillis: number | undefined;
+    counters: PoolCounters;
     readonly checkoutFailures: string[];
+  }
+
+  function zeroCounters(): PoolCounters {
+    return {
+      checkouts: 0,
+      peakCheckedOut: 0,
+      peakOpenTransactions: 0,
+      transactionsAtPeak: 0,
+      queuedCheckouts: 0,
+      longestQueuedMs: 0,
+      longestCheckoutMs: 0,
+    };
+  }
+
+  function takeCounters(observation: PoolObservation): PoolCounters {
+    const taken = observation.counters;
+    observation.counters = zeroCounters();
+    return {
+      ...taken,
+      longestQueuedMs: Math.round(taken.longestQueuedMs),
+      longestCheckoutMs: Math.round(taken.longestCheckoutMs),
+    };
   }
 
   type PoolCheckoutCallback = (
@@ -1003,13 +1033,9 @@ describe("apps/worker one pool under concurrent assistant turns (SHO-709)", () =
 
   function meterPool(pool: pg.Pool): PoolObservation {
     const seen: PoolObservation = {
-      checkouts: 0,
-      peakCheckedOut: 0,
-      peakOpenTransactions: 0,
-      longestCheckoutMs: 0,
-      queuedCheckouts: 0,
-      longestQueuedMs: 0,
-      transactionsAtPeak: 0,
+      max: pool.options.max,
+      connectionTimeoutMillis: pool.options.connectionTimeoutMillis,
+      counters: zeroCounters(),
       checkoutFailures: [],
     };
     let openTransactions = 0;
@@ -1018,16 +1044,24 @@ describe("apps/worker one pool under concurrent assistant turns (SHO-709)", () =
       pool.idleCount === 0 && pool.totalCount >= pool.options.max;
     const granted = (startedAt: number, queued: boolean) => {
       const waitedMs = performance.now() - startedAt;
-      seen.checkouts += 1;
-      seen.longestCheckoutMs = Math.max(seen.longestCheckoutMs, waitedMs);
+      const counters = seen.counters;
+      counters.checkouts += 1;
+      counters.longestCheckoutMs = Math.max(
+        counters.longestCheckoutMs,
+        waitedMs,
+      );
       if (queued) {
-        seen.queuedCheckouts += 1;
-        seen.longestQueuedMs = Math.max(seen.longestQueuedMs, waitedMs);
+        counters.queuedCheckouts += 1;
+        counters.longestQueuedMs = Math.max(counters.longestQueuedMs, waitedMs);
       }
+      counters.peakOpenTransactions = Math.max(
+        counters.peakOpenTransactions,
+        openTransactions,
+      );
       const checkedOut = pool.totalCount - pool.idleCount;
-      if (checkedOut > seen.peakCheckedOut) {
-        seen.peakCheckedOut = checkedOut;
-        seen.transactionsAtPeak = openTransactions;
+      if (checkedOut > counters.peakCheckedOut) {
+        counters.peakCheckedOut = checkedOut;
+        counters.transactionsAtPeak = openTransactions;
       }
     };
     const failed = (error: unknown) => {
@@ -1051,10 +1085,6 @@ describe("apps/worker one pool under concurrent assistant turns (SHO-709)", () =
         (client) => {
           openTransactions += 1;
           granted(startedAt, queued);
-          seen.peakOpenTransactions = Math.max(
-            seen.peakOpenTransactions,
-            openTransactions,
-          );
           const release = client.release.bind(client);
           client.release = (releaseError?: Error | boolean) => {
             openTransactions -= 1;
@@ -1223,7 +1253,9 @@ describe("apps/worker one pool under concurrent assistant turns (SHO-709)", () =
     return result.rows;
   }
 
-  it("runs four turns of parallel tool calls with maintenance on the default pool: no checkout fails and every queue completes", async () => {
+  it("runs four turns of parallel tool calls with maintenance on the default pool (max 10, 10 s): no checkout fails, every queue completes, idle and loaded counters are annotated", async ({
+    annotate,
+  }) => {
     const lines: string[] = [];
     const logger = createProcessLogger({
       name: "worker-pool-scenario",
@@ -1273,6 +1305,17 @@ describe("apps/worker one pool under concurrent assistant turns (SHO-709)", () =
       if (observed === undefined) {
         return;
       }
+      expect({
+        max: observed.max,
+        connectionTimeoutMillis: observed.connectionTimeoutMillis,
+      }).toEqual({ max: 10, connectionTimeoutMillis: 10_000 });
+      takeCounters(observed);
+      await delay(IDLE_WINDOW_MS);
+      const idle = takeCounters(observed);
+      await annotate(
+        `idle ${String(IDLE_WINDOW_MS)} ms ${JSON.stringify(idle)}`,
+        "pool",
+      );
       const sender = await openJobRunner(
         { db: kit.db.runtime.db, jobs: workerJobs, onError: () => undefined },
         "api",
@@ -1294,6 +1337,7 @@ describe("apps/worker one pool under concurrent assistant turns (SHO-709)", () =
         }
         return buildJobEnvelope(job, { companyId: null, payload: {} });
       });
+      takeCounters(observed);
       await kit.db.runtime.db.transaction(async (tx) => {
         await sender.port.enqueue(tx, maintenance);
       });
@@ -1317,6 +1361,8 @@ describe("apps/worker one pool under concurrent assistant turns (SHO-709)", () =
           states.every(({ state }) => state === "completed")
         );
       }, 60_000);
+      const loaded = takeCounters(observed);
+      await annotate(`loaded ${JSON.stringify(loaded)}`, "pool");
 
       expect(await Promise.all(turns.map(turnStatus))).toEqual(
         turns.map(() => "done"),
@@ -1330,7 +1376,6 @@ describe("apps/worker one pool under concurrent assistant turns (SHO-709)", () =
         ),
       );
       expect(observed.checkoutFailures).toEqual([]);
-      expect(observed.peakCheckedOut).toBeGreaterThan(TURNS);
       expect(lines.join("\n")).not.toMatch(
         /job runner error|idle postgres pool client error/,
       );

@@ -162,28 +162,32 @@ and is left untouched. Proof: `src/pgboss-schema.db.test.ts`.
   and 1 for every periodic job, whose ticks are meant to be serial. More
   processes still multiply the number; sizing that is a capacity question and
   there is no deployment yet.
-- Pool envelope (SHO-709, measured on `515c7f17`, local Docker Postgres 17).
-  The worker keeps `createDbClient`'s defaults (`max` 10, checkout timeout
-  10 s) for pg-boss, the outbox loop and every attempt. Scenario
-  (`apps/worker/src/jobs.db.test.ts`, "one pool under concurrent assistant
-  turns"): a booted worker at polling 0.5 s, supervise and cron 1 s, outbox poll
-  100 ms; four accepted turns whose stub model issues 4 parallel
+- Pool envelope (SHO-709, measured on `602ea189` plus the annotating test,
+  local Docker Postgres 17). The worker keeps `createDbClient`'s defaults
+  (`max` 10, checkout timeout 10 s; the test asserts both) for pg-boss, the
+  outbox loop and every attempt. Scenario (`apps/worker/src/jobs.db.test.ts`,
+  "one pool under concurrent assistant turns"): a booted worker at polling
+  0.5 s, supervise and cron 1 s, outbox poll 100 ms, left idle for 5 s; then
+  four accepted turns whose stub model issues 4 parallel
   `customers_list_customers` calls in each of 2 steps, released together at
-  each step, while the three maintenance jobs are sent. Observed over five
-  runs: peak checked-out connections 9–10, peak open transactions 5–7, 0–10
-  checkouts queued behind a full pool, longest queued wait 62 ms, longest
-  checkout including opening a connection 418 ms, no checkout timed out, all
-  four turns `done` with 8 tool results each, and every turn and maintenance job
-  `completed`. An idle worker at the same intervals already peaks at 7–10 with
-  at most one transaction open, and under load 1–5 transactions were open at
-  the peak, so it is mostly single statements, not turns: the kit host runs one turn's tool
-  calls one at a time, so parallel tool calls do not multiply a turn's
-  transactions. Not exercised: a tool whose action `ctx.call`s an audited
-  callee, which opens the audit transaction while holding its own. The setting
-  stays; nothing reproduced starvation. **Requirement for when infrastructure
-  exists:** size the worker pool and Postgres `max_connections` from measured
-  per-process peaks times worker replicas plus the API's pools, with the
-  headroom this scenario shows is thin.
+  each step, while the three maintenance jobs are sent. The test annotates the
+  idle and loaded counters; reproduce with
+  `pnpm --filter @showzy/worker exec vitest run --project db src/jobs.db.test.ts -t SHO-709 --reporter=verbose`.
+  Five runs emitted, idle: peak checked-out connections 7–9, peak open
+  transactions 1–2, nothing queued, longest checkout 2–20 ms; loaded: peak
+  checked-out 8–9, peak open transactions 5–7 with 0–5 open at the
+  checked-out peak, nothing queued behind a full pool, longest checkout 0–3 ms.
+  No checkout failed, all four turns ended `done` with 8 tool results each, and
+  every turn and maintenance job `completed`. In no run did load raise the
+  checked-out peak more than one connection above that run's idle peak: the
+  kit host runs one turn's tool calls one at a time,
+  so parallel tool calls do not multiply a turn's transactions. Not exercised:
+  a tool whose action `ctx.call`s an audited callee, which opens the audit
+  transaction while holding its own. The setting stays; nothing reproduced
+  starvation. **Requirement for when infrastructure exists:** size the worker
+  pool and Postgres `max_connections` from measured per-process peaks times
+  worker replicas plus the API's pools, with the headroom this scenario shows
+  is thin (9 of 10).
 - An `expires` job also gets a dead letter `<job>.exhausted` (zero retries,
   same expiry), provisioned before its queue; `periodic` jobs have none.
 - The `worker` role creates missing queues (`createQueue`: one
