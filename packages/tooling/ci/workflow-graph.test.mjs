@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -114,40 +115,218 @@ function jobIds(source) {
 }
 
 /**
- * Every shell command a workflow runs, including the lines of a `run: |` block
- * scalar — a guard that only reads single-line `run:` steps is evaded by one.
+ * Joins shell lines that end with a trailing `\` onto the line that follows.
+ * @param {string[]} lines
+ * @returns {string[]}
+ */
+function joinLineContinuations(lines) {
+  /** @type {string[]} */
+  const joined = [];
+  let pending = "";
+  for (const line of lines) {
+    const current = pending ? `${pending} ${line}` : line;
+    if (current.endsWith("\\")) {
+      pending = current.slice(0, -1).trimEnd();
+      continue;
+    }
+    joined.push(current);
+    pending = "";
+  }
+  if (pending) {
+    joined.push(pending);
+  }
+  return joined;
+}
+
+/**
+ * Every shell command a workflow or composite action runs. A `run: |` block
+ * yields one command per logical line (trailing-`\` continuations joined); a
+ * folded `run: >` block and a plain or quoted scalar that continues onto more
+ * indented lines yield one command. YAML anchors and aliases are not resolved.
  * @param {string} source
  * @returns {string[]}
  */
 function runStepCommands(source) {
-  const lines = source.split("\n");
+  const lines = source.split(/\r?\n/);
   /** @type {string[]} */
   const commands = [];
   for (let index = 0; index < lines.length; index += 1) {
-    const match = lines[index].match(/^(\s*)(?:- )?run:\s*(.*)$/);
+    const match = lines[index].match(/^(\s*)(- )?run:\s*(.*)$/);
     if (!match) {
       continue;
     }
-    const indent = match[1].length;
-    const inline = match[2].trim();
-    if (!inline.startsWith("|") && !inline.startsWith(">")) {
-      commands.push(inline);
-      continue;
+    const keyColumn = match[1].length + (match[2]?.length ?? 0);
+    const header = match[3].trim();
+    /** @type {string[]} */
+    const body = [];
+    let next = index + 1;
+    while (
+      next < lines.length &&
+      (lines[next].trim() === "" ||
+        (lines[next].match(/^\s*/)?.[0].length ?? 0) > keyColumn)
+    ) {
+      body.push(lines[next].trim());
+      next += 1;
     }
-    for (let body = index + 1; body < lines.length; body += 1) {
-      const line = lines[body];
-      if (line.trim() === "") {
-        continue;
-      }
-      if ((line.match(/^\s*/)?.[0].length ?? 0) <= indent) {
-        break;
-      }
-      commands.push(line.trim());
-      index = body;
+    index = next - 1;
+    const isBlockScalar = header.startsWith("|") || header.startsWith(">");
+    const logicalLines = joinLineContinuations(
+      [...(isBlockScalar ? [] : [header]), ...body].filter(
+        (line) => line !== "",
+      ),
+    );
+    if (header.startsWith("|")) {
+      commands.push(...logicalLines);
+    } else if (logicalLines.length > 0) {
+      commands.push(logicalLines.join(" "));
     }
   }
   return commands;
 }
+
+const SPAWNS_TURBO_BINARY = /(?:^|[\s;&|("'/])turbo(?=$|[\s;&|)"'])/;
+
+/**
+ * @param {string} text
+ */
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * A command that runs the root `package.json` script `name`.
+ * @param {string} name
+ */
+function rootScriptInvocation(name) {
+  const script = `${escapeRegExp(name)}(?=$|[\\s;&|)"'])`;
+  return new RegExp(
+    `\\b(?:(?:pnpm|yarn)\\s+(?:(?:-w|--workspace-root)\\s+)?(?:run\\s+)?|npm\\s+run\\s+)${script}`,
+  );
+}
+
+/**
+ * Root scripts that start turbo, directly or through another such script.
+ * @param {Record<string, string>} scripts
+ * @returns {string[]}
+ */
+function turboRootScripts(scripts) {
+  /** @type {Set<string>} */
+  const turboScripts = new Set();
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const [name, body] of Object.entries(scripts)) {
+      if (turboScripts.has(name)) {
+        continue;
+      }
+      const startsTurbo =
+        SPAWNS_TURBO_BINARY.test(body) ||
+        [...turboScripts].some((known) =>
+          rootScriptInvocation(known).test(body),
+        );
+      if (startsTurbo) {
+        turboScripts.add(name);
+        grew = true;
+      }
+    }
+  }
+  return [...turboScripts].sort();
+}
+
+/**
+ * Repo-relative paths of every workflow and composite action under `root`.
+ * @param {string} root
+ * @returns {string[]}
+ */
+function ciRunSourcePaths(root) {
+  const workflowsDir = path.join(root, ".github/workflows");
+  const actionsDir = path.join(root, ".github/actions");
+  const workflows = fs.existsSync(workflowsDir)
+    ? fs
+        .readdirSync(workflowsDir)
+        .filter((name) => /\.ya?ml$/.test(name))
+        .map((name) => `.github/workflows/${name}`)
+    : [];
+  const actions = fs.existsSync(actionsDir)
+    ? fs
+        .readdirSync(actionsDir, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .flatMap((entry) =>
+          ["action.yml", "action.yaml"].map(
+            (file) => `.github/actions/${entry.name}/${file}`,
+          ),
+        )
+        .filter((file) => fs.existsSync(path.join(root, file)))
+    : [];
+  return [...workflows, ...actions].sort();
+}
+
+/**
+ * Every CI step under `root` that could start turbo outside `run-turbo.mjs`
+ * (and so read the turbo cache) or that overrides what the helper decides.
+ * @param {string} root
+ * @returns {{ file: string, rule: string, command: string }[]}
+ */
+function turboGuardFindings(root) {
+  const manifest = JSON.parse(
+    fs.readFileSync(path.join(root, "package.json"), "utf8"),
+  );
+  const turboScriptInvocations = turboRootScripts(manifest.scripts ?? {}).map(
+    rootScriptInvocation,
+  );
+  /** @type {{ file: string, rule: string, command: string }[]} */
+  const findings = [];
+  for (const file of ciRunSourcePaths(root)) {
+    const source = fs.readFileSync(path.join(root, file), "utf8");
+    for (const command of runStepCommands(source)) {
+      if (
+        SPAWNS_TURBO_BINARY.test(command) ||
+        turboScriptInvocations.some((invocation) => invocation.test(command))
+      ) {
+        findings.push({ file, rule: "turbo-outside-run-turbo", command });
+      }
+      if (!command.includes("run-turbo.mjs")) {
+        continue;
+      }
+      if (/--cache\b/.test(command)) {
+        findings.push({ file, rule: "cache-override", command });
+      }
+      if (/--print-only\b/.test(command)) {
+        findings.push({ file, rule: "print-only", command });
+      }
+    }
+  }
+  return findings;
+}
+
+/**
+ * @param {Record<string, string>} files
+ * @param {(root: string) => void} check
+ */
+function withSyntheticRepo(files, check) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "turbo-guard-"));
+  try {
+    for (const [file, content] of Object.entries(files)) {
+      const target = path.join(root, file);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, content);
+    }
+    check(root);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
+const SYNTHETIC_MANIFEST = JSON.stringify({
+  scripts: {
+    check: "turbo run lint",
+    typecheck: "turbo run typecheck",
+    "test:unit": "turbo run test:unit",
+    test: "pnpm test:unit && pnpm test:db",
+    "test:db": "vitest run",
+    "format:check": "prettier --check .",
+  },
+});
 
 const TURBO_TASK_JOBS = ["typecheck", "lint", "test-unit", "build-smoke"];
 
@@ -339,24 +518,143 @@ test("Turbo jobs use the affected-or-full helper and restore no .turbo cache", (
   assert.doesNotMatch(workflow, /actions:\s+write/);
 });
 
-test("no CI step spawns turbo outside the one execution-mode helper", () => {
-  const commands = runStepCommands(workflow);
-  assert.ok(commands.some((command) => command.includes("run-turbo.mjs")));
-  const directSpawns = commands.filter((command) =>
-    /\b(?:pnpm|npx|yarn)\s+(?:exec\s+)?turbo\b/.test(command),
+test("no CI workflow or composite action step spawns turbo outside the one execution-mode helper", () => {
+  const sources = ciRunSourcePaths(repoRoot);
+  assert.ok(sources.includes(".github/workflows/ci.yml"));
+  assert.ok(sources.includes(".github/actions/setup-ci-workspace/action.yml"));
+  assert.ok(
+    runStepCommands(workflow).some((command) =>
+      command.includes("run-turbo.mjs"),
+    ),
   );
+  const rootManifest = JSON.parse(
+    fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"),
+  );
+  const turboScripts = turboRootScripts(rootManifest.scripts);
+  assert.ok(turboScripts.includes("test:unit"));
+  assert.ok(turboScripts.includes("test"));
   assert.deepEqual(
-    directSpawns,
+    turboGuardFindings(repoRoot),
     [],
-    "a turbo step outside run-turbo.mjs can drift back to a readable cache",
+    "turbo outside run-turbo.mjs reads the cache; --cache or --print-only on run-turbo.mjs overrides or skips the run",
   );
-  const cacheOverrides = commands.filter(
-    (command) => command.includes("run-turbo.mjs") && /--cache\b/.test(command),
+});
+
+test("the turbo guard flags a root package.json script that starts turbo, taken from the manifest", () => {
+  withSyntheticRepo(
+    {
+      "package.json": SYNTHETIC_MANIFEST,
+      ".github/workflows/ci.yml": `jobs:
+  sneak:
+    runs-on: ubuntu-latest
+    steps:
+      - run: time -p pnpm test:unit
+      - run: pnpm run typecheck
+      - run: pnpm check
+      - run: pnpm test
+      - run: pnpm test:db
+      - run: pnpm format:check
+      - run: pnpm --filter @showzy/web typecheck
+`,
+    },
+    (root) => {
+      assert.deepEqual(
+        turboGuardFindings(root).map((finding) => finding.command),
+        [
+          "time -p pnpm test:unit",
+          "pnpm run typecheck",
+          "pnpm check",
+          "pnpm test",
+        ],
+      );
+    },
   );
-  assert.deepEqual(
-    cacheOverrides,
-    [],
-    "run-turbo.mjs owns the cache mode; an extra --cache would win",
+});
+
+test("the turbo guard reads composite actions, multi-line plain and folded scalars, and backslash continuations (YAML anchors unresolved; ci.yml has none)", () => {
+  const workflowSource = `jobs:
+  sneak:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Plain scalar
+        run: pnpm exec
+          turbo run typecheck
+      - name: Backslash
+        run: |
+          echo building
+          pnpm exec \\
+            turbo run test:unit
+      - name: Folded
+        run: >
+          pnpm
+          exec turbo run build
+        env:
+          CI: "true"
+`;
+  assert.deepEqual(runStepCommands(workflowSource), [
+    "pnpm exec turbo run typecheck",
+    "echo building",
+    "pnpm exec turbo run test:unit",
+    "pnpm exec turbo run build",
+  ]);
+  withSyntheticRepo(
+    {
+      "package.json": SYNTHETIC_MANIFEST,
+      ".github/workflows/ci.yml": workflowSource,
+      ".github/actions/setup/action.yml": `name: setup
+runs:
+  using: composite
+  steps:
+    - run: pnpm exec turbo run lint
+      shell: bash
+`,
+    },
+    (root) => {
+      assert.deepEqual(turboGuardFindings(root), [
+        {
+          file: ".github/actions/setup/action.yml",
+          rule: "turbo-outside-run-turbo",
+          command: "pnpm exec turbo run lint",
+        },
+        {
+          file: ".github/workflows/ci.yml",
+          rule: "turbo-outside-run-turbo",
+          command: "pnpm exec turbo run typecheck",
+        },
+        {
+          file: ".github/workflows/ci.yml",
+          rule: "turbo-outside-run-turbo",
+          command: "pnpm exec turbo run test:unit",
+        },
+        {
+          file: ".github/workflows/ci.yml",
+          rule: "turbo-outside-run-turbo",
+          command: "pnpm exec turbo run build",
+        },
+      ]);
+    },
+  );
+});
+
+test("the turbo guard rejects --print-only and --cache on a run-turbo.mjs step", () => {
+  withSyntheticRepo(
+    {
+      "package.json": SYNTHETIC_MANIFEST,
+      ".github/workflows/ci.yml": `jobs:
+  sneak:
+    runs-on: ubuntu-latest
+    steps:
+      - run: time -p node packages/tooling/ci/run-turbo.mjs lint --print-only
+      - run: node packages/tooling/ci/run-turbo.mjs test:unit --cache=local:rw
+      - run: node packages/tooling/ci/run-turbo.mjs e2e-smoke --always-full
+`,
+    },
+    (root) => {
+      assert.deepEqual(
+        turboGuardFindings(root).map((finding) => finding.rule),
+        ["print-only", "cache-override"],
+      );
+    },
   );
 });
 
@@ -377,11 +675,7 @@ test("the turbo guard reads block scalars, not only single-line run steps", () =
     "pnpm exec turbo run test:unit --cache=local:rw",
     "echo done",
   ]);
-  assert.ok(
-    commands.some((command) =>
-      /\b(?:pnpm|npx|yarn)\s+(?:exec\s+)?turbo\b/.test(command),
-    ),
-  );
+  assert.ok(commands.some((command) => SPAWNS_TURBO_BINARY.test(command)));
 });
 
 test("publish-job-timing writes a duration summary without failing", () => {
