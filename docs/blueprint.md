@@ -88,11 +88,11 @@ tests before any domain module is built:
 | Monorepo | **Turborepo + pnpm** | Already works; shared packages are critical for agents |
 | HTTP framework | **Hono** (`@hono/node-server`) | Minimal, fetch-native, explicit. SSE, raw body, streaming proxy — out of the box. Heavy stuff (Puppeteer, WASM, queues) lives outside the framework |
 | API contract | **oRPC** | End-to-end types for web/mobile + OpenAPI autogeneration. Kills the hand-written DTO duplicates |
-| Database | **PostgreSQL 17** (self-hosted) | Extensions: pg_trgm + unaccent. Scheduled work moves to BullMQ, so pg_cron is dropped with v1 invite/analytics jobs; pgvector/pg_partman return only if their dropped features return |
+| Database | **PostgreSQL 17** (self-hosted) | Extensions: pg_trgm + unaccent. Scheduled work moves to pg-boss periodic jobs, so pg_cron is dropped with v1 invite/analytics jobs; pgvector/pg_partman return only if their dropped features return |
 | ORM / migrations | **Drizzle ORM + drizzle-kit** | Schema in TypeScript = source of types; SQL-like API without magic; versioned migrations |
 | Auth | **better-auth** | Self-hosted TS library: email/phone OTP, sessions, native Drizzle integration |
 | Storage | **S3-compatible** (Garage locally → Cloudflare R2 in prod) | Replaces Supabase Storage; signed URLs work the same. ADR-0027 |
-| Queues | **BullMQ + Redis** | Decision revised after the audit: Redis is mandatory anyway (Socket.IO adapter, cache, leader election), and patterns for 7 queues are already established |
+| Queues | **pg-boss + PostgreSQL** (ADR-0041, supersedes ADR-0007's BullMQ + Redis) | A job and the row that justifies it commit in one transaction, so nothing reconciles two stores; Redis stays for what may be lost |
 | Realtime | **Socket.IO + Redis adapter** | Carried over from the current system almost unchanged |
 | Reliable events | **Transactional outbox** (`domain_events` + `FOR UPDATE SKIP LOCKED` + LISTEN/NOTIFY) | Already implemented correctly — carried over |
 | Validation | **Zod v4** | One schema: form → API → AI tool → DB boundary |
@@ -168,7 +168,7 @@ step. The QES private key is physically inaccessible to the server and the AI.
 showzy/
 ├─ apps/
 │  ├─ api/            # Hono: mounts the oRPC router + webhooks + SSE + Socket.IO
-│  ├─ worker/         # BullMQ processors, outbox poller, cron (separate process)
+│  ├─ worker/         # pg-boss job host, outbox poller, periodic jobs (separate process)
 │  ├─ mobile/         # Expo — primary client (V2 launch)
 │  └─ web/            # Vite SPA + TanStack Router — staff panel (ADR-0030)
 ├─ packages/

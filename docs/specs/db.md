@@ -94,7 +94,7 @@ packages/db/
   Cross-module FKs between two tenant tables are still composite
   (ADR-0025).
 - **Extensions**: pg_trgm and unaccent only (blueprint §3). V1 pg_cron jobs
-  move to BullMQ workers; vector/pg_partman remain dropped.
+  move to pg-boss periodic jobs (ADR-0041); vector/pg_partman remain dropped.
 - **Staff matcher indexes (SHO-526 / db-T4):** generated `tsvector` columns
   (FTS config `simple`, `setweight` A on the owner `name` only, no
   `unaccent()`) plus GIN on that vector and GIN `gin_trgm_ops` on the name
@@ -289,43 +289,27 @@ aggregate revisions and are out of this convention.
   target: RPO ≤ 15 minutes, RTO ≤ 4 hours; a restore drill must pass before
   MVP launch and then quarterly. Any non-rebuildable Redis use requires its
   own persistence policy.
-- **Two Redis instances (ADR-0039).** Redis is split by what may reach disk.
+- **One Redis, nothing durable on it (ADR-0041, SHO-651).** Durable jobs are
+  pg-boss rows in Postgres, so Redis holds only what can be rebuilt or lost.
   - **Shared Redis** (`REDIS_URL`): better-auth secondary storage, which holds
     plaintext phone OTP codes (`apps/api/src/auth/options.ts`); rate limits;
-    confirmation challenges; assistant pauses and budget counters; the
-    assistant's event channels, presence and stream slots (SHO-562); and the
-    worker's safe-to-miss BullMQ jobs (maintenance and pdf, schedulers
-    re-upserted on boot), which may stay here. It must not persist, so OTP
-    codes never reach disk or backups (`security-operations.md` §2). Losing it
-    costs codes and challenges in flight, open questions, counters, live event
-    streams (each client reconnects and starts from a Postgres snapshot) and
-    re-runnable jobs — never product state.
-  - **Queue Redis**: durable BullMQ queues, today the assistant queue. An
-    accepted assistant turn is enqueued there, and a lost job is a turn nobody
-    runs, so it is this system's first non-rebuildable Redis use. It runs with
-    AOF (`appendonly yes`, `appendfsync everysec`) on a persistent volume and
-    `maxmemory-policy noeviction`, because an evicted job is a lost turn. A job
-    payload is the turn's identity only (kind, conversation id, command id):
-    the person, session, company and client IP stay in Postgres, so nothing
-    that must stay off disk is written there.
-  - Loss bound: up to one second of queue writes. It is covered by the
-    assistant reconciler: the accepted turn is already a Postgres row that
-    stores the accept's kind and the turn's command id, and a turn with no job
-    is rebuilt from that row and enqueued under the same `jobId`.
+    confirmation challenges; assistant pauses and budget counters; and the
+    assistant's event channels, presence and stream slots (SHO-562). It must
+    not persist, so OTP codes never reach disk or backups
+    (`security-operations.md` §2). Losing it costs codes and challenges in
+    flight, open questions, counters and live event streams (each client
+    reconnects and starts from a Postgres snapshot) — never product state.
+  - **No queue Redis.** An accepted assistant turn and its job commit in one
+    Postgres transaction (`ctx.enqueue`), so the job is exactly as durable as
+    the row and there is nothing to reconcile between two stores. ADR-0039's
+    durable-queue-on-Redis form is historical; `REDIS_QUEUE_URL` and the
+    `redis-queue` service were removed in SHO-655.
   - Development form (`docker-compose.yml`): `redis` on `127.0.0.1:6379` with
-    no append-only file and no volume; `redis-queue` on `127.0.0.1:6380` with
-    volume `redis-queue-data` at `/data` and `--appendonly yes --appendfsync
-    everysec --maxmemory-policy noeviction`. `REDIS_QUEUE_URL` points at the
-    queue Redis (`redis://localhost:6380` locally), separately from
-    `REDIS_URL`; the worker's assistant queue connects through it (SHO-569)
-    and the API's producer will (SHO-563).
+    no append-only file and no volume. `REDIS_URL` is the only Redis setting.
   - Production form, a requirement to check when the infrastructure is built
-    (there is no production environment yet): the queue Redis persists with
-    AOF on durable storage and answers `CONFIG GET appendonly` → `yes` and
-    `CONFIG GET maxmemory-policy` → `noeviction`. The shared Redis does not
-    persist: `CONFIG GET appendonly` → `no` and `CONFIG GET save` → empty.
-    The assistant queue on the shared Redis, or a persisted shared Redis, is
-    not a valid deployment.
+    (there is no production environment yet): the shared Redis does not
+    persist — `CONFIG GET appendonly` → `no` and `CONFIG GET save` → empty. A
+    persisted shared Redis is not a valid deployment.
 
 ## 7. Migration workflow and CI
 
@@ -426,6 +410,7 @@ Idempotent (`ON CONFLICT DO NOTHING`) seeds, runnable repeatedly.
 
 | Date | Change | Why | Reported by |
 | --- | --- | --- | --- |
+| 2026-09-16 | §6: one Redis and nothing durable on it — the queue Redis, `REDIS_QUEUE_URL` and the `redis-queue` compose service are gone; §3: v1 pg_cron jobs move to pg-boss periodic jobs | ADR-0041 / SHO-651: a turn and its job commit in one Postgres transaction, so the 2026-09-11 durable-queue-on-Redis form has no writer left | jobs-T9 (SHO-655) |
 | 2026-09-11 | §6: two Redis instances — a non-persistent shared Redis (OTP codes stay off disk) and a dedicated queue Redis with AOF (`appendfsync everysec`) on a volume and `noeviction`; production requirements verified with `CONFIG GET appendonly` / `maxmemory-policy` / `save` | ADR-0039: an accepted assistant turn is a durable BullMQ job, the first non-rebuildable Redis use | assistant-async-T1 (SHO-559) |
 | 2026-09-11 | §6: the assistant's event pub/sub channels, presence and stream slots live on the shared, non-persistent Redis | ADR-0039 delivery: every stream starts from a Postgres snapshot, so nothing here needs to survive a restart and there is no replay log | assistant-async-T4 (SHO-562) |
 | 2026-09-08 | §3: GIN/trgm + generated `tsvector` on owner name columns for staff matchers are not ADR-0020 discovery / `schema/search.ts` grants | SHO-528 / SHO-526 global company search T1 | db-T4 (SHO-528) |

@@ -91,8 +91,8 @@ wakeup, polling fallback, graceful drain, and the job handlers.
   transaction, so the job is as durable as the row.
 - One Redis (db.md §6): the shared, non-persistent `REDIS_URL` for the
   assistant's pauses, budget counters, published events, confirmations and
-  rate limits. Nothing durable goes on it. (`REDIS_QUEUE_URL` is unused
-  residue that SHO-655 removes.)
+  rate limits. Nothing durable goes on it. There is no second Redis and no
+  `REDIS_QUEUE_URL` (SHO-655).
 - **Shutdown drains jobs.** `close()` drains the one job runner first, for at
   most `JOB_DRAIN_TIMEOUT_MS` = `ASSISTANT_TURN_ATTEMPT_TIMEOUT_MS` (210 s:
   the 180 s turn timeout plus room for a stopped turn's last writes), before

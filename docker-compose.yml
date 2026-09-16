@@ -1,5 +1,5 @@
-# Local development stack (fnd-T3 / ADR-0027): PostgreSQL 17, two Redis
-# instances, Garage.
+# Local development stack (fnd-T3 / ADR-0027): PostgreSQL 17, one Redis,
+# Garage.
 # Blueprint §3 — prod is the same shape (self-hosted PG/Redis, R2 for S3).
 # Dev-only credentials below intentionally match .env.example; real
 # environments get secrets through validated env (packages/config), never
@@ -34,15 +34,14 @@ services:
       timeout: 3s
       retries: 10
 
-  # Two Redis instances, split by what may reach disk (db.md §6, ADR-0039).
-  # `redis` holds better-auth secondary storage — plaintext OTP codes — so it
-  # gets no persistence volume and no append-only file. `redis-queue` holds
-  # durable BullMQ queues (accepted assistant turns), so it persists and never
-  # evicts. Both listen on loopback only: neither has a password.
+  # One Redis, and nothing durable on it (db.md §6, ADR-0041). It holds
+  # better-auth secondary storage — plaintext OTP codes — so it gets no
+  # persistence volume and no append-only file. Durable jobs are pg-boss rows
+  # in Postgres. It listens on loopback only and has no password.
   redis:
     # The shared Redis (`REDIS_URL`): auth secondary storage, rate limits,
-    # confirmation challenges, assistant pauses and budget counters, and the
-    # worker's safe-to-miss maintenance and pdf jobs.
+    # confirmation challenges, assistant pauses, budget counters and the
+    # assistant event stream.
     image: redis:8-alpine
     # No RDB snapshots and no append-only file: OTP codes never reach disk.
     command:
@@ -53,31 +52,6 @@ services:
       - "no"
     ports:
       - "127.0.0.1:6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  redis-queue:
-    # The queue Redis: AOF on its own volume, fsync every second, never evict.
-    # This is the development form; production must persist the same way
-    # (`CONFIG GET appendonly` → yes, `CONFIG GET maxmemory-policy` →
-    # noeviction). `REDIS_QUEUE_URL` points here: the worker's assistant queue
-    # (SHO-569) and, from SHO-563, the API's producer.
-    image: redis:8-alpine
-    command:
-      - redis-server
-      - --appendonly
-      - "yes"
-      - --appendfsync
-      - everysec
-      - --maxmemory-policy
-      - noeviction
-    ports:
-      - "127.0.0.1:6380:6379"
-    volumes:
-      - redis-queue-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -107,6 +81,5 @@ services:
 
 volumes:
   postgres-data:
-  redis-queue-data:
   garage-meta:
   garage-data:

@@ -1,18 +1,3 @@
-/**
- * The Redis persistence policy (db.md §6, ADR-0039), proven against the compose
- * file itself.
- *
- * Two Redis instances, on purpose. The queue Redis holds accepted assistant
- * turns, so it persists with AOF and never evicts. The shared Redis holds
- * better-auth secondary storage — plaintext OTP codes among it — plus rate
- * limits, confirmation challenges and pauses, and must not persist: no RDB
- * snapshots, no append-only file.
- *
- * This reads both services from `docker-compose.yml` and runs each service's
- * exact image and command, so a compose edit that drops AOF or `noeviction`
- * from the queue, lets persistence creep onto the shared Redis, or passes a
- * command Redis refuses turns this red.
- */
 import { readFileSync } from "node:fs";
 
 import { Redis } from "ioredis";
@@ -24,7 +9,6 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const REDIS_PORT = 6379;
-const QUEUE_SERVICE = "redis-queue";
 const SHARED_SERVICE = "redis";
 
 function composeText(): string {
@@ -33,10 +17,22 @@ function composeText(): string {
   }).replaceAll("\r\n", "\n");
 }
 
-/**
- * A top-level service block, up to the next service or section, with its
- * comment lines removed so prose cannot satisfy or break an assertion.
- */
+function composeServiceNames(compose: string): string[] {
+  const services = /^services:\n((?: {2}\S.*\n| {3,}.*\n|\s*\n)*)/m.exec(
+    compose,
+  );
+  if (services?.[1] === undefined) {
+    throw new Error("docker-compose.yml has no services section");
+  }
+  return [...services[1].matchAll(/^ {2}(\S+):\s*$/gm)].map((match) => {
+    const name = match[1];
+    if (name === undefined) {
+      throw new Error("a service block has no name");
+    }
+    return name;
+  });
+}
+
 function composeService(compose: string, name: string): string {
   const match = new RegExp(
     `^ {2}${name}:\\n((?: {4}.*\\n|\\s*\\n)*)`,
@@ -56,7 +52,6 @@ function serviceImage(service: string): string {
   return match[1];
 }
 
-/** A block sequence under `key:` (`command`, `ports`, `volumes`), unquoted. */
 function blockList(service: string, key: string): string[] | undefined {
   const match = new RegExp(`^ {4}${key}:\\n((?: {6}- .*\\n)+)`, "m").exec(
     service,
@@ -96,7 +91,6 @@ async function configGet(redis: Redis, name: string): Promise<unknown> {
   return Array.isArray(reply) ? reply[1] : undefined;
 }
 
-/** Runs a compose service's image with its command, as compose would. */
 function runningService(service: string, command: string[]) {
   const running: { container?: StartedTestContainer; redis?: Redis } = {};
 
@@ -130,28 +124,18 @@ function runningService(service: string, command: string[]) {
 }
 
 const compose = composeText();
-const queue = composeService(compose, QUEUE_SERVICE);
 const shared = composeService(compose, SHARED_SERVICE);
-const queueCommand = serviceCommand(queue, QUEUE_SERVICE);
 const sharedCommand = serviceCommand(shared, SHARED_SERVICE);
 
-describe("compose queue redis (static)", () => {
-  it("keeps its data on its own named volume at /data", () => {
-    expect(blockList(queue, "volumes")).toEqual(["redis-queue-data:/data"]);
-    expect(compose).toMatch(
-      /^volumes:\n(?: {2}\S+:\n)*? {2}redis-queue-data:\s*$/m,
-    );
+describe("compose redis services", () => {
+  it("declares exactly one redis service", () => {
+    expect(
+      composeServiceNames(compose).filter((name) => name.includes("redis")),
+    ).toEqual([SHARED_SERVICE]);
   });
 
-  it("asks for AOF with an fsync every second, and never evicts", () => {
-    expect(queueCommand[0]).toBe("redis-server");
-    expect(flagValue(queueCommand, "--appendonly")).toBe("yes");
-    expect(flagValue(queueCommand, "--appendfsync")).toBe("everysec");
-    expect(flagValue(queueCommand, "--maxmemory-policy")).toBe("noeviction");
-  });
-
-  it("is published on loopback only", () => {
-    expect(blockList(queue, "ports")).toEqual(["127.0.0.1:6380:6379"]);
+  it("declares no queue redis volume", () => {
+    expect(compose).not.toContain("redis-queue");
   });
 });
 
@@ -168,26 +152,6 @@ describe("compose shared redis (static)", () => {
 
   it("is published on loopback only", () => {
     expect(blockList(shared, "ports")).toEqual(["127.0.0.1:6379:6379"]);
-  });
-});
-
-describe("compose queue redis (running)", () => {
-  const config = runningService(queue, queueCommand);
-
-  it("runs with appendonly yes (CONFIG GET appendonly)", async () => {
-    await expect(config("appendonly")).resolves.toBe("yes");
-  });
-
-  it("runs with appendfsync everysec", async () => {
-    await expect(config("appendfsync")).resolves.toBe("everysec");
-  });
-
-  it("never evicts (CONFIG GET maxmemory-policy)", async () => {
-    await expect(config("maxmemory-policy")).resolves.toBe("noeviction");
-  });
-
-  it("writes its append-only file under /data, where the volume is mounted", async () => {
-    await expect(config("dir")).resolves.toBe("/data");
   });
 });
 
