@@ -81,6 +81,9 @@ export interface JobRunnerConformanceTarget {
     name: string,
     id: string,
   ): Promise<void>;
+  refuseScheduleRegistration(
+    database: TestDatabase,
+  ): Promise<() => Promise<void>>;
 }
 
 class RollbackProbe extends Error {}
@@ -1028,6 +1031,56 @@ export function describeJobRunnerConformance(
         await expect(
           jobRecord(quick.name, quickJob.envelope.id),
         ).resolves.toMatchObject({ state: "completed" });
+        await expect(
+          jobRecord(stuck.name, stuckJob.envelope.id),
+        ).resolves.toMatchObject({
+          state: "failed",
+          output: { code: "DRAINED" },
+        });
+      });
+
+      it("a worker whose registration fails midway still drains the attempts its registered consumers started", async () => {
+        const stuck = conformanceJob("partialStuck", 0, undefined, 10_000);
+        const tick = defineJob({
+          name: "conformance.partialTick",
+          scope: "global",
+          payload: noOutput,
+          discriminator: [],
+          lifecycle: "periodic",
+          cron: "0 0 1 1 *",
+          retries: 0,
+          attemptTimeoutMs: 1_500,
+          concurrency: 1,
+        });
+        const runner = await open([stuck, tick], "worker");
+        const stuckJob = await enqueueSubject(runner, stuck);
+        let markStarted: () => void = () => undefined;
+        const started = new Promise<void>((resolve) => {
+          markStarted = resolve;
+        });
+        const allowScheduleRegistration =
+          await target.refuseScheduleRegistration(database);
+
+        try {
+          await expect(
+            work(
+              runner,
+              [
+                handlerFor(stuck, () => {
+                  markStarted();
+                  return hang();
+                }),
+                handlerFor(tick, () => Promise.resolve(), null),
+              ],
+              1_000,
+            ),
+          ).rejects.toBeInstanceOf(Error);
+        } finally {
+          await allowScheduleRegistration();
+        }
+        await started;
+        await close(runner);
+
         await expect(
           jobRecord(stuck.name, stuckJob.envelope.id),
         ).resolves.toMatchObject({

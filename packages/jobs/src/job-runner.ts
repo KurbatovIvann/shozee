@@ -73,12 +73,13 @@ export async function openJobRunner(
           "this job runner already works its handlers",
         );
       }
-      jobWorker = await createJobWorker(
+      jobWorker = createJobWorker(
         boss,
         config.jobs,
         options,
         config.intervals?.pollingSeconds,
       );
+      await jobWorker.start();
     },
     async close() {
       await (jobWorker?.drain() ?? boss.stop({ close: false }));

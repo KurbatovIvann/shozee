@@ -46,6 +46,7 @@ export interface JobWorkerOptions {
 }
 
 export interface JobWorker {
+  start(): Promise<void>;
   drain(): Promise<void>;
 }
 
@@ -55,12 +56,12 @@ const drainSettleMs = 5_000;
 
 const exhaustedQueueConcurrency = 1;
 
-export async function createJobWorker(
+export function createJobWorker(
   boss: PgBoss,
   declared: readonly Job[],
   options: JobWorkerOptions,
   pollingIntervalSeconds = 2,
-): Promise<JobWorker> {
+): JobWorker {
   assertHandlersMatchDeclarations(declared, options.handlers);
   const { deps } = options;
   const running = new Set<(code: JobFailureCode) => void>();
@@ -134,7 +135,7 @@ export async function createJobWorker(
     );
   }
 
-  for (const handler of options.handlers) {
+  async function register(handler: JobHandler): Promise<void> {
     const { job, onExhausted, afterExhausted } = handler;
     if (onExhausted !== undefined) {
       await work(exhaustedQueueName(job), exhaustedQueueConcurrency, (stored) =>
@@ -165,6 +166,11 @@ export async function createJobWorker(
   }
 
   return {
+    async start() {
+      for (const handler of options.handlers) {
+        await register(handler);
+      }
+    },
     async drain() {
       const bound = setTimeout(() => {
         for (const abandon of running) {
