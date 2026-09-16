@@ -14,6 +14,36 @@ const repoRoot = path.resolve(
 
 const BASE_SHA = "0123456789abcdef0123456789abcdef01234567";
 const AFFECTED_TASKS = ["typecheck", "lint", "test:unit"];
+const PROOF_PACKAGE = "@showzy/copy";
+const PROOF_TASK = "typecheck";
+const TURBO_TIMEOUT_MS = 180_000;
+
+function runTurbo(command) {
+  return spawnSync(command, {
+    cwd: repoRoot,
+    encoding: "utf8",
+    timeout: TURBO_TIMEOUT_MS,
+    shell: true,
+  });
+}
+
+function dryRunCacheStatus(args, taskId) {
+  const result = runTurbo(["pnpm", ...args, "--dry=json"].join(" "));
+  const stdout = result.stdout ?? "";
+  assert.equal(
+    result.status,
+    0,
+    `turbo dry-run failed:\n${stdout}\n${result.stderr ?? ""}`,
+  );
+  const plan = JSON.parse(stdout.slice(stdout.indexOf("{")));
+  const planned = plan.tasks.find((task) => task.taskId === taskId);
+  assert.ok(planned, `${taskId} must be planned by: ${args.join(" ")}`);
+  return planned.cache.status;
+}
+
+function cacheMode(args) {
+  return args.find((arg) => arg.startsWith("--cache="));
+}
 
 test("affected gates select changed packages and their dependents", () => {
   for (const task of AFFECTED_TASKS) {
@@ -29,22 +59,67 @@ test("affected gates select changed packages and their dependents", () => {
   }
 });
 
-test("affected gates never replay a cached pass", () => {
-  for (const task of AFFECTED_TASKS) {
-    const args = buildTurboArgs(task, {
-      full: false,
-      baseSha: BASE_SHA,
-      files: ["packages/validation/src/assistant-events.ts"],
-    });
-    assert.ok(
-      args.includes("--cache=local:w"),
-      `${task} must not read the Turbo cache: a dependent keeps its hash when a dependency's source changes`,
+test("a selected package misses the Turbo cache under the flags verify builds", (t) => {
+  const primed = runTurbo(
+    `pnpm exec turbo run ${PROOF_TASK} --filter=${PROOF_PACKAGE} --cache=local:rw --output-logs=errors-only`,
+  );
+  if (primed.status !== 0) {
+    t.skip(
+      `turbo could not run here: ${primed.error?.message ?? primed.stderr ?? ""}`,
     );
-    assert.ok(!args.includes("--cache=local:rw"));
+    return;
   }
+  const args = buildTurboArgs(PROOF_TASK, {
+    full: false,
+    baseSha: "HEAD",
+    files: [],
+    extra: [`--filter=${PROOF_PACKAGE}`],
+  });
+  const taskId = `${PROOF_PACKAGE}#${PROOF_TASK}`;
+  const replayArgs = [
+    ...args.filter((arg) => !arg.startsWith("--cache=")),
+    "--cache=local:rw",
+  ];
+  assert.equal(
+    dryRunCacheStatus(replayArgs, taskId),
+    "HIT",
+    "the cache entry this proof measures against was not written",
+  );
+  assert.equal(
+    dryRunCacheStatus(args, taskId),
+    "MISS",
+    "verify must re-run a selected package instead of replaying its cached pass",
+  );
 });
 
-test("--full drops the package filter and still refuses a cached replay", () => {
+test("every gate builds the cache mode the replay proof measured", () => {
+  const proven = cacheMode(
+    buildTurboArgs(PROOF_TASK, { full: false, baseSha: "HEAD", files: [] }),
+  );
+  for (const task of AFFECTED_TASKS) {
+    assert.equal(
+      cacheMode(
+        buildTurboArgs(task, { full: false, baseSha: BASE_SHA, files: [] }),
+      ),
+      proven,
+      `${task} must use the cache mode the replay proof measured`,
+    );
+  }
+  assert.equal(
+    cacheMode(
+      buildTurboArgs("test:unit", { full: true, baseSha: BASE_SHA, files: [] }),
+    ),
+    proven,
+    "--full must use it too",
+  );
+  assert.equal(
+    cacheMode(buildTurboArgs("build", { filters: ["--filter=@showzy/web"] })),
+    proven,
+    "build-web must use it too",
+  );
+});
+
+test("--full drops the package filter and keeps extra flags", () => {
   const args = buildTurboArgs("test:unit", {
     full: true,
     baseSha: BASE_SHA,
@@ -52,7 +127,6 @@ test("--full drops the package filter and still refuses a cached replay", () => 
     extra: ["--concurrency=2"],
   });
   assert.equal(args.filter((arg) => arg.startsWith("--filter=")).length, 0);
-  assert.ok(args.includes("--cache=local:w"));
   assert.ok(args.includes("--concurrency=2"));
 });
 

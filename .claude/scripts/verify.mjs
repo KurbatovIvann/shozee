@@ -288,19 +288,24 @@ function chunk(list, size) {
  * source changes and Turbo replays the stale pass. `--cache=local:w` writes the
  * cache but never reads it, so a selected package's tests actually run (SHO-699).
  *
+ * `filters` replaces that affected selection for a gate that targets one fixed
+ * package (`build-web`), which needs the same cache mode for the same reason.
+ *
  * @param {string} task
- * @param {{ full: boolean, baseSha: string, files: string[], extra?: string[] }} opts
+ * @param {{ full?: boolean, baseSha?: string, files?: string[], filters?: string[], extra?: string[] }} opts
  */
 export function buildTurboArgs(task, opts) {
-  const filters = opts.full
-    ? []
-    : [
-        `--filter=...[${opts.baseSha}]`,
-        // Workflow/CI script changes are proven by @showzy/tooling tests.
-        ...(opts.files.some((f) => f.startsWith(".github/"))
-          ? ["--filter=@showzy/tooling"]
-          : []),
-      ];
+  const filters =
+    opts.filters ??
+    (opts.full
+      ? []
+      : [
+          `--filter=...[${opts.baseSha}]`,
+          // Workflow/CI script changes are proven by @showzy/tooling tests.
+          ...((opts.files ?? []).some((f) => f.startsWith(".github/"))
+            ? ["--filter=@showzy/tooling"]
+            : []),
+        ]);
   return [
     "exec",
     "turbo",
@@ -390,7 +395,7 @@ function executeStep(step, ctx) {
       }
       break;
     case "build-web":
-      push(pnpm(["exec", "turbo", "run", "build", "--filter=@showzy/web", "--output-logs=errors-only"], ctx));
+      push(pnpm(buildTurboArgs("build", { filters: ["--filter=@showzy/web"] }), ctx));
       break;
     case "e2e-smoke":
       push(pnpm(["exec", "turbo", "run", "e2e-smoke", "--filter=@showzy/web", "--output-logs=errors-only"], ctx));
