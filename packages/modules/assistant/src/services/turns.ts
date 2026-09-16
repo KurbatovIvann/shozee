@@ -842,6 +842,7 @@ export async function readStaffLatestInterruptedTurn(env: {
   readonly conversationId: string;
 }): Promise<{
   readonly commandId: string | null;
+  readonly messageId: string | null;
   readonly endReason: AssistantTurnEndReason | null;
 }> {
   const conversationId = env.conversationId.toLowerCase();
@@ -855,6 +856,7 @@ export async function readStaffLatestInterruptedTurn(env: {
     await env.ctx.db
       .select({
         commandId: assistantTurns.commandId,
+        messageId: assistantTurns.placeholderMessageId,
         endReason: assistantTurns.endReason,
       })
       .from(assistantTurns)
@@ -870,6 +872,7 @@ export async function readStaffLatestInterruptedTurn(env: {
   )[0];
   return {
     commandId: row?.commandId ?? null,
+    messageId: row?.messageId ?? null,
     endReason: row?.endReason ?? null,
   };
 }

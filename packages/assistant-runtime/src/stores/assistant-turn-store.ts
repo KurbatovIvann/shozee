@@ -539,9 +539,13 @@ export function createPostgresAssistantTurnStore(
           input: { conversationId: scope.conversationId },
           ...call,
         });
-        return read.commandId === null
+        return read.commandId === null || read.messageId === null
           ? null
-          : { id: read.commandId, endReason: read.endReason };
+          : {
+              id: read.commandId,
+              messageId: read.messageId,
+              endReason: read.endReason,
+            };
       }),
   };
 }
@@ -798,7 +802,11 @@ export function memoryAssistantTurnStore(
       return Promise.resolve(
         interrupted === undefined
           ? null
-          : { id: interrupted.commandId, endReason: null },
+          : {
+              id: interrupted.commandId,
+              messageId: interrupted.placeholderMessageId,
+              endReason: null,
+            },
       );
     },
   };

@@ -10,6 +10,7 @@ const SCOPE = {
 const TURN = { id: "9e8d7c6b-5a49-4382-b716-a5f4e3d2c1b0", status: "queued" };
 const INTERRUPTED = {
   id: "33333333-3333-4333-8333-333333333333",
+  messageId: "44444444-4444-4444-8444-444444444444",
   endReason: "not_started" as const,
 };
 

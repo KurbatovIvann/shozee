@@ -133,6 +133,7 @@ export const assistantTurnEndReasonSchema = z.enum([
 
 export const assistantChatInterruptedTurnSchema = z.strictObject({
   id: z.uuid(),
+  messageId: z.uuid(),
   endReason: assistantTurnEndReasonSchema.nullable(),
 });
 

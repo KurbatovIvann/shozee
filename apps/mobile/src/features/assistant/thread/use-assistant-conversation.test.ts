@@ -63,6 +63,7 @@ function conversationWindow(options?: {
   readonly turn?: { readonly id: string; readonly status: string } | null;
   readonly interruptedTurn?: {
     readonly id: string;
+    readonly messageId: string;
     readonly endReason: string | null;
   } | null;
 }) {
@@ -1152,6 +1153,7 @@ describe("the conversation, live", () => {
     readonly turn?: { readonly id: string; readonly status: string } | null;
     readonly interruptedTurn?: {
       readonly id: string;
+      readonly messageId: string;
       readonly endReason: string | null;
     } | null;
   }) {
@@ -1239,7 +1241,11 @@ describe("the conversation, live", () => {
   it("shows the stored reason for a turn that never started, and again after a reconnect", async () => {
     const neverStarted = streamingWindow({
       turn: null,
-      interruptedTurn: { id: COMMAND, endReason: "not_started" },
+      interruptedTurn: {
+        id: COMMAND,
+        messageId: MESSAGE,
+        endReason: "not_started",
+      },
     });
     const source = serve({ messages: [neverStarted] });
     const view = mount({ visible: true });

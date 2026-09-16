@@ -44,6 +44,7 @@ function withTurn(
   } | null = null,
   interruptedTurn: {
     readonly id: string;
+    readonly messageId: string;
     readonly endReason: "not_started" | "job_exhausted" | "timeout" | null;
   } | null = null,
 ) {
@@ -260,6 +261,7 @@ describe("the window a server writes and the window a client reads", () => {
     const client = assistantChatWindowSchema.safeParse(
       withTurn(window, null, {
         id: "66666666-6666-4666-8666-666666666666",
+        messageId: "77777777-7777-4777-8777-777777777777",
         endReason: "not_started",
       }),
     );

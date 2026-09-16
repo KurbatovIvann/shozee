@@ -143,13 +143,18 @@ describe("assistant.readLatestInterruptedTurn", () => {
       {},
     );
 
-    expect(result).toEqual({ commandId: null, endReason: null });
+    expect(result).toEqual({
+      commandId: null,
+      messageId: null,
+      endReason: null,
+    });
   });
 
   it("reads the interrupted turn's own command", async () => {
     const conversationId = await newConversation();
     const commandId = randomUUID();
-    await kit.invoke(acceptTurn, chatAccept(conversationId, commandId), {});
+    const accept = chatAccept(conversationId, commandId);
+    await kit.invoke(acceptTurn, accept, {});
     await kit.invoke(
       finishTurn,
       { conversationId, kind: "chat", commandId, status: "interrupted" },
@@ -162,7 +167,11 @@ describe("assistant.readLatestInterruptedTurn", () => {
       {},
     );
 
-    expect(result).toEqual({ commandId, endReason: null });
+    expect(result).toEqual({
+      commandId,
+      messageId: accept.placeholder.messageId,
+      endReason: null,
+    });
   });
 
   it("reads the most recent interrupted turn when more than one exists", async () => {
@@ -175,7 +184,8 @@ describe("assistant.readLatestInterruptedTurn", () => {
       { conversationId, kind: "chat", commandId: first, status: "interrupted" },
       {},
     );
-    await kit.invoke(acceptTurn, chatAccept(conversationId, second), {});
+    const secondAccept = chatAccept(conversationId, second);
+    await kit.invoke(acceptTurn, secondAccept, {});
     await kit.invoke(
       finishTurn,
       {
@@ -193,7 +203,11 @@ describe("assistant.readLatestInterruptedTurn", () => {
       {},
     );
 
-    expect(result).toEqual({ commandId: second, endReason: null });
+    expect(result).toEqual({
+      commandId: second,
+      messageId: secondAccept.placeholder.messageId,
+      endReason: null,
+    });
   });
 });
 
