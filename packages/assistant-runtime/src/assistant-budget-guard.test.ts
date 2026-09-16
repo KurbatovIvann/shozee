@@ -749,6 +749,44 @@ describe("releaseStaffAssistantBudgetHold", () => {
     expect(await budgetStore.read(aiGlobalBudgetKey(KYIV_DATE))).toBeCloseTo(2);
   });
 
+  it("says the release failed when the store is down, leaving the reservation to its ttl", async () => {
+    const budgetStore = createMemoryAiBudgetStore();
+    const logger = createCapturingLogger().logger;
+    const turn = turnFor();
+    await budgetStore.add(
+      aiCompanyBudgetKey(COMPANY_A, KYIV_DATE),
+      1,
+      AI_BUDGET_TTL_SEC,
+    );
+    const reservation = await enforceStaffAssistantBudget({
+      logger,
+      requestId: "req-release-down",
+      userId: USER_A,
+      companyId: COMPANY_A,
+      turn,
+      skipTurnLimit: true,
+      now: NOW,
+      budgetStore,
+      limits: DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+    });
+
+    const released = await releaseStaffAssistantBudgetHold({
+      logger,
+      requestId: "req-release-down",
+      ref: { ...turn, companyId: COMPANY_A },
+      hold: reservation.hold,
+      budgetStore: {
+        ...budgetStore,
+        dropHold: () => Promise.reject(new Error("budget store is down")),
+      },
+    });
+
+    expect(released).toBe("failed");
+    expect(
+      await budgetStore.read(aiCompanyBudgetKey(COMPANY_A, KYIV_DATE)),
+    ).toBeCloseTo(1.1);
+  });
+
   /**
    * The property that ends the defect class this slice was opened for: the
    * request that reserved and the turn row's finisher can both release one

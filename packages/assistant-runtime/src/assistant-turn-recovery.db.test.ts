@@ -29,6 +29,7 @@ import {
   aiCompanyBudgetKey,
   aiGlobalBudgetKey,
   createMemoryAiBudgetStore,
+  type AiBudgetStore,
 } from "./stores/budget.js";
 
 const COMPANY = kitIdentities.companies.a;
@@ -134,8 +135,18 @@ interface Written {
   readonly userId: string;
 }
 
-function harness(refuse = false) {
+function harness(
+  options: { readonly refuse?: boolean; readonly budgetFails?: boolean } = {},
+) {
+  const refuse = options.refuse ?? false;
   const budgetStore = createMemoryAiBudgetStore();
+  const mounted: AiBudgetStore =
+    options.budgetFails === true
+      ? {
+          ...budgetStore,
+          dropHold: () => Promise.reject(new Error("budget store is down")),
+        }
+      : budgetStore;
   const written: Written[] = [];
   const published: unknown[] = [];
   const publisher: AssistantEventPublisher = {
@@ -169,7 +180,7 @@ function harness(refuse = false) {
     logger: createCapturingLogger().logger,
     forCaller,
     publisher,
-    budgetStore,
+    budgetStore: mounted,
   });
   return { recover, budgetStore, written, published };
 }
@@ -298,15 +309,49 @@ describe("the post-terminal recovery of a turn nobody is running", () => {
     expect(published).toHaveLength(1);
   });
 
-  it("still ends the turn's budget and publishes its status when the author write is refused", async () => {
+  it("still ends the turn's budget and publishes its status when the author write fails, and says the text was dropped", async () => {
     const { recovered } = await endedTurn("queued");
-    const { recover, budgetStore, written, published } = harness(true);
+    const { recover, budgetStore, written, published } = harness({
+      refuse: true,
+    });
     await reserve(budgetStore, recovered);
 
-    await recover(recovered, randomUUID());
+    await expect(recover(recovered, randomUUID())).rejects.toThrow(
+      /dropped turn text/,
+    );
 
     expect(written).toEqual([]);
     expect(await counters(budgetStore)).toEqual([0.1, 0.05]);
     expect(published).toHaveLength(1);
+  });
+
+  it("says the hold was dropped when the budget store fails, and leaves the turn ended with its reservation standing", async () => {
+    const { recovered, placeholderMessageId } = await endedTurn("queued");
+    const { recover, budgetStore, written, published } = harness({
+      budgetFails: true,
+    });
+    await reserve(budgetStore, recovered);
+
+    await expect(recover(recovered, randomUUID())).rejects.toThrow(
+      /dropped budget hold/,
+    );
+
+    expect(await counters(budgetStore)).toEqual([0.2, 0.1]);
+    expect(written).toEqual([
+      {
+        conversationId: recovered.turn.conversationId,
+        messageId: placeholderMessageId,
+        status: "interrupted",
+        userId: kitIdentities.users.anna,
+      },
+    ]);
+    expect(published).toHaveLength(1);
+    expect(
+      await kit.invoke(
+        finishTurn,
+        { ...recovered.turn, status: "interrupted" },
+        {},
+      ),
+    ).toMatchObject({ outcome: "already_finished" });
   });
 });

@@ -46,7 +46,8 @@ wakeup, polling fallback, graceful drain, and the job handlers.
   that closes it share one runtime, publisher and budget store. The turn
   handler binds `onExhausted: assistant.interruptTurn` and an `afterExhausted`
   hook that hands that action's own output to the recovery helper; the sweep
-  handler fails its attempt when the pass left a company or a turn unrecovered.
+  handler logs the pass's summary, failed turns and companies included, and
+  does not fail its attempt — nothing would retry it.
 - `src/loop.ts` — `createOutboxWorker` / `createWorkerLoop`: one tick
   dispatches then executes due deliveries; shutdown waits for in-flight
   work and does not claim further. Executor lookup is keyed by
@@ -109,7 +110,10 @@ wakeup, polling fallback, graceful drain, and the job handlers.
   bound by boot together with `maintenanceHandlers`. A failure reaches pg-boss:
   the handler throws, the attempt fails with its typed code, and on exhaustion
   `assistant.interruptTurn` ends the turn and the post-commit hook recovers it.
-  Nothing is swallowed and logged as a successful outcome.
+  Nothing is swallowed and logged as a successful outcome. The sweep pass is
+  the one place a failure stops there: a dropped recovery is counted in the
+  summary and logged, and the pass still returns, because a turn it already
+  ended is no longer overdue and no tick would retry it.
 - The worker is an AI process for assistant turns (ADR-0039): it may import
   `@showzy/assistant-runtime` (and through it `@showzy/ai` and
   `@showzy/assistant-kit`), and from the API only the approved

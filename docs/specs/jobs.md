@@ -280,12 +280,17 @@ bound the assistant turn sets.
 | `worker.cleanupIdempotencyKeys` | `0 * * * *` | 1 | `worker.cleanupIdempotencyKeys` | `apps/worker` |
 | `assistant.sweepOverdueTurns` | `* * * * *` | 1 | `assistant.listOverdueTurns` then `assistant.sweepOverdueTurns` per company | assistant module |
 
-- The overdue sweep is a global periodic job that fans out tenant work. Its
-  attempt **fails** when `AssistantSweepSummary.failedCompanies` or
-  `failedTurns` is above zero: a turn the sweep ended is no longer overdue, so
-  no later pass would find it again, and a dropped recovery would strand that
-  turn's hold and its placeholder for ever. `assertAssistantSweepRecovered`
-  is that rule, and the failure is what makes the next tick the retry.
+- The overdue sweep is a global periodic job that fans out tenant work. What
+  follows a turn's end is **best effort, and there is no retry**: a turn this
+  pass ended is no longer overdue, so no later tick selects it, and the job
+  keeps the maintenance zero retries, so a failed attempt is not retried
+  either. A recovery that drops a step throws; the pass counts it in
+  `AssistantSweepSummary.failedTurns` (a company whose group failed to end
+  counts in `failedCompanies`), logs it with the turn's identity, and carries
+  on with that turn's siblings and the other companies. A dropped budget
+  release leaves the reservation standing until its Kyiv-day key expires — a
+  lost refund is the safe direction — and an unsettled placeholder keeps its
+  streaming part until the person reloads the conversation.
 - `assistant.turn` is the one `expires` job: tenant scope, zero retries,
   identity-only payload (`kind`, `conversationId`, `commandId`), attempt
   timeout `ASSISTANT_TURN_ATTEMPT_TIMEOUT_MS` (the 180 s turn timeout plus
@@ -293,7 +298,10 @@ bound the assistant turn sets.
   `onExhausted: assistant.interruptTurn`, and a
   post-commit hook that runs the shared recovery helper on the interrupt's
   own output. `assistant.acceptTurn` sends it with `ctx.enqueue` in the
-  accepting transaction, and only for an `accepted` outcome.
+  accepting transaction, and only for an `accepted` outcome. A recovery that
+  drops a step throws out of that hook: the dead-letter job is `failed`, the
+  interrupt it was told about stays committed, and the hold waits for its
+  Kyiv-day ttl — zero retries mean nothing runs the recovery again.
 
 - The two files actions run unchanged, under ADR-0041 J10's named storage
   exception. Overlapping runs are safe: the sweep locks rows `FOR UPDATE SKIP

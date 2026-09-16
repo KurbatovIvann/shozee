@@ -86,19 +86,21 @@ registry is injected into `createAssistantRuntime`; this package never imports
   its author; publishes the ended status after the commit. At-most-once through
   the store's `dropHold`, not exactly-once: a crash between the two stores
   leaves the reservation until its Kyiv-day TTL. A missing membership costs the
-  message write and nothing else. No model, no Redis or model I/O inside a
-  domain transaction.
+  message write and nothing else. Every step runs whatever the others did, and
+  the call then throws naming the ones it dropped — that throw is the only
+  report there is, since nothing runs the recovery of an ended turn again. No
+  model, no Redis or model I/O inside a domain transaction.
 - `assistant-overdue-sweep.ts` — `sweepOverdueAssistantTurns`: one bounded pass
   over `assistant.listOverdueTurns`, grouped by company, each group ended
   through the tenant `assistant.sweepOverdueTurns` on the job attempt's own
   `run`, each ended turn handed to the recovery helper. Pages are drained while
   the attempt is live, keyed on the last identity of a full page; a company
   whose page or turn fails is logged and the rest go on.
-  **`assertAssistantSweepRecovered` decides the attempt**: a pass with
-  `failedCompanies` or `failedTurns` above zero fails the job. A turn this pass
-  already ended is no longer overdue, so no later pass would find it; without
-  that failure its hold and its placeholder would never be retried. The job is
-  `assistant.sweepOverdueTurns`, global periodic, every 60 seconds.
+  **Nothing retries what a pass dropped**: a turn this pass already ended is no
+  longer overdue, so no later tick selects it, and the job has zero retries. A
+  recovery that throws is counted in `failedTurns` (a group that would not end,
+  in `failedCompanies`) and logged, and the pass still returns its summary. The
+  job is `assistant.sweepOverdueTurns`, global periodic, every 60 seconds.
 - `stores/assistant-turn-placeholder.ts` — the one answer to "which message is
   this turn's, and under which owner token", used by both the processor and the
   recovery helper.

@@ -1,5 +1,4 @@
 import {
-  assertAssistantSweepRecovered,
   assistantBudgetHoldFromStored,
   assistantSweepOverdueTurnsJob,
   assistantTurnJob,
@@ -122,7 +121,6 @@ export function composeAssistantJobs(
           { job: assistantSweepOverdueTurnsJob.name, ...summary },
           "assistant overdue turns swept",
         );
-        assertAssistantSweepRecovered(summary);
       },
     },
   ];

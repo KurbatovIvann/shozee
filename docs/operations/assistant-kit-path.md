@@ -420,10 +420,13 @@ claim a queued turn at or after `created_at + 15 minutes`, so a late worker
 cannot start a turn the sweep is about to end, and the sweep cannot end one a
 worker has just started.
 
-**A pass that dropped work fails its own attempt.** A turn this pass ended is
-no longer overdue, so no later pass would find it again; if its recovery threw,
-its hold and its placeholder would be stranded. So `failedCompanies` or
-`failedTurns` above zero fails the job, and the next tick is the retry.
+**A pass that dropped work is logged, not retried.** A turn this pass ended is
+no longer overdue, so no later pass finds it again, and the job has zero
+retries. A recovery that drops a step throws; the pass counts it in
+`failedTurns` (`failedCompanies` for a group it could not end), logs it and
+carries on with the siblings and the other companies. The dropped hold waits
+for its Kyiv-day key to expire — a lost refund is the safe direction — and the
+placeholder keeps its streaming part until the conversation is reloaded.
 
 ```bash
 grep "assistant overdue turns swept" worker.log | tail -1
