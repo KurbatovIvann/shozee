@@ -110,7 +110,6 @@ function finished(
     kind: "chat",
     commandId,
     status: "done",
-    endReason: null,
     ...(window === undefined ? {} : { window }),
   };
 }
@@ -345,7 +344,6 @@ describe("an event about another conversation", () => {
       kind: "chat",
       commandId: COMMAND,
       status: "done",
-      endReason: null,
       window: {
         ...windowOf({ text: "Чуже", openPause: OPEN_PAUSE }),
         conversationId: OTHER,
@@ -889,7 +887,6 @@ describe("a turn that ended without ever starting", () => {
       kind: "chat",
       commandId: COMMAND,
       status: "interrupted",
-      endReason: "not_started",
       window: windowOf({
         text: "",
         status: "streaming",
@@ -924,7 +921,6 @@ describe("a turn that ended without ever starting", () => {
       kind: "chat",
       commandId: OTHER_COMMAND,
       status: "interrupted",
-      endReason: "not_started",
       window: windowOf({
         text: "",
         status: "streaming",

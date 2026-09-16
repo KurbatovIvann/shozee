@@ -124,7 +124,6 @@ export function createAssistantTurnRecovery(
           kind: ended.turn.kind,
           commandId: ended.turn.commandId,
           status: "interrupted",
-          endReason: ended.endReason,
         },
       );
     } catch (error) {

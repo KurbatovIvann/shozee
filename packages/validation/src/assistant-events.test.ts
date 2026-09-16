@@ -48,7 +48,6 @@ const events = {
     kind: "chat",
     commandId: COMMAND,
     status: "done",
-    endReason: null,
     window,
   },
 } as const;
@@ -114,7 +113,6 @@ describe("reading an assistant stream event", () => {
       kind: "chat",
       commandId: COMMAND,
       status: "interrupted",
-      endReason: "not_started",
     };
 
     expect(
@@ -132,20 +130,22 @@ describe("reading an assistant stream event", () => {
     ).toBeNull();
   });
 
-  it("refuses an end reason outside the stored ones, and a finish that omits it", () => {
+  it("carries no end reason of its own: the window's interrupted turn is the one source", () => {
     const finished = events["turn.finished"];
     expect(
       parseAssistantStreamEvent(
         "turn.finished",
-        JSON.stringify({ ...finished, endReason: "cancelled" }),
+        JSON.stringify({ ...finished, endReason: "timeout" }),
       ),
     ).toBeNull();
-    const withoutReason = Object.fromEntries(
-      Object.entries(finished).filter(([field]) => field !== "endReason"),
+
+    const parsed = parseAssistantStreamEvent(
+      "turn.finished",
+      JSON.stringify(finished),
     );
     expect(
-      parseAssistantStreamEvent("turn.finished", JSON.stringify(withoutReason)),
-    ).toBeNull();
+      parsed?.type === "turn.finished" ? parsed.window?.interruptedTurn : null,
+    ).toEqual(window.interruptedTurn);
   });
 
   it("never lets a producer publish a snapshot: each connection reads its own", () => {

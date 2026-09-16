@@ -591,7 +591,6 @@ describe("what a stream carries", () => {
       kind: "chat",
       commandId,
       status: "done",
-      endReason: null,
       window,
     });
 
@@ -638,7 +637,6 @@ describe("what a stream carries", () => {
       kind: "chat",
       commandId,
       status: "done",
-      endReason: null,
       window,
     });
 
@@ -654,7 +652,6 @@ describe("what a stream carries", () => {
       kind: "chat",
       commandId,
       status: "done",
-      endReason: null,
       window: await messagesWindow(h, conversationId),
     });
   });

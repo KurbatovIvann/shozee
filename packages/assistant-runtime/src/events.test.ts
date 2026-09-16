@@ -52,7 +52,6 @@ const published: readonly AssistantPublishedEvent[] = [
     kind: "answer",
     commandId: COMMAND,
     status: "interrupted",
-    endReason: "timeout",
     window,
   },
 ];
