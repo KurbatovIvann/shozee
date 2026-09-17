@@ -840,3 +840,58 @@ describe("limits", () => {
     expect((await nextEvent(reader)).type).toBe("snapshot");
   });
 });
+
+describe("the spend guard", () => {
+  it("moves no counter for a company the caller is not a member of", async () => {
+    const touched: string[] = [];
+    const budgetStore = createMemoryAiBudgetStore();
+    const rateLimitStore = createInMemoryRateLimitStore();
+    const budget: AssistantKitBudget = {
+      logger: kit.pipeline.logger,
+      limits: DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
+      rateLimitStore: {
+        consume: (request) => {
+          touched.push(request.key);
+          return rateLimitStore.consume(request);
+        },
+      },
+      budgetStore: {
+        read: (key) => budgetStore.read(key),
+        add: (key, amountUsd, ttlSec) => {
+          touched.push(key);
+          return budgetStore.add(key, amountUsd, ttlSec);
+        },
+        tryAdd: (key, amountUsd, capUsd, ttlSec) => {
+          touched.push(key);
+          return budgetStore.tryAdd(key, amountUsd, capUsd, ttlSec);
+        },
+        claimHold: (key, value, ttlSec) => {
+          touched.push(key);
+          return budgetStore.claimHold(key, value, ttlSec);
+        },
+        dropHold: (key) => {
+          touched.push(key);
+          return budgetStore.dropHold(key);
+        },
+      },
+    };
+    const h = harness({ budget });
+    const { conversationId } = await conversationWithTurn();
+
+    const turn = await h.app.request(ASSISTANT_KIT_CHAT_PATH, {
+      method: "POST",
+      headers: {
+        ...companyHeaders(kitIdentities.companies.b),
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        commandId: randomUUID(),
+        conversationId,
+        text: "чуже",
+      }),
+    });
+
+    expect(turn.ok).toBe(false);
+    expect(touched).toEqual([]);
+  });
+});

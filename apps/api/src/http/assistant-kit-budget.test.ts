@@ -30,13 +30,21 @@ import {
   memoryAssistantKitCommands,
   memoryAssistantTurnStore,
   type AiBudgetStore,
+  type AssistantCaller,
   type AssistantHistoryPort,
   type AssistantTurnStore,
   type ChoiceResolution,
 } from "@showzy/assistant-runtime";
 import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
-import { createInMemoryRateLimitStore } from "@showzy/core";
-import { ConflictError, CoreInvariantError } from "@showzy/core/errors";
+import {
+  createInMemoryRateLimitStore,
+  type RateLimitStore,
+} from "@showzy/core";
+import {
+  ConflictError,
+  CoreInvariantError,
+  PermissionDeniedError,
+} from "@showzy/core/errors";
 import pino, { type Logger } from "pino";
 import { describe, expect, it } from "vitest";
 
@@ -46,6 +54,7 @@ import {
   ASSISTANT_KIT_ABANDON_PATH,
   ASSISTANT_KIT_ANSWER_PATH,
   ASSISTANT_KIT_CHAT_PATH,
+  ASSISTANT_KIT_CONTINUE_PATH,
   createAssistantKitApp,
 } from "./assistant-kit.js";
 
@@ -141,6 +150,9 @@ function harness(options?: {
    * own that request's reservation.
    */
   readonly failBeforeAccept?: boolean;
+  readonly staffCompany?: (caller: AssistantCaller) => Promise<string>;
+  readonly budgetStore?: AiBudgetStore;
+  readonly rateLimitStore?: RateLimitStore;
 }) {
   const kit = createAssistantKit(testDeps(assistantInteractions));
   const failAccept = options?.failAccept;
@@ -166,7 +178,8 @@ function harness(options?: {
             Promise.reject(new Error("the conversation could not be read")),
         }
       : kit;
-  const budgetStore: AiBudgetStore = createMemoryAiBudgetStore();
+  const budgetStore: AiBudgetStore =
+    options?.budgetStore ?? createMemoryAiBudgetStore();
   const app = createAssistantKitApp(
     {
       logger: silentLogger(),
@@ -181,7 +194,7 @@ function harness(options?: {
         },
       },
       forCaller: () => ({ kit: scopedKit, history, turns }),
-      staffCompany: () => Promise.resolve(COMPANY),
+      staffCompany: options?.staffCompany ?? (() => Promise.resolve(COMPANY)),
       model: stubTextModel("Готово."),
       tools: () => Promise.resolve(options?.tools ?? {}),
       resolveAnswer: OK_RESOLVE,
@@ -197,7 +210,7 @@ function harness(options?: {
         dailyBudgetUsdGlobal: options?.limits?.dailyBudgetUsdGlobal ?? 100,
         unknownModelTurnUsd: options?.limits?.unknownModelTurnUsd ?? 0.1,
       },
-      rateLimitStore: createInMemoryRateLimitStore(),
+      rateLimitStore: options?.rateLimitStore ?? createInMemoryRateLimitStore(),
       budgetStore,
     },
   );
@@ -208,13 +221,14 @@ async function post(
   app: ReturnType<typeof createAssistantKitApp>,
   path: string,
   body: unknown,
+  company = COMPANY,
 ): Promise<Response> {
   return await app.request(
     new Request(`http://local${path}`, {
       method: "POST",
       headers: new Headers({
         "content-type": "application/json",
-        [COMPANY_SELECTOR_HEADER]: COMPANY,
+        [COMPANY_SELECTOR_HEADER]: company,
       }),
       body: JSON.stringify(body),
     }),
@@ -231,6 +245,38 @@ async function post(
  */
 function chatBody(text = "покажи замовлення", commandId = randomUUID()) {
   return { commandId, conversationId: CONVERSATION, text };
+}
+
+function recordingStores() {
+  const writes: string[] = [];
+  const budget = createMemoryAiBudgetStore();
+  const rateLimit = createInMemoryRateLimitStore();
+  const budgetStore: AiBudgetStore = {
+    read: (key) => budget.read(key),
+    dropHold: (key) => {
+      writes.push(key);
+      return budget.dropHold(key);
+    },
+    add: (key, amountUsd, ttlSec) => {
+      writes.push(key);
+      return budget.add(key, amountUsd, ttlSec);
+    },
+    tryAdd: (key, amountUsd, capUsd, ttlSec) => {
+      writes.push(key);
+      return budget.tryAdd(key, amountUsd, capUsd, ttlSec);
+    },
+    claimHold: (key, value, ttlSec) => {
+      writes.push(key);
+      return budget.claimHold(key, value, ttlSec);
+    },
+  };
+  const rateLimitStore: RateLimitStore = {
+    consume: (request) => {
+      writes.push(request.key);
+      return rateLimit.consume(request);
+    },
+  };
+  return { writes, budgetStore, rateLimitStore };
 }
 
 /** What this company has been charged today, read straight from the store. */
@@ -546,6 +592,54 @@ describe("a retry of a command whose accept failed", () => {
 
     expect(response.status).toBe(500);
     expect(await spent(budgetStore)).toBe(0);
+  });
+});
+
+describe("a company the caller is not a member of", () => {
+  const FOREIGN = "22222222-2222-4222-8222-2222222222bb";
+
+  it("moves no counter on any guarded route", async () => {
+    const recorded = recordingStores();
+    const { app } = harness({
+      staffCompany: (caller) =>
+        caller.companySelector === FOREIGN
+          ? Promise.reject(new PermissionDeniedError())
+          : Promise.resolve(caller.companySelector),
+      budgetStore: recorded.budgetStore,
+      rateLimitStore: recorded.rateLimitStore,
+    });
+
+    for (const path of [
+      ASSISTANT_KIT_CHAT_PATH,
+      ASSISTANT_KIT_ANSWER_PATH,
+      ASSISTANT_KIT_CONTINUE_PATH,
+    ]) {
+      const response = await post(app, path, chatBody(), FOREIGN);
+      expect(response.ok, path).toBe(false);
+    }
+
+    expect(recorded.writes).toEqual([]);
+  });
+
+  it("keys the reservation by the verified company, not the selector as sent", async () => {
+    const recorded = recordingStores();
+    const { app, budgetStore } = harness({
+      staffCompany: () => Promise.resolve(COMPANY),
+      budgetStore: recorded.budgetStore,
+      rateLimitStore: recorded.rateLimitStore,
+      limits: { unknownModelTurnUsd: 0.1 },
+    });
+
+    const response = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      chatBody(),
+      FOREIGN,
+    );
+
+    expect(response.status).toBe(202);
+    expect(await spent(budgetStore)).toBeCloseTo(0.1, 5);
+    expect(recorded.writes.filter((key) => key.includes(FOREIGN))).toEqual([]);
   });
 });
 
