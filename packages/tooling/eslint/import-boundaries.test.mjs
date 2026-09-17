@@ -4,7 +4,8 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { RuleTester } from "eslint";
+import { Linter, RuleTester } from "eslint";
+import boundaries from "eslint-plugin-boundaries";
 import tseslint from "typescript-eslint";
 
 import { importBoundariesRule } from "./import-boundaries.mjs";
@@ -38,6 +39,45 @@ const tester = new RuleTester({
 test("showzy/import-boundaries", () => {
   tester.run("showzy/import-boundaries", importBoundariesRule, {
     valid: [
+      {
+        filename: file("apps/api/src/boot.ts"),
+        code: `
+          import { createAssistantRuntime } from "@showzy/assistant-runtime";
+          const runtime = await import("@showzy/assistant-runtime");
+          const ai = await import("@showzy/ai");
+        `,
+      },
+      {
+        filename: file("apps/worker/src/jobs.ts"),
+        code: `const runtime = await import("@showzy/assistant-runtime");`,
+      },
+      {
+        filename: file("packages/document-signing/src/platform/web-adapter.ts"),
+        code: `
+          import { z } from "zod";
+          import { DocumentSigningError } from "../errors.js";
+          const wasm = await import("../../wasm/dist/signer.js");
+        `,
+      },
+      {
+        filename: file("packages/validation/src/orders.ts"),
+        code: `
+          import { moneySchema } from "./money.js";
+          const copy = await import(specifierFromConfig);
+        `,
+      },
+      {
+        filename: file("packages/copy/src/orders.ts"),
+        code: `import { sharedChromeCopy } from "./chrome.js";`,
+      },
+      {
+        filename: file("packages/jobs/src/queue.contract.ts"),
+        code: `import { jobPayloadSchema } from "./types.js";`,
+      },
+      {
+        filename: file("apps/mobile/src/app/orders/index.tsx"),
+        code: `import { OrderRow } from "../../components/order-row.js";`,
+      },
       {
         filename: file("apps/worker/src/boot.ts"),
         code: `
@@ -238,6 +278,90 @@ test("showzy/import-boundaries", () => {
       },
     ],
     invalid: [
+      ...[
+        "packages/contract/src/index.ts",
+        "packages/validation/src/assistant.ts",
+        "packages/ui/src/button.ts",
+        "packages/document-signing/src/index.ts",
+      ].flatMap((importer) =>
+        [
+          `const ai = await import("@showzy/ai");`,
+          "const runtime = await import(`@showzy/assistant-runtime`);",
+          `import { staffAssistantTools } from "@showzy/ai";`,
+          `export { assistantTurnJobSchema } from "@showzy/assistant-runtime";`,
+        ].map((code) => ({
+          filename: file(importer),
+          code,
+          errors: [{ messageId: "clientSafeServerOnly" }],
+        })),
+      ),
+      ...[
+        [
+          "packages/validation/src/assistant-chat.ts",
+          `import { enqueueTurn } from "../../assistant-runtime/src/queue.js";`,
+        ],
+        ["packages/ui/src/button.ts", `export * from "../../ai/src/index.js";`],
+        ["packages/contract/src/index.ts", `import "../../ai";`],
+        [
+          "packages/document-signing/src/platform/web-adapter.ts",
+          `import { createJobHost } from "../../../jobs/src/index.js";`,
+        ],
+      ].map(([importer, code]) => ({
+        filename: file(importer),
+        code,
+        errors: [{ messageId: "clientSafeServerOnly" }],
+      })),
+      ...[
+        [
+          "packages/contract/src/client/rpc.ts",
+          `const ai = await import("../../../ai/src/index.js");`,
+          "contractClient",
+        ],
+        [
+          "packages/modules/orders/src/actions/create.contract.ts",
+          `import { staffAssistantTools } from "../../../../ai/src/index.js";`,
+          "actionContract",
+        ],
+        [
+          "packages/copy/src/assistant.ts",
+          `import { staffAssistantTools } from "../../ai/src/index.js";`,
+          "copyLeaf",
+        ],
+        [
+          "packages/copy/src/assistant.ts",
+          `const runtime = await import("@showzy/assistant-runtime");`,
+          "copyLeaf",
+        ],
+        [
+          "apps/web/src/routes/index.tsx",
+          `import { createAssistantRuntime } from "../../../../packages/assistant-runtime/src/index.js";`,
+          "clientApp",
+        ],
+        [
+          "apps/mobile/src/app/index.tsx",
+          `import { verifyAsic } from "../../../../packages/document-signing/src/platform/node.js";`,
+          "clientApp",
+        ],
+        [
+          "apps/web/src/routes/index.tsx",
+          `import { users } from "../../../../packages/db/src/index.js";`,
+          "clientApp",
+        ],
+        [
+          "apps/web/src/routes/index.tsx",
+          `const ai = await import("@showzy/ai");`,
+          "clientApp",
+        ],
+        [
+          "apps/mobile/src/app/index.tsx",
+          `const runtime = require("@showzy/assistant-runtime");`,
+          "clientApp",
+        ],
+      ].map(([importer, code, messageId]) => ({
+        filename: file(importer),
+        code,
+        errors: [{ messageId }],
+      })),
       {
         filename: file("apps/worker/src/boot.ts"),
         code: `import { PgBoss } from "pg-boss";`,
@@ -613,15 +737,36 @@ test("boundaries map includes the assistant-runtime element and keeps it server-
     ),
     "boundaries/elements must declare type ui for packages/ui",
   );
-  for (const type of ["contract", "validation", "ui"]) {
-    for (const source of ["@showzy/ai", "@showzy/assistant-runtime"]) {
+  for (const type of [
+    "contract",
+    "copy",
+    "validation",
+    "ui",
+    "document-signing",
+  ]) {
+    assert.ok(
+      elements.some(
+        (element) =>
+          element.type === type && element.pattern === `packages/${type}`,
+      ),
+      `boundaries/elements must declare type ${type} for packages/${type}`,
+    );
+    for (const serverOnly of ["ai", "assistant-runtime", "jobs"]) {
       assert.ok(
         policies.some(
           (policy) =>
             policy.from?.element?.type === type &&
-            policy.disallow?.to?.module?.source === source,
+            policy.disallow?.to?.module?.source === `@showzy/${serverOnly}`,
         ),
-        `client-safe packages/${type} must be disallowed from importing ${source}`,
+        `client-safe packages/${type} must be disallowed from importing @showzy/${serverOnly}`,
+      );
+      assert.ok(
+        policies.some(
+          (policy) =>
+            policy.from?.element?.type === type &&
+            policy.disallow?.to?.element?.type === serverOnly,
+        ),
+        `client-safe packages/${type} must be disallowed from depending on packages/${serverOnly}`,
       );
     }
   }
@@ -633,6 +778,57 @@ test("boundaries map includes the assistant-runtime element and keeps it server-
           policy.disallow?.to?.module?.source === "@showzy/assistant-runtime"),
     ),
     "the server apps (apps/api, apps/worker) must stay allowed to import assistant-runtime",
+  );
+});
+
+test("boundaries/dependencies refuses a server-only import from packages/document-signing (SHO-566)", () => {
+  const linter = new Linter({ configType: "flat", cwd: repoRoot });
+  /**
+   * @param {string} importer
+   * @param {string} code
+   */
+  function lint(importer, code) {
+    return linter
+      .verify(
+        code,
+        [
+          {
+            files: ["**/*.ts"],
+            languageOptions: {
+              parser: tseslint.parser,
+              parserOptions: { ecmaVersion: 2022, sourceType: "module" },
+            },
+            plugins: { boundaries },
+            settings: showzyBoundarySettings(repoRoot),
+            rules: {
+              "boundaries/dependencies": [
+                "error",
+                showzyBoundaryDependencyOptions,
+              ],
+            },
+          },
+        ],
+        file(importer),
+      )
+      .map((message) => message.message);
+  }
+
+  const importer = "packages/document-signing/src/document-signer.ts";
+  assert.deepEqual(lint(importer, `const ai = await import("@showzy/ai");`), [
+    "packages/document-signing is client-safe and may not import @showzy/ai (server-only, ADR-0032, ADR-0039).",
+  ]);
+  assert.deepEqual(
+    lint(importer, `import { x } from "../../assistant-runtime/src/index.ts";`),
+    [
+      "packages/document-signing is client-safe and may not import packages/assistant-runtime (server-only, ADR-0032, ADR-0039).",
+    ],
+  );
+  assert.deepEqual(
+    lint(
+      "apps/api/src/boot.ts",
+      `import { x } from "@showzy/assistant-runtime";`,
+    ),
+    [],
   );
 });
 

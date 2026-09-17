@@ -38,7 +38,16 @@ used by `.github/workflows/ci.yml` (SHO-334 aggregator, SHO-387
   ADR-0039) may import it; mobile, web, and domain modules must not.
   `@showzy/assistant-runtime` (ADR-0039) is the server half of the assistant:
   `apps/api` and `apps/worker` may import it; mobile, web, domain modules, and
-  `packages/ai` must not. `@showzy/api` is importable only from `apps/worker`,
+  `packages/ai` must not. Static imports, re-exports, dynamic `import()` and
+  `require()` all go through one check (SHO-566), and for code that ships to
+  a device — client apps, `*.contract.ts`, and `CLIENT_SHIPPED_PACKAGES`
+  (`contract`, `copy`, `validation`, `ui`, `document-signing`) — a relative
+  specifier that leaves its own package is rewritten to the
+  `@showzy/<package>[/<subpath>]` it names and judged by that package's
+  allowlist, so neither form can say something the other would refuse.
+  `boundaries/dependencies` element policies only fire when a specifier
+  resolves to a file, and NodeNext `.js` specifiers to `.ts` sources do not,
+  so the specifier rules are what hold. `@showzy/api` is importable only from `apps/worker`,
   and only as `@showzy/api/subscriptions` or `@showzy/api/registry`; a worker
   relative import that leaves `apps/worker` is refused too (SHO-279,
   SHO-569). `packages/ai` itself may import `@showzy/core/*`,
