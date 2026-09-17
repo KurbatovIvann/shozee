@@ -67,6 +67,18 @@ test("showzy/import-boundaries", () => {
         `,
       },
       {
+        filename: file("packages/copy/src/orders.ts"),
+        code: `import { sharedChromeCopy } from "./chrome.js";`,
+      },
+      {
+        filename: file("packages/jobs/src/queue.contract.ts"),
+        code: `import { jobPayloadSchema } from "./types.js";`,
+      },
+      {
+        filename: file("apps/mobile/src/app/orders/index.tsx"),
+        code: `import { OrderRow } from "../../components/order-row.js";`,
+      },
+      {
         filename: file("apps/worker/src/boot.ts"),
         code: `
           import { createActionRegistry } from "@showzy/api/registry";
@@ -291,36 +303,65 @@ test("showzy/import-boundaries", () => {
         ["packages/ui/src/button.ts", `export * from "../../ai/src/index.js";`],
         ["packages/contract/src/index.ts", `import "../../ai";`],
         [
-          "packages/contract/src/client/rpc.ts",
-          `const ai = await import("../../../ai/src/index.js");`,
-        ],
-        [
           "packages/document-signing/src/platform/web-adapter.ts",
           `import { createJobHost } from "../../../jobs/src/index.js";`,
-        ],
-        [
-          "packages/modules/orders/src/actions/create.contract.ts",
-          `import { staffAssistantTools } from "../../../../ai/src/index.js";`,
-        ],
-        [
-          "apps/web/src/routes/index.tsx",
-          `import { createAssistantRuntime } from "../../../../packages/assistant-runtime/src/index.js";`,
         ],
       ].map(([importer, code]) => ({
         filename: file(importer),
         code,
         errors: [{ messageId: "clientSafeServerOnly" }],
       })),
-      {
-        filename: file("apps/web/src/routes/index.tsx"),
-        code: `const ai = await import("@showzy/ai");`,
-        errors: [{ messageId: "clientApp" }],
-      },
-      {
-        filename: file("apps/mobile/src/app/index.tsx"),
-        code: `const runtime = require("@showzy/assistant-runtime");`,
-        errors: [{ messageId: "clientApp" }],
-      },
+      ...[
+        [
+          "packages/contract/src/client/rpc.ts",
+          `const ai = await import("../../../ai/src/index.js");`,
+          "contractClient",
+        ],
+        [
+          "packages/modules/orders/src/actions/create.contract.ts",
+          `import { staffAssistantTools } from "../../../../ai/src/index.js";`,
+          "actionContract",
+        ],
+        [
+          "packages/copy/src/assistant.ts",
+          `import { staffAssistantTools } from "../../ai/src/index.js";`,
+          "copyLeaf",
+        ],
+        [
+          "packages/copy/src/assistant.ts",
+          `const runtime = await import("@showzy/assistant-runtime");`,
+          "copyLeaf",
+        ],
+        [
+          "apps/web/src/routes/index.tsx",
+          `import { createAssistantRuntime } from "../../../../packages/assistant-runtime/src/index.js";`,
+          "clientApp",
+        ],
+        [
+          "apps/mobile/src/app/index.tsx",
+          `import { verifyAsic } from "../../../../packages/document-signing/src/platform/node.js";`,
+          "clientApp",
+        ],
+        [
+          "apps/web/src/routes/index.tsx",
+          `import { users } from "../../../../packages/db/src/index.js";`,
+          "clientApp",
+        ],
+        [
+          "apps/web/src/routes/index.tsx",
+          `const ai = await import("@showzy/ai");`,
+          "clientApp",
+        ],
+        [
+          "apps/mobile/src/app/index.tsx",
+          `const runtime = require("@showzy/assistant-runtime");`,
+          "clientApp",
+        ],
+      ].map(([importer, code, messageId]) => ({
+        filename: file(importer),
+        code,
+        errors: [{ messageId }],
+      })),
       {
         filename: file("apps/worker/src/boot.ts"),
         code: `import { PgBoss } from "pg-boss";`,
@@ -696,7 +737,13 @@ test("boundaries map includes the assistant-runtime element and keeps it server-
     ),
     "boundaries/elements must declare type ui for packages/ui",
   );
-  for (const type of ["contract", "validation", "ui", "document-signing"]) {
+  for (const type of [
+    "contract",
+    "copy",
+    "validation",
+    "ui",
+    "document-signing",
+  ]) {
     assert.ok(
       elements.some(
         (element) =>

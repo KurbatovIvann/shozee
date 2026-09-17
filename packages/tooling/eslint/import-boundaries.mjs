@@ -42,19 +42,23 @@ const PLATFORM_PACKAGES = new Set([
  */
 export const SERVER_ONLY_PACKAGES = ["ai", "assistant-runtime", "jobs"];
 
-export const CLIENT_SAFE_PACKAGES = [
+/**
+ * Packages that ship into mobile and web (contract.md §2, SHO-414, SHO-251).
+ * `contract` and `copy` carry their own stricter rules, so only the rest are
+ * classified `client-safe`.
+ */
+export const CLIENT_SHIPPED_PACKAGES = [
   "contract",
+  "copy",
   "validation",
   "ui",
   "document-signing",
 ];
 
 const CLIENT_SAFE_SOURCE_RE = new RegExp(
-  `/packages/(${CLIENT_SAFE_PACKAGES.join("|")})/`,
-);
-
-const SERVER_ONLY_TARGET_RE = new RegExp(
-  `/packages/(${SERVER_ONLY_PACKAGES.join("|")})(/|$)`,
+  `/packages/(${CLIENT_SHIPPED_PACKAGES.filter(
+    (name) => name !== "contract" && name !== "copy",
+  ).join("|")})/`,
 );
 
 const CLIENT_SHIPPED_KINDS = new Set([
@@ -63,7 +67,11 @@ const CLIENT_SHIPPED_KINDS = new Set([
   "contract",
   "client-app",
   "client-safe",
+  "copy",
 ]);
+
+const PACKAGE_ROOT_RE =
+  /^(.*?\/(?:packages\/modules\/[^/]+|packages\/[^/]+|apps\/[^/]+))(?:\/(.*))?$/;
 
 /** Projection modules may import foreign schemas; contract-check enforces grants. */
 const PROJECTION_MODULES = new Set(["search", "analytics"]);
@@ -113,6 +121,43 @@ function toPosix(filename) {
  */
 function isRelative(spec) {
   return spec.startsWith("./") || spec.startsWith("../");
+}
+
+/**
+ * @param {string} posixPath
+ * @returns {{ root: string, name: string, rest: string } | null}
+ */
+function packageOf(posixPath) {
+  const match = PACKAGE_ROOT_RE.exec(posixPath);
+  if (match === null || match[1] === undefined) {
+    return null;
+  }
+  const root = match[1];
+  return {
+    root,
+    name: root.slice(root.lastIndexOf("/") + 1),
+    rest: match[2] ?? "",
+  };
+}
+
+/**
+ * A relative specifier that leaves the importer's own package names the same
+ * dependency as `@showzy/<package>[/<subpath>]`; rewriting it lets one
+ * allowlist decide both forms (SHO-566).
+ *
+ * @param {string} dir
+ * @param {string} spec
+ * @returns {string | null}
+ */
+function crossPackageSpecifier(dir, spec) {
+  const importer = packageOf(dir);
+  const target = packageOf(path.posix.normalize(path.posix.join(dir, spec)));
+  if (importer === null || target === null || importer.root === target.root) {
+    return null;
+  }
+  return target.rest === ""
+    ? `@showzy/${target.name}`
+    : `@showzy/${target.name}/${target.rest}`;
 }
 
 /**
@@ -191,7 +236,7 @@ function classify(filename) {
     return { kind: "ai" };
   }
   if (path.includes("/packages/copy/")) {
-    return { kind: "copy" };
+    return { kind: "copy", dir };
   }
   if (CLIENT_SAFE_SOURCE_RE.test(path)) {
     return { kind: "client-safe", dir };
@@ -233,14 +278,11 @@ function isTypeOnly(node) {
  * @returns {{ messageId: string, data?: Record<string, string> } | null}
  */
 function violation(from, spec, typeOnly) {
-  if (
-    CLIENT_SHIPPED_KINDS.has(from.kind) &&
-    isRelative(spec) &&
-    SERVER_ONLY_TARGET_RE.test(
-      path.posix.normalize(path.posix.join(from.dir ?? "", spec)),
-    )
-  ) {
-    return { messageId: "clientSafeServerOnly" };
+  if (CLIENT_SHIPPED_KINDS.has(from.kind) && isRelative(spec)) {
+    const crossPackage = crossPackageSpecifier(from.dir ?? "", spec);
+    if (crossPackage !== null) {
+      return violation(from, crossPackage, typeOnly);
+    }
   }
 
   if (from.kind === "action-contract") {
@@ -554,7 +596,7 @@ export const importBoundariesRule = {
         "Domain modules may not import @showzy/assistant-runtime (ADR-0039). Only the server composition roots (apps/api, apps/worker) run the assistant.",
       contractModules:
         "packages/contract may import only a module's index.contract.ts barrel (@showzy/<module>/contract) (ADR-0016).",
-      clientSafeServerOnly: `Client apps, *.contract.ts and the client-safe packages (${CLIENT_SAFE_PACKAGES.map((name) => `packages/${name}`).join(", ")}) ship into mobile and web and may not reach ${SERVER_ONLY_PACKAGES.map((name) => `@showzy/${name}`).join(", ")} by package name, dynamic import() or relative path (server-only, ADR-0032, ADR-0039, ADR-0041).`,
+      clientSafeServerOnly: `Client-safe packages ship into mobile and web and may not reach ${SERVER_ONLY_PACKAGES.map((name) => `@showzy/${name}`).join(", ")} by package name, dynamic import(), require() or a relative path (server-only, ADR-0032, ADR-0039, ADR-0041).`,
       pgBossOutsideJobs:
         "pg-boss is imported only inside packages/jobs; everything else uses @showzy/jobs (ADR-0041 J15).",
       clientApp:

@@ -7,7 +7,7 @@ import boundaries from "eslint-plugin-boundaries";
 import tseslint from "typescript-eslint";
 
 import {
-  CLIENT_SAFE_PACKAGES,
+  CLIENT_SHIPPED_PACKAGES,
   SERVER_ONLY_PACKAGES,
   importBoundariesRule,
 } from "./import-boundaries.mjs";
@@ -175,7 +175,7 @@ export const showzyBoundaryDependencyOptions = {
     },
     // Client-safe packages ship into mobile and web: a second hop through one
     // of them must not carry a server-only package there (ADR-0032, ADR-0039).
-    ...CLIENT_SAFE_PACKAGES.flatMap((type) =>
+    ...CLIENT_SHIPPED_PACKAGES.flatMap((type) =>
       SERVER_ONLY_PACKAGES.flatMap((serverOnly) => [
         {
           from: { element: { type } },
