@@ -189,7 +189,14 @@ export async function withAssistantKitBudget(
   if (!caller.ok) {
     return caller.response;
   }
-  const companyId = canonicalizeAiBudgetCompanyId(caller.companySelector);
+  const companyId = canonicalizeAiBudgetCompanyId(
+    await runtime.staffCompany({
+      userId: caller.userId,
+      companySelector: caller.companySelector,
+      requestId,
+      clientIp: c.get("clientIp"),
+    }),
+  );
   const turn = await budgetTurnIdentity(c, options.turnKind, options.namesTurn);
 
   let reservation;
