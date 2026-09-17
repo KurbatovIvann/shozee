@@ -6,7 +6,11 @@ import prettierConfig from "eslint-config-prettier";
 import boundaries from "eslint-plugin-boundaries";
 import tseslint from "typescript-eslint";
 
-import { importBoundariesRule } from "./import-boundaries.mjs";
+import {
+  CLIENT_SAFE_PACKAGES,
+  SERVER_ONLY_PACKAGES,
+  importBoundariesRule,
+} from "./import-boundaries.mjs";
 import { recordVerificationAggregatesRule } from "./record-verification-aggregates.mjs";
 import {
   SHOWZY_RESTRICTED_SYNTAX,
@@ -56,6 +60,7 @@ const boundaryElements = [
   { type: "validation", pattern: "packages/validation" },
   { type: "ui", pattern: "packages/ui" },
   { type: "copy", pattern: "packages/copy" },
+  { type: "document-signing", pattern: "packages/document-signing" },
   { type: "module-kit", pattern: "packages/module-kit" },
   { type: "tooling", pattern: "packages/tooling" },
 ];
@@ -170,14 +175,19 @@ export const showzyBoundaryDependencyOptions = {
     },
     // Client-safe packages ship into mobile and web: a second hop through one
     // of them must not carry a server-only package there (ADR-0032, ADR-0039).
-    ...["contract", "validation", "ui"].flatMap((type) =>
-      ["@showzy/ai", "@showzy/assistant-runtime", "@showzy/jobs"].map(
-        (source) => ({
+    ...CLIENT_SAFE_PACKAGES.flatMap((type) =>
+      SERVER_ONLY_PACKAGES.flatMap((serverOnly) => [
+        {
           from: { element: { type } },
-          disallow: { to: { module: { source } } },
-          message: `packages/${type} is client-safe and may not import ${source} (server-only, ADR-0032, ADR-0039).`,
-        }),
-      ),
+          disallow: { to: { module: { source: `@showzy/${serverOnly}` } } },
+          message: `packages/${type} is client-safe and may not import @showzy/${serverOnly} (server-only, ADR-0032, ADR-0039).`,
+        },
+        {
+          from: { element: { type } },
+          disallow: { to: { element: { type: serverOnly } } },
+          message: `packages/${type} is client-safe and may not import packages/${serverOnly} (server-only, ADR-0032, ADR-0039).`,
+        },
+      ]),
     ),
     {
       from: { element: { type: "copy" } },

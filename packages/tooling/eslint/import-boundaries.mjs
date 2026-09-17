@@ -40,7 +40,30 @@ const PLATFORM_PACKAGES = new Set([
  * into mobile and web, so they may not import these even where platform
  * packages are otherwise allowed (`packages/contract`).
  */
-const SERVER_ONLY_PACKAGES = new Set(["ai", "assistant-runtime", "jobs"]);
+export const SERVER_ONLY_PACKAGES = ["ai", "assistant-runtime", "jobs"];
+
+export const CLIENT_SAFE_PACKAGES = [
+  "contract",
+  "validation",
+  "ui",
+  "document-signing",
+];
+
+const CLIENT_SAFE_SOURCE_RE = new RegExp(
+  `/packages/(${CLIENT_SAFE_PACKAGES.join("|")})/`,
+);
+
+const SERVER_ONLY_TARGET_RE = new RegExp(
+  `/packages/(${SERVER_ONLY_PACKAGES.join("|")})(/|$)`,
+);
+
+const CLIENT_SHIPPED_KINDS = new Set([
+  "action-contract",
+  "contract-client",
+  "contract",
+  "client-app",
+  "client-safe",
+]);
 
 /** Projection modules may import foreign schemas; contract-check enforces grants. */
 const PROJECTION_MODULES = new Set(["search", "analytics"]);
@@ -67,7 +90,7 @@ const WORKER_API_SUBPATHS = new Set(["subscriptions", "registry"]);
 
 /** Platform packages whose own source is checked for `@showzy/api` imports. */
 const PLATFORM_SOURCE_RE =
-  /\/packages\/(assistant-kit|assistant-runtime|config|core|db|document-signing|jobs|module-kit|money)\//;
+  /\/packages\/(assistant-kit|assistant-runtime|config|core|db|jobs|module-kit|money)\//;
 
 const JOBS_PACKAGE_RE = /\/packages\/jobs\//;
 
@@ -90,6 +113,24 @@ function toPosix(filename) {
  */
 function isRelative(spec) {
   return spec.startsWith("./") || spec.startsWith("../");
+}
+
+/**
+ * @param {import("estree").Node} node
+ * @returns {string | null}
+ */
+function staticSpecifier(node) {
+  if (node.type === "Literal" && typeof node.value === "string") {
+    return node.value;
+  }
+  if (
+    node.type === "TemplateLiteral" &&
+    node.expressions.length === 0 &&
+    node.quasis[0] !== undefined
+  ) {
+    return node.quasis[0].value.cooked ?? null;
+  }
+  return null;
 }
 
 /**
@@ -121,26 +162,23 @@ function classify(filename) {
   ) {
     return { kind: "skip" };
   }
+  const dir = path.slice(0, path.lastIndexOf("/"));
   if (path.endsWith(".contract.ts")) {
-    return { kind: "action-contract" };
+    return { kind: "action-contract", dir };
   }
   if (path.includes("/packages/contract/src/client/")) {
-    return { kind: "contract-client" };
+    return { kind: "contract-client", dir };
   }
   if (path.includes("/packages/contract/")) {
-    return { kind: "contract" };
+    return { kind: "contract", dir };
   }
   const appMatch = /\/apps\/([^/]+)\//.exec(path);
   if (appMatch !== null && CLIENT_APPS.has(appMatch[1] ?? "")) {
-    return { kind: "client-app" };
+    return { kind: "client-app", dir };
   }
   const workerMatch = /^(.*\/apps\/worker\/)src\//.exec(path);
   if (workerMatch !== null && workerMatch[1] !== undefined) {
-    return {
-      kind: "worker",
-      root: workerMatch[1],
-      dir: path.slice(0, path.lastIndexOf("/")),
-    };
+    return { kind: "worker", root: workerMatch[1], dir };
   }
   const moduleMatch = /\/packages\/modules\/([^/]+)\//.exec(path);
   if (moduleMatch !== null && moduleMatch[1] !== undefined) {
@@ -155,11 +193,8 @@ function classify(filename) {
   if (path.includes("/packages/copy/")) {
     return { kind: "copy" };
   }
-  if (
-    path.includes("/packages/validation/") ||
-    path.includes("/packages/ui/")
-  ) {
-    return { kind: "client-safe" };
+  if (CLIENT_SAFE_SOURCE_RE.test(path)) {
+    return { kind: "client-safe", dir };
   }
   if (PLATFORM_SOURCE_RE.test(path)) {
     return { kind: "platform" };
@@ -198,6 +233,16 @@ function isTypeOnly(node) {
  * @returns {{ messageId: string, data?: Record<string, string> } | null}
  */
 function violation(from, spec, typeOnly) {
+  if (
+    CLIENT_SHIPPED_KINDS.has(from.kind) &&
+    isRelative(spec) &&
+    SERVER_ONLY_TARGET_RE.test(
+      path.posix.normalize(path.posix.join(from.dir ?? "", spec)),
+    )
+  ) {
+    return { messageId: "clientSafeServerOnly" };
+  }
+
   if (from.kind === "action-contract") {
     if (isRelative(spec) || spec === "zod") {
       return null;
@@ -275,7 +320,7 @@ function violation(from, spec, typeOnly) {
   }
 
   if (from.kind === "contract" || from.kind === "client-safe") {
-    if (pkg !== null && SERVER_ONLY_PACKAGES.has(pkg.name)) {
+    if (pkg !== null && SERVER_ONLY_PACKAGES.includes(pkg.name)) {
       return { messageId: "clientSafeServerOnly" };
     }
     if (from.kind === "client-safe") {
@@ -509,8 +554,7 @@ export const importBoundariesRule = {
         "Domain modules may not import @showzy/assistant-runtime (ADR-0039). Only the server composition roots (apps/api, apps/worker) run the assistant.",
       contractModules:
         "packages/contract may import only a module's index.contract.ts barrel (@showzy/<module>/contract) (ADR-0016).",
-      clientSafeServerOnly:
-        "Client-safe packages (packages/contract, packages/validation, packages/ui) ship into mobile and web and may not import @showzy/ai, @showzy/assistant-runtime or @showzy/jobs (server-only, ADR-0032, ADR-0039, ADR-0041).",
+      clientSafeServerOnly: `Client apps, *.contract.ts and the client-safe packages (${CLIENT_SAFE_PACKAGES.map((name) => `packages/${name}`).join(", ")}) ship into mobile and web and may not reach ${SERVER_ONLY_PACKAGES.map((name) => `@showzy/${name}`).join(", ")} by package name, dynamic import() or relative path (server-only, ADR-0032, ADR-0039, ADR-0041).`,
       pgBossOutsideJobs:
         "pg-boss is imported only inside packages/jobs; everything else uses @showzy/jobs (ADR-0041 J15).",
       clientApp:
@@ -576,27 +620,23 @@ export const importBoundariesRule = {
         }
       },
       ImportExpression(node) {
-        if (
-          !insideJobs &&
-          node.source.type === "Literal" &&
-          typeof node.source.value === "string" &&
-          isPgBossSpecifier(node.source.value)
-        ) {
-          context.report({ node, messageId: "pgBossOutsideJobs" });
+        const spec = staticSpecifier(node.source);
+        if (spec !== null) {
+          reportIfNeeded(node, spec);
         }
       },
       CallExpression(node) {
         const [first] = node.arguments;
         if (
-          !insideJobs &&
-          node.callee.type === "Identifier" &&
-          node.callee.name === "require" &&
-          first !== undefined &&
-          first.type === "Literal" &&
-          typeof first.value === "string" &&
-          isPgBossSpecifier(first.value)
+          node.callee.type !== "Identifier" ||
+          node.callee.name !== "require" ||
+          first === undefined
         ) {
-          context.report({ node, messageId: "pgBossOutsideJobs" });
+          return;
+        }
+        const spec = staticSpecifier(first);
+        if (spec !== null) {
+          reportIfNeeded(node, spec);
         }
       },
     };
