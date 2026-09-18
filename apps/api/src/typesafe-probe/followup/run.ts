@@ -23,6 +23,7 @@ import type { JudgmentShadowCall } from "@showzy/validation/assistant-judgment";
 import { createActionRegistry } from "../../registry.js";
 import type { LlmUsage } from "../executor/llm.js";
 import { num, pct, percentile, share } from "../probe.js";
+import { FOLLOWUP_HOLDOUT_CASES } from "./corpus-holdout.js";
 import {
   FOLLOWUP_CASES,
   KNOWN_CUSTOMER_NAMES,
@@ -116,16 +117,47 @@ async function askGate(
   return result.ok ? result.answers.needsHistory.probability : null;
 }
 
-function withKnownCustomer(input: unknown): unknown {
+function namedIds(value: unknown, found: Map<string, string>): void {
+  if (Array.isArray(value)) {
+    value.forEach((entry) => {
+      namedIds(entry, found);
+    });
+    return;
+  }
+  if (typeof value !== "object" || value === null) {
+    return;
+  }
+  if (
+    "id" in value &&
+    "name" in value &&
+    typeof value.id === "string" &&
+    typeof value.name === "string"
+  ) {
+    found.set(value.id, value.name);
+  }
+  Object.values(value).forEach((entry) => {
+    namedIds(entry, found);
+  });
+}
+
+function withKnownCustomer(probeCase: FollowupCase, input: unknown): unknown {
   if (typeof input !== "object" || input === null || !("customerId" in input)) {
     return input;
   }
+  const known = new Map(Object.entries(KNOWN_CUSTOMER_NAMES));
+  namedIds(
+    probeCase.history.map((exchange) => exchange.call?.output ?? null),
+    known,
+  );
   const name =
     typeof input.customerId === "string"
-      ? KNOWN_CUSTOMER_NAMES[input.customerId]
+      ? known.get(input.customerId)
       : undefined;
   return name === undefined ? input : { ...input, customerQuery: name };
 }
+
+const isTalk = (plan: StaffJudgmentPlan): boolean =>
+  plan.kind === "small_talk" || plan.kind === "capability_question";
 
 const confidentCall = (plan: StaffJudgmentPlan): JudgmentShadowCall | null =>
   plan.call !== undefined &&
@@ -170,7 +202,9 @@ function render(
   rows: readonly CaseRow[],
   readTools: ReadonlySet<string>,
 ): string {
-  const byId = new Map(FOLLOWUP_CASES.map((c) => [c.id, c]));
+  const byId = new Map(
+    [...FOLLOWUP_CASES, ...FOLLOWUP_HOLDOUT_CASES].map((c) => [c.id, c]),
+  );
   const caseOf = (row: CaseRow): FollowupCase => {
     const found = byId.get(row.caseId);
     if (found === undefined) {
@@ -220,6 +254,15 @@ function render(
       (row: CaseRow) =>
         (row.gateWithReply ?? 0) >= GATE_AT ? row.rewrittenPlan : row.rawPlan,
       () => false,
+    ],
+    [
+      `Not talk, Noul ≥ ${String(GATE_AT)} → Haiku rewrite → Jev, else Jev`,
+      (row: CaseRow) =>
+        (row.gateWithReply ?? 0) >= GATE_AT && !isTalk(row.rawPlan)
+          ? row.rewrittenPlan
+          : row.rawPlan,
+      (row: CaseRow) =>
+        (row.gateWithReply ?? 0) >= GATE_AT && isTalk(row.rawPlan),
     ],
   ] as const;
 
@@ -353,8 +396,17 @@ function render(
 }
 
 const { values } = parseArgs({
-  options: { raw: { type: "string" }, rescore: { type: "string" } },
+  options: {
+    raw: { type: "string" },
+    rescore: { type: "string" },
+    set: { type: "string" },
+    "reuse-llm": { type: "string" },
+  },
 });
+const probeCases =
+  values.set === "holdout" ? FOLLOWUP_HOLDOUT_CASES : FOLLOWUP_CASES;
+const savedRows = (path: string): CaseRow[] =>
+  (JSON.parse(readFileSync(path, "utf8")) as { rows: CaseRow[] }).rows;
 const { ai } = loadServerConfig();
 const contracts = aiToolSourcesForPrincipal(
   createActionRegistry().contracts(),
@@ -369,10 +421,7 @@ const readTools = new Set([
   ),
 ]);
 if (values.rescore !== undefined) {
-  const saved = JSON.parse(readFileSync(values.rescore, "utf8")) as {
-    rows: CaseRow[];
-  };
-  process.stdout.write(`${render(saved.rows, readTools)}\n`);
+  process.stdout.write(`${render(savedRows(values.rescore), readTools)}\n`);
 } else if (
   ai.typesafeApiKey === undefined ||
   ai.anthropicApiKey === undefined
@@ -418,7 +467,10 @@ if (values.rescore !== undefined) {
         result.call === undefined
           ? null
           : observedShadowCall(
-              { ...result.call, input: withKnownCustomer(result.call.input) },
+              {
+                ...result.call,
+                input: withKnownCustomer(probeCase, result.call.input),
+              },
               STAFF_JUDGMENT_SPECS,
             ),
       text: result.text,
@@ -426,6 +478,12 @@ if (values.rescore !== undefined) {
       usage: result.usage,
     };
   };
+  const reused = new Map(
+    (values["reuse-llm"] === undefined
+      ? []
+      : savedRows(values["reuse-llm"])
+    ).map((row) => [row.caseId, row]),
+  );
   const plan = (message: string) =>
     planStaffTurn({
       provider: jev,
@@ -435,7 +493,7 @@ if (values.rescore !== undefined) {
     });
 
   const rows = await mapPool(
-    FOLLOWUP_CASES,
+    probeCases,
     POOL,
     async (probeCase): Promise<CaseRow> => {
       const rewrite = await rewriteWithHistory(haiku, probeCase);
@@ -451,8 +509,8 @@ if (values.rescore !== undefined) {
         askGate(jev, probeCase, true),
         plan(probeCase.message),
         plan(rewrite.text),
-        loop(haiku, probeCase),
-        loop(sonnet, probeCase),
+        reused.get(probeCase.id)?.haiku ?? loop(haiku, probeCase),
+        reused.get(probeCase.id)?.sonnet ?? loop(sonnet, probeCase),
       ]);
       process.stderr.write(`${probeCase.id}\n`);
       return {

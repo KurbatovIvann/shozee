@@ -99,3 +99,60 @@ the second step of a tool loop, or talk and capability questions beyond three
 controls. A rewrite hop in front of the judgment is an LLM call before the
 reply model, which `packages/ai/AGENTS.md` forbids today: wiring it needs an
 ADR.
+
+## Repeat runs and an independent corpus (same day)
+
+The numbers above are one run over turns written by the author of the specs.
+To test both weaknesses: a second corpus of 90 turns (50 follow-ups, 40
+controls of which 10 are traps that look like follow-ups, 7 need no tool, 9
+need a tool with no judgment spec) was written by a separate agent that saw
+only the case format — not the specs, the planner, the Noul or the rewrite
+prompt (`corpus-holdout.ts`, `--set holdout`). The Jev paths and the rewrite
+ran three times on each corpus; the tool-loop models once (`--reuse-llm`).
+`stability.ts` lists what changed between runs. About $4.50 more of Anthropic
+spend.
+
+| Holdout, 90 turns, three runs | Follow-ups: planned / wrong | Controls: planned / wrong | Reads taken / wrong |
+| --- | --- | --- | --- |
+| Jev, last message only | 3 / 3 (all three runs) | 19 / 0 | 11 / 0 |
+| Haiku rewrite → Jev, always | 32–35 / 0–1 | 19–21 / 0–2 | 32–33 / 0–2 |
+| Noul ≥ 0.5 → rewrite → Jev, else Jev | 32–35 / 0–1 | 19–20 / 0–1 | 31 / 0–1 |
+| Not talk, Noul ≥ 0.5 → rewrite → Jev, else Jev | 32–35 / 0–1 | 19 / 0 | 31 / 0–1 |
+
+Needs-history Noul at 0.5 on the holdout: 100% of follow-ups in all three
+runs, 15–20% of controls (the traps are what it flags; the cost is a wasted
+rewrite, not a wrong plan). Tuning corpus, three runs: identical outcomes
+every run except one delegated follow-up.
+
+| Holdout, tool loop (one run) | Follow-ups correct | Controls correct | Read before the write | Wrong |
+| --- | --- | --- | --- | --- |
+| Haiku 4.5 | 78% | 90% | 8% | 9% |
+| Sonnet 4.6 | 92% | 90% | 3% | 6% |
+
+End to end on the holdout with the "not talk" path: 91–92% with Sonnet behind
+it, 88–89% with Haiku, 57–60% of turns without a tool-loop model.
+
+What the repeat changed:
+
+- **The result holds on turns its author never saw.** 32–35 of 50 follow-ups
+  planned from the rewrite, one wrong plan in three runs ("А виконані?" after a
+  list became a count once).
+- **A new failure class, and it is a write.** Praise after a create ("клас,
+  швидко ти") was rewritten into the previous request, and the planner planned
+  `customers_createCustomer` again — a duplicate customer. The Noul alone does
+  not stop it (0.47–0.57, one run in three over the threshold). The planner's
+  own `kind` answer on the *original* message does: every talk turn was
+  `small_talk` or `capability_question` at ≥ 0.88 in all runs, while 47–48 of
+  50 follow-ups were `request`. Rule: never rewrite a message whose own kind is
+  talk. With it, no wrong plan on any control in any run.
+- **Stability.** The planner on the original message never changed its
+  decision between runs on either corpus apart from one argument on one case.
+  What varies is Haiku's wording, which moved 9 holdout plans between "planned"
+  and "delegated" — never from right to wrong except the one case above.
+- **Haiku behind the cascade** is closer to Sonnet here than on the first
+  corpus (9% wrong against 6%), with the same habit: it asks for fields nobody
+  needs and declares an action impossible ("це потрібно зробити на картці").
+- **A production defect unrelated to Jev:** asked to list customer groups,
+  both models called `search_query` and said no such tool exists, three cases
+  out of three across both corpora. The deferred `customers_list_groups`
+  façade is not being found through tool search.
