@@ -1377,6 +1377,7 @@ describe("ending a turn takes its hold off the row", () => {
         minConfidence: 0.91,
       },
       wouldTake: true,
+      taken: false,
       modelFirstCall: { tool: "orders_list_counts", args: { period: "today" } },
       toolAgrees: true,
       argsAgree: true,

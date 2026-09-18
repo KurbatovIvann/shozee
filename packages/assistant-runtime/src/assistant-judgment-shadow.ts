@@ -2,6 +2,7 @@ import {
   CONTEXT_REWRITE_EXCHANGES_MAX,
   STAFF_ASSISTANT_TOOL_SEARCH_NAME,
   STAFF_JUDGMENT_SPECS,
+  createStaffCascadeModel,
   judgmentShadowOf,
   planStaffTurnInContext,
   type JudgmentExchange,
@@ -128,6 +129,65 @@ export function createAssistantJudgmentShadow(deps: {
         deps.logger.warn({ err: error }, "assistant judgment shadow failed");
         return undefined;
       }
+    },
+  };
+}
+
+export interface AssistantJudgmentCascadeTurn {
+  readonly model: LanguageModel;
+  outcome(turnMessages: readonly ModelMessage[]): {
+    readonly judgmentShadow: JudgmentShadow | undefined;
+    readonly languageModelCalled: boolean;
+  };
+}
+
+export interface AssistantJudgmentCascade {
+  forTurn(args: {
+    readonly reply: LanguageModel;
+    readonly signal: AbortSignal;
+  }): AssistantJudgmentCascadeTurn;
+}
+
+export function createAssistantJudgmentCascade(deps: {
+  readonly provider: JudgmentProvider;
+  readonly rewriteModel: LanguageModel | undefined;
+  readonly contracts: readonly ActionContract[];
+}): AssistantJudgmentCascade {
+  const risk = new Map(
+    deps.contracts.map((contract) => [contract.name, contract.risk]),
+  );
+  const isWrite = (spec: StaffJudgmentSpec): boolean =>
+    risk.get(spec.action) !== "read";
+
+  return {
+    forTurn({ reply, signal }) {
+      const cascade = createStaffCascadeModel({
+        reply,
+        provider: deps.provider,
+        rewriteModel: deps.rewriteModel,
+        specs: STAFF_JUDGMENT_SPECS,
+        isWrite,
+        signal,
+      });
+      return {
+        model: cascade.model,
+        outcome(turnMessages) {
+          const report = cascade.report();
+          return {
+            judgmentShadow:
+              report.plan === undefined
+                ? undefined
+                : judgmentShadowOf(
+                    report.plan,
+                    firstToolCall(turnMessages),
+                    STAFF_JUDGMENT_SPECS,
+                    isWrite,
+                    report.taken,
+                  ),
+            languageModelCalled: report.languageModelCalled,
+          };
+        },
+      };
     },
   };
 }

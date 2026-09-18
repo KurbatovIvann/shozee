@@ -23,6 +23,13 @@ Requirement (ADR-0043, record only): judgment-provider spend (TypeSafe,
 about $0.0001 a request) is not metered and sits inside the turn's flat
 reservation. Meter it when a consumer makes more than a few requests a turn.
 
+With `ASSISTANT_JUDGMENT_MODE=take` (ADR-0045) a turn the judgment answers
+alone calls no language model and gives its reservation back, like a turn that
+never reached a model; its TypeSafe spend (at most two requests) is unmetered.
+A turn that used the context rewrite called the gate model, so it keeps the
+whole flat reservation even when the reply model never ran — the reservation
+is the charge, and there is no partial one.
+
 ## Redis keys
 
 Turn limit uses the existing token-bucket store:

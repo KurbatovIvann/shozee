@@ -127,12 +127,15 @@ export function judgmentShadowOf(
   observed: ObservedToolCall | undefined,
   specs: readonly StaffJudgmentSpec[],
   isWrite: (spec: StaffJudgmentSpec) => boolean,
+  taken = false,
 ): JudgmentShadow {
   const modelFirstCall =
-    observed === undefined ? null : observedShadowCall(observed, specs);
+    taken || observed === undefined
+      ? null
+      : observedShadowCall(observed, specs);
   const spec = specs.find((entry) => entry.tool === plan.call?.tool);
   const toolAgrees =
-    plan.refusal === undefined
+    plan.refusal === undefined && !taken
       ? (plan.call?.tool ?? null) === (modelFirstCall?.tool ?? null)
       : null;
   const planned = plan.call;
@@ -160,6 +163,7 @@ export function judgmentShadowOf(
           },
         }),
     wouldTake: planned !== undefined && plan.declinedBecause === undefined,
+    taken,
     ...(plan.declinedBecause === undefined
       ? {}
       : { declinedBecause: plan.declinedBecause }),

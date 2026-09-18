@@ -3,6 +3,7 @@ import {
   assistantSweepOverdueTurnsJob,
   assistantTurnJob,
   createAssistantCallerKits,
+  createAssistantJudgmentCascade,
   createAssistantJudgmentShadow,
   createAssistantRuntime,
   createAssistantTurnProcessor,
@@ -48,8 +49,11 @@ export function composeAssistantJobs(
   ]);
   const judgment = createStaffJudgmentProvider(options.ai);
   logger.info(
-    { mounted: judgment !== undefined, model: judgment?.model },
-    "assistant judgment shadow",
+    {
+      mode: judgment === undefined ? "off" : options.ai.judgmentMode,
+      model: judgment?.model,
+    },
+    "assistant judgment",
   );
   const registry = createWorkerActionRegistry();
   registry.assertPaired();
@@ -78,14 +82,22 @@ export function composeAssistantJobs(
           budgetStore,
           ...(judgment === undefined
             ? {}
-            : {
-                judgmentShadow: createAssistantJudgmentShadow({
-                  provider: judgment,
-                  rewriteModel: mount.provider.createModel("gate"),
-                  contracts: registry.contracts(),
-                  logger,
+            : options.ai.judgmentMode === "take"
+              ? {
+                  judgmentCascade: createAssistantJudgmentCascade({
+                    provider: judgment,
+                    rewriteModel: mount.provider.createModel("gate"),
+                    contracts: registry.contracts(),
+                  }),
+                }
+              : {
+                  judgmentShadow: createAssistantJudgmentShadow({
+                    provider: judgment,
+                    rewriteModel: mount.provider.createModel("gate"),
+                    contracts: registry.contracts(),
+                    logger,
+                  }),
                 }),
-              }),
         });
   return [
     {

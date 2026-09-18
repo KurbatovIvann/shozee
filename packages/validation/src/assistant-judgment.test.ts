@@ -9,6 +9,7 @@ import {
 const declined = {
   version: 2,
   rewriteUsed: false,
+  taken: false,
   model: "jev-1.13.0",
   latencyMs: 0,
   refusal: "timeout",

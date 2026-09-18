@@ -520,6 +520,15 @@ describe("loadServerConfig", () => {
     },
   );
 
+  it("defaults the judgment mode to shadow and accepts only the three modes", () => {
+    const env = validEnv();
+    expect(loadServerConfig(env).ai.judgmentMode).toBe("shadow");
+    env["ASSISTANT_JUDGMENT_MODE"] = "take";
+    expect(loadServerConfig(env).ai.judgmentMode).toBe("take");
+    env["ASSISTANT_JUDGMENT_MODE"] = "on";
+    expect(() => loadServerConfig(env)).toThrow(ConfigValidationError);
+  });
+
   it("never echoes TYPESAFE_API_KEY in ConfigValidationError", () => {
     const env = validEnv();
     env["TYPESAFE_API_KEY"] = "TYPESAFE_API_KEY_SENTINEL";

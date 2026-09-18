@@ -106,8 +106,10 @@ depends on the conversation.)
    writes in hand.
 7. **The reply to a judgment-planned read** is the tool's result card
    (`@showzy/validation/assistant-surfaces`; orders list and orders aggregate
-   have one today) plus a fixed line of copy from `@showzy/copy`; no language
-   model is called. A read whose result has no card needs words, so it is not
+   have one today) plus a fixed line declared on the judgment spec beside the
+   façade (`reply`, Ukrainian or English by the script of the message; not
+   `@showzy/copy`, which is client copy that `packages/ai` may not import);
+   no language model is called. A read whose result has no card needs words, so it is not
    eligible until it has one. The
    turn processor keeps the flat budget hold as soon as the host turn starts
    (`reachedModel` is set before `runHostTurn`); it will instead ask the

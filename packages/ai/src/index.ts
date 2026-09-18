@@ -82,6 +82,13 @@ export {
   type JudgmentExchange,
 } from "./judgment/context-rewrite.js";
 export {
+  STAFF_CASCADE_DECIDED_BY,
+  STAFF_CASCADE_METADATA_KEY,
+  createStaffCascadeModel,
+  type StaffCascadeModel,
+  type StaffCascadeReport,
+} from "./judgment/cascade-model.js";
+export {
   JUDGMENT_STAGE_DEADLINE_MS,
   planStaffTurnInContext,
   type StaffJudgmentStagedPlan,

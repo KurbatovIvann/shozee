@@ -15,7 +15,10 @@ import {
 } from "@showzy/core/errors";
 import type { AssistantPublishedEvent } from "@showzy/validation/assistant-events";
 
-import type { AssistantJudgmentShadow } from "./assistant-judgment-shadow.js";
+import type {
+  AssistantJudgmentCascade,
+  AssistantJudgmentShadow,
+} from "./assistant-judgment-shadow.js";
 import { releaseStaffAssistantBudgetHold } from "./assistant-budget-guard.js";
 import type { AssistantConversationAddress } from "./events.js";
 import type { AssistantKitFor, AssistantRuntime } from "./runtime-types.js";
@@ -69,6 +72,7 @@ export interface AssistantTurnProcessorDeps {
    */
   readonly budgetStore: AiBudgetStore;
   readonly judgmentShadow?: AssistantJudgmentShadow;
+  readonly judgmentCascade?: AssistantJudgmentCascade;
   readonly timeoutMs?: number;
   readonly deadline?: AssistantTurnDeadline;
 }
@@ -355,8 +359,15 @@ export function createAssistantTurnProcessor(
       }
 
       reachedModel = true;
-      const shadowing =
+      const cascade =
         found.turn.kind === "chat"
+          ? deps.judgmentCascade?.forTurn({
+              reply: deps.runtime.model,
+              signal: controller.signal,
+            })
+          : undefined;
+      const shadowing =
+        found.turn.kind === "chat" && cascade === undefined
           ? deps.judgmentShadow?.begin({
               history: messages,
               toolNames: Object.keys(tools),
@@ -372,7 +383,7 @@ export function createAssistantTurnProcessor(
         conversationId: turnScope.conversationId,
         bind: turnScope.bind,
         messageId: found.placeholderMessageId,
-        model: deps.runtime.model,
+        model: cascade?.model ?? deps.runtime.model,
         tools,
         messages,
         abortSignal: controller.signal,
@@ -384,9 +395,14 @@ export function createAssistantTurnProcessor(
       if (turn.kind === "paused") {
         await history.save(turnScope, turn.messages);
       }
-      judgmentShadow = (await shadowing)?.(
-        turn.messages.slice(messages.length),
-      );
+      const turnMessages = turn.messages.slice(messages.length);
+      if (cascade === undefined) {
+        judgmentShadow = (await shadowing)?.(turnMessages);
+      } else {
+        const decided = cascade.outcome(turnMessages);
+        judgmentShadow = decided.judgmentShadow;
+        reachedModel = decided.languageModelCalled;
+      }
       if (turn.interrupted) {
         logger.warn(
           {

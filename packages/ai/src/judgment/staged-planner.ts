@@ -17,6 +17,7 @@ export const JUDGMENT_STAGE_DEADLINE_MS = 2000;
 
 export interface StaffJudgmentStagedPlan extends StaffJudgmentPlan {
   readonly rewriteUsed: boolean;
+  readonly rewriteAttempted: boolean;
 }
 
 const isTalk = (plan: StaffJudgmentPlan): boolean =>
@@ -48,15 +49,6 @@ export async function planStaffTurnInContext(args: {
     now,
   };
 
-  const rewriting =
-    inConversation && args.rewriteModel !== undefined
-      ? rewriteWithConversation({
-          model: args.rewriteModel,
-          exchanges: args.exchanges,
-          message: args.message,
-          signal,
-        })
-      : Promise.resolve(undefined);
   const first = await planStaffTurn({
     ...shared,
     message: args.message,
@@ -65,12 +57,26 @@ export async function planStaffTurnInContext(args: {
   const dependsOnHistory =
     (first.needsHistory ?? 0) >= JUDGMENT_NEEDS_HISTORY_THRESHOLD;
   if (first.refusal !== undefined || !dependsOnHistory || isTalk(first)) {
-    return { ...first, rewriteUsed: false };
+    return { ...first, rewriteUsed: false, rewriteAttempted: false };
   }
 
-  const rewritten = await rewriting;
+  const rewritten =
+    args.rewriteModel === undefined
+      ? undefined
+      : await rewriteWithConversation({
+          model: args.rewriteModel,
+          exchanges: args.exchanges,
+          message: args.message,
+          signal,
+        });
   if (rewritten === undefined) {
-    return { ...first, declinedBecause: "needs_history", rewriteUsed: false };
+    return {
+      ...first,
+      latencyMs: Math.round(now() - startedAt),
+      declinedBecause: "needs_history",
+      rewriteUsed: false,
+      rewriteAttempted: args.rewriteModel !== undefined,
+    };
   }
   const second = await planStaffTurn({ ...shared, message: rewritten });
   const spec = args.specs.find((entry) => entry.tool === second.call?.tool);
@@ -97,5 +103,6 @@ export async function planStaffTurnInContext(args: {
       : { needsHistory: first.needsHistory }),
     ...(grounded ? {} : { declinedBecause: "ungrounded_value" as const }),
     rewriteUsed: true,
+    rewriteAttempted: true,
   };
 }

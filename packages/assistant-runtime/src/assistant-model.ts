@@ -25,6 +25,7 @@ export interface StaffAssistantAiConfig {
   readonly gateModel: string;
   readonly typesafeApiKey: string | undefined;
   readonly typesafeModel: string;
+  readonly judgmentMode: "off" | "shadow" | "take";
 }
 
 /**
@@ -43,9 +44,12 @@ export function createStaffAssistantProvider(
 }
 
 export function createStaffJudgmentProvider(
-  ai: Pick<StaffAssistantAiConfig, "typesafeApiKey" | "typesafeModel">,
+  ai: Pick<
+    StaffAssistantAiConfig,
+    "typesafeApiKey" | "typesafeModel" | "judgmentMode"
+  >,
 ): JudgmentProvider | undefined {
-  return ai.typesafeApiKey === undefined
+  return ai.typesafeApiKey === undefined || ai.judgmentMode === "off"
     ? undefined
     : createTypeSafeJudgmentProvider({
         apiKey: ai.typesafeApiKey,

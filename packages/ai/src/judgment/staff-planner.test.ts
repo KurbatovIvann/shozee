@@ -180,7 +180,7 @@ describe("judgmentShadowOf", () => {
       "slot:customerName": choice("олени петренко"),
     });
     const shadow = judgmentShadowOf(
-      { ...planned, rewriteUsed: false },
+      { ...planned, rewriteUsed: false, rewriteAttempted: false },
       {
         toolName: "customers_list_customers",
         input: { search: "Олена Петренко", limit: 5, notes: { a: 1 } },
@@ -208,7 +208,7 @@ describe("judgmentShadowOf", () => {
       "item:1:quantity": choice("2"),
     });
     const same = judgmentShadowOf(
-      { ...planned, rewriteUsed: false },
+      { ...planned, rewriteUsed: false, rewriteAttempted: false },
       {
         toolName: "orders_create",
         input: {
@@ -223,7 +223,7 @@ describe("judgmentShadowOf", () => {
     expect(same.wouldTake).toBe(false);
 
     const inMilli = judgmentShadowOf(
-      { ...planned, rewriteUsed: false },
+      { ...planned, rewriteUsed: false, rewriteAttempted: false },
       {
         toolName: "orders_create",
         input: {
@@ -238,7 +238,7 @@ describe("judgmentShadowOf", () => {
     expect(inMilli.argsAgree).toBe(true);
 
     const other = judgmentShadowOf(
-      { ...planned, rewriteUsed: false },
+      { ...planned, rewriteUsed: false, rewriteAttempted: false },
       { toolName: "search_query", input: { query: "Олена" } },
       STAFF_JUDGMENT_SPECS,
       isWrite,
@@ -251,7 +251,7 @@ describe("judgmentShadowOf", () => {
   it("agrees that nothing was to be called", async () => {
     const planned = await plan("Привіт", { kind: choice("small_talk") });
     const shadow = judgmentShadowOf(
-      { ...planned, rewriteUsed: false },
+      { ...planned, rewriteUsed: false, rewriteAttempted: false },
       undefined,
       STAFF_JUDGMENT_SPECS,
       isWrite,

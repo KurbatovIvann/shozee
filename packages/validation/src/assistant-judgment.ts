@@ -66,6 +66,7 @@ export const judgmentShadowSchema = z.strictObject({
     .extend({ risk: z.enum(["read", "write"]), minConfidence: probability })
     .optional(),
   wouldTake: z.boolean(),
+  taken: z.boolean(),
   declinedBecause: z.enum(JUDGMENT_DECLINE_REASONS).optional(),
   modelFirstCall: judgmentShadowCallSchema.nullable(),
   toolAgrees: z.boolean().nullable(),

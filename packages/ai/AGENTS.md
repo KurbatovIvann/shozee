@@ -158,6 +158,18 @@ fallback, never use `jev-latest`.
   spec to the real tool's input schema and takes read/write from the contract.
   A tool without a spec is language-model-only. Thresholds are constants in the
   planner and belong to the pinned model version.
+- **`judgment/cascade-model.ts` is `take` mode** (ADR-0044 decision 1,
+  ADR-0045 decision 7): `wrapLanguageModel` middleware around the reply model,
+  one instance per turn. On the first step it plans through the staged
+  planner and, for a confident read whose spec has a `reply` line, emits the
+  tool call itself (`providerMetadata.showzy.decidedBy = "judgment"`, which the
+  stored history keeps); on the step after that result it emits the spec's
+  line and stops. Everything else — a write, a doubt, a refusal, a throw, a
+  tool result that is an error — is the reply model's `doStream`, untouched.
+  A spec gets a `reply` line only when its tool's result has a card
+  (`cascade-model.test.ts` pins that against the surface registry). `report()`
+  says whether any language model ran; the processor releases the budget hold
+  only when none did.
 - Tests inject `fetch`. No live call in CI or `verify.mjs`.
 
 ## Tests

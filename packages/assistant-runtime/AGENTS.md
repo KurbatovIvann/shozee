@@ -36,7 +36,14 @@ registry is injected into `createAssistantRuntime`; this package never imports
   first, whether they agree). Only the tools the caller may use are planned
   for. Inside a conversation it plans through the ADR-0045 stage:
   `earlierExchanges` gives the last three exchanges as text (no tool traffic),
-  and the worker passes the provider's gate model as the rewriter. It never throws and never delays a failure: a shadow that fails is a
+  and the worker passes the provider's gate model as the rewriter.
+  `createAssistantJudgmentCascade` is `ASSISTANT_JUDGMENT_MODE=take`: the
+  processor runs a chat turn on a per-turn cascade model instead of starting
+  the shadow (one judgment per turn, never two), stores the cascade's own
+  record (`taken: true` for a turn the judgment answered), and sets
+  `reachedModel` from whether any language model ran — the reply model or the
+  rewriter — so a judgment-only turn gives its hold back. A crash mid-turn
+  leaves `reachedModel` true, as before. It never throws and never delays a failure: a shadow that fails is a
   warning and a `null` column. `createStaffJudgmentProvider` in
   `assistant-model.ts` builds the provider from config, or none without a key.
 - `assistant-invocation.ts` — `channel: "ai"` and the assistant path name.

@@ -57,6 +57,7 @@ export interface StaffJudgmentSpec {
   readonly action: string;
   readonly job: { readonly yes: string; readonly no: string };
   readonly args: Readonly<Record<string, JudgmentArgSpec>>;
+  readonly reply?: { readonly uk: string; readonly en: string };
   readonly items?: {
     readonly arg: string;
     readonly product: string;
@@ -84,6 +85,10 @@ export const STAFF_JUDGMENT_SPECS: readonly StaffJudgmentSpec[] = [
       no: "It asks to show the orders themselves, or asks nothing about order totals.",
     },
     args: orderFilters,
+    reply: {
+      uk: "Ось підсумок за замовленнями.",
+      en: "Here is the orders summary.",
+    },
   },
   {
     tool: "orders_list_page",
@@ -93,6 +98,10 @@ export const STAFF_JUDGMENT_SPECS: readonly StaffJudgmentSpec[] = [
       no: "It asks for a number or a total, or for one specific order action.",
     },
     args: orderFilters,
+    reply: {
+      uk: "Ось замовлення за вашим запитом.",
+      en: "Here are the orders you asked for.",
+    },
   },
   {
     tool: "customers_list_customers",
