@@ -156,3 +156,12 @@ What the repeat changed:
   both models called `search_query` and said no such tool exists, three cases
   out of three across both corpora. The deferred `customers_list_groups`
   façade is not being found through tool search.
+
+Fixed the same day: the façade's hand-written description opened "Compact CRM
+customer-group page…" — no "list", no "customers" — so the BM25 tool search
+ranked the group write tools above it. It now opens "List customer groups in
+the active company. Show all customer groups, or find a customer group by
+name.", and the glossary's customers line names "групи клієнтів". Re-run of the
+three cases (`--only c12,h055,h089`), twice: both models call
+`customers_list_groups` every time. A deferred façade's description must lead
+with the verb and the nouns a person would search for.

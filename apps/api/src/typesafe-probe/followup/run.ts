@@ -401,10 +401,18 @@ const { values } = parseArgs({
     rescore: { type: "string" },
     set: { type: "string" },
     "reuse-llm": { type: "string" },
+    only: { type: "string" },
   },
 });
+const onlyIds = values.only?.split(",");
 const probeCases =
-  values.set === "holdout" ? FOLLOWUP_HOLDOUT_CASES : FOLLOWUP_CASES;
+  onlyIds === undefined
+    ? values.set === "holdout"
+      ? FOLLOWUP_HOLDOUT_CASES
+      : FOLLOWUP_CASES
+    : [...FOLLOWUP_CASES, ...FOLLOWUP_HOLDOUT_CASES].filter((probeCase) =>
+        onlyIds.some((id) => probeCase.id.startsWith(id)),
+      );
 const savedRows = (path: string): CaseRow[] =>
   (JSON.parse(readFileSync(path, "utf8")) as { rows: CaseRow[] }).rows;
 const { ai } = loadServerConfig();
