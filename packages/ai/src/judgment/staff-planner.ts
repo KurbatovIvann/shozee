@@ -183,8 +183,13 @@ function plannedCall(
   spec: StaffJudgmentSpec,
   answers: Readonly<Record<string, JudgmentAnswer>>,
   jobConfidence: number,
-): { call: StaffJudgmentPlannedCall; uncovered: boolean } {
+): {
+  call: StaffJudgmentPlannedCall;
+  uncovered: boolean;
+  usedNumbers: ReadonlySet<string>;
+} {
   const args: Record<string, JudgmentShadowArgValue> = {};
+  const usedNumbers = new Set<string>();
   let minConfidence = jobConfidence;
   let uncovered = false;
   for (const [name, argSpec] of Object.entries(spec.args)) {
@@ -192,6 +197,9 @@ function plannedCall(
     minConfidence = Math.min(minConfidence, picked.confidence);
     if (picked.choice === JUDGMENT_NONE) {
       continue;
+    }
+    if (argSpec.slot in JUDGMENT_NUMBER_SLOTS) {
+      usedNumbers.add(picked.choice);
     }
     const shaped = argSpec.unsupported?.includes(picked.choice)
       ? undefined
@@ -218,13 +226,20 @@ function plannedCall(
         product.confidence,
         quantity.confidence,
       );
+      if (quantity.choice !== JUDGMENT_NONE) {
+        usedNumbers.add(quantity.choice);
+      }
       lines.push(
         `${quantity.choice === JUDGMENT_NONE ? "1" : quantity.choice}×${product.choice}`,
       );
     }
     args[spec.items.arg] = lines;
   }
-  return { call: { tool: spec.tool, args, minConfidence }, uncovered };
+  return {
+    call: { tool: spec.tool, args, minConfidence },
+    uncovered,
+    usedNumbers,
+  };
 }
 
 export async function planStaffTurn(args: {
@@ -300,7 +315,11 @@ export async function planStaffTurn(args: {
       ? "not_a_request"
       : taken.length > 1 || doubted.length > 0
         ? "several_jobs"
-        : planned.uncovered || NUMBER_IN_WORDS.test(args.message)
+        : planned.uncovered ||
+            NUMBER_IN_WORDS.test(args.message) ||
+            numberCandidates(args.message).some(
+              (number) => !planned.usedNumbers.has(number),
+            )
           ? "uncovered_value"
           : planned.call.minConfidence < JUDGMENT_ARGUMENT_THRESHOLD
             ? "low_argument_confidence"

@@ -144,6 +144,16 @@ describe("planStaffTurn", () => {
     ],
     [
       "uncovered_value",
+      "Покажи три останні замовлення",
+      { "job:orders_list_page": yes(0.95) },
+    ],
+    [
+      "uncovered_value",
+      "Покажи 5 замовлень за сьогодні",
+      { "job:orders_list_page": yes(0.95), "slot:period": choice("today") },
+    ],
+    [
+      "uncovered_value",
       "Покажи замовлення на тисячу гривень",
       { "job:orders_list_page": yes(0.95) },
     ],
