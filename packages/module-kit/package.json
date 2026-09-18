@@ -8,6 +8,7 @@
     "./audit-target": "./src/audit-target.ts",
     "./canonical": "./src/canonical.ts",
     "./key-lock": "./src/key-lock.ts",
+    "./name-match": "./src/name-match.ts",
     "./optional-nullable-uuid": "./src/optional-nullable-uuid.ts",
     "./parse-db-enum": "./src/parse-db-enum.ts",
     "./postgres-unique": "./src/postgres-unique.ts",
@@ -25,6 +26,7 @@
   },
   "dependencies": {
     "@showzy/core": "workspace:*",
+    "@showzy/validation": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "zod": "^4.4.3"
   },

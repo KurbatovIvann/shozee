@@ -410,7 +410,14 @@ describe("search golden fixtures", () => {
       { type: "product", name: SEARCH_GOLDEN_VANILLA_NEGATIVE_NAME },
     ]);
     expect(SEARCH_GOLDEN_VANILLA_NEGATIVE_NAME).toBe("Макаронс ванільний");
-    expect(SEARCH_GOLDEN_NAME_CASES).toHaveLength(4);
+    expect(SEARCH_GOLDEN_NAME_CASES.map((entry) => entry.id)).toEqual([
+      "word-prefix-mak",
+      "token-and-excludes-vanilla",
+      "variant-combo-product-plus-variant",
+      "inflection-stem",
+      "typo-long-token",
+      "short-token-stays-strict",
+    ]);
     expect(SEARCH_GOLDEN_ORDER_NUMBER_CASES.map((entry) => entry.id)).toContain(
       "company-prefix-alone",
     );
