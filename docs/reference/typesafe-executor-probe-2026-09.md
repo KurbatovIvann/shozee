@@ -93,6 +93,95 @@ never resolves an ambiguous human reference") and changes what a turn is
 (ADR-0038, ADR-0039). It needs its own ADR and feature card; nothing here
 is wired into the assistant.
 
+## Does a rewriting orchestrator help? (hard set, four modes)
+
+Owner's hypothesis: an LLM "head" rewrites the user's message so that Jev,
+the "hands", makes fewer mistakes. Measured on 30 deliberately hard messages
+(`executor/hard.ts`: dictated run-ons, numbers and phones in words,
+fractions, verbless fragments, corrections, capability questions, an
+unsupported request), one live run, `executor/compare-run.ts`. The LLM
+planners got the same job list and submitted one forced tool call.
+
+| Mode | Whole plan correct | Latency p50 | Cost per turn |
+| --- | --- | --- | --- |
+| Jev on the raw message | 53% | 0.3 s | $0.0002 |
+| Haiku rewrites, then Jev | 63% | 1.1 s | $0.0005 |
+| Sonnet 4.6 plans alone | 83% | 3.9 s | $0.0102 |
+| Haiku 4.5 plans alone | 90% | 1.9 s | $0.0034 |
+
+- **The rewrite is not worth its place.** It bought ten points and
+  introduced its own failures: it invented digits in a phone number
+  (`067123456789`), turned a request into a statement so the order was
+  missed ("Олена Петренко замовила…"), and twice answered the user instead
+  of rewriting. Once an LLM has read the message, letting it finish the
+  plan is both more accurate and simpler than handing a paraphrase to Jev.
+- **Most of Jev's hard-set misses are candidate coverage**, not
+  understanding: eight of fourteen involve a number written in words, which
+  code never offered. The rest are extra jobs on terse or verbless fragments.
+- **Confidence still routes correctly.** At min-confidence ≥ 0.7 Jev keeps
+  12 of 30 and gets 10 right; the two confident misses are a fraction that
+  was never a candidate and the capability question — one detectable in
+  code (a number word with no digit), the other by the first probe's gate.
+  With those two guards the cascade takes a third of even this set at 0.3 s
+  and sends the rest to an LLM.
+- **Haiku planned better than Sonnet here** (90% against 83%, a third of
+  the cost, half the latency). Thirty cases and single-shot planning, not
+  the real tool loop — a reason to measure Haiku as the fallback model, not
+  a conclusion.
+
+**Reading:** the measured shape is a cascade with code as the orchestrator,
+not an agent network: Jev first; an LLM only when Jev is unsure, the gate
+says it is not a request, or code sees a value it could not offer. "Head"
+and "hands" are then an escalation order, not two stages of every turn.
+
+### Run output — hard set
+
+30 hard cases. Normaliser mean latency 871 ms.
+
+| Mode | Jobs exact | Slots all correct | Items correct | Whole plan correct | Latency p50 / p95 ms | Cost per turn |
+| --- | --- | --- | --- | --- | --- | --- |
+| Jev raw (jev-1.13.0) | 80% | 70% | 93% | 53% | 295 / 952 | $0.00019 |
+| Haiku normaliser → Jev | 70% | 83% | 100% | 63% | 1104 / 1858 | $0.00049 |
+| Sonnet plans alone (claude-sonnet-4-6) | 90% | 97% | 97% | 83% | 3871 / 4733 | $0.01015 |
+| Haiku plans alone (claude-haiku-4-5) | 97% | 90% | 100% | 90% | 1932 / 2412 | $0.00338 |
+
+| Mode | Case | Missing jobs | Extra jobs | Wrong slots | Items |
+| --- | --- | --- | --- | --- | --- |
+| Jev raw (jev-1.13.0) | x-order-number-in-words |  |  | orderNumber: none |  |
+| Jev raw (jev-1.13.0) | x-fractional-quantity |  |  |  | none×кави в зернах |
+| Jev raw (jev-1.13.0) | x-phone-in-words |  |  | customerPhone: none |  |
+| Jev raw (jev-1.13.0) | x-big-number-words |  |  |  | none×еклерів, none×макаронів |
+| Jev raw (jev-1.13.0) | x-capability-question |  | issue_document |  |  |
+| Jev raw (jev-1.13.0) | x-assign-then-order |  |  | groupName: клієнтка |  |
+| Jev raw (jev-1.13.0) | x-price-in-words |  |  | price: none |  |
+| Jev raw (jev-1.13.0) | x-reprice-in-words |  | create_order | price: none |  |
+| Jev raw (jev-1.13.0) | x-negated-then-number-words |  |  | orderNumber: none |  |
+| Jev raw (jev-1.13.0) | x-rename-correction | create_group | assign_customer_to_group |  |  |
+| Jev raw (jev-1.13.0) | x-three-jobs-dictated |  |  | customerName: мельник |  |
+| Jev raw (jev-1.13.0) | x-complete-number-words |  | cancel_order | orderNumber: none |  |
+| Jev raw (jev-1.13.0) | x-new-customer-implicit |  | create_product |  |  |
+| Jev raw (jev-1.13.0) | x-assign-verbless |  | start_order | groupName: сашу білого |  |
+| Haiku normaliser → Jev | x-dictated-order | create_order |  |  |  |
+| Haiku normaliser → Jev | x-phone-in-words |  |  | customerPhone: 067123456789 |  |
+| Haiku normaliser → Jev | x-capability-question |  | issue_document |  |  |
+| Haiku normaliser → Jev | x-reprice-in-words | change_product_price | create_order | price: none |  |
+| Haiku normaliser → Jev | x-rename-correction | create_group |  |  |  |
+| Haiku normaliser → Jev | x-three-jobs-dictated |  |  | customerName: мельник |  |
+| Haiku normaliser → Jev | x-complete-number-words |  | cancel_order |  |  |
+| Haiku normaliser → Jev | x-new-customer-implicit |  | create_product | customerName: сашу білого |  |
+| Haiku normaliser → Jev | x-assign-verbless | assign_customer_to_group |  | groupName: none |  |
+| Haiku normaliser → Jev | x-name-left-to-assistant | create_price_list |  |  |  |
+| Haiku normaliser → Jev | x-start-with-reason |  | change_product_price, issue_document |  |  |
+| Sonnet plans alone (claude-sonnet-4-6) | x-price-in-words |  | change_product_price |  |  |
+| Sonnet plans alone (claude-sonnet-4-6) | x-note-by-customer |  | find_customer |  |  |
+| Sonnet plans alone (claude-sonnet-4-6) | x-terse-three-jobs |  |  |  | 2×рафа, 1×еспресо, 3×круасан |
+| Sonnet plans alone (claude-sonnet-4-6) | x-name-left-to-assistant |  |  | priceListName: знижковий прайс |  |
+| Sonnet plans alone (claude-sonnet-4-6) | x-unsupported-add-to-order |  | create_order |  |  |
+| Haiku plans alone (claude-haiku-4-5) | x-reprice-in-words | change_product_price | create_order | productName: none; price: none |  |
+| Haiku plans alone (claude-haiku-4-5) | x-yesterday-slang |  |  | period: none |  |
+| Haiku plans alone (claude-haiku-4-5) | x-name-left-to-assistant |  |  | priceListName: знижковий прайс |  |
+
+
 ## Limits of this evidence
 
 74 plan cases and 32 resolution cases, all written by the proposing agent;

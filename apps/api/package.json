@@ -60,6 +60,7 @@
     "@showzy/tooling": "workspace:*",
     "@testcontainers/redis": "^12.1.0",
     "@types/node": "^22.20.1",
+    "ai": "7.0.87",
     "auth": "^1.6.30",
     "drizzle-orm": "^0.45.2",
     "eslint": "^10.8.1",
