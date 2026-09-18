@@ -110,8 +110,32 @@ call to summarize the card.
 ## Tools
 
 Call one terminal tool per job; do not narrate instead of calling. Do not
-add an intent classifier — the permitted tool set plus BM25 is attached
-every turn.
+add a second LLM prompt-and-parse hop (an intent classifier model) in front
+of the reply model — the permitted tool set plus BM25 is attached every
+turn. A judgment-port consumer is a different thing and has its own gate
+(below).
+
+## Judgment (ADR-0043)
+
+`src/judgment/` is a typed-judgment port beside the reply model, not a
+`LanguageModel`: `JudgmentProvider.ask({ state, questions })` returns typed
+Choice / Noul / Score answers or a typed refusal. `judgment/typesafe.ts` is
+the only importer of `@typesafe-ai/sdk` (pinned by its test). Key and pinned
+model come from `@showzy/config`; never rely on the SDK's `TYPESAFE_*` env
+fallback, never use `jev-latest`.
+
+- **Fail-open.** `ok: false` or low confidence means the existing path runs
+  unchanged. A judgment never authorises a write, never stands in for a
+  confirmation, never resolves an ambiguous human reference.
+- **Never from a module handler, never inside a domain transaction.**
+- **State is minimised**: the utterance and option/tool descriptions. No
+  customer personal data unless the consumer's ticket names the field.
+- **Jev limits**: no text generation, closed sets only (no names, numbers,
+  dates as arguments), unreliable counting and date comparison, English
+  first, does not treat `state` as hostile.
+- **A consumer needs probe numbers and its own ticket.** No consumer exists
+  yet; results live in `docs/reference/`.
+- Tests inject `fetch`. No live call in CI or `verify.mjs`.
 
 ## Tests
 

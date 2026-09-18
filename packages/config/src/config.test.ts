@@ -492,6 +492,57 @@ describe("loadServerConfig", () => {
     expect(everything).not.toContain("ANTHROPIC_API_KEY_SENTINEL");
     expect(everything).not.toContain("sk-ant-");
   });
+
+  it("leaves the judgment provider unconfigured by default and pins its model", () => {
+    const config = loadServerConfig(validEnv());
+    expect(config.ai.typesafeApiKey).toBeUndefined();
+    expect(config.ai.typesafeModel).toBe("jev-1.13.0");
+  });
+
+  it("maps TYPESAFE_API_KEY and TYPESAFE_MODEL, and treats an empty key as unset", () => {
+    const env = validEnv();
+    env["TYPESAFE_API_KEY"] = "ts-test-not-a-real-key";
+    env["TYPESAFE_MODEL"] = "jev-1.14.2";
+    const config = loadServerConfig(env);
+    expect(config.ai.typesafeApiKey).toBe("ts-test-not-a-real-key");
+    expect(config.ai.typesafeModel).toBe("jev-1.14.2");
+
+    env["TYPESAFE_API_KEY"] = "";
+    expect(loadServerConfig(env).ai.typesafeApiKey).toBeUndefined();
+  });
+
+  it.each(["jev-latest", "jev-preview"])(
+    "refuses the moving model alias %s",
+    (alias) => {
+      const env = validEnv();
+      env["TYPESAFE_MODEL"] = alias;
+      expect(() => loadServerConfig(env)).toThrow(ConfigValidationError);
+    },
+  );
+
+  it("never echoes TYPESAFE_API_KEY in ConfigValidationError", () => {
+    const env = validEnv();
+    env["TYPESAFE_API_KEY"] = "TYPESAFE_API_KEY_SENTINEL";
+    env["TYPESAFE_MODEL"] = "jev-latest";
+
+    let thrown: unknown;
+    try {
+      loadServerConfig(env);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(ConfigValidationError);
+    const configError = thrown as ConfigValidationError;
+    expect(configError.message).toContain("TYPESAFE_MODEL");
+    expect(
+      JSON.stringify({
+        message: configError.message,
+        issues: configError.issues,
+        stack: configError.stack,
+      }),
+    ).not.toContain("SENTINEL");
+  });
 });
 
 describe("ENV_SCHEMA_KEYS vs .env.example", () => {

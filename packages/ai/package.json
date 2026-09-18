@@ -23,6 +23,7 @@
     "@showzy/orders": "workspace:*",
     "@showzy/pricing": "workspace:*",
     "@showzy/validation": "workspace:*",
+    "@typesafe-ai/sdk": "0.6.0",
     "ai": "7.0.87",
     "zod": "^4.4.3"
   },

@@ -50,7 +50,7 @@ humans) don't relitigate settled questions or silently deviate.
 | [0029](0029-autonomous-feature-conveyor.md) | Autonomous parent conveyor (writer ≠ reviewer at the parent) | Accepted (mechanics amended by ADR-0040) |
 | [0030](0030-web-panel-spa-and-deferred-storefront.md) | Web panel is a Vite SPA; storefront is a separate later app | Accepted |
 | [0031](0031-module-kit-server-micro-utilities.md) | Server module micro-utilities live in `@showzy/module-kit` | Accepted |
-| [0032](0032-ai-sdk-7-thin-loop-no-harness.md) | AI loop is AI SDK 7; no coding harness | Accepted |
+| [0032](0032-ai-sdk-7-thin-loop-no-harness.md) | AI loop is AI SDK 7; no coding harness | Accepted (amended by ADR-0043) |
 | [0033](0033-channel-neutral-actions.md) | Channel-neutral actions — task-complete lists and reference writes | Accepted |
 | [0034](0034-model-trace-is-prompt-state.md) | Model trace is prompt state, not a projection | Superseded by ADR-0038 |
 | [0035](0035-one-pending-interaction-protocol.md) | One pending-interaction protocol; confirmation resumes without a model call | Superseded by ADR-0038 |
@@ -61,3 +61,4 @@ humans) don't relitigate settled questions or silently deviate.
 | [0040](0040-claude-code-agent-harness.md) | Claude Code is the agent harness | Accepted |
 | [0041](0041-postgres-first-job-runner.md) | Background jobs are enqueued in the transaction and run from Postgres behind a runner port | Accepted |
 | [0042](0042-snapshot-reads-revisions-live-resources.md) | Snapshot reads, aggregate revisions, and live resources | Accepted |
+| [0043](0043-typed-judgment-provider.md) | A typed-judgment provider beside the reply model | Accepted |

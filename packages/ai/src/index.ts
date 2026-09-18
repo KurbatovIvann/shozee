@@ -64,6 +64,32 @@ export type {
   StaffProviderToolDecoration,
 } from "./provider/types.js";
 export {
+  createTypeSafeJudgmentProvider,
+  TYPESAFE_JUDGMENT_PROVIDER_ID,
+  type TypeSafeJudgmentProviderOptions,
+} from "./judgment/typesafe.js";
+export {
+  JUDGMENT_REFUSAL_REASONS,
+  type ChoiceAnswer,
+  type ChoiceQuestion,
+  type JudgmentAnswer,
+  type JudgmentAnswers,
+  type JudgmentAskOptions,
+  type JudgmentProvider,
+  type JudgmentQuestion,
+  type JudgmentQuestions,
+  type JudgmentRefusalReason,
+  type JudgmentRefused,
+  type JudgmentRequest,
+  type JudgmentResult,
+  type JudgmentText,
+  type JudgmentUsage,
+  type NoulAnswer,
+  type NoulQuestion,
+  type ScoreAnswer,
+  type ScoreQuestion,
+} from "./judgment/types.js";
+export {
   attemptKey,
   executionAttemptKey,
   type StaffAssistantAttemptKind,

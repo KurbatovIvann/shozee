@@ -19,6 +19,10 @@ Runbook for SHO-505. Production keys live in Redis.
 
 Restart the API after changing env. Counters are not reset by a restart.
 
+Requirement (ADR-0043, record only): judgment-provider spend (TypeSafe,
+about $0.0001 a request) is not metered and sits inside the turn's flat
+reservation. Meter it when a consumer makes more than a few requests a turn.
+
 ## Redis keys
 
 Turn limit uses the existing token-bucket store:
