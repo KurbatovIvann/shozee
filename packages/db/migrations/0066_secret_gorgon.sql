@@ -1,0 +1,1 @@
+ALTER TABLE "assistant_turns" ADD COLUMN "judgment_shadow" jsonb;

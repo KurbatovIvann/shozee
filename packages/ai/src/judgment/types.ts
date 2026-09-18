@@ -1,3 +1,5 @@
+import { JUDGMENT_REFUSAL_REASONS } from "@showzy/validation/assistant-judgment";
+
 export type JudgmentJson =
   | string
   | number
@@ -68,13 +70,7 @@ export type JudgmentAnswers<Q extends JudgmentQuestions> = {
   readonly [K in keyof Q]: JudgmentAnswerFor<Q[K]>;
 };
 
-export const JUDGMENT_REFUSAL_REASONS = [
-  "timeout",
-  "rate_limited",
-  "overloaded",
-  "rejected",
-  "unavailable",
-] as const;
+export { JUDGMENT_REFUSAL_REASONS };
 
 export type JudgmentRefusalReason = (typeof JUDGMENT_REFUSAL_REASONS)[number];
 
