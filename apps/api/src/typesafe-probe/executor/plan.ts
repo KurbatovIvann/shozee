@@ -14,7 +14,7 @@ import {
   percentile,
   share,
 } from "../probe.js";
-import { numberCandidates, spanCandidates } from "./candidates.js";
+import { numberCandidates, spanCandidates } from "@showzy/ai";
 import {
   CLOSED_SLOTS,
   EXECUTOR_JOBS,

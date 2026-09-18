@@ -64,6 +64,29 @@ export type {
   StaffProviderToolDecoration,
 } from "./provider/types.js";
 export {
+  normalizeSpan,
+  numberCandidates,
+  spanCandidates,
+} from "./judgment/candidates.js";
+export {
+  judgmentShadowOf,
+  observedShadowCall,
+  type ObservedToolCall,
+} from "./judgment/shadow.js";
+export {
+  JUDGMENT_ARGUMENT_THRESHOLD,
+  JUDGMENT_DOUBT_THRESHOLD,
+  JUDGMENT_TAKE_THRESHOLD,
+  buildStaffPlanQuestions,
+  planStaffTurn,
+  type StaffJudgmentPlan,
+  type StaffJudgmentPlannedCall,
+} from "./judgment/staff-planner.js";
+export {
+  STAFF_JUDGMENT_SPECS,
+  type StaffJudgmentSpec,
+} from "./tool-facades/judgment-specs.js";
+export {
   createTypeSafeJudgmentProvider,
   TYPESAFE_JUDGMENT_PROVIDER_ID,
   type TypeSafeJudgmentProviderOptions,

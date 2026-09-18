@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { numberCandidates, spanCandidates } from "./candidates.js";
+import { numberCandidates, spanCandidates } from "@showzy/ai";
 import { EXECUTOR_CASES, EXECUTOR_NONE, type ExecutorCase } from "./corpus.js";
 import { HOLDOUT_CASES } from "./holdout.js";
 import { PICK_CASES } from "./picks.js";

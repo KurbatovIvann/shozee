@@ -2,7 +2,7 @@ import type { LanguageModel } from "@showzy/ai";
 import { generateText, tool } from "ai";
 import { z } from "zod";
 
-import { normalizeSpan } from "./candidates.js";
+import { normalizeSpan } from "@showzy/ai";
 import {
   CLOSED_SLOTS,
   EXECUTOR_JOBS,
