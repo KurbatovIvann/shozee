@@ -115,7 +115,7 @@ of the reply model — the permitted tool set plus BM25 is attached every
 turn. A judgment-port consumer is a different thing and has its own gate
 (below).
 
-## Judgment (ADR-0043)
+## Judgment (ADR-0043, ADR-0044)
 
 `src/judgment/` is a typed-judgment port beside the reply model, not a
 `LanguageModel`: `JudgmentProvider.ask({ state, questions })` returns typed
@@ -125,16 +125,26 @@ model come from `@showzy/config`; never rely on the SDK's `TYPESAFE_*` env
 fallback, never use `jev-latest`.
 
 - **Fail-open.** `ok: false` or low confidence means the existing path runs
-  unchanged. A judgment never authorises a write, never stands in for a
-  confirmation, never resolves an ambiguous human reference.
+  unchanged. A judgment may propose a call to a read action (ADR-0044); it
+  never proposes a write, never stands in for a confirmation, and never
+  resolves a human reference — the owning module does.
 - **Never from a module handler, never inside a domain transaction.**
 - **State is minimised**: the utterance and option/tool descriptions. No
   customer personal data unless the consumer's ticket names the field.
 - **Jev limits**: no text generation, closed sets only (no names, numbers,
   dates as arguments), unreliable counting and date comparison, English
   first, does not treat `state` as hostile.
-- **A consumer needs probe numbers and its own ticket.** No consumer exists
-  yet; results live in `docs/reference/`.
+- **A consumer needs probe numbers and its own ticket.** The first consumer
+  is the ADR-0044 shadow: `judgment/staff-planner.ts` plans a turn from one
+  request (message kind, one job question per spec, each argument slot once),
+  `judgment/shadow.ts` compares the plan with the model's first call. Nothing
+  it plans is executed yet.
+- **Judgment specs live beside the façades** (`tool-facades/judgment-specs.ts`)
+  and nowhere else: the job question with what it is _not_, and how each slot
+  maps onto the tool's input. `apps/api/src/judgment-specs.test.ts` pins every
+  spec to the real tool's input schema and takes read/write from the contract.
+  A tool without a spec is language-model-only. Thresholds are constants in the
+  planner and belong to the pinned model version.
 - Tests inject `fetch`. No live call in CI or `verify.mjs`.
 
 ## Tests

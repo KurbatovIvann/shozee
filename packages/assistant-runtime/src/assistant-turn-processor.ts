@@ -1,3 +1,4 @@
+import type { JudgmentShadow } from "@showzy/validation/assistant-judgment";
 import { ASSISTANT_TURN_TIMEOUT_MS } from "@showzy/assistant";
 import {
   MessageWriteRefusedError,
@@ -14,6 +15,7 @@ import {
 } from "@showzy/core/errors";
 import type { AssistantPublishedEvent } from "@showzy/validation/assistant-events";
 
+import type { AssistantJudgmentShadow } from "./assistant-judgment-shadow.js";
 import { releaseStaffAssistantBudgetHold } from "./assistant-budget-guard.js";
 import type { AssistantConversationAddress } from "./events.js";
 import type { AssistantKitFor, AssistantRuntime } from "./runtime-types.js";
@@ -66,6 +68,7 @@ export interface AssistantTurnProcessorDeps {
    * it would silently never give back a hold.
    */
   readonly budgetStore: AiBudgetStore;
+  readonly judgmentShadow?: AssistantJudgmentShadow;
   readonly timeoutMs?: number;
   readonly deadline?: AssistantTurnDeadline;
 }
@@ -327,6 +330,7 @@ export function createAssistantTurnProcessor(
     });
     const writer = publishing(kit, events, found.placeholderMessageId);
     let reachedModel = false;
+    let judgmentShadow: JudgmentShadow | undefined;
     let scope: PauseScope | undefined;
     let status: AssistantTurnEndStatus;
     try {
@@ -351,6 +355,14 @@ export function createAssistantTurnProcessor(
       }
 
       reachedModel = true;
+      const shadowing =
+        found.turn.kind === "chat"
+          ? deps.judgmentShadow?.begin({
+              history: messages,
+              toolNames: Object.keys(tools),
+              signal: controller.signal,
+            })
+          : undefined;
       const turn = await runHostTurn({
         system: prompt.system,
         ...(prompt.providerOptions === undefined
@@ -372,6 +384,9 @@ export function createAssistantTurnProcessor(
       if (turn.kind === "paused") {
         await history.save(turnScope, turn.messages);
       }
+      judgmentShadow = (await shadowing)?.(
+        turn.messages.slice(messages.length),
+      );
       if (turn.interrupted) {
         logger.warn(
           {
@@ -426,7 +441,7 @@ export function createAssistantTurnProcessor(
       attemptSignal.removeEventListener("abort", abort);
     }
 
-    const finished = await turns.finish(found.turn, status);
+    const finished = await turns.finish(found.turn, status, judgmentShadow);
     if (finished.outcome === "already_finished") {
       logger.warn(
         { ...fields, status: finished.status },

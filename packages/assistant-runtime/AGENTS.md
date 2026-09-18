@@ -28,6 +28,15 @@ registry is injected into `createAssistantRuntime`; this package never imports
   config (`createStaffAssistantProvider`), and the one mount rule and log line
   both processes use (`staffAssistantMount`, `logStaffAssistantMount`,
   SHO-569).
+- `assistant-judgment-shadow.ts` — ADR-0044 phase A. `createAssistantJudgmentShadow`
+  plans a chat turn with the typed-judgment provider **beside** the real turn
+  and executes nothing: the processor starts it before `runHostTurn`, and after
+  the turn it becomes the `judgmentShadow` that `assistant.finishTurn` stores on
+  the turn row (what the judgment would have called, what the model called
+  first, whether they agree). Only the tools the caller may use are planned
+  for. It never throws and never delays a failure: a shadow that fails is a
+  warning and a `null` column. `createStaffJudgmentProvider` in
+  `assistant-model.ts` builds the provider from config, or none without a key.
 - `assistant-invocation.ts` — `channel: "ai"` and the assistant path name.
 - `assistant-budget-guard.ts`, `stores/budget.ts`, `stores/budget-redis.ts` —
   the pure spend guard, the budget store port with its in-memory reference

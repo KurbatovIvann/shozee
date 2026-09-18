@@ -10,6 +10,8 @@ import {
   StaffAssistantNotConfiguredError,
   createAnthropicStaffProviderAdapter,
   createStaffLanguageModel,
+  createTypeSafeJudgmentProvider,
+  type JudgmentProvider,
   type LanguageModel,
   type StaffProviderAdapter,
 } from "@showzy/ai";
@@ -21,6 +23,8 @@ export interface StaffAssistantAiConfig {
   readonly anthropicApiKey: string | undefined;
   readonly model: string;
   readonly gateModel: string;
+  readonly typesafeApiKey: string | undefined;
+  readonly typesafeModel: string;
 }
 
 /**
@@ -36,6 +40,17 @@ export function createStaffAssistantProvider(
     replyModel: ai.model,
     gateModel: ai.gateModel,
   });
+}
+
+export function createStaffJudgmentProvider(
+  ai: Pick<StaffAssistantAiConfig, "typesafeApiKey" | "typesafeModel">,
+): JudgmentProvider | undefined {
+  return ai.typesafeApiKey === undefined
+    ? undefined
+    : createTypeSafeJudgmentProvider({
+        apiKey: ai.typesafeApiKey,
+        model: ai.typesafeModel,
+      });
 }
 
 /** Whether this process runs the assistant, and on what. */

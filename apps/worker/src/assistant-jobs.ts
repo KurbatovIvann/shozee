@@ -3,11 +3,13 @@ import {
   assistantSweepOverdueTurnsJob,
   assistantTurnJob,
   createAssistantCallerKits,
+  createAssistantJudgmentShadow,
   createAssistantRuntime,
   createAssistantTurnProcessor,
   createAssistantTurnRecovery,
   createRedisAiBudgetStore,
   createRedisAssistantEventPublisher,
+  createStaffJudgmentProvider,
   interruptAssistantTurn,
   logStaffAssistantMount,
   staffAssistantMount,
@@ -44,6 +46,11 @@ export function composeAssistantJobs(
     `job ${assistantTurnJob.name}`,
     `job ${assistantSweepOverdueTurnsJob.name}`,
   ]);
+  const judgment = createStaffJudgmentProvider(options.ai);
+  logger.info(
+    { mounted: judgment !== undefined, model: judgment?.model },
+    "assistant judgment shadow",
+  );
   const registry = createWorkerActionRegistry();
   registry.assertPaired();
   const publisher = createRedisAssistantEventPublisher(sharedRedis);
@@ -69,6 +76,15 @@ export function composeAssistantJobs(
           pipeline,
           publisher,
           budgetStore,
+          ...(judgment === undefined
+            ? {}
+            : {
+                judgmentShadow: createAssistantJudgmentShadow({
+                  provider: judgment,
+                  contracts: registry.contracts(),
+                  logger,
+                }),
+              }),
         });
   return [
     {

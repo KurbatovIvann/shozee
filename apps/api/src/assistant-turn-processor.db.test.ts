@@ -24,9 +24,16 @@ import {
   stubTextStep,
   stubToolCallStep,
 } from "@showzy/assistant-kit/testing";
+import type {
+  JudgmentProvider,
+  JudgmentQuestions,
+  JudgmentRequest,
+  JudgmentResult,
+} from "@showzy/ai";
 import {
   aiCompanyBudgetKey,
   aiGlobalBudgetKey,
+  createAssistantJudgmentShadow,
   createAssistantRuntime,
   createAssistantTurnProcessor,
   createMemoryAiBudgetStore,
@@ -34,6 +41,7 @@ import {
   DEFAULT_STAFF_ASSISTANT_BUDGET_LIMITS,
   enforceStaffAssistantBudget,
   type AiBudgetStore,
+  type AssistantJudgmentShadow,
   type AssistantRuntime,
   type AssistantTurnClaim,
   type AssistantTurnRef,
@@ -299,6 +307,7 @@ async function harness(
   runtime: AssistantRuntime,
   /** The store the turn was reserved against, when the test made a real one. */
   provided?: AiBudgetStore,
+  judgmentShadow?: AssistantJudgmentShadow,
 ): Promise<Harness> {
   const budget = provided ?? (await seededBudget());
   const published: Published[] = [];
@@ -307,6 +316,7 @@ async function harness(
     runtime,
     pipeline,
     budgetStore: budget,
+    ...(judgmentShadow === undefined ? {} : { judgmentShadow }),
     deadline: (abort) => {
       fire = abort;
       return () => {
@@ -395,6 +405,7 @@ async function turnRow(commandId: string) {
       .select({
         status: assistantTurns.status,
         companyReservedMicroUsd: assistantTurns.companyReservedMicroUsd,
+        judgmentShadow: assistantTurns.judgmentShadow,
       })
       .from(assistantTurns)
       .where(eq(assistantTurns.commandId, commandId))
@@ -533,6 +544,91 @@ describe("a turn the worker runs", () => {
     expect(listed.map((entry) => entry.clientIp)).toEqual(
       listed.map(() => undefined),
     );
+  });
+
+  it("stores what a judgment would have planned beside the model's first call, and changes nothing else", async () => {
+    const turn = await accepted({ history: USER_ASKS });
+    const planner: JudgmentProvider = {
+      id: "fake",
+      model: "jev-test",
+      ask<const Q extends JudgmentQuestions>(
+        request: JudgmentRequest<Q>,
+      ): Promise<JudgmentResult<Q>> {
+        const answers: Record<string, unknown> = {};
+        for (const [key, question] of Object.entries(request.questions)) {
+          answers[key] =
+            question.type === "noul"
+              ? {
+                  type: "noul",
+                  probability: key === `job:${LIST_TOOL}` ? 0.97 : 0.01,
+                }
+              : {
+                  type: "choice",
+                  choice: key === "kind" ? "request" : "none",
+                  confidence: 0.96,
+                  probabilities: {},
+                };
+        }
+        return Promise.resolve({
+          ok: true,
+          model: "jev-test-1",
+          answers,
+          usage: { inputTokens: 1, outputTokens: 1 },
+        } as JudgmentResult<Q>);
+      },
+    };
+    const h = await harness(
+      runtimeWith(
+        stubModel([
+          stubToolCallStep("toolu_list", LIST_TOOL, {}),
+          stubTextStep("Ось клієнти."),
+        ]),
+      ),
+      undefined,
+      createAssistantJudgmentShadow({
+        provider: planner,
+        contracts: createActionRegistry().contracts(),
+        logger: { warn: () => undefined },
+      }),
+    );
+
+    expect(await h.process(turn.job)).toEqual({
+      kind: "finished",
+      status: "done",
+      reachedModel: true,
+    });
+    expect((await turnRow(turn.commandId)).judgmentShadow).toMatchObject({
+      version: 1,
+      model: "jev-test-1",
+      kind: "request",
+      plan: { tool: LIST_TOOL, risk: "read", args: {} },
+      wouldTake: true,
+      modelFirstCall: { tool: LIST_TOOL, args: {} },
+      toolAgrees: true,
+      argsAgree: true,
+    });
+    const stored = await placeholder(turn.placeholderId);
+    expect(kinds(stored.parts)).toEqual(["card", "text"]);
+  });
+
+  it("finishes the turn as usual when the judgment shadow fails or has nothing to say", async () => {
+    const turn = await accepted({ history: USER_ASKS });
+    const h = await harness(
+      runtimeWith(stubModel([stubTextStep("Привіт.")])),
+      undefined,
+      createAssistantJudgmentShadow({
+        provider: {
+          id: "fake",
+          model: "jev-test",
+          ask: () => Promise.reject(new Error("judgment is down")),
+        },
+        contracts: createActionRegistry().contracts(),
+        logger: { warn: () => undefined },
+      }),
+    );
+
+    expect(await h.process(turn.job)).toMatchObject({ status: "done" });
+    expect((await turnRow(turn.commandId)).judgmentShadow).toBeNull();
   });
 
   it("opens the question a tool asked, keeps its continuation as history, and finishes done", async () => {
