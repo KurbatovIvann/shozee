@@ -2,6 +2,7 @@ import { stemNameToken } from "@showzy/validation/pagination";
 import {
   SEARCH_APOSTROPHE_CANON,
   foldSearchNameToken,
+  prepareSearchQuery,
 } from "@showzy/validation/search";
 import { and, or, sql, type SQL, type SQLWrapper } from "drizzle-orm";
 
@@ -112,4 +113,45 @@ export function exactNameSql(name: SQLWrapper, queryNormalized: string): SQL {
   const collapsed = sql`btrim(regexp_replace(normalize(${name}, NFC), '[[:space:]]+', ' ', 'g'))`;
   const foldedName = sql`replace(replace(lower(${collapsed}), ${"’"}, ${SEARCH_APOSTROPHE_CANON}), ${"ʼ"}, ${SEARCH_APOSTROPHE_CANON})`;
   return sql`${foldedName} = ${foldedQuery}`;
+}
+
+export interface ListNameSearch {
+  readonly strict: SQL;
+  readonly relaxed: SQL;
+  readonly canRelax: boolean;
+}
+
+export function listNameSearch(
+  columns: NameMatchColumns,
+  query: string,
+  alsoMatches?: (queryNormalized: string) => SQL | undefined,
+): ListNameSearch | undefined {
+  const prepared = prepareSearchQuery(query);
+  if (prepared.empty) {
+    return undefined;
+  }
+  const match = nameMatch(columns, prepared.tokens);
+  if (match.strict === undefined || match.strictOrFuzzy === undefined) {
+    return undefined;
+  }
+  const also = alsoMatches?.(prepared.queryNormalized);
+  return {
+    strict:
+      also === undefined ? match.strict : sql`(${match.strict} OR ${also})`,
+    relaxed:
+      also === undefined
+        ? match.strictOrFuzzy
+        : sql`(${match.strictOrFuzzy} OR ${also})`,
+    canRelax: prepared.tokens.some((token) => isFuzzyToken(token)),
+  };
+}
+
+export async function pickListNameSearch(
+  search: ListNameSearch,
+  hasStrictRow: (strict: SQL) => Promise<boolean>,
+): Promise<SQL> {
+  if (!search.canRelax || (await hasStrictRow(search.strict))) {
+    return search.strict;
+  }
+  return search.relaxed;
 }
