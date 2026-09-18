@@ -51,9 +51,11 @@ describe("staff judgment specs (ADR-0044 decision 4)", () => {
           : [spec.items.arg].filter((name) => !(name in properties))),
         ...(spec.items === undefined
           ? []
-          : [spec.items.product, spec.items.quantity].filter(
-              (name) => !(name in itemProperties),
-            )),
+          : [
+              spec.items.product,
+              spec.items.quantity,
+              spec.items.quantityMilli,
+            ].filter((name) => !(name in itemProperties))),
       ].map((name) => `${spec.tool}.${name}`);
     });
     expect(unknown).toEqual([]);

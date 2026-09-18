@@ -21,6 +21,7 @@ manual sections on demand; this directory is not a mandatory reading list.
 | How good is TypeSafe (Jev) on Ukrainian staff utterances? | [TypeSafe probe](reference/typesafe-probe-2026-09.md) | One hand-run per model version (ADR-0043); decides consumers, not thresholds |
 | Could Jev carry the assistant's actions, with Sonnet only for replies? | [TypeSafe executor probe](reference/typesafe-executor-probe-2026-09.md) | Held-out plan accuracy, argument filling, reference resolution; needs an ADR before any wiring |
 | Does Jev resolve customer/product/group mentions on a real database? | [TypeSafe base probe](reference/typesafe-base-probe-2026-09.md) | 300 customers seeded through actions; retrieval is the bottleneck, 256-option cap, one confident wrong record |
+| Does the judgment survive follow-up turns, and is Haiku enough behind it? | [TypeSafe follow-up probe](reference/typesafe-followup-probe-2026-09.md) | Needs-history Noul 100%/10%; Haiku rewrite → Jev 23/23 on follow-ups; Sonnet 8% wrong vs Haiku 16% in the real tool loop |
 | Where did the old specs/plans go? | `docs/archive/` | Historical, not authority; normal implementation must not load it (ADR-0033) |
 
 Accepted ADRs and repository prohibitions constrain feature cards and

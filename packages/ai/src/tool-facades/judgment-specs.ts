@@ -61,6 +61,7 @@ export interface StaffJudgmentSpec {
     readonly arg: string;
     readonly product: string;
     readonly quantity: string;
+    readonly quantityMilli: string;
   };
 }
 
@@ -141,6 +142,7 @@ export const STAFF_JUDGMENT_SPECS: readonly StaffJudgmentSpec[] = [
       arg: "items",
       product: "productQuery",
       quantity: "quantityDecimal",
+      quantityMilli: "quantityMilli",
     },
   },
   {

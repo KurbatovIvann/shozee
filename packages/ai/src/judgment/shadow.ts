@@ -23,6 +23,20 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function itemQuantity(
+  value: Readonly<Record<string, unknown>>,
+  items: NonNullable<StaffJudgmentSpec["items"]>,
+): string {
+  const decimal = value[items.quantity];
+  const milli = value[items.quantityMilli];
+  if (typeof decimal === "string" && Number.isFinite(Number(decimal))) {
+    return String(Number(decimal));
+  }
+  return typeof milli === "string" && Number.isFinite(Number(milli))
+    ? String(Number(milli) / 1000)
+    : "1";
+}
+
 function itemLine(
   value: unknown,
   items: NonNullable<StaffJudgmentSpec["items"]>,
@@ -31,9 +45,8 @@ function itemLine(
     return undefined;
   }
   const product = value[items.product];
-  const quantity = value[items.quantity];
   return typeof product === "string"
-    ? clip(`${typeof quantity === "string" ? quantity : "1"}×${product}`)
+    ? clip(`${itemQuantity(value, items)}×${product}`)
     : undefined;
 }
 

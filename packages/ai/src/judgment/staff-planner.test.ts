@@ -222,6 +222,21 @@ describe("judgmentShadowOf", () => {
     expect(same.argsAgree).toBe(true);
     expect(same.wouldTake).toBe(false);
 
+    const inMilli = judgmentShadowOf(
+      planned,
+      {
+        toolName: "orders_create",
+        input: {
+          customerQuery: "Олена",
+          items: [{ productQuery: "Капучино", quantityMilli: "2000" }],
+        },
+      },
+      STAFF_JUDGMENT_SPECS,
+      isWrite,
+    );
+    expect(inMilli.modelFirstCall?.args["items"]).toEqual(["2×Капучино"]);
+    expect(inMilli.argsAgree).toBe(true);
+
     const other = judgmentShadowOf(
       planned,
       { toolName: "search_query", input: { query: "Олена" } },
