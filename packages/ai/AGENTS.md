@@ -113,9 +113,11 @@ Call one terminal tool per job; do not narrate instead of calling. Do not
 add a second LLM prompt-and-parse hop (an intent classifier model) in front
 of the reply model — the permitted tool set plus BM25 is attached every
 turn. A judgment-port consumer is a different thing and has its own gate
-(below).
+(below). The one language-model call allowed before the reply model is the
+ADR-0045 context rewrite, and it is not a classifier: nothing reads its
+output but the typed judgment, and code decides.
 
-## Judgment (ADR-0043, ADR-0044)
+## Judgment (ADR-0043, ADR-0044, ADR-0045)
 
 `src/judgment/` is a typed-judgment port beside the reply model, not a
 `LanguageModel`: `JudgmentProvider.ask({ state, questions })` returns typed

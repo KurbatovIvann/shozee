@@ -1,6 +1,6 @@
 # ADR-0045: A context rewrite in front of the judgment, and reads taken without a shadow gate
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-18
 - **Deciders**: Ivan Kurbatov (human) (+ proposing agent)
 - **Amends**: ADR-0044 (decisions 2, 3 and 8, and one rejected alternative)

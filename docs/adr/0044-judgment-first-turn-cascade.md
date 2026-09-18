@@ -1,6 +1,6 @@
 # ADR-0044: The assistant turn is a cascade — typed judgment first, language model on escalation
 
-- **Status**: Accepted
+- **Status**: Accepted (amended by ADR-0045: decisions 2, 3 and 8, one alternative)
 - **Date**: 2026-09-18
 - **Deciders**: Ivan Kurbatov (human) (+ proposing agent)
 
@@ -61,7 +61,8 @@ Facts about the system the decision has to fit:
 **A turn is a cascade with code as the orchestrator: a typed judgment plans
 the first step when it is sure and the job is a read; in every other case
 the language model runs the turn exactly as it does today.** There is no
-agent network and no rewriting stage.
+agent network. (ADR-0045 adds one rewriting stage, for a request that
+depends on the conversation.)
 
 1. **The seam is the `LanguageModel`.** `packages/ai` gains a *cascade
    model*: an AI SDK `LanguageModel` composed of the judgment planner and the
@@ -72,7 +73,8 @@ agent network and no rewriting stage.
    (decisions 7 and 8). No model output
    is parsed as text; this is not the "Jev as a LanguageModel" that ADR-0043
    rejected — the port stays typed, and only code turns a plan into a call.
-2. **One judgment request per turn**, on the first step only, carrying the
+2. **At most two judgment requests per turn** (ADR-0045: the second plans a
+   context rewrite), on the first step only, the first carrying the
    message kind, one yes/no question per eligible job, and every argument of
    those jobs, asked speculatively. Deadline one second; any refusal,
    timeout or malformed answer delegates (ADR-0043: fail-open).
@@ -82,8 +84,8 @@ agent network and no rewriting stage.
    is above its threshold; and code's coverage guards pass — no number
    written in words without a digit, no second value for one argument, no
    open interaction, first step of the turn. Otherwise it delegates.
-   Thresholds come from shadow data, belong to a model version, and live in
-   one place beside the specs.
+   Thresholds are the measured ones (ADR-0045 decision 8), belong to a model
+   version, and live in one place beside the specs.
 4. **Eligibility is declared once, beside the façade.** Each staff tool in
    `packages/ai/src/tool-facades/` may carry a *judgment spec*: the job
    question with what it is and what it is not, and how each argument maps
@@ -117,8 +119,8 @@ agent network and no rewriting stage.
    model did first (tool name and the arguments the spec covers, no free
    text). Storage: one nullable `jsonb` column `judgment_shadow` on
    `assistant_turns`, written at finish, owned by the assistant module. Phase
-   B — reads — starts only after the owner reads the shadow numbers and sets
-   the thresholds.
+   B — reads — is switched on by `ASSISTANT_JUDGMENT_MODE=take` (ADR-0045
+   decision 7), not gated on shadow numbers.
 9. **Who decided is recorded.** A step planned by the judgment carries
    `decidedBy: "judgment"` and the model version in the step's provider
    metadata, which the pause and the history already store, and in the turn's
@@ -131,7 +133,8 @@ agent network and no rewriting stage.
 ## Alternatives considered
 
 - **An agent network with a language-model orchestrator that rewrites
-  messages for Jev** — rejected on measurement: +10 points over raw Jev, 27
+  every message for Jev** (narrowed by ADR-0045, which rewrites only a
+  request that depends on its conversation) — rejected on measurement: +10 points over raw Jev, 27
   points below letting the same small model plan alone, 0.8 s slower, and it
   introduced failures of its own (invented digits, a request turned into a
   statement). Once a language model has read the message, letting it finish
