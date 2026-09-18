@@ -1270,7 +1270,7 @@ describe("catalog.resolveLineReferences", () => {
     );
     // Declaration plus one call per status (active, archived).
     expect(source.match(/loadProductsByExactQuery\(/g)).toHaveLength(3);
-    expect(source.match(/loadProductsByContainsQuery\(/g)).toHaveLength(3);
+    expect(source.match(/loadProductsByNameSearch\(/g)).toHaveLength(3);
     expect(source).toMatch(/sellableProducts/);
     expect(source).toMatch(/VARIANT_SELECTION_OPTIONS_MAX/);
   });

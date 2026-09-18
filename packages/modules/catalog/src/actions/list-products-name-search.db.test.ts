@@ -54,8 +54,10 @@ describe("catalog.listProducts name search (db.md: one staff name matcher)", () 
     expect(await names("капучіно велике")).toEqual(["Капучино велике"]);
   });
 
-  it("keeps a short token strict", async () => {
+  it("matches inside a word only when no word starts with the token", async () => {
     expect(await names("кап")).toEqual(["Капучино", "Капучино велике"]);
-    expect(await names("као")).toEqual([]);
+    expect(await names("кейк")).toEqual(["Чізкейк Нью-Йорк"]);
+    expect(await names("ка")).toEqual(["Какао", "Капучино", "Капучино велике"]);
+    expect(await names("ей")).toEqual([]);
   });
 });

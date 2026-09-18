@@ -1,17 +1,15 @@
 import { implementAction } from "@showzy/core";
 import { CoreInvariantError, NotFoundError } from "@showzy/core/errors";
 import { companyCustomers } from "@showzy/db/schema/customers";
+import { pickListNameSearch } from "@showzy/module-kit/name-match";
 import {
-  candidatesContainingQuery,
   normalizeReferenceQuery,
-  pickUniqueNormalizedMatch,
+  pickUniqueReferenceMatch,
 } from "@showzy/validation/entity-ref";
-import {
-  likeContainsPattern,
-  sanitizeLikeLiteral,
-} from "@showzy/validation/pagination";
+import { sanitizeLikeLiteral } from "@showzy/validation/pagination";
 import { and, desc, eq, ilike, or, type SQL } from "drizzle-orm";
 
+import { customerReferenceSearch } from "../services/customer-list-search.js";
 import {
   CustomerReferenceConflictError,
   ambiguousCustomerQueryMessage,
@@ -163,8 +161,8 @@ export const resolveCustomerReference = implementAction(
 
       const normalized = normalizeReferenceQuery(input.value);
       const exactPattern = sanitizeLikeLiteral(normalized);
-      const containsPattern = likeContainsPattern(normalized);
-      if (exactPattern === undefined || containsPattern === undefined) {
+      const search = customerReferenceSearch(normalized);
+      if (exactPattern === undefined || search === undefined) {
         throw new NotFoundError();
       }
 
@@ -172,7 +170,15 @@ export const resolveCustomerReference = implementAction(
         eq(companyCustomers.companyId, ctx.companyId),
         eq(companyCustomers.status, "active"),
       );
-      const [exactRows, containsRows] = await Promise.all([
+      const nameOrContact = await pickListNameSearch(search, async (strict) => {
+        const found = await ctx.db
+          .select({ id: companyCustomers.id })
+          .from(companyCustomers)
+          .where(and(activeInCompany, strict))
+          .limit(1);
+        return found.length > 0;
+      });
+      const [exactRows, relaxedRows] = await Promise.all([
         ctx.db
           .select(candidateColumns)
           .from(companyCustomers)
@@ -180,21 +186,16 @@ export const resolveCustomerReference = implementAction(
         ctx.db
           .select(candidateColumns)
           .from(companyCustomers)
-          .where(and(activeInCompany, fieldMatch(containsPattern)))
+          .where(and(activeInCompany, nameOrContact))
           .orderBy(desc(companyCustomers.updatedAt), desc(companyCustomers.id))
           .limit(RESOLVE_CUSTOMER_CANDIDATE_MAX),
       ]);
-      const candidates = mergeCustomerCandidates(exactRows, containsRows);
-
-      const scoped = candidatesContainingQuery(
+      const candidates = mergeCustomerCandidates(exactRows, relaxedRows);
+      const picked = pickUniqueReferenceMatch(
         input.value,
         candidates,
         customerMatchFields,
-      );
-      const picked = pickUniqueNormalizedMatch(
-        input.value,
-        scoped,
-        customerMatchFields,
+        (row) => row.name,
       );
       if (picked.kind === "none") {
         throw new NotFoundError();
