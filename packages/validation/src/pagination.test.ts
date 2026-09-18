@@ -7,18 +7,10 @@ import {
   listCursorInput,
   listLimitInput,
   listSearchInput,
-  nameSearchStems,
   paginate,
   sanitizeLikeLiteral,
+  stemNameToken,
 } from "./pagination.js";
-
-function nameContainsEveryStem(
-  name: string,
-  stems: readonly string[],
-): boolean {
-  const folded = name.toLocaleLowerCase("uk");
-  return stems.every((stem) => folded.includes(stem.toLocaleLowerCase("uk")));
-}
 
 const ID = "11111111-1111-4111-8111-111111111111";
 
@@ -164,45 +156,18 @@ describe("@showzy/validation/pagination", () => {
     });
   });
 
-  describe("nameSearchStems", () => {
-    it("stems Ukrainian inflections so every stem AND-matches the nominative name", () => {
-      // ≥6 drops last 2: «Самбуки» → «Самбу». The card parenthetical
-      // «Самбук» dropped one; both AND-match «Самбука».
-      const customerStems = nameSearchStems("Каті Самбуки");
-      expect(customerStems).toEqual(["Кат", "Самбу"]);
-      expect(nameContainsEveryStem("Катя Самбука", customerStems)).toBe(true);
-
-      const productStems = nameSearchStems("Наполеона");
-      expect(productStems).toEqual(["Наполео"]);
-      expect(nameContainsEveryStem("Наполеон", productStems)).toBe(true);
-
-      expect(nameSearchStems("торта")).toEqual(["торт"]);
-      expect(nameSearchStems("Леха")).toEqual(["Лех"]);
+  describe("stemNameToken", () => {
+    it("drops the inflected ending so the stem is a prefix of the nominative", () => {
+      expect(stemNameToken("самбуки")).toBe("самбу");
+      expect("самбука".startsWith(stemNameToken("самбуки"))).toBe(true);
+      expect(stemNameToken("наполеона")).toBe("наполео");
+      expect(stemNameToken("каті")).toBe("кат");
+      expect(stemNameToken("торта")).toBe("торт");
     });
 
-    it("keeps short tokens unchanged", () => {
-      expect(nameSearchStems("Ян")).toEqual(["Ян"]);
-      expect(nameSearchStems("Ян Лі")).toEqual(["Ян", "Лі"]);
-    });
-
-    it("yields a stem that contains-matches mixed-case Latin names", () => {
-      const stems = nameSearchStems("aLpHa");
-      expect(stems).toHaveLength(1);
-      expect(nameContainsEveryStem("Alpha", stems)).toBe(true);
-    });
-
-    it("returns no stems after LIKE sanitize empties the query", () => {
-      expect(nameSearchStems("%%")).toEqual([]);
-      expect(nameSearchStems("\\")).toEqual([]);
-      expect(nameSearchStems("__")).toEqual([]);
-      expect(nameSearchStems("")).toEqual([]);
-      expect(nameSearchStems("   ")).toEqual([]);
-    });
-
-    it("collapses whitespace and keeps unique stems in token order", () => {
-      expect(nameSearchStems("  Каті   Самбуки  ")).toEqual(["Кат", "Самбу"]);
-      expect(nameSearchStems("Каті Каті")).toEqual(["Кат"]);
-      expect(nameSearchStems("%Каті% Самбуки_")).toEqual(["Кат", "Самбу"]);
+    it("keeps tokens of up to three characters unchanged", () => {
+      expect(stemNameToken("ян")).toBe("ян");
+      expect(stemNameToken("мак")).toBe("мак");
     });
   });
 

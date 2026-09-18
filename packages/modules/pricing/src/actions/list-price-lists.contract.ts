@@ -7,10 +7,6 @@
  * - Cursor payload is `0|id|name` / `1|id|name` so the name (which may
  *   contain `|`) is the remainder after the second separator.
  * - `name` is capped at 120, same as catalog / companies writes.
- * - Name search is optional, case-insensitive Drizzle `ilike`. LIKE
- *   metacharacters `%`, `_`, and `\\` in the query are stripped so they
- *   cannot widen or escape the match; a query that strips to empty
- *   returns no rows.
  * - `availability` defaults to `all` so inactive lists stay listed
  *   (customers `ctx.call` with `{}` / `{ limit }` must keep working).
  * - Additive `entryCount` is the row count of `price_list_entries`.
@@ -98,7 +94,7 @@ export const listPriceListsOutputSchema = z.object({
 export const listPriceListsContract = defineActionContract({
   name: "pricing.listPriceLists",
   description:
-    "List price lists in the staff member's active company. Default availability all includes inactive lists; pass availability active or inactive to filter. Optional case-insensitive name search. Paginate with a default/name/id cursor and a page size of at most 50. Each row includes id, name, isDefault, isActive, and entryCount. Company id is never input. Does not return assignment counts.",
+    "List price lists in the staff member's active company. Default availability all includes inactive lists; pass availability active or inactive to filter. Optional name search: every word of the query must start a word of the name, Ukrainian inflections included; when nothing matches, names within a typo of the query match instead. Paginate with a default/name/id cursor and a page size of at most 50. Each row includes id, name, isDefault, isActive, and entryCount. Company id is never input. Does not return assignment counts.",
   principal: "staff",
   transport: "client",
   input: listPriceListsInputSchema,
