@@ -61,7 +61,8 @@ describe("nameMatch", () => {
     ]);
     expect(substring.sql).not.toContain("<%");
     expect(fuzzy.sql.match(/<%/g)).toHaveLength(1);
-    expect(fuzzy.params.at(-1)).toBe("капучіно");
+    expect(fuzzy.sql).toContain("word_similarity");
+    expect(fuzzy.params.slice(-3)).toEqual(["капучіно", "капучіно", 0.5]);
   });
 
   it("ranks a strict row above any fuzzy-only row", () => {
