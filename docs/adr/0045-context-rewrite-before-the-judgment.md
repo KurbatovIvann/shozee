@@ -95,9 +95,13 @@ shadow phase first, behind a mode switch.**
    decision — the only reader of the rewrite is the typed judgment.
 5. **It lives inside the cascade model** in `packages/ai` (ADR-0044 decision
    1). The judgment stage — first request, rewrite, second request — has one
-   deadline of two seconds; past it, or on any refusal or error, the step
-   delegates. The rewrite may start alongside the first request and be
-   discarded; it costs less than the wait.
+   deadline of three seconds; past it, or on any refusal or error, the step
+   delegates. Inside a conversation the rewrite starts alongside the first
+   request and is aborted when it is not needed; it costs less than the wait.
+   (Amended the day it shipped: the first four live turns showed a single
+   request at 0.65 s from a worker whose connections had gone cold, against
+   0.36 s in the probes, so request → rewrite → request in sequence never fit
+   two seconds and three of the four turns timed out.)
 6. **Reads only stands** (ADR-0044 decision 6), and the replayed write above
    is now a second reason for it. So does the card requirement (decision 7):
    the first reads taken are `orders_list_counts` and `orders_list_page`.
@@ -157,9 +161,11 @@ shadow phase first, behind a mode switch.**
   model, once their reads have cards; today that is order counts and lists.
 - A follow-up the judgment ends up delegating waits about a second longer
   before the reply model starts. Bounded by the two-second deadline.
-- A third model is in the turn path (Haiku), on the existing Anthropic key
-  and budget. The rewrite's cost must be counted against the turn's budget
-  hold; a judgment-only turn no longer costs nothing.
+- A third model is in the turn path (Haiku), on the existing Anthropic key.
+  Its spend (about $0.0003 a turn in a conversation) is unmetered, like the
+  TypeSafe spend: the turn keeps its flat budget hold only when the reply
+  model ran. Charging a $0.10 hold for a $0.0005 turn would make every turn
+  inside a conversation cost what a Sonnet turn costs.
 - The conversation text already goes to Anthropic for every turn; the rewrite
   adds no new processor. TypeSafe now receives rewritten messages, which name
   the customer a pronoun stood for — the same kind of data an explicit

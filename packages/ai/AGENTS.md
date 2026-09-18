@@ -149,7 +149,9 @@ fallback, never use `jev-latest`.
   rewrite is never shown, stored or given to the reply model; a plan made from
   it must be grounded (`isRewriteGrounded`: its names and numbers occur in the
   conversation). Never rewrite talk — praise after a create was rewritten into
-  the create. The whole stage has one two-second deadline. The rewrite prompt,
+  the create. The whole stage has one three-second deadline, and inside a
+  conversation the rewrite starts beside the first request and is aborted when
+  it is not needed (live latencies did not fit a sequential stage). The rewrite prompt,
   the needs-history question and the thresholds change only with a hand-run of
   both probe corpora (`apps/api/src/typesafe-probe/followup/`).
 - **Judgment specs live beside the façades** (`tool-facades/judgment-specs.ts`)
@@ -168,8 +170,8 @@ fallback, never use `jev-latest`.
   tool result that is an error — is the reply model's `doStream`, untouched.
   A spec gets a `reply` line only when its tool's result has a card
   (`cascade-model.test.ts` pins that against the surface registry). `report()`
-  says whether any language model ran; the processor releases the budget hold
-  only when none did.
+  says whether the reply model ran; the processor releases the budget hold
+  when it did not.
 - Tests inject `fetch`. No live call in CI or `verify.mjs`.
 
 ## Tests

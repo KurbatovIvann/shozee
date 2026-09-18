@@ -262,3 +262,19 @@ describe("contextRewriteTranscript", () => {
     expect(transcript.endsWith("Latest message:\nа тепер?")).toBe(true);
   });
 });
+
+describe("the speculative rewrite", () => {
+  it("starts beside the first request and is dropped when the message stands alone", async () => {
+    const message = "Скільки нових замовлень сьогодні?";
+    const { result, asked } = await plan({
+      rewrite: "Скільки замовлень?",
+      message,
+      answers: { [message]: { needsHistory: yes(0.1) } },
+    });
+    expect(asked).toEqual([message]);
+    expect(result).toMatchObject({
+      rewriteUsed: false,
+      rewriteAttempted: true,
+    });
+  });
+});

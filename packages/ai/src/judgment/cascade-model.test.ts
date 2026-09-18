@@ -147,7 +147,7 @@ describe("createStaffCascadeModel", () => {
     expect(turn.replyCalls).toBe(0);
     expect(turn.report).toMatchObject({
       taken: true,
-      languageModelCalled: false,
+      replyModelCalled: false,
       plan: { call: { tool: "orders_list_counts" } },
     });
     const first = turn.messages[0];
@@ -180,7 +180,7 @@ describe("createStaffCascadeModel", () => {
     expect(write.text).toBe("Відповідь моделі.");
     expect(write.report).toMatchObject({
       taken: false,
-      languageModelCalled: true,
+      replyModelCalled: true,
       plan: { declinedBecause: "write" },
     });
 
@@ -219,7 +219,7 @@ describe("createStaffCascadeModel", () => {
     expect(turn.text).toBe("Відповідь моделі.");
     expect(turn.report).toMatchObject({
       taken: true,
-      languageModelCalled: true,
+      replyModelCalled: true,
     });
   });
 });

@@ -137,7 +137,7 @@ export interface AssistantJudgmentCascadeTurn {
   readonly model: LanguageModel;
   outcome(turnMessages: readonly ModelMessage[]): {
     readonly judgmentShadow: JudgmentShadow | undefined;
-    readonly languageModelCalled: boolean;
+    readonly replyModelCalled: boolean;
   };
 }
 
@@ -184,7 +184,7 @@ export function createAssistantJudgmentCascade(deps: {
                     isWrite,
                     report.taken,
                   ),
-            languageModelCalled: report.languageModelCalled,
+            replyModelCalled: report.replyModelCalled,
           };
         },
       };

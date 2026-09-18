@@ -13,7 +13,7 @@ import {
 } from "./staff-planner.js";
 import type { JudgmentProvider } from "./types.js";
 
-export const JUDGMENT_STAGE_DEADLINE_MS = 2000;
+export const JUDGMENT_STAGE_DEADLINE_MS = 3000;
 
 export interface StaffJudgmentStagedPlan extends StaffJudgmentPlan {
   readonly rewriteUsed: boolean;
@@ -49,6 +49,16 @@ export async function planStaffTurnInContext(args: {
     now,
   };
 
+  const rewriteAbort = new AbortController();
+  const rewriting =
+    inConversation && args.rewriteModel !== undefined
+      ? rewriteWithConversation({
+          model: args.rewriteModel,
+          exchanges: args.exchanges,
+          message: args.message,
+          signal: AbortSignal.any([signal, rewriteAbort.signal]),
+        })
+      : undefined;
   const first = await planStaffTurn({
     ...shared,
     message: args.message,
@@ -57,25 +67,22 @@ export async function planStaffTurnInContext(args: {
   const dependsOnHistory =
     (first.needsHistory ?? 0) >= JUDGMENT_NEEDS_HISTORY_THRESHOLD;
   if (first.refusal !== undefined || !dependsOnHistory || isTalk(first)) {
-    return { ...first, rewriteUsed: false, rewriteAttempted: false };
+    rewriteAbort.abort();
+    return {
+      ...first,
+      rewriteUsed: false,
+      rewriteAttempted: rewriting !== undefined,
+    };
   }
 
-  const rewritten =
-    args.rewriteModel === undefined
-      ? undefined
-      : await rewriteWithConversation({
-          model: args.rewriteModel,
-          exchanges: args.exchanges,
-          message: args.message,
-          signal,
-        });
+  const rewritten = await rewriting;
   if (rewritten === undefined) {
     return {
       ...first,
       latencyMs: Math.round(now() - startedAt),
       declinedBecause: "needs_history",
       rewriteUsed: false,
-      rewriteAttempted: args.rewriteModel !== undefined,
+      rewriteAttempted: rewriting !== undefined,
     };
   }
   const second = await planStaffTurn({ ...shared, message: rewritten });

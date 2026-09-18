@@ -32,7 +32,7 @@ type StreamPart =
 export interface StaffCascadeReport {
   readonly plan: StaffJudgmentStagedPlan | undefined;
   readonly taken: boolean;
-  readonly languageModelCalled: boolean;
+  readonly replyModelCalled: boolean;
 }
 
 export interface StaffCascadeModel {
@@ -252,7 +252,7 @@ export function createStaffCascadeModel(args: {
     report: () => ({
       plan,
       taken,
-      languageModelCalled: replyCalled || plan?.rewriteAttempted === true,
+      replyModelCalled: replyCalled,
     }),
   };
 }

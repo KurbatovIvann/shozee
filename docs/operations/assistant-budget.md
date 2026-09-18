@@ -26,9 +26,10 @@ reservation. Meter it when a consumer makes more than a few requests a turn.
 With `ASSISTANT_JUDGMENT_MODE=take` (ADR-0045) a turn the judgment answers
 alone calls no language model and gives its reservation back, like a turn that
 never reached a model; its TypeSafe spend (at most two requests) is unmetered.
-A turn that used the context rewrite called the gate model, so it keeps the
-whole flat reservation even when the reply model never ran — the reservation
-is the charge, and there is no partial one.
+The context rewrite (gate model, about $0.0003, started for every turn inside
+a conversation) is unmetered in the same way: the reservation is kept only
+when the reply model ran. Requirement (record only): meter gate-model spend if
+it ever becomes more than one short call a turn.
 
 ## Redis keys
 
