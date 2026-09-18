@@ -63,3 +63,4 @@ humans) don't relitigate settled questions or silently deviate.
 | [0042](0042-snapshot-reads-revisions-live-resources.md) | Snapshot reads, aggregate revisions, and live resources | Accepted |
 | [0043](0043-typed-judgment-provider.md) | A typed-judgment provider beside the reply model | Accepted (amended by ADR-0044) |
 | [0044](0044-judgment-first-turn-cascade.md) | The assistant turn is a cascade — typed judgment first, language model on escalation | Accepted |
+| [0045](0045-context-rewrite-before-the-judgment.md) | A context rewrite in front of the judgment, and reads taken without a shadow gate | Proposed |
