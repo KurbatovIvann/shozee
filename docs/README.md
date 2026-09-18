@@ -18,6 +18,8 @@ manual sections on demand; this directory is not a mandatory reading list.
 | How do we operate or recover the system? | [Operations](operations/) | Backups, restore drills, incidents, alerts, CI, branch protection |
 | What did V1 contain? | [V1 audit](reference/v1-backend-audit.md), [migration matrix](reference/v1-migration-matrix.md) | Read-only evidence; V2 schema is in `packages/db/src/schema/` |
 | What have we researched about external tax/bank systems? | [Tax reference](reference/tax/README.md) | Dated evidence, verification levels, open questions; not implementation approval |
+| How good is TypeSafe (Jev) on Ukrainian staff utterances? | [TypeSafe probe](reference/typesafe-probe-2026-09.md) | One hand-run per model version (ADR-0043); decides consumers, not thresholds |
+| Could Jev carry the assistant's actions, with Sonnet only for replies? | [TypeSafe executor probe](reference/typesafe-executor-probe-2026-09.md) | Held-out plan accuracy, argument filling, reference resolution; needs an ADR before any wiring |
 | Where did the old specs/plans go? | `docs/archive/` | Historical, not authority; normal implementation must not load it (ADR-0033) |
 
 Accepted ADRs and repository prohibitions constrain feature cards and
