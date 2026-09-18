@@ -37,6 +37,7 @@ describe("pricing.listPriceLists name search (db.md: one staff name matcher)", (
   it("falls back to a typo match only when the strict match finds nothing", async () => {
     expect(await names("аптовий")).toEqual(["Оптовий"]);
     expect(await names("опт")).toEqual(["Оптовий"]);
-    expect(await names("тови")).toEqual([]);
+    expect(await names("тови")).toEqual(["Оптовий"]);
+    expect(await names("ов")).toEqual([]);
   });
 });

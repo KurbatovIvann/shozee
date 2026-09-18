@@ -7,6 +7,7 @@ import {
 import { and, or, sql, type SQL, type SQLWrapper } from "drizzle-orm";
 
 export const NAME_MATCH_FUZZY_TOKEN_MIN = 5;
+export const NAME_MATCH_SUBSTRING_TOKEN_MIN = 3;
 export const NAME_MATCH_STRICT_BOOST = 16;
 
 const LEXEME_BREAK = /[^\p{L}\p{N}]+/u;
@@ -18,6 +19,7 @@ export interface NameMatchColumns {
 
 export interface NameMatch {
   readonly strict: SQL | undefined;
+  readonly strictOrSubstring: SQL | undefined;
   readonly strictOrFuzzy: SQL | undefined;
   readonly rank: SQL;
 }
@@ -35,6 +37,10 @@ export function strictTsQuery(token: string): string | undefined {
 
 export function isFuzzyToken(token: string): boolean {
   return Array.from(token).length >= NAME_MATCH_FUZZY_TOKEN_MIN;
+}
+
+export function isSubstringToken(token: string): boolean {
+  return Array.from(token).length >= NAME_MATCH_SUBSTRING_TOKEN_MIN;
 }
 
 function allOf(clauses: ReadonlyArray<SQL | undefined>): SQL | undefined {
@@ -58,23 +64,30 @@ function strictTokenSql(
     : sql`${columns.nameFts} @@ to_tsquery('simple', ${tsquery})`;
 }
 
-function fuzzyTokenSql(
+function substringTokenSql(
+  columns: NameMatchColumns,
+  token: string,
+): SQL | undefined {
+  return isSubstringToken(token)
+    ? sql`${columns.name} ILIKE ${`%${token}%`}`
+    : undefined;
+}
+
+function typoTokenSql(
   columns: NameMatchColumns,
   token: string,
 ): SQL | undefined {
   return isFuzzyToken(token) ? sql`${token} <% ${columns.name}` : undefined;
 }
 
-function eitherTokenSql(
-  columns: NameMatchColumns,
-  token: string,
-): SQL | undefined {
-  const strict = strictTokenSql(columns, token);
-  const fuzzy = fuzzyTokenSql(columns, token);
-  if (strict === undefined || fuzzy === undefined) {
-    return strict ?? fuzzy;
+function anyOf(clauses: ReadonlyArray<SQL | undefined>): SQL | undefined {
+  let combined: SQL | undefined;
+  for (const clause of clauses) {
+    if (clause !== undefined) {
+      combined = combined === undefined ? clause : or(combined, clause);
+    }
   }
-  return or(strict, fuzzy);
+  return combined;
 }
 
 export function nameMatch(
@@ -85,10 +98,29 @@ export function nameMatch(
     tokens.length === 0
       ? undefined
       : allOf(tokens.map((token) => strictTokenSql(columns, token)));
+  const strictOrSubstring =
+    tokens.length === 0
+      ? undefined
+      : allOf(
+          tokens.map((token) =>
+            anyOf([
+              strictTokenSql(columns, token),
+              substringTokenSql(columns, token),
+            ]),
+          ),
+        );
   const strictOrFuzzy =
     tokens.length === 0
       ? undefined
-      : allOf(tokens.map((token) => eitherTokenSql(columns, token)));
+      : allOf(
+          tokens.map((token) =>
+            anyOf([
+              strictTokenSql(columns, token),
+              substringTokenSql(columns, token),
+              typoTokenSql(columns, token),
+            ]),
+          ),
+        );
 
   let rank =
     strict === undefined
@@ -105,7 +137,7 @@ export function nameMatch(
   for (const token of tokens) {
     rank = sql`${rank} + word_similarity(${token}, ${columns.name})`;
   }
-  return { strict, strictOrFuzzy, rank };
+  return { strict, strictOrSubstring, strictOrFuzzy, rank };
 }
 
 export function exactNameSql(name: SQLWrapper, queryNormalized: string): SQL {
@@ -121,9 +153,10 @@ export interface ListNameSearch {
   readonly canRelax: boolean;
 }
 
-export function listNameSearch(
+function tieredNameSearch(
   columns: NameMatchColumns,
   query: string,
+  firstTier: "strict" | "strictOrSubstring",
   alsoMatches?: (queryNormalized: string) => SQL | undefined,
 ): ListNameSearch | undefined {
   const prepared = prepareSearchQuery(query);
@@ -131,19 +164,37 @@ export function listNameSearch(
     return undefined;
   }
   const match = nameMatch(columns, prepared.tokens);
-  if (match.strict === undefined || match.strictOrFuzzy === undefined) {
+  const first = match[firstTier];
+  if (first === undefined || match.strictOrFuzzy === undefined) {
     return undefined;
   }
   const also = alsoMatches?.(prepared.queryNormalized);
   return {
-    strict:
-      also === undefined ? match.strict : sql`(${match.strict} OR ${also})`,
+    strict: also === undefined ? first : sql`(${first} OR ${also})`,
     relaxed:
       also === undefined
         ? match.strictOrFuzzy
         : sql`(${match.strictOrFuzzy} OR ${also})`,
-    canRelax: prepared.tokens.some((token) => isFuzzyToken(token)),
+    canRelax: prepared.tokens.some((token) =>
+      firstTier === "strict" ? isSubstringToken(token) : isFuzzyToken(token),
+    ),
   };
+}
+
+export function listNameSearch(
+  columns: NameMatchColumns,
+  query: string,
+  alsoMatches?: (queryNormalized: string) => SQL | undefined,
+): ListNameSearch | undefined {
+  return tieredNameSearch(columns, query, "strict", alsoMatches);
+}
+
+export function referenceNameSearch(
+  columns: NameMatchColumns,
+  query: string,
+  alsoMatches?: (queryNormalized: string) => SQL | undefined,
+): ListNameSearch | undefined {
+  return tieredNameSearch(columns, query, "strictOrSubstring", alsoMatches);
 }
 
 export async function pickListNameSearch(

@@ -110,22 +110,29 @@ packages/db/
 - **One staff name matcher (ADR-0033; `@showzy/module-kit/name-match`):**
   every staff list search, `resolve*Reference` and `*.searchMatches` over an
   owner `name` uses the same definition. The query is tokenised by
-  `prepareSearchQuery` (`@showzy/validation/search`). A token matches
-  **strictly** when the name has a word starting with the token's stem
-  (`stemNameToken`; `name_fts @@ to_tsquery('simple', '<stem>:*')`, parts of
-  a token split by an apostrophe or hyphen are matched as a phrase) and
-  **fuzzily** when `token <% name` holds (trigram word similarity at the
-  cluster-wide threshold of migration `0056`), for tokens of five characters
-  or more only. A row matches when **every** token matches. Lists use the
-  strict match and fall back to strict-or-fuzzy only when the strict match
-  finds no row in scope; `searchMatches` and resolver candidates use
-  strict-or-fuzzy and order exact, then strict, then rank. A resolver
-  auto-chooses only a unique exact match or, failing that, a unique strict
-  match with the same number of words; a fuzzy-only match never auto-chooses.
-  Both operators are index-served by the GINs above; no new index, column or
-  extension. Requirement (not built): Latin↔Cyrillic matching — official
-  Ukrainian romanisation can be a query expansion; English phonetics
-  ("flat white" → «Флет вайт») is not a table problem.
+  `prepareSearchQuery` (`@showzy/validation/search`); a row matches when
+  **every** token matches. A token matches in one of three tiers:
+  **word start** — the name has a word starting with the token's stem
+  (`stemNameToken`; `name_fts @@ to_tsquery('simple', '<stem>:*')`, the parts
+  of a token split by an apostrophe or hyphen are matched as a phrase), which
+  covers Ukrainian inflections; **substring** — `name ILIKE '%token%'`, tokens
+  of three characters or more; **typo** — `token <% name` (trigram word
+  similarity at the cluster-wide threshold of migration `0056`), tokens of
+  five characters or more. All three are served by the GINs above; no new
+  index, column or extension.
+  - **Lists** match by word start and fall back to all three tiers only when
+    word start finds no row in scope; ordering and cursors do not change.
+  - **Resolver candidates** match by word start or substring and add the typo
+    tier only when that finds nothing in the tenant (any status), so a loose
+    active candidate never pre-empts a real archived match. A resolver
+    auto-chooses only a unique exact match or, failing that, a unique name
+    that is the whole query in another case (`isInflectionOfName`: same word
+    count, closed sets of endings); anything else is a picker.
+  - **`searchMatches`** matches all three tiers and orders exact, then word
+    start, then rank.
+  - Requirement (not built): Latin↔Cyrillic matching — official Ukrainian
+    romanisation can be a query expansion; English phonetics ("flat white" →
+    «Флет вайт») is not a table problem.
 - **Global published-read / discovery access paths (ADR-0018, ADR-0020):**
   Public and authenticated consumer discovery must not rely on full-table
   scans of domain `companies` / catalog product tables across tenants.
