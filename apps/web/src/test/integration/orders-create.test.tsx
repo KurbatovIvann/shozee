@@ -599,6 +599,29 @@ describe("orders create (SHO-379)", () => {
     ).toBe(true);
   });
 
+  it("shows every customer the server returns for a search, inflected matches included", async () => {
+    signInWithFlowers();
+    seedCreateLookups();
+    server.use(
+      http.post(`${PANEL_ORIGIN}/rpc/customers/listCustomers`, () =>
+        HttpResponse.json({
+          json: { items: [ZOYA_CUSTOMER], nextCursor: null },
+        }),
+      ),
+    );
+    await renderApp("/kviti-lviv/orders/new");
+    await waitForCreateForm();
+    fireEvent.click(
+      screen.getByRole("button", { name: copy.create.customerPlaceholder }),
+    );
+    fireEvent.change(screen.getByLabelText(copy.create.customerSearchLabel), {
+      target: { value: "Зої Прихованої" },
+    });
+    expect(
+      await screen.findByRole("option", { name: /Зоя Прихована/ }),
+    ).toBeDefined();
+  });
+
   it("finds a product outside the first unfiltered page via listProducts.query", async () => {
     signInWithFlowers();
     seedCustomer(ANNA_CUSTOMER);
