@@ -58,6 +58,7 @@ export interface StaffJudgmentSpec {
   readonly job: { readonly yes: string; readonly no: string };
   readonly args: Readonly<Record<string, JudgmentArgSpec>>;
   readonly reply?: { readonly uk: string; readonly en: string };
+  readonly required?: readonly string[];
   readonly items?: {
     readonly arg: string;
     readonly product: string;
@@ -147,6 +148,8 @@ export const STAFF_JUDGMENT_SPECS: readonly StaffJudgmentSpec[] = [
       no: "It only refers to an existing order: confirming, cancelling, starting, completing, listing, counting, or issuing a document for it.",
     },
     args: { customerQuery: text("customerName") },
+    required: ["customerQuery", "items"],
+    reply: { uk: "Створив замовлення.", en: "The order is created." },
     items: {
       arg: "items",
       product: "productQuery",

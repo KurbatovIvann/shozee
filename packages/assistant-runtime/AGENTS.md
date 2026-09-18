@@ -41,8 +41,9 @@ registry is injected into `createAssistantRuntime`; this package never imports
   processor runs a chat turn on a per-turn cascade model instead of starting
   the shadow (one judgment per turn, never two), stores the cascade's own
   record (`taken: true` for a turn the judgment answered), and sets
-  `reachedModel` from whether the reply model ran, so a turn the judgment
-  answered gives its hold back (the rewriter's spend is unmetered, ADR-0045). A crash mid-turn
+  `reachedModel` from whether a tool-loop model ran — the gate model or the
+  reply model (ADR-0046 tiers; the tier is on the record) — so a turn the
+  judgment answered gives its hold back (the rewriter's spend is unmetered, ADR-0045). A crash mid-turn
   leaves `reachedModel` true, as before. It never throws and never delays a failure: a shadow that fails is a
   warning and a `null` column. `createStaffJudgmentProvider` in
   `assistant-model.ts` builds the provider from config, or none without a key.

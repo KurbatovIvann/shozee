@@ -137,7 +137,7 @@ export interface AssistantJudgmentCascadeTurn {
   readonly model: LanguageModel;
   outcome(turnMessages: readonly ModelMessage[]): {
     readonly judgmentShadow: JudgmentShadow | undefined;
-    readonly replyModelCalled: boolean;
+    readonly toolLoopModelCalled: boolean;
   };
 }
 
@@ -150,7 +150,7 @@ export interface AssistantJudgmentCascade {
 
 export function createAssistantJudgmentCascade(deps: {
   readonly provider: JudgmentProvider;
-  readonly rewriteModel: LanguageModel | undefined;
+  readonly gateModel: LanguageModel | undefined;
   readonly contracts: readonly ActionContract[];
 }): AssistantJudgmentCascade {
   const risk = new Map(
@@ -163,8 +163,9 @@ export function createAssistantJudgmentCascade(deps: {
     forTurn({ reply, signal }) {
       const cascade = createStaffCascadeModel({
         reply,
+        gate: deps.gateModel,
         provider: deps.provider,
-        rewriteModel: deps.rewriteModel,
+        rewriteModel: deps.gateModel,
         specs: STAFF_JUDGMENT_SPECS,
         isWrite,
         signal,
@@ -183,8 +184,9 @@ export function createAssistantJudgmentCascade(deps: {
                     STAFF_JUDGMENT_SPECS,
                     isWrite,
                     report.taken,
+                    report.tier,
                   ),
-            replyModelCalled: report.replyModelCalled,
+            toolLoopModelCalled: report.toolLoopModelCalled,
           };
         },
       };

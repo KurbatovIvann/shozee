@@ -172,6 +172,16 @@ fallback, never use `jev-latest`.
   (`cascade-model.test.ts` pins that against the surface registry). `report()`
   says whether the reply model ran; the processor releases the budget hold
   when it did not.
+- **Three tiers (ADR-0046).** The cascade routes a turn once, on its first
+  step, and the turn stays there: the judgment takes it (a spec with a `reply`
+  line: the two order reads and `orders_create`); else the gate model runs it
+  when it is talk, a capability question, or a request whose one confident job
+  is a read; else the reply model. A write that would store a new name as
+  typed (customer, group, product, price list) is never takeable — the
+  judgment selects spans and cannot put a name in the nominative. Order guards
+  only delegate: `required` arguments, a fourth-line sentinel, the
+  `orderExtras` question (a date, delivery, comment, price), a number the plan
+  did not consume. A taken step that fails goes to the reply model.
 - Tests inject `fetch`. No live call in CI or `verify.mjs`.
 
 ## Tests

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { CoreInvariantError } from "@showzy/core/errors";
+import type { JudgmentTier } from "@showzy/validation/assistant-judgment";
 import {
   wrapLanguageModel,
   type LanguageModel,
@@ -12,6 +13,7 @@ import {
   CONTEXT_REWRITE_EXCHANGES_MAX,
   type JudgmentExchange,
 } from "./context-rewrite.js";
+import { JUDGMENT_TAKE_THRESHOLD } from "./staff-planner.js";
 import {
   planStaffTurnInContext,
   type StaffJudgmentStagedPlan,
@@ -32,7 +34,8 @@ type StreamPart =
 export interface StaffCascadeReport {
   readonly plan: StaffJudgmentStagedPlan | undefined;
   readonly taken: boolean;
-  readonly replyModelCalled: boolean;
+  readonly tier: JudgmentTier | undefined;
+  readonly toolLoopModelCalled: boolean;
 }
 
 export interface StaffCascadeModel {
@@ -133,11 +136,42 @@ function judgmentCallAwaitingReply(
     : undefined;
 }
 
+const GATE_DECLINES: ReadonlySet<string> = new Set([
+  "low_argument_confidence",
+  "uncovered_value",
+  "ungrounded_value",
+  "missing_argument",
+]);
+
+function belongsToGate(
+  plan: StaffJudgmentStagedPlan | undefined,
+  args: {
+    readonly specs: readonly StaffJudgmentSpec[];
+    readonly isWrite: (spec: StaffJudgmentSpec) => boolean;
+  },
+): boolean {
+  if (plan === undefined || plan.refusal !== undefined) {
+    return false;
+  }
+  if (plan.kind === "small_talk" || plan.kind === "capability_question") {
+    return (plan.kindConfidence ?? 0) >= JUDGMENT_TAKE_THRESHOLD;
+  }
+  const spec = args.specs.find((entry) => entry.tool === plan.call?.tool);
+  return (
+    plan.kind === "request" &&
+    spec !== undefined &&
+    !args.isWrite(spec) &&
+    (plan.declinedBecause === undefined ||
+      GATE_DECLINES.has(plan.declinedBecause))
+  );
+}
+
 const isUkrainian = (text: string): boolean =>
   /\p{Script=Cyrillic}/u.test(text);
 
 export function createStaffCascadeModel(args: {
   readonly reply: LanguageModel;
+  readonly gate: LanguageModel | undefined;
   readonly provider: JudgmentProvider;
   readonly rewriteModel: LanguageModel | undefined;
   readonly specs: readonly StaffJudgmentSpec[];
@@ -147,12 +181,26 @@ export function createStaffCascadeModel(args: {
   let plan: StaffJudgmentStagedPlan | undefined;
   let planned = false;
   let taken = false;
-  let replyCalled = false;
+  let tier: JudgmentTier | undefined;
   let askedIn = "";
+  const gate =
+    args.gate !== undefined &&
+    typeof args.gate !== "string" &&
+    args.gate.specificationVersion === "v4"
+      ? args.gate
+      : undefined;
 
-  const delegate = (doStream: WrapStreamOptions["doStream"]) => {
-    replyCalled = true;
-    return doStream();
+  const delegate = (
+    doStream: WrapStreamOptions["doStream"],
+    params: CallParams,
+  ) => {
+    if (tier === "judgment") {
+      tier = "reply";
+    }
+    tier ??= gate !== undefined && belongsToGate(plan, args) ? "gate" : "reply";
+    return tier === "gate" && gate !== undefined
+      ? gate.doStream(params)
+      : doStream();
   };
 
   const middleware: LanguageModelMiddleware = {
@@ -180,7 +228,7 @@ export function createStaffCascadeModel(args: {
 
       const conversation = cascadeConversation(params.prompt);
       if (planned || conversation.message === undefined) {
-        return delegate(doStream);
+        return delegate(doStream, params);
       }
       planned = true;
       askedIn = conversation.message;
@@ -197,21 +245,21 @@ export function createStaffCascadeModel(args: {
           ...(args.signal === undefined ? {} : { signal: args.signal }),
         });
       } catch {
-        return delegate(doStream);
+        return delegate(doStream, params);
       }
       const spec = specs.find((entry) => entry.tool === plan?.call?.tool);
       if (
         plan.call === undefined ||
         plan.declinedBecause !== undefined ||
-        spec?.reply === undefined ||
-        args.isWrite(spec)
+        spec?.reply === undefined
       ) {
-        return delegate(doStream);
+        return delegate(doStream, params);
       }
 
       taken = true;
+      tier = "judgment";
       const toolCallId = `toolu_judgment_${randomUUID().replaceAll("-", "")}`;
-      const input = JSON.stringify(plan.call.args);
+      const input = JSON.stringify(plan.call.input);
       const providerMetadata = {
         [STAFF_CASCADE_METADATA_KEY]: {
           decidedBy: STAFF_CASCADE_DECIDED_BY,
@@ -252,7 +300,8 @@ export function createStaffCascadeModel(args: {
     report: () => ({
       plan,
       taken,
-      replyModelCalled: replyCalled,
+      tier,
+      toolLoopModelCalled: tier === "gate" || tier === "reply",
     }),
   };
 }

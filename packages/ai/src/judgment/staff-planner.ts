@@ -27,8 +27,9 @@ export const JUDGMENT_DOUBT_THRESHOLD = 0.3;
 export const JUDGMENT_ARGUMENT_THRESHOLD = 0.7;
 export const JUDGMENT_NEEDS_HISTORY_THRESHOLD = 0.5;
 export const JUDGMENT_ITEM_POSITIONS = [1, 2, 3] as const;
+export const JUDGMENT_ITEM_SENTINEL_POSITION = 4;
 
-const ORDINALS = { 1: "first", 2: "second", 3: "third" } as const;
+const ORDINALS = { 1: "first", 2: "second", 3: "third", 4: "fourth" } as const;
 const NUMBER_IN_WORDS =
   /(тисяч|сот|дцять|десят|сорок|дев'яност|півтор|пів\s|чверт)/iu;
 
@@ -44,6 +45,7 @@ const KIND_CRITERIA: Readonly<Record<JudgmentMessageKind, string>> = {
 
 const KIND_KEY = "kind";
 const NEEDS_HISTORY_KEY = "needsHistory";
+const ORDER_EXTRAS_KEY = "orderExtras";
 const jobKey = (tool: string): string => `job:${tool}`;
 const slotKey = (slot: string): string => `slot:${slot}`;
 const itemProductKey = (position: number): string =>
@@ -108,7 +110,20 @@ export function buildStaffPlanQuestions(
     questions[slotKey(slot)] = { type: "choice", ...closed };
   }
   if (specs.some((spec) => spec.items !== undefined)) {
-    for (const position of JUDGMENT_ITEM_POSITIONS) {
+    questions[ORDER_EXTRAS_KEY] = {
+      type: "noul",
+      instructions:
+        "Apart from who the customer is, which products and how many of each, does `message` say anything else about the order: a date or time, delivery or pickup, an address, a comment or note, a price, a discount, or a payment?",
+      criteria: {
+        true: "The message states at least one such detail about the order.",
+        false:
+          "The message states only the customer, the products and their quantities, or is not about a new order.",
+      },
+    };
+    for (const position of [
+      ...JUDGMENT_ITEM_POSITIONS,
+      JUDGMENT_ITEM_SENTINEL_POSITION,
+    ] as const) {
       questions[itemProductKey(position)] = pick(
         `the name of the ${ORDINALS[position]} product being ordered, without its quantity,`,
         spans,
@@ -131,6 +146,7 @@ export function buildStaffPlanQuestions(
 
 export interface StaffJudgmentPlannedCall {
   readonly tool: string;
+  readonly input: Readonly<Record<string, unknown>>;
   readonly args: Readonly<Record<string, JudgmentShadowArgValue>>;
   readonly minConfidence: number;
 }
@@ -189,6 +205,7 @@ function plannedCall(
   usedNumbers: ReadonlySet<string>;
 } {
   const args: Record<string, JudgmentShadowArgValue> = {};
+  const input: Record<string, unknown> = {};
   const usedNumbers = new Set<string>();
   let minConfidence = jobConfidence;
   let uncovered = false;
@@ -209,9 +226,11 @@ function plannedCall(
       continue;
     }
     args[name] = shaped;
+    input[name] = shaped;
   }
   if (spec.items !== undefined) {
     const lines: string[] = [];
+    const items: Record<string, string>[] = [];
     for (const position of JUDGMENT_ITEM_POSITIONS) {
       const product = pickedOf(answers[itemProductKey(position)]);
       if (
@@ -229,18 +248,44 @@ function plannedCall(
       if (quantity.choice !== JUDGMENT_NONE) {
         usedNumbers.add(quantity.choice);
       }
-      lines.push(
-        `${quantity.choice === JUDGMENT_NONE ? "1" : quantity.choice}×${product.choice}`,
-      );
+      const amount =
+        quantity.choice === JUDGMENT_NONE
+          ? "1"
+          : quantity.choice.replace(",", ".");
+      lines.push(`${amount}×${product.choice}`);
+      items.push({
+        [spec.items.product]: product.choice,
+        [spec.items.quantity]: amount,
+      });
+    }
+    const sentinel = pickedOf(
+      answers[itemProductKey(JUDGMENT_ITEM_SENTINEL_POSITION)],
+    );
+    if (
+      sentinel.choice !== JUDGMENT_NONE &&
+      !lines.some((line) => line.endsWith(`×${sentinel.choice}`))
+    ) {
+      uncovered = true;
+    }
+    const extras = answers[ORDER_EXTRAS_KEY];
+    if (
+      extras?.type === "noul" &&
+      extras.probability >= JUDGMENT_DOUBT_THRESHOLD
+    ) {
+      uncovered = true;
     }
     args[spec.items.arg] = lines;
+    input[spec.items.arg] = items;
   }
   return {
-    call: { tool: spec.tool, args, minConfidence },
+    call: { tool: spec.tool, input, args, minConfidence },
     uncovered,
     usedNumbers,
   };
 }
+
+const isMissing = (value: unknown): boolean =>
+  value === undefined || (Array.isArray(value) && value.length === 0);
 
 export async function planStaffTurn(args: {
   readonly provider: JudgmentProvider;
@@ -323,9 +368,13 @@ export async function planStaffTurn(args: {
           ? "uncovered_value"
           : planned.call.minConfidence < JUDGMENT_ARGUMENT_THRESHOLD
             ? "low_argument_confidence"
-            : args.isWrite(only.spec)
-              ? "write"
-              : undefined;
+            : (only.spec.required ?? []).some((name) =>
+                  isMissing(planned.call.input[name]),
+                )
+              ? "missing_argument"
+              : args.isWrite(only.spec) && only.spec.reply === undefined
+                ? "write"
+                : undefined;
   return {
     ...withKind,
     call: planned.call,

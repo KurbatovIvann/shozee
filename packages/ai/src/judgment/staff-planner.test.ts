@@ -88,7 +88,7 @@ describe("planStaffTurn", () => {
     expect(result.model).toBe("jev-test-1");
   });
 
-  it("plans a write but declines to take it", async () => {
+  it("takes an order, whose references a module resolves", async () => {
     const result = await plan("Створи замовлення для Олени: 2 капучино", {
       "job:orders_create": yes(0.98),
       "slot:customerName": choice("олени"),
@@ -96,11 +96,24 @@ describe("planStaffTurn", () => {
       "item:1:quantity": choice("2"),
       "item:2:product": choice("капучино", 0.9),
     });
-    expect(result.declinedBecause).toBe("write");
+    expect(result.declinedBecause).toBeUndefined();
     expect(result.call?.args).toEqual({
       customerQuery: "олени",
       items: ["2×капучино"],
     });
+    expect(result.call?.input).toEqual({
+      customerQuery: "олени",
+      items: [{ productQuery: "капучино", quantityDecimal: "2" }],
+    });
+  });
+
+  it("plans a write that stores a new name but declines to take it", async () => {
+    const result = await plan("Додай клієнта Андрія Коваля", {
+      "job:customers_createCustomer": yes(0.98),
+      "slot:customerName": choice("андрія коваля"),
+    });
+    expect(result.declinedBecause).toBe("write");
+    expect(result.call?.args).toEqual({ name: "андрія коваля" });
   });
 
   it("turns a price into minor units", async () => {
@@ -230,7 +243,7 @@ describe("judgmentShadowOf", () => {
       isWrite,
     );
     expect(same.argsAgree).toBe(true);
-    expect(same.wouldTake).toBe(false);
+    expect(same.wouldTake).toBe(true);
 
     const inMilli = judgmentShadowOf(
       { ...planned, rewriteUsed: false, rewriteAttempted: false },

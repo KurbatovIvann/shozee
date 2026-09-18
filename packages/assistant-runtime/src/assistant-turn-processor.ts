@@ -401,7 +401,7 @@ export function createAssistantTurnProcessor(
       } else {
         const decided = cascade.outcome(turnMessages);
         judgmentShadow = decided.judgmentShadow;
-        reachedModel = decided.replyModelCalled;
+        reachedModel = decided.toolLoopModelCalled;
       }
       if (turn.interrupted) {
         logger.warn(

@@ -86,7 +86,7 @@ export function composeAssistantJobs(
               ? {
                   judgmentCascade: createAssistantJudgmentCascade({
                     provider: judgment,
-                    rewriteModel: mount.provider.createModel("gate"),
+                    gateModel: mount.provider.createModel("gate"),
                     contracts: registry.contracts(),
                   }),
                 }

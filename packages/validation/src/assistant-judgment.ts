@@ -24,8 +24,11 @@ export const JUDGMENT_DECLINE_REASONS = [
   "uncovered_value",
   "write",
   "needs_history",
+  "missing_argument",
   "ungrounded_value",
 ] as const;
+
+export const JUDGMENT_TIERS = ["judgment", "gate", "reply"] as const;
 
 export const JUDGMENT_SHADOW_TEXT_MAX = 200;
 export const JUDGMENT_SHADOW_ARGS_MAX = 16;
@@ -67,6 +70,7 @@ export const judgmentShadowSchema = z.strictObject({
     .optional(),
   wouldTake: z.boolean(),
   taken: z.boolean(),
+  tier: z.enum(JUDGMENT_TIERS).optional(),
   declinedBecause: z.enum(JUDGMENT_DECLINE_REASONS).optional(),
   modelFirstCall: judgmentShadowCallSchema.nullable(),
   toolAgrees: z.boolean().nullable(),
@@ -77,4 +81,5 @@ export type JudgmentShadow = z.infer<typeof judgmentShadowSchema>;
 export type JudgmentShadowCall = z.infer<typeof judgmentShadowCallSchema>;
 export type JudgmentShadowArgValue = z.infer<typeof shadowArgValueSchema>;
 export type JudgmentMessageKind = (typeof JUDGMENT_MESSAGE_KINDS)[number];
+export type JudgmentTier = (typeof JUDGMENT_TIERS)[number];
 export type JudgmentDeclineReason = (typeof JUDGMENT_DECLINE_REASONS)[number];

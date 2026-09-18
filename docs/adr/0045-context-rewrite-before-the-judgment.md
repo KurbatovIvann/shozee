@@ -115,7 +115,8 @@ shadow phase first, behind a mode switch.**
    needs-history 0.5 — tied to `jev-1.13.0` and to the gate model's version,
    in one place beside the specs. They are revisited with shadow data when
    there is traffic to produce it.
-9. **The escalation target stays the reply model (Sonnet).** A cheaper tier
+9. **The escalation target stays the reply model (Sonnet)** (amended by
+   ADR-0046: reads and talk the judgment does not take go to the gate model). A cheaper tier
    for talk and capability questions is not decided here: the probe has ten
    such turns.
 10. **ADR-0044 is amended:** decision 2 reads "at most two judgment requests

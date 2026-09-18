@@ -664,7 +664,7 @@ describe("a turn the worker runs", () => {
       undefined,
       createAssistantJudgmentCascade({
         provider: planner,
-        rewriteModel: undefined,
+        gateModel: undefined,
         contracts: createActionRegistry().contracts(),
       }),
     );
@@ -683,6 +683,7 @@ describe("a turn the worker runs", () => {
     expect((await turnRow(turn.commandId)).judgmentShadow).toMatchObject({
       version: 2,
       taken: true,
+      tier: "judgment",
       wouldTake: true,
       rewriteUsed: false,
       plan: {

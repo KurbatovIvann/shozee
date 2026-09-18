@@ -5,6 +5,7 @@ import {
   type JudgmentShadow,
   type JudgmentShadowArgValue,
   type JudgmentShadowCall,
+  type JudgmentTier,
 } from "@showzy/validation/assistant-judgment";
 import { isInflectionOfName } from "@showzy/validation/entity-ref";
 
@@ -128,6 +129,7 @@ export function judgmentShadowOf(
   specs: readonly StaffJudgmentSpec[],
   isWrite: (spec: StaffJudgmentSpec) => boolean,
   taken = false,
+  tier?: JudgmentTier,
 ): JudgmentShadow {
   const modelFirstCall =
     taken || observed === undefined
@@ -164,6 +166,7 @@ export function judgmentShadowOf(
         }),
     wouldTake: planned !== undefined && plan.declinedBecause === undefined,
     taken,
+    ...(tier === undefined ? {} : { tier }),
     ...(plan.declinedBecause === undefined
       ? {}
       : { declinedBecause: plan.declinedBecause }),

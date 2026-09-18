@@ -46,6 +46,7 @@ describe("staff judgment specs (ADR-0044 decision 4)", () => {
           : (properties[spec.items.arg]?.items?.properties ?? {});
       return [
         ...Object.keys(spec.args).filter((name) => !(name in properties)),
+        ...(spec.required ?? []).filter((name) => !(name in properties)),
         ...(spec.items === undefined
           ? []
           : [spec.items.arg].filter((name) => !(name in properties))),

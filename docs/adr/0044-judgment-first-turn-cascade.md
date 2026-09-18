@@ -98,7 +98,9 @@ depends on the conversation.)
    module resolves it or opens its picker. Whole-list resolution by Jev is
    not built: 256-option cap, a confident wrong person, run-to-run
    instability.
-6. **Reads only.** A judgment may propose a call to a `risk: "read"` action.
+6. **Reads only** (amended by ADR-0046: for a live trial the judgment also
+   takes `orders_create`, whose arguments are references a module resolves).
+   A judgment may propose a call to a `risk: "read"` action.
    It never proposes a write. Reason: most writes have no confirmation step,
    the measured whole-plan accuracy is 91%, and a wrong write is silent. A
    judgment-originated write needs a preview-and-confirm interaction that

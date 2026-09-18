@@ -17,7 +17,8 @@ import type {
   JudgmentResult,
 } from "./types.js";
 
-const isWrite = (spec: StaffJudgmentSpec) => spec.action === "orders.create";
+const WRITES = new Set(["orders.create", "customers.createGroup"]);
+const isWrite = (spec: StaffJudgmentSpec) => WRITES.has(spec.action);
 
 const USAGE = {
   inputTokens: { total: 10, noCache: 10, cacheRead: 0, cacheWrite: 0 },
@@ -90,10 +91,12 @@ async function run(args: {
   readonly toolResult?: unknown;
   readonly provider?: JudgmentProvider;
 }) {
-  const reply = replyModel("Відповідь моделі.");
-  const executed: unknown[] = [];
+  const reply = replyModel("Відповідь Sonnet.");
+  const gate = replyModel("Відповідь Haiku.");
+  const executed: { tool: string; input: unknown }[] = [];
   const cascade = createStaffCascadeModel({
     reply,
+    gate,
     provider: args.provider ?? judgment(args.answers),
     rewriteModel: undefined,
     specs: STAFF_JUDGMENT_SPECS,
@@ -111,13 +114,29 @@ async function run(args: {
       orders_list_counts: tool({
         inputSchema: listInput,
         execute: (input) => {
-          executed.push(input);
+          executed.push({ tool: "orders_list_counts", input });
           return Promise.resolve(args.toolResult ?? { total: 12 });
         },
       }),
+      orders_list_page: tool({
+        inputSchema: listInput,
+        execute: () => Promise.resolve({ rows: [] }),
+      }),
       orders_create: tool({
-        inputSchema: z.object({ customerQuery: z.string().optional() }),
-        execute: () => Promise.resolve({ number: 1 }),
+        inputSchema: z.object({
+          customerQuery: z.string().optional(),
+          items: z.array(
+            z.object({ productQuery: z.string(), quantityDecimal: z.string() }),
+          ),
+        }),
+        execute: (input) => {
+          executed.push({ tool: "orders_create", input });
+          return Promise.resolve({ number: 1042 });
+        },
+      }),
+      customers_createGroup: tool({
+        inputSchema: z.object({ name: z.string() }),
+        execute: () => Promise.resolve({ name: "x" }),
       }),
     },
   });
@@ -127,6 +146,7 @@ async function run(args: {
     messages: (await result.steps).flatMap((step) => step.response.messages),
     executed,
     replyCalls: reply.doStreamCalls.length,
+    gateCalls: gate.doStreamCalls.length,
     report: cascade.report(),
   };
 }
@@ -135,20 +155,29 @@ const COUNT_TODAY = {
   "job:orders_list_counts": yes,
   "slot:period": picked("today"),
 };
+const ORDER_FOR_OLENA = {
+  "job:orders_create": yes,
+  "slot:customerName": picked("олени"),
+  "item:1:product": picked("капучино"),
+  "item:1:quantity": picked("2"),
+};
+const ORDER_MESSAGE = "Створи замовлення для Олени: 2 капучино";
 
 describe("createStaffCascadeModel", () => {
-  it("takes a confident read: calls the tool, says the fixed line, never calls the reply model", async () => {
+  it("takes a confident read: calls the tool, says the fixed line, calls no model", async () => {
     const turn = await run({
       message: "Скільки замовлень сьогодні?",
       answers: COUNT_TODAY,
     });
-    expect(turn.executed).toEqual([{ period: "today" }]);
+    expect(turn.executed).toEqual([
+      { tool: "orders_list_counts", input: { period: "today" } },
+    ]);
     expect(turn.text).toBe("Ось підсумок за замовленнями.");
-    expect(turn.replyCalls).toBe(0);
+    expect([turn.replyCalls, turn.gateCalls]).toEqual([0, 0]);
     expect(turn.report).toMatchObject({
       taken: true,
-      replyModelCalled: false,
-      plan: { call: { tool: "orders_list_counts" } },
+      tier: "judgment",
+      toolLoopModelCalled: false,
     });
     const first = turn.messages[0];
     const call =
@@ -168,22 +197,93 @@ describe("createStaffCascadeModel", () => {
     expect(turn.text).toBe("Here is the orders summary.");
   });
 
-  it("delegates a write, a refusal and talk to the reply model untouched", async () => {
-    const write = await run({
-      message: "Створи замовлення для Олени",
+  it("creates an order from references the module resolves", async () => {
+    const turn = await run({
+      message: ORDER_MESSAGE,
+      answers: ORDER_FOR_OLENA,
+    });
+    expect(turn.executed).toEqual([
+      {
+        tool: "orders_create",
+        input: {
+          customerQuery: "олени",
+          items: [{ productQuery: "капучино", quantityDecimal: "2" }],
+        },
+      },
+    ]);
+    expect(turn.text).toBe("Створив замовлення.");
+    expect(turn.report).toMatchObject({ taken: true, tier: "judgment" });
+  });
+
+  it.each([
+    [
+      "no customer",
+      "missing_argument",
+      { ...ORDER_FOR_OLENA, "slot:customerName": picked("none") },
+    ],
+    [
+      "a delivery note the plan cannot carry",
+      "uncovered_value",
+      { ...ORDER_FOR_OLENA, orderExtras: { type: "noul", probability: 0.8 } },
+    ],
+    [
+      "a fourth line",
+      "uncovered_value",
+      { ...ORDER_FOR_OLENA, "item:4:product": picked("еклер") },
+    ],
+  ])(
+    "leaves an order with %s to the reply model",
+    async (_, reason, answers) => {
+      const turn = await run({ message: ORDER_MESSAGE, answers });
+      expect(turn.executed).toEqual([]);
+      expect(turn.text).toBe("Відповідь Sonnet.");
+      expect(turn.report).toMatchObject({
+        taken: false,
+        tier: "reply",
+        plan: { declinedBecause: reason },
+      });
+    },
+  );
+
+  it("never takes a write that would store a name as typed", async () => {
+    const turn = await run({
+      message: "Створи групу Оптовиків",
       answers: {
-        "job:orders_create": yes,
-        "slot:customerName": picked("олени"),
+        "job:customers_createGroup": yes,
+        "slot:groupName": picked("оптовиків"),
       },
     });
-    expect(write.executed).toEqual([]);
-    expect(write.text).toBe("Відповідь моделі.");
-    expect(write.report).toMatchObject({
-      taken: false,
-      replyModelCalled: true,
+    expect(turn.text).toBe("Відповідь Sonnet.");
+    expect(turn.report).toMatchObject({
+      tier: "reply",
       plan: { declinedBecause: "write" },
     });
+  });
 
+  it("gives talk and a read it would not take itself to the gate model", async () => {
+    const talk = await run({
+      message: "Дякую!",
+      answers: { kind: picked("small_talk") },
+    });
+    expect(talk.text).toBe("Відповідь Haiku.");
+    expect(talk.report).toMatchObject({
+      tier: "gate",
+      toolLoopModelCalled: true,
+    });
+    expect(talk.replyCalls).toBe(0);
+
+    const limited = await run({
+      message: "Покажи три останні замовлення",
+      answers: { "job:orders_list_page": yes },
+    });
+    expect(limited.text).toBe("Відповідь Haiku.");
+    expect(limited.report).toMatchObject({
+      tier: "gate",
+      plan: { declinedBecause: "uncovered_value" },
+    });
+  });
+
+  it("gives a refusal, a throw and a request with no job to the reply model", async () => {
     const refused = await run({
       message: "Скільки замовлень сьогодні?",
       answers: {},
@@ -193,8 +293,8 @@ describe("createStaffCascadeModel", () => {
         ask: () => Promise.resolve({ ok: false, reason: "timeout" }),
       },
     });
-    expect(refused.text).toBe("Відповідь моделі.");
-    expect(refused.report.taken).toBe(false);
+    expect(refused.text).toBe("Відповідь Sonnet.");
+    expect(refused.report).toMatchObject({ taken: false, tier: "reply" });
 
     const broken = await run({
       message: "Скільки замовлень сьогодні?",
@@ -205,21 +305,29 @@ describe("createStaffCascadeModel", () => {
         ask: () => Promise.reject(new Error("judgment is down")),
       },
     });
-    expect(broken.text).toBe("Відповідь моделі.");
+    expect(broken.text).toBe("Відповідь Sonnet.");
     expect(broken.report.plan).toBeUndefined();
+
+    const noJob = await run({
+      message: "Підтверди замовлення номер один",
+      answers: {},
+    });
+    expect(noJob.text).toBe("Відповідь Sonnet.");
+    expect(noJob.report.plan?.declinedBecause).toBe("no_job");
   });
 
-  it("lets the reply model explain a read that failed", async () => {
+  it("lets the reply model explain a step that failed", async () => {
     const turn = await run({
       message: "Скільки замовлень сьогодні?",
       answers: COUNT_TODAY,
       toolResult: { status: "error", code: "INTERNAL", message: "boom" },
     });
     expect(turn.executed).toHaveLength(1);
-    expect(turn.text).toBe("Відповідь моделі.");
+    expect(turn.text).toBe("Відповідь Sonnet.");
     expect(turn.report).toMatchObject({
       taken: true,
-      replyModelCalled: true,
+      tier: "reply",
+      toolLoopModelCalled: true,
     });
   });
 });
@@ -232,7 +340,11 @@ describe("judgment specs the cascade may take", () => {
     const speaking = STAFF_JUDGMENT_SPECS.filter(
       (spec) => spec.reply !== undefined,
     ).map((spec) => spec.tool);
-    expect(speaking).toEqual(["orders_list_counts", "orders_list_page"]);
+    expect(speaking).toEqual([
+      "orders_list_counts",
+      "orders_list_page",
+      "orders_create",
+    ]);
     expect(speaking.filter((name) => !withCard.has(name))).toEqual([]);
   });
 });

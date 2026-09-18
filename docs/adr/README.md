@@ -62,5 +62,6 @@ humans) don't relitigate settled questions or silently deviate.
 | [0041](0041-postgres-first-job-runner.md) | Background jobs are enqueued in the transaction and run from Postgres behind a runner port | Accepted |
 | [0042](0042-snapshot-reads-revisions-live-resources.md) | Snapshot reads, aggregate revisions, and live resources | Accepted |
 | [0043](0043-typed-judgment-provider.md) | A typed-judgment provider beside the reply model | Accepted (amended by ADR-0044) |
-| [0044](0044-judgment-first-turn-cascade.md) | The assistant turn is a cascade — typed judgment first, language model on escalation | Accepted (amended by ADR-0045) |
-| [0045](0045-context-rewrite-before-the-judgment.md) | A context rewrite in front of the judgment, and reads taken without a shadow gate | Accepted |
+| [0044](0044-judgment-first-turn-cascade.md) | The assistant turn is a cascade — typed judgment first, language model on escalation | Accepted (amended by ADR-0045, ADR-0046) |
+| [0045](0045-context-rewrite-before-the-judgment.md) | A context rewrite in front of the judgment, and reads taken without a shadow gate | Accepted (amended by ADR-0046) |
+| [0046](0046-three-tier-turn-cascade.md) | Three tiers for a turn — judgment, gate model, reply model — and the judgment creates orders | Accepted |
