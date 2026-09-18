@@ -15,6 +15,7 @@
     "test:unit": "vitest run --project unit",
     "contract:check": "vitest run --project unit src/composition.contract-check.test.ts",
     "start": "node --experimental-strip-types --import ../../packages/db/scripts/ts-resolve-register.mjs --env-file=../../.env src/index.ts",
+    "probe:typesafe": "node --experimental-transform-types --import ../../packages/db/scripts/ts-resolve-register.mjs --env-file=../../.env src/typesafe-probe/run.ts",
     "auth:generate": "auth generate --config src/auth/cli.ts --output ../../packages/db/src/schema/auth.ts --yes && node scripts/with-timezone.mjs ../../packages/db/src/schema/auth.ts && pnpm -w exec prettier --write packages/db/src/schema/auth.ts",
     "auth:check": "pnpm auth:generate && node ../../packages/db/scripts/assert-clean-path.mjs ../../packages/db/src/schema/auth.ts"
   },
