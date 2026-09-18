@@ -59,8 +59,11 @@ Three ways to resolve a mention:
   customer who does not exist — came back as Олена Петренко at **0.91** from
   the whole-list fallback. The same mention answered `ambiguous` (0.30) in
   the previous run with identical input, so answers near a decision boundary
-  are **not stable run to run**. A confirmation card naming the customer is
-  what stands between this and a wrong order; confidence alone does not.
+  are **not stable run to run**. Nothing downstream would catch it:
+  `orders.create` does not require confirmation (only five actions do), so
+  this pick would become a wrong order. Confidence alone does not protect a
+  write. *(Corrected 2026-09-18; an earlier version claimed a confirmation
+  card stood in between.)*
 
 ## Reading
 

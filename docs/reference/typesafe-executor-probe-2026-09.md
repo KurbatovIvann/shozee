@@ -79,8 +79,13 @@ English/Ukrainian, and three jobs the list does not have (correctly: no job).
 ## Reading for the architecture
 
 A Jev-first turn is plausible for the closed set of staff jobs: about 0.3 s
-and $0.0002 a request against a Sonnet tool loop, with confirmation cards
-(ADR-0038) still between every write and the database. The measured design
+and $0.0002 a request against a Sonnet tool loop. **Correction
+(2026-09-18):** an earlier version of this page said a confirmation card
+stands between every write and the database. It does not: only five actions
+declare `requiresConfirmation` (three customer deletes, price-list delete,
+`documents.requestSign`); creating an order, a customer or a product writes
+at once. A wrong plan for a write is therefore a wrong write, and ADR-0044
+keeps writes on the language model. The measured design
 is: gate + plan in one request → code resolves references through the
 owning module's list actions and a second Jev request over the candidates →
 low confidence, no job, or an unsupported shape falls through to the
