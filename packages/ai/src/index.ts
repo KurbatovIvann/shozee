@@ -74,8 +74,22 @@ export {
   type ObservedToolCall,
 } from "./judgment/shadow.js";
 export {
+  CONTEXT_REWRITE_EXCHANGES_MAX,
+  CONTEXT_REWRITE_SYSTEM_PROMPT,
+  contextRewriteTranscript,
+  isRewriteGrounded,
+  rewriteWithConversation,
+  type JudgmentExchange,
+} from "./judgment/context-rewrite.js";
+export {
+  JUDGMENT_STAGE_DEADLINE_MS,
+  planStaffTurnInContext,
+  type StaffJudgmentStagedPlan,
+} from "./judgment/staged-planner.js";
+export {
   JUDGMENT_ARGUMENT_THRESHOLD,
   JUDGMENT_DOUBT_THRESHOLD,
+  JUDGMENT_NEEDS_HISTORY_THRESHOLD,
   JUDGMENT_TAKE_THRESHOLD,
   buildStaffPlanQuestions,
   planStaffTurn,

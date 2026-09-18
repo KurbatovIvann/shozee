@@ -587,6 +587,7 @@ describe("a turn the worker runs", () => {
       undefined,
       createAssistantJudgmentShadow({
         provider: planner,
+        rewriteModel: undefined,
         contracts: createActionRegistry().contracts(),
         logger: { warn: () => undefined },
       }),
@@ -598,7 +599,8 @@ describe("a turn the worker runs", () => {
       reachedModel: true,
     });
     expect((await turnRow(turn.commandId)).judgmentShadow).toMatchObject({
-      version: 1,
+      version: 2,
+      rewriteUsed: false,
       model: "jev-test-1",
       kind: "request",
       plan: { tool: LIST_TOOL, risk: "read", args: {} },
@@ -622,6 +624,7 @@ describe("a turn the worker runs", () => {
           model: "jev-test",
           ask: () => Promise.reject(new Error("judgment is down")),
         },
+        rewriteModel: undefined,
         contracts: createActionRegistry().contracts(),
         logger: { warn: () => undefined },
       }),

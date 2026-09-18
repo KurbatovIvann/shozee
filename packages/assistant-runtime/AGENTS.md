@@ -34,7 +34,9 @@ registry is injected into `createAssistantRuntime`; this package never imports
   the turn it becomes the `judgmentShadow` that `assistant.finishTurn` stores on
   the turn row (what the judgment would have called, what the model called
   first, whether they agree). Only the tools the caller may use are planned
-  for. It never throws and never delays a failure: a shadow that fails is a
+  for. Inside a conversation it plans through the ADR-0045 stage:
+  `earlierExchanges` gives the last three exchanges as text (no tool traffic),
+  and the worker passes the provider's gate model as the rewriter. It never throws and never delays a failure: a shadow that fails is a
   warning and a `null` column. `createStaffJudgmentProvider` in
   `assistant-model.ts` builds the provider from config, or none without a key.
 - `assistant-invocation.ts` — `channel: "ai"` and the assistant path name.

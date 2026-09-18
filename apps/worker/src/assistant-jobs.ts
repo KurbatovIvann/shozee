@@ -81,6 +81,7 @@ export function composeAssistantJobs(
             : {
                 judgmentShadow: createAssistantJudgmentShadow({
                   provider: judgment,
+                  rewriteModel: mount.provider.createModel("gate"),
                   contracts: registry.contracts(),
                   logger,
                 }),

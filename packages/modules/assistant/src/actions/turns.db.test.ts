@@ -1363,9 +1363,11 @@ describe("ending a turn takes its hold off the row", () => {
     const turn = ref(conversationId, input.commandId);
     await kit.invoke(acceptTurn, input, {});
     const shadow = {
-      version: 1,
+      version: 2,
       model: "jev-1.13.0",
       latencyMs: 312,
+      needsHistory: 0.91,
+      rewriteUsed: true,
       kind: "request",
       kindConfidence: 0.98,
       plan: {
@@ -1390,7 +1392,7 @@ describe("ending a turn takes its hold off the row", () => {
     await expect(
       kit.invoke(
         finishTurn,
-        { ...turn, status: "done", judgmentShadow: { ...shadow, version: 2 } },
+        { ...turn, status: "done", judgmentShadow: { ...shadow, version: 3 } },
         {},
       ),
     ).rejects.toBeInstanceOf(ValidationError);

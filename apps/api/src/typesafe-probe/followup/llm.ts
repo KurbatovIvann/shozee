@@ -1,5 +1,7 @@
 import {
+  CONTEXT_REWRITE_SYSTEM_PROMPT,
   STAFF_ASSISTANT_TOOL_SEARCH_NAME,
+  contextRewriteTranscript,
   type LanguageModel,
   type ObservedToolCall,
 } from "@showzy/ai";
@@ -29,20 +31,6 @@ const usageOf = (usage: {
   inputTokens: usage.inputTokens ?? 0,
   outputTokens: usage.outputTokens ?? 0,
 });
-
-export function transcriptOf(probeCase: FollowupCase): string {
-  const lines = probeCase.history.flatMap((exchange) => [
-    `Staff: ${exchange.user}`,
-    `Assistant: ${exchange.assistant}`,
-  ]);
-  return [
-    "Conversation so far:",
-    lines.length === 0 ? "(none)" : lines.join("\n"),
-    "",
-    "Latest message:",
-    probeCase.message,
-  ].join("\n");
-}
 
 export function messagesOf(probeCase: FollowupCase): ModelMessage[] {
   return [
@@ -95,8 +83,8 @@ export async function rewriteWithHistory(
   const startedAt = performance.now();
   const result = await generateText({
     model,
-    system: REWRITE_SYSTEM_PROMPT,
-    prompt: transcriptOf(probeCase),
+    system: CONTEXT_REWRITE_SYSTEM_PROMPT,
+    prompt: contextRewriteTranscript(probeCase.history, probeCase.message),
     maxOutputTokens: 300,
   });
   return {

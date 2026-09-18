@@ -1,9 +1,12 @@
 import {
+  CONTEXT_REWRITE_EXCHANGES_MAX,
   STAFF_ASSISTANT_TOOL_SEARCH_NAME,
   STAFF_JUDGMENT_SPECS,
   judgmentShadowOf,
-  planStaffTurn,
+  planStaffTurnInContext,
+  type JudgmentExchange,
   type JudgmentProvider,
+  type LanguageModel,
   type ObservedToolCall,
   type StaffJudgmentSpec,
 } from "@showzy/ai";
@@ -24,6 +27,16 @@ export interface AssistantJudgmentShadow {
   }): Promise<AssistantJudgmentShadowResult | undefined>;
 }
 
+function textOf(message: ModelMessage): string {
+  if (typeof message.content === "string") {
+    return message.content.trim();
+  }
+  return message.content
+    .flatMap((part) => (part.type === "text" ? [part.text] : []))
+    .join(" ")
+    .trim();
+}
+
 export function lastUserText(
   history: readonly ModelMessage[],
 ): string | undefined {
@@ -31,13 +44,31 @@ export function lastUserText(
   if (last?.role !== "user") {
     return undefined;
   }
-  const text =
-    typeof last.content === "string"
-      ? last.content
-      : last.content
-          .flatMap((part) => (part.type === "text" ? [part.text] : []))
-          .join(" ");
-  return text.trim().length === 0 ? undefined : text.trim();
+  const text = textOf(last);
+  return text.length === 0 ? undefined : text;
+}
+
+export function earlierExchanges(
+  history: readonly ModelMessage[],
+): JudgmentExchange[] {
+  const exchanges: { user: string; assistant: string }[] = [];
+  for (const message of history.slice(0, -1)) {
+    const text = message.role === "tool" ? "" : textOf(message);
+    if (message.role === "user" && text.length > 0) {
+      exchanges.push({ user: text, assistant: "" });
+    }
+    const current = exchanges.at(-1);
+    if (
+      message.role === "assistant" &&
+      text.length > 0 &&
+      current !== undefined
+    ) {
+      current.assistant = [current.assistant, text]
+        .filter((part) => part.length > 0)
+        .join(" ");
+    }
+  }
+  return exchanges.slice(-CONTEXT_REWRITE_EXCHANGES_MAX);
 }
 
 export function firstToolCall(
@@ -61,6 +92,7 @@ export function firstToolCall(
 
 export function createAssistantJudgmentShadow(deps: {
   readonly provider: JudgmentProvider;
+  readonly rewriteModel: LanguageModel | undefined;
   readonly contracts: readonly ActionContract[];
   readonly logger: Pick<Logger, "warn">;
 }): AssistantJudgmentShadow {
@@ -81,9 +113,11 @@ export function createAssistantJudgmentShadow(deps: {
         permitted.has(spec.tool),
       );
       try {
-        const plan = await planStaffTurn({
+        const plan = await planStaffTurnInContext({
           provider: deps.provider,
+          rewriteModel: deps.rewriteModel,
           message,
+          exchanges: earlierExchanges(history),
           specs,
           isWrite,
           signal,

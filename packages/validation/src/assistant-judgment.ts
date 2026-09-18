@@ -23,6 +23,8 @@ export const JUDGMENT_DECLINE_REASONS = [
   "low_argument_confidence",
   "uncovered_value",
   "write",
+  "needs_history",
+  "ungrounded_value",
 ] as const;
 
 export const JUDGMENT_SHADOW_TEXT_MAX = 200;
@@ -52,12 +54,14 @@ export const judgmentShadowCallSchema = z.strictObject({
 });
 
 export const judgmentShadowSchema = z.strictObject({
-  version: z.literal(1),
+  version: z.literal(2),
   model: z.string().min(1).max(64),
   latencyMs: z.number().int().nonnegative(),
   refusal: z.enum(JUDGMENT_REFUSAL_REASONS).optional(),
   kind: z.enum(JUDGMENT_MESSAGE_KINDS).optional(),
   kindConfidence: probability.optional(),
+  needsHistory: probability.optional(),
+  rewriteUsed: z.boolean(),
   plan: judgmentShadowCallSchema
     .extend({ risk: z.enum(["read", "write"]), minConfidence: probability })
     .optional(),

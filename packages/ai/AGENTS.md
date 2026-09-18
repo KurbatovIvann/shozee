@@ -141,6 +141,17 @@ fallback, never use `jev-latest`.
   request (message kind, one job question per spec, each argument slot once),
   `judgment/shadow.ts` compares the plan with the model's first call. Nothing
   it plans is executed yet.
+- **Follow-ups are planned from a rewrite (ADR-0045).**
+  `judgment/staged-planner.ts` is the entry point: inside a conversation the
+  first request also asks whether the message depends on it; when it does and
+  the message is not talk, `judgment/context-rewrite.ts` has the gate model
+  rewrite it as a self-contained request and the planner plans from that. The
+  rewrite is never shown, stored or given to the reply model; a plan made from
+  it must be grounded (`isRewriteGrounded`: its names and numbers occur in the
+  conversation). Never rewrite talk — praise after a create was rewritten into
+  the create. The whole stage has one two-second deadline. The rewrite prompt,
+  the needs-history question and the thresholds change only with a hand-run of
+  both probe corpora (`apps/api/src/typesafe-probe/followup/`).
 - **Judgment specs live beside the façades** (`tool-facades/judgment-specs.ts`)
   and nowhere else: the job question with what it is _not_, and how each slot
   maps onto the tool's input. `apps/api/src/judgment-specs.test.ts` pins every

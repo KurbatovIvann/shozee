@@ -9,7 +9,7 @@ import {
 import { isInflectionOfName } from "@showzy/validation/entity-ref";
 
 import type { StaffJudgmentSpec } from "../tool-facades/judgment-specs.js";
-import type { StaffJudgmentPlan } from "./staff-planner.js";
+import type { StaffJudgmentStagedPlan } from "./staged-planner.js";
 
 export interface ObservedToolCall {
   readonly toolName: string;
@@ -123,7 +123,7 @@ function sameValue(
 }
 
 export function judgmentShadowOf(
-  plan: StaffJudgmentPlan,
+  plan: StaffJudgmentStagedPlan,
   observed: ObservedToolCall | undefined,
   specs: readonly StaffJudgmentSpec[],
   isWrite: (spec: StaffJudgmentSpec) => boolean,
@@ -137,7 +137,7 @@ export function judgmentShadowOf(
       : null;
   const planned = plan.call;
   return {
-    version: 1,
+    version: 2,
     model: plan.model.slice(0, 64),
     latencyMs: plan.latencyMs,
     ...(plan.refusal === undefined ? {} : { refusal: plan.refusal }),
@@ -145,6 +145,10 @@ export function judgmentShadowOf(
     ...(plan.kindConfidence === undefined
       ? {}
       : { kindConfidence: plan.kindConfidence }),
+    ...(plan.needsHistory === undefined
+      ? {}
+      : { needsHistory: plan.needsHistory }),
+    rewriteUsed: plan.rewriteUsed,
     ...(planned === undefined || spec === undefined
       ? {}
       : {

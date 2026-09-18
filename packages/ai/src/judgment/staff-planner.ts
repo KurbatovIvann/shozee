@@ -25,6 +25,7 @@ import type {
 export const JUDGMENT_TAKE_THRESHOLD = 0.7;
 export const JUDGMENT_DOUBT_THRESHOLD = 0.3;
 export const JUDGMENT_ARGUMENT_THRESHOLD = 0.7;
+export const JUDGMENT_NEEDS_HISTORY_THRESHOLD = 0.5;
 export const JUDGMENT_ITEM_POSITIONS = [1, 2, 3] as const;
 
 const ORDINALS = { 1: "first", 2: "second", 3: "third" } as const;
@@ -42,6 +43,7 @@ const KIND_CRITERIA: Readonly<Record<JudgmentMessageKind, string>> = {
 };
 
 const KIND_KEY = "kind";
+const NEEDS_HISTORY_KEY = "needsHistory";
 const jobKey = (tool: string): string => `job:${tool}`;
 const slotKey = (slot: string): string => `slot:${slot}`;
 const itemProductKey = (position: number): string =>
@@ -65,6 +67,7 @@ function pick(what: string, candidates: readonly string[]): JudgmentQuestion {
 export function buildStaffPlanQuestions(
   message: string,
   specs: readonly StaffJudgmentSpec[],
+  options: { readonly askNeedsHistory?: boolean } = {},
 ): Record<string, JudgmentQuestion> {
   const spans = spanCandidates(message);
   const numbers = numberCandidates(message);
@@ -76,6 +79,18 @@ export function buildStaffPlanQuestions(
       criteria: KIND_CRITERIA,
     },
   };
+  if (options.askNeedsHistory === true) {
+    questions[NEEDS_HISTORY_KEY] = {
+      type: "noul",
+      instructions:
+        "`message` is what a staff member typed to the business assistant in the middle of a conversation. Does `message` depend on the earlier conversation to be understood: it answers, continues, narrows or corrects something said before, or refers to a person, product, order or period without naming it?",
+      criteria: {
+        true: "The message cannot be acted on alone: part of the request is only in the earlier conversation.",
+        false:
+          "The message states the whole request itself, or is small talk that needs no context.",
+      },
+    };
+  }
   for (const spec of specs) {
     questions[jobKey(spec.tool)] = {
       type: "noul",
@@ -126,6 +141,7 @@ export interface StaffJudgmentPlan {
   readonly refusal?: JudgmentRefusalReason;
   readonly kind?: JudgmentMessageKind;
   readonly kindConfidence?: number;
+  readonly needsHistory?: number;
   readonly call?: StaffJudgmentPlannedCall;
   readonly declinedBecause?: JudgmentDeclineReason;
 }
@@ -216,6 +232,7 @@ export async function planStaffTurn(args: {
   readonly message: string;
   readonly specs: readonly StaffJudgmentSpec[];
   readonly isWrite: (spec: StaffJudgmentSpec) => boolean;
+  readonly askNeedsHistory?: boolean;
   readonly signal?: AbortSignal;
   readonly now?: () => number;
 }): Promise<StaffJudgmentPlan> {
@@ -224,7 +241,9 @@ export async function planStaffTurn(args: {
   const result = await args.provider.ask(
     {
       state: { message: args.message },
-      questions: buildStaffPlanQuestions(args.message, args.specs),
+      questions: buildStaffPlanQuestions(args.message, args.specs, {
+        askNeedsHistory: args.askNeedsHistory === true,
+      }),
     },
     args.signal === undefined ? {} : { signal: args.signal },
   );
@@ -237,12 +256,16 @@ export async function planStaffTurn(args: {
   }
   const answers: Readonly<Record<string, JudgmentAnswer>> = result.answers;
   const kindPick = pickedOf(answers[KIND_KEY]);
+  const needsHistory = answers[NEEDS_HISTORY_KEY];
   const kind = isMessageKind(kindPick.choice) ? kindPick.choice : undefined;
   const withKind = {
     ...base,
     model: result.model,
     ...(kind === undefined ? {} : { kind }),
     kindConfidence: kindPick.confidence,
+    ...(needsHistory?.type === "noul"
+      ? { needsHistory: needsHistory.probability }
+      : {}),
   };
 
   const jobs = args.specs.map((spec) => {

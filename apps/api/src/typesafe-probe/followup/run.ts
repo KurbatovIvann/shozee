@@ -6,6 +6,7 @@ import {
   createAnthropicStaffProviderAdapter,
   createStaffLanguageModel,
   createTypeSafeJudgmentProvider,
+  isRewriteGrounded,
   observedShadowCall,
   planStaffTurn,
   staffAssistantSystemMessages,
@@ -212,6 +213,27 @@ function render(
     }
     return found;
   };
+  const grounded = (probeCase: FollowupCase, row: CaseRow): boolean => {
+    const spec = STAFF_JUDGMENT_SPECS.find(
+      (entry) => entry.tool === row.rewrittenPlan.call?.tool,
+    );
+    return (
+      spec === undefined ||
+      row.rewrittenPlan.call === undefined ||
+      isRewriteGrounded({
+        spec,
+        callArgs: row.rewrittenPlan.call.args,
+        rewritten: row.rewritten,
+        conversation: [
+          probeCase.message,
+          ...probeCase.history.flatMap((exchange) => [
+            exchange.user,
+            exchange.assistant,
+          ]),
+        ],
+      })
+    );
+  };
   const groups = [
     ["Follow-ups", rows.filter((row) => row.needsHistory)],
     ["Controls", rows.filter((row) => !row.needsHistory)],
@@ -263,6 +285,20 @@ function render(
           : row.rawPlan,
       (row: CaseRow) =>
         (row.gateWithReply ?? 0) >= GATE_AT && isTalk(row.rawPlan),
+    ],
+    [
+      `As built: not talk, Noul (message only) ≥ ${String(GATE_AT)} → rewrite → Jev + grounding guard`,
+      (row: CaseRow) =>
+        (row.gateMessageOnly ?? 0) >= GATE_AT &&
+        !isTalk(row.rawPlan) &&
+        caseOf(row).history.length > 0
+          ? row.rewrittenPlan
+          : row.rawPlan,
+      (row: CaseRow) =>
+        (row.gateMessageOnly ?? 0) >= GATE_AT &&
+        !isTalk(row.rawPlan) &&
+        caseOf(row).history.length > 0 &&
+        !grounded(caseOf(row), row),
     ],
   ] as const;
 

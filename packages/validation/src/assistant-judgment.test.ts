@@ -7,7 +7,8 @@ import {
 } from "./assistant-judgment.js";
 
 const declined = {
-  version: 1,
+  version: 2,
+  rewriteUsed: false,
   model: "jev-1.13.0",
   latencyMs: 0,
   refusal: "timeout",
