@@ -3476,7 +3476,7 @@
     "/catalog/listProducts": {
       "post": {
         "operationId": "catalog.listProducts",
-        "summary": "List products in the staff member's active company. Default to active products; pass status archived or all to include archived rows. Optional case-insensitive name search: every token stem must match as a word prefix (Ukrainian inflections). Paginate with a created-at cursor and a page size of at most 50. Each row includes id, name, base price, currency, status, variant count, the primary image fileId (lowest position, if any), and timestamps. Clients fetch display URLs via files.getDownloadUrl — this action never returns URLs or object keys.",
+        "summary": "List products in the staff member's active company. Default to active products; pass status archived or all to include archived rows. Optional name search: every word of the query must start a word of the name, Ukrainian inflections included; when nothing matches, names within a typo of the query match instead. Paginate with a created-at cursor and a page size of at most 50. Each row includes id, name, base price, currency, status, variant count, the primary image fileId (lowest position, if any), and timestamps. Clients fetch display URLs via files.getDownloadUrl — this action never returns URLs or object keys.",
         "requestBody": {
           "required": true,
           "content": {
@@ -20158,7 +20158,7 @@
     "/customers/listCounterparties": {
       "post": {
         "operationId": "customers.listCounterparties",
-        "summary": "List company counterparties (legal faces for documents) in the staff member's active company. Optional case-insensitive search on legal name or EDRPOU. Optional customer filter returns an empty page for a missing or foreign customer. Paginate with an updated-at/id cursor and a page size of at most 50. Each row is the shared counterparty view (id, legal name, requisites, optional linked CRM customer id and live customer name, timestamps). Company id is never input. Counterparties are not archived.",
+        "summary": "List company counterparties (legal faces for documents) in the staff member's active company. Optional search on the legal name: every word of the query must start a word of the name, Ukrainian inflections included; when nothing matches, names within a typo of the query match instead. EDRPOU matches as a substring. Optional customer filter returns an empty page for a missing or foreign customer. Paginate with an updated-at/id cursor and a page size of at most 50. Each row is the shared counterparty view (id, legal name, requisites, optional linked CRM customer id and live customer name, timestamps). Company id is never input. Counterparties are not archived.",
         "requestBody": {
           "required": true,
           "content": {
@@ -20925,7 +20925,7 @@
     "/customers/listCustomers": {
       "post": {
         "operationId": "customers.listCustomers",
-        "summary": "List CRM customers in the staff member's active company. Default to active customers; pass status archived or all to include archived rows. Optional case-insensitive search: name matches every token stem (Ukrainian inflections); phone and email stay full-string contains. Optional group filter returns an empty page for a missing or foreign group. Paginate with an updated-at/id cursor and a page size of at most 50. Each row is the customer view (id, name, contacts, notes, group and price-list assignments, status, linked counterparty count, timestamps). Company id is never input. Does not return order counts.",
+        "summary": "List CRM customers in the staff member's active company. Default to active customers; pass status archived or all to include archived rows. Optional search by name: every word of the query must start a word of the name, Ukrainian inflections included; when nothing matches, names within a typo of the query match instead. Phone and email match as a substring. Optional group filter returns an empty page for a missing or foreign group. Paginate with an updated-at/id cursor and a page size of at most 50. Each row is the customer view (id, name, contacts, notes, group and price-list assignments, status, linked counterparty count, timestamps). Company id is never input. Does not return order counts.",
         "requestBody": {
           "required": true,
           "content": {
@@ -21672,7 +21672,7 @@
     "/customers/listGroups": {
       "post": {
         "operationId": "customers.listGroups",
-        "summary": "List customer groups in the staff member's active company. Order by sort_order ascending, then name, then id. Optional case-insensitive name search. Paginate with a sort-order/name/id cursor and a page size of at most 50. Each row is the group view (id, name, slug, description, price-list assignment, active member count, timestamps). Company id is never input. Groups are not archived.",
+        "summary": "List customer groups in the staff member's active company. Order by sort_order ascending, then name, then id. Optional name search: every word of the query must start a word of the name, Ukrainian inflections included; when nothing matches, names within a typo of the query match instead. Paginate with a sort-order/name/id cursor and a page size of at most 50. Each row is the group view (id, name, slug, description, price-list assignment, active member count, timestamps). Company id is never input. Groups are not archived.",
         "requestBody": {
           "required": true,
           "content": {
@@ -53036,7 +53036,7 @@
     "/pricing/listPriceLists": {
       "post": {
         "operationId": "pricing.listPriceLists",
-        "summary": "List price lists in the staff member's active company. Default availability all includes inactive lists; pass availability active or inactive to filter. Optional case-insensitive name search. Paginate with a default/name/id cursor and a page size of at most 50. Each row includes id, name, isDefault, isActive, and entryCount. Company id is never input. Does not return assignment counts.",
+        "summary": "List price lists in the staff member's active company. Default availability all includes inactive lists; pass availability active or inactive to filter. Optional name search: every word of the query must start a word of the name, Ukrainian inflections included; when nothing matches, names within a typo of the query match instead. Paginate with a default/name/id cursor and a page size of at most 50. Each row includes id, name, isDefault, isActive, and entryCount. Company id is never input. Does not return assignment counts.",
         "requestBody": {
           "required": true,
           "content": {

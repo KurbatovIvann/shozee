@@ -1,8 +1,12 @@
 import { implementAction } from "@showzy/core";
 import { CoreInvariantError } from "@showzy/core/errors";
 import { priceLists } from "@showzy/db/schema/pricing";
-import { likeContainsPattern, paginate } from "@showzy/validation/pagination";
-import { and, asc, desc, eq, gt, ilike, or } from "drizzle-orm";
+import {
+  listNameSearch,
+  pickListNameSearch,
+} from "@showzy/module-kit/name-match";
+import { paginate } from "@showzy/validation/pagination";
+import { and, asc, desc, eq, gt, or } from "drizzle-orm";
 
 import { countEntriesByPriceListIds } from "../services/count-price-list-entries.js";
 import {
@@ -13,11 +17,33 @@ import {
 
 export const listPriceLists = implementAction(listPriceListsContract, {
   handler: async (input, ctx) => {
-    const searchPattern =
-      input.query === undefined ? undefined : likeContainsPattern(input.query);
-    if (input.query !== undefined && searchPattern === undefined) {
+    const search =
+      input.query === undefined
+        ? undefined
+        : listNameSearch(
+            { name: priceLists.name, nameFts: priceLists.nameFts },
+            input.query,
+          );
+    if (input.query !== undefined && search === undefined) {
       return { items: [], nextCursor: null };
     }
+    const scope = and(
+      eq(priceLists.companyId, ctx.companyId),
+      input.availability === "all"
+        ? undefined
+        : eq(priceLists.isActive, input.availability === "active"),
+    );
+    const searchPredicate =
+      search === undefined
+        ? undefined
+        : await pickListNameSearch(search, async (strict) => {
+            const found = await ctx.db
+              .select({ id: priceLists.id })
+              .from(priceLists)
+              .where(and(scope, strict))
+              .limit(1);
+            return found.length > 0;
+          });
 
     const cursor =
       input.cursor === undefined
@@ -53,18 +79,7 @@ export const listPriceLists = implementAction(listPriceListsContract, {
         isActive: priceLists.isActive,
       })
       .from(priceLists)
-      .where(
-        and(
-          eq(priceLists.companyId, ctx.companyId),
-          input.availability === "all"
-            ? undefined
-            : eq(priceLists.isActive, input.availability === "active"),
-          searchPattern === undefined
-            ? undefined
-            : ilike(priceLists.name, searchPattern),
-          cursorPredicate,
-        ),
-      )
+      .where(and(scope, searchPredicate, cursorPredicate))
       .orderBy(
         desc(priceLists.isDefault),
         asc(priceLists.name),

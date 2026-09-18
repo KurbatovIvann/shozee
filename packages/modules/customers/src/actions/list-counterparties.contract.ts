@@ -5,10 +5,6 @@
  * - Pagination is a stable `(updated_at desc, id desc)` cursor, not
  *   offset. `limit` defaults to 20 and caps at 50.
  * - Cursor payload is `updatedAt|id` (ISO datetime, then uuid).
- * - Search is optional, max 100, case-insensitive Drizzle `ilike` on
- *   name OR edrpou (not IBAN). LIKE metacharacters `%`, `_`, and `\\` in
- *   the query are stripped so they cannot widen or escape the match; a
- *   query that strips to empty returns no rows.
  * - Optional `customerId`: own-tenant links only. Missing and
  *   other-tenant customer ids yield an empty page (no existence leak),
  *   not not-found.
@@ -83,7 +79,7 @@ export const listCounterpartiesOutputSchema = z.object({
 export const listCounterpartiesContract = defineActionContract({
   name: "customers.listCounterparties",
   description:
-    "List company counterparties (legal faces for documents) in the staff member's active company. Optional case-insensitive search on legal name or EDRPOU. Optional customer filter returns an empty page for a missing or foreign customer. Paginate with an updated-at/id cursor and a page size of at most 50. Each row is the shared counterparty view (id, legal name, requisites, optional linked CRM customer id and live customer name, timestamps). Company id is never input. Counterparties are not archived.",
+    "List company counterparties (legal faces for documents) in the staff member's active company. Optional search on the legal name: every word of the query must start a word of the name, Ukrainian inflections included; when nothing matches, names within a typo of the query match instead. EDRPOU matches as a substring. Optional customer filter returns an empty page for a missing or foreign customer. Paginate with an updated-at/id cursor and a page size of at most 50. Each row is the shared counterparty view (id, legal name, requisites, optional linked CRM customer id and live customer name, timestamps). Company id is never input. Counterparties are not archived.",
   principal: "staff",
   transport: "client",
   input: listCounterpartiesInputSchema,
