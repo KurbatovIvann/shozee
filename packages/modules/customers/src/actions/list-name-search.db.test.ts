@@ -96,9 +96,14 @@ describe("customers list name search (db.md: one staff name matcher)", () => {
     expect(await groupNames("оптавики")).toEqual(["Оптовики"]);
   });
 
-  it("keeps a short token strict, so it never matches inside a word", async () => {
-    expect(await customerNames("тре")).toEqual([]);
+  it("matches inside a word only when no word starts with the token", async () => {
     expect(await groupNames("опт")).toEqual(["Оптовики"]);
+    expect(await customerNames("пет")).toEqual([
+      "Олена Петренко",
+      "Олена Петрук",
+    ]);
+    expect(await customerNames("тренк")).toEqual(["Олена Петренко"]);
+    expect(await customerNames("ре")).toEqual([]);
   });
 
   it("still finds a customer by phone and a counterparty by ЄДРПОУ", async () => {
