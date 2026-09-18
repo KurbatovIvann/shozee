@@ -1,6 +1,6 @@
 # ADR-0043: A typed-judgment provider beside the reply model
 
-- **Status**: Accepted
+- **Status**: Accepted (amended by ADR-0044)
 - **Date**: 2026-09-18
 - **Deciders**: Ivan Kurbatov (human) (+ proposing agent)
 
@@ -38,13 +38,15 @@ a second AI vendor of this shape is allowed beside it.
    refusal (`timeout`, `rate_limited`, `overloaded`, `rejected`,
    `unavailable`). On a refusal or low confidence the existing path runs
    unchanged. No turn fails because a judgment failed.
-2. **A judgment never decides what a human or the domain decides.** It never
-   authorises a write, never stands in for a confirmation (ADR-0038), and
-   never resolves an ambiguous human reference
-   (`.claude/rules/actions-and-ai.md`: never guess).
+2. **A judgment never decides what a human or the domain decides.** It may
+   propose a call to a read action (ADR-0044); it never proposes a write,
+   never stands in for a confirmation (ADR-0038), and never resolves a human
+   reference (`.claude/rules/actions-and-ai.md`: never guess).
+   _(Amended 2026-09-18 by ADR-0044; the original read "never authorises a
+   write … never resolves an ambiguous human reference".)_
 3. **Where it runs.** Only from `packages/ai` or
-   `@showzy/assistant-runtime`, in the worker's turn, outside any domain
-   transaction. Never from a module handler: a handler is shared with the
+   `@showzy/assistant-runtime`, or inside the cascade model in `packages/ai`
+   (ADR-0044), in the worker's turn, outside any domain transaction. Never from a module handler: a handler is shared with the
    classic UI (ADR-0033) and must not depend on a model.
 4. **One vendor file.** `src/judgment/typesafe.ts` is the only importer of
    `@typesafe-ai/sdk`, pinned by a test the way the Anthropic import is

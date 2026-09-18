@@ -1,6 +1,6 @@
 # ADR-0044: The assistant turn is a cascade — typed judgment first, language model on escalation
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-18
 - **Deciders**: Ivan Kurbatov (human) (+ proposing agent)
 

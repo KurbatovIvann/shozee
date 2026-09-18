@@ -61,5 +61,5 @@ humans) don't relitigate settled questions or silently deviate.
 | [0040](0040-claude-code-agent-harness.md) | Claude Code is the agent harness | Accepted |
 | [0041](0041-postgres-first-job-runner.md) | Background jobs are enqueued in the transaction and run from Postgres behind a runner port | Accepted |
 | [0042](0042-snapshot-reads-revisions-live-resources.md) | Snapshot reads, aggregate revisions, and live resources | Accepted |
-| [0043](0043-typed-judgment-provider.md) | A typed-judgment provider beside the reply model | Accepted |
-| [0044](0044-judgment-first-turn-cascade.md) | The assistant turn is a cascade — typed judgment first, language model on escalation | Proposed |
+| [0043](0043-typed-judgment-provider.md) | A typed-judgment provider beside the reply model | Accepted (amended by ADR-0044) |
+| [0044](0044-judgment-first-turn-cascade.md) | The assistant turn is a cascade — typed judgment first, language model on escalation | Accepted |
