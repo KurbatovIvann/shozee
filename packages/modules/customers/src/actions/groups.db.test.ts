@@ -447,12 +447,20 @@ describe("customers.updateGroup", () => {
       priceListId: fixtures.listA,
     });
 
-    const cleared = await kit.invoke(updateGroup, {
+    const unlisted = await kit.invoke(updateGroup, {
       id: created.id,
       name: "After",
       priceListId: null,
     });
-    expect(cleared.slug).toBe("before");
+    expect(unlisted.slug).toBe("before");
+    expect(unlisted.priceListId).toBeNull();
+    expect(unlisted.description).toBe("Keep me");
+
+    const cleared = await kit.invoke(updateGroup, {
+      id: created.id,
+      name: "After",
+      description: null,
+    });
     expect(cleared.priceListId).toBeNull();
     expect(cleared.description).toBeNull();
 

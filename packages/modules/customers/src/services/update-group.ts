@@ -1,6 +1,7 @@
 import type { ActionCtx } from "@showzy/core";
 import { CoreInvariantError } from "@showzy/core/errors";
 import { customerGroups } from "@showzy/db/schema/customers";
+import { keepOmitted } from "@showzy/module-kit/keep-omitted";
 import { and, eq } from "drizzle-orm";
 import type { z } from "zod";
 
@@ -9,11 +10,7 @@ import type {
   updateGroupOutputSchema,
 } from "../actions/update-group.contract.js";
 import { countActiveGroupMembers } from "./count-active-members.js";
-import {
-  storedDescription,
-  storedPriceListId,
-  toGroupView,
-} from "./group-view.js";
+import { storedDescription, toGroupView } from "./group-view.js";
 import { resolveGroupPriceListId } from "./resolve-price-list.js";
 import { lockTenantRow } from "./tenant-row.js";
 import { requireWritable } from "./writable.js";
@@ -29,21 +26,26 @@ export async function updateStaffGroup(env: {
   const { ctx, input } = env;
   const db = requireWritable(ctx.db);
 
-  await lockTenantRow(db, customerGroups, {
+  const current = await lockTenantRow(db, customerGroups, {
     companyId: ctx.companyId,
     id: input.id,
-    columns: { id: customerGroups.id },
+    columns: {
+      description: customerGroups.description,
+      priceListId: customerGroups.priceListId,
+    },
   });
 
-  const priceListId = await resolveGroupPriceListId(ctx, input.priceListId);
+  await resolveGroupPriceListId(ctx, input.priceListId);
 
   const updated = (
     await db
       .update(customerGroups)
       .set({
         name: input.name,
-        description: storedDescription(input.description),
-        priceListId: storedPriceListId(priceListId),
+        description: storedDescription(
+          keepOmitted(input.description, current.description),
+        ),
+        priceListId: keepOmitted(input.priceListId, current.priceListId),
       })
       .where(
         and(

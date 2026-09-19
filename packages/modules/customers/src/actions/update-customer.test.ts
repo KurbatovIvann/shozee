@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  CONTACT_REQUIRED_MESSAGE,
   CUSTOMER_NAME_MAX,
   customerViewSchema,
 } from "./customer-view.contract.js";
@@ -48,7 +47,7 @@ describe("customers.updateCustomer contract", () => {
     ]);
   });
 
-  it("trims the name and rejects blank names, missing contacts, and bad ids", () => {
+  it("trims the name, accepts omitted contacts, and rejects blank names and bad ids", () => {
     expect(
       updateCustomerInputSchema.parse({
         ...validUpdate,
@@ -70,24 +69,9 @@ describe("customers.updateCustomer contract", () => {
     expect(
       updateCustomerInputSchema.safeParse({
         id: validUpdate.id,
-        name: "No contact",
+        name: "Contacts omitted, so the stored ones stand",
       }).success,
-    ).toBe(false);
-    const cleared = updateCustomerInputSchema.safeParse({
-      id: validUpdate.id,
-      name: "Cleared",
-      phone: null,
-      email: null,
-      userId: null,
-    });
-    expect(cleared.success).toBe(false);
-    if (!cleared.success) {
-      expect(
-        cleared.error.issues.some(
-          (issue) => issue.message === CONTACT_REQUIRED_MESSAGE,
-        ),
-      ).toBe(true);
-    }
+    ).toBe(true);
     expect(
       updateCustomerInputSchema.safeParse({
         ...validUpdate,

@@ -247,7 +247,7 @@ describe("remainingFormWrites", () => {
     }
   });
 
-  it("clears a price override by omitting the currency pair", () => {
+  it("clears a price override with an explicit null pair", () => {
     const draft = {
       ...draftFromProduct(loaded),
       variants: draftFromProduct(loaded).variants.map((variant) =>
@@ -269,12 +269,9 @@ describe("remainingFormWrites", () => {
         productId: PRODUCT_ID,
         variantId: VARIANT_ID,
         name: "1 кг",
+        basePriceMinor: null,
+        currency: null,
       });
-      expect(Object.keys(write.input)).toEqual([
-        "productId",
-        "variantId",
-        "name",
-      ]);
     }
   });
 });

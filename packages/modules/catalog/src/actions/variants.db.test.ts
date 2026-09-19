@@ -419,10 +419,23 @@ describe("catalog.updateVariant", () => {
       currency: "UAH",
     });
 
+    const renamed = await kit.invoke(updateVariant, {
+      productId: created.productId,
+      variantId: created.variantId,
+      name: "After",
+    });
+    expect(renamed).toMatchObject({
+      name: "After",
+      basePriceMinor: "1800",
+      currency: "UAH",
+    });
+
     const cleared = await kit.invoke(updateVariant, {
       productId: created.productId,
       variantId: created.variantId,
       name: "After",
+      basePriceMinor: null,
+      currency: null,
     });
     expect(cleared).toMatchObject({
       variantId: created.variantId,

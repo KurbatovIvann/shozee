@@ -88,6 +88,20 @@ describe("catalog.updateVariant contract", () => {
     expect(
       updateVariantInputSchema.safeParse({
         ...validUpdate,
+        basePriceMinor: "50",
+        currency: null,
+      }).success,
+    ).toBe(false);
+    expect(
+      updateVariantInputSchema.safeParse({
+        ...validUpdate,
+        basePriceMinor: null,
+        currency: null,
+      }).success,
+    ).toBe(true);
+    expect(
+      updateVariantInputSchema.safeParse({
+        ...validUpdate,
         basePriceMinor: "-1",
         currency: "UAH",
       }).success,

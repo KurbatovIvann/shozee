@@ -98,6 +98,37 @@ export function storedLegalFields(input: UpdateLegalInput): {
   };
 }
 
+const OPTIONAL_LEGAL_FIELDS = [
+  "edrpou",
+  "legalAddress",
+  "iban",
+  "bankName",
+  "bankMfo",
+  "bankEdrpou",
+  "phone",
+  "email",
+] as const;
+
+type OptionalLegalField = (typeof OPTIONAL_LEGAL_FIELDS)[number];
+
+export function namedLegalFields(input: UpdateLegalInput): {
+  readonly companyType: z.output<typeof companyLegalTypeSchema>;
+  readonly legalName: string;
+} & { readonly [K in OptionalLegalField]?: string | null } {
+  const stored = storedLegalFields(input);
+  const named: { [K in OptionalLegalField]?: string | null } = {};
+  for (const field of OPTIONAL_LEGAL_FIELDS) {
+    if (input[field] !== undefined) {
+      named[field] = stored[field];
+    }
+  }
+  return {
+    companyType: stored.companyType,
+    legalName: stored.legalName,
+    ...named,
+  };
+}
+
 export function toLegalView(row: LegalRow): LegalView {
   return {
     id: row.id,

@@ -649,6 +649,67 @@ describe("customers.updateCustomer", () => {
     });
   });
 
+  it("keeps every omitted field and clears only an explicit null", async () => {
+    const created = await kit.invoke(createCustomer, {
+      name: "Patch",
+      phone: "+380501000071",
+      email: "patch@example.com",
+      notes: "call after six",
+      groupId: fixtures.groupA,
+      priceListId: fixtures.listA,
+    });
+
+    const rephoned = await kit.invoke(updateCustomer, {
+      id: created.id,
+      name: "Patch",
+      phone: "+380501000072",
+    });
+    expect(rephoned).toMatchObject({
+      phone: "+380501000072",
+      email: "patch@example.com",
+      notes: "call after six",
+      groupId: fixtures.groupA,
+      priceListId: fixtures.listA,
+    });
+
+    const cleared = await kit.invoke(updateCustomer, {
+      id: created.id,
+      name: "Patch",
+      notes: null,
+      groupId: null,
+    });
+    expect(cleared).toMatchObject({
+      phone: "+380501000072",
+      email: "patch@example.com",
+      notes: null,
+      groupId: null,
+      priceListId: fixtures.listA,
+    });
+  });
+
+  it("refuses to clear the last contact while the others stay omitted", async () => {
+    const created = await kit.invoke(createCustomer, {
+      name: "Last contact",
+      phone: "+380501000073",
+    });
+
+    await expect(
+      kit.invoke(updateCustomer, {
+        id: created.id,
+        name: "Last contact",
+        phone: null,
+      }),
+    ).rejects.toBeInstanceOf(ValidationError);
+
+    const swapped = await kit.invoke(updateCustomer, {
+      id: created.id,
+      name: "Last contact",
+      phone: null,
+      email: "last@example.com",
+    });
+    expect(swapped).toMatchObject({ phone: null, email: "last@example.com" });
+  });
+
   it("updates an archived customer without restoring and counts linked counterparties", async () => {
     const archived = await kit.invoke(updateCustomer, {
       id: fixtures.customerArchived,
@@ -758,6 +819,9 @@ describe("customers.updateCustomer", () => {
       {
         id: fixtures.customerUpdateA,
         name: "Cake",
+        phone: null,
+        email: null,
+        userId: null,
       },
       {
         id: "not-a-uuid",

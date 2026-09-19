@@ -530,10 +530,10 @@ describe("customers.updateCounterparty", () => {
     expect(linked).toMatchObject({
       customerId: fixtures.customerACount,
       customerName: "Count Cake",
-      legalAddress: null,
-      bankName: null,
-      bankMfo: null,
-      notes: null,
+      legalAddress: "вул. Сумська, 2",
+      bankName: "Ощадбанк",
+      bankMfo: "300335",
+      notes: "keep",
     });
     expect(
       (await kit.invoke(getCustomer, { id: fixtures.customerACount }))
@@ -544,10 +544,13 @@ describe("customers.updateCounterparty", () => {
       id: created.id,
       name: "After",
       customerId: null,
+      notes: null,
     });
     expect(unlinked).toMatchObject({
       customerId: null,
       customerName: null,
+      notes: null,
+      bankName: "Ощадбанк",
     });
     expect(
       (await kit.invoke(getCustomer, { id: fixtures.customerACount }))

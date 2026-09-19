@@ -1,6 +1,8 @@
 # ADR-0033: Channel-neutral actions — task-complete lists and reference writes
 
 - **Status**: Accepted
+- **Amended**: 2026-09-19 — a staff update changes only the fields it names
+  (SHO-725, see Amendment below)
 - **Date**: 2026-09-02
 - **Deciders**: Ivan Kurbatov
 
@@ -106,3 +108,34 @@ First application: Linear [SHO-350](https://linear.app/showzy-v2/issue/SHO-350)
 - Protocol manuals (`docs/specs/core.md`, `contract.md`) stay; they do not
   define domain list shapes.
 - Archived novels stay in git for humans; they are out of agent context.
+
+## Amendment, 2026-09-19 — an update changes only the fields it names
+
+**What no longer holds.** Staff update actions copied the form: "same fields
+as create plus `id`; omitted/null optional fields clear"
+(`customers.updateCustomer`, `customers.updateCounterparty`,
+`customers.updateGroup`, `catalog.updateVariant`, `companies.updateLegal`).
+That is the screen-shaped input this ADR retires: only a client holding the
+whole record can call it safely. The assistant holds a compact list row, so
+"change the phone" wiped `notes` and `email` and answered "Готово!"
+([SHO-725](https://linear.app/showzy-v2/issue/SHO-725)).
+
+**What now holds.**
+
+- On a staff update, an **omitted** optional field is unchanged and an
+  explicit **`null`** clears it. Every optional update field is
+  `.nullable().optional()`; a field with no clear form gains `null`.
+- The handler merges the input with the current row under the row lock it
+  already takes. A row invariant (a customer keeps at least one contact, a
+  variant override is a price-and-currency pair) is checked on the **merged**
+  row, not on the submitted payload.
+- Required fields stay required. An upsert (`companies.updateLegal`) treats
+  an omitted field as unchanged when the row exists and as null when it does
+  not.
+- New staff updates follow this rule. No read-merge-write façade in
+  `packages/ai` and no "get before update" prompt rule: both reconstruct
+  state a contract decision threw away.
+
+**Consequences.** Any client may send a partial update. A form that sends
+the whole record with explicit nulls behaves as before; a form that relied
+on omission to clear must send `null`.
