@@ -39,6 +39,7 @@ One series is 1173 requests, about 5 minutes and $0.20–0.26.
 | 2 | an `extras:<tool>` question on every spec; `required` name on creates | 278 | 20 | 875 |
 | 3 | job wording: customers vs groups and counterparties, products vs price lists | 323 | 18 | 832 |
 | 4 | customer job's `yes` wording restored | 327 | 17 | 829 |
+| 4, replayed | unconsumed-words guard and `act` 0.75 on `orders_create` (resolve probe); no new run | 330 | 17 | 826 |
 
 - **Thresholds were not the problem.** In series 1 the wrong calls were
   confident: 45 of 91 dropped something the message stated (a second status, a

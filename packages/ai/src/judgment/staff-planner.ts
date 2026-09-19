@@ -13,7 +13,11 @@ import {
   type JudgmentArgSpec,
   type StaffJudgmentSpec,
 } from "../tool-facades/judgment-specs.js";
-import { numberCandidates, spanCandidates } from "./candidates.js";
+import {
+  numberCandidates,
+  spanCandidates,
+  unconsumedWords,
+} from "./candidates.js";
 import type {
   JudgmentAnswer,
   JudgmentProvider,
@@ -197,6 +201,7 @@ function shapeArg(
 }
 
 function plannedCall(
+  message: string,
   spec: StaffJudgmentSpec,
   answers: Readonly<Record<string, JudgmentAnswer>>,
   kindConfidence: number,
@@ -266,6 +271,13 @@ function plannedCall(
       sentinel.choice !== JUDGMENT_NONE &&
       !lines.some((line) => line.endsWith(`×${sentinel.choice}`))
     ) {
+      uncovered = true;
+    }
+    const spans = [
+      ...Object.values(input).filter((value) => typeof value === "string"),
+      ...items.map((item) => item[spec.items?.product ?? ""] ?? ""),
+    ];
+    if (unconsumedWords(message, spans).length > 0) {
       uncovered = true;
     }
     args[spec.items.arg] = lines;
@@ -389,7 +401,12 @@ export function decideStaffPlan(args: {
     };
   }
   const thresholds = judgmentThresholdsOf(only.spec);
-  const planned = plannedCall(only.spec, answers, kindPick.confidence);
+  const planned = plannedCall(
+    args.message,
+    only.spec,
+    answers,
+    kindPick.confidence,
+  );
   const call = {
     ...planned.call,
     minConfidence: Math.min(

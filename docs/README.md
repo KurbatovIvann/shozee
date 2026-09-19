@@ -23,6 +23,7 @@ manual sections on demand; this directory is not a mandatory reading list.
 | Does Jev resolve customer/product/group mentions on a real database? | [TypeSafe base probe](reference/typesafe-base-probe-2026-09.md) | 300 customers seeded through actions; retrieval is the bottleneck, 256-option cap, one confident wrong record |
 | Does the judgment survive follow-up turns, and is Haiku enough behind it? | [TypeSafe follow-up probe](reference/typesafe-followup-probe-2026-09.md) | Needs-history Noul 100%/10%; Haiku rewrite → Jev 23/23 on follow-ups; Sonnet 8% wrong vs Haiku 16% in the real tool loop |
 | What does the judgment do on every action it has a spec for, and what moves it? | [TypeSafe calibration stand](reference/typesafe-calibration-2026-09.md) | 391 blind cases ×3 runs; wrong calls 91 → 17 from an extras question per spec and job wording, not thresholds; the rest are name forms |
+| Can the judgment create an order from names as staff type them, and who settles what the module cannot? | [TypeSafe resolve probe](reference/typesafe-resolve-probe-2026-09.md) | 36 orders over a seeded base; verbless orders were declined at 0.85; an unconsumed-words guard removed 3 wrong orders; the judgment answered 6 of 9 pickers, none wrong at 0.9 |
 | Where did the old specs/plans go? | `docs/archive/` | Historical, not authority; normal implementation must not load it (ADR-0033) |
 
 Accepted ADRs and repository prohibitions constrain feature cards and

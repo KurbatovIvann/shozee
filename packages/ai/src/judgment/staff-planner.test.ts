@@ -112,6 +112,26 @@ describe("planStaffTurn", () => {
     });
   });
 
+  it("acts on an order at the spec's own lower job threshold", async () => {
+    const answers = {
+      "job:orders_create": yes(0.78),
+      "slot:customerName": choice("наталії гук"),
+      "item:1:product": choice("тірамісу"),
+      "item:1:quantity": choice("2"),
+    };
+    expect(
+      (await plan("Наталії Гук 2 тірамісу", answers)).declinedBecause,
+    ).toBeUndefined();
+    expect(
+      (
+        await plan("Наталії Гук 2 тірамісу", {
+          ...answers,
+          "job:orders_create": yes(0.72),
+        })
+      ).declinedBecause,
+    ).toBe("low_argument_confidence");
+  });
+
   it("plans a write that stores a new name but declines to take it", async () => {
     const result = await plan("Додай клієнта Андрія Коваля", {
       "job:customers_createCustomer": yes(0.98),
@@ -164,6 +184,16 @@ describe("planStaffTurn", () => {
       "uncovered_value",
       "Покажи три останні замовлення",
       { "job:orders_list_page": yes(0.95) },
+    ],
+    [
+      "uncovered_value",
+      "Для Олени 2 великих капучино",
+      {
+        "job:orders_create": yes(0.98),
+        "slot:customerName": choice("олени"),
+        "item:1:product": choice("капучино"),
+        "item:1:quantity": choice("2"),
+      },
     ],
     [
       "uncovered_value",

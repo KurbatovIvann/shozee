@@ -190,7 +190,9 @@ fallback, never use `jev-latest`.
   only delegate: `required` arguments, a fourth-line sentinel, the
   `extras:<tool>` question every spec has (what the message states beyond what
   the call `carries`: a second status, a customer filter, an email, a delivery
-  date), a number the plan
+  date), a word of an order message that is neither a filler nor inside a
+  span the plan took (`unconsumedWords`: "2 великих капучино" planned as
+  `капучино` resolved to another product), a number the plan
   did not consume. A taken step that fails goes to the reply model.
 - Tests inject `fetch`. No live call in CI or `verify.mjs`.
 

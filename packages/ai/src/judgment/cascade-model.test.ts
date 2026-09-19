@@ -220,6 +220,7 @@ describe("createStaffCascadeModel", () => {
       "no customer",
       "missing_argument",
       { ...ORDER_FOR_OLENA, "slot:customerName": picked("none") },
+      "Створи замовлення: 2 капучино",
     ],
     [
       "a delivery note the plan cannot carry",
@@ -236,8 +237,8 @@ describe("createStaffCascadeModel", () => {
     ],
   ])(
     "leaves an order with %s to the reply model",
-    async (_, reason, answers) => {
-      const turn = await run({ message: ORDER_MESSAGE, answers });
+    async (_, reason, answers, message = ORDER_MESSAGE) => {
+      const turn = await run({ message, answers });
       expect(turn.executed).toEqual([]);
       expect(turn.text).toBe("Відповідь Sonnet.");
       expect(turn.report).toMatchObject({

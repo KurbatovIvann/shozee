@@ -61,3 +61,79 @@ export function numberCandidates(message: string): readonly string[] {
   }
   return [...numbers];
 }
+
+const ORDER_FILLER_WORDS: ReadonlySet<string> = new Set([
+  "створи",
+  "створити",
+  "зроби",
+  "зробити",
+  "оформи",
+  "оформити",
+  "запиши",
+  "записати",
+  "замов",
+  "прийми",
+  "додай",
+  "нове",
+  "новий",
+  "замовлення",
+  "замовленя",
+  "клієнт",
+  "клієнта",
+  "клієнту",
+  "клієнтка",
+  "клієнтки",
+  "клієнтці",
+  "покупець",
+  "для",
+  "на",
+  "від",
+  "і",
+  "й",
+  "та",
+  "а",
+  "ще",
+  "також",
+  "плюс",
+  "шт",
+  "штук",
+  "штуки",
+  "штуку",
+  "будь",
+  "ласка",
+  "плз",
+  "create",
+  "make",
+  "add",
+  "place",
+  "new",
+  "an",
+  "a",
+  "the",
+  "order",
+  "for",
+  "and",
+  "with",
+  "of",
+  "please",
+  "customer",
+  "pcs",
+]);
+
+export function unconsumedWords(
+  message: string,
+  consumedSpans: readonly string[],
+): readonly string[] {
+  const consumed = new Set(consumedSpans.flatMap((span) => span.split(" ")));
+  return message
+    .split(/\s+/u)
+    .map(normalizeSpan)
+    .filter(
+      (word) =>
+        word !== "" &&
+        !/^[\d.,×x*-]+$/u.test(word) &&
+        !(word in NUMBER_WORDS) &&
+        !ORDER_FILLER_WORDS.has(word) &&
+        !consumed.has(word),
+    );
+}

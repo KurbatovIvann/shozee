@@ -177,6 +177,7 @@ export const STAFF_JUDGMENT_SPECS: readonly StaffJudgmentSpec[] = [
     beyond:
       "a date or time, delivery or pickup, an address, a comment or note, a price, a discount, or a payment",
     required: ["customerQuery", "items"],
+    thresholds: { act: 0.75 },
     reply: { uk: "Створив замовлення.", en: "The order is created." },
     items: {
       arg: "items",
