@@ -94,13 +94,18 @@ export {
   type StaffJudgmentStagedPlan,
 } from "./judgment/staged-planner.js";
 export {
+  JUDGMENT_ACT_THRESHOLD,
   JUDGMENT_ARGUMENT_THRESHOLD,
   JUDGMENT_DOUBT_THRESHOLD,
   JUDGMENT_NEEDS_HISTORY_THRESHOLD,
   JUDGMENT_TAKE_THRESHOLD,
   buildStaffPlanQuestions,
+  decideStaffPlan,
+  judgmentThresholdsOf,
   planStaffTurn,
+  type StaffJudgmentDecision,
   type StaffJudgmentPlan,
+  type StaffJudgmentThresholds,
   type StaffJudgmentPlannedCall,
 } from "./judgment/staff-planner.js";
 export {

@@ -59,6 +59,11 @@ export interface StaffJudgmentSpec {
   readonly args: Readonly<Record<string, JudgmentArgSpec>>;
   readonly reply?: { readonly uk: string; readonly en: string };
   readonly required?: readonly string[];
+  readonly thresholds?: {
+    readonly take?: number;
+    readonly act?: number;
+    readonly argument?: number;
+  };
   readonly items?: {
     readonly arg: string;
     readonly product: string;

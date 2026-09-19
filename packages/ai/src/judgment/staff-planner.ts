@@ -23,6 +23,7 @@ import type {
 } from "./types.js";
 
 export const JUDGMENT_TAKE_THRESHOLD = 0.7;
+export const JUDGMENT_ACT_THRESHOLD = 0.85;
 export const JUDGMENT_DOUBT_THRESHOLD = 0.3;
 export const JUDGMENT_ARGUMENT_THRESHOLD = 0.7;
 export const JUDGMENT_NEEDS_HISTORY_THRESHOLD = 0.5;
@@ -198,7 +199,7 @@ function shapeArg(
 function plannedCall(
   spec: StaffJudgmentSpec,
   answers: Readonly<Record<string, JudgmentAnswer>>,
-  jobConfidence: number,
+  kindConfidence: number,
 ): {
   call: StaffJudgmentPlannedCall;
   uncovered: boolean;
@@ -207,7 +208,7 @@ function plannedCall(
   const args: Record<string, JudgmentShadowArgValue> = {};
   const input: Record<string, unknown> = {};
   const usedNumbers = new Set<string>();
-  let minConfidence = jobConfidence;
+  let minConfidence = kindConfidence;
   let uncovered = false;
   for (const [name, argSpec] of Object.entries(spec.args)) {
     const picked = pickedOf(answers[slotKey(argSpec.slot)]);
@@ -287,6 +288,27 @@ function plannedCall(
 const isMissing = (value: unknown): boolean =>
   value === undefined || (Array.isArray(value) && value.length === 0);
 
+export interface StaffJudgmentThresholds {
+  readonly take: number;
+  readonly act: number;
+  readonly argument: number;
+}
+
+export function judgmentThresholdsOf(
+  spec: StaffJudgmentSpec,
+): StaffJudgmentThresholds {
+  return {
+    take: spec.thresholds?.take ?? JUDGMENT_TAKE_THRESHOLD,
+    act: spec.thresholds?.act ?? JUDGMENT_ACT_THRESHOLD,
+    argument: spec.thresholds?.argument ?? JUDGMENT_ARGUMENT_THRESHOLD,
+  };
+}
+
+export type StaffJudgmentDecision = Pick<
+  StaffJudgmentPlan,
+  "kind" | "kindConfidence" | "needsHistory" | "call" | "declinedBecause"
+>;
+
 export async function planStaffTurn(args: {
   readonly provider: JudgmentProvider;
   readonly message: string;
@@ -314,13 +336,29 @@ export async function planStaffTurn(args: {
   if (!result.ok) {
     return { ...base, refusal: result.reason, declinedBecause: "refused" };
   }
-  const answers: Readonly<Record<string, JudgmentAnswer>> = result.answers;
+  return {
+    ...base,
+    model: result.model,
+    ...decideStaffPlan({
+      message: args.message,
+      answers: result.answers,
+      specs: args.specs,
+      isWrite: args.isWrite,
+    }),
+  };
+}
+
+export function decideStaffPlan(args: {
+  readonly message: string;
+  readonly answers: Readonly<Record<string, JudgmentAnswer>>;
+  readonly specs: readonly StaffJudgmentSpec[];
+  readonly isWrite: (spec: StaffJudgmentSpec) => boolean;
+}): StaffJudgmentDecision {
+  const answers = args.answers;
   const kindPick = pickedOf(answers[KIND_KEY]);
   const needsHistory = answers[NEEDS_HISTORY_KEY];
   const kind = isMessageKind(kindPick.choice) ? kindPick.choice : undefined;
   const withKind = {
-    ...base,
-    model: result.model,
     ...(kind === undefined ? {} : { kind }),
     kindConfidence: kindPick.confidence,
     ...(needsHistory?.type === "noul"
@@ -336,12 +374,12 @@ export async function planStaffTurn(args: {
     };
   });
   const taken = jobs.filter(
-    (job) => job.probability >= JUDGMENT_TAKE_THRESHOLD,
+    (job) => job.probability >= judgmentThresholdsOf(job.spec).take,
   );
   const doubted = jobs.filter(
     (job) =>
       job.probability >= JUDGMENT_DOUBT_THRESHOLD &&
-      job.probability < JUDGMENT_TAKE_THRESHOLD,
+      job.probability < judgmentThresholdsOf(job.spec).take,
   );
   const only = taken[0];
   if (only === undefined) {
@@ -350,11 +388,15 @@ export async function planStaffTurn(args: {
       declinedBecause: kind === "request" ? "no_job" : "not_a_request",
     };
   }
-  const planned = plannedCall(
-    only.spec,
-    answers,
-    Math.min(kindPick.confidence, Math.abs(only.probability - 0.5) * 2),
-  );
+  const thresholds = judgmentThresholdsOf(only.spec);
+  const planned = plannedCall(only.spec, answers, kindPick.confidence);
+  const call = {
+    ...planned.call,
+    minConfidence: Math.min(
+      planned.call.minConfidence,
+      Math.abs(only.probability - 0.5) * 2,
+    ),
+  };
   const declinedBecause: JudgmentDeclineReason | undefined =
     kind !== "request" || kindPick.confidence < JUDGMENT_TAKE_THRESHOLD
       ? "not_a_request"
@@ -366,7 +408,8 @@ export async function planStaffTurn(args: {
               (number) => !planned.usedNumbers.has(number),
             )
           ? "uncovered_value"
-          : planned.call.minConfidence < JUDGMENT_ARGUMENT_THRESHOLD
+          : only.probability < thresholds.act ||
+              planned.call.minConfidence < thresholds.argument
             ? "low_argument_confidence"
             : (only.spec.required ?? []).some((name) =>
                   isMissing(planned.call.input[name]),
@@ -377,7 +420,7 @@ export async function planStaffTurn(args: {
                 : undefined;
   return {
     ...withKind,
-    call: planned.call,
+    call,
     ...(declinedBecause === undefined ? {} : { declinedBecause }),
   };
 }

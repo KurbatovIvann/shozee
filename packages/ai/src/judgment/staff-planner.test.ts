@@ -5,7 +5,11 @@ import {
   type StaffJudgmentSpec,
 } from "../tool-facades/judgment-specs.js";
 import { judgmentShadowOf } from "./shadow.js";
-import { buildStaffPlanQuestions, planStaffTurn } from "./staff-planner.js";
+import {
+  buildStaffPlanQuestions,
+  decideStaffPlan,
+  planStaffTurn,
+} from "./staff-planner.js";
 import type {
   JudgmentProvider,
   JudgmentQuestions,
@@ -16,13 +20,14 @@ import type {
 const WRITES = new Set(["orders.create", "customers.createCustomer"]);
 const isWrite = (spec: StaffJudgmentSpec) => WRITES.has(spec.action);
 
-const choice = (value: string, confidence = 0.95) => ({
-  type: "choice",
-  choice: value,
-  confidence,
-  probabilities: {},
-});
-const yes = (probability: number) => ({ type: "noul", probability });
+const choice = (value: string, confidence = 0.95) =>
+  ({
+    type: "choice",
+    choice: value,
+    confidence,
+    probabilities: {},
+  }) as const;
+const yes = (probability: number) => ({ type: "noul", probability }) as const;
 
 function provider(overrides: Record<string, unknown>): JudgmentProvider {
   return {
@@ -172,6 +177,34 @@ describe("planStaffTurn", () => {
     ],
   ] as const)("declines with %s", async (reason, message, overrides) => {
     expect((await plan(message, overrides)).declinedBecause).toBe(reason);
+  });
+
+  it("holds a job it is not sure enough of to act on, by the spec's own thresholds", () => {
+    const answers = {
+      kind: choice("request"),
+      "job:orders_list_counts": yes(0.8),
+      "slot:period": choice("today", 0.65),
+    };
+    const decide = (thresholds: StaffJudgmentSpec["thresholds"]) =>
+      decideStaffPlan({
+        message: "Скільки замовлень сьогодні?",
+        answers,
+        specs: STAFF_JUDGMENT_SPECS.map((spec) =>
+          spec.tool === "orders_list_counts" && thresholds !== undefined
+            ? { ...spec, thresholds }
+            : spec,
+        ),
+        isWrite,
+      });
+    expect(decide(undefined).declinedBecause).toBe("low_argument_confidence");
+    expect(decide({ act: 0.75 }).declinedBecause).toBe(
+      "low_argument_confidence",
+    );
+    expect(
+      decide({ act: 0.75, argument: 0.6 }).declinedBecause,
+    ).toBeUndefined();
+    expect(decide({ take: 0.9 }).declinedBecause).toBe("no_job");
+    expect(decide(undefined).call?.minConfidence).toBeCloseTo(0.6, 9);
   });
 
   it("reports a refusal without a plan", async () => {
