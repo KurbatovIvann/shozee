@@ -150,7 +150,7 @@ idempotencySuite(
 );
 
 describe("companies.updateLegal", () => {
-  it("upserts legal info, returns it on get, replaces fields, and stores empty optionals as null", async () => {
+  it("upserts legal info, returns it on get, keeps omitted fields, and stores empty optionals as null", async () => {
     const identityBefore = await companyRow(kitIdentities.companies.a);
     const requestId = randomUUID();
     const created = await kit.invoke(
@@ -208,14 +208,14 @@ describe("companies.updateLegal", () => {
       id: created.legal?.id,
       companyType: "tov",
       legalName: "ТОВ Київські торти",
-      edrpou: null,
-      legalAddress: null,
+      edrpou: "12345678",
+      legalAddress: "вул. Хрещатик, 1",
       iban: replacedIban,
       bankName: "Ощадбанк",
       bankMfo: "300335",
-      bankEdrpou: null,
-      phone: null,
-      email: null,
+      bankEdrpou: "12345678",
+      phone: "+380501000001",
+      email: "office@kit.test",
     });
     expect(await countCompanyLegalRows(kitIdentities.companies.a)).toBe(1);
 

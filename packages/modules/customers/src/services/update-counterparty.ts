@@ -1,6 +1,7 @@
 import type { ActionCtx } from "@showzy/core";
 import { CoreInvariantError } from "@showzy/core/errors";
 import { counterparties } from "@showzy/db/schema/customers";
+import { keepOmitted } from "@showzy/module-kit/keep-omitted";
 import { and, eq } from "drizzle-orm";
 import type { z } from "zod";
 
@@ -28,12 +29,33 @@ export async function updateStaffCounterparty(env: {
 }): Promise<CounterpartyView> {
   const { ctx, input } = env;
   const db = requireWritable(ctx.db);
-  const fields = storedCounterpartyFields(input);
 
-  await lockTenantRow(db, counterparties, {
+  const current = await lockTenantRow(db, counterparties, {
     companyId: ctx.companyId,
     id: input.id,
-    columns: { id: counterparties.id },
+    columns: {
+      edrpou: counterparties.edrpou,
+      legalAddress: counterparties.legalAddress,
+      iban: counterparties.iban,
+      bankName: counterparties.bankName,
+      bankMfo: counterparties.bankMfo,
+      phone: counterparties.phone,
+      email: counterparties.email,
+      notes: counterparties.notes,
+      customerId: counterparties.customerId,
+    },
+  });
+  const fields = storedCounterpartyFields({
+    name: input.name,
+    edrpou: keepOmitted(input.edrpou, current.edrpou),
+    legalAddress: keepOmitted(input.legalAddress, current.legalAddress),
+    iban: keepOmitted(input.iban, current.iban),
+    bankName: keepOmitted(input.bankName, current.bankName),
+    bankMfo: keepOmitted(input.bankMfo, current.bankMfo),
+    phone: keepOmitted(input.phone, current.phone),
+    email: keepOmitted(input.email, current.email),
+    notes: keepOmitted(input.notes, current.notes),
+    customerId: keepOmitted(input.customerId, current.customerId),
   });
 
   const linkedCustomer =

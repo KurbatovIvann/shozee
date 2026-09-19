@@ -99,6 +99,16 @@ function variantPayloadFields(priceMinor: string | null): {
   return { basePriceMinor: priceMinor, currency: PRODUCT_CURRENCY };
 }
 
+function variantOverrideUpdateFields(priceMinor: string | null): {
+  readonly basePriceMinor: string | null;
+  readonly currency: typeof PRODUCT_CURRENCY | null;
+} {
+  if (priceMinor === null) {
+    return { basePriceMinor: null, currency: null };
+  }
+  return { basePriceMinor: priceMinor, currency: PRODUCT_CURRENCY };
+}
+
 export function createProductPayload(draft: ProductFormDraft): {
   readonly input: CreateProductPayload;
   readonly variantKeys: readonly string[];
@@ -173,7 +183,7 @@ export function remainingFormWrites(
         productId,
         variantId: variant.variantId,
         name: variant.name,
-        ...variantPayloadFields(variant.priceMinor),
+        ...variantOverrideUpdateFields(variant.priceMinor),
       },
     });
   }
@@ -181,8 +191,8 @@ export function remainingFormWrites(
 }
 
 function sameOptionalString(
-  left: string | undefined,
-  right: string | undefined,
+  left: string | null | undefined,
+  right: string | null | undefined,
 ): boolean {
   return left === right;
 }

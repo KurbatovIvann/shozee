@@ -13,6 +13,7 @@ import type {
 import {
   companyIdentityReturning,
   legalReturning,
+  namedLegalFields,
   storedLegalFields,
   toCompanyView,
 } from "./company-view.js";
@@ -40,7 +41,7 @@ export async function updateStaffLegal(env: {
       })
       .onConflictDoUpdate({
         target: companyLegalInfo.companyId,
-        set: fields,
+        set: namedLegalFields(input),
       })
       .returning(legalReturning)
   )[0];

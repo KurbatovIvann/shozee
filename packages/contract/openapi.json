@@ -4912,7 +4912,7 @@
     "/catalog/updateVariant": {
       "post": {
         "operationId": "catalog.updateVariant",
-        "summary": "Update the name and base-price override of a variant in the staff member's active company. Currency is UAH-only (MVP). The override pair is omitted to clear it and set together to replace it. Missing, foreign-company, or product-mismatched variants fail with the same not-found. Company id is never input. Re-submitting the identical payload with the same idempotency key returns the same view without a second write.",
+        "summary": "Update the name and base-price override of a variant in the staff member's active company. Currency is UAH-only (MVP). The override pair is omitted to keep the stored override, null together to clear it, and set together to replace it. Missing, foreign-company, or product-mismatched variants fail with the same not-found. Company id is never input. Re-submitting the identical payload with the same idempotency key returns the same view without a second write.",
         "requestBody": {
           "required": true,
           "content": {
@@ -4934,11 +4934,25 @@
                     "maxLength": 120
                   },
                   "basePriceMinor": {
-                    "type": "string",
-                    "pattern": "^(0|-?[1-9][0-9]*)$"
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^(0|-?[1-9][0-9]*)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "currency": {
-                    "const": "UAH"
+                    "anyOf": [
+                      {
+                        "const": "UAH"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -11763,7 +11777,7 @@
     "/companies/updateLegal": {
       "post": {
         "operationId": "companies.updateLegal",
-        "summary": "Upsert seller legal requisites for the staff member's active company (ФОП/ТОВ, legal name, ЄДРПОУ, address, IBAN/bank, document phone and email). Empty optional strings store null. Does not change the company's trade name, slug, or numbering prefix. Company id is never input. Re-submitting the identical payload with the same idempotency key returns the same view without a second legal row.",
+        "summary": "Upsert seller legal requisites for the staff member's active company (ФОП/ТОВ, legal name, ЄДРПОУ, address, IBAN/bank, document phone and email). Changes only the fields it names: once requisites exist, an omitted optional field keeps its stored value and an explicit null or empty string clears it; on the first save an omitted field is stored as null. Does not change the company's trade name, slug, or numbering prefix. Company id is never input. Re-submitting the identical payload with the same idempotency key returns the same view without a second legal row.",
         "requestBody": {
           "required": true,
           "content": {
@@ -23122,7 +23136,7 @@
     "/customers/updateCounterparty": {
       "post": {
         "operationId": "customers.updateCounterparty",
-        "summary": "Update a company counterparty in the staff member's active company. Replaces the legal name, requisites, and CRM customer link. Omitting or nulling optional fields clears them. Null customer id unlinks the counterparty (standalone). The linked customer may be active or archived. Missing counterparties and counterparties that belong to another company fail with the same not-found. Duplicate non-null EDRPOU in the company is a conflict. Company id is never input. Re-submitting the identical payload with the same idempotency key returns the same view without a second write.",
+        "summary": "Update a company counterparty in the staff member's active company. Changes only the fields it names: an omitted field keeps its stored value and an explicit null clears it. Null customer id unlinks the counterparty (standalone). The linked customer may be active or archived. Missing counterparties and counterparties that belong to another company fail with the same not-found. Duplicate non-null EDRPOU in the company is a conflict. Company id is never input. Re-submitting the identical payload with the same idempotency key returns the same view without a second write.",
         "requestBody": {
           "required": true,
           "content": {
@@ -24044,7 +24058,7 @@
     "/customers/updateCustomer": {
       "post": {
         "operationId": "customers.updateCustomer",
-        "summary": "Update a CRM customer in the staff member's active company. Replaces name, contacts, notes, and group/price-list assignments. At least one of phone, email, or userId must remain. Empty group or price-list assignment means inherit. Missing customers and customers that belong to another company fail with the same not-found. Archived customers may be edited; status is not changed. Company id and status are never input. Re-submitting the identical payload with the same idempotency key returns the same view without a second write.",
+        "summary": "Update a CRM customer in the staff member's active company. Changes only the fields it names: an omitted field keeps its stored value and an explicit null clears it. At least one of phone, email, or userId must remain on the stored customer. A null group or price-list assignment means inherit. Missing customers and customers that belong to another company fail with the same not-found. Archived customers may be edited; status is not changed. Company id and status are never input. Re-submitting the identical payload with the same idempotency key returns the same view without a second write.",
         "requestBody": {
           "required": true,
           "content": {
@@ -24904,7 +24918,7 @@
     "/customers/updateGroup": {
       "post": {
         "operationId": "customers.updateGroup",
-        "summary": "Update the name, description, and price-list assignment of a customer group in the staff member's active company. The slug stays the previous value. Omitting or nulling the price list returns the group to inherit the company default. Missing groups and groups that belong to another company fail with the same not-found. Company id is never input. Re-submitting the identical payload with the same idempotency key returns the same view without a second write.",
+        "summary": "Update the name, description, and price-list assignment of a customer group in the staff member's active company. The slug stays the previous value. Changes only the fields it names: an omitted description or price list keeps its stored value and an explicit null clears it. A null price list returns the group to inherit the company default. Missing groups and groups that belong to another company fail with the same not-found. Company id is never input. Re-submitting the identical payload with the same idempotency key returns the same view without a second write.",
         "requestBody": {
           "required": true,
           "content": {
@@ -24922,8 +24936,15 @@
                     "maxLength": 120
                   },
                   "description": {
-                    "type": "string",
-                    "maxLength": 2000
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 2000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "priceListId": {
                     "anyOf": [

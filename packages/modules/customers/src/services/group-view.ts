@@ -29,7 +29,7 @@ export function toGroupView(
 }
 
 export function storedDescription(
-  description: string | undefined,
+  description: string | null | undefined,
 ): string | null {
   return description === undefined || description === "" ? null : description;
 }

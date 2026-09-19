@@ -21,7 +21,13 @@ export async function updateStaffVariant(env: {
 }): Promise<VariantView> {
   const { ctx, input } = env;
   const db = requireWritable(ctx.db);
-  const price = variantPriceFields(input);
+  const price =
+    input.basePriceMinor === undefined
+      ? {}
+      : variantPriceFields({
+          basePriceMinor: input.basePriceMinor ?? undefined,
+          currency: input.currency ?? undefined,
+        });
 
   const existing = (
     await db
@@ -44,11 +50,7 @@ export async function updateStaffVariant(env: {
   const updated = (
     await db
       .update(productVariants)
-      .set({
-        name: input.name,
-        basePriceMinor: price.basePriceMinor,
-        currency: price.currency,
-      })
+      .set({ name: input.name, ...price })
       .where(
         and(
           eq(productVariants.companyId, ctx.companyId),
