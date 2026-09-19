@@ -152,7 +152,9 @@ fallback, never use `jev-latest`.
   rewrite it as a self-contained request and the planner plans from that. The
   rewrite is never shown, stored or given to the reply model; a plan made from
   it must be grounded (`isRewriteGrounded`: its names and numbers occur in the
-  conversation). Never rewrite talk — praise after a create was rewritten into
+  conversation). Where the rewrite only adds words to an argument the original
+  message states ("каті" → "каті самбуки"), the typed value stands
+  (`keepingWhatWasTyped`): the module asks which one. Never rewrite talk — praise after a create was rewritten into
   the create. The whole stage has one three-second deadline, and inside a
   conversation the rewrite starts beside the first request and is aborted when
   it is not needed (live latencies did not fit a sequential stage). The rewrite prompt,
@@ -178,7 +180,9 @@ fallback, never use `jev-latest`.
   planner and, for a confident read whose spec has a `reply` line, emits the
   tool call itself (`providerMetadata.showzy.decidedBy = "judgment"`, which the
   stored history keeps); on the step after that result it emits the spec's
-  line and stops. Everything else — a write, a doubt, a refusal, a throw, a
+  line and stops — also on a continued turn (`continues: true`: after a tap or
+  a confirmation it plans nothing and only says the line for a call the
+  judgment made). Everything else — a write, a doubt, a refusal, a throw, a
   tool result that is an error — is the reply model's `doStream`, untouched.
   A spec gets a `reply` line only when its tool's result has a card
   (`cascade-model.test.ts` pins that against the surface registry). `report()`
