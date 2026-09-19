@@ -128,6 +128,63 @@ describe("planStaffTurnInContext", () => {
     expect(result.declinedBecause).toBeUndefined();
   });
 
+  it("keeps the customer as typed when the rewrite only extends it from the conversation", async () => {
+    const typed = "Каті 2 макаронси";
+    const extended = "Створи замовлення для Каті Самбуки: 2 макаронси";
+    const order = (customer: string) => ({
+      "job:orders_create": yes(0.95),
+      "slot:customerName": choice(customer),
+      "item:1:product": choice("макаронси"),
+      "item:1:quantity": choice("2"),
+    });
+    const { result } = await plan({
+      message: typed,
+      rewrite: extended,
+      exchanges: [
+        {
+          user: "Каті Самбуці 6 макаронсів лимон",
+          assistant: "Створив замовлення для Каті Самбуки.",
+        },
+      ],
+      answers: {
+        [typed]: { needsHistory: yes(0.53), ...order("каті") },
+        [extended]: order("каті самбуки"),
+      },
+    });
+    expect(result.rewriteUsed).toBe(true);
+    expect(result.call?.input["customerQuery"]).toBe("каті");
+    expect(result.call?.args["customerQuery"]).toBe("каті");
+    expect(result.declinedBecause).toBeUndefined();
+  });
+
+  it("lets the rewrite name the customer a pronoun stood for", async () => {
+    const typed = "Їй ще 2 лате";
+    const resolved = "Створи замовлення для Олени Петренко: 2 лате";
+    const { result } = await plan({
+      message: typed,
+      rewrite: resolved,
+      exchanges: [
+        { user: "Знайди Олену Петренко", assistant: "Ось Олена Петренко." },
+      ],
+      answers: {
+        [typed]: {
+          needsHistory: yes(0.9),
+          "job:orders_create": yes(0.9),
+          "slot:customerName": choice("їй"),
+          "item:1:product": choice("лате"),
+          "item:1:quantity": choice("2"),
+        },
+        [resolved]: {
+          "job:orders_create": yes(0.95),
+          "slot:customerName": choice("олени петренко"),
+          "item:1:product": choice("лате"),
+          "item:1:quantity": choice("2"),
+        },
+      },
+    });
+    expect(result.call?.input["customerQuery"]).toBe("олени петренко");
+  });
+
   it("keeps the original plan for a message that stands alone", async () => {
     const message = "Скільки нових замовлень сьогодні?";
     const { result, asked } = await plan({

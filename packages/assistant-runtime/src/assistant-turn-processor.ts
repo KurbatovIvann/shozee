@@ -374,13 +374,11 @@ export function createAssistantTurnProcessor(
       }
 
       reachedModel = true;
-      const cascade =
-        found.turn.kind === "chat"
-          ? deps.judgmentCascade?.forTurn({
-              reply: deps.runtime.model,
-              signal: controller.signal,
-            })
-          : undefined;
+      const cascade = deps.judgmentCascade?.forTurn({
+        reply: deps.runtime.model,
+        signal: controller.signal,
+        continues: found.turn.kind !== "chat",
+      });
       const shadowing =
         found.turn.kind === "chat" && cascade === undefined
           ? deps.judgmentShadow?.begin({

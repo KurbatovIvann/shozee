@@ -86,6 +86,12 @@ the gate model only when the message does not depend on the conversation
 is small talk by kind and a write by meaning: the gate model created an order
 from it. Such a turn goes to the reply model.
 
+**Amended 2026-09-19 (live finding):** a continued turn (after a person's
+tap or a confirmation) runs on the cascade too, which plans nothing there and
+only says the spec's line when the finished call is one the judgment made.
+Live, the reply model continued such a turn and asked which Катя was meant
+under the card of the order already created.
+
 ## Alternatives considered
 
 - **Preview-and-confirm first** (the proposing agent's recommendation).

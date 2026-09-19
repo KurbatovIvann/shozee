@@ -2,6 +2,7 @@ import type { LanguageModel } from "ai";
 
 import type { StaffJudgmentSpec } from "../tool-facades/judgment-specs.js";
 import {
+  isExtensionOfTyped,
   isRewriteGrounded,
   rewriteWithConversation,
   type JudgmentExchange,
@@ -10,6 +11,7 @@ import {
   JUDGMENT_NEEDS_HISTORY_THRESHOLD,
   planStaffTurn,
   type StaffJudgmentPlan,
+  type StaffJudgmentPlannedCall,
 } from "./staff-planner.js";
 import type { JudgmentProvider } from "./types.js";
 
@@ -18,6 +20,29 @@ export const JUDGMENT_STAGE_DEADLINE_MS = 3000;
 export interface StaffJudgmentStagedPlan extends StaffJudgmentPlan {
   readonly rewriteUsed: boolean;
   readonly rewriteAttempted: boolean;
+}
+
+function keepingWhatWasTyped(
+  typed: StaffJudgmentPlannedCall | undefined,
+  made: StaffJudgmentPlannedCall,
+): StaffJudgmentPlannedCall {
+  if (typed?.tool !== made.tool) {
+    return made;
+  }
+  const input: Record<string, unknown> = { ...made.input };
+  const args = { ...made.args };
+  for (const [name, value] of Object.entries(typed.input)) {
+    const extended = made.input[name];
+    if (
+      typeof value === "string" &&
+      typeof extended === "string" &&
+      isExtensionOfTyped(value, extended)
+    ) {
+      input[name] = value;
+      args[name] = value;
+    }
+  }
+  return { ...made, input, args };
 }
 
 const isTalk = (plan: StaffJudgmentPlan): boolean =>
@@ -104,6 +129,9 @@ export async function planStaffTurnInContext(args: {
     });
   return {
     ...second,
+    ...(second.call === undefined
+      ? {}
+      : { call: keepingWhatWasTyped(first.call, second.call) }),
     latencyMs: Math.round(now() - startedAt),
     ...(first.needsHistory === undefined
       ? {}

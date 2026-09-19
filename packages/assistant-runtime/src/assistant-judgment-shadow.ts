@@ -145,6 +145,7 @@ export interface AssistantJudgmentCascade {
   forTurn(args: {
     readonly reply: LanguageModel;
     readonly signal: AbortSignal;
+    readonly continues: boolean;
   }): AssistantJudgmentCascadeTurn;
 }
 
@@ -160,7 +161,7 @@ export function createAssistantJudgmentCascade(deps: {
     risk.get(spec.action) !== "read";
 
   return {
-    forTurn({ reply, signal }) {
+    forTurn({ reply, signal, continues }) {
       const cascade = createStaffCascadeModel({
         reply,
         gate: deps.gateModel,
@@ -169,6 +170,7 @@ export function createAssistantJudgmentCascade(deps: {
         specs: STAFF_JUDGMENT_SPECS,
         isWrite,
         signal,
+        continues,
       });
       return {
         model: cascade.model,

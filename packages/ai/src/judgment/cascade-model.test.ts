@@ -369,6 +369,82 @@ describe("createStaffCascadeModel", () => {
   });
 });
 
+describe("a continued turn", () => {
+  const continued = async (decidedByJudgment: boolean) => {
+    const reply = replyModel("Відповідь Sonnet.");
+    const cascade = createStaffCascadeModel({
+      reply,
+      gate: undefined,
+      provider: judgment({}),
+      rewriteModel: undefined,
+      specs: STAFF_JUDGMENT_SPECS,
+      isWrite,
+      continues: true,
+    });
+    const result = streamText({
+      model: cascade.model,
+      messages: [
+        { role: "user", content: "Каті 2 макаронси" },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "tool-call",
+              toolCallId: "call-1",
+              toolName: "orders_create",
+              input: { customerQuery: "каті", items: [] },
+              ...(decidedByJudgment
+                ? {
+                    providerOptions: {
+                      showzy: { decidedBy: "judgment", model: "jev-test-1" },
+                    },
+                  }
+                : {}),
+            },
+          ],
+        },
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "call-1",
+              toolName: "orders_create",
+              output: { type: "json", value: { orderNumber: "CO-1" } },
+            },
+          ],
+        },
+      ],
+    });
+    await result.consumeStream();
+    return {
+      text: await result.text,
+      replyCalls: reply.doStreamCalls.length,
+      report: cascade.report(),
+    };
+  };
+
+  it("says the fixed line after a person's tap finished a call the judgment made", async () => {
+    const turn = await continued(true);
+    expect(turn.text).toBe("Створив замовлення.");
+    expect(turn.replyCalls).toBe(0);
+    expect(turn.report).toMatchObject({
+      tier: "judgment",
+      toolLoopModelCalled: false,
+    });
+    expect(turn.report.plan).toBeUndefined();
+  });
+
+  it("leaves a call the reply model made to the reply model, and plans nothing", async () => {
+    const turn = await continued(false);
+    expect(turn.text).toBe("Відповідь Sonnet.");
+    expect(turn.report).toMatchObject({
+      tier: "reply",
+      toolLoopModelCalled: true,
+    });
+  });
+});
+
 describe("judgment specs the cascade may take", () => {
   it("have a reply line only for a tool whose result has a card", () => {
     const withCard = new Set(

@@ -82,6 +82,16 @@ function isGroundedWord(word: string, source: readonly string[]): boolean {
   );
 }
 
+export function isExtensionOfTyped(typed: string, made: string): boolean {
+  const madeWords = wordsOf(made);
+  const typedWords = wordsOf(typed);
+  return (
+    typedWords.length > 0 &&
+    typedWords.length < madeWords.length &&
+    typedWords.every((word) => isGroundedWord(word, madeWords))
+  );
+}
+
 function spokenValues(
   spec: StaffJudgmentSpec,
   args: Readonly<Record<string, JudgmentShadowArgValue>>,

@@ -89,6 +89,13 @@ shadow phase first, behind a mode switch.**
    output is planned by a second judgment request under ADR-0044's take rules
    unchanged, plus one guard: every name and number the plan takes from the
    rewrite must occur in the conversation, or the step delegates.
+   **Amended 2026-09-19 (live finding):** the rewrite may add what the
+   message left out, never extend what it states. Live, "Каті 2 макаронси"
+   was rewritten with "Каті Самбуки" from the conversation and the order was
+   planned for her, though the company has two customers called Катя. When
+   the plan from the original message states a text argument and the plan
+   from the rewrite only adds words to it, the typed value stands and the
+   owning module asks which one.
 4. **The rewrite is invisible.** It is never shown, never stored as the
    person's message, and never given to the reply model: a delegated turn
    runs on the real history exactly as today. No model output is parsed for a

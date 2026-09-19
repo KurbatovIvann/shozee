@@ -182,11 +182,12 @@ export function createStaffCascadeModel(args: {
   readonly rewriteModel: LanguageModel | undefined;
   readonly specs: readonly StaffJudgmentSpec[];
   readonly isWrite: (spec: StaffJudgmentSpec) => boolean;
+  readonly continues?: boolean;
   readonly signal?: AbortSignal;
 }): StaffCascadeModel {
   let plan: StaffJudgmentStagedPlan | undefined;
-  let planned = false;
-  let taken = false;
+  let planned = args.continues === true;
+  let taken = args.continues === true;
   let tier: JudgmentTier | undefined;
   let askedIn = "";
   const gate =
@@ -215,8 +216,16 @@ export function createStaffCascadeModel(args: {
       const answered = judgmentCallAwaitingReply(params.prompt);
       const answeredSpec = args.specs.find((spec) => spec.tool === answered);
       if (taken && answeredSpec?.reply !== undefined) {
+        tier ??= "judgment";
         const id = `text_${randomUUID()}`;
-        const line = isUkrainian(askedIn)
+        const said =
+          askedIn === ""
+            ? params.prompt
+                .filter((entry) => entry.role === "user")
+                .map(textOf)
+                .join(" ")
+            : askedIn;
+        const line = isUkrainian(said)
           ? answeredSpec.reply.uk
           : answeredSpec.reply.en;
         return streamOf([
