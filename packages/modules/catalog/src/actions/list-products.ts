@@ -7,10 +7,13 @@ import {
 } from "@showzy/db/schema/catalog";
 import { moneyToCanonical } from "@showzy/module-kit/canonical";
 import { parseDbEnum } from "@showzy/module-kit/parse-db-enum";
+import {
+  listNameSearch,
+  pickListNameSearch,
+} from "@showzy/module-kit/name-match";
 import { paginate } from "@showzy/validation/pagination";
 import { and, count, desc, eq, inArray, lt, or } from "drizzle-orm";
 
-import { productListSearchPredicate } from "../services/product-list-search.js";
 import { productStatusSchema } from "../wire.contract.js";
 import {
   formatListProductsCursor,
@@ -44,13 +47,31 @@ function compareMediaPosition(
 
 export const listProducts = implementAction(listProductsContract, {
   handler: async (input, ctx) => {
-    const searchPredicate =
+    const search =
       input.query === undefined
         ? undefined
-        : productListSearchPredicate(input.query);
-    if (input.query !== undefined && searchPredicate === undefined) {
+        : listNameSearch(
+            { name: products.name, nameFts: products.nameFts },
+            input.query,
+          );
+    if (input.query !== undefined && search === undefined) {
       return { items: [], nextCursor: null };
     }
+    const scope = and(
+      eq(products.companyId, ctx.companyId),
+      input.status === "all" ? undefined : eq(products.status, input.status),
+    );
+    const searchPredicate =
+      search === undefined
+        ? undefined
+        : await pickListNameSearch(search, async (strict) => {
+            const found = await ctx.db
+              .select({ id: products.id })
+              .from(products)
+              .where(and(scope, strict))
+              .limit(1);
+            return found.length > 0;
+          });
 
     const cursor =
       input.cursor === undefined
@@ -84,16 +105,7 @@ export const listProducts = implementAction(listProductsContract, {
         updatedAt: products.updatedAt,
       })
       .from(products)
-      .where(
-        and(
-          eq(products.companyId, ctx.companyId),
-          input.status === "all"
-            ? undefined
-            : eq(products.status, input.status),
-          searchPredicate,
-          cursorPredicate,
-        ),
-      )
+      .where(and(scope, searchPredicate, cursorPredicate))
       .orderBy(desc(products.createdAt), desc(products.id))
       .limit(input.limit + 1);
 

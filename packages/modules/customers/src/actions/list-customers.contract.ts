@@ -6,12 +6,6 @@
  *   offset. `limit` defaults to 20 and caps at 50.
  * - Cursor payload is `updatedAt|id` (ISO datetime, then uuid).
  * - `status` defaults to `active`; `archived` and `all` are explicit.
- * - Search is optional, max 100. Name is token-AND of `nameSearchStems`
- *   as word-prefix `ilike` (SHO-396 / SHO-398); phone and email stay
- *   full-string contains. The row matches name-AND OR phone OR email.
- *   LIKE metacharacters `%`, `_`, and `\\` in the query are stripped so
- *   they cannot widen or escape the match; a query that strips to empty
- *   returns no rows.
  * - Optional `groupId`: own-tenant membership only. Missing and
  *   other-tenant group ids yield an empty page (no existence leak), not
  *   not-found.
@@ -84,7 +78,7 @@ export const listCustomersOutputSchema = z.object({
 export const listCustomersContract = defineActionContract({
   name: "customers.listCustomers",
   description:
-    "List CRM customers in the staff member's active company. Default to active customers; pass status archived or all to include archived rows. Optional case-insensitive search: name matches every token stem (Ukrainian inflections); phone and email stay full-string contains. Optional group filter returns an empty page for a missing or foreign group. Paginate with an updated-at/id cursor and a page size of at most 50. Each row is the customer view (id, name, contacts, notes, group and price-list assignments, status, linked counterparty count, timestamps). Company id is never input. Does not return order counts.",
+    "List CRM customers in the staff member's active company. Default to active customers; pass status archived or all to include archived rows. Optional search by name: every word of the query must start a word of the name, Ukrainian inflections included; when nothing matches, names within a typo of the query match instead. Phone and email match as a substring. Optional group filter returns an empty page for a missing or foreign group. Paginate with an updated-at/id cursor and a page size of at most 50. Each row is the customer view (id, name, contacts, notes, group and price-list assignments, status, linked counterparty count, timestamps). Company id is never input. Does not return order counts.",
   principal: "staff",
   transport: "client",
   input: listCustomersInputSchema,

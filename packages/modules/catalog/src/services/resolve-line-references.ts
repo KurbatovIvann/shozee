@@ -1,20 +1,30 @@
 import type { ActionCtx } from "@showzy/core";
 import { CoreInvariantError, NotFoundError } from "@showzy/core/errors";
 import { products, productVariants } from "@showzy/db/schema/catalog";
+import { referenceNameSearch } from "@showzy/module-kit/name-match";
 import { uniqueIds } from "@showzy/module-kit/unique-ids";
 import {
-  candidatesContainingQuery,
+  fieldContainsQuery,
+  isInflectionOfName,
   normalizeReferenceQuery,
-  pickUniqueNormalizedMatch,
+  normalizeUniqueMatchQuery,
+  pickUniqueReferenceMatch,
   type EntityRef,
   type UniqueMatchResult,
 } from "@showzy/validation/entity-ref";
+import { sanitizeLikeLiteral } from "@showzy/validation/pagination";
 import {
-  likeContainsPattern,
-  sanitizeLikeLiteral,
-} from "@showzy/validation/pagination";
-import { and, asc, eq, ilike, inArray, or, type SQL } from "drizzle-orm";
-import { unionAll } from "drizzle-orm/pg-core";
+  and,
+  asc,
+  eq,
+  ilike,
+  inArray,
+  notExists,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
+import { alias, unionAll } from "drizzle-orm/pg-core";
 
 import {
   VARIANT_SELECTION_OPTIONS_MAX,
@@ -86,6 +96,11 @@ function orIlike(
   }
   return or(...parts);
 }
+
+type ProductQueryCandidates = {
+  readonly exact: readonly ProductCandidate[];
+  readonly byQuery: ReadonlyMap<string, readonly ProductCandidate[]>;
+};
 
 function mergeProductCandidates(
   primary: readonly ProductCandidate[],
@@ -307,26 +322,45 @@ async function loadProductsByExactQuery(
     );
 }
 
-async function loadProductsByContainsQuery(
+async function loadProductsByNameSearch(
   db: StaffDb,
   companyId: string,
   queries: readonly string[],
   status: ProductLifecycleStatus,
-): Promise<ProductCandidate[]> {
-  const selects = queries.flatMap((query) => {
-    const pattern = likeContainsPattern(normalizeReferenceQuery(query));
-    if (pattern === undefined) {
+): Promise<ReadonlyMap<string, readonly ProductCandidate[]>> {
+  const probe = alias(products, "strict_probe");
+  const selects = queries.flatMap((query, queryIndex) => {
+    const search = referenceNameSearch(
+      { name: products.name, nameFts: products.nameFts },
+      query,
+    );
+    const probeSearch = referenceNameSearch(
+      { name: probe.name, nameFts: probe.nameFts },
+      query,
+    );
+    if (search === undefined || probeSearch === undefined) {
       return [];
     }
+    const strictFindsNothing = notExists(
+      db
+        .select({ id: probe.id })
+        .from(probe)
+        .where(and(eq(probe.companyId, companyId), probeSearch.strict)),
+    );
     return [
       db
-        .select(productCandidateColumns)
+        .select({
+          ...productCandidateColumns,
+          queryIndex: sql<number>`${queryIndex}::int`.as("query_index"),
+        })
         .from(products)
         .where(
           and(
             eq(products.companyId, companyId),
             eq(products.status, status),
-            ilike(products.name, pattern),
+            search.canRelax
+              ? and(search.relaxed, or(search.strict, strictFindsNothing))
+              : search.strict,
           ),
         )
         .orderBy(asc(products.name), asc(products.id))
@@ -335,13 +369,22 @@ async function loadProductsByContainsQuery(
   });
   const first = selects[0];
   if (first === undefined) {
-    return [];
+    return new Map();
   }
   const second = selects[1];
-  if (second === undefined) {
-    return await first;
+  const rows =
+    second === undefined
+      ? await first
+      : await unionAll(first, second, ...selects.slice(2));
+  const byQuery = new Map<string, ProductCandidate[]>();
+  for (const { queryIndex, ...row } of rows) {
+    const query = queries[queryIndex];
+    if (query === undefined) {
+      continue;
+    }
+    byQuery.set(query, [...(byQuery.get(query) ?? []), row]);
   }
-  return await unionAll(first, second, ...selects.slice(2));
+  return byQuery;
 }
 
 async function loadVariantsForProducts(
@@ -383,12 +426,25 @@ function uniqueArchivedSubject(
   return undefined;
 }
 
+function candidatesForQuery(
+  query: string,
+  exactPool: readonly ProductCandidate[],
+  byQuery: ReadonlyMap<string, readonly ProductCandidate[]>,
+): ProductCandidate[] {
+  const normalized = normalizeReferenceQuery(query);
+  const needle = normalizeUniqueMatchQuery(query);
+  return mergeProductCandidates(
+    exactPool.filter((row) => normalizeUniqueMatchQuery(row.name) === needle),
+    byQuery.get(normalized) ?? [],
+  );
+}
+
 function resolveProductRef(
   ref: EntityRef,
   lineIndex: number,
   byId: ReadonlyMap<string, ProductCandidate>,
-  activeQueryCandidates: readonly ProductCandidate[],
-  archivedQueryCandidates: readonly ProductCandidate[],
+  active: ProductQueryCandidates,
+  archived: ProductQueryCandidates,
 ): ProductCandidate {
   if (ref.by === "id") {
     const row = byId.get(ref.id);
@@ -397,15 +453,11 @@ function resolveProductRef(
     }
     return row;
   }
-  const activeScoped = candidatesContainingQuery(
+  const activePicked = pickUniqueReferenceMatch(
     ref.value,
-    activeQueryCandidates,
+    candidatesForQuery(ref.value, active.exact, active.byQuery),
     (row) => [row.name],
-  );
-  const activePicked = pickUniqueNormalizedMatch(
-    ref.value,
-    activeScoped,
-    (row) => [row.name],
+    (row) => row.name,
   );
   if (activePicked.kind === "unique") {
     return activePicked.row;
@@ -417,15 +469,11 @@ function resolveProductRef(
       optionsSource: activePicked.rows,
     });
   }
-  const archivedScoped = candidatesContainingQuery(
+  const archivedPicked = pickUniqueReferenceMatch(
     ref.value,
-    archivedQueryCandidates,
+    candidatesForQuery(ref.value, archived.exact, archived.byQuery),
     (row) => [row.name],
-  );
-  const archivedPicked = pickUniqueNormalizedMatch(
-    ref.value,
-    archivedScoped,
-    (row) => [row.name],
+    (row) => row.name,
   );
   if (archivedPicked.kind === "none") {
     throw new NotFoundError();
@@ -465,12 +513,17 @@ function resolveReferencedVariant(
       clientMessage: noActiveVariantsMessage(product.name),
     });
   }
-  const scoped = candidatesContainingQuery(ref.value, active, (row) => [
-    row.name,
-  ]);
-  const picked = pickUniqueNormalizedMatch(ref.value, scoped, (row) => [
-    row.name,
-  ]);
+  const scoped = active.filter(
+    (row) =>
+      fieldContainsQuery(row.name, ref.value) ||
+      isInflectionOfName(ref.value, row.name),
+  );
+  const picked = pickUniqueReferenceMatch(
+    ref.value,
+    scoped,
+    (row) => [row.name],
+    (row) => row.name,
+  );
   if (picked.kind === "none") {
     throwVariantSelectionConflict({
       reason: "unmatched_query",
@@ -490,6 +543,82 @@ function resolveReferencedVariant(
     });
   }
   return picked.row;
+}
+
+export const PRODUCT_VARIANT_SPLIT_WORDS_MAX = 5;
+
+export interface ProductVariantSplit {
+  readonly product: string;
+  readonly variant: string;
+}
+
+export function productVariantSplits(
+  query: string,
+): readonly ProductVariantSplit[] {
+  const words = normalizeReferenceQuery(query).split(" ");
+  if (words.length < 2 || words.length > PRODUCT_VARIANT_SPLIT_WORDS_MAX) {
+    return [];
+  }
+  return words.slice(1).flatMap((_, index) => {
+    const head = words.slice(0, index + 1).join(" ");
+    const tail = words.slice(index + 1).join(" ");
+    return [
+      { product: head, variant: tail },
+      { product: tail, variant: head },
+    ];
+  });
+}
+
+function uniqueVariantByQuery(
+  query: string,
+  active: readonly VariantCandidate[],
+): VariantCandidate | undefined {
+  const picked = pickUniqueReferenceMatch(
+    query,
+    active.filter(
+      (row) =>
+        fieldContainsQuery(row.name, query) ||
+        isInflectionOfName(query, row.name),
+    ),
+    (row) => [row.name],
+    (row) => row.name,
+  );
+  return picked.kind === "unique" ? picked.row : undefined;
+}
+
+function resolveProductNamingItsVariant(
+  query: string,
+  candidates: ProductQueryCandidates,
+  variants: readonly VariantCandidate[],
+): ResolvedLineReference | undefined {
+  const hits = new Map<string, ResolvedLineReference>();
+  for (const split of productVariantSplits(query)) {
+    const product = pickUniqueReferenceMatch(
+      split.product,
+      candidatesForQuery(split.product, candidates.exact, candidates.byQuery),
+      (row) => [row.name],
+      (row) => row.name,
+    );
+    if (product.kind !== "unique") {
+      continue;
+    }
+    const variant = uniqueVariantByQuery(
+      split.variant,
+      variants.filter(
+        (row) => row.productId === product.row.id && row.status === "active",
+      ),
+    );
+    if (variant !== undefined) {
+      hits.set(`${product.row.id}:${variant.id}`, {
+        productId: product.row.id,
+        productName: product.row.name,
+        variantId: variant.id,
+        variantName: variant.name,
+      });
+    }
+  }
+  const only = [...hits.values()];
+  return only.length === 1 ? only[0] : undefined;
 }
 
 export type ExpectedLineResolutionFailure =
@@ -609,7 +738,7 @@ export async function resolveCatalogLineReferences(args: {
     ),
   );
 
-  const [idRows, exactActive, containsActive, exactArchived, containsArchived] =
+  const [idRows, exactActive, searchActive, exactArchived, searchArchived] =
     await Promise.all([
       loadProductsById(args.db, args.companyId, productIds),
       loadProductsByExactQuery(
@@ -618,7 +747,7 @@ export async function resolveCatalogLineReferences(args: {
         productQueries,
         "active",
       ),
-      loadProductsByContainsQuery(
+      loadProductsByNameSearch(
         args.db,
         args.companyId,
         productQueries,
@@ -630,7 +759,7 @@ export async function resolveCatalogLineReferences(args: {
         productQueries,
         "archived",
       ),
-      loadProductsByContainsQuery(
+      loadProductsByNameSearch(
         args.db,
         args.companyId,
         productQueries,
@@ -638,10 +767,9 @@ export async function resolveCatalogLineReferences(args: {
       ),
     ]);
   const byId = new Map(idRows.map((row) => [row.id, row]));
-  const activeQueryRows = mergeProductCandidates(exactActive, containsActive);
-  const archivedQueryRows = mergeProductCandidates(
-    exactArchived,
-    containsArchived,
+  const activeQueryRows = mergeProductCandidates(
+    exactActive,
+    [...searchActive.values()].flat(),
   );
   const sellableProducts = mergeProductCandidates(idRows, activeQueryRows);
   const variants = await loadVariantsForProducts(
@@ -650,21 +778,75 @@ export async function resolveCatalogLineReferences(args: {
     uniqueIds(sellableProducts.map((row) => row.id)),
   );
 
+  const unfoundQueries = uniqueIds(
+    args.lines.flatMap((line) =>
+      line.product.by === "query" &&
+      variantSelectionOf(line).kind === "unspecified" &&
+      candidatesForQuery(line.product.value, exactActive, searchActive)
+        .length === 0 &&
+      candidatesForQuery(line.product.value, exactArchived, searchArchived)
+        .length === 0
+        ? [line.product.value]
+        : [],
+    ),
+  );
+  const splitProductQueries = uniqueIds(
+    unfoundQueries.flatMap((query) =>
+      productVariantSplits(query).map((split) => split.product),
+    ),
+  );
+  const [splitExact, splitSearch] =
+    splitProductQueries.length === 0
+      ? [[], new Map<string, readonly ProductCandidate[]>()]
+      : await Promise.all([
+          loadProductsByExactQuery(
+            args.db,
+            args.companyId,
+            splitProductQueries,
+            "active",
+          ),
+          loadProductsByNameSearch(
+            args.db,
+            args.companyId,
+            splitProductQueries,
+            "active",
+          ),
+        ]);
+  const splitVariants = await loadVariantsForProducts(
+    args.db,
+    args.companyId,
+    uniqueIds(
+      mergeProductCandidates(splitExact, [...splitSearch.values()].flat()).map(
+        (row) => row.id,
+      ),
+    ),
+  );
+
   const resolved: Array<ResolvedLineReference | undefined> = args.lines.map(
-    () => undefined,
+    (line) =>
+      line.product.by === "query" && unfoundQueries.includes(line.product.value)
+        ? resolveProductNamingItsVariant(
+            line.product.value,
+            { exact: splitExact, byQuery: splitSearch },
+            splitVariants,
+          )
+        : undefined,
   );
   let firstTerminal:
     NotFoundError | ReferenceResolutionConflictError | undefined;
   let firstPicker: ReferenceResolutionConflictError | undefined;
 
   for (const [index, line] of args.lines.entries()) {
+    if (resolved[index] !== undefined) {
+      continue;
+    }
     try {
       const product = resolveProductRef(
         line.product,
         index,
         byId,
-        activeQueryRows,
-        archivedQueryRows,
+        { exact: exactActive, byQuery: searchActive },
+        { exact: exactArchived, byQuery: searchArchived },
       );
       resolved[index] = resolveLineVariant(line, index, product, variants);
     } catch (error) {

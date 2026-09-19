@@ -14,6 +14,7 @@
  * Additive in this slice: the routes still use the Redis lease and receipts
  * until the switch (SHO-563).
  */
+import type { JudgmentShadow } from "@showzy/validation/assistant-judgment";
 import { createHash } from "node:crypto";
 
 import {
@@ -293,6 +294,7 @@ export interface AssistantTurnStore {
   finish(
     ref: AssistantTurnRef,
     status: "done" | "failed" | "interrupted",
+    judgmentShadow?: JudgmentShadow,
   ): Promise<
     | {
         readonly outcome: "finished";
@@ -492,10 +494,14 @@ export function createPostgresAssistantTurnStore(
         : { outcome: "not_queued", status: started.status };
     },
 
-    finish: async (ref, status) => {
+    finish: async (ref, status, judgmentShadow) => {
       const finished = await executeAction(deps.pipeline, {
         action: finishTurn,
-        input: { ...identityOf(ref), status },
+        input: {
+          ...identityOf(ref),
+          status,
+          ...(judgmentShadow === undefined ? {} : { judgmentShadow }),
+        },
         ...call,
       });
       return finished.outcome === "finished"

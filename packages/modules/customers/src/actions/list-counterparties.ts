@@ -1,7 +1,11 @@
 import { implementAction } from "@showzy/core";
 import { CoreInvariantError } from "@showzy/core/errors";
 import { counterparties } from "@showzy/db/schema/customers";
-import { likeContainsPattern, paginate } from "@showzy/validation/pagination";
+import {
+  listNameSearch,
+  pickListNameSearch,
+} from "@showzy/module-kit/name-match";
+import { paginate } from "@showzy/validation/pagination";
 import { and, desc, eq, ilike, lt, or } from "drizzle-orm";
 
 import {
@@ -17,13 +21,35 @@ import {
 
 export const listCounterparties = implementAction(listCounterpartiesContract, {
   handler: async (input, ctx) => {
-    const searchPattern =
+    const search =
       input.search === undefined
         ? undefined
-        : likeContainsPattern(input.search);
-    if (input.search !== undefined && searchPattern === undefined) {
+        : listNameSearch(
+            { name: counterparties.name, nameFts: counterparties.nameFts },
+            input.search,
+            (queryNormalized) =>
+              ilike(counterparties.edrpou, `%${queryNormalized}%`),
+          );
+    if (input.search !== undefined && search === undefined) {
       return { items: [], nextCursor: null };
     }
+    const scope = and(
+      eq(counterparties.companyId, ctx.companyId),
+      input.customerId === undefined
+        ? undefined
+        : eq(counterparties.customerId, input.customerId),
+    );
+    const searchPredicate =
+      search === undefined
+        ? undefined
+        : await pickListNameSearch(search, async (strict) => {
+            const found = await ctx.db
+              .select({ id: counterparties.id })
+              .from(counterparties)
+              .where(and(scope, strict))
+              .limit(1);
+            return found.length > 0;
+          });
 
     const cursor =
       input.cursor === undefined
@@ -46,27 +72,10 @@ export const listCounterparties = implementAction(listCounterpartiesContract, {
             ),
           );
 
-    const searchPredicate =
-      searchPattern === undefined
-        ? undefined
-        : or(
-            ilike(counterparties.name, searchPattern),
-            ilike(counterparties.edrpou, searchPattern),
-          );
-
     const pageRows = await ctx.db
       .select(counterpartyReturning)
       .from(counterparties)
-      .where(
-        and(
-          eq(counterparties.companyId, ctx.companyId),
-          input.customerId === undefined
-            ? undefined
-            : eq(counterparties.customerId, input.customerId),
-          searchPredicate,
-          cursorPredicate,
-        ),
-      )
+      .where(and(scope, searchPredicate, cursorPredicate))
       .orderBy(desc(counterparties.updatedAt), desc(counterparties.id))
       .limit(input.limit + 1);
 

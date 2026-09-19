@@ -35,7 +35,7 @@ export const resolveCustomerReferenceOutputSchema = z.strictObject({
 export const resolveCustomerReferenceContract = defineActionContract({
   name: "customers.resolveCustomerReference",
   description:
-    "Resolve one CRM customer in the staff member's active company from a canonical id or a unique human query (name, phone, or email). Query matches are active customers only. An id may still target an archived row. Zero matches are not-found. Ambiguous or contains-only matches return a structured conflict (reason, server-side customer target, options, optionsTruncated) and never auto-select. Company id is never input. Does not return notes.",
+    "Resolve one CRM customer in the staff member's active company from a canonical id or a unique human query (name, phone, or email). Query matches are active customers only. An id may still target an archived row. Zero matches are not-found. A unique exact match resolves, and so does a unique customer whose whole name is the query in another Ukrainian case (same words, any order). Ambiguous, partial, substring or typo matches return a structured conflict (reason, server-side customer target, options, optionsTruncated) and never auto-select; typo candidates are offered only when nothing else matches. Company id is never input. Does not return notes.",
   principal: "staff",
   transport: "internal",
   input: resolveCustomerReferenceInputSchema,

@@ -49,6 +49,7 @@ import {
 } from "@showzy/core";
 import {
   ConfirmationRequiredError,
+  CoreError,
   CoreInvariantError,
 } from "@showzy/core/errors";
 import type { Redis } from "ioredis";
@@ -119,12 +120,26 @@ function requireImplementation(
 export function assistantKitIdempotencyKey(
   context: Pick<AssistantToolContext, "conversationId" | "commandId">,
   actionName: string,
+  refusedBefore = 0,
 ): string {
   return attemptKey(
     "tool",
     context.conversationId,
-    `${context.commandId}:${actionName}`,
+    refusedBefore === 0
+      ? `${context.commandId}:${actionName}`
+      : `${context.commandId}:${actionName}:after-${String(refusedBefore)}`,
   );
+}
+
+const HANDLER_REFUSALS: ReadonlySet<string> = new Set([
+  "VALIDATION",
+  "NOT_FOUND",
+  "CONFLICT",
+  "PERMISSION_DENIED",
+]);
+
+export function handlerRefusedTheWrite(error: unknown): boolean {
+  return error instanceof CoreError && HANDLER_REFUSALS.has(error.code);
 }
 
 function aiRequest(
@@ -210,6 +225,7 @@ export function createAssistantRuntime(
     readonly context: AssistantToolContext;
     readonly actionName: string;
     readonly input: unknown;
+    readonly refusedBefore?: number;
     readonly confirmed?: {
       readonly idempotencyKey: string;
       readonly challengeId: string;
@@ -217,7 +233,11 @@ export function createAssistantRuntime(
   }): Promise<unknown> {
     const idempotencyKey =
       args.confirmed?.idempotencyKey ??
-      assistantKitIdempotencyKey(args.context, args.actionName);
+      assistantKitIdempotencyKey(
+        args.context,
+        args.actionName,
+        args.refusedBefore ?? 0,
+      );
     try {
       return await executeAction(options.pipeline, {
         action: requireImplementation(options.registry, args.actionName),
@@ -296,7 +316,7 @@ export function createAssistantRuntime(
       providerOptions: provider.replyProviderOptions(),
     }),
 
-    async tools(context): Promise<ToolSet> {
+    async tools(context, toolOptions): Promise<ToolSet> {
       // The verified membership, not the selector. A tool the caller may not
       // use is never offered, and the pipeline would refuse it anyway.
       const actor = await executeAction(options.pipeline, {
@@ -311,14 +331,32 @@ export function createAssistantRuntime(
         permissions: actor.permissions,
       });
 
-      const execute: ActionToolExecute = (actionName, input, toolOptions) => {
+      const refused = new Map<string, number>();
+      const execute: ActionToolExecute = async (
+        actionName,
+        input,
+        toolOptions,
+      ) => {
         void toolOptions;
-        return runAction({ context, actionName, input });
+        try {
+          return await runAction({
+            context,
+            actionName,
+            input,
+            refusedBefore: refused.get(actionName) ?? 0,
+          });
+        } catch (error) {
+          if (handlerRefusedTheWrite(error)) {
+            refused.set(actionName, (refused.get(actionName) ?? 0) + 1);
+          }
+          throw error;
+        }
       };
 
       return assistantKitTurnTools(
         staffAssistantTools(contracts, execute),
         options.pipeline.logger,
+        toolOptions?.answerPicker,
       );
     },
   };

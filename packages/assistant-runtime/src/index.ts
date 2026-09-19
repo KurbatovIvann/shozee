@@ -10,6 +10,8 @@ export * from "./assistant-kit-confirmation.js";
 export * from "./assistant-kit-history-window.js";
 export * from "./assistant-kit-resolve.js";
 export * from "./assistant-kit-tools.js";
+export * from "./assistant-judgment-shadow.js";
+export * from "./assistant-picker-answers.js";
 export * from "./assistant-model.js";
 export * from "./assistant-overdue-sweep.js";
 export * from "./assistant-runtime.js";

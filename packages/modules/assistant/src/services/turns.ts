@@ -29,6 +29,7 @@ import {
   type AssistantTurnKind,
 } from "@showzy/db/schema/assistant";
 import { postgresError } from "@showzy/module-kit/postgres-unique";
+import type { JudgmentShadow } from "@showzy/validation/assistant-judgment";
 import {
   and,
   asc,
@@ -467,6 +468,7 @@ async function finaliseTurn(
   status: "done" | "failed" | "interrupted",
   eligible: SQL,
   runningEndReason: Exclude<AssistantTurnEndReason, "not_started"> | null,
+  judgmentShadow?: JudgmentShadow,
 ): Promise<{
   readonly hold: BudgetHold;
   readonly from: (typeof assistantTurns.$inferSelect)["status"];
@@ -495,6 +497,7 @@ async function finaliseTurn(
         sessionId: null,
         companyReservedMicroUsd: 0,
         globalReservedMicroUsd: 0,
+        ...(judgmentShadow === undefined ? {} : { judgmentShadow }),
         endReason:
           runningEndReason === null
             ? null
@@ -539,6 +542,7 @@ export async function finishStaffTurn(env: {
     env.input.status,
     isActive(),
     null,
+    env.input.judgmentShadow,
   );
   if (ended === null) {
     return {

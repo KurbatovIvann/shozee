@@ -12,7 +12,13 @@ registry is injected into `createAssistantRuntime`; this package never imports
 
 - `assistant-runtime.ts` — `createAssistantRuntime`: tools per caller, the
   resolved-answer runner, the system prompt, and the per-caller kit and history
-  stores. `assistantKitIdempotencyKey` derives a tool's key from the command.
+  stores. `assistantKitIdempotencyKey` derives a tool's key from the command and the
+  action: one write of a kind per command, and an untouched retry replays it.
+  The one exception: after the handler itself refused the write (`VALIDATION`,
+  `NOT_FOUND`, `CONFLICT`, `PERMISSION_DENIED` — nothing was written), the next
+  call to that action in the same turn gets a new key, so a corrected call is
+  not an `IDEMPOTENCY_CONFLICT` with the refused one. Never after `INTERNAL`,
+  `TIMEOUT` or an idempotency refusal, where a write may stand.
   `createAssistantCallerKits` is the per-caller kit, history and turn stores on
   their own, built without a provider or a language model, so recovery work can
   act as a turn's author with no model mounted (SHO-698).
@@ -28,6 +34,34 @@ registry is injected into `createAssistantRuntime`; this package never imports
   config (`createStaffAssistantProvider`), and the one mount rule and log line
   both processes use (`staffAssistantMount`, `logStaffAssistantMount`,
   SHO-569).
+- `assistant-judgment-shadow.ts` — ADR-0044 phase A. `createAssistantJudgmentShadow`
+  plans a chat turn with the typed-judgment provider **beside** the real turn
+  and executes nothing: the processor starts it before `runHostTurn`, and after
+  the turn it becomes the `judgmentShadow` that `assistant.finishTurn` stores on
+  the turn row (what the judgment would have called, what the model called
+  first, whether they agree). Only the tools the caller may use are planned
+  for. Inside a conversation it plans through the ADR-0045 stage:
+  `earlierExchanges` gives the last three exchanges as text (no tool traffic),
+  and the worker passes the provider's gate model as the rewriter.
+  `createAssistantJudgmentCascade` is `ASSISTANT_JUDGMENT_MODE=take`: the
+  processor runs a chat turn on a per-turn cascade model instead of starting
+  the shadow (one judgment per turn, never two), stores the cascade's own
+  record (`taken: true` for a turn the judgment answered), and sets
+  `reachedModel` from whether a tool-loop model ran — the gate model or the
+  reply model (ADR-0046 tiers; the tier is on the record) — so a turn the
+  judgment answered gives its hold back (the rewriter's spend is unmetered, ADR-0045). A crash mid-turn
+  leaves `reachedModel` true, as before. It never throws and never delays a failure: a shadow that fails is a
+  warning and a `null` column. `createStaffJudgmentProvider` in
+  `assistant-model.ts` builds the provider from config, or none without a key.
+- `assistant-picker-answers.ts` — ADR-0047. In `take` mode the processor
+  gives a chat turn's tools an `answerPicker`: when a façade ends in a picker
+  `CONFLICT`, `assistantKitTurnTools` asks it before pausing, and on an answer
+  calls the same tool again through `withChosenId` — the path a tap takes (the
+  refused call rotated the idempotency key). At most four answers a tool
+  call; an id the picker never offered is ignored; anything else opens the
+  picker as before, with the input as far as it was resolved. The count goes
+  on the turn's judgment record as `pickersAnswered`. Answers, resumes and
+  continuations never get one: only the message of this turn can answer.
 - `assistant-invocation.ts` — `channel: "ai"` and the assistant path name.
 - `assistant-budget-guard.ts`, `stores/budget.ts`, `stores/budget-redis.ts` —
   the pure spend guard, the budget store port with its in-memory reference

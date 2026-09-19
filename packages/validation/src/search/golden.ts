@@ -46,10 +46,22 @@ export const SEARCH_GOLDEN_NAME_CASES = [
     negatives: [],
   },
   {
-    id: "inflection-not-promised",
+    id: "inflection-stem",
     query: "Олени",
-    positives: [],
-    negatives: [{ type: "customer", name: "Олена" }],
+    positives: [{ type: "customer", name: "Олена" }],
+    negatives: [],
+  },
+  {
+    id: "typo-long-token",
+    query: "капучіно",
+    positives: [{ type: "product", name: "Капучино" }],
+    negatives: [],
+  },
+  {
+    id: "short-token-stays-strict",
+    query: "кап",
+    positives: [{ type: "product", name: "Капучино" }],
+    negatives: [{ type: "product", name: "Какао" }],
   },
 ] as const satisfies readonly SearchGoldenNameCase[];
 

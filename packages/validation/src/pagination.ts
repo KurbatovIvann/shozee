@@ -180,7 +180,7 @@ export function likeContainsPattern(query: string): string | undefined {
   return `%${literal}%`;
 }
 
-function stemNameToken(token: string): string {
+export function stemNameToken(token: string): string {
   if (token.length >= 6) {
     return token.slice(0, -2);
   }
@@ -188,41 +188,6 @@ function stemNameToken(token: string): string {
     return token.slice(0, -1);
   }
   return token;
-}
-
-/**
- * Token stems for staff name search (SHO-396 / SHO-397).
- *
- * Sanitizes LIKE metacharacters, NFC-normalizes, splits on whitespace,
- * then shortens each token (≥6 drop last 2, ≥4 drop last 1, else keep).
- * Returns unique non-empty stems in token order. An empty list means
- * "match nothing" at the call site (same as a stripped LIKE remainder).
- *
- * Callers AND-match each stem as `ILIKE %stem%` on a **name** field.
- * Phone, email, and identifier fields keep full-string contains.
- */
-export function nameSearchStems(query: string): string[] {
-  const literal = sanitizeLikeLiteral(query);
-  if (literal === undefined) {
-    return [];
-  }
-
-  const normalized = literal.normalize("NFC").trim().replaceAll(/\s+/g, " ");
-  if (normalized.length === 0) {
-    return [];
-  }
-
-  const stems: string[] = [];
-  const seen = new Set<string>();
-  for (const token of normalized.split(" ")) {
-    const stem = stemNameToken(token);
-    if (stem.length === 0 || seen.has(stem)) {
-      continue;
-    }
-    seen.add(stem);
-    stems.push(stem);
-  }
-  return stems;
 }
 
 export function paginate<T>(
