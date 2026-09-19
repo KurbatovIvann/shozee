@@ -247,3 +247,52 @@ describe("a delete the assistant asks for", () => {
     expect(await customerExists(customerId)).toBe(true);
   });
 });
+
+describe("a write the handler refused can be corrected in the same turn", () => {
+  it("gives the corrected call its own key, and keeps one key for an untouched retry", async () => {
+    const id = randomUUID();
+    await kit.db.runtime.db.insert(companyCustomers).values({
+      id,
+      companyId: kitIdentities.companies.a,
+      name: "Катя Самбука",
+      email: `katya-${id}@example.com`,
+      status: "active",
+    });
+    const runtime = runtimeWithChallenges();
+    const context = request(randomUUID());
+    const tools = await runtime.tools(context);
+    const update = tools["customers_updateCustomer"]?.execute;
+    if (update === undefined) {
+      throw new Error("customers_updateCustomer is not offered to an owner");
+    }
+    const call = (input: unknown) =>
+      update(input, {
+        toolCallId: "toolu_update",
+        messages: [],
+      } as never) as Promise<ToolOutcome>;
+    const fields = {
+      name: "Катерина Самбука",
+      email: `katya-${id}@example.com`,
+    };
+
+    const missing = await call({ id: randomUUID(), ...fields });
+    expect(missing).toMatchObject({ kind: "error", code: "NOT_FOUND" });
+
+    const corrected = await call({ id, ...fields });
+    expect(corrected).toMatchObject({ kind: "ok" });
+    const again = await call({ id, ...fields });
+    expect(again).toMatchObject({ kind: "ok" });
+
+    const stored = await kit.db.runtime.db
+      .select({ name: companyCustomers.name })
+      .from(companyCustomers)
+      .where(eq(companyCustomers.id, id));
+    expect(stored[0]?.name).toBe("Катерина Самбука");
+
+    expect(
+      assistantKitIdempotencyKey(context, "customers.updateCustomer"),
+    ).not.toBe(
+      assistantKitIdempotencyKey(context, "customers.updateCustomer", 1),
+    );
+  });
+});
