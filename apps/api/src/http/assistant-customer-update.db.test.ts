@@ -7,10 +7,7 @@ import {
   kitIdentities,
   type TestKit,
 } from "@showzy/core/testing";
-import {
-  companyCustomers,
-  customerGroups,
-} from "@showzy/db/schema/customers";
+import { companyCustomers, customerGroups } from "@showzy/db/schema/customers";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 

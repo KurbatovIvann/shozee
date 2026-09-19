@@ -29,7 +29,10 @@ export const updateVariantInputSchema = z
     (variant) =>
       overrideFieldState(variant.basePriceMinor) ===
       overrideFieldState(variant.currency),
-    { message: "Variant price and currency must be omitted, null, or set together." },
+    {
+      message:
+        "Variant price and currency must be omitted, null, or set together.",
+    },
   );
 
 export const updateVariantOutputSchema = variantViewSchema;
