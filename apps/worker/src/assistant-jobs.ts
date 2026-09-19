@@ -5,6 +5,7 @@ import {
   createAssistantCallerKits,
   createAssistantJudgmentCascade,
   createAssistantJudgmentShadow,
+  createAssistantPickerAnswers,
   createAssistantRuntime,
   createAssistantTurnProcessor,
   createAssistantTurnRecovery,
@@ -84,6 +85,9 @@ export function composeAssistantJobs(
             ? {}
             : options.ai.judgmentMode === "take"
               ? {
+                  pickerAnswers: createAssistantPickerAnswers({
+                    provider: judgment,
+                  }),
                   judgmentCascade: createAssistantJudgmentCascade({
                     provider: judgment,
                     gateModel: mount.provider.createModel("gate"),

@@ -316,7 +316,7 @@ export function createAssistantRuntime(
       providerOptions: provider.replyProviderOptions(),
     }),
 
-    async tools(context): Promise<ToolSet> {
+    async tools(context, toolOptions): Promise<ToolSet> {
       // The verified membership, not the selector. A tool the caller may not
       // use is never offered, and the pipeline would refuse it anyway.
       const actor = await executeAction(options.pipeline, {
@@ -356,6 +356,7 @@ export function createAssistantRuntime(
       return assistantKitTurnTools(
         staffAssistantTools(contracts, execute),
         options.pipeline.logger,
+        toolOptions?.answerPicker,
       );
     },
   };

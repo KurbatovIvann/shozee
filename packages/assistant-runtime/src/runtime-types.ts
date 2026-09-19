@@ -19,6 +19,7 @@ import type { AssistantTurnKind } from "@showzy/assistant";
 import type { Logger } from "pino";
 
 import type { AssistantInteractionTypes } from "./assistant-interactions.js";
+import type { AssistantPickerAnswer } from "./assistant-kit-tools.js";
 import type { AssistantTurnStore } from "./stores/assistant-turn-store.js";
 
 /**
@@ -161,7 +162,10 @@ export interface AssistantRuntime {
    * Built fresh per turn: the caller's permissions decide the set, and card
    * composition needs every result of one turn without leaking into another's.
    */
-  readonly tools: (context: AssistantToolContext) => Promise<ToolSet>;
+  readonly tools: (
+    context: AssistantToolContext,
+    options?: { readonly answerPicker?: AssistantPickerAnswer },
+  ) => Promise<ToolSet>;
   readonly resolveAnswer: ResolveAnswer;
   /** Built per turn: the turn context carries the current time. */
   readonly prompt: () => AssistantTurnPrompt;

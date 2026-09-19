@@ -15,10 +15,12 @@ import {
 } from "@showzy/core/errors";
 import type { AssistantPublishedEvent } from "@showzy/validation/assistant-events";
 
-import type {
-  AssistantJudgmentCascade,
-  AssistantJudgmentShadow,
+import {
+  lastUserText,
+  type AssistantJudgmentCascade,
+  type AssistantJudgmentShadow,
 } from "./assistant-judgment-shadow.js";
+import type { AssistantPickerAnswers } from "./assistant-picker-answers.js";
 import { releaseStaffAssistantBudgetHold } from "./assistant-budget-guard.js";
 import type { AssistantConversationAddress } from "./events.js";
 import type { AssistantKitFor, AssistantRuntime } from "./runtime-types.js";
@@ -73,6 +75,7 @@ export interface AssistantTurnProcessorDeps {
   readonly budgetStore: AiBudgetStore;
   readonly judgmentShadow?: AssistantJudgmentShadow;
   readonly judgmentCascade?: AssistantJudgmentCascade;
+  readonly pickerAnswers?: AssistantPickerAnswers;
   readonly timeoutMs?: number;
   readonly deadline?: AssistantTurnDeadline;
 }
@@ -344,13 +347,25 @@ export function createAssistantTurnProcessor(
       };
       scope = turnScope;
       const messages = await history.load(turnScope);
-      const tools = await deps.runtime.tools({
-        userId: caller.userId,
-        companySelector: caller.companySelector,
-        conversationId: found.turn.conversationId,
-        commandId: found.continuationRootCommandId,
-        requestId: caller.requestId,
-      });
+      const asked =
+        found.turn.kind === "chat" ? lastUserText(messages) : undefined;
+      const pickers =
+        asked === undefined
+          ? undefined
+          : deps.pickerAnswers?.forTurn({
+              message: asked,
+              signal: controller.signal,
+            });
+      const tools = await deps.runtime.tools(
+        {
+          userId: caller.userId,
+          companySelector: caller.companySelector,
+          conversationId: found.turn.conversationId,
+          commandId: found.continuationRootCommandId,
+          requestId: caller.requestId,
+        },
+        pickers === undefined ? {} : { answerPicker: pickers.answer },
+      );
       const prompt = deps.runtime.prompt();
       if (controller.signal.aborted) {
         throw new CoreInvariantError(
@@ -400,7 +415,15 @@ export function createAssistantTurnProcessor(
         judgmentShadow = (await shadowing)?.(turnMessages);
       } else {
         const decided = cascade.outcome(turnMessages);
-        judgmentShadow = decided.judgmentShadow;
+        judgmentShadow =
+          decided.judgmentShadow === undefined ||
+          pickers === undefined ||
+          pickers.answered() === 0
+            ? decided.judgmentShadow
+            : {
+                ...decided.judgmentShadow,
+                pickersAnswered: pickers.answered(),
+              };
         reachedModel = decided.toolLoopModelCalled;
       }
       if (turn.interrupted) {

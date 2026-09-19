@@ -71,6 +71,7 @@ export const judgmentShadowSchema = z.strictObject({
   wouldTake: z.boolean(),
   taken: z.boolean(),
   tier: z.enum(JUDGMENT_TIERS).optional(),
+  pickersAnswered: z.number().int().min(1).max(64).optional(),
   declinedBecause: z.enum(JUDGMENT_DECLINE_REASONS).optional(),
   modelFirstCall: judgmentShadowCallSchema.nullable(),
   toolAgrees: z.boolean().nullable(),
