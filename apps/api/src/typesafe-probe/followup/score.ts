@@ -12,14 +12,19 @@ export interface CallScore {
   readonly detour: boolean;
 }
 
-const fold = (value: string): string =>
-  value.normalize("NFC").trim().replaceAll(/\s+/g, " ").toLowerCase();
+export const foldText = (value: string): string =>
+  value
+    .normalize("NFC")
+    .replaceAll(/["«»“”„]/g, "")
+    .trim()
+    .replaceAll(/\s+/g, " ")
+    .toLowerCase();
 
 const digits = (value: string): string => value.replaceAll(/\D/g, "");
 
 function sameText(expected: string, observed: string): boolean {
   return (
-    fold(expected) === fold(observed) ||
+    foldText(expected) === foldText(observed) ||
     isInflectionOfName(expected, observed) ||
     isInflectionOfName(observed, expected)
   );

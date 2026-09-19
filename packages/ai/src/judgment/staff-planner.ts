@@ -46,7 +46,7 @@ const KIND_CRITERIA: Readonly<Record<JudgmentMessageKind, string>> = {
 
 const KIND_KEY = "kind";
 const NEEDS_HISTORY_KEY = "needsHistory";
-const ORDER_EXTRAS_KEY = "orderExtras";
+const extrasKey = (tool: string): string => `extras:${tool}`;
 const jobKey = (tool: string): string => `job:${tool}`;
 const slotKey = (slot: string): string => `slot:${slot}`;
 const itemProductKey = (position: number): string =>
@@ -110,17 +110,17 @@ export function buildStaffPlanQuestions(
   for (const [slot, closed] of Object.entries(JUDGMENT_CLOSED_SLOTS)) {
     questions[slotKey(slot)] = { type: "choice", ...closed };
   }
-  if (specs.some((spec) => spec.items !== undefined)) {
-    questions[ORDER_EXTRAS_KEY] = {
+  for (const spec of specs) {
+    questions[extrasKey(spec.tool)] = {
       type: "noul",
-      instructions:
-        "Apart from who the customer is, which products and how many of each, does `message` say anything else about the order: a date or time, delivery or pickup, an address, a comment or note, a price, a discount, or a payment?",
+      instructions: `Suppose \`message\` asks to ${spec.job.yes}. Apart from ${spec.carries}, does \`message\` say anything else that matters for it: ${spec.beyond}?`,
       criteria: {
-        true: "The message states at least one such detail about the order.",
-        false:
-          "The message states only the customer, the products and their quantities, or is not about a new order.",
+        true: "The message states at least one such detail.",
+        false: `The message states only ${spec.carries}, or less, or is not about this job.`,
       },
     };
+  }
+  if (specs.some((spec) => spec.items !== undefined)) {
     for (const position of [
       ...JUDGMENT_ITEM_POSITIONS,
       JUDGMENT_ITEM_SENTINEL_POSITION,
@@ -268,15 +268,15 @@ function plannedCall(
     ) {
       uncovered = true;
     }
-    const extras = answers[ORDER_EXTRAS_KEY];
-    if (
-      extras?.type === "noul" &&
-      extras.probability >= JUDGMENT_DOUBT_THRESHOLD
-    ) {
-      uncovered = true;
-    }
     args[spec.items.arg] = lines;
     input[spec.items.arg] = items;
+  }
+  const extras = answers[extrasKey(spec.tool)];
+  if (
+    extras?.type === "noul" &&
+    extras.probability >= JUDGMENT_DOUBT_THRESHOLD
+  ) {
+    uncovered = true;
   }
   return {
     call: { tool: spec.tool, input, args, minConfidence },

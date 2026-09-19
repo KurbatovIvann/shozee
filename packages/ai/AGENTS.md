@@ -155,11 +155,19 @@ fallback, never use `jev-latest`.
   the needs-history question and the thresholds change only with a hand-run of
   both probe corpora (`apps/api/src/typesafe-probe/followup/`).
 - **Judgment specs live beside the façades** (`tool-facades/judgment-specs.ts`)
-  and nowhere else: the job question with what it is _not_, and how each slot
-  maps onto the tool's input. `apps/api/src/judgment-specs.test.ts` pins every
+  and nowhere else: the job question with what it is _not_ (when two jobs fire
+  together, extend the `no` of one — rewording a `yes` cost ten correct calls),
+  what the call `carries` and what lies `beyond` it (the extras question), and
+  how each slot maps onto the tool's input. `apps/api/src/judgment-specs.test.ts` pins every
   spec to the real tool's input schema and takes read/write from the contract.
-  A tool without a spec is language-model-only. Thresholds are constants in the
-  planner and belong to the pinned model version.
+  A tool without a spec is language-model-only. Thresholds belong to the
+  pinned model version: the defaults are constants in the planner (`take` —
+  this is the job; `act` — sure enough to call it; `argument` — every slot),
+  and a spec may carry its own under `thresholds`. `decideStaffPlan` is the
+  whole decision as a pure function of the saved answers, so the calibration
+  stand (`apps/api/src/typesafe-probe/calibration/`) sweeps thresholds offline
+  with the production code. A spec's thresholds change only with numbers from
+  that stand: chosen on its tuning split, checked on the held-out one.
 - **`judgment/cascade-model.ts` is `take` mode** (ADR-0044 decision 1,
   ADR-0045 decision 7): `wrapLanguageModel` middleware around the reply model,
   one instance per turn. On the first step it plans through the staged
@@ -180,7 +188,9 @@ fallback, never use `jev-latest`.
   typed (customer, group, product, price list) is never takeable — the
   judgment selects spans and cannot put a name in the nominative. Order guards
   only delegate: `required` arguments, a fourth-line sentinel, the
-  `orderExtras` question (a date, delivery, comment, price), a number the plan
+  `extras:<tool>` question every spec has (what the message states beyond what
+  the call `carries`: a second status, a customer filter, an email, a delivery
+  date), a number the plan
   did not consume. A taken step that fails goes to the reply model.
 - Tests inject `fetch`. No live call in CI or `verify.mjs`.
 

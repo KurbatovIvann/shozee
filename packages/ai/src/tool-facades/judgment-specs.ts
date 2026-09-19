@@ -57,6 +57,8 @@ export interface StaffJudgmentSpec {
   readonly action: string;
   readonly job: { readonly yes: string; readonly no: string };
   readonly args: Readonly<Record<string, JudgmentArgSpec>>;
+  readonly carries: string;
+  readonly beyond: string;
   readonly reply?: { readonly uk: string; readonly en: string };
   readonly required?: readonly string[];
   readonly thresholds?: {
@@ -77,6 +79,12 @@ const text = (slot: JudgmentSlot): JudgmentArgSpec => ({
   shape: "text",
 });
 
+const orderFilterLimits = {
+  carries: "one period (today, this week or this month) and one order status",
+  beyond:
+    "a customer, a product, an amount, a date or another period, a second status, a sort order, or how many to show",
+} as const;
+
 const orderFilters = {
   period: { slot: "period", shape: "text", unsupported: ["other_period"] },
   statuses: { slot: "orderStatus", shape: "list" },
@@ -91,6 +99,7 @@ export const STAFF_JUDGMENT_SPECS: readonly StaffJudgmentSpec[] = [
       no: "It asks to show the orders themselves, or asks nothing about order totals.",
     },
     args: orderFilters,
+    ...orderFilterLimits,
     reply: {
       uk: "Ось підсумок за замовленнями.",
       en: "Here is the orders summary.",
@@ -104,6 +113,7 @@ export const STAFF_JUDGMENT_SPECS: readonly StaffJudgmentSpec[] = [
       no: "It asks for a number or a total, or for one specific order action.",
     },
     args: orderFilters,
+    ...orderFilterLimits,
     reply: {
       uk: "Ось замовлення за вашим запитом.",
       en: "Here are the orders you asked for.",
@@ -114,9 +124,12 @@ export const STAFF_JUDGMENT_SPECS: readonly StaffJudgmentSpec[] = [
     action: "customers.listCustomers",
     job: {
       yes: "find or show existing customers",
-      no: "The customer is only named as part of another job, or a new customer is being added.",
+      no: "The customer is only named as part of another job, or a new customer is being added, or it asks about customer groups or about counterparties.",
     },
     args: { search: text("customerName") },
+    carries: "a customer name to search by",
+    beyond:
+      "a phone, an email, a group, a status, a date, or another condition",
   },
   {
     tool: "customers_list_groups",
@@ -126,15 +139,20 @@ export const STAFF_JUDGMENT_SPECS: readonly StaffJudgmentSpec[] = [
       no: "A group is only named as part of another job, or a new group is being created.",
     },
     args: { search: text("groupName") },
+    carries: "a group name to search by",
+    beyond: "its members, a price list, a discount, or another condition",
   },
   {
     tool: "catalog_list_products",
     action: "catalog.listProducts",
     job: {
       yes: "show or find products in the catalog",
-      no: "A product is only named as part of an order, or a new product is being added.",
+      no: "A product is only named as part of an order, or a new product is being added, or it asks about price lists (прайс, прайс-лист) rather than products.",
     },
     args: { query: text("productName") },
+    carries: "a product name to search by",
+    beyond:
+      "a price, a status such as archived, a category, stock, or another condition",
   },
   {
     tool: "pricing_list_price_lists",
@@ -144,6 +162,8 @@ export const STAFF_JUDGMENT_SPECS: readonly StaffJudgmentSpec[] = [
       no: "A price list is only being created or changed.",
     },
     args: { query: text("priceListName") },
+    carries: "a price list name to search by",
+    beyond: "a status such as active, a date, a currency, or another condition",
   },
   {
     tool: "orders_create",
@@ -153,6 +173,9 @@ export const STAFF_JUDGMENT_SPECS: readonly StaffJudgmentSpec[] = [
       no: "It only refers to an existing order: confirming, cancelling, starting, completing, listing, counting, or issuing a document for it.",
     },
     args: { customerQuery: text("customerName") },
+    carries: "who the customer is, which products and how many of each",
+    beyond:
+      "a date or time, delivery or pickup, an address, a comment or note, a price, a discount, or a payment",
     required: ["customerQuery", "items"],
     reply: { uk: "Створив замовлення.", en: "The order is created." },
     items: {
@@ -170,6 +193,10 @@ export const STAFF_JUDGMENT_SPECS: readonly StaffJudgmentSpec[] = [
       no: "It only refers to an existing customer: ordering for them, finding them, or putting them into a group.",
     },
     args: { name: text("customerName"), phone: text("customerPhone") },
+    required: ["name"],
+    carries: "the new customer's name and phone",
+    beyond:
+      "an email, an address, a note, a group, a price list, a discount, or a second thing to do",
   },
   {
     tool: "customers_createGroup",
@@ -179,6 +206,10 @@ export const STAFF_JUDGMENT_SPECS: readonly StaffJudgmentSpec[] = [
       no: "It only mentions an existing group, for example to put a customer into it.",
     },
     args: { name: text("groupName") },
+    required: ["name"],
+    carries: "the new group's name",
+    beyond:
+      "customers to put into it, a price list, a discount, a description, or a second thing to do",
   },
   {
     tool: "catalog_createProduct",
@@ -191,6 +222,10 @@ export const STAFF_JUDGMENT_SPECS: readonly StaffJudgmentSpec[] = [
       name: text("productName"),
       basePriceMinor: { slot: "price", shape: "minorUnits" },
     },
+    required: ["name"],
+    carries: "the new product's name and price",
+    beyond:
+      "variants or sizes, a unit of measure, a description, a category, a photo, stock, or a second thing to do",
   },
   {
     tool: "pricing_createPriceList",
@@ -200,5 +235,9 @@ export const STAFF_JUDGMENT_SPECS: readonly StaffJudgmentSpec[] = [
       no: "It only mentions or asks about existing price lists.",
     },
     args: { name: text("priceListName") },
+    required: ["name"],
+    carries: "the new price list's name",
+    beyond:
+      "a currency, dates, prices or products to put into it, copying another price list, or making it default or active",
   },
 ];

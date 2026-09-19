@@ -224,7 +224,10 @@ describe("createStaffCascadeModel", () => {
     [
       "a delivery note the plan cannot carry",
       "uncovered_value",
-      { ...ORDER_FOR_OLENA, orderExtras: { type: "noul", probability: 0.8 } },
+      {
+        ...ORDER_FOR_OLENA,
+        "extras:orders_create": { type: "noul", probability: 0.8 },
+      },
     ],
     [
       "a fourth line",
