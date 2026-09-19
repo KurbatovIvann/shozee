@@ -597,7 +597,7 @@ describe("catalog.resolveLineReferences", () => {
     ]);
   });
 
-  it("resolves a unique variant query without splitting a combined phrase", async () => {
+  it("resolves a unique variant query, and a combined phrase as the product naming its variant", async () => {
     const lemon = await kit.invoke(resolveLineReferences, {
       lines: [
         {
@@ -615,11 +615,10 @@ describe("catalog.resolveLineReferences", () => {
       variantId: fixtures.macaronLemon,
       variantName: "Lemon",
     });
-    await expect(
-      kit.invoke(resolveLineReferences, {
-        lines: [{ product: { by: "query", value: "Macarons Lemon" } }],
-      }),
-    ).rejects.toBeInstanceOf(NotFoundError);
+    const combined = await kit.invoke(resolveLineReferences, {
+      lines: [{ product: { by: "query", value: "Macarons Lemon" } }],
+    });
+    expect(combined.lines[0]).toEqual(lemon.lines[0]);
   });
 
   it("requires an active variant for unspecified or base on a variable product", async () => {
@@ -1268,9 +1267,8 @@ describe("catalog.resolveLineReferences", () => {
     expect(source.match(/\.from\((products|productVariants)\)/g)?.length).toBe(
       4,
     );
-    // Declaration plus one call per status (active, archived).
-    expect(source.match(/loadProductsByExactQuery\(/g)).toHaveLength(3);
-    expect(source.match(/loadProductsByNameSearch\(/g)).toHaveLength(3);
+    expect(source.match(/loadProductsByExactQuery\(/g)).toHaveLength(4);
+    expect(source.match(/loadProductsByNameSearch\(/g)).toHaveLength(4);
     expect(source).toMatch(/sellableProducts/);
     expect(source).toMatch(/VARIANT_SELECTION_OPTIONS_MAX/);
   });

@@ -53,6 +53,15 @@ registry is injected into `createAssistantRuntime`; this package never imports
   leaves `reachedModel` true, as before. It never throws and never delays a failure: a shadow that fails is a
   warning and a `null` column. `createStaffJudgmentProvider` in
   `assistant-model.ts` builds the provider from config, or none without a key.
+- `assistant-picker-answers.ts` — ADR-0047. In `take` mode the processor
+  gives a chat turn's tools an `answerPicker`: when a façade ends in a picker
+  `CONFLICT`, `assistantKitTurnTools` asks it before pausing, and on an answer
+  calls the same tool again through `withChosenId` — the path a tap takes (the
+  refused call rotated the idempotency key). At most four answers a tool
+  call; an id the picker never offered is ignored; anything else opens the
+  picker as before, with the input as far as it was resolved. The count goes
+  on the turn's judgment record as `pickersAnswered`. Answers, resumes and
+  continuations never get one: only the message of this turn can answer.
 - `assistant-invocation.ts` — `channel: "ai"` and the assistant path name.
 - `assistant-budget-guard.ts`, `stores/budget.ts`, `stores/budget-redis.ts` —
   the pure spend guard, the budget store port with its in-memory reference

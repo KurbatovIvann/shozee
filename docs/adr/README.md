@@ -65,4 +65,4 @@ humans) don't relitigate settled questions or silently deviate.
 | [0044](0044-judgment-first-turn-cascade.md) | The assistant turn is a cascade — typed judgment first, language model on escalation | Accepted (amended by ADR-0045, ADR-0046) |
 | [0045](0045-context-rewrite-before-the-judgment.md) | A context rewrite in front of the judgment, and reads taken without a shadow gate | Accepted (amended by ADR-0046) |
 | [0046](0046-three-tier-turn-cascade.md) | Three tiers for a turn — judgment, gate model, reply model — and the judgment creates orders | Accepted |
-| [0047](0047-the-judgment-answers-a-picker.md) | The judgment answers a picker from the person's own words, and a product query may name its variant | Proposed |
+| [0047](0047-the-judgment-answers-a-picker.md) | The judgment answers a picker from the person's own words, and a product query may name its variant | Accepted |

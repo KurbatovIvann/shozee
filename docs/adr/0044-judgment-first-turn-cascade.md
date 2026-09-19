@@ -97,7 +97,8 @@ depends on the conversation.)
    reference (`customerQuery`, `productQuery`, list `search`) and the owning
    module resolves it or opens its picker. Whole-list resolution by Jev is
    not built: 256-option cap, a confident wrong person, run-to-run
-   instability.
+   instability. (Amended by ADR-0047: the judgment never looks a reference
+   up; it may answer a picker the owning module opened.)
 6. **Reads only** (amended by ADR-0046: for a live trial the judgment also
    takes `orders_create`, whose arguments are references a module resolves).
    A judgment may propose a call to a `risk: "read"` action.

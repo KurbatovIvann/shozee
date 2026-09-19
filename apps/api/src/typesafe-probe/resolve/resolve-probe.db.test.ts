@@ -1,14 +1,15 @@
 import { writeFileSync } from "node:fs";
 
 import {
+  JUDGMENT_PICKER_THRESHOLD,
   STAFF_JUDGMENT_SPECS,
+  answerPickerFromMessage,
   buildStaffPlanQuestions,
   catalogPickerConflictExtrasFromError,
   createTypeSafeJudgmentProvider,
   decideStaffPlan,
   type CatalogPickerConflictExtras,
   type JudgmentProvider,
-  type JudgmentText,
 } from "@showzy/ai";
 import { createProduct, resolveLineReferences } from "@showzy/catalog";
 import { loadServerConfig } from "@showzy/config";
@@ -29,7 +30,6 @@ import {
 
 const LIVE = process.env["TYPESAFE_LIVE_PROBE"] === "1";
 const OUT = process.env["TYPESAFE_PROBE_OUT"];
-const ACT_AT = 0.9;
 const THRESHOLD_PAIRS = [
   "0.85/0.7",
   "0.8/0.7",
@@ -37,8 +37,7 @@ const THRESHOLD_PAIRS = [
   "0.75/0.3",
   "0.7/0.7",
 ] as const;
-const UNCLEAR = "unclear";
-const PATHS = ["module alone", "judgment answers the picker", "and splits"];
+const PATHS = ["module alone", "judgment answers the picker"];
 const ROUNDS_MAX = 4;
 
 let kit: TestKit;
@@ -68,7 +67,6 @@ interface PickRecord {
   readonly about: string;
   readonly options: number;
   readonly choice: string;
-  readonly confidence: number;
 }
 
 function failure(error: unknown): Resolution {
@@ -133,71 +131,24 @@ async function pickOption(
   lineText: string | undefined,
   picks: PickRecord[],
 ): Promise<string | undefined> {
-  const labels = extras.options.map((option) => option.label);
-  const about =
-    "query" in extras.target ? extras.target.query : extras.target.productName;
-  if (new Set(labels).size !== labels.length) {
-    picks.push({
-      caseId: probeCase.id,
-      about,
-      options: labels.length,
-      choice: "same labels",
-      confidence: 0,
-    });
-    return undefined;
-  }
-  const criteria: Record<string, JudgmentText | null> = {};
-  for (const label of labels) {
-    criteria[label] = null;
-  }
-  criteria[UNCLEAR] =
-    "Two or more of them fit what the message says equally well, or the message does not say which.";
-  criteria[RESOLVE_NONE] = "The message means none of them.";
-  const isVariant = !("query" in extras.target);
-  const result = await provider.ask({
-    state: {
-      message: probeCase.message,
-      ...(isVariant ? { product: about } : { mention: about }),
-      ...(lineText === undefined ? {} : { line: lineText }),
-    },
-    questions: {
-      pick: {
-        type: "choice",
-        instructions: isVariant
-          ? `\`message\` is what a staff member typed to create an order. The order line \`line\` is for \`product\`, which is sold only in variants. Which variant does \`message\` ask for on that line? The message may name it inflected, as an adjective, shortened or misspelled. Choose \`${UNCLEAR}\` when the message names no variant for that line.`
-          : `\`message\` is what a staff member typed to create an order. The system looked up \`mention\` and found these stored records. Which one does \`message\` mean? The message may name it inflected, in another word order, shortened or misspelled. Choose \`${UNCLEAR}\` when the message does not say enough to tell them apart.`,
-        criteria,
-      },
-    },
+  const chosen = await answerPickerFromMessage({
+    provider,
+    message: probeCase.message,
+    picker: extras,
+    ...(lineText === undefined ? {} : { line: lineText }),
   });
-  const choice = result.ok ? result.answers.pick.choice : "refused";
-  const confidence = result.ok ? result.answers.pick.confidence : 0;
   picks.push({
     caseId: probeCase.id,
-    about,
-    options: labels.length,
-    choice,
-    confidence,
+    about:
+      "query" in extras.target
+        ? extras.target.query
+        : extras.target.productName,
+    options: extras.options.length,
+    choice:
+      extras.options.find((option) => option.id === chosen)?.label ??
+      "left to the person",
   });
-  return confidence >= ACT_AT
-    ? extras.options.find((option) => option.label === choice)?.id
-    : undefined;
-}
-
-function splits(query: string): { product: string; variant: string }[] {
-  const words = query.split(/\s+/u);
-  const found: { product: string; variant: string }[] = [];
-  for (let cut = words.length - 1; cut >= 1; cut -= 1) {
-    found.push({
-      product: words.slice(0, cut).join(" "),
-      variant: words.slice(cut).join(" "),
-    });
-    found.push({
-      product: words.slice(cut).join(" "),
-      variant: words.slice(0, cut).join(" "),
-    });
-  }
-  return found;
+  return chosen;
 }
 
 async function settle(
@@ -438,26 +389,6 @@ describe.runIf(LIVE)("typesafe resolve probe, live", () => {
           let product: Ref = { by: "query", value: said };
           let variant: Ref | undefined;
           const run = () => resolveLine(product, variant);
-          if (path === PATHS[2] && said.includes(" ")) {
-            const first = await run();
-            if (
-              first.kind === "none" ||
-              (first.kind === "picker" &&
-                first.extras.reason === "unmatched_query")
-            ) {
-              for (const split of splits(said)) {
-                const tried = await resolveLine(
-                  { by: "query", value: split.product },
-                  { by: "query", value: split.variant },
-                );
-                if (tried.kind === "resolved") {
-                  product = { by: "query", value: split.product };
-                  variant = { by: "query", value: split.variant };
-                  break;
-                }
-              }
-            }
-          }
           const resolution = await settle(
             run,
             (extras, id) => {
@@ -530,7 +461,7 @@ describe.runIf(LIVE)("typesafe resolve probe, live", () => {
     const report = [
       "## Resolve probe",
       "",
-      `${String(RESOLVE_CASES.length)} order messages, ${String(rows.length)} references from the ${String(RESOLVE_CASES.length - notPlanned.length)} the planner took. The judgment acts on a pick at confidence ${num(ACT_AT)} or more.`,
+      `${String(RESOLVE_CASES.length)} order messages, ${String(rows.length)} references from the ${String(RESOLVE_CASES.length - notPlanned.length)} the planner took. The judgment acts on a pick at confidence ${num(JUDGMENT_PICKER_THRESHOLD)} or more.`,
       "",
       "| Path | Correct | Wrong | Left to the person | Not found |",
       "| --- | --- | --- | --- | --- |",
@@ -567,11 +498,11 @@ describe.runIf(LIVE)("typesafe resolve probe, live", () => {
       "",
       "### Picks",
       "",
-      "| Case | About | Options | Choice | Confidence |",
-      "| --- | --- | --- | --- | --- |",
+      "| Case | About | Options | Choice |",
+      "| --- | --- | --- | --- |",
       ...picks.map(
         (pick) =>
-          `| ${pick.caseId} | ${pick.about} | ${String(pick.options)} | ${pick.choice} | ${num(pick.confidence)} |`,
+          `| ${pick.caseId} | ${pick.about} | ${String(pick.options)} | ${pick.choice} |`,
       ),
       "",
       "### Messages the planner did not take",

@@ -128,11 +128,15 @@ fallback, never use `jev-latest`.
 
 - **Fail-open.** `ok: false` or low confidence means the existing path runs
   unchanged. A judgment may propose a call to a read action (ADR-0044); it
-  never proposes a write, never stands in for a confirmation, and never
-  resolves a human reference — the owning module does.
+  never stands in for a confirmation and never looks a human reference up —
+  the owning module does. It may answer a picker that module opened
+  (ADR-0047): `judgment/picker-answer.ts` asks which option the person's
+  message already names, acts only at 0.9, and returns nothing on `unclear`,
+  `none`, a refusal or two options that read the same.
 - **Never from a module handler, never inside a domain transaction.**
 - **State is minimised**: the utterance and option/tool descriptions. No
-  customer personal data unless the consumer's ticket names the field.
+  customer personal data unless the consumer's ticket names the field; the
+  one named field is a picker's option labels (ADR-0047).
 - **Jev limits**: no text generation, closed sets only (no names, numbers,
   dates as arguments), unreliable counting and date comparison, English
   first, does not treat `state` as hostile.

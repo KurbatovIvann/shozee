@@ -75,3 +75,13 @@ TYPESAFE_LIVE_PROBE=1 TYPESAFE_PROBE_OUT=<file.md> node --env-file=../../.env \
 The unconsumed-words guard and `thresholds: { act: 0.75 }` on the
 `orders_create` spec. Findings 4 and 5 change who resolves a reference and
 what a catalog query means: ADR-0047.
+
+## After ADR-0047 was built, same day
+
+The probe now calls the production `answerPickerFromMessage`, and the split
+lives in `catalog.resolveLineReferences`, so "module alone" has it. One run:
+references not found 7 → 4; at `act` 0.75, of 21 orders taken, 17 right, 2
+unneeded pickers, 2 to the reply model, none wrong (15 / 4 / 2 with the module
+alone). Jev's spans vary run to run: this run it took `лате холодне` from
+"матча лате холодне", which is another product; the unconsumed-words guard
+delegated it.

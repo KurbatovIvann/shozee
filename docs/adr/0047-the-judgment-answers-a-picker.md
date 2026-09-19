@@ -1,6 +1,6 @@
 # ADR-0047: The judgment answers a picker from the person's own words, and a product query may name its variant
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-19
 - **Deciders**: Ivan Kurbatov (human) (+ proposing agent)
 - **Amends**: ADR-0043 (state minimisation), ADR-0044 (the judgment never
@@ -58,10 +58,12 @@ on 36 order messages over a seeded base (300 customers, 138 products):
    variant name; it resolves only when exactly one split gives a unique
    product and a unique active variant of it. Domain behaviour in the owning
    module, so the panel and every tier get it.
-6. **Recorded.** The repeated call is in the stored history with the id in
-   its input; the turn's judgment record gains how many pickers the judgment
-   answered.
-7. Without a TypeSafe key, or in mode `off`, nothing changes.
+6. **Recorded.** The turn's judgment record gains how many pickers the
+   judgment answered (`pickersAnswered`). The stored history keeps the one
+   tool call the model made, with its result; the repeated call is the same
+   tool call continued, as it is after a tap.
+7. Pickers are answered only in mode `take`. Without a TypeSafe key, in
+   `off` and in `shadow`, nothing changes: shadow executes nothing.
 
 ## Alternatives considered
 

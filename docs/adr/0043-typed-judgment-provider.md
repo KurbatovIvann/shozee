@@ -59,7 +59,9 @@ a second AI vendor of this shape is allowed beside it.
    probe.
 6. **State is minimised.** A request carries the utterance and the option or
    tool descriptions. Customer personal data enters `state` only when a
-   consumer's own ticket names the field and why.
+   consumer's own ticket names the field and why. (ADR-0047 names one: the
+   option labels of a picker the owning module opened — customer, product and
+   variant names.)
 7. **A consumer needs numbers.** The first branch ships the port, the adapter
    and a hand-run Ukrainian probe, and changes no assistant behaviour. Each
    consumer is its own ticket, justified by probe results recorded in
