@@ -80,6 +80,12 @@ development; preview-and-confirm is decided after it.**
 7. **`ASSISTANT_JUDGMENT_MODE=take` now means this cascade.** `shadow` and
    `off` are unchanged, and `shadow` is the way back.
 
+**Amended 2026-09-19 (live finding):** talk and capability questions go to
+the gate model only when the message does not depend on the conversation
+(needs-history under its threshold). "Так" after the reply model's question
+is small talk by kind and a write by meaning: the gate model created an order
+from it. Such a turn goes to the reply model.
+
 ## Alternatives considered
 
 - **Preview-and-confirm first** (the proposing agent's recommendation).

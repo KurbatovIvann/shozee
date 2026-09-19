@@ -187,8 +187,10 @@ fallback, never use `jev-latest`.
 - **Three tiers (ADR-0046).** The cascade routes a turn once, on its first
   step, and the turn stays there: the judgment takes it (a spec with a `reply`
   line: the two order reads and `orders_create`); else the gate model runs it
-  when it is talk, a capability question, or a request whose one confident job
-  is a read; else the reply model. A write that would store a new name as
+  when it is talk or a capability question that does not depend on the
+  conversation ("Так" after a question is a write by meaning — live, the gate
+  model created an order from it), or a request whose one confident job is a
+  read; else the reply model. A write that would store a new name as
   typed (customer, group, product, price list) is never takeable — the
   judgment selects spans and cannot put a name in the nominative. Order guards
   only delegate: `required` arguments, a fourth-line sentinel, the

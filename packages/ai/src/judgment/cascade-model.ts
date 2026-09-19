@@ -13,7 +13,10 @@ import {
   CONTEXT_REWRITE_EXCHANGES_MAX,
   type JudgmentExchange,
 } from "./context-rewrite.js";
-import { JUDGMENT_TAKE_THRESHOLD } from "./staff-planner.js";
+import {
+  JUDGMENT_NEEDS_HISTORY_THRESHOLD,
+  JUDGMENT_TAKE_THRESHOLD,
+} from "./staff-planner.js";
 import {
   planStaffTurnInContext,
   type StaffJudgmentStagedPlan,
@@ -154,7 +157,10 @@ function belongsToGate(
     return false;
   }
   if (plan.kind === "small_talk" || plan.kind === "capability_question") {
-    return (plan.kindConfidence ?? 0) >= JUDGMENT_TAKE_THRESHOLD;
+    return (
+      (plan.kindConfidence ?? 0) >= JUDGMENT_TAKE_THRESHOLD &&
+      (plan.needsHistory ?? 0) < JUDGMENT_NEEDS_HISTORY_THRESHOLD
+    );
   }
   const spec = args.specs.find((entry) => entry.tool === plan.call?.tool);
   return (

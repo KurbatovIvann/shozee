@@ -90,6 +90,7 @@ async function run(args: {
   readonly answers: Record<string, unknown>;
   readonly toolResult?: unknown;
   readonly provider?: JudgmentProvider;
+  readonly inConversation?: boolean;
 }) {
   const reply = replyModel("Відповідь Sonnet.");
   const gate = replyModel("Відповідь Haiku.");
@@ -108,7 +109,15 @@ async function run(args: {
   });
   const result = streamText({
     model: cascade.model,
-    messages: [{ role: "user", content: args.message }],
+    messages: [
+      ...(args.inConversation === true
+        ? ([
+            { role: "user", content: "Каті 2 макаронси" },
+            { role: "assistant", content: "Для Каті Самбуки?" },
+          ] as const)
+        : []),
+      { role: "user", content: args.message },
+    ],
     stopWhen: stepCountIs(4),
     tools: {
       orders_list_counts: tool({
@@ -285,6 +294,30 @@ describe("createStaffCascadeModel", () => {
       tier: "gate",
       plan: { declinedBecause: "uncovered_value" },
     });
+  });
+
+  it("gives talk that answers the conversation to the reply model, not the gate model", async () => {
+    const turn = await run({
+      message: "Так",
+      inConversation: true,
+      answers: {
+        kind: picked("small_talk"),
+        needsHistory: { type: "noul", probability: 0.76 },
+      },
+    });
+    expect(turn.text).toBe("Відповідь Sonnet.");
+    expect(turn.report).toMatchObject({ tier: "reply" });
+    expect(turn.gateCalls).toBe(0);
+
+    const thanks = await run({
+      message: "Дякую!",
+      inConversation: true,
+      answers: {
+        kind: picked("small_talk"),
+        needsHistory: { type: "noul", probability: 0.2 },
+      },
+    });
+    expect(thanks.report).toMatchObject({ tier: "gate" });
   });
 
   it("gives a refusal, a throw and a request with no job to the reply model", async () => {

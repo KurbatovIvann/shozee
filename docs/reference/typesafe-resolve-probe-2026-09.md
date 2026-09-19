@@ -76,6 +76,17 @@ The unconsumed-words guard and `thresholds: { act: 0.75 }` on the
 `orders_create` spec. Findings 4 and 5 change who resolves a reference and
 what a catalog query means: ADR-0047.
 
+## After the first live trial, same day
+
+The order job's wording now names the terse form (calibration doc, series
+5): 23 of 36 orders are taken at the default thresholds, 19 right with the
+picker answered, 2 unneeded pickers, 2 to the reply model, none wrong. The
+`act` 0.75 override is gone. Two guards came from the live logs: an item
+whose words are the customer's ("Каті Самбуці 2 макаронси" planned a line
+`каті самбуці`) delegates, and talk that depends on the conversation ("Так"
+after a question) goes to the reply model — live, the gate model created an
+order from it.
+
 ## After ADR-0047 was built, same day
 
 The probe now calls the production `answerPickerFromMessage`, and the split

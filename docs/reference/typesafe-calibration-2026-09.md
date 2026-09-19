@@ -40,6 +40,7 @@ One series is 1173 requests, about 5 minutes and $0.20–0.26.
 | 3 | job wording: customers vs groups and counterparties, products vs price lists | 323 | 18 | 832 |
 | 4 | customer job's `yes` wording restored | 327 | 17 | 829 |
 | 4, replayed | unconsumed-words guard and `act` 0.75 on `orders_create` (resolve probe); no new run | 330 | 17 | 826 |
+| 5 | the order job's `yes` names the terse form ("Олені 2 капучино"); `act` back to the default | 325 | 18 | 830 |
 
 - **Thresholds were not the problem.** In series 1 the wrong calls were
   confident: 45 of 91 dropped something the message stated (a second status, a
@@ -88,3 +89,16 @@ One series is 1173 requests, about 5 minutes and $0.20–0.26.
 - To state "at most one wrong call in a hundred" for a tool, it needs about
   300 taken held-out observations; grow that tool's corpus, or use live shadow
   disagreements as cases.
+
+## Series 5, after the first live trial of ADR-0047
+
+Live, "Каті 2 макаронси" was `no_job`: the order job answered 0.63. Replayed,
+verbless orders sat at 0.59–0.74 — the question asked about "creating an
+order" and the message never says so. Naming the terse form in the `yes`
+moved them to 0.81–0.89 and left "Скільки коштує торт?" at 0.06. On the
+resolve probe the planner now takes 23 of 36 orders at the **default**
+thresholds (7 before), none wrong, so the `act` 0.75 override shipped earlier
+the same day was removed: wording did what the threshold was compensating
+for. The stand's totals moved within run-to-run noise (orders 31 → 33
+correct). The earlier lesson stands with a condition: leave a `yes` alone when
+the job already scores high on its own messages; change it when it does not.

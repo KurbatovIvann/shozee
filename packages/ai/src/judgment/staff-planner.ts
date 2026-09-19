@@ -277,7 +277,19 @@ function plannedCall(
       ...Object.values(input).filter((value) => typeof value === "string"),
       ...items.map((item) => item[spec.items?.product ?? ""] ?? ""),
     ];
-    if (unconsumedWords(message, spans).length > 0) {
+    const customerWords = new Set(
+      Object.values(input).flatMap((value) =>
+        typeof value === "string" ? value.split(" ") : [],
+      ),
+    );
+    if (
+      unconsumedWords(message, spans).length > 0 ||
+      items.some((item) =>
+        (item[spec.items?.product ?? ""] ?? "")
+          .split(" ")
+          .some((word) => customerWords.has(word)),
+      )
+    ) {
       uncovered = true;
     }
     args[spec.items.arg] = lines;

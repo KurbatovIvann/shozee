@@ -169,7 +169,7 @@ export const STAFF_JUDGMENT_SPECS: readonly StaffJudgmentSpec[] = [
     tool: "orders_create",
     action: "orders.create",
     job: {
-      yes: "create a new order with products for a customer",
+      yes: "create a new order with products for a customer; a terse message that only names who it is for, quantities and products (Олені 2 капучино) is such a request",
       no: "It only refers to an existing order: confirming, cancelling, starting, completing, listing, counting, or issuing a document for it.",
     },
     args: { customerQuery: text("customerName") },
@@ -177,7 +177,6 @@ export const STAFF_JUDGMENT_SPECS: readonly StaffJudgmentSpec[] = [
     beyond:
       "a date or time, delivery or pickup, an address, a comment or note, a price, a discount, or a payment",
     required: ["customerQuery", "items"],
-    thresholds: { act: 0.75 },
     reply: { uk: "Створив замовлення.", en: "The order is created." },
     items: {
       arg: "items",
