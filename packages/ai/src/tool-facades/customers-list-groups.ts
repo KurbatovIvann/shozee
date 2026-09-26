@@ -53,7 +53,7 @@ export type CustomersListGroupsFacadeInput = z.output<
   typeof customersListGroupsInputSchema
 >;
 
-const CUSTOMERS_LIST_GROUPS_DESCRIPTION = `Compact CRM customer-group page in the active company: id, name, memberCount, priceListId, and nextCursor. Optional case-insensitive name search. Optional cursor pages forward. Page size defaults to ${String(CUSTOMERS_LIST_GROUPS_ASSISTANT_LIMIT)} (cap ${String(CUSTOMERS_LIST_GROUPS_ASSISTANT_LIMIT)}) so every visible row matches nextCursor. Groups are not archived. Does not return description, slug, or timestamps. Find a group by name with this tool.`;
+const CUSTOMERS_LIST_GROUPS_DESCRIPTION = `List customer groups in the active company. Show all customer groups, or find a customer group by name. Compact page: id, name, memberCount, priceListId, and nextCursor. Optional case-insensitive name search. Optional cursor pages forward. Page size defaults to ${String(CUSTOMERS_LIST_GROUPS_ASSISTANT_LIMIT)} (cap ${String(CUSTOMERS_LIST_GROUPS_ASSISTANT_LIMIT)}) so every visible row matches nextCursor. Groups are not archived. Does not return description, slug, or timestamps. Find a group by name with this tool.`;
 
 export function mapCustomersListGroupsInput(
   input: CustomersListGroupsFacadeInput,
