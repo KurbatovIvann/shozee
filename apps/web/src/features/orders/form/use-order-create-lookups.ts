@@ -57,14 +57,6 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
   return debounced;
 }
 
-function matchesLookupQuery(haystack: string, query: string): boolean {
-  const needle = query.trim().toLowerCase();
-  if (needle.length === 0) {
-    return true;
-  }
-  return haystack.toLowerCase().includes(needle);
-}
-
 export function useOrderCreateLookups(args: {
   readonly enabled: boolean;
   readonly variantProductId: string | null;
@@ -126,15 +118,10 @@ export function useOrderCreateLookups(args: {
     }),
   });
 
-  const customerRows = useMemo(() => {
-    const items = customers.data?.items ?? [];
-    if (customerSearch === undefined) {
-      return items;
-    }
-    return items.filter((row) =>
-      matchesLookupQuery(`${row.name} ${row.phone ?? ""}`, customerSearch),
-    );
-  }, [customerSearch, customers.data?.items]);
+  const customerRows = useMemo(
+    () => customers.data?.items ?? [],
+    [customers.data?.items],
+  );
 
   const catalogFacts = useMemo((): OrderLineCatalogFactsMap => {
     const map = new Map<string, OrderLineCatalogFacts>();
@@ -149,18 +136,14 @@ export function useOrderCreateLookups(args: {
 
   const productRows = useMemo(() => {
     const items = products.data?.items ?? [];
-    const filtered =
-      productSearch === undefined
-        ? items
-        : items.filter((row) => matchesLookupQuery(row.name, productSearch));
-    return filtered.map((row) => ({
+    return items.map((row) => ({
       ...row,
       variantCount: overlayCatalogVariantCount(
         row.variantCount,
         catalogFacts.get(row.id),
       ),
     }));
-  }, [catalogFacts, productSearch, products.data?.items]);
+  }, [catalogFacts, products.data?.items]);
 
   const thumbnailPages = useMemo(() => [{ items: productRows }], [productRows]);
   const { urlsByFileId, failedFileIds } = useOrderThumbnails({

@@ -1,11 +1,12 @@
 import { implementAction } from "@showzy/core";
 import { CoreInvariantError } from "@showzy/core/errors";
 import { companyCustomers } from "@showzy/db/schema/customers";
+import { pickListNameSearch } from "@showzy/module-kit/name-match";
 import { paginate } from "@showzy/validation/pagination";
 import { and, desc, eq, lt, or } from "drizzle-orm";
 
 import { countLinkedCounterpartiesByCustomerIds } from "../services/count-linked-counterparties.js";
-import { customerListSearchPredicate } from "../services/customer-list-search.js";
+import { customerListSearch } from "../services/customer-list-search.js";
 import { customerColumns, toCustomerView } from "../services/customer-view.js";
 import {
   formatListCustomersCursor,
@@ -15,13 +16,31 @@ import {
 
 export const listCustomers = implementAction(listCustomersContract, {
   handler: async (input, ctx) => {
-    const searchPredicate =
-      input.search === undefined
-        ? undefined
-        : customerListSearchPredicate(input.search);
-    if (input.search !== undefined && searchPredicate === undefined) {
+    const search =
+      input.search === undefined ? undefined : customerListSearch(input.search);
+    if (input.search !== undefined && search === undefined) {
       return { items: [], nextCursor: null };
     }
+    const scope = and(
+      eq(companyCustomers.companyId, ctx.companyId),
+      input.status === "all"
+        ? undefined
+        : eq(companyCustomers.status, input.status),
+      input.groupId === undefined
+        ? undefined
+        : eq(companyCustomers.groupId, input.groupId),
+    );
+    const searchPredicate =
+      search === undefined
+        ? undefined
+        : await pickListNameSearch(search, async (strict) => {
+            const found = await ctx.db
+              .select({ id: companyCustomers.id })
+              .from(companyCustomers)
+              .where(and(scope, strict))
+              .limit(1);
+            return found.length > 0;
+          });
 
     const cursor =
       input.cursor === undefined
@@ -47,19 +66,7 @@ export const listCustomers = implementAction(listCustomersContract, {
     const pageRows = await ctx.db
       .select(customerColumns)
       .from(companyCustomers)
-      .where(
-        and(
-          eq(companyCustomers.companyId, ctx.companyId),
-          input.status === "all"
-            ? undefined
-            : eq(companyCustomers.status, input.status),
-          input.groupId === undefined
-            ? undefined
-            : eq(companyCustomers.groupId, input.groupId),
-          searchPredicate,
-          cursorPredicate,
-        ),
-      )
+      .where(and(scope, searchPredicate, cursorPredicate))
       .orderBy(desc(companyCustomers.updatedAt), desc(companyCustomers.id))
       .limit(input.limit + 1);
 

@@ -6,11 +6,6 @@
  *   not offset. `limit` defaults to 20 and caps at 50.
  * - Cursor payload is `sortOrder|id|name` so the name (which may contain
  *   `|`) is the remainder after the second separator.
- * - Name search is optional, case-insensitive Drizzle `ilike`, max 100.
- *   LIKE metacharacters `%`, `_`, and `\\` in the query are stripped so
- *   they cannot widen or escape the match; a query that strips to empty
- *   returns no rows. No color filter. No archived filter (groups are
- *   not archived).
  * - `timeout: 5000` matches the golden catalog/pricing reads.
  * - No `rateLimit` override — staff default 120/min per user.
  * - `idempotent: false` like other staff reads: core.md §5 treats reads as
@@ -76,7 +71,7 @@ export const listGroupsOutputSchema = z.object({
 export const listGroupsContract = defineActionContract({
   name: "customers.listGroups",
   description:
-    "List customer groups in the staff member's active company. Order by sort_order ascending, then name, then id. Optional case-insensitive name search. Paginate with a sort-order/name/id cursor and a page size of at most 50. Each row is the group view (id, name, slug, description, price-list assignment, active member count, timestamps). Company id is never input. Groups are not archived.",
+    "List customer groups in the staff member's active company. Order by sort_order ascending, then name, then id. Optional name search: every word of the query must start a word of the name, Ukrainian inflections included; when nothing matches, names within a typo of the query match instead. Paginate with a sort-order/name/id cursor and a page size of at most 50. Each row is the group view (id, name, slug, description, price-list assignment, active member count, timestamps). Company id is never input. Groups are not archived.",
   principal: "staff",
   transport: "client",
   input: listGroupsInputSchema,
