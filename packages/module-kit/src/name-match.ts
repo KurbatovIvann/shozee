@@ -8,6 +8,7 @@ import { and, or, sql, type SQL, type SQLWrapper } from "drizzle-orm";
 
 export const NAME_MATCH_FUZZY_TOKEN_MIN = 5;
 export const NAME_MATCH_SUBSTRING_TOKEN_MIN = 3;
+export const NAME_MATCH_TYPO_SIMILARITY_MIN = 0.5;
 export const NAME_MATCH_STRICT_BOOST = 16;
 
 const LEXEME_BREAK = /[^\p{L}\p{N}]+/u;
@@ -77,7 +78,9 @@ function typoTokenSql(
   columns: NameMatchColumns,
   token: string,
 ): SQL | undefined {
-  return isFuzzyToken(token) ? sql`${token} <% ${columns.name}` : undefined;
+  return isFuzzyToken(token)
+    ? sql`(${token} <% ${columns.name} AND word_similarity(${token}, ${columns.name}) >= ${NAME_MATCH_TYPO_SIMILARITY_MIN})`
+    : undefined;
 }
 
 function anyOf(clauses: ReadonlyArray<SQL | undefined>): SQL | undefined {
