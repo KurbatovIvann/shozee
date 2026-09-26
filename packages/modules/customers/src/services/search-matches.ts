@@ -18,7 +18,6 @@ import {
 } from "@showzy/db/schema/customers";
 import {
   ORDER_CUSTOMER_LOOKUP_MAX,
-  SEARCH_APOSTROPHE_CANON,
   SEARCH_CUSTOMER_TYPES,
   SEARCH_LABEL_MAX,
   SEARCH_STATUS_MAX,
@@ -36,12 +35,11 @@ import {
   type SearchHit,
   type SearchMatchedOn,
 } from "@showzy/validation/search";
+import { exactNameSql, nameMatch } from "@showzy/module-kit/name-match";
 import { and, eq, or, sql, type SQL, type SQLWrapper } from "drizzle-orm";
 
 type StaffDb = Extract<ActionCtx, { principal: "staff" }>["db"];
 type PreparedTokens = Extract<PreparedSearchQuery, { empty: false }>;
-
-const TSQUERY_LEXEME = /[^\p{L}\p{N}]+/gu;
 
 type InternalHit = SearchHit & {
   readonly type: SearchCustomerType;
@@ -324,28 +322,7 @@ function nameMatchSql(
   nameFts: SQLWrapper,
   tokens: readonly string[],
 ): SQL | undefined {
-  const clauses: SQL[] = [];
-  for (const token of tokens) {
-    const clause = nameTokenSql(name, nameFts, token);
-    if (clause === undefined) {
-      return undefined;
-    }
-    clauses.push(clause);
-  }
-  return combineAnd(clauses);
-}
-
-function nameTokenSql(
-  name: SQLWrapper,
-  nameFts: SQLWrapper,
-  token: string,
-): SQL | undefined {
-  const trgm = sql`${token} <% ${name}`;
-  const tsquery = prefixTsQuery(token);
-  if (tsquery === undefined) {
-    return trgm;
-  }
-  return or(sql`${nameFts} @@ to_tsquery('simple', ${tsquery})`, trgm) ?? trgm;
+  return nameMatch({ name, nameFts }, tokens).strictOrFuzzy;
 }
 
 function nameRankSql(
@@ -353,18 +330,7 @@ function nameRankSql(
   nameFts: SQLWrapper,
   tokens: readonly string[],
 ): SQL {
-  const parts: SQL[] = [];
-  const joined = tokens
-    .map((token) => prefixTsQuery(token))
-    .filter((token): token is string => token !== undefined)
-    .join(" & ");
-  if (joined.length > 0) {
-    parts.push(sql`ts_rank(${nameFts}, to_tsquery('simple', ${joined}))`);
-  }
-  for (const token of tokens) {
-    parts.push(sql`word_similarity(${token}, ${name})`);
-  }
-  return combineSum(parts) ?? sql`0`;
+  return nameMatch({ name, nameFts }, tokens).rank;
 }
 
 function phoneMatchSql(
@@ -449,24 +415,11 @@ function exactPhoneSql(
   return sql`${canonicalPhoneSql(phone)} = ${canonical}`;
 }
 
-/** Mirrors `nameCandidate` exact: collapsed NFC name, apostrophe-fold, lower. */
-function exactNameSql(name: SQLWrapper, queryNormalized: string): SQL {
-  const foldedQuery = foldSearchNameToken(queryNormalized);
-  const collapsed = sql`btrim(regexp_replace(normalize(${name}, NFC), '[[:space:]]+', ' ', 'g'))`;
-  const foldedName = sql`replace(replace(lower(${collapsed}), ${"\u2019"}, ${SEARCH_APOSTROPHE_CANON}), ${"\u02BC"}, ${SEARCH_APOSTROPHE_CANON})`;
-  return sql`${foldedName} = ${foldedQuery}`;
-}
-
 function exactBoostSql(exactMatch: SQL | undefined): SQL {
   if (exactMatch === undefined) {
     return sql`0`;
   }
   return sql`(CASE WHEN ${exactMatch} THEN 1 ELSE 0 END)`;
-}
-
-function prefixTsQuery(token: string): string | undefined {
-  const lexeme = token.replace(TSQUERY_LEXEME, "");
-  return lexeme.length === 0 ? undefined : `${lexeme}:*`;
 }
 
 function toCustomerHit(
@@ -723,26 +676,10 @@ function definedSql(clauses: ReadonlyArray<SQL | undefined>): SQL[] {
   return present;
 }
 
-function combineAnd(clauses: readonly SQL[]): SQL | undefined {
-  let combined: SQL | undefined;
-  for (const clause of clauses) {
-    combined = combined === undefined ? clause : and(combined, clause);
-  }
-  return combined;
-}
-
 function combineOr(clauses: readonly SQL[]): SQL | undefined {
   let combined: SQL | undefined;
   for (const clause of clauses) {
     combined = combined === undefined ? clause : or(combined, clause);
-  }
-  return combined;
-}
-
-function combineSum(parts: readonly SQL[]): SQL | undefined {
-  let combined: SQL | undefined;
-  for (const part of parts) {
-    combined = combined === undefined ? part : sql`${combined} + ${part}`;
   }
   return combined;
 }

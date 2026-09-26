@@ -180,7 +180,7 @@ export function likeContainsPattern(query: string): string | undefined {
   return `%${literal}%`;
 }
 
-function stemNameToken(token: string): string {
+export function stemNameToken(token: string): string {
   if (token.length >= 6) {
     return token.slice(0, -2);
   }

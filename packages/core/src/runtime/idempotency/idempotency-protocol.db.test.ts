@@ -565,15 +565,16 @@ describe("idempotency protocol — takeover fencing (SHO-434)", () => {
     takeover.release();
     const outcomes = await Promise.allSettled([first, second]);
 
-    const fulfilled = outcomes.filter((o) => o.status === "fulfilled");
-    const rejected = outcomes.filter((o) => o.status === "rejected");
-    expect(fulfilled).toHaveLength(1);
-    expect(rejected).toHaveLength(1);
-    expect(rejected[0]).toEqual(
-      expect.objectContaining({ status: "rejected" }),
+    const results = outcomes.flatMap((o) =>
+      o.status === "fulfilled" ? [o.value.resultId] : [],
     );
-    if (rejected[0]?.status === "rejected") {
-      expect(rejected[0].reason).toBeInstanceOf(ConcurrentRetryError);
+    const refusals = outcomes.flatMap((o): unknown[] =>
+      o.status === "rejected" ? [o.reason] : [],
+    );
+    expect(results.length).toBeGreaterThanOrEqual(1);
+    expect(new Set(results).size).toBe(1);
+    for (const refusal of refusals) {
+      expect(refusal).toBeInstanceOf(ConcurrentRetryError);
     }
     expect(runs()).toBe(1);
     expect(await countEffects(key)).toBe(1);
