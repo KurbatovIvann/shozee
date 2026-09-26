@@ -6,9 +6,12 @@ import {
   candidatesContainingQuery,
   entityRefSchema,
   formatReferenceConflictMessage,
+  isInflectionOfName,
+  isInflectionOfWord,
   normalizeReferenceQuery,
   normalizeUniqueMatchQuery,
   pickUniqueNormalizedMatch,
+  pickUniqueReferenceMatch,
 } from "./entity-ref.js";
 
 describe("@showzy/validation/entity-ref", () => {
@@ -90,5 +93,56 @@ describe("@showzy/validation/entity-ref", () => {
     expect(message).toContain("A (…1111)");
     expect(message).toContain("E (…5555)");
     expect(message).not.toContain("F (…6666)");
+  });
+});
+
+describe("reference inflection", () => {
+  it("accepts an oblique case of the same word and rejects a different word", () => {
+    expect(isInflectionOfWord("олени", "олена")).toBe(true);
+    expect(isInflectionOfWord("шевчука", "шевчук")).toBe(true);
+    expect(isInflectionOfWord("коваля", "коваль")).toBe(true);
+    expect(isInflectionOfWord("марію", "марія")).toBe(true);
+    expect(isInflectionOfWord("петренка", "петренко")).toBe(true);
+    expect(isInflectionOfWord("шевчука", "шевчун")).toBe(false);
+    expect(isInflectionOfWord("олени", "олеся")).toBe(false);
+    expect(isInflectionOfWord("петренка", "петрук")).toBe(false);
+    expect(isInflectionOfWord("anna", "anne")).toBe(false);
+  });
+
+  it("needs the same number of words, in any order", () => {
+    expect(isInflectionOfName("Олени Петренко", "Олена Петренко")).toBe(true);
+    expect(isInflectionOfName("шевчука ігоря", "Ігор Шевчук")).toBe(true);
+    expect(isInflectionOfName("петренка", "Олена Петренко")).toBe(false);
+    expect(isInflectionOfName("олени петренко", "Олена Петрук")).toBe(false);
+  });
+
+  const rows = [
+    { id: "1", name: "Олена Петренко", phone: "0671000001" },
+    { id: "2", name: "Олена Петрук", phone: "0671000002" },
+  ];
+  const fields = (row: (typeof rows)[number]) => [row.name, row.phone];
+  const name = (row: (typeof rows)[number]) => row.name;
+
+  it("writes on a unique inflected name when nothing is exact", () => {
+    expect(
+      pickUniqueReferenceMatch("олени петренко", rows, fields, name),
+    ).toEqual({ kind: "unique", row: rows[0] });
+  });
+
+  it("keeps the exact rule first and never auto-chooses a loose candidate", () => {
+    expect(pickUniqueReferenceMatch("0671000002", rows, fields, name)).toEqual({
+      kind: "unique",
+      row: rows[1],
+    });
+    expect(pickUniqueReferenceMatch("олена", rows, fields, name)).toEqual({
+      kind: "ambiguous",
+      rows,
+    });
+    expect(
+      pickUniqueReferenceMatch("олена питренко", rows, fields, name),
+    ).toEqual({ kind: "ambiguous", rows });
+    expect(pickUniqueReferenceMatch("олени", [], fields, name)).toEqual({
+      kind: "none",
+    });
   });
 });
