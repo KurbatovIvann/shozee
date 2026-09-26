@@ -44,15 +44,25 @@ describe("nameMatch", () => {
     expect(match.strictOrFuzzy).toBeUndefined();
   });
 
-  it("keeps short tokens strict and lets long tokens also match by trigram", () => {
-    const match = nameMatch(columns, ["кап", "капучіно"]);
+  it("has three tiers: word start, plus substring, plus typo on long tokens", () => {
+    const match = nameMatch(columns, ["ка", "кап", "капучіно"]);
     const strict = render(match.strict ?? sql``);
-    const either = render(match.strictOrFuzzy ?? sql``);
+    const substring = render(match.strictOrSubstring ?? sql``);
+    const fuzzy = render(match.strictOrFuzzy ?? sql``);
 
-    expect(strict.sql).not.toContain("<%");
-    expect(strict.params).toEqual(["кап:*", "капучі:*"]);
-    expect(either.sql.match(/<%/g)).toHaveLength(1);
-    expect(either.params).toEqual(["кап:*", "капучі:*", "капучіно"]);
+    expect(strict.params).toEqual(["ка:*", "кап:*", "капучі:*"]);
+    expect(strict.sql).not.toContain("ILIKE");
+    expect(substring.params).toEqual([
+      "ка:*",
+      "кап:*",
+      "%кап%",
+      "капучі:*",
+      "%капучіно%",
+    ]);
+    expect(substring.sql).not.toContain("<%");
+    expect(fuzzy.sql.match(/<%/g)).toHaveLength(1);
+    expect(fuzzy.sql).toContain("word_similarity");
+    expect(fuzzy.params.slice(-3)).toEqual(["капучіно", "капучіно", 0.5]);
   });
 
   it("ranks a strict row above any fuzzy-only row", () => {
