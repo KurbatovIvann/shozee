@@ -6,10 +6,6 @@
  * - Pagination is a stable `(createdAt desc, id desc)` cursor, not offset.
  *   `limit` defaults to 20 and caps at 50 (small-business catalog pages).
  * - `status` defaults to `active`; `archived` and `all` are explicit.
- * - Name search is optional. Name is token-AND of `nameSearchStems` as
- *   word-prefix `ilike` (SHO-396 / SHO-400). LIKE metacharacters `%`,
- *   `_`, and `\\` in the query are stripped so they cannot widen or
- *   escape the match; a query that strips to empty returns no rows.
  * - Primary image is lowest `position`, then media id (same as
  *   `getProduct.imageFileIds[0]`).
  * - `timeout: 5000` matches the golden catalog reads.
@@ -87,7 +83,7 @@ export const listProductsOutputSchema = z.object({
 export const listProductsContract = defineActionContract({
   name: "catalog.listProducts",
   description:
-    "List products in the staff member's active company. Default to active products; pass status archived or all to include archived rows. Optional case-insensitive name search: every token stem must match as a word prefix (Ukrainian inflections). Paginate with a created-at cursor and a page size of at most 50. Each row includes id, name, base price, currency, status, variant count, the primary image fileId (lowest position, if any), and timestamps. Clients fetch display URLs via files.getDownloadUrl — this action never returns URLs or object keys.",
+    "List products in the staff member's active company. Default to active products; pass status archived or all to include archived rows. Optional name search: every word of the query must start a word of the name, Ukrainian inflections included; when nothing matches, names within a typo of the query match instead. Paginate with a created-at cursor and a page size of at most 50. Each row includes id, name, base price, currency, status, variant count, the primary image fileId (lowest position, if any), and timestamps. Clients fetch display URLs via files.getDownloadUrl — this action never returns URLs or object keys.",
   principal: "staff",
   transport: "client",
   input: listProductsInputSchema,

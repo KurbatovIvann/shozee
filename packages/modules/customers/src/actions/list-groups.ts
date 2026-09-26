@@ -1,8 +1,12 @@
 import { implementAction } from "@showzy/core";
 import { CoreInvariantError } from "@showzy/core/errors";
 import { customerGroups } from "@showzy/db/schema/customers";
-import { likeContainsPattern, paginate } from "@showzy/validation/pagination";
-import { and, asc, eq, gt, ilike, or } from "drizzle-orm";
+import {
+  listNameSearch,
+  pickListNameSearch,
+} from "@showzy/module-kit/name-match";
+import { paginate } from "@showzy/validation/pagination";
+import { and, asc, eq, gt, or } from "drizzle-orm";
 
 import { countActiveMembersByGroupIds } from "../services/count-active-members.js";
 import { toGroupView } from "../services/group-view.js";
@@ -14,13 +18,28 @@ import {
 
 export const listGroups = implementAction(listGroupsContract, {
   handler: async (input, ctx) => {
-    const searchPattern =
+    const search =
       input.search === undefined
         ? undefined
-        : likeContainsPattern(input.search);
-    if (input.search !== undefined && searchPattern === undefined) {
+        : listNameSearch(
+            { name: customerGroups.name, nameFts: customerGroups.nameFts },
+            input.search,
+          );
+    if (input.search !== undefined && search === undefined) {
       return { items: [], nextCursor: null };
     }
+    const scope = eq(customerGroups.companyId, ctx.companyId);
+    const searchPredicate =
+      search === undefined
+        ? undefined
+        : await pickListNameSearch(search, async (strict) => {
+            const found = await ctx.db
+              .select({ id: customerGroups.id })
+              .from(customerGroups)
+              .where(and(scope, strict))
+              .limit(1);
+            return found.length > 0;
+          });
 
     const cursor =
       input.cursor === undefined
@@ -60,15 +79,7 @@ export const listGroups = implementAction(listGroupsContract, {
         updatedAt: customerGroups.updatedAt,
       })
       .from(customerGroups)
-      .where(
-        and(
-          eq(customerGroups.companyId, ctx.companyId),
-          searchPattern === undefined
-            ? undefined
-            : ilike(customerGroups.name, searchPattern),
-          cursorPredicate,
-        ),
-      )
+      .where(and(scope, searchPredicate, cursorPredicate))
       .orderBy(
         asc(customerGroups.sortOrder),
         asc(customerGroups.name),
