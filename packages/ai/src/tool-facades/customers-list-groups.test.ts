@@ -157,6 +157,15 @@ describe("mapCustomersListGroupsOutput", () => {
 });
 
 describe("customersListGroupsFacadeTools", () => {
+  it("opens its description with the words a tool search for it uses", () => {
+    const tools = customersListGroupsFacadeTools(listGroups, () =>
+      Promise.resolve({}),
+    );
+    expect(tools["customers_list_groups"]?.description).toMatch(
+      /^List customer groups in the active company. Show all customer groups, or find a customer group by name./,
+    );
+  });
+
   it("executes customers.listGroups with mapped canonical input and toolCallId", async () => {
     const execute = vi.fn(() =>
       Promise.resolve({
