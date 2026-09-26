@@ -12,7 +12,13 @@ registry is injected into `createAssistantRuntime`; this package never imports
 
 - `assistant-runtime.ts` — `createAssistantRuntime`: tools per caller, the
   resolved-answer runner, the system prompt, and the per-caller kit and history
-  stores. `assistantKitIdempotencyKey` derives a tool's key from the command.
+  stores. `assistantKitIdempotencyKey` derives a tool's key from the command and the
+  action: one write of a kind per command, and an untouched retry replays it.
+  The one exception: after the handler itself refused the write (`VALIDATION`,
+  `NOT_FOUND`, `CONFLICT`, `PERMISSION_DENIED` — nothing was written), the next
+  call to that action in the same turn gets a new key, so a corrected call is
+  not an `IDEMPOTENCY_CONFLICT` with the refused one. Never after `INTERNAL`,
+  `TIMEOUT` or an idempotency refusal, where a write may stand.
   `createAssistantCallerKits` is the per-caller kit, history and turn stores on
   their own, built without a provider or a language model, so recovery work can
   act as a turn's author with no model mounted (SHO-698).
