@@ -36,6 +36,7 @@ import {
   confirmation,
   createResolveAnswer,
   withChosenId,
+  type AssistantPickerAnswer,
   type AssistantToolLogger,
   type ChoiceSecret,
   type ResolveAnswerDeps,
@@ -107,10 +108,12 @@ function capturingLogger(): {
 function tools(
   execute: ActionToolExecute,
   logger?: AssistantToolLogger,
+  answerPicker?: AssistantPickerAnswer,
 ): ToolSet {
   return assistantKitTurnTools(
     staffAssistantTools(CONTRACTS, execute),
     logger ?? capturingLogger().logger,
+    answerPicker,
   );
 }
 
@@ -420,6 +423,70 @@ describe("a picker CONFLICT becomes a pause, not an error", () => {
     expect(outcome.kind).toBe("pause");
     if (outcome.kind !== "pause") return;
     expect(outcome.prompt).toMatchObject({ subject: "Наполеон" });
+  });
+});
+
+describe("a picker the judgment answers from the person's words", () => {
+  const conflictThenCreate =
+    (inputs: unknown[]): ActionToolExecute =>
+    (_action, input) => {
+      inputs.push(input);
+      return inputs.length === 1
+        ? Promise.reject(pickerConflict({ kind: "customer", query: "Катя" }))
+        : Promise.resolve(CREATED_ORDER);
+    };
+
+  it("calls the same tool again with the chosen id and never pauses", async () => {
+    const inputs: unknown[] = [];
+    const asked: unknown[] = [];
+    const set = tools(conflictThenCreate(inputs), undefined, (picker, line) => {
+      asked.push({ subject: picker.target, line });
+      return Promise.resolve(CUSTOMER_A);
+    });
+
+    const outcome = await run(set, ORDERS_CREATE_TOOL_NAME, CREATE_BY_QUERY);
+
+    expect(outcome.kind).toBe("ok");
+    expect(asked).toEqual([
+      { subject: { kind: "customer", query: "Катя" }, line: undefined },
+    ]);
+    expect(inputs).toHaveLength(2);
+    expect(inputs[1]).toMatchObject({
+      customer: { by: "id", id: CUSTOMER_A },
+    });
+  });
+
+  it("opens the picker when the judgment does not say, or names an option never offered", async () => {
+    for (const answer of [undefined, ORDER_ID]) {
+      const inputs: unknown[] = [];
+      const set = tools(conflictThenCreate(inputs), undefined, () =>
+        Promise.resolve(answer),
+      );
+      const outcome = await run(set, ORDERS_CREATE_TOOL_NAME, CREATE_BY_QUERY);
+      expect(outcome.kind).toBe("pause");
+      expect(inputs).toHaveLength(1);
+    }
+  });
+
+  it("stops answering after four pickers and leaves the fifth to the person", async () => {
+    let calls = 0;
+    const set = tools(
+      () => {
+        calls += 1;
+        return Promise.reject(
+          pickerConflict({ kind: "customer", query: "Катя" }),
+        );
+      },
+      undefined,
+      () => Promise.resolve(CUSTOMER_A),
+    );
+    const outcome = await run(set, ORDERS_CREATE_TOOL_NAME, CREATE_BY_QUERY);
+    expect(outcome.kind).toBe("pause");
+    expect(calls).toBe(5);
+    if (outcome.kind !== "pause") return;
+    expect((outcome.secret as ChoiceSecret).input).toMatchObject({
+      customerId: CUSTOMER_A,
+    });
   });
 });
 

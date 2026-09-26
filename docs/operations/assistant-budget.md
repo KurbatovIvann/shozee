@@ -19,6 +19,19 @@ Runbook for SHO-505. Production keys live in Redis.
 
 Restart the API after changing env. Counters are not reset by a restart.
 
+Requirement (ADR-0043, record only): judgment-provider spend (TypeSafe,
+about $0.0001 a request) is not metered and sits inside the turn's flat
+reservation. Meter it when a consumer makes more than a few requests a turn.
+
+With `ASSISTANT_JUDGMENT_MODE=take` (ADR-0045) a turn the judgment answers
+alone calls no language model and gives its reservation back, like a turn that
+never reached a model; its TypeSafe spend (at most two requests) is unmetered.
+The context rewrite (gate model, about $0.0003, started for every turn inside
+a conversation) is unmetered in the same way: the reservation is kept only
+when a tool-loop model ran: the gate model (ADR-0046 tier two) or the reply
+model. A gate-model turn keeps the same flat reservation as a reply-model turn. Requirement (record only): meter gate-model spend if
+it ever becomes more than one short call a turn.
+
 ## Redis keys
 
 Turn limit uses the existing token-bucket store:

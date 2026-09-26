@@ -18,7 +18,10 @@ const SECRET_ENV_KEYS: ReadonlySet<string> = new Set([
   "RESEND_API_KEY",
   "SMS_FLY_API_KEY",
   "ANTHROPIC_API_KEY",
+  "TYPESAFE_API_KEY",
 ]);
+
+const MOVING_MODEL_ALIAS = /-(latest|preview)$/;
 
 const DEFAULT_SMS_FLY_API_URL = "https://sms-fly.ua/api/v2/api.php";
 
@@ -157,6 +160,15 @@ const envObjectSchema = z.object({
    * second `@ai-sdk/*` package). Not a secret. Default Haiku 4.5.
    */
   AI_GATE_MODEL: z.string().min(1).default("claude-haiku-4-5"),
+  TYPESAFE_API_KEY: z.string().min(1).optional(),
+  TYPESAFE_MODEL: z
+    .string()
+    .min(1)
+    .refine((id) => !MOVING_MODEL_ALIAS.test(id), {
+      message: "must be a pinned model version, not a moving alias",
+    })
+    .default("jev-1.13.0"),
+  ASSISTANT_JUDGMENT_MODE: z.enum(["off", "shadow", "take"]).default("shadow"),
   /**
    * Staff-assistant HTTP turn bucket (`POST /assistant/chat`). `0` disables
    * the per-user turn check (SHO-505). Default 20 turns / 60s / user.
@@ -316,6 +328,9 @@ export interface ServerConfig {
     readonly assistantKitEnabled: boolean;
     readonly model: string;
     readonly gateModel: string;
+    readonly typesafeApiKey: string | undefined;
+    readonly typesafeModel: string;
+    readonly judgmentMode: "off" | "shadow" | "take";
     /** `0` disables the per-user `/assistant/chat` turn check. */
     readonly chatTurnsPerMinutePerUser: number;
     /** `0` disables the per-company Kyiv-day USD check. */
@@ -426,6 +441,9 @@ export function loadServerConfig(
       assistantKitEnabled: parsed.AI_ASSISTANT_KIT,
       model: parsed.AI_MODEL,
       gateModel: parsed.AI_GATE_MODEL,
+      typesafeApiKey: parsed.TYPESAFE_API_KEY,
+      typesafeModel: parsed.TYPESAFE_MODEL,
+      judgmentMode: parsed.ASSISTANT_JUDGMENT_MODE,
       chatTurnsPerMinutePerUser: parsed.AI_CHAT_TURNS_PER_MINUTE_PER_USER,
       dailyBudgetUsdPerCompany: parsed.AI_DAILY_BUDGET_USD_PER_COMPANY,
       dailyBudgetUsdGlobal: parsed.AI_DAILY_BUDGET_USD_GLOBAL,

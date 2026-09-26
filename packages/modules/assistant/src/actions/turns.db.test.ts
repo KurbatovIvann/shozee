@@ -1357,6 +1357,67 @@ describe("ending a turn takes its hold off the row", () => {
     });
   });
 
+  it("stores the judgment shadow with the first finish, and never afterwards", async () => {
+    const conversationId = await newConversation();
+    const input = chatAccept(conversationId);
+    const turn = ref(conversationId, input.commandId);
+    await kit.invoke(acceptTurn, input, {});
+    const shadow = {
+      version: 2,
+      model: "jev-1.13.0",
+      latencyMs: 312,
+      needsHistory: 0.91,
+      rewriteUsed: true,
+      kind: "request",
+      kindConfidence: 0.98,
+      plan: {
+        tool: "orders_list_counts",
+        args: { period: "today" },
+        risk: "read",
+        minConfidence: 0.91,
+      },
+      wouldTake: true,
+      taken: false,
+      modelFirstCall: { tool: "orders_list_counts", args: { period: "today" } },
+      toolAgrees: true,
+      argsAgree: true,
+    };
+    const storedShadow = async () =>
+      (
+        await kit.db.runtime.db
+          .select({ judgmentShadow: assistantTurns.judgmentShadow })
+          .from(assistantTurns)
+          .where(eq(assistantTurns.conversationId, conversationId))
+      )[0]?.judgmentShadow;
+
+    await expect(
+      kit.invoke(
+        finishTurn,
+        { ...turn, status: "done", judgmentShadow: { ...shadow, version: 3 } },
+        {},
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+    expect(await storedShadow()).toBeNull();
+
+    await kit.invoke(
+      finishTurn,
+      { ...turn, status: "done", judgmentShadow: shadow },
+      {},
+    );
+    expect(await storedShadow()).toEqual(shadow);
+
+    await kit.invoke(
+      finishTurn,
+      {
+        ...turn,
+        status: "failed",
+        judgmentShadow: { ...shadow, wouldTake: false },
+      },
+      {},
+    );
+    expect(await storedShadow()).toEqual(shadow);
+  });
+
   it("interrupts a running turn past its deadline once, audited in its company", async () => {
     const conversationId = await newConversation();
     const input = chatAccept(conversationId);

@@ -18,7 +18,11 @@
  * — the continuation is stored, so resume replays once instead of a two-phase
  * retry.
  */
-import { catalogPickerConflictExtrasFromError } from "@showzy/ai";
+import {
+  JUDGMENT_PICKER_ANSWERS_MAX,
+  catalogPickerConflictExtrasFromError,
+  type CatalogPickerConflictExtras,
+} from "@showzy/ai";
 import type { CardRef, ToolOutcome, ToolSet } from "@showzy/assistant-kit";
 import { CoreError } from "@showzy/core/errors";
 import {
@@ -36,12 +40,38 @@ import {
   AssistantConfirmationRequired,
   confirmationPause,
 } from "./assistant-kit-confirmation.js";
+import { withChosenId } from "./assistant-kit-resolve.js";
 
 /**
  * The only thing this layer needs from a logger. Narrower than pino's, which a
  * pino logger satisfies structurally — so the runtime passes the real one and a
  * test passes an object.
  */
+export type AssistantPickerAnswer = (
+  picker: CatalogPickerConflictExtras,
+  line: string | undefined,
+) => Promise<string | undefined>;
+
+function orderLineOf(
+  input: unknown,
+  target: ChoicePickerTarget,
+): string | undefined {
+  if (!("lineIndex" in target) || typeof input !== "object" || input === null) {
+    return undefined;
+  }
+  const items: unknown = Reflect.get(input, "items");
+  const line: unknown = Array.isArray(items)
+    ? items[target.lineIndex]
+    : undefined;
+  if (typeof line !== "object" || line === null) {
+    return undefined;
+  }
+  const said = ["quantityDecimal", "productQuery", "variantQuery"]
+    .map((field): unknown => Reflect.get(line, field))
+    .filter((value) => typeof value === "string");
+  return said.length === 0 ? undefined : said.join(" ");
+}
+
 export interface AssistantToolLogger {
   warn(fields: Record<string, unknown>, message: string): void;
 }
@@ -126,6 +156,7 @@ function subjectFor(target: ChoicePickerTarget): string {
 export function assistantKitTurnTools(
   base: ToolSet,
   logger: AssistantToolLogger,
+  answerPicker?: AssistantPickerAnswer,
 ): ToolSet {
   const results: AssistantSurfaceToolResult[] = [];
   const wrapped: ToolSet = {};
@@ -138,61 +169,92 @@ export function assistantKitTurnTools(
     }
     wrapped[name] = {
       ...definition,
-      execute: async (input, options): Promise<ToolOutcome> => {
-        try {
-          const before = assistantSurfacesFromToolResults(results);
-          const result: unknown = await execute(input, options);
-          results.push({ toolName: name, output: result });
-          const card = cardFor(
-            before,
-            assistantSurfacesFromToolResults(results),
-          );
-          return card === undefined
-            ? { kind: "ok", result }
-            : { kind: "ok", result, card };
-        } catch (error) {
-          const picker = catalogPickerConflictExtrasFromError(error);
-          if (picker !== undefined) {
-            const secret: ChoiceSecret = {
-              // The option id is the entity id here; the map still exists so an
-              // option this picker never offered is refused by the interaction.
-              byOption: Object.fromEntries(
-                picker.options.map((option) => [option.id, option.id]),
-              ),
-              toolName: name,
-              input,
-              target: picker.target,
-            };
-            return {
-              kind: "pause",
-              interaction: "choice",
-              prompt: {
-                subject: subjectFor(picker.target),
-                options: picker.options.map((option) => ({
-                  optionId: option.id,
-                  label: option.label,
-                })),
-                optionsTruncated: picker.optionsTruncated,
-              },
-              secret,
-            };
+      execute: async (firstInput, options): Promise<ToolOutcome> => {
+        let input: unknown = firstInput;
+        for (let answered = 0; ; answered += 1) {
+          const outcome = await attempt(input, options, answered);
+          if ("retryWith" in outcome) {
+            input = outcome.retryWith;
+            continue;
           }
-          if (error instanceof AssistantConfirmationRequired) {
-            // Core will not run this without a person's say-so and has issued
-            // a challenge for it. Nothing was written; the person is asked.
-            return confirmationPause(error);
-          }
-          if (error instanceof CoreError) {
-            if (error.code === "CONFLICT") {
-              logUnpickableConflict(logger, name, error);
-            }
-            return { kind: "error", code: error.code, message: error.message };
-          }
-          // Not a domain refusal. Let the loop see it as a failed turn rather
-          // than dressing an unknown fault as a business answer.
-          throw error;
+          return outcome;
         }
       },
+    };
+
+    const attempt = async (
+      input: unknown,
+      options: Parameters<NonNullable<typeof execute>>[1],
+      answered: number,
+    ): Promise<ToolOutcome | { readonly retryWith: unknown }> => {
+      try {
+        const before = assistantSurfacesFromToolResults(results);
+        const result: unknown = await execute(input, options);
+        results.push({ toolName: name, output: result });
+        const card = cardFor(before, assistantSurfacesFromToolResults(results));
+        return card === undefined
+          ? { kind: "ok", result }
+          : { kind: "ok", result, card };
+      } catch (error) {
+        const picker = catalogPickerConflictExtrasFromError(error);
+        if (
+          picker !== undefined &&
+          answerPicker !== undefined &&
+          answered < JUDGMENT_PICKER_ANSWERS_MAX
+        ) {
+          const chosen = await answerPicker(
+            picker,
+            orderLineOf(input, picker.target),
+          );
+          const patched =
+            chosen !== undefined &&
+            picker.options.some((option) => option.id === chosen)
+              ? withChosenId(input, picker.target, chosen)
+              : undefined;
+          if (patched?.kind === "patched") {
+            return { retryWith: patched.input };
+          }
+        }
+        if (picker !== undefined) {
+          const secret: ChoiceSecret = {
+            // The option id is the entity id here; the map still exists so an
+            // option this picker never offered is refused by the interaction.
+            byOption: Object.fromEntries(
+              picker.options.map((option) => [option.id, option.id]),
+            ),
+            toolName: name,
+            input,
+            target: picker.target,
+          };
+          return {
+            kind: "pause",
+            interaction: "choice",
+            prompt: {
+              subject: subjectFor(picker.target),
+              options: picker.options.map((option) => ({
+                optionId: option.id,
+                label: option.label,
+              })),
+              optionsTruncated: picker.optionsTruncated,
+            },
+            secret,
+          };
+        }
+        if (error instanceof AssistantConfirmationRequired) {
+          // Core will not run this without a person's say-so and has issued
+          // a challenge for it. Nothing was written; the person is asked.
+          return confirmationPause(error);
+        }
+        if (error instanceof CoreError) {
+          if (error.code === "CONFLICT") {
+            logUnpickableConflict(logger, name, error);
+          }
+          return { kind: "error", code: error.code, message: error.message };
+        }
+        // Not a domain refusal. Let the loop see it as a failed turn rather
+        // than dressing an unknown fault as a business answer.
+        throw error;
+      }
     };
   }
 

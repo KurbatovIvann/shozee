@@ -64,6 +64,86 @@ export type {
   StaffProviderToolDecoration,
 } from "./provider/types.js";
 export {
+  normalizeSpan,
+  numberCandidates,
+  spanCandidates,
+} from "./judgment/candidates.js";
+export {
+  judgmentShadowOf,
+  observedShadowCall,
+  type ObservedToolCall,
+} from "./judgment/shadow.js";
+export {
+  CONTEXT_REWRITE_EXCHANGES_MAX,
+  CONTEXT_REWRITE_SYSTEM_PROMPT,
+  contextRewriteTranscript,
+  isRewriteGrounded,
+  rewriteWithConversation,
+  type JudgmentExchange,
+} from "./judgment/context-rewrite.js";
+export {
+  STAFF_CASCADE_DECIDED_BY,
+  STAFF_CASCADE_METADATA_KEY,
+  createStaffCascadeModel,
+  type StaffCascadeModel,
+  type StaffCascadeReport,
+} from "./judgment/cascade-model.js";
+export {
+  JUDGMENT_PICKER_ANSWERS_MAX,
+  JUDGMENT_PICKER_THRESHOLD,
+  answerPickerFromMessage,
+} from "./judgment/picker-answer.js";
+export {
+  JUDGMENT_STAGE_DEADLINE_MS,
+  planStaffTurnInContext,
+  type StaffJudgmentStagedPlan,
+} from "./judgment/staged-planner.js";
+export {
+  JUDGMENT_ACT_THRESHOLD,
+  JUDGMENT_ARGUMENT_THRESHOLD,
+  JUDGMENT_DOUBT_THRESHOLD,
+  JUDGMENT_NEEDS_HISTORY_THRESHOLD,
+  JUDGMENT_TAKE_THRESHOLD,
+  buildStaffPlanQuestions,
+  decideStaffPlan,
+  judgmentThresholdsOf,
+  planStaffTurn,
+  type StaffJudgmentDecision,
+  type StaffJudgmentPlan,
+  type StaffJudgmentThresholds,
+  type StaffJudgmentPlannedCall,
+} from "./judgment/staff-planner.js";
+export {
+  STAFF_JUDGMENT_SPECS,
+  type StaffJudgmentSpec,
+} from "./tool-facades/judgment-specs.js";
+export {
+  createTypeSafeJudgmentProvider,
+  TYPESAFE_JUDGMENT_PROVIDER_ID,
+  type TypeSafeJudgmentProviderOptions,
+} from "./judgment/typesafe.js";
+export {
+  JUDGMENT_REFUSAL_REASONS,
+  type ChoiceAnswer,
+  type ChoiceQuestion,
+  type JudgmentAnswer,
+  type JudgmentAnswers,
+  type JudgmentAskOptions,
+  type JudgmentProvider,
+  type JudgmentQuestion,
+  type JudgmentQuestions,
+  type JudgmentRefusalReason,
+  type JudgmentRefused,
+  type JudgmentRequest,
+  type JudgmentResult,
+  type JudgmentText,
+  type JudgmentUsage,
+  type NoulAnswer,
+  type NoulQuestion,
+  type ScoreAnswer,
+  type ScoreQuestion,
+} from "./judgment/types.js";
+export {
   attemptKey,
   executionAttemptKey,
   type StaffAssistantAttemptKind,

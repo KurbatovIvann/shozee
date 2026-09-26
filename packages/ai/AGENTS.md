@@ -110,8 +110,101 @@ call to summarize the card.
 ## Tools
 
 Call one terminal tool per job; do not narrate instead of calling. Do not
-add an intent classifier — the permitted tool set plus BM25 is attached
-every turn.
+add a second LLM prompt-and-parse hop (an intent classifier model) in front
+of the reply model — the permitted tool set plus BM25 is attached every
+turn. A judgment-port consumer is a different thing and has its own gate
+(below). The one language-model call allowed before the reply model is the
+ADR-0045 context rewrite, and it is not a classifier: nothing reads its
+output but the typed judgment, and code decides.
+
+## Judgment (ADR-0043, ADR-0044, ADR-0045)
+
+`src/judgment/` is a typed-judgment port beside the reply model, not a
+`LanguageModel`: `JudgmentProvider.ask({ state, questions })` returns typed
+Choice / Noul / Score answers or a typed refusal. `judgment/typesafe.ts` is
+the only importer of `@typesafe-ai/sdk` (pinned by its test). Key and pinned
+model come from `@showzy/config`; never rely on the SDK's `TYPESAFE_*` env
+fallback, never use `jev-latest`.
+
+- **Fail-open.** `ok: false` or low confidence means the existing path runs
+  unchanged. A judgment may propose a call to a read action (ADR-0044); it
+  never stands in for a confirmation and never looks a human reference up —
+  the owning module does. It may answer a picker that module opened
+  (ADR-0047): `judgment/picker-answer.ts` asks which option the person's
+  message already names, acts only at 0.9, and returns nothing on `unclear`,
+  `none`, a refusal or two options that read the same.
+- **Never from a module handler, never inside a domain transaction.**
+- **State is minimised**: the utterance and option/tool descriptions. No
+  customer personal data unless the consumer's ticket names the field; the
+  one named field is a picker's option labels (ADR-0047).
+- **Jev limits**: no text generation, closed sets only (no names, numbers,
+  dates as arguments), unreliable counting and date comparison, English
+  first, does not treat `state` as hostile.
+- **A consumer needs probe numbers and its own ticket.** The first consumer
+  is the ADR-0044 shadow: `judgment/staff-planner.ts` plans a turn from one
+  request (message kind, one job question per spec, each argument slot once),
+  `judgment/shadow.ts` compares the plan with the model's first call. Nothing
+  it plans is executed yet.
+- **Follow-ups are planned from a rewrite (ADR-0045).**
+  `judgment/staged-planner.ts` is the entry point: inside a conversation the
+  first request also asks whether the message depends on it; when it does and
+  the message is not talk, `judgment/context-rewrite.ts` has the gate model
+  rewrite it as a self-contained request and the planner plans from that. The
+  rewrite is never shown, stored or given to the reply model; a plan made from
+  it must be grounded (`isRewriteGrounded`: its names and numbers occur in the
+  conversation). Where the rewrite only adds words to an argument the original
+  message states ("каті" → "каті самбуки"), the typed value stands
+  (`keepingWhatWasTyped`): the module asks which one. Never rewrite talk — praise after a create was rewritten into
+  the create. The whole stage has one three-second deadline, and inside a
+  conversation the rewrite starts beside the first request and is aborted when
+  it is not needed (live latencies did not fit a sequential stage). The rewrite prompt,
+  the needs-history question and the thresholds change only with a hand-run of
+  both probe corpora (`apps/api/src/typesafe-probe/followup/`).
+- **Judgment specs live beside the façades** (`tool-facades/judgment-specs.ts`)
+  and nowhere else: the job question with what it is _not_ (when two jobs fire
+  together, extend the `no` of one — rewording a `yes` cost ten correct calls),
+  what the call `carries` and what lies `beyond` it (the extras question), and
+  how each slot maps onto the tool's input. `apps/api/src/judgment-specs.test.ts` pins every
+  spec to the real tool's input schema and takes read/write from the contract.
+  A tool without a spec is language-model-only. Thresholds belong to the
+  pinned model version: the defaults are constants in the planner (`take` —
+  this is the job; `act` — sure enough to call it; `argument` — every slot),
+  and a spec may carry its own under `thresholds`. `decideStaffPlan` is the
+  whole decision as a pure function of the saved answers, so the calibration
+  stand (`apps/api/src/typesafe-probe/calibration/`) sweeps thresholds offline
+  with the production code. A spec's thresholds change only with numbers from
+  that stand: chosen on its tuning split, checked on the held-out one.
+- **`judgment/cascade-model.ts` is `take` mode** (ADR-0044 decision 1,
+  ADR-0045 decision 7): `wrapLanguageModel` middleware around the reply model,
+  one instance per turn. On the first step it plans through the staged
+  planner and, for a confident read whose spec has a `reply` line, emits the
+  tool call itself (`providerMetadata.showzy.decidedBy = "judgment"`, which the
+  stored history keeps); on the step after that result it emits the spec's
+  line and stops — also on a continued turn (`continues: true`: after a tap or
+  a confirmation it plans nothing and only says the line for a call the
+  judgment made). Everything else — a write, a doubt, a refusal, a throw, a
+  tool result that is an error — is the reply model's `doStream`, untouched.
+  A spec gets a `reply` line only when its tool's result has a card
+  (`cascade-model.test.ts` pins that against the surface registry). `report()`
+  says whether the reply model ran; the processor releases the budget hold
+  when it did not.
+- **Three tiers (ADR-0046).** The cascade routes a turn once, on its first
+  step, and the turn stays there: the judgment takes it (a spec with a `reply`
+  line: the two order reads and `orders_create`); else the gate model runs it
+  when it is talk or a capability question that does not depend on the
+  conversation ("Так" after a question is a write by meaning — live, the gate
+  model created an order from it), or a request whose one confident job is a
+  read; else the reply model. A write that would store a new name as
+  typed (customer, group, product, price list) is never takeable — the
+  judgment selects spans and cannot put a name in the nominative. Order guards
+  only delegate: `required` arguments, a fourth-line sentinel, the
+  `extras:<tool>` question every spec has (what the message states beyond what
+  the call `carries`: a second status, a customer filter, an email, a delivery
+  date), a word of an order message that is neither a filler nor inside a
+  span the plan took (`unconsumedWords`: "2 великих капучино" planned as
+  `капучино` resolved to another product), a number the plan
+  did not consume. A taken step that fails goes to the reply model.
+- Tests inject `fetch`. No live call in CI or `verify.mjs`.
 
 ## Tests
 

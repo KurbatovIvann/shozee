@@ -8,6 +8,7 @@
     "./assistant-budget": "./src/assistant-budget.ts",
     "./assistant-chat": "./src/assistant-chat.ts",
     "./assistant-events": "./src/assistant-events.ts",
+    "./assistant-judgment": "./src/assistant-judgment.ts",
     "./assistant-surfaces": "./src/assistant-surfaces/index.ts",
     "./catalog": "./src/catalog.ts",
     "./customers": "./src/customers.ts",

@@ -3,11 +3,15 @@ import {
   assistantSweepOverdueTurnsJob,
   assistantTurnJob,
   createAssistantCallerKits,
+  createAssistantJudgmentCascade,
+  createAssistantJudgmentShadow,
+  createAssistantPickerAnswers,
   createAssistantRuntime,
   createAssistantTurnProcessor,
   createAssistantTurnRecovery,
   createRedisAiBudgetStore,
   createRedisAssistantEventPublisher,
+  createStaffJudgmentProvider,
   interruptAssistantTurn,
   logStaffAssistantMount,
   staffAssistantMount,
@@ -44,6 +48,14 @@ export function composeAssistantJobs(
     `job ${assistantTurnJob.name}`,
     `job ${assistantSweepOverdueTurnsJob.name}`,
   ]);
+  const judgment = createStaffJudgmentProvider(options.ai);
+  logger.info(
+    {
+      mode: judgment === undefined ? "off" : options.ai.judgmentMode,
+      model: judgment?.model,
+    },
+    "assistant judgment",
+  );
   const registry = createWorkerActionRegistry();
   registry.assertPaired();
   const publisher = createRedisAssistantEventPublisher(sharedRedis);
@@ -69,6 +81,27 @@ export function composeAssistantJobs(
           pipeline,
           publisher,
           budgetStore,
+          ...(judgment === undefined
+            ? {}
+            : options.ai.judgmentMode === "take"
+              ? {
+                  pickerAnswers: createAssistantPickerAnswers({
+                    provider: judgment,
+                  }),
+                  judgmentCascade: createAssistantJudgmentCascade({
+                    provider: judgment,
+                    gateModel: mount.provider.createModel("gate"),
+                    contracts: registry.contracts(),
+                  }),
+                }
+              : {
+                  judgmentShadow: createAssistantJudgmentShadow({
+                    provider: judgment,
+                    rewriteModel: mount.provider.createModel("gate"),
+                    contracts: registry.contracts(),
+                    logger,
+                  }),
+                }),
         });
   return [
     {

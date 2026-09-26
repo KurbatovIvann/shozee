@@ -220,6 +220,7 @@ export const assistantTurns = pgTable(
     deadlineAt: timestamp("deadline_at", { withTimezone: true }),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     endReason: text("end_reason").$type<AssistantTurnEndReason>(),
+    judgmentShadow: jsonb("judgment_shadow"),
     ...timestampColumns(),
   },
   (table) => [
