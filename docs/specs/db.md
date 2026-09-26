@@ -116,9 +116,10 @@ packages/db/
   (`stemNameToken`; `name_fts @@ to_tsquery('simple', '<stem>:*')`, the parts
   of a token split by an apostrophe or hyphen are matched as a phrase), which
   covers Ukrainian inflections; **substring** — `name ILIKE '%token%'`, tokens
-  of three characters or more; **typo** — `token <% name` (trigram word
-  similarity at the cluster-wide threshold of migration `0056`), tokens of
-  five characters or more. All three are served by the GINs above; no new
+  of three characters or more; **typo** — `token <% name` (index-served at the cluster-wide threshold of
+  migration `0056`) **and** `word_similarity(token, name) >= 0.5`, tokens of
+  five characters or more; the higher bar keeps one-letter typos and drops
+  names that only share a common suffix («-енко»). All three are served by the GINs above; no new
   index, column or extension.
   - **Lists** match by word start and fall back to all three tiers only when
     word start finds no row in scope; ordering and cursors do not change.
