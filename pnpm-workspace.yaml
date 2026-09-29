@@ -24,11 +24,14 @@ overrides:
 # runs the script; `false` is a reviewed deny. Unlisted lifecycle scripts
 # fail the install (`strictDepBuilds`). Do not add other `true` entries as
 # a workaround for native cutters (no imgproxy).
+# onnxruntime-node ships its CPU binaries in the tarball; its postinstall only
+# downloads CUDA/TensorRT providers on linux/x64, which Шо never uses.
 allowBuilds:
   sharp: true
   cpu-features: false
   esbuild: false
   msgpackr-extract: false
+  onnxruntime-node: false
   msw: false
   protobufjs: false
   ssh2: false
