@@ -14,7 +14,7 @@
     "test": "vitest run",
     "test:unit": "vitest run --project unit",
     "test:db": "vitest run --project db",
-    "pgboss:generate": "node --experimental-strip-types --import ../db/scripts/ts-resolve-register.mjs scripts/generate-pgboss-migration.ts"
+    "pgboss:generate": "node --import ../db/scripts/ts-resolve-register.mjs scripts/generate-pgboss-migration.ts"
   },
   "dependencies": {
     "@showzy/core": "workspace:*",

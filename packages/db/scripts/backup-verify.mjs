@@ -15,13 +15,7 @@ const register = pathToFileURL(
 const cli = path.join(import.meta.dirname, "../src/ops/backup-verify.cli.ts");
 const result = spawnSync(
   process.execPath,
-  [
-    "--experimental-strip-types",
-    "--import",
-    register,
-    cli,
-    ...process.argv.slice(2),
-  ],
+  ["--import", register, cli, ...process.argv.slice(2)],
   { encoding: "utf8", env: process.env },
 );
 if (result.stdout !== null && result.stdout !== "") {

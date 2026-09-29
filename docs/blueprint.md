@@ -84,7 +84,7 @@ tests before any domain module is built:
 
 | Layer | Technology | Rationale |
 | --- | --- | --- |
-| Runtime | **Node.js 22 LTS + TypeScript (strict)** | The whole ecosystem (UAPKI WASM, Puppeteer, Socket.IO) is proven on Node |
+| Runtime | **Node.js 24 LTS + TypeScript (strict)** | The whole ecosystem (UAPKI WASM, Puppeteer, Socket.IO) is proven on Node |
 | Monorepo | **Turborepo + pnpm** | Already works; shared packages are critical for agents |
 | HTTP framework | **Hono** (`@hono/node-server`) | Minimal, fetch-native, explicit. SSE, raw body, streaming proxy — out of the box. Heavy stuff (Puppeteer, WASM, queues) lives outside the framework |
 | API contract | **oRPC** | End-to-end types for web/mobile + OpenAPI autogeneration. Kills the hand-written DTO duplicates |

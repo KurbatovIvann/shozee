@@ -1,5 +1,5 @@
 /**
- * ESM resolve hook so `node --experimental-strip-types` can load
+ * ESM resolve hook so Node type stripping can load
  * NodeNext sources (API/worker start, backup-verify CLI): they import
  * siblings with `.js` specifiers, and type-stripping does not remap
  * those to `.ts` / `.tsx`. Native resolution always wins first (real `.js`
