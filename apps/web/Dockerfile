@@ -6,7 +6,7 @@
 # Build from the repo root (pnpm workspace context):
 #   docker build -f apps/web/Dockerfile .
 
-FROM node:22.23-alpine AS build
+FROM node:24.19-alpine AS build
 WORKDIR /repo
 # corepack activates the pnpm version pinned by the root `packageManager`.
 RUN corepack enable

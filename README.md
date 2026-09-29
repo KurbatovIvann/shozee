@@ -127,7 +127,7 @@ docs/                  Architecture, decisions, protocols, design, operations
 
 ## Technology stack
 
-- **Platform:** Node.js 22+, ESM, TypeScript 6 in strict mode, pnpm 12,
+- **Platform:** Node.js 24+, ESM, TypeScript 6 in strict mode, pnpm 12,
   Turborepo 2.
 - **API and contracts:** Hono 4, oRPC 1, Zod 4, better-auth 1.6, generated
   OpenAPI aliases, Pino 10, Sentry 10.
@@ -175,7 +175,7 @@ require an accepted ADR.
 
 ## Local development
 
-Prerequisites: Node.js 22+, pnpm 12, and Docker.
+Prerequisites: Node.js 24+, pnpm 12, and Docker.
 
 ```bash
 pnpm install
