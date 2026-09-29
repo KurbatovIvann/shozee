@@ -1,0 +1,1635 @@
+{
+ "outputs": [
+  "action",
+  "tags",
+  "enum_order_status",
+  "enum_period",
+  "enum_payment_status",
+  "enum_group_by",
+  "enum_payment_method",
+  "enum_record_status",
+  "enum_availability",
+  "enum_is_default",
+  "enum_is_active",
+  "enum_document_type",
+  "enum_signing_status",
+  "enum_channel",
+  "enum_is_reusable",
+  "enum_company_type",
+  "enum_search_type",
+  "enum_ordinal",
+  "enum_carrier",
+  "enum_payer",
+  "enum_shipment_status",
+  "enum_prepayment",
+  "enum_flow",
+  "enum_metric",
+  "enum_debt_side",
+  "enum_stock_level",
+  "aux_domain",
+  "aux_verb",
+  "list_tax",
+  "segment"
+ ],
+ "inputs": [
+  "input_ids",
+  "attention_mask"
+ ],
+ "max_length": 256,
+ "pad_id": 0,
+ "bos_id": 2,
+ "eos_id": 1,
+ "actions": [
+  "orders.list",
+  "orders.count",
+  "orders.get",
+  "orders.create",
+  "orders.confirm",
+  "orders.start",
+  "orders.complete",
+  "orders.cancel",
+  "customers.listCustomers",
+  "customers.getCustomer",
+  "customers.createCustomer",
+  "customers.updateCustomer",
+  "customers.setGroup",
+  "customers.archiveCustomer",
+  "customers.restoreCustomer",
+  "customers.deleteCustomer",
+  "customers.listGroups",
+  "customers.getGroup",
+  "customers.createGroup",
+  "customers.updateGroup",
+  "customers.deleteGroup",
+  "customers.listCounterparties",
+  "customers.getCounterparty",
+  "customers.createCounterparty",
+  "customers.updateCounterparty",
+  "customers.deleteCounterparty",
+  "catalog.listProducts",
+  "catalog.getProduct",
+  "catalog.createProduct",
+  "catalog.updateProduct",
+  "catalog.archiveProduct",
+  "catalog.restoreProduct",
+  "catalog.createVariant",
+  "catalog.updateVariant",
+  "catalog.archiveVariant",
+  "catalog.restoreVariant",
+  "pricing.listPriceLists",
+  "pricing.getPriceList",
+  "pricing.listPriceListEntries",
+  "pricing.createPriceList",
+  "pricing.updatePriceList",
+  "pricing.activatePriceList",
+  "pricing.deactivatePriceList",
+  "pricing.setDefaultPriceList",
+  "pricing.clearDefaultPriceList",
+  "pricing.deletePriceList",
+  "pricing.setPriceListEntries",
+  "pricing.removePriceListEntries",
+  "documents.list",
+  "documents.get",
+  "documents.createFromOrder",
+  "documents.cancel",
+  "documents.share",
+  "documents.requestSign",
+  "docGeneration.listLayouts",
+  "invites.create",
+  "companies.updateLegal",
+  "search.query",
+  "nav.home",
+  "nav.back",
+  "nav.orders",
+  "nav.orders_new",
+  "nav.products",
+  "nav.products_new",
+  "nav.customers",
+  "nav.customers_new",
+  "nav.groups",
+  "nav.groups_new",
+  "nav.counterparties",
+  "nav.counterparties_new",
+  "nav.price_lists",
+  "nav.price_lists_new",
+  "nav.documents",
+  "nav.documents_new",
+  "nav.document_templates",
+  "nav.invites",
+  "nav.company",
+  "nav.company_legal",
+  "nav.company_team",
+  "ui.pick",
+  "ui.confirm",
+  "ui.reject",
+  "none",
+  "delivery.createShipment",
+  "delivery.track",
+  "delivery.list",
+  "delivery.estimate",
+  "delivery.cancelShipment",
+  "nav.deliveries",
+  "nav.deliveries_new",
+  "fiscal.openShift",
+  "fiscal.closeShift",
+  "fiscal.xReport",
+  "fiscal.createReceipt",
+  "fiscal.returnReceipt",
+  "fiscal.cashIn",
+  "fiscal.cashOut",
+  "fiscal.sendReceipt",
+  "fiscal.listReceipts",
+  "nav.receipts",
+  "payments.createLink",
+  "payments.status",
+  "payments.markPaid",
+  "payments.refund",
+  "bank.balance",
+  "bank.statement",
+  "nav.payments",
+  "nav.bank",
+  "accounting.addIncome",
+  "accounting.addExpense",
+  "accounting.listEntries",
+  "accounting.summary",
+  "accounting.taxDue",
+  "accounting.taxDeadlines",
+  "debts.list",
+  "documents.createReconciliation",
+  "nav.accounting",
+  "analytics.summary",
+  "nav.analytics",
+  "stock.get",
+  "stock.list",
+  "stock.receive",
+  "stock.writeOff",
+  "stock.set",
+  "nav.stock",
+  "nav.notifications",
+  "orders.update",
+  "ui.refine"
+ ],
+ "intents": {
+  "orders.list": {
+   "kind": "read",
+   "route": "/orders",
+   "params": {
+    "customer": "customer",
+    "status": "order_status",
+    "period": "period",
+    "due": "when",
+    "payment_status": "payment_status"
+   }
+  },
+  "orders.count": {
+   "kind": "read",
+   "route": null,
+   "params": {
+    "customer": "customer",
+    "status": "order_status",
+    "period": "period",
+    "group_by": "group_by",
+    "due": "when",
+    "payment_status": "payment_status"
+   }
+  },
+  "orders.get": {
+   "kind": "read",
+   "route": "/orders/$orderId",
+   "params": {
+    "order_number": "order_number",
+    "customer": "customer",
+    "period": "period",
+    "status": "order_status",
+    "amount": "money",
+    "due": "when",
+    "payment_status": "payment_status"
+   }
+  },
+  "orders.create": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "customer": "customer",
+    "items": "order_lines",
+    "comment": "comment",
+    "due": "when",
+    "payment_method": "payment_method",
+    "discount": "discount"
+   }
+  },
+  "orders.confirm": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "order_number": "order_number",
+    "customer": "customer",
+    "period": "period",
+    "amount": "money"
+   }
+  },
+  "orders.start": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "order_number": "order_number",
+    "customer": "customer",
+    "period": "period",
+    "amount": "money"
+   }
+  },
+  "orders.complete": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "order_number": "order_number",
+    "customer": "customer",
+    "period": "period",
+    "amount": "money"
+   }
+  },
+  "orders.cancel": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "order_number": "order_number",
+    "customer": "customer",
+    "period": "period",
+    "amount": "money"
+   }
+  },
+  "customers.listCustomers": {
+   "kind": "read",
+   "route": "/customers",
+   "params": {
+    "search_text": "search_text",
+    "status": "record_status",
+    "group": "group"
+   }
+  },
+  "customers.getCustomer": {
+   "kind": "read",
+   "route": "/customers/$customerId",
+   "params": {
+    "customer": "customer"
+   }
+  },
+  "customers.createCustomer": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "new_name": "new_name",
+    "phone": "phone",
+    "email": "email",
+    "comment": "comment",
+    "group": "group",
+    "price_list": "price_list"
+   }
+  },
+  "customers.updateCustomer": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "customer": "customer",
+    "rename_to": "rename_to",
+    "phone": "phone",
+    "email": "email",
+    "comment": "comment",
+    "group": "group",
+    "price_list": "price_list"
+   }
+  },
+  "customers.setGroup": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "customers": "customer_list",
+    "group": "group"
+   }
+  },
+  "customers.archiveCustomer": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "customer": "customer"
+   }
+  },
+  "customers.restoreCustomer": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "customer": "customer"
+   }
+  },
+  "customers.deleteCustomer": {
+   "kind": "high",
+   "route": null,
+   "params": {
+    "customer": "customer"
+   }
+  },
+  "customers.listGroups": {
+   "kind": "read",
+   "route": "/customers/groups",
+   "params": {
+    "search_text": "search_text"
+   }
+  },
+  "customers.getGroup": {
+   "kind": "read",
+   "route": "/customers/groups/$groupId",
+   "params": {
+    "group": "group"
+   }
+  },
+  "customers.createGroup": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "new_name": "new_name",
+    "description": "description",
+    "price_list": "price_list"
+   }
+  },
+  "customers.updateGroup": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "group": "group",
+    "rename_to": "rename_to",
+    "description": "description",
+    "price_list": "price_list"
+   }
+  },
+  "customers.deleteGroup": {
+   "kind": "high",
+   "route": null,
+   "params": {
+    "group": "group"
+   }
+  },
+  "customers.listCounterparties": {
+   "kind": "read",
+   "route": "/customers/counterparties",
+   "params": {
+    "search_text": "search_text",
+    "customer": "customer"
+   }
+  },
+  "customers.getCounterparty": {
+   "kind": "read",
+   "route": "/customers/counterparties/$counterpartyId",
+   "params": {
+    "counterparty": "counterparty"
+   }
+  },
+  "customers.createCounterparty": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "new_name": "new_name",
+    "edrpou": "edrpou",
+    "address": "address",
+    "iban": "iban",
+    "bank_name": "bank_name",
+    "mfo": "mfo",
+    "phone": "phone",
+    "email": "email",
+    "comment": "comment",
+    "customer": "customer"
+   }
+  },
+  "customers.updateCounterparty": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "counterparty": "counterparty",
+    "rename_to": "rename_to",
+    "edrpou": "edrpou",
+    "address": "address",
+    "iban": "iban",
+    "bank_name": "bank_name",
+    "mfo": "mfo",
+    "phone": "phone",
+    "email": "email",
+    "comment": "comment",
+    "customer": "customer"
+   }
+  },
+  "customers.deleteCounterparty": {
+   "kind": "high",
+   "route": null,
+   "params": {
+    "counterparty": "counterparty"
+   }
+  },
+  "catalog.listProducts": {
+   "kind": "read",
+   "route": "/products",
+   "params": {
+    "search_text": "search_text",
+    "status": "record_status"
+   }
+  },
+  "catalog.getProduct": {
+   "kind": "read",
+   "route": "/products/$productId",
+   "params": {
+    "product": "product"
+   }
+  },
+  "catalog.createProduct": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "new_name": "new_name",
+    "price": "money"
+   }
+  },
+  "catalog.updateProduct": {
+   "kind": "write",
+   "route": "/products/$productId/edit",
+   "params": {
+    "product": "product",
+    "rename_to": "rename_to",
+    "price": "money"
+   }
+  },
+  "catalog.archiveProduct": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "product": "product"
+   }
+  },
+  "catalog.restoreProduct": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "product": "product"
+   }
+  },
+  "catalog.createVariant": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "product": "product",
+    "new_name": "new_name",
+    "price": "money"
+   }
+  },
+  "catalog.updateVariant": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "variant": "attrs",
+    "product": "product",
+    "rename_to": "rename_to",
+    "price": "money"
+   }
+  },
+  "catalog.archiveVariant": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "variant": "attrs",
+    "product": "product"
+   }
+  },
+  "catalog.restoreVariant": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "variant": "attrs",
+    "product": "product"
+   }
+  },
+  "pricing.listPriceLists": {
+   "kind": "read",
+   "route": "/pricing",
+   "params": {
+    "search_text": "search_text",
+    "availability": "availability"
+   }
+  },
+  "pricing.getPriceList": {
+   "kind": "read",
+   "route": "/pricing/$priceListId",
+   "params": {
+    "price_list": "price_list"
+   }
+  },
+  "pricing.listPriceListEntries": {
+   "kind": "read",
+   "route": null,
+   "params": {
+    "price_list": "price_list",
+    "product": "product"
+   }
+  },
+  "pricing.createPriceList": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "new_name": "new_name",
+    "is_default": "boolean",
+    "is_active": "boolean"
+   }
+  },
+  "pricing.updatePriceList": {
+   "kind": "write",
+   "route": "/pricing/$priceListId/edit",
+   "params": {
+    "price_list": "price_list",
+    "rename_to": "rename_to"
+   }
+  },
+  "pricing.activatePriceList": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "price_list": "price_list"
+   }
+  },
+  "pricing.deactivatePriceList": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "price_list": "price_list"
+   }
+  },
+  "pricing.setDefaultPriceList": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "price_list": "price_list"
+   }
+  },
+  "pricing.clearDefaultPriceList": {
+   "kind": "write",
+   "route": null,
+   "params": {}
+  },
+  "pricing.deletePriceList": {
+   "kind": "high",
+   "route": null,
+   "params": {
+    "price_list": "price_list"
+   }
+  },
+  "pricing.setPriceListEntries": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "price_list": "price_list",
+    "product": "product",
+    "variant": "attrs",
+    "price": "money"
+   }
+  },
+  "pricing.removePriceListEntries": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "price_list": "price_list",
+    "product": "product",
+    "variant": "attrs"
+   }
+  },
+  "documents.list": {
+   "kind": "read",
+   "route": "/documents",
+   "params": {
+    "document_type": "document_type",
+    "order_number": "order_number",
+    "customer": "customer",
+    "period": "period",
+    "signing_status": "signing_status"
+   }
+  },
+  "documents.get": {
+   "kind": "read",
+   "route": "/documents/$documentId",
+   "params": {
+    "document_ref": "document_ref",
+    "document_type": "document_type",
+    "order_number": "order_number",
+    "customer": "customer",
+    "period": "period"
+   }
+  },
+  "documents.createFromOrder": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "order_number": "order_number",
+    "customer": "customer",
+    "period": "period",
+    "status": "order_status",
+    "amount": "money",
+    "document_type": "document_type",
+    "counterparty": "counterparty",
+    "basis": "basis"
+   }
+  },
+  "documents.cancel": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "document_ref": "document_ref",
+    "document_type": "document_type",
+    "order_number": "order_number",
+    "customer": "customer",
+    "period": "period"
+   }
+  },
+  "documents.share": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "document_ref": "document_ref",
+    "document_type": "document_type",
+    "order_number": "order_number",
+    "customer": "customer",
+    "period": "period",
+    "channel": "channel",
+    "email": "email",
+    "phone": "phone"
+   }
+  },
+  "documents.requestSign": {
+   "kind": "high",
+   "route": null,
+   "params": {
+    "document_ref": "document_ref",
+    "document_type": "document_type",
+    "order_number": "order_number",
+    "customer": "customer",
+    "period": "period"
+   }
+  },
+  "docGeneration.listLayouts": {
+   "kind": "read",
+   "route": null,
+   "params": {
+    "document_type": "document_type"
+   }
+  },
+  "invites.create": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "is_reusable": "boolean",
+    "expires": "expires",
+    "max_uses": "count",
+    "group": "group",
+    "price_list": "price_list",
+    "new_name": "new_name",
+    "phone": "phone"
+   }
+  },
+  "companies.updateLegal": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "company_type": "company_type",
+    "legal_name": "legal_name",
+    "edrpou": "edrpou",
+    "address": "address",
+    "iban": "iban",
+    "bank_name": "bank_name",
+    "mfo": "mfo",
+    "phone": "phone",
+    "email": "email"
+   }
+  },
+  "search.query": {
+   "kind": "read",
+   "route": null,
+   "params": {
+    "search_text": "search_text",
+    "search_type": "search_type"
+   }
+  },
+  "nav.home": {
+   "kind": "nav",
+   "route": "/",
+   "params": {}
+  },
+  "nav.back": {
+   "kind": "nav",
+   "route": "history.back",
+   "params": {}
+  },
+  "nav.orders": {
+   "kind": "nav",
+   "route": "/orders",
+   "params": {}
+  },
+  "nav.orders_new": {
+   "kind": "nav",
+   "route": "/orders/new",
+   "params": {}
+  },
+  "nav.products": {
+   "kind": "nav",
+   "route": "/products",
+   "params": {}
+  },
+  "nav.products_new": {
+   "kind": "nav",
+   "route": "/products/new",
+   "params": {}
+  },
+  "nav.customers": {
+   "kind": "nav",
+   "route": "/customers",
+   "params": {}
+  },
+  "nav.customers_new": {
+   "kind": "nav",
+   "route": "/customers/new",
+   "params": {}
+  },
+  "nav.groups": {
+   "kind": "nav",
+   "route": "/customers/groups",
+   "params": {}
+  },
+  "nav.groups_new": {
+   "kind": "nav",
+   "route": "/customers/groups/new",
+   "params": {}
+  },
+  "nav.counterparties": {
+   "kind": "nav",
+   "route": "/customers/counterparties",
+   "params": {}
+  },
+  "nav.counterparties_new": {
+   "kind": "nav",
+   "route": "/customers/counterparties/new",
+   "params": {}
+  },
+  "nav.price_lists": {
+   "kind": "nav",
+   "route": "/pricing",
+   "params": {}
+  },
+  "nav.price_lists_new": {
+   "kind": "nav",
+   "route": "/pricing/new",
+   "params": {}
+  },
+  "nav.documents": {
+   "kind": "nav",
+   "route": "/documents",
+   "params": {}
+  },
+  "nav.documents_new": {
+   "kind": "nav",
+   "route": "/documents/new",
+   "params": {}
+  },
+  "nav.document_templates": {
+   "kind": "nav",
+   "route": "/documents/templates",
+   "params": {}
+  },
+  "nav.invites": {
+   "kind": "nav",
+   "route": "/invites",
+   "params": {}
+  },
+  "nav.company": {
+   "kind": "nav",
+   "route": "/company",
+   "params": {}
+  },
+  "nav.company_legal": {
+   "kind": "nav",
+   "route": "/company/legal",
+   "params": {}
+  },
+  "nav.company_team": {
+   "kind": "nav",
+   "route": "/company/team",
+   "params": {}
+  },
+  "ui.pick": {
+   "kind": "ui",
+   "route": null,
+   "params": {
+    "ordinal": "ordinal",
+    "pick_text": "pick_text"
+   }
+  },
+  "ui.confirm": {
+   "kind": "ui",
+   "route": null,
+   "params": {}
+  },
+  "ui.reject": {
+   "kind": "ui",
+   "route": null,
+   "params": {}
+  },
+  "none": {
+   "kind": "none",
+   "route": null,
+   "params": {}
+  },
+  "delivery.createShipment": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "order_number": "order_number",
+    "customer": "customer",
+    "phone": "phone",
+    "city": "city",
+    "branch": "branch",
+    "address": "address",
+    "carrier": "carrier",
+    "payer": "payer",
+    "cod": "money",
+    "declared": "money",
+    "measure": "measure_list",
+    "count": "count",
+    "send": "when",
+    "description": "description"
+   }
+  },
+  "delivery.track": {
+   "kind": "read",
+   "route": null,
+   "params": {
+    "ttn": "ttn",
+    "order_number": "order_number",
+    "customer": "customer"
+   }
+  },
+  "delivery.list": {
+   "kind": "read",
+   "route": null,
+   "params": {
+    "shipment_status": "shipment_status",
+    "period": "period",
+    "customer": "customer",
+    "carrier": "carrier"
+   }
+  },
+  "delivery.estimate": {
+   "kind": "read",
+   "route": null,
+   "params": {
+    "city": "city_list",
+    "measure": "measure_list",
+    "declared": "money",
+    "cod": "money",
+    "branch": "branch"
+   }
+  },
+  "delivery.cancelShipment": {
+   "kind": "high",
+   "route": null,
+   "params": {
+    "ttn": "ttn",
+    "order_number": "order_number",
+    "customer": "customer"
+   }
+  },
+  "nav.deliveries": {
+   "kind": "nav",
+   "route": null,
+   "params": {}
+  },
+  "nav.deliveries_new": {
+   "kind": "nav",
+   "route": null,
+   "params": {}
+  },
+  "fiscal.openShift": {
+   "kind": "write",
+   "route": null,
+   "params": {}
+  },
+  "fiscal.closeShift": {
+   "kind": "high",
+   "route": null,
+   "params": {}
+  },
+  "fiscal.xReport": {
+   "kind": "read",
+   "route": null,
+   "params": {}
+  },
+  "fiscal.createReceipt": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "order_number": "order_number",
+    "customer": "customer",
+    "items": "order_lines",
+    "amount": "money",
+    "payment_method": "payment_method",
+    "split": "money_list",
+    "discount": "discount",
+    "prepayment": "boolean",
+    "email": "email",
+    "phone": "phone"
+   }
+  },
+  "fiscal.returnReceipt": {
+   "kind": "high",
+   "route": null,
+   "params": {
+    "document_ref": "document_ref",
+    "document_type": "document_type",
+    "order_number": "order_number",
+    "customer": "customer",
+    "amount": "money",
+    "items": "order_lines"
+   }
+  },
+  "fiscal.cashIn": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "amount": "money"
+   }
+  },
+  "fiscal.cashOut": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "amount": "money"
+   }
+  },
+  "fiscal.sendReceipt": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "order_number": "order_number",
+    "customer": "customer",
+    "document_ref": "document_ref",
+    "channel": "channel",
+    "email": "email",
+    "phone": "phone"
+   }
+  },
+  "fiscal.listReceipts": {
+   "kind": "read",
+   "route": null,
+   "params": {
+    "period": "period",
+    "payment_method": "payment_method",
+    "customer": "customer"
+   }
+  },
+  "nav.receipts": {
+   "kind": "nav",
+   "route": null,
+   "params": {}
+  },
+  "payments.createLink": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "order_number": "order_number",
+    "customer": "customer",
+    "amount": "money",
+    "bank_name": "bank_name",
+    "channel": "channel",
+    "phone": "phone",
+    "email": "email"
+   }
+  },
+  "payments.status": {
+   "kind": "read",
+   "route": null,
+   "params": {
+    "order_number": "order_number",
+    "customer": "customer",
+    "document_ref": "document_ref"
+   }
+  },
+  "payments.markPaid": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "order_number": "order_number",
+    "customer": "customer",
+    "amount": "money",
+    "payment_method": "payment_method",
+    "paid": "when"
+   }
+  },
+  "payments.refund": {
+   "kind": "high",
+   "route": null,
+   "params": {
+    "order_number": "order_number",
+    "customer": "customer",
+    "amount": "money"
+   }
+  },
+  "bank.balance": {
+   "kind": "read",
+   "route": null,
+   "params": {
+    "bank_name": "bank_name"
+   }
+  },
+  "bank.statement": {
+   "kind": "read",
+   "route": null,
+   "params": {
+    "period": "period",
+    "flow": "flow",
+    "customer": "customer",
+    "counterparty": "counterparty",
+    "amount": "money",
+    "bank_name": "bank_name"
+   }
+  },
+  "nav.payments": {
+   "kind": "nav",
+   "route": null,
+   "params": {}
+  },
+  "nav.bank": {
+   "kind": "nav",
+   "route": null,
+   "params": {}
+  },
+  "accounting.addIncome": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "amount": "money",
+    "payment_method": "payment_method",
+    "customer": "customer",
+    "counterparty": "counterparty",
+    "category": "category",
+    "on": "when",
+    "comment": "comment"
+   }
+  },
+  "accounting.addExpense": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "amount": "money",
+    "category": "category",
+    "counterparty": "counterparty",
+    "payment_method": "payment_method",
+    "on": "when",
+    "comment": "comment"
+   }
+  },
+  "accounting.listEntries": {
+   "kind": "read",
+   "route": null,
+   "params": {
+    "flow": "flow",
+    "period": "period",
+    "category": "category",
+    "counterparty": "counterparty"
+   }
+  },
+  "accounting.summary": {
+   "kind": "read",
+   "route": null,
+   "params": {
+    "metric": "metric",
+    "period": "period",
+    "category": "category"
+   }
+  },
+  "accounting.taxDue": {
+   "kind": "read",
+   "route": null,
+   "params": {
+    "tax": "tax_list",
+    "period": "period"
+   }
+  },
+  "accounting.taxDeadlines": {
+   "kind": "read",
+   "route": null,
+   "params": {
+    "tax": "tax_list"
+   }
+  },
+  "debts.list": {
+   "kind": "read",
+   "route": null,
+   "params": {
+    "debt_side": "debt_side",
+    "customer": "customer",
+    "counterparty": "counterparty"
+   }
+  },
+  "documents.createReconciliation": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "counterparty": "counterparty",
+    "customer": "customer",
+    "period": "period"
+   }
+  },
+  "nav.accounting": {
+   "kind": "nav",
+   "route": null,
+   "params": {}
+  },
+  "analytics.summary": {
+   "kind": "read",
+   "route": null,
+   "params": {
+    "metric": "metric",
+    "period": "period",
+    "customer": "customer",
+    "product": "product",
+    "attrs": "attrs",
+    "group_by": "group_by",
+    "count": "count",
+    "payment_method": "payment_method"
+   }
+  },
+  "nav.analytics": {
+   "kind": "nav",
+   "route": null,
+   "params": {}
+  },
+  "stock.get": {
+   "kind": "read",
+   "route": null,
+   "params": {
+    "product": "product",
+    "attrs": "attrs"
+   }
+  },
+  "stock.list": {
+   "kind": "read",
+   "route": null,
+   "params": {
+    "stock_level": "stock_level",
+    "search_text": "search_text"
+   }
+  },
+  "stock.receive": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "items": "order_lines",
+    "counterparty": "counterparty",
+    "amount": "money",
+    "comment": "comment"
+   }
+  },
+  "stock.writeOff": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "items": "order_lines",
+    "comment": "comment"
+   }
+  },
+  "stock.set": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "product": "product",
+    "attrs": "attrs",
+    "quantity": "quantity"
+   }
+  },
+  "nav.stock": {
+   "kind": "nav",
+   "route": null,
+   "params": {}
+  },
+  "nav.notifications": {
+   "kind": "nav",
+   "route": null,
+   "params": {}
+  },
+  "orders.update": {
+   "kind": "write",
+   "route": null,
+   "params": {
+    "order_number": "order_number",
+    "customer": "customer",
+    "items": "order_lines",
+    "remove_items": "order_lines",
+    "set_items": "order_lines",
+    "due": "when",
+    "discount": "discount",
+    "payment_method": "payment_method",
+    "comment": "comment"
+   }
+  },
+  "ui.refine": {
+   "kind": "read-modifier",
+   "route": null,
+   "params": {
+    "period": "period",
+    "due": "when",
+    "customer": "customer",
+    "counterparty": "counterparty",
+    "group": "group",
+    "status": "order_status",
+    "payment_status": "payment_status",
+    "payment_method": "payment_method",
+    "shipment_status": "shipment_status",
+    "carrier": "carrier",
+    "city": "city_list",
+    "branch": "branch",
+    "measure": "measure_list",
+    "flow": "flow",
+    "category": "category",
+    "bank_name": "bank_name",
+    "debt_side": "debt_side",
+    "tax": "tax_list",
+    "metric": "metric",
+    "group_by": "group_by",
+    "count": "count",
+    "document_type": "document_type",
+    "signing_status": "signing_status",
+    "product": "product",
+    "attrs": "attrs",
+    "search_text": "search_text",
+    "stock_level": "stock_level"
+   }
+  }
+ },
+ "enum_types": [
+  "availability",
+  "boolean",
+  "carrier",
+  "channel",
+  "company_type",
+  "debt_side",
+  "document_type",
+  "flow",
+  "group_by",
+  "metric",
+  "order_status",
+  "ordinal",
+  "payer",
+  "payment_method",
+  "payment_status",
+  "period",
+  "record_status",
+  "search_type",
+  "shipment_status",
+  "signing_status",
+  "stock_level",
+  "tax"
+ ],
+ "enums": {
+  "order_status": [
+   "",
+   "new",
+   "confirmed",
+   "in_progress",
+   "done",
+   "canceled",
+   "active"
+  ],
+  "period": [
+   "",
+   "today",
+   "yesterday",
+   "this_week",
+   "last_week",
+   "this_month",
+   "last_month",
+   "this_year",
+   "last_year",
+   "range",
+   "last_days",
+   "this_quarter",
+   "last_quarter",
+   "previous"
+  ],
+  "payment_status": [
+   "",
+   "paid",
+   "unpaid",
+   "partial",
+   "refunded"
+  ],
+  "group_by": [
+   "",
+   "status",
+   "product",
+   "customer",
+   "day",
+   "payment_method"
+  ],
+  "payment_method": [
+   "",
+   "cash",
+   "card",
+   "cashless",
+   "cod",
+   "online",
+   "mixed"
+  ],
+  "record_status": [
+   "",
+   "active",
+   "archived",
+   "all"
+  ],
+  "availability": [
+   "",
+   "active",
+   "inactive",
+   "all"
+  ],
+  "is_default": [
+   "",
+   "true",
+   "false"
+  ],
+  "is_active": [
+   "",
+   "true",
+   "false"
+  ],
+  "document_type": [
+   "",
+   "payment_invoice",
+   "delivery_note",
+   "act",
+   "reconciliation_act",
+   "receipt"
+  ],
+  "signing_status": [
+   "",
+   "unsigned",
+   "pending",
+   "supplier_signed"
+  ],
+  "channel": [
+   "",
+   "email",
+   "sms",
+   "viber",
+   "telegram"
+  ],
+  "is_reusable": [
+   "",
+   "true",
+   "false"
+  ],
+  "company_type": [
+   "",
+   "fop",
+   "tov"
+  ],
+  "search_type": [
+   "",
+   "order",
+   "customer",
+   "customerGroup",
+   "counterparty",
+   "product",
+   "variant",
+   "priceList",
+   "document",
+   "shipment",
+   "receipt"
+  ],
+  "ordinal": [
+   "",
+   "first",
+   "second",
+   "third",
+   "fourth",
+   "fifth",
+   "last",
+   "previous"
+  ],
+  "carrier": [
+   "",
+   "nova_poshta"
+  ],
+  "payer": [
+   "",
+   "sender",
+   "recipient"
+  ],
+  "shipment_status": [
+   "",
+   "created",
+   "in_transit",
+   "arrived",
+   "received",
+   "refused",
+   "returned"
+  ],
+  "prepayment": [
+   "",
+   "true",
+   "false"
+  ],
+  "flow": [
+   "",
+   "in",
+   "out"
+  ],
+  "metric": [
+   "",
+   "revenue",
+   "orders",
+   "avg_check",
+   "units",
+   "customers",
+   "margin",
+   "income",
+   "expense",
+   "profit",
+   "limit_left"
+  ],
+  "debt_side": [
+   "",
+   "receivable",
+   "payable"
+  ],
+  "stock_level": [
+   "",
+   "in_stock",
+   "low",
+   "out"
+  ]
+ },
+ "colliding": [
+  "boolean"
+ ],
+ "line_fields": {
+  "product": "product",
+  "attr": "attr",
+  "quantity": "quantity"
+ },
+ "list_types": {
+  "customer_list": "customer",
+  "attrs": "attr",
+  "money_list": "money",
+  "measure_list": "measure",
+  "city_list": "city"
+ },
+ "range_span": "period_span",
+ "tags": [
+  "O",
+  "B-customer",
+  "I-customer",
+  "B-when",
+  "I-when",
+  "B-order_number",
+  "I-order_number",
+  "B-money",
+  "I-money",
+  "B-product",
+  "I-product",
+  "B-attr",
+  "I-attr",
+  "B-quantity",
+  "I-quantity",
+  "B-comment",
+  "I-comment",
+  "B-percent",
+  "I-percent",
+  "B-search_text",
+  "I-search_text",
+  "B-group",
+  "I-group",
+  "B-new_name",
+  "I-new_name",
+  "B-phone",
+  "I-phone",
+  "B-email",
+  "I-email",
+  "B-price_list",
+  "I-price_list",
+  "B-rename_to",
+  "I-rename_to",
+  "B-description",
+  "I-description",
+  "B-counterparty",
+  "I-counterparty",
+  "B-edrpou",
+  "I-edrpou",
+  "B-address",
+  "I-address",
+  "B-iban",
+  "I-iban",
+  "B-bank_name",
+  "I-bank_name",
+  "B-mfo",
+  "I-mfo",
+  "B-document_ref",
+  "I-document_ref",
+  "B-basis",
+  "I-basis",
+  "B-expires",
+  "I-expires",
+  "B-count",
+  "I-count",
+  "B-legal_name",
+  "I-legal_name",
+  "B-pick_text",
+  "I-pick_text",
+  "B-city",
+  "I-city",
+  "B-branch",
+  "I-branch",
+  "B-measure",
+  "I-measure",
+  "B-ttn",
+  "I-ttn",
+  "B-category",
+  "I-category",
+  "B-period_span",
+  "I-period_span"
+ ],
+ "catalogue": "v3",
+ "unions": {
+  "discount": [
+   "percent",
+   "money"
+  ]
+ },
+ "aux": {
+  "domain": [
+   "orders",
+   "customers",
+   "catalog",
+   "pricing",
+   "documents",
+   "company",
+   "search",
+   "nav",
+   "ui",
+   "none",
+   "delivery",
+   "fiscal",
+   "payments",
+   "bank",
+   "accounting",
+   "analytics",
+   "stock"
+  ],
+  "verb": [
+   "create",
+   "update",
+   "remove",
+   "cancel",
+   "restore",
+   "list",
+   "get",
+   "count",
+   "report",
+   "send",
+   "status",
+   "set",
+   "record",
+   "refund",
+   "estimate",
+   "search",
+   "open",
+   "answer",
+   "none"
+  ]
+ },
+ "item_lists": [
+  "attrs"
+ ],
+ "list_enums": {
+  "tax_list": "tax"
+ },
+ "list_heads": {
+  "tax": [
+   "single_tax",
+   "esv",
+   "military_levy",
+   "vat",
+   "pdfo",
+   "declaration"
+  ]
+ },
+ "list_thresholds": {
+  "tax": [
+   0.5,
+   0.5,
+   0.5,
+   0.5,
+   0.5,
+   0.5
+  ]
+ }
+}

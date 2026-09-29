@@ -32,3 +32,9 @@ packages/document-signing/nitrogen/
 packages/document-signing/android/
 packages/document-signing/ios/
 packages/document-signing/cpp-bridge/
+
+# Vendored Шо runtime, model bundle and conformance vectors — copied byte for
+# byte from system-one-uk d8e39da, so Prettier never rewrites them (SHO-731).
+packages/sho/runtime/
+packages/sho/model/
+packages/sho/test/conformance-v3/

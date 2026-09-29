@@ -1,0 +1,116 @@
+{
+  "model": "v33",
+  "catalogue": "v3",
+  "files": {
+    "calibration.json": {
+      "md5": "46ee35fe0cbcbc13344596ca7f898794",
+      "bytes": 307
+    },
+    "intent_labels_uk.json": {
+      "md5": "58ea7db7b3f43438b5e7beed827705ce",
+      "bytes": 177584
+    },
+    "labels.json": {
+      "md5": "e3268c5d8783656973ad1839038b158c",
+      "bytes": 31931
+    },
+    "model.int8.onnx": {
+      "md5": "f10ddb141facf18a42a69769e59c099c",
+      "bytes": 28740435
+    },
+    "tokenizer.json": {
+      "md5": "b7943c0e6e335439c0b8df6590bf76df",
+      "bytes": 1039303
+    }
+  },
+  "source": {
+    "repo": "system-one-uk",
+    "commit": "d8e39dadceb2986308c66c96fad3138f96d67ab8",
+    "runtimeVersion": "0.2.0",
+    "bundle": "demo/model-v33",
+    "registry": "default"
+  },
+  "conformance": {
+    "cases-d70.jsonl": {
+      "md5": "d3ca123a4c1fbf36796067c0908b596a",
+      "bytes": 10213
+    },
+    "cases-d72.jsonl": {
+      "md5": "a4b8552469a92a6e3d2cd216e8a33b36",
+      "bytes": 2498
+    },
+    "cases-d73.jsonl": {
+      "md5": "14c4ee466f210884292221a4adf70e7e",
+      "bytes": 4982
+    },
+    "cases-d75.jsonl": {
+      "md5": "923f800e87dd4e5b279d23ecd76f05d2",
+      "bytes": 1834
+    },
+    "cases-d78-refine.jsonl": {
+      "md5": "a7622533bedbdb7dee5642a0a6ddaf14",
+      "bytes": 3964
+    },
+    "cases-d78.jsonl": {
+      "md5": "ea1a9a57ded4c6e3532e79cb11ace3f8",
+      "bytes": 4102
+    },
+    "cases-d79.jsonl": {
+      "md5": "ea9bde1baafc223239b22a7e68e307dc",
+      "bytes": 5164
+    },
+    "commands.jsonl": {
+      "md5": "08398a9318665f64eed036e0f264ea17",
+      "bytes": 479985
+    },
+    "contexts/coffee_tea-01.json": {
+      "md5": "956b815877ff7bc38c04813882e2bf7c",
+      "bytes": 31390
+    },
+    "contexts/d73-shop.json": {
+      "md5": "b7f682d6953ff52a7821737d1e34de91",
+      "bytes": 2414
+    },
+    "contexts/d75-shop.json": {
+      "md5": "9b594c8b5edb9f47d20760db17df9039",
+      "bytes": 931
+    },
+    "contexts/d78-shop.json": {
+      "md5": "815fb26e1f238b48b9274a44532a0826",
+      "bytes": 1565
+    },
+    "contexts/d79-shop.json": {
+      "md5": "43f2cac21f412168bba672f5b3f7f238",
+      "bytes": 2909
+    },
+    "contexts/flowers-01.json": {
+      "md5": "b3c21f24d204cc5e9176be6983d72613",
+      "bytes": 25999
+    },
+    "contexts/pet_supplies-01.json": {
+      "md5": "ededa8608017073f466825a8f0a7973e",
+      "bytes": 29556
+    },
+    "contexts/tools-01-stockless.json": {
+      "md5": "efd22deee438283aa6d7cb787a34f4aa",
+      "bytes": 24965
+    },
+    "contexts/tools-01.json": {
+      "md5": "fd269cd682536b1418b77182b9a8f498",
+      "bytes": 24924
+    },
+    "labels-v32.json": {
+      "md5": "dafc196f7e782cfae53d36dee8782a64",
+      "bytes": 22892
+    },
+    "labels.json": {
+      "md5": "c254042771a19cefcef35f77a176b7bf",
+      "bytes": 30661
+    },
+    "refine.jsonl": {
+      "md5": "a5f432dda184736071aee2ccd85f6e40",
+      "bytes": 8074
+    }
+  },
+  "updatedAt": "2026-09-29T17:54:05.358244Z"
+}

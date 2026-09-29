@@ -1,0 +1,12 @@
+{
+  "extends": "@showzy/tooling/tsconfig/base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "allowImportingTsExtensions": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noImplicitReturns": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
+  },
+  "include": ["src", "test", "scripts", "runtime/src", "vitest.config.ts"]
+}
