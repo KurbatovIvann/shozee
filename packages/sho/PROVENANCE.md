@@ -40,7 +40,9 @@ model `v33` in the checkout's `models.json`, and `model.int8.onnx` its
 - `intent_labels_uk.json`: md5 `58ea7db7b3f43438b5e7beed827705ce`, 177584 bytes.
 - `calibration.json`: md5 `46ee35fe0cbcbc13344596ca7f898794`, 307 bytes.
 
-`manifest.json` holds the same hashes and those of the conformance files;
+`manifest.json` holds the same hashes, one per vendored `runtime/src` file, and
+those of the conformance files; `loadSho` hashes the bundle and the runtime
+sources against it on every load unless the caller passes `verify: false`, and
 `test/manifest.test.ts` fails if a committed file differs from it. Updating the
 bundle means re-copying from the source checkout and regenerating
 `manifest.json`; `runtime/`, `model/` and `test/conformance-v3/` are excluded

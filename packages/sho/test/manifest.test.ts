@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   checkModel,
+  checkRuntime,
   conformanceDir,
   fileProblems,
   manifest,
@@ -11,11 +12,16 @@ import {
   modelInfo,
   parseManifest,
 } from "../src/index.ts";
-import { modelProblems } from "../src/manifest.ts";
 
 describe("model integrity", () => {
   it("the committed model files match manifest.json", async () => {
     expect(await checkModel()).toEqual([]);
+  });
+
+  it("the committed runtime sources match manifest.json", async () => {
+    expect(await checkRuntime()).toEqual([]);
+    expect(Object.keys(manifest.runtime)).toHaveLength(75);
+    expect(Object.keys(manifest.runtime)).toContain("adapters/node.ts");
   });
 
   it("the committed conformance vectors match manifest.json", async () => {
@@ -56,7 +62,7 @@ describe("model integrity", () => {
       await copyFile(join(modelDir, "labels.json"), join(dir, "labels.json"));
       await writeFile(join(dir, "tokenizer.json"), "{}");
       await writeFile(join(dir, "model.onnx"), "fp32");
-      const problems = await modelProblems(dir, manifest);
+      const problems = await checkModel(dir);
       expect(problems).toContain("model.onnx is not in the manifest");
       expect(problems).toContain("model.int8.onnx is missing");
       expect(
@@ -92,6 +98,9 @@ describe("model integrity", () => {
     ).toThrow(/registry is neither/);
     expect(() => parseManifest({ ...manifest, catalogue: "" })).toThrow(
       /catalogue is not a string/,
+    );
+    expect(() => parseManifest({ ...manifest, runtime: undefined })).toThrow(
+      /malformed/,
     );
   });
 });

@@ -2,7 +2,10 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { loadSho } from "../src/index.ts";
 
-const DEFAULT_DIR = "E:/system-one-uk/data/voice2";
+const USAGE =
+  "usage: node scripts/bench.ts <dir>\n" +
+  "  <dir> holds the gold datasets of the system-one-uk checkout " +
+  "(data/voice2), which this repository does not carry.\n";
 const FILES = [
   "live_heldout_gold.jsonl",
   "dictation_v4_gold.jsonl",
@@ -41,9 +44,13 @@ function quantile(sorted: readonly number[], at: number): number {
   return sorted[index] ?? Number.NaN;
 }
 
-const dir = process.argv[2] ?? DEFAULT_DIR;
+const dir = process.argv[2];
+if (dir === undefined || dir === "") {
+  process.stderr.write(USAGE);
+  process.exit(2);
+}
 const utterances = await phrases(dir);
-const sho = await loadSho({ threads: 1, verify: true });
+const sho = await loadSho({ threads: 1 });
 
 for (const phrase of utterances.slice(0, 20)) await sho.run({ raw: phrase });
 

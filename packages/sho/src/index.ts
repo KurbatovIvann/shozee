@@ -19,7 +19,7 @@ import {
 import {
   ONNX_FILE,
   ShoIntegrityError,
-  modelProblems,
+  fileProblems,
   readManifest,
 } from "./manifest.ts";
 
@@ -73,6 +73,8 @@ export const manifest = readManifest(packageRoot);
 
 export const modelDir = join(packageRoot, "model", manifest.model);
 
+export const runtimeDir = join(packageRoot, "runtime", "src");
+
 export const conformanceDir = join(packageRoot, "test", "conformance-v3");
 
 export const modelInfo: ModelInfo = {
@@ -80,8 +82,12 @@ export const modelInfo: ModelInfo = {
   md5: manifest.files[ONNX_FILE]?.md5 ?? "",
 };
 
-export function checkModel(): Promise<string[]> {
-  return modelProblems(modelDir, manifest);
+export function checkModel(dir = modelDir): Promise<string[]> {
+  return fileProblems(dir, manifest.files);
+}
+
+export function checkRuntime(): Promise<string[]> {
+  return fileProblems(runtimeDir, manifest.runtime);
 }
 
 export function assertV3(bundle: Pick<Bundle, "catalogue">, dir: string): void {
@@ -107,8 +113,9 @@ export function calibrationOf(dir = modelDir): Promise<Calibration> {
 
 export async function loadSho(options: LoadOptions = {}): Promise<Sho> {
   const dir = options.dir ?? modelDir;
-  if (options.verify === true) {
-    const problems = await modelProblems(dir, manifest);
+  if (options.verify !== false) {
+    const checked = await Promise.all([checkModel(dir), checkRuntime()]);
+    const problems = checked.flat();
     if (problems.length > 0) throw new ShoIntegrityError(problems);
   }
   const [bundle, requirements, calibration] = await Promise.all([

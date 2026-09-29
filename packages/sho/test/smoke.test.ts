@@ -47,7 +47,7 @@ describe("Шо smoke", () => {
 
   it("loads the verified v3 model and parses a phrase into a Result v2", async () => {
     const started = performance.now();
-    sho = await loadSho({ verify: true });
+    sho = await loadSho();
     const loadMs = performance.now() - started;
     expect(sho.model).toEqual(modelInfo);
     expect(sho.bundle.catalogue).toBe("v3");
@@ -104,7 +104,7 @@ describe("Шо smoke", () => {
 });
 
 describe("loadSho refusals", () => {
-  it("refuses a bundle whose files do not hash to the manifest", async () => {
+  it("refuses a tampered bundle without being asked to verify", async () => {
     const dir = await mkdtemp(join(tmpdir(), "sho-tampered-"));
     try {
       for (const name of [
@@ -114,9 +114,7 @@ describe("loadSho refusals", () => {
       ])
         await copyFile(join(modelDir, name), join(dir, name));
       await writeFile(join(dir, "tokenizer.json"), "{}");
-      const error = await loadSho({ dir, verify: true }).catch(
-        (thrown: unknown) => thrown,
-      );
+      const error = await loadSho({ dir }).catch((thrown: unknown) => thrown);
       expect(error).toBeInstanceOf(ShoIntegrityError);
       expect((error as ShoIntegrityError).problems).toContain(
         "model.int8.onnx is missing",
@@ -149,7 +147,9 @@ describe("loadSho refusals", () => {
       );
       await writeFile(join(dir, "model.int8.onnx"), "not a model");
       await expect(loadV3Bundle(dir)).rejects.toBeInstanceOf(ShoBundleError);
-      await expect(loadSho({ dir })).rejects.toThrow(/is not a Шо v3 bundle/);
+      await expect(loadSho({ dir, verify: false })).rejects.toThrow(
+        /is not a Шо v3 bundle/,
+      );
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

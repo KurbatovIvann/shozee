@@ -14,6 +14,7 @@ export interface Manifest {
   readonly model: string;
   readonly catalogue: string;
   readonly files: FileRecords;
+  readonly runtime: FileRecords;
   readonly source: {
     readonly repo: string;
     readonly commit: string;
@@ -87,6 +88,7 @@ export function parseManifest(json: unknown): Manifest {
     model: text(root["model"], "model"),
     catalogue: text(root["catalogue"], "catalogue"),
     files,
+    runtime: fileRecords(root["runtime"], "runtime"),
     source: {
       repo: text(source["repo"], "source.repo"),
       commit: text(source["commit"], "source.commit"),
@@ -146,11 +148,4 @@ export async function fileProblems(
       );
   }
   return problems;
-}
-
-export function modelProblems(
-  dir: string,
-  manifest: Pick<Manifest, "files">,
-): Promise<string[]> {
-  return fileProblems(dir, manifest.files);
 }

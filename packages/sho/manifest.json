@@ -23,6 +23,308 @@
       "bytes": 1039303
     }
   },
+  "runtime": {
+    "adapters/node.ts": {
+      "md5": "c7b0377677c0a16cba56d2e46f91441a",
+      "bytes": 5520
+    },
+    "adapters/ort.ts": {
+      "md5": "9f7d84137a5eb9cff579fdfd00dba703",
+      "bytes": 1394
+    },
+    "adapters/web.ts": {
+      "md5": "e9829e452ee4902f5ca1a6b7351f321e",
+      "bytes": 1826
+    },
+    "attrKinds.ts": {
+      "md5": "c86aed5affddf52faab50ddaed3c47e3",
+      "bytes": 4674
+    },
+    "bundle.ts": {
+      "md5": "f6a57aa331f8b8b2d06866b758bd45dc",
+      "bytes": 15295
+    },
+    "catalogue.ts": {
+      "md5": "05c9f777232bc79688c46183731cdbd6",
+      "bytes": 28275
+    },
+    "command.ts": {
+      "md5": "88c5346e98e98bfda895c9f713c458db",
+      "bytes": 41205
+    },
+    "confidence.ts": {
+      "md5": "2b59cc24b3bdd34703b4db03c3d61919",
+      "bytes": 2549
+    },
+    "context.ts": {
+      "md5": "c6e96690907376828f1f0f97ffe450cd",
+      "bytes": 17666
+    },
+    "createAsUpdate.ts": {
+      "md5": "2fec7badb5c0dc92adf804a2323d8715",
+      "bytes": 8750
+    },
+    "customers.ts": {
+      "md5": "209d5e8959376dd552036ed0d1d99415",
+      "bytes": 20564
+    },
+    "dates.ts": {
+      "md5": "bccab93e0be17c3cfaa144ea823782c8",
+      "bytes": 6230
+    },
+    "decode.ts": {
+      "md5": "523581c08aafc73a554c2b83992e281c",
+      "bytes": 33024
+    },
+    "errors.ts": {
+      "md5": "833574448cfd0b61f1b6c735e73ca30c",
+      "bytes": 577
+    },
+    "gender.ts": {
+      "md5": "cd114bfe79e1da20ac9c9ba5bb19518d",
+      "bytes": 2711
+    },
+    "index.ts": {
+      "md5": "bc1a1d0aac6197012b50efdc05914903",
+      "bytes": 9729
+    },
+    "leftover.ts": {
+      "md5": "732d8d040d322d155b4e7a8d6d4ac29d",
+      "bytes": 5709
+    },
+    "lexicon/attrs.ts": {
+      "md5": "6d80649dcb51c4e1d72e13a4587f165b",
+      "bytes": 3145
+    },
+    "lexicon/catalogue.ts": {
+      "md5": "4e3b00ddea049b203c7a08564c8b41d5",
+      "bytes": 3631
+    },
+    "lexicon/customers.ts": {
+      "md5": "386c67b3429652e95d89ab0b1ec117ec",
+      "bytes": 6165
+    },
+    "lexicon/dates.ts": {
+      "md5": "59ea302a6399a8ec7b38c3bff70a81ea",
+      "bytes": 3940
+    },
+    "lexicon/firstNames.ts": {
+      "md5": "6a280d3b2e9bd1555213764ab42987c1",
+      "bytes": 4016
+    },
+    "lexicon/lists.ts": {
+      "md5": "ce87892de56acefa9086792c3790d712",
+      "bytes": 1842
+    },
+    "lexicon/morphology.ts": {
+      "md5": "fa40197647f68e8bd162463a80c3e397",
+      "bytes": 4539
+    },
+    "lexicon/names.ts": {
+      "md5": "02aa90107267b447379d0da5dc821d7d",
+      "bytes": 8437
+    },
+    "lexicon/numbers.ts": {
+      "md5": "c2205fd90e377b460452c43e6fbb8791",
+      "bytes": 10143
+    },
+    "lexicon/periods.ts": {
+      "md5": "d54a6a11d3d19eb7f88400bf4d9083f7",
+      "bytes": 1531
+    },
+    "lexicon/references.ts": {
+      "md5": "d457a1c3d096f8de4af0ecdc0da61499",
+      "bytes": 8317
+    },
+    "lexicon/repair.ts": {
+      "md5": "a46660d8a58d670d16e594b1be975cca",
+      "bytes": 5571
+    },
+    "lexicon/roles.ts": {
+      "md5": "5d3ad1f3b53ab5c44bc27e564bc7d474",
+      "bytes": 7853
+    },
+    "lexicon/segment.ts": {
+      "md5": "464c782570e1e3cf4663d93cf25eb2ee",
+      "bytes": 4529
+    },
+    "lexicon/units.ts": {
+      "md5": "8bee5cdf612358b5a835a6c85a57aad0",
+      "bytes": 22481
+    },
+    "lexicon/values.ts": {
+      "md5": "e3513aa5e2f01e36052b085ca733e4ee",
+      "bytes": 15607
+    },
+    "lexicon/when.ts": {
+      "md5": "8feaabb0cc5118c413e6fc8f98c3c82f",
+      "bytes": 8791
+    },
+    "lines.ts": {
+      "md5": "a1baeb2a04cb1b1b802350ed0a335b4c",
+      "bytes": 21335
+    },
+    "lists.ts": {
+      "md5": "3b48ab0b3ce41af6ee402eb0fb876d59",
+      "bytes": 14764
+    },
+    "math.ts": {
+      "md5": "4e97d6d3d0d3b05e1c24c8b071881474",
+      "bytes": 510
+    },
+    "measures.ts": {
+      "md5": "087e901d3d8a1b6c43b5564a4831ade1",
+      "bytes": 1285
+    },
+    "model.ts": {
+      "md5": "6aedf2a5a0d587380ad31e31d68102ac",
+      "bytes": 2783
+    },
+    "morphology.ts": {
+      "md5": "0a9be85155ff74fe5c4389408bdd5d84",
+      "bytes": 12161
+    },
+    "nameIndex.ts": {
+      "md5": "cdab8d072f53cf02bc6874df29e71c19",
+      "bytes": 8612
+    },
+    "nameList.ts": {
+      "md5": "f1145ed7b669f0dc849c0fe261a99106",
+      "bytes": 16568
+    },
+    "nameTokens.ts": {
+      "md5": "248a547d19b815455e370dacb884f0ee",
+      "bytes": 14144
+    },
+    "names.ts": {
+      "md5": "4d41383922c804c581f0fec2949ecee0",
+      "bytes": 15194
+    },
+    "nearest.ts": {
+      "md5": "c6bb6967d6075ec47636770779a65c2f",
+      "bytes": 8190
+    },
+    "nominative.ts": {
+      "md5": "09b658e359aeb3028b685888c04370ec",
+      "bytes": 6710
+    },
+    "numbers.ts": {
+      "md5": "2d73ad732c9c04da2a62a6f465374a15",
+      "bytes": 19605
+    },
+    "params.ts": {
+      "md5": "63912c67b796f3dc8480a24dee01c1a8",
+      "bytes": 7380
+    },
+    "periods.ts": {
+      "md5": "4a92f41305125cc616200922d142813d",
+      "bytes": 4515
+    },
+    "pipeline.ts": {
+      "md5": "baad72fc76838a28878ab9a9e673b09e",
+      "bytes": 21399
+    },
+    "products.ts": {
+      "md5": "e3d8944d4e43df96724d19b7057aae86",
+      "bytes": 11731
+    },
+    "pronouns.ts": {
+      "md5": "89012cde12d9996367bb1d803ae89b03",
+      "bytes": 7945
+    },
+    "records.ts": {
+      "md5": "3bc0aca8d5d3b8d866fa40fa50831e13",
+      "bytes": 17652
+    },
+    "references.ts": {
+      "md5": "d45beb309689cee11b009fde2e2ee517",
+      "bytes": 18489
+    },
+    "refine.ts": {
+      "md5": "b21e4cbc5b5c9d0594490e4b055ac48b",
+      "bytes": 14966
+    },
+    "repair.ts": {
+      "md5": "026666fa274320f3e0ad6e541e46bbeb",
+      "bytes": 21213
+    },
+    "resolve.ts": {
+      "md5": "7780114a4a4d280d46a2fe674eb54029",
+      "bytes": 27098
+    },
+    "result.ts": {
+      "md5": "133f434635fbf3c0ad53657142bd468d",
+      "bytes": 11407
+    },
+    "roles.ts": {
+      "md5": "a8dfc364164c768a63e8608a87f276a1",
+      "bytes": 19653
+    },
+    "rules.ts": {
+      "md5": "835080caff39e2599f615af5f835bcd5",
+      "bytes": 2286
+    },
+    "segment.ts": {
+      "md5": "92eac9c9430a04f5148baac249fe9f0f",
+      "bytes": 2785
+    },
+    "sounds.ts": {
+      "md5": "ac658df8040340af80e0803c420b1d5c",
+      "bytes": 6610
+    },
+    "spans.ts": {
+      "md5": "6bace7cab87ded9504e6ef7cd75b6f7f",
+      "bytes": 10615
+    },
+    "stockless.ts": {
+      "md5": "5fc9dda0267caa39c685130bc6a41510",
+      "bytes": 2244
+    },
+    "suggest.ts": {
+      "md5": "1750996a49797a87ef635e89182b91e2",
+      "bytes": 9247
+    },
+    "text/normalise.ts": {
+      "md5": "b41a5e494a611eeb09bc9beacf0b1af7",
+      "bytes": 4537
+    },
+    "tokenizer.ts": {
+      "md5": "c4f37cf7732ef9456c3956546d310a8e",
+      "bytes": 8811
+    },
+    "tyres.ts": {
+      "md5": "1720ac3fbcc229718c75473363cdd7a9",
+      "bytes": 2358
+    },
+    "v1.ts": {
+      "md5": "93ea10049a5b3c837639afa74780f31d",
+      "bytes": 6627
+    },
+    "values.ts": {
+      "md5": "739b3e7f03b2752ddeaf3a916c462d8e",
+      "bytes": 18723
+    },
+    "variantNumbers.ts": {
+      "md5": "6f53b9665e331dce8b1d11cebe5138d5",
+      "bytes": 7401
+    },
+    "version.ts": {
+      "md5": "bc4a5b188b27a969a760ce51690998d0",
+      "bytes": 32
+    },
+    "when.ts": {
+      "md5": "72a0407255b86bcf9e4e7559354e5032",
+      "bytes": 18264
+    },
+    "words.ts": {
+      "md5": "08d4afac4cc6c037e83e2cd27cc2ba1e",
+      "bytes": 5068
+    },
+    "yearPeriods.ts": {
+      "md5": "227765098821c6726710fd7dd1979360",
+      "bytes": 11032
+    }
+  },
   "source": {
     "repo": "system-one-uk",
     "commit": "d8e39dadceb2986308c66c96fad3138f96d67ab8",
@@ -112,5 +414,5 @@
       "bytes": 8074
     }
   },
-  "updatedAt": "2026-09-29T17:54:05.358244Z"
+  "updatedAt": "2026-09-29T18:49:52.031477Z"
 }

@@ -4,9 +4,7 @@
     "types": ["node"],
     "allowImportingTsExtensions": true,
     "noPropertyAccessFromIndexSignature": true,
-    "noImplicitReturns": true,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false
+    "noImplicitReturns": true
   },
   "include": ["src", "test", "scripts", "runtime/src", "vitest.config.ts"]
 }
