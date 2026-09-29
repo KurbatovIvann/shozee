@@ -1,0 +1,6600 @@
+{
+ "version": 3,
+ "catalogue": "v3",
+ "source": "sho.data.intent_labels --bundle",
+ "intents": {
+  "orders.list": {
+   "title": "Список замовлень з фільтром",
+   "description": "Відкриває список замовлень, відфільтрований за клієнтом, статусом або періодом.",
+   "module": "Замовлення",
+   "kind": "read",
+   "params": [
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "status",
+     "title": "статус",
+     "type": "order_status",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "period",
+     "title": "період",
+     "type": "period",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "due",
+     "title": "на коли",
+     "type": "when",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "payment_status",
+     "title": "статус оплати",
+     "type": "payment_status",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "замовлення з першого по п'яте травня",
+     "params": {
+      "period": "range:05-01..05-05"
+     },
+     "source_id": "w-007-149"
+    },
+    {
+     "utterance": "виконані замовлення кав'ярні тераса",
+     "params": {
+      "customer": "кав'ярні тераса",
+      "status": "done"
+     },
+     "source_id": "w-017-272"
+    },
+    {
+     "utterance": "покажи активні замовлення за сьогодні",
+     "params": {
+      "status": "active",
+      "period": "today"
+     },
+     "source_id": "w-022-109"
+    }
+   ]
+  },
+  "orders.count": {
+   "title": "Кількість і сума замовлень",
+   "description": "Рахує замовлення та їхню суму за фільтрами, за потреби з розбивкою по статусах, товарах чи клієнтах.",
+   "module": "Замовлення",
+   "kind": "read",
+   "params": [
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "status",
+     "title": "статус",
+     "type": "order_status",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "period",
+     "title": "період",
+     "type": "period",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "group_by",
+     "title": "групувати",
+     "type": "group_by",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "due",
+     "title": "на коли",
+     "type": "when",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "payment_status",
+     "title": "статус оплати",
+     "type": "payment_status",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "скільки замовлень у кав'ярні дванадцять за цей місяць",
+     "params": {
+      "customer": "кав'ярні дванадцять",
+      "period": "this_month"
+     },
+     "source_id": "w-022-058"
+    },
+    {
+     "utterance": "яка сума з 1 по 20 грудня",
+     "params": {
+      "period": "range:12-01..12-20"
+     },
+     "source_id": "w-025-362"
+    },
+    {
+     "utterance": "порахуй усі замовлення",
+     "params": {},
+     "source_id": "w-025-467"
+    }
+   ]
+  },
+  "orders.get": {
+   "title": "Відкрити одне замовлення",
+   "description": "Знаходить одне замовлення за номером або описом і відкриває його картку.",
+   "module": "Замовлення",
+   "kind": "read",
+   "params": [
+    {
+     "name": "order_number",
+     "title": "номер замовлення",
+     "type": "order_number",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "period",
+     "title": "період",
+     "type": "period",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "status",
+     "title": "статус",
+     "type": "order_status",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "amount",
+     "title": "сума",
+     "type": "money",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "due",
+     "title": "на коли",
+     "type": "when",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "payment_status",
+     "title": "статус оплати",
+     "type": "payment_status",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "картка замовлення за минулі тридцять днів",
+     "params": {
+      "period": "last_month"
+     },
+     "source_id": "w-012-282"
+    },
+    {
+     "utterance": "відкрий замовлення 512",
+     "params": {
+      "order_number": "512"
+     },
+     "source_id": "w-000-153"
+    },
+    {
+     "utterance": "замовлення ганни козак на 1260 грн",
+     "params": {
+      "customer": "ганни козак",
+      "amount": "1260 грн"
+     },
+     "source_id": "w-014-101"
+    }
+   ]
+  },
+  "orders.create": {
+   "title": "Створити замовлення",
+   "description": "Готує картку нового замовлення з клієнтом і позиціями для підтвердження.",
+   "module": "Замовлення",
+   "kind": "write",
+   "params": [
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "items",
+     "title": "позиції",
+     "type": "order_lines",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "comment",
+     "title": "коментар",
+     "type": "comment",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "due",
+     "title": "на коли",
+     "type": "when",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "payment_method",
+     "title": "спосіб оплати",
+     "type": "payment_method",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "discount",
+     "title": "знижка",
+     "type": "discount",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "оформи замовлення три безе і п'ять макіато",
+     "params": {
+      "items": [
+       {
+        "product": "безе",
+        "quantity": "три"
+       },
+       {
+        "product": "макіато",
+        "quantity": "п'ять"
+       }
+      ]
+     },
+     "source_id": "w-004-259"
+    },
+    {
+     "utterance": "замовлення для плюща какао дві і узвар три",
+     "params": {
+      "customer": "плюща",
+      "items": [
+       {
+        "product": "какао",
+        "quantity": "дві"
+       },
+       {
+        "product": "узвар",
+        "quantity": "три"
+       }
+      ]
+     },
+     "source_id": "w-019-479"
+    },
+    {
+     "utterance": "оформи замовлення для крамниці смак коментар дві особи",
+     "params": {
+      "customer": "крамниці смак",
+      "comment": "дві особи"
+     },
+     "source_id": "w-000-219"
+    }
+   ]
+  },
+  "orders.confirm": {
+   "title": "Підтвердити замовлення",
+   "description": "Знаходить нове замовлення і пропонує перевести його в статус «підтверджене».",
+   "module": "Замовлення",
+   "kind": "write",
+   "params": [
+    {
+     "name": "order_number",
+     "title": "номер замовлення",
+     "type": "order_number",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "period",
+     "title": "період",
+     "type": "period",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "amount",
+     "title": "сума",
+     "type": "money",
+     "required": false,
+     "one_of": true
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "підтверди замовлення двісті сім",
+     "params": {
+      "order_number": "двісті сім"
+     },
+     "source_id": "w-029-450"
+    },
+    {
+     "utterance": "прийми заказ клієнта алли костянтинівни на суму дев'ятсот сорок п'ять",
+     "params": {
+      "customer": "алли костянтинівни",
+      "amount": "дев'ятсот сорок п'ять"
+     },
+     "source_id": "gtr-012824"
+    },
+    {
+     "utterance": "підтверди замовлення богдана мельника",
+     "params": {
+      "customer": "богдана мельника"
+     },
+     "source_id": "w-020-354"
+    }
+   ]
+  },
+  "orders.start": {
+   "title": "Взяти замовлення в роботу",
+   "description": "Знаходить підтверджене замовлення і пропонує перевести його в статус «в роботі».",
+   "module": "Замовлення",
+   "kind": "write",
+   "params": [
+    {
+     "name": "order_number",
+     "title": "номер замовлення",
+     "type": "order_number",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "period",
+     "title": "період",
+     "type": "period",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "amount",
+     "title": "сума",
+     "type": "money",
+     "required": false,
+     "one_of": true
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "візьми в роботу замовлення сто сорок сім",
+     "params": {
+      "order_number": "сто сорок сім"
+     },
+     "source_id": "w-020-006"
+    },
+    {
+     "utterance": "бери в роботу замовлення на шістсот гривень",
+     "params": {
+      "amount": "шістсот гривень"
+     },
+     "source_id": "w-018-166"
+    },
+    {
+     "utterance": "постав у роботу сьогоднішнього замовлення",
+     "params": {
+      "period": "today"
+     },
+     "source_id": "w-021-117"
+    }
+   ]
+  },
+  "orders.complete": {
+   "title": "Виконати замовлення",
+   "description": "Знаходить замовлення в роботі і пропонує позначити його виконаним.",
+   "module": "Замовлення",
+   "kind": "write",
+   "params": [
+    {
+     "name": "order_number",
+     "title": "номер замовлення",
+     "type": "order_number",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "period",
+     "title": "період",
+     "type": "period",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "amount",
+     "title": "сума",
+     "type": "money",
+     "required": false,
+     "one_of": true
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "закрий замовлення 84",
+     "params": {
+      "order_number": "84"
+     },
+     "source_id": "w-001-461"
+    },
+    {
+     "utterance": "замовлення оксани довгань з 21 по 28 лютого закрий",
+     "params": {
+      "customer": "оксани довгань",
+      "period": "range:02-21..02-28"
+     },
+     "source_id": "w-002-277"
+    },
+    {
+     "utterance": "заявку на суму триста шістдесят п'ять виконано",
+     "params": {
+      "amount": "триста шістдесят п'ять"
+     },
+     "source_id": "gtr-013252"
+    }
+   ]
+  },
+  "orders.cancel": {
+   "title": "Скасувати замовлення",
+   "description": "Знаходить замовлення і пропонує скасувати його (замовлення не видаляються назавжди).",
+   "module": "Замовлення",
+   "kind": "write",
+   "params": [
+    {
+     "name": "order_number",
+     "title": "номер замовлення",
+     "type": "order_number",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "period",
+     "title": "період",
+     "type": "period",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "amount",
+     "title": "сума",
+     "type": "money",
+     "required": false,
+     "one_of": true
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "скасуй вчорашнє замовлення на 610 грн",
+     "params": {
+      "period": "yesterday",
+      "amount": "610 грн"
+     },
+     "source_id": "w-006-435"
+    },
+    {
+     "utterance": "відміни замовлення sp сорок п'ять",
+     "params": {
+      "order_number": "sp сорок п'ять"
+     },
+     "source_id": "gtr-013109"
+    },
+    {
+     "utterance": "скасуй замовлення на сімсот гривень",
+     "params": {
+      "amount": "сімсот гривень"
+     },
+     "source_id": "w-018-371"
+    }
+   ]
+  },
+  "customers.listCustomers": {
+   "title": "Список клієнтів з фільтром",
+   "description": "Відкриває список клієнтів за текстом пошуку, статусом або групою.",
+   "module": "Клієнти",
+   "kind": "read",
+   "params": [
+    {
+     "name": "search_text",
+     "title": "текст пошуку",
+     "type": "search_text",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "status",
+     "title": "статус",
+     "type": "record_status",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "group",
+     "title": "група",
+     "type": "group",
+     "required": false,
+     "one_of": true
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "покажи клієнтів постійних помітка опт",
+     "params": {
+      "search_text": "помітка опт",
+      "group": "постійних"
+     },
+     "source_id": "w-028-395"
+    },
+    {
+     "utterance": "клієнти в архіві",
+     "params": {
+      "status": "archived"
+     },
+     "source_id": "w-006-196"
+    },
+    {
+     "utterance": "архівні клієнти групи оптові",
+     "params": {
+      "status": "archived",
+      "group": "оптові"
+     },
+     "source_id": "w-017-007"
+    }
+   ]
+  },
+  "customers.getCustomer": {
+   "title": "Відкрити картку клієнта",
+   "description": "Знаходить клієнта за назвою і відкриває його картку.",
+   "module": "Клієнти",
+   "kind": "read",
+   "params": [
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": true,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "відкрий клієнта бістро вітрило",
+     "params": {
+      "customer": "бістро вітрило"
+     },
+     "source_id": "w-019-410"
+    },
+    {
+     "utterance": "відкрий клієнта зою коваленко",
+     "params": {
+      "customer": "зою коваленко"
+     },
+     "source_id": "w-017-420"
+    },
+    {
+     "utterance": "картка клієнта наталі гришко",
+     "params": {
+      "customer": "наталі гришко"
+     },
+     "source_id": "w-021-038"
+    }
+   ]
+  },
+  "customers.createCustomer": {
+   "title": "Створити клієнта",
+   "description": "Готує картку нового клієнта з назвою, контактами, групою та прайс-листом для підтвердження.",
+   "module": "Клієнти",
+   "kind": "write",
+   "params": [
+    {
+     "name": "new_name",
+     "title": "назва",
+     "type": "new_name",
+     "required": true,
+     "one_of": false
+    },
+    {
+     "name": "phone",
+     "title": "телефон",
+     "type": "phone",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "email",
+     "title": "e-mail",
+     "type": "email",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "comment",
+     "title": "коментар",
+     "type": "comment",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "group",
+     "title": "група",
+     "type": "group",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "price_list",
+     "title": "прайс-лист",
+     "type": "price_list",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "додай артем лисенко нуль шістдесят сім двісті три сорок чотири вісімнадцять artem.l@ukr.net група зміна три",
+     "params": {
+      "new_name": "артем лисенко",
+      "phone": "нуль шістдесят сім двісті три сорок чотири вісімнадцять",
+      "email": "artem.l@ukr.net",
+      "group": "зміна три"
+     },
+     "source_id": "w-023-314"
+    },
+    {
+     "utterance": "софія гнатюк телефон нуль дев'яносто три двісті чотирнадцять п'ятдесят п'ять шістдесят сім пошта sonya@ukr.net вечір",
+     "params": {
+      "new_name": "софія гнатюк",
+      "phone": "нуль дев'яносто три двісті чотирнадцять п'ятдесят п'ять шістдесят сім",
+      "email": "sonya@ukr.net",
+      "comment": "вечір"
+     },
+     "source_id": "w-020-363"
+    },
+    {
+     "utterance": "новий клієнт павло яременко під замовлення коментар стіл 6 прайс барний",
+     "params": {
+      "new_name": "павло яременко",
+      "comment": "стіл 6",
+      "price_list": "барний"
+     },
+     "source_id": "w-000-228"
+    }
+   ]
+  },
+  "customers.updateCustomer": {
+   "title": "Змінити клієнта",
+   "description": "Знаходить клієнта і відкриває форму зміни з названими новими даними.",
+   "module": "Клієнти",
+   "kind": "write",
+   "params": [
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": true,
+     "one_of": false
+    },
+    {
+     "name": "rename_to",
+     "title": "нова назва",
+     "type": "rename_to",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "phone",
+     "title": "телефон",
+     "type": "phone",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "email",
+     "title": "e-mail",
+     "type": "email",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "comment",
+     "title": "коментар",
+     "type": "comment",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "group",
+     "title": "група",
+     "type": "group",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "price_list",
+     "title": "прайс-лист",
+     "type": "price_list",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "зміни існуючого клієнта лесі бондаренко телефон 073 615 20 48 прайс нічний",
+     "params": {
+      "customer": "лесі бондаренко",
+      "phone": "073 615 20 48",
+      "price_list": "нічний"
+     },
+     "source_id": "w-021-226"
+    },
+    {
+     "utterance": "перейменуй марка левченка на марко левченко молодший телефон 068 901 22 77 прайс нічний",
+     "params": {
+      "customer": "марка левченка",
+      "rename_to": "марко левченко молодший",
+      "phone": "068 901 22 77",
+      "price_list": "нічний"
+     },
+     "source_id": "w-000-190"
+    },
+    {
+     "utterance": "зміни клієнту софії кравець телефон 097 410 20 15 коментар передзвоню група доставка",
+     "params": {
+      "customer": "софії кравець",
+      "phone": "097 410 20 15",
+      "comment": "передзвоню",
+      "group": "доставка"
+     },
+     "source_id": "w-028-323"
+    }
+   ]
+  },
+  "customers.setGroup": {
+   "title": "Додати клієнтів у групу",
+   "description": "Знаходить кількох клієнтів і групу і готує одну картку: кожного клієнта буде перенесено в цю групу.",
+   "module": "Клієнти",
+   "kind": "write",
+   "params": [
+    {
+     "name": "customers",
+     "title": "клієнти",
+     "type": "customer_list",
+     "required": true,
+     "one_of": false
+    },
+    {
+     "name": "group",
+     "title": "група",
+     "type": "group",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "додай хостел козак і акву в групу заклади",
+     "params": {
+      "customers": [
+       "хостел козак",
+       "акву"
+      ],
+      "group": "заклади"
+     },
+     "source_id": "v31-03-0582"
+    },
+    {
+     "utterance": "запиши туда roast room та ніну коломієць",
+     "params": {
+      "customers": [
+       "roast room",
+       "ніну коломієць"
+      ]
+     },
+     "source_id": "m2n-01430-s"
+    },
+    {
+     "utterance": "перекинь їх у групу оптові",
+     "params": {
+      "group": "оптові"
+     },
+     "source_id": "v32-04-0208"
+    }
+   ]
+  },
+  "customers.archiveCustomer": {
+   "title": "Архівувати клієнта",
+   "description": "Знаходить клієнта і пропонує перенести його в архів.",
+   "module": "Клієнти",
+   "kind": "write",
+   "params": [
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": true,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "архівуй наталю шевченко",
+     "params": {
+      "customer": "наталю шевченко"
+     },
+     "source_id": "w-017-003"
+    },
+    {
+     "utterance": "архівуй ольгу сидор",
+     "params": {
+      "customer": "ольгу сидор"
+     },
+     "source_id": "w-002-197"
+    },
+    {
+     "utterance": "архівуй клієнта назара мельника",
+     "params": {
+      "customer": "назара мельника"
+     },
+     "source_id": "w-013-032"
+    }
+   ]
+  },
+  "customers.restoreCustomer": {
+   "title": "Відновити клієнта з архіву",
+   "description": "Знаходить архівного клієнта і пропонує повернути його в активні.",
+   "module": "Клієнти",
+   "kind": "write",
+   "params": [
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": true,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "віднови клієнта лізу крук",
+     "params": {
+      "customer": "лізу крук"
+     },
+     "source_id": "w-010-089"
+    },
+    {
+     "utterance": "віднови клієнта олега приходька",
+     "params": {
+      "customer": "олега приходька"
+     },
+     "source_id": "w-010-146"
+    },
+    {
+     "utterance": "поверни з архіву крамницю смак",
+     "params": {
+      "customer": "крамницю смак"
+     },
+     "source_id": "w-000-335"
+    }
+   ]
+  },
+  "customers.deleteCustomer": {
+   "title": "Видалити клієнта (назавжди)",
+   "description": "Знаходить клієнта і пропонує видалити його назавжди з посиленим підтвердженням.",
+   "module": "Клієнти",
+   "kind": "high",
+   "params": [
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": true,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "видали клієнта євгена шаповала",
+     "params": {
+      "customer": "євгена шаповала"
+     },
+     "source_id": "w-013-076"
+    },
+    {
+     "utterance": "видали клієнта миколу шелест",
+     "params": {
+      "customer": "миколу шелест"
+     },
+     "source_id": "w-029-240"
+    },
+    {
+     "utterance": "видали клієнта остапа козака",
+     "params": {
+      "customer": "остапа козака"
+     },
+     "source_id": "w-022-279"
+    }
+   ]
+  },
+  "customers.listGroups": {
+   "title": "Пошук груп клієнтів",
+   "description": "Відкриває список груп клієнтів, відфільтрований за текстом пошуку.",
+   "module": "Групи клієнтів",
+   "kind": "read",
+   "params": [
+    {
+     "name": "search_text",
+     "title": "текст пошуку",
+     "type": "search_text",
+     "required": true,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "найди групи зміна 11",
+     "params": {
+      "search_text": "зміна 11"
+     },
+     "source_id": "w-009-494"
+    },
+    {
+     "utterance": "покажи групи зміна два",
+     "params": {
+      "search_text": "зміна два"
+     },
+     "source_id": "w-023-452"
+    },
+    {
+     "utterance": "знайди групи поверх 6",
+     "params": {
+      "search_text": "поверх 6"
+     },
+     "source_id": "w-010-243"
+    }
+   ]
+  },
+  "customers.getGroup": {
+   "title": "Відкрити групу клієнтів",
+   "description": "Знаходить групу клієнтів за назвою і відкриває її картку.",
+   "module": "Групи клієнтів",
+   "kind": "read",
+   "params": [
+    {
+     "name": "group",
+     "title": "група",
+     "type": "group",
+     "required": true,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "відкрий групу постійні гості",
+     "params": {
+      "group": "постійні гості"
+     },
+     "source_id": "w-020-467"
+    },
+    {
+     "utterance": "відкрий групу фірми офісу",
+     "params": {
+      "group": "фірми офісу"
+     },
+     "source_id": "w-017-444"
+    },
+    {
+     "utterance": "покажи групу корпоративні",
+     "params": {
+      "group": "корпоративні"
+     },
+     "source_id": "w-029-139"
+    }
+   ]
+  },
+  "customers.createGroup": {
+   "title": "Створити групу клієнтів",
+   "description": "Готує картку нової групи клієнтів з описом і прайс-листом для підтвердження.",
+   "module": "Групи клієнтів",
+   "kind": "write",
+   "params": [
+    {
+     "name": "new_name",
+     "title": "назва",
+     "type": "new_name",
+     "required": true,
+     "one_of": false
+    },
+    {
+     "name": "description",
+     "title": "опис",
+     "type": "description",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "price_list",
+     "title": "прайс-лист",
+     "type": "price_list",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "додай групу клієнтів ранкові доставки 2",
+     "params": {
+      "new_name": "ранкові доставки 2"
+     },
+     "source_id": "w-004-054"
+    },
+    {
+     "utterance": "створи групу франшиза 3 прайс партнерський",
+     "params": {
+      "new_name": "франшиза 3",
+      "price_list": "партнерський"
+     },
+     "source_id": "w-012-123"
+    },
+    {
+     "utterance": "нова група нічні зміни",
+     "params": {
+      "new_name": "нічні зміни"
+     },
+     "source_id": "w-019-403"
+    }
+   ]
+  },
+  "customers.updateGroup": {
+   "title": "Змінити групу клієнтів",
+   "description": "Знаходить групу і відкриває форму зміни з названими новими даними.",
+   "module": "Групи клієнтів",
+   "kind": "write",
+   "params": [
+    {
+     "name": "group",
+     "title": "група",
+     "type": "group",
+     "required": true,
+     "one_of": false
+    },
+    {
+     "name": "rename_to",
+     "title": "нова назва",
+     "type": "rename_to",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "description",
+     "title": "опис",
+     "type": "description",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "price_list",
+     "title": "прайс-лист",
+     "type": "price_list",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "перейменуй групу вечірні на вечірні 2",
+     "params": {
+      "group": "вечірні",
+      "rename_to": "вечірні 2"
+     },
+     "source_id": "w-008-325"
+    },
+    {
+     "utterance": "зміни групу оптові 3 на корпоративні 9 прайс літній",
+     "params": {
+      "group": "оптові 3",
+      "rename_to": "корпоративні 9",
+      "price_list": "літній"
+     },
+     "source_id": "w-009-418"
+    },
+    {
+     "utterance": "редагуй групу офісні кухні",
+     "params": {
+      "group": "офісні кухні"
+     },
+     "source_id": "w-024-344"
+    }
+   ]
+  },
+  "customers.deleteGroup": {
+   "title": "Видалити групу клієнтів (назавжди)",
+   "description": "Знаходить групу клієнтів і пропонує видалити її назавжди з посиленим підтвердженням.",
+   "module": "Групи клієнтів",
+   "kind": "high",
+   "params": [
+    {
+     "name": "group",
+     "title": "група",
+     "type": "group",
+     "required": true,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "видали групу ранкові доставки",
+     "params": {
+      "group": "ранкові доставки"
+     },
+     "source_id": "w-014-295"
+    },
+    {
+     "utterance": "видали групу поділ",
+     "params": {
+      "group": "поділ"
+     },
+     "source_id": "w-005-481"
+    },
+    {
+     "utterance": "видали групу ранкові",
+     "params": {
+      "group": "ранкові"
+     },
+     "source_id": "w-002-334"
+    }
+   ]
+  },
+  "customers.listCounterparties": {
+   "title": "Список контрагентів з фільтром",
+   "description": "Відкриває список контрагентів за текстом пошуку або клієнтом.",
+   "module": "Контрагенти",
+   "kind": "read",
+   "params": [
+    {
+     "name": "search_text",
+     "title": "текст пошуку",
+     "type": "search_text",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": true
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "контрагенти кав'ярні липа де 19384756",
+     "params": {
+      "search_text": "19384756",
+      "customer": "кав'ярні липа"
+     },
+     "source_id": "w-015-025"
+    },
+    {
+     "utterance": "знайди контрагентів 31567890",
+     "params": {
+      "search_text": "31567890"
+     },
+     "source_id": "w-002-204"
+    },
+    {
+     "utterance": "контрагенти лесі шевчук єдрпоу 41223358",
+     "params": {
+      "search_text": "єдрпоу 41223358",
+      "customer": "лесі шевчук"
+     },
+     "source_id": "w-020-042"
+    }
+   ]
+  },
+  "customers.getCounterparty": {
+   "title": "Відкрити контрагента",
+   "description": "Знаходить контрагента за назвою або ЄДРПОУ і відкриває його картку.",
+   "module": "Контрагенти",
+   "kind": "read",
+   "params": [
+    {
+     "name": "counterparty",
+     "title": "контрагент",
+     "type": "counterparty",
+     "required": true,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "відкрий контрагента фоп бурлак",
+     "params": {
+      "counterparty": "фоп бурлак"
+     },
+     "source_id": "w-028-035"
+    },
+    {
+     "utterance": "відкрий контрагента тов верба груп",
+     "params": {
+      "counterparty": "тов верба груп"
+     },
+     "source_id": "w-011-353"
+    },
+    {
+     "utterance": "відкрий контрагента тов осока плюс",
+     "params": {
+      "counterparty": "тов осока плюс"
+     },
+     "source_id": "w-027-306"
+    }
+   ]
+  },
+  "customers.createCounterparty": {
+   "title": "Створити контрагента",
+   "description": "Готує картку нового контрагента з реквізитами для підтвердження.",
+   "module": "Контрагенти",
+   "kind": "write",
+   "params": [
+    {
+     "name": "new_name",
+     "title": "назва",
+     "type": "new_name",
+     "required": true,
+     "one_of": false
+    },
+    {
+     "name": "edrpou",
+     "title": "ЄДРПОУ",
+     "type": "edrpou",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "address",
+     "title": "адреса",
+     "type": "address",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "iban",
+     "title": "IBAN",
+     "type": "iban",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "bank_name",
+     "title": "банк",
+     "type": "bank_name",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "mfo",
+     "title": "МФО",
+     "type": "mfo",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "phone",
+     "title": "телефон",
+     "type": "phone",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "email",
+     "title": "e-mail",
+     "type": "email",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "comment",
+     "title": "коментар",
+     "type": "comment",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "додай контрагента фоп кравець 3 коментар працює з пн",
+     "params": {
+      "new_name": "фоп кравець 3",
+      "comment": "працює з пн"
+     },
+     "source_id": "w-029-181"
+    },
+    {
+     "utterance": "контрагент фоп плющ адреса тиха 8 телефон 093 120 88 76",
+     "params": {
+      "new_name": "фоп плющ",
+      "address": "тиха 8",
+      "phone": "093 120 88 76"
+     },
+     "source_id": "w-019-296"
+    },
+    {
+     "utterance": "створи контрагента тов логістик центр ібан ua дев'яносто три 3282 0900 0002 6000 4428 1975 8 банк отримувача глобус банк мфо банку триста двадцять один вісімсот сорок два",
+     "params": {
+      "new_name": "тов логістик центр",
+      "iban": "ua дев'яносто три 3282 0900 0002 6000 4428 1975 8",
+      "bank_name": "глобус банк",
+      "mfo": "триста двадцять один вісімсот сорок два"
+     },
+     "source_id": "gtr-000442"
+    }
+   ]
+  },
+  "customers.updateCounterparty": {
+   "title": "Змінити контрагента",
+   "description": "Знаходить контрагента і відкриває форму зміни з названими новими реквізитами.",
+   "module": "Контрагенти",
+   "kind": "write",
+   "params": [
+    {
+     "name": "counterparty",
+     "title": "контрагент",
+     "type": "counterparty",
+     "required": true,
+     "one_of": false
+    },
+    {
+     "name": "rename_to",
+     "title": "нова назва",
+     "type": "rename_to",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "edrpou",
+     "title": "ЄДРПОУ",
+     "type": "edrpou",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "address",
+     "title": "адреса",
+     "type": "address",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "iban",
+     "title": "IBAN",
+     "type": "iban",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "bank_name",
+     "title": "банк",
+     "type": "bank_name",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "mfo",
+     "title": "МФО",
+     "type": "mfo",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "phone",
+     "title": "телефон",
+     "type": "phone",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "email",
+     "title": "e-mail",
+     "type": "email",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "comment",
+     "title": "коментар",
+     "type": "comment",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "зміни у тов схил плюс банк ощад мфо 322001",
+     "params": {
+      "counterparty": "тов схил плюс",
+      "bank_name": "ощад",
+      "mfo": "322001"
+     },
+     "source_id": "w-006-131"
+    },
+    {
+     "utterance": "онови тов верба трейд банк ощад мфо 300335 коментар каса",
+     "params": {
+      "counterparty": "тов верба трейд",
+      "bank_name": "ощад",
+      "mfo": "300335",
+      "comment": "каса"
+     },
+     "source_id": "w-015-383"
+    },
+    {
+     "utterance": "перейменуй фоп гриценко на фоп панчук єдрпоу 21590384 адреса вулиця тиха 9",
+     "params": {
+      "counterparty": "фоп гриценко",
+      "rename_to": "фоп панчук",
+      "edrpou": "21590384",
+      "address": "вулиця тиха 9"
+     },
+     "source_id": "w-022-121"
+    }
+   ]
+  },
+  "customers.deleteCounterparty": {
+   "title": "Видалити контрагента (назавжди)",
+   "description": "Знаходить контрагента і пропонує видалити його назавжди з посиленим підтвердженням.",
+   "module": "Контрагенти",
+   "kind": "high",
+   "params": [
+    {
+     "name": "counterparty",
+     "title": "контрагент",
+     "type": "counterparty",
+     "required": true,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "видали контрагента фоп жук",
+     "params": {
+      "counterparty": "фоп жук"
+     },
+     "source_id": "w-027-241"
+    },
+    {
+     "utterance": "видали контрагента тов світанку",
+     "params": {
+      "counterparty": "тов світанку"
+     },
+     "source_id": "w-021-399"
+    },
+    {
+     "utterance": "видали юрособу фопа кривенка",
+     "params": {
+      "counterparty": "фопа кривенка"
+     },
+     "source_id": "w-009-039"
+    }
+   ]
+  },
+  "catalog.listProducts": {
+   "title": "Список товарів з фільтром",
+   "description": "Відкриває список товарів за текстом пошуку або статусом.",
+   "module": "Каталог",
+   "kind": "read",
+   "params": [
+    {
+     "name": "search_text",
+     "title": "текст пошуку",
+     "type": "search_text",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "status",
+     "title": "статус",
+     "type": "record_status",
+     "required": false,
+     "one_of": true
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "покажи архівні товари",
+     "params": {
+      "status": "archived"
+     },
+     "source_id": "w-001-458"
+    },
+    {
+     "utterance": "активні товари 250 грам",
+     "params": {
+      "search_text": "250 грам",
+      "status": "active"
+     },
+     "source_id": "w-007-264"
+    },
+    {
+     "utterance": "знайди товари 0,33",
+     "params": {
+      "search_text": "0,33"
+     },
+     "source_id": "w-006-301"
+    }
+   ]
+  },
+  "catalog.getProduct": {
+   "title": "Відкрити картку товару",
+   "description": "Знаходить товар за назвою і відкриває його картку з ціною.",
+   "module": "Каталог",
+   "kind": "read",
+   "params": [
+    {
+     "name": "product",
+     "title": "товар",
+     "type": "product",
+     "required": true,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "скільки коштує американо 0,5",
+     "params": {
+      "product": "американо 0,5"
+     },
+     "source_id": "w-012-111"
+    },
+    {
+     "utterance": "покажи товар гранола 40",
+     "params": {
+      "product": "гранола 40"
+     },
+     "source_id": "w-030-265"
+    },
+    {
+     "utterance": "скільки коштує печиво 500",
+     "params": {
+      "product": "печиво 500"
+     },
+     "source_id": "w-017-191"
+    }
+   ]
+  },
+  "catalog.createProduct": {
+   "title": "Створити товар",
+   "description": "Готує картку нового товару з назвою і ціною для підтвердження.",
+   "module": "Каталог",
+   "kind": "write",
+   "params": [
+    {
+     "name": "new_name",
+     "title": "назва",
+     "type": "new_name",
+     "required": true,
+     "one_of": false
+    },
+    {
+     "name": "price",
+     "title": "ціна",
+     "type": "money",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "додай товар кекс 6",
+     "params": {
+      "new_name": "кекс 6"
+     },
+     "source_id": "w-008-301"
+    },
+    {
+     "utterance": "новий товар фокача за двісті грн",
+     "params": {
+      "new_name": "фокача",
+      "price": "двісті грн"
+     },
+     "source_id": "w-016-471"
+    },
+    {
+     "utterance": "створи товар мафін 8",
+     "params": {
+      "new_name": "мафін 8"
+     },
+     "source_id": "w-010-303"
+    }
+   ]
+  },
+  "catalog.updateProduct": {
+   "title": "Змінити товар",
+   "description": "Знаходить товар і відкриває форму зміни назви чи ціни.",
+   "module": "Каталог",
+   "kind": "write",
+   "params": [
+    {
+     "name": "product",
+     "title": "товар",
+     "type": "product",
+     "required": true,
+     "one_of": false
+    },
+    {
+     "name": "rename_to",
+     "title": "нова назва",
+     "type": "rename_to",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "price",
+     "title": "ціна",
+     "type": "money",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "зміни ціну американо на 48 грн",
+     "params": {
+      "product": "американо",
+      "price": "48 грн"
+     },
+     "source_id": "w-021-306"
+    },
+    {
+     "utterance": "перейменуй пряник два на пряник медовий",
+     "params": {
+      "product": "пряник два",
+      "rename_to": "пряник медовий"
+     },
+     "source_id": "w-018-147"
+    },
+    {
+     "utterance": "перейменуй мока на мока на двох",
+     "params": {
+      "product": "мока",
+      "rename_to": "мока на двох"
+     },
+     "source_id": "w-020-331"
+    }
+   ]
+  },
+  "catalog.archiveProduct": {
+   "title": "Архівувати товар",
+   "description": "Знаходить товар і пропонує перенести його в архів (товари не видаляються назавжди).",
+   "module": "Каталог",
+   "kind": "write",
+   "params": [
+    {
+     "name": "product",
+     "title": "товар",
+     "type": "product",
+     "required": true,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "видали товар пряник три",
+     "params": {
+      "product": "пряник три"
+     },
+     "source_id": "w-030-283"
+    },
+    {
+     "utterance": "заархівуй товар чіабата 2",
+     "params": {
+      "product": "чіабата 2"
+     },
+     "source_id": "w-014-347"
+    },
+    {
+     "utterance": "архівуй товар лимонад 1",
+     "params": {
+      "product": "лимонад 1"
+     },
+     "source_id": "w-028-296"
+    }
+   ]
+  },
+  "catalog.restoreProduct": {
+   "title": "Відновити товар з архіву",
+   "description": "Знаходить архівний товар і пропонує повернути його в активні.",
+   "module": "Каталог",
+   "kind": "write",
+   "params": [
+    {
+     "name": "product",
+     "title": "товар",
+     "type": "product",
+     "required": true,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "віднови товар сендвіч 4",
+     "params": {
+      "product": "сендвіч 4"
+     },
+     "source_id": "w-027-468"
+    },
+    {
+     "utterance": "віднови товар еклер два",
+     "params": {
+      "product": "еклер два"
+     },
+     "source_id": "w-018-074"
+    },
+    {
+     "utterance": "поверни з архіву фокачу 2",
+     "params": {
+      "product": "фокачу 2"
+     },
+     "source_id": "w-007-192"
+    }
+   ]
+  },
+  "catalog.createVariant": {
+   "title": "Додати варіант товару",
+   "description": "Готує новий варіант названого товару з назвою і ціною для підтвердження.",
+   "module": "Каталог",
+   "kind": "write",
+   "params": [
+    {
+     "name": "product",
+     "title": "товар",
+     "type": "product",
+     "required": true,
+     "one_of": false
+    },
+    {
+     "name": "new_name",
+     "title": "назва",
+     "type": "new_name",
+     "required": true,
+     "one_of": false
+    },
+    {
+     "name": "price",
+     "title": "ціна",
+     "type": "money",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "додай товару американо варіант подвійного",
+     "params": {
+      "product": "американо",
+      "new_name": "подвійного"
+     },
+     "source_id": "w-022-196"
+    },
+    {
+     "utterance": "новий варіант 0,5 для мокко постав ціну 55 грн",
+     "params": {
+      "product": "мокко",
+      "new_name": "0,5",
+      "price": "55 грн"
+     },
+     "source_id": "w-021-086"
+    },
+    {
+     "utterance": "додай до ристрето варіант 250 мл",
+     "params": {
+      "product": "ристрето",
+      "new_name": "250 мл"
+     },
+     "source_id": "w-027-111"
+    }
+   ]
+  },
+  "catalog.updateVariant": {
+   "title": "Змінити варіант товару",
+   "description": "Знаходить варіант товару і відкриває форму зміни назви чи ціни.",
+   "module": "Каталог",
+   "kind": "write",
+   "params": [
+    {
+     "name": "variant",
+     "title": "варіант",
+     "type": "attrs",
+     "required": true,
+     "one_of": false
+    },
+    {
+     "name": "product",
+     "title": "товар",
+     "type": "product",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "rename_to",
+     "title": "нова назва",
+     "type": "rename_to",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "price",
+     "title": "ціна",
+     "type": "money",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "постав великому ціну 55 грн",
+     "params": {
+      "variant": [
+       "великому"
+      ],
+      "price": "55 грн"
+     },
+     "source_id": "w-025-063"
+    },
+    {
+     "utterance": "перейменуй варіант великий на подвійний",
+     "params": {
+      "variant": [
+       "великий"
+      ],
+      "rename_to": "подвійний"
+     },
+     "source_id": "w-001-160"
+    },
+    {
+     "utterance": "зміни варіант дві порції",
+     "params": {
+      "variant": [
+       "дві порції"
+      ]
+     },
+     "source_id": "w-005-209"
+    }
+   ]
+  },
+  "catalog.archiveVariant": {
+   "title": "Архівувати варіант товару",
+   "description": "Знаходить варіант товару і пропонує перенести його в архів.",
+   "module": "Каталог",
+   "kind": "write",
+   "params": [
+    {
+     "name": "variant",
+     "title": "варіант",
+     "type": "attrs",
+     "required": true,
+     "one_of": false
+    },
+    {
+     "name": "product",
+     "title": "товар",
+     "type": "product",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "видали варіант пів кіло",
+     "params": {
+      "variant": [
+       "пів кіло"
+      ]
+     },
+     "source_id": "w-018-441"
+    },
+    {
+     "utterance": "заархівуй варіант 0,3 для лимонаду імбирного",
+     "params": {
+      "variant": [
+       "0,3"
+      ],
+      "product": "лимонаду імбирного"
+     },
+     "source_id": "w-007-091"
+    },
+    {
+     "utterance": "заархівуй варіант 0,25",
+     "params": {
+      "variant": [
+       "0,25"
+      ]
+     },
+     "source_id": "w-022-286"
+    }
+   ]
+  },
+  "catalog.restoreVariant": {
+   "title": "Відновити варіант товару",
+   "description": "Знаходить архівний варіант товару і пропонує повернути його в активні.",
+   "module": "Каталог",
+   "kind": "write",
+   "params": [
+    {
+     "name": "variant",
+     "title": "варіант",
+     "type": "attrs",
+     "required": true,
+     "one_of": false
+    },
+    {
+     "name": "product",
+     "title": "товар",
+     "type": "product",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "віднови варіант подвійний",
+     "params": {
+      "variant": [
+       "подвійний"
+      ]
+     },
+     "source_id": "w-018-107"
+    },
+    {
+     "utterance": "поверни варіант 0,5 товару кола",
+     "params": {
+      "variant": [
+       "0,5"
+      ],
+      "product": "кола"
+     },
+     "source_id": "w-022-098"
+    },
+    {
+     "utterance": "віднови варіант 1 л",
+     "params": {
+      "variant": [
+       "1 л"
+      ]
+     },
+     "source_id": "w-022-116"
+    }
+   ]
+  },
+  "pricing.listPriceLists": {
+   "title": "Список прайс-листів з фільтром",
+   "description": "Відкриває список прайс-листів за текстом пошуку або доступністю.",
+   "module": "Ціни",
+   "kind": "read",
+   "params": [
+    {
+     "name": "search_text",
+     "title": "текст пошуку",
+     "type": "search_text",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "availability",
+     "title": "доступність",
+     "type": "availability",
+     "required": false,
+     "one_of": true
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "вимкнені прайси нічний 2",
+     "params": {
+      "search_text": "нічний 2",
+      "availability": "inactive"
+     },
+     "source_id": "w-021-059"
+    },
+    {
+     "utterance": "знайди прайси 2024",
+     "params": {
+      "search_text": "2024"
+     },
+     "source_id": "w-011-290"
+    },
+    {
+     "utterance": "покажи прайси літнього",
+     "params": {
+      "search_text": "літнього"
+     },
+     "source_id": "w-019-291"
+    }
+   ]
+  },
+  "pricing.getPriceList": {
+   "title": "Відкрити прайс-лист",
+   "description": "Знаходить прайс-лист за назвою і відкриває його.",
+   "module": "Ціни",
+   "kind": "read",
+   "params": [
+    {
+     "name": "price_list",
+     "title": "прайс-лист",
+     "type": "price_list",
+     "required": true,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "відкрий прайс закупівельний",
+     "params": {
+      "price_list": "закупівельний"
+     },
+     "source_id": "w-000-166"
+    },
+    {
+     "utterance": "відкрий прайс нічний",
+     "params": {
+      "price_list": "нічний"
+     },
+     "source_id": "w-012-463"
+    },
+    {
+     "utterance": "відкрий прайс гуртового",
+     "params": {
+      "price_list": "гуртового"
+     },
+     "source_id": "w-012-065"
+    }
+   ]
+  },
+  "pricing.listPriceListEntries": {
+   "title": "Ціни в прайс-листі",
+   "description": "Показує ціни товарів у названому прайс-листі, за потреби для одного товару.",
+   "module": "Ціни",
+   "kind": "read",
+   "params": [
+    {
+     "name": "price_list",
+     "title": "прайс-лист",
+     "type": "price_list",
+     "required": true,
+     "one_of": false
+    },
+    {
+     "name": "product",
+     "title": "товар",
+     "type": "product",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "яка ціна сендвіч 2 в оптовому прайсі",
+     "params": {
+      "price_list": "оптовому прайсі",
+      "product": "сендвіч 2"
+     },
+     "source_id": "w-019-282"
+    },
+    {
+     "utterance": "знайди ціни в прайсі літнього сезону",
+     "params": {
+      "price_list": "літнього сезону"
+     },
+     "source_id": "w-001-373"
+    },
+    {
+     "utterance": "яка ціна рогалик 2 у прайсі акційний",
+     "params": {
+      "price_list": "акційний",
+      "product": "рогалик 2"
+     },
+     "source_id": "w-012-138"
+    }
+   ]
+  },
+  "pricing.createPriceList": {
+   "title": "Створити прайс-лист",
+   "description": "Готує новий прайс-лист з назвою та ознаками «основний» і «активний» для підтвердження.",
+   "module": "Ціни",
+   "kind": "write",
+   "params": [
+    {
+     "name": "new_name",
+     "title": "назва",
+     "type": "new_name",
+     "required": true,
+     "one_of": false
+    },
+    {
+     "name": "is_default",
+     "title": "основний",
+     "type": "boolean",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "is_active",
+     "title": "активний",
+     "type": "boolean",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "створи прайс сезонний неактивний",
+     "params": {
+      "new_name": "сезонний",
+      "is_active": "false"
+     },
+     "source_id": "w-003-267"
+    },
+    {
+     "utterance": "додай прайс літо 2026",
+     "params": {
+      "new_name": "літо 2026"
+     },
+     "source_id": "w-008-011"
+    },
+    {
+     "utterance": "створи прайс нічного не основний",
+     "params": {
+      "new_name": "нічного",
+      "is_default": "false"
+     },
+     "source_id": "w-022-253"
+    }
+   ]
+  },
+  "pricing.updatePriceList": {
+   "title": "Перейменувати прайс-лист",
+   "description": "Знаходить прайс-лист і відкриває форму зміни його назви.",
+   "module": "Ціни",
+   "kind": "write",
+   "params": [
+    {
+     "name": "price_list",
+     "title": "прайс-лист",
+     "type": "price_list",
+     "required": true,
+     "one_of": false
+    },
+    {
+     "name": "rename_to",
+     "title": "нова назва",
+     "type": "rename_to",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "перейменуй прайс ніч 6 на святковий",
+     "params": {
+      "price_list": "ніч 6",
+      "rename_to": "святковий"
+     },
+     "source_id": "w-005-462"
+    },
+    {
+     "utterance": "перейменуй прайс опт 8 на опт осінь",
+     "params": {
+      "price_list": "опт 8",
+      "rename_to": "опт осінь"
+     },
+     "source_id": "w-017-277"
+    },
+    {
+     "utterance": "перейменуй нічний прайс 4 на прайс вечірній",
+     "params": {
+      "price_list": "нічний прайс 4",
+      "rename_to": "прайс вечірній"
+     },
+     "source_id": "w-023-203"
+    }
+   ]
+  },
+  "pricing.activatePriceList": {
+   "title": "Увімкнути прайс-лист",
+   "description": "Знаходить прайс-лист і пропонує зробити його активним.",
+   "module": "Ціни",
+   "kind": "write",
+   "params": [
+    {
+     "name": "price_list",
+     "title": "прайс-лист",
+     "type": "price_list",
+     "required": true,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "увімкни святковому прайсу",
+     "params": {
+      "price_list": "святковому прайсу"
+     },
+     "source_id": "w-025-272"
+    },
+    {
+     "utterance": "увімкни прайс святковий",
+     "params": {
+      "price_list": "святковий"
+     },
+     "source_id": "w-012-384"
+    },
+    {
+     "utterance": "увімкни прайс базовий",
+     "params": {
+      "price_list": "базовий"
+     },
+     "source_id": "w-005-453"
+    }
+   ]
+  },
+  "pricing.deactivatePriceList": {
+   "title": "Вимкнути прайс-лист",
+   "description": "Знаходить прайс-лист і пропонує зробити його неактивним.",
+   "module": "Ціни",
+   "kind": "write",
+   "params": [
+    {
+     "name": "price_list",
+     "title": "прайс-лист",
+     "type": "price_list",
+     "required": true,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "вимкни прайс партнерський",
+     "params": {
+      "price_list": "партнерський"
+     },
+     "source_id": "w-011-371"
+    },
+    {
+     "utterance": "вимкни зимовий прайс",
+     "params": {
+      "price_list": "зимовий прайс"
+     },
+     "source_id": "w-003-011"
+    },
+    {
+     "utterance": "вимкни прайс літнього",
+     "params": {
+      "price_list": "літнього"
+     },
+     "source_id": "w-009-295"
+    }
+   ]
+  },
+  "pricing.setDefaultPriceList": {
+   "title": "Зробити прайс-лист основним",
+   "description": "Знаходить прайс-лист і пропонує зробити його основним для компанії.",
+   "module": "Ціни",
+   "kind": "write",
+   "params": [
+    {
+     "name": "price_list",
+     "title": "прайс-лист",
+     "type": "price_list",
+     "required": true,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "постав прайс літній за замовчуванням",
+     "params": {
+      "price_list": "літній"
+     },
+     "source_id": "w-022-470"
+    },
+    {
+     "utterance": "зроби основним святковий прайс",
+     "params": {
+      "price_list": "святковий прайс"
+     },
+     "source_id": "w-019-464"
+    },
+    {
+     "utterance": "зроби основним прайс опт база",
+     "params": {
+      "price_list": "опт база"
+     },
+     "source_id": "w-028-161"
+    }
+   ]
+  },
+  "pricing.clearDefaultPriceList": {
+   "title": "Прибрати основний прайс-лист",
+   "description": "Пропонує зняти позначку «основний» з поточного основного прайс-листа.",
+   "module": "Ціни",
+   "kind": "write",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "зніми прайс за замовчуванням",
+     "params": {},
+     "source_id": "w-012-216"
+    }
+   ]
+  },
+  "pricing.deletePriceList": {
+   "title": "Видалити прайс-лист (назавжди)",
+   "description": "Знаходить прайс-лист і пропонує видалити його назавжди з посиленим підтвердженням.",
+   "module": "Ціни",
+   "kind": "high",
+   "params": [
+    {
+     "name": "price_list",
+     "title": "прайс-лист",
+     "type": "price_list",
+     "required": true,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "видали прайс колоска",
+     "params": {
+      "price_list": "колоска"
+     },
+     "source_id": "w-004-387"
+    },
+    {
+     "utterance": "видали прайс корпоративний",
+     "params": {
+      "price_list": "корпоративний"
+     },
+     "source_id": "w-006-077"
+    },
+    {
+     "utterance": "видали прайс нічного",
+     "params": {
+      "price_list": "нічного"
+     },
+     "source_id": "w-027-101"
+    }
+   ]
+  },
+  "pricing.setPriceListEntries": {
+   "title": "Встановити ціну в прайс-листі",
+   "description": "Готує зміну ціни одного товару чи варіанта в названому прайс-листі для підтвердження.",
+   "module": "Ціни",
+   "kind": "write",
+   "params": [
+    {
+     "name": "price_list",
+     "title": "прайс-лист",
+     "type": "price_list",
+     "required": true,
+     "one_of": false
+    },
+    {
+     "name": "product",
+     "title": "товар",
+     "type": "product",
+     "required": true,
+     "one_of": false
+    },
+    {
+     "name": "variant",
+     "title": "варіант",
+     "type": "attrs",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "price",
+     "title": "ціна",
+     "type": "money",
+     "required": true,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "постав у прайс ранковий какао 33 грн",
+     "params": {
+      "price_list": "ранковий",
+      "product": "какао",
+      "price": "33 грн"
+     },
+     "source_id": "w-007-257"
+    },
+    {
+     "utterance": "в прайсі базовий лист для пряника великий постав 40 грн",
+     "params": {
+      "price_list": "базовий лист",
+      "product": "пряника",
+      "variant": [
+       "великий"
+      ],
+      "price": "40 грн"
+     },
+     "source_id": "w-029-267"
+    },
+    {
+     "utterance": "постав у прайсі оптовий ціну зефіру сто гривень",
+     "params": {
+      "price_list": "оптовий",
+      "product": "зефіру",
+      "price": "сто гривень"
+     },
+     "source_id": "w-001-216"
+    }
+   ]
+  },
+  "pricing.removePriceListEntries": {
+   "title": "Прибрати ціну з прайс-листа",
+   "description": "Пропонує видалити ціну товару чи варіанта з названого прайс-листа.",
+   "module": "Ціни",
+   "kind": "write",
+   "params": [
+    {
+     "name": "price_list",
+     "title": "прайс-лист",
+     "type": "price_list",
+     "required": true,
+     "one_of": false
+    },
+    {
+     "name": "product",
+     "title": "товар",
+     "type": "product",
+     "required": true,
+     "one_of": false
+    },
+    {
+     "name": "variant",
+     "title": "варіант",
+     "type": "attrs",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "прибери узвар пів літра з прайса нічного",
+     "params": {
+      "price_list": "нічного",
+      "product": "узвар пів літра"
+     },
+     "source_id": "w-018-121"
+    },
+    {
+     "utterance": "прибери з прайсу базового американо варіант великий",
+     "params": {
+      "price_list": "базового",
+      "product": "американо",
+      "variant": [
+       "великий"
+      ]
+     },
+     "source_id": "w-022-489"
+    },
+    {
+     "utterance": "прибери мокачино 3 з прайсу оптового",
+     "params": {
+      "price_list": "оптового",
+      "product": "мокачино 3"
+     },
+     "source_id": "w-027-119"
+    }
+   ]
+  },
+  "documents.list": {
+   "title": "Список документів з фільтром",
+   "description": "Відкриває список документів за типом, замовленням, клієнтом, періодом або статусом підпису.",
+   "module": "Документи",
+   "kind": "read",
+   "params": [
+    {
+     "name": "document_type",
+     "title": "тип документа",
+     "type": "document_type",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "order_number",
+     "title": "номер замовлення",
+     "type": "order_number",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "period",
+     "title": "період",
+     "type": "period",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "signing_status",
+     "title": "статус підпису",
+     "type": "signing_status",
+     "required": false,
+     "one_of": true
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "накладні кав'ярні бриль 6",
+     "params": {
+      "document_type": "delivery_note",
+      "customer": "кав'ярні бриль 6"
+     },
+     "source_id": "w-031-045"
+    },
+    {
+     "utterance": "сьогоднішні рахунки для ради шум",
+     "params": {
+      "document_type": "payment_invoice",
+      "customer": "ради шум",
+      "period": "today"
+     },
+     "source_id": "w-031-143"
+    },
+    {
+     "utterance": "відкрий документи богдану цимбалу",
+     "params": {
+      "customer": "богдану цимбалу"
+     },
+     "source_id": "w-031-246"
+    }
+   ]
+  },
+  "documents.get": {
+   "title": "Відкрити документ",
+   "description": "Знаходить один документ за номером або описом і відкриває його.",
+   "module": "Документи",
+   "kind": "read",
+   "params": [
+    {
+     "name": "document_ref",
+     "title": "номер документа",
+     "type": "document_ref",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "document_type",
+     "title": "тип документа",
+     "type": "document_type",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "order_number",
+     "title": "номер замовлення",
+     "type": "order_number",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "period",
+     "title": "період",
+     "type": "period",
+     "required": false,
+     "one_of": true
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "документ 44 за минулий місяць",
+     "params": {
+      "document_ref": "44",
+      "period": "last_month"
+     },
+     "source_id": "w-014-280"
+    },
+    {
+     "utterance": "відкрий счёт шістсот дев'ять",
+     "params": {
+      "document_type": "payment_invoice",
+      "document_ref": "шістсот дев'ять"
+     },
+     "source_id": "gtr-003754"
+    },
+    {
+     "utterance": "покажи документ 44 богдана мельника",
+     "params": {
+      "document_ref": "44",
+      "customer": "богдана мельника"
+     },
+     "source_id": "w-020-434"
+    }
+   ]
+  },
+  "documents.createFromOrder": {
+   "title": "Створити документ із замовлення",
+   "description": "Знаходить замовлення і готує рахунок або накладну за ним для підтвердження.",
+   "module": "Документи",
+   "kind": "write",
+   "params": [
+    {
+     "name": "order_number",
+     "title": "номер замовлення",
+     "type": "order_number",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "period",
+     "title": "період",
+     "type": "period",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "status",
+     "title": "статус",
+     "type": "order_status",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "amount",
+     "title": "сума",
+     "type": "money",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "document_type",
+     "title": "тип документа",
+     "type": "document_type",
+     "required": true,
+     "one_of": false
+    },
+    {
+     "name": "counterparty",
+     "title": "контрагент",
+     "type": "counterparty",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "basis",
+     "title": "підстава",
+     "type": "basis",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "випиши накладну по замовленню 219",
+     "params": {
+      "order_number": "219",
+      "document_type": "delivery_note"
+     },
+     "source_id": "w-024-384"
+    },
+    {
+     "utterance": "вистави рахунок по замовленню кав'ярні берег для фоп жук підстава договір",
+     "params": {
+      "customer": "кав'ярні берег",
+      "document_type": "payment_invoice",
+      "counterparty": "фоп жук",
+      "basis": "договір"
+     },
+     "source_id": "w-027-257"
+    },
+    {
+     "utterance": "зроби накладную по замовленню сто тринадцять з підставою рамковий договір дванадцять",
+     "params": {
+      "document_type": "delivery_note",
+      "order_number": "сто тринадцять",
+      "basis": "рамковий договір дванадцять"
+     },
+     "source_id": "gtr-004106"
+    }
+   ]
+  },
+  "documents.cancel": {
+   "title": "Анулювати документ",
+   "description": "Знаходить документ і пропонує його анулювати (документи не видаляються назавжди).",
+   "module": "Документи",
+   "kind": "write",
+   "params": [
+    {
+     "name": "document_ref",
+     "title": "номер документа",
+     "type": "document_ref",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "document_type",
+     "title": "тип документа",
+     "type": "document_type",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "order_number",
+     "title": "номер замовлення",
+     "type": "order_number",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "period",
+     "title": "період",
+     "type": "period",
+     "required": false,
+     "one_of": true
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "скасуй рахунок 58 цього тижня",
+     "params": {
+      "document_ref": "58",
+      "document_type": "payment_invoice",
+      "period": "this_week"
+     },
+     "source_id": "w-014-222"
+    },
+    {
+     "utterance": "видали док дев'ятсот один",
+     "params": {
+      "document_ref": "дев'ятсот один"
+     },
+     "source_id": "gtr-004364"
+    },
+    {
+     "utterance": "анулюй рахунок 17",
+     "params": {
+      "document_ref": "17",
+      "document_type": "payment_invoice"
+     },
+     "source_id": "w-003-254"
+    }
+   ]
+  },
+  "documents.share": {
+   "title": "Поділитися документом",
+   "description": "Знаходить документ і готує посилання, щоб надіслати його клієнту.",
+   "module": "Документи",
+   "kind": "write",
+   "params": [
+    {
+     "name": "document_ref",
+     "title": "номер документа",
+     "type": "document_ref",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "document_type",
+     "title": "тип документа",
+     "type": "document_type",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "order_number",
+     "title": "номер замовлення",
+     "type": "order_number",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "period",
+     "title": "період",
+     "type": "period",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "channel",
+     "title": "канал",
+     "type": "channel",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "email",
+     "title": "e-mail",
+     "type": "email",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "phone",
+     "title": "телефон",
+     "type": "phone",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "надішли документ 63 за цей місяць",
+     "params": {
+      "document_ref": "63",
+      "period": "this_month"
+     },
+     "source_id": "w-013-143"
+    },
+    {
+     "utterance": "лінк на док до замовлення вісімдесят шість",
+     "params": {
+      "order_number": "вісімдесят шість"
+     },
+     "source_id": "gtr-004739"
+    },
+    {
+     "utterance": "скинь рахунок номер 61",
+     "params": {
+      "document_ref": "61",
+      "document_type": "payment_invoice"
+     },
+     "source_id": "w-025-304"
+    }
+   ]
+  },
+  "documents.requestSign": {
+   "title": "Надіслати документ на підпис",
+   "description": "Знаходить документ і пропонує надіслати його на підпис з посиленим підтвердженням.",
+   "module": "Документи",
+   "kind": "high",
+   "params": [
+    {
+     "name": "document_ref",
+     "title": "номер документа",
+     "type": "document_ref",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "document_type",
+     "title": "тип документа",
+     "type": "document_type",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "order_number",
+     "title": "номер замовлення",
+     "type": "order_number",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "period",
+     "title": "період",
+     "type": "period",
+     "required": false,
+     "one_of": true
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "давай на підпис накладну вісімсот п'ятдесят дев'ять",
+     "params": {
+      "document_type": "delivery_note",
+      "document_ref": "вісімсот п'ятдесят дев'ять"
+     },
+     "source_id": "gtr-004952"
+    },
+    {
+     "utterance": "треба підписати документ двісті дев'яносто один",
+     "params": {
+      "document_ref": "двісті дев'яносто один"
+     },
+     "source_id": "gtr-004959"
+    },
+    {
+     "utterance": "відправ на підпис накладну по замовленню 902",
+     "params": {
+      "document_type": "delivery_note",
+      "order_number": "902"
+     },
+     "source_id": "w-008-088"
+    }
+   ]
+  },
+  "docGeneration.listLayouts": {
+   "title": "Шаблони документа",
+   "description": "Показує доступні шаблони (макети) для названого типу документа.",
+   "module": "Документи",
+   "kind": "read",
+   "params": [
+    {
+     "name": "document_type",
+     "title": "тип документа",
+     "type": "document_type",
+     "required": true,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "покажи шаблони накладної",
+     "params": {
+      "document_type": "delivery_note"
+     },
+     "source_id": "w-006-221"
+    },
+    {
+     "utterance": "шаблони видаткових накладних",
+     "params": {
+      "document_type": "delivery_note"
+     },
+     "source_id": "w-003-043"
+    },
+    {
+     "utterance": "макети накладних",
+     "params": {
+      "document_type": "delivery_note"
+     },
+     "source_id": "w-007-430"
+    }
+   ]
+  },
+  "invites.create": {
+   "title": "Створити запрошення",
+   "description": "Відкриває форму нового запрошення клієнта з названими умовами для підтвердження.",
+   "module": "Запрошення",
+   "kind": "write",
+   "params": [
+    {
+     "name": "is_reusable",
+     "title": "багаторазове",
+     "type": "boolean",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "expires",
+     "title": "діє до",
+     "type": "expires",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "max_uses",
+     "title": "кількість використань",
+     "type": "count",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "group",
+     "title": "група",
+     "type": "group",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "price_list",
+     "title": "прайс-лист",
+     "type": "price_list",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "new_name",
+     "title": "назва",
+     "type": "new_name",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "phone",
+     "title": "телефон",
+     "type": "phone",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "персональне запрошення для групи оптових гостей",
+     "params": {
+      "is_reusable": "false",
+      "group": "оптових гостей"
+     },
+     "source_id": "w-001-090"
+    },
+    {
+     "utterance": "створи запрошення богдана на 14 днів",
+     "params": {
+      "expires": "14 днів",
+      "new_name": "богдана"
+     },
+     "source_id": "w-007-058"
+    },
+    {
+     "utterance": "запрошення на 14 днів телефон 066 205 73 88",
+     "params": {
+      "expires": "на 14 днів",
+      "phone": "066 205 73 88"
+     },
+     "source_id": "w-018-178"
+    }
+   ]
+  },
+  "companies.updateLegal": {
+   "title": "Змінити реквізити компанії",
+   "description": "Готує зміну юридичних реквізитів компанії з названими значеннями для підтвердження.",
+   "module": "Компанія",
+   "kind": "write",
+   "params": [
+    {
+     "name": "company_type",
+     "title": "тип компанії",
+     "type": "company_type",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "legal_name",
+     "title": "юридична назва",
+     "type": "legal_name",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "edrpou",
+     "title": "ЄДРПОУ",
+     "type": "edrpou",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "address",
+     "title": "адреса",
+     "type": "address",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "iban",
+     "title": "IBAN",
+     "type": "iban",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "bank_name",
+     "title": "банк",
+     "type": "bank_name",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "mfo",
+     "title": "МФО",
+     "type": "mfo",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "phone",
+     "title": "телефон",
+     "type": "phone",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "email",
+     "title": "e-mail",
+     "type": "email",
+     "required": false,
+     "one_of": true
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "зміни на тов назву тов лелека трейд ібан ua433510050000026004455667788 мфо 351005",
+     "params": {
+      "company_type": "tov",
+      "legal_name": "тов лелека трейд",
+      "iban": "ua433510050000026004455667788",
+      "mfo": "351005"
+     },
+     "source_id": "w-013-447"
+    },
+    {
+     "utterance": "онови реквізити фоп єдрпоу 30112233 адреса вулиця липова 7 пошта office@sikh.ua",
+     "params": {
+      "company_type": "fop",
+      "edrpou": "30112233",
+      "address": "вулиця липова 7",
+      "email": "office@sikh.ua"
+     },
+     "source_id": "w-028-273"
+    },
+    {
+     "utterance": "постав ібан ua213223130000026007233566001 і пошту office@lilia.ua",
+     "params": {
+      "iban": "ua213223130000026007233566001",
+      "email": "office@lilia.ua"
+     },
+     "source_id": "w-017-040"
+    }
+   ]
+  },
+  "search.query": {
+   "title": "Пошук по всіх записах",
+   "description": "Шукає названий текст серед замовлень, клієнтів, товарів, документів та інших записів.",
+   "module": "Пошук",
+   "kind": "read",
+   "params": [
+    {
+     "name": "search_text",
+     "title": "текст пошуку",
+     "type": "search_text",
+     "required": true,
+     "one_of": false
+    },
+    {
+     "name": "search_type",
+     "title": "тип запису",
+     "type": "search_type",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "знайди 450 скрізь",
+     "params": {
+      "search_text": "450"
+     },
+     "source_id": "w-027-130"
+    },
+    {
+     "utterance": "давай пошукаємо по документах щось з бургер п'ятдесят п'ять",
+     "params": {
+      "search_type": "document",
+      "search_text": "бургер п'ятдесят п'ять"
+     },
+     "source_id": "gtr-006906"
+    },
+    {
+     "utterance": "знайди 1500",
+     "params": {
+      "search_text": "1500"
+     },
+     "source_id": "w-026-196"
+    }
+   ]
+  },
+  "nav.home": {
+   "title": "Відкрити головну",
+   "description": "Переходить на головний екран панелі.",
+   "module": "Навігація",
+   "kind": "nav",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "на головну сторінку",
+     "params": {},
+     "source_id": "w-009-480"
+    },
+    {
+     "utterance": "перейди до головної",
+     "params": {},
+     "source_id": "w-020-264"
+    },
+    {
+     "utterance": "відкрий головну сторінку",
+     "params": {},
+     "source_id": "w-006-264"
+    }
+   ]
+  },
+  "nav.back": {
+   "title": "Назад",
+   "description": "Повертається на попередній екран.",
+   "module": "Навігація",
+   "kind": "nav",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "до минулого екрана",
+     "params": {},
+     "source_id": "w-017-260"
+    },
+    {
+     "utterance": "на минулу сторінку",
+     "params": {},
+     "source_id": "w-027-496"
+    },
+    {
+     "utterance": "крок назад",
+     "params": {},
+     "source_id": "w-005-072"
+    }
+   ]
+  },
+  "nav.orders": {
+   "title": "Відкрити екран замовлень",
+   "description": "Переходить на екран списку замовлень без фільтрів.",
+   "module": "Навігація",
+   "kind": "nav",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "покажи розділ замовлень",
+     "params": {},
+     "source_id": "w-007-417"
+    },
+    {
+     "utterance": "розділ усіх замовлень",
+     "params": {},
+     "source_id": "w-023-090"
+    },
+    {
+     "utterance": "до списку замовлень",
+     "params": {},
+     "source_id": "w-013-074"
+    }
+   ]
+  },
+  "nav.orders_new": {
+   "title": "Відкрити форму нового замовлення",
+   "description": "Переходить на порожню форму створення замовлення.",
+   "module": "Навігація",
+   "kind": "nav",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "почни нове замовлення",
+     "params": {},
+     "source_id": "w-020-287"
+    },
+    {
+     "utterance": "порожня форма нового замовлення",
+     "params": {},
+     "source_id": "w-016-145"
+    },
+    {
+     "utterance": "просто нове замовлення",
+     "params": {},
+     "source_id": "w-016-454"
+    }
+   ]
+  },
+  "nav.products": {
+   "title": "Відкрити екран товарів",
+   "description": "Переходить на екран списку товарів без фільтрів.",
+   "module": "Навігація",
+   "kind": "nav",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "відкрий каталог товарів",
+     "params": {},
+     "source_id": "w-002-345"
+    },
+    {
+     "utterance": "до списку товарів",
+     "params": {},
+     "source_id": "w-008-147"
+    },
+    {
+     "utterance": "каталог товарів",
+     "params": {},
+     "source_id": "w-014-324"
+    }
+   ]
+  },
+  "nav.products_new": {
+   "title": "Відкрити форму нового товару",
+   "description": "Переходить на порожню форму створення товару.",
+   "module": "Навігація",
+   "kind": "nav",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "відкрий новий товар",
+     "params": {},
+     "source_id": "w-000-378"
+    },
+    {
+     "utterance": "до нового товару",
+     "params": {},
+     "source_id": "w-023-326"
+    },
+    {
+     "utterance": "форма нового товару",
+     "params": {},
+     "source_id": "w-003-451"
+    }
+   ]
+  },
+  "nav.customers": {
+   "title": "Відкрити екран клієнтів",
+   "description": "Переходить на екран списку клієнтів без фільтрів.",
+   "module": "Навігація",
+   "kind": "nav",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "відкрий базу клієнтів",
+     "params": {},
+     "source_id": "w-007-380"
+    },
+    {
+     "utterance": "до розділу клієнтів",
+     "params": {},
+     "source_id": "w-010-120"
+    },
+    {
+     "utterance": "перейди до клієнтів",
+     "params": {},
+     "source_id": "w-001-351"
+    }
+   ]
+  },
+  "nav.customers_new": {
+   "title": "Відкрити форму нового клієнта",
+   "description": "Переходить на порожню форму створення клієнта.",
+   "module": "Навігація",
+   "kind": "nav",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "відкрий форму нового клієнта",
+     "params": {},
+     "source_id": "w-006-129"
+    },
+    {
+     "utterance": "до картки нового клієнта",
+     "params": {},
+     "source_id": "w-016-225"
+    },
+    {
+     "utterance": "новий клієнт для офісу",
+     "params": {},
+     "source_id": "w-012-416"
+    }
+   ]
+  },
+  "nav.groups": {
+   "title": "Відкрити екран груп клієнтів",
+   "description": "Переходить на екран списку груп клієнтів.",
+   "module": "Навігація",
+   "kind": "nav",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "групи",
+     "params": {},
+     "source_id": "w-017-243"
+    },
+    {
+     "utterance": "відкрий розділ груп",
+     "params": {},
+     "source_id": "w-003-232"
+    },
+    {
+     "utterance": "до списку груп",
+     "params": {},
+     "source_id": "w-013-375"
+    }
+   ]
+  },
+  "nav.groups_new": {
+   "title": "Відкрити форму нової групи",
+   "description": "Переходить на порожню форму створення групи клієнтів.",
+   "module": "Навігація",
+   "kind": "nav",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "бланк нової групи",
+     "params": {},
+     "source_id": "w-007-457"
+    },
+    {
+     "utterance": "у створення нової групи",
+     "params": {},
+     "source_id": "w-023-348"
+    },
+    {
+     "utterance": "форму нової групи клієнтів",
+     "params": {},
+     "source_id": "w-020-463"
+    }
+   ]
+  },
+  "nav.counterparties": {
+   "title": "Відкрити екран контрагентів",
+   "description": "Переходить на екран списку контрагентів.",
+   "module": "Навігація",
+   "kind": "nav",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "переключись на контрагентів",
+     "params": {},
+     "source_id": "w-006-346"
+    },
+    {
+     "utterance": "глянь усіх контрагентів",
+     "params": {},
+     "source_id": "w-015-332"
+    },
+    {
+     "utterance": "розділ контрагентів",
+     "params": {},
+     "source_id": "w-008-251"
+    }
+   ]
+  },
+  "nav.counterparties_new": {
+   "title": "Відкрити форму нового контрагента",
+   "description": "Переходить на порожню форму створення контрагента.",
+   "module": "Навігація",
+   "kind": "nav",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "бланк нового контрагента",
+     "params": {},
+     "source_id": "w-017-344"
+    },
+    {
+     "utterance": "новий контрагент",
+     "params": {},
+     "source_id": "w-000-020"
+    },
+    {
+     "utterance": "нова форма контрагента",
+     "params": {},
+     "source_id": "w-008-022"
+    }
+   ]
+  },
+  "nav.price_lists": {
+   "title": "Відкрити екран прайс-листів",
+   "description": "Переходить на екран списку прайс-листів.",
+   "module": "Навігація",
+   "kind": "nav",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "у розділ прайсів",
+     "params": {},
+     "source_id": "w-008-358"
+    },
+    {
+     "utterance": "відкрий усі прайси",
+     "params": {},
+     "source_id": "w-005-067"
+    },
+    {
+     "utterance": "до розділу прайсів",
+     "params": {},
+     "source_id": "w-010-173"
+    }
+   ]
+  },
+  "nav.price_lists_new": {
+   "title": "Відкрити форму нового прайс-листа",
+   "description": "Переходить на порожню форму створення прайс-листа.",
+   "module": "Навігація",
+   "kind": "nav",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "відкрий новий прайс",
+     "params": {},
+     "source_id": "w-006-133"
+    },
+    {
+     "utterance": "новий прайс будь ласка",
+     "params": {},
+     "source_id": "w-023-482"
+    },
+    {
+     "utterance": "порожня форма прайсу у піцерії дрова",
+     "params": {},
+     "source_id": "w-000-259"
+    }
+   ]
+  },
+  "nav.documents": {
+   "title": "Відкрити екран документів",
+   "description": "Переходить на екран списку документів без фільтрів.",
+   "module": "Навігація",
+   "kind": "nav",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "до розділу документів",
+     "params": {},
+     "source_id": "w-010-128"
+    },
+    {
+     "utterance": "перейди в документи",
+     "params": {},
+     "source_id": "w-004-437"
+    },
+    {
+     "utterance": "відкрий усі документи",
+     "params": {},
+     "source_id": "w-030-065"
+    }
+   ]
+  },
+  "nav.documents_new": {
+   "title": "Відкрити форму нового документа",
+   "description": "Переходить на порожню форму створення документа.",
+   "module": "Навігація",
+   "kind": "nav",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "бланк нового документа",
+     "params": {},
+     "source_id": "w-007-497"
+    },
+    {
+     "utterance": "хочу новий документ",
+     "params": {},
+     "source_id": "w-002-285"
+    },
+    {
+     "utterance": "чистий новий документ",
+     "params": {},
+     "source_id": "w-008-305"
+    }
+   ]
+  },
+  "nav.document_templates": {
+   "title": "Відкрити шаблони документів",
+   "description": "Переходить на екран шаблонів документів.",
+   "module": "Навігація",
+   "kind": "nav",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "список шаблонів документів",
+     "params": {},
+     "source_id": "w-005-417"
+    },
+    {
+     "utterance": "покажи шаблони бланків",
+     "params": {},
+     "source_id": "w-014-287"
+    },
+    {
+     "utterance": "глянь шаблони документів",
+     "params": {},
+     "source_id": "w-015-329"
+    }
+   ]
+  },
+  "nav.invites": {
+   "title": "Відкрити екран запрошень",
+   "description": "Переходить на екран списку запрошень клієнтів.",
+   "module": "Навігація",
+   "kind": "nav",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "перейди до запрошень",
+     "params": {},
+     "source_id": "w-023-087"
+    },
+    {
+     "utterance": "покажи усі запрошення",
+     "params": {},
+     "source_id": "w-006-463"
+    },
+    {
+     "utterance": "відкрий список запрошень",
+     "params": {},
+     "source_id": "w-005-038"
+    }
+   ]
+  },
+  "nav.company": {
+   "title": "Відкрити налаштування компанії",
+   "description": "Переходить на екран налаштувань компанії.",
+   "module": "Навігація",
+   "kind": "nav",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "покажи сторінку компанії",
+     "params": {},
+     "source_id": "w-008-053"
+    },
+    {
+     "utterance": "відкрий компанію",
+     "params": {},
+     "source_id": "w-007-361"
+    },
+    {
+     "utterance": "розділ компанії",
+     "params": {},
+     "source_id": "w-023-259"
+    }
+   ]
+  },
+  "nav.company_legal": {
+   "title": "Відкрити реквізити компанії",
+   "description": "Переходить на екран юридичних реквізитів компанії.",
+   "module": "Навігація",
+   "kind": "nav",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "відкрий юридичні реквізити",
+     "params": {},
+     "source_id": "w-000-484"
+    },
+    {
+     "utterance": "реквізити нашої фірми",
+     "params": {},
+     "source_id": "w-019-327"
+    },
+    {
+     "utterance": "покажи юридичні реквізити",
+     "params": {},
+     "source_id": "w-006-140"
+    }
+   ]
+  },
+  "nav.company_team": {
+   "title": "Відкрити команду",
+   "description": "Переходить на екран співробітників компанії.",
+   "module": "Навігація",
+   "kind": "nav",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "покажи команду",
+     "params": {},
+     "source_id": "w-007-138"
+    },
+    {
+     "utterance": "перейди до співробітників",
+     "params": {},
+     "source_id": "w-020-384"
+    },
+    {
+     "utterance": "до картки команди",
+     "params": {},
+     "source_id": "w-010-275"
+    }
+   ]
+  },
+  "ui.pick": {
+   "title": "Вибрати рядок у списку",
+   "description": "Вибирає рядок у відкритому списку чи виборі за порядковим номером або ознакою.",
+   "module": "Відповідь на картку",
+   "kind": "ui",
+   "params": [
+    {
+     "name": "ordinal",
+     "title": "номер у списку",
+     "type": "ordinal",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "pick_text",
+     "title": "ознака рядка",
+     "type": "pick_text",
+     "required": false,
+     "one_of": true
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "попереднє галини чорної",
+     "params": {
+      "ordinal": "previous",
+      "pick_text": "галини чорної"
+     },
+     "source_id": "w-022-038"
+    },
+    {
+     "utterance": "оце п'ятсот гривень",
+     "params": {
+      "pick_text": "п'ятсот гривень"
+     },
+     "source_id": "w-003-334"
+    },
+    {
+     "utterance": "друге 75 грн",
+     "params": {
+      "ordinal": "second",
+      "pick_text": "75 грн"
+     },
+     "source_id": "w-006-092"
+    }
+   ]
+  },
+  "ui.confirm": {
+   "title": "Так — підтвердити картку",
+   "description": "Виконує дію з відкритої картки підтвердження.",
+   "module": "Відповідь на картку",
+   "kind": "ui",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "підтверджую підпис",
+     "params": {},
+     "source_id": "w-000-366"
+    },
+    {
+     "utterance": "так",
+     "params": {},
+     "source_id": "w-000-075"
+    },
+    {
+     "utterance": "ага підписати",
+     "params": {},
+     "source_id": "w-019-391"
+    }
+   ]
+  },
+  "ui.reject": {
+   "title": "Ні — закрити картку",
+   "description": "Закриває відкриту картку чи вибір, нічого не змінюючи.",
+   "module": "Відповідь на картку",
+   "kind": "ui",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "відміна",
+     "params": {},
+     "source_id": "w-000-298"
+    },
+    {
+     "utterance": "ні",
+     "params": {},
+     "source_id": "w-002-055"
+    },
+    {
+     "utterance": "ні дякую",
+     "params": {},
+     "source_id": "w-022-453"
+    }
+   ]
+  },
+  "none": {
+   "title": "Не команда",
+   "description": "Нічого не робить і відповідає, що не зрозуміло або цього не вміє.",
+   "module": "Нічого",
+   "kind": "none",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "дякую кав'ярні дзвінок",
+     "params": {},
+     "source_id": "w-022-338"
+    },
+    {
+     "utterance": "яка погода у львові",
+     "params": {},
+     "source_id": "w-019-411"
+    },
+    {
+     "utterance": "соломія кравець сьогодні запізнилась",
+     "params": {},
+     "source_id": "w-013-006"
+    }
+   ]
+  },
+  "delivery.createShipment": {
+   "title": "Створити ТТН",
+   "description": "Готує відправку (ТТН) за замовленням: місто, відділення, платник, накладений платіж, вага — для підтвердження.",
+   "module": "Доставка",
+   "kind": "write",
+   "params": [
+    {
+     "name": "order_number",
+     "title": "номер замовлення",
+     "type": "order_number",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "phone",
+     "title": "телефон",
+     "type": "phone",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "city",
+     "title": "місто",
+     "type": "city",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "branch",
+     "title": "відділення",
+     "type": "branch",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "address",
+     "title": "адреса",
+     "type": "address",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "carrier",
+     "title": "перевізник",
+     "type": "carrier",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "payer",
+     "title": "платник доставки",
+     "type": "payer",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "cod",
+     "title": "накладений платіж",
+     "type": "money",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "declared",
+     "title": "оголошена вартість",
+     "type": "money",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "measure",
+     "title": "вага / розміри",
+     "type": "measure_list",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "count",
+     "title": "кількість",
+     "type": "count",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "send",
+     "title": "дата відправки",
+     "type": "when",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "description",
+     "title": "опис",
+     "type": "description",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "відправ його в славуту на відділення 2",
+     "params": {
+      "city": "славуту",
+      "branch": "відділення 2"
+     },
+     "source_id": "v31-01-0032"
+    },
+    {
+     "utterance": "отправь бондаренко гриф в славуту на отделение 1",
+     "params": {
+      "customer": "бондаренко",
+      "city": "славуту",
+      "branch": "отделение 1"
+     },
+     "source_id": "sports-02-044"
+    },
+    {
+     "utterance": "сделай ттн на одессу почтомат 2231 получатель лобода наложка тысяча пятьсот",
+     "params": {
+      "city": "одессу",
+      "branch": "почтомат 2231",
+      "customer": "лобода",
+      "cod": "тысяча пятьсот"
+     },
+     "source_id": "tv_audio-02-006"
+    }
+   ]
+  },
+  "delivery.track": {
+   "title": "Де посилка",
+   "description": "Знаходить відправку за ТТН або замовленням і показує, де вона зараз.",
+   "module": "Доставка",
+   "kind": "read",
+   "params": [
+    {
+     "name": "ttn",
+     "title": "ТТН",
+     "type": "ttn",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "order_number",
+     "title": "номер замовлення",
+     "type": "order_number",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "костенку посилка де зараз ттн закінчується на 4471",
+     "params": {
+      "customer": "костенку",
+      "ttn": "4471"
+     },
+     "source_id": "v31-02-0341"
+    },
+    {
+     "utterance": "где посылка нестеренко уже неделю едет",
+     "params": {
+      "customer": "нестеренко"
+     },
+     "source_id": "aquarium-01-049"
+    },
+    {
+     "utterance": "де т т н 20463377810059 від гаджет-опту",
+     "params": {
+      "ttn": "20463377810059"
+     },
+     "source_id": "phones-02-007~asr"
+    }
+   ]
+  },
+  "delivery.list": {
+   "title": "Список відправок з фільтром",
+   "description": "Відкриває список відправок за статусом, періодом, клієнтом або перевізником.",
+   "module": "Доставка",
+   "kind": "read",
+   "params": [
+    {
+     "name": "shipment_status",
+     "title": "статус посилки",
+     "type": "shipment_status",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "period",
+     "title": "період",
+     "type": "period",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "carrier",
+     "title": "перевізник",
+     "type": "carrier",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "повернення посилок за июль",
+     "params": {
+      "shipment_status": "returned",
+      "period": "range:07-01..07-31"
+     },
+     "source_id": "s1b-02-1121"
+    },
+    {
+     "utterance": "покажи відправки за цей тиждень",
+     "params": {
+      "period": "this_week"
+     },
+     "source_id": "party-01-074"
+    },
+    {
+     "utterance": "пос ылки для совы еще в дороге",
+     "params": {
+      "customer": "совы",
+      "shipment_status": "in_transit"
+     },
+     "source_id": "v32-03-0796~asr"
+    }
+   ]
+  },
+  "delivery.estimate": {
+   "title": "Вартість доставки",
+   "description": "Рахує, скільки коштуватиме доставка до названого міста з вагою та оголошеною вартістю.",
+   "module": "Доставка",
+   "kind": "read",
+   "params": [
+    {
+     "name": "city",
+     "title": "місто",
+     "type": "city_list",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "measure",
+     "title": "вага / розміри",
+     "type": "measure_list",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "declared",
+     "title": "оголошена вартість",
+     "type": "money",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "cod",
+     "title": "накладений платіж",
+     "type": "money",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "branch",
+     "title": "відділення",
+     "type": "branch",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "сколько выйдет доста вка ручек в винницу восемьсот грамм",
+     "params": {
+      "city": [
+       "винницу"
+      ],
+      "measure": [
+       "восемьсот грамм"
+      ]
+     },
+     "source_id": "s1b-02-0195~asr"
+    },
+    {
+     "utterance": "порахуй відправку склянок у южноукраїнськ на відділення 1",
+     "params": {
+      "city": [
+       "южноукраїнськ"
+      ],
+      "branch": "відділення 1"
+     },
+     "source_id": "s1b-02-0693"
+    },
+    {
+     "utterance": "почому буде посилка в житомир если наложка 1650",
+     "params": {
+      "city": [
+       "житомир"
+      ],
+      "cod": "1650"
+     },
+     "source_id": "s1b-02-0383"
+    }
+   ]
+  },
+  "delivery.cancelShipment": {
+   "title": "Видалити ТТН",
+   "description": "Знаходить відправку і пропонує видалити її ТТН з посиленим підтвердженням.",
+   "module": "Доставка",
+   "kind": "high",
+   "params": [
+    {
+     "name": "ttn",
+     "title": "ТТН",
+     "type": "ttn",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "order_number",
+     "title": "номер замовлення",
+     "type": "order_number",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "видали експрес-накладну на 4730",
+     "params": {
+      "ttn": "4730"
+     },
+     "source_id": "s1b-03-0380"
+    },
+    {
+     "utterance": "удали ттн для гордиенко он передумал",
+     "params": {
+      "customer": "гордиенко"
+     },
+     "source_id": "s1b-03-1440"
+    },
+    {
+     "utterance": "ттн для него отмени приедет сам",
+     "params": {},
+     "source_id": "v31-02-1140"
+    }
+   ]
+  },
+  "nav.deliveries": {
+   "title": "Відкрити екран відправок",
+   "description": "Переходить на екран списку відправок.",
+   "module": "Навігація",
+   "kind": "nav",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "открой отправки гляну что по новой почте",
+     "params": {},
+     "source_id": "security-01-091"
+    },
+    {
+     "utterance": "відкрий розділ посилок ттн-ки нової пошти",
+     "params": {},
+     "source_id": "s1b-09-1346"
+    },
+    {
+     "utterance": "перейди в посилки треба глянути відправки наречених",
+     "params": {},
+     "source_id": "s1b-02-1044"
+    }
+   ]
+  },
+  "nav.deliveries_new": {
+   "title": "Відкрити форму нової ТТН",
+   "description": "Переходить на порожню форму створення відправки.",
+   "module": "Навігація",
+   "kind": "nav",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "дай порожню експрес-накладну заповню сама",
+     "params": {},
+     "source_id": "s1b-02-1409"
+    },
+    {
+     "utterance": "открой нову відправку заповню вручну",
+     "params": {},
+     "source_id": "s1b-03-1423"
+    },
+    {
+     "utterance": "мне нада нову ттн пустую відкрий",
+     "params": {},
+     "source_id": "s1b-11-0346"
+    }
+   ]
+  },
+  "fiscal.openShift": {
+   "title": "Відкрити касову зміну",
+   "description": "Пропонує відкрити зміну в касі (ПРРО).",
+   "module": "Каса (ПРРО)",
+   "kind": "write",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "так від кривай зміну на касі",
+     "params": {},
+     "source_id": "lingerie-01-020~asr"
+    },
+    {
+     "utterance": "відкривай касу на другій точці",
+     "params": {},
+     "source_id": "appliances-02-032"
+    },
+    {
+     "utterance": "відчиняємося запусти касову зміну на день",
+     "params": {},
+     "source_id": "s1b-04-0592"
+    }
+   ]
+  },
+  "fiscal.closeShift": {
+   "title": "Закрити зміну (Z-звіт)",
+   "description": "Пропонує закрити касову зміну і сформувати Z-звіт з посиленим підтвердженням.",
+   "module": "Каса (ПРРО)",
+   "kind": "high",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "зміну закрий я вже кавоварку помила",
+     "params": {},
+     "source_id": "s1b-05-0468"
+    },
+    {
+     "utterance": "закрий зміну всьо щас сворачиваюсь",
+     "params": {},
+     "source_id": "board_games-03-047"
+    },
+    {
+     "utterance": "закривай касову зміну їдемо додому",
+     "params": {},
+     "source_id": "garden-02-083"
+    }
+   ]
+  },
+  "fiscal.xReport": {
+   "title": "X-звіт",
+   "description": "Показує X-звіт поточної касової зміни.",
+   "module": "Каса (ПРРО)",
+   "kind": "read",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "покажи промежуточный икс сверю с тетрадкой продаж",
+     "params": {},
+     "source_id": "s1b-06-1354"
+    },
+    {
+     "utterance": "дай икс отчёт сколько кэша сейчас",
+     "params": {},
+     "source_id": "s1b-04-1197"
+    },
+    {
+     "utterance": "глянь ікс звіт скільки там готівки назбиралось",
+     "params": {},
+     "source_id": "s1b-06-0007"
+    }
+   ]
+  },
+  "fiscal.createReceipt": {
+   "title": "Пробити чек",
+   "description": "Готує фіскальний чек за замовленням чи позиціями з сумою і способом оплати для підтвердження.",
+   "module": "Каса (ПРРО)",
+   "kind": "write",
+   "params": [
+    {
+     "name": "order_number",
+     "title": "номер замовлення",
+     "type": "order_number",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "items",
+     "title": "позиції",
+     "type": "order_lines",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "amount",
+     "title": "сума",
+     "type": "money",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "payment_method",
+     "title": "спосіб оплати",
+     "type": "payment_method",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "split",
+     "title": "частини оплати",
+     "type": "money_list",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "discount",
+     "title": "знижка",
+     "type": "discount",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "prepayment",
+     "title": "передоплата",
+     "type": "boolean",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "email",
+     "title": "e-mail",
+     "type": "email",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "phone",
+     "title": "телефон",
+     "type": "phone",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "пробей чек на плёнку кодак ультрамакс тридцать шесть кадров картой",
+     "params": {
+      "items": [
+       {
+        "product": "кодак ультрамакс",
+        "attrs": [
+         "тридцать шесть кадров"
+        ]
+       }
+      ],
+      "payment_method": "card"
+     },
+     "source_id": "cameras-03-012"
+    },
+    {
+     "utterance": "пробий паламарчуку чек за три автомати оез на 16 а",
+     "params": {
+      "customer": "паламарчуку",
+      "items": [
+       {
+        "product": "автомати оез",
+        "attrs": [
+         "16 а"
+        ],
+        "quantity": "три"
+       }
+      ]
+     },
+     "source_id": "v33-02-0252"
+    },
+    {
+     "utterance": "чек рибальському клубу псел по замовленню 207 передопл ата 3000",
+     "params": {
+      "customer": "рибальському клубу псел",
+      "order_number": "207",
+      "prepayment": "true",
+      "amount": "3000"
+     },
+     "source_id": "s1b-04-1354~asr"
+    }
+   ]
+  },
+  "fiscal.returnReceipt": {
+   "title": "Чек повернення",
+   "description": "Знаходить чек і готує чек повернення з посиленим підтвердженням.",
+   "module": "Каса (ПРРО)",
+   "kind": "high",
+   "params": [
+    {
+     "name": "document_ref",
+     "title": "номер документа",
+     "type": "document_ref",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "document_type",
+     "title": "тип документа",
+     "type": "document_type",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "order_number",
+     "title": "номер замовлення",
+     "type": "order_number",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "amount",
+     "title": "сума",
+     "type": "money",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "items",
+     "title": "позиції",
+     "type": "order_lines",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "возврат 120 гривен лілі за пемзу бо роз сипалась",
+     "params": {
+      "amount": "120 гривен",
+      "customer": "лілі",
+      "items": [
+       {
+        "product": "пемзу"
+       }
+      ]
+     },
+     "source_id": "s1b-05-1009~asr"
+    },
+    {
+     "utterance": "повернення складна миска двісті п'ятдесят мл тріснула",
+     "params": {
+      "items": [
+       {
+        "product": "складна миска",
+        "attrs": [
+         "двісті п'ятдесят мл"
+        ]
+       }
+      ]
+     },
+     "source_id": "pet_supplies-02-097~asr"
+    },
+    {
+     "utterance": "повернули робот-танцюрист білий не танцює чек 4417",
+     "params": {
+      "document_ref": "4417",
+      "document_type": "receipt",
+      "items": [
+       {
+        "product": "робот-танцюрист",
+        "attrs": [
+         "білий"
+        ]
+       }
+      ]
+     },
+     "source_id": "toys-02-069"
+    }
+   ]
+  },
+  "fiscal.cashIn": {
+   "title": "Службове внесення",
+   "description": "Готує службове внесення готівки в касу на названу суму.",
+   "module": "Каса (ПРРО)",
+   "kind": "write",
+   "params": [
+    {
+     "name": "amount",
+     "title": "сума",
+     "type": "money",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "поклади в кассу 300 мелочи совсем нема",
+     "params": {
+      "amount": "300"
+     },
+     "source_id": "s1b-06-0634"
+    },
+    {
+     "utterance": "закинь в касу п'ятсот шоб була решта",
+     "params": {
+      "amount": "п'ятсот"
+     },
+     "source_id": "tools-02-098"
+    },
+    {
+     "utterance": "внеси 400 гривен в касу для сдачи",
+     "params": {
+      "amount": "400 гривен"
+     },
+     "source_id": "s1b-04-0694"
+    }
+   ]
+  },
+  "fiscal.cashOut": {
+   "title": "Службова видача",
+   "description": "Готує службову видачу готівки з каси на названу суму.",
+   "module": "Каса (ПРРО)",
+   "kind": "write",
+   "params": [
+    {
+     "name": "amount",
+     "title": "сума",
+     "type": "money",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "видай з каси 450 за доставку коробок",
+     "params": {
+      "amount": "450"
+     },
+     "source_id": "s1b-05-1087"
+    },
+    {
+     "utterance": "вилучи з каси десять тисяч на інкасацію",
+     "params": {
+      "amount": "десять тисяч"
+     },
+     "source_id": "s1b-05-0697"
+    },
+    {
+     "utterance": "візьми з кассы 500 на обогрівач",
+     "params": {
+      "amount": "500"
+     },
+     "source_id": "s1b-05-0907"
+    }
+   ]
+  },
+  "fiscal.sendReceipt": {
+   "title": "Надіслати чек",
+   "description": "Знаходить чек і надсилає його клієнту на e-mail, SMS чи в месенджер.",
+   "module": "Каса (ПРРО)",
+   "kind": "write",
+   "params": [
+    {
+     "name": "order_number",
+     "title": "номер замовлення",
+     "type": "order_number",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "document_ref",
+     "title": "номер документа",
+     "type": "document_ref",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "channel",
+     "title": "канал",
+     "type": "channel",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "email",
+     "title": "e-mail",
+     "type": "email",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "phone",
+     "title": "телефон",
+     "type": "phone",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "кинь шульге чек на viber",
+     "params": {
+      "customer": "шульге",
+      "channel": "viber"
+     },
+     "source_id": "v32-01-0336"
+    },
+    {
+     "utterance": "продублюй чек номер 1902 у вайбер орестові",
+     "params": {
+      "document_ref": "1902",
+      "channel": "viber",
+      "customer": "орестові"
+     },
+     "source_id": "s1b-06-0851"
+    },
+    {
+     "utterance": "чек номер 3712 продублюй смс на 0976043118",
+     "params": {
+      "document_ref": "3712",
+      "channel": "sms",
+      "phone": "0976043118"
+     },
+     "source_id": "s1b-06-0091~asr"
+    }
+   ]
+  },
+  "fiscal.listReceipts": {
+   "title": "Список чеків з фільтром",
+   "description": "Відкриває список чеків за періодом, способом оплати або клієнтом.",
+   "module": "Каса (ПРРО)",
+   "kind": "read",
+   "params": [
+    {
+     "name": "period",
+     "title": "період",
+     "type": "period",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "payment_method",
+     "title": "спосіб оплати",
+     "type": "payment_method",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "покажи чеки за сегодня",
+     "params": {
+      "period": "today"
+     },
+     "source_id": "v31-02-1148"
+    },
+    {
+     "utterance": "знайди мені чеки ельвіри ткачук за червень",
+     "params": {
+      "customer": "ельвіри ткачук",
+      "period": "range:06-01..06-30"
+     },
+     "source_id": "s1b-04-0817"
+    },
+    {
+     "utterance": "дай чеки через термінал за минулий тиждень",
+     "params": {
+      "payment_method": "card",
+      "period": "last_week"
+     },
+     "source_id": "s1b-04-1355"
+    }
+   ]
+  },
+  "nav.receipts": {
+   "title": "Відкрити екран чеків",
+   "description": "Переходить на екран списку чеків.",
+   "module": "Навігація",
+   "kind": "nav",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "мені чеки треба відк рий їх",
+     "params": {},
+     "source_id": "s1b-02-0868~asr"
+    },
+    {
+     "utterance": "відкрий історію чеків каси",
+     "params": {},
+     "source_id": "s1b-01-0994"
+    },
+    {
+     "utterance": "перейди на вкладку чеків",
+     "params": {},
+     "source_id": "s1b-07-0526"
+    }
+   ]
+  },
+  "payments.createLink": {
+   "title": "Посилання на оплату",
+   "description": "Готує посилання на оплату замовлення чи суми і надсилає його клієнту.",
+   "module": "Оплати",
+   "kind": "write",
+   "params": [
+    {
+     "name": "order_number",
+     "title": "номер замовлення",
+     "type": "order_number",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "amount",
+     "title": "сума",
+     "type": "money",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "bank_name",
+     "title": "банк",
+     "type": "bank_name",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "channel",
+     "title": "канал",
+     "type": "channel",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "phone",
+     "title": "телефон",
+     "type": "phone",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "email",
+     "title": "e-mail",
+     "type": "email",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "надішли кафе-бару ретро посилання для оплати на вісімнадцять тисяч",
+     "params": {
+      "customer": "кафе-бару ретро",
+      "amount": "вісімнадцять тисяч"
+     },
+     "source_id": "s1b-07-0618"
+    },
+    {
+     "utterance": "кинь катерині бойчук ссилку на оплату замовлення 415",
+     "params": {
+      "customer": "катерині бойчук",
+      "order_number": "415"
+     },
+     "source_id": "s1b-09-0011"
+    },
+    {
+     "utterance": "скинь ему ссылку на оплату на 189 000",
+     "params": {
+      "amount": "189 000"
+     },
+     "source_id": "moto-01-072"
+    }
+   ]
+  },
+  "payments.status": {
+   "title": "Чи оплачено",
+   "description": "Перевіряє, чи оплачено замовлення або рахунок.",
+   "module": "Оплати",
+   "kind": "read",
+   "params": [
+    {
+     "name": "order_number",
+     "title": "номер замовлення",
+     "type": "order_number",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "document_ref",
+     "title": "номер документа",
+     "type": "document_ref",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "запорожтранс за антифриз расплатился",
+     "params": {
+      "customer": "запорожтранс"
+     },
+     "source_id": "v33-01-0148"
+    },
+    {
+     "utterance": "бельведер оплатил заказ 1322",
+     "params": {
+      "customer": "бельведер",
+      "order_number": "1322"
+     },
+     "source_id": "gifts-01-064"
+    },
+    {
+     "utterance": "простір вже оплатив рахунок 612",
+     "params": {
+      "customer": "простір",
+      "document_ref": "612"
+     },
+     "source_id": "s1b-09-0720"
+    }
+   ]
+  },
+  "payments.markPaid": {
+   "title": "Позначити оплаченим",
+   "description": "Знаходить замовлення і пропонує позначити його оплаченим із сумою та способом оплати.",
+   "module": "Оплати",
+   "kind": "write",
+   "params": [
+    {
+     "name": "order_number",
+     "title": "номер замовлення",
+     "type": "order_number",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "amount",
+     "title": "сума",
+     "type": "money",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "payment_method",
+     "title": "спосіб оплати",
+     "type": "payment_method",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "paid",
+     "title": "коли оплачено",
+     "type": "when",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "престиж оплатив заказ 412 перечисленієм",
+     "params": {
+      "customer": "престиж",
+      "order_number": "412",
+      "payment_method": "cashless"
+     },
+     "source_id": "workwear-02-069"
+    },
+    {
+     "utterance": "ярина кушнір оплатила онлайн дві тисячі чотириста",
+     "params": {
+      "customer": "ярина кушнір",
+      "payment_method": "online",
+      "amount": "дві тисячі чотириста"
+     },
+     "source_id": "s1b-07-1177"
+    },
+    {
+     "utterance": "осадчему отметь оплату нал ичными",
+     "params": {
+      "customer": "осадчему",
+      "payment_method": "cash"
+     },
+     "source_id": "v31-03-0738~asr"
+    }
+   ]
+  },
+  "payments.refund": {
+   "title": "Повернути гроші",
+   "description": "Знаходить оплату і пропонує повернути гроші клієнту з посиленим підтвердженням.",
+   "module": "Оплати",
+   "kind": "high",
+   "params": [
+    {
+     "name": "order_number",
+     "title": "номер замовлення",
+     "type": "order_number",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "amount",
+     "title": "сума",
+     "type": "money",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "верни ярині 520 за трусики не тот размер",
+     "params": {
+      "customer": "ярині",
+      "amount": "520"
+     },
+     "source_id": "s1b-09-0776"
+    },
+    {
+     "utterance": "стасюку треба вернуть переплату по заказу 1398",
+     "params": {
+      "customer": "стасюку",
+      "order_number": "1398"
+     },
+     "source_id": "s1b-09-0600"
+    },
+    {
+     "utterance": "родині повертаємо 2 700 по замовленню 3021",
+     "params": {
+      "customer": "родині",
+      "amount": "2 700",
+      "order_number": "3021"
+     },
+     "source_id": "s1b-09-1128"
+    }
+   ]
+  },
+  "bank.balance": {
+   "title": "Залишок на рахунку",
+   "description": "Показує залишок коштів на банківському рахунку.",
+   "module": "Банк",
+   "kind": "read",
+   "params": [
+    {
+     "name": "bank_name",
+     "title": "банк",
+     "type": "bank_name",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "скол ько у нас на карте привата",
+     "params": {
+      "bank_name": "привата"
+     },
+     "source_id": "s1b-07-0290~asr"
+    },
+    {
+     "utterance": "скільки лишилось на розрахунковому глянь",
+     "params": {},
+     "source_id": "s1b-07-0239"
+    },
+    {
+     "utterance": "скіко там денег на фопівському рахунку",
+     "params": {},
+     "source_id": "s1b-08-0831"
+    }
+   ]
+  },
+  "bank.statement": {
+   "title": "Банківська виписка",
+   "description": "Показує виписку: надходження і списання за період, від клієнта чи контрагента.",
+   "module": "Банк",
+   "kind": "read",
+   "params": [
+    {
+     "name": "period",
+     "title": "період",
+     "type": "period",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "flow",
+     "title": "напрям",
+     "type": "flow",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "counterparty",
+     "title": "контрагент",
+     "type": "counterparty",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "amount",
+     "title": "сума",
+     "type": "money",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "bank_name",
+     "title": "банк",
+     "type": "bank_name",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "покажи надход ження від теплобуду за вересень",
+     "params": {
+      "flow": "in",
+      "customer": "теплобуду",
+      "period": "range:09-01..09-30"
+     },
+     "source_id": "heating-01-047~asr"
+    },
+    {
+     "utterance": "виписка з монобанку за минулий квартал",
+     "params": {
+      "bank_name": "монобанку",
+      "period": "last_quarter"
+     },
+     "source_id": "s1b-08-0805"
+    },
+    {
+     "utterance": "хто переказував гроші за останні три дні",
+     "params": {
+      "flow": "in",
+      "period": "last_days:3"
+     },
+     "source_id": "s1b-07-1121"
+    }
+   ]
+  },
+  "nav.payments": {
+   "title": "Відкрити екран оплат",
+   "description": "Переходить на екран оплат.",
+   "module": "Навігація",
+   "kind": "nav",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "открой раздел оплат проверю терминал",
+     "params": {},
+     "source_id": "car_service-02-061"
+    },
+    {
+     "utterance": "покажи екран оплат школи мали розрахуватись",
+     "params": {},
+     "source_id": "s1b-01-1295"
+    },
+    {
+     "utterance": "перейди в розділ платежів гляну сама",
+     "params": {},
+     "source_id": "s1b-07-0537"
+    }
+   ]
+  },
+  "nav.bank": {
+   "title": "Відкрити банк",
+   "description": "Переходить на екран банківських рахунків.",
+   "module": "Навігація",
+   "kind": "nav",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "перейди у банк подивлюсь рахунки",
+     "params": {},
+     "source_id": "s1b-11-1299"
+    },
+    {
+     "utterance": "відкрий рахунок у банку гляну надходження",
+     "params": {},
+     "source_id": "s1b-12-1225"
+    },
+    {
+     "utterance": "банк открой там переказ від кравченка",
+     "params": {},
+     "source_id": "s1b-10-1400"
+    }
+   ]
+  },
+  "accounting.addIncome": {
+   "title": "Записати дохід",
+   "description": "Готує запис доходу з сумою, категорією і датою для підтвердження.",
+   "module": "Бухгалтерія",
+   "kind": "write",
+   "params": [
+    {
+     "name": "amount",
+     "title": "сума",
+     "type": "money",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "payment_method",
+     "title": "спосіб оплати",
+     "type": "payment_method",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "counterparty",
+     "title": "контрагент",
+     "type": "counterparty",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "category",
+     "title": "категорія",
+     "type": "category",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "on",
+     "title": "дата",
+     "type": "when",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "comment",
+     "title": "коментар",
+     "type": "comment",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "запиши доход за ремонт две тысячи четыреста наличными",
+     "params": {
+      "amount": "две тысячи четыреста",
+      "payment_method": "cash"
+     },
+     "source_id": "bikes-01-062"
+    },
+    {
+     "utterance": "локон скинув 2400 за шампуні запиши як надходження",
+     "params": {
+      "customer": "локон",
+      "amount": "2400"
+     },
+     "source_id": "s1b-12-0665"
+    },
+    {
+     "utterance": "приход денег от лозового девятьсот наличными сегодня",
+     "params": {
+      "customer": "лозового",
+      "amount": "девятьсот",
+      "payment_method": "cash",
+      "on": "сегодня"
+     },
+     "source_id": "s1b-11-0120"
+    }
+   ]
+  },
+  "accounting.addExpense": {
+   "title": "Записати витрату",
+   "description": "Готує запис витрати з сумою, категорією і датою для підтвердження.",
+   "module": "Бухгалтерія",
+   "kind": "write",
+   "params": [
+    {
+     "name": "amount",
+     "title": "сума",
+     "type": "money",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "category",
+     "title": "категорія",
+     "type": "category",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "counterparty",
+     "title": "контрагент",
+     "type": "counterparty",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "payment_method",
+     "title": "спосіб оплати",
+     "type": "payment_method",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "on",
+     "title": "дата",
+     "type": "when",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "comment",
+     "title": "коментар",
+     "type": "comment",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "запиши витрату три тисячі на оренду складу",
+     "params": {
+      "amount": "три тисячі",
+      "category": "оренду складу"
+     },
+     "source_id": "hair_pro-01-024"
+    },
+    {
+     "utterance": "агроцентру заплатили за добрива 16 тисяч запиши витрату",
+     "params": {
+      "counterparty": "агроцентру",
+      "category": "добрива",
+      "amount": "16 тисяч"
+     },
+     "source_id": "s1b-12-0489"
+    },
+    {
+     "utterance": "расход на газ для плит тысяча девятьсот оплатила картой",
+     "params": {
+      "category": "газ для плит",
+      "amount": "тысяча девятьсот",
+      "payment_method": "card"
+     },
+     "source_id": "s1b-10-0482"
+    }
+   ]
+  },
+  "accounting.listEntries": {
+   "title": "Доходи і витрати",
+   "description": "Показує записи доходів і витрат за період, категорією або контрагентом.",
+   "module": "Бухгалтерія",
+   "kind": "read",
+   "params": [
+    {
+     "name": "flow",
+     "title": "напрям",
+     "type": "flow",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "period",
+     "title": "період",
+     "type": "period",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "category",
+     "title": "категорія",
+     "type": "category",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "counterparty",
+     "title": "контрагент",
+     "type": "counterparty",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "список доходів за минулий тиждень",
+     "params": {
+      "flow": "in",
+      "period": "last_week"
+     },
+     "source_id": "s1b-12-0679"
+    },
+    {
+     "utterance": "покажи витр ати на рекламу за вересень",
+     "params": {
+      "flow": "out",
+      "category": "рекламу",
+      "period": "range:09-01..09-30"
+     },
+     "source_id": "s1b-12-1381~asr"
+    },
+    {
+     "utterance": "пла тежі карпенку з початку року виведи",
+     "params": {
+      "flow": "out",
+      "counterparty": "карпенку",
+      "period": "this_year"
+     },
+     "source_id": "s1b-10-0688~asr"
+    }
+   ]
+  },
+  "accounting.summary": {
+   "title": "Підсумок обліку",
+   "description": "Показує підсумок обліку: дохід, витрати, прибуток або залишок до ліміту за період.",
+   "module": "Бухгалтерія",
+   "kind": "read",
+   "params": [
+    {
+     "name": "metric",
+     "title": "показник",
+     "type": "metric",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "period",
+     "title": "період",
+     "type": "period",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "category",
+     "title": "категорія",
+     "type": "category",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "сколько витрат набралось за цей тиждень",
+     "params": {
+      "metric": "expense",
+      "period": "this_week"
+     },
+     "source_id": "s1b-10-1125"
+    },
+    {
+     "utterance": "скільки ще до ліміту посчитай",
+     "params": {
+      "metric": "limit_left"
+     },
+     "source_id": "s1b-12-0859"
+    },
+    {
+     "utterance": "витрати на гелій за рік скільки",
+     "params": {
+      "metric": "expense",
+      "category": "гелій",
+      "period": "this_year"
+     },
+     "source_id": "s1b-12-0972"
+    }
+   ]
+  },
+  "accounting.taxDue": {
+   "title": "Податок до сплати",
+   "description": "Рахує, скільки податку (єдиний податок, ЄСВ, військовий збір) треба сплатити за період.",
+   "module": "Бухгалтерія",
+   "kind": "read",
+   "params": [
+    {
+     "name": "tax",
+     "title": "податок",
+     "type": "tax_list",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "period",
+     "title": "період",
+     "type": "period",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "шо там по єсв за прошлый квартал",
+     "params": {
+      "tax": [
+       "esv"
+      ],
+      "period": "last_quarter"
+     },
+     "source_id": "s1b-12-0208"
+    },
+    {
+     "utterance": "налоги за прошлый квартал сколько",
+     "params": {
+      "period": "last_quarter"
+     },
+     "source_id": "s1b-12-0979"
+    },
+    {
+     "utterance": "скіки єсв і единого за квартал вийде",
+     "params": {
+      "tax": [
+       "esv",
+       "single_tax"
+      ]
+     },
+     "source_id": "v31-03-0711"
+    }
+   ]
+  },
+  "accounting.taxDeadlines": {
+   "title": "Строки податків",
+   "description": "Каже, до якого числа подати декларацію чи сплатити податок (єдиний податок, ЄСВ, військовий збір), і чи вже подано (v3.1).",
+   "module": "Бухгалтерія",
+   "kind": "read",
+   "params": [
+    {
+     "name": "tax",
+     "title": "податок",
+     "type": "tax_list",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "коли платити військовий збір за 3-й квартал",
+     "params": {
+      "tax": [
+       "military_levy"
+      ]
+     },
+     "source_id": "v31-03-0118"
+    },
+    {
+     "utterance": "коли податкова чекає єсв та декларацію",
+     "params": {
+      "tax": [
+       "esv",
+       "declaration"
+      ]
+     },
+     "source_id": "v31-01-0924"
+    },
+    {
+     "utterance": "ще раз коли мені подавати звітність по єсв",
+     "params": {
+      "tax": [
+       "esv"
+      ]
+     },
+     "source_id": "v31-01-0743"
+    }
+   ]
+  },
+  "debts.list": {
+   "title": "Борги",
+   "description": "Показує, хто нам винен і кому винні ми, за потреби для одного клієнта чи контрагента.",
+   "module": "Борги",
+   "kind": "read",
+   "params": [
+    {
+     "name": "debt_side",
+     "title": "хто кому винен",
+     "type": "debt_side",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "counterparty",
+     "title": "контрагент",
+     "type": "counterparty",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "кто мне должен по тетрадке покажи",
+     "params": {
+      "debt_side": "receivable"
+     },
+     "source_id": "paints-02-013"
+    },
+    {
+     "utterance": "сколько должна горбунова за оправу",
+     "params": {
+      "debt_side": "receivable",
+      "customer": "горбунова"
+     },
+     "source_id": "s1b-12-0926"
+    },
+    {
+     "utterance": "вглянь скільки ми винні консерв трейду",
+     "params": {
+      "counterparty": "консерв трейду",
+      "debt_side": "payable"
+     },
+     "source_id": "v33-01-0797~asr"
+    }
+   ]
+  },
+  "documents.createReconciliation": {
+   "title": "Акт звірки",
+   "description": "Готує акт звірки з контрагентом чи клієнтом за період для підтвердження.",
+   "module": "Документи",
+   "kind": "write",
+   "params": [
+    {
+     "name": "counterparty",
+     "title": "контрагент",
+     "type": "counterparty",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "period",
+     "title": "період",
+     "type": "period",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "сдєлай акт сверки з латорицею за этот квартал",
+     "params": {
+      "customer": "латорицею",
+      "period": "this_quarter"
+     },
+     "source_id": "s1b-12-1214"
+    },
+    {
+     "utterance": "подготовь сверку взаиморасчётов с автохим юг за сентябрь",
+     "params": {
+      "counterparty": "автохим юг",
+      "period": "range:09-01..09-30"
+     },
+     "source_id": "s1b-11-0133"
+    },
+    {
+     "utterance": "акт сверки с харьковагроснабом за третий квартал",
+     "params": {
+      "counterparty": "харьковагроснабом",
+      "period": "range:07-01..09-30"
+     },
+     "source_id": "farm_supplies-03-048"
+    }
+   ]
+  },
+  "nav.accounting": {
+   "title": "Відкрити бухгалтерію",
+   "description": "Переходить на екран обліку доходів і витрат.",
+   "module": "Навігація",
+   "kind": "nav",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "открой облік фопа мені податки глянути",
+     "params": {},
+     "source_id": "s1b-11-0752"
+    },
+    {
+     "utterance": "перейди в раздел доходов и расходов",
+     "params": {},
+     "source_id": "s1b-10-0027"
+    },
+    {
+     "utterance": "відкрий облік глянемо доходи кіоску",
+     "params": {},
+     "source_id": "s1b-06-0728"
+    }
+   ]
+  },
+  "analytics.summary": {
+   "title": "Звіт",
+   "description": "Показує звіт: виручку, кількість замовлень, середній чек чи продані штуки за період, товаром або клієнтом.",
+   "module": "Звіти",
+   "kind": "read",
+   "params": [
+    {
+     "name": "metric",
+     "title": "показник",
+     "type": "metric",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "period",
+     "title": "період",
+     "type": "period",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "product",
+     "title": "товар",
+     "type": "product",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "attrs",
+     "title": "ознаки",
+     "type": "attrs",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "group_by",
+     "title": "групувати",
+     "type": "group_by",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "count",
+     "title": "кількість",
+     "type": "count",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "payment_method",
+     "title": "спосіб оплати",
+     "type": "payment_method",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "яка сума замовлень крамниці калина по клієнтах",
+     "params": {
+      "metric": "revenue",
+      "customer": "крамниці калина",
+      "group_by": "customer"
+     },
+     "source_id": "w-004-085"
+    },
+    {
+     "utterance": "виручка з 8 по 20 листопада",
+     "params": {
+      "metric": "revenue",
+      "period": "range:11-08..11-20"
+     },
+     "source_id": "w-006-297"
+    },
+    {
+     "utterance": "яка виручка з 1 по 8 травня",
+     "params": {
+      "metric": "revenue",
+      "period": "range:05-01..05-08"
+     },
+     "source_id": "w-030-041"
+    }
+   ]
+  },
+  "nav.analytics": {
+   "title": "Відкрити звіти",
+   "description": "Переходить на екран звітів.",
+   "module": "Навігація",
+   "kind": "nav",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "відкрий статистику подивлюсь сама",
+     "params": {},
+     "source_id": "s1b-07-1423"
+    },
+    {
+     "utterance": "розділ ана літики відкрий будь ласка",
+     "params": {},
+     "source_id": "s1b-01-1236~asr"
+    },
+    {
+     "utterance": "открой статистику продаж овощей",
+     "params": {},
+     "source_id": "s1b-10-1140"
+    }
+   ]
+  },
+  "stock.get": {
+   "title": "Залишок товару",
+   "description": "Показує, скільки товару чи варіанта лишилось на складі.",
+   "module": "Склад",
+   "kind": "read",
+   "params": [
+    {
+     "name": "product",
+     "title": "товар",
+     "type": "product",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "attrs",
+     "title": "ознаки",
+     "type": "attrs",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "перевір залишок чіабатти",
+     "params": {
+      "product": "чіабатти"
+     },
+     "source_id": "w-004-466"
+    },
+    {
+     "utterance": "перевір залишок пряника",
+     "params": {
+      "product": "пряника"
+     },
+     "source_id": "w-002-104"
+    },
+    {
+     "utterance": "перевір залишок фрапе на складі",
+     "params": {
+      "product": "фрапе"
+     },
+     "source_id": "w-030-128"
+    }
+   ]
+  },
+  "stock.list": {
+   "title": "Залишки з фільтром",
+   "description": "Відкриває список залишків: усі, ті, що закінчуються, або яких немає.",
+   "module": "Склад",
+   "kind": "read",
+   "params": [
+    {
+     "name": "stock_level",
+     "title": "наявність",
+     "type": "stock_level",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "search_text",
+     "title": "текст пошуку",
+     "type": "search_text",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "що з рушників вже закінчується",
+     "params": {
+      "stock_level": "low",
+      "search_text": "рушників"
+     },
+     "source_id": "home_textiles-01-056"
+    },
+    {
+     "utterance": "покажи что по струнам на складе",
+     "params": {
+      "search_text": "струнам"
+     },
+     "source_id": "v32-03-0959"
+    },
+    {
+     "utterance": "глянь по складу чиво мало осталось",
+     "params": {
+      "stock_level": "low"
+     },
+     "source_id": "water_delivery-01-079"
+    }
+   ]
+  },
+  "stock.receive": {
+   "title": "Оприбуткувати товар",
+   "description": "Готує надходження товару на склад з позиціями і постачальником для підтвердження.",
+   "module": "Склад",
+   "kind": "write",
+   "params": [
+    {
+     "name": "items",
+     "title": "позиції",
+     "type": "order_lines",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "counterparty",
+     "title": "контрагент",
+     "type": "counterparty",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "amount",
+     "title": "сума",
+     "type": "money",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "comment",
+     "title": "коментар",
+     "type": "comment",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "від петмаркет захід прийшло шість коробок нашийників для котів з бубонцем",
+     "params": {
+      "counterparty": "петмаркет захід",
+      "items": [
+       {
+        "product": "нашийників для котів з бубонцем",
+        "quantity": "шість коробок"
+       }
+      ]
+     },
+     "source_id": "v31-01-0856"
+    },
+    {
+     "utterance": "мацола привіз двадцять казеїну нічного шоколад сума 31 000",
+     "params": {
+      "counterparty": "мацола",
+      "items": [
+       {
+        "product": "казеїну нічного",
+        "attrs": [
+         "шоколад"
+        ],
+        "quantity": "двадцять"
+       }
+      ],
+      "amount": "31 000"
+     },
+     "source_id": "s1b-03-1279"
+    },
+    {
+     "utterance": "прийшло 2 ящики шампуню матрикс для фарбованого",
+     "params": {
+      "items": [
+       {
+        "product": "шампуню матрикс",
+        "attrs": [
+         "фарбованого"
+        ],
+        "quantity": "2 ящики"
+       }
+      ]
+     },
+     "source_id": "v31-03-0491"
+    }
+   ]
+  },
+  "stock.writeOff": {
+   "title": "Списати товар",
+   "description": "Готує списання позицій зі складу з причиною для підтвердження.",
+   "module": "Склад",
+   "kind": "write",
+   "params": [
+    {
+     "name": "items",
+     "title": "позиції",
+     "type": "order_lines",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "comment",
+     "title": "коментар",
+     "type": "comment",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "морозиво ріжок брупума шоколадний три штуки розтало списуй",
+     "params": {
+      "items": [
+       {
+        "product": "морозиво ріжок брупума",
+        "attrs": [
+         "шоколадний"
+        ],
+        "quantity": "три штуки"
+       }
+      ],
+      "comment": "розтало"
+     },
+     "source_id": "confectionery-03-037"
+    },
+    {
+     "utterance": "мінеральна добавка відсиріла дві списати",
+     "params": {
+      "items": [
+       {
+        "product": "мінеральна добавка",
+        "quantity": "дві"
+       }
+      ]
+     },
+     "source_id": "farm_supplies-02-092"
+    },
+    {
+     "utterance": "в брак два аварийных ключа не подходят",
+     "params": {
+      "items": [
+       {
+        "product": "аварийных ключа",
+        "quantity": "два"
+       }
+      ],
+      "comment": "не подходят"
+     },
+     "source_id": "s1b-03-1219"
+    }
+   ]
+  },
+  "stock.set": {
+   "title": "Встановити залишок",
+   "description": "Готує нове значення залишку товару чи варіанта для підтвердження.",
+   "module": "Склад",
+   "kind": "write",
+   "params": [
+    {
+     "name": "product",
+     "title": "товар",
+     "type": "product",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "attrs",
+     "title": "ознаки",
+     "type": "attrs",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "quantity",
+     "title": "кількість",
+     "type": "quantity",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "генераторів деу з електростартером насправді три виправ залишок",
+     "params": {
+      "product": "генераторів деу",
+      "attrs": [
+       "з електростартером"
+      ],
+      "quantity": "три"
+     },
+     "source_id": "power_backup-03-067"
+    },
+    {
+     "utterance": "печатных машинок олимпия осталось две исправь в программе",
+     "params": {
+      "product": "печатных машинок олимпия",
+      "quantity": "две"
+     },
+     "source_id": "s1b-03-0919"
+    },
+    {
+     "utterance": "поставь остаток сиропа инвертного четырнадцать литров тридцать штук",
+     "params": {
+      "product": "сиропа инвертного",
+      "attrs": [
+       "четырнадцать литров"
+      ],
+      "quantity": "тридцать штук"
+     },
+     "source_id": "honey-03-091"
+    }
+   ]
+  },
+  "nav.stock": {
+   "title": "Відкрити склад",
+   "description": "Переходить на екран складу.",
+   "module": "Навігація",
+   "kind": "nav",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "перейди в зал ишки на складі",
+     "params": {},
+     "source_id": "s1b-07-0506~asr"
+    },
+    {
+     "utterance": "склад покажи щас буду рахувати батончики",
+     "params": {},
+     "source_id": "s1b-02-1417"
+    },
+    {
+     "utterance": "відкрий склад крамниці",
+     "params": {},
+     "source_id": "s1b-02-1054"
+    }
+   ]
+  },
+  "nav.notifications": {
+   "title": "Відкрити сповіщення",
+   "description": "Переходить на екран сповіщень.",
+   "module": "Навігація",
+   "kind": "nav",
+   "params": [],
+   "examples": [
+    {
+     "utterance": "що мені там понаприходило відкрий сповіщення",
+     "params": {},
+     "source_id": "s1b-01-0481"
+    },
+    {
+     "utterance": "открой сповіщення там школа щось написала",
+     "params": {},
+     "source_id": "s1b-06-1403"
+    },
+    {
+     "utterance": "покажи сповіщення що там нового",
+     "params": {},
+     "source_id": "s1b-02-1110"
+    }
+   ]
+  },
+  "orders.update": {
+   "title": "Змінити замовлення",
+   "description": "Знаходить замовлення і готує зміну: додати, прибрати чи змінити позиції, строк, знижку або спосіб оплати.",
+   "module": "Замовлення",
+   "kind": "write",
+   "params": [
+    {
+     "name": "order_number",
+     "title": "номер замовлення",
+     "type": "order_number",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "items",
+     "title": "позиції",
+     "type": "order_lines",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "remove_items",
+     "title": "прибрати позиції",
+     "type": "order_lines",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "set_items",
+     "title": "змінити позиції",
+     "type": "order_lines",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "due",
+     "title": "на коли",
+     "type": "when",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "discount",
+     "title": "знижка",
+     "type": "discount",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "payment_method",
+     "title": "спосіб оплати",
+     "type": "payment_method",
+     "required": false,
+     "one_of": false
+    },
+    {
+     "name": "comment",
+     "title": "коментар",
+     "type": "comment",
+     "required": false,
+     "one_of": false
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "у морского бриза олеандр розовый замени на белый",
+     "params": {
+      "customer": "морского бриза",
+      "remove_items": [
+       {
+        "product": "олеандр",
+        "attrs": [
+         "розовый"
+        ]
+       }
+      ],
+      "items": [
+       {
+        "product": "олеандр",
+        "attrs": [
+         "белый"
+        ]
+       }
+      ]
+     },
+     "source_id": "v31-03-0885"
+    },
+    {
+     "utterance": "замовлення 433 перенеси на понеділок клієнт раніше не встигне",
+     "params": {
+      "order_number": "433",
+      "due": "на понеділок"
+     },
+     "source_id": "power_backup-01-058"
+    },
+    {
+     "utterance": "в заказ 1207 добавь подарочную упаковку",
+     "params": {
+      "items": [
+       {
+        "product": "подарочную упаковку"
+       }
+      ],
+      "order_number": "1207"
+     },
+     "source_id": "watches-01-060"
+    }
+   ]
+  },
+  "ui.refine": {
+   "title": "Уточнити попередній запит",
+   "description": "Уточнює попередню команду читання: інший період, клієнт, статус, спосіб оплати чи показник («а за минулий», «а для Олега», «а тільки нові») (v3.2).",
+   "module": "Відповідь на картку",
+   "kind": "read-modifier",
+   "params": [
+    {
+     "name": "period",
+     "title": "період",
+     "type": "period",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "due",
+     "title": "на коли",
+     "type": "when",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "customer",
+     "title": "клієнт",
+     "type": "customer",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "counterparty",
+     "title": "контрагент",
+     "type": "counterparty",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "group",
+     "title": "група",
+     "type": "group",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "status",
+     "title": "статус",
+     "type": "order_status",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "payment_status",
+     "title": "статус оплати",
+     "type": "payment_status",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "payment_method",
+     "title": "спосіб оплати",
+     "type": "payment_method",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "shipment_status",
+     "title": "статус посилки",
+     "type": "shipment_status",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "carrier",
+     "title": "перевізник",
+     "type": "carrier",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "city",
+     "title": "місто",
+     "type": "city_list",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "branch",
+     "title": "відділення",
+     "type": "branch",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "measure",
+     "title": "вага / розміри",
+     "type": "measure_list",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "flow",
+     "title": "напрям",
+     "type": "flow",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "category",
+     "title": "категорія",
+     "type": "category",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "bank_name",
+     "title": "банк",
+     "type": "bank_name",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "debt_side",
+     "title": "хто кому винен",
+     "type": "debt_side",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "tax",
+     "title": "податок",
+     "type": "tax_list",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "metric",
+     "title": "показник",
+     "type": "metric",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "group_by",
+     "title": "групувати",
+     "type": "group_by",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "count",
+     "title": "кількість",
+     "type": "count",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "document_type",
+     "title": "тип документа",
+     "type": "document_type",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "signing_status",
+     "title": "статус підпису",
+     "type": "signing_status",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "product",
+     "title": "товар",
+     "type": "product",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "attrs",
+     "title": "ознаки",
+     "type": "attrs",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "search_text",
+     "title": "текст пошуку",
+     "type": "search_text",
+     "required": false,
+     "one_of": true
+    },
+    {
+     "name": "stock_level",
+     "title": "наявність",
+     "type": "stock_level",
+     "required": false,
+     "one_of": true
+    }
+   ],
+   "examples": [
+    {
+     "utterance": "а по дачниках",
+     "params": {
+      "group": "дачниках"
+     },
+     "source_id": "v32-01-0831"
+    },
+    {
+     "utterance": "ну а прошлый как",
+     "params": {
+      "period": "previous"
+     },
+     "source_id": "v32-01-0706"
+    },
+    {
+     "utterance": "і по клубах за минулий теж",
+     "params": {
+      "group": "клубах",
+      "period": "previous"
+     },
+     "source_id": "v32-02-0357"
+    }
+   ]
+  }
+ }
+}

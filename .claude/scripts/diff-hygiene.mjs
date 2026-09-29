@@ -25,7 +25,7 @@ const APPROVAL_REFERENCE = /ADR-\d{4}|docs\/specs\//;
 const RAW_SQL = /\bsql`|\.execute\(|sql\.raw\(/;
 
 const GENERATED =
-  /(^pnpm-lock\.yaml$|^packages\/contract\/openapi\.json$|^apps\/web\/src\/routeTree\.gen\.ts$|^packages\/db\/src\/schema\/auth\.ts$|^packages\/db\/migrations\/|\.gen\.tsx?$|\.d\.ts$|\/__goldens__\/|\.snap$)/;
+  /(^pnpm-lock\.yaml$|^packages\/contract\/openapi\.json$|^apps\/web\/src\/routeTree\.gen\.ts$|^packages\/db\/src\/schema\/auth\.ts$|^packages\/db\/migrations\/|^packages\/sho\/(runtime|model)\/|^packages\/sho\/manifest\.json$|\.gen\.tsx?$|\.d\.ts$|\/__goldens__\/|\.snap$)/;
 const TESTS = /(\.(test|spec)\.[cm]?[jt]sx?$|(^|\/)(__tests__|__mocks__|tests?)\/)/;
 const PROSE = /(\.mdx?$|^docs\/)/;
 

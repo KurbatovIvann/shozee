@@ -1,0 +1,28 @@
+{
+  "name": "@showzy/sho",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Vendored Шо runtime and model bundle (system-one-uk). Server-only.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./manifest": "./src/manifest.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:unit": "vitest run",
+    "bench": "node scripts/bench.ts"
+  },
+  "dependencies": {
+    "onnxruntime-node": "1.30.0"
+  },
+  "devDependencies": {
+    "@showzy/tooling": "workspace:*",
+    "@types/node": "^22.20.1",
+    "eslint": "^10.8.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10"
+  }
+}
