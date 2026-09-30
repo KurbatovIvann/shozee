@@ -9,6 +9,7 @@ import {
   AHEAD_HOURS,
   AHEAD_MONTHS,
   BOUNDS,
+  DAY_DIGIT_ENDINGS,
   DAY_ENDINGS,
   DAY_WORDS,
   END_WORDS,
@@ -112,10 +113,10 @@ function hourOrdinal(word: string, next: string | undefined): number | null {
 }
 
 // A day of the month said as a masculine or neuter ordinal («п'ятнадцятого», «первому», «десяте») with no hour word after it, or as a number with
-// «числа» after it («до 5 числа»).
-function dayOrdinal(word: string, next: string | undefined): boolean {
+// «числа» after it («до 5 числа»); D92: or written with an ordinal ending («на 21-ше число», «до 18-го»: the words read «21», «ше»).
+function dayOrdinal(word: string, next: string | undefined, after: string | undefined): boolean {
   if (HOUR_WORDS.has(next ?? "")) return false;
-  if (/^[0-9]{1,2}$/.test(word)) return DAY_WORDS.has(next ?? "");
+  if (/^[0-9]{1,2}$/.test(word)) return DAY_WORDS.has(next ?? "") || (DAY_DIGIT_ENDINGS.has(next ?? "") && !HOUR_WORDS.has(after ?? ""));
   return DAY_ORDINALS.some(([pattern]) => DAY_ENDINGS.has(pattern.exec(word)?.[1] ?? ""));
 }
 
@@ -285,11 +286,13 @@ class Reading {
     for (const [kind, day, start, end] of tokens) {
       const words = this.wordsIn(start, end);
       const last = words.at(-1) ?? -1;
-      if (kind !== "day" || words.some((at) => this.used[at] === true) || !dayOrdinal(this.words[last] ?? "", this.words[last + 1])) continue;
+      if (kind !== "day" || words.some((at) => this.used[at] === true) || !dayOrdinal(this.words[last] ?? "", this.words[last + 1], this.words[last + 2])) continue;
       const thisMonth = Date.UTC(this.now.year, this.now.month - 1, day);
       const month = this.past ? (thisMonth <= this.today ? this.now.month - 1 : this.now.month - 2) : thisMonth >= this.today ? this.now.month - 1 : this.now.month;
       this.date = Date.UTC(this.now.year, month, day);
       for (const at of words) this.take(at);
+      // D92: the ending written after the digits («21-ше» reads «21», «ше»).
+      if (/^[0-9]{1,2}$/.test(this.words[last] ?? "") && DAY_DIGIT_ENDINGS.has(this.words[last + 1] ?? "")) this.take(last + 1);
       return;
     }
   }

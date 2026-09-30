@@ -1,6 +1,6 @@
 export { VERSION } from "./version.ts";
 export { BundleError, InputError, ModelError } from "./errors.ts";
-export { clockMarks, normalise, percentMarks, punctuationBreaks, rawMarks, type RawMarks } from "./text/normalise.ts";
+export { clockMarks, isNormalised, normalise, percentMarks, punctuationBreaks, rawMarks, type RawMarks } from "./text/normalise.ts";
 export { Tokenizer, parseTokenizerSpec, type Encoding, type Offset, type TokenizerLimits, type TokenizerSpec } from "./tokenizer.ts";
 export { argmax, softmax } from "./math.ts";
 export { Dates, type DateToken, type Period, type PeriodMatch, type RangePeriod, type Span } from "./dates.ts";
@@ -165,6 +165,7 @@ export {
   type ConfidenceV2,
   type Confirmation,
   type ContextInfo,
+  type Creates,
   type DebugV2,
   type Effect,
   type EnumParam,
@@ -243,7 +244,21 @@ export { attrApart, attrKind, type AttrKind } from "./attrKinds.ts";
 export { ADJECTIVE_TAILS, ATTR_ENDINGS, COLOUR_STEMS, LATIN_COLOURS, SIZE_STEMS } from "./lexicon/attrs.ts";
 export { nameAcross, namedLists, type Listed } from "./lists.ts";
 export { fromPrevious, nameGender } from "./pronouns.ts";
+export { FOCUS_LIVE, MOST_FOCUS, parseFocus, withCreates, withFocus, type FocusEntry, type FocusHow, type FocusType } from "./focus.ts";
 export { LEFTOVER_KINDS, LEFTOVER_SURE, UNPARSED, leftoverOf, type Leftover } from "./leftover.ts";
-export { PRONOUN_FORMS, type PronounForm } from "./lexicon/references.ts";
+export {
+  CONTINUATION_LEADS,
+  CONTINUATION_MORE,
+  FOCUS_CONTAINER_PARAMS,
+  FOCUS_CONTAINERS,
+  FOCUS_HERE,
+  FOCUS_NEW,
+  FOCUS_NOUNS,
+  FOCUS_PARAM_TYPES,
+  FOCUS_PREPOSITIONS,
+  FOCUS_THIS,
+  PRONOUN_FORMS,
+  type PronounForm,
+} from "./lexicon/references.ts";
 export { GROUP_NOUNS, GROUP_PREPOSITIONS, PRICE_LIST_NOUNS, PRICE_LIST_PREPOSITIONS } from "./lexicon/lists.ts";
 export { DECIMAL_JOINERS } from "./lexicon/numbers.ts";

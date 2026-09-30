@@ -49,20 +49,20 @@
       "bytes": 28275
     },
     "command.ts": {
-      "md5": "88c5346e98e98bfda895c9f713c458db",
-      "bytes": 41205
+      "md5": "ecd6dae3c24ac23f5ce5a3ce93d597bf",
+      "bytes": 42849
     },
     "confidence.ts": {
       "md5": "2b59cc24b3bdd34703b4db03c3d61919",
       "bytes": 2549
     },
     "context.ts": {
-      "md5": "c6e96690907376828f1f0f97ffe450cd",
-      "bytes": 17666
+      "md5": "96cd62feaeb860bf41e83b650187b760",
+      "bytes": 18347
     },
     "createAsUpdate.ts": {
-      "md5": "2fec7badb5c0dc92adf804a2323d8715",
-      "bytes": 8750
+      "md5": "3f1e11b0c4030d8b677cdd6c932f71d9",
+      "bytes": 13136
     },
     "customers.ts": {
       "md5": "209d5e8959376dd552036ed0d1d99415",
@@ -73,20 +73,28 @@
       "bytes": 6230
     },
     "decode.ts": {
-      "md5": "523581c08aafc73a554c2b83992e281c",
-      "bytes": 33024
+      "md5": "09a90e10490ed2da239b9dead6fdad5d",
+      "bytes": 35376
     },
     "errors.ts": {
       "md5": "833574448cfd0b61f1b6c735e73ca30c",
       "bytes": 577
     },
+    "fiscal.ts": {
+      "md5": "0880137a3e80a4f1145ac2557be9b0dd",
+      "bytes": 4218
+    },
+    "focus.ts": {
+      "md5": "87ae66745263c2dc885adc47a2af984d",
+      "bytes": 38761
+    },
     "gender.ts": {
-      "md5": "cd114bfe79e1da20ac9c9ba5bb19518d",
-      "bytes": 2711
+      "md5": "4b56841bd7b39a24eba35064fd6b421b",
+      "bytes": 3828
     },
     "index.ts": {
-      "md5": "bc1a1d0aac6197012b50efdc05914903",
-      "bytes": 9729
+      "md5": "9e687e94194b367cb15d220e9b7a5294",
+      "bytes": 10089
     },
     "leftover.ts": {
       "md5": "732d8d040d322d155b4e7a8d6d4ac29d",
@@ -112,6 +120,10 @@
       "md5": "6a280d3b2e9bd1555213764ab42987c1",
       "bytes": 4016
     },
+    "lexicon/fiscal.ts": {
+      "md5": "981c6c4414c9bcaf4f7ae9c157cf36c8",
+      "bytes": 1806
+    },
     "lexicon/lists.ts": {
       "md5": "ce87892de56acefa9086792c3790d712",
       "bytes": 1842
@@ -133,8 +145,8 @@
       "bytes": 1531
     },
     "lexicon/references.ts": {
-      "md5": "d457a1c3d096f8de4af0ecdc0da61499",
-      "bytes": 8317
+      "md5": "d00d0a7ed284320f2b65d5c19b75dac9",
+      "bytes": 15739
     },
     "lexicon/repair.ts": {
       "md5": "a46660d8a58d670d16e594b1be975cca",
@@ -157,8 +169,8 @@
       "bytes": 15607
     },
     "lexicon/when.ts": {
-      "md5": "8feaabb0cc5118c413e6fc8f98c3c82f",
-      "bytes": 8791
+      "md5": "082ee3d6cbb54a1cc9405d1365b79ae8",
+      "bytes": 9292
     },
     "lines.ts": {
       "md5": "a1baeb2a04cb1b1b802350ed0a335b4c",
@@ -189,8 +201,8 @@
       "bytes": 8612
     },
     "nameList.ts": {
-      "md5": "f1145ed7b669f0dc849c0fe261a99106",
-      "bytes": 16568
+      "md5": "ee97e4286d4582db2372d77e37a1ab15",
+      "bytes": 16936
     },
     "nameTokens.ts": {
       "md5": "248a547d19b815455e370dacb884f0ee",
@@ -221,8 +233,8 @@
       "bytes": 4515
     },
     "pipeline.ts": {
-      "md5": "baad72fc76838a28878ab9a9e673b09e",
-      "bytes": 21399
+      "md5": "862ee4f4bd90b770d41995ccbedcaa02",
+      "bytes": 23345
     },
     "products.ts": {
       "md5": "e3d8944d4e43df96724d19b7057aae86",
@@ -253,8 +265,8 @@
       "bytes": 27098
     },
     "result.ts": {
-      "md5": "133f434635fbf3c0ad53657142bd468d",
-      "bytes": 11407
+      "md5": "6b0800fd0e2e8f5e864afea3020ab401",
+      "bytes": 13631
     },
     "roles.ts": {
       "md5": "a8dfc364164c768a63e8608a87f276a1",
@@ -277,16 +289,16 @@
       "bytes": 10615
     },
     "stockless.ts": {
-      "md5": "5fc9dda0267caa39c685130bc6a41510",
-      "bytes": 2244
+      "md5": "da865ddd5998377979deb314934ca017",
+      "bytes": 2343
     },
     "suggest.ts": {
       "md5": "1750996a49797a87ef635e89182b91e2",
       "bytes": 9247
     },
     "text/normalise.ts": {
-      "md5": "b41a5e494a611eeb09bc9beacf0b1af7",
-      "bytes": 4537
+      "md5": "6024959195835da923fac5c03b23a0c6",
+      "bytes": 5357
     },
     "tokenizer.ts": {
       "md5": "c4f37cf7732ef9456c3956546d310a8e",
@@ -301,8 +313,8 @@
       "bytes": 6627
     },
     "values.ts": {
-      "md5": "739b3e7f03b2752ddeaf3a916c462d8e",
-      "bytes": 18723
+      "md5": "566553262e6c3fb7a944f5979257eb80",
+      "bytes": 19691
     },
     "variantNumbers.ts": {
       "md5": "6f53b9665e331dce8b1d11cebe5138d5",
@@ -313,8 +325,8 @@
       "bytes": 32
     },
     "when.ts": {
-      "md5": "72a0407255b86bcf9e4e7559354e5032",
-      "bytes": 18264
+      "md5": "b1b1cf42775dbbac12705e16f79dad36",
+      "bytes": 18743
     },
     "words.ts": {
       "md5": "08d4afac4cc6c037e83e2cd27cc2ba1e",
@@ -327,7 +339,7 @@
   },
   "source": {
     "repo": "system-one-uk",
-    "commit": "d8e39dadceb2986308c66c96fad3138f96d67ab8",
+    "commit": "b1e2b4d82c55253c12007dc3eac1fca20f1ecaba",
     "runtimeVersion": "0.2.0",
     "bundle": "demo/model-v33",
     "registry": "default"
@@ -361,9 +373,33 @@
       "md5": "ea9bde1baafc223239b22a7e68e307dc",
       "bytes": 5164
     },
+    "cases-d88-focus.jsonl": {
+      "md5": "35a8d4a5572c35325b327849f5e5e3a7",
+      "bytes": 7988
+    },
+    "cases-d89-focus.jsonl": {
+      "md5": "c7ab64ae8ac942a5c9093d3bac019c98",
+      "bytes": 4157
+    },
+    "cases-d89.jsonl": {
+      "md5": "1505c47942753f72e8c6029688d16c49",
+      "bytes": 2277
+    },
+    "cases-d90-focus.jsonl": {
+      "md5": "a51d945c512ed350a4120aa9a56e0517",
+      "bytes": 7043
+    },
+    "cases-d92-focus.jsonl": {
+      "md5": "699bbfe054d9d44674cbffbe5f704b5b",
+      "bytes": 1184
+    },
+    "cases-d92.jsonl": {
+      "md5": "68a9671aa37c3f542d464b2fd58519db",
+      "bytes": 2001
+    },
     "commands.jsonl": {
-      "md5": "08398a9318665f64eed036e0f264ea17",
-      "bytes": 479985
+      "md5": "8a0dc07c7d23dba914611f2d3a199e12",
+      "bytes": 490690
     },
     "contexts/coffee_tea-01.json": {
       "md5": "956b815877ff7bc38c04813882e2bf7c",
@@ -380,6 +416,14 @@
     "contexts/d78-shop.json": {
       "md5": "815fb26e1f238b48b9274a44532a0826",
       "bytes": 1565
+    },
+    "contexts/d79-shop-till.json": {
+      "md5": "cbd95739864d2e716ec3f44e6bfa65ad",
+      "bytes": 2948
+    },
+    "contexts/d79-shop-tillless.json": {
+      "md5": "c12bd13014be011486aaf135bfddda7b",
+      "bytes": 2953
     },
     "contexts/d79-shop.json": {
       "md5": "43f2cac21f412168bba672f5b3f7f238",
@@ -401,6 +445,10 @@
       "md5": "fd269cd682536b1418b77182b9a8f498",
       "bytes": 24924
     },
+    "focus.jsonl": {
+      "md5": "bf330e52d34cdf179682e6235af64e04",
+      "bytes": 42826
+    },
     "labels-v32.json": {
       "md5": "dafc196f7e782cfae53d36dee8782a64",
       "bytes": 22892
@@ -414,5 +462,5 @@
       "bytes": 8074
     }
   },
-  "updatedAt": "2026-09-29T18:49:52.031477Z"
+  "updatedAt": "2026-09-30T09:06:44.883Z"
 }

@@ -112,6 +112,10 @@ export const DAY_ENDINGS: ReadonlySet<string> = new Set(["ого", "ього", "
 // Words that say the number before them is a day of the month: «до 5 числа» (D67).
 export const DAY_WORDS: ReadonlySet<string> = new Set(["числа", "число"]);
 
+// D92 (P5): the endings a day of the month is written with after its digits («на 21-ше число», «до 18-го», «5-те», ru «21-е», «21-го»): the masculine
+// and neuter ordinal endings, uk and ru. The feminine ones («о 5-й», «до 3-ї») stay hours; «5-й» is no day either (ru «пятый» or «пятой»).
+export const DAY_DIGIT_ENDINGS: ReadonlySet<string> = new Set(["ше", "ге", "те", "ме", "ве", "ое", "е", "го", "ого", "му", "ому"]);
+
 // Words that say the number before them is an hour: «на три часа дня», «о восьмій годині вечора» (D67).
 export const HOUR_WORDS: ReadonlySet<string> = new Set(["година", "годину", "години", "годині", "годин", "час", "часа", "часу", "часов", "часам"]);
 
