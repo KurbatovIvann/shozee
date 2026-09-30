@@ -37,6 +37,7 @@ import { sql } from "drizzle-orm";
 import type { Logger } from "pino";
 import type { z } from "zod";
 
+import { confirmationPreconditionProblems } from "../../contract/confirmation-preconditions.js";
 import {
   CoreError,
   CoreInvariantError,
@@ -975,9 +976,18 @@ function assertExecutionTimeConfirmation(
   if (request.requireConfirmation !== true) {
     return;
   }
+  const problems = confirmationPreconditionProblems(
+    contract,
+    "requireConfirmation",
+  );
   if (contract.risk !== "write" && contract.risk !== "high") {
+    problems.unshift(
+      `requireConfirmation applies to risk write and high actions only — "${contract.name}" is risk "${contract.risk}"`,
+    );
+  }
+  if (problems.length > 0) {
     throw new CoreInvariantError(
-      `"${contract.name}" is risk "${contract.risk}" — an execution-time requireConfirmation applies only to write and high actions (core.md §7)`,
+      `"${contract.name}" cannot be gated by an execution-time requireConfirmation (core.md §7): ${problems.join("; ")}`,
     );
   }
 }

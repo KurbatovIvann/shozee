@@ -72,7 +72,6 @@ export interface ActionServerCallbacks<
   ): Promise<z.input<TOutput>>;
   /** Required for customer, public-target, and share actions, forbidden otherwise. */
   readonly resolveTarget?: TargetResolver<TInput, TTarget>;
-  /** Required when `requiresConfirmation: true`, forbidden otherwise. */
   readonly confirmationSummary?: ConfirmationSummaryFn<TInput>;
   readonly preview?: ActionPreviewFn<TInput>;
   /** Required when `audit: true`, forbidden otherwise. */

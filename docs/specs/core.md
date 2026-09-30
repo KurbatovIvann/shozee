@@ -50,7 +50,7 @@ bound by `implementAction`. All fields are required unless noted:
 | `enqueues` | optional job names, **not on `risk: read`** | ADR-0041: `<module>.<name>` jobs of this action's own module, no duplicates; each must be a registered non-`periodic` job (§6 Jobs) |
 | `requiresConfirmation` | boolean | Required for human-invoked `risk: high` (staff, customer, account — not share); triggers the confirmation protocol (§7) |
 | `confirmationSummary` | server fn, conditional | Required when `requiresConfirmation: true` unless `preview` is bound; returns a redacted, human-readable summary from validated input + resolved target. Forbidden when `requiresConfirmation: false` |
-| `preview` | server fn, conditional | Allowed on `risk: write`/`high`; returns the structured card `{ title, lines: [{ label, value }], notes? }` from validated input + resolved target (ADR-0050). Satisfies `requiresConfirmation` in place of `confirmationSummary`; binding both is rejected |
+| `preview` | server fn, conditional | Allowed on `risk: write`/`high`; returns the **redacted** structured card `{ title, lines: [{ label, value }], notes? }` from validated input + resolved target (ADR-0050), under the same redaction obligation as `confirmationSummary` (§7). Satisfies `requiresConfirmation` in place of `confirmationSummary`; binding both is rejected |
 | `idempotent` | boolean | Write actions with `true` participate in the idempotency protocol (§5) |
 | `emits` | `string[]` event names | Declared outbox events; `ctx.emit` of an undeclared event throws; CI checks declared events have a definition |
 | `errors` | `string[]` of `VALIDATION` \| `NOT_FOUND` \| `CONFLICT` | Domain codes this action may let escape `executeAction`. Empty is a real answer. `INTERNAL` and pipeline codes are not declarable. Enforced from observed `invokeAction` throws; a caller's set must include every code declared by its `ctx.call` / `ctx.callAtomic` callees |
@@ -566,11 +566,17 @@ runner settings from the same declaration (`docs/specs/jobs.md`).
 The gate runs when the contract declares `requiresConfirmation: true`, or
 when the request meta carries `requireConfirmation: true` for this one
 attempt (ADR-0050). The execution-time flag is transport meta like the
-idempotency key and the challenge id — never action input — and applies only
-to `risk: write`/`high`; anything else is a composition bug
-(`CoreInvariantError`). It changes **which attempts** are gated, nothing
-else: one protocol, the same challenge, the same fail-closed rules. The
-classic UI invokes without the flag and is unaffected.
+idempotency key and the challenge id — never action input. It carries the
+same preconditions `requiresConfirmation` checks at define time, widened
+only in risk: a **human principal** (`staff`, `customer`, `account` — never
+`system`, which has nobody to answer the card, and never `share`, whose
+legal intent is on-device QES per ADR-0022), `risk: write`/`high`, and
+`idempotent: true`, because step 2's consumed grant is persisted on the
+idempotency reservation and a non-idempotent write would re-execute on
+retry (§5). Anything else is a composition bug (`CoreInvariantError`
+before any hook runs). The flag changes **which attempts** are gated,
+nothing else: one protocol, the same challenge, the same fail-closed
+rules. The classic UI invokes without the flag and is unaffected.
 
 Two-step, single-use, channel-agnostic (same for UI and AI — ADR-0008):
 
@@ -581,8 +587,12 @@ Two-step, single-use, channel-agnostic (same for UI and AI — ADR-0008):
    (null for account), idempotencyKey, expiresAt (5 min) }` (Redis), and
    returns
    `ConfirmationRequiredError` carrying only the redacted summary and, from
-   `preview`, the structured card. An action that must present a card but
-   binds neither callback fails closed. The AI
+   `preview`, the structured card. The card is redacted exactly like the
+   summary: `title`, `lines[].label`, `lines[].value` and `notes[]` are
+   display text the author writes for this principal, never a secret, a
+   token, or a field the principal may not already read. An action that
+   must present a card but binds neither callback fails closed
+   (`CoreInvariantError`, nothing executed). The AI
    surfaces this as a confirmation card; the classic UI as a dialog.
 2. Re-invocation with `{ challengeId }` + identical input (hash-checked)
    executes. A challenge is consumed atomically (single use), bound to the
@@ -892,7 +902,7 @@ does not apply — fails the check.
 
 | Date | Change | Why | Reported by |
 | --- | --- | --- | --- |
-| 2026-09-30 | §2/§7: execution-time `requireConfirmation` request meta gates one attempt of a `write`/`high` action; `preview` callback returns the structured card and may stand in for `confirmationSummary` | ADR-0050: every assistant write must pause on a card core verifies, without a second approval protocol | SHO-745 |
+| 2026-09-30 | §2/§7: execution-time `requireConfirmation` request meta gates one attempt of an idempotent human-principal `write`/`high` action; `preview` callback returns the redacted structured card and may stand in for `confirmationSummary` | ADR-0050: every assistant write must pause on a card core verifies, without a second approval protocol | SHO-745 |
 | 2026-09-15 | §6/§12: `jobIsolationCase` global branch (global job → global action, no company, effect and audit); `cleanupExpiredIdempotencyKeys` takes `Pick<Database, "delete">`; job declarations from module barrels plus app-owned jobs | Owner decision: a global job without fan-out had no suite case, and cleanup must run in its action's transaction | SHO-650 |
 | 2026-09-14 | §2/§6/§12: `defineJob`, optional `enqueues`, job contract-check rules and `jobIsolation` coverage | ADR-0041 §3, §5, J4, J6 | SHO-644 |
 | 2026-09-14 | §9: a `consistency: snapshot` `ctx.call` callee requires a snapshot caller | ADR-0042 L1: a callee runs on its caller's transaction, so a default caller silently dropped the snapshot | SHO-631 |

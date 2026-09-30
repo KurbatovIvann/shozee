@@ -60,12 +60,19 @@ export const wireValidationIssueSchema = z.looseObject({
  * these fields may cross the wire — the full server record (input hash,
  * principal key, company, idempotency key) stays in Redis.
  */
+export const wireActionPreviewSchema = z.object({
+  title: z.string(),
+  lines: z.array(z.object({ label: z.string(), value: z.string() })),
+  notes: z.array(z.string()).optional(),
+});
+
 export const wireConfirmationChallengeSchema = z.object({
   challengeId: z.string(),
   /** Redacted human-readable summary from `confirmationSummary`. */
   summary: z.string(),
   /** ISO-8601 expiry — five minutes from issuance (core.md §7). */
   expiresAt: z.string(),
+  preview: wireActionPreviewSchema.optional(),
 });
 
 /**

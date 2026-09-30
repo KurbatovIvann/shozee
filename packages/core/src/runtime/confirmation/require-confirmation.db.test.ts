@@ -106,6 +106,47 @@ const draftContract = defineActionContract({
   timeout: 5_000,
 });
 
+const nonIdempotentContract = defineActionContract({
+  transport: "internal",
+  aiExposure: "internal",
+  emits: [],
+  atomicCalls: [],
+  atomicCallers: [],
+  errors: [],
+  name: "previewFixture.appendThing",
+  description: "Write that cannot replay — step 6 reserves nothing.",
+  principal: "staff",
+  input: z.object({ note: z.string() }),
+  output: z.object({ resultId: z.uuid() }),
+  permissions: ["previewFixture:manage"],
+  risk: "write",
+  requiresConfirmation: false,
+  idempotent: false,
+  audit: true,
+  timeout: 5_000,
+});
+
+const systemContract = defineActionContract({
+  transport: "internal",
+  aiExposure: "internal",
+  emits: [],
+  atomicCalls: [],
+  atomicCallers: [],
+  errors: [],
+  name: "previewFixture.sweepThings",
+  description: "System write — no human is behind it to answer a card.",
+  principal: "system",
+  systemScope: "tenant",
+  input: z.object({ note: z.string() }),
+  output: z.object({ resultId: z.uuid() }),
+  permissions: [],
+  risk: "write",
+  requiresConfirmation: false,
+  idempotent: true,
+  audit: true,
+  timeout: 5_000,
+});
+
 const declaredContract = defineActionContract({
   transport: "internal",
   aiExposure: "internal",
@@ -366,6 +407,88 @@ describe("execution-time requireConfirmation (core.md §7, ADR-0050)", () => {
         requireConfirmation: true,
       }),
     ).rejects.toBeInstanceOf(CoreInvariantError);
+  });
+
+  it("replays the stored response on a third attempt with the same key", async () => {
+    const { action, runs, previewCalls } = previewAction();
+    const flow = session();
+    const key = randomUUID();
+    const required = await flow.requireChallenge(action, {
+      key,
+      requireConfirmation: true,
+    });
+    const confirmed = await flow.run(action, {
+      key,
+      requireConfirmation: true,
+      challengeId: required.challenge.challengeId,
+    });
+
+    const replayed = await flow.run(action, { key, requireConfirmation: true });
+
+    expect(replayed.resultId).toBe(confirmed.resultId);
+    expect(runs()).toBe(1);
+    expect(previewCalls()).toBe(1);
+  });
+
+  it("fails closed when the flagged write binds no card callback", async () => {
+    let runs = 0;
+    const action = implementAction(writeContract, {
+      handler: () => {
+        runs += 1;
+        return Promise.resolve({ resultId: randomUUID() });
+      },
+      auditTarget: () => ({ type: "thing", id: "fixture" }),
+    });
+    const flow = session();
+
+    await expect(
+      flow.run(action, { requireConfirmation: true }),
+    ).rejects.toBeInstanceOf(CoreInvariantError);
+    expect(runs).toBe(0);
+  });
+
+  it("refuses the flag on a write that cannot replay", async () => {
+    let runs = 0;
+    const action = implementAction(nonIdempotentContract, {
+      handler: () => {
+        runs += 1;
+        return Promise.resolve({ resultId: randomUUID() });
+      },
+      preview: () => ({ title: "Append", lines: [] }),
+      auditTarget: () => ({ type: "thing", id: "fixture" }),
+    });
+    const flow = session();
+
+    await expect(
+      flow.run(action, { requireConfirmation: true }),
+    ).rejects.toBeInstanceOf(CoreInvariantError);
+    expect(runs).toBe(0);
+  });
+
+  it("refuses the flag on a write no human invoked", async () => {
+    let runs = 0;
+    const action = implementAction(systemContract, {
+      handler: () => {
+        runs += 1;
+        return Promise.resolve({ resultId: randomUUID() });
+      },
+      preview: () => ({ title: "Sweep", lines: [] }),
+      auditTarget: () => ({ type: "thing", id: "fixture" }),
+    });
+
+    await expect(
+      executeAction(deps(createInMemoryConfirmationStore()), {
+        action,
+        input: { note: "Oksana" },
+        request: requestMeta({ requireConfirmation: true }),
+        principal: {
+          mode: "system",
+          serviceName: "require-confirm-fixture",
+          scope: { scope: "tenant", companyId: companyA },
+        },
+      }),
+    ).rejects.toBeInstanceOf(CoreInvariantError);
+    expect(runs).toBe(0);
   });
 
   it("leaves a contract-declared confirmation on its string summary", async () => {

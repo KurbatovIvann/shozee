@@ -106,6 +106,20 @@ describe("contract.md §4 wire table", () => {
       }).data,
     ).toEqual(challenge);
   });
+
+  it("carries the structured preview card across the wire (core.md §7)", () => {
+    const challenge = {
+      challengeId: "c-2",
+      summary: "Rename to Oksana",
+      expiresAt: new Date().toISOString(),
+      preview: {
+        title: "Rename to Oksana",
+        lines: [{ label: "Note", value: "Oksana" }],
+        notes: ["Price list is missing a currency."],
+      },
+    };
+    expect(wireConfirmationChallengeSchema.parse(challenge)).toEqual(challenge);
+  });
 });
 
 describe("WireError union (contract.md §4)", () => {
