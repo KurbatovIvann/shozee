@@ -1,6 +1,8 @@
 # ADR-0039: The assistant turn runs off the request
 
 - **Status**: Accepted
+- **Amended by**: ADR-0041, ADR-0042, and ADR-0049 — a turn Шо closes settles
+  inside the accept request and is charged nothing.
 - **Date**: 2026-09-11
 - **Deciders**: Ivan Kurbatov (human) (+ proposing agent)
 

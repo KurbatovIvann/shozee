@@ -1,6 +1,9 @@
 # ADR-0038: The assistant is a stored document and a claimable pause
 
 - **Status**: Accepted; amended by the addenda below (SHO-553, SHO-555)
+- **Amended by**: ADR-0042; ADR-0049 — the stored provider messages may
+  include a `sho-` tool call no model made; ADR-0050 — a host-side approval
+  returns, as a rule over every assistant write.
 - **Date**: 2026-09-10
 - **Deciders**: Ivan Kurbatov (human) (+ proposing agent)
 
