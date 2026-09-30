@@ -15,12 +15,15 @@ import type { AssistantCopy } from "../../../i18n/assistant";
 import { assistantInterruptedNotice } from "../shared/interrupted-notice";
 import type { AssistantThreadRow } from "../thread/thread-rows";
 import {
+  assistantExampleChips,
+  type AssistantExampleChip,
   assistantShozikPose,
   SHOZIK_EMPTY_POSE_SIZE,
   SHOZIK_HEADER_POSE_SIZE,
   SHOZIK_WAIT_POSE_SIZE,
 } from "./assistant-chrome";
 import { AssistantComposer } from "./assistant-composer";
+import { AssistantExampleChips } from "./assistant-example-chips";
 import { AssistantMessageRow } from "./assistant-message-row";
 import {
   ASSISTANT_THREAD_START,
@@ -43,6 +46,7 @@ export type AssistantSheetViewModel = {
   readonly input: string;
   readonly changeInput: (value: string) => void;
   readonly send: () => void;
+  readonly sendExample: (text: string) => void;
   readonly answer: (answer: unknown) => void;
   readonly dismiss: () => void;
   readonly continueTurn: () => void;
@@ -58,6 +62,8 @@ export type AssistantSheetViewModel = {
   readonly loadOlder: () => void;
   readonly loadingOlder: boolean;
 };
+
+const NO_EXAMPLE_CHIPS: readonly AssistantExampleChip[] = [];
 
 function keyExtractor(item: AssistantThreadRow): string {
   return item.id;
@@ -133,6 +139,10 @@ export function AssistantSheetView(model: AssistantSheetViewModel) {
 
   const showEmpty = model.rows.length === 0 && !model.thinking;
   const headerPose = assistantShozikPose({ thinking: model.thinking });
+  const exampleChips = assistantExampleChips({
+    examples: copy.examples,
+    busy: model.busy,
+  });
 
   return (
     <SafeAreaView
@@ -157,6 +167,12 @@ export function AssistantSheetView(model: AssistantSheetViewModel) {
             <ShozikPoseMark pose="sit" size={SHOZIK_EMPTY_POSE_SIZE} />
             <Text style={styles.emptyTitle}>{copy.emptyTitle}</Text>
             <Text style={styles.emptyDescription}>{copy.emptyDescription}</Text>
+            <AssistantExampleChips
+              chips={exampleChips}
+              label={copy.examplesLabel}
+              layout="wrap"
+              onSend={model.sendExample}
+            />
           </View>
         ) : (
           <FlashList
@@ -190,6 +206,9 @@ export function AssistantSheetView(model: AssistantSheetViewModel) {
             sendLabel={copy.sendLabel}
             editable={!model.busy}
             canSend={model.canSend}
+            exampleChips={showEmpty ? NO_EXAMPLE_CHIPS : exampleChips}
+            examplesLabel={copy.examplesLabel}
+            onSendExample={model.sendExample}
           />
         </View>
       </KeyboardAvoidingView>

@@ -80,6 +80,11 @@ Product screens in `apps/mobile` are blocked until:
    `internal evaluation only`.
 7. Human owner records the gate as open for canvas-covered surfaces.
 
+**Recorded openings:** the staff assistant (Shozik) surface in
+`apps/mobile/src/features/assistant/` — owner, 2026-09-30, reference
+`sho-demo` (`E:/sho-demo/apps/web/src/demo/`, read-only; port behaviour onto
+the app's tokens, never the code).
+
 **Exception:** Expo shell, auth routes, and deep links are not gated as
 foundation work. New auth **visuals** still follow the canvas. Google and
 guest entry on the prototype must not ship (ADR-0006).

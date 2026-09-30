@@ -3,11 +3,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   assistantComposerSendVisible,
+  assistantExampleChips,
+  assistantReplyTone,
   assistantShozikPose,
   SHOZIK_EMPTY_POSE_SIZE,
   SHOZIK_HEADER_POSE_SIZE,
   SHOZIK_WAIT_POSE_SIZE,
 } from "./assistant-chrome";
+import { assistantCopy } from "../../../i18n/assistant";
 
 const sheetView = readFileSync(
   new URL("./assistant-sheet-view.tsx", import.meta.url),
@@ -88,11 +91,9 @@ describe("assistant conversation chrome (SHO-392)", () => {
     expect(composer).not.toContain("AudioLinesIcon");
   });
 
-  it("does not invent first-run suggestion chips", () => {
+  it("keeps the i18n module a re-export of the shared namespace", () => {
     expect(i18n).not.toContain("chips");
     expect(i18n).not.toContain("suggestion");
-    expect(sheetView).not.toContain("sendText");
-    expect(sheetView).not.toContain("chips.map");
   });
 
   it("does not put Shozik assets on SHO-383 result cards", () => {
@@ -160,5 +161,101 @@ describe("assistant wait-state chrome (SHO-394)", () => {
     expect(hook).toContain("rows: conversation.rows");
     expect(hook.includes("assistantTurnIsWaiting")).toBe(false);
     expect(hook.includes("pendingConfirmation")).toBe(false);
+  });
+});
+
+describe("assistantExampleChips", () => {
+  it("keys each chip by its own text so a tap can send it", () => {
+    expect(
+      assistantExampleChips({
+        examples: ["Замовлення за сьогодні", "Список клієнтів"],
+        busy: false,
+      }),
+    ).toEqual([
+      { key: "Замовлення за сьогодні", text: "Замовлення за сьогодні" },
+      { key: "Список клієнтів", text: "Список клієнтів" },
+    ]);
+  });
+
+  it("drops blanks and repeats rather than duplicating a key", () => {
+    expect(
+      assistantExampleChips({
+        examples: ["Виторг", "  ", " Виторг ", ""],
+        busy: false,
+      }),
+    ).toEqual([{ key: "Виторг", text: "Виторг" }]);
+  });
+
+  it("offers nothing while a turn is in flight", () => {
+    expect(assistantExampleChips({ examples: ["Виторг"], busy: true })).toEqual(
+      [],
+    );
+  });
+});
+
+describe("assistantReplyTone", () => {
+  it("leaves an ordinary reply untoned", () => {
+    expect(assistantReplyTone({ failed: false, hasOpenQuestion: false })).toBe(
+      "reply",
+    );
+  });
+
+  it("marks a reply that still carries an open question as clarify", () => {
+    expect(assistantReplyTone({ failed: false, hasOpenQuestion: true })).toBe(
+      "clarify",
+    );
+  });
+
+  it("prefers error over clarify when the turn itself failed", () => {
+    expect(assistantReplyTone({ failed: true, hasOpenQuestion: false })).toBe(
+      "error",
+    );
+    expect(assistantReplyTone({ failed: true, hasOpenQuestion: true })).toBe(
+      "error",
+    );
+  });
+});
+
+describe("assistant example chips and reply tones (SHO-748)", () => {
+  const chips = readFileSync(
+    new URL("./assistant-example-chips.tsx", import.meta.url),
+    "utf8",
+  );
+  const messageRow = readFileSync(
+    new URL("./assistant-message-row.tsx", import.meta.url),
+    "utf8",
+  );
+  const hook = readFileSync(
+    new URL("./use-assistant-sheet.ts", import.meta.url),
+    "utf8",
+  );
+
+  it("sends the chip's own text on tap, from the empty state and the composer", () => {
+    expect(chips).toContain("props.onSend(chip.text)");
+    expect(chips).toContain('accessibilityRole="button"');
+    expect(sheetView).toContain('layout="wrap"');
+    expect(sheetView).toContain("model.sendExample");
+    expect(composer).toContain('layout="scroll"');
+    expect(composer).toContain("props.onSendExample");
+    expect(hook).toContain("sendExample: sendText");
+  });
+
+  it("takes the chip text from the copy namespace in both locales", () => {
+    const uk = assistantCopy("uk");
+    const en = assistantCopy("en");
+    expect(uk.examples).toHaveLength(4);
+    expect(en.examples).toHaveLength(4);
+    expect(uk.examples).not.toEqual(en.examples);
+    expect(uk.examplesLabel.length).toBeGreaterThan(0);
+    expect(en.examplesLabel.length).toBeGreaterThan(0);
+  });
+
+  it("draws the chip and the clarify/error tones from theme tokens", () => {
+    expect(chips).not.toMatch(/#[0-9a-fA-F]{3}/);
+    expect(messageRow).not.toMatch(/#[0-9a-fA-F]{3}/);
+    expect(messageRow).toContain("assistantReplyTone");
+    expect(messageRow).toContain("theme.colors.warning");
+    expect(messageRow).toContain("theme.colors.destructive");
+    expect(messageRow).toContain("theme.colors.destructiveSoft");
   });
 });
