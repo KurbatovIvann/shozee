@@ -397,6 +397,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -1057,6 +1093,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -1756,6 +1828,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -2468,6 +2576,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -3228,6 +3372,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -3926,6 +4106,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -4664,6 +4880,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -5395,6 +5647,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -6065,6 +6353,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -6735,6 +7059,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -7405,6 +7765,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -8075,6 +8471,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -8761,6 +9193,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -9449,6 +9917,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -10106,6 +10610,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -10878,6 +11418,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -11529,6 +12105,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -12382,6 +12994,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -13145,6 +13793,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -14037,6 +14721,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -14892,6 +15612,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -15649,6 +16405,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -16317,6 +17109,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -16985,6 +17813,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -17653,6 +18517,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -18445,6 +19345,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -19208,6 +20144,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -19924,6 +20896,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -20691,6 +21699,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -21438,6 +22482,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -22125,6 +23205,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -22888,6 +24004,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -23785,6 +24937,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -24645,6 +25833,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -25414,6 +26638,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -26090,6 +27350,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -27246,6 +28542,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -28460,6 +29792,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -29595,6 +30963,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -30310,6 +31714,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -30978,6 +32418,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -32124,6 +33600,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -32769,6 +34281,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -33479,6 +35027,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -34123,6 +35707,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -34820,6 +36440,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -35470,6 +37126,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -36045,6 +37737,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -36739,6 +38467,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -37323,6 +39087,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -38024,6 +39824,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -38644,6 +40480,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -39219,6 +41091,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -39896,6 +41804,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -40779,6 +42723,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -41455,6 +43435,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -42097,6 +44113,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -42773,6 +44825,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -43757,6 +45845,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -44469,6 +46593,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -45176,6 +47336,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -45883,6 +48079,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -46590,6 +48822,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -47411,6 +49679,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -48771,6 +51075,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -49367,6 +51707,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -50013,6 +52389,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -50710,6 +53122,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -51378,6 +53826,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -52074,6 +54558,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -52809,6 +55329,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -53476,6 +56032,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -54167,6 +56759,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -54878,6 +57506,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -55620,6 +58284,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -56323,6 +59023,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [
@@ -57512,6 +60248,42 @@
                                 },
                                 "expiresAt": {
                                   "type": "string"
+                                },
+                                "preview": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "lines": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "value"
+                                        ]
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "title",
+                                    "lines"
+                                  ]
                                 }
                               },
                               "required": [

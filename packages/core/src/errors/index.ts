@@ -142,6 +142,17 @@ export class ConcurrentRetryError extends CoreError {
   }
 }
 
+export interface ActionPreviewLine {
+  readonly label: string;
+  readonly value: string;
+}
+
+export interface ActionPreview {
+  readonly title: string;
+  readonly lines: readonly ActionPreviewLine[];
+  readonly notes?: readonly string[];
+}
+
 /**
  * The client-visible part of a confirmation challenge (core.md §7). The
  * full server record (input hash, principal key, company, idempotency key)
@@ -149,10 +160,10 @@ export class ConcurrentRetryError extends CoreError {
  */
 export interface ConfirmationChallenge {
   readonly challengeId: string;
-  /** Redacted human-readable summary from `confirmationSummary`. */
   readonly summary: string;
   /** ISO-8601 expiry — five minutes from issuance (core.md §7). */
   readonly expiresAt: string;
+  readonly preview?: ActionPreview;
 }
 
 /**

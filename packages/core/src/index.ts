@@ -72,6 +72,7 @@ export type {
 export type {
   ActionExecutionCtx,
   ActionHandler,
+  ActionPreviewFn,
   AuditSnapshotFn,
   AuditTargetEnv,
   AuditTargetFn,
@@ -128,6 +129,7 @@ export type {
   ActionTelemetry,
   ActionTransactionRunner,
   AuditHook,
+  ConfirmationChallengeSummary,
   ConfirmationGrant,
   ConfirmationHook,
   IdempotencyHook,

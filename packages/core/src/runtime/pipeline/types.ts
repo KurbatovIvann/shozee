@@ -16,7 +16,7 @@
 import type { Database, ProjectionGrantManifest, Tx } from "@showzy/db";
 import type { Logger } from "pino";
 
-import type { CoreError } from "../../errors/index.js";
+import type { ActionPreview, CoreError } from "../../errors/index.js";
 import type { AnyActionContract } from "../action-registry.js";
 import type {
   ActionRequestMeta,
@@ -65,6 +65,7 @@ export interface PipelineRequestMeta {
    * as meta keeps it out of the canonical input hash.
    */
   readonly confirmationChallengeId?: string;
+  readonly requireConfirmation?: true;
 }
 
 /**
@@ -133,6 +134,7 @@ export interface PipelineHookRequestMeta extends ActionRequestMeta {
   readonly causationId?: string;
   readonly idempotencyKey?: string;
   readonly confirmationChallengeId?: string;
+  readonly requireConfirmation?: true;
 }
 
 /** Fields every protocol hook receives about the current invocation. */
@@ -156,12 +158,17 @@ export interface RateLimitHook {
  * and consumes the challenge on the second. Returns the consumed grant
  * so reserve can persist it.
  */
+export interface ConfirmationChallengeSummary {
+  readonly summary: string;
+  readonly preview?: ActionPreview;
+}
+
 export interface ConfirmationHook {
   gate(
     env: PipelineHookEnv & {
       readonly authorization: PreflightAuthorization;
       /** The action's `confirmationSummary`, bound to the validated input. */
-      readonly summarize: () => MaybePromise<string>;
+      readonly summarize: () => MaybePromise<ConfirmationChallengeSummary>;
     },
   ): Promise<ConfirmationGrant>;
 }

@@ -55,6 +55,12 @@ export const wireValidationIssueSchema = z.looseObject({
   message: z.string(),
 });
 
+export const wireActionPreviewSchema = z.object({
+  title: z.string(),
+  lines: z.array(z.object({ label: z.string(), value: z.string() })),
+  notes: z.array(z.string()).optional(),
+});
+
 /**
  * The client-visible part of a confirmation challenge (core.md §7). Only
  * these fields may cross the wire — the full server record (input hash,
@@ -66,6 +72,7 @@ export const wireConfirmationChallengeSchema = z.object({
   summary: z.string(),
   /** ISO-8601 expiry — five minutes from issuance (core.md §7). */
   expiresAt: z.string(),
+  preview: wireActionPreviewSchema.optional(),
 });
 
 /**

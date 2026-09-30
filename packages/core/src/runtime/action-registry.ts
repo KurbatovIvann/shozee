@@ -9,6 +9,7 @@
 import type { z } from "zod";
 
 import type { ActionContract } from "../contract/types.js";
+import type { ActionPreview } from "../errors/index.js";
 import type { ImplementedAction } from "./implement-action.js";
 import type {
   AuditTargetEnv,
@@ -57,6 +58,10 @@ export interface RegisteredImplementation {
     input: never,
     env: ConfirmationSummaryEnv,
   ) => MaybePromise<string>;
+  readonly preview?: (
+    input: never,
+    env: ConfirmationSummaryEnv,
+  ) => MaybePromise<ActionPreview>;
   readonly auditTarget?: (env: AuditTargetEnv) => MaybePromise<AuditTargetRef>;
   readonly auditSnapshot?: (input: never) => JsonValue;
 }
