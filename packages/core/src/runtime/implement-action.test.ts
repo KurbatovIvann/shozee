@@ -343,7 +343,45 @@ describe("implementAction — binding rejections (core.md §2)", () => {
         resolveTarget,
         preview: () => ({ title: "Read one payment", lines: [] }),
       },
-      "preview is allowed only on risk write and high actions",
+      "preview applies to risk write and high actions only",
+    );
+  });
+
+  it("rejects preview on a staff write that cannot replay", () => {
+    const contract = defineActionContract({
+      ...staffWriteContract(),
+      name: "orders.appendNote",
+      idempotent: false,
+    });
+    expectProblem(
+      contract,
+      {
+        handler,
+        auditTarget,
+        preview: () => ({ title: "Append a note", lines: [] }),
+      },
+      "preview requires idempotent: true",
+    );
+  });
+
+  it("rejects preview on a write no human invokes", () => {
+    const contract = defineActionContract({
+      ...staffWriteContract(),
+      name: "orders.sweepStale",
+      principal: "system",
+      systemScope: "tenant",
+      permissions: [],
+      aiExposure: "internal",
+      transport: "internal",
+    });
+    expectProblem(
+      contract,
+      {
+        handler,
+        auditTarget,
+        preview: () => ({ title: "Sweep stale orders", lines: [] }),
+      },
+      "preview applies to human principals (staff, customer, account) only",
     );
   });
 

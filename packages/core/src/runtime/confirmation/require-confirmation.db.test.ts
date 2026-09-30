@@ -454,7 +454,6 @@ describe("execution-time requireConfirmation (core.md §7, ADR-0050)", () => {
         runs += 1;
         return Promise.resolve({ resultId: randomUUID() });
       },
-      preview: () => ({ title: "Append", lines: [] }),
       auditTarget: () => ({ type: "thing", id: "fixture" }),
     });
     const flow = session();
@@ -472,7 +471,6 @@ describe("execution-time requireConfirmation (core.md §7, ADR-0050)", () => {
         runs += 1;
         return Promise.resolve({ resultId: randomUUID() });
       },
-      preview: () => ({ title: "Sweep", lines: [] }),
       auditTarget: () => ({ type: "thing", id: "fixture" }),
     });
 

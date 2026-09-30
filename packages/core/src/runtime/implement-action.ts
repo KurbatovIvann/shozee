@@ -7,6 +7,10 @@
  */
 import type { z } from "zod";
 
+import {
+  CONFIRMABLE_RISKS,
+  confirmationPreconditionProblems,
+} from "../contract/confirmation-preconditions.js";
 import type { ActionContract, ActionPrincipal } from "../contract/types.js";
 import type { ActionCtxFor } from "./context/types.js";
 import type {
@@ -175,13 +179,13 @@ function collectBindingProblems(
       "confirmationSummary is allowed only when requiresConfirmation: true — a write that pauses only at execution time binds preview (core.md §7)",
     );
   }
-  if (
-    callbacks.preview !== undefined &&
-    contract.risk !== "write" &&
-    contract.risk !== "high"
-  ) {
+  if (callbacks.preview !== undefined) {
     problems.push(
-      "preview is allowed only on risk write and high actions (core.md §7)",
+      ...confirmationPreconditionProblems(
+        contract,
+        "preview",
+        CONFIRMABLE_RISKS,
+      ),
     );
   }
   if (

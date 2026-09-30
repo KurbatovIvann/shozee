@@ -55,17 +55,17 @@ export const wireValidationIssueSchema = z.looseObject({
   message: z.string(),
 });
 
-/**
- * The client-visible part of a confirmation challenge (core.md §7). Only
- * these fields may cross the wire — the full server record (input hash,
- * principal key, company, idempotency key) stays in Redis.
- */
 export const wireActionPreviewSchema = z.object({
   title: z.string(),
   lines: z.array(z.object({ label: z.string(), value: z.string() })),
   notes: z.array(z.string()).optional(),
 });
 
+/**
+ * The client-visible part of a confirmation challenge (core.md §7). Only
+ * these fields may cross the wire — the full server record (input hash,
+ * principal key, company, idempotency key) stays in Redis.
+ */
 export const wireConfirmationChallengeSchema = z.object({
   challengeId: z.string(),
   /** Redacted human-readable summary from `confirmationSummary`. */
