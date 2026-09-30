@@ -1,7 +1,9 @@
-import { intentOfAction, type Bundle } from "./bundle.ts";
+import { intentOfAction, isV3, type Bundle } from "./bundle.ts";
 import type { CompiledContext } from "./catalogue.ts";
 import type { Decision } from "./command.ts";
+import type { Need } from "./result.ts";
 import { DATIVE_ADD_VERBS, DATIVE_CUSTOMER_LEADS, DATIVE_NAME_ENDINGS, DATIVE_SHORT_ENDINGS, NEW_WORDS, RENAME_VERBS } from "./lexicon/customers.ts";
+import { CONTINUATION_MORE, ORDER_EDIT_STEMS, ORDER_NOUN_BARE, ORDER_NOUN_LEADS, ORDER_NOUN_STEMS } from "./lexicon/references.ts";
 import { nameMatch, nameWords } from "./nameList.ts";
 
 // D84 (E10 of the v3.3 served report): the first rule where the runtime serves another action than the model's (D85 below is the second). «додай клієнту Євген Панасюк коментар бере
@@ -116,4 +118,60 @@ export function groupAsUpdate(bundle: Bundle, decision: Decision, context: Compi
     decision: { ...decision, action: intentOfAction(bundle, UPDATE).action, params: { [CUSTOMER]: words, ...Object.fromEntries(moved) }, resolved: { ...decision.resolved, [CUSTOMER]: name } },
     said: words,
   };
+}
+
+// D92 (P1 of the v3.4 served report, owner-approved 2026-09-30): the third rule that changes the model's action. v3.4 reads «замовлення Петі Жолоба
+// сандалі 39 2 пари» (probe_ood po-sh-10) and «и сразу заказ ему на пять пирожков» (a customer just created, focus fc12) as `orders.update {customer,
+// items}`: `orders.update` needs no order number, so the card was ready to update some order of that customer's the words never named. When nothing
+// says an order exists, it is that customer's new order: `orders.create` with the same params and a non-blocking need `{path: "action", reason:
+// "read_as_create", span: {text: <the customer as said>}}`. All of these must hold:
+//   1. a v3 bundle; the served action is `orders.update` and the bundle has `orders.create`;
+//   2. no order: no `order_number` said, from an earlier command of the utterance (`refPrevious`), from the previous command or bound from the focus
+//      (`fromPrevious`: D88/D90's continuation «і ще …» binds its order there and stays as it is);
+//   3. items and a customer: said, from an earlier command, or bound by a reference word («ему»);
+//   4. no word says the order exists: no «ще / еще / ещё», no order noun but the bare «замовлення / заказ» and none after a preposition («в замовлення»,
+//      «у заказі», «до замовлення»), no verb that adds to, changes or takes from an order («додай», «допиши», «поміняй», «убери», «перенеси»,
+//      `ORDER_EDIT_STEMS`).
+// When the update also carries what a create does not take (`remove_items`, `set_items`), there is no clean create: the update stays with a blocking
+// need `{path: "order_number", reason: "missing"}`, so the card never updates an order it did not name.
+const ORDER_UPDATE = "orders.update";
+const ORDER_CREATE = "orders.create";
+const ORDER_NUMBER = "order_number";
+const ITEMS = "items";
+
+export interface AsCreate {
+  readonly decision: Decision;
+  // The need the rule adds: `read_as_create` when the update was served as the new order, `order_number/missing` when it stays an update; else null.
+  readonly need: Need | null;
+}
+
+function orderSaid(words: readonly string[]): boolean {
+  return words.some((word, at) => {
+    if (CONTINUATION_MORE.has(word) || ORDER_EDIT_STEMS.some((stem) => word.startsWith(stem))) return true;
+    if (!ORDER_NOUN_STEMS.some((stem) => word.startsWith(stem))) return false;
+    return !ORDER_NOUN_BARE.has(word) || ORDER_NOUN_LEADS.has(words[at - 1] ?? "");
+  });
+}
+
+function customerSaid(decision: Decision): string | null {
+  const span = decision.params[CUSTOMER];
+  if (typeof span === "string") return span;
+  const ref = decision.fromPrevious?.[CUSTOMER];
+  const text = typeof ref === "object" && ref !== null && !Array.isArray(ref) && "text" in ref ? ref.text : undefined;
+  return typeof text === "string" ? text : null;
+}
+
+export function updateAsCreate(bundle: Bundle, decision: Decision): AsCreate {
+  const kept = { decision, need: null };
+  if (!isV3(bundle) || !Object.hasOwn(bundle.intents, ORDER_UPDATE) || !Object.hasOwn(bundle.intents, ORDER_CREATE)) return kept;
+  const update = intentOfAction(bundle, ORDER_UPDATE);
+  if (decision.action !== update.action) return kept;
+  const bound = decision.fromPrevious ?? {};
+  const has = (name: string) => decision.params[name] !== undefined || Object.hasOwn(decision.refPrevious, name) || Object.hasOwn(bound, name);
+  if (has(ORDER_NUMBER) || !has(ITEMS) || !has(CUSTOMER) || orderSaid(wordsOf(decision.text))) return kept;
+  const create = intentOfAction(bundle, ORDER_CREATE);
+  const clean = [...Object.keys(decision.params), ...Object.keys(decision.refPrevious), ...Object.keys(bound)].every((name) => Object.hasOwn(create.intent.params, name));
+  if (!clean) return { decision, need: { path: ORDER_NUMBER, reason: "missing", blocking: true } };
+  const said = customerSaid(decision);
+  return { decision: { ...decision, action: create.action }, need: { path: "action", reason: "read_as_create", blocking: false, ...(said === null ? {} : { span: { text: said } }) } };
 }

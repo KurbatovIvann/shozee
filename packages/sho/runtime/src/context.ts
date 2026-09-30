@@ -44,8 +44,11 @@ export type RecordList = "customers" | "groups" | "priceLists" | "counterparties
 export type ListName = "products" | RecordList;
 
 // What the shop's back office does (D72). `stock`: whether it tracks stock; absent means it does, so a context without the field reads as before.
+// D89: `fiscal`, whether it has a till (a ПРРО): money given back is a till return with one, a refund without; absent means the runtime does not know,
+// and the model's reading stands.
 export interface Capabilities {
   readonly stock?: boolean;
+  readonly fiscal?: boolean;
 }
 
 export interface ContextV2 {
@@ -81,7 +84,7 @@ export const RECORD_LISTS: readonly RecordList[] = ["customers", "groups", "pric
 const LIST_NAMES: readonly ListName[] = ["products", ...RECORD_LISTS];
 const V1_KEYS: ReadonlySet<string> = new Set(["products", "variants", "customers"]);
 const V2_KEYS: ReadonlySet<string> = new Set(["version", "revision", "partial", "capabilities", ...LIST_NAMES]);
-const CAPABILITY_KEYS: ReadonlySet<string> = new Set(["stock"]);
+const CAPABILITY_KEYS: ReadonlySet<string> = new Set(["stock", "fiscal"]);
 const PRODUCT_KEYS: ReadonlySet<string> = new Set(["id", "name", "aliases", "brand", "unit", "variants"]);
 const VARIANT_KEYS: ReadonlySet<string> = new Set(["id", "name", "values", "aliases"]);
 const RECORD_KEYS: ReadonlySet<string> = new Set(["id", "name", "aliases"]);
@@ -201,7 +204,9 @@ function capabilitiesOf(value: unknown): Capabilities {
   onlyKeys(value, CAPABILITY_KEYS, "capabilities");
   const stock = value["stock"];
   if (stock !== undefined && typeof stock !== "boolean") fail("capabilities.stock is not a boolean");
-  return stock === undefined ? {} : { stock };
+  const fiscal = value["fiscal"];
+  if (fiscal !== undefined && typeof fiscal !== "boolean") fail("capabilities.fiscal is not a boolean");
+  return { ...(stock === undefined ? {} : { stock }), ...(fiscal === undefined ? {} : { fiscal }) };
 }
 
 function isListName(value: unknown): value is ListName {
@@ -285,6 +290,8 @@ export interface Shop {
   readonly partial: ReadonlySet<ListName>;
   // D72: false when the shop tracks no stock (context v2 `capabilities.stock: false`); a v1 context and a v2 one without the field track it.
   readonly stock: boolean;
+  // D89: whether the shop has a till (context v2 `capabilities.fiscal`); null when the context does not say (a v1 context, a v2 one without the field).
+  readonly fiscal: boolean | null;
 }
 
 // Spaces split a name, and a «,» that is no decimal comma («0,5 л» is one value, D66).
@@ -362,6 +369,7 @@ export function shopOf(context: Context): Shop {
       lists: { customers: v1Records(context.customers, false), groups: null, priceLists: null, counterparties: null },
       partial: new Set(),
       stock: true,
+      fiscal: null,
     };
   }
   const products = context.products?.map((product): ShopProduct => ({
@@ -382,5 +390,6 @@ export function shopOf(context: Context): Shop {
     lists: { customers: listOf("customers"), groups: listOf("groups"), priceLists: listOf("priceLists"), counterparties: listOf("counterparties") },
     partial: new Set(context.partial ?? []),
     stock: context.capabilities?.stock !== false,
+    fiscal: context.capabilities?.fiscal ?? null,
   };
 }

@@ -56,6 +56,9 @@ export interface Ref {
   readonly confidence?: number;
   readonly nearest?: readonly NearCandidate[];
   readonly suggest?: Suggestion;
+  // D88: a ref a reference word took from the host's focus (`RunOptions.focus`): the index of the focus entry it is (`status: "context"`, with its `id`
+  // and `name`; D90: the one a `check_reference` need offers too), or `true` on an `ambiguous` ref whose `candidates` are the focus entries that fit.
+  readonly focus?: number | true;
 }
 
 // variantIds null: not checked (the product is not resolved, or the context does not know its variants); []: the attr matches no variant of the product.
@@ -161,7 +164,20 @@ export type NeedReason =
   | "read_as_update"
   // D85: the model's `customers.updateGroup` was served as `customers.updateCustomer` of the customer the list knows by the name said as the group
   // (`path` "action", `span` the name as said); the card says so. Non-blocking.
-  | "read_as_customer_update";
+  | "read_as_customer_update"
+  // D88: a reference word («для неї», «туди», «цю групу») said for a record the command takes, when the host passed a focus and no record of the
+  // param's type in it fits (none, another type or gender, closed): `path` the param, `span` the words; blocking.
+  | "reference"
+  // D89: a bare verb said of a record in focus («видали її» after a customer) was served as that verb's action for the record's type
+  // (`customers.deleteCustomer`, not the model's `orders.cancel`): `path` "action", `span` the reference word as said; the card says so. Non-blocking.
+  | "read_as_focus_type"
+  // D90: a reference word whose record the focus only offers (touched in an earlier conversation, three commands ago or more, opened by hand and left,
+  // or a list of its type shown since): the param holds that record's ref (`status: "context"`, `id`, `name`, `focus`) and the card asks to confirm it
+  // with one tap («Для Софії Мельник?»); `path` the param, `span` the words; blocking.
+  | "check_reference"
+  // D92: the model's `orders.update` with a customer and items, no order and no word that says one exists, was served as that customer's new order
+  // (`orders.create`, the same params): `path` "action", `span` the customer as said; the card says so. Non-blocking.
+  | "read_as_create";
 
 // A blocking need keeps the card from being confirmed until it is answered; a non-blocking one is shown on the card.
 export interface Need {
@@ -202,7 +218,16 @@ export interface CommandV2 {
   // D78: the command is a refinement («а за минулий», `ui.refine`) merged into the previous command the host gave (`RunOptions.previous`): the text of
   // that command. `action`, `params` and `needs` are the merged command's.
   readonly refines?: string;
+  // D88: on a command that creates a record the host keeps in its focus (a customer, a group, an order, a product, a price list, a counterparty), when
+  // the run passed `focus`: the record's type and name (a customer's in the nominative when the runtime can tell it; null for an order), so the host
+  // pushes it into the focus with the id its API returns.
+  readonly creates?: Creates;
   readonly debug?: Inference;
+}
+
+export interface Creates {
+  readonly type: "customer" | "group" | "order" | "product" | "price_list" | "counterparty";
+  readonly name: string | null;
 }
 
 export interface ContextInfo {

@@ -3,6 +3,7 @@ import { FIRST_NAME_GROUPS } from "./lexicon/firstNames.ts";
 import { ASR_SLIPS } from "./lexicon/names.ts";
 import { sameWord } from "./morphology.ts";
 import { startsAlike, wordMatch } from "./words.ts";
+import { normalise } from "./text/normalise.ts";
 
 // Known names as people say them (D56): a name's words match their case forms and the recogniser's Russian spelling.
 
@@ -27,8 +28,10 @@ function folded(word: string): string {
 
 const ENDINGS: ReadonlySet<string> = new Set(NAME_ENDINGS.map(folded));
 
+// D92: a known name's words as the utterance's are written: `normalise`d as a spoken text is («Кав'ярня №5» «кав'ярня номер 5», «ТОВ "Сота"» «тов
+// сота», «Crumb & Co» «crumb co», «Кав’ярня» «кав'ярня»), so a name said through `run({raw})` meets the name as the host wrote it.
 export function nameWords(name: string): string[] {
-  return wordsOf(name.toLowerCase().replace(/[«»]/g, " "));
+  return wordsOf(normalise(name));
 }
 
 // A long name said in the other language's spelling («нежности» «Ніжність», «творчества» «Творчість», «светлане» «Світлана», D71): uk «і» for ru «е»

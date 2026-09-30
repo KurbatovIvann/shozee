@@ -7,6 +7,9 @@ import {
   fillReferences,
   parseBundle,
   parseContext,
+  parseFocus,
+  withCreates,
+  withFocus,
   type Bundle,
   type CommandV2,
   type CompiledContext,
@@ -32,6 +35,14 @@ export interface Vector {
   readonly input: VectorInput | readonly VectorInput[];
   readonly context: string | null;
   readonly requirements?: "catalogue_v3";
+  readonly expect: unknown;
+}
+
+export interface FocusVector {
+  readonly id: string;
+  readonly input: VectorInput;
+  readonly focus: unknown;
+  readonly context: string | null;
   readonly expect: unknown;
 }
 
@@ -103,12 +114,37 @@ export function parseVector(value: unknown): Vector {
   };
 }
 
-export async function readVectors(dir: string): Promise<Vector[]> {
-  const text = await readFile(join(dir, "commands.jsonl"), "utf8");
+export function parseFocusVector(value: unknown): FocusVector {
+  if (!isRecord(value)) throw new TypeError("a focus vector is not an object");
+  const { id, input, context } = value;
+  if (typeof id !== "string") throw new TypeError("focus vector.id");
+  if (context !== null && typeof context !== "string")
+    throw new TypeError(`${id}: context`);
+  if (!("focus" in value)) throw new TypeError(`${id}: focus`);
+  return {
+    id,
+    input: inputOf(input),
+    focus: value["focus"],
+    context,
+    expect: value["expect"],
+  };
+}
+
+function jsonl(text: string): unknown[] {
   return text
     .split("\n")
     .filter((line) => line.trim() !== "")
-    .map((line) => parseVector(JSON.parse(line)));
+    .map((line): unknown => JSON.parse(line));
+}
+
+export async function readVectors(dir: string): Promise<Vector[]> {
+  const text = await readFile(join(dir, "commands.jsonl"), "utf8");
+  return jsonl(text).map(parseVector);
+}
+
+export async function readFocusVectors(dir: string): Promise<FocusVector[]> {
+  const text = await readFile(join(dir, "focus.jsonl"), "utf8");
+  return jsonl(text).map(parseFocusVector);
 }
 
 export async function vectorBundle(
@@ -191,18 +227,18 @@ function built(bundle: Bundle, input: VectorInput): Built {
   };
 }
 
-function decision(
-  part: {
-    readonly text: string;
-    readonly decoded: Decoded;
-    readonly refPrevious: Readonly<Record<string, number>>;
-    readonly action: Decoded["action"];
-    readonly params: Decoded["params"];
-    readonly resolved: Decoded["resolved"];
-  },
-  now: Now,
-): Decision {
+interface Part {
+  readonly text: string;
+  readonly decoded: Decoded;
+  readonly refPrevious: Readonly<Record<string, number>>;
+  readonly action: Decoded["action"];
+  readonly params: Decoded["params"];
+  readonly resolved: Decoded["resolved"];
+}
+
+function decision(part: Part, now: Now, segmented: boolean): Decision {
   const { decoded } = part;
+  const kept = !segmented || part.action === decoded.action;
   return {
     text: part.text,
     action: part.action,
@@ -213,13 +249,42 @@ function decision(
     actionProbabilities: decoded.actionProbabilities,
     spans: decoded.spans,
     ...(decoded.aux === undefined ? {} : { aux: decoded.aux }),
-    ...(decoded.asks === undefined || part.action !== decoded.action
-      ? {}
-      : { asks: decoded.asks }),
-    ...(decoded.unsupported === undefined || part.action !== decoded.action
+    ...(decoded.asks === undefined || !kept ? {} : { asks: decoded.asks }),
+    ...(decoded.unsupported === undefined || !kept
       ? {}
       : { unsupported: decoded.unsupported }),
+    ...(decoded.dropped === undefined || !kept
+      ? {}
+      : { dropped: decoded.dropped }),
+    ...(decoded.ignored === undefined || segmented
+      ? {}
+      : { ignored: decoded.ignored }),
     now,
+  };
+}
+
+function decodedPart(
+  bundle: Bundle,
+  input: VectorInput,
+  context: CompiledContext | null,
+  now: Now,
+): Omit<Part, "refPrevious"> {
+  const segment = built(bundle, input);
+  const decoded = decode(
+    bundle,
+    segment.text,
+    segment.offsets,
+    segment.heads,
+    context,
+    segment.breaks,
+    now,
+  );
+  return {
+    text: segment.text,
+    action: decoded.action,
+    params: decoded.params,
+    resolved: decoded.resolved,
+    decoded,
   };
 }
 
@@ -230,32 +295,35 @@ export function decodeVector(
   now: Now = VECTOR_NOW,
   requirements: Requirements = {},
 ): CommandV2[] {
-  const inputs = Array.isArray(vector.input) ? vector.input : [vector.input];
-  const parts = inputs.map((input: VectorInput) => {
-    const segment = built(bundle, input);
-    const decoded = decode(
-      bundle,
-      segment.text,
-      segment.offsets,
-      segment.heads,
-      context,
-      segment.breaks,
-      now,
-    );
-    return {
-      text: segment.text,
-      action: decoded.action,
-      params: decoded.params,
-      resolved: decoded.resolved,
-      decoded,
-    };
-  });
-  const filled = Array.isArray(vector.input)
+  const segmented = Array.isArray(vector.input);
+  const inputs = segmented ? vector.input : [vector.input];
+  const parts = (inputs as readonly VectorInput[]).map((input) =>
+    decodedPart(bundle, input, context, now),
+  );
+  const filled = segmented
     ? fillReferences(bundle, parts)
     : parts.map((part) => ({ ...part, refPrevious: {} }));
   return filled.map((part) =>
-    commandV2(bundle, decision(part, now), context, requirements),
+    commandV2(bundle, decision(part, now, segmented), context, requirements),
   );
+}
+
+export function decodeFocusVector(
+  bundle: Bundle,
+  vector: Pick<FocusVector, "input" | "focus">,
+  context: CompiledContext | null,
+  now: Now = VECTOR_NOW,
+): CommandV2 {
+  const part = {
+    ...decodedPart(bundle, vector.input, context, now),
+    refPrevious: {},
+  };
+  const bound = withFocus(
+    bundle,
+    decision(part, now, false),
+    parseFocus(vector.focus),
+  );
+  return withCreates(commandV2(bundle, bound, context));
 }
 
 export function pinned(command: CommandV2): unknown {

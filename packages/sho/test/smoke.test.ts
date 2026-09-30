@@ -101,6 +101,20 @@ describe("Шо smoke", () => {
     sho ??= await loadSho();
     await expect(sho.run({ raw: "   " })).rejects.toBeInstanceOf(InputError);
   });
+
+  it("refuses a recognised transcript passed as text, and reads it as raw", async () => {
+    sho ??= await loadSho();
+    const transcript = "Створи замовлення для Шерлока";
+    const refused = await sho
+      .run({ text: transcript }, { context: CONTEXT })
+      .catch((thrown: unknown) => thrown);
+    expect(refused).toBeInstanceOf(InputError);
+    expect((refused as InputError).code).toBe("text_not_normalised");
+
+    const result = await sho.run({ raw: transcript }, { context: CONTEXT });
+    expect(result.schema).toBe(RESULT_SCHEMA);
+    expect(result.commands[0]?.action).toBe("orders.create");
+  });
 });
 
 describe("loadSho refusals", () => {
