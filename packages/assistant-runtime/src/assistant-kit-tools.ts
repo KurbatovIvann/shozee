@@ -18,7 +18,10 @@
  * — the continuation is stored, so resume replays once instead of a two-phase
  * retry.
  */
-import { catalogPickerConflictExtrasFromError } from "@showzy/ai";
+import {
+  catalogPickerConflictExtrasFromError,
+  type ChoicePickerReason,
+} from "@showzy/ai";
 import type { CardRef, ToolOutcome, ToolSet } from "@showzy/assistant-kit";
 import { CoreError } from "@showzy/core/errors";
 import {
@@ -119,6 +122,17 @@ function subjectFor(target: ChoicePickerTarget): string {
   }
 }
 
+function problemFor(reason: ChoicePickerReason): string {
+  switch (reason) {
+    case "unmatched_query":
+      return "Nothing matches that exactly.";
+    case "ambiguous":
+      return "More than one record matches.";
+    default:
+      return "This product is sold by variant.";
+  }
+}
+
 /**
  * Fresh per turn: the composer needs every result of the turn so far, and one
  * turn's results must never leak into another's.
@@ -176,6 +190,7 @@ export function assistantKitTurnTools(
                 })),
                 optionsTruncated: picker.optionsTruncated,
                 nearest: picker.reason === "unmatched_query",
+                problem: problemFor(picker.reason),
               },
               secret,
             };

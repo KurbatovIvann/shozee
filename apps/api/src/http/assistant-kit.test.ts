@@ -39,7 +39,7 @@ import {
   type AssistantHistoryPort,
   type AssistantInteractionTypes,
   type AssistantTurnStore,
-  type ChoiceRecordResolution,
+  type ChoiceResolution,
   type ResolveAnswer,
 } from "@showzy/assistant-runtime";
 import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
@@ -112,7 +112,7 @@ function recordingAccepts(store: AssistantTurnStore): {
 }
 
 const OK_RESOLVE: ResolveAnswer = ({ value }) => {
-  const resolution = value as ChoiceRecordResolution;
+  const resolution = value as ChoiceResolution;
   return Promise.resolve({
     kind: "ok",
     result: { entityId: resolution.entityId, number: "CO-1" },
@@ -312,7 +312,7 @@ function harness(options?: {
   return { kit, app, history, queue, turns, bind: `${USER}:${COMPANY}` };
 }
 
-async function openPause(kit: Kit, bind: string) {
+async function openPause(kit: Kit, bind: string, withCreate = false) {
   const opened = await kit.open({
     conversationId: CONVERSATION,
     bind,
@@ -322,6 +322,9 @@ async function openPause(kit: Kit, bind: string) {
       options: [
         { optionId: "opt-a", label: "A" },
         { optionId: "opt-b", label: "B" },
+        ...(withCreate
+          ? [{ optionId: "opt-new", label: "New", kind: "create" as const }]
+          : []),
       ],
       optionsTruncated: false,
     },
@@ -329,6 +332,15 @@ async function openPause(kit: Kit, bind: string) {
       byOption: {
         "opt-a": { kind: "record", entityId: "entity-a" },
         "opt-b": { kind: "record", entityId: "entity-b" },
+        ...(withCreate
+          ? {
+              "opt-new": {
+                kind: "create" as const,
+                toolName: "customers_create",
+                input: { name: "New" },
+              },
+            }
+          : {}),
       },
       toolName: "orders_create",
       input: { customerQuery: "two matches", items: [] },
@@ -1088,7 +1100,6 @@ describe("POST /assistant/kit/answer", () => {
     );
 
     expect(seen).toEqual({
-      kind: "record",
       entityId: "entity-b",
       toolName: "orders_create",
       input: { customerQuery: "two matches", items: [] },
@@ -1109,6 +1120,30 @@ describe("POST /assistant/kit/answer", () => {
     });
 
     expect(response.status).toBe(400);
+    expect(
+      (await kit.peek({ conversationId: CONVERSATION, bind }))?.status,
+    ).toBe("open");
+  });
+
+  it("409 for a create option, and no tool runs before a producer lands", async () => {
+    let resolved = 0;
+    const counting: ResolveAnswer = (args) => {
+      resolved += 1;
+      return OK_RESOLVE(args);
+    };
+    const { kit, app, queue, bind } = harness({ resolveAnswer: counting });
+    const pause = await openPause(kit, bind, true);
+
+    const response = await post(
+      app,
+      ASSISTANT_KIT_ANSWER_PATH,
+      answerBody(pause.interactionId, pause.revision, "opt-new"),
+    );
+
+    expect(response.status).toBe(409);
+    expect(((await response.json()) as KitBody).status).toBe("unresolvable");
+    expect(resolved).toBe(0);
+    expect(queue.added).toEqual([]);
     expect(
       (await kit.peek({ conversationId: CONVERSATION, bind }))?.status,
     ).toBe("open");

@@ -57,6 +57,14 @@ export type ChoicePickerTarget =
       readonly productName: string;
     };
 
+export type ChoiceOptionSecret =
+  | { readonly kind: "record"; readonly entityId: string }
+  | {
+      readonly kind: "create";
+      readonly toolName: string;
+      readonly input: unknown;
+    };
+
 /**
  * Server-side only. `byOption` never reaches a client — the client sends an
  * `optionId` and the server says what it meant.
@@ -66,14 +74,6 @@ export type ChoicePickerTarget =
  * one field filled in", with no second code path that has to agree with the
  * first.
  */
-export type ChoiceOptionSecret =
-  | { readonly kind: "record"; readonly entityId: string }
-  | {
-      readonly kind: "create";
-      readonly toolName: string;
-      readonly input: unknown;
-    };
-
 export interface ChoiceSecret {
   readonly byOption: Record<string, ChoiceOptionSecret>;
   readonly toolName: string;
@@ -95,21 +95,12 @@ export interface ConfirmationSecret {
   readonly challengeId: string;
 }
 
-export interface ChoiceRecordResolution {
-  readonly kind: "record";
+export interface ChoiceResolution {
   readonly entityId: string;
   readonly toolName: string;
   readonly input: unknown;
   readonly target: ChoicePickerTarget;
 }
-
-export interface ChoiceCreateResolution {
-  readonly kind: "create";
-  readonly toolName: string;
-  readonly input: unknown;
-}
-
-export type ChoiceResolution = ChoiceRecordResolution | ChoiceCreateResolution;
 
 /**
  * Names the attempt a person approved. It authorises nothing by itself: core
@@ -133,18 +124,13 @@ export const choice = defineInteraction<ChoiceSecret>()({
       return unresolvable(`unknown option ${answer.optionId}`);
     }
     return option.kind === "create"
-      ? resolved({
-          kind: "create",
-          toolName: option.toolName,
-          input: option.input,
-        } satisfies ChoiceCreateResolution)
+      ? unresolvable(`create option ${answer.optionId} has no producer`)
       : resolved({
-          kind: "record",
           entityId: option.entityId,
           toolName: secret.toolName,
           input: secret.input,
           target: secret.target,
-        } satisfies ChoiceRecordResolution);
+        } satisfies ChoiceResolution);
   },
 });
 

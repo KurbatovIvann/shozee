@@ -33,7 +33,7 @@ import {
   type AssistantCaller,
   type AssistantHistoryPort,
   type AssistantTurnStore,
-  type ChoiceRecordResolution,
+  type ChoiceResolution,
 } from "@showzy/assistant-runtime";
 import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
 import {
@@ -80,7 +80,7 @@ function memoryHistory(): AssistantHistoryPort {
 }
 
 const OK_RESOLVE = ({ value }: { value: unknown }) => {
-  const resolution = value as ChoiceRecordResolution;
+  const resolution = value as ChoiceResolution;
   return Promise.resolve<ToolOutcome>({
     kind: "ok",
     result: { entityId: resolution.entityId },

@@ -44,7 +44,6 @@ import {
 } from "@showzy/assistant-runtime";
 import { ConflictError, NotFoundError } from "@showzy/core/errors";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
 
 import { createActionRegistry } from "../registry.js";
 
@@ -450,6 +449,7 @@ describe("a picker CONFLICT produces v2 options", () => {
       subject: "Катя",
       optionsTruncated: false,
       nearest: false,
+      problem: "More than one record matches.",
       options: [
         { optionId: CUSTOMER_A, label: "Катя Самбука", kind: "record" },
         { optionId: CUSTOMER_B, label: "Катя Іванова", kind: "record" },
@@ -464,7 +464,11 @@ describe("a picker CONFLICT produces v2 options", () => {
 
     expect(outcome.kind).toBe("pause");
     if (outcome.kind !== "pause") return;
-    expect(outcome.prompt).toMatchObject({ subject: "Галя", nearest: true });
+    expect(outcome.prompt).toMatchObject({
+      subject: "Галя",
+      nearest: true,
+      problem: "Nothing matches that exactly.",
+    });
   });
 });
 
@@ -792,23 +796,16 @@ describe("an idempotent write is given a key that survives a retry", () => {
   });
 });
 
-describe("a create option is a write the server already holds", () => {
+describe("a create option is offered but has no producer yet", () => {
   const CREATE_TOOL = "customers_create";
-  const CREATE_INPUT = { name: "Галина" };
-  const CREATE_ATTEMPT = {
-    actionName: "customers.createCustomer",
-    input: CREATE_INPUT,
-    idempotencyKey: "tool:the-turn-that-asked",
-  };
-  const CREATE_CHALLENGE = {
-    challengeId: "ffffffff-ffff-4fff-8fff-ffffffffffff",
-    summary: "A customer named Галина will be created.",
-    expiresAt: "2026-09-10T12:05:00.000Z",
-  };
 
   const byOption: Record<string, ChoiceOptionSecret> = {
     [CUSTOMER_A]: { kind: "record", entityId: CUSTOMER_A },
-    create: { kind: "create", toolName: CREATE_TOOL, input: CREATE_INPUT },
+    create: {
+      kind: "create",
+      toolName: CREATE_TOOL,
+      input: { name: "Галина" },
+    },
   };
 
   const secret: ChoiceSecret = {
@@ -818,74 +815,23 @@ describe("a create option is a write the server already holds", () => {
     target: { kind: "customer", query: "Галя" },
   };
 
-  function chose(optionId: string): unknown {
-    const resolution = choice.resolve({ answer: { optionId }, secret });
-    if (resolution.kind !== "resolved") {
-      throw new Error(`expected resolved, got ${resolution.kind}`);
-    }
-    return resolution.value;
-  }
-
-  function creatingTools(seen: unknown[]): ToolSet {
-    return assistantKitTurnTools(
-      {
-        [CREATE_TOOL]: {
-          description: "create one customer",
-          inputSchema: z.strictObject({ name: z.string().min(1) }),
-          execute: (input: unknown) => {
-            seen.push(input);
-            return Promise.reject(
-              new AssistantConfirmationRequired(
-                CREATE_ATTEMPT,
-                CREATE_CHALLENGE,
-              ),
-            );
-          },
-        },
-      },
-      capturingLogger().logger,
-    );
-  }
-
-  it("resolves to that write, and never to anything the answer carried", () => {
-    expect(chose("create")).toEqual({
-      kind: "create",
-      toolName: CREATE_TOOL,
-      input: CREATE_INPUT,
+  it("refuses a create answer rather than resolving it to a write", () => {
+    expect(choice.resolve({ answer: { optionId: "create" }, secret })).toEqual({
+      kind: "unresolvable",
+      reason: "create option create has no producer",
     });
   });
 
   it("leaves a record option settling the ambiguity the tool hit", () => {
-    expect(chose(CUSTOMER_A)).toEqual({
-      kind: "record",
-      entityId: CUSTOMER_A,
-      toolName: ORDERS_CREATE_TOOL_NAME,
-      input: CREATE_BY_QUERY,
-      target: { kind: "customer", query: "Галя" },
-    });
-  });
-
-  it("runs the held write, which stops on its own preview", async () => {
-    const seen: unknown[] = [];
-
-    const outcome = await createResolveAnswer(NEVER_CONFIRMED)({
-      toolName: CREATE_TOOL,
-      kind: "choice",
-      value: chose("create"),
-      tools: creatingTools(seen),
-      context: ANSWER_CONTEXT,
-    });
-
-    expect(seen).toEqual([CREATE_INPUT]);
-    expect(outcome).toEqual({
-      kind: "pause",
-      interaction: "confirmation",
-      prompt: { summary: CREATE_CHALLENGE.summary },
-      secret: {
-        actionName: CREATE_ATTEMPT.actionName,
-        canonicalInput: CREATE_INPUT,
-        idempotencyKey: CREATE_ATTEMPT.idempotencyKey,
-        challengeId: CREATE_CHALLENGE.challengeId,
+    expect(
+      choice.resolve({ answer: { optionId: CUSTOMER_A }, secret }),
+    ).toEqual({
+      kind: "resolved",
+      value: {
+        entityId: CUSTOMER_A,
+        toolName: ORDERS_CREATE_TOOL_NAME,
+        input: CREATE_BY_QUERY,
+        target: { kind: "customer", query: "Галя" },
       },
     });
   });
