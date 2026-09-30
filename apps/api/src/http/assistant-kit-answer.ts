@@ -29,6 +29,8 @@ import {
   acceptProvedRollback,
   assistantTurnEarnedCard,
   readAssistantChatWindow,
+  shoFreeBudgetHold,
+  shoWriteReply,
 } from "@showzy/assistant-runtime";
 import type { Context } from "hono";
 import { randomUUID } from "node:crypto";
@@ -46,6 +48,7 @@ import {
   type AssistantKitAppEnv,
   type AssistantKitRuntime,
 } from "./assistant-kit-http.js";
+import { shoOpenedThePause } from "./assistant-kit-sho.js";
 
 export const ASSISTANT_KIT_ANSWER_PATH = "/assistant/kit/answer";
 export const ASSISTANT_KIT_ABANDON_PATH = "/assistant/kit/abandon";
@@ -321,6 +324,43 @@ export async function handleAssistantKitAnswer(
     );
   }
 
+  const resumed = kit.resume(claimed, resolvedOutcome.result).messages;
+
+  if (shoOpenedThePause(claimed.record.continuation.pausedToolCall.id)) {
+    const reply = shoWriteReply(resolvedOutcome.result);
+    const settled = await turns.accept({
+      kind: "answer",
+      conversationId: body.conversationId,
+      commandId: body.commandId,
+      earned: [],
+      history: resumed,
+      bind: caller.bind,
+      sessionId: caller.sessionId,
+      budgetHold: shoFreeBudgetHold(new Date()),
+      releaseUnusedHold: () => Promise.resolve(),
+      settled: {
+        parts: [
+          ...assistantTurnEarnedCard(resolvedOutcome.card),
+          { kind: "text", text: reply, status: "complete" },
+        ],
+        history: [...resumed, { role: "assistant", content: reply }],
+      },
+    });
+    if (settled.outcome === "wrong_owner") {
+      await Promise.all([release(), giveBackCommand()]);
+      return goneResponse(requestId);
+    }
+    if (settled.outcome === "busy") {
+      await Promise.all([release(), giveBackCommand()]);
+      return json(
+        409,
+        { status: "turn_open", window: await windowNow() },
+        requestId,
+      );
+    }
+    return json(200, { status: "ok", window: await windowNow() }, requestId);
+  }
+
   // The action committed. Its card is stored by the accept, on the placeholder,
   // as the part already earned — before any generation is attempted.
   const budget = requireBudgetTicket(c);
@@ -331,7 +371,7 @@ export async function handleAssistantKitAnswer(
       conversationId: body.conversationId,
       commandId: body.commandId,
       earned: assistantTurnEarnedCard(resolvedOutcome.card),
-      history: kit.resume(claimed, resolvedOutcome.result).messages,
+      history: resumed,
       bind: caller.bind,
       sessionId: caller.sessionId,
       budgetHold: budget.handOverToAccept(),

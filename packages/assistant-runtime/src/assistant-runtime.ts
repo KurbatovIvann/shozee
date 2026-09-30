@@ -61,6 +61,7 @@ import {
 } from "./assistant-interactions.js";
 import { ASSISTANT_INVOCATION_CHANNEL } from "./assistant-invocation.js";
 import { AssistantConfirmationRequired } from "./assistant-kit-confirmation.js";
+import type { ShoEngine } from "./sho-plan.js";
 import {
   createResolveAnswer,
   type RunConfirmedAction,
@@ -90,6 +91,7 @@ export interface CreateAssistantRuntimeOptions {
   /** Same adapter the live assistant uses: it owns the caching options. */
   readonly provider?: StaffProviderAdapter;
   readonly redis: RedisLike;
+  readonly sho?: ShoEngine;
 }
 
 function requireImplementation(
@@ -283,6 +285,7 @@ export function createAssistantRuntime(
     forTurn: (caller, claim) => scopedKit(caller, claim),
 
     model: options.model,
+    ...(options.sho === undefined ? {} : { sho: options.sho }),
     resolveAnswer: createResolveAnswer({ runConfirmed }),
 
     /**
