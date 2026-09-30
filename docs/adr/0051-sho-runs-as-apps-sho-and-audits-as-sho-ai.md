@@ -1,6 +1,6 @@
 # ADR-0051: Шо runs as `apps/sho`, and its audit channel is `sho-ai`
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-30
 - **Deciders**: Ivan Kurbatov (human) (+ proposing agent)
 
@@ -36,9 +36,8 @@ where it runs and what it is given.
 - SHO-733 finding 7: `packages/sho` is not type-importable from other
   packages (`.ts` specifiers).
 - `onnxruntime-node` and `@google-cloud/speech` (Chirp 3) are approved
-  (owner, 2026-09-30). A WebSocket adapter for Hono is not: `apps/api` has
-  `hono` and `@hono/node-server`, and WebSockets on that server need the
-  separate `@hono/node-ws`.
+  (owner, 2026-09-30). `apps/api` has `hono` and `@hono/node-server`, and
+  WebSockets on that server need the separate `@hono/node-ws`.
 
 ## Decision
 
@@ -78,12 +77,14 @@ where it runs and what it is given.
     model in CI.
 - **Context.** `apps/api` builds the context from bulk id+name reads and sends
   it gzipped. Freshness is a `count(*) + max(updated_at)` fingerprint per list
-  behind a short TTL — **not** recomputed per parse: SHO-732 measured it at
+  behind a **30 s TTL** — **not** recomputed per parse: SHO-732 measured it at
   O(tenant rows), 11.1 ms for `product_variants` against a 5 ms target, and a
   per-turn cost that grows with the tenant is the wrong shape at the front of
   every turn. The durable answer is an **O(1) per-company collection
   revision**, which is ADR-0042 extended to collections. This ADR does not
-  build it; the TTL stands in until it is ticketed.
+  build it; the 30 s TTL stands in until it is ticketed, and a name created in
+  that window costs a fall-through to the LLM, never a wrong write
+  (ADR-0050).
   - Above a variants cap the list is sent `partial` and the parse is
     best-effort; the 8 MB limit is reached near ~13k products × 4 variants.
   - The fingerprint's two blind spots are accepted: a stale name costs a
@@ -96,17 +97,20 @@ where it runs and what it is given.
 - **Audit.** An action Шо closed carries channel `sho-ai`, distinct from `ai`,
   so "what did the small model do" is answerable without parsing a trace. That
   is a fifth value in the core channel enum and in the db CHECKs named in
-  Context. **This is a `packages/core` and `packages/db` change: proposed
-  here, not built.**
+  Context. **This is a `packages/core` and `packages/db` change: named here,
+  built by its own ticket.** A record created through `sho-ai` counts in
+  `countedCreatedVia` exactly as `ai` does: it is assistant-created, and which
+  model wrote it does not change that (owner, 2026-09-30).
 - **Retraining data** (owner, 2026-09-30): the command transcript and Шо's
   result are stored for retraining in **dev and test companies only**, and no
   audio is stored anywhere. A policy for real company commands is decided
   before there is production (ADR-0049 states the same rule).
-- **Dependencies.** `onnxruntime-node` and `@google-cloud/speech` (Chirp 3)
-  are **approved** (owner, 2026-09-30). A WebSocket adapter is a **separate
-  dependency and stays proposed**: `apps/api` runs Hono on
-  `@hono/node-server`, whose WebSocket support is the `@hono/node-ws` package
-  (which pulls `ws`), not part of `hono` itself.
+- **Dependencies** (owner, 2026-09-30). `onnxruntime-node` and
+  `@google-cloud/speech` (Chirp 3) are **approved**. `@hono/node-ws` — a
+  separate package, not part of `hono`, and it pulls `ws` — is **approved
+  together with the voice feature**: `apps/api` runs Hono on
+  `@hono/node-server`, which has no WebSocket support of its own, and nothing
+  before voice needs one.
 
 ## Amendments to earlier ADRs
 
@@ -166,6 +170,4 @@ mounts no model loop of the AI SDK and reaches no database.
 
 ## Open questions
 
-1. Does `sho-ai` count in `countedCreatedVia` (today `ui` and `system`)?
-2. Is the fingerprint TTL acceptable as the stand-in, and for how long before
-   the collection revision is ticketed?
+None.

@@ -1,6 +1,6 @@
 # ADR-0049: Шо parses every staff assistant message first
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-30
 - **Deciders**: Ivan Kurbatov (human) (+ proposing agent)
 
@@ -135,7 +135,12 @@ ADR-0037's rule that model output is never a resolution survives: Шо's
   `assistant_chat_state` must tolerate a `tool_use` id no provider issued.
 - The whitelist and the param planners are the ceiling, not the threshold:
   222 of the 367 closures have no param planner today (`no_param_plan`), so a
-  first slice closes 145.
+  first slice closes 145. The planners come in this order (owner,
+  2026-09-30): the SHO-734 ticket whitelist — `orders` list, get, create,
+  confirm, start, complete, cancel, the customer and product cards and lists,
+  and price lists — then `customers.createCustomer` and
+  `customers.updateCustomer`, the two most frequent commands in the 554
+  (40 and 23).
 - `interaction_open` stops being a refusal of a chat send; the mobile banner
   for it (SHO-550) goes with it.
 - Recorded, not built: replica count, deploy ordering between `apps/api` and
@@ -152,7 +157,4 @@ ADR-0037's rule that model output is never a resolution survives: Шо's
 
 ## Open questions
 
-1. What does the host do with `ui.pick` / `ui.refine` / `ui.confirm` when no
-   interaction is open? Falling through to the LLM is proposed; 10 of the 14
-   measured answer cases produce them.
-2. Which param planners next? 222 of 367 closures fall back today.
+None.

@@ -1,6 +1,6 @@
 # ADR-0050: Every assistant write pauses on a preview card
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-30
 - **Deciders**: Ivan Kurbatov (human) (+ proposing agent)
 
@@ -44,16 +44,26 @@ flag, and not from a rule inside `packages/ai`.**
   and `also` when the parse carries a second action. The client sends only
   `approve` or an option id; the pause is server-owned and its payload never
   reaches the wire (ADR-0038).
+- **`also` is one card and one tap for two actions, and two attempts.** The
+  card lists both; approving approves both; each then executes as its own
+  attempt, with its own idempotency key and its own confirmation. A card is
+  not a transaction: the second failing leaves the first committed, and the
+  reply says so.
 - Every AI-exposed action with `risk: "write"` or `risk: "high"` pauses.
+  `risk: "draft"` does not — a draft is the thing a person then reviews, and a
+  card in front of it asks the same question twice.
   **No new `preview` field.** "This action writes" already exists once, and a
   second derivation of one fact disagrees with the first sooner or later
   (`AGENTS.md`, How we work).
 - The card's text comes from a server callback on the contract, shaped like
   today's `confirmationSummary` but returning structure instead of one
   redacted string, and required for every AI-exposed write. **That is a
-  `packages/core` contract change: proposed here, not built.**
-- A closed card leaves a trace in the stored log — interaction id, action
-  name, outcome. No input snapshot, no card body.
+  `packages/core` contract change: decided here, built by its own ticket.**
+- Every closed card leaves a trace in the stored log — interaction id, action
+  name, outcome — and a **declined card leaves one too, with outcome
+  `rejected`**. "The assistant proposed this and the person said no" is the
+  signal that tells a wrong parse from an unused feature. No input snapshot,
+  no card body.
 - **Relation to core confirmation.** For the five `requiresConfirmation`
   actions nothing changes: core issues the challenge, the preview card *is*
   the confirmation card and carries it, and the answer presents the same
@@ -69,7 +79,7 @@ flag, and not from a rule inside `packages/ai`.**
   card carries a real challenge on every assistant write, not only on the
   five contracts that declare one. It reuses §7 whole: no second approval
   protocol, and no change to how the classic UI invokes anything.
-  **Proposed here for a `packages/core` ticket, not built by it.**
+  **Decided here, built by its own `packages/core` ticket, not by this ADR.**
 - Until that ticket lands, the preview is a UI gate and is described as one —
   here, in the runbook, and in what the card's tests assert. It is not written
   down as authorization.
@@ -140,8 +150,4 @@ core option above is accepted and ticketed.
 
 ## Open questions
 
-1. Does `also` — two actions on one card — approve both with one tap, or one
-   tap each?
-2. Does a declined card leave a trace, or only a closed one?
-3. Does the preview cover `risk: "draft"` actions too, or only `write` and
-   `high`?
+None.
