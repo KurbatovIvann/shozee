@@ -11,16 +11,20 @@ import {
   type Requirements,
 } from "../src/index.ts";
 import {
+  decodeFocusVector,
   decodeVector,
   pinned,
+  readFocusVectors,
   readVectors,
   vectorBundle,
   vectorContext,
+  type FocusVector,
   type Vector,
   type VectorInput,
 } from "./vectors.ts";
 
 const vectors: Vector[] = await readVectors(conformanceDir);
+const focusVectors: FocusVector[] = await readFocusVectors(conformanceDir);
 
 describe("Шо v3 conformance vectors", () => {
   let bundle: Bundle;
@@ -33,7 +37,7 @@ describe("Шо v3 conformance vectors", () => {
   });
 
   it("are all there and name only v3 actions", () => {
-    expect(vectors.length).toBe(478);
+    expect(vectors.length).toBe(490);
     expect(new Set(vectors.map((vector) => vector.id)).size).toBe(
       vectors.length,
     );
@@ -98,6 +102,33 @@ describe("Шо v3 conformance vectors", () => {
     }
     console.log(
       `Шо v3 conformance: ${String(vectors.length - failures.length)} of ${String(vectors.length)} vectors`,
+    );
+    expect(failures).toEqual([]);
+  });
+
+  it("decode the D88-D92 focus vectors to exactly the expected commands", async () => {
+    expect(focusVectors.length).toBe(46);
+    expect(new Set(focusVectors.map((vector) => vector.id)).size).toBe(
+      focusVectors.length,
+    );
+    const failures: string[] = [];
+    const contexts = new Map<string | null, CompiledContext | null>();
+    for (const vector of focusVectors) {
+      let context = contexts.get(vector.context);
+      if (context === undefined) {
+        context = await vectorContext(conformanceDir, vector.context);
+        contexts.set(vector.context, context);
+      }
+      try {
+        expect(pinned(decodeFocusVector(bundle, vector, context))).toEqual(
+          vector.expect,
+        );
+      } catch {
+        failures.push(vector.id);
+      }
+    }
+    console.log(
+      `Шо v3 focus: ${String(focusVectors.length - failures.length)} of ${String(focusVectors.length)} vectors`,
     );
     expect(failures).toEqual([]);
   });

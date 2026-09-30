@@ -8,8 +8,9 @@ import type { ParamValue, Params } from "./params.ts";
 // "unsupported"}` so the app knows what was asked: not blocking where the catalogue answers, blocking where it cannot (a list by stock level, a stock
 // write). With stock tracked, or without a context, nothing changes.
 
+// D89: `path` "fiscal": the shop has no till, the words said «чек» (`fiscal.ts`).
 export interface Unsupported {
-  readonly path: "stock";
+  readonly path: "stock" | "fiscal";
   readonly blocking: boolean;
 }
 

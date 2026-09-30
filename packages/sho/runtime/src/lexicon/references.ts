@@ -74,3 +74,72 @@ export const PRONOUN_FORMS: ReadonlyMap<string, PronounForm> = new Map<string, P
   ...["їх", "них", "ними", "их"].map((word) => [word, PLURAL] as const),
   ...["їм"].map((word) => [word, { ...PLURAL, dative: true }] as const),
 ]);
+
+// D88 (`focus.ts`): the words a reference to a record in the host's focus is said with, beyond the pronouns above and D70's deictics.
+// The record types a focus entry has; a param's type (`customer`, `order_number`, …) is one of them by `FOCUS_PARAM_TYPES`.
+export type FocusType = "customer" | "group" | "order" | "product" | "price_list" | "counterparty";
+export const FOCUS_PARAM_TYPES: ReadonlyMap<string, FocusType> = new Map<string, FocusType>([
+  ["customer", "customer"], ["group", "group"], ["order_number", "order"], ["product", "product"], ["price_list", "price_list"], ["counterparty", "counterparty"],
+]);
+
+// A place a record is: a group a customer goes to, an order lines go to, a price list entries go to or leave («додай туди Катю», «прибери звідти
+// круасан»). They fill the command's container param, in this order of preference: `group`, then `order_number`, then `price_list`.
+export const FOCUS_CONTAINERS: ReadonlySet<string> = new Set(["туди", "сюди", "звідти", "звідси", "там", "туда", "сюда", "оттуда", "отсюда"]);
+export const FOCUS_CONTAINER_PARAMS: readonly string[] = ["group", "order_number", "price_list"];
+// «сюди», «звідси», «тут»: the record on the screen the person sees, when the host marks one (`screen`).
+export const FOCUS_HERE: ReadonlySet<string> = new Set(["сюди", "звідси", "сюда", "отсюда"]);
+
+// «цей / цю / цій / цьому … <noun>», «этот / эту …»: a record of the noun's type said as the one in focus; the screen's record first.
+export const FOCUS_THIS: ReadonlySet<string> = new Set([
+  "цей", "ця", "це", "цю", "цього", "цьому", "цим", "цієї", "цій", "цією", "этот", "эта", "это", "эту", "этого", "этому", "этим", "этой", "этом",
+]);
+// «нового клієнта», «нову групу», «новий прайс»: the record of the noun's type the host created (`how: "created"`) first.
+export const FOCUS_NEW: ReadonlySet<string> = new Set([
+  "новий", "нового", "новому", "новим", "новій", "нова", "нову", "нової", "новою", "нове",
+  "новый", "новому", "новым", "новая", "новую", "новой", "новое",
+]);
+// The nouns of the record types, by the start of the word, uk and ru («клієнта», «клієнтці», «групу», «замовлення», «заказу», «прайс-лист»).
+export const FOCUS_NOUNS: readonly (readonly [stem: string, type: FocusType])[] = [
+  ["клієнт", "customer"], ["клиент", "customer"], ["покупц", "customer"], ["покупец", "customer"],
+  ["груп", "group"],
+  ["замовлен", "order"], ["заказ", "order"],
+  ["прайс", "price_list"],
+  ["контрагент", "counterparty"],
+  ["товар", "product"],
+];
+// The prepositions a pronoun is said after («для неї», «по ньому», «в неї», «у него»): the span of the reference holds them.
+export const FOCUS_PREPOSITIONS: ReadonlySet<string> = new Set([
+  "для", "по", "на", "в", "у", "до", "з", "із", "зі", "від", "про", "за", "к", "с", "со", "из", "от", "о", "об",
+]);
+// «і ще 2 круасани», «а ще булочку», «и ещё два»: an order said on after the order the host just created (`focus.ts` `continued`).
+export const CONTINUATION_LEADS: ReadonlySet<string> = new Set(["і", "й", "а", "та", "и"]);
+export const CONTINUATION_MORE: ReadonlySet<string> = new Set(["ще", "ещё", "еще"]);
+
+// D89 (`focus.ts` `byFocusType`): a bare verb said of a record in focus («видали її», «заархівуй його», «перейменуй її на …», «відкрий його»; no type
+// noun) is the verb's action for the referent's type. The verbs by family, uk / ru / surzhyk, the imperative and the infinitive; the rename verbs are
+// D85's `RENAME_VERBS`. «скасуй» is no delete verb (only an order is cancelled), «прибери» neither (entries and lines are removed).
+export type FocusVerb = "delete" | "archive" | "restore" | "rename" | "open";
+export const FOCUS_VERBS: ReadonlyMap<string, FocusVerb> = new Map<string, FocusVerb>([
+  ...["видали", "видаліть", "видалити", "видаляй", "видаляйте", "удали", "удалите", "удалить", "удаляй", "удаляйте", "вилучи", "вилучіть", "стери", "зітри", "сотри"].map((word) => [word, "delete"] as const),
+  ...["заархівуй", "заархівуйте", "заархівувати", "архівуй", "архівуйте", "заархивируй", "заархивируйте", "заархивировать", "архивируй", "архивируйте"].map((word) => [word, "archive"] as const),
+  ...["віднови", "відновіть", "відновити", "розархівуй", "розархівуйте", "розархівувати", "восстанови", "восстановите", "восстановить", "разархивируй", "разархивируйте", "разархивировать"].map((word) => [word, "restore"] as const),
+  ...["відкрий", "відкрийте", "відкрити", "открой", "откройте", "открыть", "покажи", "покажіть", "показати", "покажите", "показать"].map((word) => [word, "open"] as const),
+]);
+// «перенеси його в архів», «верни її з архіву»: the archive said as a place.
+export const FOCUS_ARCHIVE_PHRASES: readonly (readonly [phrase: string, verb: FocusVerb])[] = [
+  ["в архів", "archive"], ["до архіву", "archive"], ["в архив", "archive"],
+  ["з архіву", "restore"], ["із архіву", "restore"], ["из архива", "restore"],
+];
+
+// D92 (P1 of the v3.4 served report, `createAsUpdate.ts` `updateAsCreate`): the words that say an order already exists, so a served `orders.update` with
+// no order keeps the model's update. The order noun in any form but the bare one («в замовленні», «до заказу», «замовленню»), or the bare one after a
+// preposition («в замовлення», «у заказ»); a verb that adds to, changes or takes from an order, by the start of the word, uk / ru / surzhyk. «ще» is
+// D88's `CONTINUATION_MORE`.
+export const ORDER_NOUN_BARE: ReadonlySet<string> = new Set(["замовлення", "заказ"]);
+export const ORDER_NOUN_STEMS: readonly string[] = ["замовлен", "заказ"];
+export const ORDER_NOUN_LEADS: ReadonlySet<string> = new Set(["в", "у", "во", "до", "к", "ко", "із", "з", "зі", "из", "с", "со"]);
+export const ORDER_EDIT_STEMS: readonly string[] = [
+  "дода", "добав", "допи", "докин", "докла", "докуп", "дозамов", "дозаказ",
+  "замін", "замен", "змін", "измен", "помін", "помен", "виправ", "исправ", "онов", "обнов", "редаг", "відредаг", "отредакт", "скориг", "скоррект",
+  "прибер", "прибра", "убер", "убра", "видал", "удал", "вилуч", "перенес",
+];

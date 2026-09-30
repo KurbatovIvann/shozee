@@ -8,7 +8,11 @@ or any public artifact.
 ## Source
 
 - Repository: `system-one-uk` (local checkout), commit
-  `d8e39dadceb2986308c66c96fad3138f96d67ab8`.
+  `b1e2b4d82c55253c12007dc3eac1fca20f1ecaba` (D88-D92: a stateless `focus`,
+  new need reasons, `capabilities.fiscal`, `run({text})` refusing
+  unnormalised text with `text_not_normalised`, and an `orders.update` that
+  names no order read as `orders.create`). Vendored from `git archive`, not
+  the working tree.
 - Runtime: `runtime/src` of `@sho/runtime` 0.2.0 without `src/cli`, copied byte
   for byte into `runtime/src`. Its `package.json` was not copied: it declares a
   `bin` pointing at the `src/cli` we deliberately left out, and `@showzy/sho`
@@ -24,9 +28,10 @@ or any public artifact.
 - Calibration: the bundle's `calibration.json`; `loadSho` passes its action
   temperature to the runtime (`RuntimeOptions.actionTemperature`), so
   `confidence` is calibrated.
-- Conformance: `conformance/v3/` (20 files) copied byte for byte into
-  `test/conformance-v3/`; `test/conformance-v3.test.ts` decodes all 478 vectors
-  with the vendored runtime.
+- Conformance: `conformance/v3/` (29 files) copied byte for byte into
+  `test/conformance-v3/`; `test/conformance-v3.test.ts` decodes all 490
+  `commands.jsonl` vectors and the 46 `focus.jsonl` vectors (D88-D92, bound
+  through `withFocus` and `withCreates`) with the vendored runtime.
 
 ## Files
 
