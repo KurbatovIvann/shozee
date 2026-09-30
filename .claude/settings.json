@@ -135,7 +135,6 @@
     ],
     "ask": [
       "Read(./docs/archive/**)",
-      "Edit(./packages/core/**)",
       "Edit(./.github/**)",
       "Bash(git push * --force-with-lease*)",
       "Bash(git rebase *)",
