@@ -36,8 +36,9 @@ import {
 } from "./values.ts";
 import type { Now } from "./when.ts";
 import type { Unsupported } from "./stockless.ts";
+import type { Dropped } from "./fiscal.ts";
 import { withSuggestions } from "./suggest.ts";
-import { createAsUpdate, groupAsUpdate } from "./createAsUpdate.ts";
+import { createAsUpdate, groupAsUpdate, updateAsCreate } from "./createAsUpdate.ts";
 import { RENAME_LEADS, RENAME_VERBS } from "./lexicon/customers.ts";
 
 // A command as the pipeline decided it (spans, the names the customer matcher found, references to earlier commands), built into a `CommandV2`: every
@@ -61,12 +62,18 @@ export interface Decision {
   readonly asks?: readonly RoleAsk[];
   // D72: what the shop cannot do that the command asked (`stockless.ts`): a need on that path.
   readonly unsupported?: Unsupported;
+  // D89: what a till return said that the refund it was served as does not take (`fiscal.ts`): a non-blocking `ignored` need each.
+  readonly dropped?: readonly Dropped[];
   // D72: the numbers the raw text wrote with a percent sign («знижкою 10%»), which the normalised text lost (`percentMarks`).
   readonly percents?: readonly string[];
   // D82: clock times said («о 9:00») whose pieces were no params (`decode.ts` `clockFree`): a non-blocking `ignored` need each.
   readonly ignored?: readonly string[];
   // D79: refs a pronoun or a deictic word takes from the previous command the host passed (`pronouns.ts`), by param.
   readonly fromPrevious?: Readonly<Record<string, Param>>;
+  // D88: when the host passed a focus (`focus.ts`): the needs the reference words raise (`reference`, `ambiguous`, the order continuation's
+  // `read_as_update`) and the params they were said for (no D70 `context` ref and no `missing` need of their own there).
+  readonly focusNeeds?: readonly Need[];
+  readonly focusPaths?: readonly string[];
   readonly debug?: Inference;
 }
 
@@ -572,7 +579,7 @@ function renamedCustomer(bundle: Bundle, decision: Decision): Decision {
 // command is the new-waybill form (`nav.deliveries_new`, spec §3 rule 2), when the bundle has it.
 function v3Decision(bundle: Bundle, given: Decision, pointed: ReadonlyMap<string, string>): Decision {
   const decision = bareBranch(bundle, given);
-  const bare = decision.action === SHIPMENT && Object.keys(decision.params).every((name) => BARE_SHIPMENT_PARAMS.has(name)) && !Object.keys(decision.refPrevious).length;
+  const bare = decision.action === SHIPMENT && Object.keys(decision.params).every((name) => BARE_SHIPMENT_PARAMS.has(name)) && !Object.keys(decision.refPrevious).length && !decision.focusPaths?.length;
   if (!bare || pointed.size || decision.asks?.length || !Object.hasOwn(bundle.intents, NEW_SHIPMENT)) return decision;
   return { ...decision, action: intentOfAction(bundle, NEW_SHIPMENT).action, params: {}, asks: [] };
 }
@@ -612,9 +619,16 @@ export function commandV2(bundle: Bundle, given: Decision, context: CompiledCont
   const asUpdate = createAsUpdate(bundle, given, context);
   const asCustomer = groupAsUpdate(bundle, asUpdate.decision, context);
   // D85: the new name the model tagged as a second customer after a rename verb.
-  const renamed = renamedCustomer(bundle, asCustomer.decision);
+  const named = renamedCustomer(bundle, asCustomer.decision);
+  // D92: an order update that names no order and says none exists is the customer's new order (`createAsUpdate.ts` `updateAsCreate`).
+  const asCreate = updateAsCreate(bundle, named);
+  const renamed = asCreate.decision;
   const pointed = v3 ? deictics(bundle, renamed) : new Map<string, string>();
   const decision = v3 ? v3Decision(bundle, renamed, pointed) : renamed;
+  // D88: the params a reference word was said for when the host passed a focus; a `missing` need there is the `reference` need's.
+  const focused = new Set(decision.focusPaths ?? []);
+  const referenced = new Set((decision.focusNeeds ?? []).filter((need) => need.reason === "reference").map((need) => need.path));
+  const unreferenced = (need: Need) => !need.path.split("|").some((name) => referenced.has(name));
   const { intent } = intentOfAction(bundle, decision.action);
   const builder = new ParamBuilder(bundle, decision, context);
   const params: Record<string, Param> = {};
@@ -632,7 +646,7 @@ export function commandV2(bundle: Bundle, given: Decision, context: CompiledCont
   }
   if (v3) {
     for (const [name, ref] of Object.entries(decision.fromPrevious ?? {})) if (Object.hasOwn(intent.params, name) && !Object.hasOwn(params, name)) params[name] = ref;
-    for (const [name, phrase] of pointed) if (Object.hasOwn(intent.params, name) && !Object.hasOwn(params, name)) params[name] = { text: phrase, status: "context" };
+    for (const [name, phrase] of pointed) if (Object.hasOwn(intent.params, name) && !Object.hasOwn(params, name) && !focused.has(name)) params[name] = { text: phrase, status: "context" };
     for (const ask of decision.asks ?? []) {
       const span = builder.asked(ask.span.kind, ask.span.text);
       needs.push({ path: ask.names.join("|"), reason: "ambiguous_role", blocking: true, ...(span === null ? {} : { span }) });
@@ -641,13 +655,16 @@ export function commandV2(bundle: Bundle, given: Decision, context: CompiledCont
     const method = params[PAYMENT_METHOD] as EnumParam | undefined;
     if (parts !== null && Object.hasOwn(intent.params, PAYMENT_METHOD) && (method === undefined || method.value === MIXED)) params[PAYMENT_METHOD] = { value: MIXED, parts };
     const oneOf = V3_ONE_OF[decision.action];
-    if (oneOf !== undefined) needs.unshift(...missing({ required: [], oneOf }, (name) => Object.hasOwn(params, name)));
+    if (oneOf !== undefined) needs.unshift(...missing({ required: [], oneOf }, (name) => Object.hasOwn(params, name)).filter(unreferenced));
+    needs.push(...(decision.focusNeeds ?? []));
   }
-  needs.unshift(...missing(requirements[decision.action], (name) => Object.hasOwn(params, name)));
+  needs.unshift(...missing(requirements[decision.action], (name) => Object.hasOwn(params, name)).filter(unreferenced));
   if (decision.unsupported !== undefined) needs.push({ path: decision.unsupported.path, reason: "unsupported", blocking: decision.unsupported.blocking });
+  for (const { path, text } of decision.dropped ?? []) needs.push({ path, reason: "ignored", blocking: false, span: { text } });
   for (const text of decision.ignored ?? []) needs.push({ path: "text", reason: "ignored", blocking: false, span: { text } });
   if (asUpdate.said !== null) needs.push({ path: "action", reason: "read_as_update", blocking: false, span: { text: asUpdate.said } });
   if (asCustomer.said !== null) needs.push({ path: "action", reason: "read_as_customer_update", blocking: false, span: { text: asCustomer.said } });
+  if (asCreate.need !== null && !needs.some((need) => need.path === asCreate.need?.path && need.reason === asCreate.need.reason)) needs.push(asCreate.need);
   const spans = Object.values(params).flatMap(scores);
   const command: CommandV2 = {
     text: decision.text,

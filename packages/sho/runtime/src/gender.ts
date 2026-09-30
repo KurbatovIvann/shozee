@@ -13,7 +13,20 @@ const MASCULINE_PATRONYMIC = /(ович|евич|йович|ьович|іч|ич
 const FEMININE_SURNAME = /(ська|цька|зька|ская|цкая)$/;
 const MASCULINE_SURNAME = /(ський|цький|зький|ский|цкий)$/;
 
+// D88: men's short first names in «-я» / «-а» («Петя Бондар», «Вася», «Юра»): a record's gender for a pronoun (`nameGender`). The nominative of a
+// name said in another case (`nominative.ts`) reads `firstNameGender` and does not use them.
+const MEN_SHORT: ReadonlySet<string> = new Set([
+  "петя", "вася", "ваня", "коля", "толя", "юра", "федя", "митя", "діма", "дима", "гоша", "міша", "миша", "паша", "гриша", "сеня", "сьома", "льоша",
+  "лёша", "альоша", "алёша", "костя", "вова", "володя", "жора", "яша", "рома", "стьопа", "стёпа", "боря", "вітя", "витя", "сєрьожа", "серьожа",
+  "сережа", "серёжа", "гена", "льоня", "лёня", "андрюша", "олежка",
+]);
+
 export type Gender = "feminine" | "masculine";
+
+// A person's first word's gender for a pronoun: a man's short name first, else as `firstNameGender`.
+function personGender(word: string): Gender | null {
+  return MEN_SHORT.has(word) ? "masculine" : firstNameGender(word);
+}
 
 export function firstNameGender(word: string): Gender | null {
   if (EITHER.has(word)) return null;
@@ -29,12 +42,12 @@ export function nameGender(name: string): Gender | null {
   const words = all.filter((word) => !LEGAL_FORMS.has(word));
   // A firm («ТОВ «Лілея Сервіс»», «Салон краси «Півонія»») is no person: only a patronymic or a first name the lexicon knows says one.
   const person = words.length === all.length && !/[«»"]/.test(name);
-  const known = words.find((word) => FIRST_NAMES.has(word));
-  if (known !== undefined) return firstNameGender(known);
+  const known = words.find((word) => FIRST_NAMES.has(word) || MEN_SHORT.has(word));
+  if (known !== undefined) return personGender(known);
   for (const word of words) {
     if (FEMININE_PATRONYMIC.test(word) || FEMININE_SURNAME.test(word)) return "feminine";
     if (MASCULINE_PATRONYMIC.test(word) || MASCULINE_SURNAME.test(word)) return "masculine";
   }
   const [first] = words;
-  return person && words.length >= 2 && first !== undefined && /^[а-яіїєґё'-]+$/.test(first) ? firstNameGender(first) : null;
+  return person && words.length >= 2 && first !== undefined && /^[а-яіїєґё'-]+$/.test(first) ? personGender(first) : null;
 }

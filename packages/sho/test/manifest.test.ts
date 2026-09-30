@@ -20,7 +20,7 @@ describe("model integrity", () => {
 
   it("the committed runtime sources match manifest.json", async () => {
     expect(await checkRuntime()).toEqual([]);
-    expect(Object.keys(manifest.runtime)).toHaveLength(75);
+    expect(Object.keys(manifest.runtime)).toHaveLength(78);
     expect(Object.keys(manifest.runtime)).toContain("adapters/node.ts");
   });
 
@@ -29,13 +29,14 @@ describe("model integrity", () => {
       [],
     );
     expect(Object.keys(manifest.conformance)).toContain("commands.jsonl");
+    expect(Object.keys(manifest.conformance)).toContain("focus.jsonl");
   });
 
   it("names the v3 bundle it was vendored from, without fp32 weights", () => {
     expect(manifest.catalogue).toBe("v3");
     expect(manifest.source).toEqual({
       repo: "system-one-uk",
-      commit: "d8e39dadceb2986308c66c96fad3138f96d67ab8",
+      commit: "b1e2b4d82c55253c12007dc3eac1fca20f1ecaba",
       runtimeVersion: "0.2.0",
       bundle: "demo/model-v33",
       registry: "default",

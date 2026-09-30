@@ -79,15 +79,30 @@ function halvedThousands(words: readonly string[]): string[] {
   return [String(before + 0.5), THOUSAND, ...words.slice(at + 3)];
 }
 
+function currencyOf(text: string): Currency | null {
+  const lowered = folded(text);
+  return CURRENCY_STEMS.find(([stem]) => (stem.length === 1 ? lowered.includes(stem) : wordsOf(text).some((word) => word.startsWith(stem))))?.[1] ?? null;
+}
+
+// D92 (P5): «21-ше», «18-го», «5-те», «на 21-ше число», ru «21-е»: a number written with an ordinal ending, and no other number and no currency said
+// with it, is a day of the month or a place in a row, never a sum. The words of the text but prepositions and «число / числа» are that one number.
+const ORDINAL_WRITTEN = /^[0-9]{1,4}-\p{L}{1,3}$/u;
+const ORDINAL_AROUND: ReadonlySet<string> = new Set(["на", "до", "к", "по", "з", "с", "із", "от", "від", "число", "числа"]);
+
+export function ordinalWritten(text: string): boolean {
+  const words = folded(text).split(/\s+/).filter((word) => word && !ORDINAL_AROUND.has(word));
+  return words.length === 1 && ORDINAL_WRITTEN.test(words[0] ?? "") && currencyOf(text) === null;
+}
+
 // «півтори тисячі» 1500 грн, «1,5к», «1,5 тис», «полторы тыщи», «два косаря» 2000, «870 гривень 50 копійок», «50 баксів» 50 USD (intents v3 §5.1).
+// D92: an ordinal («21-ше») is no sum (`ordinalWritten`).
 export function moneyAmount(text: string): Money | null {
+  if (ordinalWritten(text)) return null;
   const words = halvedThousands(numberTokens(text).map(([word]) => word));
   const said = words.map((word, index) => (index > 0 && THOUSAND_WORDS.has(word) && numberValue(words[index - 1] ?? "") !== null ? THOUSAND : word));
   const value = moneyValue(said.join(" "));
   if (value === null || !Number.isFinite(value)) return null;
-  const lowered = folded(text);
-  const currency = CURRENCY_STEMS.find(([stem]) => (stem.length === 1 ? lowered.includes(stem) : wordsOf(text).some((word) => word.startsWith(stem))))?.[1] ?? "UAH";
-  return { minor: Math.round(value * MINOR), currency };
+  return { minor: Math.round(value * MINOR), currency: currencyOf(text) ?? "UAH" };
 }
 
 export function countValue(text: string): number | null {

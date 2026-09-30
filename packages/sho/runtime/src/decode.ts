@@ -9,8 +9,9 @@ import { productReading } from "./products.ts";
 import { productRef } from "./resolve.ts";
 import { percentValue, valueOf } from "./numbers.ts";
 import { variantNumbers } from "./variantNumbers.ts";
-import { measureTexts } from "./values.ts";
+import { measureTexts, ordinalWritten } from "./values.ts";
 import { stockless, type Unsupported } from "./stockless.ts";
+import { tillRoute, type Dropped } from "./fiscal.ts";
 import { listedAction, numberlessOrder, singleGroupMove } from "./rules.ts";
 import { namedLists } from "./lists.ts";
 import { bestSpans, collectSpans, leadJoined, moneyApart, type BestSpans, type TaggedSpan } from "./spans.ts";
@@ -74,6 +75,8 @@ export interface Resolution {
   readonly catalogued: boolean;
   // D72: what the shop cannot do that the command asked (`stockless.ts`).
   readonly unsupported?: Unsupported;
+  // D89: the params a till return said that the refund it was served as does not take (`fiscal.ts`).
+  readonly dropped?: readonly Dropped[];
 }
 
 export interface Decoded {
@@ -93,6 +96,8 @@ export interface Decoded {
   readonly asks?: readonly RoleAsk[];
   // D72: what the shop cannot do that the command asked.
   readonly unsupported?: Unsupported;
+  // D89: what a till return said that the refund it was served as does not take.
+  readonly dropped?: readonly Dropped[];
   // D82: clock times said whose pieces were dropped (`clockFree`): a non-blocking `ignored` need each.
   readonly ignored?: readonly string[];
 }
@@ -208,6 +213,25 @@ function clockFree(spans: readonly TaggedSpan[], utterance: string, clocks: read
   return [kept, [...dropped]];
 }
 
+// D92 (P5): «виставити рахунок на 21-ше число»: a money span that is only a number written with an ordinal ending (`ordinalWritten`) is no sum. In an
+// intent that takes a `when` and has no `when` span, it is that date («на 21-ше» → the 21st); otherwise it is dropped, an `ignored` need, as D82 drops
+// a clock's pieces. The spans kept, and the texts dropped.
+function ordinalFree(spans: readonly TaggedSpan[], types: Readonly<Record<string, string>>): readonly [spans: readonly TaggedSpan[], ignored: readonly string[]] {
+  if (!spans.some((span) => span.kind === MONEY_KIND && ordinalWritten(span.text))) return [spans, []];
+  let dated = !Object.values(types).includes(WHEN_KIND) || spans.some((span) => span.kind === WHEN_KIND);
+  const ignored: string[] = [];
+  const kept = spans.flatMap((span) => {
+    if (span.kind !== MONEY_KIND || !ordinalWritten(span.text)) return [span];
+    if (!dated) {
+      dated = true;
+      return [{ ...span, kind: WHEN_KIND }];
+    }
+    ignored.push(span.text);
+    return [];
+  });
+  return [kept, ignored];
+}
+
 // D82 (E11): «створи рахунок для 18-го замовлення»: a customer span that is only a number (an ordinal «18-го»), in an intent that takes an order number
 // and has no order-number span, is the order.
 const NUMBER_ONLY = /^[0-9]{1,7}(?:-\p{L}{1,3})?$/u;
@@ -263,7 +287,10 @@ export function readCommand(bundle: Bundle, utterance: string, offsets: readonly
   // clock time are no params (`clockFree`).
   const percents = marks.percents ?? new Set<string>();
   const read = isV3(bundle) ? saidAgain(numberedOrder(types, percentSpans(bundle, types, discountSpans(bundle, types, brokenNames(joined, breaks), utterance, percents), percents)), utterance, bundle.lineFields) : joined;
-  const [spans, ignored] = isV3(bundle) ? clockFree(read, utterance, marks.clocks ?? [], predictedIntent.kind === "read") : [joined, []];
+  const [clocked, ignoredClocks] = isV3(bundle) ? clockFree(read, utterance, marks.clocks ?? [], predictedIntent.kind === "read") : [joined, []];
+  // D92 (v3): a number written with an ordinal ending is no sum (`ordinalFree`).
+  const [spans, ignoredOrdinals] = isV3(bundle) ? ordinalFree(clocked, types) : [clocked, []];
+  const ignored = [...ignoredClocks, ...ignoredOrdinals];
   const best = bestSpans(spans, utterance);
   const roles = isV3(bundle) ? assignRoles(bundle, types, utterance, spans) : null;
   const spoken: Record<string, ParamValue> = {};
@@ -380,8 +407,12 @@ function sizeSaid(span: TaggedSpan, utterance: string): boolean {
 export function resolve(bundle: Pick<Bundle, "intents" | "lineFields" | "listTypes" | "catalogue">, given: Reading, context: CompiledContext, breaks: ReadonlySet<string> = new Set()): Resolution {
   const reading: Reading = { ...given, params: withLabels(given.params, given.intent, given.spans, context) };
   const product = productReading(bundle, reading.action, withChosenCustomer(reading, context), reading.utterance, context);
-  const fallback = stockless(bundle, product.action, product.params, context);
-  const stocked = fallback === null ? product : { action: intentOfAction(bundle, fallback.action).action, params: fallback.params };
+  const stockFallback = stockless(bundle, product.action, product.params, context);
+  const stockServed = stockFallback === null ? product : { action: intentOfAction(bundle, stockFallback.action).action, params: stockFallback.params };
+  // D89: money given back is a till return or a refund by the words, else by the shop's till (`capabilities.fiscal`, `fiscal.ts`).
+  const till = tillRoute(bundle, stockServed.action, stockServed.params, reading.utterance, context);
+  const stocked = till === null ? stockServed : { action: intentOfAction(bundle, till.action).action, params: till.params };
+  const fallback = stockFallback ?? (till?.unsupported === undefined ? null : { unsupported: till.unsupported });
   // D79: a group, price list or counterparty the words name where the model's spans said less (`lists.ts`).
   const read = namedLists(bundle, stocked.action, stocked.params, reading.spans, reading.utterance, context);
   const { intent } = intentOfAction(bundle, read.action);
@@ -421,9 +452,10 @@ export function resolve(bundle: Pick<Bundle, "intents" | "lineFields" | "listTyp
     resolved[CUSTOMER_PARAM] = leading[1];
   }
   const unsupported = fallback === null ? {} : { unsupported: fallback.unsupported };
+  const dropped = till === null || !till.dropped.length ? {} : { dropped: till.dropped };
   // D73: a bare number said right after a line that the product's variants hold is its size, not a count or a sum («шампунь гліс на 400»).
   const sized = variantNumbers(intent, params, reading.utterance, context);
-  return { action: read.action, intent, params: first === null && leading === null ? sized : ordered(intent, sized), resolved, catalogued: lines !== null, ...unsupported };
+  return { action: read.action, intent, params: first === null && leading === null ? sized : ordered(intent, sized), resolved, catalogued: lines !== null, ...unsupported, ...dropped };
 }
 
 // Params in the intent's order, the order lines last as `catalogueLines` appends them.
@@ -452,6 +484,7 @@ export function decoded(reading: Reading, resolution: Resolution, heads: Heads):
     ...(Object.keys(reading.aux).length ? { aux: reading.aux } : {}),
     ...(reading.asks.length && resolution.action === reading.action ? { asks: reading.asks } : {}),
     ...(resolution.unsupported === undefined ? {} : { unsupported: resolution.unsupported }),
+    ...(resolution.dropped === undefined ? {} : { dropped: resolution.dropped }),
     ...(reading.ignored === undefined ? {} : { ignored: reading.ignored }),
   };
 }

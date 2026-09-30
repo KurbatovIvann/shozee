@@ -10,13 +10,14 @@ import { LEFTOVER_KINDS, LEFTOVER_SURE, UNPARSED, leftoverOf } from "./leftover.
 import { headsOf, type ModelRunner } from "./model.ts";
 import type { Params } from "./params.ts";
 import { nameAcross } from "./lists.ts";
+import { withCreates, withFocus, type FocusEntry } from "./focus.ts";
 import { fromPrevious } from "./pronouns.ts";
 import { FRAGMENT_ACTIONS, fillReferences, lostCommand, type NameOf, type References, type Segment } from "./references.ts";
 import { RESULT_SCHEMA, type CommandV2, type ContextInfo, type Need, type ResultV2 } from "./result.ts";
 import { REFINE, REFINE_WINDOW, epochOf, ignoredNeeds, refined, type Previous, type RefineClock } from "./refine.ts";
 import { MAX_COMMANDS, segmentStarts, splitCommands } from "./segment.ts";
 import type { BestSpans, TaggedSpan } from "./spans.ts";
-import { normalise, percentMarks, punctuationBreaks, rawMarks, type RawMarks } from "./text/normalise.ts";
+import { isNormalised, normalise, percentMarks, punctuationBreaks, rawMarks, type RawMarks } from "./text/normalise.ts";
 import { Tokenizer, type Encoding, type Offset } from "./tokenizer.ts";
 import type { Now } from "./when.ts";
 
@@ -40,6 +41,8 @@ export interface Inference {
   readonly timing: Timing;
 }
 
+// `raw`: recognised speech as the recogniser gave it, always (normalised here, its punctuation, «%» and clock times read). `text`: a text already
+// normalised (tests, evaluation); D91: one `normalise` would change is an InputError `text_not_normalised`.
 export type Input = { readonly raw: string } | { readonly text: string };
 
 export interface RunOptions {
@@ -50,6 +53,10 @@ export interface RunOptions {
   // D78: the command the host ran before this utterance (as the runtime returned it) and when: a refinement («а за минулий», `ui.refine`) is merged
   // into it (`refine.ts`).
   readonly previous?: Previous | null;
+  // D88: the records the host keeps in focus, newest first (`focus.ts`, `parseFocus`): a reference word («для неї», «туди», «цю групу») binds to the one
+  // live entry of its param's type that agrees (D90: by the conversation's turns, never a clock), asks when several fit, offers one only a one-tap
+  // check may take, asks when none does, and a create command says what it `creates`. Absent (null): the pronouns read `previous` as D79 does.
+  readonly focus?: readonly FocusEntry[] | null;
 }
 
 export interface HeldPass {
@@ -77,7 +84,7 @@ export interface Runtime {
   readonly bundle: Bundle;
   run(input: Input, options?: RunOptions): Promise<ResultV2>;
   decode(text: string, heads: Heads, context?: CompiledContext | null, breaks?: ReadonlySet<string>, now?: Now | null): CommandV2;
-  decodeResult(text: string, heads: Heads, passes: readonly HeldPass[], context?: CompiledContext | null, now?: Now | null, previous?: Previous | null): ResultV2;
+  decodeResult(text: string, heads: Heads, passes: readonly HeldPass[], context?: CompiledContext | null, now?: Now | null, previous?: Previous | null, focus?: readonly FocusEntry[] | null): ResultV2;
   segmentsOf(text: string, heads: Heads): readonly string[];
   tokenize(text: string): Encoding;
 }
@@ -162,8 +169,9 @@ export function createRuntime(bundle: Bundle, runner: ModelRunner, options: Runt
   function decisionOf(text: string, decoded: Decoded, inference: Inference | null, spans: readonly TaggedSpan[], now: Now | null, fill: Filled = { ...decoded, refPrevious: {} }, percents: readonly string[] = []): Decision {
     const asks = decoded.asks === undefined || fill.action !== decoded.action ? {} : { asks: decoded.asks };
     const unsupported = decoded.unsupported === undefined || fill.action !== decoded.action ? {} : { unsupported: decoded.unsupported };
+    const dropped = decoded.dropped === undefined || fill.action !== decoded.action ? {} : { dropped: decoded.dropped };
     const ignored = decoded.ignored === undefined ? {} : { ignored: decoded.ignored };
-    const decision: Decision = { text, ...fill, catalogued: decoded.catalogued, actionProbabilities: tempered(decoded.actionProbabilities, temperature), spans, ...(decoded.aux === undefined ? {} : { aux: decoded.aux }), ...asks, ...unsupported, ...ignored, ...(percents.length ? { percents } : {}), now };
+    const decision: Decision = { text, ...fill, catalogued: decoded.catalogued, actionProbabilities: tempered(decoded.actionProbabilities, temperature), spans, ...(decoded.aux === undefined ? {} : { aux: decoded.aux }), ...asks, ...unsupported, ...dropped, ...ignored, ...(percents.length ? { percents } : {}), now };
     return inference === null ? decision : { ...decision, debug: inference };
   }
 
@@ -239,7 +247,7 @@ export function createRuntime(bundle: Bundle, runner: ModelRunner, options: Runt
     return { ...command, needs: [...command.needs, need] };
   }
 
-  function assembled(raw: string | null, text: string, first: Pass, segments: readonly string[], passes: readonly Pass[], context: CompiledContext | null, debug: boolean, now: Now | null, previous: Previous | null = null, pinned = true, recovered: readonly Piece[] | null = null): ResultV2 {
+  function assembled(raw: string | null, text: string, first: Pass, segments: readonly string[], passes: readonly Pass[], context: CompiledContext | null, debug: boolean, now: Now | null, previous: Previous | null = null, pinned = true, recovered: readonly Piece[] | null = null, focus: readonly FocusEntry[] | null = null): ResultV2 {
     const percents = [...percentMarks(raw)];
     const pieces = recovered ?? servedPieces(text, first, segments, passes, context);
     // A bundle with no segment head reads one command per utterance (v2c and before): nothing is a leftover.
@@ -252,12 +260,15 @@ export function createRuntime(bundle: Bundle, runner: ModelRunner, options: Runt
     const whole = recovered === null && pieces.length === 1 && pieces[0]?.pass === first;
     const decisions = whole ? [firstDecision] : filled.map((part) => decisionOf(part.text, part.pass.decoded, debug ? part.pass.inference : null, part.spans ?? spansOf(part.text, passes), now, part, percents));
     const clock = refineClock(now, pinned);
-    // D79: a pronoun takes its record from the previous command (`pronouns.ts`).
+    // D79: a pronoun takes its record from the previous command (`pronouns.ts`); D88: with a focus from the host, a reference word takes its record from
+    // the focus (`focus.ts`) and `previous` is only what a refinement merges into.
     const withPrevious = (decision: Decision): Decision => {
+      if (focus !== null) return withFocus(bundle, decision, focus);
       const refs = fromPrevious(bundle, decision, previous, clock, refineWindow);
       return Object.keys(refs).length ? { ...decision, fromPrevious: refs } : decision;
     };
-    const build = (decision: Decision) => withUnparsed(refined(bundle, commandV2(bundle, withPrevious(decision), context, requirements), previous, clock, refineWindow), unparsed);
+    const creating = (command: CommandV2): CommandV2 => (focus === null ? command : withCreates(command));
+    const build = (decision: Decision) => creating(withUnparsed(refined(bundle, commandV2(bundle, withPrevious(decision), context, requirements), previous, clock, refineWindow), unparsed));
     // D82 (E11): a refinement said right after another command of the same utterance («відкрий форму нового прайсу | в chrome») refines that command,
     // not the host's previous one: merged into it when it is a read, else its filters are `ignored` needs on it; it gets no card of its own.
     const commands: CommandV2[] = [];
@@ -306,6 +317,9 @@ export function createRuntime(bundle: Bundle, runner: ModelRunner, options: Runt
     const raw = "raw" in input ? input.raw : null;
     const text = "raw" in input ? normalise(input.raw) : input.text;
     if (!text) throw new InputError("empty_input", "the input is empty after normalisation");
+    // D91: `{text}` is a text already normalised (tests, evaluation); recognised speech is `{raw}`. A text `normalise` would change («Шерлока», a
+    // comma) would be read as it is written and resolve nothing, so it is refused, not read.
+    if (raw === null && !isNormalised(text)) throw new InputError("text_not_normalised", `the text is not normalised (normalised: «${normalise(text)}»); pass recognised speech as {raw}`);
     const breaks = raw === null ? new Set<string>() : punctuationBreaks(raw);
     const context = runOptions.context ?? null;
     const debug = runOptions.debug === true;
@@ -319,7 +333,7 @@ export function createRuntime(bundle: Bundle, runner: ModelRunner, options: Runt
     if (wantsPasses(segments)) for (const segment of segments) passes.push(await infer(segment, context, breaks, now, marks));
     const extra: Pass[] = [];
     const recovered = segmentLogits === null || segments.length > MAX_COMMANDS ? null : await recover(servedPieces(text, first, segments, passes, context), context, breaks, now, extra, marks);
-    const result = assembled(raw, text, first, segments, passes, context, debug, now, runOptions.previous ?? null, runOptions.now !== undefined, recovered);
+    const result = assembled(raw, text, first, segments, passes, context, debug, now, runOptions.previous ?? null, runOptions.now !== undefined, recovered, runOptions.focus ?? null);
     return debug ? { ...result, debug: { first: first.inference, passes: [...passes, ...extra].map((pass) => pass.inference), total: clock() - started } } : result;
   }
 
@@ -328,12 +342,12 @@ export function createRuntime(bundle: Bundle, runner: ModelRunner, options: Runt
     return commandV2(bundle, decisionOf(text, decoded, null, decoded.spans, now), context, requirements);
   }
 
-  function decodeResult(text: string, heads: Heads, given: readonly HeldPass[], context: CompiledContext | null = null, now: Now | null = kyivNow(wallClock()), previous: Previous | null = null): ResultV2 {
+  function decodeResult(text: string, heads: Heads, given: readonly HeldPass[], context: CompiledContext | null = null, now: Now | null = kyivNow(wallClock()), previous: Previous | null = null, focus: readonly FocusEntry[] | null = null): ResultV2 {
     const first = held(text, heads, context, now);
     const segments = segmentsOf(text, heads);
     const expected = wantsPasses(segments) ? segments : [];
     if (given.length !== expected.length || given.some((pass, index) => pass.text !== expected[index])) throw new InputError("input_passes", `passes must be the ${expected.length} segment(s) of the first pass, in order`);
-    return assembled(null, text, first, segments, given.map((pass) => held(pass.text, pass.heads, context, now)), context, false, now, previous);
+    return assembled(null, text, first, segments, given.map((pass) => held(pass.text, pass.heads, context, now)), context, false, now, previous, true, null, focus);
   }
 
   return { bundle, run, decode: decodeText, decodeResult, segmentsOf, tokenize: (text) => tokenizer.encode(text) };
