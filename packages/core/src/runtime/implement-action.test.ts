@@ -184,6 +184,32 @@ describe("implementAction — valid bindings", () => {
     expect(action.confirmationSummary).toBeDefined();
   });
 
+  it("binds preview on a write action that declares no confirmation", () => {
+    const action = implementAction(staffWriteContract(), {
+      handler,
+      auditTarget,
+      preview: () => ({ title: "Confirm order", lines: [] }),
+    });
+    expect(action.preview).toBeDefined();
+  });
+
+  it("accepts preview instead of confirmationSummary on a confirmed action", () => {
+    const contract = defineActionContract({
+      ...staffWriteContract(),
+      name: "featureFlags.setOverride",
+      permissions: ["featureFlags:manage"],
+      risk: "high",
+      requiresConfirmation: true,
+      emits: [],
+    });
+    const action = implementAction(contract, {
+      handler,
+      auditTarget,
+      preview: () => ({ title: "Override feature flag", lines: [] }),
+    });
+    expect(action.preview).toBeDefined();
+  });
+
   it("accepts an optional auditSnapshot on an audited action", () => {
     const action = implementAction(staffWriteContract(), {
       handler,
@@ -306,6 +332,39 @@ describe("implementAction — binding rejections (core.md §2)", () => {
       staffWriteContract(),
       { handler, auditTarget, confirmationSummary: () => "summary" },
       "confirmationSummary is allowed only when requiresConfirmation: true",
+    );
+  });
+
+  it("rejects preview on an action that is not a write or high", () => {
+    expectProblem(
+      customerReadContract(),
+      {
+        handler,
+        resolveTarget,
+        preview: () => ({ title: "Read one payment", lines: [] }),
+      },
+      "preview is allowed only on risk write and high actions",
+    );
+  });
+
+  it("rejects binding both preview and confirmationSummary", () => {
+    const contract = defineActionContract({
+      ...staffWriteContract(),
+      name: "featureFlags.setOverride",
+      permissions: ["featureFlags:manage"],
+      risk: "high",
+      requiresConfirmation: true,
+      emits: [],
+    });
+    expectProblem(
+      contract,
+      {
+        handler,
+        auditTarget,
+        confirmationSummary: () => "summary",
+        preview: () => ({ title: "Override feature flag", lines: [] }),
+      },
+      "bind preview or confirmationSummary, never both",
     );
   });
 

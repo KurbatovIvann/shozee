@@ -15,6 +15,7 @@ import {
   ValidationError,
 } from "../../errors/index.js";
 import type {
+  ConfirmationChallengeSummary,
   ConfirmationHook,
   PipelineHookEnv,
   PipelineHookRequestMeta,
@@ -100,7 +101,7 @@ function env(
   } = {},
 ): PipelineHookEnv & {
   readonly authorization: PreflightAuthorization;
-  readonly summarize: () => string;
+  readonly summarize: () => ConfirmationChallengeSummary;
 } {
   return {
     contract,
@@ -111,7 +112,9 @@ function env(
     principal: overrides.principal ?? principal(),
     input: overrides.input ?? { note: "hello" },
     authorization: overrides.authorization ?? authorization(),
-    summarize: () => overrides.summary ?? "Revoke access for one company.",
+    summarize: () => ({
+      summary: overrides.summary ?? "Revoke access for one company.",
+    }),
   };
 }
 
@@ -350,7 +353,7 @@ describe("confirmation hook — consume and bindings", () => {
         actor: { type: "user" as const, id: userId },
         companyId: null,
       },
-      summarize: () => "Delete the account.",
+      summarize: () => ({ summary: "Delete the account." }),
     };
 
     await issue(confirmation, gateEnv);

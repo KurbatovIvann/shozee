@@ -74,6 +74,7 @@ import { createCtxCallAtomic } from "./ctx-call-atomic.js";
 import { createCtxCall } from "./ctx-call.js";
 import type {
   ActionPipelineDeps,
+  ConfirmationChallengeSummary,
   ConfirmationGrant,
   PipelineHookEnv,
   PipelineHookRequestMeta,
@@ -232,7 +233,12 @@ export async function executeAction<
     //    (steps 4/7); nothing here grants access.
     assertPrincipalShape(contract, principal);
     assertAuthenticated(principal);
-    assertRequiredProtocolHooks(contract, deps.hooks);
+    assertExecutionTimeConfirmation(contract, request);
+    assertRequiredProtocolHooks(
+      contract,
+      deps.hooks,
+      confirmationIsRequired(contract, request),
+    );
 
     const { env, hookEnv, emitBuffer, enqueueBuffer } = buildRunEnv({
       deps,
@@ -252,7 +258,7 @@ export async function executeAction<
     //    confirmation challenges or idempotency reservations. Never the
     //    only authorization check — step 7 re-authorizes in-transaction.
     const needsPreflight =
-      contract.requiresConfirmation ||
+      confirmationIsRequired(contract, request) ||
       (contract.idempotent && contract.risk !== "read");
     if (needsPreflight) {
       state.authorization = await runAuthorizationPreflight(env);
@@ -505,7 +511,7 @@ async function runConfirmationGate<
   ReplayOrExecute<TOutput, { readonly grant: ConfirmationGrant | undefined }>
 > {
   const { contract, deps } = env;
-  if (!contract.requiresConfirmation) {
+  if (!confirmationIsRequired(contract, env.request)) {
     return { kind: "execute", grant: undefined };
   }
   const confirmedAuth = requireAuthorization(
@@ -812,6 +818,7 @@ async function recordFailureOutcome(options: {
 function assertRequiredProtocolHooks(
   contract: AnyActionContract,
   hooks: ActionPipelineDeps["hooks"],
+  requiresConfirmation: boolean,
 ): void {
   if (contract.principal !== "system" && hooks?.rateLimit === undefined) {
     throw new CoreInvariantError(
@@ -832,7 +839,7 @@ function assertRequiredProtocolHooks(
       `"${contract.name}" declares audit: true but no audit hook is composed`,
     );
   }
-  if (contract.requiresConfirmation && hooks?.confirmation === undefined) {
+  if (requiresConfirmation && hooks?.confirmation === undefined) {
     throw new CoreInvariantError(
       `"${contract.name}" requires confirmation but no confirmation hook is composed — high-risk execution cannot proceed`,
     );
@@ -931,20 +938,48 @@ function bindConfirmationSummary<
 >(
   env: RunEnv<TInput, TOutput, TTarget>,
   authorization: PreflightAuthorization,
-): () => MaybePromise<string> {
-  const summarize = env.action.confirmationSummary;
-  if (summarize === undefined) {
-    throw new CoreInvariantError(
-      `action "${env.contract.name}" requires confirmation but binds no confirmationSummary — implementAction should have rejected this pairing`,
-    );
-  }
+): () => MaybePromise<ConfirmationChallengeSummary> {
   const summaryEnv: ConfirmationSummaryEnv = {
     companyId: authorization.companyId,
     ...(authorization.target !== undefined
       ? { target: authorization.target }
       : {}),
   };
-  return () => summarize(env.input, summaryEnv);
+  const preview = env.action.preview;
+  if (preview !== undefined) {
+    return async () => {
+      const card = await preview(env.input, summaryEnv);
+      return { summary: card.title, preview: card };
+    };
+  }
+  const summarize = env.action.confirmationSummary;
+  if (summarize === undefined) {
+    throw new CoreInvariantError(
+      `action "${env.contract.name}" must present a confirmation card but binds neither preview nor confirmationSummary`,
+    );
+  }
+  return async () => ({ summary: await summarize(env.input, summaryEnv) });
+}
+
+function confirmationIsRequired(
+  contract: AnyActionContract,
+  request: PipelineHookRequestMeta,
+): boolean {
+  return contract.requiresConfirmation || request.requireConfirmation === true;
+}
+
+function assertExecutionTimeConfirmation(
+  contract: AnyActionContract,
+  request: PipelineHookRequestMeta,
+): void {
+  if (request.requireConfirmation !== true) {
+    return;
+  }
+  if (contract.risk !== "write" && contract.risk !== "high") {
+    throw new CoreInvariantError(
+      `"${contract.name}" is risk "${contract.risk}" — an execution-time requireConfirmation applies only to write and high actions (core.md §7)`,
+    );
+  }
 }
 
 /**

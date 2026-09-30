@@ -27,6 +27,7 @@ import {
 import { canonicalJsonSha256OfUnknown } from "../audit/canonical-json.js";
 import { principalKeyFor, requireIdempotencyKey } from "../idempotency/keys.js";
 import type {
+  ConfirmationChallengeSummary,
   ConfirmationGrant,
   ConfirmationHook,
   PipelineHookEnv,
@@ -57,7 +58,8 @@ export interface ConfirmationHookDeps {
 
 type GateEnv = PipelineHookEnv & {
   readonly authorization: PreflightAuthorization;
-  readonly summarize: () => string | Promise<string>;
+  readonly summarize: () =>
+    ConfirmationChallengeSummary | Promise<ConfirmationChallengeSummary>;
 };
 
 export function createConfirmationHook(
@@ -167,7 +169,7 @@ async function issueChallenge(
     idempotencyKey: bindings.idempotencyKey,
     expiresAt: expiresAt.toISOString(),
   };
-  const summary = await env.summarize();
+  const { summary, preview } = await env.summarize();
   await withStore(env.contract.name, () =>
     store.set(
       challengeKey(challengeId),
@@ -179,6 +181,7 @@ async function issueChallenge(
     challengeId,
     summary,
     expiresAt: expiresAt.toISOString(),
+    ...(preview !== undefined ? { preview } : {}),
   });
 }
 
