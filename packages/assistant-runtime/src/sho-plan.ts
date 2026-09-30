@@ -42,7 +42,7 @@ export interface ShoResult {
 
 export interface ShoEngine {
   parse(input: {
-    readonly text: string;
+    readonly raw: string;
     readonly now: Date;
   }): Promise<ShoResult>;
 }
@@ -71,7 +71,17 @@ export type ShoFallbackReason =
   | "unsupported_param"
   | "unresolved_reference"
   | "blocking_need"
+  | "no_param_plan"
   | "engine_failed";
+
+export const SHO_GATE_FAILURES: readonly ShoFallbackReason[] = [
+  "no_command",
+  "many_commands",
+  "not_whitelisted",
+  "low_confidence",
+  "blocking_need",
+  "engine_failed",
+];
 
 interface ShoCall {
   readonly toolName: string;
@@ -267,7 +277,11 @@ function planOrdersCreate(command: ShoCommand): ShoPlan {
   };
 }
 
-export function planShoTurn(result: ShoResult, now: Date): ShoPlan {
+export function planShoTurn(
+  result: ShoResult,
+  now: Date,
+  whitelist: Readonly<Record<string, string>> = SHO_WHITELIST,
+): ShoPlan {
   if (result.tooMany || result.commands.length > 1) {
     return fallback("many_commands");
   }
@@ -275,7 +289,7 @@ export function planShoTurn(result: ShoResult, now: Date): ShoPlan {
   if (command === undefined) {
     return fallback("no_command");
   }
-  const toolName = SHO_WHITELIST[command.action];
+  const toolName = whitelist[command.action];
   if (toolName === undefined) {
     return fallback("not_whitelisted");
   }
@@ -290,7 +304,10 @@ export function planShoTurn(result: ShoResult, now: Date): ShoPlan {
   if (!onlyAmbiguousCustomer) {
     return fallback("blocking_need");
   }
-  return toolName === SHO_ORDERS_LIST_TOOL
-    ? planOrdersList(command, now)
-    : planOrdersCreate(command);
+  if (toolName === SHO_ORDERS_LIST_TOOL) {
+    return planOrdersList(command, now);
+  }
+  return toolName === SHO_ORDERS_CREATE_TOOL
+    ? planOrdersCreate(command)
+    : fallback("no_param_plan");
 }

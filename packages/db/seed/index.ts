@@ -1,4 +1,18 @@
 export {
+  devShoBakeryCompany,
+  devShoBakeryCompanyId,
+  devShoBakeryCustomers,
+  devShoBakeryGroups,
+  devShoBakeryId,
+  devShoBakeryOwner,
+  devShoBakeryOwnerUserId,
+  devShoBakeryPriceLists,
+  devShoBakeryProducts,
+  seedDevShoBakery,
+  type DevShoBakeryProduct,
+  type DevShoBakerySeed,
+} from "./dev-sho-bakery.js";
+export {
   rolePermissionDefaultRows,
   seedRolePermissionDefaults,
 } from "./role-permission-defaults.js";

@@ -4,7 +4,7 @@
  * runtime role; raw SQL is limited to PostgreSQL catalog structure checks.
  */
 import assert from "node:assert/strict";
-import { readdir } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 
 import { eq } from "drizzle-orm";
@@ -19,7 +19,9 @@ import {
 } from "vitest";
 
 import {
+  devShoBakeryCustomers,
   rolePermissionDefaultRows,
+  seedDevShoBakery,
   seedRolePermissionDefaults,
 } from "../seed/index.js";
 import type { DbClient } from "./client.js";
@@ -30,6 +32,7 @@ import {
   companyMembers,
   rolePermissionDefaults,
 } from "./schema/companies.js";
+import { companyCustomers } from "./schema/customers.js";
 import { createTestDatabase, type TestDatabase } from "./testing/harness.js";
 
 let database: TestDatabase;
@@ -270,12 +273,39 @@ describe("companies foundation schema", () => {
 });
 
 describe("role permission defaults seed", () => {
-  it("does not ship the local-dev company/staff/product fixture seed (db.md §9)", async () => {
+  it("ships exactly the seeds db.md §9 names", async () => {
     const seedDir = path.resolve(import.meta.dirname, "../seed");
     const names = (await readdir(seedDir)).filter((name) =>
       name.endsWith(".ts"),
     );
-    expect(names.sort()).toEqual(["index.ts", "role-permission-defaults.ts"]);
+    expect(names.sort()).toEqual([
+      "dev-sho-bakery-cli.ts",
+      "dev-sho-bakery.ts",
+      "index.ts",
+      "role-permission-defaults.ts",
+    ]);
+  });
+
+  it("keeps the local-dev fixture seed out of production (db.md §9)", async () => {
+    const cli = await readFile(
+      path.resolve(import.meta.dirname, "../seed/dev-sho-bakery-cli.ts"),
+      "utf8",
+    );
+    expect(cli).toContain('config.nodeEnv === "production"');
+    expect(cli).toContain("process.exit(1)");
+  });
+
+  it("seeds the dev bakery idempotently with a resolvable catalogue", async () => {
+    const first = await seedDevShoBakery(dbClient.db);
+    const second = await seedDevShoBakery(dbClient.db);
+    expect(second).toEqual(first);
+    const seeded = await dbClient.db
+      .select({ name: companyCustomers.name })
+      .from(companyCustomers)
+      .where(eq(companyCustomers.companyId, first.companyId));
+    expect(seeded.map((row) => row.name).sort()).toEqual(
+      [...devShoBakeryCustomers].sort(),
+    );
   });
 
   it("is idempotent and never seeds the implicit owner role", async () => {

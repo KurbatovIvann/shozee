@@ -227,7 +227,7 @@ export async function runShoTurn(input: ShoTurnInput): Promise<ShoTurnOutcome> {
   let plan: ShoPlan;
   try {
     plan = planShoTurn(
-      await input.engine.parse({ text: input.text, now: input.now }),
+      await input.engine.parse({ raw: input.text, now: input.now }),
       input.now,
     );
   } catch {
