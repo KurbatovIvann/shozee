@@ -51,10 +51,15 @@ an ordinary LLM turn, and Шо's parse is discarded.**
 - The accept calls `POST /v1/parse` (ADR-0051) after the existing
   repeated-command, budget and open-question checks, before anything is
   enqueued. The whole Шо path has a ~1 s time budget.
-- A command is taken when confidence ≥ 0.95, the action is on the whitelist,
-  and the only blocking need is an ambiguous reference. Reads answer at once;
-  writes open the preview card (ADR-0050); an ambiguous reference opens a
-  choice card.
+- A command is taken when confidence **≥ 0.95**, the action is on the
+  whitelist, and the only blocking need is an ambiguous reference. Reads
+  answer at once; writes open the preview card (ADR-0050); an ambiguous
+  reference opens a choice card.
+- The floor is calibrated, not a round number: on the SHO-734 ticket
+  whitelist, action accuracy is **99.0% at ≥ 0.95** against **98.0% at
+  ≥ 0.90**, and the bar is ≥ 97%. It does not reach the wrong-write class —
+  that is ADR-0050's job — and raising it further buys 0.3 points at the cost
+  of turns Шо would have closed correctly.
 - Talk, non-commands, unsupported actions, several commands in one message and
   anything depending on the conversation go to Haiku with today's tool loop.
   **Шо's parse is not attached to the prompt** — arm B cost 8.6 points of
@@ -70,6 +75,10 @@ an ordinary LLM turn, and Шо's parse is discarded.**
 - Budget: `withAssistantKitBudget` keeps the per-minute turn limit and holds
   **$0** for the Шо path. A fall-through turn reserves as it does today.
 - Any Шо error, timeout, or unusable parse is an ordinary LLM turn.
+- **Retraining data** (owner, 2026-09-30): the command transcript and Шо's
+  result are stored for retraining in **dev and test companies only**, and no
+  audio is stored anywhere. Whether real company commands may be kept is a
+  production policy, decided before there is production.
 - Шо closes a turn by calling the same `executeAction` handlers through the
   same façades (ADR-0033). It is not a second domain path.
 
@@ -147,7 +156,3 @@ ADR-0037's rule that model output is never a resolution survives: Шо's
    interaction is open? Falling through to the LLM is proposed; 10 of the 14
    measured answer cases produce them.
 2. Which param planners next? 222 of 367 closures fall back today.
-3. Is ≥ 0.95 the right floor? Raising it to 0.99 moves accuracy 98.6% → 98.9%
-   and removes neither wrong write.
-4. Do we keep staff command text (and audio) to train Шо, and on what consent
-   basis?

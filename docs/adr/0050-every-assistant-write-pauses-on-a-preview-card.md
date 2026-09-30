@@ -61,19 +61,18 @@ flag, and not from a rule inside `packages/ai`.**
   preview is a gate core does not verify, because `runConfirmationGate`
   returns `execute` at `execute-action.ts:508` and a `challengeId` on the
   attempt is ignored.
-- **The honest answer is that core must change.** The assistant needs an
-  execution-time approval it can present for an action whose contract does not
-  declare `requiresConfirmation`, bound the way a challenge is bound —
-  principal, company, input hash, idempotency key, single use. Options for the
-  owner, when it is ticketed:
-  1. an execution option (`requireConfirmation: true`) that turns core's §7
-     gate on for this attempt — smallest change, reuses §7 whole; **preferred**;
-  2. `requiresConfirmation: true` on every write contract — rejected below;
-  3. a separate assistant-approval protocol beside §7 — a second copy of a
-     protocol that already exists.
-- Until that lands, the preview is a UI gate and is described as one — here,
-  in the runbook, and in what the card's tests assert. It is not written down
-  as authorization.
+- **Core must change, and this is the change** (owner, 2026-09-30): core gains
+  an **execution-time `requireConfirmation` option** that turns the §7 gate on
+  for one attempt, whatever the contract declares. Core then issues and
+  consumes an ordinary challenge — bound to principal, company, input hash and
+  idempotency key, single use, 5-minute expiry, fail-closed — so the preview
+  card carries a real challenge on every assistant write, not only on the
+  five contracts that declare one. It reuses §7 whole: no second approval
+  protocol, and no change to how the classic UI invokes anything.
+  **Proposed here for a `packages/core` ticket, not built by it.**
+- Until that ticket lands, the preview is a UI gate and is described as one —
+  here, in the runbook, and in what the card's tests assert. It is not written
+  down as authorization.
 
 ## Amendments to earlier ADRs
 
@@ -95,11 +94,15 @@ core option above is accepted and ticketed.
   already says the action writes. Two fields for one fact drift silently, and
   the first place they disagree is the defect class this repo has already
   paid for (SHO-486, derive on one side and hardcode on the other).
-- **`requiresConfirmation: true` on every write contract.** Rejected: that
-  field is core's *authorization* challenge — a Redis round trip, a single-use
-  token, a 5-minute expiry, fail-closed. Setting it on every write puts a
-  two-step dialog and a Redis dependency on every classic-UI save. ADR-0033's
-  one data path is the handler, not the dialog.
+- **`requiresConfirmation: true` on every write contract.** Rejected: the
+  field is a property of the *action*, and setting it puts a two-step dialog
+  and a Redis round trip on every classic-UI save as well. ADR-0033's one data
+  path is the handler, not the dialog. The execution-time option in the
+  Decision gets the same gate for the caller that needs it.
+- **A separate assistant-approval protocol beside core §7.** Rejected: a
+  second copy of a protocol that already exists — the same single-use,
+  principal-bound, hash-bound, fail-closed rules, written twice and diverging
+  on the first fix applied to one of them.
 - **A rule inside `packages/ai` (an assistant-channel rule).** Rejected:
   `packages/ai` is a façade layer (ADR-0033) and the Шо path does not pass
   through it, so the rule would be written twice and the server would own
@@ -137,9 +140,8 @@ core option above is accepted and ticketed.
 
 ## Open questions
 
-1. Which of the three core options? (1 is preferred.)
-2. Does `also` — two actions on one card — approve both with one tap, or one
+1. Does `also` — two actions on one card — approve both with one tap, or one
    tap each?
-3. Does a declined card leave a trace, or only a closed one?
-4. Does the preview cover `risk: "draft"` actions too, or only `write` and
+2. Does a declined card leave a trace, or only a closed one?
+3. Does the preview cover `risk: "draft"` actions too, or only `write` and
    `high`?

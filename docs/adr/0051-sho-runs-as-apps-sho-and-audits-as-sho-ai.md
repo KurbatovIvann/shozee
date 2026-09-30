@@ -35,7 +35,10 @@ where it runs and what it is given.
   `packages/db/src/schema/tenant-columns.ts`.
 - SHO-733 finding 7: `packages/sho` is not type-importable from other
   packages (`.ts` specifiers).
-- `onnxruntime-node` is approved. `@google-cloud/speech` (Chirp 3) is not.
+- `onnxruntime-node` and `@google-cloud/speech` (Chirp 3) are approved
+  (owner, 2026-09-30). A WebSocket adapter for Hono is not: `apps/api` has
+  `hono` and `@hono/node-server`, and WebSockets on that server need the
+  separate `@hono/node-ws`.
 
 ## Decision
 
@@ -95,9 +98,15 @@ where it runs and what it is given.
   is a fifth value in the core channel enum and in the db CHECKs named in
   Context. **This is a `packages/core` and `packages/db` change: proposed
   here, not built.**
-- **Dependencies.** `onnxruntime-node` is approved. `@google-cloud/speech`
-  (Chirp 3) and a WebSocket adapter for Hono are **proposed** and need the
-  owner's approval before a ticket adds them.
+- **Retraining data** (owner, 2026-09-30): the command transcript and Шо's
+  result are stored for retraining in **dev and test companies only**, and no
+  audio is stored anywhere. A policy for real company commands is decided
+  before there is production (ADR-0049 states the same rule).
+- **Dependencies.** `onnxruntime-node` and `@google-cloud/speech` (Chirp 3)
+  are **approved** (owner, 2026-09-30). A WebSocket adapter is a **separate
+  dependency and stays proposed**: `apps/api` runs Hono on
+  `@hono/node-server`, whose WebSocket support is the `@hono/node-ws` package
+  (which pulls `ws`), not part of `hono` itself.
 
 ## Amendments to earlier ADRs
 
@@ -158,9 +167,5 @@ mounts no model loop of the AI SDK and reaches no database.
 ## Open questions
 
 1. Does `sho-ai` count in `countedCreatedVia` (today `ui` and `system`)?
-2. Do we keep staff command text and audio to train Шо, and on what consent
-   basis?
-3. `@google-cloud/speech` and a Hono WebSocket adapter: approve now, or defer
-   speech to a later feature?
-4. Is the fingerprint TTL acceptable as the stand-in, and for how long before
+2. Is the fingerprint TTL acceptable as the stand-in, and for how long before
    the collection revision is ticketed?
