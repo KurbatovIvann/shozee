@@ -1,6 +1,8 @@
 # ADR-0042: Snapshot reads, aggregate revisions, and live resources
 
 - **Status**: Accepted
+- **Amended by**: ADR-0051 (Proposed) — the Шо context is the first caller for
+  the collection revision this ADR left out of scope.
 - **Date**: 2026-09-13
 - **Deciders**: Ivan Kurbatov (human) (+ proposing agent)
 

@@ -13,6 +13,8 @@ humans) don't relitigate settled questions or silently deviate.
   changing it, stop and bring that evidence to the human. A superseding ADR
   is accepted before code deviates.
 - New ADRs are proposed via PR using `template.md`, numbered sequentially.
+  0043–0048 are reserved: they are taken on the shelved
+  `feat/typesafe-judgment-port` branch, so the index jumps from 0042 to 0049.
 - Status lifecycle: `Proposed` → `Accepted` → (`Superseded by ADR-XXXX` | `Deprecated`).
 
 ## Index
@@ -56,8 +58,11 @@ humans) don't relitigate settled questions or silently deviate.
 | [0035](0035-one-pending-interaction-protocol.md) | One pending-interaction protocol; confirmation resumes without a model call | Superseded by ADR-0038 |
 | [0036](0036-assistant-speech-is-not-a-surface.md) | Assistant speech is not a surface | Superseded by ADR-0038 |
 | [0037](0037-assistant-host-is-one-tool-loop.md) | The staff assistant host is one tool loop | Superseded by ADR-0038 |
-| [0038](0038-assistant-is-a-stored-document.md) | The assistant is a stored document and a claimable pause | Accepted (amended by ADR-0042) |
-| [0039](0039-assistant-turn-runs-off-the-request.md) | The assistant turn runs off the request | Accepted (amended by ADR-0041, ADR-0042) |
+| [0038](0038-assistant-is-a-stored-document.md) | The assistant is a stored document and a claimable pause | Accepted (amended by ADR-0042; ADR-0049, ADR-0050 proposed) |
+| [0039](0039-assistant-turn-runs-off-the-request.md) | The assistant turn runs off the request | Accepted (amended by ADR-0041, ADR-0042; ADR-0049 proposed) |
 | [0040](0040-claude-code-agent-harness.md) | Claude Code is the agent harness | Accepted |
 | [0041](0041-postgres-first-job-runner.md) | Background jobs are enqueued in the transaction and run from Postgres behind a runner port | Accepted |
-| [0042](0042-snapshot-reads-revisions-live-resources.md) | Snapshot reads, aggregate revisions, and live resources | Accepted |
+| [0042](0042-snapshot-reads-revisions-live-resources.md) | Snapshot reads, aggregate revisions, and live resources | Accepted (ADR-0051 proposed) |
+| [0049](0049-sho-parses-every-assistant-message-first.md) | Шо parses every staff assistant message first | Proposed |
+| [0050](0050-every-assistant-write-pauses-on-a-preview-card.md) | Every assistant write pauses on a preview card | Proposed |
+| [0051](0051-sho-runs-as-apps-sho-and-audits-as-sho-ai.md) | Шо runs as `apps/sho`, and its audit channel is `sho-ai` | Proposed |
