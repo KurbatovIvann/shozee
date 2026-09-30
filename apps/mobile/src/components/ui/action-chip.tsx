@@ -26,21 +26,25 @@ export function ActionChip(props: {
 }
 
 const styles = StyleSheet.create((theme) => ({
-  chip: chipCapsule({
-    theme,
-    paddingHorizontal: theme.spacing.md,
-    shrink: false,
-  }),
-  chipShrink: chipCapsule({
-    theme,
-    paddingHorizontal: theme.spacing.md,
-    shrink: true,
-  }),
+  chip: {
+    ...chipCapsule({
+      theme,
+      paddingHorizontal: theme.spacing.md,
+      shrink: false,
+    }),
+  },
+  chipShrink: {
+    ...chipCapsule({
+      theme,
+      paddingHorizontal: theme.spacing.md,
+      shrink: true,
+    }),
+  },
   label: {
     flexShrink: 1,
     color: theme.colors.mutedForeground,
     fontSize: theme.typography.sm.fontSize,
     lineHeight: theme.typography.sm.lineHeight,
   },
-  pressed: chipPressed(theme),
+  pressed: { ...chipPressed(theme) },
 }));

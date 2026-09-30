@@ -57,4 +57,13 @@ describe("chipCapsule", () => {
     expect(actionChip).not.toContain("theme.radii.full");
     expect(choiceField).not.toContain("theme.radii.full");
   });
+
+  it("is spread into a style literal so Unistyles still tracks the theme", () => {
+    for (const source of [actionChip, choiceField]) {
+      expect(source).toMatch(/:\s*\{\s*\.\.\.chipCapsule\(/);
+      expect(source).toMatch(/:\s*\{\s*\.\.\.chipPressed\(/);
+      expect(source).not.toMatch(/:\s*chipCapsule\(/);
+      expect(source).not.toMatch(/:\s*chipPressed\(/);
+    }
+  });
 });

@@ -75,16 +75,18 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     gap: theme.spacing.sm,
   },
-  chip: chipCapsule({
-    theme,
-    paddingHorizontal: theme.spacing.lg,
-    shrink: false,
-  }),
+  chip: {
+    ...chipCapsule({
+      theme,
+      paddingHorizontal: theme.spacing.lg,
+      shrink: false,
+    }),
+  },
   chipSelected: {
     borderColor: theme.colors.primary,
     backgroundColor: theme.colors.primary,
   },
-  pressed: chipPressed(theme),
+  pressed: { ...chipPressed(theme) },
   chipLabel: {
     color: theme.colors.foreground,
     fontSize: theme.typography.sm.fontSize,
