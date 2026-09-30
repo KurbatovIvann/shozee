@@ -67,7 +67,7 @@ beforeAll(async () => {
     customers: [{ id: customerId, name: "Олена Коваль" }],
   });
   const engine: ShoEngine = {
-    parse: ({ text }) => sho.run({ text }, { context }),
+    parse: ({ raw }) => sho.run({ raw }, { context }),
   };
 
   const runtime = createAssistantKitRuntime({

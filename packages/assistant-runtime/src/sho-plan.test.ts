@@ -156,4 +156,26 @@ describe("planShoTurn", () => {
       ),
     ).toMatchObject({ kind: "read" });
   });
+
+  it("gates an action the caller's whitelist adds but no planner maps", () => {
+    const given = result({ action: "orders.get", params: {} });
+    expect(planned(given)).toEqual({
+      kind: "fallback",
+      reason: "not_whitelisted",
+    });
+    expect(planShoTurn(given, NOW, { "orders.get": "orders_get" })).toEqual({
+      kind: "fallback",
+      reason: "no_param_plan",
+    });
+  });
+
+  it("keeps the default whitelist when the caller passes none", () => {
+    expect(planShoTurn(result({ action: "orders.list" }), NOW, {})).toEqual({
+      kind: "fallback",
+      reason: "not_whitelisted",
+    });
+    expect(planned(result({ action: "orders.list" }))).toMatchObject({
+      kind: "read",
+    });
+  });
 });
