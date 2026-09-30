@@ -30,3 +30,40 @@ export function assistantShozikPose(input: {
 export function assistantComposerSendVisible(input: string): boolean {
   return input.trim().length > 0;
 }
+
+export type AssistantExampleChip = {
+  readonly key: string;
+  readonly text: string;
+};
+
+export function assistantExampleChips(input: {
+  readonly examples: readonly string[];
+  readonly busy: boolean;
+}): readonly AssistantExampleChip[] {
+  if (input.busy) {
+    return [];
+  }
+  const seen = new Set<string>();
+  const chips: AssistantExampleChip[] = [];
+  for (const example of input.examples) {
+    const text = example.trim();
+    if (text.length === 0 || seen.has(text)) {
+      continue;
+    }
+    seen.add(text);
+    chips.push({ key: text, text });
+  }
+  return chips;
+}
+
+export type AssistantReplyTone = "reply" | "clarify" | "error";
+
+export function assistantReplyTone(input: {
+  readonly failed: boolean;
+  readonly hasOpenQuestion: boolean;
+}): AssistantReplyTone {
+  if (input.failed) {
+    return "error";
+  }
+  return input.hasOpenQuestion ? "clarify" : "reply";
+}

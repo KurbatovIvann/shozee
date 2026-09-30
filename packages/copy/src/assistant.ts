@@ -103,6 +103,7 @@ export type AssistantCopy = {
   readonly inputPlaceholder: string;
   readonly inputLabel: string;
   readonly sendLabel: string;
+  readonly examples: readonly [string, string, string, string];
   readonly confirmLabel: string;
   readonly dismissLabel: string;
   readonly confirmingLabel: string;
@@ -248,6 +249,12 @@ const assistantEn: AssistantCopy = {
   inputPlaceholder: "Write a request…",
   inputLabel: "Message to the assistant",
   sendLabel: "Send",
+  examples: [
+    "Today's orders",
+    "Revenue this week",
+    "Customers list",
+    "Products in the catalog",
+  ],
   confirmLabel: "Confirm",
   dismissLabel: "Cancel",
   confirmingLabel: "Confirming…",
@@ -329,6 +336,12 @@ const assistantUk: AssistantCopy = {
   inputPlaceholder: "Напиши запит…",
   inputLabel: "Повідомлення асистенту",
   sendLabel: "Надіслати",
+  examples: [
+    "Замовлення за сьогодні",
+    "Виторг за цей тиждень",
+    "Список клієнтів",
+    "Товари в каталозі",
+  ],
   confirmLabel: "Підтвердити",
   dismissLabel: "Скасувати",
   confirmingLabel: "Підтверджую…",

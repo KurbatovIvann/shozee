@@ -3,7 +3,11 @@ import { SendHorizonalIcon } from "lucide-react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 
 import { keyboardAppearance } from "../../../theme/tokens";
-import { assistantComposerSendVisible } from "./assistant-chrome";
+import {
+  assistantComposerSendVisible,
+  type AssistantExampleChip,
+} from "./assistant-chrome";
+import { AssistantExampleChips } from "./assistant-example-chips";
 
 export function AssistantComposer(props: {
   readonly value: string;
@@ -14,6 +18,8 @@ export function AssistantComposer(props: {
   readonly sendLabel: string;
   readonly editable: boolean;
   readonly canSend: boolean;
+  readonly exampleChips: readonly AssistantExampleChip[];
+  readonly onSendExample: (text: string) => void;
 }) {
   const { theme, rt } = useUnistyles();
   const showSend = assistantComposerSendVisible(props.value);
@@ -22,35 +28,42 @@ export function AssistantComposer(props: {
     : theme.colors.icon.muted;
 
   return (
-    <View style={styles.row}>
-      <TextInput
-        value={props.value}
-        onChangeText={props.onChangeText}
-        placeholder={props.placeholder}
-        placeholderTextColor={theme.colors.icon.muted}
-        accessibilityLabel={props.accessibilityLabel}
-        editable={props.editable}
-        returnKeyType="send"
-        onSubmitEditing={props.onSend}
-        style={styles.input}
-        keyboardAppearance={keyboardAppearance(rt.themeName)}
+    <>
+      <AssistantExampleChips
+        chips={props.exampleChips}
+        layout="scroll"
+        onSend={props.onSendExample}
       />
-      {showSend ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={props.sendLabel}
-          disabled={!props.canSend}
-          onPress={props.onSend}
-          style={({ pressed }) => [
-            styles.send,
-            props.canSend ? styles.sendReady : styles.sendDisabled,
-            pressed && props.canSend ? styles.pressed : null,
-          ]}
-        >
-          <SendHorizonalIcon size={theme.iconSize.sm} color={sendColor} />
-        </Pressable>
-      ) : null}
-    </View>
+      <View style={styles.row}>
+        <TextInput
+          value={props.value}
+          onChangeText={props.onChangeText}
+          placeholder={props.placeholder}
+          placeholderTextColor={theme.colors.icon.muted}
+          accessibilityLabel={props.accessibilityLabel}
+          editable={props.editable}
+          returnKeyType="send"
+          onSubmitEditing={props.onSend}
+          style={styles.input}
+          keyboardAppearance={keyboardAppearance(rt.themeName)}
+        />
+        {showSend ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={props.sendLabel}
+            disabled={!props.canSend}
+            onPress={props.onSend}
+            style={({ pressed }) => [
+              styles.send,
+              props.canSend ? styles.sendReady : styles.sendDisabled,
+              pressed && props.canSend ? styles.pressed : null,
+            ]}
+          >
+            <SendHorizonalIcon size={theme.iconSize.sm} color={sendColor} />
+          </Pressable>
+        ) : null}
+      </View>
+    </>
   );
 }
 

@@ -152,6 +152,17 @@ export function useAssistantSheet(): AssistantSheetViewModel & {
     });
   }, [conversation, input]);
 
+  const sendExample = useCallback(
+    (raw: string) => {
+      const text = clipAssistantKitText(raw);
+      if (text.length === 0) {
+        return;
+      }
+      void conversation.send(text);
+    },
+    [conversation],
+  );
+
   const openHref = useCallback(
     (href: string) => {
       push(href);
@@ -174,6 +185,7 @@ export function useAssistantSheet(): AssistantSheetViewModel & {
     input,
     changeInput: setInput,
     send,
+    sendExample,
     answer: conversation.answer,
     dismiss: conversation.dismiss,
     continueTurn: conversation.continueTurn,

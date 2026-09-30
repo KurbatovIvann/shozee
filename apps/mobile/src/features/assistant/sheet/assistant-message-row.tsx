@@ -9,6 +9,10 @@ import {
 import type { AssistantInteraction } from "@showzy/validation/assistant-chat";
 
 import { assistantSurfaceKey, type AssistantSurface } from "../surfaces";
+import {
+  assistantReplyTone,
+  type AssistantReplyTone,
+} from "./assistant-chrome";
 import { AssistantMarkdownView } from "./assistant-markdown-view";
 import { AssistantSurfaceCard } from "./assistant-surface-card";
 import { AssistantWaitLine } from "./assistant-wait-line";
@@ -43,6 +47,10 @@ export const AssistantMessageRow = memo(function AssistantMessageRow(props: {
 }) {
   const isUser = props.role === "user";
   const interaction = props.interaction;
+  const tone = assistantReplyTone({
+    failed: props.failed,
+    hasOpenQuestion: interaction !== null,
+  });
 
   return (
     <View style={isUser ? styles.userWrap : styles.assistantWrap}>
@@ -57,7 +65,7 @@ export const AssistantMessageRow = memo(function AssistantMessageRow(props: {
         isUser ? (
           <Text style={styles.userBubble}>{props.text}</Text>
         ) : (
-          <View style={styles.assistantBubble}>
+          <View style={[styles.assistantBubble, styles.bubbleTone(tone)]}>
             <AssistantMarkdownView
               text={props.text}
               onOpenHref={props.onOpenHref}
@@ -150,10 +158,21 @@ const styles = StyleSheet.create((theme) => ({
     overflow: "hidden",
     borderRadius: theme.radii.lg,
     borderBottomLeftRadius: theme.radii.sm,
+    borderWidth: 1,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm + theme.spacing["2xs"],
     ...theme.shadows.sm,
   },
+  bubbleTone: (tone: AssistantReplyTone) => ({
+    borderColor:
+      tone === "error"
+        ? theme.colors.destructive
+        : tone === "clarify"
+          ? theme.colors.warning
+          : theme.colors.card,
+    backgroundColor:
+      tone === "error" ? theme.colors.destructiveSoft : theme.colors.card,
+  }),
 }));
 
 function AssistantTurnResult(props: { readonly children: ReactNode }) {
