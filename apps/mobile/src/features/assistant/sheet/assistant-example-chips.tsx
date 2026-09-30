@@ -1,6 +1,7 @@
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { ScrollView, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 
+import { ActionChip, inertHorizontalScrollProps } from "../../../components/ui";
 import type { AssistantExampleChip } from "./assistant-chrome";
 
 export function AssistantExampleChips(props: {
@@ -14,24 +15,23 @@ export function AssistantExampleChips(props: {
   }
 
   const items = props.chips.map((chip) => (
-    <Pressable
+    <ActionChip
       key={chip.key}
-      accessibilityRole="button"
-      accessibilityLabel={chip.text}
+      label={chip.text}
       onPress={() => {
         props.onSend(chip.text);
       }}
-      style={({ pressed }) => [styles.chip, pressed ? styles.pressed : null]}
-    >
-      <Text numberOfLines={1} style={styles.chipLabel}>
-        {chip.text}
-      </Text>
-    </Pressable>
+    />
   ));
 
   if (props.layout === "wrap") {
     return (
-      <View accessibilityLabel={props.label} style={styles.wrap}>
+      <View
+        accessible={false}
+        accessibilityRole="list"
+        accessibilityLabel={props.label}
+        style={styles.wrap}
+      >
         {items}
       </View>
     );
@@ -39,9 +39,10 @@ export function AssistantExampleChips(props: {
 
   return (
     <ScrollView
-      horizontal
+      {...inertHorizontalScrollProps}
+      accessible={false}
+      accessibilityRole="list"
       accessibilityLabel={props.label}
-      showsHorizontalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
       style={styles.strip}
       contentContainerStyle={styles.stripContent}
@@ -65,21 +66,5 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     gap: theme.spacing.sm,
     paddingBottom: theme.spacing.sm,
-  },
-  chip: {
-    borderRadius: theme.radii.full,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.card,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-  },
-  chipLabel: {
-    color: theme.colors.mutedForeground,
-    fontSize: theme.typography.sm.fontSize,
-    lineHeight: theme.typography.sm.lineHeight,
-  },
-  pressed: {
-    opacity: theme.pressedOpacity,
   },
 }));

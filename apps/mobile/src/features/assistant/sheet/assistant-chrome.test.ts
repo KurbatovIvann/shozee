@@ -10,7 +10,10 @@ import {
   SHOZIK_HEADER_POSE_SIZE,
   SHOZIK_WAIT_POSE_SIZE,
 } from "./assistant-chrome";
+import * as sharedAssistantCopy from "@showzy/copy/assistant";
+
 import { assistantCopy } from "../../../i18n/assistant";
+import * as mobileAssistantCopy from "../../../i18n/assistant";
 
 const sheetView = readFileSync(
   new URL("./assistant-sheet-view.tsx", import.meta.url),
@@ -22,10 +25,6 @@ const composer = readFileSync(
 );
 const poseMark = readFileSync(
   new URL("./shozik-pose-mark.tsx", import.meta.url),
-  "utf8",
-);
-const i18n = readFileSync(
-  new URL("../../../i18n/assistant.ts", import.meta.url),
   "utf8",
 );
 const surfaceCard = readFileSync(
@@ -92,8 +91,10 @@ describe("assistant conversation chrome (SHO-392)", () => {
   });
 
   it("keeps the i18n module a re-export of the shared namespace", () => {
-    expect(i18n).not.toContain("chips");
-    expect(i18n).not.toContain("suggestion");
+    expect(Object.keys(mobileAssistantCopy)).toEqual(["assistantCopy"]);
+    expect(mobileAssistantCopy.assistantCopy).toBe(
+      sharedAssistantCopy.assistantCopy,
+    );
   });
 
   it("does not put Shozik assets on SHO-383 result cards", () => {
@@ -230,14 +231,40 @@ describe("assistant example chips and reply tones (SHO-748)", () => {
     "utf8",
   );
 
+  const actionChip = readFileSync(
+    new URL("../../../components/ui/action-chip.tsx", import.meta.url),
+    "utf8",
+  );
+
   it("sends the chip's own text on tap, from the empty state and the composer", () => {
     expect(chips).toContain("props.onSend(chip.text)");
-    expect(chips).toContain('accessibilityRole="button"');
+    expect(chips).toContain("<ActionChip");
     expect(sheetView).toContain('layout="wrap"');
     expect(sheetView).toContain("model.sendExample");
     expect(composer).toContain('layout="scroll"');
     expect(composer).toContain("props.onSendExample");
-    expect(hook).toContain("sendExample: sendText");
+    expect(hook).toContain("sendExample,");
+  });
+
+  it("leaves a typed draft alone when a chip is tapped", () => {
+    const composerSend = hook.slice(
+      hook.indexOf("const send = useCallback("),
+      hook.indexOf("const sendExample = useCallback("),
+    );
+    const chipSend = hook.slice(
+      hook.indexOf("const sendExample = useCallback("),
+      hook.indexOf("const openHref = useCallback("),
+    );
+    expect(composerSend).toContain('setInput("")');
+    expect(chipSend).toContain("void conversation.send(text)");
+    expect(chipSend).not.toContain("setInput");
+  });
+
+  it("gives the shared chip capsule a full hit target", () => {
+    expect(actionChip).toContain("minHeight: theme.hitTarget.min");
+    expect(actionChip).toContain('justifyContent: "center"');
+    expect(chips).toContain('accessibilityRole="list"');
+    expect(chips).toContain("accessible={false}");
   });
 
   it("takes the chip text from the copy namespace in both locales", () => {

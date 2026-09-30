@@ -134,30 +134,34 @@ export function useAssistantSheet(): AssistantSheetViewModel & {
    * failure — "the field is empty, so put it back" — put one company's words
    * into another company's composer after a switch mid-flight (SHO-552).
    */
-  const sendText = useCallback(
+  const send = useCallback(() => {
+    const text = clipAssistantKitText(input);
+    if (text.length === 0) {
+      return;
+    }
+    setInput("");
+    void conversation.send(text).then((outcome) => {
+      if (outcome.kind === "refused") {
+        // Only if the person has not started typing something else since.
+        setInput((current) => (current.length === 0 ? text : current));
+      }
+      // `unknown` deliberately does not restore: the accept may have stored the
+      // message and queued the turn, and the retry that would settle it is the
+      // same command anyway (ADR-0039). The words stay visible as the echo
+      // until a window says what actually happened.
+    });
+  }, [conversation, input]);
+
+  const sendExample = useCallback(
     (raw: string) => {
       const text = clipAssistantKitText(raw);
       if (text.length === 0) {
         return;
       }
-      setInput("");
-      void conversation.send(text).then((outcome) => {
-        if (outcome.kind === "refused") {
-          // Only if the person has not started typing something else since.
-          setInput((current) => (current.length === 0 ? text : current));
-        }
-        // `unknown` deliberately does not restore: the accept may have stored the
-        // message and queued the turn, and the retry that would settle it is the
-        // same command anyway (ADR-0039). The words stay visible as the echo
-        // until a window says what actually happened.
-      });
+      void conversation.send(text);
     },
     [conversation],
   );
-
-  const send = useCallback(() => {
-    sendText(input);
-  }, [sendText, input]);
 
   const openHref = useCallback(
     (href: string) => {
@@ -181,7 +185,7 @@ export function useAssistantSheet(): AssistantSheetViewModel & {
     input,
     changeInput: setInput,
     send,
-    sendExample: sendText,
+    sendExample,
     answer: conversation.answer,
     dismiss: conversation.dismiss,
     continueTurn: conversation.continueTurn,
