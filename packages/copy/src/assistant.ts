@@ -103,7 +103,6 @@ export type AssistantCopy = {
   readonly inputPlaceholder: string;
   readonly inputLabel: string;
   readonly sendLabel: string;
-  readonly examplesLabel: string;
   readonly examples: readonly [string, string, string, string];
   readonly confirmLabel: string;
   readonly dismissLabel: string;
@@ -250,7 +249,6 @@ const assistantEn: AssistantCopy = {
   inputPlaceholder: "Write a request…",
   inputLabel: "Message to the assistant",
   sendLabel: "Send",
-  examplesLabel: "Example commands",
   examples: [
     "Today's orders",
     "Revenue this week",
@@ -338,7 +336,6 @@ const assistantUk: AssistantCopy = {
   inputPlaceholder: "Напиши запит…",
   inputLabel: "Повідомлення асистенту",
   sendLabel: "Надіслати",
-  examplesLabel: "Приклади команд",
   examples: [
     "Замовлення за сьогодні",
     "Виторг за цей тиждень",

@@ -1,6 +1,7 @@
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 
+import { chipCapsule, chipPressed } from "./chip-capsule";
 import { inertHorizontalScrollProps } from "./inert-horizontal-scroll";
 
 /**
@@ -74,23 +75,16 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     gap: theme.spacing.sm,
   },
-  chip: {
-    flexShrink: 0,
-    minHeight: theme.hitTarget.min,
-    justifyContent: "center",
-    borderRadius: theme.radii.full,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.card,
+  chip: chipCapsule({
+    theme,
     paddingHorizontal: theme.spacing.lg,
-  },
+    shrink: false,
+  }),
   chipSelected: {
     borderColor: theme.colors.primary,
     backgroundColor: theme.colors.primary,
   },
-  pressed: {
-    opacity: theme.pressedOpacity,
-  },
+  pressed: chipPressed(theme),
   chipLabel: {
     color: theme.colors.foreground,
     fontSize: theme.typography.sm.fontSize,

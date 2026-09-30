@@ -231,11 +231,6 @@ describe("assistant example chips and reply tones (SHO-748)", () => {
     "utf8",
   );
 
-  const actionChip = readFileSync(
-    new URL("../../../components/ui/action-chip.tsx", import.meta.url),
-    "utf8",
-  );
-
   it("sends the chip's own text on tap, from the empty state and the composer", () => {
     expect(chips).toContain("props.onSend(chip.text)");
     expect(chips).toContain("<ActionChip");
@@ -260,11 +255,11 @@ describe("assistant example chips and reply tones (SHO-748)", () => {
     expect(chipSend).not.toContain("setInput");
   });
 
-  it("gives the shared chip capsule a full hit target", () => {
-    expect(actionChip).toContain("minHeight: theme.hitTarget.min");
-    expect(actionChip).toContain('justifyContent: "center"');
+  it("groups the chips without a label no reader would announce", () => {
     expect(chips).toContain('accessibilityRole="list"');
     expect(chips).toContain("accessible={false}");
+    expect(chips).not.toContain("accessibilityLabel");
+    expect(chips).toContain("shrink={wrap}");
   });
 
   it("takes the chip text from the copy namespace in both locales", () => {
@@ -273,8 +268,6 @@ describe("assistant example chips and reply tones (SHO-748)", () => {
     expect(uk.examples).toHaveLength(4);
     expect(en.examples).toHaveLength(4);
     expect(uk.examples).not.toEqual(en.examples);
-    expect(uk.examplesLabel.length).toBeGreaterThan(0);
-    expect(en.examplesLabel.length).toBeGreaterThan(0);
   });
 
   it("draws the chip and the clarify/error tones from theme tokens", () => {

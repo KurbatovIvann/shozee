@@ -169,7 +169,6 @@ export function AssistantSheetView(model: AssistantSheetViewModel) {
             <Text style={styles.emptyDescription}>{copy.emptyDescription}</Text>
             <AssistantExampleChips
               chips={exampleChips}
-              label={copy.examplesLabel}
               layout="wrap"
               onSend={model.sendExample}
             />
@@ -207,7 +206,6 @@ export function AssistantSheetView(model: AssistantSheetViewModel) {
             editable={!model.busy}
             canSend={model.canSend}
             exampleChips={showEmpty ? NO_EXAMPLE_CHIPS : exampleChips}
-            examplesLabel={copy.examplesLabel}
             onSendExample={model.sendExample}
           />
         </View>

@@ -1,18 +1,22 @@
 import { Pressable, Text } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 
+import { chipCapsule, chipPressed } from "./chip-capsule";
+
 export function ActionChip(props: {
   readonly label: string;
+  readonly shrink: boolean;
   readonly onPress: () => void;
-  readonly disabled?: boolean;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={props.label}
-      disabled={props.disabled}
       onPress={props.onPress}
-      style={({ pressed }) => [styles.chip, pressed ? styles.pressed : null]}
+      style={({ pressed }) => [
+        props.shrink ? styles.chipShrink : styles.chip,
+        pressed ? styles.pressed : null,
+      ]}
     >
       <Text numberOfLines={1} style={styles.label}>
         {props.label}
@@ -22,22 +26,21 @@ export function ActionChip(props: {
 }
 
 const styles = StyleSheet.create((theme) => ({
-  chip: {
-    flexShrink: 0,
-    minHeight: theme.hitTarget.min,
-    justifyContent: "center",
-    borderRadius: theme.radii.full,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.card,
+  chip: chipCapsule({
+    theme,
     paddingHorizontal: theme.spacing.md,
-  },
+    shrink: false,
+  }),
+  chipShrink: chipCapsule({
+    theme,
+    paddingHorizontal: theme.spacing.md,
+    shrink: true,
+  }),
   label: {
+    flexShrink: 1,
     color: theme.colors.mutedForeground,
     fontSize: theme.typography.sm.fontSize,
     lineHeight: theme.typography.sm.lineHeight,
   },
-  pressed: {
-    opacity: theme.pressedOpacity,
-  },
+  pressed: chipPressed(theme),
 }));

@@ -6,7 +6,6 @@ import type { AssistantExampleChip } from "./assistant-chrome";
 
 export function AssistantExampleChips(props: {
   readonly chips: readonly AssistantExampleChip[];
-  readonly label: string;
   readonly layout: "scroll" | "wrap";
   readonly onSend: (text: string) => void;
 }) {
@@ -14,24 +13,21 @@ export function AssistantExampleChips(props: {
     return null;
   }
 
+  const wrap = props.layout === "wrap";
   const items = props.chips.map((chip) => (
     <ActionChip
       key={chip.key}
       label={chip.text}
+      shrink={wrap}
       onPress={() => {
         props.onSend(chip.text);
       }}
     />
   ));
 
-  if (props.layout === "wrap") {
+  if (wrap) {
     return (
-      <View
-        accessible={false}
-        accessibilityRole="list"
-        accessibilityLabel={props.label}
-        style={styles.wrap}
-      >
+      <View accessible={false} accessibilityRole="list" style={styles.wrap}>
         {items}
       </View>
     );
@@ -42,7 +38,6 @@ export function AssistantExampleChips(props: {
       {...inertHorizontalScrollProps}
       accessible={false}
       accessibilityRole="list"
-      accessibilityLabel={props.label}
       keyboardShouldPersistTaps="handled"
       style={styles.strip}
       contentContainerStyle={styles.stripContent}

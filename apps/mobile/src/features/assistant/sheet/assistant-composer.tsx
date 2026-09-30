@@ -19,7 +19,6 @@ export function AssistantComposer(props: {
   readonly editable: boolean;
   readonly canSend: boolean;
   readonly exampleChips: readonly AssistantExampleChip[];
-  readonly examplesLabel: string;
   readonly onSendExample: (text: string) => void;
 }) {
   const { theme, rt } = useUnistyles();
@@ -32,7 +31,6 @@ export function AssistantComposer(props: {
     <>
       <AssistantExampleChips
         chips={props.exampleChips}
-        label={props.examplesLabel}
         layout="scroll"
         onSend={props.onSendExample}
       />
