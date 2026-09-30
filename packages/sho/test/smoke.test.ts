@@ -115,6 +115,21 @@ describe("Шо smoke", () => {
     expect(result.schema).toBe(RESULT_SCHEMA);
     expect(result.commands[0]?.action).toBe("orders.create");
   });
+
+  it("leaves an utterance without a Cyrillic word to the dialogue model", async () => {
+    sho ??= await loadSho();
+    const result = await sho.run(
+      { raw: "Thanks a lot, that was helpful!" },
+      { context: CONTEXT },
+    );
+    expect(result.commands).toHaveLength(1);
+    const [command] = result.commands;
+    expect(command?.action).toBe("none");
+    expect(command?.confidence.action).toBe(0);
+    expect(command?.needs).toEqual([
+      { path: "text", reason: "language", blocking: false },
+    ]);
+  });
 });
 
 describe("loadSho refusals", () => {
