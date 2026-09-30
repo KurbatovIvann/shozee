@@ -39,7 +39,7 @@ import {
   type AssistantHistoryPort,
   type AssistantInteractionTypes,
   type AssistantTurnStore,
-  type ChoiceResolution,
+  type ChoiceRecordResolution,
   type ResolveAnswer,
 } from "@showzy/assistant-runtime";
 import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
@@ -112,7 +112,7 @@ function recordingAccepts(store: AssistantTurnStore): {
 }
 
 const OK_RESOLVE: ResolveAnswer = ({ value }) => {
-  const resolution = value as ChoiceResolution;
+  const resolution = value as ChoiceRecordResolution;
   return Promise.resolve({
     kind: "ok",
     result: { entityId: resolution.entityId, number: "CO-1" },
@@ -147,7 +147,10 @@ const SECOND_QUESTION: ResolveAnswer = () =>
       optionsTruncated: false,
     },
     secret: {
-      byOption: { "opt-c": "entity-c", "opt-d": "entity-d" },
+      byOption: {
+        "opt-c": { kind: "record", entityId: "entity-c" },
+        "opt-d": { kind: "record", entityId: "entity-d" },
+      },
       toolName: "orders_create",
       input: { label: "which product" },
       target: { kind: "customer", query: "which product" },
@@ -170,7 +173,10 @@ const PAUSING_TOOLS: ToolSet = {
         optionsTruncated: false,
       },
       secret: {
-        byOption: { "opt-a": "entity-a", "opt-b": "entity-b" },
+        byOption: {
+          "opt-a": { kind: "record", entityId: "entity-a" },
+          "opt-b": { kind: "record", entityId: "entity-b" },
+        },
         toolName: "orders_create",
         input,
         target: { kind: "customer", query: input.label },
@@ -320,7 +326,10 @@ async function openPause(kit: Kit, bind: string) {
       optionsTruncated: false,
     },
     secret: {
-      byOption: { "opt-a": "entity-a", "opt-b": "entity-b" },
+      byOption: {
+        "opt-a": { kind: "record", entityId: "entity-a" },
+        "opt-b": { kind: "record", entityId: "entity-b" },
+      },
       toolName: "orders_create",
       input: { customerQuery: "two matches", items: [] },
       target: { kind: "customer", query: "two matches" },
@@ -1079,6 +1088,7 @@ describe("POST /assistant/kit/answer", () => {
     );
 
     expect(seen).toEqual({
+      kind: "record",
       entityId: "entity-b",
       toolName: "orders_create",
       input: { customerQuery: "two matches", items: [] },

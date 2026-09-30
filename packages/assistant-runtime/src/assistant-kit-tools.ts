@@ -154,10 +154,11 @@ export function assistantKitTurnTools(
           const picker = catalogPickerConflictExtrasFromError(error);
           if (picker !== undefined) {
             const secret: ChoiceSecret = {
-              // The option id is the entity id here; the map still exists so an
-              // option this picker never offered is refused by the interaction.
               byOption: Object.fromEntries(
-                picker.options.map((option) => [option.id, option.id]),
+                picker.options.map((option) => [
+                  option.id,
+                  { kind: "record", entityId: option.id } as const,
+                ]),
               ),
               toolName: name,
               input,
@@ -171,8 +172,10 @@ export function assistantKitTurnTools(
                 options: picker.options.map((option) => ({
                   optionId: option.id,
                   label: option.label,
+                  kind: "record" as const,
                 })),
                 optionsTruncated: picker.optionsTruncated,
+                nearest: picker.reason === "unmatched_query",
               },
               secret,
             };

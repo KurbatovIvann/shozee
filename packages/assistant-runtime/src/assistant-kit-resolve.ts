@@ -117,6 +117,13 @@ async function resolveChoice(args: ResolveArgs): Promise<ToolOutcome> {
     } satisfies ToolOutcome;
   }
 
+  if (resolution.kind === "create") {
+    return (await execute(resolution.input, {
+      toolCallId: `create_${resolution.toolName}`,
+      messages: [],
+    } as never)) as ToolOutcome;
+  }
+
   const patched = withChosenId(
     resolution.input,
     resolution.target,

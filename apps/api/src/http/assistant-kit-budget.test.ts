@@ -33,7 +33,7 @@ import {
   type AssistantCaller,
   type AssistantHistoryPort,
   type AssistantTurnStore,
-  type ChoiceResolution,
+  type ChoiceRecordResolution,
 } from "@showzy/assistant-runtime";
 import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
 import {
@@ -80,7 +80,7 @@ function memoryHistory(): AssistantHistoryPort {
 }
 
 const OK_RESOLVE = ({ value }: { value: unknown }) => {
-  const resolution = value as ChoiceResolution;
+  const resolution = value as ChoiceRecordResolution;
   return Promise.resolve<ToolOutcome>({
     kind: "ok",
     result: { entityId: resolution.entityId },
@@ -452,7 +452,7 @@ describe("the spend ceiling on the kit routes", () => {
         optionsTruncated: false,
       },
       secret: {
-        byOption: { "opt-a": "entity-a" },
+        byOption: { "opt-a": { kind: "record", entityId: "entity-a" } },
         toolName: "orders_create",
         input: {},
         target: { kind: "customer", query: "two matches" },

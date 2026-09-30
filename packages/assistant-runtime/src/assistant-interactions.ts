@@ -66,8 +66,16 @@ export type ChoicePickerTarget =
  * one field filled in", with no second code path that has to agree with the
  * first.
  */
+export type ChoiceOptionSecret =
+  | { readonly kind: "record"; readonly entityId: string }
+  | {
+      readonly kind: "create";
+      readonly toolName: string;
+      readonly input: unknown;
+    };
+
 export interface ChoiceSecret {
-  readonly byOption: Record<string, string>;
+  readonly byOption: Record<string, ChoiceOptionSecret>;
   readonly toolName: string;
   readonly input: unknown;
   readonly target: ChoicePickerTarget;
@@ -87,12 +95,21 @@ export interface ConfirmationSecret {
   readonly challengeId: string;
 }
 
-export interface ChoiceResolution {
+export interface ChoiceRecordResolution {
+  readonly kind: "record";
   readonly entityId: string;
   readonly toolName: string;
   readonly input: unknown;
   readonly target: ChoicePickerTarget;
 }
+
+export interface ChoiceCreateResolution {
+  readonly kind: "create";
+  readonly toolName: string;
+  readonly input: unknown;
+}
+
+export type ChoiceResolution = ChoiceRecordResolution | ChoiceCreateResolution;
 
 /**
  * Names the attempt a person approved. It authorises nothing by itself: core
@@ -111,17 +128,23 @@ export const choice = defineInteraction<ChoiceSecret>()({
   prompt: assistantChoicePromptSchema,
   answer: z.strictObject({ optionId: z.string().min(1).max(128) }),
   resolve: ({ answer, secret }) => {
-    const entityId = secret.byOption[answer.optionId];
-    // An option this picker never offered is refused before the claim is
-    // spent, so the card stays answerable.
-    return entityId === undefined
-      ? unresolvable(`unknown option ${answer.optionId}`)
+    const option = secret.byOption[answer.optionId];
+    if (option === undefined) {
+      return unresolvable(`unknown option ${answer.optionId}`);
+    }
+    return option.kind === "create"
+      ? resolved({
+          kind: "create",
+          toolName: option.toolName,
+          input: option.input,
+        } satisfies ChoiceCreateResolution)
       : resolved({
-          entityId,
+          kind: "record",
+          entityId: option.entityId,
           toolName: secret.toolName,
           input: secret.input,
           target: secret.target,
-        } satisfies ChoiceResolution);
+        } satisfies ChoiceRecordResolution);
   },
 });
 

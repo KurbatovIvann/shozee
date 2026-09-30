@@ -36,12 +36,15 @@ import {
   confirmation,
   createResolveAnswer,
   withChosenId,
+  choice,
   type AssistantToolLogger,
+  type ChoiceOptionSecret,
   type ChoiceSecret,
   type ResolveAnswerDeps,
 } from "@showzy/assistant-runtime";
 import { ConflictError, NotFoundError } from "@showzy/core/errors";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import { createActionRegistry } from "../registry.js";
 
@@ -423,6 +426,48 @@ describe("a picker CONFLICT becomes a pause, not an error", () => {
   });
 });
 
+function nearestConflict(): ConflictError {
+  const error = new ConflictError("nothing matched");
+  return Object.assign(error, {
+    reason: "unmatched_query",
+    target: { kind: "customer", query: "Галя" },
+    options: [{ id: CUSTOMER_A, label: "Галина Петренко" }],
+    optionsTruncated: false,
+  });
+}
+
+describe("a picker CONFLICT produces v2 options", () => {
+  it("numbers them by position and marks each one a record", async () => {
+    const set = tools(() =>
+      Promise.reject(pickerConflict({ kind: "customer", query: "Катя" })),
+    );
+
+    const outcome = await run(set, ORDERS_CREATE_TOOL_NAME, CREATE_BY_QUERY);
+
+    expect(outcome.kind).toBe("pause");
+    if (outcome.kind !== "pause") return;
+    expect(outcome.prompt).toEqual({
+      subject: "Катя",
+      optionsTruncated: false,
+      nearest: false,
+      options: [
+        { optionId: CUSTOMER_A, label: "Катя Самбука", kind: "record" },
+        { optionId: CUSTOMER_B, label: "Катя Іванова", kind: "record" },
+      ],
+    });
+  });
+
+  it("asks under «можливо, ви мали на увазі» when nothing matched", async () => {
+    const set = tools(() => Promise.reject(nearestConflict()));
+
+    const outcome = await run(set, ORDERS_CREATE_TOOL_NAME, CREATE_BY_QUERY);
+
+    expect(outcome.kind).toBe("pause");
+    if (outcome.kind !== "pause") return;
+    expect(outcome.prompt).toMatchObject({ subject: "Галя", nearest: true });
+  });
+});
+
 describe("any other domain refusal becomes an error", () => {
   it("passes the code through instead of inventing a picker", async () => {
     const set = tools(() => Promise.reject(new NotFoundError("no such thing")));
@@ -527,6 +572,7 @@ describe("resolveAnswer calls the same tool again", () => {
       toolName: ORDERS_CREATE_TOOL_NAME,
       kind: "choice",
       value: {
+        kind: "record",
         entityId: CUSTOMER_A,
         toolName: ORDERS_CREATE_TOOL_NAME,
         input: CREATE_BY_QUERY,
@@ -562,6 +608,7 @@ describe("resolveAnswer calls the same tool again", () => {
       toolName: ORDERS_CREATE_TOOL_NAME,
       kind: "choice",
       value: {
+        kind: "record",
         entityId: CUSTOMER_A,
         toolName: ORDERS_CREATE_TOOL_NAME,
         input: CREATE_BY_QUERY,
@@ -742,5 +789,110 @@ describe("an idempotent write is given a key that survives a retry", () => {
     // Never the model's own tool call id: it is regenerated, so a retry of the
     // same tap would read as a new write.
     expect(first).not.toContain("toolu_");
+  });
+});
+
+describe("a create option is a write the server already holds", () => {
+  const CREATE_TOOL = "customers_create";
+  const CREATE_INPUT = { name: "Галина" };
+  const CREATE_ATTEMPT = {
+    actionName: "customers.createCustomer",
+    input: CREATE_INPUT,
+    idempotencyKey: "tool:the-turn-that-asked",
+  };
+  const CREATE_CHALLENGE = {
+    challengeId: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+    summary: "A customer named Галина will be created.",
+    expiresAt: "2026-09-10T12:05:00.000Z",
+  };
+
+  const byOption: Record<string, ChoiceOptionSecret> = {
+    [CUSTOMER_A]: { kind: "record", entityId: CUSTOMER_A },
+    create: { kind: "create", toolName: CREATE_TOOL, input: CREATE_INPUT },
+  };
+
+  const secret: ChoiceSecret = {
+    byOption,
+    toolName: ORDERS_CREATE_TOOL_NAME,
+    input: CREATE_BY_QUERY,
+    target: { kind: "customer", query: "Галя" },
+  };
+
+  function chose(optionId: string): unknown {
+    const resolution = choice.resolve({ answer: { optionId }, secret });
+    if (resolution.kind !== "resolved") {
+      throw new Error(`expected resolved, got ${resolution.kind}`);
+    }
+    return resolution.value;
+  }
+
+  function creatingTools(seen: unknown[]): ToolSet {
+    return assistantKitTurnTools(
+      {
+        [CREATE_TOOL]: {
+          description: "create one customer",
+          inputSchema: z.strictObject({ name: z.string().min(1) }),
+          execute: (input: unknown) => {
+            seen.push(input);
+            return Promise.reject(
+              new AssistantConfirmationRequired(
+                CREATE_ATTEMPT,
+                CREATE_CHALLENGE,
+              ),
+            );
+          },
+        },
+      },
+      capturingLogger().logger,
+    );
+  }
+
+  it("resolves to that write, and never to anything the answer carried", () => {
+    expect(chose("create")).toEqual({
+      kind: "create",
+      toolName: CREATE_TOOL,
+      input: CREATE_INPUT,
+    });
+  });
+
+  it("leaves a record option settling the ambiguity the tool hit", () => {
+    expect(chose(CUSTOMER_A)).toEqual({
+      kind: "record",
+      entityId: CUSTOMER_A,
+      toolName: ORDERS_CREATE_TOOL_NAME,
+      input: CREATE_BY_QUERY,
+      target: { kind: "customer", query: "Галя" },
+    });
+  });
+
+  it("runs the held write, which stops on its own preview", async () => {
+    const seen: unknown[] = [];
+
+    const outcome = await createResolveAnswer(NEVER_CONFIRMED)({
+      toolName: CREATE_TOOL,
+      kind: "choice",
+      value: chose("create"),
+      tools: creatingTools(seen),
+      context: ANSWER_CONTEXT,
+    });
+
+    expect(seen).toEqual([CREATE_INPUT]);
+    expect(outcome).toEqual({
+      kind: "pause",
+      interaction: "confirmation",
+      prompt: { summary: CREATE_CHALLENGE.summary },
+      secret: {
+        actionName: CREATE_ATTEMPT.actionName,
+        canonicalInput: CREATE_INPUT,
+        idempotencyKey: CREATE_ATTEMPT.idempotencyKey,
+        challengeId: CREATE_CHALLENGE.challengeId,
+      },
+    });
+  });
+
+  it("refuses an option the picker never offered, and keeps the card open", () => {
+    expect(choice.resolve({ answer: { optionId: "nope" }, secret }).kind).toBe(
+      "unresolvable",
+    );
   });
 });
