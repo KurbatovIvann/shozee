@@ -37,6 +37,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createActionRegistry } from "../registry.js";
 import type { AssistantKitRuntime } from "./assistant-kit-http.js";
 import { createAssistantKitRuntime } from "./assistant-kit-runtime.js";
+import { testStaffProvider } from "@showzy/ai/test";
 
 const DELETE_TOOL = "customers_deleteCustomer";
 const DELETE_ACTION = "customers.deleteCustomer";
@@ -65,6 +66,7 @@ function runtimeWithChallenges(): AssistantKitRuntime {
     registry: createActionRegistry(),
     pipeline,
     model: "mock",
+    provider: testStaffProvider,
     // Tools and answers only: nothing here opens or claims a pause.
     redis: {} as never,
   });
@@ -176,9 +178,8 @@ describe("a delete the assistant asks for", () => {
 
     expect(pause.interaction).toBe("confirmation");
     expect(await customerExists(customerId)).toBe(true);
-    // Core's redacted summary, and nothing about the record or the attempt.
     expect(pause.prompt).toEqual({ summary: expect.any(String) as unknown });
-    expect(JSON.stringify(pause.prompt)).not.toContain("Катя");
+    expect(JSON.stringify(pause.prompt)).toContain("Катя Самбука");
     expect(JSON.stringify(pause.prompt)).not.toContain(customerId);
 
     // A separate request with its own command, as a real answer is.

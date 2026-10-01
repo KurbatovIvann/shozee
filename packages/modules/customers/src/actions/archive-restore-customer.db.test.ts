@@ -236,11 +236,13 @@ crossTenantSuite(
       archiveCustomer,
       { input: { id: fixtures.customerIsolationArchiveA } },
       { input: { id: fixtures.customerIsolationArchiveB } },
+      { missing: { input: { id: randomUUID() } } },
     ),
     isolationCase(
       restoreCustomer,
       { input: { id: fixtures.customerIsolationRestoreA } },
       { input: { id: fixtures.customerIsolationRestoreB } },
+      { missing: { input: { id: randomUUID() } } },
     ),
   ],
 );

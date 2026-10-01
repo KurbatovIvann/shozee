@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import type { LanguageModel } from "ai";
 import { describe, expect, it, vi } from "vitest";
 
 import { StaffAssistantNotConfiguredError } from "../errors.js";
@@ -16,6 +17,10 @@ import {
 } from "./anthropic.js";
 
 const ANTHROPIC_SDK = "@ai-sdk/anthropic";
+
+function modelIdOf(model: LanguageModel): string {
+  return typeof model === "string" ? model : model.modelId;
+}
 
 function walkTsFiles(dir: string, files: string[]): void {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -51,7 +56,10 @@ describe("packages/ai/src Anthropic import boundary (SHO-508)", () => {
 
 describe("staff assistant prompt-cache breakpoints", () => {
   it("sets ttl 1h on the static system/tools prefix and 5m on history", () => {
-    const provider = createAnthropicStaffProviderAdapter();
+    const provider = createAnthropicStaffProviderAdapter({
+      replyModel: "claude-haiku-4-5",
+      gateModel: "claude-haiku-4-5",
+    });
     expect(STAFF_ASSISTANT_STATIC_CACHE_CONTROL).toEqual({
       type: "ephemeral",
       ttl: "1h",
@@ -83,7 +91,10 @@ describe("staff assistant prompt-cache breakpoints", () => {
 
 describe("Anthropic adapter pricing", () => {
   it("prices known families and returns null for unknown models", () => {
-    const provider = createAnthropicStaffProviderAdapter();
+    const provider = createAnthropicStaffProviderAdapter({
+      replyModel: "claude-haiku-4-5",
+      gateModel: "claude-haiku-4-5",
+    });
     expect(staffAssistantAnthropicRateTier("claude-sonnet-4-6")).toBe("sonnet");
     expect(staffAssistantAnthropicRateTier("claude-haiku-4-5")).toBe("haiku");
     expect(staffAssistantAnthropicRateTier("claude-opus-4-6")).toBe("opus");
@@ -97,10 +108,35 @@ describe("Anthropic adapter pricing", () => {
 
 describe("createAnthropicStaffProviderAdapter", () => {
   it("does not construct a model without an API key", () => {
-    const provider = createAnthropicStaffProviderAdapter();
+    const provider = createAnthropicStaffProviderAdapter({
+      replyModel: "claude-haiku-4-5",
+      gateModel: "claude-haiku-4-5",
+    });
     expect(() => provider.createModel("reply")).toThrow(
       StaffAssistantNotConfiguredError,
     );
+  });
+
+  it("takes both model ids from its caller and invents no fallback", () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new Error("network must not run"));
+    const configured = createAnthropicStaffProviderAdapter({
+      apiKey: "sk-ant-test-not-a-real-key",
+      replyModel: "claude-opus-4-6",
+      gateModel: "claude-sonnet-4-6",
+    });
+    expect(modelIdOf(configured.createModel("reply"))).toBe("claude-opus-4-6");
+    expect(modelIdOf(configured.createModel("gate"))).toBe("claude-sonnet-4-6");
+
+    const adapterSource = readFileSync(
+      path.join(path.dirname(fileURLToPath(import.meta.url)), "anthropic.ts"),
+      "utf8",
+    );
+    expect(adapterSource).not.toMatch(/Model\s*\?\?/);
+    expect(adapterSource).not.toContain("claude-haiku-4-5");
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
   });
 
   it("constructs a model without touching the network when a key is present", () => {

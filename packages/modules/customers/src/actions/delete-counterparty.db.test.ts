@@ -28,10 +28,8 @@ import { companyCustomers, counterparties } from "@showzy/db/schema/customers";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import {
-  deleteCounterparty,
-  deleteCounterpartyConfirmationSummary,
-} from "./delete-counterparty.js";
+import { DELETE_COUNTERPARTY_NOTE } from "../services/preview-card.js";
+import { deleteCounterparty } from "./delete-counterparty.js";
 import { getCustomer } from "./get-customer.js";
 
 const fixtures = {
@@ -223,6 +221,7 @@ crossTenantSuite(
       deleteCounterparty,
       { input: { id: fixtures.isolationOwn } },
       { input: { id: fixtures.isolationForeign } },
+      { missing: { input: { id: randomUUID() } } },
     ),
   ],
 );
@@ -342,12 +341,14 @@ describe("customers.deleteCounterparty", () => {
       throw new Error("expected ConfirmationRequiredError");
     }
     expect(unconfirmed.challenge.summary).toBe(
-      deleteCounterpartyConfirmationSummary,
+      unconfirmed.challenge.preview?.title,
     );
-    expect(unconfirmed.challenge.summary).toContain(
-      "Прив’язаний клієнт CRM залишиться",
+    expect(unconfirmed.challenge.summary).toBe(
+      "Видалити контрагента: Confirm me",
     );
-    expect(unconfirmed.challenge.summary).not.toContain("Confirm me");
+    expect(unconfirmed.challenge.preview?.notes).toContain(
+      DELETE_COUNTERPARTY_NOTE,
+    );
     expect(Date.parse(unconfirmed.challenge.expiresAt)).toBeGreaterThan(
       Date.now(),
     );

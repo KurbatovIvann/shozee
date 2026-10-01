@@ -69,7 +69,7 @@ describe("loadServerConfig", () => {
       },
     });
     expect(config.ai.anthropicApiKey).toBeUndefined();
-    expect(config.ai.model).toBe("claude-sonnet-4-6");
+    expect(config.ai.model).toBe("claude-haiku-4-5");
     expect(config.ai.gateModel).toBe("claude-haiku-4-5");
     expect(config.ai.chatTurnsPerMinutePerUser).toBe(20);
     expect(config.ai.dailyBudgetUsdPerCompany).toBe(5);
@@ -106,7 +106,7 @@ describe("loadServerConfig", () => {
       apiUrl: "https://sms-fly.ua/api/v2/api.php",
     });
     expect(config.ai.anthropicApiKey).toBeUndefined();
-    expect(config.ai.model).toBe("claude-sonnet-4-6");
+    expect(config.ai.model).toBe("claude-haiku-4-5");
     expect(config.ai.gateModel).toBe("claude-haiku-4-5");
     expect(config.ai.chatTurnsPerMinutePerUser).toBe(20);
     expect(config.ai.dailyBudgetUsdPerCompany).toBe(5);
@@ -367,7 +367,7 @@ describe("loadServerConfig", () => {
     expect(missing["ANTHROPIC_API_KEY"]).toBeUndefined();
     const withoutKey = loadServerConfig(missing);
     expect(withoutKey.ai.anthropicApiKey).toBeUndefined();
-    expect(withoutKey.ai.model).toBe("claude-sonnet-4-6");
+    expect(withoutKey.ai.model).toBe("claude-haiku-4-5");
     expect(withoutKey.ai.gateModel).toBe("claude-haiku-4-5");
 
     const env = validEnv();

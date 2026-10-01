@@ -38,6 +38,8 @@ import {
 import { exactNameSql, nameMatch } from "@showzy/module-kit/name-match";
 import { and, eq, or, sql, type SQL, type SQLWrapper } from "drizzle-orm";
 
+import { canonicalPhoneSql } from "./canonical-phone-sql.js";
+
 type StaffDb = Extract<ActionCtx, { principal: "staff" }>["db"];
 type PreparedTokens = Extract<PreparedSearchQuery, { empty: false }>;
 
@@ -397,11 +399,6 @@ function edrpouMatchSql(
     );
   }
   return combineOr(clauses);
-}
-
-function canonicalPhoneSql(phone: SQLWrapper): SQL {
-  const digits = sql`regexp_replace(coalesce(${phone}, ''), '[^0-9]', '', 'g')`;
-  return sql`(CASE WHEN ${digits} LIKE '0%' THEN '380' || substr(${digits}, 2) ELSE ${digits} END)`;
 }
 
 function exactPhoneSql(

@@ -6,7 +6,6 @@ import {
 } from "@showzy/validation/assistant-surfaces";
 import { jsonSchema, tool, type Tool, type ToolSet } from "ai";
 
-import { anthropicStaffProvider } from "./provider/anthropic.js";
 import type { StaffProviderAdapter } from "./provider/types.js";
 import {
   CATALOG_GET_PRODUCT_ACTION_NAME,
@@ -248,14 +247,14 @@ function actionContractJsonSchema(
 export function actionContractToTool(
   contract: ActionContract,
   execute: ActionToolExecute,
-  options?: {
+  options: {
     readonly description?: string;
-    readonly provider?: StaffProviderAdapter;
+    readonly provider: StaffProviderAdapter;
   },
 ): Tool {
-  const provider = options?.provider ?? anthropicStaffProvider;
+  const provider = options.provider;
   return tool({
-    description: options?.description ?? contract.description,
+    description: options.description ?? contract.description,
     inputSchema: actionContractJsonSchema(contract, provider),
     execute: async (input: unknown, executeOptions) => {
       const parsed: unknown = contract.input.parse(input);
@@ -285,7 +284,7 @@ export function actionContractToTool(
 export function staffAssistantTools(
   contracts: readonly ActionContract[],
   execute: ActionToolExecute,
-  provider: StaffProviderAdapter = anthropicStaffProvider,
+  provider: StaffProviderAdapter,
 ): ToolSet {
   const tools: ToolSet = {};
   if (contracts.length === 0) {

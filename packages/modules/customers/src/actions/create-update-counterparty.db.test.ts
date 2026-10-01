@@ -201,6 +201,7 @@ crossTenantSuite(
       updateCounterparty,
       { input: updateIsolationOwn },
       { input: updateIsolationForeign },
+      { missing: { input: { ...updateIsolationOwn, id: randomUUID() } } },
     ),
   ],
 );

@@ -3,6 +3,7 @@ import { CoreInvariantError } from "@showzy/core/errors";
 
 import { customerAuditTarget } from "../services/customer-audit-target.js";
 import { setCustomerStatus } from "../services/customer-status.js";
+import { customerStatusPreview } from "../services/preview-card.js";
 import { requireWritable } from "../services/writable.js";
 import { restoreCustomerContract } from "./restore-customer.contract.js";
 
@@ -20,5 +21,10 @@ export const restoreCustomer = implementAction(restoreCustomerContract, {
     }
     return saved;
   },
+  preview: customerStatusPreview(
+    restoreCustomerContract,
+    "Відновити клієнта",
+    "active",
+  ),
   auditTarget: customerAuditTarget,
 });
