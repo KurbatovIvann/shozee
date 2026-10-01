@@ -7,13 +7,12 @@ import {
   seedDevShoBakery,
 } from "./dev-sho-bakery.js";
 
-const config = loadServerConfig(process.env);
-
-if (config.nodeEnv === "production") {
+if (process.env["NODE_ENV"] === "production") {
   console.error("dev-sho-bakery seed refuses to run with NODE_ENV=production");
   process.exit(1);
 }
 
+const config = loadServerConfig(process.env);
 const client = createDbClient({ databaseUrl: config.database.url, max: 2 });
 
 try {

@@ -9,6 +9,7 @@ export {
   devShoBakeryPriceLists,
   devShoBakeryProducts,
   seedDevShoBakery,
+  type DevShoBakeryGroup,
   type DevShoBakeryProduct,
   type DevShoBakerySeed,
 } from "./dev-sho-bakery.js";

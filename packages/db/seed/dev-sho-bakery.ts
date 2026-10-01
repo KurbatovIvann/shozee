@@ -1,17 +1,27 @@
 import { createHash } from "node:crypto";
 
+import { eq, or } from "drizzle-orm";
+
 import type { Database } from "../src/client.js";
 import { user } from "../src/schema/auth.js";
 import { products, productVariants } from "../src/schema/catalog.js";
 import { companies, companyMembers } from "../src/schema/companies.js";
 import { companyCustomers, customerGroups } from "../src/schema/customers.js";
 import { priceLists } from "../src/schema/pricing.js";
+import type { RecordCreatedVia } from "../src/schema/tenant-columns.js";
 
 export interface DevShoBakeryProduct {
   readonly name: string;
   readonly priceMinor: number;
   readonly variants?: readonly string[];
 }
+
+export interface DevShoBakeryGroup {
+  readonly name: string;
+  readonly slug: string;
+}
+
+const SEEDED_VIA: RecordCreatedVia = "system";
 
 const CAKE_VARIANTS = [
   "Шоколадний великий",
@@ -86,10 +96,10 @@ export const devShoBakeryCustomers: readonly string[] = [
   "Петя Жолоб",
 ];
 
-export const devShoBakeryGroups: readonly string[] = [
-  "Оптові",
-  "Роздріб",
-  "VIP",
+export const devShoBakeryGroups: readonly DevShoBakeryGroup[] = [
+  { name: "Оптові", slug: "optovi" },
+  { name: "Роздріб", slug: "rozdrib" },
+  { name: "VIP", slug: "vip" },
 ];
 
 export const devShoBakeryPriceLists: readonly string[] = [
@@ -130,12 +140,6 @@ export const devShoBakeryCompanyId = devShoBakeryId(
 
 export const devShoBakeryOwnerUserId = "sho-dev-bakery-owner";
 
-function slugOf(name: string, index: number): string {
-  const ascii = name.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-");
-  const trimmed = ascii.replaceAll(/(^-|-$)/g, "");
-  return trimmed.length >= 2 ? trimmed : `group-${String(index + 1)}`;
-}
-
 export interface DevShoBakerySeed {
   readonly companyId: string;
   readonly ownerUserId: string;
@@ -147,96 +151,123 @@ export interface DevShoBakerySeed {
 export async function seedDevShoBakery(
   db: Database,
   companyId: string = devShoBakeryCompanyId,
-  ownerUserId: string = devShoBakeryOwnerUserId,
+  fallbackOwnerUserId: string = devShoBakeryOwnerUserId,
 ): Promise<DevShoBakerySeed> {
-  await db
-    .insert(companies)
-    .values({ id: companyId, ...devShoBakeryCompany })
-    .onConflictDoNothing({ target: companies.id });
-
-  await db
-    .insert(user)
-    .values({
-      id: ownerUserId,
-      name: devShoBakeryOwner.name,
-      email: devShoBakeryOwner.email,
-      emailVerified: true,
-      phoneNumber: devShoBakeryOwner.phone,
-      phoneNumberVerified: true,
-    })
-    .onConflictDoNothing({ target: user.id });
-
-  await db
-    .insert(companyMembers)
-    .values({
-      id: devShoBakeryId("member", ownerUserId),
-      companyId,
-      userId: ownerUserId,
-      role: "owner",
-    })
-    .onConflictDoNothing({ target: companyMembers.id });
-
-  await db
-    .insert(priceLists)
-    .values(
-      devShoBakeryPriceLists.map((name, index) => ({
-        id: devShoBakeryId("priceList", name),
-        companyId,
-        name,
-        isDefault: index === 1,
-      })),
-    )
-    .onConflictDoNothing({ target: priceLists.id });
-
-  await db
-    .insert(customerGroups)
-    .values(
-      devShoBakeryGroups.map((name, index) => ({
-        id: devShoBakeryId("group", name),
-        companyId,
-        name,
-        slug: slugOf(name, index),
-        sortOrder: index,
-      })),
-    )
-    .onConflictDoNothing({ target: customerGroups.id });
-
-  await db
-    .insert(companyCustomers)
-    .values(
-      devShoBakeryCustomers.map((name, index) => ({
-        id: devShoBakeryId("customer", name),
-        companyId,
-        name,
-        phone: `+38093222${String(index + 1).padStart(4, "0")}`,
-      })),
-    )
-    .onConflictDoNothing({ target: companyCustomers.id });
-
-  await db
-    .insert(products)
-    .values(
-      devShoBakeryProducts.map((product) => ({
-        id: devShoBakeryId("product", product.name),
-        companyId,
-        name: product.name,
-        basePriceMinor: BigInt(product.priceMinor),
-      })),
-    )
-    .onConflictDoNothing({ target: products.id });
-
   const variants = devShoBakeryProducts.flatMap((product) =>
     (product.variants ?? []).map((name) => ({
       id: devShoBakeryId("variant", `${product.name}/${name}`),
       companyId,
       productId: devShoBakeryId("product", product.name),
       name,
+      createdVia: SEEDED_VIA,
     })),
   );
-  await db
-    .insert(productVariants)
-    .values(variants)
-    .onConflictDoNothing({ target: productVariants.id });
+
+  const ownerUserId = await db.transaction(async (tx) => {
+    await tx
+      .insert(companies)
+      .values({ id: companyId, ...devShoBakeryCompany })
+      .onConflictDoNothing({ target: companies.id });
+
+    const [signedUpOwner] = await tx
+      .select({ id: user.id })
+      .from(user)
+      .where(
+        or(
+          eq(user.phoneNumber, devShoBakeryOwner.phone),
+          eq(user.email, devShoBakeryOwner.email),
+        ),
+      )
+      .limit(1);
+
+    const resolvedOwnerUserId = signedUpOwner?.id ?? fallbackOwnerUserId;
+
+    if (signedUpOwner === undefined) {
+      await tx
+        .insert(user)
+        .values({
+          id: resolvedOwnerUserId,
+          name: devShoBakeryOwner.name,
+          email: devShoBakeryOwner.email,
+          emailVerified: true,
+          phoneNumber: devShoBakeryOwner.phone,
+          phoneNumberVerified: true,
+        })
+        .onConflictDoNothing({ target: user.id });
+    }
+
+    await tx
+      .insert(companyMembers)
+      .values({
+        id: devShoBakeryId("member", resolvedOwnerUserId),
+        companyId,
+        userId: resolvedOwnerUserId,
+        role: "owner",
+      })
+      .onConflictDoNothing({
+        target: [companyMembers.companyId, companyMembers.userId],
+      });
+
+    await tx
+      .insert(priceLists)
+      .values(
+        devShoBakeryPriceLists.map((name, index) => ({
+          id: devShoBakeryId("priceList", name),
+          companyId,
+          name,
+          isDefault: index === 1,
+          createdVia: SEEDED_VIA,
+        })),
+      )
+      .onConflictDoNothing({ target: priceLists.id });
+
+    await tx
+      .insert(customerGroups)
+      .values(
+        devShoBakeryGroups.map((group, index) => ({
+          id: devShoBakeryId("group", group.name),
+          companyId,
+          name: group.name,
+          slug: group.slug,
+          sortOrder: index,
+          createdVia: SEEDED_VIA,
+        })),
+      )
+      .onConflictDoNothing({ target: customerGroups.id });
+
+    await tx
+      .insert(companyCustomers)
+      .values(
+        devShoBakeryCustomers.map((name, index) => ({
+          id: devShoBakeryId("customer", name),
+          companyId,
+          name,
+          phone: `+38093222${String(index + 1).padStart(4, "0")}`,
+          createdVia: SEEDED_VIA,
+        })),
+      )
+      .onConflictDoNothing({ target: companyCustomers.id });
+
+    await tx
+      .insert(products)
+      .values(
+        devShoBakeryProducts.map((product) => ({
+          id: devShoBakeryId("product", product.name),
+          companyId,
+          name: product.name,
+          basePriceMinor: BigInt(product.priceMinor),
+          createdVia: SEEDED_VIA,
+        })),
+      )
+      .onConflictDoNothing({ target: products.id });
+
+    await tx
+      .insert(productVariants)
+      .values(variants)
+      .onConflictDoNothing({ target: productVariants.id });
+
+    return resolvedOwnerUserId;
+  });
 
   return {
     companyId,

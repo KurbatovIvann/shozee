@@ -4,10 +4,12 @@
  * runtime role; raw SQL is limited to PostgreSQL catalog structure checks.
  */
 import assert from "node:assert/strict";
-import { readFile, readdir } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { readdir } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-import { count, eq } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
 import pg from "pg";
 import {
   afterAll,
@@ -15,13 +17,16 @@ import {
   describe,
   expect,
   expectTypeOf,
+  inject,
   it,
 } from "vitest";
 
 import {
+  devShoBakeryCompany,
   devShoBakeryCompanyId,
   devShoBakeryCustomers,
   devShoBakeryId,
+  devShoBakeryOwner,
   rolePermissionDefaultRows,
   seedDevShoBakery,
   seedRolePermissionDefaults,
@@ -392,13 +397,93 @@ describe("dev bakery fixture seed", () => {
     };
   }
 
-  it("refuses to run under NODE_ENV=production (db.md §9)", async () => {
-    const cli = await readFile(
-      path.resolve(import.meta.dirname, "../seed/dev-sho-bakery-cli.ts"),
-      "utf8",
+  function runSeedCliUnderProduction() {
+    const url = new URL(inject("dbHarness").adminUrl);
+    url.pathname = `/${database.name}`;
+    return spawnSync(
+      process.execPath,
+      [
+        "--import",
+        new URL("../scripts/ts-resolve-register.mjs", import.meta.url).href,
+        fileURLToPath(
+          new URL("../seed/dev-sho-bakery-cli.ts", import.meta.url),
+        ),
+      ],
+      {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          NODE_ENV: "production",
+          DATABASE_URL: url.toString(),
+        },
+      },
     );
-    expect(cli).toContain('config.nodeEnv === "production"');
-    expect(cli).toContain("process.exit(1)");
+  }
+
+  async function readSystemLayout(companyId: string): Promise<DevBakeryLayout> {
+    const [productRow] = await dbClient.db
+      .select({ value: count() })
+      .from(products)
+      .where(
+        and(
+          eq(products.companyId, companyId),
+          eq(products.createdVia, "system"),
+        ),
+      );
+    const [variantRow] = await dbClient.db
+      .select({ value: count() })
+      .from(productVariants)
+      .where(
+        and(
+          eq(productVariants.companyId, companyId),
+          eq(productVariants.createdVia, "system"),
+        ),
+      );
+    const [customerRow] = await dbClient.db
+      .select({ value: count() })
+      .from(companyCustomers)
+      .where(
+        and(
+          eq(companyCustomers.companyId, companyId),
+          eq(companyCustomers.createdVia, "system"),
+        ),
+      );
+    const [groupRow] = await dbClient.db
+      .select({ value: count() })
+      .from(customerGroups)
+      .where(
+        and(
+          eq(customerGroups.companyId, companyId),
+          eq(customerGroups.createdVia, "system"),
+        ),
+      );
+    const [priceListRow] = await dbClient.db
+      .select({ value: count() })
+      .from(priceLists)
+      .where(
+        and(
+          eq(priceLists.companyId, companyId),
+          eq(priceLists.createdVia, "system"),
+        ),
+      );
+    return {
+      products: productRow?.value ?? 0,
+      variants: variantRow?.value ?? 0,
+      customers: customerRow?.value ?? 0,
+      groups: groupRow?.value ?? 0,
+      priceLists: priceListRow?.value ?? 0,
+    };
+  }
+
+  it("refuses to run under NODE_ENV=production and writes nothing (db.md §9)", async () => {
+    const before = await readLayout(devShoBakeryCompanyId);
+
+    const refused = runSeedCliUnderProduction();
+
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain("refuses to run with NODE_ENV=production");
+    expect(refused.stdout).not.toContain(devShoBakeryCompany.name);
+    expect(await readLayout(devShoBakeryCompanyId)).toEqual(before);
   });
 
   it("seeds the dictated catalogue and repeats without duplicating it", async () => {
@@ -436,5 +521,54 @@ describe("dev bakery fixture seed", () => {
     expect(seeded.map((row) => row.name).sort()).toEqual(
       [...devShoBakeryCustomers].sort(),
     );
+  });
+
+  it("stamps every fixture row with created_via=system (SHO-465)", async () => {
+    await seedDevShoBakery(dbClient.db);
+    const layout = await readLayout(devShoBakeryCompanyId);
+    expect(await readSystemLayout(devShoBakeryCompanyId)).toEqual(layout);
+  });
+
+  it("gives customer groups the slugs a Cyrillic name really produces", async () => {
+    await seedDevShoBakery(dbClient.db);
+    const groups = await dbClient.db
+      .select({ name: customerGroups.name, slug: customerGroups.slug })
+      .from(customerGroups)
+      .where(eq(customerGroups.companyId, devShoBakeryCompanyId));
+    expect(groups.map((row) => row.slug).sort()).toEqual([
+      "optovi",
+      "rozdrib",
+      "vip",
+    ]);
+    expect(groups.every((row) => !row.slug.startsWith("group-"))).toBe(true);
+  });
+
+  it("adopts a phone-first owner that signed up before the seed ran", async () => {
+    const fresh = await createTestDatabase();
+    try {
+      const signedUpOwnerId = "phone-first-owner-id";
+      await fresh.runtime.db.insert(user).values({
+        id: signedUpOwnerId,
+        name: "Phone first",
+        email: "+380931110001@phone.sho-dev.local",
+        emailVerified: false,
+        phoneNumber: devShoBakeryOwner.phone,
+        phoneNumberVerified: true,
+      });
+
+      const seeded = await seedDevShoBakery(fresh.runtime.db);
+      expect(seeded.ownerUserId).toBe(signedUpOwnerId);
+
+      const members = await fresh.runtime.db
+        .select({ userId: companyMembers.userId, role: companyMembers.role })
+        .from(companyMembers)
+        .where(eq(companyMembers.companyId, seeded.companyId));
+      expect(members).toEqual([{ userId: signedUpOwnerId, role: "owner" }]);
+
+      const again = await seedDevShoBakery(fresh.runtime.db);
+      expect(again).toEqual(seeded);
+    } finally {
+      await fresh.close();
+    }
   });
 });
