@@ -9,6 +9,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  assistantChoicePromptSchema,
+  assistantInteractionFromPause,
   mergeAssistantChatWindow,
   orderAssistantChatWindow,
   parseAssistantChatWindow,
@@ -425,5 +427,89 @@ describe("parseAssistantChatWindow", () => {
     ]) {
       expect(parseAssistantChatWindow(value)).toBeNull();
     }
+  });
+});
+
+const CHOICE_V1 = {
+  subject: "Катя",
+  options: [
+    { optionId: "a", label: "Катя Самбука" },
+    { optionId: "b", label: "Катя Іванова", detail: "+380..." },
+  ],
+  optionsTruncated: false,
+};
+
+const CHOICE_V2 = {
+  subject: "Галина",
+  options: [
+    { optionId: "a", label: "Галина Петренко", detail: "Київ", kind: "record" },
+    { optionId: "create", label: "Створити клієнта «Галина»", kind: "create" },
+  ],
+  optionsTruncated: true,
+  nearest: true,
+  problem: "Клієнта з таким іменем немає.",
+};
+
+function pause(prompt: unknown): AssistantPause {
+  return {
+    kind: "choice",
+    interactionId: "88888888-8888-4888-8888-888888888888",
+    revision: 1,
+    status: "open",
+    prompt,
+    expiresAt: "2026-09-10T10:15:00.000Z",
+  };
+}
+
+describe("a choice prompt", () => {
+  it("round-trips everything the picker shows", () => {
+    const parsed = assistantChoicePromptSchema.parse(CHOICE_V2);
+
+    expect(parsed).toEqual(CHOICE_V2);
+    expect(assistantChoicePromptSchema.parse(parsed)).toEqual(parsed);
+  });
+
+  it("still accepts a payload written before the create option existed", () => {
+    const parsed = assistantChoicePromptSchema.parse(CHOICE_V1);
+
+    expect(parsed.nearest).toBe(false);
+    expect(parsed.problem).toBeUndefined();
+    expect(parsed.options.map((option) => option.kind)).toEqual([
+      "record",
+      "record",
+    ]);
+    expect(parsed.options[1]?.detail).toBe("+380...");
+  });
+
+  it("refuses an option kind this build does not know", () => {
+    const parsed = assistantChoicePromptSchema.safeParse({
+      ...CHOICE_V1,
+      options: [{ optionId: "a", label: "A", kind: "compose" }],
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+
+  it("reaches the renderer with the header, the problem and the create option", () => {
+    const interaction = assistantInteractionFromPause(pause(CHOICE_V2));
+
+    expect(interaction).toMatchObject({
+      kind: "choice",
+      nearest: true,
+      problem: "Клієнта з таким іменем немає.",
+      optionsTruncated: true,
+    });
+    if (interaction?.kind !== "choice") return;
+    expect(interaction.options[1]).toEqual({
+      optionId: "create",
+      label: "Створити клієнта «Галина»",
+      kind: "create",
+    });
+  });
+
+  it("gives an old pause the same defaults, so one renderer serves both", () => {
+    const interaction = assistantInteractionFromPause(pause(CHOICE_V1));
+
+    expect(interaction).toMatchObject({ nearest: false, problem: undefined });
   });
 });

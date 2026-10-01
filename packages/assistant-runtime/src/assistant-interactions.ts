@@ -57,6 +57,14 @@ export type ChoicePickerTarget =
       readonly productName: string;
     };
 
+export type ChoiceOptionSecret =
+  | { readonly kind: "record"; readonly entityId: string }
+  | {
+      readonly kind: "create";
+      readonly toolName: string;
+      readonly input: unknown;
+    };
+
 /**
  * Server-side only. `byOption` never reaches a client — the client sends an
  * `optionId` and the server says what it meant.
@@ -67,7 +75,7 @@ export type ChoicePickerTarget =
  * first.
  */
 export interface ChoiceSecret {
-  readonly byOption: Record<string, string>;
+  readonly byOption: Record<string, ChoiceOptionSecret>;
   readonly toolName: string;
   readonly input: unknown;
   readonly target: ChoicePickerTarget;
@@ -111,13 +119,16 @@ export const choice = defineInteraction<ChoiceSecret>()({
   prompt: assistantChoicePromptSchema,
   answer: z.strictObject({ optionId: z.string().min(1).max(128) }),
   resolve: ({ answer, secret }) => {
-    const entityId = secret.byOption[answer.optionId];
-    // An option this picker never offered is refused before the claim is
-    // spent, so the card stays answerable.
-    return entityId === undefined
-      ? unresolvable(`unknown option ${answer.optionId}`)
+    const option = Object.hasOwn(secret.byOption, answer.optionId)
+      ? secret.byOption[answer.optionId]
+      : undefined;
+    if (option === undefined) {
+      return unresolvable(`unknown option ${answer.optionId}`);
+    }
+    return option.kind === "create"
+      ? unresolvable(`create option ${answer.optionId} has no producer`)
       : resolved({
-          entityId,
+          entityId: option.entityId,
           toolName: secret.toolName,
           input: secret.input,
           target: secret.target,

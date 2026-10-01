@@ -452,7 +452,7 @@ describe("the spend ceiling on the kit routes", () => {
         optionsTruncated: false,
       },
       secret: {
-        byOption: { "opt-a": "entity-a" },
+        byOption: { "opt-a": { kind: "record", entityId: "entity-a" } },
         toolName: "orders_create",
         input: {},
         target: { kind: "customer", query: "two matches" },
