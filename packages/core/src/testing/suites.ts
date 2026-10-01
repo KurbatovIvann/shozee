@@ -62,9 +62,8 @@ export interface IsolationInvocation extends IsolationActor {
  */
 export type SuiteAction = ImplementedAction<z.ZodType, z.ZodType, unknown>;
 
-export interface ForeignReferenceProbe {
-  readonly missing: IsolationInvocation;
-}
+export type ForeignReferenceProbe =
+  { readonly missing: IsolationInvocation } | { readonly noReference: true };
 
 export interface CrossTenantCase {
   readonly action: SuiteAction;
@@ -195,7 +194,94 @@ function previewExistenceChecked(c: CrossTenantCase, gated: boolean): boolean {
   }
   return (
     c.action.contract.principal !== "account" ||
-    c.foreignReference !== undefined
+    missingReferenceProbe(c) !== undefined
+  );
+}
+
+function missingReferenceProbe(
+  c: CrossTenantCase,
+): IsolationInvocation | undefined {
+  const probe = c.foreignReference;
+  return probe !== undefined && "missing" in probe ? probe.missing : undefined;
+}
+
+type SchemaDefinition = z.core.$ZodTypes["_zod"]["def"];
+
+function schemaDefinition(schema: z.core.$ZodType): SchemaDefinition {
+  const node: z.core.$ZodTypes = schema as z.core.$ZodTypes;
+  return node._zod.def;
+}
+
+function schemaChildren(def: SchemaDefinition): readonly z.core.$ZodType[] {
+  switch (def.type) {
+    case "object":
+      return Object.values(def.shape);
+    case "array":
+      return [def.element];
+    case "union":
+      return def.options;
+    case "intersection":
+      return [def.left, def.right];
+    case "tuple":
+      return def.rest === null ? def.items : [...def.items, def.rest];
+    case "record":
+    case "map":
+      return [def.keyType, def.valueType];
+    case "set":
+      return [def.valueType];
+    case "lazy":
+      return [def.getter()];
+    case "pipe":
+      return [def.in, def.out];
+    case "optional":
+    case "nullable":
+    case "nonoptional":
+    case "default":
+    case "prefault":
+    case "catch":
+    case "readonly":
+    case "promise":
+      return [def.innerType];
+    default:
+      return [];
+  }
+}
+
+function carriesUuidField(
+  schema: z.core.$ZodType,
+  seen: Set<z.core.$ZodType>,
+): boolean {
+  if (seen.has(schema)) {
+    return false;
+  }
+  seen.add(schema);
+  const def = schemaDefinition(schema);
+  if (def.type === "string" && "format" in def && def.format === "uuid") {
+    return true;
+  }
+  return schemaChildren(def).some((child) => carriesUuidField(child, seen));
+}
+
+function inputCarriesUuidField(action: SuiteAction): boolean {
+  return carriesUuidField(action.contract.input, new Set());
+}
+
+function assertForeignReferenceProbeDeclared(c: CrossTenantCase): void {
+  const probe = c.foreignReference;
+  const name = c.action.contract.name;
+  if (probe !== undefined && "noReference" in probe) {
+    if (inputCarriesUuidField(c.action)) {
+      throw new Error(
+        `"${name}" declares { noReference: true } but its input schema carries a uuid field, so the input can name a foreign row. Declare isolationCase(action, own, foreign, { missing }) instead — the exemption is only for an input with no resolvable reference.`,
+      );
+    }
+    return;
+  }
+  if (c.action.preview === undefined || probe !== undefined) {
+    return;
+  }
+  throw new Error(
+    `"${name}" binds a preview, so its isolation case must declare a missing-reference probe — isolationCase(action, own, foreign, { missing }) — or, only when the input carries no resolvable reference, the exemption { noReference: true }. Without the probe a preview that refuses a foreign reference differently from a missing one still passes.`,
   );
 }
 
@@ -311,12 +397,12 @@ async function expectPreviewRefusesForeignAsMissing(
     c.foreign,
     "a foreign reference",
   );
-  const probe = c.foreignReference;
+  const probe = missingReferenceProbe(c);
   if (probe !== undefined) {
     const atMissing = await refusalAtPreview(
       kit,
       c.action,
-      probe.missing,
+      probe,
       "a missing reference",
     );
     if (refusalsDiffer(atPreview, atMissing)) {
@@ -379,6 +465,7 @@ export async function runCrossTenantCase(
   c: CrossTenantCase,
 ): Promise<void> {
   const { action } = c;
+  assertForeignReferenceProbeDeclared(c);
   const principal = action.contract.principal;
   const publicScope = action.contract.publicScope;
 
@@ -689,6 +776,7 @@ export async function runAccountIsolationCase(
   c: CrossTenantCase,
 ): Promise<void> {
   const action = c.action;
+  assertForeignReferenceProbeDeclared(c);
   if (action.contract.principal !== "account") {
     throw new Error(
       `"${action.contract.name}" is not an account action — accountIsolationSuite only accepts principal: account`,

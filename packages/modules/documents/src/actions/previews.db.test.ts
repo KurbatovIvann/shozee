@@ -38,15 +38,12 @@ const fixtures = {
   productA: randomUUID(),
   productB: randomUUID(),
   orderA: randomUUID(),
-  orderB: randomUUID(),
   orderShared: randomUUID(),
   orderRevoked: randomUUID(),
   itemA: randomUUID(),
-  itemB: randomUUID(),
   itemShared: randomUUID(),
   itemRevoked: randomUUID(),
   docA: randomUUID(),
-  docB: randomUUID(),
   docShared: randomUUID(),
   docRevoked: randomUUID(),
   counterpartyA: randomUUID(),
@@ -251,28 +248,12 @@ beforeAll(async () => {
     productId: fixtures.productA,
     orderNumber: "KA-1",
   });
-  await insertSeedOrder({
-    id: fixtures.orderB,
-    itemId: fixtures.itemB,
-    companyId: companyB,
-    customerId: fixtures.customerB,
-    productId: fixtures.productB,
-    orderNumber: "KB-1",
-  });
-
   await insertSeedDocument({
     id: fixtures.docA,
     companyId: companyA,
     orderId: fixtures.orderA,
     documentNumber: "KA-РХ-000001",
   });
-  await insertSeedDocument({
-    id: fixtures.docB,
-    companyId: companyB,
-    orderId: fixtures.orderB,
-    documentNumber: "KB-РХ-000001",
-  });
-
   await insertSeedOrder({
     id: fixtures.orderShared,
     itemId: fixtures.itemShared,
@@ -451,39 +432,5 @@ describe("documents preview cards (core.md §7)", () => {
       .from(documents)
       .where(eq(documents.id, fixtures.docA));
     expect(rows[0]?.status).toBe("issued");
-  });
-
-  it("refuses a foreign document in the cancel card exactly like a missing one", async () => {
-    expectSameRefusal(
-      await refusalOf(cancelDocument, { documentId: fixtures.docB }),
-      await refusalOf(cancelDocument, { documentId: fixtures.missingId }),
-    );
-  });
-
-  it("refuses a foreign document in the share card exactly like a missing one", async () => {
-    expectSameRefusal(
-      await refusalOf(shareDocument, { documentId: fixtures.docB }),
-      await refusalOf(shareDocument, { documentId: fixtures.missingId }),
-    );
-  });
-
-  it("refuses a foreign document in the requestSign card exactly like a missing one", async () => {
-    expectSameRefusal(
-      await refusalOf(requestSign, { documentId: fixtures.docB }),
-      await refusalOf(requestSign, { documentId: fixtures.missingId }),
-    );
-  });
-
-  it("refuses a foreign order in the createFromOrder card like a missing one", async () => {
-    expectSameRefusal(
-      await refusalOf(createFromOrder, {
-        orderId: fixtures.orderB,
-        type: "payment_invoice",
-      }),
-      await refusalOf(createFromOrder, {
-        orderId: fixtures.missingId,
-        type: "payment_invoice",
-      }),
-    );
   });
 });

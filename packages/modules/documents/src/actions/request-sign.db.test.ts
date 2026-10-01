@@ -560,6 +560,7 @@ crossTenantSuite(
       requestSign,
       { input: { documentId: fixtures.docIsolationA } },
       { input: { documentId: fixtures.docIsolationB } },
+      { missing: { input: { documentId: randomUUID() } } },
     ),
     isolationCase(
       getSigning,

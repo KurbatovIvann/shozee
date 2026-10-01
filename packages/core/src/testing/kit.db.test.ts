@@ -44,6 +44,7 @@ const foreignProduct = {
   productId: kitIdentities.products.ofUnpublishedCompany,
 };
 const missingProduct = { productId: randomUUID() };
+const announcement = { note: "Spring sale" };
 const unpublishedProduct = {
   productId: kitIdentities.products.unpublished,
 };
@@ -277,6 +278,66 @@ describe("suites fail on seeded violations", () => {
         ),
       ),
     ).rejects.toThrow(/expected foreign access/);
+  });
+
+  it("detects a preview case that declares neither a probe nor the exemption", async () => {
+    await expect(
+      runCrossTenantCase(
+        kit,
+        isolationCase(
+          correct.staffPublishProduct,
+          { input: ownProduct },
+          { input: foreignProduct },
+        ),
+      ),
+    ).rejects.toThrow(/must declare a missing-reference probe/);
+  });
+
+  it("accepts the no-reference exemption on an input that names no row", async () => {
+    await expect(
+      runCrossTenantCase(
+        kit,
+        isolationCase(
+          correct.staffAnnounceSale,
+          { input: announcement },
+          { input: announcement, companyId: kitIdentities.companies.b },
+          { noReference: true },
+        ),
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it("rejects the no-reference exemption on an input that carries a uuid", async () => {
+    await expect(
+      runCrossTenantCase(
+        kit,
+        isolationCase(
+          correct.staffPublishProduct,
+          { input: ownProduct },
+          { input: ownProduct, companyId: kitIdentities.companies.b },
+          { noReference: true },
+        ),
+      ),
+    ).rejects.toThrow(/input schema carries a uuid field/);
+  });
+
+  it("accepts an actor-varying preview case that probes a missing reference", async () => {
+    await expect(
+      runCrossTenantCase(
+        kit,
+        isolationCase(
+          correct.staffPublishProduct,
+          { input: ownProduct },
+          { input: ownProduct, companyId: kitIdentities.companies.b },
+          {
+            missing: {
+              input: missingProduct,
+              companyId: kitIdentities.companies.b,
+            },
+          },
+        ),
+      ),
+    ).resolves.toBeUndefined();
   });
 
   it("detects a preview that tells a foreign id apart from a missing one", async () => {
