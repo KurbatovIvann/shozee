@@ -54,6 +54,7 @@ export {
 export type {
   BrowseCase,
   CrossTenantCase,
+  ForeignReferenceProbe,
   IsolationInvocation,
   JobIsolationCase,
   JobIsolationEffect,

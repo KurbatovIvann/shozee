@@ -1,11 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import {
-  createConfirmationHook,
-  createInMemoryConfirmationStore,
-  type ActionPipelineDeps,
-  type ImplementedAction,
-} from "@showzy/core";
+import { type ImplementedAction } from "@showzy/core";
 import {
   ConfirmationRequiredError,
   NotFoundError,
@@ -44,18 +39,6 @@ const futureExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
 let kit: TestKit;
 
-function confirmationPipeline(target: TestKit): ActionPipelineDeps {
-  return {
-    ...target.pipeline,
-    hooks: {
-      ...target.pipeline.hooks,
-      confirmation: createConfirmationHook({
-        store: createInMemoryConfirmationStore(),
-      }),
-    },
-  };
-}
-
 async function invokeForCard<
   TInput extends z.ZodType,
   TOutput extends z.ZodType,
@@ -66,7 +49,6 @@ async function invokeForCard<
       input,
       {},
       {
-        deps: confirmationPipeline(kit),
         request: { requireConfirmation: true },
       },
     )
