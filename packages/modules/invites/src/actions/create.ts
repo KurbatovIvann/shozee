@@ -1,29 +1,55 @@
 import { implementAction } from "@showzy/core";
+import type { ActionPreviewLine } from "@showzy/core/errors";
+import { getGroup } from "@showzy/customers";
+import { optionalNullableUuid } from "@showzy/module-kit/optional-nullable-uuid";
+import { getPriceList } from "@showzy/pricing";
+
 import { createInviteContract } from "./create.contract.js";
 import { inviteAuditTarget } from "../services/invite-audit-target.js";
 import { createStaffInvite } from "../services/create-invite.js";
+import { nullableText } from "../services/invite-view.js";
 import {
   inviteExpiryLabel,
   inviteKindLabel,
   inviteUsesLabel,
 } from "../services/preview-invite.js";
 
+const ABSENT = "—";
+
 export const createInvite = implementAction(createInviteContract, {
   handler: (input, ctx) => {
     return createStaffInvite({ ctx, input });
   },
-  preview: (input) => ({
-    title: "Створити запрошення для клієнта",
-    lines: [
+  preview: async (input, env) => {
+    const lines: ActionPreviewLine[] = [
       { label: "Тип", value: inviteKindLabel(input.isReusable) },
-      { label: "Ім'я", value: input.name ?? "—" },
+      { label: "Ім'я", value: nullableText(input.name) ?? ABSENT },
       {
         label: "Використань",
         value: inviteUsesLabel(input.maxUses ?? (input.isReusable ? null : 1)),
       },
       { label: "Діє до", value: inviteExpiryLabel(input.expiresAt) },
-    ],
-    notes: ["Посилання з таємним кодом буде показано один раз."],
-  }),
+      { label: "Телефон", value: nullableText(input.phone) ?? ABSENT },
+      { label: "Email", value: nullableText(input.email) ?? ABSENT },
+    ];
+
+    const groupId = optionalNullableUuid(input.groupId);
+    const group =
+      groupId === null ? null : await env.call(getGroup, { id: groupId });
+    lines.push({ label: "Група", value: group?.name ?? ABSENT });
+
+    const priceListId = optionalNullableUuid(input.priceListId);
+    const priceList =
+      priceListId === null
+        ? null
+        : await env.call(getPriceList, { id: priceListId });
+    lines.push({ label: "Прайс-лист", value: priceList?.name ?? ABSENT });
+
+    return {
+      title: "Створити запрошення для клієнта",
+      lines,
+      notes: ["Посилання з таємним кодом буде показано один раз."],
+    };
+  },
   auditTarget: inviteAuditTarget,
 });

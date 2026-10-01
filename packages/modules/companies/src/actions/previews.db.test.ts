@@ -149,8 +149,38 @@ describe("companies preview cards (core.md §7)", () => {
     expect(preview.lines).toEqual([
       { label: "Форма", value: "ФОП → ТОВ" },
       { label: "Юридична назва", value: "ФОП Анна → ТОВ Анна" },
-      { label: "ЄДРПОУ", value: "12345678" },
       { label: "IBAN", value: `${storedIban} → очистити` },
+    ]);
+  });
+
+  it("shows every field companies.updateLegal writes, set or cleared", async () => {
+    const preview = await previewOf(
+      updateLegal,
+      {
+        companyType: "fop",
+        legalName: "ФОП Анна",
+        edrpou: null,
+        legalAddress: "вул. Хрещатик, 1",
+        iban: "",
+        bankName: "ПриватБанк",
+        bankMfo: "305299",
+        bankEdrpou: "14360570",
+        phone: "+380501112233",
+        email: "anna@example.test",
+      },
+      { userId: admin, companyId: companyA },
+    );
+    expect(preview.lines).toEqual([
+      { label: "Форма", value: "ФОП" },
+      { label: "Юридична назва", value: "ФОП Анна" },
+      { label: "ЄДРПОУ", value: "12345678 → очистити" },
+      { label: "Юридична адреса", value: "вул. Хрещатик, 1" },
+      { label: "IBAN", value: `${storedIban} → очистити` },
+      { label: "Банк", value: "ПриватБанк" },
+      { label: "МФО", value: "305299" },
+      { label: "ЄДРПОУ банку", value: "14360570" },
+      { label: "Телефон", value: "+380501112233" },
+      { label: "Email", value: "anna@example.test" },
     ]);
   });
 

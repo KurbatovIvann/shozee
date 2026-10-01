@@ -2,32 +2,41 @@ import type { ActionPreviewEnv } from "@showzy/core";
 import type { ActionPreviewLine } from "@showzy/core/errors";
 import { NotFoundError } from "@showzy/core/errors";
 import { documents } from "@showzy/db/schema/documents";
+import { parseDbEnum } from "@showzy/module-kit/parse-db-enum";
 import { and, eq } from "drizzle-orm";
+import type { z } from "zod";
+
+import {
+  documentStatusSchema,
+  documentTypeSchema,
+} from "../actions/document-view.contract.js";
 
 type PreviewTx = ActionPreviewEnv["tx"];
+type DocumentType = z.output<typeof documentTypeSchema>;
+type DocumentStatus = z.output<typeof documentStatusSchema>;
 
-const TYPE_LABELS = new Map<string, string>([
-  ["payment_invoice", "Рахунок на оплату"],
-  ["delivery_note", "Видаткова накладна"],
-]);
+const TYPE_LABELS = {
+  payment_invoice: "Рахунок на оплату",
+  delivery_note: "Видаткова накладна",
+} as const satisfies Record<DocumentType, string>;
 
-const STATUS_LABELS = new Map<string, string>([
-  ["issued", "Виданий"],
-  ["cancelled", "Скасований"],
-]);
+const STATUS_LABELS = {
+  issued: "Виданий",
+  cancelled: "Скасований",
+} as const satisfies Record<DocumentStatus, string>;
 
-export function documentTypeLabel(type: string): string {
-  return TYPE_LABELS.get(type) ?? type;
+export function documentTypeLabel(type: DocumentType): string {
+  return TYPE_LABELS[type];
 }
 
-export function documentStatusLabel(status: string): string {
-  return STATUS_LABELS.get(status) ?? status;
+export function documentStatusLabel(status: DocumentStatus): string {
+  return STATUS_LABELS[status];
 }
 
 export interface DocumentPreviewFacts {
   readonly documentNumber: string;
-  readonly type: string;
-  readonly status: string;
+  readonly type: DocumentType;
+  readonly status: DocumentStatus;
 }
 
 export async function loadDocumentPreviewFacts(env: {
@@ -53,7 +62,19 @@ export async function loadDocumentPreviewFacts(env: {
   if (row === undefined) {
     throw new NotFoundError();
   }
-  return row;
+  return {
+    documentNumber: row.documentNumber,
+    type: parseDbEnum(
+      documentTypeSchema,
+      row.type,
+      `documents row has illegal type "${row.type}"`,
+    ),
+    status: parseDbEnum(
+      documentStatusSchema,
+      row.status,
+      `documents row has illegal status "${row.status}"`,
+    ),
+  };
 }
 
 export function documentPreviewLines(

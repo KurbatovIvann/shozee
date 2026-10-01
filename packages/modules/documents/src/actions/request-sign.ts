@@ -38,6 +38,10 @@ export {
 export const REQUEST_SIGN_KEY_POSSESSION_NOTE =
   "Підтвердження не замінює володіння ключем — документ підписують на вашому пристрої.";
 
+export function requestSignPreviewTitle(documentNumber: string): string {
+  return `Запросити підписання документа ${documentNumber}. ${REQUEST_SIGN_KEY_POSSESSION_NOTE}`;
+}
+
 const documentIdHolder = z.object({ documentId: z.string() });
 
 function requestSignAuditTarget(env: AuditTargetEnv): {
@@ -117,11 +121,11 @@ export const requestSign = implementAction(requestSignContract, {
   preview: async (input, env) => {
     const facts = await loadDocumentPreviewFacts({
       tx: env.tx,
-      companyId: previewCompanyScope(env.companyId, "documents.requestSign"),
+      companyId: previewCompanyScope(env.companyId, requestSignContract),
       documentId: input.documentId,
     });
     return {
-      title: `Запросити підписання документа ${facts.documentNumber}`,
+      title: requestSignPreviewTitle(facts.documentNumber),
       lines: documentPreviewLines(facts),
       notes: [REQUEST_SIGN_KEY_POSSESSION_NOTE],
     };

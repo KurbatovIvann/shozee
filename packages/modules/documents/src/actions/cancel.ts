@@ -105,7 +105,7 @@ export const cancelDocument = implementAction(cancelDocumentContract, {
   preview: async (input, env) => {
     const facts = await loadDocumentPreviewFacts({
       tx: env.tx,
-      companyId: previewCompanyScope(env.companyId, "documents.cancel"),
+      companyId: previewCompanyScope(env.companyId, cancelDocumentContract),
       documentId: input.documentId,
     });
     return {

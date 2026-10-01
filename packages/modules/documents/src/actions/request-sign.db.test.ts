@@ -48,6 +48,7 @@ import {
   CANCELLED_REQUEST_SIGN_MESSAGE,
   PDF_NOT_READY_MESSAGE,
   requestSign,
+  requestSignPreviewTitle,
   REQUEST_SIGN_KEY_POSSESSION_NOTE,
 } from "./request-sign.js";
 import { documentsSignRequested } from "../events/sign-requested.js";
@@ -664,10 +665,13 @@ describe("documents.requestSign", () => {
       throw new Error("expected ConfirmationRequiredError");
     }
     expect(unconfirmed.challenge.summary).toBe(
-      "Запросити підписання документа KA-РХ-000928",
+      requestSignPreviewTitle("KA-РХ-000928"),
+    );
+    expect(unconfirmed.challenge.summary).toContain(
+      REQUEST_SIGN_KEY_POSSESSION_NOTE,
     );
     expect(unconfirmed.challenge.preview).toEqual({
-      title: "Запросити підписання документа KA-РХ-000928",
+      title: requestSignPreviewTitle("KA-РХ-000928"),
       lines: [
         { label: "Документ", value: "KA-РХ-000928" },
         { label: "Тип", value: "Рахунок на оплату" },

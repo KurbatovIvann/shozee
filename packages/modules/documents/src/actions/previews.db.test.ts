@@ -18,7 +18,7 @@ import {
 } from "@showzy/core/testing";
 import { products } from "@showzy/db/schema/catalog";
 import { companyLegalInfo } from "@showzy/db/schema/companies";
-import { companyCustomers } from "@showzy/db/schema/customers";
+import { companyCustomers, counterparties } from "@showzy/db/schema/customers";
 import { documents } from "@showzy/db/schema/documents";
 import { orderItems, orders } from "@showzy/db/schema/orders";
 import { eq } from "drizzle-orm";
@@ -47,6 +47,8 @@ const fixtures = {
   itemB: randomUUID(),
   docA: randomUUID(),
   docB: randomUUID(),
+  counterpartyA: randomUUID(),
+  counterpartyB: randomUUID(),
   missingId: randomUUID(),
 };
 
@@ -223,6 +225,21 @@ beforeAll(async () => {
     },
   ]);
 
+  await kit.db.runtime.db.insert(counterparties).values([
+    {
+      id: fixtures.counterpartyA,
+      companyId: companyA,
+      customerId: fixtures.customerA,
+      name: "ТОВ Покупець",
+    },
+    {
+      id: fixtures.counterpartyB,
+      companyId: companyB,
+      customerId: fixtures.customerB,
+      name: "Чужий покупець",
+    },
+  ]);
+
   await kit.db.runtime.db.insert(products).values([
     {
       id: fixtures.productA,
@@ -301,8 +318,18 @@ describe("documents preview cards (core.md §7)", () => {
     const preview = await previewOf(requestSign, {
       documentId: fixtures.docA,
     });
-    expect(preview.title).toBe("Запросити підписання документа KA-РХ-000001");
+    expect(preview.title).toContain(
+      "Запросити підписання документа KA-РХ-000001",
+    );
     expect(preview.notes).toEqual([REQUEST_SIGN_KEY_POSSESSION_NOTE]);
+  });
+
+  it("keeps the key-possession warning reachable through the summary", async () => {
+    const error = await refusalOf(requestSign, { documentId: fixtures.docA });
+    if (!(error instanceof ConfirmationRequiredError)) {
+      throw error;
+    }
+    expect(error.challenge.summary).toContain(REQUEST_SIGN_KEY_POSSESSION_NOTE);
   });
 
   it("previews documents.createFromOrder through the nested order read", async () => {
@@ -316,8 +343,37 @@ describe("documents preview cards (core.md §7)", () => {
       { label: "Тип", value: "Рахунок на оплату" },
       { label: "Замовлення", value: "KA-1" },
       { label: "Позицій", value: "1" },
+      { label: "Покупець", value: "Customer A" },
       { label: "Підстава", value: "Договір 7" },
     ]);
+  });
+
+  it("names the counterparty the document is issued to and the layout", async () => {
+    const preview = await previewOf(createFromOrder, {
+      orderId: fixtures.orderA,
+      type: "payment_invoice",
+      counterpartyId: fixtures.counterpartyA,
+      layoutKey: "payment_invoice.branded",
+    });
+    expect(preview.lines.slice(3)).toEqual([
+      { label: "Покупець", value: "ТОВ Покупець" },
+      { label: "Шаблон", value: "payment_invoice.branded" },
+    ]);
+  });
+
+  it("refuses a foreign counterparty in the createFromOrder card like a missing one", async () => {
+    expectSameRefusal(
+      await refusalOf(createFromOrder, {
+        orderId: fixtures.orderA,
+        type: "payment_invoice",
+        counterpartyId: fixtures.counterpartyB,
+      }),
+      await refusalOf(createFromOrder, {
+        orderId: fixtures.orderA,
+        type: "payment_invoice",
+        counterpartyId: fixtures.missingId,
+      }),
+    );
   });
 
   it("leaves nothing behind when a card is issued", async () => {

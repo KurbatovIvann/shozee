@@ -103,6 +103,28 @@ export const createFromOrder = implementAction(createFromOrderContract, {
       { label: "Замовлення", value: order.orderNumber },
       { label: "Позицій", value: String(order.items.length) },
     ];
+    if (input.counterpartyId === undefined) {
+      const customer = await env.call(getCustomer, {
+        id: requireOrderCustomerId(order.customerId),
+      });
+      lines.push({ label: "Покупець", value: customer.name });
+    } else {
+      const counterparty = await env.call(getCounterparty, {
+        id: input.counterpartyId,
+      });
+      requireCounterpartyCustomerMatch(
+        counterparty.customerId,
+        order.customerId,
+      );
+      lines.push({ label: "Покупець", value: counterparty.name });
+    }
+    if (input.layoutKey !== undefined) {
+      const layout = await env.call(resolveLayout, {
+        layoutKey: input.layoutKey,
+        type: input.type,
+      });
+      lines.push({ label: "Шаблон", value: layout.key });
+    }
     if (input.basis !== undefined && input.basis.length > 0) {
       lines.push({ label: "Підстава", value: input.basis });
     }

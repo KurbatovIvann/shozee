@@ -16,7 +16,9 @@ import {
   kitIdentities,
   type TestKit,
 } from "@showzy/core/testing";
+import { customerGroups } from "@showzy/db/schema/customers";
 import { companyCustomerInvites } from "@showzy/db/schema/invites";
+import { priceLists } from "@showzy/db/schema/pricing";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { z } from "zod";
@@ -30,6 +32,10 @@ const companyB = kitIdentities.companies.b;
 const fixtures = {
   inviteA: randomUUID(),
   inviteB: randomUUID(),
+  groupA: randomUUID(),
+  groupB: randomUUID(),
+  listA: randomUUID(),
+  listB: randomUUID(),
   missingId: randomUUID(),
 };
 
@@ -102,6 +108,25 @@ function expectSameRefusal(foreign: unknown, missing: unknown): void {
 beforeAll(async () => {
   kit = await createTestKit();
 
+  await kit.db.runtime.db.insert(priceLists).values([
+    { id: fixtures.listA, companyId: companyA, name: "Прайс Альфа" },
+    { id: fixtures.listB, companyId: companyB, name: "Чужий прайс" },
+  ]);
+  await kit.db.runtime.db.insert(customerGroups).values([
+    {
+      id: fixtures.groupA,
+      companyId: companyA,
+      name: "Гуртові",
+      slug: `hurtovi-${fixtures.groupA}`,
+    },
+    {
+      id: fixtures.groupB,
+      companyId: companyB,
+      name: "Чужа група",
+      slug: `chuzha-${fixtures.groupB}`,
+    },
+  ]);
+
   await kit.db.runtime.db.insert(companyCustomerInvites).values([
     {
       id: fixtures.inviteA,
@@ -148,21 +173,78 @@ describe("invites preview cards (core.md §7)", () => {
       { label: "Використань", value: "1" },
     ]);
     expect(preview.lines[3]?.label).toBe("Діє до");
-    expect(preview.lines[3]?.value).toMatch(/^\d{2}\.\d{2}\.\d{4}$/);
+    expect(preview.lines[3]?.value).toMatch(
+      /^\d{2}\.\d{2}\.\d{4}\D+\d{2}:\d{2}$/,
+    );
+    expect(preview.lines.slice(4)).toEqual([
+      { label: "Телефон", value: "—" },
+      { label: "Email", value: "—" },
+      { label: "Група", value: "—" },
+      { label: "Прайс-лист", value: "—" },
+    ]);
     expect(preview.notes).toEqual([
       "Посилання з таємним кодом буде показано один раз.",
     ]);
   });
 
+  it("names the group and price list the invite grants", async () => {
+    const preview = await previewOf(createInvite, {
+      isReusable: true,
+      expiresAt: futureExpiresAt.toISOString(),
+      phone: "+380501112233",
+      email: "oksana@example.test",
+      groupId: fixtures.groupA,
+      priceListId: fixtures.listA,
+    });
+    expect(preview.lines.slice(4)).toEqual([
+      { label: "Телефон", value: "+380501112233" },
+      { label: "Email", value: "oksana@example.test" },
+      { label: "Група", value: "Гуртові" },
+      { label: "Прайс-лист", value: "Прайс Альфа" },
+    ]);
+  });
+
+  it("refuses a foreign group in the create card exactly like a missing one", async () => {
+    expectSameRefusal(
+      await invokeForCard(createInvite, {
+        isReusable: true,
+        expiresAt: futureExpiresAt.toISOString(),
+        groupId: fixtures.groupB,
+      }),
+      await invokeForCard(createInvite, {
+        isReusable: true,
+        expiresAt: futureExpiresAt.toISOString(),
+        groupId: fixtures.missingId,
+      }),
+    );
+  });
+
+  it("refuses a foreign price list in the create card exactly like a missing one", async () => {
+    expectSameRefusal(
+      await invokeForCard(createInvite, {
+        isReusable: true,
+        expiresAt: futureExpiresAt.toISOString(),
+        priceListId: fixtures.listB,
+      }),
+      await invokeForCard(createInvite, {
+        isReusable: true,
+        expiresAt: futureExpiresAt.toISOString(),
+        priceListId: fixtures.missingId,
+      }),
+    );
+  });
+
   it("previews invites.revoke from the stored invite", async () => {
     const preview = await previewOf(revokeInvite, { id: fixtures.inviteA });
     expect(preview.title).toBe("Відкликати запрошення для Пекарня Оксани");
-    expect(preview.lines).toEqual([
+    expect(preview.lines.slice(0, 3)).toEqual([
       { label: "Тип", value: "Багаторазове" },
       { label: "Статус", value: "Чинне" },
       { label: "Використань", value: "2 / 5" },
-      { label: "Діє до", value: "15.06.2099" },
     ]);
+    expect(preview.lines[3]?.label).toBe("Діє до");
+    expect(preview.lines[3]?.value).toContain("15.06.2099");
+    expect(preview.lines[3]?.value).toContain("12:00");
   });
 
   it("leaves the invite untouched while the card is issued", async () => {

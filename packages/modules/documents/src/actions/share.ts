@@ -131,7 +131,7 @@ export const shareDocument = implementAction(shareDocumentContract, {
   preview: async (input, env) => {
     const facts = await loadDocumentPreviewFacts({
       tx: env.tx,
-      companyId: previewCompanyScope(env.companyId, "documents.share"),
+      companyId: previewCompanyScope(env.companyId, shareDocumentContract),
       documentId: input.documentId,
     });
     return {

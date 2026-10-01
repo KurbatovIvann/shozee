@@ -6,33 +6,38 @@ import { and, eq } from "drizzle-orm";
 
 type PreviewTx = ActionPreviewEnv["tx"];
 
-import type { InviteView } from "../actions/invite-view.contract.js";
+import type {
+  InviteDerivedStatus,
+  InviteView,
+} from "../actions/invite-view.contract.js";
 import { inviteRowColumns, toInviteView } from "./invite-view.js";
 
-const STATUS_LABELS = new Map<string, string>([
-  ["pending", "Чинне"],
-  ["revoked", "Відкликане"],
-  ["expired", "Прострочене"],
-  ["exhausted", "Вичерпане"],
-]);
+const STATUS_LABELS = {
+  pending: "Чинне",
+  revoked: "Відкликане",
+  expired: "Прострочене",
+  exhausted: "Вичерпане",
+} as const satisfies Record<InviteDerivedStatus, string>;
 
-const kyivDay = new Intl.DateTimeFormat("uk-UA", {
+const kyivMoment = new Intl.DateTimeFormat("uk-UA", {
   timeZone: "Europe/Kyiv",
   day: "2-digit",
   month: "2-digit",
   year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
 });
 
 export function inviteExpiryLabel(expiresAt: string): string {
-  return kyivDay.format(new Date(expiresAt));
+  return kyivMoment.format(new Date(expiresAt));
 }
 
 export function inviteKindLabel(isReusable: boolean): string {
   return isReusable ? "Багаторазове" : "Персональне";
 }
 
-export function inviteStatusLabel(status: string): string {
-  return STATUS_LABELS.get(status) ?? status;
+export function inviteStatusLabel(status: InviteDerivedStatus): string {
+  return STATUS_LABELS[status];
 }
 
 export function inviteUsesLabel(maxUses: number | null): string {

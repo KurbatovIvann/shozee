@@ -29,7 +29,7 @@ export const updateLegal = implementAction(updateLegalContract, {
   preview: async (input, env) => {
     const stored = await loadStoredLegalFacts({
       tx: env.tx,
-      companyId: previewCompanyScope(env.companyId, "companies.updateLegal"),
+      companyId: previewCompanyScope(env.companyId, updateLegalContract),
     });
     return {
       title: "Зберегти реквізити компанії",

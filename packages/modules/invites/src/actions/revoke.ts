@@ -34,7 +34,7 @@ export const revokeInvite = implementAction(revokeInviteContract, {
   preview: async (input, env) => {
     const view = await loadInvitePreview({
       tx: env.tx,
-      companyId: previewCompanyScope(env.companyId, "invites.revoke"),
+      companyId: previewCompanyScope(env.companyId, revokeInviteContract),
       inviteId: input.id,
     });
     const named = view.name === null ? "" : ` для ${view.name}`;
