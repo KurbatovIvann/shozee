@@ -11,13 +11,16 @@ import {
   type Requirements,
 } from "../src/index.ts";
 import {
+  CONTACT_LABELS,
   decodeFocusVector,
   decodeVector,
   pinned,
+  readContactVectors,
   readFocusVectors,
   readVectors,
   vectorBundle,
   vectorContext,
+  vectorRequirements,
   type FocusVector,
   type Vector,
   type VectorInput,
@@ -37,7 +40,7 @@ describe("Шо v3 conformance vectors", () => {
   });
 
   it("are all there and name only v3 actions", () => {
-    expect(vectors.length).toBe(490);
+    expect(vectors.length).toBe(514);
     expect(new Set(vectors.map((vector) => vector.id)).size).toBe(
       vectors.length,
     );
@@ -77,7 +80,7 @@ describe("Шо v3 conformance vectors", () => {
   });
 
   it("decode to exactly the expected commands", async () => {
-    const requirements: Requirements = await requirementsOf();
+    const requirements: Requirements = await vectorRequirements(conformanceDir);
     const failures: string[] = [];
     const contexts = new Map<string | null, CompiledContext | null>();
     for (const vector of vectors) {
@@ -106,6 +109,21 @@ describe("Шо v3 conformance vectors", () => {
     expect(failures).toEqual([]);
   });
 
+  it("need only `customer` for d72-read-one under the shipped bundle's intent_labels_uk.json", async () => {
+    const vector = vectors.find((candidate) => candidate.id === "d72-read-one");
+    if (vector === undefined) throw new Error("d72-read-one vector is missing");
+    const command = decodeVector(
+      bundle,
+      vector,
+      null,
+      undefined,
+      await requirementsOf(),
+    )[0];
+    expect(command?.needs).toEqual([
+      { path: "customer", reason: "missing", blocking: true },
+    ]);
+  });
+
   it("decode the D88-D92 focus vectors to exactly the expected commands", async () => {
     expect(focusVectors.length).toBe(46);
     expect(new Set(focusVectors.map((vector) => vector.id)).size).toBe(
@@ -130,6 +148,36 @@ describe("Шо v3 conformance vectors", () => {
     console.log(
       `Шо v3 focus: ${String(focusVectors.length - failures.length)} of ${String(focusVectors.length)} vectors`,
     );
+    expect(failures).toEqual([]);
+  });
+
+  it("decode the D94 contact vectors against the labels a v3.5 bundle will have", async () => {
+    const contacts = await readContactVectors(conformanceDir);
+    expect(contacts.length).toBe(13);
+    const target = await vectorBundle(
+      conformanceDir,
+      join(modelDir, "tokenizer.json"),
+      CONTACT_LABELS,
+    );
+    const requirements: Requirements = await vectorRequirements(conformanceDir);
+    const failures: string[] = [];
+    const contexts = new Map<string | null, CompiledContext | null>();
+    for (const vector of contacts) {
+      let context = contexts.get(vector.context);
+      if (context === undefined) {
+        context = await vectorContext(conformanceDir, vector.context);
+        contexts.set(vector.context, context);
+      }
+      try {
+        expect(
+          decodeVector(target, vector, context, undefined, requirements).map(
+            pinned,
+          )[0],
+        ).toEqual(vector.expect);
+      } catch {
+        failures.push(vector.id);
+      }
+    }
     expect(failures).toEqual([]);
   });
 });

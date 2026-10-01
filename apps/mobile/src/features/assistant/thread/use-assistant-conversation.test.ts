@@ -265,10 +265,12 @@ describe("useAssistantConversation", () => {
       revision: 2,
       subject: "Катя",
       options: [
-        { optionId: "opt-a", label: "Катя Самбука" },
-        { optionId: "opt-b", label: "Катя Іванова" },
+        { optionId: "opt-a", label: "Катя Самбука", kind: "record" },
+        { optionId: "opt-b", label: "Катя Іванова", kind: "record" },
       ],
       optionsTruncated: false,
+      nearest: false,
+      problem: undefined,
     });
     // Attached to the message that asked it, so the card renders in place.
     expect(view.latest().rows[0]?.interaction).not.toBeNull();

@@ -39,6 +39,8 @@ import type { Unsupported } from "./stockless.ts";
 import type { Dropped } from "./fiscal.ts";
 import { withSuggestions } from "./suggest.ts";
 import { createAsUpdate, groupAsUpdate, updateAsCreate } from "./createAsUpdate.ts";
+import { GET_CUSTOMER, contactCustomer, createAsFind, saidContacts } from "./contacts.ts";
+import { contradictingObject } from "./objects.ts";
 import { RENAME_LEADS, RENAME_VERBS } from "./lexicon/customers.ts";
 
 // A command as the pipeline decided it (spans, the names the customer matcher found, references to earlier commands), built into a `CommandV2`: every
@@ -617,14 +619,20 @@ export function commandV2(bundle: Bundle, given: Decision, context: CompiledCont
   // D84: a create of a customer the list knows, addressed in the dative, is its update; D85: a group edit whose group is a customer the list knows is
   // that customer's update (`createAsUpdate.ts`, the two rules that change the action).
   const asUpdate = createAsUpdate(bundle, given, context);
-  const asCustomer = groupAsUpdate(bundle, asUpdate.decision, context);
+  // D94: a create that says only a phone or an e-mail, with a find word and no create word, is the find of that customer (`contacts.ts`), the fourth
+  // rule that changes the action.
+  const asFind = createAsFind(bundle, asUpdate.decision);
+  const asCustomer = groupAsUpdate(bundle, asFind.decision, context);
   // D85: the new name the model tagged as a second customer after a rename verb.
   const named = renamedCustomer(bundle, asCustomer.decision);
   // D92: an order update that names no order and says none exists is the customer's new order (`createAsUpdate.ts` `updateAsCreate`).
   const asCreate = updateAsCreate(bundle, named);
   const renamed = asCreate.decision;
   const pointed = v3 ? deictics(bundle, renamed) : new Map<string, string>();
-  const decision = v3 ? v3Decision(bundle, renamed, pointed) : renamed;
+  // D94: the phone or the e-mail the model tagged for the customer of a command whose intent has no param for it.
+  const contacts = saidContacts(bundle, v3 ? v3Decision(bundle, renamed, pointed) : renamed, pointed);
+  const decision = contacts.decision;
+  const contactTypes: Readonly<Record<string, ParamType>> = { ...asFind.types, ...contacts.types };
   // D88: the params a reference word was said for when the host passed a focus; a `missing` need there is the `reference` need's.
   const focused = new Set(decision.focusPaths ?? []);
   const referenced = new Set((decision.focusNeeds ?? []).filter((need) => need.reason === "reference").map((need) => need.path));
@@ -634,7 +642,7 @@ export function commandV2(bundle: Bundle, given: Decision, context: CompiledCont
   const params: Record<string, Param> = {};
   const needs: Need[] = [];
   for (const [name, value] of Object.entries(decision.params)) {
-    const found = builder.param(name, Object.hasOwn(intent.params, name) ? intent.params[name] : undefined, value);
+    const found = builder.param(name, Object.hasOwn(intent.params, name) ? intent.params[name] : Object.hasOwn(contactTypes, name) ? contactTypes[name] : undefined, value);
     if (found === null) continue;
     params[name] = found.param;
     needs.push(...found.needs);
@@ -646,7 +654,10 @@ export function commandV2(bundle: Bundle, given: Decision, context: CompiledCont
   }
   if (v3) {
     for (const [name, ref] of Object.entries(decision.fromPrevious ?? {})) if (Object.hasOwn(intent.params, name) && !Object.hasOwn(params, name)) params[name] = ref;
-    for (const [name, phrase] of pointed) if (Object.hasOwn(intent.params, name) && !Object.hasOwn(params, name) && !focused.has(name)) params[name] = { text: phrase, status: "context" };
+    for (const [name, phrase] of pointed) {
+      if (contacts.unpointed && name === CUSTOMER) continue;
+      if (Object.hasOwn(intent.params, name) && !Object.hasOwn(params, name) && !focused.has(name)) params[name] = { text: phrase, status: "context" };
+    }
     for (const ask of decision.asks ?? []) {
       const span = builder.asked(ask.span.kind, ask.span.text);
       needs.push({ path: ask.names.join("|"), reason: "ambiguous_role", blocking: true, ...(span === null ? {} : { span }) });
@@ -658,22 +669,37 @@ export function commandV2(bundle: Bundle, given: Decision, context: CompiledCont
     if (oneOf !== undefined) needs.unshift(...missing({ required: [], oneOf }, (name) => Object.hasOwn(params, name)).filter(unreferenced));
     needs.push(...(decision.focusNeeds ?? []));
   }
-  needs.unshift(...missing(requirements[decision.action], (name) => Object.hasOwn(params, name)).filter(unreferenced));
+  // D94: a contact said for the customer is the `customer` ref (`contactCustomer`: `unchecked` for the host to resolve, or resolved against the
+  // context's contacts), so nothing is `missing` on `customer`.
+  const contact = contactCustomer(bundle, params, context, contacts.standing);
+  const byContact = (need: Need) => contact === null || !need.path.split("|").includes(CUSTOMER);
+  needs.unshift(...missing(requirements[decision.action], (name) => Object.hasOwn(params, name)).filter(unreferenced).filter(byContact));
+  if (contact !== null) {
+    needs.push(...contact.needs);
+    delete params[contact.taken];
+  }
   if (decision.unsupported !== undefined) needs.push({ path: decision.unsupported.path, reason: "unsupported", blocking: decision.unsupported.blocking });
   for (const { path, text } of decision.dropped ?? []) needs.push({ path, reason: "ignored", blocking: false, span: { text } });
   for (const text of decision.ignored ?? []) needs.push({ path: "text", reason: "ignored", blocking: false, span: { text } });
   if (asUpdate.said !== null) needs.push({ path: "action", reason: "read_as_update", blocking: false, span: { text: asUpdate.said } });
+  if (asFind.said !== null && decision.action === GET_CUSTOMER) needs.push({ path: "action", reason: "read_as_find", blocking: false, span: { text: asFind.said } });
   if (asCustomer.said !== null) needs.push({ path: "action", reason: "read_as_customer_update", blocking: false, span: { text: asCustomer.said } });
   if (asCreate.need !== null && !needs.some((need) => need.path === asCreate.need?.path && need.reason === asCreate.need.reason)) needs.push(asCreate.need);
-  const spans = Object.values(params).flatMap(scores);
+  // D93: the words name, as the verb's object, a thing the served action's type is not (a product group, a chat, a staff member, the shop's own
+  // requisites): a blocking `unsupported` need on `action` (`objects.ts`).
+  const contradicted = contradictingObject(decision.action, decision.text, decision.params);
+  if (contradicted !== null) needs.push(contradicted);
+  // D78: `nearest` and `suggest` on what the context does not know; D94: the customer a contact stands for, first.
+  const suggested = withSuggestions(bundle, decision.action, params, context);
+  const shown: Readonly<Record<string, Param>> = contact === null ? suggested : { [CUSTOMER]: contact.customer, ...suggested };
+  const spans = Object.values(shown).flatMap(scores);
   const command: CommandV2 = {
     text: decision.text,
     action: decision.action,
     kind: intent.kind,
     effect: EFFECTS[intent.kind],
     confirm: CONFIRMATIONS[intent.kind],
-    // D78: `nearest` and `suggest` on what the context does not know.
-    params: withSuggestions(bundle, decision.action, params, context),
+    params: shown,
     needs,
     ready: !needs.some((need) => need.blocking),
     refPrevious: decision.refPrevious,

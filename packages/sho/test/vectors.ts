@@ -8,6 +8,7 @@ import {
   parseBundle,
   parseContext,
   parseFocus,
+  parseRequirements,
   withCreates,
   withFocus,
   type Bundle,
@@ -147,12 +148,29 @@ export async function readFocusVectors(dir: string): Promise<FocusVector[]> {
   return jsonl(text).map(parseFocusVector);
 }
 
+export const CONTACT_LABELS = "labels-v35.json";
+
+export async function readContactVectors(dir: string): Promise<Vector[]> {
+  const text = await readFile(join(dir, "contacts.jsonl"), "utf8");
+  return jsonl(text).map(parseVector);
+}
+
+export const CATALOGUE_FILE = "catalogue_v3.json";
+
+export async function vectorRequirements(dir: string): Promise<Requirements> {
+  const json: unknown = JSON.parse(
+    await readFile(join(dir, CATALOGUE_FILE), "utf8"),
+  );
+  return parseRequirements(json);
+}
+
 export async function vectorBundle(
   dir: string,
   tokenizerPath: string,
+  labelsFile = "labels.json",
 ): Promise<Bundle> {
   const [labels, tokenizer] = await Promise.all([
-    readFile(join(dir, "labels.json"), "utf8"),
+    readFile(join(dir, labelsFile), "utf8"),
     readFile(tokenizerPath, "utf8"),
   ]);
   return parseBundle(JSON.parse(labels), JSON.parse(tokenizer));

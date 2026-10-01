@@ -1,3 +1,4 @@
+import { ContactIndex } from "./contacts.ts";
 import type { RecordList, Shop, ShopProduct, ShopRecord } from "./context.ts";
 import { LABEL_WORDS, LIST_LABELS } from "./lexicon/catalogue.ts";
 import { COUNT_KEY, COUNT_WORDS, PERCENT_SIGNS } from "./lexicon/units.ts";
@@ -42,7 +43,7 @@ const MILLIMETRES = "mm";
 // Words that say what a value is, left out of an attr that names no value with them: the labels, and «номер» («номер тридцять вісім», D71).
 const VALUE_LABELS: ReadonlySet<string> = new Set([...LABEL_WORDS, "номер", "номера", "номеру", "номером", "номері"]);
 
-const RANK: Readonly<Record<Match, number>> = { exact: 0, form: 1, sound: 2, alias: 3, part: 4, attrs: 5, only: 6 };
+const RANK: Readonly<Record<Match, number>> = { exact: 0, form: 1, sound: 2, alias: 3, part: 4, attrs: 5, only: 6, phone: 7, email: 8 };
 const NO_HITS: Hits = { whole: [], part: [], named: [] };
 
 function wholeMatch(spoken: readonly string[], form: Form, proper: boolean): Match {
@@ -315,6 +316,8 @@ export class RecordIndex {
 export class Records {
   readonly shop: Shop;
   readonly lists: Readonly<Record<RecordList, RecordIndex | null>>;
+  // D94: the customers by their phones and e-mails, when the context has a customer list (`contacts.ts`).
+  readonly contacts: ContactIndex | null;
   private readonly productForms: Forms | null;
   private readonly values = new Map<number, ProductValues>();
 
@@ -327,6 +330,7 @@ export class Records {
       return records === null ? null : new RecordIndex(records);
     };
     this.lists = { customers: list("customers"), groups: list("groups"), priceLists: list("priceLists"), counterparties: list("counterparties") };
+    this.contacts = shop.lists.customers === null ? null : new ContactIndex(shop.lists.customers);
   }
 
   products(text: string): Hits {

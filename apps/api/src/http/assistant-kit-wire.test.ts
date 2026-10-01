@@ -70,7 +70,10 @@ const PAUSING_TOOLS = {
         optionsTruncated: false,
       },
       secret: {
-        byOption: { "opt-a": "entity-a", "opt-b": "entity-b" },
+        byOption: {
+          "opt-a": { kind: "record", entityId: "entity-a" },
+          "opt-b": { kind: "record", entityId: "entity-b" },
+        },
         toolName: "orders_create",
         input,
         target: { kind: "customer" as const, query: input.label },
@@ -148,10 +151,12 @@ describe("the window a server writes and the window a client reads", () => {
       revision: 1,
       subject: "two matches",
       options: [
-        { optionId: "opt-a", label: "A" },
-        { optionId: "opt-b", label: "B" },
+        { optionId: "opt-a", label: "A", kind: "record" },
+        { optionId: "opt-b", label: "B", kind: "record" },
       ],
       optionsTruncated: false,
+      nearest: false,
+      problem: undefined,
     });
     expect(JSON.stringify(window)).not.toContain("byOption");
   });

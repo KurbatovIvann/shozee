@@ -358,10 +358,13 @@ function laterOf(
  */
 export const ASSISTANT_CHOICE_OPTIONS_MAX = 20;
 
+export const ASSISTANT_CHOICE_OPTION_KINDS = ["record", "create"] as const;
+
 export const assistantChoiceOptionSchema = z.strictObject({
   optionId: z.string().min(1).max(128),
   label: z.string().min(1).max(400),
   detail: z.string().min(1).max(400).optional(),
+  kind: z.enum(ASSISTANT_CHOICE_OPTION_KINDS).default("record"),
 });
 
 export const assistantChoicePromptSchema = z.strictObject({
@@ -372,6 +375,8 @@ export const assistantChoicePromptSchema = z.strictObject({
     .max(ASSISTANT_CHOICE_OPTIONS_MAX),
   /** True when the real list was longer than the cap above. */
   optionsTruncated: z.boolean(),
+  nearest: z.boolean().default(false),
+  problem: z.string().min(1).max(400).optional(),
 });
 
 export const assistantConfirmationPromptSchema = z.strictObject({
@@ -391,6 +396,8 @@ export type AssistantInteraction =
       readonly subject: string;
       readonly options: readonly AssistantChoiceOption[];
       readonly optionsTruncated: boolean;
+      readonly nearest: boolean;
+      readonly problem: string | undefined;
     }
   | {
       readonly kind: "confirmation";
@@ -419,6 +426,8 @@ export function assistantInteractionFromPause(
           subject: prompt.data.subject,
           options: prompt.data.options,
           optionsTruncated: prompt.data.optionsTruncated,
+          nearest: prompt.data.nearest,
+          problem: prompt.data.problem,
         }
       : null;
   }

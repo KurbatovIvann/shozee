@@ -36,7 +36,9 @@ import {
   confirmation,
   createResolveAnswer,
   withChosenId,
+  choice,
   type AssistantToolLogger,
+  type ChoiceOptionSecret,
   type ChoiceSecret,
   type ResolveAnswerDeps,
 } from "@showzy/assistant-runtime";
@@ -423,6 +425,82 @@ describe("a picker CONFLICT becomes a pause, not an error", () => {
   });
 });
 
+function nearestConflict(): ConflictError {
+  const error = new ConflictError("nothing matched");
+  return Object.assign(error, {
+    reason: "unmatched_query",
+    target: { kind: "customer", query: "Галя" },
+    options: [{ id: CUSTOMER_A, label: "Галина Петренко" }],
+    optionsTruncated: false,
+  });
+}
+
+describe("a picker CONFLICT produces v2 options", () => {
+  it("numbers them by position and marks each one a record", async () => {
+    const set = tools(() =>
+      Promise.reject(pickerConflict({ kind: "customer", query: "Катя" })),
+    );
+
+    const outcome = await run(set, ORDERS_CREATE_TOOL_NAME, CREATE_BY_QUERY);
+
+    expect(outcome.kind).toBe("pause");
+    if (outcome.kind !== "pause") return;
+    expect(outcome.prompt).toEqual({
+      subject: "Катя",
+      optionsTruncated: false,
+      nearest: false,
+      problem: "More than one record matches.",
+      options: [
+        { optionId: CUSTOMER_A, label: "Катя Самбука", kind: "record" },
+        { optionId: CUSTOMER_B, label: "Катя Іванова", kind: "record" },
+      ],
+    });
+  });
+
+  it("asks under «можливо, ви мали на увазі» when nothing matched", async () => {
+    const set = tools(() => Promise.reject(nearestConflict()));
+
+    const outcome = await run(set, ORDERS_CREATE_TOOL_NAME, CREATE_BY_QUERY);
+
+    expect(outcome.kind).toBe("pause");
+    if (outcome.kind !== "pause") return;
+    expect(outcome.prompt).toMatchObject({
+      subject: "Галя",
+      nearest: true,
+      problem: "Nothing matches that exactly.",
+    });
+  });
+
+  it("names the variant problem in its own words", async () => {
+    const error = new ConflictError("pick a variant");
+    const set = tools(() =>
+      Promise.reject(
+        Object.assign(error, {
+          reason: "variant_required",
+          target: {
+            kind: "order_line_variant",
+            lineIndex: 0,
+            productId: ORDER_ID,
+            productName: "Наполеон",
+          },
+          options: [{ id: CUSTOMER_A, label: "1 кг" }],
+          optionsTruncated: false,
+        }),
+      ),
+    );
+
+    const outcome = await run(set, ORDERS_CREATE_TOOL_NAME, CREATE_BY_QUERY);
+
+    expect(outcome.kind).toBe("pause");
+    if (outcome.kind !== "pause") return;
+    expect(outcome.prompt).toMatchObject({
+      subject: "Наполеон",
+      nearest: false,
+      problem: "This product is sold by variant.",
+    });
+  });
+});
+
 describe("any other domain refusal becomes an error", () => {
   it("passes the code through instead of inventing a picker", async () => {
     const set = tools(() => Promise.reject(new NotFoundError("no such thing")));
@@ -743,4 +821,61 @@ describe("an idempotent write is given a key that survives a retry", () => {
     // same tap would read as a new write.
     expect(first).not.toContain("toolu_");
   });
+});
+
+describe("a create option is offered but has no producer yet", () => {
+  const CREATE_TOOL = "customers_create";
+
+  const byOption: Record<string, ChoiceOptionSecret> = {
+    [CUSTOMER_A]: { kind: "record", entityId: CUSTOMER_A },
+    create: {
+      kind: "create",
+      toolName: CREATE_TOOL,
+      input: { name: "Галина" },
+    },
+  };
+
+  const secret: ChoiceSecret = {
+    byOption,
+    toolName: ORDERS_CREATE_TOOL_NAME,
+    input: CREATE_BY_QUERY,
+    target: { kind: "customer", query: "Галя" },
+  };
+
+  it("refuses a create answer rather than resolving it to a write", () => {
+    expect(choice.resolve({ answer: { optionId: "create" }, secret })).toEqual({
+      kind: "unresolvable",
+      reason: "create option create has no producer",
+    });
+  });
+
+  it("leaves a record option settling the ambiguity the tool hit", () => {
+    expect(
+      choice.resolve({ answer: { optionId: CUSTOMER_A }, secret }),
+    ).toEqual({
+      kind: "resolved",
+      value: {
+        entityId: CUSTOMER_A,
+        toolName: ORDERS_CREATE_TOOL_NAME,
+        input: CREATE_BY_QUERY,
+        target: { kind: "customer", query: "Галя" },
+      },
+    });
+  });
+
+  it("refuses an option the picker never offered, and keeps the card open", () => {
+    expect(choice.resolve({ answer: { optionId: "nope" }, secret }).kind).toBe(
+      "unresolvable",
+    );
+  });
+
+  it.each(["constructor", "toString", "valueOf", "__proto__"])(
+    "refuses the inherited key %s rather than reading Object.prototype",
+    (optionId) => {
+      expect(choice.resolve({ answer: { optionId }, secret })).toEqual({
+        kind: "unresolvable",
+        reason: `unknown option ${optionId}`,
+      });
+    },
+  );
 });
