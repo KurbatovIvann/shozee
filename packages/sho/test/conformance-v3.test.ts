@@ -5,6 +5,7 @@ import {
   conformanceDir,
   manifest,
   modelDir,
+  requirementsOf,
   type Bundle,
   type CompiledContext,
   type Requirements,
@@ -106,6 +107,21 @@ describe("Шо v3 conformance vectors", () => {
       `Шо v3 conformance: ${String(vectors.length - failures.length)} of ${String(vectors.length)} vectors`,
     );
     expect(failures).toEqual([]);
+  });
+
+  it("need only `customer` for d72-read-one under the shipped bundle's intent_labels_uk.json", async () => {
+    const vector = vectors.find((candidate) => candidate.id === "d72-read-one");
+    if (vector === undefined) throw new Error("d72-read-one vector is missing");
+    const command = decodeVector(
+      bundle,
+      vector,
+      null,
+      undefined,
+      await requirementsOf(),
+    )[0];
+    expect(command?.needs).toEqual([
+      { path: "customer", reason: "missing", blocking: true },
+    ]);
   });
 
   it("decode the D88-D92 focus vectors to exactly the expected commands", async () => {

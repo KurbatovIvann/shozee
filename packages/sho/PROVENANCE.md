@@ -3,10 +3,8 @@
 **Internal and proprietary.** The Шо model weights, tokenizer, labels and the
 `@sho/runtime` decoder are confidential assets of the Шозі (Shozee) project.
 They run only on our servers and are never shipped to browsers, mobile clients,
-or any public artifact. The `@showzy/sho/contract` subpath is the exception a
-type can take: it re-exports the vendored result, context, focus and run-option
-types and nothing else, so it compiles to an empty module and imports neither
-`node:` nor `onnxruntime-node` (`test/contract.test.ts`).
+or any public artifact. `@showzy/sho` is imported by `apps/sho` alone
+(ADR-0051); the schemas both sides share live in `@showzy/sho-protocol`.
 
 ## Source
 

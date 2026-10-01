@@ -6,7 +6,6 @@
   "description": "Vendored Шо runtime and model bundle (system-one-uk). Server-only.",
   "exports": {
     ".": "./src/index.ts",
-    "./contract": "./src/contract.ts",
     "./manifest": "./src/manifest.ts"
   },
   "scripts": {
