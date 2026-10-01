@@ -40,7 +40,21 @@ allowBuilds:
 # 1.2.1. Both high GHSAs list <=2.0.2 with no patched release. Build-time
 # parser DoS in Metro, not a Showzy runtime path. Drop when Expo/Metro
 # bumps image-size (fnd-T48).
+#
+# SHO-782: high GHSAs on dev/test-only transitive deps published 2026-09-30
+# (undici via vitest>jsdom and @ai-sdk/provider-utils; brace-expansion via
+# minimatch in eslint and testcontainers>archiver; @grpc/grpc-js via
+# testcontainers>dockerode). Patched releases exist, but pinning them with
+# overrides re-resolves the whole Expo peer tree (@types/react 19.2.18 ->
+# 19.1.17), the SHO-563 hazard. Ignored until SHO-784 bumps them with a
+# reviewed lockfile. No production exists.
 audit:
   ignore:
     - GHSA-w3rx-r6r6-pgpr
     - GHSA-5p2g-fcmc-qvqq
+    - GHSA-rfgv-xxqx-mfg5
+    - GHSA-w293-vg96-wgc3
+    - GHSA-vp8m-p9jh-q5pm
+    - GHSA-qhr7-859c-m2p7
+    - GHSA-6j4f-fj2g-mc7p
+    - GHSA-m9gg-hp2v-232j

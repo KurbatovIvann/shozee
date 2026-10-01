@@ -184,6 +184,32 @@ describe("implementAction — valid bindings", () => {
     expect(action.confirmationSummary).toBeDefined();
   });
 
+  it("binds preview on a write action that declares no confirmation", () => {
+    const action = implementAction(staffWriteContract(), {
+      handler,
+      auditTarget,
+      preview: () => ({ title: "Confirm order", lines: [] }),
+    });
+    expect(action.preview).toBeDefined();
+  });
+
+  it("accepts preview instead of confirmationSummary on a confirmed action", () => {
+    const contract = defineActionContract({
+      ...staffWriteContract(),
+      name: "featureFlags.setOverride",
+      permissions: ["featureFlags:manage"],
+      risk: "high",
+      requiresConfirmation: true,
+      emits: [],
+    });
+    const action = implementAction(contract, {
+      handler,
+      auditTarget,
+      preview: () => ({ title: "Override feature flag", lines: [] }),
+    });
+    expect(action.preview).toBeDefined();
+  });
+
   it("accepts an optional auditSnapshot on an audited action", () => {
     const action = implementAction(staffWriteContract(), {
       handler,
@@ -306,6 +332,77 @@ describe("implementAction — binding rejections (core.md §2)", () => {
       staffWriteContract(),
       { handler, auditTarget, confirmationSummary: () => "summary" },
       "confirmationSummary is allowed only when requiresConfirmation: true",
+    );
+  });
+
+  it("rejects preview on an action that is not a write or high", () => {
+    expectProblem(
+      customerReadContract(),
+      {
+        handler,
+        resolveTarget,
+        preview: () => ({ title: "Read one payment", lines: [] }),
+      },
+      "preview applies to risk write and high actions only",
+    );
+  });
+
+  it("rejects preview on a staff write that cannot replay", () => {
+    const contract = defineActionContract({
+      ...staffWriteContract(),
+      name: "orders.appendNote",
+      idempotent: false,
+    });
+    expectProblem(
+      contract,
+      {
+        handler,
+        auditTarget,
+        preview: () => ({ title: "Append a note", lines: [] }),
+      },
+      "preview requires idempotent: true",
+    );
+  });
+
+  it("rejects preview on a write no human invokes", () => {
+    const contract = defineActionContract({
+      ...staffWriteContract(),
+      name: "orders.sweepStale",
+      principal: "system",
+      systemScope: "tenant",
+      permissions: [],
+      aiExposure: "internal",
+      transport: "internal",
+    });
+    expectProblem(
+      contract,
+      {
+        handler,
+        auditTarget,
+        preview: () => ({ title: "Sweep stale orders", lines: [] }),
+      },
+      "preview applies to human principals (staff, customer, account) only",
+    );
+  });
+
+  it("rejects binding both preview and confirmationSummary", () => {
+    const contract = defineActionContract({
+      ...staffWriteContract(),
+      name: "featureFlags.setOverride",
+      permissions: ["featureFlags:manage"],
+      risk: "high",
+      requiresConfirmation: true,
+      emits: [],
+    });
+    expectProblem(
+      contract,
+      {
+        handler,
+        auditTarget,
+        confirmationSummary: () => "summary",
+        preview: () => ({ title: "Override feature flag", lines: [] }),
+      },
+      "bind preview or confirmationSummary, never both",
     );
   });
 

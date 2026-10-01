@@ -9,6 +9,10 @@
 import { z } from "zod";
 
 import {
+  confirmationPreconditionProblems,
+  isHumanPrincipal,
+} from "./confirmation-preconditions.js";
+import {
   DECLARED_ERROR_CODES,
   isDeclaredErrorCode,
   undeclarableErrorReason,
@@ -45,13 +49,6 @@ const ACTION_NAME_PATTERN = /^[a-z][a-zA-Z0-9]*\.[a-z][a-zA-Z0-9]*$/;
 const EVENT_NAME_PATTERN = ACTION_NAME_PATTERN;
 /** `<module>:<verb>` permission strings (conventions.mdc). */
 const PERMISSION_PATTERN = /^[a-z][a-zA-Z0-9]*:[a-z][a-zA-Z0-9]*$/;
-
-/** Principals behind confirmation dialogs/cards (core.md §7). */
-const HUMAN_PRINCIPALS: ReadonlySet<ActionPrincipal> = new Set([
-  "staff",
-  "customer",
-  "account",
-]);
 
 /** Principals whose actions are strict read-only subsets (core.md §2). */
 const READ_ONLY_PRINCIPALS: ReadonlySet<ActionPrincipal> = new Set([
@@ -309,22 +306,15 @@ function validateConfirmation(
   problems: string[],
 ): void {
   if (definition.requiresConfirmation) {
-    if (!HUMAN_PRINCIPALS.has(definition.principal)) {
-      problems.push(
-        "requiresConfirmation applies to human principals (staff, customer, account) only",
-      );
-    }
+    problems.push(
+      ...confirmationPreconditionProblems(definition, "requiresConfirmation"),
+    );
     if (definition.risk !== "high") {
       problems.push('requiresConfirmation requires risk: "high"');
     }
-    if (!definition.idempotent) {
-      problems.push(
-        "requiresConfirmation requires idempotent: true (confirmed retries must replay safely, core.md §5)",
-      );
-    }
   } else if (
     definition.risk === "high" &&
-    HUMAN_PRINCIPALS.has(definition.principal)
+    isHumanPrincipal(definition.principal)
   ) {
     problems.push(
       'human-invoked risk: "high" actions must declare requiresConfirmation: true (core.md §7)',

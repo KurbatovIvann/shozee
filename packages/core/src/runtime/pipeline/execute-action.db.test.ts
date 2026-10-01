@@ -385,7 +385,7 @@ describe("pipeline step order (§4)", () => {
         gate: async (env) => {
           steps.push("confirmation");
           gateCompanyId = env.authorization.companyId;
-          summary = await env.summarize();
+          summary = (await env.summarize()).summary;
           return {
             challengeId: randomUUID(),
             confirmedAt: new Date(),

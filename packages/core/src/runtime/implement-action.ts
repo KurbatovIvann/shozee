@@ -7,9 +7,14 @@
  */
 import type { z } from "zod";
 
+import {
+  CONFIRMABLE_RISKS,
+  confirmationPreconditionProblems,
+} from "../contract/confirmation-preconditions.js";
 import type { ActionContract, ActionPrincipal } from "../contract/types.js";
 import type { ActionCtxFor } from "./context/types.js";
 import type {
+  ActionPreviewFn,
   AuditSnapshotFn,
   AuditTargetFn,
   ConfirmationSummaryFn,
@@ -71,8 +76,8 @@ export interface ActionServerCallbacks<
   ): Promise<z.input<TOutput>>;
   /** Required for customer, public-target, and share actions, forbidden otherwise. */
   readonly resolveTarget?: TargetResolver<TInput, TTarget>;
-  /** Required when `requiresConfirmation: true`, forbidden otherwise. */
   readonly confirmationSummary?: ConfirmationSummaryFn<TInput>;
+  readonly preview?: ActionPreviewFn<TInput>;
   /** Required when `audit: true`, forbidden otherwise. */
   readonly auditTarget?: AuditTargetFn;
   /** Optional, allowed only when `audit: true` (hash-only is the default). */
@@ -129,7 +134,11 @@ function collectBindingProblems(
   contract: ActionContract,
   callbacks: Pick<
     ActionServerCallbacks<z.ZodType, z.ZodType, unknown>,
-    "resolveTarget" | "confirmationSummary" | "auditTarget" | "auditSnapshot"
+    | "resolveTarget"
+    | "confirmationSummary"
+    | "preview"
+    | "auditTarget"
+    | "auditSnapshot"
   >,
 ): string[] {
   const problems: string[] = [];
@@ -155,10 +164,11 @@ function collectBindingProblems(
 
   if (
     contract.requiresConfirmation &&
-    callbacks.confirmationSummary === undefined
+    callbacks.confirmationSummary === undefined &&
+    callbacks.preview === undefined
   ) {
     problems.push(
-      "requiresConfirmation: true actions must bind confirmationSummary (core.md §7)",
+      "requiresConfirmation: true actions must bind confirmationSummary or preview (core.md §7)",
     );
   }
   if (
@@ -166,7 +176,24 @@ function collectBindingProblems(
     callbacks.confirmationSummary !== undefined
   ) {
     problems.push(
-      "confirmationSummary is allowed only when requiresConfirmation: true",
+      "confirmationSummary is allowed only when requiresConfirmation: true — a write that pauses only at execution time binds preview (core.md §7)",
+    );
+  }
+  if (callbacks.preview !== undefined) {
+    problems.push(
+      ...confirmationPreconditionProblems(
+        contract,
+        "preview",
+        CONFIRMABLE_RISKS,
+      ),
+    );
+  }
+  if (
+    callbacks.preview !== undefined &&
+    callbacks.confirmationSummary !== undefined
+  ) {
+    problems.push(
+      "bind preview or confirmationSummary, never both — one card has one source (core.md §7)",
     );
   }
 
