@@ -1176,6 +1176,33 @@ describe("POST /assistant/kit/answer", () => {
     expect(queue.added).toHaveLength(1);
   });
 
+  it.each(["constructor", "toString", "valueOf", "__proto__"])(
+    "409 for the inherited key %s, with no tool run and the claim unspent",
+    async (optionId) => {
+      let resolved = 0;
+      const counting: ResolveAnswer = (args) => {
+        resolved += 1;
+        return OK_RESOLVE(args);
+      };
+      const { kit, app, queue, bind } = harness({ resolveAnswer: counting });
+      const pause = await openPause(kit, bind);
+
+      const response = await post(
+        app,
+        ASSISTANT_KIT_ANSWER_PATH,
+        answerBody(pause.interactionId, pause.revision, optionId),
+      );
+
+      expect(response.status).toBe(409);
+      expect(((await response.json()) as KitBody).status).toBe("unresolvable");
+      expect(resolved).toBe(0);
+      expect(queue.added).toEqual([]);
+      expect(
+        (await kit.peek({ conversationId: CONVERSATION, bind }))?.status,
+      ).toBe("open");
+    },
+  );
+
   it("410 for a session in another tenant, and the owner's card stays open", async () => {
     const { kit, app, bind } = harness();
     const pause = await openPause(kit, bind);

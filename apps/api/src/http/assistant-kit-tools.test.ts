@@ -470,6 +470,35 @@ describe("a picker CONFLICT produces v2 options", () => {
       problem: "Nothing matches that exactly.",
     });
   });
+
+  it("names the variant problem in its own words", async () => {
+    const error = new ConflictError("pick a variant");
+    const set = tools(() =>
+      Promise.reject(
+        Object.assign(error, {
+          reason: "variant_required",
+          target: {
+            kind: "order_line_variant",
+            lineIndex: 0,
+            productId: ORDER_ID,
+            productName: "Наполеон",
+          },
+          options: [{ id: CUSTOMER_A, label: "1 кг" }],
+          optionsTruncated: false,
+        }),
+      ),
+    );
+
+    const outcome = await run(set, ORDERS_CREATE_TOOL_NAME, CREATE_BY_QUERY);
+
+    expect(outcome.kind).toBe("pause");
+    if (outcome.kind !== "pause") return;
+    expect(outcome.prompt).toMatchObject({
+      subject: "Наполеон",
+      nearest: false,
+      problem: "This product is sold by variant.",
+    });
+  });
 });
 
 describe("any other domain refusal becomes an error", () => {
@@ -576,7 +605,6 @@ describe("resolveAnswer calls the same tool again", () => {
       toolName: ORDERS_CREATE_TOOL_NAME,
       kind: "choice",
       value: {
-        kind: "record",
         entityId: CUSTOMER_A,
         toolName: ORDERS_CREATE_TOOL_NAME,
         input: CREATE_BY_QUERY,
@@ -612,7 +640,6 @@ describe("resolveAnswer calls the same tool again", () => {
       toolName: ORDERS_CREATE_TOOL_NAME,
       kind: "choice",
       value: {
-        kind: "record",
         entityId: CUSTOMER_A,
         toolName: ORDERS_CREATE_TOOL_NAME,
         input: CREATE_BY_QUERY,
@@ -841,4 +868,14 @@ describe("a create option is offered but has no producer yet", () => {
       "unresolvable",
     );
   });
+
+  it.each(["constructor", "toString", "valueOf", "__proto__"])(
+    "refuses the inherited key %s rather than reading Object.prototype",
+    (optionId) => {
+      expect(choice.resolve({ answer: { optionId }, secret })).toEqual({
+        kind: "unresolvable",
+        reason: `unknown option ${optionId}`,
+      });
+    },
+  );
 });

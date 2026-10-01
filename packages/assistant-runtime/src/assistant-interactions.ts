@@ -119,7 +119,9 @@ export const choice = defineInteraction<ChoiceSecret>()({
   prompt: assistantChoicePromptSchema,
   answer: z.strictObject({ optionId: z.string().min(1).max(128) }),
   resolve: ({ answer, secret }) => {
-    const option = secret.byOption[answer.optionId];
+    const option = Object.hasOwn(secret.byOption, answer.optionId)
+      ? secret.byOption[answer.optionId]
+      : undefined;
     if (option === undefined) {
       return unresolvable(`unknown option ${answer.optionId}`);
     }

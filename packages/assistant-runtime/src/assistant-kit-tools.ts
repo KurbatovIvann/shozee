@@ -128,8 +128,12 @@ function problemFor(reason: ChoicePickerReason): string {
       return "Nothing matches that exactly.";
     case "ambiguous":
       return "More than one record matches.";
-    default:
+    case "variant_required":
       return "This product is sold by variant.";
+    default: {
+      const unhandledChoicePickerReason: never = reason;
+      return unhandledChoicePickerReason;
+    }
   }
 }
 
