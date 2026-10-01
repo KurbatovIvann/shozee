@@ -166,16 +166,19 @@ describe("catalog.getProductPricingFacts", () => {
       products: [
         {
           productId: fixtures.productA,
+          name: "Alpha",
           basePriceMinor: "1500",
           currency: "UAH",
           variants: [
             {
               variantId: fixtures.variantABase,
+              name: "Base",
               basePriceMinor: null,
               currency: null,
             },
             {
               variantId: fixtures.variantAOverride,
+              name: "Override",
               basePriceMinor: "1250",
               currency: "UAH",
             },
@@ -200,6 +203,7 @@ describe("catalog.getProductPricingFacts", () => {
       products: [
         {
           productId: fixtures.productAZero,
+          name: "Zero",
           basePriceMinor: "0",
           currency: "UAH",
           variants: [],

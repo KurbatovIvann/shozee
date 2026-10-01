@@ -50,7 +50,7 @@ bound by `implementAction`. All fields are required unless noted:
 | `enqueues` | optional job names, **not on `risk: read`** | ADR-0041: `<module>.<name>` jobs of this action's own module, no duplicates; each must be a registered non-`periodic` job (§6 Jobs) |
 | `requiresConfirmation` | boolean | Required for human-invoked `risk: high` (staff, customer, account — not share); triggers the confirmation protocol (§7) |
 | `confirmationSummary` | server fn, conditional | Required when `requiresConfirmation: true` unless `preview` is bound; returns a redacted, human-readable summary from validated input + resolved target. Forbidden when `requiresConfirmation: false` |
-| `preview` | server fn, conditional | Allowed only where the §7 gate can run — `risk: write`/`high`, a human principal (`staff`, `customer`, `account`) and `idempotent: true`, rejected at implement time otherwise; returns the **redacted** structured card `{ title, lines: [{ label, value }], notes? }` from validated input, the resolved target, and the read-only company-scoped `ActionPreviewEnv` capability (`tx`, `call` — §7) (ADR-0050), under the same redaction obligation as `confirmationSummary` (§7). Satisfies `requiresConfirmation` in place of `confirmationSummary`; binding both is rejected |
+| `preview` | server fn, conditional | Allowed only where the §7 gate can run — `risk: write`/`high`, a human principal (`staff`, `customer`, `account`) and `idempotent: true`, rejected at implement time otherwise; **required** by the contract check on every AI-exposed `risk: write`/`high` action (SHO-754); returns the **redacted** structured card `{ title, lines: [{ label, value }], notes? }` from validated input, the resolved target, and the read-only company-scoped `ActionPreviewEnv` capability (`tx`, `call` — §7) (ADR-0050), under the same redaction obligation as `confirmationSummary` (§7). Satisfies `requiresConfirmation` in place of `confirmationSummary`; binding both is rejected |
 | `idempotent` | boolean | Write actions with `true` participate in the idempotency protocol (§5) |
 | `emits` | `string[]` event names | Declared outbox events; `ctx.emit` of an undeclared event throws; CI checks declared events have a definition |
 | `errors` | `string[]` of `VALIDATION` \| `NOT_FOUND` \| `CONFLICT` | Domain codes this action may let escape `executeAction`. Empty is a real answer. `INTERNAL` and pipeline codes are not declarable. Enforced from observed `invokeAction` throws; a caller's set must include every code declared by its `ctx.call` / `ctx.callAtomic` callees |
@@ -96,7 +96,14 @@ allowlist (SHO-467). Every `ASSISTANT_SURFACE_REGISTRY` `actionNames` /
 `toolNames` binding must resolve to an AI-exposed contract
 (`deriveAiToolSources`) or a provider / façade tool name; failure names
 the surface kind, the unresolved string, and the nearest real name
-(SHO-471).
+(SHO-471). Every AI-exposed `risk: write|high` action (after
+`deriveAiToolSources`) must bind `preview`: the assistant shows the
+server's card before the write, so the binding is a registry rule, not a
+per-module choice (ADR-0050, SHO-754). Because `preview` itself requires
+`idempotent: true` and a human principal, an AI-exposed write that
+declares neither cannot satisfy the rule — the failure message names the
+full precondition, and the fix is the contract's metadata, not a bound
+callback.
 
 Public actions are a strict subset: `risk: read`, `permissions: []`,
 `audit: false`, `idempotent: false`, `requiresConfirmation: false`,
@@ -972,6 +979,7 @@ does not apply — fails the check.
 
 | Date | Change | Why | Reported by |
 | --- | --- | --- | --- |
+| 2026-10-02 | §2: the contract check fails an AI-exposed `risk: write`/`high` action that binds no `preview`; the `preview` row records that the callback is now required, not merely allowed | ADR-0050: the assistant must show the server's card before every write, so the binding belongs to the registry rather than each module's taste | SHO-754 |
 | 2026-10-01 | §7: the challenge binds `previewHash` beside `inputHash`; consuming it re-runs `preview` in the same read-only environment before the handler and, on a different card, executes nothing and returns a fresh challenge carrying the new card | Guardian on SHO-750: only `inputHash` was bound, so a price-list change inside the five-minute window persisted a total the person never approved | SHO-804 |
 | 2026-10-01 | §12: `createTestKit` composes a confirmation hook over an in-memory store, and `crossTenantSuite` drives the two-step gate — the §7 existence-leak rule is now an inherited test for every preview action | Guardian on SHO-785: no `requiresConfirmation`/preview action could run through the suite, so the rule had no inherited test | SHO-790 |
 | 2026-10-01 | §7: `preview` receives `ActionPreviewEnv` — a `ReadTx` over a read-only transaction under the §4 statement timeout and `ctx.call` of `risk: "read"` callees, with the `target` from the in-transaction resolver; the existence-leak rule makes a missing or foreign id refuse exactly as the handler would, and an audited callee's §8 row is the one row a preview leaves | ADR-0050: a card cannot show resolved names, amounts or «old → new» from validated input alone | SHO-785 |

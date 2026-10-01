@@ -200,16 +200,19 @@ crossTenantSuite(
       setDefaultPriceList,
       { input: { priceListId: fixtures.listSetDefaultA } },
       { input: { priceListId: fixtures.listSetDefaultB } },
+      { missing: { input: { priceListId: randomUUID() } } },
     ),
     isolationCase(
       activatePriceList,
       { input: { id: fixtures.listActivateA } },
       { input: { id: fixtures.listActivateB } },
+      { missing: { input: { id: randomUUID() } } },
     ),
     isolationCase(
       deactivatePriceList,
       { input: { id: fixtures.listDeactivateA } },
       { input: { id: fixtures.listDeactivateB } },
+      { missing: { input: { id: randomUUID() } } },
     ),
   ],
 );

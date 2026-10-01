@@ -16,10 +16,12 @@ export const getProductPricingFacts = implementAction(
       return {
         products: facts.map((product) => ({
           productId: product.productId,
+          name: product.name,
           basePriceMinor: moneyToCanonical(product.basePriceMinor),
           currency: product.currency,
           variants: product.variants.map((variant) => ({
             variantId: variant.variantId,
+            name: variant.name,
             basePriceMinor:
               variant.basePriceMinor === null
                 ? null

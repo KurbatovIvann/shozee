@@ -30,6 +30,7 @@ import {
   runContractCheck,
 } from "./contract-check.js";
 import { moduleOf } from "./call-rules.js";
+import { fixtureCardCallbacks } from "./test/fixture-card-callbacks.js";
 import {
   emptySuiteCoverage,
   type SuiteCoverageManifest,
@@ -61,7 +62,6 @@ function fixtureContract(
   });
 }
 
-/** Binds the minimal callbacks the contract's metadata implies. */
 function fixtureImplementation(contract: ActionContract) {
   const needsResolver =
     contract.principal === "customer" ||
@@ -81,9 +81,7 @@ function fixtureImplementation(contract: ActionContract) {
             }),
         }
       : {}),
-    ...(contract.requiresConfirmation
-      ? { confirmationSummary: () => "fixture summary" }
-      : {}),
+    ...fixtureCardCallbacks(contract),
     ...(contract.audit
       ? { auditTarget: () => ({ type: "fixture", id: "1" }) }
       : {}),

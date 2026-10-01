@@ -150,11 +150,17 @@ crossTenantSuite(
       createProduct,
       { input: createIsolationInput },
       { input: createIsolationInput, companyId: kitIdentities.companies.b },
+      { noReference: true },
     ),
     isolationCase(
       updateProduct,
       { input: updateIsolationOwn },
       { input: updateIsolationForeign },
+      {
+        missing: {
+          input: { ...updateIsolationOwn, productId: randomUUID() },
+        },
+      },
     ),
   ],
 );

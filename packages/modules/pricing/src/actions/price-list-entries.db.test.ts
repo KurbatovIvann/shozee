@@ -321,6 +321,14 @@ crossTenantSuite(
           entries: [{ productId: fixtures.productIsoB, priceMinor: "250" }],
         },
       },
+      {
+        missing: {
+          input: {
+            priceListId: randomUUID(),
+            entries: [{ productId: fixtures.productIsoA, priceMinor: "250" }],
+          },
+        },
+      },
     ),
     isolationCase(
       removePriceListEntries,
@@ -334,6 +342,14 @@ crossTenantSuite(
         input: {
           priceListId: fixtures.listB,
           entries: [{ productId: fixtures.productIsoB }],
+        },
+      },
+      {
+        missing: {
+          input: {
+            priceListId: randomUUID(),
+            entries: [{ productId: fixtures.productIsoA }],
+          },
         },
       },
     ),

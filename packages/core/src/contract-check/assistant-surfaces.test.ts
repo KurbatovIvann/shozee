@@ -17,6 +17,7 @@ import type { AssistantSurfaceBindingRef } from "./assistant-surfaces.js";
 import type { ContractCheckInput } from "./contract-check.js";
 import { runContractCheck } from "./contract-check.js";
 import { type SuiteCoverageManifest } from "./suite-coverage.js";
+import { fixtureCardCallbacks } from "./test/fixture-card-callbacks.js";
 import { moduleOf } from "./call-rules.js";
 
 const io = z.object({});
@@ -48,9 +49,7 @@ function fixtureContract(
 function fixtureImplementation(contract: ActionContract) {
   return implementAction(contract, {
     handler: () => Promise.resolve({}),
-    ...(contract.requiresConfirmation
-      ? { confirmationSummary: () => "fixture summary" }
-      : {}),
+    ...fixtureCardCallbacks(contract),
     ...(contract.audit
       ? { auditTarget: () => ({ type: "fixture", id: "1" }) }
       : {}),

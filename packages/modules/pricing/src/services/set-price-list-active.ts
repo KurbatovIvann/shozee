@@ -23,7 +23,7 @@ const defaultListDeactivateGate = z.object({
   }),
 });
 
-function rejectDefaultDeactivate(isDefault: boolean): void {
+export function rejectDefaultDeactivate(isDefault: boolean): void {
   const parsed = defaultListDeactivateGate.safeParse({ isDefault });
   if (!parsed.success) {
     throw new ValidationError(

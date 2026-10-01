@@ -5,7 +5,6 @@
  * AI, no confirmation, idempotent, audited, no events.
  *
  * Mechanical choices copied from set and `catalog` writes:
- * - `timeout: 5000` — one delete batch, no nested `ctx.call`.
  * - No `rateLimit` override — staff default 120/min per user.
  * - Batch min 1, max 200. Missing entries are ignored (empty editor
  *   field is a remove, not a stored blank). There is no replace-all.
@@ -55,5 +54,5 @@ export const removePriceListEntriesContract = defineActionContract({
   atomicCallers: [],
   errors: ["VALIDATION", "NOT_FOUND"],
   audit: true,
-  timeout: 5_000,
+  timeout: 10_000,
 });
