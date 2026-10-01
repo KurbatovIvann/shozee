@@ -107,7 +107,7 @@ const TEST_FILE_RE = /\.test\.tsx?$/;
 
 const AI_TEST_ENTRY = "@showzy/ai/test";
 
-const AI_TEST_MODULE_RE = /\/packages\/ai\/src\/test(\.[cm]?[jt]sx?)?$/;
+const AI_TEST_MODULE_RE = /\/packages\/ai\/src\/test(?:\.[cm]?[jt]sx?|\/.+)?$/;
 
 /**
  * @param {string} spec
@@ -132,14 +132,15 @@ function isRelative(spec) {
 
 /**
  * `@showzy/ai/test` builds a provider adapter for tests to drive; reaching it
- * by package subpath or by a relative path into `packages/ai/src/test` is the
- * same import (SHO-817).
+ * by package subpath, by a deeper path under that subpath, or by a relative
+ * path resolving to `packages/ai/src/test` or below it is the same import
+ * (SHO-817).
  *
  * @param {string} dir
  * @param {string} spec
  */
 function isAiTestEntry(dir, spec) {
-  if (spec === AI_TEST_ENTRY) {
+  if (spec === AI_TEST_ENTRY || spec.startsWith(`${AI_TEST_ENTRY}/`)) {
     return true;
   }
   if (!isRelative(spec)) {
@@ -664,14 +665,21 @@ export const importBoundariesRule = {
         context.report({ node, messageId: "pgBossOutsideJobs" });
         return;
       }
-      if (!insideTestFile && isAiTestEntry(fileDir, spec)) {
-        context.report({ node, messageId: "aiTestEntry" });
-        return;
-      }
       if (from.kind === "skip") {
+        if (!insideTestFile && isAiTestEntry(fileDir, spec)) {
+          context.report({ node, messageId: "aiTestEntry" });
+        }
         return;
       }
       const result = violation(from, spec, isTypeOnly(node));
+      if (
+        !insideTestFile &&
+        isAiTestEntry(fileDir, spec) &&
+        (from.kind !== "client-app" || result === null)
+      ) {
+        context.report({ node, messageId: "aiTestEntry" });
+        return;
+      }
       if (result !== null) {
         context.report({
           node,

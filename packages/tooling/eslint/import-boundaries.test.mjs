@@ -60,6 +60,14 @@ test("showzy/import-boundaries", () => {
         code: `import { testStaffProvider } from "@showzy/ai/test";`,
       })),
       {
+        filename: file("apps/api/src/http/assistant-kit-tools.test.ts"),
+        code: `import { testStaffProvider } from "@showzy/ai/test/provider.js";`,
+      },
+      {
+        filename: file("packages/ai/src/provider/anthropic.test.ts"),
+        code: `import { testStaffProvider } from "../test/provider.js";`,
+      },
+      {
         filename: file("packages/ai/src/test.ts"),
         code: `import { createAnthropicStaffProviderAdapter } from "./provider/anthropic.js";`,
       },
@@ -418,12 +426,12 @@ test("showzy/import-boundaries", () => {
           `export { testStaffProvider } from "@showzy/ai/test";`,
         ],
         [
-          "apps/web/src/features/assistant/turn.tsx",
-          `const provider = await import("@showzy/ai/test");`,
-        ],
-        [
           "apps/worker/src/boot.ts",
           `const { testStaffProvider } = require("@showzy/ai/test");`,
+        ],
+        [
+          "apps/api/src/boot.ts",
+          `import { testStaffProvider } from "@showzy/ai/test/provider.js";`,
         ],
         [
           "packages/ai/src/index.ts",
@@ -433,10 +441,28 @@ test("showzy/import-boundaries", () => {
           "packages/ai/src/provider/anthropic.ts",
           `import { testStaffProvider } from "../test.js";`,
         ],
+        [
+          "packages/ai/src/provider/anthropic.ts",
+          `import { testStaffProvider } from "../test/provider.js";`,
+        ],
       ].map(([importer, code]) => ({
         filename: file(importer ?? ""),
         code: code ?? "",
         errors: [{ messageId: "aiTestEntry" }],
+      })),
+      ...[
+        [
+          "apps/web/src/features/assistant/turn.tsx",
+          `const provider = await import("@showzy/ai/test");`,
+        ],
+        [
+          "apps/mobile/src/assistant/turn.ts",
+          `import { testStaffProvider } from "@showzy/ai/test/provider.js";`,
+        ],
+      ].map(([importer, code]) => ({
+        filename: file(importer ?? ""),
+        code: code ?? "",
+        errors: [{ messageId: "clientApp" }],
       })),
       {
         filename: file("packages/validation/src/jobs.ts"),
