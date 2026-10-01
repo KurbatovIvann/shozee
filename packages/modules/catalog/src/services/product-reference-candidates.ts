@@ -35,28 +35,52 @@ export function productCandidateName(row: ProductCandidate): string {
   return row.name;
 }
 
+function compareProductNameThenId(
+  left: ProductCandidate,
+  right: ProductCandidate,
+): number {
+  const byName = left.name.localeCompare(right.name);
+  if (byName !== 0) {
+    return byName;
+  }
+  const byCurrency = left.currency.localeCompare(right.currency);
+  if (byCurrency !== 0) {
+    return byCurrency;
+  }
+  return left.id.localeCompare(right.id);
+}
+
+export function productOptionLabel(
+  row: ProductCandidate,
+  siblings: readonly ProductCandidate[],
+): string {
+  const sameName = siblings.filter((other) => other.name === row.name);
+  if (sameName.length === 1) {
+    return row.name;
+  }
+  const sameCurrency = sameName.filter(
+    (other) => other.currency === row.currency,
+  );
+  return sameCurrency.length === 1
+    ? `${row.name} (${row.currency})`
+    : `${row.name} (${row.currency}, ${row.id})`;
+}
+
 export function productCandidateOptions(
   rows: readonly ProductCandidate[],
 ): readonly EntityLookupOption[] {
-  return rows.map((row) => {
-    const sameName = rows.filter((other) => other.name === row.name);
-    if (sameName.length === 1) {
-      return { id: row.id, label: row.name };
-    }
-    const sameCurrency = sameName.filter(
-      (other) => other.currency === row.currency,
-    );
-    return sameCurrency.length === 1
-      ? { id: row.id, label: `${row.name} (${row.currency})` }
-      : { id: row.id, label: `${row.name} (${row.currency}, ${row.id})` };
-  });
+  const sorted = [...rows].toSorted(compareProductNameThenId);
+  return sorted.map((row) => ({
+    id: row.id,
+    label: productOptionLabel(row, sorted),
+  }));
 }
 
-function mergeCandidates(
-  primary: readonly ProductCandidate[],
-  extra: readonly ProductCandidate[],
-): ProductCandidate[] {
-  const byId = new Map<string, ProductCandidate>();
+export function mergeProductCandidates<T extends { readonly id: string }>(
+  primary: readonly T[],
+  extra: readonly T[],
+): T[] {
+  const byId = new Map<string, T>();
   for (const row of primary) {
     byId.set(row.id, row);
   }
@@ -103,5 +127,5 @@ export async function loadProductReferenceCandidates(args: {
       .orderBy(desc(products.updatedAt), desc(products.id))
       .limit(PRODUCT_CANDIDATE_MAX),
   ]);
-  return mergeCandidates(exactRows, relaxedRows);
+  return mergeProductCandidates(exactRows, relaxedRows);
 }

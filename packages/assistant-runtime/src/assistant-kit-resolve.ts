@@ -62,14 +62,26 @@ export function withChosenId(
   const next = structuredClone(input) as FacadeInput;
 
   if (!("lineIndex" in target)) {
-    if (target.kind === "customer") {
-      next.customerId = entityId;
-      delete next.customerQuery;
-    } else {
-      next.productId = entityId;
-      delete next.productQuery;
+    const lookupKind = target.kind;
+    switch (lookupKind) {
+      case "customer": {
+        next.customerId = entityId;
+        delete next.customerQuery;
+        return { kind: "patched", input: next };
+      }
+      case "product": {
+        next.productId = entityId;
+        delete next.productQuery;
+        return { kind: "patched", input: next };
+      }
+      default: {
+        const unhandled: never = lookupKind;
+        return {
+          kind: "unpatchable",
+          reason: `no input field for lookup kind ${String(unhandled)}`,
+        };
+      }
     }
-    return { kind: "patched", input: next };
   }
 
   const line = next.items?.[target.lineIndex];

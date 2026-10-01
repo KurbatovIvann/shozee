@@ -14,6 +14,7 @@ import { defineActionContract } from "@showzy/core/contract";
 import {
   ENTITY_REF_EXACTLY_ONE_MESSAGE,
   entityRefQuerySchema,
+  hasExactlyOneReference,
 } from "@showzy/validation/entity-ref";
 import { z } from "zod";
 
@@ -26,7 +27,10 @@ export const getProductInputSchema = z
   })
   .refine(
     (input) =>
-      (input.productId === undefined) !== (input.productQuery === undefined),
+      hasExactlyOneReference({
+        id: input.productId,
+        query: input.productQuery,
+      }),
     { message: ENTITY_REF_EXACTLY_ONE_MESSAGE },
   );
 

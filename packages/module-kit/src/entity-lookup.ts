@@ -1,12 +1,11 @@
 import { ConflictError, NotFoundError } from "@showzy/core/errors";
-import { ASSISTANT_CHOICE_OPTIONS_MAX } from "@showzy/validation/assistant-chat";
 import {
   normalizeUniqueMatchQuery,
   pickUniqueReferenceMatch,
   type EntityLookupTarget,
 } from "@showzy/validation/entity-ref";
 
-export const ENTITY_LOOKUP_OPTIONS_MAX = ASSISTANT_CHOICE_OPTIONS_MAX;
+export const ENTITY_LOOKUP_OPTIONS_MAX = 20;
 
 export type EntityLookupOption = {
   readonly id: string;
