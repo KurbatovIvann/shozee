@@ -62,10 +62,15 @@ export interface IsolationInvocation extends IsolationActor {
  */
 export type SuiteAction = ImplementedAction<z.ZodType, z.ZodType, unknown>;
 
+export interface ForeignReferenceProbe {
+  readonly missing: IsolationInvocation;
+}
+
 export interface CrossTenantCase {
   readonly action: SuiteAction;
   readonly own: IsolationInvocation;
   readonly foreign: IsolationInvocation;
+  readonly foreignReference?: ForeignReferenceProbe;
 }
 
 export interface BrowseCase {
@@ -82,8 +87,14 @@ export function isolationCase<
   action: ImplementedAction<TInput, TOutput, TTarget>,
   own: IsolationInvocation,
   foreign: IsolationInvocation,
+  foreignReference?: ForeignReferenceProbe,
 ): CrossTenantCase {
-  return { action, own, foreign };
+  return {
+    action,
+    own,
+    foreign,
+    ...(foreignReference === undefined ? {} : { foreignReference }),
+  };
 }
 
 export function browseCase<
@@ -183,7 +194,8 @@ function previewExistenceChecked(c: CrossTenantCase, gated: boolean): boolean {
     return false;
   }
   return (
-    c.action.contract.principal !== "account" || onlyTheReferenceDiffers(c)
+    c.action.contract.principal !== "account" ||
+    c.foreignReference !== undefined
   );
 }
 
@@ -194,14 +206,6 @@ function gateRequest(action: SuiteAction): Partial<PipelineRequestMeta> {
       ? {}
       : { requireConfirmation: true as const }),
   };
-}
-
-function onlyTheReferenceDiffers(c: CrossTenantCase): boolean {
-  return (
-    c.own.userId === c.foreign.userId &&
-    c.own.companyId === c.foreign.companyId &&
-    c.own.serviceName === c.foreign.serviceName
-  );
 }
 
 function gatedDeps(kit: TestKit): ActionPipelineDeps {
@@ -258,28 +262,42 @@ async function invokeThroughGate(
   });
 }
 
-const MISSING_REFERENCE_CLIENT_MESSAGE = new NotFoundError().clientMessage;
+type IsolationRefusal = NotFoundError | PermissionDeniedError;
 
-function assertRefusedAsMissing(
-  actionName: string,
-  refusal: NotFoundError | PermissionDeniedError,
-): void {
-  if (!(refusal instanceof NotFoundError)) {
+function refusalText(refusal: IsolationRefusal): string {
+  return `${refusal.code} "${refusal.clientMessage}"`;
+}
+
+function refusalsDiffer(
+  left: IsolationRefusal,
+  right: IsolationRefusal,
+): boolean {
+  return left.code !== right.code || left.clientMessage !== right.clientMessage;
+}
+
+async function refusalAtPreview(
+  kit: TestKit,
+  action: SuiteAction,
+  call: IsolationInvocation,
+  reference: string,
+): Promise<IsolationRefusal> {
+  const name = action.contract.name;
+  const refusal = await rejectionOf(
+    kit,
+    action,
+    call,
+    { deps: gatedDeps(kit), request: gateRequest(action) },
+    denyMessage(name),
+  );
+  if (refusal instanceof ConfirmationRequiredError) {
     throw new Error(
-      leakMessage(
-        actionName,
-        `existence: the preview refused a foreign reference with ${refusal.code} where a missing one is NOT_FOUND`,
-      ),
+      leakMessage(name, `existence: ${reference} got a confirmation card`),
     );
   }
-  if (refusal.clientMessage !== MISSING_REFERENCE_CLIENT_MESSAGE) {
-    throw new Error(
-      leakMessage(
-        actionName,
-        `existence: the preview refused a foreign reference with "${refusal.clientMessage}" where a missing one says "${MISSING_REFERENCE_CLIENT_MESSAGE}"`,
-      ),
-    );
+  if (!isolationDenied(refusal)) {
+    throw refusal;
   }
+  return refusal;
 }
 
 async function expectPreviewRefusesForeignAsMissing(
@@ -287,26 +305,28 @@ async function expectPreviewRefusesForeignAsMissing(
   c: CrossTenantCase,
 ): Promise<void> {
   const name = c.action.contract.name;
-  const atPreview = await rejectionOf(
+  const atPreview = await refusalAtPreview(
     kit,
     c.action,
     c.foreign,
-    { deps: gatedDeps(kit), request: gateRequest(c.action) },
-    denyMessage(name),
+    "a foreign reference",
   );
-  if (atPreview instanceof ConfirmationRequiredError) {
-    throw new Error(
-      leakMessage(
-        name,
-        "existence: a foreign reference got a confirmation card",
-      ),
+  const probe = c.foreignReference;
+  if (probe !== undefined) {
+    const atMissing = await refusalAtPreview(
+      kit,
+      c.action,
+      probe.missing,
+      "a missing reference",
     );
-  }
-  if (!isolationDenied(atPreview)) {
-    throw atPreview;
-  }
-  if (onlyTheReferenceDiffers(c)) {
-    assertRefusedAsMissing(name, atPreview);
+    if (refusalsDiffer(atPreview, atMissing)) {
+      throw new Error(
+        leakMessage(
+          name,
+          `existence: the preview refused a foreign reference with ${refusalText(atPreview)} where a missing one gets ${refusalText(atMissing)}`,
+        ),
+      );
+    }
   }
   if (c.action.contract.requiresConfirmation) {
     return;
@@ -321,14 +341,11 @@ async function expectPreviewRefusesForeignAsMissing(
   if (!isolationDenied(atExecution)) {
     throw atExecution;
   }
-  if (
-    atPreview.code !== atExecution.code ||
-    atPreview.clientMessage !== atExecution.clientMessage
-  ) {
+  if (refusalsDiffer(atPreview, atExecution)) {
     throw new Error(
       leakMessage(
         name,
-        `existence: the preview refused a foreign reference with ${atPreview.code} but execution refuses it with ${atExecution.code}`,
+        `existence: the preview refused a foreign reference with ${refusalText(atPreview)} but execution refuses it with ${refusalText(atExecution)}`,
       ),
     );
   }

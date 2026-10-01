@@ -239,6 +239,22 @@ async function previewLeakingForeignExistence(
   return publishCard(row.name);
 }
 
+async function previewCardingAnyProduct(
+  input: { productId: string },
+  env: ActionPreviewEnv,
+): Promise<ActionPreview> {
+  const rows = await env.tx
+    .select()
+    .from(fixtureProducts)
+    .where(eq(fixtureProducts.id, input.productId))
+    .limit(1);
+  const row = rows[0];
+  if (row === undefined) {
+    throw new NotFoundError();
+  }
+  return publishCard(row.name);
+}
+
 async function previewNamingTheForeignOwner(
   input: { productId: string },
   env: ActionPreviewEnv,
@@ -774,6 +790,17 @@ export function createLeakyFixtureActions(db: Database) {
       }),
       handler: correct.staffPublishProduct.handler,
     }),
+    staffPublishProductCardingAnyProduct: implementAction(
+      correct.staffPublishProduct.contract,
+      {
+        preview: previewCardingAnyProduct,
+        auditTarget: (env) => ({
+          type: "product",
+          id: productInput.parse(env.input).productId,
+        }),
+        handler: correct.staffPublishProduct.handler,
+      },
+    ),
     staffPublishProductNamingTheOwner: implementAction(
       correct.staffPublishProduct.contract,
       {

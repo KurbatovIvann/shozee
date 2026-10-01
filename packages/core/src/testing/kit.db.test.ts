@@ -43,6 +43,7 @@ const ownProduct = { productId: kitIdentities.products.published };
 const foreignProduct = {
   productId: kitIdentities.products.ofUnpublishedCompany,
 };
+const missingProduct = { productId: randomUUID() };
 const unpublishedProduct = {
   productId: kitIdentities.products.unpublished,
 };
@@ -90,6 +91,7 @@ function correctCrossTenantCases() {
       correct.staffPublishProduct,
       { input: ownProduct },
       { input: foreignProduct },
+      { missing: { input: missingProduct } },
     ),
     isolationCase(
       correct.customerGetOwnCrm,
@@ -285,9 +287,12 @@ describe("suites fail on seeded violations", () => {
           leaky.staffPublishProduct,
           { input: ownProduct },
           { input: foreignProduct },
+          { missing: { input: missingProduct } },
         ),
       ),
-    ).rejects.toThrow(/leaked existence/);
+    ).rejects.toThrow(
+      /PERMISSION_DENIED .* where a missing one gets NOT_FOUND/,
+    );
   });
 
   it("detects a preview that names the owner of a foreign id", async () => {
@@ -298,9 +303,24 @@ describe("suites fail on seeded violations", () => {
           leaky.staffPublishProductNamingTheOwner,
           { input: ownProduct },
           { input: foreignProduct },
+          { missing: { input: missingProduct } },
         ),
       ),
     ).rejects.toThrow(/belongs to another company/);
+  });
+
+  it("detects a preview that cards a foreign id", async () => {
+    await expect(
+      runCrossTenantCase(
+        kit,
+        isolationCase(
+          leaky.staffPublishProductCardingAnyProduct,
+          { input: ownProduct },
+          { input: foreignProduct },
+          { missing: { input: missingProduct } },
+        ),
+      ),
+    ).rejects.toThrow(/a foreign reference got a confirmation card/);
   });
 
   it("detects a customer resolver that skips ownership", async () => {
