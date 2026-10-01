@@ -23,6 +23,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { z } from "zod";
 
 import {
+  DUPLICATE_EMAIL_NOTE_PREFIX,
+  DUPLICATE_PHONE_NOTE_PREFIX,
+} from "../services/duplicate-contact.js";
+import {
   DELETE_COUNTERPARTY_NOTE,
   DELETE_CUSTOMER_NOTE,
   DELETE_GROUP_NOTE,
@@ -218,7 +222,35 @@ describe("customers preview cards (ADR-0050, core.md §7)", () => {
       { label: "Нотатки", value: "—" },
       { label: "Група", value: "Оптовики" },
       { label: "Прайс-лист", value: "Опт" },
+      { label: "Статус", value: "активний" },
     ]);
+    expect(preview.notes).toBeUndefined();
+  });
+
+  it("warns that the phone or the email already belongs to a customer", async () => {
+    const byPhone = await previewOf(createCustomer, {
+      name: "Інша Анна",
+      phone: "0501112233",
+    });
+    expect(byPhone.notes).toEqual([
+      `${DUPLICATE_PHONE_NOTE_PREFIX}Анна Коваль`,
+    ]);
+
+    const byEmail = await previewOf(createCustomer, {
+      name: "Інший Богдан",
+      email: "BOHDAN@previews.test",
+    });
+    expect(byEmail.notes).toEqual([
+      `${DUPLICATE_EMAIL_NOTE_PREFIX}Богдан Мороз`,
+    ]);
+  });
+
+  it("never warns about another company's customer", async () => {
+    const preview = await previewOf(createCustomer, {
+      name: "Нова Клієнтка",
+      phone: "+380509999999",
+    });
+    expect(preview.notes).toBeUndefined();
   });
 
   it("shows customers.updateCustomer as a transition and omits unnamed fields", async () => {
@@ -306,16 +338,15 @@ describe("customers preview cards (ADR-0050, core.md §7)", () => {
     ]);
   });
 
-  it("names the group and the price fallback on the delete card", async () => {
-    const preview = await previewOf(deleteGroup, {
-      id: fixtures.groupDeleted,
-    });
-    expect(preview.title).toBe("Видалити групу клієнтів: Застаріла");
-    expect(preview.lines).toEqual([
-      { label: "Назва", value: "Застаріла" },
-      { label: "Опис", value: "Більше не потрібна" },
-    ]);
-    expect(preview.notes).toEqual([DELETE_GROUP_NOTE]);
+  it("counts the active members the group delete card loses", async () => {
+    const empty = await previewOf(deleteGroup, { id: fixtures.groupDeleted });
+    expect(empty.title).toBe("Видалити групу клієнтів: Застаріла");
+    expect(empty.lines).toEqual([{ label: "Активні клієнти", value: "0" }]);
+    expect(empty.notes).toEqual([DELETE_GROUP_NOTE]);
+
+    const populated = await previewOf(deleteGroup, { id: fixtures.groupA });
+    expect(populated.title).toBe("Видалити групу клієнтів: Оптовики");
+    expect(populated.lines).toEqual([{ label: "Активні клієнти", value: "1" }]);
   });
 
   it("previews counterparty writes with the linked customer name", async () => {
@@ -360,10 +391,7 @@ describe("customers preview cards (ADR-0050, core.md §7)", () => {
       id: fixtures.partyA,
     });
     expect(preview.title).toBe("Видалити контрагента: ТОВ Анна");
-    expect(preview.lines).toEqual([
-      { label: "Назва", value: "ТОВ Анна" },
-      { label: "ЄДРПОУ", value: "12345678" },
-    ]);
+    expect(preview.lines).toEqual([{ label: "ЄДРПОУ", value: "12345678" }]);
     expect(preview.notes).toEqual([DELETE_COUNTERPARTY_NOTE]);
   });
 
@@ -433,5 +461,42 @@ describe("customers preview cards (ADR-0050, core.md §7)", () => {
     expect(customers[0]?.value).toBe(2);
     expect(groups[0]?.value).toBe(3);
     expect(parties[0]?.value).toBe(1);
+
+    const [customer] = await kit.db.runtime.db
+      .select({
+        phone: companyCustomers.phone,
+        notes: companyCustomers.notes,
+        groupId: companyCustomers.groupId,
+        status: companyCustomers.status,
+      })
+      .from(companyCustomers)
+      .where(eq(companyCustomers.id, fixtures.customerA));
+    expect(customer).toEqual({
+      phone: "+380501112233",
+      notes: "VIP",
+      groupId: fixtures.groupA,
+      status: "active",
+    });
+
+    const [group] = await kit.db.runtime.db
+      .select({
+        name: customerGroups.name,
+        priceListId: customerGroups.priceListId,
+      })
+      .from(customerGroups)
+      .where(eq(customerGroups.id, fixtures.groupA));
+    expect(group).toEqual({ name: "Оптовики", priceListId: fixtures.listA });
+
+    const [party] = await kit.db.runtime.db
+      .select({
+        iban: counterparties.iban,
+        customerId: counterparties.customerId,
+      })
+      .from(counterparties)
+      .where(eq(counterparties.id, fixtures.partyA));
+    expect(party).toEqual({
+      iban: "UA111111111111111111111111111",
+      customerId: fixtures.customerA,
+    });
   });
 });

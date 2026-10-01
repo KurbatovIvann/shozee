@@ -12,32 +12,44 @@ import { getPriceList } from "@showzy/pricing/get-price-list";
 import { and, eq } from "drizzle-orm";
 import type { z } from "zod";
 
+import type { createCounterpartyInputSchema } from "../actions/create-counterparty.contract.js";
+import type { createCustomerInputSchema } from "../actions/create-customer.contract.js";
+import type { createGroupInputSchema } from "../actions/create-group.contract.js";
 import { customerStatusSchema } from "../actions/customer-view.contract.js";
 import type { updateCounterpartyInputSchema } from "../actions/update-counterparty.contract.js";
 import type { updateCustomerInputSchema } from "../actions/update-customer.contract.js";
 import type { updateGroupInputSchema } from "../actions/update-group.contract.js";
+import { countActiveGroupMembers } from "./count-active-members.js";
+import { duplicateContactNotes } from "./duplicate-contact.js";
 
 type PreviewEnv = ActionPreviewEnv;
 type Contract = { readonly name: string };
 type CustomerStatus = z.output<typeof customerStatusSchema>;
 
-export type CustomerPreviewFields = Omit<
+type CreateCustomerFields = z.output<typeof createCustomerInputSchema>;
+type UpdateCustomerFields = Omit<
   z.output<typeof updateCustomerInputSchema>,
   "id"
 >;
-export type GroupPreviewFields = Omit<
-  z.output<typeof updateGroupInputSchema>,
-  "id"
->;
-export type CounterpartyPreviewFields = Omit<
+type CustomerPreviewFields = CreateCustomerFields | UpdateCustomerFields;
+
+type CreateGroupFields = z.output<typeof createGroupInputSchema>;
+type UpdateGroupFields = Omit<z.output<typeof updateGroupInputSchema>, "id">;
+type GroupPreviewFields = CreateGroupFields | UpdateGroupFields;
+
+type CreateCounterpartyFields = z.output<typeof createCounterpartyInputSchema>;
+type UpdateCounterpartyFields = Omit<
   z.output<typeof updateCounterpartyInputSchema>,
   "id"
 >;
+type CounterpartyPreviewFields =
+  CreateCounterpartyFields | UpdateCounterpartyFields;
 
 export const PREVIEW_ABSENT = "—";
 export const PREVIEW_CLEARED = "очистити";
 export const CUSTOMER_STATUS_LABEL = "Статус";
 export const CUSTOMER_CONTACT_LABEL = "Контакт";
+export const GROUP_MEMBERS_LABEL = "Активні клієнти";
 
 export const DELETE_CUSTOMER_NOTE =
   "Замовлення залишаться і втратять зв’язок із клієнтом. Прив’язані контрагенти залишаться окремими юридичними особами. Персональні ціни буде видалено.";
@@ -59,7 +71,10 @@ const CUSTOMER_LABELS = {
   notes: "Нотатки",
   groupId: "Група",
   priceListId: "Прайс-лист",
-} as const satisfies Record<keyof CustomerPreviewFields, string>;
+} as const satisfies Record<
+  keyof (CreateCustomerFields & UpdateCustomerFields),
+  string
+>;
 
 const CUSTOMER_TEXT_FIELDS = ["phone", "email", "userId", "notes"] as const;
 
@@ -67,7 +82,10 @@ const GROUP_LABELS = {
   name: "Назва",
   description: "Опис",
   priceListId: "Прайс-лист",
-} as const satisfies Record<keyof GroupPreviewFields, string>;
+} as const satisfies Record<
+  keyof (CreateGroupFields & UpdateGroupFields),
+  string
+>;
 
 const COUNTERPARTY_LABELS = {
   name: "Назва",
@@ -80,7 +98,10 @@ const COUNTERPARTY_LABELS = {
   email: "Email",
   notes: "Нотатки",
   customerId: "Клієнт",
-} as const satisfies Record<keyof CounterpartyPreviewFields, string>;
+} as const satisfies Record<
+  keyof (CreateCounterpartyFields & UpdateCounterpartyFields),
+  string
+>;
 
 const COUNTERPARTY_TEXT_FIELDS = [
   "edrpou",
@@ -375,12 +396,17 @@ async function counterpartyLines(
 
 export function createCustomerPreview(
   contract: Contract,
-): (input: CustomerPreviewFields, env: PreviewEnv) => Promise<ActionPreview> {
+): (input: CreateCustomerFields, env: PreviewEnv) => Promise<ActionPreview> {
   return async (input, env) => {
     const companyId = previewCompanyScope(env.companyId, contract);
+    const notes = await duplicateContactNotes(env.tx, companyId, input);
     return {
       title: `Новий клієнт: ${input.name}`,
-      lines: await customerLines(env, companyId, input, null),
+      lines: [
+        ...(await customerLines(env, companyId, input, null)),
+        { label: CUSTOMER_STATUS_LABEL, value: STATUS_LABELS.active },
+      ],
+      ...(notes.length > 0 ? { notes } : {}),
     };
   };
 }
@@ -388,7 +414,7 @@ export function createCustomerPreview(
 export function updateCustomerPreview(
   contract: Contract,
 ): (
-  input: CustomerPreviewFields & { readonly id: string },
+  input: UpdateCustomerFields & { readonly id: string },
   env: PreviewEnv,
 ) => Promise<ActionPreview> {
   return async (input, env) => {
@@ -443,7 +469,7 @@ export function deleteCustomerPreview(
 
 export function createGroupPreview(
   contract: Contract,
-): (input: GroupPreviewFields, env: PreviewEnv) => Promise<ActionPreview> {
+): (input: CreateGroupFields, env: PreviewEnv) => Promise<ActionPreview> {
   return async (input, env) => {
     previewCompanyScope(env.companyId, contract);
     return {
@@ -456,7 +482,7 @@ export function createGroupPreview(
 export function updateGroupPreview(
   contract: Contract,
 ): (
-  input: GroupPreviewFields & { readonly id: string },
+  input: UpdateGroupFields & { readonly id: string },
   env: PreviewEnv,
 ) => Promise<ActionPreview> {
   return async (input, env) => {
@@ -475,15 +501,10 @@ export function deleteGroupPreview(
   return async (input, env) => {
     const companyId = previewCompanyScope(env.companyId, contract);
     const stored = await loadGroup(env, companyId, input.id);
+    const members = await countActiveGroupMembers(env.tx, companyId, input.id);
     return {
       title: `Видалити групу клієнтів: ${stored.name}`,
-      lines: [
-        { label: GROUP_LABELS.name, value: stored.name },
-        {
-          label: GROUP_LABELS.description,
-          value: text(stored.description) ?? PREVIEW_ABSENT,
-        },
-      ],
+      lines: [{ label: GROUP_MEMBERS_LABEL, value: String(members) }],
       notes: [DELETE_GROUP_NOTE],
     };
   };
@@ -492,7 +513,7 @@ export function deleteGroupPreview(
 export function createCounterpartyPreview(
   contract: Contract,
 ): (
-  input: CounterpartyPreviewFields,
+  input: CreateCounterpartyFields,
   env: PreviewEnv,
 ) => Promise<ActionPreview> {
   return async (input, env) => {
@@ -507,7 +528,7 @@ export function createCounterpartyPreview(
 export function updateCounterpartyPreview(
   contract: Contract,
 ): (
-  input: CounterpartyPreviewFields & { readonly id: string },
+  input: UpdateCounterpartyFields & { readonly id: string },
   env: PreviewEnv,
 ) => Promise<ActionPreview> {
   return async (input, env) => {
@@ -529,7 +550,6 @@ export function deleteCounterpartyPreview(
     return {
       title: `Видалити контрагента: ${stored.name}`,
       lines: [
-        { label: COUNTERPARTY_LABELS.name, value: stored.name },
         {
           label: COUNTERPARTY_LABELS.edrpou,
           value: text(stored.edrpou) ?? PREVIEW_ABSENT,

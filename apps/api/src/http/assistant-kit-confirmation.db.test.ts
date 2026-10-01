@@ -176,9 +176,8 @@ describe("a delete the assistant asks for", () => {
 
     expect(pause.interaction).toBe("confirmation");
     expect(await customerExists(customerId)).toBe(true);
-    // Core's redacted summary, and nothing about the record or the attempt.
     expect(pause.prompt).toEqual({ summary: expect.any(String) as unknown });
-    expect(JSON.stringify(pause.prompt)).not.toContain("Катя");
+    expect(JSON.stringify(pause.prompt)).toContain("Катя Самбука");
     expect(JSON.stringify(pause.prompt)).not.toContain(customerId);
 
     // A separate request with its own command, as a real answer is.
