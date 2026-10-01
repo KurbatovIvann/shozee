@@ -52,7 +52,10 @@ used by `.github/workflows/ci.yml` (SHO-334 aggregator, SHO-387
   relative import that leaves `apps/worker` is refused too (SHO-279,
   SHO-569). `packages/ai` itself may import `@showzy/core/*`,
   `@showzy/contract`, `@showzy/validation/*`, and `@showzy/<module>/contract`;
-  it must not import a module barrel or `@showzy/db`. `@showzy/module-kit` is a platform package (ADR-0031): module server code
+  it must not import a module barrel or `@showzy/db`. `@showzy/ai/test` is a
+  test-only entry (SHO-817): only a test file (`*.test.ts`, `*.db.test.ts`,
+  `*.test.tsx`) may import it, by package subpath or by a relative path into
+  `packages/ai/src/test`. `@showzy/module-kit` is a platform package (ADR-0031): module server code
   may import it. The contract-client layer currently
   permits any non-`@showzy` npm package (today: `zod`, `@orpc/*`). Tighten
   to an explicit external allowlist when that set grows — do not add
