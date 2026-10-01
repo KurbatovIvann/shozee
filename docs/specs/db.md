@@ -383,12 +383,19 @@ aggregate revisions and are out of this convention.
 
 Idempotent (`ON CONFLICT DO NOTHING`) seeds, runnable repeatedly.
 
-**Phase 0:** only `role_permission_defaults` (companies-foundation).
+**Phase 0:** `role_permission_defaults` (companies-foundation).
+
+**Local-dev fixture set** (`seed/dev-sho-bakery.ts`, `seedDevShoBakery`,
+SHO-761): one company, one owner user and membership, customers, groups,
+price lists, products and variants — the catalogue the owner's recorded
+Ukrainian speech names, so a Шо or assistant reference resolves against a
+real dev database. Its deferral ("needs the catalog schema") lapsed when
+the catalog schema landed. Dev only: its CLI
+(`pnpm --filter @showzy/db seed:dev-sho`) refuses `NODE_ENV=production`,
+and no production bootstrap may depend on it.
 
 **Deferred** until the owning schema exists:
 
-- Local-dev fixture set (one company, one staff, one customer, products)
-  used by Maestro smoke tests later — needs the catalog schema (fnd-T29+).
 - Default document templates (scope §3) — `documents` module.
 - KVED/CPV classifiers — `reference-data`.
 - `business_categories` reference rows — companies-owned seed when the
@@ -437,6 +444,7 @@ Idempotent (`ON CONFLICT DO NOTHING`) seeds, runnable repeatedly.
 
 | Date | Change | Why | Reported by |
 | --- | --- | --- | --- |
+| 2026-10-01 | §9: the local-dev fixture set lands as `seedDevShoBakery`, dev-only and production-refusing; the seed-layout guard now names it | SHO-742 needs a dev company whose catalogue the owner's recorded speech resolves against; the deferral's stated condition (the catalog schema) has been met since fnd-T29 | db-T3 (SHO-761) |
 | 2026-09-16 | §6: one Redis and nothing durable on it — the queue Redis, `REDIS_QUEUE_URL` and the `redis-queue` compose service are gone; §3: v1 pg_cron jobs move to pg-boss periodic jobs | ADR-0041 / SHO-651: a turn and its job commit in one Postgres transaction, so the 2026-09-11 durable-queue-on-Redis form has no writer left | jobs-T9 (SHO-655) |
 | 2026-09-11 | §6: two Redis instances — a non-persistent shared Redis (OTP codes stay off disk) and a dedicated queue Redis with AOF (`appendfsync everysec`) on a volume and `noeviction`; production requirements verified with `CONFIG GET appendonly` / `maxmemory-policy` / `save` | ADR-0039: an accepted assistant turn is a durable BullMQ job, the first non-rebuildable Redis use | assistant-async-T1 (SHO-559) |
 | 2026-09-11 | §6: the assistant's event pub/sub channels, presence and stream slots live on the shared, non-persistent Redis | ADR-0039 delivery: every stream starts from a Postgres snapshot, so nothing here needs to survive a restart and there is no replay log | assistant-async-T4 (SHO-562) |

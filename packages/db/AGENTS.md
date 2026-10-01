@@ -49,9 +49,11 @@ actions/services running under the core pipeline.
   and the drift check. Foundation protocol rows are produced by the core
   kit through runtime protocols — this package does not export outbox /
   idempotency / audit row factories.
-- `seed/` — currently exports only `role_permission_defaults`. Treat
-  db.md §9 domain fixtures as planned until implemented; production
-  bootstrap must not depend on hypothetical demo data.
+- `seed/` — exports `role_permission_defaults` and `seedDevShoBakery`
+  (SHO-761): a local-dev company whose catalogue matches the shop the owner
+  dictated to, run by `pnpm --filter @showzy/db seed:dev-sho`, which refuses
+  `NODE_ENV=production`. Treat db.md §9 domain fixtures as planned until
+  implemented; production bootstrap must not depend on demo data.
 
 ## Raw SQL policy
 

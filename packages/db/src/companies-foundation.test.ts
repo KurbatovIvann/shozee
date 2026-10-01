@@ -4,10 +4,10 @@
  * runtime role; raw SQL is limited to PostgreSQL catalog structure checks.
  */
 import assert from "node:assert/strict";
-import { readdir } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 
-import { eq } from "drizzle-orm";
+import { count, eq } from "drizzle-orm";
 import pg from "pg";
 import {
   afterAll,
@@ -19,17 +19,24 @@ import {
 } from "vitest";
 
 import {
+  devShoBakeryCompanyId,
+  devShoBakeryCustomers,
+  devShoBakeryId,
   rolePermissionDefaultRows,
+  seedDevShoBakery,
   seedRolePermissionDefaults,
 } from "../seed/index.js";
 import type { DbClient } from "./client.js";
 import type { UserId } from "./schema/auth-ids.js";
 import { user } from "./schema/auth.js";
+import { products, productVariants } from "./schema/catalog.js";
 import {
   companies,
   companyMembers,
   rolePermissionDefaults,
 } from "./schema/companies.js";
+import { companyCustomers, customerGroups } from "./schema/customers.js";
+import { priceLists } from "./schema/pricing.js";
 import { createTestDatabase, type TestDatabase } from "./testing/harness.js";
 
 let database: TestDatabase;
@@ -270,12 +277,17 @@ describe("companies foundation schema", () => {
 });
 
 describe("role permission defaults seed", () => {
-  it("does not ship the local-dev company/staff/product fixture seed (db.md §9)", async () => {
+  it("ships exactly the seeds db.md §9 names", async () => {
     const seedDir = path.resolve(import.meta.dirname, "../seed");
     const names = (await readdir(seedDir)).filter((name) =>
       name.endsWith(".ts"),
     );
-    expect(names.sort()).toEqual(["index.ts", "role-permission-defaults.ts"]);
+    expect(names.sort()).toEqual([
+      "dev-sho-bakery-cli.ts",
+      "dev-sho-bakery.ts",
+      "index.ts",
+      "role-permission-defaults.ts",
+    ]);
   });
 
   it("is idempotent and never seeds the implicit owner role", async () => {
@@ -338,5 +350,91 @@ describe("role permission defaults seed", () => {
     await expectSqlState(insertCompany({ slug: "ABC" }), "23514");
     await expectSqlState(insertCompany({ slug: "-abc" }), "23514");
     await expectSqlState(insertCompany({ prefix: "co" }), "23514");
+  });
+});
+
+describe("dev bakery fixture seed", () => {
+  interface DevBakeryLayout {
+    readonly products: number;
+    readonly variants: number;
+    readonly customers: number;
+    readonly groups: number;
+    readonly priceLists: number;
+  }
+
+  async function readLayout(companyId: string): Promise<DevBakeryLayout> {
+    const [productRow] = await dbClient.db
+      .select({ value: count() })
+      .from(products)
+      .where(eq(products.companyId, companyId));
+    const [variantRow] = await dbClient.db
+      .select({ value: count() })
+      .from(productVariants)
+      .where(eq(productVariants.companyId, companyId));
+    const [customerRow] = await dbClient.db
+      .select({ value: count() })
+      .from(companyCustomers)
+      .where(eq(companyCustomers.companyId, companyId));
+    const [groupRow] = await dbClient.db
+      .select({ value: count() })
+      .from(customerGroups)
+      .where(eq(customerGroups.companyId, companyId));
+    const [priceListRow] = await dbClient.db
+      .select({ value: count() })
+      .from(priceLists)
+      .where(eq(priceLists.companyId, companyId));
+    return {
+      products: productRow?.value ?? 0,
+      variants: variantRow?.value ?? 0,
+      customers: customerRow?.value ?? 0,
+      groups: groupRow?.value ?? 0,
+      priceLists: priceListRow?.value ?? 0,
+    };
+  }
+
+  it("refuses to run under NODE_ENV=production (db.md §9)", async () => {
+    const cli = await readFile(
+      path.resolve(import.meta.dirname, "../seed/dev-sho-bakery-cli.ts"),
+      "utf8",
+    );
+    expect(cli).toContain('config.nodeEnv === "production"');
+    expect(cli).toContain("process.exit(1)");
+  });
+
+  it("seeds the dictated catalogue and repeats without duplicating it", async () => {
+    const first = await seedDevShoBakery(dbClient.db);
+    const afterFirst = await readLayout(first.companyId);
+
+    expect(afterFirst).toEqual({
+      products: 15,
+      variants: 38,
+      customers: 12,
+      groups: 3,
+      priceLists: 3,
+    });
+    expect(first.productCount).toBe(afterFirst.products);
+    expect(first.variantCount).toBe(afterFirst.variants);
+    expect(first.customerCount).toBe(afterFirst.customers);
+
+    const cakeVariants = await dbClient.db
+      .select({ name: productVariants.name })
+      .from(productVariants)
+      .where(eq(productVariants.productId, devShoBakeryId("product", "Торт")));
+    expect(cakeVariants).toHaveLength(8);
+
+    const second = await seedDevShoBakery(dbClient.db);
+    expect(second).toEqual(first);
+    expect(await readLayout(first.companyId)).toEqual(afterFirst);
+  });
+
+  it("names every customer the recorded speech refers to", async () => {
+    await seedDevShoBakery(dbClient.db);
+    const seeded = await dbClient.db
+      .select({ name: companyCustomers.name })
+      .from(companyCustomers)
+      .where(eq(companyCustomers.companyId, devShoBakeryCompanyId));
+    expect(seeded.map((row) => row.name).sort()).toEqual(
+      [...devShoBakeryCustomers].sort(),
+    );
   });
 });
