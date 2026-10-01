@@ -1,3 +1,4 @@
+import type { RefObject } from "react";
 import { Pressable, TextInput, View } from "react-native";
 import { SendHorizonalIcon } from "lucide-react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
@@ -10,6 +11,7 @@ import {
 import { AssistantExampleChips } from "./assistant-example-chips";
 
 export function AssistantComposer(props: {
+  readonly inputRef: RefObject<TextInput | null>;
   readonly value: string;
   readonly onChangeText: (value: string) => void;
   readonly onSend: () => void;
@@ -36,6 +38,7 @@ export function AssistantComposer(props: {
       />
       <View style={styles.row}>
         <TextInput
+          ref={props.inputRef}
           value={props.value}
           onChangeText={props.onChangeText}
           placeholder={props.placeholder}

@@ -43,6 +43,7 @@ export const AssistantMessageRow = memo(function AssistantMessageRow(props: {
   readonly applying: boolean;
   readonly interactionCopy: InteractionCardCopy;
   readonly onAnswer: (answer: unknown) => void;
+  readonly onCompose: () => void;
   readonly onDismiss: () => void;
 }) {
   const isUser = props.role === "user";
@@ -101,6 +102,7 @@ export const AssistantMessageRow = memo(function AssistantMessageRow(props: {
             applying={props.applying}
             copy={props.interactionCopy}
             onAnswer={props.onAnswer}
+            onCompose={props.onCompose}
             onDismiss={props.onDismiss}
           />
         </AssistantTurnResult>
