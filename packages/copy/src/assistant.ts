@@ -109,12 +109,14 @@ export type AssistantCopy = {
   readonly confirmingLabel: string;
   readonly confirmationTitle: string;
   readonly choiceTitle: string;
+  readonly choiceNearest: string;
+  readonly choiceCompose: string;
+  readonly choiceChosen: string;
   readonly choiceTruncated: string;
   readonly choiceTruncatedMatch: string;
   readonly choiceExpired: string;
   readonly choiceClaimed: string;
   readonly choiceRetry: string;
-  readonly choiceSelecting: string;
   readonly waitLabel: string;
   /**
    * Shown under a turn that ended before the assistant answered — the network
@@ -260,12 +262,14 @@ const assistantEn: AssistantCopy = {
   confirmingLabel: "Confirming…",
   confirmationTitle: "Confirmation required",
   choiceTitle: "Select a variant",
+  choiceNearest: "Nothing exact. Maybe…",
+  choiceCompose: "Something else…",
+  choiceChosen: "Chosen",
   choiceTruncated: "More variants exist. Reply with the exact flavour name.",
   choiceTruncatedMatch: "More matches exist. Reply with the exact name.",
   choiceExpired: "This choice expired.",
   choiceClaimed: "This choice is already in progress. Continue to finish it.",
   choiceRetry: "Continue",
-  choiceSelecting: "Selecting…",
   waitLabel: "Shozik is thinking",
   turnInterrupted: "The reply was cut short. Anything shown above was saved.",
   interruptedMessage: "Shozik didn't get to finish.",
@@ -347,12 +351,14 @@ const assistantUk: AssistantCopy = {
   confirmingLabel: "Підтверджую…",
   confirmationTitle: "Потрібне підтвердження",
   choiceTitle: "Обери варіант",
+  choiceNearest: "Точного немає. Можливо…",
+  choiceCompose: "Інше…",
+  choiceChosen: "Обрано",
   choiceTruncated: "Є ще варіанти. Напиши точну назву смаку.",
   choiceTruncatedMatch: "Є ще збіги. Напиши точну назву.",
   choiceExpired: "Цей вибір більше недоступний.",
   choiceClaimed: "Цей вибір уже в процесі. Продовжи, щоб завершити.",
   choiceRetry: "Продовжити",
-  choiceSelecting: "Обираю…",
   waitLabel: "Шозік думає",
   turnInterrupted: "Відповідь обірвалася. Те, що вище, вже збережено.",
   interruptedMessage: "Шозік не встиг завершити.",

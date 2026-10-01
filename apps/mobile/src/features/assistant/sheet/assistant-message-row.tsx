@@ -41,8 +41,10 @@ export const AssistantMessageRow = memo(function AssistantMessageRow(props: {
   /** Present only while it is answerable. There is no closed-question card. */
   readonly interaction: AssistantInteraction | null;
   readonly applying: boolean;
+  readonly pendingOptionId: string | null;
   readonly interactionCopy: InteractionCardCopy;
   readonly onAnswer: (answer: unknown) => void;
+  readonly onCompose: () => void;
   readonly onDismiss: () => void;
 }) {
   const isUser = props.role === "user";
@@ -99,8 +101,10 @@ export const AssistantMessageRow = memo(function AssistantMessageRow(props: {
           <InteractionCard
             interaction={interaction}
             applying={props.applying}
+            pendingOptionId={props.pendingOptionId}
             copy={props.interactionCopy}
             onAnswer={props.onAnswer}
+            onCompose={props.onCompose}
             onDismiss={props.onDismiss}
           />
         </AssistantTurnResult>
