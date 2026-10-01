@@ -481,6 +481,7 @@ crossTenantSuite(
       revokeInvite,
       { input: { id: fixtures.isolationRevokeA } },
       { input: { id: fixtures.isolationRevokeB } },
+      { missing: { input: { id: randomUUID() } } },
     ),
   ],
 );

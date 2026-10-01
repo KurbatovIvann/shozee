@@ -237,13 +237,6 @@ describe("invites preview cards (core.md §7)", () => {
     expect(rows[0]?.status).toBe("pending");
   });
 
-  it("refuses a foreign invite in the card exactly like a missing one", async () => {
-    expectSameRefusal(
-      await invokeForCard(revokeInvite, { id: fixtures.inviteB }),
-      await invokeForCard(revokeInvite, { id: fixtures.missingId }),
-    );
-  });
-
   it("keeps another company's invite name out of the card", async () => {
     const refusal = await invokeForCard(revokeInvite, { id: fixtures.inviteB });
     expect(refusal).toBeInstanceOf(NotFoundError);

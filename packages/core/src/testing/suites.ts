@@ -199,6 +199,37 @@ function previewExistenceChecked(c: CrossTenantCase, gated: boolean): boolean {
   );
 }
 
+function sameIsolationActor(
+  left: IsolationInvocation,
+  right: IsolationInvocation,
+): boolean {
+  return (
+    left.userId === right.userId &&
+    left.companyId === right.companyId &&
+    left.serviceName === right.serviceName
+  );
+}
+
+function variesTheReference(c: CrossTenantCase): boolean {
+  return (
+    sameIsolationActor(c.own, c.foreign) &&
+    JSON.stringify(c.own.input) !== JSON.stringify(c.foreign.input)
+  );
+}
+
+function assertForeignReferenceProbeDeclared(c: CrossTenantCase): void {
+  if (
+    c.action.preview === undefined ||
+    c.foreignReference !== undefined ||
+    !variesTheReference(c)
+  ) {
+    return;
+  }
+  throw new Error(
+    `"${c.action.contract.name}" binds a preview and this case varies the reference under one actor, so it must declare a missing-reference probe: isolationCase(action, own, foreign, { missing }). Without it a preview that refuses a foreign reference differently from a missing one still passes.`,
+  );
+}
+
 function gateRequest(action: SuiteAction): Partial<PipelineRequestMeta> {
   return {
     idempotencyKey: randomUUID(),
@@ -379,6 +410,7 @@ export async function runCrossTenantCase(
   c: CrossTenantCase,
 ): Promise<void> {
   const { action } = c;
+  assertForeignReferenceProbeDeclared(c);
   const principal = action.contract.principal;
   const publicScope = action.contract.publicScope;
 

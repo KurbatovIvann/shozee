@@ -1036,6 +1036,11 @@ crossTenantSuite(
       {
         input: createById(fixtures.customerB, [{ productId: fixtures.pB }]),
       },
+      {
+        missing: {
+          input: createById(randomUUID(), [{ productId: fixtures.pB }]),
+        },
+      },
     ),
     isolationCase(
       createOrder,
@@ -1057,26 +1062,35 @@ crossTenantSuite(
       {
         input: createById(fixtures.customerB, [{ productId: fixtures.pB }]),
       },
+      {
+        missing: {
+          input: createById(randomUUID(), [{ productId: fixtures.pB }]),
+        },
+      },
     ),
     isolationCase(
       confirmOrder,
       { input: { orderId: fixtures.orderIsolationA } },
       { input: { orderId: fixtures.orderIsolationB } },
+      { missing: { input: { orderId: randomUUID() } } },
     ),
     isolationCase(
       startOrder,
       { input: { orderId: fixtures.orderStartIsolationA } },
       { input: { orderId: fixtures.orderStartIsolationB } },
+      { missing: { input: { orderId: randomUUID() } } },
     ),
     isolationCase(
       completeOrder,
       { input: { orderId: fixtures.orderCompleteIsolationA } },
       { input: { orderId: fixtures.orderCompleteIsolationB } },
+      { missing: { input: { orderId: randomUUID() } } },
     ),
     isolationCase(
       cancelOrder,
       { input: { orderId: fixtures.orderCancelIsolationA } },
       { input: { orderId: fixtures.orderCancelIsolationB } },
+      { missing: { input: { orderId: randomUUID() } } },
     ),
     isolationCase(
       getOrder,

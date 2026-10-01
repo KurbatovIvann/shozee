@@ -279,6 +279,32 @@ describe("suites fail on seeded violations", () => {
     ).rejects.toThrow(/expected foreign access/);
   });
 
+  it("detects a preview case that declares no missing-reference probe", async () => {
+    await expect(
+      runCrossTenantCase(
+        kit,
+        isolationCase(
+          correct.staffPublishProduct,
+          { input: ownProduct },
+          { input: foreignProduct },
+        ),
+      ),
+    ).rejects.toThrow(/must declare a missing-reference probe/);
+  });
+
+  it("accepts a preview case whose foreign call changes the actor, not the reference", async () => {
+    await expect(
+      runCrossTenantCase(
+        kit,
+        isolationCase(
+          correct.staffPublishProduct,
+          { input: ownProduct },
+          { input: ownProduct, companyId: kitIdentities.companies.b },
+        ),
+      ),
+    ).resolves.toBeUndefined();
+  });
+
   it("detects a preview that tells a foreign id apart from a missing one", async () => {
     await expect(
       runCrossTenantCase(

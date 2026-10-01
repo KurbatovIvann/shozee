@@ -465,6 +465,7 @@ crossTenantSuite(
       cancelDocument,
       { input: { documentId: fixtures.docIsolationA } },
       { input: { documentId: fixtures.docIsolationB } },
+      { missing: { input: { documentId: randomUUID() } } },
     ),
   ],
 );
