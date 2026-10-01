@@ -6,7 +6,10 @@ import { resolveLayout } from "@showzy/doc-generation/resolve-layout";
 import { getOrder } from "@showzy/orders";
 import { z } from "zod";
 
-import { createFromOrderContract } from "./create-from-order.contract.js";
+import {
+  createFromOrderContract,
+  type createFromOrderInputSchema,
+} from "./create-from-order.contract.js";
 import type { documentTypeSchema } from "./document-view.contract.js";
 import { createStaffDocument } from "../services/create-from-order.js";
 import { documentTypeLabel } from "../services/preview-document.js";
@@ -21,6 +24,9 @@ const documentIdHolder = z.object({ documentId: z.string() });
 const orderIdHolder = z.object({ orderId: z.string() });
 
 type DocumentType = z.output<typeof documentTypeSchema>;
+type CreateFromOrderInput = z.output<typeof createFromOrderInputSchema>;
+
+const ABSENT = "—";
 
 /**
  * Catalog defaults named on SHO-362. Nested `resolveLayout` still
@@ -31,6 +37,16 @@ const DEFAULT_LAYOUT_KEY_BY_TYPE = {
   payment_invoice: "payment_invoice.branded",
   delivery_note: "delivery_note.parties",
 } as const satisfies Record<DocumentType, string>;
+
+function requestedLayout(input: CreateFromOrderInput): {
+  layoutKey: string;
+  type: DocumentType;
+} {
+  return {
+    layoutKey: input.layoutKey ?? DEFAULT_LAYOUT_KEY_BY_TYPE[input.type],
+    type: input.type,
+  };
+}
 
 function persistableBasis(value: string | undefined): string | null {
   if (value === undefined || value.length === 0) {
@@ -53,10 +69,7 @@ function createAuditTarget(env: AuditTargetEnv): { type: string; id: string } {
 
 export const createFromOrder = implementAction(createFromOrderContract, {
   handler: async (input, ctx) => {
-    const layout = await ctx.call(resolveLayout, {
-      layoutKey: input.layoutKey ?? DEFAULT_LAYOUT_KEY_BY_TYPE[input.type],
-      type: input.type,
-    });
+    const layout = await ctx.call(resolveLayout, requestedLayout(input));
     const templateName = layout.key;
     const basis = persistableBasis(input.basis);
 
@@ -118,16 +131,12 @@ export const createFromOrder = implementAction(createFromOrderContract, {
       );
       lines.push({ label: "Покупець", value: counterparty.name });
     }
-    if (input.layoutKey !== undefined) {
-      const layout = await env.call(resolveLayout, {
-        layoutKey: input.layoutKey,
-        type: input.type,
-      });
-      lines.push({ label: "Шаблон", value: layout.key });
-    }
-    if (input.basis !== undefined && input.basis.length > 0) {
-      lines.push({ label: "Підстава", value: input.basis });
-    }
+    const layout = await env.call(resolveLayout, requestedLayout(input));
+    lines.push({ label: "Шаблон", value: layout.key });
+    lines.push({
+      label: "Підстава",
+      value: persistableBasis(input.basis) ?? ABSENT,
+    });
     return {
       title: `Створити документ за замовленням ${order.orderNumber}`,
       lines,

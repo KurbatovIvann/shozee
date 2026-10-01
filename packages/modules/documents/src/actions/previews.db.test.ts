@@ -19,7 +19,7 @@ import {
 import { products } from "@showzy/db/schema/catalog";
 import { companyLegalInfo } from "@showzy/db/schema/companies";
 import { companyCustomers, counterparties } from "@showzy/db/schema/customers";
-import { documents } from "@showzy/db/schema/documents";
+import { documents, documentShareTokens } from "@showzy/db/schema/documents";
 import { orderItems, orders } from "@showzy/db/schema/orders";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -43,10 +43,16 @@ const fixtures = {
   productB: randomUUID(),
   orderA: randomUUID(),
   orderB: randomUUID(),
+  orderShared: randomUUID(),
+  orderRevoked: randomUUID(),
   itemA: randomUUID(),
   itemB: randomUUID(),
+  itemShared: randomUUID(),
+  itemRevoked: randomUUID(),
   docA: randomUUID(),
   docB: randomUUID(),
+  docShared: randomUUID(),
+  docRevoked: randomUUID(),
   counterpartyA: randomUUID(),
   counterpartyB: randomUUID(),
   missingId: randomUUID(),
@@ -284,6 +290,51 @@ beforeAll(async () => {
     orderId: fixtures.orderB,
     documentNumber: "KB-РХ-000001",
   });
+
+  await insertSeedOrder({
+    id: fixtures.orderShared,
+    itemId: fixtures.itemShared,
+    companyId: companyA,
+    customerId: fixtures.customerA,
+    productId: fixtures.productA,
+    orderNumber: "KA-2",
+  });
+  await insertSeedOrder({
+    id: fixtures.orderRevoked,
+    itemId: fixtures.itemRevoked,
+    companyId: companyA,
+    customerId: fixtures.customerA,
+    productId: fixtures.productA,
+    orderNumber: "KA-3",
+  });
+  await insertSeedDocument({
+    id: fixtures.docShared,
+    companyId: companyA,
+    orderId: fixtures.orderShared,
+    documentNumber: "KA-РХ-000002",
+  });
+  await insertSeedDocument({
+    id: fixtures.docRevoked,
+    companyId: companyA,
+    orderId: fixtures.orderRevoked,
+    documentNumber: "KA-РХ-000003",
+  });
+
+  await kit.db.runtime.db.insert(documentShareTokens).values([
+    {
+      companyId: companyA,
+      documentId: fixtures.docShared,
+      tokenHash: "a".repeat(64),
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+    },
+    {
+      companyId: companyA,
+      documentId: fixtures.docRevoked,
+      tokenHash: "b".repeat(64),
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      revokedAt: new Date("2026-03-16T00:00:00Z"),
+    },
+  ]);
 });
 
 afterAll(async () => {
@@ -312,6 +363,25 @@ describe("documents preview cards (core.md §7)", () => {
     });
     expect(preview.title).toBe("Поділитися документом KA-РХ-000001");
     expect(preview.lines).toEqual(documentCardLines);
+    expect(preview.notes).toEqual([
+      "Буде створено нове посилання, і воно діє 90 днів.",
+    ]);
+  });
+
+  it("warns about the revoked link only when one is still unrevoked", async () => {
+    const preview = await previewOf(shareDocument, {
+      documentId: fixtures.docShared,
+    });
+    expect(preview.notes).toEqual([
+      "Чинне посилання буде відкликано — працюватиме лише нове, і воно діє 90 днів.",
+    ]);
+  });
+
+  it("treats a revoked link as no link at all", async () => {
+    const preview = await previewOf(shareDocument, {
+      documentId: fixtures.docRevoked,
+    });
+    expect(preview.notes?.[0]).not.toContain("відкликано");
   });
 
   it("previews documents.requestSign with the key-possession note", async () => {
@@ -344,7 +414,19 @@ describe("documents preview cards (core.md §7)", () => {
       { label: "Замовлення", value: "KA-1" },
       { label: "Позицій", value: "1" },
       { label: "Покупець", value: "Customer A" },
+      { label: "Шаблон", value: "payment_invoice.branded" },
       { label: "Підстава", value: "Договір 7" },
+    ]);
+  });
+
+  it("names the default layout and the empty basis the handler would write", async () => {
+    const preview = await previewOf(createFromOrder, {
+      orderId: fixtures.orderA,
+      type: "delivery_note",
+    });
+    expect(preview.lines.slice(4)).toEqual([
+      { label: "Шаблон", value: "delivery_note.parties" },
+      { label: "Підстава", value: "—" },
     ]);
   });
 
@@ -358,6 +440,7 @@ describe("documents preview cards (core.md §7)", () => {
     expect(preview.lines.slice(3)).toEqual([
       { label: "Покупець", value: "ТОВ Покупець" },
       { label: "Шаблон", value: "payment_invoice.branded" },
+      { label: "Підстава", value: "—" },
     ]);
   });
 

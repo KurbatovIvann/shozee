@@ -1,9 +1,9 @@
 import type { ActionPreviewEnv } from "@showzy/core";
 import type { ActionPreviewLine } from "@showzy/core/errors";
 import { NotFoundError } from "@showzy/core/errors";
-import { documents } from "@showzy/db/schema/documents";
+import { documents, documentShareTokens } from "@showzy/db/schema/documents";
 import { parseDbEnum } from "@showzy/module-kit/parse-db-enum";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import type { z } from "zod";
 
 import {
@@ -75,6 +75,25 @@ export async function loadDocumentPreviewFacts(env: {
       `documents row has illegal status "${row.status}"`,
     ),
   };
+}
+
+export async function hasUnrevokedShareToken(env: {
+  readonly tx: PreviewTx;
+  readonly companyId: string;
+  readonly documentId: string;
+}): Promise<boolean> {
+  const rows = await env.tx
+    .select({ id: documentShareTokens.id })
+    .from(documentShareTokens)
+    .where(
+      and(
+        eq(documentShareTokens.companyId, env.companyId),
+        eq(documentShareTokens.documentId, env.documentId),
+        isNull(documentShareTokens.revokedAt),
+      ),
+    )
+    .limit(1);
+  return rows[0] !== undefined;
 }
 
 export function documentPreviewLines(
