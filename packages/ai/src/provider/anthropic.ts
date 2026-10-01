@@ -133,12 +133,9 @@ export function ensureAnthropicToolInputSchemaType(
 
 export interface AnthropicStaffProviderOptions {
   readonly apiKey?: string;
-  readonly replyModel?: string;
-  readonly gateModel?: string;
+  readonly replyModel: string;
+  readonly gateModel: string;
 }
-
-const DEFAULT_REPLY_MODEL = "claude-haiku-4-5";
-const DEFAULT_GATE_MODEL = "claude-haiku-4-5";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -177,11 +174,11 @@ function markLastNonDeferredToolCacheBreakpoint(tools: ToolSet): void {
 }
 
 export function createAnthropicStaffProviderAdapter(
-  options: AnthropicStaffProviderOptions = {},
+  options: AnthropicStaffProviderOptions,
 ): StaffProviderAdapter {
   const apiKey = options.apiKey;
-  const replyModel = options.replyModel ?? DEFAULT_REPLY_MODEL;
-  const gateModel = options.gateModel ?? DEFAULT_GATE_MODEL;
+  const replyModel = options.replyModel;
+  const gateModel = options.gateModel;
 
   return {
     id: ANTHROPIC_STAFF_PROVIDER_ID,
@@ -239,5 +236,10 @@ export function createAnthropicStaffProviderAdapter(
   };
 }
 
+const TEST_PROVIDER_MODEL = "unit-test-model";
+
 /** Default Anthropic adapter for unit tests that omit an explicit instance. */
-export const anthropicStaffProvider = createAnthropicStaffProviderAdapter();
+export const anthropicStaffProvider = createAnthropicStaffProviderAdapter({
+  replyModel: TEST_PROVIDER_MODEL,
+  gateModel: TEST_PROVIDER_MODEL,
+});
