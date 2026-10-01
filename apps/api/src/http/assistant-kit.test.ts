@@ -147,7 +147,10 @@ const SECOND_QUESTION: ResolveAnswer = () =>
       optionsTruncated: false,
     },
     secret: {
-      byOption: { "opt-c": "entity-c", "opt-d": "entity-d" },
+      byOption: {
+        "opt-c": { kind: "record", entityId: "entity-c" },
+        "opt-d": { kind: "record", entityId: "entity-d" },
+      },
       toolName: "orders_create",
       input: { label: "which product" },
       target: { kind: "customer", query: "which product" },
@@ -170,7 +173,10 @@ const PAUSING_TOOLS: ToolSet = {
         optionsTruncated: false,
       },
       secret: {
-        byOption: { "opt-a": "entity-a", "opt-b": "entity-b" },
+        byOption: {
+          "opt-a": { kind: "record", entityId: "entity-a" },
+          "opt-b": { kind: "record", entityId: "entity-b" },
+        },
         toolName: "orders_create",
         input,
         target: { kind: "customer", query: input.label },
@@ -306,7 +312,7 @@ function harness(options?: {
   return { kit, app, history, queue, turns, bind: `${USER}:${COMPANY}` };
 }
 
-async function openPause(kit: Kit, bind: string) {
+async function openPause(kit: Kit, bind: string, withCreate = false) {
   const opened = await kit.open({
     conversationId: CONVERSATION,
     bind,
@@ -316,11 +322,26 @@ async function openPause(kit: Kit, bind: string) {
       options: [
         { optionId: "opt-a", label: "A" },
         { optionId: "opt-b", label: "B" },
+        ...(withCreate
+          ? [{ optionId: "opt-new", label: "New", kind: "create" as const }]
+          : []),
       ],
       optionsTruncated: false,
     },
     secret: {
-      byOption: { "opt-a": "entity-a", "opt-b": "entity-b" },
+      byOption: {
+        "opt-a": { kind: "record", entityId: "entity-a" },
+        "opt-b": { kind: "record", entityId: "entity-b" },
+        ...(withCreate
+          ? {
+              "opt-new": {
+                kind: "create" as const,
+                toolName: "customers_create",
+                input: { name: "New" },
+              },
+            }
+          : {}),
+      },
       toolName: "orders_create",
       input: { customerQuery: "two matches", items: [] },
       target: { kind: "customer", query: "two matches" },
@@ -1104,6 +1125,30 @@ describe("POST /assistant/kit/answer", () => {
     ).toBe("open");
   });
 
+  it("409 for a create option, and no tool runs before a producer lands", async () => {
+    let resolved = 0;
+    const counting: ResolveAnswer = (args) => {
+      resolved += 1;
+      return OK_RESOLVE(args);
+    };
+    const { kit, app, queue, bind } = harness({ resolveAnswer: counting });
+    const pause = await openPause(kit, bind, true);
+
+    const response = await post(
+      app,
+      ASSISTANT_KIT_ANSWER_PATH,
+      answerBody(pause.interactionId, pause.revision, "opt-new"),
+    );
+
+    expect(response.status).toBe(409);
+    expect(((await response.json()) as KitBody).status).toBe("unresolvable");
+    expect(resolved).toBe(0);
+    expect(queue.added).toEqual([]);
+    expect(
+      (await kit.peek({ conversationId: CONVERSATION, bind }))?.status,
+    ).toBe("open");
+  });
+
   it("409 for an option this question never offered, without spending the claim", async () => {
     const { kit, app, queue, bind } = harness();
     const pause = await openPause(kit, bind);
@@ -1130,6 +1175,33 @@ describe("POST /assistant/kit/answer", () => {
     expect(((await retry.json()) as KitBody).status).toBe("accepted");
     expect(queue.added).toHaveLength(1);
   });
+
+  it.each(["constructor", "toString", "valueOf", "__proto__"])(
+    "409 for the inherited key %s, with no tool run and the claim unspent",
+    async (optionId) => {
+      let resolved = 0;
+      const counting: ResolveAnswer = (args) => {
+        resolved += 1;
+        return OK_RESOLVE(args);
+      };
+      const { kit, app, queue, bind } = harness({ resolveAnswer: counting });
+      const pause = await openPause(kit, bind);
+
+      const response = await post(
+        app,
+        ASSISTANT_KIT_ANSWER_PATH,
+        answerBody(pause.interactionId, pause.revision, optionId),
+      );
+
+      expect(response.status).toBe(409);
+      expect(((await response.json()) as KitBody).status).toBe("unresolvable");
+      expect(resolved).toBe(0);
+      expect(queue.added).toEqual([]);
+      expect(
+        (await kit.peek({ conversationId: CONVERSATION, bind }))?.status,
+      ).toBe("open");
+    },
+  );
 
   it("410 for a session in another tenant, and the owner's card stays open", async () => {
     const { kit, app, bind } = harness();

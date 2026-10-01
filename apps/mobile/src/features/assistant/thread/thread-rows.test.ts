@@ -149,10 +149,12 @@ describe("assistantThreadRows", () => {
       revision: 1,
       subject: "Катя",
       options: [
-        { optionId: "opt-a", label: "Катя Самбука" },
-        { optionId: "opt-b", label: "Катя Іванова" },
+        { optionId: "opt-a", label: "Катя Самбука", kind: "record" },
+        { optionId: "opt-b", label: "Катя Іванова", kind: "record" },
       ],
       optionsTruncated: false,
+      nearest: false,
+      problem: undefined,
     });
   });
 
