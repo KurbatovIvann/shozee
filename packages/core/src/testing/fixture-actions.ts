@@ -12,6 +12,8 @@ import {
   companyMembers,
   domainEvents,
   type Database,
+  type ReadTx,
+  type Tx,
 } from "@showzy/db";
 import {
   fixtureCompanies,
@@ -24,10 +26,19 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { defineActionContract } from "../contract/define-action-contract.js";
-import { CoreInvariantError, NotFoundError } from "../errors/index.js";
+import {
+  CoreInvariantError,
+  NotFoundError,
+  PermissionDeniedError,
+  type ActionPreview,
+} from "../errors/index.js";
 import { defineEvent } from "../runtime/events/define-event.js";
 import { implementAction } from "../runtime/implement-action.js";
-import type { ResolvedTarget, TargetResolutionEnv } from "../runtime/types.js";
+import type {
+  ActionPreviewEnv,
+  ResolvedTarget,
+  TargetResolutionEnv,
+} from "../runtime/types.js";
 import { kitIdentities } from "./identities.js";
 import {
   resolveKitShareTarget,
@@ -61,6 +72,10 @@ const productInput = z.object({ productId: z.uuid() });
 const productOutput = z.object({ id: z.uuid(), name: z.string() });
 const crmInput = z.object({ customerId: z.uuid() });
 const crmOutput = z.object({ id: z.uuid(), companyId: z.uuid() });
+const publishOutput = z.object({
+  productId: z.uuid(),
+  published: z.boolean(),
+});
 const browseOutput = z.object({
   items: z.array(
     z.object({
@@ -165,6 +180,65 @@ async function resolveAnyProduct(
   return { companyId: product.companyId, resource: product };
 }
 
+function writableTx(db: Tx | ReadTx): Tx {
+  if (!("update" in db)) {
+    throw new CoreInvariantError(
+      "kitFixture.publishProduct expected the writable transaction",
+    );
+  }
+  return db;
+}
+
+function publishCard(name: string): ActionPreview {
+  return {
+    title: "Publish product",
+    lines: [{ label: "Product", value: name }],
+  };
+}
+
+async function previewScopedPublish(
+  input: { productId: string },
+  env: ActionPreviewEnv,
+): Promise<ActionPreview> {
+  if (env.companyId === null) {
+    throw new NotFoundError();
+  }
+  const rows = await env.tx
+    .select()
+    .from(fixtureProducts)
+    .where(
+      and(
+        eq(fixtureProducts.id, input.productId),
+        eq(fixtureProducts.companyId, env.companyId),
+      ),
+    )
+    .limit(1);
+  const row = rows[0];
+  if (row === undefined) {
+    throw new NotFoundError();
+  }
+  return publishCard(row.name);
+}
+
+async function previewLeakingForeignExistence(
+  input: { productId: string },
+  env: ActionPreviewEnv,
+): Promise<ActionPreview> {
+  const rows = await env.tx
+    .select()
+    .from(fixtureProducts)
+    .where(eq(fixtureProducts.id, input.productId))
+    .limit(1);
+  const row = rows[0];
+  if (row === undefined) {
+    throw new NotFoundError();
+  }
+  if (row.companyId !== env.companyId) {
+    throw new PermissionDeniedError();
+  }
+  return publishCard(row.name);
+}
+
 export function createCorrectFixtureActions() {
   return {
     staffGetProduct: implementAction(
@@ -198,6 +272,49 @@ export function createCorrectFixtureActions() {
             throw new NotFoundError();
           }
           return row;
+        },
+      },
+    ),
+    staffPublishProduct: implementAction(
+      defineActionContract({
+        ...contractDefaults,
+        name: "kitFixture.publishProduct",
+        errors: ["NOT_FOUND"],
+        description: "Staff publish of one product, gated by a preview card.",
+        principal: "staff",
+        input: productInput,
+        output: publishOutput,
+        permissions: ["kitFixture:manage"],
+        risk: "write",
+        idempotent: true,
+        audit: true,
+        timeout: 5_000,
+      }),
+      {
+        preview: previewScopedPublish,
+        auditTarget: (env) => ({
+          type: "product",
+          id: productInput.parse(env.input).productId,
+        }),
+        handler: async (input, ctx) => {
+          const rows = await writableTx(ctx.db)
+            .update(fixtureProducts)
+            .set({ published: true })
+            .where(
+              and(
+                eq(fixtureProducts.id, input.productId),
+                eq(fixtureProducts.companyId, ctx.companyId),
+              ),
+            )
+            .returning({
+              id: fixtureProducts.id,
+              published: fixtureProducts.published,
+            });
+          const row = rows[0];
+          if (row === undefined) {
+            throw new NotFoundError();
+          }
+          return { productId: row.id, published: row.published };
         },
       },
     ),
@@ -628,6 +745,14 @@ export function createLeakyFixtureActions(db: Database) {
         },
       },
     ),
+    staffPublishProduct: implementAction(correct.staffPublishProduct.contract, {
+      preview: previewLeakingForeignExistence,
+      auditTarget: (env) => ({
+        type: "product",
+        id: productInput.parse(env.input).productId,
+      }),
+      handler: correct.staffPublishProduct.handler,
+    }),
     shareGetDocument: implementAction(correct.shareGetDocument.contract, {
       resolveTarget: resolveLeakyKitShareTarget,
       handler: correct.shareGetDocument.handler,

@@ -3,8 +3,11 @@
  * fixture actions prove each suite passes on correct isolation and fails
  * on a seeded violation.
  */
+import { randomUUID } from "node:crypto";
+
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { ConfirmationRequiredError } from "../errors/index.js";
 import { effectiveCompanyId } from "../runtime/context/factories.js";
 import {
   createCorrectFixtureActions,
@@ -80,6 +83,11 @@ function correctCrossTenantCases() {
   return [
     isolationCase(
       correct.staffGetProduct,
+      { input: ownProduct },
+      { input: foreignProduct },
+    ),
+    isolationCase(
+      correct.staffPublishProduct,
       { input: ownProduct },
       { input: foreignProduct },
     ),
@@ -222,6 +230,39 @@ shareIsolationSuite(
   ],
 );
 
+describe("createTestKit ships the confirmation hook", () => {
+  it("issues a preview card and executes on the challenge", async () => {
+    const request = {
+      idempotencyKey: randomUUID(),
+      requireConfirmation: true as const,
+    };
+    const challenged = await kit
+      .invoke(correct.staffPublishProduct, ownProduct, {}, { request })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+    expect(challenged).toBeInstanceOf(ConfirmationRequiredError);
+    if (!(challenged instanceof ConfirmationRequiredError)) return;
+    expect(challenged.challenge.preview?.title).toBe("Publish product");
+    const output = await kit.invoke(
+      correct.staffPublishProduct,
+      ownProduct,
+      {},
+      {
+        request: {
+          ...request,
+          confirmationChallengeId: challenged.challenge.challengeId,
+        },
+      },
+    );
+    expect(output).toEqual({
+      productId: kitIdentities.products.published,
+      published: true,
+    });
+  });
+});
+
 describe("suites fail on seeded violations", () => {
   it("detects a staff handler that ignores company scope", async () => {
     await expect(
@@ -234,6 +275,19 @@ describe("suites fail on seeded violations", () => {
         ),
       ),
     ).rejects.toThrow(/expected foreign access/);
+  });
+
+  it("detects a preview that tells a foreign id apart from a missing one", async () => {
+    await expect(
+      runCrossTenantCase(
+        kit,
+        isolationCase(
+          leaky.staffPublishProduct,
+          { input: ownProduct },
+          { input: foreignProduct },
+        ),
+      ),
+    ).rejects.toThrow(/leaked existence/);
   });
 
   it("detects a customer resolver that skips ownership", async () => {

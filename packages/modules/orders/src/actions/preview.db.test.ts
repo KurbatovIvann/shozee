@@ -1,10 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import {
-  createConfirmationHook,
-  createInMemoryConfirmationStore,
-  type ActionPipelineDeps,
-} from "@showzy/core";
 import { ConfirmationRequiredError, NotFoundError } from "@showzy/core/errors";
 import {
   createTestKit,
@@ -42,7 +37,6 @@ const fixtures = {
 };
 
 let kit: TestKit;
-let confirming: ActionPipelineDeps;
 
 function previewOf(error: unknown) {
   expect(error).toBeInstanceOf(ConfirmationRequiredError);
@@ -70,7 +64,6 @@ async function previewCard(
 
 function previewOptions() {
   return {
-    deps: confirming,
     request: { requireConfirmation: true as const },
   };
 }
@@ -86,15 +79,6 @@ async function rejection(run: () => Promise<unknown>): Promise<unknown> {
 
 beforeAll(async () => {
   kit = await createTestKit();
-  confirming = {
-    ...kit.pipeline,
-    hooks: {
-      ...kit.pipeline.hooks,
-      confirmation: createConfirmationHook({
-        store: createInMemoryConfirmationStore(),
-      }),
-    },
-  };
   const companyA = kitIdentities.companies.a;
   const companyB = kitIdentities.companies.b;
 
@@ -233,7 +217,7 @@ describe("orders preview cards (SHO-750)", () => {
           comment: ORDER_COMMENT,
         },
         {},
-        { deps: confirming, request: { requireConfirmation: true } },
+        { request: { requireConfirmation: true } },
       ),
     );
 
@@ -268,7 +252,7 @@ describe("orders preview cards (SHO-750)", () => {
           ],
         },
         {},
-        { deps: confirming, request: { requireConfirmation: true } },
+        { request: { requireConfirmation: true } },
       ),
     );
 

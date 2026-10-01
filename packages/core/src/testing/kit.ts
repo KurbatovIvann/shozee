@@ -48,6 +48,8 @@ import {
   type SystemScopeInput,
 } from "../runtime/context/factories.js";
 import type { ActionChannel, ActionCtx } from "../runtime/context/types.js";
+import { createConfirmationHook } from "../runtime/confirmation/create-confirmation-hook.js";
+import { createInMemoryConfirmationStore } from "../runtime/confirmation/store.js";
 import { createIdempotencyHook } from "../runtime/idempotency/create-idempotency-hook.js";
 import type { ImplementedAction } from "../runtime/implement-action.js";
 import type { JobEnvelope, JobPort } from "../runtime/jobs/enqueue.js";
@@ -201,6 +203,9 @@ function kitProtocolHooks(
   return {
     jobs,
     audit: createAuditHook({ db: database.runtime.db, logger: silentLogger }),
+    confirmation: createConfirmationHook({
+      store: createInMemoryConfirmationStore(),
+    }),
     idempotency: createIdempotencyHook({ db: database.runtime.db }),
     rateLimit: createRateLimitHook({
       store: createInMemoryRateLimitStore(),

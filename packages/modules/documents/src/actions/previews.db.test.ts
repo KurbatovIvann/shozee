@@ -1,11 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import {
-  createConfirmationHook,
-  createInMemoryConfirmationStore,
-  type ActionPipelineDeps,
-  type ImplementedAction,
-} from "@showzy/core";
+import { type ImplementedAction } from "@showzy/core";
 import {
   ConfirmationRequiredError,
   NotFoundError,
@@ -70,18 +65,6 @@ const buyerSnapshot = {
 
 let kit: TestKit;
 
-function confirmationPipeline(target: TestKit): ActionPipelineDeps {
-  return {
-    ...target.pipeline,
-    hooks: {
-      ...target.pipeline.hooks,
-      confirmation: createConfirmationHook({
-        store: createInMemoryConfirmationStore(),
-      }),
-    },
-  };
-}
-
 async function previewOf<TInput extends z.ZodType, TOutput extends z.ZodType>(
   action: ImplementedAction<TInput, TOutput>,
   input: unknown,
@@ -92,7 +75,6 @@ async function previewOf<TInput extends z.ZodType, TOutput extends z.ZodType>(
       input,
       {},
       {
-        deps: confirmationPipeline(kit),
         request: { requireConfirmation: true },
       },
     )
@@ -123,7 +105,6 @@ async function refusalOf<TInput extends z.ZodType, TOutput extends z.ZodType>(
       input,
       {},
       {
-        deps: confirmationPipeline(kit),
         request: { requireConfirmation: true },
       },
     )

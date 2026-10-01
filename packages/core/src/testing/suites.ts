@@ -16,14 +16,25 @@ import type { z } from "zod";
 
 import { SHARE_DURABLE_ACTOR } from "../runtime/context/types.js";
 import {
+  CONFIRMABLE_RISKS,
+  isHumanPrincipal,
+} from "../contract/confirmation-preconditions.js";
+import {
+  ConfirmationRequiredError,
   NotFoundError,
   PermissionDeniedError,
   RateLimitError,
 } from "../errors/index.js";
 import type { Job } from "../jobs/define-job.js";
+import { createConfirmationHook } from "../runtime/confirmation/create-confirmation-hook.js";
+import { createInMemoryConfirmationStore } from "../runtime/confirmation/store.js";
 import type { ImplementedAction } from "../runtime/implement-action.js";
 import { executeJobAction } from "../runtime/jobs/execute-job-action.js";
-import type { RateLimitHook } from "../runtime/pipeline/types.js";
+import type {
+  ActionPipelineDeps,
+  PipelineRequestMeta,
+  RateLimitHook,
+} from "../runtime/pipeline/types.js";
 import {
   createRateLimitHook,
   rateLimitDefaults,
@@ -40,6 +51,7 @@ import {
   buildJobEnvelope,
   createCapturingLogger,
   invokeAction,
+  type InvokeOptions,
   type IsolationActor,
   type TestKit,
 } from "./kit.js";
@@ -89,7 +101,9 @@ export function browseCase<
   return { action, ...extras };
 }
 
-function isolationDenied(error: unknown): boolean {
+function isolationDenied(
+  error: unknown,
+): error is NotFoundError | PermissionDeniedError {
   return (
     error instanceof NotFoundError || error instanceof PermissionDeniedError
   );
@@ -164,6 +178,148 @@ function assertAccountDidNotLeak(
   }
 }
 
+function previewGated(action: SuiteAction): boolean {
+  if (action.contract.requiresConfirmation) {
+    return true;
+  }
+  if (action.preview === undefined) {
+    return false;
+  }
+  return (
+    CONFIRMABLE_RISKS.includes(action.contract.risk) &&
+    isHumanPrincipal(action.contract.principal) &&
+    action.contract.idempotent
+  );
+}
+
+function gateRequest(action: SuiteAction): Partial<PipelineRequestMeta> {
+  return {
+    idempotencyKey: randomUUID(),
+    ...(action.contract.requiresConfirmation
+      ? {}
+      : { requireConfirmation: true as const }),
+  };
+}
+
+function onlyTheReferenceDiffers(c: CrossTenantCase): boolean {
+  return (
+    c.own.userId === c.foreign.userId &&
+    c.own.companyId === c.foreign.companyId &&
+    c.own.serviceName === c.foreign.serviceName
+  );
+}
+
+function gatedDeps(kit: TestKit): ActionPipelineDeps {
+  return {
+    ...kit.pipeline,
+    hooks: {
+      ...kit.pipeline.hooks,
+      confirmation: createConfirmationHook({
+        store: createInMemoryConfirmationStore(),
+      }),
+    },
+  };
+}
+
+async function rejectionOf(
+  kit: TestKit,
+  action: SuiteAction,
+  call: IsolationInvocation,
+  options: InvokeOptions,
+  whenItResolves: string,
+): Promise<unknown> {
+  return invoke(kit, action, call, options).then(
+    () => {
+      throw new Error(whenItResolves);
+    },
+    (caught: unknown) => caught,
+  );
+}
+
+async function invokeThroughGate(
+  kit: TestKit,
+  action: SuiteAction,
+  call: IsolationInvocation,
+): Promise<void> {
+  const name = action.contract.name;
+  const deps = gatedDeps(kit);
+  const request = gateRequest(action);
+  const challenged = await rejectionOf(
+    kit,
+    action,
+    call,
+    { deps, request },
+    `expected "${name}" to answer the first invocation with a confirmation card`,
+  );
+  if (!(challenged instanceof ConfirmationRequiredError)) {
+    throw challenged;
+  }
+  await invoke(kit, action, call, {
+    deps,
+    request: {
+      ...request,
+      confirmationChallengeId: challenged.challenge.challengeId,
+    },
+  });
+}
+
+async function expectPreviewRefusesForeignAsMissing(
+  kit: TestKit,
+  c: CrossTenantCase,
+): Promise<void> {
+  const name = c.action.contract.name;
+  const atPreview = await rejectionOf(
+    kit,
+    c.action,
+    c.foreign,
+    { deps: gatedDeps(kit), request: gateRequest(c.action) },
+    denyMessage(name),
+  );
+  if (atPreview instanceof ConfirmationRequiredError) {
+    throw new Error(
+      leakMessage(
+        name,
+        "existence: a foreign reference got a confirmation card",
+      ),
+    );
+  }
+  if (!isolationDenied(atPreview)) {
+    throw atPreview;
+  }
+  if (onlyTheReferenceDiffers(c) && !(atPreview instanceof NotFoundError)) {
+    throw new Error(
+      leakMessage(
+        name,
+        `existence: the preview refused a foreign reference with ${atPreview.code} where a missing one is NOT_FOUND`,
+      ),
+    );
+  }
+  if (c.action.contract.requiresConfirmation) {
+    return;
+  }
+  const atExecution = await rejectionOf(
+    kit,
+    c.action,
+    c.foreign,
+    { request: { idempotencyKey: randomUUID() } },
+    denyMessage(name),
+  );
+  if (!isolationDenied(atExecution)) {
+    throw atExecution;
+  }
+  if (
+    atPreview.code !== atExecution.code ||
+    atPreview.clientMessage !== atExecution.clientMessage
+  ) {
+    throw new Error(
+      leakMessage(
+        name,
+        `existence: the preview refused a foreign reference with ${atPreview.code} but execution refuses it with ${atExecution.code}`,
+      ),
+    );
+  }
+}
+
 async function expectForeignDenied(
   actionName: string,
   run: () => Promise<unknown>,
@@ -211,7 +367,12 @@ export async function runCrossTenantCase(
     return;
   }
 
-  await invoke(kit, action, c.own);
+  const gated = previewGated(action);
+  if (gated) {
+    await invokeThroughGate(kit, action, c.own);
+  } else {
+    await invoke(kit, action, c.own);
+  }
 
   if (principal === "account") {
     try {
@@ -226,8 +387,15 @@ export async function runCrossTenantCase(
     }
   }
 
+  if (gated && action.preview !== undefined) {
+    await expectPreviewRefusesForeignAsMissing(kit, c);
+    return;
+  }
+
   await expectForeignDenied(action.contract.name, () =>
-    invoke(kit, action, c.foreign),
+    gated
+      ? invokeThroughGate(kit, action, c.foreign)
+      : invoke(kit, action, c.foreign),
   );
 }
 

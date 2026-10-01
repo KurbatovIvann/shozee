@@ -789,9 +789,14 @@ Exported from `packages/core/testing`, used by every module (this is how
   (they do not deny a "foreign" tenant — isolation is that a locked row's
   derived keys do not mutate another company's objects, proven in the
   module tests); account user A vs user B's companies/personal data; or
-  share token A vs document/resource of token B. Every module
-  instantiates the relevant case for each action — omission fails the
-  contract check.
+  share token A vs document/resource of token B. A confirmation-gated
+  action runs the own case through the two-step gate (challenge → confirm)
+  on the suite's own `createConfirmationHook`, so a module that swaps the
+  kit's hook cannot disable the check; when the action binds `preview`,
+  the foreign reference must be refused at the preview step with the same
+  code and `clientMessage` a missing one gets at execution (§7). Every
+  module instantiates the relevant case for each action — omission fails
+  the contract check.
 - `publicProjectionSuite(actions)` — for `publicScope: globalProjection`:
   unpublished rows hidden, response field allowlist, no CRM/domain side
   effects, no resolver/cross-module call, anonymous logging, and IP-HMAC rate
@@ -931,6 +936,7 @@ does not apply — fails the check.
 
 | Date | Change | Why | Reported by |
 | --- | --- | --- | --- |
+| 2026-10-01 | §12: `createTestKit` composes a confirmation hook over an in-memory store, and `crossTenantSuite` drives the two-step gate — the §7 existence-leak rule is now an inherited test for every preview action | Guardian on SHO-785: no `requiresConfirmation`/preview action could run through the suite, so the rule had no inherited test | SHO-790 |
 | 2026-10-01 | §7: `preview` receives `ActionPreviewEnv` — a `ReadTx` over a read-only transaction under the §4 statement timeout and `ctx.call` of `risk: "read"` callees, with the `target` from the in-transaction resolver; the existence-leak rule makes a missing or foreign id refuse exactly as the handler would, and an audited callee's §8 row is the one row a preview leaves | ADR-0050: a card cannot show resolved names, amounts or «old → new» from validated input alone | SHO-785 |
 | 2026-09-30 | §2/§7: execution-time `requireConfirmation` request meta gates one attempt of an idempotent human-principal `write`/`high` action; `preview` callback returns the redacted structured card and may stand in for `confirmationSummary` | ADR-0050: every assistant write must pause on a card core verifies, without a second approval protocol | SHO-745 |
 | 2026-09-15 | §6/§12: `jobIsolationCase` global branch (global job → global action, no company, effect and audit); `cleanupExpiredIdempotencyKeys` takes `Pick<Database, "delete">`; job declarations from module barrels plus app-owned jobs | Owner decision: a global job without fan-out had no suite case, and cleanup must run in its action's transaction | SHO-650 |
