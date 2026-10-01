@@ -7,8 +7,6 @@ import {
 
 export const ENTITY_LOOKUP_OPTIONS_MAX = 20;
 
-export type { EntityLookupTarget };
-
 export type EntityLookupOption = {
   readonly id: string;
   readonly label: string;
