@@ -150,6 +150,42 @@ describe("Шо smoke", () => {
       },
     ]);
   });
+
+  it("reads an order said after «и сделай» as a second command of the chain", async () => {
+    sho ??= await loadSho();
+    const result = await sho.run(
+      { raw: "Создай клиента Анна Левчук и сделай ей заказ пять эклеров" },
+      { context: CONTEXT },
+    );
+    expect(result.commands.map((command) => command.action)).toEqual([
+      "customers.createCustomer",
+      "orders.create",
+    ]);
+    const [created, order] = result.commands;
+    expect(created?.ready).toBe(true);
+    expect(order?.refPrevious).toEqual({ customer: 0 });
+    expect(order?.ready).toBe(false);
+  });
+
+  it("blocks a write's card while an order said with it is left unread", async () => {
+    sho ??= await loadSho();
+    const result = await sho.run(
+      { raw: "Онови телефон Олені 0671234567 і зроби переоблік трьох еклерів" },
+      { context: CONTEXT },
+    );
+    expect(result.commands).toHaveLength(1);
+    const [command] = result.commands;
+    expect(command?.action).toBe("customers.updateCustomer");
+    expect(command?.ready).toBe(false);
+    expect(command?.needs).toEqual([
+      {
+        path: "text",
+        reason: "unparsed",
+        blocking: true,
+        span: { text: "зроби переоблік трьох еклерів" },
+      },
+    ]);
+  });
 });
 
 describe("loadSho refusals", () => {
