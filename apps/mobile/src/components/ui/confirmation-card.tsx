@@ -10,6 +10,7 @@ import { Sheet } from "./sheet";
 export function ConfirmationCard(props: {
   readonly visible: boolean;
   readonly view: ConfirmationCardView | null;
+  readonly confirmDisabled: boolean;
   readonly copy: ConfirmationCardCopy;
   readonly onChoice: (choice: ConfirmDialogChoice) => void;
   readonly onHidden: () => void;
@@ -45,6 +46,7 @@ export function ConfirmationCard(props: {
               label={props.copy.confirm}
               variant="primary"
               fullWidth
+              disabled={props.confirmDisabled}
               onPress={() => {
                 props.onChoice("confirm");
               }}

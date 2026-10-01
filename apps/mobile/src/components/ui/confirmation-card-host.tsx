@@ -2,7 +2,6 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useRef,
   useState,
   type ReactNode,
@@ -15,6 +14,7 @@ import { ConfirmationCard } from "./confirmation-card";
 import {
   CLOSED_CONFIRMATION_CARD,
   createConfirmationCardMachine,
+  scheduleConfirmArmWithTimeout,
   type ConfirmationCardMachine,
   type ConfirmationCardState,
 } from "./confirmation-card.machine";
@@ -36,7 +36,11 @@ export function ConfirmationCardProvider(props: {
   );
   const machineRef = useRef<ConfirmationCardMachine | null>(null);
   if (machineRef.current === null) {
-    machineRef.current = createConfirmationCardMachine({ onState: setState });
+    machineRef.current = createConfirmationCardMachine({
+      onState: setState,
+      armDelayMs: SHEET_MS,
+      schedule: scheduleConfirmArmWithTimeout,
+    });
   }
   const machine = machineRef.current;
 
@@ -59,25 +63,13 @@ export function ConfirmationCardProvider(props: {
     machine.clearCard();
   }, [machine]);
 
-  const shownCard = state.open ? state.card : null;
-  useEffect(() => {
-    if (shownCard === null) {
-      return;
-    }
-    const armTimer = setTimeout(() => {
-      machine.armConfirm(shownCard);
-    }, SHEET_MS);
-    return () => {
-      clearTimeout(armTimer);
-    };
-  }, [machine, shownCard]);
-
   return (
     <ConfirmationCardContext.Provider value={present}>
       {props.children}
       <ConfirmationCard
         visible={state.open}
         view={state.card}
+        confirmDisabled={!state.confirmArmed}
         copy={copy}
         onChoice={choose}
         onHidden={clearCard}
