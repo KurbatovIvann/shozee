@@ -422,7 +422,9 @@ async function setPeerReadDenied(
 ): Promise<void> {
   await database.runtime.db
     .update(companyMembers)
-    .set({ permissions: { granted: [], denied: denied ? ["previewPeer:read"] : [] } })
+    .set({
+      permissions: { granted: [], denied: denied ? ["previewPeer:read"] : [] },
+    })
     .where(
       and(
         eq(companyMembers.companyId, companyA),
@@ -731,15 +733,21 @@ describe("preview reads (core.md §7, ADR-0050)", () => {
   it("re-runs the caller-gated card on confirm and refuses a permission revoked inside the window", async () => {
     const store = createInMemoryConfirmationStore();
     const idempotencyKey = randomUUID();
-    const presented = await card(nameGatedPreview, { store, idempotencyKey });
-    expect(cardLine(presented, "Current name")).toBe(companyAName);
-    const challengeId = (presented as ConfirmationRequiredError).challenge
-      .challengeId;
+    await setPeerReadDenied(borysId, false);
     try {
-      await setPeerReadDenied(annaId, true);
+      const presented = await card(nameGatedPreview, {
+        store,
+        idempotencyKey,
+        userId: borysId,
+      });
+      expect(cardLine(presented, "Current name")).toBe(companyAName);
+      const challengeId = (presented as ConfirmationRequiredError).challenge
+        .challengeId;
+      await setPeerReadDenied(borysId, true);
       const confirmed = await card(nameGatedPreview, {
         store,
         idempotencyKey,
+        userId: borysId,
         confirmationChallengeId: challengeId,
       });
       expect(confirmed).toBeInstanceOf(ConfirmationRequiredError);
@@ -747,7 +755,7 @@ describe("preview reads (core.md §7, ADR-0050)", () => {
       expect(fresh.challenge.challengeId).not.toBe(challengeId);
       expect(cardLine(confirmed, "Current name")).toBe(REDACTED_NAME);
     } finally {
-      await setPeerReadDenied(annaId, false);
+      await setPeerReadDenied(borysId, true);
     }
   });
 
