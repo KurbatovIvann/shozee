@@ -7,7 +7,7 @@ import {
 export const ENTITY_LOOKUP_OPTIONS_MAX = 20;
 
 export type EntityLookupTarget = {
-  readonly kind: "customer" | "product";
+  readonly kind: "customer";
   readonly query: string;
 };
 

@@ -11,26 +11,13 @@
  *   `packages/contract/src/client/money-wire.ts` until validation owns it.
  */
 import { defineActionContract } from "@showzy/core/contract";
-import {
-  ENTITY_REF_EXACTLY_ONE_MESSAGE,
-  entityRefQuerySchema,
-} from "@showzy/validation/entity-ref";
 import { z } from "zod";
 
 import { moneyWireSchema, productStatusSchema } from "../wire.contract.js";
 
-export const getProductInputSchema = z
-  .object({
-    productId: z.uuid().optional(),
-    productQuery: entityRefQuerySchema.optional(),
-  })
-  .refine(
-    (input) =>
-      (input.productId === undefined) !== (input.productQuery === undefined),
-    { message: ENTITY_REF_EXACTLY_ONE_MESSAGE },
-  );
-
-export type GetProductInput = z.output<typeof getProductInputSchema>;
+export const getProductInputSchema = z.object({
+  productId: z.uuid(),
+});
 
 export const getProductVariantViewSchema = z.object({
   id: z.uuid(),
@@ -55,7 +42,7 @@ export const getProductOutputSchema = z.object({
 export const getProductContract = defineActionContract({
   name: "catalog.getProduct",
   description:
-    "Return one product in the staff member's active company, including every variant (archived variants included, each with status and a nullable base-price override) and the ordered image fileId list. Takes exactly one of a canonical productId or a human productQuery (product name); the query matches active and archived products alike, and a product with no active variants still opens. A unique exact match (or a unique name in another Ukrainian case) returns that product. Several exact matches fail with a conflict carrying the matching products as options. No match fails with not-found carrying the nearest products, which is empty when nothing is near. Missing or foreign-company products fail with not-found. Clients fetch display URLs via files.getDownloadUrl — this action never returns URLs or object keys.",
+    "Return one product in the staff member's active company, including every variant (archived variants included, each with status and a nullable base-price override) and the ordered image fileId list. Missing or foreign-company products fail with not-found. Clients fetch display URLs via files.getDownloadUrl — this action never returns URLs or object keys.",
   principal: "staff",
   transport: "client",
   input: getProductInputSchema,
@@ -68,7 +55,7 @@ export const getProductContract = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
-  errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
+  errors: ["VALIDATION", "NOT_FOUND"],
   audit: false,
   timeout: 5_000,
 });

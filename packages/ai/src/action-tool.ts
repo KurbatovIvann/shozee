@@ -9,11 +9,6 @@ import { jsonSchema, tool, type Tool, type ToolSet } from "ai";
 import { anthropicStaffProvider } from "./provider/anthropic.js";
 import type { StaffProviderAdapter } from "./provider/types.js";
 import {
-  CATALOG_GET_PRODUCT_ACTION_NAME,
-  CATALOG_GET_PRODUCT_TOOL_NAME,
-  catalogGetProductFacadeTools,
-} from "./tool-facades/catalog-get-product.js";
-import {
   CATALOG_LIST_PRODUCTS_ACTION_NAME,
   CATALOG_LIST_PRODUCTS_TOOL_NAME,
   catalogListProductsFacadeTools,
@@ -82,7 +77,6 @@ export const STAFF_ASSISTANT_HOT_ACTION_NAMES = [
   "orders.get",
   ORDERS_CREATE_ACTION_NAME,
   CATALOG_LIST_PRODUCTS_ACTION_NAME,
-  CATALOG_GET_PRODUCT_ACTION_NAME,
   PRICING_LIST_PRICE_LISTS_ACTION_NAME,
   CUSTOMERS_LIST_CUSTOMERS_ACTION_NAME,
   CUSTOMERS_GET_CUSTOMER_ACTION_NAME,
@@ -102,8 +96,6 @@ export {
 } from "./provider/anthropic.js";
 
 export {
-  CATALOG_GET_PRODUCT_ACTION_NAME,
-  CATALOG_GET_PRODUCT_TOOL_NAME,
   CATALOG_LIST_PRODUCTS_ACTION_NAME,
   CATALOG_LIST_PRODUCTS_TOOL_NAME,
   CUSTOMERS_GET_CUSTOMER_ACTION_NAME,
@@ -144,7 +136,6 @@ const HOT_FACADE_FACTORIES: Readonly<Record<string, FacadeToolsFactory>> = {
   [ORDERS_LIST_ACTION_NAME]: ordersListFacadeTools,
   [ORDERS_CREATE_ACTION_NAME]: ordersCreateFacadeTools,
   [CATALOG_LIST_PRODUCTS_ACTION_NAME]: catalogListProductsFacadeTools,
-  [CATALOG_GET_PRODUCT_ACTION_NAME]: catalogGetProductFacadeTools,
   [PRICING_LIST_PRICE_LISTS_ACTION_NAME]: pricingListPriceListsFacadeTools,
   [CUSTOMERS_LIST_CUSTOMERS_ACTION_NAME]: customersListCustomersFacadeTools,
   [CUSTOMERS_GET_CUSTOMER_ACTION_NAME]: customersGetCustomerFacadeTools,
@@ -166,7 +157,6 @@ const HOT_FACADE_TOOL_NAMES: Readonly<Record<string, readonly string[]>> = {
   ],
   [ORDERS_CREATE_ACTION_NAME]: [ORDERS_CREATE_TOOL_NAME],
   [CATALOG_LIST_PRODUCTS_ACTION_NAME]: [CATALOG_LIST_PRODUCTS_TOOL_NAME],
-  [CATALOG_GET_PRODUCT_ACTION_NAME]: [CATALOG_GET_PRODUCT_TOOL_NAME],
   [PRICING_LIST_PRICE_LISTS_ACTION_NAME]: [PRICING_LIST_PRICE_LISTS_TOOL_NAME],
   [CUSTOMERS_LIST_CUSTOMERS_ACTION_NAME]: [CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME],
   [CUSTOMERS_GET_CUSTOMER_ACTION_NAME]: [CUSTOMERS_GET_CUSTOMER_TOOL_NAME],

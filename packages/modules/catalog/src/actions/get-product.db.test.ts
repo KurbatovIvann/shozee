@@ -20,10 +20,6 @@ import {
 } from "@showzy/db/schema/catalog";
 import { companyMembers } from "@showzy/db/schema/companies";
 import { files } from "@showzy/db/schema/files";
-import {
-  EntityLookupAmbiguousError,
-  EntityLookupUnmatchedError,
-} from "@showzy/module-kit/entity-lookup";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { getProduct } from "./get-product.js";
@@ -32,8 +28,6 @@ const fixtures = {
   productA: randomUUID(),
   productAEmpty: randomUUID(),
   productB: randomUUID(),
-  productTwinOne: randomUUID(),
-  productTwinTwo: randomUUID(),
   variantLive: randomUUID(),
   variantArchived: randomUUID(),
   fileSecond: randomUUID(),
@@ -123,19 +117,6 @@ beforeAll(async () => {
     companyId: kitIdentities.companies.b,
     name: "Bravo",
     basePriceMinor: 2200n,
-  });
-
-  await insertProduct({
-    id: fixtures.productTwinOne,
-    companyId: kitIdentities.companies.a,
-    name: "Twin Cake",
-    basePriceMinor: 900n,
-  });
-  await insertProduct({
-    id: fixtures.productTwinTwo,
-    companyId: kitIdentities.companies.a,
-    name: "Twin Cake",
-    basePriceMinor: 1100n,
   });
 
   await insertVariant({
@@ -302,93 +283,5 @@ describe("catalog.getProduct", () => {
     ) {
       expect(missingError.clientMessage).toBe(foreignError.clientMessage);
     }
-  });
-});
-
-async function productRefusalOf(query: string): Promise<unknown> {
-  return await kit.invoke(getProduct, { productQuery: query }).then(
-    () => {
-      throw new Error(`expected a refusal for "${query}"`);
-    },
-    (error: unknown) => error,
-  );
-}
-
-describe("catalog.getProduct by human reference", () => {
-  it("resolves a unique product name", async () => {
-    await expect(
-      kit.invoke(getProduct, { productQuery: "Alpha" }),
-    ).resolves.toMatchObject({ id: fixtures.productA });
-  });
-
-  it("opens an archived product with no active variants", async () => {
-    await expect(
-      kit.invoke(getProduct, { productQuery: "Bare" }),
-    ).resolves.toMatchObject({
-      id: fixtures.productAEmpty,
-      status: "archived",
-      variants: [],
-    });
-  });
-
-  it("refuses several exact matches with the matching products as options", async () => {
-    const error = await productRefusalOf("Twin Cake");
-    expect(error).toBeInstanceOf(EntityLookupAmbiguousError);
-    if (!(error instanceof EntityLookupAmbiguousError)) {
-      return;
-    }
-    expect(error.target).toEqual({ kind: "product", query: "Twin Cake" });
-    expect(error.options.map((option) => option.id).toSorted()).toEqual(
-      [fixtures.productTwinOne, fixtures.productTwinTwo].toSorted(),
-    );
-    expect(error.optionsTruncated).toBe(false);
-  });
-
-  it("refuses a partial name as not found with the nearest products", async () => {
-    const error = await productRefusalOf("Alph");
-    expect(error).toBeInstanceOf(EntityLookupUnmatchedError);
-    if (!(error instanceof EntityLookupUnmatchedError)) {
-      return;
-    }
-    expect(error.options.map((option) => option.id)).toEqual([
-      fixtures.productA,
-    ]);
-  });
-
-  it("refuses an unknown name as not found with nothing near", async () => {
-    const error = await productRefusalOf("Zzyzx Nobody");
-    expect(error).toBeInstanceOf(EntityLookupUnmatchedError);
-    if (!(error instanceof EntityLookupUnmatchedError)) {
-      return;
-    }
-    expect(error.options).toEqual([]);
-  });
-
-  it("refuses another company's product name as missing", async () => {
-    await expect(
-      kit.invoke(getProduct, { productQuery: "Bravo" }),
-    ).rejects.toBeInstanceOf(NotFoundError);
-  });
-
-  it("denies a query for staff without products:view", async () => {
-    await expect(
-      kit.invoke(
-        getProduct,
-        { productQuery: "Alpha" },
-        { userId: clerkUserId, companyId: kitIdentities.companies.a },
-      ),
-    ).rejects.toBeInstanceOf(PermissionDeniedError);
-  });
-
-  it("rejects an input with both references and one with neither", async () => {
-    await expect(
-      kit.invoke(getProduct, {
-        productId: fixtures.productA,
-        productQuery: "Alpha",
-      }),
-    ).rejects.toBeInstanceOf(ValidationError);
-    await expect(kit.invoke(getProduct, {})).rejects.toBeInstanceOf(
-      ValidationError,
-    );
   });
 });

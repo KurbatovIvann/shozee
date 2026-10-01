@@ -43,7 +43,6 @@ export const CONFIRMATION_TTL_MS = CHALLENGE_TTL_MS;
  */
 export type ChoicePickerTarget =
   | { readonly kind: "customer"; readonly query: string }
-  | { readonly kind: "product"; readonly query: string }
   | {
       readonly kind: "order_line_product";
       readonly lineIndex: number;

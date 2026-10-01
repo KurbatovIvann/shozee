@@ -42,10 +42,6 @@ const catalogConflictTargetSchema = z.union([
     query: z.string().min(1),
   }),
   z.strictObject({
-    kind: z.literal("product"),
-    query: z.string().min(1),
-  }),
-  z.strictObject({
     kind: z.literal("order_line_product"),
     lineIndex: z.number().int().nonnegative(),
     query: z.string().min(1),
@@ -114,9 +110,10 @@ export function catalogPickerConflictExtrasFromError(
   return parsed.success ? parsed.data : undefined;
 }
 
-export type EntityLookupTarget =
-  | { readonly kind: "customer"; readonly query: string }
-  | { readonly kind: "product"; readonly query: string };
+export type EntityLookupTarget = {
+  readonly kind: "customer";
+  readonly query: string;
+};
 
 export class EntityLookupConflictError extends ConflictError {
   readonly reason: ChoicePickerReason;

@@ -2860,7 +2860,7 @@
     "/catalog/getProduct": {
       "post": {
         "operationId": "catalog.getProduct",
-        "summary": "Return one product in the staff member's active company, including every variant (archived variants included, each with status and a nullable base-price override) and the ordered image fileId list. Takes exactly one of a canonical productId or a human productQuery (product name); the query matches active and archived products alike, and a product with no active variants still opens. A unique exact match (or a unique name in another Ukrainian case) returns that product. Several exact matches fail with a conflict carrying the matching products as options. No match fails with not-found carrying the nearest products, which is empty when nothing is near. Missing or foreign-company products fail with not-found. Clients fetch display URLs via files.getDownloadUrl — this action never returns URLs or object keys.",
+        "summary": "Return one product in the staff member's active company, including every variant (archived variants included, each with status and a nullable base-price override) and the ordered image fileId list. Missing or foreign-company products fail with not-found. Clients fetch display URLs via files.getDownloadUrl — this action never returns URLs or object keys.",
         "requestBody": {
           "required": true,
           "content": {
@@ -2871,13 +2871,11 @@
                   "productId": {
                     "type": "string",
                     "format": "uuid"
-                  },
-                  "productQuery": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 100
                   }
-                }
+                },
+                "required": [
+                  "productId"
+                ]
               }
             }
           }
@@ -3430,31 +3428,6 @@
                         "status",
                         "message",
                         "data"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "defined": {
-                          "const": true
-                        },
-                        "code": {
-                          "const": "CONFLICT"
-                        },
-                        "status": {
-                          "const": 409
-                        },
-                        "message": {
-                          "type": "string",
-                          "default": "Conflict"
-                        },
-                        "data": {}
-                      },
-                      "required": [
-                        "defined",
-                        "code",
-                        "status",
-                        "message"
                       ]
                     },
                     {

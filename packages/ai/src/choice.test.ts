@@ -25,18 +25,18 @@ describe("catalogPickerConflictExtrasSchema", () => {
   it("refuses a picker with neither record options nor a create option", () => {
     const parsed = catalogPickerConflictExtrasSchema.safeParse({
       reason: "unmatched_query",
-      target: { kind: "product", query: "Наполеон" },
+      target: { kind: "customer", query: "Катя" },
       options: [],
       optionsTruncated: false,
     });
     expect(parsed.success).toBe(false);
   });
 
-  it("accepts a product target with record options and no create option", () => {
+  it("accepts record options with no create option", () => {
     const parsed = catalogPickerConflictExtrasSchema.safeParse({
       reason: "ambiguous",
-      target: { kind: "product", query: "Наполеон" },
-      options: [{ id: optionId, label: "Наполеон класичний" }],
+      target: { kind: "customer", query: "Катя" },
+      options: [{ id: optionId, label: "Катя Самбука (…1111)" }],
       optionsTruncated: false,
     });
     expect(parsed.success).toBe(true);
@@ -65,14 +65,14 @@ describe("catalogPickerConflictExtrasFromError", () => {
   it("omits create when the picker only offers records", () => {
     const error = new EntityLookupConflictError({
       reason: "ambiguous",
-      target: { kind: "product", query: "Наполеон" },
-      options: [{ id: optionId, label: "Наполеон класичний" }],
+      target: { kind: "customer", query: "Катя" },
+      options: [{ id: optionId, label: "Катя Самбука (…1111)" }],
       optionsTruncated: true,
-      clientMessage: 'Select a product matching "Наполеон".',
+      clientMessage: 'Select a customer matching "Катя".',
     });
     const extras = catalogPickerConflictExtrasFromError(error);
     expect(extras?.create).toBeUndefined();
-    expect(extras?.target).toEqual({ kind: "product", query: "Наполеон" });
+    expect(extras?.target).toEqual({ kind: "customer", query: "Катя" });
     expect(extras?.optionsTruncated).toBe(true);
   });
 

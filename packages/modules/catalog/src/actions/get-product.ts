@@ -1,31 +1,16 @@
-import { implementAction, type ActionCtx } from "@showzy/core";
-import { CoreInvariantError, NotFoundError } from "@showzy/core/errors";
+import { implementAction } from "@showzy/core";
+import { NotFoundError } from "@showzy/core/errors";
 import {
   productMedia,
   products,
   productVariants,
 } from "@showzy/db/schema/catalog";
 import { moneyToCanonical } from "@showzy/module-kit/canonical";
-import {
-  classifyEntityLookupMatch,
-  entityLookupRefusal,
-} from "@showzy/module-kit/entity-lookup";
 import { parseDbEnum } from "@showzy/module-kit/parse-db-enum";
 import { and, asc, eq } from "drizzle-orm";
 
-import {
-  loadProductReferenceCandidates,
-  productCandidateName,
-  productCandidateOptions,
-  productMatchFields,
-} from "../services/product-reference-candidates.js";
 import { productStatusSchema } from "../wire.contract.js";
-import {
-  getProductContract,
-  type GetProductInput,
-} from "./get-product.contract.js";
-
-type StaffDb = Extract<ActionCtx, { principal: "staff" }>["db"];
+import { getProductContract } from "./get-product.contract.js";
 
 function parseProductStatus(value: string): "active" | "archived" {
   return parseDbEnum(
@@ -35,52 +20,8 @@ function parseProductStatus(value: string): "active" | "archived" {
   );
 }
 
-async function productIdFromQuery(
-  db: StaffDb,
-  companyId: string,
-  query: string,
-): Promise<string> {
-  const candidates = await loadProductReferenceCandidates({
-    db,
-    companyId,
-    query,
-  });
-  const match = classifyEntityLookupMatch(
-    query,
-    candidates,
-    productMatchFields,
-    productCandidateName,
-  );
-  if (match.kind === "unique") {
-    return match.row.id;
-  }
-  const target = { kind: "product", query } as const;
-  throw entityLookupRefusal(
-    target,
-    match.kind,
-    match.kind === "none" ? [] : productCandidateOptions(match.rows),
-  );
-}
-
-async function lookupProductId(
-  db: StaffDb,
-  companyId: string,
-  input: GetProductInput,
-): Promise<string> {
-  if (input.productId !== undefined) {
-    return input.productId;
-  }
-  if (input.productQuery === undefined) {
-    throw new CoreInvariantError(
-      "catalog.getProduct input carries neither productId nor productQuery",
-    );
-  }
-  return await productIdFromQuery(db, companyId, input.productQuery);
-}
-
 export const getProduct = implementAction(getProductContract, {
   handler: async (input, ctx) => {
-    const requestedId = await lookupProductId(ctx.db, ctx.companyId, input);
     const productRows = await ctx.db
       .select({
         id: products.id,
@@ -95,7 +36,7 @@ export const getProduct = implementAction(getProductContract, {
       .where(
         and(
           eq(products.companyId, ctx.companyId),
-          eq(products.id, requestedId),
+          eq(products.id, input.productId),
         ),
       )
       .limit(1);

@@ -116,7 +116,7 @@ function logUnpickableConflict(
 function subjectFor(target: ChoicePickerTarget): string {
   switch (target.kind) {
     case "customer":
-    case "product":
+      return target.query;
     case "order_line_product":
       return target.query;
     default:
