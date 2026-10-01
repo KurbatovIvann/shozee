@@ -9,6 +9,7 @@
     "./canonical": "./src/canonical.ts",
     "./keep-omitted": "./src/keep-omitted.ts",
     "./key-lock": "./src/key-lock.ts",
+    "./money-format": "./src/money-format.ts",
     "./name-match": "./src/name-match.ts",
     "./optional-nullable-uuid": "./src/optional-nullable-uuid.ts",
     "./parse-db-enum": "./src/parse-db-enum.ts",

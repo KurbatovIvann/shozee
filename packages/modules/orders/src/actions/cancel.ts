@@ -9,6 +9,7 @@ import { holderAuditTarget } from "@showzy/module-kit/audit-target";
 import { and, eq } from "drizzle-orm";
 
 import { ordersCanceled } from "../events/canceled.js";
+import { orderTransitionPreview } from "../services/preview-card.js";
 import { requireWritable } from "../services/writable.js";
 import { cancelOrderContract } from "./cancel.contract.js";
 
@@ -73,5 +74,6 @@ export const cancelOrder = implementAction(cancelOrderContract, {
       status: "canceled" as const,
     };
   },
+  preview: orderTransitionPreview(cancelOrderContract, "Скасувати замовлення"),
   auditTarget: cancelAuditTarget,
 });

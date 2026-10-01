@@ -19,48 +19,8 @@ export function formatIssuedOn(issuedOn: string): string {
   return `${day}.${month}.${year}`;
 }
 
-/** Canonical minor-unit string → Ukrainian decimal with a thin space grouping. */
-export function formatMinorUnits(
-  minor: string,
-  fractionDigits: number,
-): string {
-  const negative = minor.startsWith("-");
-  const digits = negative ? minor.slice(1) : minor;
-  if (digits.length === 0 || !/^[0-9]+$/.test(digits)) {
-    throw new CoreInvariantError(`illegal minor-unit string "${minor}"`);
-  }
-  const padded = digits.padStart(fractionDigits + 1, "0");
-  const whole = padded.slice(0, -fractionDigits);
-  const frac = padded.slice(-fractionDigits);
-  const grouped = groupThousands(whole);
-  const sign = negative ? "-" : "";
-  return `${sign}${grouped},${frac}`;
-}
-
-function groupThousands(whole: string): string {
-  const parts: string[] = [];
-  let remaining = whole;
-  while (remaining.length > 3) {
-    parts.unshift(remaining.slice(-3));
-    remaining = remaining.slice(0, -3);
-  }
-  parts.unshift(remaining);
-  return parts.join(" ");
-}
-
-export function formatMoneyUah(minor: string): string {
-  return `${formatMinorUnits(minor, 2)} грн`;
-}
-
-/** quantity_milli (scale 3) without trailing zero fractional digits. */
-export function formatQuantityMilli(milli: string): string {
-  if (!/^[1-9][0-9]*$/.test(milli)) {
-    throw new CoreInvariantError(`illegal quantity_milli string "${milli}"`);
-  }
-  const padded = milli.padStart(4, "0");
-  const whole = padded.slice(0, -3);
-  const frac = padded.slice(-3).replace(/0+$/, "");
-  return frac.length === 0
-    ? groupThousands(whole)
-    : `${groupThousands(whole)},${frac}`;
-}
+export {
+  formatMinorUnits,
+  formatMoneyUah,
+  formatQuantityMilli,
+} from "@showzy/module-kit/money-format";
