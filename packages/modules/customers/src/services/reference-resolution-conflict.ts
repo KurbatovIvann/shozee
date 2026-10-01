@@ -4,11 +4,7 @@
  * map without importing this module. Wire code stays CONFLICT.
  */
 import { ConflictError } from "@showzy/core/errors";
-
-export type CustomerReferenceTarget = {
-  readonly kind: "customer";
-  readonly query: string;
-};
+import type { EntityLookupTarget } from "@showzy/validation/entity-ref";
 
 export type CustomerReferenceOption = {
   readonly id: string;
@@ -17,12 +13,12 @@ export type CustomerReferenceOption = {
 
 export class CustomerReferenceConflictError extends ConflictError {
   readonly reason: "ambiguous";
-  readonly target: CustomerReferenceTarget;
+  readonly target: EntityLookupTarget;
   readonly options: readonly CustomerReferenceOption[];
   readonly optionsTruncated: boolean;
 
   constructor(args: {
-    readonly target: CustomerReferenceTarget;
+    readonly target: EntityLookupTarget;
     readonly options: readonly CustomerReferenceOption[];
     readonly optionsTruncated: boolean;
     readonly clientMessage: string;
