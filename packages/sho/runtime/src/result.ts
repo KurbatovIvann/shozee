@@ -164,7 +164,8 @@ export type NeedReason =
   // command runs without it. Non-blocking.
   | "ignored"
   // D81: words from a command verb on that this command holds nothing of and that were not served as a command of their own (`path` "text", `span`
-  // the words as said); the host shows them («Також було: …»). Non-blocking.
+  // the words as said); the host shows them («Також було: …»). Non-blocking; D95: blocking on a write or a destructive command when the words hold
+  // a product the command does not hold (an order said with it and left out: the card is not ready).
   | "unparsed"
   // D84: the model's `customers.createCustomer` was served as `customers.updateCustomer` of the customer the list knows by that name, said in the
   // dative (`path` "action", `span` the name as said); the card says so. Non-blocking.
@@ -191,7 +192,11 @@ export type NeedReason =
   | "read_as_find"
   // D93: the utterance has letters and no Cyrillic word (English, a transliteration): ШО reads only Ukrainian and Russian, so the model is not run and
   // the one command is `none` with confidence 0 and this need (`path` "text", non-blocking); the host sends the message to its dialogue model.
-  | "language";
+  | "language"
+  // D97: the command's words are a question about the app itself («як мені …», «що таке …», «де в застосунку …»; `howTo.ts`): it is served as `none`
+  // with this need (`path` "text", `span` the question words, non-blocking) — the model's own `none` keeps its confidence, a `none` served in place
+  // of the model's action has confidence 0 (D93's); the host sends the message to its dialogue model.
+  | "how_to";
 
 // A blocking need keeps the card from being confirmed until it is answered; a non-blocking one is shown on the card.
 export interface Need {

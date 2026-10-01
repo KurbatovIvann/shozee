@@ -26,6 +26,11 @@ export const COMMAND_VERBS: ReadonlySet<string> = new Set([
   "покажи", "покажіть", "показати", "відкрий", "відкрийте", "открой", "откройте",
 ]);
 
+// D95 (Q2 of the v3.5 served report): «зроби» / «сделай», left out of COMMAND_VERBS («і зроби його основним», «і зроби Z-звіт» say more of the same
+// command), are a cue only after a connector and before a product the command does not hold, when it holds none («створи клієнта … і зроби для неї
+// замовлення два торти»): an order said after the first command (`leftover.ts`).
+export const WEAK_COMMAND_VERBS: ReadonlySet<string> = new Set(["зроби", "зробіть", "зробити", "зробить", "сделай", "сделайте", "сделать"]);
+
 // D81: the verbs of COMMAND_VERBS that are a whole command said alone at the end («… і підтверди», «… і скасуй»: the record is the one just named); an
 // «і додай», «і створи» said last with nothing after it is a phrase left unfinished, not a command.
 export const BARE_COMMAND_VERBS: ReadonlySet<string> = new Set([

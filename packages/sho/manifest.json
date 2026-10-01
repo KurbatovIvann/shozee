@@ -1,26 +1,26 @@
 {
-  "model": "v33",
+  "model": "v35",
   "catalogue": "v3",
   "files": {
     "calibration.json": {
-      "md5": "46ee35fe0cbcbc13344596ca7f898794",
+      "md5": "a298b87895edb334dc6f5122071ffafe",
       "bytes": 307
     },
     "intent_labels_uk.json": {
-      "md5": "58ea7db7b3f43438b5e7beed827705ce",
-      "bytes": 177584
+      "md5": "ecca9fa43654b05efe6acfdfb584284d",
+      "bytes": 177535
     },
     "labels.json": {
-      "md5": "e3268c5d8783656973ad1839038b158c",
-      "bytes": 31931
+      "md5": "d8596295b99528f0d03fc801710b3315",
+      "bytes": 30341
     },
     "model.int8.onnx": {
-      "md5": "f10ddb141facf18a42a69769e59c099c",
-      "bytes": 28740435
+      "md5": "09435500d21e44536daf87c12aa57a62",
+      "bytes": 28755698
     },
     "tokenizer.json": {
-      "md5": "b7943c0e6e335439c0b8df6590bf76df",
-      "bytes": 1039303
+      "md5": "7d098a6442843ea95b28e43a904f78bc",
+      "bytes": 1039101
     }
   },
   "runtime": {
@@ -49,8 +49,8 @@
       "bytes": 28275
     },
     "command.ts": {
-      "md5": "8ff36dda761a8d6b6c3addfd20ea82f3",
-      "bytes": 44886
+      "md5": "4f0295dc41c5cf9e8dec4a336c36f1df",
+      "bytes": 50557
     },
     "confidence.ts": {
       "md5": "2b59cc24b3bdd34703b4db03c3d61919",
@@ -96,6 +96,10 @@
       "md5": "4b56841bd7b39a24eba35064fd6b421b",
       "bytes": 3828
     },
+    "howTo.ts": {
+      "md5": "970a545ccc7d4550f6749aa79ed80425",
+      "bytes": 6159
+    },
     "index.ts": {
       "md5": "a7aefd5e72ba1c4a8c2a03c985d240e5",
       "bytes": 10292
@@ -105,8 +109,8 @@
       "bytes": 4548
     },
     "leftover.ts": {
-      "md5": "732d8d040d322d155b4e7a8d6d4ac29d",
-      "bytes": 5709
+      "md5": "f5b0f7ada2dbd085b7ddac8bc1d447df",
+      "bytes": 7052
     },
     "lexicon/attrs.ts": {
       "md5": "6d80649dcb51c4e1d72e13a4587f165b",
@@ -160,6 +164,10 @@
       "md5": "d54a6a11d3d19eb7f88400bf4d9083f7",
       "bytes": 1531
     },
+    "lexicon/questions.ts": {
+      "md5": "11e8a9965bd249238af7a27a80b9ae37",
+      "bytes": 8096
+    },
     "lexicon/references.ts": {
       "md5": "d00d0a7ed284320f2b65d5c19b75dac9",
       "bytes": 15739
@@ -173,8 +181,8 @@
       "bytes": 7853
     },
     "lexicon/segment.ts": {
-      "md5": "464c782570e1e3cf4663d93cf25eb2ee",
-      "bytes": 4529
+      "md5": "fdc6a2591a2eb6382e1ec354eb1d5280",
+      "bytes": 5191
     },
     "lexicon/units.ts": {
       "md5": "8bee5cdf612358b5a835a6c85a57aad0",
@@ -253,8 +261,8 @@
       "bytes": 4515
     },
     "pipeline.ts": {
-      "md5": "d60ee4e28b8da47efdda93cd8cacf026",
-      "bytes": 24450
+      "md5": "82ffd1f766c260a15df8b48a3d2eda69",
+      "bytes": 25194
     },
     "products.ts": {
       "md5": "e3d8944d4e43df96724d19b7057aae86",
@@ -285,8 +293,8 @@
       "bytes": 27098
     },
     "result.ts": {
-      "md5": "a55a478ed807e82aa22f662600eba316",
-      "bytes": 15214
+      "md5": "c3b2fe2d2d127db469fbadddd9095e7e",
+      "bytes": 15840
     },
     "roles.ts": {
       "md5": "a8dfc364164c768a63e8608a87f276a1",
@@ -359,9 +367,9 @@
   },
   "source": {
     "repo": "system-one-uk",
-    "commit": "c1e1d8547e7bae9ce0fb2ef55f1d655dfcdab932",
+    "commit": "d85704f36f0853e55d5e89eeb577f3096a24fd70",
     "runtimeVersion": "0.2.0",
-    "bundle": "demo/model-v33",
+    "bundle": "demo/model-v35",
     "registry": "default"
   },
   "conformance": {
@@ -429,13 +437,17 @@
       "md5": "86afd4a61454dd8dfac44d0e03d2716b",
       "bytes": 7011
     },
+    "cases-d95.jsonl": {
+      "md5": "44969149e2cfea141bc0f056694552f7",
+      "bytes": 2761
+    },
     "catalogue_v3.json": {
       "md5": "4a283338fa9daf6e9cb1b5bb76543e92",
       "bytes": 72645
     },
     "commands.jsonl": {
-      "md5": "02d027f5d8e6df199a5b1503cafefda7",
-      "bytes": 510108
+      "md5": "456362dde840865eebedd63136c1dfec",
+      "bytes": 515432
     },
     "contacts.jsonl": {
       "md5": "c4d5471b312f250c672ef4effc582724",
@@ -510,5 +522,5 @@
       "bytes": 8074
     }
   },
-  "updatedAt": "2026-09-30T21:08:58.353Z"
+  "updatedAt": "2026-10-01T05:57:15.680Z"
 }

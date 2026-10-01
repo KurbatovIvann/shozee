@@ -12,7 +12,7 @@ import type { ReadTx } from "@showzy/db";
 import type { z } from "zod";
 
 import type { ActionPreview } from "../errors/index.js";
-import type { ActionCtx, ActionCtxFor } from "./context/types.js";
+import type { ActionCtx, ActionCtxFor, CtxCall } from "./context/types.js";
 
 export type MaybePromise<T> = T | Promise<T>;
 
@@ -133,9 +133,14 @@ export type ConfirmationSummaryFn<TInput extends z.ZodType> = (
   env: ConfirmationSummaryEnv,
 ) => MaybePromise<string>;
 
+export interface ActionPreviewEnv extends ConfirmationSummaryEnv {
+  readonly tx: ReadTx;
+  readonly call: CtxCall;
+}
+
 export type ActionPreviewFn<TInput extends z.ZodType> = (
   input: z.output<TInput>,
-  env: ConfirmationSummaryEnv,
+  env: ActionPreviewEnv,
 ) => MaybePromise<ActionPreview>;
 
 /** Derives the audit target from validated input/output/context (§8). */
