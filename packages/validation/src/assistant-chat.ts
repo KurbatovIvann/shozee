@@ -379,9 +379,40 @@ export const assistantChoicePromptSchema = z.strictObject({
   problem: z.string().min(1).max(400).optional(),
 });
 
-export const assistantConfirmationPromptSchema = z.strictObject({
-  summary: z.string().min(1).max(2000),
+export const ASSISTANT_PREVIEW_TEXT_MAX = 4096;
+export const ASSISTANT_PREVIEW_LIST_MAX = 256;
+export const ASSISTANT_PREVIEW_ALSO_MAX = 4;
+
+export const ASSISTANT_PREVIEW_LEVELS = ["card", "strong"] as const;
+
+const assistantPreviewTextSchema = z
+  .string()
+  .min(1)
+  .max(ASSISTANT_PREVIEW_TEXT_MAX);
+
+export const assistantPreviewLineSchema = z.strictObject({
+  label: assistantPreviewTextSchema,
+  value: assistantPreviewTextSchema,
 });
+
+export const assistantPreviewSchema = z.strictObject({
+  title: assistantPreviewTextSchema,
+  lines: z.array(assistantPreviewLineSchema).max(ASSISTANT_PREVIEW_LIST_MAX),
+  notes: z.array(assistantPreviewTextSchema).max(ASSISTANT_PREVIEW_LIST_MAX),
+});
+
+export const assistantConfirmationPromptSchema = z.strictObject({
+  summary: assistantPreviewTextSchema,
+  preview: assistantPreviewSchema,
+  also: z.array(assistantPreviewSchema).max(ASSISTANT_PREVIEW_ALSO_MAX),
+  level: z.enum(ASSISTANT_PREVIEW_LEVELS),
+});
+
+export type AssistantPreviewLine = z.output<typeof assistantPreviewLineSchema>;
+
+export type AssistantPreview = z.output<typeof assistantPreviewSchema>;
+
+export type AssistantPreviewLevel = (typeof ASSISTANT_PREVIEW_LEVELS)[number];
 
 export type AssistantChoiceOption = z.output<
   typeof assistantChoiceOptionSchema
@@ -404,6 +435,9 @@ export type AssistantInteraction =
       readonly interactionId: string;
       readonly revision: number;
       readonly summary: string;
+      readonly preview: AssistantPreview;
+      readonly also: readonly AssistantPreview[];
+      readonly level: AssistantPreviewLevel;
     };
 
 /**
@@ -439,6 +473,9 @@ export function assistantInteractionFromPause(
           interactionId: pause.interactionId,
           revision: pause.revision,
           summary: prompt.data.summary,
+          preview: prompt.data.preview,
+          also: prompt.data.also,
+          level: prompt.data.level,
         }
       : null;
   }

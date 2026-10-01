@@ -23,6 +23,8 @@ import { CONFIRMATION_TTL_MS as CHALLENGE_TTL_MS } from "@showzy/core";
 import {
   assistantChoicePromptSchema,
   assistantConfirmationPromptSchema,
+  type AssistantPreview,
+  type AssistantPreviewLevel,
 } from "@showzy/validation/assistant-chat";
 import type { EntityLookupTarget } from "@showzy/validation/entity-ref";
 import { z } from "zod";
@@ -88,12 +90,21 @@ export interface ChoiceSecret {
  * and a resume under any other key is a different attempt that core answers with
  * a fresh challenge instead of running.
  */
-export interface ConfirmationSecret {
+export interface ConfirmationAttemptSecret {
   readonly actionName: string;
   /** The object `executeAction` received. Core hashed it. */
   readonly canonicalInput: unknown;
   readonly idempotencyKey: string;
   readonly challengeId: string;
+}
+
+export interface ConfirmationAlsoSecret extends ConfirmationAttemptSecret {
+  readonly preview: AssistantPreview;
+  readonly level: AssistantPreviewLevel;
+}
+
+export interface ConfirmationSecret extends ConfirmationAttemptSecret {
+  readonly also: readonly ConfirmationAlsoSecret[];
 }
 
 export interface ChoiceResolution {
@@ -107,12 +118,9 @@ export interface ChoiceResolution {
  * Names the attempt a person approved. It authorises nothing by itself: core
  * decides whether the challenge still holds for that attempt (SHO-553).
  */
-export interface ConfirmationResolution {
+export interface ConfirmationResolution extends ConfirmationAttemptSecret {
   readonly approved: true;
-  readonly actionName: string;
-  readonly canonicalInput: unknown;
-  readonly idempotencyKey: string;
-  readonly challengeId: string;
+  readonly also: readonly ConfirmationAlsoSecret[];
 }
 
 export const choice = defineInteraction<ChoiceSecret>()({
@@ -159,6 +167,7 @@ export const confirmation = defineInteraction<ConfirmationSecret>()({
       canonicalInput: secret.canonicalInput,
       idempotencyKey: secret.idempotencyKey,
       challengeId: secret.challengeId,
+      also: Object.hasOwn(secret, "also") ? secret.also : [],
     } satisfies ConfirmationResolution),
 });
 

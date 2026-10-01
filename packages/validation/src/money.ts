@@ -42,9 +42,12 @@ export function isMoneyWire(value: string): boolean {
  * `bigint`. Refine is safe to run when the regex already failed (Zod 4
  * still invokes later checks).
  */
+export const MONEY_WIRE_MAX = String(INT64_MIN).length;
+
 export const moneyWireSchema = z
   .string()
   .regex(CANONICAL_INT64, MONEY_WIRE_MESSAGE)
+  .max(MONEY_WIRE_MAX, MONEY_WIRE_MESSAGE)
   .refine(isMoneyWire, { message: MONEY_WIRE_MESSAGE });
 
 /**
@@ -62,7 +65,8 @@ export const nonNegativeMoneyWireSchema = moneyWireSchema.refine(
  */
 export const quantityMilliWireSchema = z
   .string()
-  .regex(/^[1-9][0-9]*$/, "Expected a canonical positive integer string");
+  .regex(/^[1-9][0-9]*$/, "Expected a canonical positive integer string")
+  .max(MONEY_WIRE_MAX, "Expected a canonical positive integer string");
 
 /** Quantity scale 3: 1 unit = 1000 milli (money.md). */
 export const QUANTITY_MILLI_SCALE = 1000n;
@@ -71,6 +75,8 @@ const DECIMAL_QUANTITY = /^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,3})?$/;
 
 export const DECIMAL_QUANTITY_MESSAGE =
   "Expected a positive decimal string with at most 3 fractional digits";
+
+export const DECIMAL_QUANTITY_MAX = MONEY_WIRE_MAX + ".000".length;
 
 export function isDecimalQuantityString(value: string): boolean {
   return DECIMAL_QUANTITY.test(value);

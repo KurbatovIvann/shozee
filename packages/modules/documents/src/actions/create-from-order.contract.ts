@@ -22,6 +22,7 @@ import { z } from "zod";
 
 import {
   DOCUMENT_BASIS_MAX,
+  DOCUMENT_LAYOUT_KEY_MAX,
   documentTypeSchema,
   documentViewSchema,
 } from "./document-view.contract.js";
@@ -30,7 +31,7 @@ export const createFromOrderInputSchema = z.strictObject({
   orderId: z.uuid(),
   type: documentTypeSchema,
   counterpartyId: z.uuid().optional(),
-  layoutKey: z.string().trim().min(1).optional(),
+  layoutKey: z.string().trim().min(1).max(DOCUMENT_LAYOUT_KEY_MAX).optional(),
   basis: z.string().trim().max(DOCUMENT_BASIS_MAX).optional(),
 });
 

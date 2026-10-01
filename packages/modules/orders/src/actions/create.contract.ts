@@ -23,6 +23,7 @@
 import { defineActionContract } from "@showzy/core/contract";
 import { entityRefSchema } from "@showzy/validation/entity-ref";
 import {
+  DECIMAL_QUANTITY_MAX,
   DECIMAL_QUANTITY_MESSAGE,
   decimalQuantityToMilli,
   isDecimalQuantityString,
@@ -62,6 +63,7 @@ export type VariantSelection = z.output<typeof variantSelectionSchema>;
 
 const createOrderDecimalSchema = z
   .string()
+  .max(DECIMAL_QUANTITY_MAX, DECIMAL_QUANTITY_MESSAGE)
   .refine(
     (value) =>
       isDecimalQuantityString(value) &&
