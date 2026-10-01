@@ -137,7 +137,7 @@ export interface AnthropicStaffProviderOptions {
   readonly gateModel?: string;
 }
 
-const DEFAULT_REPLY_MODEL = "claude-sonnet-4-6";
+const DEFAULT_REPLY_MODEL = "claude-haiku-4-5";
 const DEFAULT_GATE_MODEL = "claude-haiku-4-5";
 
 function isRecord(value: unknown): value is Record<string, unknown> {

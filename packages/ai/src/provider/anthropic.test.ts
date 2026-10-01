@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import type { LanguageModel } from "ai";
 import { describe, expect, it, vi } from "vitest";
 
 import { StaffAssistantNotConfiguredError } from "../errors.js";
@@ -16,6 +17,10 @@ import {
 } from "./anthropic.js";
 
 const ANTHROPIC_SDK = "@ai-sdk/anthropic";
+
+function modelIdOf(model: LanguageModel): string {
+  return typeof model === "string" ? model : model.modelId;
+}
 
 function walkTsFiles(dir: string, files: string[]): void {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -101,6 +106,27 @@ describe("createAnthropicStaffProviderAdapter", () => {
     expect(() => provider.createModel("reply")).toThrow(
       StaffAssistantNotConfiguredError,
     );
+  });
+
+  it("defaults both models to Haiku 4.5 and takes the configured ids when given", () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new Error("network must not run"));
+    const defaulted = createAnthropicStaffProviderAdapter({
+      apiKey: "sk-ant-test-not-a-real-key",
+    });
+    expect(modelIdOf(defaulted.createModel("reply"))).toBe("claude-haiku-4-5");
+    expect(modelIdOf(defaulted.createModel("gate"))).toBe("claude-haiku-4-5");
+
+    const configured = createAnthropicStaffProviderAdapter({
+      apiKey: "sk-ant-test-not-a-real-key",
+      replyModel: "claude-opus-4-6",
+      gateModel: "claude-sonnet-4-6",
+    });
+    expect(modelIdOf(configured.createModel("reply"))).toBe("claude-opus-4-6");
+    expect(modelIdOf(configured.createModel("gate"))).toBe("claude-sonnet-4-6");
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
   });
 
   it("constructs a model without touching the network when a key is present", () => {

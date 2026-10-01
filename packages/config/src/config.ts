@@ -147,11 +147,7 @@ const envObjectSchema = z.object({
    * this from `process.env` outside this package.
    */
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
-  /**
-   * Staff-panel model id. Provider choice is config, not a runtime swap
-   * (ADR-0032). Default matches the SHO-318 pin.
-   */
-  AI_MODEL: z.string().min(1).default("claude-sonnet-4-6"),
+  AI_MODEL: z.string().min(1).default("claude-haiku-4-5"),
   /**
    * Cheap classifier / chitchat model id (same Anthropic provider, not a
    * second `@ai-sdk/*` package). Not a secret. Default Haiku 4.5.
