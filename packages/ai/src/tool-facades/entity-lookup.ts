@@ -1,48 +1,65 @@
 import { CoreError } from "@showzy/core/errors";
-import { ENTITY_REF_QUERY_MAX } from "@showzy/validation/entity-ref";
+import { ASSISTANT_CHOICE_OPTIONS_MAX } from "@showzy/validation/assistant-chat";
+import {
+  ENTITY_REF_EXACTLY_ONE_MESSAGE,
+  entityRefQuerySchema,
+} from "@showzy/validation/entity-ref";
 import { z } from "zod";
 
 import {
   CHOICE_CREATE_OPTION_ID,
   EntityLookupConflictError,
+  choiceCardOptionSchema,
   type EntityLookupTarget,
 } from "../choice.js";
 
-export const ENTITY_LOOKUP_QUERY_MAX = ENTITY_REF_QUERY_MAX;
+export const entityLookupQuerySchema = entityRefQuerySchema;
 
-export const entityLookupQuerySchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(ENTITY_LOOKUP_QUERY_MAX);
+export const EXACTLY_ONE_REFERENCE_MESSAGE = ENTITY_REF_EXACTLY_ONE_MESSAGE;
 
-export const EXACTLY_ONE_REFERENCE_MESSAGE =
-  "Provide exactly one of the id or the query.";
+export const ENTITY_LOOKUP_RECORD_OPTIONS_MAX =
+  ASSISTANT_CHOICE_OPTIONS_MAX - 1;
 
-export function isNotFound(error: unknown): boolean {
-  return error instanceof CoreError && error.code === "NOT_FOUND";
-}
+const unmatchedRefusalSchema = z.strictObject({
+  reason: z.literal("unmatched_query"),
+  options: z.array(choiceCardOptionSchema),
+  optionsTruncated: z.boolean(),
+});
 
 export function createOptionLabel(query: string): string {
   return `Create "${query}"`;
 }
 
-export function nothingMatchedConflict(
+export function nearestChoiceFromError(
+  error: unknown,
   target: EntityLookupTarget,
-): EntityLookupConflictError {
+): EntityLookupConflictError | undefined {
+  if (!(error instanceof CoreError) || error.code !== "NOT_FOUND") {
+    return undefined;
+  }
+  const parsed = unmatchedRefusalSchema.safeParse({
+    reason: Reflect.get(error, "reason") as unknown,
+    options: Reflect.get(error, "options") as unknown,
+    optionsTruncated: Reflect.get(error, "optionsTruncated") as unknown,
+  });
+  if (!parsed.success) {
+    return undefined;
+  }
+  const nearest = parsed.data.options.slice(
+    0,
+    ENTITY_LOOKUP_RECORD_OPTIONS_MAX,
+  );
   return new EntityLookupConflictError({
     reason: "unmatched_query",
     target,
-    options: [],
-    optionsTruncated: false,
+    options: nearest,
+    optionsTruncated:
+      parsed.data.optionsTruncated ||
+      nearest.length < parsed.data.options.length,
     create: {
       optionId: CHOICE_CREATE_OPTION_ID,
       label: createOptionLabel(target.query),
     },
-    clientMessage: `Nothing matches "${target.query}".`,
+    clientMessage: error.clientMessage,
   });
-}
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

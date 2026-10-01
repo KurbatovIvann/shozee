@@ -7,6 +7,7 @@
   "exports": {
     "./audit-target": "./src/audit-target.ts",
     "./canonical": "./src/canonical.ts",
+    "./entity-lookup": "./src/entity-lookup.ts",
     "./keep-omitted": "./src/keep-omitted.ts",
     "./key-lock": "./src/key-lock.ts",
     "./name-match": "./src/name-match.ts",

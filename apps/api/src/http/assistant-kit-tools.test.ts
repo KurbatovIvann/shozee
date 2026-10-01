@@ -881,9 +881,36 @@ describe("a create option is offered but has no producer yet", () => {
   );
 });
 
+const NEAREST_GALYA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+
+function unmatchedCustomer(
+  options: readonly { id: string; label: string }[],
+): NotFoundError {
+  return Object.assign(new NotFoundError('Nothing matches "Галя".'), {
+    reason: "unmatched_query",
+    target: { kind: "customer", query: "Галя" },
+    options,
+    optionsTruncated: false,
+  });
+}
+
 describe("«знайди X» with nothing matching", () => {
-  it("pauses on a create-only picker the answer then refuses", async () => {
+  it("passes a plain not-found through as an error", async () => {
     const set = tools(() => Promise.reject(new NotFoundError()));
+
+    const outcome = await run(set, CUSTOMERS_GET_CUSTOMER_TOOL_NAME, {
+      customerQuery: "Галя",
+    });
+
+    expect(outcome.kind).toBe("error");
+  });
+
+  it("pauses on the nearest customers plus create", async () => {
+    const set = tools(() =>
+      Promise.reject(
+        unmatchedCustomer([{ id: NEAREST_GALYA, label: "Галина" }]),
+      ),
+    );
 
     const outcome = await run(set, CUSTOMERS_GET_CUSTOMER_TOOL_NAME, {
       customerQuery: "Галя",
@@ -896,7 +923,10 @@ describe("«знайди X» with nothing matching", () => {
       optionsTruncated: false,
       nearest: true,
       problem: "Nothing matches that exactly.",
-      options: [{ optionId: "create", label: 'Create "Галя"', kind: "create" }],
+      options: [
+        { optionId: NEAREST_GALYA, label: "Галина", kind: "record" },
+        { optionId: "create", label: 'Create "Галя"', kind: "create" },
+      ],
     });
     const secret = outcome.secret as ChoiceSecret;
     expect(secret.target).toEqual({ kind: "customer", query: "Галя" });

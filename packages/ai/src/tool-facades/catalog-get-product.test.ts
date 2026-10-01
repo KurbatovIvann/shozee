@@ -10,10 +10,10 @@ import {
 import {
   CATALOG_GET_PRODUCT_ACTION_NAME,
   CATALOG_GET_PRODUCT_TOOL_NAME,
-  CATALOG_RESOLVE_LINE_REFERENCES_ACTION_NAME,
   catalogGetProductFacadeTools,
   catalogGetProductInputSchema,
 } from "./catalog-get-product.js";
+import { ENTITY_LOOKUP_RECORD_OPTIONS_MAX } from "./entity-lookup.js";
 
 const getProduct = defineActionContract({
   name: CATALOG_GET_PRODUCT_ACTION_NAME,
@@ -28,16 +28,37 @@ const getProduct = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
-  errors: ["NOT_FOUND"],
+  errors: ["NOT_FOUND", "CONFLICT"],
   audit: false,
   timeout: 5_000,
-  input: z.strictObject({ productId: z.uuid() }),
+  input: z.strictObject({
+    productId: z.uuid().optional(),
+    productQuery: z.string().min(1).optional(),
+  }),
   output: z.object({ id: z.uuid(), name: z.string() }),
 });
 
 const productId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const otherId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const foreignId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+
+function nearestOption(index: number): { id: string; label: string } {
+  return {
+    id: `dddddddd-dddd-4ddd-8ddd-${String(index).padStart(12, "0")}`,
+    label: `Наполеон ${String(index)}`,
+  };
+}
+
+function unmatched(
+  options: readonly { id: string; label: string }[],
+): NotFoundError {
+  return Object.assign(new NotFoundError('Nothing matches "наполеон".'), {
+    reason: "unmatched_query",
+    target: { kind: "product", query: "наполеон" },
+    options,
+    optionsTruncated: false,
+  });
+}
 
 function runTool(
   execute: (
@@ -68,7 +89,7 @@ describe("catalogGetProductInputSchema", () => {
     expect(
       catalogGetProductInputSchema.safeParse({
         productId,
-        productQuery: "Наполеон",
+        productQuery: "наполеон",
       }).success,
     ).toBe(false);
     expect(catalogGetProductInputSchema.safeParse({}).success).toBe(false);
@@ -76,7 +97,7 @@ describe("catalogGetProductInputSchema", () => {
 });
 
 describe("catalogGetProductFacadeTools", () => {
-  it("reads the product by id without resolving a reference", async () => {
+  it("reads the product by id in one call", async () => {
     const execute = vi.fn(() =>
       Promise.resolve({ id: productId, name: "Наполеон" }),
     );
@@ -90,86 +111,66 @@ describe("catalogGetProductFacadeTools", () => {
     expect(result).toEqual({ id: productId, name: "Наполеон" });
   });
 
-  it("resolves a unique name query through the line resolver", async () => {
-    const execute = vi.fn((actionName: string) =>
-      actionName === CATALOG_RESOLVE_LINE_REFERENCES_ACTION_NAME
-        ? Promise.resolve({ lines: [{ productId }] })
-        : Promise.resolve({ id: productId, name: "Наполеон" }),
+  it("sends a name query to the owning action in one call", async () => {
+    const execute = vi.fn(() =>
+      Promise.resolve({ id: productId, name: "Наполеон" }),
     );
-    const result = await runTool(execute, { productQuery: "Наполеон" });
-    expect(execute).toHaveBeenNthCalledWith(
-      1,
-      CATALOG_RESOLVE_LINE_REFERENCES_ACTION_NAME,
-      { lines: [{ product: { by: "query", value: "Наполеон" } }] },
-      { toolCallId: "call-product" },
-    );
-    expect(execute).toHaveBeenNthCalledWith(
-      2,
+    await runTool(execute, { productQuery: "наполеон" });
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledWith(
       CATALOG_GET_PRODUCT_ACTION_NAME,
-      { productId },
+      { productQuery: "наполеон" },
       { toolCallId: "call-product" },
     );
-    expect(result).toEqual({ id: productId, name: "Наполеон" });
   });
 
-  it("re-targets several matches from an order line onto the product query", async () => {
+  it("passes the action's several-matches conflict through untouched", async () => {
     const ambiguous = Object.assign(new ConflictError("Which Наполеон?"), {
       reason: "ambiguous",
-      target: { kind: "order_line_product", lineIndex: 0, query: "Наполеон" },
+      target: { kind: "product", query: "наполеон" },
       options: [
-        { id: productId, label: "Наполеон класичний" },
-        { id: otherId, label: "Наполеон медовий" },
+        { id: productId, label: "Наполеон (UAH)" },
+        { id: otherId, label: "Наполеон (EUR)" },
       ],
       optionsTruncated: false,
     });
-    const error: unknown = await runTool(() => Promise.reject(ambiguous), {
-      productQuery: "Наполеон",
-    }).catch((thrown: unknown) => thrown);
-    const picker = catalogPickerConflictExtrasFromError(error);
-    expect(picker?.target).toEqual({ kind: "product", query: "Наполеон" });
+    await expect(
+      runTool(() => Promise.reject(ambiguous), { productQuery: "наполеон" }),
+    ).rejects.toBe(ambiguous);
+    const picker = catalogPickerConflictExtrasFromError(ambiguous);
+    expect(picker?.target).toEqual({ kind: "product", query: "наполеон" });
     expect(picker?.options).toHaveLength(2);
     expect(picker?.create).toBeUndefined();
   });
 
-  it("reads the product when the resolver only needed a variant chosen", async () => {
-    const variantConflict = Object.assign(new ConflictError("Which variant?"), {
-      reason: "variant_required",
-      target: {
-        kind: "order_line_variant",
-        lineIndex: 0,
-        productId,
-        productName: "Наполеон",
-      },
-      options: [{ id: otherId, label: "1 кг" }],
+  it("offers the action's nearest products plus create when nothing matched", async () => {
+    const nearest = [nearestOption(1), nearestOption(2)];
+    const error: unknown = await runTool(
+      () => Promise.reject(unmatched(nearest)),
+      { productQuery: "наполеон" },
+    ).catch((thrown: unknown) => thrown);
+    const picker = catalogPickerConflictExtrasFromError(error);
+    expect(picker).toEqual({
+      reason: "unmatched_query",
+      target: { kind: "product", query: "наполеон" },
+      options: nearest,
       optionsTruncated: false,
+      create: { optionId: CHOICE_CREATE_OPTION_ID, label: 'Create "наполеон"' },
     });
-    const execute = vi.fn((actionName: string) =>
-      actionName === CATALOG_RESOLVE_LINE_REFERENCES_ACTION_NAME
-        ? Promise.reject(variantConflict)
-        : Promise.resolve({ id: productId, name: "Наполеон" }),
-    );
-    const result = await runTool(execute, { productQuery: "Наполеон" });
-    expect(execute).toHaveBeenNthCalledWith(
-      2,
-      CATALOG_GET_PRODUCT_ACTION_NAME,
-      { productId },
-      { toolCallId: "call-product" },
-    );
-    expect(result).toEqual({ id: productId, name: "Наполеон" });
   });
 
-  it("turns nothing matched into a picker whose only option is create", async () => {
+  it("leaves room for the create option when the nearest list fills the card", async () => {
+    const nearest = Array.from({ length: 20 }, (_, index) =>
+      nearestOption(index),
+    );
     const error: unknown = await runTool(
-      () => Promise.reject(new NotFoundError()),
-      { productQuery: "Наполеон" },
+      () => Promise.reject(unmatched(nearest)),
+      { productQuery: "наполеон" },
     ).catch((thrown: unknown) => thrown);
-    expect(catalogPickerConflictExtrasFromError(error)).toEqual({
-      reason: "unmatched_query",
-      target: { kind: "product", query: "Наполеон" },
-      options: [],
-      optionsTruncated: false,
-      create: { optionId: CHOICE_CREATE_OPTION_ID, label: 'Create "Наполеон"' },
-    });
+    const picker = catalogPickerConflictExtrasFromError(error);
+    expect(picker?.options).toHaveLength(ENTITY_LOOKUP_RECORD_OPTIONS_MAX);
+    expect(picker?.optionsTruncated).toBe(true);
+    expect(picker?.create).toBeDefined();
   });
 
   it("refuses a product id from another company with not found", async () => {
@@ -182,6 +183,13 @@ describe("catalogGetProductFacadeTools", () => {
       { productId: foreignId },
       { toolCallId: "call-product" },
     );
+  });
+
+  it("keeps a plain not-found plain", async () => {
+    const plain = new NotFoundError();
+    await expect(
+      runTool(() => Promise.reject(plain), { productQuery: "наполеон" }),
+    ).rejects.toBe(plain);
   });
 
   it("tells the model a named product is this tool and a plural is the list", () => {

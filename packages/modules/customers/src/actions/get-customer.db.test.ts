@@ -12,6 +12,10 @@ import {
   kitIdentities,
   type TestKit,
 } from "@showzy/core/testing";
+import {
+  EntityLookupAmbiguousError,
+  EntityLookupUnmatchedError,
+} from "@showzy/module-kit/entity-lookup";
 import { user } from "@showzy/db/schema/auth";
 import { companyMembers } from "@showzy/db/schema/companies";
 import {
@@ -29,6 +33,8 @@ const fixtures = {
   customerAEmpty: randomUUID(),
   customerArchived: randomUUID(),
   customerB: randomUUID(),
+  customerTwinPhone: randomUUID(),
+  customerTwinEmail: randomUUID(),
   groupA: randomUUID(),
   listA: randomUUID(),
   partyA: randomUUID(),
@@ -79,9 +85,22 @@ beforeAll(async () => {
       status: "archived",
     },
     {
+      id: fixtures.customerTwinPhone,
+      companyId: kitIdentities.companies.a,
+      name: "Duo Twin",
+      phone: "+380502222222",
+    },
+    {
+      id: fixtures.customerTwinEmail,
+      companyId: kitIdentities.companies.a,
+      name: "Duo Twin",
+      email: "twin@kit.test",
+    },
+    {
       id: fixtures.customerB,
       companyId: kitIdentities.companies.b,
       name: "Bravo",
+      phone: "+380509999999",
       email: "bravo@kit.test",
     },
   ]);
@@ -211,5 +230,101 @@ describe("customers.getCustomer", () => {
     ) {
       expect(missingError.clientMessage).toBe(foreignError.clientMessage);
     }
+  });
+});
+
+async function refusalOf(input: { readonly query: string }): Promise<unknown> {
+  return await kit.invoke(getCustomer, input).then(
+    () => {
+      throw new Error(`expected a refusal for "${input.query}"`);
+    },
+    (error: unknown) => error,
+  );
+}
+
+describe("customers.getCustomer by human reference", () => {
+  it("resolves a unique name, phone, and email", async () => {
+    await expect(
+      kit.invoke(getCustomer, { query: "Alpha Cake" }),
+    ).resolves.toMatchObject({ id: fixtures.customerA });
+    await expect(
+      kit.invoke(getCustomer, { query: "+380501111111" }),
+    ).resolves.toMatchObject({ id: fixtures.customerA });
+    await expect(
+      kit.invoke(getCustomer, { query: "bare@kit.test" }),
+    ).resolves.toMatchObject({ id: fixtures.customerAEmpty });
+  });
+
+  it("finds an archived customer by name", async () => {
+    await expect(
+      kit.invoke(getCustomer, { query: "Old Thing" }),
+    ).resolves.toMatchObject({
+      id: fixtures.customerArchived,
+      status: "archived",
+    });
+  });
+
+  it("refuses several exact matches with the matching customers as options", async () => {
+    const error = await refusalOf({ query: "Duo Twin" });
+    expect(error).toBeInstanceOf(EntityLookupAmbiguousError);
+    if (!(error instanceof EntityLookupAmbiguousError)) {
+      return;
+    }
+    expect(error.target).toEqual({ kind: "customer", query: "Duo Twin" });
+    expect(error.options.map((option) => option.id).toSorted()).toEqual(
+      [fixtures.customerTwinPhone, fixtures.customerTwinEmail].toSorted(),
+    );
+    expect(error.options.map((option) => option.label)).toContain(
+      "Duo Twin (…2222)",
+    );
+    expect(error.optionsTruncated).toBe(false);
+  });
+
+  it("refuses a partial name as not found with the nearest customers", async () => {
+    const error = await refusalOf({ query: "Alpha" });
+    expect(error).toBeInstanceOf(EntityLookupUnmatchedError);
+    if (!(error instanceof EntityLookupUnmatchedError)) {
+      return;
+    }
+    expect(error.options.map((option) => option.id)).toEqual([
+      fixtures.customerA,
+    ]);
+  });
+
+  it("refuses an unknown name as not found with nothing near", async () => {
+    const error = await refusalOf({ query: "Zzyzx Nobody" });
+    expect(error).toBeInstanceOf(EntityLookupUnmatchedError);
+    if (!(error instanceof EntityLookupUnmatchedError)) {
+      return;
+    }
+    expect(error.options).toEqual([]);
+  });
+
+  it("refuses another company's name and phone as missing", async () => {
+    await expect(
+      kit.invoke(getCustomer, { query: "Bravo" }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+    await expect(
+      kit.invoke(getCustomer, { query: "+380509999999" }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it("denies a query for staff without customers:view", async () => {
+    await expect(
+      kit.invoke(
+        getCustomer,
+        { query: "Alpha Cake" },
+        { userId: clerkUserId, companyId: kitIdentities.companies.a },
+      ),
+    ).rejects.toBeInstanceOf(PermissionDeniedError);
+  });
+
+  it("rejects an input with both references and one with neither", async () => {
+    await expect(
+      kit.invoke(getCustomer, { id: fixtures.customerA, query: "Alpha Cake" }),
+    ).rejects.toBeInstanceOf(ValidationError);
+    await expect(kit.invoke(getCustomer, {})).rejects.toBeInstanceOf(
+      ValidationError,
+    );
   });
 });

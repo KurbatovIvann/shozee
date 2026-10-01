@@ -21,6 +21,11 @@ describe("customers.getCustomer contract", () => {
     expect(getCustomerContract.emits).toEqual([]);
     expect(getCustomerContract.timeout).toBe(5_000);
     expect(getCustomerContract.rateLimit).toBeUndefined();
+    expect(getCustomerContract.errors.toSorted()).toEqual([
+      "CONFLICT",
+      "NOT_FOUND",
+      "VALIDATION",
+    ]);
     expect(Object.keys(getCustomerOutputSchema.shape).toSorted()).toEqual([
       "createdAt",
       "email",
@@ -54,5 +59,18 @@ describe("customers.getCustomer contract", () => {
         getCustomerInputSchema.safeParse({ id: validId, ...extra }).success,
       ).toBe(false);
     }
+  });
+
+  it("accepts a human query and refuses both references at once", () => {
+    expect(getCustomerInputSchema.parse({ query: " Катя Самбука " })).toEqual({
+      query: "Катя Самбука",
+    });
+    expect(
+      getCustomerInputSchema.safeParse({ id: validId, query: "Катя" }).success,
+    ).toBe(false);
+    expect(getCustomerInputSchema.safeParse({ query: "" }).success).toBe(false);
+    expect(
+      getCustomerInputSchema.safeParse({ query: "x".repeat(101) }).success,
+    ).toBe(false);
   });
 });

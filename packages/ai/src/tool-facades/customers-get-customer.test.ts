@@ -10,10 +10,10 @@ import {
 import {
   CUSTOMERS_GET_CUSTOMER_ACTION_NAME,
   CUSTOMERS_GET_CUSTOMER_TOOL_NAME,
-  CUSTOMERS_RESOLVE_REFERENCE_ACTION_NAME,
   customersGetCustomerFacadeTools,
   customersGetCustomerInputSchema,
 } from "./customers-get-customer.js";
+import { ENTITY_LOOKUP_RECORD_OPTIONS_MAX } from "./entity-lookup.js";
 
 const getCustomer = defineActionContract({
   name: CUSTOMERS_GET_CUSTOMER_ACTION_NAME,
@@ -28,16 +28,37 @@ const getCustomer = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
-  errors: ["NOT_FOUND"],
+  errors: ["NOT_FOUND", "CONFLICT"],
   audit: false,
   timeout: 5_000,
-  input: z.strictObject({ id: z.uuid() }),
+  input: z.strictObject({
+    id: z.uuid().optional(),
+    query: z.string().min(1).optional(),
+  }),
   output: z.object({ id: z.uuid(), name: z.string() }),
 });
 
 const customerId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const otherId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const foreignId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+
+function nearestOption(index: number): { id: string; label: string } {
+  return {
+    id: `dddddddd-dddd-4ddd-8ddd-${String(index).padStart(12, "0")}`,
+    label: `Катя ${String(index)}`,
+  };
+}
+
+function unmatched(
+  options: readonly { id: string; label: string }[],
+): NotFoundError {
+  return Object.assign(new NotFoundError('Nothing matches "Катя".'), {
+    reason: "unmatched_query",
+    target: { kind: "customer", query: "Катя" },
+    options,
+    optionsTruncated: false,
+  });
+}
 
 function runTool(
   execute: (
@@ -76,7 +97,7 @@ describe("customersGetCustomerInputSchema", () => {
 });
 
 describe("customersGetCustomerFacadeTools", () => {
-  it("reads the customer by id without resolving a reference", async () => {
+  it("reads the customer by id in one call", async () => {
     const execute = vi.fn(() =>
       Promise.resolve({ id: customerId, name: "Катя Самбука" }),
     );
@@ -90,44 +111,32 @@ describe("customersGetCustomerFacadeTools", () => {
     expect(result).toEqual({ id: customerId, name: "Катя Самбука" });
   });
 
-  it("resolves a unique name query and then reads that customer", async () => {
-    const execute = vi.fn((actionName: string) =>
-      actionName === CUSTOMERS_RESOLVE_REFERENCE_ACTION_NAME
-        ? Promise.resolve({ customerId })
-        : Promise.resolve({ id: customerId, name: "Катя Самбука" }),
+  it("sends a name query to the owning action in one call", async () => {
+    const execute = vi.fn(() =>
+      Promise.resolve({ id: customerId, name: "Катя Самбука" }),
     );
-    const result = await runTool(execute, { customerQuery: "Катя Самбука" });
-    expect(execute).toHaveBeenNthCalledWith(
-      1,
-      CUSTOMERS_RESOLVE_REFERENCE_ACTION_NAME,
-      { by: "query", value: "Катя Самбука" },
-      { toolCallId: "call-customer" },
-    );
-    expect(execute).toHaveBeenNthCalledWith(
-      2,
+    await runTool(execute, { customerQuery: "Катя Самбука" });
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledWith(
       CUSTOMERS_GET_CUSTOMER_ACTION_NAME,
-      { id: customerId },
+      { query: "Катя Самбука" },
       { toolCallId: "call-customer" },
     );
-    expect(result).toEqual({ id: customerId, name: "Катя Самбука" });
   });
 
-  it("resolves a phone query through the same reference action", async () => {
-    const execute = vi.fn((actionName: string) =>
-      actionName === CUSTOMERS_RESOLVE_REFERENCE_ACTION_NAME
-        ? Promise.resolve({ customerId })
-        : Promise.resolve({ id: customerId, name: "Катя Самбука" }),
+  it("sends a phone query through the same single call", async () => {
+    const execute = vi.fn(() =>
+      Promise.resolve({ id: customerId, name: "Катя Самбука" }),
     );
     await runTool(execute, { customerQuery: "+380501234567" });
-    expect(execute).toHaveBeenNthCalledWith(
-      1,
-      CUSTOMERS_RESOLVE_REFERENCE_ACTION_NAME,
-      { by: "query", value: "+380501234567" },
+    expect(execute).toHaveBeenCalledWith(
+      CUSTOMERS_GET_CUSTOMER_ACTION_NAME,
+      { query: "+380501234567" },
       { toolCallId: "call-customer" },
     );
   });
 
-  it("passes several matches through as an answerable customer picker", async () => {
+  it("passes the action's several-matches conflict through untouched", async () => {
     const ambiguous = Object.assign(new ConflictError("Which Катя?"), {
       reason: "ambiguous",
       target: { kind: "customer", query: "Катя" },
@@ -146,19 +155,43 @@ describe("customersGetCustomerFacadeTools", () => {
     expect(picker?.create).toBeUndefined();
   });
 
-  it("turns nothing matched into a picker whose only option is create", async () => {
+  it("offers the action's nearest customers plus create when nothing matched", async () => {
+    const nearest = [nearestOption(1), nearestOption(2)];
     const error: unknown = await runTool(
-      () => Promise.reject(new NotFoundError()),
+      () => Promise.reject(unmatched(nearest)),
       { customerQuery: "Катя" },
     ).catch((thrown: unknown) => thrown);
     const picker = catalogPickerConflictExtrasFromError(error);
     expect(picker).toEqual({
       reason: "unmatched_query",
       target: { kind: "customer", query: "Катя" },
-      options: [],
+      options: nearest,
       optionsTruncated: false,
       create: { optionId: CHOICE_CREATE_OPTION_ID, label: 'Create "Катя"' },
     });
+  });
+
+  it("offers only create when the action found nothing near", async () => {
+    const error: unknown = await runTool(() => Promise.reject(unmatched([])), {
+      customerQuery: "Катя",
+    }).catch((thrown: unknown) => thrown);
+    const picker = catalogPickerConflictExtrasFromError(error);
+    expect(picker?.options).toEqual([]);
+    expect(picker?.create?.optionId).toBe(CHOICE_CREATE_OPTION_ID);
+  });
+
+  it("leaves room for the create option when the nearest list fills the card", async () => {
+    const nearest = Array.from({ length: 20 }, (_, index) =>
+      nearestOption(index),
+    );
+    const error: unknown = await runTool(
+      () => Promise.reject(unmatched(nearest)),
+      { customerQuery: "Катя" },
+    ).catch((thrown: unknown) => thrown);
+    const picker = catalogPickerConflictExtrasFromError(error);
+    expect(picker?.options).toHaveLength(ENTITY_LOOKUP_RECORD_OPTIONS_MAX);
+    expect(picker?.optionsTruncated).toBe(true);
+    expect(picker?.create).toBeDefined();
   });
 
   it("refuses a customer id from another company with not found", async () => {
@@ -171,6 +204,13 @@ describe("customersGetCustomerFacadeTools", () => {
       { id: foreignId },
       { toolCallId: "call-customer" },
     );
+  });
+
+  it("keeps a plain not-found plain", async () => {
+    const plain = new NotFoundError();
+    await expect(
+      runTool(() => Promise.reject(plain), { customerQuery: "Катя" }),
+    ).rejects.toBe(plain);
   });
 
   it("tells the model a named customer is this tool and a plural is the list", () => {

@@ -9,6 +9,22 @@ export const ENTITY_REF_QUERY_MAX = 100;
 
 export const REFERENCE_CONFLICT_LABELS_MAX = 5;
 
+export const entityRefQuerySchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(ENTITY_REF_QUERY_MAX);
+
+export const ENTITY_REF_EXACTLY_ONE_MESSAGE =
+  "Provide exactly one of the id or the query.";
+
+export function hasExactlyOneReference(input: {
+  readonly id?: string | undefined;
+  readonly query?: string | undefined;
+}): boolean {
+  return (input.id === undefined) !== (input.query === undefined);
+}
+
 export const entityRefSchema = z.discriminatedUnion("by", [
   z.strictObject({
     by: z.literal("id"),
@@ -16,7 +32,7 @@ export const entityRefSchema = z.discriminatedUnion("by", [
   }),
   z.strictObject({
     by: z.literal("query"),
-    value: z.string().trim().min(1).max(ENTITY_REF_QUERY_MAX),
+    value: entityRefQuerySchema,
   }),
 ]);
 
