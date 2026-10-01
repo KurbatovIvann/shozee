@@ -13,10 +13,12 @@ import { companyMembers } from "@showzy/db/schema/companies";
 import { priceLists } from "@showzy/db/schema/pricing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { readPricingNameIndex } from "../services/name-index.js";
 import { listNameIndex } from "./list-name-index.js";
 
 const fixtures = {
   active: randomUUID(),
+  secondActive: randomUUID(),
   inactive: randomUUID(),
   foreign: randomUUID(),
 };
@@ -33,6 +35,12 @@ beforeAll(async () => {
       id: fixtures.active,
       companyId: kitIdentities.companies.a,
       name: "Index Роздріб",
+      isActive: true,
+    },
+    {
+      id: fixtures.secondActive,
+      companyId: kitIdentities.companies.a,
+      name: "Index Опт",
       isActive: true,
     },
     {
@@ -92,6 +100,17 @@ describe("pricing.listNameIndex", () => {
     for (const row of listed.priceLists.items) {
       expect(Object.keys(row).sort()).toEqual(["id", "name"]);
     }
+  });
+
+  it("cuts the list at its cap and sets truncated", async () => {
+    const capped = await readPricingNameIndex({
+      db: kit.db.runtime.db,
+      companyId: kitIdentities.companies.a,
+      cap: 1,
+    });
+
+    expect(capped.priceLists.items).toHaveLength(1);
+    expect(capped.priceLists.truncated).toBe(true);
   });
 
   it("excludes a deactivated price list", async () => {

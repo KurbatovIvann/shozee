@@ -13,14 +13,18 @@ import { products, productVariants } from "@showzy/db/schema/catalog";
 import { companyMembers } from "@showzy/db/schema/companies";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { readCatalogNameIndex } from "../services/name-index.js";
 import { listNameIndex } from "./list-name-index.js";
 
 const fixtures = {
   activeProduct: randomUUID(),
+  secondActiveProduct: randomUUID(),
   archivedProduct: randomUUID(),
   foreignProduct: randomUUID(),
   activeVariant: randomUUID(),
+  secondActiveVariant: randomUUID(),
   archivedVariant: randomUUID(),
+  variantOfArchivedProduct: randomUUID(),
   foreignVariant: randomUUID(),
 };
 
@@ -37,6 +41,12 @@ beforeAll(async () => {
       companyId: kitIdentities.companies.a,
       name: "Index Кава",
       basePriceMinor: 1000n,
+    },
+    {
+      id: fixtures.secondActiveProduct,
+      companyId: kitIdentities.companies.a,
+      name: "Index Чай",
+      basePriceMinor: 1050n,
     },
     {
       id: fixtures.archivedProduct,
@@ -61,11 +71,23 @@ beforeAll(async () => {
       name: "Index Кава / 1 кг",
     },
     {
+      id: fixtures.secondActiveVariant,
+      companyId: kitIdentities.companies.a,
+      productId: fixtures.secondActiveProduct,
+      name: "Index Чай / 500 г",
+    },
+    {
       id: fixtures.archivedVariant,
       companyId: kitIdentities.companies.a,
       productId: fixtures.activeProduct,
       name: "Index Кава / знята",
       status: "archived",
+    },
+    {
+      id: fixtures.variantOfArchivedProduct,
+      companyId: kitIdentities.companies.a,
+      productId: fixtures.archivedProduct,
+      name: "Index Старий Чай / 1 кг",
     },
     {
       id: fixtures.foreignVariant,
@@ -132,6 +154,32 @@ describe("catalog.listNameIndex", () => {
     expect(listed.variants.items.map((entry) => entry.id)).not.toContain(
       fixtures.archivedVariant,
     );
+  });
+
+  it("excludes an active variant whose parent product is archived", async () => {
+    const listed = await kit.invoke(listNameIndex, {});
+    expect(listed.variants.items.map((entry) => entry.id)).not.toContain(
+      fixtures.variantOfArchivedProduct,
+    );
+    const listedProductIds = new Set(
+      listed.products.items.map((entry) => entry.id),
+    );
+    for (const variant of listed.variants.items) {
+      expect(listedProductIds.has(variant.productId)).toBe(true);
+    }
+  });
+
+  it("cuts each list at its cap and sets truncated", async () => {
+    const capped = await readCatalogNameIndex({
+      db: kit.db.runtime.db,
+      companyId: kitIdentities.companies.a,
+      caps: { products: 1, variants: 1 },
+    });
+
+    expect(capped.products.items).toHaveLength(1);
+    expect(capped.products.truncated).toBe(true);
+    expect(capped.variants.items).toHaveLength(1);
+    expect(capped.variants.truncated).toBe(true);
   });
 
   it("returns ids and names only", async () => {

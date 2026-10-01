@@ -13,13 +13,16 @@ import { companyMembers } from "@showzy/db/schema/companies";
 import { companyCustomers, customerGroups } from "@showzy/db/schema/customers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { readCustomersNameIndex } from "../services/name-index.js";
 import { listNameIndex } from "./list-name-index.js";
 
 const fixtures = {
   active: randomUUID(),
+  secondActive: randomUUID(),
   archived: randomUUID(),
   foreign: randomUUID(),
   group: randomUUID(),
+  secondGroup: randomUUID(),
   foreignGroup: randomUUID(),
 };
 
@@ -37,6 +40,13 @@ beforeAll(async () => {
       name: "Index Alpha",
       phone: "+380501000001",
       email: `index-alpha-${fixtures.active}@kit.test`,
+    },
+    {
+      id: fixtures.secondActive,
+      companyId: kitIdentities.companies.a,
+      name: "Index Beta",
+      phone: "+380501000004",
+      email: `index-beta-${fixtures.secondActive}@kit.test`,
     },
     {
       id: fixtures.archived,
@@ -59,6 +69,12 @@ beforeAll(async () => {
       companyId: kitIdentities.companies.a,
       name: "Index Group",
       slug: `index-group-${fixtures.group}`,
+    },
+    {
+      id: fixtures.secondGroup,
+      companyId: kitIdentities.companies.a,
+      name: "Index Group Two",
+      slug: `index-group-two-${fixtures.secondGroup}`,
     },
     {
       id: fixtures.foreignGroup,
@@ -115,6 +131,19 @@ describe("customers.listNameIndex", () => {
     const groupIds = listed.groups.items.map((entry) => entry.id);
     expect(groupIds).toContain(fixtures.group);
     expect(listed.groups.truncated).toBe(false);
+  });
+
+  it("cuts each list at its cap and sets truncated", async () => {
+    const capped = await readCustomersNameIndex({
+      db: kit.db.runtime.db,
+      companyId: kitIdentities.companies.a,
+      caps: { customers: 1, groups: 1 },
+    });
+
+    expect(capped.customers.items).toHaveLength(1);
+    expect(capped.customers.truncated).toBe(true);
+    expect(capped.groups.items).toHaveLength(1);
+    expect(capped.groups.truncated).toBe(true);
   });
 
   it("excludes archived customers", async () => {

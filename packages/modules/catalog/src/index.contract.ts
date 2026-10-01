@@ -6,17 +6,17 @@ export { getProductContract } from "./actions/get-product.contract.js";
 export { getProductOrderFactsContract } from "./actions/get-product-order-facts.contract.js";
 export { getProductPricingFactsContract } from "./actions/get-product-pricing-facts.contract.js";
 export {
+  LIST_NAME_INDEX_PRODUCTS_MAX,
+  LIST_NAME_INDEX_VARIANTS_MAX,
+  listNameIndexContract,
+} from "./actions/list-name-index.contract.js";
+export {
   LIST_PRODUCTS_CURSOR_MAX,
   LIST_PRODUCTS_DEFAULT_LIMIT,
   LIST_PRODUCTS_MAX_LIMIT,
   LIST_PRODUCTS_QUERY_MAX,
   listProductsContract,
 } from "./actions/list-products.contract.js";
-export {
-  LIST_NAME_INDEX_PRODUCTS_MAX,
-  LIST_NAME_INDEX_VARIANTS_MAX,
-  listNameIndexContract,
-} from "./actions/list-name-index.contract.js";
 export { resolveLineReferencesContract } from "./actions/resolve-line-references.contract.js";
 export { restoreProductContract } from "./actions/restore-product.contract.js";
 export { restoreVariantContract } from "./actions/restore-variant.contract.js";

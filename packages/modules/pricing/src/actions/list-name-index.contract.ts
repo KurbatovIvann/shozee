@@ -20,7 +20,7 @@ export const listNameIndexOutputSchema = z.strictObject({
 export const listNameIndexContract = defineActionContract({
   name: "pricing.listNameIndex",
   description:
-    "Return every active price list in the staff member's active company as ids and names only, for the Шо parse context (ADR-0051). Deactivated price lists are excluded, as in the SHO-732 benchmark. The list is capped (1000 price lists) and sets truncated when more rows exist. Company id is never input. Internal — not mounted on HTTP.",
+    "Return every active price list in the staff member's active company as ids and names only, for the Шо parse context (ADR-0051). Deactivated price lists are excluded, as in the SHO-732 benchmark. The list is capped (1000 price lists) and sets truncated when more rows exist. The byte budget of the Шо context and its partial flag belong to the context builder (ADR-0051), not to this read. Company id is never input. Internal — not mounted on HTTP.",
   principal: "staff",
   transport: "internal",
   input: listNameIndexInputSchema,
