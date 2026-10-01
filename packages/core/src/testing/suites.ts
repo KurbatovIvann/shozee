@@ -16,10 +16,6 @@ import type { z } from "zod";
 
 import { SHARE_DURABLE_ACTOR } from "../runtime/context/types.js";
 import {
-  CONFIRMABLE_RISKS,
-  isHumanPrincipal,
-} from "../contract/confirmation-preconditions.js";
-import {
   ConfirmationRequiredError,
   NotFoundError,
   PermissionDeniedError,
@@ -179,16 +175,15 @@ function assertAccountDidNotLeak(
 }
 
 function previewGated(action: SuiteAction): boolean {
-  if (action.contract.requiresConfirmation) {
-    return true;
-  }
-  if (action.preview === undefined) {
+  return action.preview !== undefined || action.contract.requiresConfirmation;
+}
+
+function previewExistenceChecked(c: CrossTenantCase, gated: boolean): boolean {
+  if (!gated || c.action.preview === undefined) {
     return false;
   }
   return (
-    CONFIRMABLE_RISKS.includes(action.contract.risk) &&
-    isHumanPrincipal(action.contract.principal) &&
-    action.contract.idempotent
+    c.action.contract.principal !== "account" || onlyTheReferenceDiffers(c)
   );
 }
 
@@ -263,6 +258,30 @@ async function invokeThroughGate(
   });
 }
 
+const MISSING_REFERENCE_CLIENT_MESSAGE = new NotFoundError().clientMessage;
+
+function assertRefusedAsMissing(
+  actionName: string,
+  refusal: NotFoundError | PermissionDeniedError,
+): void {
+  if (!(refusal instanceof NotFoundError)) {
+    throw new Error(
+      leakMessage(
+        actionName,
+        `existence: the preview refused a foreign reference with ${refusal.code} where a missing one is NOT_FOUND`,
+      ),
+    );
+  }
+  if (refusal.clientMessage !== MISSING_REFERENCE_CLIENT_MESSAGE) {
+    throw new Error(
+      leakMessage(
+        actionName,
+        `existence: the preview refused a foreign reference with "${refusal.clientMessage}" where a missing one says "${MISSING_REFERENCE_CLIENT_MESSAGE}"`,
+      ),
+    );
+  }
+}
+
 async function expectPreviewRefusesForeignAsMissing(
   kit: TestKit,
   c: CrossTenantCase,
@@ -286,13 +305,8 @@ async function expectPreviewRefusesForeignAsMissing(
   if (!isolationDenied(atPreview)) {
     throw atPreview;
   }
-  if (onlyTheReferenceDiffers(c) && !(atPreview instanceof NotFoundError)) {
-    throw new Error(
-      leakMessage(
-        name,
-        `existence: the preview refused a foreign reference with ${atPreview.code} where a missing one is NOT_FOUND`,
-      ),
-    );
+  if (onlyTheReferenceDiffers(c)) {
+    assertRefusedAsMissing(name, atPreview);
   }
   if (c.action.contract.requiresConfirmation) {
     return;
@@ -374,7 +388,9 @@ export async function runCrossTenantCase(
     await invoke(kit, action, c.own);
   }
 
-  if (principal === "account") {
+  const checksPreviewExistence = previewExistenceChecked(c, gated);
+
+  if (principal === "account" && !checksPreviewExistence) {
     try {
       const output = await invoke(kit, action, c.foreign);
       assertAccountDidNotLeak(action.contract.name, output);
@@ -387,7 +403,7 @@ export async function runCrossTenantCase(
     }
   }
 
-  if (gated && action.preview !== undefined) {
+  if (checksPreviewExistence) {
     await expectPreviewRefusesForeignAsMissing(kit, c);
     return;
   }

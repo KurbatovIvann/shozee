@@ -793,8 +793,13 @@ Exported from `packages/core/testing`, used by every module (this is how
   action runs the own case through the two-step gate (challenge → confirm)
   on the suite's own `createConfirmationHook`, so a module that swaps the
   kit's hook cannot disable the check; when the action binds `preview`,
-  the foreign reference must be refused at the preview step with the same
-  code and `clientMessage` a missing one gets at execution (§7). Every
+  the foreign reference must be refused at the preview step, never
+  answered with a confirmation card. Where the own and foreign cases
+  differ only in the reference (same actor, same company — including an
+  `account` case), that refusal carries the `NOT_FOUND` code and the
+  `clientMessage` a missing reference gets; where the action pauses only
+  at execution time, the preview and the execution refuse with the same
+  code and `clientMessage` (§7). Every
   module instantiates the relevant case for each action — omission fails
   the contract check.
 - `publicProjectionSuite(actions)` — for `publicScope: globalProjection`:

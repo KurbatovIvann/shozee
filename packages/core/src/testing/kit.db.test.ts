@@ -290,6 +290,19 @@ describe("suites fail on seeded violations", () => {
     ).rejects.toThrow(/leaked existence/);
   });
 
+  it("detects a preview that names the owner of a foreign id", async () => {
+    await expect(
+      runCrossTenantCase(
+        kit,
+        isolationCase(
+          leaky.staffPublishProductNamingTheOwner,
+          { input: ownProduct },
+          { input: foreignProduct },
+        ),
+      ),
+    ).rejects.toThrow(/belongs to another company/);
+  });
+
   it("detects a customer resolver that skips ownership", async () => {
     await expect(
       runCrossTenantCase(
