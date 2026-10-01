@@ -48,7 +48,7 @@ import {
   CANCELLED_REQUEST_SIGN_MESSAGE,
   PDF_NOT_READY_MESSAGE,
   requestSign,
-  requestSignConfirmationSummary,
+  REQUEST_SIGN_KEY_POSSESSION_NOTE,
 } from "./request-sign.js";
 import { documentsSignRequested } from "../events/sign-requested.js";
 
@@ -642,7 +642,7 @@ describe("documents.requestSign", () => {
     });
   });
 
-  it("rejects an unconfirmed call with a static summary and executes after the challenge", async () => {
+  it("rejects an unconfirmed call with a structured preview card and executes after the challenge", async () => {
     const deps = confirmationPipeline(kit);
     const idempotencyKey = randomUUID();
     const unconfirmed = await kit
@@ -663,10 +663,18 @@ describe("documents.requestSign", () => {
     if (!(unconfirmed instanceof ConfirmationRequiredError)) {
       throw new Error("expected ConfirmationRequiredError");
     }
-    expect(unconfirmed.challenge.summary).toBe(requestSignConfirmationSummary);
-    expect(unconfirmed.challenge.summary).not.toContain("KA-РХ-000928");
-    expect(unconfirmed.challenge.summary).not.toContain("Fixture buyer");
-    expect(unconfirmed.challenge.summary).toContain("key possession");
+    expect(unconfirmed.challenge.summary).toBe(
+      "Запросити підписання документа KA-РХ-000928",
+    );
+    expect(unconfirmed.challenge.preview).toEqual({
+      title: "Запросити підписання документа KA-РХ-000928",
+      lines: [
+        { label: "Документ", value: "KA-РХ-000928" },
+        { label: "Тип", value: "Рахунок на оплату" },
+        { label: "Статус", value: "Виданий" },
+      ],
+      notes: [REQUEST_SIGN_KEY_POSSESSION_NOTE],
+    });
 
     const before = await kit.db.runtime.db
       .select({ signRequestedAt: documents.signRequestedAt })

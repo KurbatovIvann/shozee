@@ -7,6 +7,7 @@ import {
   issueShareDownloadUrl,
   issueShareSigningDownloadUrl,
 } from "@showzy/files";
+import { previewCompanyScope } from "@showzy/module-kit/preview-scope";
 import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 
@@ -24,6 +25,10 @@ import {
   mintShareDownload,
   mintSharePdfDownload,
 } from "../services/mint-share-pdf.js";
+import {
+  documentPreviewLines,
+  loadDocumentPreviewFacts,
+} from "../services/preview-document.js";
 import { getDocumentShareOrigin } from "../services/share-origin.js";
 import {
   generateDocumentShareToken,
@@ -121,6 +126,20 @@ export const shareDocument = implementAction(shareDocumentContract, {
       ...view,
       token: plaintextToken,
       url: documentShareUrl(plaintextToken, getDocumentShareOrigin()),
+    };
+  },
+  preview: async (input, env) => {
+    const facts = await loadDocumentPreviewFacts({
+      tx: env.tx,
+      companyId: previewCompanyScope(env.companyId, "documents.share"),
+      documentId: input.documentId,
+    });
+    return {
+      title: `Поділитися документом ${facts.documentNumber}`,
+      lines: documentPreviewLines(facts),
+      notes: [
+        "Чинне посилання буде відкликано — працюватиме лише нове, і воно діє 90 днів.",
+      ],
     };
   },
   auditTarget: shareAuditTarget,

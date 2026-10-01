@@ -1,6 +1,11 @@
 import { implementAction, type AuditTargetEnv } from "@showzy/core";
+import { previewCompanyScope } from "@showzy/module-kit/preview-scope";
 import { z } from "zod";
 
+import {
+  legalPreviewLines,
+  loadStoredLegalFacts,
+} from "../services/preview-legal.js";
 import { updateStaffLegal } from "../services/update-legal.js";
 import { updateLegalContract } from "./update-legal.contract.js";
 
@@ -20,6 +25,19 @@ function updateLegalAuditTarget(env: AuditTargetEnv): {
 export const updateLegal = implementAction(updateLegalContract, {
   handler: (input, ctx) => {
     return updateStaffLegal({ ctx, input });
+  },
+  preview: async (input, env) => {
+    const stored = await loadStoredLegalFacts({
+      tx: env.tx,
+      companyId: previewCompanyScope(env.companyId, "companies.updateLegal"),
+    });
+    return {
+      title: "Зберегти реквізити компанії",
+      lines: legalPreviewLines(input, stored),
+      notes: [
+        "Реквізити потрапляють у рахунки та накладні, які ви видасте після збереження.",
+      ],
+    };
   },
   auditTarget: updateLegalAuditTarget,
 });

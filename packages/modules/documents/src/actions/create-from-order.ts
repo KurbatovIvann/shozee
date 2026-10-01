@@ -1,5 +1,6 @@
 import { getSellerFacts } from "@showzy/companies";
 import { implementAction, type AuditTargetEnv } from "@showzy/core";
+import type { ActionPreviewLine } from "@showzy/core/errors";
 import { getCounterparty, getCustomer } from "@showzy/customers";
 import { resolveLayout } from "@showzy/doc-generation/resolve-layout";
 import { getOrder } from "@showzy/orders";
@@ -8,6 +9,7 @@ import { z } from "zod";
 import { createFromOrderContract } from "./create-from-order.contract.js";
 import type { documentTypeSchema } from "./document-view.contract.js";
 import { createStaffDocument } from "../services/create-from-order.js";
+import { documentTypeLabel } from "../services/preview-document.js";
 import {
   requireCounterpartyCustomerMatch,
   requireOrderCustomerId,
@@ -93,6 +95,24 @@ export const createFromOrder = implementAction(createFromOrderContract, {
       buyer: snapshotCustomerBuyer(customer.name),
       counterpartyId: null,
     });
+  },
+  preview: async (input, env) => {
+    const order = await env.call(getOrder, { orderId: input.orderId });
+    const lines: ActionPreviewLine[] = [
+      { label: "Тип", value: documentTypeLabel(input.type) },
+      { label: "Замовлення", value: order.orderNumber },
+      { label: "Позицій", value: String(order.items.length) },
+    ];
+    if (input.basis !== undefined && input.basis.length > 0) {
+      lines.push({ label: "Підстава", value: input.basis });
+    }
+    return {
+      title: `Створити документ за замовленням ${order.orderNumber}`,
+      lines,
+      notes: [
+        "Документ отримає наступний номер за своїм типом — номер не повертають у нумерацію.",
+      ],
+    };
   },
   auditTarget: createAuditTarget,
 });

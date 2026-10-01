@@ -7,6 +7,7 @@ import {
 import { documents } from "@showzy/db/schema/documents";
 import { getArtifact } from "@showzy/doc-generation/get-artifact";
 import { getSigning } from "@showzy/doc-signing/get";
+import { previewCompanyScope } from "@showzy/module-kit/preview-scope";
 import {
   ALREADY_SIGNED_MESSAGE,
   CANCELLED_REQUEST_SIGN_MESSAGE,
@@ -20,6 +21,10 @@ import {
   loadGenerationArtifact,
   readyArtifactFileId,
 } from "../services/load-generation.js";
+import {
+  documentPreviewLines,
+  loadDocumentPreviewFacts,
+} from "../services/preview-document.js";
 import { requireReadyPdf } from "../services/signing-gates.js";
 import { requireWritable } from "../services/writable.js";
 import { requestSignContract } from "./request-sign.contract.js";
@@ -30,15 +35,8 @@ export {
   PDF_NOT_READY_MESSAGE,
 };
 
-/**
- * Staff confirmationSummary cannot load the document (core.md §7
- * `ConfirmationSummaryEnv` is validated input + company id; no handler
- * `ctx` / tx). Live number would also distinguish missing vs foreign ids
- * on the challenge. The UI already has the document from list/get when it
- * shows the dialog. Confirmation does not replace key possession.
- */
-export const requestSignConfirmationSummary =
-  "Request a qualified electronic signature for this issued document. Confirm the number and type shown in the dialog. You still need the signing key on the device — confirmation does not replace key possession.";
+export const REQUEST_SIGN_KEY_POSSESSION_NOTE =
+  "Підтвердження не замінює володіння ключем — документ підписують на вашому пристрої.";
 
 const documentIdHolder = z.object({ documentId: z.string() });
 
@@ -116,6 +114,17 @@ export const requestSign = implementAction(requestSignContract, {
 
     return { documentId: input.documentId };
   },
-  confirmationSummary: () => requestSignConfirmationSummary,
+  preview: async (input, env) => {
+    const facts = await loadDocumentPreviewFacts({
+      tx: env.tx,
+      companyId: previewCompanyScope(env.companyId, "documents.requestSign"),
+      documentId: input.documentId,
+    });
+    return {
+      title: `Запросити підписання документа ${facts.documentNumber}`,
+      lines: documentPreviewLines(facts),
+      notes: [REQUEST_SIGN_KEY_POSSESSION_NOTE],
+    };
+  },
   auditTarget: requestSignAuditTarget,
 });
