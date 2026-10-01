@@ -984,6 +984,11 @@ async function runActionPreview<
 ): Promise<ActionPreview> {
   return await env.deps.db.transaction(
     async (tx) => {
+      await applyStatementTimeout(
+        tx,
+        env.contract.name,
+        env.deadline - env.now(),
+      );
       const readOnlyPreview = true;
       const previewCtx = await constructPrincipalContext(
         env,
@@ -1001,13 +1006,28 @@ async function runActionPreview<
         path: [env.contract.name],
       });
       return await preview(env.input, {
-        ...summaryEnv,
+        companyId: summaryEnv.companyId,
+        ...resolvedTargetOf(previewCtx),
         tx: createReadTx(tx),
         call,
       });
     },
     { accessMode: "read only" },
   );
+}
+
+function resolvedTargetOf(
+  ctx: ActionCtx,
+): Pick<ConfirmationSummaryEnv, "target"> {
+  switch (ctx.principal) {
+    case "customer":
+    case "share":
+      return { target: ctx.target.resource };
+    case "public":
+      return ctx.scope === "target" ? { target: ctx.target.resource } : {};
+    default:
+      return {};
+  }
 }
 
 function confirmationIsRequired(

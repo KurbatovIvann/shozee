@@ -601,9 +601,16 @@ Two-step, single-use, channel-agnostic (same for UI and AI — ADR-0008):
    read-only transaction, plus `ctx.call` of principal-compatible
    `risk: "read"` actions through the same declared §9 edges a handler
    uses. The principal context is reconstructed inside that transaction,
-   so membership and the typed resolver re-verify there. No writes, no
-   `ctx.callAtomic`, no `ctx.emit`, no job enqueue, and no idempotency
-   reservation: the card is a read. The callback runs after the
+   so membership and the typed resolver re-verify there, and the `target`
+   the callback sees is the one that resolver proved. The transaction
+   carries the §4 transaction-local statement timeout sized to the
+   remaining deadline, so preview reads and their nested calls are bounded
+   by `timeout` like any other query. No writes, no `ctx.callAtomic`, no
+   `ctx.emit`, no job enqueue, and no idempotency reservation: the card is
+   a read. The one row a preview can leave behind is the §8 audit row of
+   an `audit: true` `risk: "read"` callee — the audited read happened, and
+   its best-effort post-commit row is the §8 protocol, not a domain write.
+   The callback runs after the
    authorization preflight and **before** the challenge is stored, so a
    throw propagates as the invocation's outcome and leaves no orphan
    challenge and nothing reserved.
@@ -924,7 +931,7 @@ does not apply — fails the check.
 
 | Date | Change | Why | Reported by |
 | --- | --- | --- | --- |
-| 2026-10-01 | §7: `preview` receives `ActionPreviewEnv` — a `ReadTx` over a read-only transaction and `ctx.call` of `risk: "read"` callees, under the typed target resolver's rules; the existence-leak rule makes a missing or foreign id refuse exactly as the handler would | ADR-0050: a card cannot show resolved names, amounts or «old → new» from validated input alone | SHO-785 |
+| 2026-10-01 | §7: `preview` receives `ActionPreviewEnv` — a `ReadTx` over a read-only transaction under the §4 statement timeout and `ctx.call` of `risk: "read"` callees, with the `target` from the in-transaction resolver; the existence-leak rule makes a missing or foreign id refuse exactly as the handler would, and an audited callee's §8 row is the one row a preview leaves | ADR-0050: a card cannot show resolved names, amounts or «old → new» from validated input alone | SHO-785 |
 | 2026-09-30 | §2/§7: execution-time `requireConfirmation` request meta gates one attempt of an idempotent human-principal `write`/`high` action; `preview` callback returns the redacted structured card and may stand in for `confirmationSummary` | ADR-0050: every assistant write must pause on a card core verifies, without a second approval protocol | SHO-745 |
 | 2026-09-15 | §6/§12: `jobIsolationCase` global branch (global job → global action, no company, effect and audit); `cleanupExpiredIdempotencyKeys` takes `Pick<Database, "delete">`; job declarations from module barrels plus app-owned jobs | Owner decision: a global job without fan-out had no suite case, and cleanup must run in its action's transaction | SHO-650 |
 | 2026-09-14 | §2/§6/§12: `defineJob`, optional `enqueues`, job contract-check rules and `jobIsolation` coverage | ADR-0041 §3, §5, J4, J6 | SHO-644 |

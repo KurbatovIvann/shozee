@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { companies, companyMembers, rolePermissionDefaults } from "@showzy/db";
 import { user } from "@showzy/db/schema/auth";
 import { createTestDatabase, type TestDatabase } from "@showzy/db/testing";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -215,6 +215,98 @@ const throwingPreview = renameAction(() => {
   throw new NotFoundError();
 });
 
+const slowContract = defineActionContract({
+  ...contractDefaults,
+  errors: [],
+  name: "previewReads.slowThing",
+  description: "Confirmed write whose card runs a query past the deadline.",
+  principal: "staff",
+  input: z.object({ companyRef: z.uuid() }),
+  output: z.object({ resultId: z.uuid() }),
+  permissions: ["previewReads:manage"],
+  risk: "high",
+  requiresConfirmation: true,
+  idempotent: true,
+  audit: true,
+  timeout: 2_000,
+});
+
+const slowPreviewAction = implementAction(slowContract, {
+  handler: () => Promise.resolve({ resultId: randomUUID() }),
+  preview: async (_input, env) => {
+    await env.tx
+      .select({ slept: sql<string>`pg_sleep(10)::text` })
+      .from(companies)
+      .limit(1);
+    return { title: "unreachable", lines: [] };
+  },
+  auditTarget: () => ({ type: "thing", id: "slow" }),
+});
+
+const customerContract = defineActionContract({
+  ...contractDefaults,
+  transport: "client",
+  errors: ["NOT_FOUND"],
+  name: "previewReads.customerRename",
+  description: "Customer-principal card built from the resolved target.",
+  principal: "customer",
+  input: z.object({ companyRef: z.uuid() }),
+  output: z.object({ companyId: z.uuid() }),
+  permissions: [],
+  risk: "high",
+  requiresConfirmation: true,
+  idempotent: true,
+  audit: true,
+  timeout: 5_000,
+});
+
+const resolverPasses: { readonly name: string; readonly pass: number }[] = [];
+
+function previewPass(target: unknown): number {
+  if (
+    typeof target === "object" &&
+    target !== null &&
+    "pass" in target &&
+    typeof target.pass === "number"
+  ) {
+    return target.pass;
+  }
+  throw new CoreInvariantError("preview target carries no resolver pass");
+}
+
+const customerPreviewAction = implementAction(customerContract, {
+  handler: (_input, ctx) =>
+    Promise.resolve({ companyId: ctx.target.companyId }),
+  resolveTarget: async (input, resolveEnv) => {
+    if (resolveEnv.principal.mode !== "customer") {
+      throw new CoreInvariantError("fixture expects a customer resolver");
+    }
+    const rows = await resolveEnv.tx
+      .select({ id: companies.id, name: companies.name })
+      .from(companies)
+      .innerJoin(companyMembers, eq(companyMembers.companyId, companies.id))
+      .where(
+        and(
+          eq(companies.id, input.companyRef),
+          eq(companyMembers.userId, resolveEnv.principal.userId),
+        ),
+      )
+      .limit(1);
+    const row = rows[0];
+    if (row === undefined) {
+      throw new NotFoundError();
+    }
+    const resource = { name: row.name, pass: resolverPasses.length + 1 };
+    resolverPasses.push(resource);
+    return { companyId: row.id, resource };
+  },
+  preview: (_input, env) => ({
+    title: "Rename",
+    lines: [{ label: "Resolver pass", value: String(previewPass(env.target)) }],
+  }),
+  auditTarget: () => ({ type: "thing", id: "customer" }),
+});
+
 const summaryOnlyAction = implementAction(renameContract, {
   handler: () => Promise.resolve({ resultId: randomUUID() }),
   confirmationSummary: (_input, env: ConfirmationSummaryEnv) =>
@@ -359,6 +451,43 @@ describe("preview reads (core.md §7, ADR-0050)", () => {
     const error = await card(directReadPreview, { store: counting.store });
     expect(error).toBeInstanceOf(ConfirmationRequiredError);
     expect(counting.stored()).toBe(1);
+  });
+
+  it("bounds the preview transaction by the contract statement timeout", async () => {
+    const counting = countingStore();
+    const error = await executeAction(deps(counting.store), {
+      action: slowPreviewAction,
+      input: { companyRef: companyA },
+      request: requestMeta(),
+      principal: {
+        mode: "staff",
+        session: { userId: annaId },
+        companySelector: companyA,
+      },
+    }).then(
+      () => undefined,
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(CoreInvariantError);
+    expect(causeChain(error)).toContain("statement timeout");
+    expect(counting.stored()).toBe(0);
+  });
+
+  it("hands the preview the target resolved inside its own transaction", async () => {
+    const error = await executeAction(deps(createInMemoryConfirmationStore()), {
+      action: customerPreviewAction,
+      input: { companyRef: companyA },
+      request: requestMeta(),
+      principal: { mode: "customer", session: { userId: annaId } },
+    }).then(
+      () => undefined,
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(ConfirmationRequiredError);
+    expect(resolverPasses.length).toBeGreaterThan(1);
+    expect(
+      (error as ConfirmationRequiredError).challenge.preview?.lines[0]?.value,
+    ).toBe(String(resolverPasses.length));
   });
 
   it("leaves confirmationSummary on input and company scope alone", async () => {
