@@ -167,6 +167,22 @@ crossTenantSuite(
       createVariant,
       { input: createIsolationInput },
       { input: createIsolationInput, companyId: kitIdentities.companies.b },
+      {
+        missing: {
+          input: { ...createIsolationInput, productId: randomUUID() },
+          companyId: kitIdentities.companies.b,
+        },
+      },
+    ),
+    isolationCase(
+      createVariant,
+      { input: createIsolationInput },
+      { input: { ...createIsolationInput, productId: fixtures.productB } },
+      {
+        missing: {
+          input: { ...createIsolationInput, productId: randomUUID() },
+        },
+      },
     ),
     isolationCase(
       updateVariant,

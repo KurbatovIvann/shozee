@@ -152,6 +152,7 @@ crossTenantSuite(
       createPriceList,
       { input: createIsolationInput },
       { input: createIsolationInput, companyId: kitIdentities.companies.b },
+      { noReference: true },
     ),
     isolationCase(
       updatePriceList,
