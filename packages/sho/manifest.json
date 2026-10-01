@@ -49,16 +49,20 @@
       "bytes": 28275
     },
     "command.ts": {
-      "md5": "ecd6dae3c24ac23f5ce5a3ce93d597bf",
-      "bytes": 42849
+      "md5": "8ff36dda761a8d6b6c3addfd20ea82f3",
+      "bytes": 44886
     },
     "confidence.ts": {
       "md5": "2b59cc24b3bdd34703b4db03c3d61919",
       "bytes": 2549
     },
+    "contacts.ts": {
+      "md5": "543572c23ee12330eab2effbabd4a4bc",
+      "bytes": 19538
+    },
     "context.ts": {
-      "md5": "96cd62feaeb860bf41e83b650187b760",
-      "bytes": 18347
+      "md5": "373066da31dfd60466d72f8d86372e45",
+      "bytes": 19936
     },
     "createAsUpdate.ts": {
       "md5": "3f1e11b0c4030d8b677cdd6c932f71d9",
@@ -93,8 +97,12 @@
       "bytes": 3828
     },
     "index.ts": {
-      "md5": "9e687e94194b367cb15d220e9b7a5294",
-      "bytes": 10089
+      "md5": "a7aefd5e72ba1c4a8c2a03c985d240e5",
+      "bytes": 10292
+    },
+    "language.ts": {
+      "md5": "08fb1efbb96571fb4535d7de17f42219",
+      "bytes": 4548
     },
     "leftover.ts": {
       "md5": "732d8d040d322d155b4e7a8d6d4ac29d",
@@ -107,6 +115,10 @@
     "lexicon/catalogue.ts": {
       "md5": "4e3b00ddea049b203c7a08564c8b41d5",
       "bytes": 3631
+    },
+    "lexicon/contacts.ts": {
+      "md5": "69bbd934880cbd87627d69a7dbe35b93",
+      "bytes": 2654
     },
     "lexicon/customers.ts": {
       "md5": "386c67b3429652e95d89ab0b1ec117ec",
@@ -139,6 +151,10 @@
     "lexicon/numbers.ts": {
       "md5": "c2205fd90e377b460452c43e6fbb8791",
       "bytes": 10143
+    },
+    "lexicon/objects.ts": {
+      "md5": "6c4e227e4e167851cf349835b7139fa6",
+      "bytes": 10796
     },
     "lexicon/periods.ts": {
       "md5": "d54a6a11d3d19eb7f88400bf4d9083f7",
@@ -224,6 +240,10 @@
       "md5": "2d73ad732c9c04da2a62a6f465374a15",
       "bytes": 19605
     },
+    "objects.ts": {
+      "md5": "45610a1559effb31766a9dcd41c2e3b1",
+      "bytes": 8908
+    },
     "params.ts": {
       "md5": "63912c67b796f3dc8480a24dee01c1a8",
       "bytes": 7380
@@ -233,8 +253,8 @@
       "bytes": 4515
     },
     "pipeline.ts": {
-      "md5": "862ee4f4bd90b770d41995ccbedcaa02",
-      "bytes": 23345
+      "md5": "d60ee4e28b8da47efdda93cd8cacf026",
+      "bytes": 24450
     },
     "products.ts": {
       "md5": "e3d8944d4e43df96724d19b7057aae86",
@@ -245,8 +265,8 @@
       "bytes": 7945
     },
     "records.ts": {
-      "md5": "3bc0aca8d5d3b8d866fa40fa50831e13",
-      "bytes": 17652
+      "md5": "a656ca3e769c33dd31147df20911b005",
+      "bytes": 17966
     },
     "references.ts": {
       "md5": "d45beb309689cee11b009fde2e2ee517",
@@ -265,8 +285,8 @@
       "bytes": 27098
     },
     "result.ts": {
-      "md5": "6b0800fd0e2e8f5e864afea3020ab401",
-      "bytes": 13631
+      "md5": "a55a478ed807e82aa22f662600eba316",
+      "bytes": 15214
     },
     "roles.ts": {
       "md5": "a8dfc364164c768a63e8608a87f276a1",
@@ -339,7 +359,7 @@
   },
   "source": {
     "repo": "system-one-uk",
-    "commit": "b1e2b4d82c55253c12007dc3eac1fca20f1ecaba",
+    "commit": "c1e1d8547e7bae9ce0fb2ef55f1d655dfcdab932",
     "runtimeVersion": "0.2.0",
     "bundle": "demo/model-v33",
     "registry": "default"
@@ -350,8 +370,8 @@
       "bytes": 10213
     },
     "cases-d72.jsonl": {
-      "md5": "a4b8552469a92a6e3d2cd216e8a33b36",
-      "bytes": 2498
+      "md5": "f6d416246edfefec1b97b7880ffb3f97",
+      "bytes": 2542
     },
     "cases-d73.jsonl": {
       "md5": "14c4ee466f210884292221a4adf70e7e",
@@ -397,9 +417,29 @@
       "md5": "68a9671aa37c3f542d464b2fd58519db",
       "bytes": 2001
     },
+    "cases-d93.jsonl": {
+      "md5": "28066aa7546bfeaeb220c9beb53856df",
+      "bytes": 2073
+    },
+    "cases-d94-contacts.jsonl": {
+      "md5": "ec363e972cd56d28b76beaa4dcfb98b7",
+      "bytes": 3910
+    },
+    "cases-d94.jsonl": {
+      "md5": "86afd4a61454dd8dfac44d0e03d2716b",
+      "bytes": 7011
+    },
+    "catalogue_v3.json": {
+      "md5": "4a283338fa9daf6e9cb1b5bb76543e92",
+      "bytes": 72645
+    },
     "commands.jsonl": {
-      "md5": "8a0dc07c7d23dba914611f2d3a199e12",
-      "bytes": 490690
+      "md5": "02d027f5d8e6df199a5b1503cafefda7",
+      "bytes": 510108
+    },
+    "contacts.jsonl": {
+      "md5": "c4d5471b312f250c672ef4effc582724",
+      "bytes": 9449
     },
     "contexts/coffee_tea-01.json": {
       "md5": "956b815877ff7bc38c04813882e2bf7c",
@@ -429,6 +469,10 @@
       "md5": "43f2cac21f412168bba672f5b3f7f238",
       "bytes": 2909
     },
+    "contexts/d94-shop.json": {
+      "md5": "bfe7de9fd92ba0de5debdcd0477a5048",
+      "bytes": 654
+    },
     "contexts/flowers-01.json": {
       "md5": "b3c21f24d204cc5e9176be6983d72613",
       "bytes": 25999
@@ -453,6 +497,10 @@
       "md5": "dafc196f7e782cfae53d36dee8782a64",
       "bytes": 22892
     },
+    "labels-v35.json": {
+      "md5": "0329ddf59e02ceb8494410223319885e",
+      "bytes": 22221
+    },
     "labels.json": {
       "md5": "c254042771a19cefcef35f77a176b7bf",
       "bytes": 30661
@@ -462,5 +510,5 @@
       "bytes": 8074
     }
   },
-  "updatedAt": "2026-09-30T09:06:44.883Z"
+  "updatedAt": "2026-09-30T21:08:58.353Z"
 }

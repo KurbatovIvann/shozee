@@ -18,8 +18,8 @@ export const RESULT_SCHEMA = "sho-result/2";
 export type RefStatus = "resolved" | "ambiguous" | "unknown" | "unchecked" | "previous" | "context";
 
 // How the words named the record: its whole name as written, a word form of it, an alias, by sound in the other script, a part of it, by the attrs said
-// with it, or the only variant a product has.
-export type Match = "exact" | "form" | "alias" | "sound" | "part" | "attrs" | "only";
+// with it, or the only variant a product has. D94: a customer by a phone or an e-mail the context holds (`contacts.ts`).
+export type Match = "exact" | "form" | "alias" | "sound" | "part" | "attrs" | "only" | "phone" | "email";
 
 export interface Candidate {
   readonly id: string | null;
@@ -59,6 +59,11 @@ export interface Ref {
   // D88: a ref a reference word took from the host's focus (`RunOptions.focus`): the index of the focus entry it is (`status: "context"`, with its `id`
   // and `name`; D90: the one a `check_reference` need offers too), or `true` on an `ambiguous` ref whose `candidates` are the focus entries that fit.
   readonly focus?: number | true;
+  // D94: a customer said by a contact, not a name («клієнта з номером 067 …», «з поштою …»): `by` the kind of contact, `text` the contact as said,
+  // `value` a phone's digits as recognised (no country code guessed) or an e-mail in lower case. `unchecked` unless the context holds the customers'
+  // contacts: the host looks the customer up by `value`; never `nearest`, and `suggest` only on an `unknown` the context's contacts gave.
+  readonly by?: "phone" | "email";
+  readonly value?: string;
 }
 
 // variantIds null: not checked (the product is not resolved, or the context does not know its variants); []: the attr matches no variant of the product.
@@ -151,7 +156,9 @@ export type Param = Ref | readonly Ref[] | VariantParam | readonly OrderItem[] |
 export type NeedReason =
   | "missing" | "ambiguous" | "unknown" | "variant_required" | "unknown_attr" | "quantity_asks" | "unit_mismatch" | "duplicate_line"
   | "invalid_value" | "postomat_limit" | "ambiguous_role"
-  // D72: the shop cannot do what was asked (`path` "stock": it tracks no stock); the command is the nearest question it can answer, if any.
+  // D72: the shop cannot do what was asked (`path` "stock": it tracks no stock); the command is the nearest question it can answer, if any. D89: `path`
+  // "fiscal", no till. D93: `path` "action", blocking: the words name as the verb's object a thing the action's type is not and ШО does not handle
+  // (a product group or category, a chat, a staff member, the shop's own requisites; `span` the object as said); the card declines.
   | "unsupported"
   // D78: a refinement (`ui.refine`) said a filter the command it refines does not take (`path` the refinement's param, `span` what was said); the
   // command runs without it. Non-blocking.
@@ -177,7 +184,14 @@ export type NeedReason =
   | "check_reference"
   // D92: the model's `orders.update` with a customer and items, no order and no word that says one exists, was served as that customer's new order
   // (`orders.create`, the same params): `path` "action", `span` the customer as said; the card says so. Non-blocking.
-  | "read_as_create";
+  | "read_as_create"
+  // D94: the model's `customers.createCustomer` that says only a phone or an e-mail, with a find word («знайди», «пошукай», «чий») and no word that
+  // makes a record, was served as `customers.getCustomer` with that contact (`path` "action", `span` the contact as said); the card says so.
+  // Non-blocking.
+  | "read_as_find"
+  // D93: the utterance has letters and no Cyrillic word (English, a transliteration): ШО reads only Ukrainian and Russian, so the model is not run and
+  // the one command is `none` with confidence 0 and this need (`path` "text", non-blocking); the host sends the message to its dialogue model.
+  | "language";
 
 // A blocking need keeps the card from being confirmed until it is answered; a non-blocking one is shown on the card.
 export interface Need {

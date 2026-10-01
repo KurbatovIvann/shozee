@@ -6,6 +6,7 @@ import type { Resolved } from "./customers.ts";
 import { resolveCustomer } from "./customers.ts";
 import { decode, type Decoded, type Heads } from "./decode.ts";
 import { InputError } from "./errors.ts";
+import { answersCard, foreignLanguage, languageCommand, namesRecord } from "./language.ts";
 import { LEFTOVER_KINDS, LEFTOVER_SURE, UNPARSED, leftoverOf } from "./leftover.ts";
 import { headsOf, type ModelRunner } from "./model.ts";
 import type { Params } from "./params.ts";
@@ -326,6 +327,17 @@ export function createRuntime(bundle: Bundle, runner: ModelRunner, options: Runt
     const now = runOptions.now ?? kyivNow(wallClock());
     // D82: the percent signs and clock times the normalised text lost (`rawMarks`); a text given as is may still write them.
     const marks = rawMarks(raw ?? text);
+    // D93: no Cyrillic word is no utterance of ours (`language.ts`): one `none` command with the `language` need, the model not read (with `debug`, it
+    // is read for the diagnostics only). The addendum: a short answer to a card the previous command left asking, or a record's whole name, is read.
+    const exempt = (): boolean => answersCard(text, runOptions.previous ?? null) || namesRecord(text, context);
+    const foreign = foreignLanguage(raw ?? text) && !exempt() ? languageCommand(bundle, text) : null;
+    if (foreign !== null) {
+      const served: ResultV2 = { schema: RESULT_SCHEMA, raw, text, segments: [text], tooMany: false, commands: [foreign], first: foreign, context: contextInfo(context) };
+      if (!debug) return served;
+      const read = await infer(text, context, breaks, now, marks);
+      const shown = { ...foreign, debug: read.inference };
+      return { ...served, commands: [shown], first: shown, debug: { first: read.inference, passes: [], total: clock() - started } };
+    }
     const first = await infer(text, context, breaks, now, marks);
     const segmentLogits = first.inference.heads.segment;
     const segments = segmentLogits === null ? [text] : splitCommands(text, segmentStarts(text, first.inference.offsets, segmentLogits));
