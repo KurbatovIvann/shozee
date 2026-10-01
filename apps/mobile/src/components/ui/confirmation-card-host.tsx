@@ -14,10 +14,12 @@ import { ConfirmationCard } from "./confirmation-card";
 import {
   CLOSED_CONFIRMATION_CARD,
   createConfirmationCardMachine,
+  scheduleConfirmArmWithTimeout,
   type ConfirmationCardMachine,
   type ConfirmationCardState,
 } from "./confirmation-card.machine";
 import { confirmationCardView } from "./confirmation-card.model";
+import { SHEET_MS } from "./sheet-dismiss";
 
 const ConfirmationCardContext =
   createContext<PresentConfirmationChallenge | null>(null);
@@ -34,7 +36,11 @@ export function ConfirmationCardProvider(props: {
   );
   const machineRef = useRef<ConfirmationCardMachine | null>(null);
   if (machineRef.current === null) {
-    machineRef.current = createConfirmationCardMachine({ onState: setState });
+    machineRef.current = createConfirmationCardMachine({
+      onState: setState,
+      armDelayMs: SHEET_MS,
+      schedule: scheduleConfirmArmWithTimeout,
+    });
   }
   const machine = machineRef.current;
 
@@ -63,6 +69,7 @@ export function ConfirmationCardProvider(props: {
       <ConfirmationCard
         visible={state.open}
         view={state.card}
+        confirmDisabled={!state.confirmArmed}
         copy={copy}
         onChoice={choose}
         onHidden={clearCard}

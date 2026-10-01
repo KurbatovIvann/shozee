@@ -14,9 +14,15 @@ import {
   confirmationCardView,
   type ConfirmationCardView,
 } from "./confirmation-card.model";
+import { SHEET_MS } from "./sheet-dismiss";
 
 const CARD_SOURCE = readFileSync(
   new URL("./confirmation-card.tsx", import.meta.url),
+  "utf8",
+);
+
+const HOST_SOURCE = readFileSync(
+  new URL("./confirmation-card-host.tsx", import.meta.url),
   "utf8",
 );
 
@@ -39,12 +45,44 @@ function confirmationRequired(challengeId: string) {
   });
 }
 
+type PendingArm = {
+  readonly run: () => void;
+  readonly delayMs: number;
+  cancelled: boolean;
+};
+
 function machineUnderTest() {
   const states: ConfirmationCardState[] = [];
+  const arms: PendingArm[] = [];
   const machine = createConfirmationCardMachine({
     onState: (state) => states.push(state),
+    armDelayMs: SHEET_MS,
+    schedule: (run, delayMs) => {
+      const pending: PendingArm = { run, delayMs, cancelled: false };
+      arms.push(pending);
+      return () => {
+        pending.cancelled = true;
+      };
+    },
   });
-  return { machine, states };
+  function runArm(index: number): void {
+    const pending = arms[index];
+    if (pending === undefined || pending.cancelled) {
+      return;
+    }
+    pending.run();
+  }
+  function settleSheet(): void {
+    runArm(arms.length - 1);
+  }
+  return { machine, states, arms, runArm, settleSheet };
+}
+
+function openCard(
+  card: ConfirmationCardView,
+  presentationId: number,
+): ConfirmationCardState {
+  return { open: true, card, presentationId, confirmArmed: false };
 }
 
 const CALL_SITES = [
@@ -136,25 +174,87 @@ describe("confirmationCardView", () => {
 
 describe("createConfirmationCardMachine", () => {
   it("opens on present and settles the choice the viewer made", async () => {
-    const { machine, states } = machineUnderTest();
-    const choice = machine.present(cardNamed("Видалити групу?"));
-    expect(states.at(-1)).toEqual({
-      open: true,
-      card: cardNamed("Видалити групу?"),
-    });
+    const { machine, states, settleSheet } = machineUnderTest();
+    const card = cardNamed("Видалити групу?");
+    const choice = machine.present(card);
+    expect(states.at(-1)).toEqual(openCard(card, 1));
+    settleSheet();
     machine.choose("confirm");
     expect(await choice).toBe("confirm");
     expect(states.at(-1)?.open).toBe(false);
   });
 
+  it("arms the confirm only once the sheet-settle delay has elapsed", () => {
+    const { machine, states, arms, settleSheet } = machineUnderTest();
+    void machine.present(cardNamed("Видалити групу?"));
+    expect(arms.at(-1)?.delayMs).toBe(SHEET_MS);
+    expect(states.at(-1)?.confirmArmed).toBe(false);
+    settleSheet();
+    expect(states.at(-1)?.confirmArmed).toBe(true);
+  });
+
+  it("cancels the pending arm of the card a re-present replaced", () => {
+    const { machine, states, arms, runArm } = machineUnderTest();
+    void machine.present(cardNamed("Перший"));
+    void machine.present(cardNamed("Другий"));
+    expect(arms[0]?.cancelled).toBe(true);
+    runArm(0);
+    expect(states.at(-1)?.confirmArmed).toBe(false);
+  });
+
   it("cancels the first challenge when a second one is presented", async () => {
-    const { machine, states } = machineUnderTest();
+    const { machine, states, settleSheet } = machineUnderTest();
+    const secondCard = cardNamed("Другий");
     const first = machine.present(cardNamed("Перший"));
-    const second = machine.present(cardNamed("Другий"));
+    const second = machine.present(secondCard);
     expect(await first).toBe("cancel");
-    expect(states.at(-1)).toEqual({ open: true, card: cardNamed("Другий") });
+    expect(states.at(-1)).toEqual(openCard(secondCard, 2));
+    settleSheet();
     machine.choose("confirm");
     expect(await second).toBe("confirm");
+  });
+
+  it("ignores a confirm press that lands before the re-presented card arms", async () => {
+    const { machine, states, settleSheet } = machineUnderTest();
+    const firstCard = cardNamed("Перший");
+    const driftedCard = cardNamed("Оновлений");
+    const first = machine.present(firstCard);
+    settleSheet();
+    machine.choose("confirm");
+    expect(await first).toBe("confirm");
+
+    const drifted = machine.present(driftedCard);
+    const settled = vi.fn();
+    void drifted.then(settled);
+    machine.choose("confirm");
+    await Promise.resolve();
+
+    expect(settled).not.toHaveBeenCalled();
+    expect(states.at(-1)).toEqual(openCard(driftedCard, 2));
+
+    settleSheet();
+    machine.choose("confirm");
+    expect(await drifted).toBe("confirm");
+  });
+
+  it("does not arm a card the viewer is no longer looking at", async () => {
+    const { machine, states } = machineUnderTest();
+    const staleCard = cardNamed("Застарілий");
+    const freshCard = cardNamed("Новий");
+    const stale = machine.present(staleCard);
+    const fresh = machine.present(freshCard);
+    expect(await stale).toBe("cancel");
+
+    machine.armConfirm(1);
+    expect(states.at(-1)).toEqual(openCard(freshCard, 2));
+    const settled = vi.fn();
+    void fresh.then(settled);
+    machine.choose("confirm");
+    await Promise.resolve();
+
+    expect(settled).not.toHaveBeenCalled();
+    machine.choose("cancel");
+    expect(await fresh).toBe("cancel");
   });
 
   it("settles cancel when the card closes and clears the card after it hides", async () => {
@@ -165,19 +265,23 @@ describe("createConfirmationCardMachine", () => {
     expect(states.at(-1)).toEqual({
       open: false,
       card: cardNamed("Видалити клієнта?"),
+      presentationId: 1,
+      confirmArmed: false,
     });
     machine.clearCard();
     expect(states.at(-1)).toEqual(CLOSED_CONFIRMATION_CARD);
   });
 
   it("ignores a late hide callback that arrives after the next card opened", async () => {
-    const { machine, states } = machineUnderTest();
+    const { machine, states, settleSheet } = machineUnderTest();
+    const secondCard = cardNamed("Другий");
     const first = machine.present(cardNamed("Перший"));
     machine.choose("cancel");
     expect(await first).toBe("cancel");
-    const second = machine.present(cardNamed("Другий"));
+    const second = machine.present(secondCard);
     machine.clearCard();
-    expect(states.at(-1)).toEqual({ open: true, card: cardNamed("Другий") });
+    expect(states.at(-1)).toEqual(openCard(secondCard, 2));
+    settleSheet();
     machine.choose("confirm");
     expect(await second).toBe("confirm");
   });
@@ -206,6 +310,16 @@ describe("confirmation card presenter wiring", () => {
     expect(CARD_SOURCE).toContain("view.lines.map");
     expect(CARD_SOURCE).toContain("view.notes.map");
     expect(CARD_SOURCE).toContain("view.summary");
+  });
+
+  it("disables the confirm button until the presentation arms", () => {
+    expect(CARD_SOURCE).toContain("disabled={props.confirmDisabled}");
+    expect(HOST_SOURCE).toContain("confirmDisabled={!state.confirmArmed}");
+  });
+
+  it("leaves the arm schedule to the machine instead of a host timer", () => {
+    expect(HOST_SOURCE).not.toContain("setTimeout");
+    expect(HOST_SOURCE).toContain("armDelayMs: SHEET_MS");
   });
 
   it("leaves no hand-written delete or sign confirm copy at those call sites", () => {
