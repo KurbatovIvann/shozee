@@ -34,6 +34,8 @@ import type { AssistantToolContext, ResolveAnswer } from "./runtime-types.js";
 interface FacadeInput {
   customerId?: string;
   customerQuery?: string;
+  productId?: string;
+  productQuery?: string;
   items?: Array<{
     productId?: string;
     productQuery?: string;
@@ -62,6 +64,12 @@ export function withChosenId(
   if (target.kind === "customer") {
     next.customerId = entityId;
     delete next.customerQuery;
+    return { kind: "patched", input: next };
+  }
+
+  if (target.kind === "product") {
+    next.productId = entityId;
+    delete next.productQuery;
     return { kind: "patched", input: next };
   }
 

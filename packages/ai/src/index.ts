@@ -5,8 +5,12 @@ export {
   staffAssistantHotToolNames,
   staffAssistantTools,
   toProviderToolName,
+  CATALOG_GET_PRODUCT_ACTION_NAME,
+  CATALOG_GET_PRODUCT_TOOL_NAME,
   CATALOG_LIST_PRODUCTS_ACTION_NAME,
   CATALOG_LIST_PRODUCTS_TOOL_NAME,
+  CUSTOMERS_GET_CUSTOMER_ACTION_NAME,
+  CUSTOMERS_GET_CUSTOMER_TOOL_NAME,
   CUSTOMERS_LIST_CUSTOMERS_ACTION_NAME,
   CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME,
   CUSTOMERS_LIST_GROUPS_ACTION_NAME,
@@ -75,13 +79,18 @@ export {
  * `@showzy/assistant-kit`.
  */
 export {
+  CHOICE_CREATE_OPTION_ID,
   CHOICE_PICKER_REASONS,
+  EntityLookupConflictError,
   catalogPickerConflictExtrasFromError,
   catalogPickerConflictExtrasSchema,
   choiceCardOptionSchema,
+  choiceCreateOptionSchema,
   type CatalogPickerConflictExtras,
   type ChoiceCardOption,
+  type ChoiceCreateOption,
   type ChoicePickerReason,
+  type EntityLookupTarget,
 } from "./choice.js";
 export {
   fillStaffAssistantCopy,
@@ -92,8 +101,10 @@ export {
   type StaffAssistantLocale,
 } from "./locale.js";
 export {
+  CUSTOMER_ENTITY_PROMPT_LINE,
   CUSTOMERS_LIST_PROMPT_LINE,
   ORDER_ENTITY_PROMPT_LINE,
+  PRODUCT_ENTITY_PROMPT_LINE,
   ORDERS_AGGREGATE_PROMPT_LINE,
   ORDERS_LIST_PROMPT_LINE,
 } from "@showzy/validation/assistant-surfaces";

@@ -12,7 +12,7 @@
  * dead end. `archived` and `no_active_variants` are terminals — there is nothing
  * to pick between, so they are explained rather than offered.
  */
-import { CoreError } from "@showzy/core/errors";
+import { ConflictError, CoreError } from "@showzy/core/errors";
 import { z } from "zod";
 
 /** Reasons that open a picker. `archived` / `no_active_variants` never do. */
@@ -42,6 +42,10 @@ const catalogConflictTargetSchema = z.union([
     query: z.string().min(1),
   }),
   z.strictObject({
+    kind: z.literal("product"),
+    query: z.string().min(1),
+  }),
+  z.strictObject({
     kind: z.literal("order_line_product"),
     lineIndex: z.number().int().nonnegative(),
     query: z.string().min(1),
@@ -61,12 +65,30 @@ const catalogConflictTargetSchema = z.union([
  * Empty options never parse. A picker with nothing to pick is a terminal, and
  * offering one would be a card the person cannot act on.
  */
-export const catalogPickerConflictExtrasSchema = z.strictObject({
-  reason: z.enum(CHOICE_PICKER_REASONS),
-  target: catalogConflictTargetSchema,
-  options: z.array(choiceCardOptionSchema).min(1),
-  optionsTruncated: z.boolean(),
+export const CHOICE_CREATE_OPTION_ID = "create";
+
+export const choiceCreateOptionSchema = z.strictObject({
+  optionId: z.string().min(1).max(128),
+  label: z.string().min(1),
 });
+
+export type ChoiceCreateOption = z.output<typeof choiceCreateOptionSchema>;
+
+export const CHOICE_PICKER_NEEDS_AN_ANSWERABLE_OPTION =
+  "a picker needs a record option or a create option";
+
+export const catalogPickerConflictExtrasSchema = z
+  .strictObject({
+    reason: z.enum(CHOICE_PICKER_REASONS),
+    target: catalogConflictTargetSchema,
+    options: z.array(choiceCardOptionSchema),
+    optionsTruncated: z.boolean(),
+    create: choiceCreateOptionSchema.optional(),
+  })
+  .refine(
+    (extras) => extras.options.length > 0 || extras.create !== undefined,
+    { message: CHOICE_PICKER_NEEDS_AN_ANSWERABLE_OPTION },
+  );
 
 export type CatalogPickerConflictExtras = z.output<
   typeof catalogPickerConflictExtrasSchema
@@ -84,11 +106,43 @@ export function catalogPickerConflictExtrasFromError(
   if (!(error instanceof CoreError) || error.code !== "CONFLICT") {
     return undefined;
   }
+  const create: unknown = Reflect.get(error, "create");
   const parsed = catalogPickerConflictExtrasSchema.safeParse({
     reason: Reflect.get(error, "reason") as unknown,
     target: Reflect.get(error, "target") as unknown,
     options: Reflect.get(error, "options") as unknown,
     optionsTruncated: Reflect.get(error, "optionsTruncated") as unknown,
+    ...(create === undefined ? {} : { create }),
   });
   return parsed.success ? parsed.data : undefined;
+}
+
+export type EntityLookupTarget =
+  | { readonly kind: "customer"; readonly query: string }
+  | { readonly kind: "product"; readonly query: string };
+
+export class EntityLookupConflictError extends ConflictError {
+  readonly reason: ChoicePickerReason;
+  readonly target: EntityLookupTarget;
+  readonly options: readonly ChoiceCardOption[];
+  readonly optionsTruncated: boolean;
+  readonly create?: ChoiceCreateOption;
+
+  constructor(args: {
+    readonly reason: ChoicePickerReason;
+    readonly target: EntityLookupTarget;
+    readonly options: readonly ChoiceCardOption[];
+    readonly optionsTruncated: boolean;
+    readonly create?: ChoiceCreateOption;
+    readonly clientMessage: string;
+  }) {
+    super(args.clientMessage);
+    this.reason = args.reason;
+    this.target = args.target;
+    this.options = args.options;
+    this.optionsTruncated = args.optionsTruncated;
+    if (args.create !== undefined) {
+      this.create = args.create;
+    }
+  }
 }

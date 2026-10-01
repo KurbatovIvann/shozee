@@ -23,6 +23,24 @@ export {
   type AssistantCollectionSurface,
 } from "./collection.js";
 export {
+  CUSTOMER_ENTITY_ACTION_NAMES,
+  CUSTOMER_ENTITY_DESTINATION,
+  CUSTOMER_ENTITY_PROMPT_LINE,
+  CUSTOMER_ENTITY_SURFACE_TOOLS,
+  CUSTOMERS_GET_CUSTOMER_TOOLS,
+  parseCustomerEntitySurfaces,
+  type AssistantCustomerEntityData,
+} from "./customer-entity.js";
+export {
+  CATALOG_GET_PRODUCT_TOOLS,
+  PRODUCT_ENTITY_ACTION_NAMES,
+  PRODUCT_ENTITY_DESTINATION,
+  PRODUCT_ENTITY_PROMPT_LINE,
+  PRODUCT_ENTITY_SURFACE_TOOLS,
+  parseProductEntitySurfaces,
+  type AssistantProductEntityData,
+} from "./product-entity.js";
+export {
   ASSISTANT_CUSTOMERS_LIST_ROW_MAX,
   CUSTOMERS_LIST_ACTION_NAME,
   CUSTOMERS_LIST_COLLECTION_COLUMNS,
