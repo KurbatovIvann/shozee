@@ -102,6 +102,13 @@ const PLATFORM_SOURCE_RE =
 
 const JOBS_PACKAGE_RE = /\/packages\/jobs\//;
 
+/** Files the repo runs as tests: `*.test.ts`, `*.db.test.ts`, `*.test.tsx`. */
+const TEST_FILE_RE = /\.test\.tsx?$/;
+
+const AI_TEST_ENTRY = "@showzy/ai/test";
+
+const AI_TEST_MODULE_RE = /\/packages\/ai\/src\/test(?:\.[cm]?[jt]sx?|\/.+)?$/;
+
 /**
  * @param {string} spec
  */
@@ -121,6 +128,33 @@ function toPosix(filename) {
  */
 function isRelative(spec) {
   return spec.startsWith("./") || spec.startsWith("../");
+}
+
+/**
+ * `@showzy/ai/test` builds a provider adapter for tests to drive; reaching it
+ * by package subpath, by a deeper path under that subpath, or by a relative
+ * path resolving to `packages/ai/src/test` or below it is the same import
+ * (SHO-817). The entry's own files reach each other from inside it, so a
+ * file that is itself the entry never imports it.
+ *
+ * @param {string} filePath
+ * @param {string} spec
+ */
+function isAiTestEntry(filePath, spec) {
+  if (AI_TEST_MODULE_RE.test(filePath)) {
+    return false;
+  }
+  if (spec === AI_TEST_ENTRY || spec.startsWith(`${AI_TEST_ENTRY}/`)) {
+    return true;
+  }
+  if (!isRelative(spec)) {
+    return false;
+  }
+  return AI_TEST_MODULE_RE.test(
+    path.posix.normalize(
+      path.posix.join(filePath.slice(0, filePath.lastIndexOf("/")), spec),
+    ),
+  );
 }
 
 /**
@@ -599,6 +633,8 @@ export const importBoundariesRule = {
       clientSafeServerOnly: `Client-safe packages ship into mobile and web and may not reach ${SERVER_ONLY_PACKAGES.map((name) => `@showzy/${name}`).join(", ")} by package name, dynamic import(), require() or a relative path (server-only, ADR-0032, ADR-0039, ADR-0041).`,
       pgBossOutsideJobs:
         "pg-boss is imported only inside packages/jobs; everything else uses @showzy/jobs (ADR-0041 J15).",
+      aiTestEntry:
+        "@showzy/ai/test is a test-only entry and may be imported only from a test file (*.test.ts, *.db.test.ts, *.test.tsx). Production code builds its provider adapter from @showzy/ai (SHO-817).",
       clientApp:
         "Client apps may import only @showzy/contract, @showzy/validation, @showzy/copy, @showzy/ui, and @showzy/document-signing (native/web adapters; never /node) (contract.md §2, SHO-251, SHO-414).",
       copyLeaf:
@@ -621,7 +657,9 @@ export const importBoundariesRule = {
   },
   create(context) {
     const from = classify(context.filename);
-    const insideJobs = JOBS_PACKAGE_RE.test(toPosix(context.filename));
+    const filePath = toPosix(context.filename);
+    const insideJobs = JOBS_PACKAGE_RE.test(filePath);
+    const insideTestFile = TEST_FILE_RE.test(filePath);
 
     /**
      * @param {import("estree").Node} node
@@ -633,9 +671,20 @@ export const importBoundariesRule = {
         return;
       }
       if (from.kind === "skip") {
+        if (!insideTestFile && isAiTestEntry(filePath, spec)) {
+          context.report({ node, messageId: "aiTestEntry" });
+        }
         return;
       }
       const result = violation(from, spec, isTypeOnly(node));
+      if (
+        !insideTestFile &&
+        isAiTestEntry(filePath, spec) &&
+        (from.kind !== "client-app" || result === null)
+      ) {
+        context.report({ node, messageId: "aiTestEntry" });
+        return;
+      }
       if (result !== null) {
         context.report({
           node,
