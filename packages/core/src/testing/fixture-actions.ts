@@ -197,16 +197,12 @@ async function previewOwnFollow(
   input: { companyId: string },
   env: ActionPreviewEnv,
 ): Promise<ActionPreview> {
-  const userId = env.caller.userId;
-  if (userId === null) {
-    throw new NotFoundError();
-  }
   const rows = await env.tx
     .select({ companyId: fixtureCompanyFollows.companyId })
     .from(fixtureCompanyFollows)
     .where(
       and(
-        eq(fixtureCompanyFollows.userId, userId),
+        eq(fixtureCompanyFollows.userId, env.caller.userId),
         eq(fixtureCompanyFollows.companyId, input.companyId),
       ),
     )

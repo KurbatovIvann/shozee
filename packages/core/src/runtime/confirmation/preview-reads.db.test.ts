@@ -383,11 +383,53 @@ const callerPreview = renameAction((_input, env) =>
   Promise.resolve({
     title: "Caller",
     lines: [
-      { label: "userId", value: env.caller.userId ?? "none" },
+      { label: "userId", value: env.caller.userId },
       { label: "peerRead", value: String(env.caller.can("previewPeer:read")) },
     ],
   }),
 );
+
+const REDACTED_NAME = "—";
+
+const nameGatedPreview = renameAction(async (input, env) => {
+  const rows = await env.tx
+    .select({ name: companies.name })
+    .from(companies)
+    .where(
+      and(
+        eq(companies.id, input.companyRef),
+        eq(companies.id, env.companyId ?? ""),
+      ),
+    );
+  const row = rows[0];
+  if (row === undefined) {
+    throw new NotFoundError();
+  }
+  return {
+    title: "Rename",
+    lines: [
+      {
+        label: "Current name",
+        value: env.caller.can("previewPeer:read") ? row.name : REDACTED_NAME,
+      },
+    ],
+  };
+});
+
+async function setPeerReadDenied(
+  userId: string,
+  denied: boolean,
+): Promise<void> {
+  await database.runtime.db
+    .update(companyMembers)
+    .set({ permissions: { granted: [], denied: denied ? ["previewPeer:read"] : [] } })
+    .where(
+      and(
+        eq(companyMembers.companyId, companyA),
+        eq(companyMembers.userId, userId),
+      ),
+    );
+}
 
 const accountContract = defineActionContract({
   ...contractDefaults,
@@ -411,7 +453,7 @@ const accountPreviewAction = implementAction(accountContract, {
   preview: (_input, env) => ({
     title: "Account",
     lines: [
-      { label: "userId", value: env.caller.userId ?? "none" },
+      { label: "userId", value: env.caller.userId },
       {
         label: "staffPermission",
         value: String(env.caller.can("previewReads:manage")),
@@ -666,7 +708,7 @@ describe("preview reads (core.md §7, ADR-0050)", () => {
     expect(cardLine(error, "peerRead")).toBe("false");
   });
 
-  it("rebuilds the card for the confirming caller, not the presenting one", async () => {
+  it("refuses another caller's challenge and issues that caller a fresh one", async () => {
     const store = createInMemoryConfirmationStore();
     const idempotencyKey = randomUUID();
     const presented = await card(callerPreview, { store, idempotencyKey });
@@ -679,7 +721,34 @@ describe("preview reads (core.md §7, ADR-0050)", () => {
       userId: borysId,
       confirmationChallengeId: challengeId,
     });
+    expect(reused).toBeInstanceOf(ConfirmationRequiredError);
+    expect(
+      (reused as ConfirmationRequiredError).challenge.challengeId,
+    ).not.toBe(challengeId);
     expect(cardLine(reused, "userId")).toBe(borysId);
+  });
+
+  it("re-runs the caller-gated card on confirm and refuses a permission revoked inside the window", async () => {
+    const store = createInMemoryConfirmationStore();
+    const idempotencyKey = randomUUID();
+    const presented = await card(nameGatedPreview, { store, idempotencyKey });
+    expect(cardLine(presented, "Current name")).toBe(companyAName);
+    const challengeId = (presented as ConfirmationRequiredError).challenge
+      .challengeId;
+    try {
+      await setPeerReadDenied(annaId, true);
+      const confirmed = await card(nameGatedPreview, {
+        store,
+        idempotencyKey,
+        confirmationChallengeId: challengeId,
+      });
+      expect(confirmed).toBeInstanceOf(ConfirmationRequiredError);
+      const fresh = confirmed as ConfirmationRequiredError;
+      expect(fresh.challenge.challengeId).not.toBe(challengeId);
+      expect(cardLine(confirmed, "Current name")).toBe(REDACTED_NAME);
+    } finally {
+      await setPeerReadDenied(annaId, false);
+    }
   });
 
   it("hands an account preview the caller's own user id and no permissions", async () => {

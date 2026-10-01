@@ -30,10 +30,7 @@ import { priceListEntries, priceLists } from "@showzy/db/schema/pricing";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import {
-  deletePriceList,
-  deletePriceListConfirmationSummary,
-} from "./delete-price-list.js";
+import { deletePriceList } from "./delete-price-list.js";
 import { PRICING_RESOLVER_VERSION } from "./resolve-product-prices.contract.js";
 import { resolveProductPrices } from "./resolve-product-prices.js";
 
@@ -257,6 +254,7 @@ crossTenantSuite(
       deletePriceList,
       { input: { id: fixtures.isolationOwn } },
       { input: { id: fixtures.isolationForeign } },
+      { missing: { input: { id: randomUUID() } } },
     ),
   ],
 );
@@ -370,12 +368,14 @@ describe("pricing.deletePriceList", () => {
       throw new Error("expected ConfirmationRequiredError");
     }
     expect(unconfirmed.challenge.summary).toBe(
-      deletePriceListConfirmationSummary,
+      unconfirmed.challenge.preview?.title,
     );
-    expect(unconfirmed.challenge.summary).toContain(
-      "Усі ціни в ньому буде видалено",
+    expect(unconfirmed.challenge.summary).toBe(
+      "Видалити прайс-лист: Confirm me",
     );
-    expect(unconfirmed.challenge.summary).not.toContain("Confirm me");
+    expect(unconfirmed.challenge.preview?.notes?.[0]).toContain(
+      "Усі ціни в цьому прайс-листі буде видалено",
+    );
     expect(Date.parse(unconfirmed.challenge.expiresAt)).toBeGreaterThan(
       Date.now(),
     );

@@ -41,6 +41,7 @@ import {
   collectSuiteCoverageProblems,
   type SuiteCoverageManifest,
 } from "./suite-coverage.js";
+import { collectWritePreviewProblems } from "./write-previews.js";
 
 export type { AssistantSurfaceBindingRef, JobDefinitionRef, SchemaTableRef };
 
@@ -221,6 +222,7 @@ export function runContractCheck(
     problems,
   );
   collectRecordProvenanceProblems(contracts, input.schemaTables, problems);
+  collectWritePreviewProblems(input.registry.implementations(), problems);
   collectAssistantSurfaceBindingProblems(
     contracts,
     input.assistantSurfaces,

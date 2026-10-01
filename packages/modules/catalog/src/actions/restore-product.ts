@@ -3,6 +3,7 @@ import { CoreInvariantError } from "@showzy/core/errors";
 
 import { productAuditTarget } from "../services/catalog-audit-target.js";
 import { setProductStatus } from "../services/catalog-status.js";
+import { productStatusPreview } from "../services/preview-card.js";
 import { requireWritable } from "../services/writable.js";
 import { restoreProductContract } from "./restore-product.contract.js";
 
@@ -20,5 +21,10 @@ export const restoreProduct = implementAction(restoreProductContract, {
     }
     return { productId: saved.productId, status: "active" as const };
   },
+  preview: productStatusPreview(
+    restoreProductContract,
+    "Відновити товар",
+    "active",
+  ),
   auditTarget: productAuditTarget,
 });

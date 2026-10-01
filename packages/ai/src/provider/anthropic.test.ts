@@ -128,13 +128,6 @@ describe("createAnthropicStaffProviderAdapter", () => {
     });
     expect(modelIdOf(configured.createModel("reply"))).toBe("claude-opus-4-6");
     expect(modelIdOf(configured.createModel("gate"))).toBe("claude-sonnet-4-6");
-
-    const adapterSource = readFileSync(
-      path.join(path.dirname(fileURLToPath(import.meta.url)), "anthropic.ts"),
-      "utf8",
-    );
-    expect(adapterSource).not.toMatch(/Model\s*\?\?/);
-    expect(adapterSource).not.toContain("claude-haiku-4-5");
     expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
   });

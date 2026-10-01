@@ -37,11 +37,13 @@ export const getProductPricingFactsOutputSchema = z.object({
   products: z.array(
     z.object({
       productId: z.uuid(),
+      name: z.string().min(1),
       basePriceMinor: moneyWireSchema,
       currency: z.string().length(3),
       variants: z.array(
         z.object({
           variantId: z.uuid(),
+          name: z.string().min(1),
           basePriceMinor: moneyWireSchema.nullable(),
           currency: z.string().length(3).nullable(),
         }),
@@ -53,7 +55,7 @@ export const getProductPricingFactsOutputSchema = z.object({
 export const getProductPricingFactsContract = defineActionContract({
   name: "catalog.getProductPricingFacts",
   description:
-    "Return catalog base-price facts for a batch of products in the staff member's active company. Each product includes its base price and every variant (variant id plus a nullable base-price override). The whole batch fails with not-found when any product or named variant is missing, belongs to another product, or is outside the company.",
+    "Return catalog base-price facts for a batch of products in the staff member's active company. Each product includes its name, its base price, and every variant (variant id, name, and a nullable base-price override). The whole batch fails with not-found when any product or named variant is missing, belongs to another product, or is outside the company.",
   principal: "staff",
   transport: "internal",
   input: getProductPricingFactsInputSchema,

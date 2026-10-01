@@ -1019,7 +1019,7 @@ async function runActionPreview<
       try {
         return await preview(env.input, {
           ...previewScopeOf(previewCtx),
-          caller: previewCallerOf(previewCtx),
+          caller: previewCallerOf(env.contract, previewCtx),
           tx: createReadTx(tx),
           call,
         });
@@ -1052,7 +1052,10 @@ function previewScopeOf(
   }
 }
 
-function previewCallerOf(ctx: ActionCtx): ActionPreviewCaller {
+function previewCallerOf(
+  contract: AnyActionContract,
+  ctx: ActionCtx,
+): ActionPreviewCaller {
   const holdsNoCompanyPermission = (): boolean => false;
   switch (ctx.principal) {
     case "staff":
@@ -1061,13 +1064,15 @@ function previewCallerOf(ctx: ActionCtx): ActionPreviewCaller {
         can: (permission) => staffHasPermission(ctx.membership, permission),
       };
     case "customer":
-    case "consumer":
     case "account":
       return { userId: ctx.userId, can: holdsNoCompanyPermission };
+    case "consumer":
     case "public":
     case "share":
     case "system":
-      return { userId: null, can: holdsNoCompanyPermission };
+      throw new CoreInvariantError(
+        `${contract.name}: preview bound to non-human principal "${ctx.principal}" (core.md §7)`,
+      );
   }
 }
 

@@ -134,7 +134,7 @@ export type ConfirmationSummaryFn<TInput extends z.ZodType> = (
 ) => MaybePromise<string>;
 
 export interface ActionPreviewCaller {
-  readonly userId: string | null;
+  readonly userId: string;
   readonly can: (permission: string) => boolean;
 }
 
