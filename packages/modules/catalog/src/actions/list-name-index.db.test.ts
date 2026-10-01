@@ -182,6 +182,24 @@ describe("catalog.listNameIndex", () => {
     expect(capped.variants.truncated).toBe(true);
   });
 
+  it("keeps every listed variant's product listed when products truncate", async () => {
+    const capped = await readCatalogNameIndex({
+      db: kit.db.runtime.db,
+      companyId: kitIdentities.companies.a,
+      caps: { products: 1, variants: 100 },
+    });
+
+    expect(capped.products.truncated).toBe(true);
+    const listedProductIds = new Set(
+      capped.products.items.map((entry) => entry.id),
+    );
+    expect(capped.variants.items.length).toBeGreaterThan(0);
+    for (const variant of capped.variants.items) {
+      expect(listedProductIds.has(variant.productId)).toBe(true);
+    }
+    expect(capped.variants.truncated).toBe(true);
+  });
+
   it("returns ids and names only", async () => {
     const listed = await kit.invoke(listNameIndex, {});
     for (const entry of listed.products.items) {
