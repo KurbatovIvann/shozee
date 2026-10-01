@@ -23,6 +23,7 @@ import type {
   AssistantInteractionTypes,
   ChoicePickerTarget,
   ChoiceResolution,
+  ConfirmationAttemptSecret,
   ConfirmationResolution,
 } from "./assistant-interactions.js";
 import {
@@ -157,32 +158,89 @@ async function resolveChoice(args: ResolveArgs): Promise<ToolOutcome> {
   } as never)) as ToolOutcome;
 }
 
+export interface ConfirmedCardAction {
+  readonly action: string;
+  readonly result: unknown;
+}
+
+export interface ConfirmedCardFailure {
+  readonly action: string;
+  readonly code: string;
+  readonly message: string;
+}
+
+export interface ConfirmedCardResult {
+  readonly done: readonly ConfirmedCardAction[];
+  readonly failed?: ConfirmedCardFailure;
+}
+
+function confirmedAttempts(
+  resolution: ConfirmationResolution,
+): readonly ConfirmationAttemptSecret[] {
+  return [
+    {
+      actionName: resolution.actionName,
+      canonicalInput: resolution.canonicalInput,
+      idempotencyKey: resolution.idempotencyKey,
+      challengeId: resolution.challengeId,
+    },
+    ...resolution.also,
+  ];
+}
+
 async function resolveConfirmation(
   args: ResolveArgs,
   deps: ResolveAnswerDeps,
 ): Promise<ToolOutcome> {
-  const resolution = args.value as ConfirmationResolution;
-  try {
-    const result = await deps.runConfirmed({
-      context: args.context,
-      actionName: resolution.actionName,
-      input: resolution.canonicalInput,
-      idempotencyKey: resolution.idempotencyKey,
-      challengeId: resolution.challengeId,
-    });
-    return { kind: "ok", result };
-  } catch (error) {
-    if (error instanceof AssistantConfirmationRequired) {
-      // Core would not accept the challenge — it expired, or it was presented
-      // for something it was not issued for — and issued another. A new
-      // question for the person, never an execution.
-      return confirmationPause(error);
+  const attempts = confirmedAttempts(args.value as ConfirmationResolution);
+  const oneAction = attempts.length === 1;
+  const done: ConfirmedCardAction[] = [];
+
+  for (const attempt of attempts) {
+    try {
+      const result = await deps.runConfirmed({
+        context: args.context,
+        actionName: attempt.actionName,
+        input: attempt.canonicalInput,
+        idempotencyKey: attempt.idempotencyKey,
+        challengeId: attempt.challengeId,
+      });
+      done.push({ action: attempt.actionName, result });
+    } catch (error) {
+      if (error instanceof AssistantConfirmationRequired) {
+        if (oneAction) {
+          return confirmationPause(error);
+        }
+        return halted(done, {
+          action: attempt.actionName,
+          code: "CONFIRMATION_REQUIRED",
+          message: error.message,
+        });
+      }
+      if (error instanceof CoreError) {
+        if (oneAction) {
+          return { kind: "error", code: error.code, message: error.message };
+        }
+        return halted(done, {
+          action: attempt.actionName,
+          code: error.code,
+          message: error.message,
+        });
+      }
+      throw error;
     }
-    if (error instanceof CoreError) {
-      return { kind: "error", code: error.code, message: error.message };
-    }
-    throw error;
   }
+
+  return oneAction && done[0] !== undefined
+    ? { kind: "ok", result: done[0].result }
+    : { kind: "ok", result: { done } satisfies ConfirmedCardResult };
+}
+
+function halted(
+  done: readonly ConfirmedCardAction[],
+  failed: ConfirmedCardFailure,
+): ToolOutcome {
+  return { kind: "ok", result: { done, failed } satisfies ConfirmedCardResult };
 }
 
 /**

@@ -379,9 +379,35 @@ export const assistantChoicePromptSchema = z.strictObject({
   problem: z.string().min(1).max(400).optional(),
 });
 
+export const ASSISTANT_PREVIEW_LINES_MAX = 24;
+export const ASSISTANT_PREVIEW_NOTES_MAX = 8;
+export const ASSISTANT_PREVIEW_ALSO_MAX = 4;
+
+export const ASSISTANT_PREVIEW_LEVELS = ["card", "strong"] as const;
+
+export const assistantPreviewLineSchema = z.strictObject({
+  label: z.string().min(1).max(200),
+  value: z.string().min(1).max(400),
+});
+
+export const assistantPreviewSchema = z.strictObject({
+  title: z.string().min(1).max(2000),
+  lines: z.array(assistantPreviewLineSchema).max(ASSISTANT_PREVIEW_LINES_MAX),
+  notes: z.array(z.string().min(1).max(400)).max(ASSISTANT_PREVIEW_NOTES_MAX),
+});
+
 export const assistantConfirmationPromptSchema = z.strictObject({
   summary: z.string().min(1).max(2000),
+  preview: assistantPreviewSchema,
+  also: z.array(assistantPreviewSchema).max(ASSISTANT_PREVIEW_ALSO_MAX),
+  level: z.enum(ASSISTANT_PREVIEW_LEVELS),
 });
+
+export type AssistantPreviewLine = z.output<typeof assistantPreviewLineSchema>;
+
+export type AssistantPreview = z.output<typeof assistantPreviewSchema>;
+
+export type AssistantPreviewLevel = (typeof ASSISTANT_PREVIEW_LEVELS)[number];
 
 export type AssistantChoiceOption = z.output<
   typeof assistantChoiceOptionSchema
@@ -404,6 +430,9 @@ export type AssistantInteraction =
       readonly interactionId: string;
       readonly revision: number;
       readonly summary: string;
+      readonly preview: AssistantPreview;
+      readonly also: readonly AssistantPreview[];
+      readonly level: AssistantPreviewLevel;
     };
 
 /**
@@ -439,6 +468,9 @@ export function assistantInteractionFromPause(
           interactionId: pause.interactionId,
           revision: pause.revision,
           summary: prompt.data.summary,
+          preview: prompt.data.preview,
+          also: prompt.data.also,
+          level: prompt.data.level,
         }
       : null;
   }

@@ -59,7 +59,10 @@ import {
   type AssistantInteractionTypes,
 } from "./assistant-interactions.js";
 import { ASSISTANT_INVOCATION_CHANNEL } from "./assistant-invocation.js";
-import { AssistantConfirmationRequired } from "./assistant-kit-confirmation.js";
+import {
+  assistantPreviewLevel,
+  AssistantConfirmationRequired,
+} from "./assistant-kit-confirmation.js";
 import {
   createResolveAnswer,
   type RunConfirmedAction,
@@ -237,13 +240,18 @@ export function createAssistantRuntime(
         args.actionName,
         args.refusedBefore ?? 0,
       );
+    const action = requireImplementation(options.registry, args.actionName);
+    const level = assistantPreviewLevel(action.contract.risk);
     try {
       return await executeAction(options.pipeline, {
-        action: requireImplementation(options.registry, args.actionName),
+        action,
         input: args.input,
         request: {
           ...aiRequest(args.context),
           idempotencyKey,
+          ...(level === undefined
+            ? {}
+            : { requireConfirmation: true as const }),
           ...(args.confirmed === undefined
             ? {}
             : { confirmationChallengeId: args.confirmed.challengeId }),
@@ -255,6 +263,7 @@ export function createAssistantRuntime(
         throw new AssistantConfirmationRequired(
           { actionName: args.actionName, input: args.input, idempotencyKey },
           error.challenge,
+          level ?? "card",
         );
       }
       throw error;

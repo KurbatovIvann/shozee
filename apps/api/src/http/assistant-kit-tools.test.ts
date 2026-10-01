@@ -34,13 +34,16 @@ import {
   assistantInteractions,
   assistantKitIdempotencyKey,
   assistantKitTurnTools,
+  assistantPreviewLevel,
   confirmation,
+  confirmationPause,
   createResolveAnswer,
   withChosenId,
   choice,
   type AssistantToolLogger,
   type ChoiceOptionSecret,
   type ChoiceSecret,
+  type ConfirmationAttemptSecret,
   type ResolveAnswerDeps,
 } from "@showzy/assistant-runtime";
 import {
@@ -49,7 +52,10 @@ import {
   NotFoundError,
 } from "@showzy/core/errors";
 import { ENTITY_LOOKUP_OPTIONS_MAX } from "@showzy/module-kit/entity-lookup";
-import { ASSISTANT_CHOICE_OPTIONS_MAX } from "@showzy/validation/assistant-chat";
+import {
+  ASSISTANT_CHOICE_OPTIONS_MAX,
+  assistantConfirmationPromptSchema,
+} from "@showzy/validation/assistant-chat";
 import { describe, expect, it } from "vitest";
 
 import { createActionRegistry } from "../registry.js";
@@ -690,14 +696,31 @@ describe("an action that needs a person's authorisation", () => {
     input: { id: CUSTOMER_A },
     idempotencyKey: "tool:the-turn-that-asked",
   };
+  const CARD = {
+    title: "The customer will be deleted permanently.",
+    lines: [{ label: "Контакт", value: "+380 50 000 00 00" }],
+    notes: ["Цю дію не можна скасувати."],
+  };
   const CHALLENGE = {
     challengeId: "ffffffff-ffff-4fff-8fff-ffffffffffff",
-    summary: "The customer will be deleted permanently.",
+    summary: CARD.title,
     expiresAt: "2026-09-10T12:05:00.000Z",
+    preview: CARD,
+  };
+  const SECOND_ATTEMPT = {
+    actionName: "customers.updateCustomer",
+    input: { id: CUSTOMER_A, name: "Галина" },
+    idempotencyKey: "tool:the-turn-that-asked:second",
+  };
+  const SECOND_CHALLENGE = {
+    challengeId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+    summary: "Змінити клієнта: Галина",
+    expiresAt: "2026-09-10T12:05:00.000Z",
+    preview: { title: "Змінити клієнта: Галина", lines: [], notes: [] },
   };
 
   /** What a claim hands the resolver, produced by the kind's own `resolve`. */
-  function approved(): unknown {
+  function approved(also: readonly ConfirmationAttemptSecret[] = []): unknown {
     const resolution = confirmation.resolve({
       answer: { approved: true },
       secret: {
@@ -705,6 +728,7 @@ describe("an action that needs a person's authorisation", () => {
         canonicalInput: ATTEMPT.input,
         idempotencyKey: ATTEMPT.idempotencyKey,
         challengeId: CHALLENGE.challengeId,
+        also,
       },
     });
     if (resolution.kind !== "resolved") {
@@ -713,20 +737,25 @@ describe("an action that needs a person's authorisation", () => {
     return resolution.value;
   }
 
-  function answerWith(deps: ResolveAnswerDeps): Promise<ToolOutcome> {
+  function answerWith(
+    deps: ResolveAnswerDeps,
+    also: readonly ConfirmationAttemptSecret[] = [],
+  ): Promise<ToolOutcome> {
     return createResolveAnswer(deps)({
       toolName: "customers_deleteCustomer",
       kind: "confirmation",
-      value: approved(),
+      value: approved(also),
       // Nothing is looked up by tool name: the stored attempt says what runs.
       tools: {},
       context: ANSWER_CONTEXT,
     });
   }
 
-  it("pauses on a confirmation that shows the summary and keeps the attempt server-side", async () => {
+  it("pauses on a confirmation that carries the whole card and keeps the attempt server-side", async () => {
     const set = tools(() =>
-      Promise.reject(new AssistantConfirmationRequired(ATTEMPT, CHALLENGE)),
+      Promise.reject(
+        new AssistantConfirmationRequired(ATTEMPT, CHALLENGE, "strong"),
+      ),
     );
 
     const outcome = await run(set, "customers_deleteCustomer", {
@@ -736,14 +765,164 @@ describe("an action that needs a person's authorisation", () => {
     expect(outcome).toEqual({
       kind: "pause",
       interaction: "confirmation",
-      prompt: { summary: CHALLENGE.summary },
+      prompt: {
+        summary: CHALLENGE.summary,
+        preview: CARD,
+        also: [],
+        level: "strong",
+      },
       secret: {
         actionName: ATTEMPT.actionName,
         canonicalInput: ATTEMPT.input,
         idempotencyKey: ATTEMPT.idempotencyKey,
         challengeId: CHALLENGE.challengeId,
+        also: [],
       },
     });
+  });
+
+  it("falls back to the summary when the action presents no structured card", () => {
+    const { preview } = assistantConfirmationPromptSchema.parse(
+      confirmationPause(
+        new AssistantConfirmationRequired(ATTEMPT, {
+          challengeId: CHALLENGE.challengeId,
+          summary: "Підписати документ",
+          expiresAt: CHALLENGE.expiresAt,
+        }),
+      ).prompt,
+    );
+
+    expect(preview).toEqual({
+      title: "Підписати документ",
+      lines: [],
+      notes: [],
+    });
+  });
+
+  it("puts both actions on one card, and keeps each attempt whole", () => {
+    const pause = confirmationPause(
+      new AssistantConfirmationRequired(ATTEMPT, CHALLENGE, "strong"),
+      [
+        new AssistantConfirmationRequired(
+          SECOND_ATTEMPT,
+          SECOND_CHALLENGE,
+          "card",
+        ),
+      ],
+    );
+
+    const prompt = assistantConfirmationPromptSchema.parse(pause.prompt);
+    expect(prompt.also).toEqual([SECOND_CHALLENGE.preview]);
+    expect(prompt.level).toBe("strong");
+    expect(pause.secret).toMatchObject({
+      idempotencyKey: ATTEMPT.idempotencyKey,
+      challengeId: CHALLENGE.challengeId,
+      also: [
+        {
+          actionName: SECOND_ATTEMPT.actionName,
+          canonicalInput: SECOND_ATTEMPT.input,
+          idempotencyKey: SECOND_ATTEMPT.idempotencyKey,
+          challengeId: SECOND_CHALLENGE.challengeId,
+        },
+      ],
+    });
+  });
+
+  it("runs one card's actions as separate attempts, each under its own key", async () => {
+    const seen: unknown[] = [];
+
+    const outcome = await answerWith(
+      {
+        runConfirmed: (args) => {
+          seen.push({
+            actionName: args.actionName,
+            idempotencyKey: args.idempotencyKey,
+            challengeId: args.challengeId,
+          });
+          return Promise.resolve({ ran: args.actionName });
+        },
+      },
+      [
+        {
+          actionName: SECOND_ATTEMPT.actionName,
+          canonicalInput: SECOND_ATTEMPT.input,
+          idempotencyKey: SECOND_ATTEMPT.idempotencyKey,
+          challengeId: SECOND_CHALLENGE.challengeId,
+        },
+      ],
+    );
+
+    expect(seen).toEqual([
+      {
+        actionName: ATTEMPT.actionName,
+        idempotencyKey: ATTEMPT.idempotencyKey,
+        challengeId: CHALLENGE.challengeId,
+      },
+      {
+        actionName: SECOND_ATTEMPT.actionName,
+        idempotencyKey: SECOND_ATTEMPT.idempotencyKey,
+        challengeId: SECOND_CHALLENGE.challengeId,
+      },
+    ]);
+    expect(outcome).toEqual({
+      kind: "ok",
+      result: {
+        done: [
+          { action: ATTEMPT.actionName, result: { ran: ATTEMPT.actionName } },
+          {
+            action: SECOND_ATTEMPT.actionName,
+            result: { ran: SECOND_ATTEMPT.actionName },
+          },
+        ],
+      },
+    });
+  });
+
+  it("reports the first as done when the second of one card fails", async () => {
+    const refusal = new NotFoundError();
+
+    const outcome = await answerWith(
+      {
+        runConfirmed: (args) =>
+          args.actionName === ATTEMPT.actionName
+            ? Promise.resolve({ id: CUSTOMER_A })
+            : Promise.reject(refusal),
+      },
+      [
+        {
+          actionName: SECOND_ATTEMPT.actionName,
+          canonicalInput: SECOND_ATTEMPT.input,
+          idempotencyKey: SECOND_ATTEMPT.idempotencyKey,
+          challengeId: SECOND_CHALLENGE.challengeId,
+        },
+      ],
+    );
+
+    expect(outcome).toEqual({
+      kind: "ok",
+      result: {
+        done: [{ action: ATTEMPT.actionName, result: { id: CUSTOMER_A } }],
+        failed: {
+          action: SECOND_ATTEMPT.actionName,
+          code: refusal.code,
+          message: refusal.message,
+        },
+      },
+    });
+  });
+
+  it("has no answer that declines and still runs", () => {
+    expect(confirmation.answer.safeParse({ approved: false }).success).toBe(
+      false,
+    );
+    expect(confirmation.answer.safeParse({}).success).toBe(false);
+  });
+
+  it("stops the assistant on writes, loudly on high risk, and never on a draft", () => {
+    expect(assistantPreviewLevel("write")).toBe("card");
+    expect(assistantPreviewLevel("high")).toBe("strong");
+    expect(assistantPreviewLevel("draft")).toBeUndefined();
+    expect(assistantPreviewLevel("read")).toBeUndefined();
   });
 
   it("presents the stored attempt again, under its own key rather than the answer's", async () => {

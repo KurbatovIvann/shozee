@@ -17,9 +17,17 @@
  * would ask again rather than run.
  */
 import type { ToolOutcome } from "@showzy/assistant-kit";
+import type { ActionRisk } from "@showzy/core/contract";
 import type { ConfirmationChallenge } from "@showzy/core/errors";
+import type {
+  AssistantPreview,
+  AssistantPreviewLevel,
+} from "@showzy/validation/assistant-chat";
 
-import type { ConfirmationSecret } from "./assistant-interactions.js";
+import type {
+  ConfirmationAttemptSecret,
+  ConfirmationSecret,
+} from "./assistant-interactions.js";
 
 /** What the server supplied to the call core challenged. */
 export interface ConfirmationAttempt {
@@ -39,13 +47,55 @@ export interface ConfirmationAttempt {
 export class AssistantConfirmationRequired extends Error {
   readonly attempt: ConfirmationAttempt;
   readonly challenge: ConfirmationChallenge;
+  readonly level: AssistantPreviewLevel;
 
-  constructor(attempt: ConfirmationAttempt, challenge: ConfirmationChallenge) {
+  constructor(
+    attempt: ConfirmationAttempt,
+    challenge: ConfirmationChallenge,
+    level: AssistantPreviewLevel = "card",
+  ) {
     super(`"${attempt.actionName}" requires confirmation`);
     this.name = "AssistantConfirmationRequired";
     this.attempt = attempt;
     this.challenge = challenge;
+    this.level = level;
   }
+}
+
+export function assistantPreviewLevel(
+  risk: ActionRisk,
+): AssistantPreviewLevel | undefined {
+  switch (risk) {
+    case "high":
+      return "strong";
+    case "write":
+      return "card";
+    default:
+      return undefined;
+  }
+}
+
+function previewOf(required: AssistantConfirmationRequired): AssistantPreview {
+  const card = required.challenge.preview;
+  if (card === undefined) {
+    return { title: required.challenge.summary, lines: [], notes: [] };
+  }
+  return {
+    title: card.title,
+    lines: card.lines.map((line) => ({ label: line.label, value: line.value })),
+    notes: [...(card.notes ?? [])],
+  };
+}
+
+function attemptSecretOf(
+  required: AssistantConfirmationRequired,
+): ConfirmationAttemptSecret {
+  return {
+    actionName: required.attempt.actionName,
+    canonicalInput: required.attempt.input,
+    idempotencyKey: required.attempt.idempotencyKey,
+    challengeId: required.challenge.challengeId,
+  };
 }
 
 /**
@@ -55,17 +105,22 @@ export class AssistantConfirmationRequired extends Error {
  */
 export function confirmationPause(
   required: AssistantConfirmationRequired,
+  also: readonly AssistantConfirmationRequired[] = [],
 ): Extract<ToolOutcome, { kind: "pause" }> {
   const secret: ConfirmationSecret = {
-    actionName: required.attempt.actionName,
-    canonicalInput: required.attempt.input,
-    idempotencyKey: required.attempt.idempotencyKey,
-    challengeId: required.challenge.challengeId,
+    ...attemptSecretOf(required),
+    also: also.map(attemptSecretOf),
   };
+  const strong = [required, ...also].some((one) => one.level === "strong");
   return {
     kind: "pause",
     interaction: "confirmation",
-    prompt: { summary: required.challenge.summary },
+    prompt: {
+      summary: required.challenge.summary,
+      preview: previewOf(required),
+      also: also.map(previewOf),
+      level: strong ? "strong" : "card",
+    },
     secret,
   };
 }
