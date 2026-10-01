@@ -475,14 +475,39 @@ describe("dev bakery fixture seed", () => {
     };
   }
 
+  async function withProductionNodeEnv(
+    body: () => Promise<void>,
+  ): Promise<void> {
+    const previous = process.env["NODE_ENV"];
+    process.env["NODE_ENV"] = "production";
+    try {
+      await body();
+    } finally {
+      if (previous === undefined) {
+        delete process.env["NODE_ENV"];
+      } else {
+        process.env["NODE_ENV"] = previous;
+      }
+    }
+  }
+
   it("refuses to run under NODE_ENV=production and writes nothing (db.md §9)", async () => {
+    await seedDevShoBakery(dbClient.db);
     const before = await readLayout(devShoBakeryCompanyId);
+    expect(before.products).toBeGreaterThan(0);
 
     const refused = runSeedCliUnderProduction();
 
     expect(refused.status).toBe(1);
     expect(refused.stderr).toContain("refuses to run with NODE_ENV=production");
     expect(refused.stdout).not.toContain(devShoBakeryCompany.name);
+
+    await withProductionNodeEnv(async () => {
+      await expect(seedDevShoBakery(dbClient.db)).rejects.toThrow(
+        "refuses to run with NODE_ENV=production",
+      );
+    });
+
     expect(await readLayout(devShoBakeryCompanyId)).toEqual(before);
   });
 
@@ -543,21 +568,34 @@ describe("dev bakery fixture seed", () => {
     expect(groups.every((row) => !row.slug.startsWith("group-"))).toBe(true);
   });
 
-  it("adopts a phone-first owner that signed up before the seed ran", async () => {
+  it("adopts the earliest signed-up user matching the fixture phone or email", async () => {
     const fresh = await createTestDatabase();
     try {
       const signedUpOwnerId = "phone-first-owner-id";
-      await fresh.runtime.db.insert(user).values({
-        id: signedUpOwnerId,
-        name: "Phone first",
-        email: "+380931110001@phone.sho-dev.local",
-        emailVerified: false,
-        phoneNumber: devShoBakeryOwner.phone,
-        phoneNumberVerified: true,
-      });
+      const signedUpOwnerEmail = `${devShoBakeryOwner.phone}@phone.sho-dev.local`;
+      await fresh.runtime.db.insert(user).values([
+        {
+          id: signedUpOwnerId,
+          name: "Phone first",
+          email: signedUpOwnerEmail,
+          emailVerified: false,
+          phoneNumber: devShoBakeryOwner.phone,
+          phoneNumberVerified: true,
+          createdAt: new Date("2026-01-01T00:00:00.000Z"),
+        },
+        {
+          id: "email-holder-id",
+          name: "Email holder",
+          email: devShoBakeryOwner.email,
+          emailVerified: false,
+          createdAt: new Date("2026-02-01T00:00:00.000Z"),
+        },
+      ]);
 
       const seeded = await seedDevShoBakery(fresh.runtime.db);
       expect(seeded.ownerUserId).toBe(signedUpOwnerId);
+      expect(seeded.ownerEmail).toBe(signedUpOwnerEmail);
+      expect(seeded.ownerPhone).toBe(devShoBakeryOwner.phone);
 
       const members = await fresh.runtime.db
         .select({ userId: companyMembers.userId, role: companyMembers.role })

@@ -390,9 +390,12 @@ SHO-761): one company, one owner user and membership, customers, groups,
 price lists, products and variants — the catalogue the owner's recorded
 Ukrainian speech names, so a Шо or assistant reference resolves against a
 real dev database. Its deferral ("needs the catalog schema") lapsed when
-the catalog schema landed. Dev only: its CLI
-(`pnpm --filter @showzy/db seed:dev-sho`) refuses `NODE_ENV=production`,
-and no production bootstrap may depend on it.
+the catalog schema landed. Dev only: `seedDevShoBakery` and its CLI
+(`pnpm --filter @showzy/db seed:dev-sho`) both refuse `NODE_ENV=production`,
+and no production bootstrap may depend on it. Every fixture phone sits on
+the unallocated Ukrainian operator code `00` (owner `+380000000001`,
+customers `+38000222nnnn`) so a verified fixture user can never reach a
+real subscriber.
 
 **Deferred** until the owning schema exists:
 

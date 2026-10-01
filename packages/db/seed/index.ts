@@ -8,6 +8,7 @@ export {
   devShoBakeryOwnerUserId,
   devShoBakeryPriceLists,
   devShoBakeryProducts,
+  devShoBakeryProductionRefusal,
   seedDevShoBakery,
   type DevShoBakeryGroup,
   type DevShoBakeryProduct,

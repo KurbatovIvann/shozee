@@ -3,12 +3,12 @@ import { loadServerConfig } from "@showzy/config";
 import { createDbClient } from "../src/client.js";
 import {
   devShoBakeryCompany,
-  devShoBakeryOwner,
+  devShoBakeryProductionRefusal,
   seedDevShoBakery,
 } from "./dev-sho-bakery.js";
 
 if (process.env["NODE_ENV"] === "production") {
-  console.error("dev-sho-bakery seed refuses to run with NODE_ENV=production");
+  console.error(devShoBakeryProductionRefusal);
   process.exit(1);
 }
 
@@ -21,7 +21,7 @@ try {
     [
       `company ${devShoBakeryCompany.name} (${seeded.companyId})`,
       `products ${String(seeded.productCount)}, variants ${String(seeded.variantCount)}, customers ${String(seeded.customerCount)}`,
-      `sign in with ${devShoBakeryOwner.email} or ${devShoBakeryOwner.phone}`,
+      `sign in with ${seeded.ownerEmail}${seeded.ownerPhone === null ? "" : ` or ${seeded.ownerPhone}`}`,
       "the dev OTP transport sends nothing: read the code from the verification table",
     ].join("\n"),
   );

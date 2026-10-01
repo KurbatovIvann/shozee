@@ -117,8 +117,11 @@ export const devShoBakeryCompany = {
 export const devShoBakeryOwner = {
   name: "Власник (dev)",
   email: "owner@sho-dev.local",
-  phone: "+380931110001",
+  phone: "+380000000001",
 } as const;
+
+export const devShoBakeryProductionRefusal =
+  "dev-sho-bakery seed refuses to run with NODE_ENV=production";
 
 export function devShoBakeryId(kind: string, key: string): string {
   const hex = createHash("sha256")
@@ -143,6 +146,8 @@ export const devShoBakeryOwnerUserId = "sho-dev-bakery-owner";
 export interface DevShoBakerySeed {
   readonly companyId: string;
   readonly ownerUserId: string;
+  readonly ownerEmail: string;
+  readonly ownerPhone: string | null;
   readonly productCount: number;
   readonly variantCount: number;
   readonly customerCount: number;
@@ -150,9 +155,12 @@ export interface DevShoBakerySeed {
 
 export async function seedDevShoBakery(
   db: Database,
-  companyId: string = devShoBakeryCompanyId,
-  fallbackOwnerUserId: string = devShoBakeryOwnerUserId,
 ): Promise<DevShoBakerySeed> {
+  if (process.env["NODE_ENV"] === "production") {
+    throw new Error(devShoBakeryProductionRefusal);
+  }
+
+  const companyId = devShoBakeryCompanyId;
   const variants = devShoBakeryProducts.flatMap((product) =>
     (product.variants ?? []).map((name) => ({
       id: devShoBakeryId("variant", `${product.name}/${name}`),
@@ -163,14 +171,18 @@ export async function seedDevShoBakery(
     })),
   );
 
-  const ownerUserId = await db.transaction(async (tx) => {
+  const owner = await db.transaction(async (tx) => {
     await tx
       .insert(companies)
       .values({ id: companyId, ...devShoBakeryCompany })
       .onConflictDoNothing({ target: companies.id });
 
     const [signedUpOwner] = await tx
-      .select({ id: user.id })
+      .select({
+        id: user.id,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+      })
       .from(user)
       .where(
         or(
@@ -178,15 +190,20 @@ export async function seedDevShoBakery(
           eq(user.email, devShoBakeryOwner.email),
         ),
       )
+      .orderBy(user.createdAt, user.id)
       .limit(1);
 
-    const resolvedOwnerUserId = signedUpOwner?.id ?? fallbackOwnerUserId;
+    const resolvedOwner = signedUpOwner ?? {
+      id: devShoBakeryOwnerUserId,
+      email: devShoBakeryOwner.email,
+      phoneNumber: devShoBakeryOwner.phone,
+    };
 
     if (signedUpOwner === undefined) {
       await tx
         .insert(user)
         .values({
-          id: resolvedOwnerUserId,
+          id: resolvedOwner.id,
           name: devShoBakeryOwner.name,
           email: devShoBakeryOwner.email,
           emailVerified: true,
@@ -199,9 +216,9 @@ export async function seedDevShoBakery(
     await tx
       .insert(companyMembers)
       .values({
-        id: devShoBakeryId("member", resolvedOwnerUserId),
+        id: devShoBakeryId("member", resolvedOwner.id),
         companyId,
-        userId: resolvedOwnerUserId,
+        userId: resolvedOwner.id,
         role: "owner",
       })
       .onConflictDoNothing({
@@ -242,7 +259,7 @@ export async function seedDevShoBakery(
           id: devShoBakeryId("customer", name),
           companyId,
           name,
-          phone: `+38093222${String(index + 1).padStart(4, "0")}`,
+          phone: `+38000222${String(index + 1).padStart(4, "0")}`,
           createdVia: SEEDED_VIA,
         })),
       )
@@ -266,12 +283,14 @@ export async function seedDevShoBakery(
       .values(variants)
       .onConflictDoNothing({ target: productVariants.id });
 
-    return resolvedOwnerUserId;
+    return resolvedOwner;
   });
 
   return {
     companyId,
-    ownerUserId,
+    ownerUserId: owner.id,
+    ownerEmail: owner.email,
+    ownerPhone: owner.phoneNumber,
     productCount: devShoBakeryProducts.length,
     variantCount: variants.length,
     customerCount: devShoBakeryCustomers.length,

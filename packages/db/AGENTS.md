@@ -51,8 +51,9 @@ actions/services running under the core pipeline.
   idempotency / audit row factories.
 - `seed/` — exports `role_permission_defaults` and `seedDevShoBakery`
   (SHO-761): a local-dev company whose catalogue matches the shop the owner
-  dictated to, run by `pnpm --filter @showzy/db seed:dev-sho`, which refuses
-  `NODE_ENV=production`. Treat db.md §9 domain fixtures as planned until
+  dictated to, run by `pnpm --filter @showzy/db seed:dev-sho`; function and
+  CLI both refuse `NODE_ENV=production`, and fixture phones are unroutable
+  (db.md §9). Treat db.md §9 domain fixtures as planned until
   implemented; production bootstrap must not depend on demo data.
 
 ## Raw SQL policy
