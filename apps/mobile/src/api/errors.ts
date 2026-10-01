@@ -5,6 +5,7 @@
 import { onlineManager } from "@tanstack/react-query";
 import {
   isWireError,
+  type WireActionPreview,
   type WireError,
   type WireErrorCode,
 } from "@showzy/contract";
@@ -95,6 +96,7 @@ export type WireErrorView = {
   readonly retryAfterSec?: number;
   readonly challengeId?: string;
   readonly summary?: string;
+  readonly preview?: WireActionPreview;
 };
 
 export type QueryFailureKind =
@@ -116,6 +118,7 @@ export type QueryFailure = {
   readonly retryAfterSec?: number;
   readonly challengeId?: string;
   readonly summary?: string;
+  readonly preview?: WireActionPreview;
 };
 
 export function describeWireError(error: unknown): WireErrorView | null {
@@ -141,6 +144,7 @@ export function describeQueryFailure(
         ? {}
         : { challengeId: view.challengeId }),
       ...(view.summary === undefined ? {} : { summary: view.summary }),
+      ...(view.preview === undefined ? {} : { preview: view.preview }),
     };
   }
   if (isClientUnavailableError(error) || isInternalInvariantError(error)) {
@@ -198,6 +202,9 @@ function viewFor(error: WireError): WireErrorView {
         message: error.message,
         challengeId: error.data.challenge.challengeId,
         summary: error.data.challenge.summary,
+        ...(error.data.challenge.preview === undefined
+          ? {}
+          : { preview: error.data.challenge.preview }),
       };
     case "VALIDATION":
     case "UNAUTHENTICATED":

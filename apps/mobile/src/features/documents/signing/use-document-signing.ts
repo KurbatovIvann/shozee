@@ -1,7 +1,3 @@
-/**
- * HITL + signing-sheet session (SHO-260). UI confirm → protocol
- * `documents.requestSign` → key sheet. Key bytes stay in a ref.
- */
 import { useQueryClient } from "@tanstack/react-query";
 import { useReducer, useRef, useState } from "react";
 
@@ -11,7 +7,7 @@ import { useContractMutation } from "../../../api/contract-mutation";
 import { describeQueryFailure } from "../../../api/errors";
 import { submitWithProtocolConfirmation } from "../../../api/protocol-confirm";
 import { useActiveCompany } from "../../../api/query-provider";
-import { presentConfirmDialog } from "../../../components/ui/present-confirm-dialog";
+import { useConfirmationCard } from "../../../components/ui/confirmation-card-host";
 import { createMobileMutationAttempt } from "../../../crypto/create-attempt";
 import type { DocumentsCopy } from "../../../i18n/documents";
 import { bindDocumentRequestSignMutate } from "../api/document-request-sign";
@@ -66,6 +62,7 @@ export function useDocumentSigning(args: {
   readonly copy: DocumentsCopy;
   readonly canEdit: boolean;
 }) {
+  const presentCard = useConfirmationCard();
   const apiClient = useApiClient();
   const apiRef = useRef(apiClient);
   apiRef.current = apiClient;
@@ -109,19 +106,14 @@ export function useDocumentSigning(args: {
     setHitlBanner(null);
     requestSignMutation.reset();
     try {
-      const choice = await presentConfirmDialog({
-        title: args.copy.confirm.signTitle,
-        message: args.copy.confirm.signDescription,
-        confirmLabel: args.copy.confirm.signConfirm,
-        cancelLabel: args.copy.confirm.dismiss,
-      });
-      if (choice !== "confirm") {
-        return;
-      }
-      await submitWithProtocolConfirmation({
+      const result = await submitWithProtocolConfirmation({
         submit: () => requestSignMutation.submit({ documentId: target.id }),
+        present: (challenge) => presentCard(challenge),
         confirm: (challengeId) => requestSignMutation.confirm(challengeId),
       });
+      if (result.outcome === "declined") {
+        return;
+      }
       requestSignMutation.reset();
       clearKey();
       dispatch({

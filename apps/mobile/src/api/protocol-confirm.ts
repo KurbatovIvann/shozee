@@ -1,29 +1,61 @@
-/**
- * High-risk writes that declare `requiresConfirmation` return
- * `CONFIRMATION_REQUIRED` after the UI confirm. This helper re-invokes
- * with the challenge so the protocol is real, not just a local Alert.
- */
+import type { WireActionPreview } from "@showzy/contract";
+
+import type { ConfirmDialogChoice } from "../components/ui/confirm-dialog";
 import { describeWireError } from "./errors";
 
-export function confirmationChallengeId(error: unknown): string | null {
+export type ConfirmationChallengeView = {
+  readonly challengeId: string;
+  readonly summary: string;
+  readonly preview?: WireActionPreview;
+};
+
+export type PresentConfirmationChallenge = (
+  challenge: ConfirmationChallengeView,
+) => Promise<ConfirmDialogChoice>;
+
+export type ProtocolConfirmationResult<T> =
+  | { readonly outcome: "submitted"; readonly value: T }
+  | { readonly outcome: "declined" };
+
+export function confirmationChallenge(
+  error: unknown,
+): ConfirmationChallengeView | null {
   const view = describeWireError(error);
-  if (view === null || view.code !== "CONFIRMATION_REQUIRED") {
+  if (
+    view === null ||
+    view.code !== "CONFIRMATION_REQUIRED" ||
+    view.challengeId === undefined
+  ) {
     return null;
   }
-  return view.challengeId ?? null;
+  return {
+    challengeId: view.challengeId,
+    summary: view.summary ?? "",
+    ...(view.preview === undefined ? {} : { preview: view.preview }),
+  };
 }
 
 export async function submitWithProtocolConfirmation<T>(args: {
   readonly submit: () => Promise<T>;
+  readonly present: PresentConfirmationChallenge;
   readonly confirm: (challengeId: string) => Promise<T>;
-}): Promise<T> {
+}): Promise<ProtocolConfirmationResult<T>> {
+  let challenge: ConfirmationChallengeView;
   try {
-    return await args.submit();
+    return { outcome: "submitted", value: await args.submit() };
   } catch (error) {
-    const challengeId = confirmationChallengeId(error);
-    if (challengeId === null) {
+    const pending = confirmationChallenge(error);
+    if (pending === null) {
       throw error;
     }
-    return args.confirm(challengeId);
+    challenge = pending;
   }
+  const choice = await args.present(challenge);
+  if (choice === "cancel") {
+    return { outcome: "declined" };
+  }
+  return {
+    outcome: "submitted",
+    value: await args.confirm(challenge.challengeId),
+  };
 }

@@ -8,8 +8,9 @@ the catalog form stack.
 UI state ownership is `.claude/rules/mobile-ui-state.md`. List filters
 and options-sheet chrome are `useState` / local view state, never XState.
 Writes on the list (default / active / delete) use `useContractMutation`.
-Delete is UI confirm (`presentConfirmDialog`) then protocol confirmation
-(`submitWithProtocolConfirmation`). Catalog list does not own writes; this
+Delete submits first and confirms on the module's own preview card
+(`submitWithProtocolConfirmation` + `useConfirmationCard`), after the
+options sheet hides. Catalog list does not own writes; this
 slice does, because default/active/delete live on the options sheet.
 
 The editor is RHF `Controller` + UI draft Zod + a save planner. Dirty is

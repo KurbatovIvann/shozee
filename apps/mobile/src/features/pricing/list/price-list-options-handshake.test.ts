@@ -2,7 +2,6 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it, vi } from "vitest";
 
-import type { ConfirmDialogRequest } from "../../../components/ui/confirm-dialog";
 import {
   hidePriceListOptions,
   IDLE_PRICE_LIST_OPTIONS,
@@ -14,14 +13,6 @@ import {
 } from "./price-list-options-handshake";
 
 const LIST_ID = "0f0e2d5c-4a1b-4c3d-9e8f-102938475601";
-
-const DELETE_CONFIRM: ConfirmDialogRequest = {
-  title: "Delete this price list?",
-  message: "Really delete Опт?",
-  confirmLabel: "Delete",
-  cancelLabel: "Cancel",
-  tone: "danger",
-};
 
 const HOOK_SOURCE = readFileSync(
   new URL("./use-price-lists-list.ts", import.meta.url),
@@ -99,13 +90,13 @@ describe("planPriceListOptionsFollowUp", () => {
 });
 
 describe("runPriceListOptionsFollowUp", () => {
-  it("delete waits for sheet hidden before presentConfirmDialog", async () => {
+  it("delete waits for sheet hidden before the server card write", async () => {
     let chrome = openPriceListOptions(LIST_ID);
     const events: string[] = [];
     const gate = deferred();
-    const presentConfirmDialog = vi.fn(() => {
-      events.push("presentConfirmDialog");
-      return Promise.resolve("confirm" as const);
+    const deleteOnServerCard = vi.fn(() => {
+      events.push("deleteOnServerCard");
+      return Promise.resolve();
     });
 
     const done = runPriceListOptionsFollowUp({
@@ -118,41 +109,19 @@ describe("runPriceListOptionsFollowUp", () => {
         chrome = hidePriceListOptions(chrome);
         events.push("hide");
       },
-      presentConfirmDialog,
-      confirm: DELETE_CONFIRM,
+      deleteOnServerCard,
     });
 
     await Promise.resolve();
     expect(events).toEqual(["wait", "hide"]);
     expect(chrome.visible).toBe(false);
     expect(chrome.listId).toBe(LIST_ID);
-    expect(presentConfirmDialog).not.toHaveBeenCalled();
+    expect(deleteOnServerCard).not.toHaveBeenCalled();
 
     gate.resolve();
-    await expect(done).resolves.toBe("confirm");
-    expect(presentConfirmDialog).toHaveBeenCalledOnce();
-    expect(presentConfirmDialog).toHaveBeenCalledWith(DELETE_CONFIRM);
-    expect(events).toEqual(["wait", "hide", "presentConfirmDialog"]);
-  });
-
-  it("delete returns cancel without implying a submit", async () => {
-    const gate = deferred();
-    const presentConfirmDialog = vi.fn(() =>
-      Promise.resolve("cancel" as const),
-    );
-
-    const done = runPriceListOptionsFollowUp({
-      kind: "delete",
-      waitHidden: () => gate.promise,
-      hide: () => undefined,
-      presentConfirmDialog,
-      confirm: DELETE_CONFIRM,
-    });
-
-    expect(presentConfirmDialog).not.toHaveBeenCalled();
-    gate.resolve();
-    await expect(done).resolves.toBe("cancel");
-    expect(presentConfirmDialog).toHaveBeenCalledOnce();
+    await done;
+    expect(deleteOnServerCard).toHaveBeenCalledOnce();
+    expect(events).toEqual(["wait", "hide", "deleteOnServerCard"]);
   });
 
   it("deactivate-default sets Banner only after hide and never submits", async () => {
@@ -203,7 +172,8 @@ describe("live hook wiring (SHO-200)", () => {
 
   it("calls the follow-up with live ports, not a bypass then into writes", () => {
     expect(HOOK_SOURCE).toContain("runPriceListOptionsFollowUp");
-    expect(HOOK_SOURCE).toContain("presentConfirmDialog");
+    expect(HOOK_SOURCE).toContain("deleteOnServerCard");
+    expect(HOOK_SOURCE).not.toContain("presentConfirmDialog");
     expect(HOOK_SOURCE).toContain("setBanner");
     expect(HOOK_SOURCE).not.toContain("submitDeactivate");
     expect(HOOK_SOURCE).toContain("const openOptions = useCallback");

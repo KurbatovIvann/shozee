@@ -28,6 +28,27 @@ export type FormChromeCopy = {
   readonly submitEditLoading: string;
 };
 
+export type ConfirmationCardCopy = {
+  readonly fallbackTitle: string;
+  readonly confirm: string;
+  readonly cancel: string;
+  readonly close: string;
+};
+
+export const confirmationCardEn: ConfirmationCardCopy = {
+  fallbackTitle: "Confirm this action",
+  confirm: "Confirm",
+  cancel: "Cancel",
+  close: "Close",
+};
+
+export const confirmationCardUk: ConfirmationCardCopy = {
+  fallbackTitle: "Підтвердьте дію",
+  confirm: "Підтвердити",
+  cancel: "Скасувати",
+  close: "Закрити",
+};
+
 export const writeErrorsEn: WriteErrorsCopy = {
   validation: "Check the highlighted fields.",
   network: "Could not save. Try again.",

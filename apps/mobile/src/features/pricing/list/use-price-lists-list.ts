@@ -5,7 +5,6 @@ import { useApiClient } from "../../../api/api-provider";
 import { describeQueryFailure } from "../../../api/errors";
 import { useActiveCompany } from "../../../api/query-provider";
 import { useResolvedCompany } from "../../../company-resolution/resolved-company-provider";
-import { presentConfirmDialog } from "../../../components/ui/present-confirm-dialog";
 import { detectLocale, interpolate } from "../../../i18n/locale";
 import { pricingCopy } from "../../../i18n/pricing";
 import {
@@ -212,25 +211,12 @@ export function usePriceListsList() {
         return;
       }
       const list = optionsList;
-      const choice = await runPriceListOptionsFollowUp({
+      await runPriceListOptionsFollowUp({
         kind: "delete",
         waitHidden: optionsHidden.wait,
         hide: hideOptions,
-        presentConfirmDialog,
-        confirm: {
-          title: copy.confirm.deleteTitle,
-          message: interpolate(copy.confirm.deleteDescription, {
-            name: list.name,
-          }),
-          confirmLabel: copy.confirm.deleteConfirm,
-          cancelLabel: copy.confirm.cancel,
-          tone: "danger",
-        },
+        deleteOnServerCard: () => writes.remove(list),
       });
-      if (choice !== "confirm") {
-        return;
-      }
-      await writes.remove(list);
     },
   };
 }

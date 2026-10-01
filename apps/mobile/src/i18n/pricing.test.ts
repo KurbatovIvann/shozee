@@ -52,9 +52,6 @@ describe("pricing copy", () => {
     expect(uk.form.leaveDescription).toBe("Внесені зміни буде втрачено.");
     expect(uk.form.leaveContinue).toBe("Продовжити редагування");
     expect(uk.form.leaveConfirm).toBe("Вийти без збереження");
-    expect(uk.confirm.deleteTitle).toBe("Видалити прайс-лист?");
-    expect(uk.confirm.deleteDescription).toContain("{{name}}");
-    expect(uk.confirm.deleteDescription).not.toMatch(/\d+\s+груп/);
     expect(uk.prices.none).toBe("Без окремих цін");
     expect(uk.hint).toContain("призначеного листа");
     expect(uk.form.createTitle).toBe("Новий прайс-лист");
@@ -84,7 +81,6 @@ describe("pricing copy", () => {
     expect(pricingCopy("uk").prices.one).toContain("{{count}}");
     expect(pricingCopy("en").prices.one).toContain("{{count}}");
     expect(pricingCopy("uk").optionsLabel).toContain("{{name}}");
-    expect(pricingCopy("en").confirm.deleteDescription).toContain("{{name}}");
     expect(pricingCopy("uk").form.bulkApplied).toContain("{{percent}}");
     expect(pricingCopy("uk").form.catalogBaseLabel).toContain("{{price}}");
   });

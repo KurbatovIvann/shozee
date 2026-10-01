@@ -117,9 +117,6 @@ export type SharedPricingCopy = {
     readonly close: string;
   };
   readonly confirm: {
-    readonly deleteTitle: string;
-    readonly deleteDescription: string;
-    readonly deleteConfirm: string;
     readonly cancel: string;
   };
   readonly toast: {
@@ -288,10 +285,6 @@ const en: SharedPricingCopy = {
     close: "Close",
   },
   confirm: {
-    deleteTitle: "Delete this price list?",
-    deleteDescription:
-      "“{{name}}” and all of its prices will be deleted. Assigned customers and groups will fall back to the next price level.",
-    deleteConfirm: "Delete",
     cancel: "Cancel",
   },
   toast: {
@@ -352,10 +345,6 @@ const uk: SharedPricingCopy = {
     close: "Закрити",
   },
   confirm: {
-    deleteTitle: "Видалити прайс-лист?",
-    deleteDescription:
-      "«{{name}}» і всі ціни в ньому буде видалено. Призначені клієнти й групи перейдуть на наступний рівень цін.",
-    deleteConfirm: "Видалити",
     cancel: "Скасувати",
   },
   toast: {

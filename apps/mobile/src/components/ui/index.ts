@@ -11,6 +11,16 @@ export {
   type ConfirmDialogRequest,
   type ConfirmDialogTone,
 } from "./confirm-dialog";
+export { ConfirmationCard } from "./confirmation-card";
+export {
+  ConfirmationCardProvider,
+  useConfirmationCard,
+} from "./confirmation-card-host";
+export {
+  confirmationCardView,
+  type ConfirmationCardLine,
+  type ConfirmationCardView,
+} from "./confirmation-card.model";
 export { EditorFooter } from "./editor-footer";
 export { editorFooterChrome } from "./editor-footer-chrome";
 export { EmptyState } from "./empty-state";

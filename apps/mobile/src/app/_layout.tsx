@@ -12,6 +12,7 @@ import { useUnistyles } from "react-native-unistyles";
 import { ApiProvider } from "../api/api-provider";
 import { QueryRuntimeProvider } from "../api/query-provider";
 import { SessionProvider } from "../auth/session-provider";
+import { ConfirmationCardProvider } from "../components/ui/confirmation-card-host";
 
 export default function RootLayout() {
   const { theme, rt } = useUnistyles();
@@ -30,13 +31,15 @@ export default function RootLayout() {
         <SessionProvider>
           <ApiProvider>
             <QueryRuntimeProvider>
-              <StatusBar style={rt.themeName === "dark" ? "light" : "dark"} />
-              <Stack
-                screenOptions={{
-                  headerShown: false,
-                  contentStyle: { backgroundColor: theme.colors.background },
-                }}
-              />
+              <ConfirmationCardProvider>
+                <StatusBar style={rt.themeName === "dark" ? "light" : "dark"} />
+                <Stack
+                  screenOptions={{
+                    headerShown: false,
+                    contentStyle: { backgroundColor: theme.colors.background },
+                  }}
+                />
+              </ConfirmationCardProvider>
             </QueryRuntimeProvider>
           </ApiProvider>
         </SessionProvider>

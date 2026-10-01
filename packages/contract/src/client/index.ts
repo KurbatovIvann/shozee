@@ -52,9 +52,14 @@ export {
 } from "./transport-meta.js";
 export {
   isWireError,
+  wireActionPreviewSchema,
   wireConfirmationChallengeSchema,
   wireErrorDefinitions,
   wireErrorStatus,
   wireValidationIssueSchema,
 } from "./wire-errors.js";
-export type { WireError, WireErrorCode } from "./wire-errors.js";
+export type {
+  WireActionPreview,
+  WireError,
+  WireErrorCode,
+} from "./wire-errors.js";

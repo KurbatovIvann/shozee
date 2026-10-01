@@ -244,6 +244,7 @@ describe("runDocumentSigning", () => {
 
     await submitWithProtocolConfirmation({
       submit: () => requestSign.submit({ documentId: DOCUMENT_ID }),
+      present: () => Promise.resolve("confirm"),
       confirm: (challengeId) => requestSign.confirm(challengeId),
     });
     expect(requestCalls).toEqual(["submit", "challenge-sign"]);

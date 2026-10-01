@@ -2,11 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import { LIST_GROUPS_SEARCH_MAX } from "@showzy/validation/customers";
 
-import { customersCopy } from "../../../i18n/customers";
 import type { GroupListItem } from "../api/group.queries";
 import {
   classifyGroupsList,
-  deleteGroupConfirmMessage,
   groupRowActions,
   listGroupsPageInput,
   nameById,
@@ -97,23 +95,5 @@ describe("groupRowActions", () => {
       showEdit: true,
       showDelete: true,
     });
-  });
-});
-
-describe("deleteGroupConfirmMessage", () => {
-  it("uses empty copy at zero and Ukrainian one/few/many otherwise", () => {
-    const copy = customersCopy("uk").confirm;
-    expect(deleteGroupConfirmMessage(0, "uk", copy)).toBe(
-      copy.deleteGroupDescriptionEmpty,
-    );
-    expect(deleteGroupConfirmMessage(1, "uk", copy)).toContain("1 клієнт ");
-    expect(deleteGroupConfirmMessage(3, "uk", copy)).toContain("3 клієнти ");
-    expect(deleteGroupConfirmMessage(11, "uk", copy)).toContain("11 клієнтів ");
-  });
-
-  it("uses English one/other", () => {
-    const copy = customersCopy("en").confirm;
-    expect(deleteGroupConfirmMessage(1, "en", copy)).toContain("1 client ");
-    expect(deleteGroupConfirmMessage(4, "en", copy)).toContain("4 clients ");
   });
 });

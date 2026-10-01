@@ -12,9 +12,8 @@ import { useContractMutation } from "../../../api/contract-mutation";
 import { describeQueryFailure } from "../../../api/errors";
 import { submitWithProtocolConfirmation } from "../../../api/protocol-confirm";
 import { useActiveCompany } from "../../../api/query-provider";
-import { presentConfirmDialog } from "../../../components/ui/present-confirm-dialog";
+import { useConfirmationCard } from "../../../components/ui/confirmation-card-host";
 import type { CustomersCopy } from "../../../i18n/customers";
-import type { Locale } from "../../../i18n/locale";
 import { invalidateCustomersAfterWrite } from "../api/customer-status";
 import { bindGroupDeleteMutate } from "../api/group-delete";
 import { runConfirmedWrite } from "../shared/confirmed-write";
@@ -23,11 +22,9 @@ import {
   customersWriteBanner,
   mapCustomersWriteFailure,
 } from "../shared/mutation-failure";
-import { deleteGroupConfirmMessage } from "./groups-list.presenter";
 
 export function useGroupWrites(args: {
   readonly copy: CustomersCopy;
-  readonly locale: Locale;
   readonly canEdit: boolean;
 }) {
   const apiClient = useApiClient();
@@ -45,6 +42,9 @@ export function useGroupWrites(args: {
   queryClientRef.current = queryClient;
   const routerRef = useRef(router);
   routerRef.current = router;
+  const presentCard = useConfirmationCard();
+  const presentCardRef = useRef(presentCard);
+  presentCardRef.current = presentCard;
 
   const deleteMutation = useContractMutation(
     (input: { id: string }, options) => {
@@ -80,30 +80,21 @@ export function useGroupWrites(args: {
   }, []);
 
   const remove = useCallback(
-    async (id: string, memberCount: number) => {
+    async (id: string) => {
       const current = argsRef.current;
-      const message = deleteGroupConfirmMessage(
-        memberCount,
-        current.locale,
-        current.copy.confirm,
-      );
       await runConfirmedWrite({
         busyRef: writeBusyRef,
         allowed: current.canEdit,
-        confirm: {
-          title: current.copy.confirm.deleteGroupTitle,
-          message,
-          confirmLabel: current.copy.confirm.deleteGroupConfirm,
-          cancelLabel: current.copy.confirm.cancel,
-          tone: "danger",
-        },
-        present: presentConfirmDialog,
         run: async () => {
-          await submitWithProtocolConfirmation({
+          const result = await submitWithProtocolConfirmation({
             submit: () => deleteMutationRef.current.submit({ id }),
+            present: (challenge) => presentCardRef.current(challenge),
             confirm: (challengeId) =>
               deleteMutationRef.current.confirm(challengeId),
           });
+          if (result.outcome === "declined") {
+            return;
+          }
           await afterWrite();
         },
       });

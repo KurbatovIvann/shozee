@@ -13,6 +13,7 @@ import { useContractMutation } from "../../../api/contract-mutation";
 import { describeQueryFailure } from "../../../api/errors";
 import { submitWithProtocolConfirmation } from "../../../api/protocol-confirm";
 import { useActiveCompany } from "../../../api/query-provider";
+import { useConfirmationCard } from "../../../components/ui/confirmation-card-host";
 import type { PricingCopy } from "../../../i18n/pricing";
 import { bindPriceListDeleteMutate } from "../api/price-list-delete";
 import {
@@ -48,6 +49,9 @@ export function usePriceListWrites(args: {
   const queryClient = useQueryClient();
   const router = useRouter();
   const writeBusyRef = useRef(false);
+  const presentCard = useConfirmationCard();
+  const presentCardRef = useRef(presentCard);
+  presentCardRef.current = presentCard;
   const [localBanner, setLocalBanner] = useState<string | null>(null);
 
   const statusMutation = useContractMutation(
@@ -174,10 +178,14 @@ export function usePriceListWrites(args: {
       writeBusyRef.current = true;
       setLocalBanner(null);
       try {
-        await submitWithProtocolConfirmation({
+        const result = await submitWithProtocolConfirmation({
           submit: () => deleteMutation.submit({ id: list.id }),
+          present: (challenge) => presentCardRef.current(challenge),
           confirm: (challengeId) => deleteMutation.confirm(challengeId),
         });
+        if (result.outcome === "declined") {
+          return;
+        }
         await afterWrite();
       } catch {
         // Banner is derived from mutation.error.

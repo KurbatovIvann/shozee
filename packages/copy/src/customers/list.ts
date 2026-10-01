@@ -13,16 +13,6 @@ export type CustomersConfirmCopy = {
   readonly archiveTitle: string;
   readonly archiveDescription: string;
   readonly archiveConfirm: string;
-  readonly deleteTitle: string;
-  readonly deleteDescription: string;
-  readonly deleteConfirm: string;
-  readonly deleteGroupTitle: string;
-  readonly deleteGroupDescription: CustomersCountForms;
-  readonly deleteGroupDescriptionEmpty: string;
-  readonly deleteGroupConfirm: string;
-  readonly deleteCounterpartyTitle: string;
-  readonly deleteCounterpartyDescription: string;
-  readonly deleteCounterpartyConfirm: string;
   readonly revokeInviteTitle: string;
   readonly revokeInviteDescription: string;
   readonly revokeInviteConfirm: string;
@@ -215,23 +205,6 @@ export const en: CustomersListCopy = {
     archiveDescription:
       "Archive first, then delete. The client leaves the active list. Orders stay. Delete is only available from the archive.",
     archiveConfirm: "Archive",
-    deleteTitle: "Delete this client?",
-    deleteDescription:
-      "The client will be deleted forever. Counterparties stay unlinked. This cannot be undone.",
-    deleteConfirm: "Delete",
-    deleteGroupTitle: "Delete this group?",
-    deleteGroupDescription: {
-      one: "{{count}} client will stay with no group. Their price lists do not change.",
-      few: "{{count}} clients will stay with no group. Their price lists do not change.",
-      many: "{{count}} clients will stay with no group. Their price lists do not change.",
-    },
-    deleteGroupDescriptionEmpty:
-      "The group will be deleted. Clients are not removed.",
-    deleteGroupConfirm: "Delete group",
-    deleteCounterpartyTitle: "Delete this counterparty?",
-    deleteCounterpartyDescription:
-      "The counterparty will be deleted forever. A linked client stays. This cannot be undone.",
-    deleteCounterpartyConfirm: "Delete counterparty",
     revokeInviteTitle: "Revoke this invitation?",
     revokeInviteDescription:
       "The invite link will stop working. The row stays in invitation history.",
@@ -348,23 +321,6 @@ export const uk: CustomersListCopy = {
     archiveDescription:
       "Спочатку архів, потім видалення. Клієнт зникне з активного списку. Замовлення залишаться. Видалити можна буде лише з архіву.",
     archiveConfirm: "Архівувати",
-    deleteTitle: "Видалити клієнта?",
-    deleteDescription:
-      "Клієнта буде видалено назавжди. Контрагенти залишаться без прив’язки. Цю дію не можна скасувати.",
-    deleteConfirm: "Видалити",
-    deleteGroupTitle: "Видалити групу?",
-    deleteGroupDescription: {
-      one: "{{count}} клієнт залишиться без групи. Їхні прайс-листи не зміняться.",
-      few: "{{count}} клієнти залишаться без групи. Їхні прайс-листи не зміняться.",
-      many: "{{count}} клієнтів залишаться без групи. Їхні прайс-листи не зміняться.",
-    },
-    deleteGroupDescriptionEmpty:
-      "Групу буде видалено. Клієнти не постраждають.",
-    deleteGroupConfirm: "Видалити групу",
-    deleteCounterpartyTitle: "Видалити контрагента?",
-    deleteCounterpartyDescription:
-      "Контрагента буде видалено назавжди. Клієнт (якщо був прив’язаний) залишиться. Цю дію не можна скасувати.",
-    deleteCounterpartyConfirm: "Видалити контрагента",
     revokeInviteTitle: "Відкликати запрошення?",
     revokeInviteDescription:
       "Посилання перестане працювати, але запис залишиться в історії запрошень.",

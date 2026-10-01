@@ -8,9 +8,10 @@ catalog form stack.
 UI state ownership is `.claude/rules/mobile-ui-state.md`. List filters
 and tab chrome are `useState` / local view state, never XState. Writes
 on the list (archive / restore / delete) use `useContractMutation`.
-Delete re-invokes with the confirmation challenge (protocol). Archive
-is a UI confirm only. Catalog list does not own writes; this slice does,
-because archive / restore / delete live on the row.
+Delete submits first and confirms on the module's own preview card
+(`useConfirmationCard`). Archive is a UI confirm only. Catalog list does
+not own writes; this slice does, because archive / restore / delete live
+on the row.
 
 The client form (SHO-180 / SHO-307) composes `src/components/form-kit`
 (`runFormSave` / `useFormSave` / `useUnsavedGuard` / `FormScreenScaffold`

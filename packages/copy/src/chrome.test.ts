@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  confirmationCardEn,
+  confirmationCardUk,
   formChromeEn,
   formChromeUk,
   writeErrorsEn,
@@ -31,6 +33,24 @@ describe("shared form chrome copy", () => {
       expect(String(ukValue).length, path).toBeGreaterThan(0);
       expect(String(enValue).length, path).toBeGreaterThan(0);
     }
+  });
+
+  it("keeps uk/en key parity on the confirmation card chrome", () => {
+    expect(leafPaths(confirmationCardUk)).toEqual(
+      leafPaths(confirmationCardEn),
+    );
+    for (const path of leafPaths(confirmationCardUk)) {
+      expect(
+        String(leafAt(confirmationCardUk, path)).length,
+        path,
+      ).toBeGreaterThan(0);
+      expect(
+        String(leafAt(confirmationCardEn, path)).length,
+        path,
+      ).toBeGreaterThan(0);
+    }
+    expect(confirmationCardUk.confirm).toBe("Підтвердити");
+    expect(confirmationCardUk.fallbackTitle).toBe("Підтвердьте дію");
   });
 
   it("pins write-error strings byte-identical to the former mobile chrome", () => {
