@@ -47,6 +47,7 @@ import {
   PermissionDeniedError,
   TimeoutError,
   ValidationError,
+  type ActionPreview,
 } from "../../errors/index.js";
 import type { AnyActionContract } from "../action-registry.js";
 import {
@@ -69,6 +70,7 @@ import { createEnqueueBuffer, type EnqueueBuffer } from "../jobs/enqueue.js";
 import { jobOriginFor } from "../jobs/job-identity.js";
 import type { ImplementedAction } from "../implement-action.js";
 import type {
+  ActionPreviewFn,
   AuditTargetFn,
   ConfirmationSummaryEnv,
   MaybePromise,
@@ -108,6 +110,9 @@ interface RunEnv<TInput extends z.ZodType, TOutput extends z.ZodType, TTarget> {
   readonly request: PipelineHookRequestMeta;
   readonly principal: PrincipalInvocation;
   readonly input: z.output<TInput>;
+  readonly deadline: number;
+  readonly signal: AbortSignal;
+  readonly now: () => number;
   readonly makeRuntime: <TDb>(db: TDb) => ContextRuntime<TDb>;
 }
 
@@ -407,6 +412,9 @@ function buildRunEnv<
     request,
     principal: invocation.principal,
     input,
+    deadline,
+    signal: options.controller.signal,
+    now,
     makeRuntime: <TDb>(db: TDb): ContextRuntime<TDb> => ({
       db,
       logger: deps.logger,
@@ -621,7 +629,12 @@ async function runExecutionTransaction<
   const { contract, deps } = env;
   return await deps.db.transaction(
     async (tx) => {
-      await applyStatementTimeout(tx, contract.name, options.deadline - now());
+      await applyStatementTimeout(
+        tx,
+        contract.name,
+        options.deadline - now(),
+        "execution",
+      );
       state.executionTx = tx;
 
       // TOCTOU re-authorization (§4 step 7): the principal context is
@@ -943,16 +956,10 @@ function bindConfirmationSummary<
   env: RunEnv<TInput, TOutput, TTarget>,
   authorization: PreflightAuthorization,
 ): () => MaybePromise<ConfirmationChallengeSummary> {
-  const summaryEnv: ConfirmationSummaryEnv = {
-    companyId: authorization.companyId,
-    ...(authorization.target !== undefined
-      ? { target: authorization.target }
-      : {}),
-  };
   const preview = env.action.preview;
   if (preview !== undefined) {
     return async () => {
-      const card = await preview(env.input, summaryEnv);
+      const card = await runActionPreview(env, preview);
       return { summary: card.title, preview: card };
     };
   }
@@ -962,7 +969,82 @@ function bindConfirmationSummary<
       `action "${env.contract.name}" must present a confirmation card but binds neither preview nor confirmationSummary`,
     );
   }
+  const summaryEnv: ConfirmationSummaryEnv = {
+    companyId: authorization.companyId,
+    ...(authorization.target !== undefined
+      ? { target: authorization.target }
+      : {}),
+  };
   return async () => ({ summary: await summarize(env.input, summaryEnv) });
+}
+
+async function runActionPreview<
+  TInput extends z.ZodType,
+  TOutput extends z.ZodType,
+  TTarget,
+>(
+  env: RunEnv<TInput, TOutput, TTarget>,
+  preview: ActionPreviewFn<TInput>,
+): Promise<ActionPreview> {
+  return await env.deps.db.transaction(
+    async (tx) => {
+      await applyStatementTimeout(
+        tx,
+        env.contract.name,
+        env.deadline - env.now(),
+        "preview",
+      );
+      const readOnlyPreview = true;
+      const previewCtx = await constructPrincipalContext(
+        env,
+        tx,
+        readOnlyPreview,
+      );
+      let previewFinished = false;
+      const call = createCtxCall({
+        deps: env.deps,
+        callerContract: env.contract,
+        request: env.request,
+        deadline: env.deadline,
+        signal: env.signal,
+        now: env.now,
+        getExecution: () =>
+          previewFinished ? undefined : { tx, ctx: previewCtx },
+        path: [env.contract.name],
+      });
+      try {
+        return await preview(env.input, {
+          ...previewScopeOf(previewCtx),
+          tx: createReadTx(tx),
+          call,
+        });
+      } finally {
+        previewFinished = true;
+      }
+    },
+    { accessMode: "read only" },
+  );
+}
+
+function previewScopeOf(
+  ctx: ActionCtx,
+): Pick<ConfirmationSummaryEnv, "companyId" | "target"> {
+  switch (ctx.principal) {
+    case "staff":
+      return { companyId: ctx.companyId };
+    case "customer":
+    case "share":
+      return { companyId: ctx.target.companyId, target: ctx.target.resource };
+    case "public":
+      return ctx.scope === "target"
+        ? { companyId: ctx.target.companyId, target: ctx.target.resource }
+        : { companyId: null };
+    case "system":
+      return { companyId: ctx.scope === "tenant" ? ctx.companyId : null };
+    case "consumer":
+    case "account":
+      return { companyId: null };
+  }
 }
 
 function confirmationIsRequired(
@@ -1096,10 +1178,13 @@ async function constructPrincipalContext<
   TInput extends z.ZodType,
   TOutput extends z.ZodType,
   TTarget,
->(env: RunEnv<TInput, TOutput, TTarget>, tx: Tx): Promise<ActionCtx> {
+>(
+  env: RunEnv<TInput, TOutput, TTarget>,
+  tx: Tx,
+  readOnly: boolean = env.contract.risk === "read",
+): Promise<ActionCtx> {
   const { contract, request, principal } = env;
-  const capability: ReadTx | Tx =
-    contract.risk === "read" ? createReadTx(tx) : tx;
+  const capability: ReadTx | Tx = readOnly ? createReadTx(tx) : tx;
   switch (principal.mode) {
     case "staff": {
       const ctx = await createStaffContext({
@@ -1152,7 +1237,7 @@ async function constructPrincipalContext<
             {
               request,
               runtime: env.makeRuntime(capability),
-              readOnly: contract.risk === "read",
+              readOnly,
             },
           )
         : createSystemContext(principal.serviceName, principal.scope, {
@@ -1189,10 +1274,11 @@ async function applyStatementTimeout(
   tx: Tx,
   actionName: string,
   remainingMs: number,
+  phase: "execution" | "preview",
 ): Promise<void> {
   if (remainingMs <= 0) {
     throw new TimeoutError(undefined, {
-      internalMessage: `deadline of "${actionName}" was exhausted before the execution transaction could start`,
+      internalMessage: `deadline of "${actionName}" was exhausted before the ${phase} transaction could start`,
     });
   }
   // Integral milliseconds by construction — the interpolation cannot inject.
