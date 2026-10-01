@@ -21,7 +21,7 @@ export function collectWritePreviewProblems(
       continue;
     }
     problems.push(
-      `"${contract.name}": an AI-exposed risk ${contract.risk} action must bind preview — the assistant shows the server's card before the write (ADR-0050)`,
+      `"${contract.name}": an AI-exposed risk ${contract.risk} action must bind preview, which itself requires idempotent: true and a human principal (staff, customer, account) — the assistant shows the server's card before the write (ADR-0050)`,
     );
   }
 }

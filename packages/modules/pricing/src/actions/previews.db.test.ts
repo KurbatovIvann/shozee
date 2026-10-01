@@ -4,11 +4,13 @@ import { type ImplementedAction } from "@showzy/core";
 import {
   ConfirmationRequiredError,
   NotFoundError,
+  ValidationError,
   type ActionPreview,
 } from "@showzy/core/errors";
 import {
   createTestKit,
   kitIdentities,
+  type IsolationActor,
   type TestKit,
 } from "@showzy/core/testing";
 import { products, productVariants } from "@showzy/db/schema/catalog";
@@ -19,6 +21,7 @@ import type { z } from "zod";
 
 import { activatePriceList } from "./activate-price-list.js";
 import { createPriceList } from "./create-price-list.js";
+import { deactivatePriceList } from "./deactivate-price-list.js";
 import { deletePriceList } from "./delete-price-list.js";
 import { removePriceListEntries } from "./remove-price-list-entries.js";
 import { setDefaultPriceList } from "./set-default-price-list.js";
@@ -44,9 +47,13 @@ let kit: TestKit;
 async function invokeForCard<
   TInput extends z.ZodType,
   TOutput extends z.ZodType,
->(action: ImplementedAction<TInput, TOutput>, input: unknown) {
+>(
+  action: ImplementedAction<TInput, TOutput>,
+  input: unknown,
+  actor: IsolationActor = {},
+) {
   return await kit
-    .invoke(action, input, {}, { request: { requireConfirmation: true } })
+    .invoke(action, input, actor, { request: { requireConfirmation: true } })
     .then(
       () => {
         throw new Error("expected the invocation to stop on a card");
@@ -58,8 +65,9 @@ async function invokeForCard<
 async function previewOf<TInput extends z.ZodType, TOutput extends z.ZodType>(
   action: ImplementedAction<TInput, TOutput>,
   input: unknown,
+  actor: IsolationActor = {},
 ): Promise<ActionPreview> {
-  const error = await invokeForCard(action, input);
+  const error = await invokeForCard(action, input, actor);
   if (!(error instanceof ConfirmationRequiredError)) {
     throw error;
   }
@@ -164,16 +172,60 @@ describe("pricing preview cards", () => {
     ]);
   });
 
-  it("shows that creating a default list also activates it", async () => {
+  it("names the default it unsets, and the activation creating it implies", async () => {
     const preview = await previewOf(createPriceList, {
       name: "Новий основний",
       isDefault: true,
       isActive: false,
     });
     expect(preview.lines.slice(1)).toEqual([
-      { label: "Основний", value: "так" },
+      { label: "Основний", value: "Основний прайс → Новий основний" },
       { label: "Активний", value: "так" },
     ]);
+  });
+
+  it("names only the new default when the company has none yet", async () => {
+    const preview = await previewOf(
+      createPriceList,
+      { name: "Перший основний", isDefault: true },
+      {
+        userId: kitIdentities.users.boris,
+        companyId: companyB,
+      },
+    );
+    expect(preview.lines.slice(1, 2)).toEqual([
+      { label: "Основний", value: "Перший основний" },
+    ]);
+  });
+
+  it("refuses deactivating the default on the card exactly as the write does", async () => {
+    const carded = await invokeForCard(deactivatePriceList, {
+      id: fixtures.listDefault,
+    });
+    const executed = await kit
+      .invoke(deactivatePriceList, { id: fixtures.listDefault })
+      .then(
+        () => {
+          throw new Error("expected the write to refuse the default list");
+        },
+        (thrown: unknown) => thrown,
+      );
+    if (
+      !(carded instanceof ValidationError) ||
+      !(executed instanceof ValidationError)
+    ) {
+      throw carded;
+    }
+    expect(carded.code).toBe(executed.code);
+    expect(carded.clientMessage).toBe(executed.clientMessage);
+  });
+
+  it("still cards the deactivation of a list that is not the default", async () => {
+    const preview = await previewOf(deactivatePriceList, {
+      id: fixtures.listDelete,
+    });
+    expect(preview.title).toBe("Деактивувати прайс-лист: Застарілий прайс");
+    expect(preview.lines).toEqual([{ label: "Активний", value: "так → ні" }]);
   });
 
   it("cards the stored-to-new name for pricing.updatePriceList", async () => {

@@ -17,6 +17,7 @@ import type { AssistantSurfaceBindingRef } from "./assistant-surfaces.js";
 import type { ContractCheckInput } from "./contract-check.js";
 import { runContractCheck } from "./contract-check.js";
 import { type SuiteCoverageManifest } from "./suite-coverage.js";
+import { fixtureCardCallbacks } from "./test/fixture-card-callbacks.js";
 import { moduleOf } from "./call-rules.js";
 
 const io = z.object({});
@@ -43,24 +44,6 @@ function fixtureContract(
     timeout: 5_000,
     ...overrides,
   });
-}
-
-function fixtureCardCallbacks(contract: ActionContract) {
-  const human =
-    contract.principal === "staff" ||
-    contract.principal === "customer" ||
-    contract.principal === "account";
-  if (
-    contract.aiExposure === "exposed" &&
-    contract.risk !== "read" &&
-    contract.idempotent &&
-    human
-  ) {
-    return { preview: () => ({ title: "Fixture card", lines: [] }) };
-  }
-  return contract.requiresConfirmation
-    ? { confirmationSummary: () => "fixture summary" }
-    : {};
 }
 
 function fixtureImplementation(contract: ActionContract) {

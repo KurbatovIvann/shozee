@@ -17,6 +17,7 @@ import {
   entryKey,
   type PriceListEntryKeyParts,
 } from "./entry-keys.js";
+import { rejectDefaultDeactivate } from "./set-price-list-active.js";
 
 type PreviewEnv = ActionPreviewEnv;
 type Contract = { readonly name: string };
@@ -197,14 +198,19 @@ function storedPriceText(row: StoredEntry): string {
 
 export function createPriceListPreview(
   contract: Contract,
-): (input: CreateFields, env: PreviewEnv) => ActionPreview {
-  return (input, env) => {
-    previewCompanyScope(env.companyId, contract);
+): (input: CreateFields, env: PreviewEnv) => Promise<ActionPreview> {
+  return async (input, env) => {
+    const companyId = previewCompanyScope(env.companyId, contract);
+    const previousDefault = input.isDefault
+      ? await currentDefaultName(env, companyId)
+      : null;
     return {
       title: `Новий прайс-лист: ${input.name}`,
       lines: [
         { label: PRICE_LIST_NAME_LABEL, value: input.name },
-        { label: PRICE_LIST_DEFAULT_LABEL, value: flag(input.isDefault) },
+        input.isDefault
+          ? changeLine(PRICE_LIST_DEFAULT_LABEL, previousDefault, input.name)
+          : { label: PRICE_LIST_DEFAULT_LABEL, value: PRICE_LIST_NO },
         {
           label: PRICE_LIST_ACTIVE_LABEL,
           value: flag(input.isDefault || input.isActive),
@@ -238,6 +244,9 @@ export function priceListActivePreview(
   return async (input, env) => {
     const companyId = previewCompanyScope(env.companyId, contract);
     const stored = await loadPriceList(env, companyId, input.id);
+    if (!isActive) {
+      rejectDefaultDeactivate(stored.isDefault);
+    }
     return {
       title: `${subject}: ${stored.name}`,
       lines: [

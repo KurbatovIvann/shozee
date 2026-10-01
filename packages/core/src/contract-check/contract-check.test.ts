@@ -30,6 +30,7 @@ import {
   runContractCheck,
 } from "./contract-check.js";
 import { moduleOf } from "./call-rules.js";
+import { fixtureCardCallbacks } from "./test/fixture-card-callbacks.js";
 import {
   emptySuiteCoverage,
   type SuiteCoverageManifest,
@@ -59,25 +60,6 @@ function fixtureContract(
     timeout: 5_000,
     ...overrides,
   });
-}
-
-/** Binds the minimal callbacks the contract's metadata implies. */
-function fixtureCardCallbacks(contract: ActionContract) {
-  const human =
-    contract.principal === "staff" ||
-    contract.principal === "customer" ||
-    contract.principal === "account";
-  if (
-    contract.aiExposure === "exposed" &&
-    contract.risk !== "read" &&
-    contract.idempotent &&
-    human
-  ) {
-    return { preview: () => ({ title: "Fixture card", lines: [] }) };
-  }
-  return contract.requiresConfirmation
-    ? { confirmationSummary: () => "fixture summary" }
-    : {};
 }
 
 function fixtureImplementation(contract: ActionContract) {
