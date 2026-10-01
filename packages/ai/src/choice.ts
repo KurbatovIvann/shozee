@@ -13,6 +13,10 @@
  * to pick between, so they are explained rather than offered.
  */
 import { ConflictError, CoreError } from "@showzy/core/errors";
+import {
+  entityLookupTargetSchema,
+  type EntityLookupTarget,
+} from "@showzy/validation/entity-ref";
 import { z } from "zod";
 
 /** Reasons that open a picker. `archived` / `no_active_variants` never do. */
@@ -37,10 +41,7 @@ export type ChoiceCardOption = z.output<typeof choiceCardOptionSchema>;
  * query: by then the product is already resolved.
  */
 const catalogConflictTargetSchema = z.union([
-  z.strictObject({
-    kind: z.literal("customer"),
-    query: z.string().min(1),
-  }),
+  entityLookupTargetSchema,
   z.strictObject({
     kind: z.literal("order_line_product"),
     lineIndex: z.number().int().nonnegative(),
@@ -108,11 +109,6 @@ export function catalogPickerConflictExtrasFromError(
   });
   return parsed.success ? parsed.data : undefined;
 }
-
-export type EntityLookupTarget = {
-  readonly kind: "customer";
-  readonly query: string;
-};
 
 export class EntityLookupConflictError extends ConflictError {
   readonly reason: ChoicePickerReason;

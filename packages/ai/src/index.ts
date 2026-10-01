@@ -88,7 +88,6 @@ export {
   type ChoiceCardOption,
   type ChoiceCreateOption,
   type ChoicePickerReason,
-  type EntityLookupTarget,
 } from "./choice.js";
 export {
   fillStaffAssistantCopy,

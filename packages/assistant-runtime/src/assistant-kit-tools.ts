@@ -24,7 +24,7 @@ import {
   type ChoicePickerReason,
 } from "@showzy/ai";
 import type { CardRef, ToolOutcome, ToolSet } from "@showzy/assistant-kit";
-import { CoreError } from "@showzy/core/errors";
+import { CoreError, CoreInvariantError } from "@showzy/core/errors";
 import {
   assistantSurfaceSlot,
   assistantSurfacesFromToolResults,
@@ -148,6 +148,11 @@ function choiceOptions(
   }));
   const create = picker.create;
   if (create !== undefined) {
+    if (picker.options.some((option) => option.id === create.optionId)) {
+      throw new CoreInvariantError(
+        `picker create option id collides with a record option in ${toolName}`,
+      );
+    }
     prompt.push({
       optionId: create.optionId,
       label: subjectFor(picker.target),

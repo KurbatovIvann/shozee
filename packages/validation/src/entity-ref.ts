@@ -38,6 +38,19 @@ export const entityRefSchema = z.discriminatedUnion("by", [
 
 export type EntityRef = z.output<typeof entityRefSchema>;
 
+export const ENTITY_LOOKUP_KINDS = ["customer"] as const;
+
+export type EntityLookupKind = (typeof ENTITY_LOOKUP_KINDS)[number];
+
+export const entityLookupTargetSchema = z.strictObject({
+  kind: z.enum(ENTITY_LOOKUP_KINDS),
+  query: z.string().min(1),
+});
+
+export type EntityLookupTarget = Readonly<
+  z.output<typeof entityLookupTargetSchema>
+>;
+
 /** NFC, trim, collapse internal whitespace. SQL ILIKE uses this (case via ILIKE). */
 export function normalizeReferenceQuery(query: string): string {
   return query.normalize("NFC").trim().replace(/\s+/g, " ");

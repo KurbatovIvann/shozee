@@ -24,6 +24,7 @@ import {
   assistantChoicePromptSchema,
   assistantConfirmationPromptSchema,
 } from "@showzy/validation/assistant-chat";
+import type { EntityLookupTarget } from "@showzy/validation/entity-ref";
 import { z } from "zod";
 
 /** Deliberately longer than a confirmation: "which one" waits better than
@@ -42,7 +43,7 @@ export const CONFIRMATION_TTL_MS = CHALLENGE_TTL_MS;
  * domain reports on a picker CONFLICT.
  */
 export type ChoicePickerTarget =
-  | { readonly kind: "customer"; readonly query: string }
+  | EntityLookupTarget
   | {
       readonly kind: "order_line_product";
       readonly lineIndex: number;

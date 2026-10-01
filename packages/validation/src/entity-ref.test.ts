@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ENTITY_LOOKUP_KINDS,
   ENTITY_REF_QUERY_MAX,
   REFERENCE_CONFLICT_LABELS_MAX,
   candidatesContainingQuery,
+  entityLookupTargetSchema,
   entityRefSchema,
   formatReferenceConflictMessage,
   isInflectionOfName,
@@ -144,5 +146,34 @@ describe("reference inflection", () => {
     expect(pickUniqueReferenceMatch("олени", [], fields, name)).toEqual({
       kind: "none",
     });
+  });
+});
+
+describe("entity lookup target", () => {
+  it("accepts every declared kind with a query", () => {
+    for (const kind of ENTITY_LOOKUP_KINDS) {
+      expect(entityLookupTargetSchema.parse({ kind, query: "Катя" })).toEqual({
+        kind,
+        query: "Катя",
+      });
+    }
+  });
+
+  it("refuses an undeclared kind, an empty query and an extra key", () => {
+    expect(
+      entityLookupTargetSchema.safeParse({ kind: "invoice", query: "Катя" })
+        .success,
+    ).toBe(false);
+    expect(
+      entityLookupTargetSchema.safeParse({ kind: "customer", query: "" })
+        .success,
+    ).toBe(false);
+    expect(
+      entityLookupTargetSchema.safeParse({
+        kind: "customer",
+        query: "Катя",
+        lineIndex: 0,
+      }).success,
+    ).toBe(false);
   });
 });
