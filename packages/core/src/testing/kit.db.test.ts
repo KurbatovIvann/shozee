@@ -279,7 +279,7 @@ describe("suites fail on seeded violations", () => {
     ).rejects.toThrow(/expected foreign access/);
   });
 
-  it("detects a preview case that declares no missing-reference probe", async () => {
+  it("detects a preview case that declares neither a probe nor the exemption", async () => {
     await expect(
       runCrossTenantCase(
         kit,
@@ -292,7 +292,7 @@ describe("suites fail on seeded violations", () => {
     ).rejects.toThrow(/must declare a missing-reference probe/);
   });
 
-  it("accepts a preview case whose foreign call changes the actor, not the reference", async () => {
+  it("accepts a preview case that declares the no-reference exemption", async () => {
     await expect(
       runCrossTenantCase(
         kit,
@@ -300,6 +300,26 @@ describe("suites fail on seeded violations", () => {
           correct.staffPublishProduct,
           { input: ownProduct },
           { input: ownProduct, companyId: kitIdentities.companies.b },
+          { noReference: true },
+        ),
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it("accepts an actor-varying preview case that probes a missing reference", async () => {
+    await expect(
+      runCrossTenantCase(
+        kit,
+        isolationCase(
+          correct.staffPublishProduct,
+          { input: ownProduct },
+          { input: ownProduct, companyId: kitIdentities.companies.b },
+          {
+            missing: {
+              input: missingProduct,
+              companyId: kitIdentities.companies.b,
+            },
+          },
         ),
       ),
     ).resolves.toBeUndefined();

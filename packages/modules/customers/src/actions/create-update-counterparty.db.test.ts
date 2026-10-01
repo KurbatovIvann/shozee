@@ -196,6 +196,7 @@ crossTenantSuite(
       createCounterparty,
       { input: createIsolationInput },
       { input: createIsolationInput, companyId: kitIdentities.companies.b },
+      { noReference: true },
     ),
     isolationCase(
       updateCounterparty,

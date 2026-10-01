@@ -62,9 +62,8 @@ export interface IsolationInvocation extends IsolationActor {
  */
 export type SuiteAction = ImplementedAction<z.ZodType, z.ZodType, unknown>;
 
-export interface ForeignReferenceProbe {
-  readonly missing: IsolationInvocation;
-}
+export type ForeignReferenceProbe =
+  { readonly missing: IsolationInvocation } | { readonly noReference: true };
 
 export interface CrossTenantCase {
   readonly action: SuiteAction;
@@ -195,38 +194,23 @@ function previewExistenceChecked(c: CrossTenantCase, gated: boolean): boolean {
   }
   return (
     c.action.contract.principal !== "account" ||
-    c.foreignReference !== undefined
+    missingReferenceProbe(c) !== undefined
   );
 }
 
-function sameIsolationActor(
-  left: IsolationInvocation,
-  right: IsolationInvocation,
-): boolean {
-  return (
-    left.userId === right.userId &&
-    left.companyId === right.companyId &&
-    left.serviceName === right.serviceName
-  );
-}
-
-function variesTheReference(c: CrossTenantCase): boolean {
-  return (
-    sameIsolationActor(c.own, c.foreign) &&
-    JSON.stringify(c.own.input) !== JSON.stringify(c.foreign.input)
-  );
+function missingReferenceProbe(
+  c: CrossTenantCase,
+): IsolationInvocation | undefined {
+  const probe = c.foreignReference;
+  return probe !== undefined && "missing" in probe ? probe.missing : undefined;
 }
 
 function assertForeignReferenceProbeDeclared(c: CrossTenantCase): void {
-  if (
-    c.action.preview === undefined ||
-    c.foreignReference !== undefined ||
-    !variesTheReference(c)
-  ) {
+  if (c.action.preview === undefined || c.foreignReference !== undefined) {
     return;
   }
   throw new Error(
-    `"${c.action.contract.name}" binds a preview and this case varies the reference under one actor, so it must declare a missing-reference probe: isolationCase(action, own, foreign, { missing }). Without it a preview that refuses a foreign reference differently from a missing one still passes.`,
+    `"${c.action.contract.name}" binds a preview, so its isolation case must declare a missing-reference probe — isolationCase(action, own, foreign, { missing }) — or, only when the input carries no resolvable reference, the exemption { noReference: true }. Without the probe a preview that refuses a foreign reference differently from a missing one still passes.`,
   );
 }
 
@@ -342,12 +326,12 @@ async function expectPreviewRefusesForeignAsMissing(
     c.foreign,
     "a foreign reference",
   );
-  const probe = c.foreignReference;
+  const probe = missingReferenceProbe(c);
   if (probe !== undefined) {
     const atMissing = await refusalAtPreview(
       kit,
       c.action,
-      probe.missing,
+      probe,
       "a missing reference",
     );
     if (refusalsDiffer(atPreview, atMissing)) {

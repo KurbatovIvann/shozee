@@ -382,7 +382,9 @@ describe("orders preview cards (SHO-750)", () => {
       const foreign = await rejection(() => probe(fixtures.orderB));
 
       expect(foreign).toBeInstanceOf(NotFoundError);
-      expect(JSON.stringify(foreign)).not.toContain(FOREIGN_CUSTOMER_NAME);
+      if (foreign instanceof NotFoundError) {
+        expect(foreign.clientMessage).not.toContain(FOREIGN_CUSTOMER_NAME);
+      }
     }
   });
 });

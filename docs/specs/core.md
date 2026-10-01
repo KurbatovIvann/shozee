@@ -794,14 +794,17 @@ Exported from `packages/core/testing`, used by every module (this is how
   on the suite's own `createConfirmationHook`, so a module that swaps the
   kit's hook cannot disable the check; when the action binds `preview`,
   the foreign reference must be refused at the preview step, never
-  answered with a confirmation card. `foreignReference: { missing }` — the
-  own invocation with a reference that exists nowhere — also proves the
-  foreign refusal carries the same code and `clientMessage` as that
-  missing one, and a preview-bound case whose foreign invocation varies
-  the reference under the same actor must declare it or the suite fails;
-  a case whose foreign invocation changes the actor instead refuses at
-  the scope boundary and has no reference to probe. An `account` case
-  runs this preview branch only when it declares that probe, because its
+  answered with a confirmation card. Every preview-bound case declares
+  `foreignReference`, and a case declaring neither variant fails the
+  suite: `{ missing }` — an invocation with a reference that exists
+  nowhere — also proves the foreign refusal carries the same code and
+  `clientMessage` as that missing one, and is required whenever the input
+  carries a resolvable reference, including a case whose foreign
+  invocation varies the actor rather than the reference (the probe then
+  keeps the foreign actor and randomizes the reference);
+  `{ noReference: true }` is the exemption for an input that carries no
+  reference at all, such as `companies.create`. An `account` case runs
+  this preview branch only when it declares `{ missing }`, because its
   foreign invocation is otherwise another user, not another reference.
   Where the action pauses only
   at execution time, the preview and the execution refuse with the same

@@ -38,15 +38,12 @@ const fixtures = {
   productA: randomUUID(),
   productB: randomUUID(),
   orderA: randomUUID(),
-  orderB: randomUUID(),
   orderShared: randomUUID(),
   orderRevoked: randomUUID(),
   itemA: randomUUID(),
-  itemB: randomUUID(),
   itemShared: randomUUID(),
   itemRevoked: randomUUID(),
   docA: randomUUID(),
-  docB: randomUUID(),
   docShared: randomUUID(),
   docRevoked: randomUUID(),
   counterpartyA: randomUUID(),
@@ -251,28 +248,12 @@ beforeAll(async () => {
     productId: fixtures.productA,
     orderNumber: "KA-1",
   });
-  await insertSeedOrder({
-    id: fixtures.orderB,
-    itemId: fixtures.itemB,
-    companyId: companyB,
-    customerId: fixtures.customerB,
-    productId: fixtures.productB,
-    orderNumber: "KB-1",
-  });
-
   await insertSeedDocument({
     id: fixtures.docA,
     companyId: companyA,
     orderId: fixtures.orderA,
     documentNumber: "KA-РХ-000001",
   });
-  await insertSeedDocument({
-    id: fixtures.docB,
-    companyId: companyB,
-    orderId: fixtures.orderB,
-    documentNumber: "KB-РХ-000001",
-  });
-
   await insertSeedOrder({
     id: fixtures.orderShared,
     itemId: fixtures.itemShared,

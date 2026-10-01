@@ -1038,7 +1038,7 @@ crossTenantSuite(
       },
       {
         missing: {
-          input: createById(randomUUID(), [{ productId: fixtures.pB }]),
+          input: createById(randomUUID(), [{ productId: randomUUID() }]),
         },
       },
     ),
@@ -1064,7 +1064,7 @@ crossTenantSuite(
       },
       {
         missing: {
-          input: createById(randomUUID(), [{ productId: fixtures.pB }]),
+          input: createById(randomUUID(), [{ productId: randomUUID() }]),
         },
       },
     ),
