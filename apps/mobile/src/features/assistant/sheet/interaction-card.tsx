@@ -15,6 +15,7 @@
  */
 import type { AssistantInteraction } from "@showzy/validation/assistant-chat";
 
+import { assistantChoiceAnswer } from "../shared/choice-answer";
 import { ChoiceCard } from "./choice-card";
 import type { AssistantChoiceCardCopy } from "./choice-card-model";
 import { ConfirmationCard } from "./confirmation-card";
@@ -29,6 +30,7 @@ export function InteractionCard(props: {
   readonly interaction: AssistantInteraction;
   /** A request is in flight. The same flag for every card: only one can run. */
   readonly applying: boolean;
+  readonly pendingOptionId: string | null;
   readonly copy: InteractionCardCopy;
   /** The shape belongs to the kind; the server checks it against that kind. */
   readonly onAnswer: (answer: unknown) => void;
@@ -59,9 +61,10 @@ export function InteractionCard(props: {
     <ChoiceCard
       interaction={interaction}
       applying={props.applying}
+      answeredOptionId={props.pendingOptionId}
       copy={copy}
       onPick={(optionId) => {
-        props.onAnswer({ optionId });
+        props.onAnswer(assistantChoiceAnswer(optionId));
       }}
       onCompose={props.onCompose}
       onDismiss={props.onDismiss}

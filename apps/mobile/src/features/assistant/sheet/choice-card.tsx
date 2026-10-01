@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { CheckIcon } from "lucide-react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
@@ -20,19 +19,13 @@ export type AssistantChoiceInteraction = Extract<
 export function ChoiceCard(props: {
   readonly interaction: AssistantChoiceInteraction;
   readonly applying: boolean;
+  readonly answeredOptionId: string | null;
   readonly copy: AssistantChoiceCardCopy;
   readonly onPick: (optionId: string) => void;
   readonly onCompose: () => void;
   readonly onDismiss: () => void;
 }) {
-  const { applying, interaction } = props;
-  const [answeredOptionId, setAnsweredOptionId] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!applying) {
-      setAnsweredOptionId(null);
-    }
-  }, [applying]);
+  const { applying, answeredOptionId, interaction } = props;
 
   const model = assistantChoiceCardModel({
     subject: interaction.subject,
@@ -57,21 +50,18 @@ export function ChoiceCard(props: {
             <Text style={styles.problemText}>{model.problem}</Text>
           </View>
         ) : null}
-        {model.rows.length > 0 ? (
-          <View style={styles.options}>
-            {model.rows.map((row) => (
-              <ChoiceOptionRow
-                key={row.optionId}
-                row={row}
-                chosenLabel={model.chosenLabel}
-                onPick={() => {
-                  setAnsweredOptionId(row.optionId);
-                  props.onPick(row.optionId);
-                }}
-              />
-            ))}
-          </View>
-        ) : null}
+        <View style={styles.options}>
+          {model.rows.map((row) => (
+            <ChoiceOptionRow
+              key={row.optionId}
+              row={row}
+              chosenLabel={model.chosenLabel}
+              onPick={() => {
+                props.onPick(row.optionId);
+              }}
+            />
+          ))}
+        </View>
         {model.footnotes.map((footnote) => (
           <Text key={footnote} style={styles.footnote}>
             {footnote}
@@ -152,7 +142,7 @@ const styles = StyleSheet.create((theme) => ({
     gap: theme.spacing.sm,
   },
   eyebrow: {
-    color: theme.colors.accentForeground,
+    color: theme.colors.accentFg,
     fontSize: theme.typography.xs.fontSize,
     lineHeight: theme.typography.xs.lineHeight,
     fontWeight: "600",
@@ -225,7 +215,7 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.accentSoft,
   },
   markCreateText: {
-    color: theme.colors.accentForeground,
+    color: theme.colors.accentFg,
     fontSize: theme.typography.sm.fontSize,
     lineHeight: theme.typography.xs.lineHeight,
     fontWeight: "700",

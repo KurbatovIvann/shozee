@@ -48,6 +48,7 @@ export type AssistantSheetViewModel = {
   readonly send: () => void;
   readonly sendExample: (text: string) => void;
   readonly answer: (answer: unknown) => void;
+  readonly pendingOptionId: string | null;
   readonly dismiss: () => void;
   readonly continueTurn: () => void;
   readonly openHref: (href: string) => void;
@@ -127,6 +128,7 @@ export function AssistantSheetView(model: AssistantSheetViewModel) {
         onOpenHref={model.openHref}
         interaction={item.interaction}
         applying={model.busy}
+        pendingOptionId={model.pendingOptionId}
         interactionCopy={copy}
         onAnswer={model.answer}
         onCompose={focusComposer}
@@ -141,6 +143,7 @@ export function AssistantSheetView(model: AssistantSheetViewModel) {
       model.continueTurn,
       model.dismiss,
       model.openHref,
+      model.pendingOptionId,
     ],
   );
 

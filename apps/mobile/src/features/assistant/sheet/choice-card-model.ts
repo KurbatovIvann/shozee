@@ -43,7 +43,8 @@ export function assistantChoiceCardModel(input: {
   readonly copy: AssistantChoiceCardCopy;
 }): AssistantChoiceCardModel {
   const { copy } = input;
-  const open = !input.applying;
+  const answered = input.answeredOptionId !== null;
+  const open = !answered;
   let recordCount = 0;
   const rows = input.options.map((option): AssistantChoiceRow => {
     const create = option.kind === "create";
@@ -56,8 +57,8 @@ export function assistantChoiceCardModel(input: {
       label: option.label,
       detail: option.detail ?? null,
       create,
-      chosen: !open && option.optionId === input.answeredOptionId,
-      tappable: open,
+      chosen: option.optionId === input.answeredOptionId,
+      tappable: open && !input.applying,
     };
   });
 

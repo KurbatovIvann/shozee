@@ -6,6 +6,11 @@ import type { AssistantChoiceOption } from "@showzy/validation/assistant-chat";
 
 import { assistantCopy } from "../../../i18n/assistant";
 import {
+  assistantChoiceAnswer,
+  assistantChoiceAnswerOptionId,
+} from "../shared/choice-answer";
+import { darkPalette, lightPalette } from "../../../theme/tokens";
+import {
   ASSISTANT_CHOICE_CREATE_MARK,
   assistantChoiceCardModel,
 } from "./choice-card-model";
@@ -26,6 +31,36 @@ const COMPOSER = readFileSync(
   new URL("./assistant-composer.tsx", import.meta.url),
   "utf8",
 );
+const SHEET = readFileSync(
+  new URL("./use-assistant-sheet.ts", import.meta.url),
+  "utf8",
+);
+
+function block(source: string, name: string): string {
+  const start = source.indexOf(`  ${name}: {`);
+  return source.slice(start, source.indexOf("\n  },", start));
+}
+
+function channels(hex: string): readonly number[] {
+  return [1, 3, 5].map(
+    (at) => Number.parseInt(hex.slice(at, at + 2), 16) / 255,
+  );
+}
+
+function relativeLuminance(hex: string): number {
+  const [r = 0, g = 0, b = 0] = channels(hex).map((channel) =>
+    channel <= 0.03928
+      ? channel / 12.92
+      : Math.pow((channel + 0.055) / 1.055, 2.4),
+  );
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function contrastRatio(foreground: string, background: string): number {
+  const a = relativeLuminance(foreground);
+  const b = relativeLuminance(background);
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
 
 const copy = assistantCopy("uk");
 
@@ -129,12 +164,20 @@ describe("assistantChoiceCardModel", () => {
     expect(card.chosenLabel).toBe(copy.choiceChosen);
   });
 
-  it("keeps no chosen mark while the question is still open", () => {
+  it("marks the chosen option from the pending answer, not from the busy flag", () => {
     expect(
-      model({ applying: false, answeredOptionId: "b" }).rows.some(
+      model({ applying: false, answeredOptionId: "b" }).rows.map(
         (row) => row.chosen,
       ),
-    ).toBe(false);
+    ).toEqual([false, true]);
+  });
+
+  it("keeps the picker answerable later while an unrelated turn runs", () => {
+    const card = model({ applying: true, answeredOptionId: null });
+    expect(card.rows.some((row) => row.chosen)).toBe(false);
+    expect(card.rows.every((row) => row.tappable)).toBe(false);
+    expect(card.composeLabel).toBe(copy.choiceCompose);
+    expect(card.dismissLabel).toBe(copy.dismissLabel);
   });
 
   it("falls back to the generic title when the subject is empty", () => {
@@ -142,9 +185,23 @@ describe("assistantChoiceCardModel", () => {
   });
 });
 
+describe("the answer the sheet reads back for its pending mark", () => {
+  it("round-trips the option id the card answered with", () => {
+    expect(assistantChoiceAnswerOptionId(assistantChoiceAnswer("b"))).toBe("b");
+  });
+
+  it("leaves no pending option for an answer of another kind", () => {
+    expect(assistantChoiceAnswerOptionId({ approved: true })).toBeNull();
+    expect(assistantChoiceAnswerOptionId({ optionId: 3 })).toBeNull();
+    expect(assistantChoiceAnswerOptionId(null)).toBeNull();
+  });
+});
+
 describe("choice card wiring", () => {
   it("answers with the option id and nothing else", () => {
-    expect(INTERACTION).toContain("props.onAnswer({ optionId })");
+    expect(INTERACTION).toContain(
+      "props.onAnswer(assistantChoiceAnswer(optionId))",
+    );
     expect(CARD).toContain("props.onPick(row.optionId)");
     expect(CARD).not.toContain("onAnswer");
     expect(CARD).not.toMatch(/onPick\([^)]*label/);
@@ -167,7 +224,36 @@ describe("choice card wiring", () => {
   it("renders the picker from the model instead of deciding in the view", () => {
     expect(CARD).toContain("assistantChoiceCardModel");
     expect(CARD).toContain("model.rows.map");
+    expect(CARD).not.toContain("model.rows.length");
     expect(INTERACTION).toContain("<ChoiceCard");
     expect(INTERACTION).not.toContain("choiceSelecting");
+  });
+
+  it("takes the in-flight option from the sheet model, not a local echo", () => {
+    expect(CARD).not.toContain("useState");
+    expect(CARD).toContain("answeredOptionId,");
+    expect(INTERACTION).toContain("answeredOptionId={props.pendingOptionId}");
+    expect(VIEW).toContain("readonly pendingOptionId: string | null");
+    expect(VIEW).toContain("pendingOptionId={model.pendingOptionId}");
+    expect(SHEET).toContain("assistantChoiceAnswerOptionId");
+    expect(SHEET).toContain("pendingOptionId");
+  });
+
+  it("writes both soft-background marks in a token that stays readable", () => {
+    expect(CARD).not.toContain("accentForeground");
+    expect(block(CARD, "eyebrow")).toContain("theme.colors.accentFg");
+    expect(block(CARD, "markCreate")).toContain("theme.colors.accentSoft");
+    expect(block(CARD, "markCreateText")).toContain("theme.colors.accentFg");
+    for (const palette of [lightPalette, darkPalette]) {
+      expect(contrastRatio(palette.accentFg, palette.card)).toBeGreaterThan(
+        4.5,
+      );
+      expect(
+        contrastRatio(palette.accentFg, palette.accentSoft),
+      ).toBeGreaterThan(4.5);
+      expect(
+        contrastRatio(palette.accentForeground, palette.accentSoft),
+      ).toBeLessThan(4.5);
+    }
   });
 });
