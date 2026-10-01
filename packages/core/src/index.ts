@@ -72,6 +72,7 @@ export type {
 export type {
   ActionExecutionCtx,
   ActionHandler,
+  ActionPreviewEnv,
   ActionPreviewFn,
   AuditSnapshotFn,
   AuditTargetEnv,

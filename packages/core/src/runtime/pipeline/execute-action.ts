@@ -47,6 +47,7 @@ import {
   PermissionDeniedError,
   TimeoutError,
   ValidationError,
+  type ActionPreview,
 } from "../../errors/index.js";
 import type { AnyActionContract } from "../action-registry.js";
 import {
@@ -69,6 +70,7 @@ import { createEnqueueBuffer, type EnqueueBuffer } from "../jobs/enqueue.js";
 import { jobOriginFor } from "../jobs/job-identity.js";
 import type { ImplementedAction } from "../implement-action.js";
 import type {
+  ActionPreviewFn,
   AuditTargetFn,
   ConfirmationSummaryEnv,
   MaybePromise,
@@ -108,6 +110,9 @@ interface RunEnv<TInput extends z.ZodType, TOutput extends z.ZodType, TTarget> {
   readonly request: PipelineHookRequestMeta;
   readonly principal: PrincipalInvocation;
   readonly input: z.output<TInput>;
+  readonly deadline: number;
+  readonly signal: AbortSignal;
+  readonly now: () => number;
   readonly makeRuntime: <TDb>(db: TDb) => ContextRuntime<TDb>;
 }
 
@@ -407,6 +412,9 @@ function buildRunEnv<
     request,
     principal: invocation.principal,
     input,
+    deadline,
+    signal: options.controller.signal,
+    now,
     makeRuntime: <TDb>(db: TDb): ContextRuntime<TDb> => ({
       db,
       logger: deps.logger,
@@ -952,7 +960,7 @@ function bindConfirmationSummary<
   const preview = env.action.preview;
   if (preview !== undefined) {
     return async () => {
-      const card = await preview(env.input, summaryEnv);
+      const card = await runActionPreview(env, summaryEnv, preview);
       return { summary: card.title, preview: card };
     };
   }
@@ -963,6 +971,43 @@ function bindConfirmationSummary<
     );
   }
   return async () => ({ summary: await summarize(env.input, summaryEnv) });
+}
+
+async function runActionPreview<
+  TInput extends z.ZodType,
+  TOutput extends z.ZodType,
+  TTarget,
+>(
+  env: RunEnv<TInput, TOutput, TTarget>,
+  summaryEnv: ConfirmationSummaryEnv,
+  preview: ActionPreviewFn<TInput>,
+): Promise<ActionPreview> {
+  return await env.deps.db.transaction(
+    async (tx) => {
+      const readOnlyPreview = true;
+      const previewCtx = await constructPrincipalContext(
+        env,
+        tx,
+        readOnlyPreview,
+      );
+      const call = createCtxCall({
+        deps: env.deps,
+        callerContract: env.contract,
+        request: env.request,
+        deadline: env.deadline,
+        signal: env.signal,
+        now: env.now,
+        getExecution: () => ({ tx, ctx: previewCtx }),
+        path: [env.contract.name],
+      });
+      return await preview(env.input, {
+        ...summaryEnv,
+        tx: createReadTx(tx),
+        call,
+      });
+    },
+    { accessMode: "read only" },
+  );
 }
 
 function confirmationIsRequired(
@@ -1096,10 +1141,13 @@ async function constructPrincipalContext<
   TInput extends z.ZodType,
   TOutput extends z.ZodType,
   TTarget,
->(env: RunEnv<TInput, TOutput, TTarget>, tx: Tx): Promise<ActionCtx> {
+>(
+  env: RunEnv<TInput, TOutput, TTarget>,
+  tx: Tx,
+  readOnly: boolean = env.contract.risk === "read",
+): Promise<ActionCtx> {
   const { contract, request, principal } = env;
-  const capability: ReadTx | Tx =
-    contract.risk === "read" ? createReadTx(tx) : tx;
+  const capability: ReadTx | Tx = readOnly ? createReadTx(tx) : tx;
   switch (principal.mode) {
     case "staff": {
       const ctx = await createStaffContext({
@@ -1152,7 +1200,7 @@ async function constructPrincipalContext<
             {
               request,
               runtime: env.makeRuntime(capability),
-              readOnly: contract.risk === "read",
+              readOnly,
             },
           )
         : createSystemContext(principal.serviceName, principal.scope, {

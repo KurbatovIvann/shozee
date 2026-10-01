@@ -50,7 +50,7 @@ bound by `implementAction`. All fields are required unless noted:
 | `enqueues` | optional job names, **not on `risk: read`** | ADR-0041: `<module>.<name>` jobs of this action's own module, no duplicates; each must be a registered non-`periodic` job (§6 Jobs) |
 | `requiresConfirmation` | boolean | Required for human-invoked `risk: high` (staff, customer, account — not share); triggers the confirmation protocol (§7) |
 | `confirmationSummary` | server fn, conditional | Required when `requiresConfirmation: true` unless `preview` is bound; returns a redacted, human-readable summary from validated input + resolved target. Forbidden when `requiresConfirmation: false` |
-| `preview` | server fn, conditional | Allowed only where the §7 gate can run — `risk: write`/`high`, a human principal (`staff`, `customer`, `account`) and `idempotent: true`, rejected at implement time otherwise; returns the **redacted** structured card `{ title, lines: [{ label, value }], notes? }` from validated input + resolved target (ADR-0050), under the same redaction obligation as `confirmationSummary` (§7). Satisfies `requiresConfirmation` in place of `confirmationSummary`; binding both is rejected |
+| `preview` | server fn, conditional | Allowed only where the §7 gate can run — `risk: write`/`high`, a human principal (`staff`, `customer`, `account`) and `idempotent: true`, rejected at implement time otherwise; returns the **redacted** structured card `{ title, lines: [{ label, value }], notes? }` from validated input, the resolved target, and the read-only company-scoped `ActionPreviewEnv` capability (`tx`, `call` — §7) (ADR-0050), under the same redaction obligation as `confirmationSummary` (§7). Satisfies `requiresConfirmation` in place of `confirmationSummary`; binding both is rejected |
 | `idempotent` | boolean | Write actions with `true` participate in the idempotency protocol (§5) |
 | `emits` | `string[]` event names | Declared outbox events; `ctx.emit` of an undeclared event throws; CI checks declared events have a definition |
 | `errors` | `string[]` of `VALIDATION` \| `NOT_FOUND` \| `CONFLICT` | Domain codes this action may let escape `executeAction`. Empty is a real answer. `INTERNAL` and pipeline codes are not declarable. Enforced from observed `invokeAction` throws; a caller's set must include every code declared by its `ctx.call` / `ctx.callAtomic` callees |
@@ -594,6 +594,28 @@ Two-step, single-use, channel-agnostic (same for UI and AI — ADR-0008):
    must present a card but binds neither callback fails closed
    (`CoreInvariantError`, nothing executed). The AI
    surfaces this as a confirmation card; the classic UI as a dialog.
+
+   `preview` receives `ActionPreviewEnv` — `companyId`, the resolved
+   `target` when a typed resolver ran, and the **read-only, company-scoped
+   capability of a typed target resolver**: a `ReadTx` over a database
+   read-only transaction, plus `ctx.call` of principal-compatible
+   `risk: "read"` actions through the same declared §9 edges a handler
+   uses. The principal context is reconstructed inside that transaction,
+   so membership and the typed resolver re-verify there. No writes, no
+   `ctx.callAtomic`, no `ctx.emit`, no job enqueue, and no idempotency
+   reservation: the card is a read. The callback runs after the
+   authorization preflight and **before** the challenge is stored, so a
+   throw propagates as the invocation's outcome and leaves no orphan
+   challenge and nothing reserved.
+
+   **Existence must not leak through the card.** A reference the handler
+   would refuse — a missing id, or one belonging to another tenant — must
+   produce the same refusal from `preview`: the same error code and the
+   same `clientMessage` the handler path returns, which for a resolved
+   reference is `NotFoundError` (§2). Scope every preview read by
+   `env.companyId` (or read through the `target` the resolver already
+   proved) and never report "forbidden" where the handler reports "not
+   found".
 2. Re-invocation with `{ challengeId }` + identical input (hash-checked)
    executes. A challenge is consumed atomically (single use), bound to the
    same principal, company, and idempotency key, and expires. Any mismatch →
@@ -902,6 +924,7 @@ does not apply — fails the check.
 
 | Date | Change | Why | Reported by |
 | --- | --- | --- | --- |
+| 2026-10-01 | §7: `preview` receives `ActionPreviewEnv` — a `ReadTx` over a read-only transaction and `ctx.call` of `risk: "read"` callees, under the typed target resolver's rules; the existence-leak rule makes a missing or foreign id refuse exactly as the handler would | ADR-0050: a card cannot show resolved names, amounts or «old → new» from validated input alone | SHO-785 |
 | 2026-09-30 | §2/§7: execution-time `requireConfirmation` request meta gates one attempt of an idempotent human-principal `write`/`high` action; `preview` callback returns the redacted structured card and may stand in for `confirmationSummary` | ADR-0050: every assistant write must pause on a card core verifies, without a second approval protocol | SHO-745 |
 | 2026-09-15 | §6/§12: `jobIsolationCase` global branch (global job → global action, no company, effect and audit); `cleanupExpiredIdempotencyKeys` takes `Pick<Database, "delete">`; job declarations from module barrels plus app-owned jobs | Owner decision: a global job without fan-out had no suite case, and cleanup must run in its action's transaction | SHO-650 |
 | 2026-09-14 | §2/§6/§12: `defineJob`, optional `enqueues`, job contract-check rules and `jobIsolation` coverage | ADR-0041 §3, §5, J4, J6 | SHO-644 |
