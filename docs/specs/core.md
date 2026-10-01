@@ -803,7 +803,10 @@ Exported from `packages/core/testing`, used by every module (this is how
   invocation varies the actor rather than the reference (the probe then
   keeps the foreign actor and randomizes the reference);
   `{ noReference: true }` is the exemption for an input that carries no
-  reference at all, such as `companies.create`. An `account` case runs
+  reference at all, such as `companies.create`, and it cannot be
+  self-certified: the kit walks the contract's input schema and rejects
+  the exemption when any field is uuid-formatted, in a `crossTenantSuite`
+  or an `accountIsolationSuite` case alike. An `account` case runs
   this preview branch only when it declares `{ missing }`, because its
   foreign invocation is otherwise another user, not another reference.
   Where the action pauses only

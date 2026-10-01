@@ -82,6 +82,20 @@ const createIsolationInput = {
   name: "Isolation create",
 };
 
+const createGroupRefInput = {
+  isReusable: false as const,
+  expiresAt: futureExpiry,
+  name: "Isolation create group ref",
+  groupId: fixtures.groupA,
+};
+
+const createListRefInput = {
+  isReusable: false as const,
+  expiresAt: futureExpiry,
+  name: "Isolation create list ref",
+  priceListId: fixtures.listA,
+};
+
 let kit: TestKit;
 
 function objectKeys(value: unknown): string[] {
@@ -462,7 +476,28 @@ crossTenantSuite(
       createInvite,
       { input: createIsolationInput },
       { input: createIsolationInput, companyId: kitIdentities.companies.b },
-      { noReference: true },
+      {
+        missing: {
+          input: { ...createIsolationInput, groupId: randomUUID() },
+          companyId: kitIdentities.companies.b,
+        },
+      },
+    ),
+    isolationCase(
+      createInvite,
+      { input: createGroupRefInput },
+      { input: { ...createGroupRefInput, groupId: fixtures.groupB } },
+      { missing: { input: { ...createGroupRefInput, groupId: randomUUID() } } },
+    ),
+    isolationCase(
+      createInvite,
+      { input: createListRefInput },
+      { input: { ...createListRefInput, priceListId: fixtures.listB } },
+      {
+        missing: {
+          input: { ...createListRefInput, priceListId: randomUUID() },
+        },
+      },
     ),
     isolationCase(
       getInvite,

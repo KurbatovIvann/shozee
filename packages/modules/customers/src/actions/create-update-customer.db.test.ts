@@ -63,6 +63,18 @@ const createIsolationInput = {
   phone: "+380501000001",
 };
 
+const createGroupRefInput = {
+  name: "Isolation create group ref",
+  phone: "+380501000051",
+  groupId: fixtures.groupA,
+};
+
+const createListRefInput = {
+  name: "Isolation create list ref",
+  phone: "+380501000052",
+  priceListId: fixtures.listA,
+};
+
 const updateIsolationOwn = {
   id: fixtures.customerUpdateA,
   name: "Isolation updated A",
@@ -228,7 +240,28 @@ crossTenantSuite(
       createCustomer,
       { input: createIsolationInput },
       { input: createIsolationInput, companyId: kitIdentities.companies.b },
-      { noReference: true },
+      {
+        missing: {
+          input: { ...createIsolationInput, groupId: randomUUID() },
+          companyId: kitIdentities.companies.b,
+        },
+      },
+    ),
+    isolationCase(
+      createCustomer,
+      { input: createGroupRefInput },
+      { input: { ...createGroupRefInput, groupId: fixtures.groupB } },
+      { missing: { input: { ...createGroupRefInput, groupId: randomUUID() } } },
+    ),
+    isolationCase(
+      createCustomer,
+      { input: createListRefInput },
+      { input: { ...createListRefInput, priceListId: fixtures.listB } },
+      {
+        missing: {
+          input: { ...createListRefInput, priceListId: randomUUID() },
+        },
+      },
     ),
     isolationCase(
       updateCustomer,

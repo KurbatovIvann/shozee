@@ -44,6 +44,7 @@ const foreignProduct = {
   productId: kitIdentities.products.ofUnpublishedCompany,
 };
 const missingProduct = { productId: randomUUID() };
+const announcement = { note: "Spring sale" };
 const unpublishedProduct = {
   productId: kitIdentities.products.unpublished,
 };
@@ -292,7 +293,21 @@ describe("suites fail on seeded violations", () => {
     ).rejects.toThrow(/must declare a missing-reference probe/);
   });
 
-  it("accepts a preview case that declares the no-reference exemption", async () => {
+  it("accepts the no-reference exemption on an input that names no row", async () => {
+    await expect(
+      runCrossTenantCase(
+        kit,
+        isolationCase(
+          correct.staffAnnounceSale,
+          { input: announcement },
+          { input: announcement, companyId: kitIdentities.companies.b },
+          { noReference: true },
+        ),
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it("rejects the no-reference exemption on an input that carries a uuid", async () => {
     await expect(
       runCrossTenantCase(
         kit,
@@ -303,7 +318,7 @@ describe("suites fail on seeded violations", () => {
           { noReference: true },
         ),
       ),
-    ).resolves.toBeUndefined();
+    ).rejects.toThrow(/input schema carries a uuid field/);
   });
 
   it("accepts an actor-varying preview case that probes a missing reference", async () => {

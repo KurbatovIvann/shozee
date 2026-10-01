@@ -31,7 +31,6 @@ const fixtures = {
   groupB: randomUUID(),
   listA: randomUUID(),
   listB: randomUUID(),
-  missingId: randomUUID(),
 };
 
 const storedExpiresAt = new Date("2099-06-15T09:00:00.000Z");
@@ -74,17 +73,6 @@ async function previewOf<TInput extends z.ZodType, TOutput extends z.ZodType>(
   }
   expect(error.challenge.summary).toBe(preview.title);
   return preview;
-}
-
-function expectSameRefusal(foreign: unknown, missing: unknown): void {
-  if (
-    !(foreign instanceof NotFoundError) ||
-    !(missing instanceof NotFoundError)
-  ) {
-    throw foreign;
-  }
-  expect(foreign.code).toBe(missing.code);
-  expect(foreign.clientMessage).toBe(missing.clientMessage);
 }
 
 beforeAll(async () => {
@@ -184,36 +172,6 @@ describe("invites preview cards (core.md §7)", () => {
       { label: "Група", value: "Гуртові" },
       { label: "Прайс-лист", value: "Прайс Альфа" },
     ]);
-  });
-
-  it("refuses a foreign group in the create card exactly like a missing one", async () => {
-    expectSameRefusal(
-      await invokeForCard(createInvite, {
-        isReusable: true,
-        expiresAt: futureExpiresAt.toISOString(),
-        groupId: fixtures.groupB,
-      }),
-      await invokeForCard(createInvite, {
-        isReusable: true,
-        expiresAt: futureExpiresAt.toISOString(),
-        groupId: fixtures.missingId,
-      }),
-    );
-  });
-
-  it("refuses a foreign price list in the create card exactly like a missing one", async () => {
-    expectSameRefusal(
-      await invokeForCard(createInvite, {
-        isReusable: true,
-        expiresAt: futureExpiresAt.toISOString(),
-        priceListId: fixtures.listB,
-      }),
-      await invokeForCard(createInvite, {
-        isReusable: true,
-        expiresAt: futureExpiresAt.toISOString(),
-        priceListId: fixtures.missingId,
-      }),
-    );
   });
 
   it("previews invites.revoke from the stored invite", async () => {

@@ -34,6 +34,7 @@ const fixtures = {
   customerAArchived: randomUUID(),
   customerACount: randomUUID(),
   customerARelink: randomUUID(),
+  customerAIsolation: randomUUID(),
   customerB: randomUUID(),
   partyUpdateA: randomUUID(),
   partyUpdateB: randomUUID(),
@@ -48,6 +49,11 @@ const clerks = {
 
 const createIsolationInput = {
   name: "Isolation create A",
+};
+
+const createCustomerRefInput = {
+  name: "Isolation create customer ref",
+  customerId: fixtures.customerAIsolation,
 };
 
 const updateIsolationOwn = {
@@ -126,6 +132,12 @@ beforeAll(async () => {
       phone: "+380501111112",
     },
     {
+      id: fixtures.customerAIsolation,
+      companyId: kitIdentities.companies.a,
+      name: "Isolation Target",
+      phone: "+380501111114",
+    },
+    {
       id: fixtures.customerB,
       companyId: kitIdentities.companies.b,
       name: "Bravo Cake",
@@ -196,7 +208,22 @@ crossTenantSuite(
       createCounterparty,
       { input: createIsolationInput },
       { input: createIsolationInput, companyId: kitIdentities.companies.b },
-      { noReference: true },
+      {
+        missing: {
+          input: { ...createIsolationInput, customerId: randomUUID() },
+          companyId: kitIdentities.companies.b,
+        },
+      },
+    ),
+    isolationCase(
+      createCounterparty,
+      { input: createCustomerRefInput },
+      { input: { ...createCustomerRefInput, customerId: fixtures.customerB } },
+      {
+        missing: {
+          input: { ...createCustomerRefInput, customerId: randomUUID() },
+        },
+      },
     ),
     isolationCase(
       updateCounterparty,

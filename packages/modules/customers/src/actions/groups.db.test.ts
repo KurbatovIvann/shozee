@@ -49,6 +49,11 @@ const createIsolationInput = {
   name: "Isolation create A",
 };
 
+const createListRefInput = {
+  name: "Isolation create list ref",
+  priceListId: fixtures.listA,
+};
+
 const updateIsolationOwn = {
   id: fixtures.groupUpdateA,
   name: "Isolation updated A",
@@ -193,7 +198,22 @@ crossTenantSuite(
       createGroup,
       { input: createIsolationInput },
       { input: createIsolationInput, companyId: kitIdentities.companies.b },
-      { noReference: true },
+      {
+        missing: {
+          input: { ...createIsolationInput, priceListId: randomUUID() },
+          companyId: kitIdentities.companies.b,
+        },
+      },
+    ),
+    isolationCase(
+      createGroup,
+      { input: createListRefInput },
+      { input: { ...createListRefInput, priceListId: fixtures.listB } },
+      {
+        missing: {
+          input: { ...createListRefInput, priceListId: randomUUID() },
+        },
+      },
     ),
     isolationCase(
       updateGroup,

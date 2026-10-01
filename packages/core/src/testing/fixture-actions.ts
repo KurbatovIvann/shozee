@@ -72,6 +72,8 @@ const productInput = z.object({ productId: z.uuid() });
 const productOutput = z.object({ id: z.uuid(), name: z.string() });
 const crmInput = z.object({ customerId: z.uuid() });
 const crmOutput = z.object({ id: z.uuid(), companyId: z.uuid() });
+const announceInput = z.object({ note: z.string().min(1) });
+const announceOutput = z.object({ announced: z.boolean() });
 const publishOutput = z.object({
   productId: z.uuid(),
   published: z.boolean(),
@@ -352,6 +354,36 @@ export function createCorrectFixtureActions() {
             throw new NotFoundError();
           }
           return { productId: row.id, published: row.published };
+        },
+      },
+    ),
+    staffAnnounceSale: implementAction(
+      defineActionContract({
+        ...contractDefaults,
+        name: "kitFixture.announceSale",
+        description:
+          "Staff announcement gated by a preview card, with an input that names no row.",
+        principal: "staff",
+        input: announceInput,
+        output: announceOutput,
+        permissions: ["kitFixture:manage"],
+        risk: "write",
+        idempotent: true,
+        audit: true,
+        timeout: 5_000,
+      }),
+      {
+        preview: (input) =>
+          Promise.resolve({
+            title: "Announce sale",
+            lines: [{ label: "Note", value: announceInput.parse(input).note }],
+          }),
+        auditTarget: () => ({ type: "announcement", id: "fixture" }),
+        handler: (input, ctx) => {
+          if (ctx.companyId.length === 0) {
+            throw new CoreInvariantError("fixture expects a staff company");
+          }
+          return Promise.resolve({ announced: input.note.length > 0 });
         },
       },
     ),
