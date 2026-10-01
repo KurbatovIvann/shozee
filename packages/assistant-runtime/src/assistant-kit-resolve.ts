@@ -184,7 +184,7 @@ function confirmedAttempts(
       idempotencyKey: resolution.idempotencyKey,
       challengeId: resolution.challengeId,
     },
-    ...resolution.also,
+    ...(resolution.also ?? []),
   ];
 }
 
@@ -208,12 +208,12 @@ async function resolveConfirmation(
       done.push({ action: attempt.actionName, result });
     } catch (error) {
       if (error instanceof AssistantConfirmationRequired) {
-        if (oneAction) {
+        if (done.length === 0) {
           return confirmationPause(error);
         }
         return halted(done, {
           action: attempt.actionName,
-          code: "CONFIRMATION_REQUIRED",
+          code: error.code,
           message: error.message,
         });
       }

@@ -9,8 +9,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ASSISTANT_PREVIEW_TEXT_MAX,
   assistantChoicePromptSchema,
   assistantInteractionFromPause,
+  assistantPreviewSchema,
   mergeAssistantChatWindow,
   orderAssistantChatWindow,
   parseAssistantChatWindow,
@@ -19,6 +21,8 @@ import {
   type AssistantChatWindow,
   type AssistantPause,
 } from "./assistant-chat.js";
+import { CREATE_PRODUCT_MAX_VARIANTS, PRODUCT_NAME_MAX } from "./catalog.js";
+import { CREATE_ORDER_COMMENT_MAX, CREATE_ORDER_MAX_ITEMS } from "./orders.js";
 
 const CONVERSATION = "33333333-3333-4333-8333-333333333333";
 const OTHER_CONVERSATION = "44444444-4444-4444-8444-444444444444";
@@ -511,5 +515,86 @@ describe("a choice prompt", () => {
     const interaction = assistantInteractionFromPause(pause(CHOICE_V1));
 
     expect(interaction).toMatchObject({ nearest: false, problem: undefined });
+  });
+});
+
+const longestItemTitle = `${"т".repeat(PRODUCT_NAME_MAX)} · ${"в".repeat(
+  PRODUCT_NAME_MAX,
+)}`;
+
+function largestCreateOrderCard(): unknown {
+  return {
+    title: `Нове замовлення: ${"к".repeat(PRODUCT_NAME_MAX)}`,
+    lines: [
+      ...Array.from({ length: CREATE_ORDER_MAX_ITEMS }, () => ({
+        label: longestItemTitle,
+        value: "1 000 × 1 000,00 ₴ = 1 000 000,00 ₴",
+      })),
+      { label: "Разом", value: "100 000 000,00 ₴" },
+      { label: "Коментар", value: "я".repeat(CREATE_ORDER_COMMENT_MAX) },
+    ],
+    notes: ["Ціни: базова ціна, прайс-лист клієнта"],
+  };
+}
+
+function largestCreateProductCard(): unknown {
+  return {
+    title: `Новий товар: ${"т".repeat(PRODUCT_NAME_MAX)}`,
+    lines: [
+      { label: "Назва", value: "т".repeat(PRODUCT_NAME_MAX) },
+      { label: "Базова ціна", value: "1 000,00 ₴" },
+      ...Array.from({ length: CREATE_PRODUCT_MAX_VARIANTS }, () => ({
+        label: `Варіант: ${"в".repeat(PRODUCT_NAME_MAX)}`,
+        value: "за базовою ціною товару",
+      })),
+    ],
+    notes: [],
+  };
+}
+
+describe("the preview a pause puts on the wire", () => {
+  it("carries the largest card orders.create can build", () => {
+    expect(() =>
+      assistantPreviewSchema.parse(largestCreateOrderCard()),
+    ).not.toThrow();
+  });
+
+  it("carries the largest card catalog.createProduct can build", () => {
+    expect(() =>
+      assistantPreviewSchema.parse(largestCreateProductCard()),
+    ).not.toThrow();
+  });
+
+  it("bounds every text of a card by the same ceiling", () => {
+    const tooLong = "я".repeat(ASSISTANT_PREVIEW_TEXT_MAX + 1);
+
+    expect(
+      assistantPreviewSchema.safeParse({
+        title: tooLong,
+        lines: [],
+        notes: [],
+      }).success,
+    ).toBe(false);
+    expect(
+      assistantPreviewSchema.safeParse({
+        title: "Нове замовлення",
+        lines: [{ label: tooLong, value: "1" }],
+        notes: [],
+      }).success,
+    ).toBe(false);
+    expect(
+      assistantPreviewSchema.safeParse({
+        title: "Нове замовлення",
+        lines: [{ label: "Коментар", value: tooLong }],
+        notes: [],
+      }).success,
+    ).toBe(false);
+    expect(
+      assistantPreviewSchema.safeParse({
+        title: "Нове замовлення",
+        lines: [],
+        notes: [tooLong],
+      }).success,
+    ).toBe(false);
   });
 });

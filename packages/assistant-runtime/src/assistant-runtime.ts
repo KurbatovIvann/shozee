@@ -262,7 +262,7 @@ export function createAssistantRuntime(
       if (error instanceof ConfirmationRequiredError) {
         throw new AssistantConfirmationRequired(
           { actionName: args.actionName, input: args.input, idempotencyKey },
-          error.challenge,
+          error,
           level ?? "card",
         );
       }

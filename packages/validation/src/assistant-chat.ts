@@ -379,25 +379,30 @@ export const assistantChoicePromptSchema = z.strictObject({
   problem: z.string().min(1).max(400).optional(),
 });
 
-export const ASSISTANT_PREVIEW_LINES_MAX = 24;
-export const ASSISTANT_PREVIEW_NOTES_MAX = 8;
+export const ASSISTANT_PREVIEW_TEXT_MAX = 2000;
+export const ASSISTANT_PREVIEW_LIST_MAX = 128;
 export const ASSISTANT_PREVIEW_ALSO_MAX = 4;
 
 export const ASSISTANT_PREVIEW_LEVELS = ["card", "strong"] as const;
 
+const assistantPreviewTextSchema = z
+  .string()
+  .min(1)
+  .max(ASSISTANT_PREVIEW_TEXT_MAX);
+
 export const assistantPreviewLineSchema = z.strictObject({
-  label: z.string().min(1).max(200),
-  value: z.string().min(1).max(400),
+  label: assistantPreviewTextSchema,
+  value: assistantPreviewTextSchema,
 });
 
 export const assistantPreviewSchema = z.strictObject({
-  title: z.string().min(1).max(2000),
-  lines: z.array(assistantPreviewLineSchema).max(ASSISTANT_PREVIEW_LINES_MAX),
-  notes: z.array(z.string().min(1).max(400)).max(ASSISTANT_PREVIEW_NOTES_MAX),
+  title: assistantPreviewTextSchema,
+  lines: z.array(assistantPreviewLineSchema).max(ASSISTANT_PREVIEW_LIST_MAX),
+  notes: z.array(assistantPreviewTextSchema).max(ASSISTANT_PREVIEW_LIST_MAX),
 });
 
 export const assistantConfirmationPromptSchema = z.strictObject({
-  summary: z.string().min(1).max(2000),
+  summary: assistantPreviewTextSchema,
   preview: assistantPreviewSchema,
   also: z.array(assistantPreviewSchema).max(ASSISTANT_PREVIEW_ALSO_MAX),
   level: z.enum(ASSISTANT_PREVIEW_LEVELS),

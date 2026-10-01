@@ -47,6 +47,7 @@ import {
   type ResolveAnswerDeps,
 } from "@showzy/assistant-runtime";
 import {
+  ConfirmationRequiredError,
   ConflictError,
   CoreInvariantError,
   NotFoundError,
@@ -754,7 +755,11 @@ describe("an action that needs a person's authorisation", () => {
   it("pauses on a confirmation that carries the whole card and keeps the attempt server-side", async () => {
     const set = tools(() =>
       Promise.reject(
-        new AssistantConfirmationRequired(ATTEMPT, CHALLENGE, "strong"),
+        new AssistantConfirmationRequired(
+          ATTEMPT,
+          new ConfirmationRequiredError(CHALLENGE),
+          "strong",
+        ),
       ),
     );
 
@@ -784,11 +789,14 @@ describe("an action that needs a person's authorisation", () => {
   it("falls back to the summary when the action presents no structured card", () => {
     const { preview } = assistantConfirmationPromptSchema.parse(
       confirmationPause(
-        new AssistantConfirmationRequired(ATTEMPT, {
-          challengeId: CHALLENGE.challengeId,
-          summary: "Підписати документ",
-          expiresAt: CHALLENGE.expiresAt,
-        }),
+        new AssistantConfirmationRequired(
+          ATTEMPT,
+          new ConfirmationRequiredError({
+            challengeId: CHALLENGE.challengeId,
+            summary: "Підписати документ",
+            expiresAt: CHALLENGE.expiresAt,
+          }),
+        ),
       ).prompt,
     );
 
@@ -801,11 +809,15 @@ describe("an action that needs a person's authorisation", () => {
 
   it("puts both actions on one card, and keeps each attempt whole", () => {
     const pause = confirmationPause(
-      new AssistantConfirmationRequired(ATTEMPT, CHALLENGE, "strong"),
+      new AssistantConfirmationRequired(
+        ATTEMPT,
+        new ConfirmationRequiredError(CHALLENGE),
+        "strong",
+      ),
       [
         new AssistantConfirmationRequired(
           SECOND_ATTEMPT,
-          SECOND_CHALLENGE,
+          new ConfirmationRequiredError(SECOND_CHALLENGE),
           "card",
         ),
       ],
@@ -911,6 +923,72 @@ describe("an action that needs a person's authorisation", () => {
     });
   });
 
+  it("asks again with the fresh card when the first action of one card drifts", async () => {
+    const fresh = {
+      ...CHALLENGE,
+      challengeId: "cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd",
+    };
+    const seen: string[] = [];
+
+    const outcome = await answerWith(
+      {
+        runConfirmed: (args) => {
+          seen.push(args.actionName);
+          return Promise.reject(
+            new AssistantConfirmationRequired(
+              ATTEMPT,
+              new ConfirmationRequiredError(fresh),
+            ),
+          );
+        },
+      },
+      [
+        {
+          actionName: SECOND_ATTEMPT.actionName,
+          canonicalInput: SECOND_ATTEMPT.input,
+          idempotencyKey: SECOND_ATTEMPT.idempotencyKey,
+          challengeId: SECOND_CHALLENGE.challengeId,
+        },
+      ],
+    );
+
+    expect(seen).toEqual([ATTEMPT.actionName]);
+    expect(outcome).toMatchObject({
+      kind: "pause",
+      interaction: "confirmation",
+      secret: {
+        challengeId: fresh.challengeId,
+        idempotencyKey: ATTEMPT.idempotencyKey,
+      },
+    });
+  });
+
+  it("runs a pause opened before one card could carry several actions", async () => {
+    const seen: string[] = [];
+
+    const outcome = await createResolveAnswer({
+      runConfirmed: (args) => {
+        seen.push(args.actionName);
+        return Promise.resolve({ id: CUSTOMER_A });
+      },
+    })({
+      toolName: "customers_deleteCustomer",
+      kind: "confirmation",
+      value: {
+        approved: true,
+        actionName: ATTEMPT.actionName,
+        canonicalInput: ATTEMPT.input,
+        idempotencyKey: ATTEMPT.idempotencyKey,
+        challengeId: CHALLENGE.challengeId,
+      },
+      tools: {},
+      context: ANSWER_CONTEXT,
+    });
+
+    expect(seen).toEqual([ATTEMPT.actionName]);
+    expect(outcome).toEqual({ kind: "ok", result: { id: CUSTOMER_A } });
+  });
+
   it("has no answer that declines and still runs", () => {
     expect(confirmation.answer.safeParse({ approved: false }).success).toBe(
       false,
@@ -955,7 +1033,12 @@ describe("an action that needs a person's authorisation", () => {
 
     const outcome = await answerWith({
       runConfirmed: () =>
-        Promise.reject(new AssistantConfirmationRequired(ATTEMPT, fresh)),
+        Promise.reject(
+          new AssistantConfirmationRequired(
+            ATTEMPT,
+            new ConfirmationRequiredError(fresh),
+          ),
+        ),
     });
 
     expect(outcome).toMatchObject({

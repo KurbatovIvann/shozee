@@ -97,7 +97,7 @@ export interface ConfirmationAttemptSecret {
 }
 
 export interface ConfirmationSecret extends ConfirmationAttemptSecret {
-  readonly also: readonly ConfirmationAttemptSecret[];
+  readonly also?: readonly ConfirmationAttemptSecret[];
 }
 
 export interface ChoiceResolution {
@@ -113,7 +113,7 @@ export interface ChoiceResolution {
  */
 export interface ConfirmationResolution extends ConfirmationAttemptSecret {
   readonly approved: true;
-  readonly also: readonly ConfirmationAttemptSecret[];
+  readonly also?: readonly ConfirmationAttemptSecret[];
 }
 
 export const choice = defineInteraction<ChoiceSecret>()({
@@ -160,7 +160,7 @@ export const confirmation = defineInteraction<ConfirmationSecret>()({
       canonicalInput: secret.canonicalInput,
       idempotencyKey: secret.idempotencyKey,
       challengeId: secret.challengeId,
-      also: secret.also,
+      ...(secret.also === undefined ? {} : { also: secret.also }),
     } satisfies ConfirmationResolution),
 });
 

@@ -18,7 +18,11 @@
  */
 import type { ToolOutcome } from "@showzy/assistant-kit";
 import type { ActionRisk } from "@showzy/core/contract";
-import type { ConfirmationChallenge } from "@showzy/core/errors";
+import type {
+  ConfirmationChallenge,
+  ConfirmationRequiredError,
+  CoreErrorCode,
+} from "@showzy/core/errors";
 import type {
   AssistantPreview,
   AssistantPreviewLevel,
@@ -47,17 +51,19 @@ export interface ConfirmationAttempt {
 export class AssistantConfirmationRequired extends Error {
   readonly attempt: ConfirmationAttempt;
   readonly challenge: ConfirmationChallenge;
+  readonly code: CoreErrorCode;
   readonly level: AssistantPreviewLevel;
 
   constructor(
     attempt: ConfirmationAttempt,
-    challenge: ConfirmationChallenge,
+    refused: ConfirmationRequiredError,
     level: AssistantPreviewLevel = "card",
   ) {
     super(`"${attempt.actionName}" requires confirmation`);
     this.name = "AssistantConfirmationRequired";
     this.attempt = attempt;
-    this.challenge = challenge;
+    this.challenge = refused.challenge;
+    this.code = refused.code;
     this.level = level;
   }
 }
