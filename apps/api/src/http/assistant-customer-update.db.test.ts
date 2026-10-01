@@ -14,6 +14,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createActionRegistry } from "../registry.js";
 import type { AssistantKitRuntime } from "./assistant-kit-http.js";
 import { createAssistantKitRuntime } from "./assistant-kit-runtime.js";
+import { testStaffProvider } from "@showzy/ai/test";
 
 const LIST_TOOL = "customers_list_customers";
 const UPDATE_TOOL = "customers_updateCustomer";
@@ -34,6 +35,7 @@ function runtime(): AssistantKitRuntime {
     registry: createActionRegistry(),
     pipeline: kit.pipeline,
     model: "mock",
+    provider: testStaffProvider,
     redis: {} as never,
   });
 }

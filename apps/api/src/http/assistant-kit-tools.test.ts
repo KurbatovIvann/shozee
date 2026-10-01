@@ -51,6 +51,7 @@ import {
 import { describe, expect, it } from "vitest";
 
 import { createActionRegistry } from "../registry.js";
+import { testStaffProvider } from "@showzy/ai/test";
 
 const registry = createActionRegistry();
 const CONTRACTS = filterStaffAiTools(registry.contracts(), {
@@ -116,7 +117,7 @@ function tools(
   logger?: AssistantToolLogger,
 ): ToolSet {
   return assistantKitTurnTools(
-    staffAssistantTools(CONTRACTS, execute),
+    staffAssistantTools(CONTRACTS, execute, testStaffProvider),
     logger ?? capturingLogger().logger,
   );
 }

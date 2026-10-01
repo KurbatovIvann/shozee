@@ -47,7 +47,6 @@ export { createStaffLanguageModel } from "./language-model.js";
 export type { LanguageModel } from "ai";
 export {
   createAnthropicStaffProviderAdapter,
-  anthropicStaffProvider,
   ANTHROPIC_STAFF_PROVIDER_ID,
   STAFF_ASSISTANT_ANTHROPIC_PROVIDER_OPTIONS,
   STAFF_ASSISTANT_ANTHROPIC_THINKING,

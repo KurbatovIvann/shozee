@@ -25,7 +25,6 @@
 import { randomUUID } from "node:crypto";
 
 import {
-  anthropicStaffProvider,
   attemptKey,
   filterStaffAiTools,
   staffAssistantSystemMessages,
@@ -88,7 +87,7 @@ export interface CreateAssistantRuntimeOptions {
   readonly pipeline: ActionPipelineDeps;
   readonly model: LanguageModel;
   /** Same adapter the live assistant uses: it owns the caching options. */
-  readonly provider?: StaffProviderAdapter;
+  readonly provider: StaffProviderAdapter;
   readonly redis: RedisLike;
 }
 
@@ -208,7 +207,7 @@ export function createAssistantRuntime(
 ): AssistantRuntime {
   const scopedKit = createAssistantCallerKits(options);
 
-  const provider = options.provider ?? anthropicStaffProvider;
+  const provider = options.provider;
 
   /**
    * Every call the assistant makes into the domain: a tool the model chose, and
@@ -354,7 +353,7 @@ export function createAssistantRuntime(
       };
 
       return assistantKitTurnTools(
-        staffAssistantTools(contracts, execute),
+        staffAssistantTools(contracts, execute, provider),
         options.pipeline.logger,
       );
     },

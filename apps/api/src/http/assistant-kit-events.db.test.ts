@@ -75,6 +75,7 @@ import {
   nextEvent,
   type EventReader,
 } from "./assistant-kit-events.test-reader.js";
+import { testStaffProvider } from "@showzy/ai/test";
 
 let kit: TestKit;
 let container: StartedRedisContainer;
@@ -197,6 +198,7 @@ function harness(options?: {
     registry,
     pipeline: kit.pipeline,
     model: "mock",
+    provider: testStaffProvider,
     redis,
   });
   const timers = manualTimers();

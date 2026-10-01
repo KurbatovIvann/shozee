@@ -13,7 +13,6 @@ import {
   STAFF_ASSISTANT_TOOL_SEARCH_NAME,
 } from "./action-tool.js";
 import { STAFF_ASSISTANT_PRODUCT_GLOSSARY } from "./product-glossary.js";
-import { anthropicStaffProvider } from "./provider/anthropic.js";
 import type { StaffProviderAdapter } from "./provider/types.js";
 
 const STAFF_ASSISTANT_PRESENTATION_PROMPT_LINES =
@@ -89,7 +88,7 @@ ${STAFF_ASSISTANT_PRESENTATION_PROMPT_LINES}
 
 /** System message with the provider prompt-cache breakpoint on the stable prefix. */
 export function staffAssistantSystemMessage(
-  provider: StaffProviderAdapter = anthropicStaffProvider,
+  provider: StaffProviderAdapter,
 ): SystemModelMessage {
   return {
     role: "system",
@@ -105,7 +104,7 @@ export function staffAssistantSystemMessage(
  */
 export function staffAssistantSystemMessages(
   turnContextAddendum: string,
-  provider: StaffProviderAdapter = anthropicStaffProvider,
+  provider: StaffProviderAdapter,
 ): SystemModelMessage[] {
   return [
     staffAssistantSystemMessage(provider),
