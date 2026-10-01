@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 
-import { companies, companyMembers, rolePermissionDefaults } from "@showzy/db";
+import {
+  auditLog,
+  companies,
+  companyMembers,
+  rolePermissionDefaults,
+} from "@showzy/db";
 import { user } from "@showzy/db/schema/auth";
 import { createTestDatabase, type TestDatabase } from "@showzy/db/testing";
 import { and, eq, sql } from "drizzle-orm";
@@ -108,6 +113,22 @@ const peerReadContract = defineActionContract({
   timeout: 5_000,
 });
 
+const peerAuditedReadContract = defineActionContract({
+  ...contractDefaults,
+  errors: ["NOT_FOUND"],
+  name: "previewPeer.getAuditedCompanyName",
+  description: "Company-scoped name lookup that records an audit row.",
+  principal: "staff",
+  input: z.object({ companyRef: z.uuid() }),
+  output: z.object({ name: z.string() }),
+  permissions: ["previewPeer:read"],
+  risk: "read",
+  requiresConfirmation: false,
+  idempotent: false,
+  audit: true,
+  timeout: 5_000,
+});
+
 const peerWriteContract = defineActionContract({
   ...contractDefaults,
   errors: [],
@@ -141,6 +162,26 @@ const getCompanyName = implementAction(peerReadContract, {
     }
     return { name: row.name };
   },
+});
+
+const getAuditedCompanyName = implementAction(peerAuditedReadContract, {
+  handler: async (input, ctx) => {
+    const rows = await ctx.db
+      .select({ name: companies.name })
+      .from(companies)
+      .where(
+        and(
+          eq(companies.id, input.companyRef),
+          eq(companies.id, ctx.companyId),
+        ),
+      );
+    const row = rows[0];
+    if (row === undefined) {
+      throw new NotFoundError();
+    }
+    return { name: row.name };
+  },
+  auditTarget: () => ({ type: "company", id: companyA }),
 });
 
 const touchThing = implementAction(peerWriteContract, {
@@ -195,6 +236,23 @@ const calledReadPreview = renameAction(async (input, env) => {
     title: `Rename ${peer.name} to ${input.note}`,
     lines: [{ label: "Current name", value: peer.name }],
   };
+});
+
+const calledAuditedReadPreview = renameAction(async (input, env) => {
+  const peer = await env.call(getAuditedCompanyName, {
+    companyRef: input.companyRef,
+  });
+  return {
+    title: `Rename ${peer.name} to ${input.note}`,
+    lines: [{ label: "Current name", value: peer.name }],
+  };
+});
+
+let escapedPreviewCall: ActionPreviewEnv["call"] | undefined;
+
+const escapingPreview = renameAction((_input, env) => {
+  escapedPreviewCall = env.call;
+  return Promise.resolve({ title: "Rename", lines: [] });
 });
 
 const calledWritePreview = renameAction(async (input, env) => {
@@ -488,6 +546,34 @@ describe("preview reads (core.md §7, ADR-0050)", () => {
     expect(
       (error as ConfirmationRequiredError).challenge.preview?.lines[0]?.value,
     ).toBe(String(resolverPasses.length));
+  });
+
+  it("lands the audit row of an audit: true callee read from the preview", async () => {
+    const error = await card(calledAuditedReadPreview, {});
+    expect(error).toBeInstanceOf(ConfirmationRequiredError);
+    const rows = await database.runtime.db
+      .select({ companyId: auditLog.companyId, action: auditLog.action })
+      .from(auditLog)
+      .where(eq(auditLog.action, peerAuditedReadContract.name));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.companyId).toBe(companyA);
+  });
+
+  it("refuses an escaped preview call once the preview resolved", async () => {
+    const error = await card(escapingPreview, {});
+    expect(error).toBeInstanceOf(ConfirmationRequiredError);
+    const escaped = escapedPreviewCall;
+    expect(escaped).toBeDefined();
+    const leaked = await (escaped as ActionPreviewEnv["call"])(getCompanyName, {
+      companyRef: companyA,
+    }).then(
+      () => undefined,
+      (caught: unknown) => caught,
+    );
+    expect(leaked).toBeInstanceOf(CoreInvariantError);
+    expect((leaked as CoreInvariantError).message).toContain(
+      "outside its handler execution",
+    );
   });
 
   it("leaves confirmationSummary on input and company scope alone", async () => {
