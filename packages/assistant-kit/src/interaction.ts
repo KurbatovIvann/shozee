@@ -98,11 +98,12 @@ export function createInteractions<
   T extends Record<string, InteractionType<z.ZodType, z.ZodType, never>>,
 >(types: T): InteractionRegistry<T> {
   const kinds = Object.keys(types) as (keyof T & string)[];
+  const has = (kind: string): kind is keyof T & string =>
+    Object.prototype.hasOwnProperty.call(types, kind);
   return {
     kinds,
-    get: (kind) => types[kind],
-    has: (kind): kind is keyof T & string =>
-      Object.prototype.hasOwnProperty.call(types, kind),
+    get: (kind) => (has(kind) ? types[kind] : undefined),
+    has,
   };
 }
 
