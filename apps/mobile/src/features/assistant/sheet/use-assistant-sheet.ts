@@ -31,6 +31,7 @@ import {
   type AssistantConversationDirectory,
 } from "../thread/use-assistant-conversation-id";
 import { assistantChatErrorMessage, bannerKindFor } from "../shared/chat-error";
+import { assistantChoiceAnswerOptionId } from "../shared/choice-answer";
 import type { AssistantSheetViewModel } from "./assistant-sheet-view";
 
 function resolveApiUrl(): string | null {
@@ -170,6 +171,41 @@ export function useAssistantSheet(): AssistantSheetViewModel & {
     [push],
   );
 
+  const openQuestion = conversation.interaction;
+  const openQuestionKey =
+    openQuestion === null
+      ? null
+      : `${openQuestion.interactionId}:${String(openQuestion.revision)}`;
+  const [answeredHere, setAnsweredHere] = useState<{
+    readonly questionKey: string;
+    readonly optionId: string;
+    readonly request: object;
+  } | null>(null);
+
+  const answer = useCallback(
+    (value: unknown) => {
+      const optionId = assistantChoiceAnswerOptionId(value);
+      const marked =
+        optionId === null || openQuestionKey === null
+          ? null
+          : { questionKey: openQuestionKey, optionId, request: {} };
+      setAnsweredHere(marked);
+      void conversation.answer(value).then(() => {
+        setAnsweredHere((current) =>
+          marked !== null && current?.request === marked.request
+            ? null
+            : current,
+        );
+      });
+    },
+    [conversation, openQuestionKey],
+  );
+
+  const pendingOptionId =
+    answeredHere !== null && answeredHere.questionKey === openQuestionKey
+      ? answeredHere.optionId
+      : null;
+
   // A turn running anywhere on this conversation, this screen's own command in
   // flight, or the conversation still being resolved. The composer is closed
   // for all three; only the first is the server's state.
@@ -186,7 +222,8 @@ export function useAssistantSheet(): AssistantSheetViewModel & {
     changeInput: setInput,
     send,
     sendExample,
-    answer: conversation.answer,
+    answer,
+    pendingOptionId,
     dismiss: conversation.dismiss,
     continueTurn: conversation.continueTurn,
     openHref,

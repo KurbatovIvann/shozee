@@ -294,7 +294,7 @@ describe("useAssistantConversation", () => {
       window: conversationWindow({ text: "Готово.", asked: true }),
     });
     act(() => {
-      view.latest().answer({ optionId: "opt-a" });
+      void view.latest().answer({ optionId: "opt-a" });
     });
     await flush();
 
@@ -322,7 +322,7 @@ describe("useAssistantConversation", () => {
 
     respond(200, { status: "ok", window: conversationWindow() });
     act(() => {
-      view.latest().answer({ optionId: "opt-a" });
+      void view.latest().answer({ optionId: "opt-a" });
     });
     await flush();
 
@@ -345,7 +345,7 @@ describe("useAssistantConversation", () => {
 
     hang();
     act(() => {
-      view.latest().answer({ optionId: "opt-a" });
+      void view.latest().answer({ optionId: "opt-a" });
     });
     await flush();
     // `sending`, not `busy`: this screen has a command in flight. `busy` is the
@@ -354,7 +354,7 @@ describe("useAssistantConversation", () => {
     expect(view.latest().busy).toBe(false);
 
     act(() => {
-      view.latest().answer({ optionId: "opt-b" });
+      void view.latest().answer({ optionId: "opt-b" });
       void view.latest().send("щось інше");
       view.latest().dismiss();
     });
@@ -380,7 +380,7 @@ describe("useAssistantConversation", () => {
       }),
     });
     act(() => {
-      view.latest().answer({ optionId: "opt-a" });
+      void view.latest().answer({ optionId: "opt-a" });
     });
     await flush();
 
@@ -629,7 +629,7 @@ describe("useAssistantConversation", () => {
     await flush();
 
     act(() => {
-      view.latest().answer({ optionId: "opt-a" });
+      void view.latest().answer({ optionId: "opt-a" });
       view.latest().dismiss();
     });
     await flush();
@@ -860,7 +860,7 @@ describe("retrying a command whose reply never came", () => {
 
     fetchMock.mockRejectedValueOnce(new Error("network is gone"));
     await act(async () => {
-      view.latest().answer({ optionId: "opt-b" });
+      void view.latest().answer({ optionId: "opt-b" });
       await flush();
     });
 
@@ -869,7 +869,7 @@ describe("retrying a command whose reply never came", () => {
       window: conversationWindow({ text: "Готово." }),
     });
     await act(async () => {
-      view.latest().answer({ optionId: "opt-b" });
+      void view.latest().answer({ optionId: "opt-b" });
       await flush();
     });
 
@@ -882,7 +882,7 @@ describe("retrying a command whose reply never came", () => {
 
     fetchMock.mockRejectedValueOnce(new Error("network is gone"));
     await act(async () => {
-      view.latest().answer({ optionId: "opt-b" });
+      void view.latest().answer({ optionId: "opt-b" });
       await flush();
     });
 
@@ -891,7 +891,7 @@ describe("retrying a command whose reply never came", () => {
       window: conversationWindow({ text: "Готово." }),
     });
     await act(async () => {
-      view.latest().answer({ optionId: "opt-a" });
+      void view.latest().answer({ optionId: "opt-a" });
       await flush();
     });
 
@@ -1960,7 +1960,7 @@ describe("the conversation, live", () => {
       window: conversationWindow({ text: "Готово.", asked: true }),
     });
     act(() => {
-      view.latest().answer({ optionId: "opt-a" });
+      void view.latest().answer({ optionId: "opt-a" });
     });
     await flush();
     expect(view.latest().interaction).toBeNull();
