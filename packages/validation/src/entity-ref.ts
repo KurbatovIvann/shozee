@@ -38,7 +38,7 @@ export const entityRefSchema = z.discriminatedUnion("by", [
 
 export type EntityRef = z.output<typeof entityRefSchema>;
 
-export const ENTITY_LOOKUP_KINDS = ["customer"] as const;
+export const ENTITY_LOOKUP_KINDS = ["customer", "product"] as const;
 
 export type EntityLookupKind = (typeof ENTITY_LOOKUP_KINDS)[number];
 

@@ -34,6 +34,8 @@ import type { AssistantToolContext, ResolveAnswer } from "./runtime-types.js";
 interface FacadeInput {
   customerId?: string;
   customerQuery?: string;
+  productId?: string;
+  productQuery?: string;
   items?: Array<{
     productId?: string;
     productQuery?: string;
@@ -59,10 +61,27 @@ export function withChosenId(
   }
   const next = structuredClone(input) as FacadeInput;
 
-  if (target.kind === "customer") {
-    next.customerId = entityId;
-    delete next.customerQuery;
-    return { kind: "patched", input: next };
+  if (!("lineIndex" in target)) {
+    const lookupKind = target.kind;
+    switch (lookupKind) {
+      case "customer": {
+        next.customerId = entityId;
+        delete next.customerQuery;
+        return { kind: "patched", input: next };
+      }
+      case "product": {
+        next.productId = entityId;
+        delete next.productQuery;
+        return { kind: "patched", input: next };
+      }
+      default: {
+        const unhandled: never = lookupKind;
+        return {
+          kind: "unpatchable",
+          reason: `no input field for lookup kind ${String(unhandled)}`,
+        };
+      }
+    }
   }
 
   const line = next.items?.[target.lineIndex];

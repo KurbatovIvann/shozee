@@ -32,6 +32,10 @@ import {
   type VariantSelection,
 } from "../actions/resolve-line-references.contract.js";
 import {
+  mergeProductCandidates,
+  productCandidateOptions,
+} from "./product-reference-candidates.js";
+import {
   ambiguousProductQueryMessage,
   ambiguousVariantQueryMessage,
   archivedProductMessage,
@@ -102,63 +106,14 @@ type ProductQueryCandidates = {
   readonly byQuery: ReadonlyMap<string, readonly ProductCandidate[]>;
 };
 
-function mergeProductCandidates(
-  primary: readonly ProductCandidate[],
-  extra: readonly ProductCandidate[],
-): ProductCandidate[] {
-  const byId = new Map<string, ProductCandidate>();
-  for (const row of primary) {
-    byId.set(row.id, row);
-  }
-  for (const row of extra) {
-    byId.set(row.id, row);
-  }
-  return [...byId.values()];
-}
-
-function compareProductNameThenId(
-  left: ProductCandidate,
-  right: ProductCandidate,
-): number {
-  const byName = left.name.localeCompare(right.name);
-  if (byName !== 0) {
-    return byName;
-  }
-  const byCurrency = left.currency.localeCompare(right.currency);
-  if (byCurrency !== 0) {
-    return byCurrency;
-  }
-  return left.id.localeCompare(right.id);
-}
-
-function productOptionLabel(
-  row: ProductCandidate,
-  siblings: readonly ProductCandidate[],
-): string {
-  const sameName = siblings.filter((candidate) => candidate.name === row.name);
-  if (sameName.length === 1) {
-    return row.name;
-  }
-  const sameNameCurrency = sameName.filter(
-    (candidate) => candidate.currency === row.currency,
-  );
-  if (sameNameCurrency.length === 1) {
-    return `${row.name} (${row.currency})`;
-  }
-  return `${row.name} (${row.currency}, ${row.id})`;
-}
-
 function pickerFromProducts(rows: readonly ProductCandidate[]): {
   readonly options: readonly VariantSelectionOption[];
   readonly optionsTruncated: boolean;
 } {
-  const sorted = [...rows].toSorted(compareProductNameThenId);
+  const options = productCandidateOptions(rows);
   return {
-    options: sorted.slice(0, VARIANT_SELECTION_OPTIONS_MAX).map((row) => ({
-      id: row.id,
-      label: productOptionLabel(row, sorted),
-    })),
-    optionsTruncated: sorted.length > VARIANT_SELECTION_OPTIONS_MAX,
+    options: options.slice(0, VARIANT_SELECTION_OPTIONS_MAX),
+    optionsTruncated: options.length > VARIANT_SELECTION_OPTIONS_MAX,
   };
 }
 
