@@ -28,7 +28,8 @@ import { companyCustomers, customerGroups } from "@showzy/db/schema/customers";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { deleteGroup, deleteGroupConfirmationSummary } from "./delete-group.js";
+import { DELETE_GROUP_NOTE } from "../services/preview-card.js";
+import { deleteGroup } from "./delete-group.js";
 
 const fixtures = {
   isolationOwn: randomUUID(),
@@ -217,6 +218,7 @@ crossTenantSuite(
       deleteGroup,
       { input: { id: fixtures.isolationOwn } },
       { input: { id: fixtures.isolationForeign } },
+      { missing: { input: { id: randomUUID() } } },
     ),
   ],
 );
@@ -317,11 +319,13 @@ describe("customers.deleteGroup", () => {
     if (!(unconfirmed instanceof ConfirmationRequiredError)) {
       throw new Error("expected ConfirmationRequiredError");
     }
-    expect(unconfirmed.challenge.summary).toBe(deleteGroupConfirmationSummary);
-    expect(unconfirmed.challenge.summary).toContain(
-      "Клієнти залишаться і втратять призначення групи",
+    expect(unconfirmed.challenge.summary).toBe(
+      unconfirmed.challenge.preview?.title,
     );
-    expect(unconfirmed.challenge.summary).not.toContain("Confirm me");
+    expect(unconfirmed.challenge.summary).toBe(
+      "Видалити групу клієнтів: Confirm me",
+    );
+    expect(unconfirmed.challenge.preview?.notes).toContain(DELETE_GROUP_NOTE);
     expect(Date.parse(unconfirmed.challenge.expiresAt)).toBeGreaterThan(
       Date.now(),
     );

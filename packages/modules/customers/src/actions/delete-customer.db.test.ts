@@ -35,10 +35,10 @@ import { personalPrices } from "@showzy/db/schema/pricing";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { DELETE_CUSTOMER_NOTE } from "../services/preview-card.js";
 import {
   ACTIVE_CUSTOMER_DELETE_MESSAGE,
   deleteCustomer,
-  deleteCustomerConfirmationSummary,
 } from "./delete-customer.js";
 
 const fixtures = {
@@ -293,6 +293,7 @@ crossTenantSuite(
       deleteCustomer,
       { input: { id: fixtures.isolationOwn } },
       { input: { id: fixtures.isolationForeign } },
+      { missing: { input: { id: randomUUID() } } },
     ),
   ],
 );
@@ -418,11 +419,12 @@ describe("customers.deleteCustomer", () => {
       throw new Error("expected ConfirmationRequiredError");
     }
     expect(unconfirmed.challenge.summary).toBe(
-      deleteCustomerConfirmationSummary,
+      unconfirmed.challenge.preview?.title,
     );
-    expect(unconfirmed.challenge.summary).toContain("Замовлення залишаться");
-    expect(unconfirmed.challenge.summary).not.toContain("ім’я");
-    expect(unconfirmed.challenge.summary).not.toContain("Confirm me");
+    expect(unconfirmed.challenge.summary).toBe("Видалити клієнта: Confirm me");
+    expect(unconfirmed.challenge.preview?.notes).toContain(
+      DELETE_CUSTOMER_NOTE,
+    );
     expect(unconfirmed.challenge.summary).not.toContain(
       `confirm-${customerId}@example.com`,
     );
