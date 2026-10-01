@@ -23,6 +23,8 @@ import { CONFIRMATION_TTL_MS as CHALLENGE_TTL_MS } from "@showzy/core";
 import {
   assistantChoicePromptSchema,
   assistantConfirmationPromptSchema,
+  type AssistantPreview,
+  type AssistantPreviewLevel,
 } from "@showzy/validation/assistant-chat";
 import type { EntityLookupTarget } from "@showzy/validation/entity-ref";
 import { z } from "zod";
@@ -96,8 +98,13 @@ export interface ConfirmationAttemptSecret {
   readonly challengeId: string;
 }
 
+export interface ConfirmationAlsoSecret extends ConfirmationAttemptSecret {
+  readonly preview: AssistantPreview;
+  readonly level: AssistantPreviewLevel;
+}
+
 export interface ConfirmationSecret extends ConfirmationAttemptSecret {
-  readonly also?: readonly ConfirmationAttemptSecret[];
+  readonly also: readonly ConfirmationAlsoSecret[];
 }
 
 export interface ChoiceResolution {
@@ -113,7 +120,7 @@ export interface ChoiceResolution {
  */
 export interface ConfirmationResolution extends ConfirmationAttemptSecret {
   readonly approved: true;
-  readonly also?: readonly ConfirmationAttemptSecret[];
+  readonly also: readonly ConfirmationAlsoSecret[];
 }
 
 export const choice = defineInteraction<ChoiceSecret>()({
@@ -160,7 +167,7 @@ export const confirmation = defineInteraction<ConfirmationSecret>()({
       canonicalInput: secret.canonicalInput,
       idempotencyKey: secret.idempotencyKey,
       challengeId: secret.challengeId,
-      ...(secret.also === undefined ? {} : { also: secret.also }),
+      also: Object.hasOwn(secret, "also") ? secret.also : [],
     } satisfies ConfirmationResolution),
 });
 

@@ -1392,6 +1392,7 @@
                   },
                   "basePriceMinor": {
                     "type": "string",
+                    "maxLength": 20,
                     "pattern": "^(0|-?[1-9][0-9]*)$"
                   },
                   "currency": {
@@ -1411,6 +1412,7 @@
                         },
                         "basePriceMinor": {
                           "type": "string",
+                          "maxLength": 20,
                           "pattern": "^(0|-?[1-9][0-9]*)$"
                         },
                         "currency": {
@@ -1451,6 +1453,7 @@
                     },
                     "basePriceMinor": {
                       "type": "string",
+                      "maxLength": 20,
                       "pattern": "^(0|-?[1-9][0-9]*)$"
                     },
                     "currency": {
@@ -1472,6 +1475,7 @@
                             "anyOf": [
                               {
                                 "type": "string",
+                                "maxLength": 20,
                                 "pattern": "^(0|-?[1-9][0-9]*)$"
                               },
                               {
@@ -2131,6 +2135,7 @@
                   },
                   "basePriceMinor": {
                     "type": "string",
+                    "maxLength": 20,
                     "pattern": "^(0|-?[1-9][0-9]*)$"
                   },
                   "currency": {
@@ -2169,6 +2174,7 @@
                       "anyOf": [
                         {
                           "type": "string",
+                          "maxLength": 20,
                           "pattern": "^(0|-?[1-9][0-9]*)$"
                         },
                         {
@@ -2899,6 +2905,7 @@
                     },
                     "basePriceMinor": {
                       "type": "string",
+                      "maxLength": 20,
                       "pattern": "^(0|-?[1-9][0-9]*)$"
                     },
                     "currency": {
@@ -2944,6 +2951,7 @@
                             "anyOf": [
                               {
                                 "type": "string",
+                                "maxLength": 20,
                                 "pattern": "^(0|-?[1-9][0-9]*)$"
                               },
                               {
@@ -3743,6 +3751,7 @@
                           },
                           "basePriceMinor": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^(0|-?[1-9][0-9]*)$"
                           },
                           "currency": {
@@ -4436,6 +4445,7 @@
                   },
                   "basePriceMinor": {
                     "type": "string",
+                    "maxLength": 20,
                     "pattern": "^(0|-?[1-9][0-9]*)$"
                   },
                   "currency": {
@@ -4470,6 +4480,7 @@
                     },
                     "basePriceMinor": {
                       "type": "string",
+                      "maxLength": 20,
                       "pattern": "^(0|-?[1-9][0-9]*)$"
                     },
                     "currency": {
@@ -4491,6 +4502,7 @@
                             "anyOf": [
                               {
                                 "type": "string",
+                                "maxLength": 20,
                                 "pattern": "^(0|-?[1-9][0-9]*)$"
                               },
                               {
@@ -5216,6 +5228,7 @@
                     "anyOf": [
                       {
                         "type": "string",
+                        "maxLength": 20,
                         "pattern": "^(0|-?[1-9][0-9]*)$"
                       },
                       {
@@ -5267,6 +5280,7 @@
                       "anyOf": [
                         {
                           "type": "string",
+                          "maxLength": 20,
                           "pattern": "^(0|-?[1-9][0-9]*)$"
                         },
                         {
@@ -27738,7 +27752,8 @@
                   },
                   "layoutKey": {
                     "type": "string",
-                    "minLength": 1
+                    "minLength": 1,
+                    "maxLength": 120
                   },
                   "basis": {
                     "type": "string",
@@ -28057,14 +28072,17 @@
                     },
                     "totalNetMinor": {
                       "type": "string",
+                      "maxLength": 20,
                       "pattern": "^(0|-?[1-9][0-9]*)$"
                     },
                     "totalTaxMinor": {
                       "type": "string",
+                      "maxLength": 20,
                       "pattern": "^(0|-?[1-9][0-9]*)$"
                     },
                     "totalGrossMinor": {
                       "type": "string",
+                      "maxLength": 20,
                       "pattern": "^(0|-?[1-9][0-9]*)$"
                     },
                     "currency": {
@@ -28126,10 +28144,12 @@
                           },
                           "quantityMilli": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^[1-9][0-9]*$"
                           },
                           "unitPriceMinor": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^(0|-?[1-9][0-9]*)$"
                           },
                           "discountKind": {
@@ -28137,10 +28157,12 @@
                           },
                           "discountValue": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^(0|-?[1-9][0-9]*)$"
                           },
                           "discountAmountMinor": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^(0|-?[1-9][0-9]*)$"
                           },
                           "taxTreatment": {
@@ -28158,14 +28180,17 @@
                           },
                           "taxAmountMinor": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^(0|-?[1-9][0-9]*)$"
                           },
                           "netAmountMinor": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^(0|-?[1-9][0-9]*)$"
                           },
                           "grossAmountMinor": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^(0|-?[1-9][0-9]*)$"
                           },
                           "currency": {
@@ -29229,14 +29254,17 @@
                     },
                     "totalNetMinor": {
                       "type": "string",
+                      "maxLength": 20,
                       "pattern": "^(0|-?[1-9][0-9]*)$"
                     },
                     "totalTaxMinor": {
                       "type": "string",
+                      "maxLength": 20,
                       "pattern": "^(0|-?[1-9][0-9]*)$"
                     },
                     "totalGrossMinor": {
                       "type": "string",
+                      "maxLength": 20,
                       "pattern": "^(0|-?[1-9][0-9]*)$"
                     },
                     "currency": {
@@ -29298,10 +29326,12 @@
                           },
                           "quantityMilli": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^[1-9][0-9]*$"
                           },
                           "unitPriceMinor": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^(0|-?[1-9][0-9]*)$"
                           },
                           "discountKind": {
@@ -29309,10 +29339,12 @@
                           },
                           "discountValue": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^(0|-?[1-9][0-9]*)$"
                           },
                           "discountAmountMinor": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^(0|-?[1-9][0-9]*)$"
                           },
                           "taxTreatment": {
@@ -29330,14 +29362,17 @@
                           },
                           "taxAmountMinor": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^(0|-?[1-9][0-9]*)$"
                           },
                           "netAmountMinor": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^(0|-?[1-9][0-9]*)$"
                           },
                           "grossAmountMinor": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^(0|-?[1-9][0-9]*)$"
                           },
                           "currency": {
@@ -30454,14 +30489,17 @@
                     },
                     "totalNetMinor": {
                       "type": "string",
+                      "maxLength": 20,
                       "pattern": "^(0|-?[1-9][0-9]*)$"
                     },
                     "totalTaxMinor": {
                       "type": "string",
+                      "maxLength": 20,
                       "pattern": "^(0|-?[1-9][0-9]*)$"
                     },
                     "totalGrossMinor": {
                       "type": "string",
+                      "maxLength": 20,
                       "pattern": "^(0|-?[1-9][0-9]*)$"
                     },
                     "currency": {
@@ -30523,10 +30561,12 @@
                           },
                           "quantityMilli": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^[1-9][0-9]*$"
                           },
                           "unitPriceMinor": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^(0|-?[1-9][0-9]*)$"
                           },
                           "discountKind": {
@@ -30534,10 +30574,12 @@
                           },
                           "discountValue": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^(0|-?[1-9][0-9]*)$"
                           },
                           "discountAmountMinor": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^(0|-?[1-9][0-9]*)$"
                           },
                           "taxTreatment": {
@@ -30555,14 +30597,17 @@
                           },
                           "taxAmountMinor": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^(0|-?[1-9][0-9]*)$"
                           },
                           "netAmountMinor": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^(0|-?[1-9][0-9]*)$"
                           },
                           "grossAmountMinor": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^(0|-?[1-9][0-9]*)$"
                           },
                           "currency": {
@@ -31391,6 +31436,7 @@
                           },
                           "totalGrossMinor": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^(0|-?[1-9][0-9]*)$"
                           },
                           "currency": {
@@ -33105,14 +33151,17 @@
                     },
                     "totalNetMinor": {
                       "type": "string",
+                      "maxLength": 20,
                       "pattern": "^(0|-?[1-9][0-9]*)$"
                     },
                     "totalTaxMinor": {
                       "type": "string",
+                      "maxLength": 20,
                       "pattern": "^(0|-?[1-9][0-9]*)$"
                     },
                     "totalGrossMinor": {
                       "type": "string",
+                      "maxLength": 20,
                       "pattern": "^(0|-?[1-9][0-9]*)$"
                     },
                     "currency": {
@@ -33174,10 +33223,12 @@
                           },
                           "quantityMilli": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^[1-9][0-9]*$"
                           },
                           "unitPriceMinor": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^(0|-?[1-9][0-9]*)$"
                           },
                           "discountKind": {
@@ -33185,10 +33236,12 @@
                           },
                           "discountValue": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^(0|-?[1-9][0-9]*)$"
                           },
                           "discountAmountMinor": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^(0|-?[1-9][0-9]*)$"
                           },
                           "taxTreatment": {
@@ -33206,14 +33259,17 @@
                           },
                           "taxAmountMinor": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^(0|-?[1-9][0-9]*)$"
                           },
                           "netAmountMinor": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^(0|-?[1-9][0-9]*)$"
                           },
                           "grossAmountMinor": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^(0|-?[1-9][0-9]*)$"
                           },
                           "currency": {
@@ -45382,6 +45438,7 @@
                               "properties": {
                                 "milli": {
                                   "type": "string",
+                                  "maxLength": 20,
                                   "pattern": "^[1-9][0-9]*$"
                                 }
                               },
@@ -45394,7 +45451,8 @@
                               "type": "object",
                               "properties": {
                                 "decimal": {
-                                  "type": "string"
+                                  "type": "string",
+                                  "maxLength": 24
                                 }
                               },
                               "required": [
@@ -45484,14 +45542,17 @@
                     },
                     "totalNetMinor": {
                       "type": "string",
+                      "maxLength": 20,
                       "pattern": "^(0|-?[1-9][0-9]*)$"
                     },
                     "totalTaxMinor": {
                       "type": "string",
+                      "maxLength": 20,
                       "pattern": "^(0|-?[1-9][0-9]*)$"
                     },
                     "totalGrossMinor": {
                       "type": "string",
+                      "maxLength": 20,
                       "pattern": "^(0|-?[1-9][0-9]*)$"
                     },
                     "currency": {
@@ -49255,14 +49316,17 @@
                     },
                     "totalNetMinor": {
                       "type": "string",
+                      "maxLength": 20,
                       "pattern": "^(0|-?[1-9][0-9]*)$"
                     },
                     "totalTaxMinor": {
                       "type": "string",
+                      "maxLength": 20,
                       "pattern": "^(0|-?[1-9][0-9]*)$"
                     },
                     "totalGrossMinor": {
                       "type": "string",
+                      "maxLength": 20,
                       "pattern": "^(0|-?[1-9][0-9]*)$"
                     },
                     "currency": {
@@ -49316,10 +49380,12 @@
                           },
                           "quantityMilli": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^[1-9][0-9]*$"
                           },
                           "unitPriceMinor": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^(0|-?[1-9][0-9]*)$"
                           },
                           "discountKind": {
@@ -49327,10 +49393,12 @@
                           },
                           "discountValue": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^(0|-?[1-9][0-9]*)$"
                           },
                           "discountAmountMinor": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^(0|-?[1-9][0-9]*)$"
                           },
                           "taxTreatment": {
@@ -49348,14 +49416,17 @@
                           },
                           "taxAmountMinor": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^(0|-?[1-9][0-9]*)$"
                           },
                           "netAmountMinor": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^(0|-?[1-9][0-9]*)$"
                           },
                           "grossAmountMinor": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^(0|-?[1-9][0-9]*)$"
                           },
                           "currency": {
@@ -50293,6 +50364,7 @@
                               },
                               "totalGrossMinor": {
                                 "type": "string",
+                                "maxLength": 20,
                                 "pattern": "^(0|-?[1-9][0-9]*)$"
                               },
                               "currency": {
@@ -50400,6 +50472,7 @@
                               },
                               "totalGrossMinor": {
                                 "type": "string",
+                                "maxLength": 20,
                                 "pattern": "^(0|-?[1-9][0-9]*)$"
                               },
                               "currency": {
@@ -50441,10 +50514,12 @@
                                     },
                                     "quantityMilli": {
                                       "type": "string",
+                                      "maxLength": 20,
                                       "pattern": "^[1-9][0-9]*$"
                                     },
                                     "grossAmountMinor": {
                                       "type": "string",
+                                      "maxLength": 20,
                                       "pattern": "^(0|-?[1-9][0-9]*)$"
                                     },
                                     "currency": {
@@ -50528,6 +50603,7 @@
                               },
                               "grossAmountMinor": {
                                 "type": "string",
+                                "maxLength": 20,
                                 "pattern": "^(0|-?[1-9][0-9]*)$"
                               }
                             },
@@ -50592,6 +50668,7 @@
                                         },
                                         "grossAmountMinor": {
                                           "type": "string",
+                                          "maxLength": 20,
                                           "pattern": "^(0|-?[1-9][0-9]*)$"
                                         }
                                       },
@@ -50603,6 +50680,7 @@
                                   },
                                   "quantityMilli": {
                                     "type": "string",
+                                    "maxLength": 20,
                                     "pattern": "^[1-9][0-9]*$"
                                   }
                                 },
@@ -50702,6 +50780,7 @@
                                         },
                                         "grossAmountMinor": {
                                           "type": "string",
+                                          "maxLength": 20,
                                           "pattern": "^(0|-?[1-9][0-9]*)$"
                                         }
                                       },
@@ -50776,6 +50855,7 @@
                                     },
                                     "grossAmountMinor": {
                                       "type": "string",
+                                      "maxLength": 20,
                                       "pattern": "^(0|-?[1-9][0-9]*)$"
                                     }
                                   },
@@ -54969,6 +55049,7 @@
                           },
                           "priceMinor": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^(0|-?[1-9][0-9]*)$"
                           },
                           "currency": {
@@ -57873,6 +57954,7 @@
                         },
                         "priceMinor": {
                           "type": "string",
+                          "maxLength": 20,
                           "pattern": "^(0|-?[1-9][0-9]*)$"
                         },
                         "currency": {
@@ -57935,6 +58017,7 @@
                           },
                           "priceMinor": {
                             "type": "string",
+                            "maxLength": 20,
                             "pattern": "^(0|-?[1-9][0-9]*)$"
                           },
                           "currency": {

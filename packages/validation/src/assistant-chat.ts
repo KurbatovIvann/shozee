@@ -379,8 +379,8 @@ export const assistantChoicePromptSchema = z.strictObject({
   problem: z.string().min(1).max(400).optional(),
 });
 
-export const ASSISTANT_PREVIEW_TEXT_MAX = 2000;
-export const ASSISTANT_PREVIEW_LIST_MAX = 128;
+export const ASSISTANT_PREVIEW_TEXT_MAX = 4096;
+export const ASSISTANT_PREVIEW_LIST_MAX = 256;
 export const ASSISTANT_PREVIEW_ALSO_MAX = 4;
 
 export const ASSISTANT_PREVIEW_LEVELS = ["card", "strong"] as const;

@@ -36,6 +36,7 @@ import {
   assistantKitTurnTools,
   assistantPreviewLevel,
   confirmation,
+  confirmationAlso,
   confirmationPause,
   createResolveAnswer,
   withChosenId,
@@ -43,7 +44,8 @@ import {
   type AssistantToolLogger,
   type ChoiceOptionSecret,
   type ChoiceSecret,
-  type ConfirmationAttemptSecret,
+  type ConfirmationAlsoSecret,
+  type ConfirmationSecret,
   type ResolveAnswerDeps,
 } from "@showzy/assistant-runtime";
 import {
@@ -720,17 +722,30 @@ describe("an action that needs a person's authorisation", () => {
     preview: { title: "Змінити клієнта: Галина", lines: [], notes: [] },
   };
 
+  const SECOND_ALSO: ConfirmationAlsoSecret = {
+    actionName: SECOND_ATTEMPT.actionName,
+    canonicalInput: SECOND_ATTEMPT.input,
+    idempotencyKey: SECOND_ATTEMPT.idempotencyKey,
+    challengeId: SECOND_CHALLENGE.challengeId,
+    preview: SECOND_CHALLENGE.preview,
+    level: "card",
+  };
+
+  function storedBeforeAlso(): ConfirmationSecret {
+    const stored: Omit<ConfirmationSecret, "also"> = {
+      actionName: ATTEMPT.actionName,
+      canonicalInput: ATTEMPT.input,
+      idempotencyKey: ATTEMPT.idempotencyKey,
+      challengeId: CHALLENGE.challengeId,
+    };
+    return stored as ConfirmationSecret;
+  }
+
   /** What a claim hands the resolver, produced by the kind's own `resolve`. */
-  function approved(also: readonly ConfirmationAttemptSecret[] = []): unknown {
+  function approvedFrom(secret: ConfirmationSecret): unknown {
     const resolution = confirmation.resolve({
       answer: { approved: true },
-      secret: {
-        actionName: ATTEMPT.actionName,
-        canonicalInput: ATTEMPT.input,
-        idempotencyKey: ATTEMPT.idempotencyKey,
-        challengeId: CHALLENGE.challengeId,
-        also,
-      },
+      secret,
     });
     if (resolution.kind !== "resolved") {
       throw new Error("a confirmation always resolves");
@@ -738,9 +753,19 @@ describe("an action that needs a person's authorisation", () => {
     return resolution.value;
   }
 
+  function approved(also: readonly ConfirmationAlsoSecret[] = []): unknown {
+    return approvedFrom({
+      actionName: ATTEMPT.actionName,
+      canonicalInput: ATTEMPT.input,
+      idempotencyKey: ATTEMPT.idempotencyKey,
+      challengeId: CHALLENGE.challengeId,
+      also,
+    });
+  }
+
   function answerWith(
     deps: ResolveAnswerDeps,
-    also: readonly ConfirmationAttemptSecret[] = [],
+    also: readonly ConfirmationAlsoSecret[] = [],
   ): Promise<ToolOutcome> {
     return createResolveAnswer(deps)({
       toolName: "customers_deleteCustomer",
@@ -815,10 +840,12 @@ describe("an action that needs a person's authorisation", () => {
         "strong",
       ),
       [
-        new AssistantConfirmationRequired(
-          SECOND_ATTEMPT,
-          new ConfirmationRequiredError(SECOND_CHALLENGE),
-          "card",
+        confirmationAlso(
+          new AssistantConfirmationRequired(
+            SECOND_ATTEMPT,
+            new ConfirmationRequiredError(SECOND_CHALLENGE),
+            "card",
+          ),
         ),
       ],
     );
@@ -854,14 +881,7 @@ describe("an action that needs a person's authorisation", () => {
           return Promise.resolve({ ran: args.actionName });
         },
       },
-      [
-        {
-          actionName: SECOND_ATTEMPT.actionName,
-          canonicalInput: SECOND_ATTEMPT.input,
-          idempotencyKey: SECOND_ATTEMPT.idempotencyKey,
-          challengeId: SECOND_CHALLENGE.challengeId,
-        },
-      ],
+      [SECOND_ALSO],
     );
 
     expect(seen).toEqual([
@@ -900,14 +920,7 @@ describe("an action that needs a person's authorisation", () => {
             ? Promise.resolve({ id: CUSTOMER_A })
             : Promise.reject(refusal),
       },
-      [
-        {
-          actionName: SECOND_ATTEMPT.actionName,
-          canonicalInput: SECOND_ATTEMPT.input,
-          idempotencyKey: SECOND_ATTEMPT.idempotencyKey,
-          challengeId: SECOND_CHALLENGE.challengeId,
-        },
-      ],
+      [SECOND_ALSO],
     );
 
     expect(outcome).toEqual({
@@ -942,25 +955,48 @@ describe("an action that needs a person's authorisation", () => {
           );
         },
       },
-      [
-        {
-          actionName: SECOND_ATTEMPT.actionName,
-          canonicalInput: SECOND_ATTEMPT.input,
-          idempotencyKey: SECOND_ATTEMPT.idempotencyKey,
-          challengeId: SECOND_CHALLENGE.challengeId,
-        },
-      ],
+      [SECOND_ALSO],
     );
 
     expect(seen).toEqual([ATTEMPT.actionName]);
     expect(outcome).toMatchObject({
       kind: "pause",
       interaction: "confirmation",
+      prompt: {
+        preview: CARD,
+        also: [SECOND_CHALLENGE.preview],
+      },
       secret: {
         challengeId: fresh.challengeId,
         idempotencyKey: ATTEMPT.idempotencyKey,
+        also: [SECOND_ALSO],
       },
     });
+  });
+
+  it("re-approving a drifted card runs the actions that never ran", async () => {
+    const ran: string[] = [];
+    const outcome = await createResolveAnswer({
+      runConfirmed: (args) => {
+        ran.push(args.actionName);
+        return Promise.resolve({ ran: args.actionName });
+      },
+    })({
+      toolName: "customers_deleteCustomer",
+      kind: "confirmation",
+      value: approvedFrom({
+        actionName: ATTEMPT.actionName,
+        canonicalInput: ATTEMPT.input,
+        idempotencyKey: ATTEMPT.idempotencyKey,
+        challengeId: "cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd",
+        also: [SECOND_ALSO],
+      }),
+      tools: {},
+      context: ANSWER_CONTEXT,
+    });
+
+    expect(ran).toEqual([ATTEMPT.actionName, SECOND_ATTEMPT.actionName]);
+    expect(outcome).toMatchObject({ kind: "ok" });
   });
 
   it("runs a pause opened before one card could carry several actions", async () => {
@@ -974,13 +1010,7 @@ describe("an action that needs a person's authorisation", () => {
     })({
       toolName: "customers_deleteCustomer",
       kind: "confirmation",
-      value: {
-        approved: true,
-        actionName: ATTEMPT.actionName,
-        canonicalInput: ATTEMPT.input,
-        idempotencyKey: ATTEMPT.idempotencyKey,
-        challengeId: CHALLENGE.challengeId,
-      },
+      value: approvedFrom(storedBeforeAlso()),
       tools: {},
       context: ANSWER_CONTEXT,
     });

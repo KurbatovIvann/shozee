@@ -184,7 +184,7 @@ function confirmedAttempts(
       idempotencyKey: resolution.idempotencyKey,
       challengeId: resolution.challengeId,
     },
-    ...(resolution.also ?? []),
+    ...resolution.also,
   ];
 }
 
@@ -192,7 +192,8 @@ async function resolveConfirmation(
   args: ResolveArgs,
   deps: ResolveAnswerDeps,
 ): Promise<ToolOutcome> {
-  const attempts = confirmedAttempts(args.value as ConfirmationResolution);
+  const resolution = args.value as ConfirmationResolution;
+  const attempts = confirmedAttempts(resolution);
   const oneAction = attempts.length === 1;
   const done: ConfirmedCardAction[] = [];
 
@@ -209,7 +210,7 @@ async function resolveConfirmation(
     } catch (error) {
       if (error instanceof AssistantConfirmationRequired) {
         if (done.length === 0) {
-          return confirmationPause(error);
+          return confirmationPause(error, resolution.also);
         }
         return halted(done, {
           action: attempt.actionName,

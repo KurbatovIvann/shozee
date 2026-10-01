@@ -29,6 +29,7 @@ import type {
 } from "@showzy/validation/assistant-chat";
 
 import type {
+  ConfirmationAlsoSecret,
   ConfirmationAttemptSecret,
   ConfirmationSecret,
 } from "./assistant-interactions.js";
@@ -109,22 +110,30 @@ function attemptSecretOf(
  * nothing more; the attempt and the challenge stay in the secret, which never
  * leaves the server.
  */
+export function confirmationAlso(
+  required: AssistantConfirmationRequired,
+): ConfirmationAlsoSecret {
+  return {
+    ...attemptSecretOf(required),
+    preview: previewOf(required),
+    level: required.level,
+  };
+}
+
 export function confirmationPause(
   required: AssistantConfirmationRequired,
-  also: readonly AssistantConfirmationRequired[] = [],
+  also: readonly ConfirmationAlsoSecret[] = [],
 ): Extract<ToolOutcome, { kind: "pause" }> {
-  const secret: ConfirmationSecret = {
-    ...attemptSecretOf(required),
-    also: also.map(attemptSecretOf),
-  };
-  const strong = [required, ...also].some((one) => one.level === "strong");
+  const secret: ConfirmationSecret = { ...attemptSecretOf(required), also };
+  const strong =
+    required.level === "strong" || also.some((one) => one.level === "strong");
   return {
     kind: "pause",
     interaction: "confirmation",
     prompt: {
       summary: required.challenge.summary,
       preview: previewOf(required),
-      also: also.map(previewOf),
+      also: also.map((one) => one.preview),
       level: strong ? "strong" : "card",
     },
     secret,
