@@ -1,6 +1,7 @@
 import { getProductPricingFacts } from "@showzy/catalog";
 import { implementAction } from "@showzy/core";
 import { priceListAuditTarget } from "../services/price-list-audit-target.js";
+import { setPriceListEntriesPreview } from "../services/preview-card.js";
 import { setStaffPriceListEntries } from "../services/set-price-list-entries.js";
 import { setPriceListEntriesContract } from "./set-price-list-entries.contract.js";
 
@@ -18,6 +19,7 @@ export const setPriceListEntries = implementAction(
 
       return setStaffPriceListEntries({ ctx, input });
     },
+    preview: setPriceListEntriesPreview(setPriceListEntriesContract),
     auditTarget: priceListAuditTarget,
   },
 );

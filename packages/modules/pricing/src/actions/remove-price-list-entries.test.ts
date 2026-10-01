@@ -33,7 +33,7 @@ describe("pricing.removePriceListEntries contract", () => {
     expect(removePriceListEntriesContract.emits).toEqual([]);
     expect(removePriceListEntriesContract.atomicCalls).toEqual([]);
     expect(removePriceListEntriesContract.atomicCallers).toEqual([]);
-    expect(removePriceListEntriesContract.timeout).toBe(5_000);
+    expect(removePriceListEntriesContract.timeout).toBe(10_000);
     expect(removePriceListEntriesContract.rateLimit).toBeUndefined();
     expect(REMOVE_PRICE_LIST_ENTRIES_MAX_ITEMS).toBe(200);
     expect(

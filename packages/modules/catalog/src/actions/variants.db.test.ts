@@ -172,6 +172,11 @@ crossTenantSuite(
       updateVariant,
       { input: updateIsolationOwn },
       { input: updateIsolationForeign },
+      {
+        missing: {
+          input: { ...updateIsolationOwn, variantId: randomUUID() },
+        },
+      },
     ),
   ],
 );

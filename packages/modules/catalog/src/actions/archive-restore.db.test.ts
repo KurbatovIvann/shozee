@@ -346,21 +346,25 @@ crossTenantSuite(
       archiveProduct,
       { input: { productId: fixtures.productIsolationArchiveA } },
       { input: { productId: fixtures.productIsolationArchiveB } },
+      { missing: { input: { productId: randomUUID() } } },
     ),
     isolationCase(
       restoreProduct,
       { input: { productId: fixtures.productIsolationRestoreA } },
       { input: { productId: fixtures.productIsolationRestoreB } },
+      { missing: { input: { productId: randomUUID() } } },
     ),
     isolationCase(
       archiveVariant,
       { input: { variantId: fixtures.variantIsolationArchiveA } },
       { input: { variantId: fixtures.variantIsolationArchiveB } },
+      { missing: { input: { variantId: randomUUID() } } },
     ),
     isolationCase(
       restoreVariant,
       { input: { variantId: fixtures.variantIsolationRestoreA } },
       { input: { variantId: fixtures.variantIsolationRestoreB } },
+      { missing: { input: { variantId: randomUUID() } } },
     ),
   ],
 );
@@ -625,11 +629,13 @@ describe("catalog archive/restore", () => {
     expect(pricing.products).toEqual([
       {
         productId: fixtures.productFacts,
+        name: "Facts stay visible",
         basePriceMinor: "2200",
         currency: "UAH",
         variants: [
           {
             variantId: fixtures.variantFacts,
+            name: "Facts variant",
             basePriceMinor: null,
             currency: null,
           },

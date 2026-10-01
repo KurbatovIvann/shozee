@@ -3,6 +3,7 @@ import { CoreInvariantError } from "@showzy/core/errors";
 
 import { productAuditTarget } from "../services/catalog-audit-target.js";
 import { setProductStatus } from "../services/catalog-status.js";
+import { productStatusPreview } from "../services/preview-card.js";
 import { requireWritable } from "../services/writable.js";
 import { archiveProductContract } from "./archive-product.contract.js";
 
@@ -20,5 +21,10 @@ export const archiveProduct = implementAction(archiveProductContract, {
     }
     return { productId: saved.productId, status: "archived" as const };
   },
+  preview: productStatusPreview(
+    archiveProductContract,
+    "Архівувати товар",
+    "archived",
+  ),
   auditTarget: productAuditTarget,
 });

@@ -62,6 +62,24 @@ function fixtureContract(
 }
 
 /** Binds the minimal callbacks the contract's metadata implies. */
+function fixtureCardCallbacks(contract: ActionContract) {
+  const human =
+    contract.principal === "staff" ||
+    contract.principal === "customer" ||
+    contract.principal === "account";
+  if (
+    contract.aiExposure === "exposed" &&
+    contract.risk !== "read" &&
+    contract.idempotent &&
+    human
+  ) {
+    return { preview: () => ({ title: "Fixture card", lines: [] }) };
+  }
+  return contract.requiresConfirmation
+    ? { confirmationSummary: () => "fixture summary" }
+    : {};
+}
+
 function fixtureImplementation(contract: ActionContract) {
   const needsResolver =
     contract.principal === "customer" ||
@@ -81,9 +99,7 @@ function fixtureImplementation(contract: ActionContract) {
             }),
         }
       : {}),
-    ...(contract.requiresConfirmation
-      ? { confirmationSummary: () => "fixture summary" }
-      : {}),
+    ...fixtureCardCallbacks(contract),
     ...(contract.audit
       ? { auditTarget: () => ({ type: "fixture", id: "1" }) }
       : {}),

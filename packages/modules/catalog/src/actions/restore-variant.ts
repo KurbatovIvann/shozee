@@ -3,6 +3,7 @@ import { CoreInvariantError } from "@showzy/core/errors";
 
 import { variantAuditTarget } from "../services/catalog-audit-target.js";
 import { setVariantStatus } from "../services/catalog-status.js";
+import { variantStatusPreview } from "../services/preview-card.js";
 import { requireWritable } from "../services/writable.js";
 import { restoreVariantContract } from "./restore-variant.contract.js";
 
@@ -20,5 +21,10 @@ export const restoreVariant = implementAction(restoreVariantContract, {
     }
     return { variantId: saved.variantId, status: "active" as const };
   },
+  preview: variantStatusPreview(
+    restoreVariantContract,
+    "Відновити варіант",
+    "active",
+  ),
   auditTarget: variantAuditTarget,
 });

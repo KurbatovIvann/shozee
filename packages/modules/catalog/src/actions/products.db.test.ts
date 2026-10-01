@@ -155,6 +155,11 @@ crossTenantSuite(
       updateProduct,
       { input: updateIsolationOwn },
       { input: updateIsolationForeign },
+      {
+        missing: {
+          input: { ...updateIsolationOwn, productId: randomUUID() },
+        },
+      },
     ),
   ],
 );
