@@ -150,7 +150,7 @@ function choiceOptions(
   if (create !== undefined) {
     prompt.push({
       optionId: create.optionId,
-      label: create.label,
+      label: subjectFor(picker.target),
       kind: "create",
     });
     entries.push([create.optionId, { kind: "create", toolName, input }]);

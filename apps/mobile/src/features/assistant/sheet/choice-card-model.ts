@@ -1,11 +1,14 @@
 import type { AssistantChoiceOption } from "@showzy/validation/assistant-chat";
 
+import { interpolate } from "../../../i18n/locale";
+
 export const ASSISTANT_CHOICE_CREATE_MARK = "+";
 
 export type AssistantChoiceCardCopy = {
   readonly choiceTitle: string;
   readonly choiceNearest: string;
   readonly choiceCompose: string;
+  readonly choiceCreate: string;
   readonly choiceChosen: string;
   readonly choiceTruncated: string;
   readonly dismissLabel: string;
@@ -54,7 +57,9 @@ export function assistantChoiceCardModel(input: {
     return {
       optionId: option.optionId,
       mark: create ? ASSISTANT_CHOICE_CREATE_MARK : String(recordCount),
-      label: option.label,
+      label: create
+        ? interpolate(copy.choiceCreate, { name: option.label })
+        : option.label,
       detail: option.detail ?? null,
       create,
       chosen: option.optionId === input.answeredOptionId,

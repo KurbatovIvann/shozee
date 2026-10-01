@@ -17,7 +17,7 @@ describe("catalogPickerConflictExtrasSchema", () => {
       target: { kind: "customer", query: "Катя" },
       options: [],
       optionsTruncated: false,
-      create: { optionId: CHOICE_CREATE_OPTION_ID, label: 'Create "Катя"' },
+      create: { optionId: CHOICE_CREATE_OPTION_ID },
     });
     expect(parsed.success).toBe(true);
   });
@@ -50,7 +50,7 @@ describe("catalogPickerConflictExtrasFromError", () => {
       target: { kind: "customer", query: "Катя" },
       options: [],
       optionsTruncated: false,
-      create: { optionId: CHOICE_CREATE_OPTION_ID, label: 'Create "Катя"' },
+      create: { optionId: CHOICE_CREATE_OPTION_ID },
       clientMessage: 'Nothing matches "Катя".',
     });
     expect(catalogPickerConflictExtrasFromError(error)).toEqual({
@@ -58,7 +58,7 @@ describe("catalogPickerConflictExtrasFromError", () => {
       target: { kind: "customer", query: "Катя" },
       options: [],
       optionsTruncated: false,
-      create: { optionId: CHOICE_CREATE_OPTION_ID, label: 'Create "Катя"' },
+      create: { optionId: CHOICE_CREATE_OPTION_ID },
     });
   });
 

@@ -26,10 +26,6 @@ const unmatchedRefusalSchema = z.strictObject({
   optionsTruncated: z.boolean(),
 });
 
-export function createOptionLabel(query: string): string {
-  return `Create "${query}"`;
-}
-
 export function nearestChoiceFromError(
   error: unknown,
   target: EntityLookupTarget,
@@ -56,10 +52,7 @@ export function nearestChoiceFromError(
     optionsTruncated:
       parsed.data.optionsTruncated ||
       nearest.length < parsed.data.options.length,
-    create: {
-      optionId: CHOICE_CREATE_OPTION_ID,
-      label: createOptionLabel(target.query),
-    },
+    create: { optionId: CHOICE_CREATE_OPTION_ID },
     clientMessage: error.clientMessage,
   });
 }

@@ -62,7 +62,6 @@ export const CHOICE_CREATE_OPTION_ID = "create";
 
 export const choiceCreateOptionSchema = z.strictObject({
   optionId: z.string().min(1).max(128),
-  label: z.string().min(1),
 });
 
 export type ChoiceCreateOption = z.output<typeof choiceCreateOptionSchema>;

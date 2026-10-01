@@ -925,7 +925,7 @@ describe("«знайди X» with nothing matching", () => {
       problem: "Nothing matches that exactly.",
       options: [
         { optionId: NEAREST_GALYA, label: "Галина", kind: "record" },
-        { optionId: "create", label: 'Create "Галя"', kind: "create" },
+        { optionId: "create", label: "Галя", kind: "create" },
       ],
     });
     const secret = outcome.secret as ChoiceSecret;

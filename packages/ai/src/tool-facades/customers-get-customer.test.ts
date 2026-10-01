@@ -167,7 +167,7 @@ describe("customersGetCustomerFacadeTools", () => {
       target: { kind: "customer", query: "Катя" },
       options: nearest,
       optionsTruncated: false,
-      create: { optionId: CHOICE_CREATE_OPTION_ID, label: 'Create "Катя"' },
+      create: { optionId: CHOICE_CREATE_OPTION_ID },
     });
   });
 
