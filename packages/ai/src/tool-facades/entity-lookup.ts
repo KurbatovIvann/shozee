@@ -3,6 +3,7 @@ import { ASSISTANT_CHOICE_OPTIONS_MAX } from "@showzy/validation/assistant-chat"
 import {
   ENTITY_REF_EXACTLY_ONE_MESSAGE,
   entityRefQuerySchema,
+  type EntityLookupTarget,
 } from "@showzy/validation/entity-ref";
 import { z } from "zod";
 
@@ -10,7 +11,6 @@ import {
   CHOICE_CREATE_OPTION_ID,
   EntityLookupConflictError,
   choiceCardOptionSchema,
-  type EntityLookupTarget,
 } from "../choice.js";
 
 export const entityLookupQuerySchema = entityRefQuerySchema;

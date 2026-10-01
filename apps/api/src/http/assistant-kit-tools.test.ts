@@ -43,7 +43,11 @@ import {
   type ChoiceSecret,
   type ResolveAnswerDeps,
 } from "@showzy/assistant-runtime";
-import { ConflictError, NotFoundError } from "@showzy/core/errors";
+import {
+  ConflictError,
+  CoreInvariantError,
+  NotFoundError,
+} from "@showzy/core/errors";
 import { describe, expect, it } from "vitest";
 
 import { createActionRegistry } from "../registry.js";
@@ -405,6 +409,21 @@ describe("a picker CONFLICT becomes a pause, not an error", () => {
     expect(secret.input).toEqual(CREATE_BY_QUERY);
     // The entity ids stay on the server side of the record.
     expect(JSON.stringify(outcome.prompt)).not.toContain("byOption");
+  });
+
+  it("fails the turn when the create option id is one of the record ids", async () => {
+    const collision = Object.assign(new ConflictError("choose one"), {
+      reason: "ambiguous",
+      target: { kind: "customer", query: "Катя" },
+      options: [{ id: CUSTOMER_A, label: "Катя Самбука" }],
+      optionsTruncated: false,
+      create: { optionId: CUSTOMER_A },
+    });
+    const set = tools(() => Promise.reject(collision));
+
+    await expect(
+      run(set, ORDERS_CREATE_TOOL_NAME, CREATE_BY_QUERY),
+    ).rejects.toBeInstanceOf(CoreInvariantError);
   });
 
   it("names the product line as the subject when the ambiguity is a line", async () => {

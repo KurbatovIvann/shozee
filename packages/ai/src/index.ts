@@ -88,8 +88,13 @@ export {
   type ChoiceCardOption,
   type ChoiceCreateOption,
   type ChoicePickerReason,
-  type EntityLookupTarget,
 } from "./choice.js";
+export {
+  ENTITY_LOOKUP_KINDS,
+  entityLookupTargetSchema,
+  type EntityLookupKind,
+  type EntityLookupTarget,
+} from "@showzy/validation/entity-ref";
 export {
   fillStaffAssistantCopy,
   staffAssistantLocale,

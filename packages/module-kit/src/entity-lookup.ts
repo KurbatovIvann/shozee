@@ -2,14 +2,12 @@ import { ConflictError, NotFoundError } from "@showzy/core/errors";
 import {
   normalizeUniqueMatchQuery,
   pickUniqueReferenceMatch,
+  type EntityLookupTarget,
 } from "@showzy/validation/entity-ref";
 
 export const ENTITY_LOOKUP_OPTIONS_MAX = 20;
 
-export type EntityLookupTarget = {
-  readonly kind: "customer";
-  readonly query: string;
-};
+export type { EntityLookupTarget };
 
 export type EntityLookupOption = {
   readonly id: string;
