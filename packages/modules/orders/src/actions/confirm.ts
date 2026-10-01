@@ -77,6 +77,9 @@ export const confirmOrder = implementAction(confirmOrderContract, {
       confirmedAt: confirmedAtIso,
     };
   },
-  preview: orderTransitionPreview("Підтвердити замовлення"),
+  preview: orderTransitionPreview(
+    confirmOrderContract,
+    "Підтвердити замовлення",
+  ),
   auditTarget: confirmAuditTarget,
 });

@@ -70,6 +70,9 @@ export const startOrder = implementAction(startOrderContract, {
       status: "in_progress" as const,
     };
   },
-  preview: orderTransitionPreview("Взяти в роботу замовлення"),
+  preview: orderTransitionPreview(
+    startOrderContract,
+    "Взяти в роботу замовлення",
+  ),
   auditTarget: startAuditTarget,
 });

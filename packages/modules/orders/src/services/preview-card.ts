@@ -19,8 +19,8 @@ import {
   resolveCreateOrderDraft,
   type CreateOrderInput,
 } from "./create-draft.js";
-import { requireSingleCurrency } from "./create-order.js";
-import { computeExemptNoneLine, titleSnapshot } from "./line-money.js";
+import { priceOrderLines, requireSingleCurrency } from "./create-order.js";
+import { titleSnapshot } from "./line-money.js";
 import { parseStatus } from "./parse-status.js";
 
 type PriceSource = z.output<typeof orderPriceSourceSchema>;
@@ -45,6 +45,8 @@ const STATUS_LABELS: Readonly<Record<OrderStatus, string>> = {
 
 export const ORDER_PREVIEW_TOTAL_LABEL = "Разом";
 export const ORDER_PREVIEW_STATUS_LABEL = "Поточний статус";
+export const ORDER_PREVIEW_COMMENT_LABEL = "Коментар";
+export const ORDER_PREVIEW_EMPTY_VALUE = "—";
 export const ORDER_PREVIEW_PRICES_NOTE_PREFIX = "Ціни";
 
 export interface OrderPreviewLineFacts {
@@ -72,6 +74,14 @@ export function orderPreviewTotalLine(
   };
 }
 
+export function orderPreviewCommentLine(comment: string): PreviewLine {
+  const trimmed = comment.trim();
+  return {
+    label: ORDER_PREVIEW_COMMENT_LABEL,
+    value: trimmed.length === 0 ? ORDER_PREVIEW_EMPTY_VALUE : trimmed,
+  };
+}
+
 export function orderPreviewPricesNote(
   sources: readonly PriceSource[],
 ): string {
@@ -85,16 +95,19 @@ export function orderPreviewCustomerTitle(
   subject: string,
   customerName: string,
 ): string {
-  return `${subject} для клієнта «${customerName}»`;
+  return `${subject}: ${customerName}`;
 }
 
-function previewCompanyId(env: ActionPreviewEnv): string {
-  if (env.companyId === null) {
+function previewCompanyScope(
+  companyId: string | null,
+  contract: { readonly name: string },
+): string {
+  if (companyId === null) {
     throw new CoreInvariantError(
-      "orders preview requires a company-scoped principal",
+      `${contract.name} preview ran without a company scope`,
     );
   }
-  return env.companyId;
+  return companyId;
 }
 
 export async function createOrderPreview(
@@ -102,21 +115,14 @@ export async function createOrderPreview(
   env: ActionPreviewEnv,
 ): Promise<ActionPreview> {
   const draft = await resolveCreateOrderDraft(env.call, input);
+  const priced = priceOrderLines(draft.items, draft.prices);
   const currency = requireSingleCurrency(draft.prices);
 
   const lines: PreviewLine[] = [];
   const sources: PriceSource[] = [];
   let totalGrossMinor = 0n;
 
-  for (const [index, item] of draft.items.entries()) {
-    const price = draft.prices[index];
-    if (price === undefined) {
-      throw new CoreInvariantError("create preview line zip went out of range");
-    }
-    const amounts = computeExemptNoneLine(
-      BigInt(price.unitPriceMinor),
-      BigInt(item.quantityMilli),
-    );
+  for (const { item, price, amounts } of priced) {
     totalGrossMinor += amounts.grossAmountMinor;
     sources.push(price.source);
     lines.push(
@@ -132,6 +138,9 @@ export async function createOrderPreview(
   lines.push(
     orderPreviewTotalLine(moneyToCanonical(totalGrossMinor), currency),
   );
+  if (input.comment !== undefined) {
+    lines.push(orderPreviewCommentLine(input.comment));
+  }
 
   return {
     title: orderPreviewCustomerTitle(
@@ -145,15 +154,15 @@ export async function createOrderPreview(
 
 async function loadOrderPreviewFacts(
   env: ActionPreviewEnv,
+  contract: { readonly name: string },
   orderId: string,
 ): Promise<{
   readonly orderNumber: string;
   readonly customerNameSnapshot: string;
-  readonly status: OrderStatus;
   readonly lines: readonly PreviewLine[];
   readonly sources: readonly PriceSource[];
 }> {
-  const companyId = previewCompanyId(env);
+  const companyId = previewCompanyScope(env.companyId, contract);
   const headerRows = await env.tx
     .select({
       orderNumber: orders.orderNumber,
@@ -214,7 +223,6 @@ async function loadOrderPreviewFacts(
   return {
     orderNumber: header.orderNumber,
     customerNameSnapshot: header.customerNameSnapshot,
-    status,
     lines,
     sources: itemRows.map((row) => {
       const source = row.priceSource ?? "";
@@ -228,13 +236,14 @@ async function loadOrderPreviewFacts(
 }
 
 export function orderTransitionPreview(
+  contract: { readonly name: string },
   subject: string,
 ): (
   input: { readonly orderId: string },
   env: ActionPreviewEnv,
 ) => Promise<ActionPreview> {
   return async (input, env) => {
-    const facts = await loadOrderPreviewFacts(env, input.orderId);
+    const facts = await loadOrderPreviewFacts(env, contract, input.orderId);
     return {
       title: orderPreviewCustomerTitle(
         `${subject} ${facts.orderNumber}`,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  orderPreviewCommentLine,
   orderPreviewCustomerTitle,
   orderPreviewLine,
   orderPreviewPricesNote,
@@ -38,9 +39,20 @@ describe("order preview card copy", () => {
     ).toBe("Ціни: персональна ціна, основний прайс-лист, базова ціна");
   });
 
-  it("quotes the customer name instead of declining it", () => {
+  it("names the customer in the nominative without nesting quotes", () => {
     expect(orderPreviewCustomerTitle("Нове замовлення", "Олена Коваль")).toBe(
-      "Нове замовлення для клієнта «Олена Коваль»",
+      "Нове замовлення: Олена Коваль",
     );
+  });
+
+  it("shows the persisted comment and marks an empty one", () => {
+    expect(orderPreviewCommentLine("  до 14:00  ")).toEqual({
+      label: "Коментар",
+      value: "до 14:00",
+    });
+    expect(orderPreviewCommentLine("   ")).toEqual({
+      label: "Коментар",
+      value: "—",
+    });
   });
 });

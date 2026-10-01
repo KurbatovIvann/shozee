@@ -26,6 +26,7 @@ import { startOrder } from "./start.js";
 const FOREIGN_CUSTOMER_NAME = "Богдан Фореіньчук";
 const FOREIGN_PRODUCT_NAME = "Таємний торт";
 const CUSTOMER_NAME = "Олена Коваль";
+const ORDER_COMMENT = "Доставити до 14:00";
 
 const fixtures = {
   customerA: randomUUID(),
@@ -229,19 +230,19 @@ describe("orders preview cards (SHO-750)", () => {
               quantity: { milli: "1500" },
             },
           ],
+          comment: ORDER_COMMENT,
         },
         {},
         { deps: confirming, request: { requireConfirmation: true } },
       ),
     );
 
-    expect(preview.title).toBe(
-      `Нове замовлення для клієнта «${CUSTOMER_NAME}»`,
-    );
+    expect(preview.title).toBe(`Нове замовлення: ${CUSTOMER_NAME}`);
     expect(preview.lines).toEqual([
       { label: "Торт Наполеон", value: "2 × 250,00 грн = 500,00 грн" },
       { label: "Коробка", value: "1,5 × 12,50 грн = 18,75 грн" },
       { label: "Разом", value: "518,75 грн" },
+      { label: "Коментар", value: ORDER_COMMENT },
     ]);
     expect(preview.notes).toEqual(["Ціни: базова ціна"]);
 
@@ -324,9 +325,7 @@ describe("orders preview cards (SHO-750)", () => {
     for (const { subject, run } of subjects) {
       const preview = await previewCard(run);
 
-      expect(preview.title, subject).toBe(
-        `${subject} для клієнта «${CUSTOMER_NAME}»`,
-      );
+      expect(preview.title, subject).toBe(`${subject}: ${CUSTOMER_NAME}`);
       expect(preview.lines, subject).toEqual([
         { label: "Торт Наполеон", value: "2 × 250,00 грн = 500,00 грн" },
         { label: "Коробка", value: "1,5 × 12,50 грн = 18,75 грн" },

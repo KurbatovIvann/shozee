@@ -74,6 +74,6 @@ export const cancelOrder = implementAction(cancelOrderContract, {
       status: "canceled" as const,
     };
   },
-  preview: orderTransitionPreview("Скасувати замовлення"),
+  preview: orderTransitionPreview(cancelOrderContract, "Скасувати замовлення"),
   auditTarget: cancelAuditTarget,
 });

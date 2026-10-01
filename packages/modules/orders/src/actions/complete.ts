@@ -70,6 +70,9 @@ export const completeOrder = implementAction(completeOrderContract, {
       status: "done" as const,
     };
   },
-  preview: orderTransitionPreview("Завершити замовлення"),
+  preview: orderTransitionPreview(
+    completeOrderContract,
+    "Завершити замовлення",
+  ),
   auditTarget: completeAuditTarget,
 });

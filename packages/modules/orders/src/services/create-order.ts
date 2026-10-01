@@ -21,7 +21,11 @@ import {
   orderViewSchema,
 } from "../actions/order-view.contract.js";
 import { ordersCreated } from "../events/created.js";
-import { computeExemptNoneLine, titleSnapshot } from "./line-money.js";
+import {
+  computeExemptNoneLine,
+  titleSnapshot,
+  type ExemptNoneLineAmounts,
+} from "./line-money.js";
 import { formatStaffOrderNumber } from "./order-number-format.js";
 import { mapOrderNumberUniqueViolation } from "./order-number.js";
 import { requireWritable } from "./writable.js";
@@ -234,16 +238,46 @@ export function requireSingleCurrency(
   return first.currency;
 }
 
+export interface PricedOrderLine {
+  readonly item: PersistedCreateLine;
+  readonly price: ResolvedOrderPrice;
+  readonly amounts: ExemptNoneLineAmounts;
+}
+
+export function priceOrderLines(
+  items: readonly PersistedCreateLine[],
+  prices: readonly ResolvedOrderPrice[],
+): readonly PricedOrderLine[] {
+  if (prices.length !== items.length) {
+    throw new CoreInvariantError(
+      "pricing.resolveProductPrices returned a different item count than create input",
+    );
+  }
+  return items.map((item, index) => {
+    const price = prices[index];
+    if (price === undefined) {
+      throw new CoreInvariantError("create line zip went out of range");
+    }
+    validatePriceAlignment(item, price, index);
+    return {
+      item,
+      price,
+      amounts: computeExemptNoneLine(
+        BigInt(price.unitPriceMinor),
+        BigInt(item.quantityMilli),
+      ),
+    };
+  });
+}
+
 function buildOrderLine(args: {
   readonly item: PersistedCreateLine;
   readonly price: ResolvedOrderPrice;
+  readonly amounts: ExemptNoneLineAmounts;
   readonly companyId: string;
   readonly orderId: string;
 }): PersistedLine {
-  const amounts = computeExemptNoneLine(
-    BigInt(args.price.unitPriceMinor),
-    BigInt(args.item.quantityMilli),
-  );
+  const amounts = args.amounts;
   const view: OrderItemView = {
     itemId: randomUUID(),
     productId: args.item.productId,
@@ -298,11 +332,7 @@ export async function createStaffOrder(env: {
     numberingPrefix,
     prices,
   } = env;
-  if (prices.length !== items.length) {
-    throw new CoreInvariantError(
-      "pricing.resolveProductPrices returned a different item count than create input",
-    );
-  }
+  const priced = priceOrderLines(items, prices);
 
   const currency = requireSingleCurrency(prices);
 
@@ -312,16 +342,11 @@ export async function createStaffOrder(env: {
   let totalTaxMinor = 0n;
   let totalGrossMinor = 0n;
 
-  for (let index = 0; index < items.length; index += 1) {
-    const item = items[index];
-    const price = prices[index];
-    if (item === undefined || price === undefined) {
-      throw new CoreInvariantError("create line zip went out of range");
-    }
-    validatePriceAlignment(item, price, index);
+  for (const { item, price, amounts } of priced) {
     const line = buildOrderLine({
       item,
       price,
+      amounts,
       companyId: ctx.companyId,
       orderId,
     });
