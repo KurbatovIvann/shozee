@@ -1,5 +1,5 @@
 import { useCallback, useRef } from "react";
-import { Text, View } from "react-native";
+import { Text, TextInput, View } from "react-native";
 import {
   FlashList,
   type FlashListRef,
@@ -48,6 +48,7 @@ export type AssistantSheetViewModel = {
   readonly send: () => void;
   readonly sendExample: (text: string) => void;
   readonly answer: (answer: unknown) => void;
+  readonly pendingOptionId: string | null;
   readonly dismiss: () => void;
   readonly continueTurn: () => void;
   readonly openHref: (href: string) => void;
@@ -88,7 +89,12 @@ function itemType(item: AssistantThreadRow): string {
 export function AssistantSheetView(model: AssistantSheetViewModel) {
   const { copy, rows } = model;
   const listRef = useRef<FlashListRef<AssistantThreadRow>>(null);
+  const composerRef = useRef<TextInput>(null);
   const edgesRef = useRef(ASSISTANT_THREAD_START);
+
+  const focusComposer = useCallback(() => {
+    composerRef.current?.focus();
+  }, []);
 
   // FlashList keeps an older page from moving what is on screen on its own;
   // this only decides when to bring the thread back down to its end.
@@ -122,18 +128,22 @@ export function AssistantSheetView(model: AssistantSheetViewModel) {
         onOpenHref={model.openHref}
         interaction={item.interaction}
         applying={model.busy}
+        pendingOptionId={model.pendingOptionId}
         interactionCopy={copy}
         onAnswer={model.answer}
+        onCompose={focusComposer}
         onDismiss={model.dismiss}
       />
     ),
     [
       copy,
+      focusComposer,
       model.answer,
       model.busy,
       model.continueTurn,
       model.dismiss,
       model.openHref,
+      model.pendingOptionId,
     ],
   );
 
@@ -197,6 +207,7 @@ export function AssistantSheetView(model: AssistantSheetViewModel) {
         )}
         <View style={styles.composer}>
           <AssistantComposer
+            inputRef={composerRef}
             value={model.input}
             onChangeText={model.changeInput}
             onSend={model.send}
