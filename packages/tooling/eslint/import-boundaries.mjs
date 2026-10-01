@@ -134,12 +134,16 @@ function isRelative(spec) {
  * `@showzy/ai/test` builds a provider adapter for tests to drive; reaching it
  * by package subpath, by a deeper path under that subpath, or by a relative
  * path resolving to `packages/ai/src/test` or below it is the same import
- * (SHO-817).
+ * (SHO-817). The entry's own files reach each other from inside it, so a
+ * file that is itself the entry never imports it.
  *
- * @param {string} dir
+ * @param {string} filePath
  * @param {string} spec
  */
-function isAiTestEntry(dir, spec) {
+function isAiTestEntry(filePath, spec) {
+  if (AI_TEST_MODULE_RE.test(filePath)) {
+    return false;
+  }
   if (spec === AI_TEST_ENTRY || spec.startsWith(`${AI_TEST_ENTRY}/`)) {
     return true;
   }
@@ -147,7 +151,9 @@ function isAiTestEntry(dir, spec) {
     return false;
   }
   return AI_TEST_MODULE_RE.test(
-    path.posix.normalize(path.posix.join(dir, spec)),
+    path.posix.normalize(
+      path.posix.join(filePath.slice(0, filePath.lastIndexOf("/")), spec),
+    ),
   );
 }
 
@@ -654,7 +660,6 @@ export const importBoundariesRule = {
     const filePath = toPosix(context.filename);
     const insideJobs = JOBS_PACKAGE_RE.test(filePath);
     const insideTestFile = TEST_FILE_RE.test(filePath);
-    const fileDir = filePath.slice(0, filePath.lastIndexOf("/"));
 
     /**
      * @param {import("estree").Node} node
@@ -666,7 +671,7 @@ export const importBoundariesRule = {
         return;
       }
       if (from.kind === "skip") {
-        if (!insideTestFile && isAiTestEntry(fileDir, spec)) {
+        if (!insideTestFile && isAiTestEntry(filePath, spec)) {
           context.report({ node, messageId: "aiTestEntry" });
         }
         return;
@@ -674,7 +679,7 @@ export const importBoundariesRule = {
       const result = violation(from, spec, isTypeOnly(node));
       if (
         !insideTestFile &&
-        isAiTestEntry(fileDir, spec) &&
+        isAiTestEntry(filePath, spec) &&
         (from.kind !== "client-app" || result === null)
       ) {
         context.report({ node, messageId: "aiTestEntry" });

@@ -72,6 +72,10 @@ test("showzy/import-boundaries", () => {
         code: `import { createAnthropicStaffProviderAdapter } from "./provider/anthropic.js";`,
       },
       {
+        filename: file("packages/ai/src/test/index.ts"),
+        code: `import { testStaffProvider } from "./provider.js";`,
+      },
+      {
         filename: file("packages/core/src/runtime/execute.ts"),
         code: `import { buildFixture } from "./test.js";`,
       },
