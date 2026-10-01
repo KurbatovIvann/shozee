@@ -34,7 +34,12 @@ export const pick = defineInteraction<PickSecret>()({
   }),
   answer: z.strictObject({ chose: z.string().min(1) }),
   resolve: ({ answer, secret }) => {
-    const value = secret.byOption[answer.chose];
+    const value = Object.prototype.hasOwnProperty.call(
+      secret.byOption,
+      answer.chose,
+    )
+      ? secret.byOption[answer.chose]
+      : undefined;
     return value === undefined
       ? unresolvable(`no option ${answer.chose}`)
       : resolved({ chosen: value, replay: secret.replay });

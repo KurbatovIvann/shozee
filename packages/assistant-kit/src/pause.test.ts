@@ -138,6 +138,47 @@ describe("the kind decides what is acceptable", () => {
   });
 });
 
+describe("a prototype member is not a kind", () => {
+  const PROTOTYPE_KEYS = [
+    "constructor",
+    "toString",
+    "valueOf",
+    "hasOwnProperty",
+    "__proto__",
+  ];
+
+  it.each(PROTOTYPE_KEYS)("the registry does not resolve %s", (kind) => {
+    expect(fixtureInteractions.has(kind)).toBe(false);
+    expect(fixtureInteractions.get(kind)).toBeUndefined();
+  });
+
+  it.each(PROTOTYPE_KEYS)("refuses to open a pause on %s", async (kind) => {
+    const { kit } = newKit();
+
+    const opened = await kit.open(openInput({ kind } as never));
+
+    expect(opened.kind).toBe("unknown_kind");
+  });
+
+  it("refuses an answer naming a prototype member, and the pause stays open", async () => {
+    const { kit } = newKit();
+    const pause = await openPick(kit);
+
+    const bad = await kit.claim({
+      conversationId: CONVERSATION,
+      bind: BIND,
+      interactionId: pause.interactionId,
+      revision: 1,
+      answer: { chose: "constructor" },
+    });
+
+    expect(bad.kind).toBe("unresolvable");
+    expect(
+      (await kit.peek({ conversationId: CONVERSATION, bind: BIND }))?.status,
+    ).toBe("open");
+  });
+});
+
 describe("one open interaction per conversation", () => {
   it("refuses a second open and returns the current pause", async () => {
     const { kit } = newKit();
