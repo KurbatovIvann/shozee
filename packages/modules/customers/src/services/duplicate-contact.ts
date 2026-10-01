@@ -10,21 +10,20 @@ import type { WritableStaffDb } from "./writable.js";
 
 type ContactLookupDb = Pick<WritableStaffDb, "select">;
 
-export const DUPLICATE_PHONE_NOTE_PREFIX = "Клієнт з таким телефоном уже є: ";
-export const DUPLICATE_EMAIL_NOTE_PREFIX = "Клієнт з таким email уже є: ";
+export const DUPLICATE_PHONE_NOTE = "Клієнт з таким телефоном уже є";
+export const DUPLICATE_EMAIL_NOTE = "Клієнт з таким email уже є";
 
-async function firstMatchingName(
+async function contactTaken(
   db: ContactLookupDb,
   companyId: string,
   match: SQL,
-): Promise<string | undefined> {
+): Promise<boolean> {
   const rows = await db
-    .select({ name: companyCustomers.name })
+    .select({ id: companyCustomers.id })
     .from(companyCustomers)
     .where(and(eq(companyCustomers.companyId, companyId), match))
-    .orderBy(companyCustomers.name, companyCustomers.id)
     .limit(1);
-  return rows[0]?.name;
+  return rows.length > 0;
 }
 
 export async function duplicateContactNotes(
@@ -44,25 +43,25 @@ export async function duplicateContactNotes(
       ? undefined
       : canonicalizeEmail(contact.email);
   const notes: string[] = [];
-  if (phone !== undefined) {
-    const name = await firstMatchingName(
+  if (
+    phone !== undefined &&
+    (await contactTaken(
       db,
       companyId,
       sql`${canonicalPhoneSql(companyCustomers.phone)} = ${phone}`,
-    );
-    if (name !== undefined) {
-      notes.push(`${DUPLICATE_PHONE_NOTE_PREFIX}${name}`);
-    }
+    ))
+  ) {
+    notes.push(DUPLICATE_PHONE_NOTE);
   }
-  if (email !== undefined) {
-    const name = await firstMatchingName(
+  if (
+    email !== undefined &&
+    (await contactTaken(
       db,
       companyId,
       sql`lower(${companyCustomers.email}) = ${email}`,
-    );
-    if (name !== undefined) {
-      notes.push(`${DUPLICATE_EMAIL_NOTE_PREFIX}${name}`);
-    }
+    ))
+  ) {
+    notes.push(DUPLICATE_EMAIL_NOTE);
   }
   return notes;
 }

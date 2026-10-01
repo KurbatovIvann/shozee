@@ -23,8 +23,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { z } from "zod";
 
 import {
-  DUPLICATE_EMAIL_NOTE_PREFIX,
-  DUPLICATE_PHONE_NOTE_PREFIX,
+  DUPLICATE_EMAIL_NOTE,
+  DUPLICATE_PHONE_NOTE,
 } from "../services/duplicate-contact.js";
 import {
   DELETE_COUNTERPARTY_NOTE,
@@ -227,22 +227,25 @@ describe("customers preview cards (ADR-0050, core.md §7)", () => {
     expect(preview.notes).toBeUndefined();
   });
 
-  it("warns that the phone or the email already belongs to a customer", async () => {
+  it("warns about a taken phone or email without naming the existing customer", async () => {
     const byPhone = await previewOf(createCustomer, {
       name: "Інша Анна",
       phone: "0501112233",
     });
-    expect(byPhone.notes).toEqual([
-      `${DUPLICATE_PHONE_NOTE_PREFIX}Анна Коваль`,
-    ]);
+    expect(byPhone.notes).toEqual([DUPLICATE_PHONE_NOTE]);
 
     const byEmail = await previewOf(createCustomer, {
       name: "Інший Богдан",
       email: "BOHDAN@previews.test",
     });
-    expect(byEmail.notes).toEqual([
-      `${DUPLICATE_EMAIL_NOTE_PREFIX}Богдан Мороз`,
-    ]);
+    expect(byEmail.notes).toEqual([DUPLICATE_EMAIL_NOTE]);
+
+    for (const note of [...(byPhone.notes ?? []), ...(byEmail.notes ?? [])]) {
+      expect(note).not.toContain("Анна Коваль");
+      expect(note).not.toContain("Богдан Мороз");
+      expect(note).not.toContain("0501112233");
+      expect(note).not.toContain("bohdan@previews.test");
+    }
   });
 
   it("never warns about another company's customer", async () => {

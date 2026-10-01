@@ -2,6 +2,7 @@ import type { ActionPreviewEnv } from "@showzy/core";
 import type { ActionPreview, ActionPreviewLine } from "@showzy/core/errors";
 import { NotFoundError } from "@showzy/core/errors";
 import {
+  COMPANY_CUSTOMER_DEFAULT_STATUS,
   companyCustomers,
   counterparties,
   customerGroups,
@@ -404,7 +405,10 @@ export function createCustomerPreview(
       title: `Новий клієнт: ${input.name}`,
       lines: [
         ...(await customerLines(env, companyId, input, null)),
-        { label: CUSTOMER_STATUS_LABEL, value: STATUS_LABELS.active },
+        {
+          label: CUSTOMER_STATUS_LABEL,
+          value: statusLabel(COMPANY_CUSTOMER_DEFAULT_STATUS),
+        },
       ],
       ...(notes.length > 0 ? { notes } : {}),
     };
