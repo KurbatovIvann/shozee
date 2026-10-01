@@ -45,7 +45,6 @@ export function useGroupsList(args: {
   const { activeCompanyId } = useActiveCompany();
   const writes = useGroupWrites({
     copy,
-    locale,
     canEdit: args.canEdit,
   });
 

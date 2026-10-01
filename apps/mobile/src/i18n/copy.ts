@@ -10,10 +10,13 @@
 export type { CountForms } from "@showzy/copy/plural";
 export { selectCopy } from "@showzy/copy/locale";
 export {
+  confirmationCardEn,
+  confirmationCardUk,
   formChromeEn,
   formChromeUk,
   writeErrorsEn,
   writeErrorsUk,
+  type ConfirmationCardCopy,
   type FormChromeCopy,
   type WriteErrorsCopy,
 } from "@showzy/copy/chrome";

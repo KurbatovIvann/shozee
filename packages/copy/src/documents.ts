@@ -139,9 +139,6 @@ export type SharedDocumentsCopy = {
     readonly cancelTitle: string;
     readonly cancelDescription: string;
     readonly cancelConfirm: string;
-    readonly signTitle: string;
-    readonly signDescription: string;
-    readonly signConfirm: string;
     readonly dismiss: string;
   };
   readonly handover: {
@@ -352,10 +349,6 @@ const en: SharedDocumentsCopy = {
     cancelDescription:
       "The document will move to Cancelled. The number stays consumed.",
     cancelConfirm: "Cancel document",
-    signTitle: "Sign this document?",
-    signDescription:
-      "You will confirm a qualified electronic signature. The key stays on this device — confirmation does not replace key possession.",
-    signConfirm: "Continue",
     dismiss: "Keep",
   },
   handover: {
@@ -484,10 +477,6 @@ const uk: SharedDocumentsCopy = {
     cancelDescription:
       "Документ змінить статус на «Скасовано». Номер залишиться використаним.",
     cancelConfirm: "Скасувати документ",
-    signTitle: "Підписати документ?",
-    signDescription:
-      "Ви підтвердите кваліфікований електронний підпис. Ключ залишиться на цьому пристрої — підтвердження не замінює володіння ключем.",
-    signConfirm: "Продовжити",
     dismiss: "Залишити",
   },
   handover: {

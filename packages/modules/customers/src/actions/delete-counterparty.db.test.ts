@@ -344,6 +344,9 @@ describe("customers.deleteCounterparty", () => {
     expect(unconfirmed.challenge.summary).toBe(
       deleteCounterpartyConfirmationSummary,
     );
+    expect(unconfirmed.challenge.summary).toContain(
+      "Прив’язаний клієнт CRM залишиться",
+    );
     expect(unconfirmed.challenge.summary).not.toContain("Confirm me");
     expect(Date.parse(unconfirmed.challenge.expiresAt)).toBeGreaterThan(
       Date.now(),

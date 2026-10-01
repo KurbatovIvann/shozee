@@ -72,9 +72,13 @@ describe("bindDocumentRequestSignMutate", () => {
 
     const result = await submitWithProtocolConfirmation({
       submit: () => controller.submit({ documentId: DOCUMENT_ID }),
+      present: () => Promise.resolve("confirm"),
       confirm: (challengeId) => controller.confirm(challengeId),
     });
-    expect(result).toEqual({ documentId: DOCUMENT_ID });
+    expect(result).toEqual({
+      outcome: "submitted",
+      value: { documentId: DOCUMENT_ID },
+    });
     expect(calls).toEqual(["submit", "challenge-request-sign"]);
   });
 });

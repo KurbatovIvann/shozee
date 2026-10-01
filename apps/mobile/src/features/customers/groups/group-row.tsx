@@ -12,14 +12,13 @@ export const GroupRow = memo(function GroupRow(props: {
   readonly name: string;
   readonly description: string | null;
   readonly membersLabel: string;
-  readonly memberCount: number;
   readonly priceListName: string | null;
   readonly editLabel: string;
   readonly deleteA11y: string;
   readonly canEdit: boolean;
   readonly disabled: boolean;
   readonly onEdit: (id: string) => void;
-  readonly onRemove: (id: string, memberCount: number) => void;
+  readonly onRemove: (id: string) => void;
 }) {
   const { theme } = useUnistyles();
   const actions = groupRowActions(props.canEdit);
@@ -62,7 +61,7 @@ export const GroupRow = memo(function GroupRow(props: {
       removeMode="delete"
       showRemove={actions.showDelete}
       onRemove={() => {
-        props.onRemove(props.id, props.memberCount);
+        props.onRemove(props.id);
       }}
       disabled={props.disabled}
     />

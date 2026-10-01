@@ -11,7 +11,7 @@ import { deletePriceListContract } from "./delete-price-list.contract.js";
  * the dialog.
  */
 export const deletePriceListConfirmationSummary =
-  "Delete this price list. Its entries are removed. Assigned customers and groups inherit the next price level.";
+  "Видалити цей прайс-лист. Усі ціни в ньому буде видалено. Призначені клієнти й групи перейдуть на наступний рівень цін.";
 
 export const deletePriceList = implementAction(deletePriceListContract, {
   handler: (input, ctx) => {

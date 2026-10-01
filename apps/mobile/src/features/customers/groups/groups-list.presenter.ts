@@ -4,8 +4,6 @@
 import { LIST_GROUPS_SEARCH_MAX } from "@showzy/validation/customers";
 
 import type { QueryFailureKind } from "../../../api/errors";
-import type { CustomersConfirmCopy } from "../../../i18n/customers";
-import { interpolate, type Locale } from "../../../i18n/locale";
 import type { GroupListItem } from "../api/group.queries";
 import type { ListGroupsPageInput } from "../api/group.queries";
 import {
@@ -13,7 +11,6 @@ import {
   nameById,
   normalizeCustomersSearch,
 } from "../shared/paged-list";
-import { countPluralForm } from "../shared/plural";
 
 export { LIST_GROUPS_SEARCH_MAX };
 export { nameById, normalizeCustomersSearch };
@@ -97,18 +94,4 @@ export function groupRowActions(canEdit: boolean): GroupRowActions {
     showEdit: canEdit,
     showDelete: canEdit,
   };
-}
-
-export function deleteGroupConfirmMessage(
-  memberCount: number,
-  locale: Locale,
-  copy: CustomersConfirmCopy,
-): string {
-  if (memberCount === 0) {
-    return copy.deleteGroupDescriptionEmpty;
-  }
-  return interpolate(
-    copy.deleteGroupDescription[countPluralForm(memberCount, locale)],
-    { count: String(memberCount) },
-  );
 }

@@ -11,7 +11,7 @@ import { useContractMutation } from "../../../api/contract-mutation";
 import { describeQueryFailure } from "../../../api/errors";
 import { submitWithProtocolConfirmation } from "../../../api/protocol-confirm";
 import { useActiveCompany } from "../../../api/query-provider";
-import { presentConfirmDialog } from "../../../components/ui/present-confirm-dialog";
+import { useConfirmationCard } from "../../../components/ui/confirmation-card-host";
 import type { CustomersCopy } from "../../../i18n/customers";
 import { bindCounterpartyDeleteMutate } from "../api/counterparty-delete";
 import { invalidateCustomersAfterWrite } from "../api/customer-status";
@@ -42,6 +42,9 @@ export function useCounterpartyDeleteWrite(args: {
   companyIdRef.current = activeCompanyId;
   const queryClientRef = useRef(queryClient);
   queryClientRef.current = queryClient;
+  const presentCard = useConfirmationCard();
+  const presentCardRef = useRef(presentCard);
+  presentCardRef.current = presentCard;
 
   const deleteMutation = useContractMutation(
     (input: { id: string }, options) => {
@@ -79,20 +82,16 @@ export function useCounterpartyDeleteWrite(args: {
       await runConfirmedWrite({
         busyRef: writeBusyRef,
         allowed: current.canEdit,
-        confirm: {
-          title: current.copy.confirm.deleteCounterpartyTitle,
-          message: current.copy.confirm.deleteCounterpartyDescription,
-          confirmLabel: current.copy.confirm.deleteCounterpartyConfirm,
-          cancelLabel: current.copy.confirm.cancel,
-          tone: "danger",
-        },
-        present: presentConfirmDialog,
         run: async () => {
-          await submitWithProtocolConfirmation({
+          const result = await submitWithProtocolConfirmation({
             submit: () => deleteMutationRef.current.submit({ id }),
+            present: (challenge) => presentCardRef.current(challenge),
             confirm: (challengeId) =>
               deleteMutationRef.current.confirm(challengeId),
           });
+          if (result.outcome === "declined") {
+            return;
+          }
           await afterWrite();
         },
       });

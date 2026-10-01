@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createMutationAttempt } from "@showzy/contract";
 import { ORPCError } from "@orpc/client";
 
+import { classifyWriteFailure } from "../../../api/classify-write-failure";
 import { createContractMutationController } from "../../../api/contract-mutation";
 import { submitWithProtocolConfirmation } from "../../../api/protocol-confirm";
 import { bindDocumentRequestSignMutate } from "../api/document-request-sign";
@@ -244,6 +245,7 @@ describe("runDocumentSigning", () => {
 
     await submitWithProtocolConfirmation({
       submit: () => requestSign.submit({ documentId: DOCUMENT_ID }),
+      present: () => Promise.resolve("confirm"),
       confirm: (challengeId) => requestSign.confirm(challengeId),
     });
     expect(requestCalls).toEqual(["submit", "challenge-sign"]);
@@ -425,5 +427,55 @@ describe("mapSigningFailure", () => {
     );
     expect(bannerFromQueryKind("validation")).toBe("validation");
     expect(bannerFromQueryKind("network")).toBe("network");
+  });
+
+  it("shows no banner for a pending confirmation challenge", () => {
+    expect(bannerFromQueryKind("confirmation")).toBeNull();
+    expect(classifyWriteFailure("confirmation")).toBeNull();
+  });
+
+  it("declining the sign card confirms nothing and releases the attempt", async () => {
+    const requestCalls: string[] = [];
+    const requestSign = createContractMutationController<
+      { documentId: string },
+      { documentId: string }
+    >({
+      mutate: bindDocumentRequestSignMutate({
+        client: {
+          documents: {
+            requestSign: (_input, options) => {
+              const challenge = options.context.confirmationChallengeId;
+              requestCalls.push(challenge ?? "submit");
+              return Promise.reject(
+                new ORPCError("CONFIRMATION_REQUIRED", {
+                  defined: true,
+                  status: 409,
+                  message: "Confirm.",
+                  data: {
+                    challenge: {
+                      challengeId: "challenge-sign",
+                      summary: "Request a qualified electronic signature.",
+                      expiresAt: "2026-08-30T00:00:00.000Z",
+                    },
+                  },
+                }),
+              );
+            },
+          },
+        },
+      }),
+    });
+
+    const result = await submitWithProtocolConfirmation({
+      submit: () => requestSign.submit({ documentId: DOCUMENT_ID }),
+      present: () => Promise.resolve("cancel"),
+      confirm: (challengeId) => requestSign.confirm(challengeId),
+    });
+
+    expect(result).toEqual({ outcome: "declined" });
+    expect(requestCalls).toEqual(["submit"]);
+    expect(requestSign.attemptKey()).not.toBeNull();
+    requestSign.reset();
+    expect(requestSign.attemptKey()).toBeNull();
   });
 });

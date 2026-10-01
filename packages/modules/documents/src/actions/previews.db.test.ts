@@ -25,6 +25,7 @@ import { createFromOrder } from "./create-from-order.js";
 import {
   REQUEST_SIGN_KEY_POSSESSION_NOTE,
   requestSign,
+  requestSignPreviewTitle,
 } from "./request-sign.js";
 import { shareDocument } from "./share.js";
 
@@ -372,14 +373,18 @@ describe("documents preview cards (core.md §7)", () => {
     expect(preview.title).toContain(
       "Запросити підписання документа KA-РХ-000001",
     );
-    expect(preview.notes).toEqual([REQUEST_SIGN_KEY_POSSESSION_NOTE]);
+    expect(preview.title).toContain(REQUEST_SIGN_KEY_POSSESSION_NOTE);
+    expect(preview.notes ?? []).toEqual([REQUEST_SIGN_KEY_POSSESSION_NOTE]);
   });
 
-  it("keeps the key-possession warning reachable through the summary", async () => {
+  it("carries the key-possession warning in the summary the assistant reads", async () => {
     const error = await refusalOf(requestSign, { documentId: fixtures.docA });
     if (!(error instanceof ConfirmationRequiredError)) {
       throw error;
     }
+    expect(error.challenge.summary).toBe(
+      requestSignPreviewTitle("KA-РХ-000001"),
+    );
     expect(error.challenge.summary).toContain(REQUEST_SIGN_KEY_POSSESSION_NOTE);
   });
 

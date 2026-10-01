@@ -29,8 +29,8 @@ export function GroupsListPane(props: {
   const { copy } = model;
 
   const onRemove = useCallback(
-    (id: string, memberCount: number) => {
-      void model.remove(id, memberCount);
+    (id: string) => {
+      void model.remove(id);
     },
     [model.remove],
   );
@@ -43,7 +43,6 @@ export function GroupsListPane(props: {
           name={item.name}
           description={item.description}
           membersLabel={item.membersLabel}
-          memberCount={item.memberCount}
           priceListName={item.priceListName}
           editLabel={copy.editLabel}
           deleteA11y={item.deleteA11y}

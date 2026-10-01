@@ -11,6 +11,7 @@ import { useContractMutation } from "../../../api/contract-mutation";
 import { describeQueryFailure } from "../../../api/errors";
 import { submitWithProtocolConfirmation } from "../../../api/protocol-confirm";
 import { useActiveCompany } from "../../../api/query-provider";
+import { useConfirmationCard } from "../../../components/ui/confirmation-card-host";
 import { presentConfirmDialog } from "../../../components/ui/present-confirm-dialog";
 import type { CustomersCopy } from "../../../i18n/customers";
 import { bindCustomerDeleteMutate } from "../api/customer-delete";
@@ -42,6 +43,9 @@ export function useCustomerStatusWrites(args: {
   apiRef.current = apiClient;
   const { activeCompanyId } = useActiveCompany();
   const queryClient = useQueryClient();
+  const presentCard = useConfirmationCard();
+  const presentCardRef = useRef(presentCard);
+  presentCardRef.current = presentCard;
   const writeBusyRef = useRef(false);
   const argsRef = useRef(args);
   argsRef.current = args;
@@ -149,20 +153,16 @@ export function useCustomerStatusWrites(args: {
       await runConfirmedWrite({
         busyRef: writeBusyRef,
         allowed: current.canDelete,
-        confirm: {
-          title: current.copy.confirm.deleteTitle,
-          message: current.copy.confirm.deleteDescription,
-          confirmLabel: current.copy.confirm.deleteConfirm,
-          cancelLabel: current.copy.confirm.cancel,
-          tone: "danger",
-        },
-        present: presentConfirmDialog,
         run: async () => {
-          await submitWithProtocolConfirmation({
+          const result = await submitWithProtocolConfirmation({
             submit: () => deleteMutationRef.current.submit({ id }),
+            present: (challenge) => presentCardRef.current(challenge),
             confirm: (challengeId) =>
               deleteMutationRef.current.confirm(challengeId),
           });
+          if (result.outcome === "declined") {
+            return;
+          }
           await afterWrite();
         },
       });

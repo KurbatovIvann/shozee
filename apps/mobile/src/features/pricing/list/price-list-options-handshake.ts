@@ -1,16 +1,3 @@
-/**
- * Options-sheet chrome and the native dismiss handshake (SHO-198 / SHO-200).
- * Close sets `visible=false` first; `listId` stays until `onHidden` so the
- * title does not flip to the close label mid-animation. Native Alert and
- * the deactivate-default Banner run only after the RN Modal is gone.
- *
- * Live hook chrome is `PriceListOptionsChrome`. Delete / deactivate-default
- * call `runPriceListOptionsFollowUp` (not a bypass `then` into writes).
- */
-import type {
-  ConfirmDialogChoice,
-  ConfirmDialogRequest,
-} from "../../../components/ui/confirm-dialog";
 import { shouldBlockDeactivateDefault } from "./price-lists-list.presenter";
 
 export type PriceListOptionsChrome = {
@@ -90,10 +77,7 @@ type OptionsSheetHiddenPorts = {
 
 export type PriceListDeleteFollowUpPorts = OptionsSheetHiddenPorts & {
   readonly kind: "delete";
-  readonly presentConfirmDialog: (
-    request: ConfirmDialogRequest,
-  ) => Promise<ConfirmDialogChoice>;
-  readonly confirm: ConfirmDialogRequest;
+  readonly deleteOnServerCard: () => Promise<void>;
 };
 
 export type PriceListBlockDeactivateFollowUpPorts = OptionsSheetHiddenPorts & {
@@ -105,22 +89,15 @@ export type PriceListBlockDeactivateFollowUpPorts = OptionsSheetHiddenPorts & {
 export type PriceListOptionsFollowUpPorts =
   PriceListDeleteFollowUpPorts | PriceListBlockDeactivateFollowUpPorts;
 
-/**
- * Catalog product-detail handshake: register the waiter, hide the sheet,
- * then run the follow-up (`presentConfirmDialog` / Banner) only after
- * Modal dismiss. Do not present `Alert.alert` on the same tick as hide.
- * The live hook must call this — not `writes.remove` / `writes.toggleActive`
- * in a bypass `then`.
- */
 export async function runPriceListOptionsFollowUp(
   args: PriceListOptionsFollowUpPorts,
-): Promise<ConfirmDialogChoice | undefined> {
+): Promise<void> {
   const hidden = args.waitHidden();
   args.hide();
   await hidden;
   if (args.kind === "delete") {
-    return args.presentConfirmDialog(args.confirm);
+    await args.deleteOnServerCard();
+    return;
   }
   args.setBanner(args.message);
-  return undefined;
 }

@@ -11,7 +11,7 @@ import { deleteGroupContract } from "./delete-group.contract.js";
  * list/get when it shows the dialog.
  */
 export const deleteGroupConfirmationSummary =
-  "Delete this customer group. Customers in the group stay and lose the group assignment.";
+  "Видалити цю групу клієнтів. Клієнти залишаться і втратять призначення групи: вони перейдуть на наступний рівень цін.";
 
 export const deleteGroup = implementAction(deleteGroupContract, {
   handler: (input, ctx) => {

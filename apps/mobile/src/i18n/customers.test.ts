@@ -17,9 +17,6 @@ describe("customers copy", () => {
     expect(Object.keys(uk.filters)).toEqual(Object.keys(en.filters));
     expect(Object.keys(uk.empty)).toEqual(Object.keys(en.empty));
     expect(Object.keys(uk.confirm)).toEqual(Object.keys(en.confirm));
-    expect(Object.keys(uk.confirm.deleteGroupDescription)).toEqual(
-      Object.keys(en.confirm.deleteGroupDescription),
-    );
     expect(Object.keys(uk.mutation)).toEqual(Object.keys(en.mutation));
     expect(Object.keys(uk.editorStub)).toEqual(Object.keys(en.editorStub));
     expect(Object.keys(uk.form)).toEqual(Object.keys(en.form));
@@ -80,15 +77,6 @@ describe("customers copy", () => {
     expect(uk.edrpouBadge).toBe("ЄДРПОУ {{edrpou}}");
     expect(uk.confirm.archiveDescription).toContain(
       "Спочатку архів, потім видалення",
-    );
-    expect(uk.confirm.deleteDescription).toContain(
-      "Контрагенти залишаться без прив’язки",
-    );
-    expect(uk.confirm.deleteGroupDescription.many).toContain("{{count}}");
-    expect(uk.confirm.deleteGroupDescription.one).toContain("клієнт");
-    expect(uk.confirm.deleteCounterpartyTitle).toBe("Видалити контрагента?");
-    expect(uk.confirm.deleteCounterpartyDescription).toContain(
-      "Клієнт (якщо був прив’язаний) залишиться",
     );
     expect(uk.form.contactsHelper).toBe(
       "Потрібен хоча б один контакт: телефон, email або прив’язаний акаунт Шозі.",

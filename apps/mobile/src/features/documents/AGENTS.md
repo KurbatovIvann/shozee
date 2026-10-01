@@ -13,9 +13,9 @@ UI state ownership is `.claude/rules/mobile-ui-state.md`. List filters
 and options-sheet chrome are `useState` / local view state, never XState.
 Writes on the list (share / cancel) use `useContractMutation`. Cancel is
 UI confirm (`presentConfirmDialog`) after the options sheet hides — the
-action does not declare protocol confirmation. Sign is HITL: local
-confirm → `submitWithProtocolConfirmation` (`documents.requestSign`) →
-key sheet. Confirmation does not replace key possession. Share mints the
+action does not declare protocol confirmation. Sign is HITL: submit
+`documents.requestSign`, then the module's own preview card
+(`submitWithProtocolConfirmation` + `useConfirmationCard`) → key sheet. Confirmation does not replace key possession. Share mints the
 page token once per sheet session; do not log the raw token, key,
 password, or signed URL.
 

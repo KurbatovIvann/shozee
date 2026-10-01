@@ -61,6 +61,8 @@ export const wireActionPreviewSchema = z.object({
   notes: z.array(z.string()).optional(),
 });
 
+export type WireActionPreview = z.infer<typeof wireActionPreviewSchema>;
+
 /**
  * The client-visible part of a confirmation challenge (core.md §7). Only
  * these fields may cross the wire — the full server record (input hash,

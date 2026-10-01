@@ -71,9 +71,13 @@ describe("bindPriceListDeleteMutate", () => {
 
     const result = await submitWithProtocolConfirmation({
       submit: () => controller.submit({ id: PRICE_LIST_ID }),
+      present: () => Promise.resolve("confirm"),
       confirm: (challengeId) => controller.confirm(challengeId),
     });
-    expect(result).toEqual({ id: PRICE_LIST_ID });
+    expect(result).toEqual({
+      outcome: "submitted",
+      value: { id: PRICE_LIST_ID },
+    });
     expect(calls).toEqual(["submit", "challenge-delete"]);
   });
 });
