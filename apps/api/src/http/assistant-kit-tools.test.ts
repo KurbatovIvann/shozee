@@ -48,6 +48,8 @@ import {
   CoreInvariantError,
   NotFoundError,
 } from "@showzy/core/errors";
+import { ENTITY_LOOKUP_OPTIONS_MAX } from "@showzy/module-kit/entity-lookup";
+import { ASSISTANT_CHOICE_OPTIONS_MAX } from "@showzy/validation/assistant-chat";
 import { describe, expect, it } from "vitest";
 
 import { createActionRegistry } from "../registry.js";
@@ -953,6 +955,14 @@ describe("«знайди X» with nothing matching", () => {
       kind: "unresolvable",
       reason: "create option create has no producer",
     });
+  });
+});
+
+describe("the domain option cap fits the choice card", () => {
+  it("never offers more options than a choice card may carry", () => {
+    expect(ENTITY_LOOKUP_OPTIONS_MAX).toBeLessThanOrEqual(
+      ASSISTANT_CHOICE_OPTIONS_MAX,
+    );
   });
 });
 

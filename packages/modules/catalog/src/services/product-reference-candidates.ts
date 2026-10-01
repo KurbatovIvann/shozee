@@ -50,7 +50,7 @@ function compareProductNameThenId(
   return left.id.localeCompare(right.id);
 }
 
-export function productOptionLabel(
+function productOptionLabel(
   row: ProductCandidate,
   siblings: readonly ProductCandidate[],
 ): string {
