@@ -20,7 +20,7 @@ import {
   ALREADY_SIGNED_MESSAGE as REQUEST_SIGN_ALREADY_SIGNED_MESSAGE,
   CANCELLED_REQUEST_SIGN_MESSAGE as REQUEST_SIGN_CANCELLED_MESSAGE,
   PDF_NOT_READY_MESSAGE as REQUEST_SIGN_PDF_NOT_READY_MESSAGE,
-  requestSignConfirmationSummary,
+  REQUEST_SIGN_KEY_POSSESSION_NOTE,
 } from "./request-sign.js";
 
 const validId = "11111111-1111-4111-8111-111111111111";
@@ -64,14 +64,11 @@ describe("documents.requestSign contract", () => {
     ).toBe(false);
   });
 
-  it("uses a static confirmation summary without live number or PII", () => {
-    expect(requestSignConfirmationSummary).toContain(
-      "qualified electronic signature",
-    );
-    expect(requestSignConfirmationSummary).toContain("key possession");
-    expect(requestSignConfirmationSummary).not.toMatch(/\d{6}/);
-    expect(requestSignConfirmationSummary).not.toContain("@");
-    expect(requestSignConfirmationSummary).not.toContain("+380");
+  it("keeps the key-possession note free of live numbers and PII", () => {
+    expect(REQUEST_SIGN_KEY_POSSESSION_NOTE).toContain("володіння ключем");
+    expect(REQUEST_SIGN_KEY_POSSESSION_NOTE).not.toMatch(/\d{6}/);
+    expect(REQUEST_SIGN_KEY_POSSESSION_NOTE).not.toContain("@");
+    expect(REQUEST_SIGN_KEY_POSSESSION_NOTE).not.toContain("+380");
   });
 
   it("emits the shared signing-gate clientMessages also used by docSigning.start", () => {

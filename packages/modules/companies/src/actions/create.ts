@@ -18,5 +18,13 @@ export const createCompany = implementAction(createCompanyContract, {
   handler: (input, ctx) => {
     return createOwnedCompany({ ctx, input });
   },
+  preview: (input) => ({
+    title: `Створити компанію «${input.name}»`,
+    lines: [
+      { label: "Назва", value: input.name },
+      { label: "Публічна адреса", value: input.slug },
+    ],
+    notes: ["Ви станете власником компанії."],
+  }),
   auditTarget: createAuditTarget,
 });

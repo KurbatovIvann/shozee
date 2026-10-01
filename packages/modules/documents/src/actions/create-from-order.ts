@@ -1,13 +1,18 @@
 import { getSellerFacts } from "@showzy/companies";
 import { implementAction, type AuditTargetEnv } from "@showzy/core";
+import type { ActionPreviewLine } from "@showzy/core/errors";
 import { getCounterparty, getCustomer } from "@showzy/customers";
 import { resolveLayout } from "@showzy/doc-generation/resolve-layout";
 import { getOrder } from "@showzy/orders";
 import { z } from "zod";
 
-import { createFromOrderContract } from "./create-from-order.contract.js";
+import {
+  createFromOrderContract,
+  type createFromOrderInputSchema,
+} from "./create-from-order.contract.js";
 import type { documentTypeSchema } from "./document-view.contract.js";
 import { createStaffDocument } from "../services/create-from-order.js";
+import { documentTypeLabel } from "../services/preview-document.js";
 import {
   requireCounterpartyCustomerMatch,
   requireOrderCustomerId,
@@ -19,6 +24,9 @@ const documentIdHolder = z.object({ documentId: z.string() });
 const orderIdHolder = z.object({ orderId: z.string() });
 
 type DocumentType = z.output<typeof documentTypeSchema>;
+type CreateFromOrderInput = z.output<typeof createFromOrderInputSchema>;
+
+const ABSENT = "—";
 
 /**
  * Catalog defaults named on SHO-362. Nested `resolveLayout` still
@@ -29,6 +37,16 @@ const DEFAULT_LAYOUT_KEY_BY_TYPE = {
   payment_invoice: "payment_invoice.branded",
   delivery_note: "delivery_note.parties",
 } as const satisfies Record<DocumentType, string>;
+
+function requestedLayout(input: CreateFromOrderInput): {
+  layoutKey: string;
+  type: DocumentType;
+} {
+  return {
+    layoutKey: input.layoutKey ?? DEFAULT_LAYOUT_KEY_BY_TYPE[input.type],
+    type: input.type,
+  };
+}
 
 function persistableBasis(value: string | undefined): string | null {
   if (value === undefined || value.length === 0) {
@@ -51,10 +69,7 @@ function createAuditTarget(env: AuditTargetEnv): { type: string; id: string } {
 
 export const createFromOrder = implementAction(createFromOrderContract, {
   handler: async (input, ctx) => {
-    const layout = await ctx.call(resolveLayout, {
-      layoutKey: input.layoutKey ?? DEFAULT_LAYOUT_KEY_BY_TYPE[input.type],
-      type: input.type,
-    });
+    const layout = await ctx.call(resolveLayout, requestedLayout(input));
     const templateName = layout.key;
     const basis = persistableBasis(input.basis);
 
@@ -93,6 +108,42 @@ export const createFromOrder = implementAction(createFromOrderContract, {
       buyer: snapshotCustomerBuyer(customer.name),
       counterpartyId: null,
     });
+  },
+  preview: async (input, env) => {
+    const order = await env.call(getOrder, { orderId: input.orderId });
+    const lines: ActionPreviewLine[] = [
+      { label: "Тип", value: documentTypeLabel(input.type) },
+      { label: "Замовлення", value: order.orderNumber },
+      { label: "Позицій", value: String(order.items.length) },
+    ];
+    if (input.counterpartyId === undefined) {
+      const customer = await env.call(getCustomer, {
+        id: requireOrderCustomerId(order.customerId),
+      });
+      lines.push({ label: "Покупець", value: customer.name });
+    } else {
+      const counterparty = await env.call(getCounterparty, {
+        id: input.counterpartyId,
+      });
+      requireCounterpartyCustomerMatch(
+        counterparty.customerId,
+        order.customerId,
+      );
+      lines.push({ label: "Покупець", value: counterparty.name });
+    }
+    const layout = await env.call(resolveLayout, requestedLayout(input));
+    lines.push({ label: "Шаблон", value: layout.key });
+    lines.push({
+      label: "Підстава",
+      value: persistableBasis(input.basis) ?? ABSENT,
+    });
+    return {
+      title: `Створити документ за замовленням ${order.orderNumber}`,
+      lines,
+      notes: [
+        "Документ отримає наступний номер за своїм типом — номер не повертають у нумерацію.",
+      ],
+    };
   },
   auditTarget: createAuditTarget,
 });

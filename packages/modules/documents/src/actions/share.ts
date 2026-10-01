@@ -7,6 +7,7 @@ import {
   issueShareDownloadUrl,
   issueShareSigningDownloadUrl,
 } from "@showzy/files";
+import { previewCompanyScope } from "@showzy/module-kit/preview-scope";
 import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 
@@ -24,6 +25,11 @@ import {
   mintShareDownload,
   mintSharePdfDownload,
 } from "../services/mint-share-pdf.js";
+import {
+  documentPreviewLines,
+  hasUnrevokedShareToken,
+  loadDocumentPreviewFacts,
+} from "../services/preview-document.js";
 import { getDocumentShareOrigin } from "../services/share-origin.js";
 import {
   generateDocumentShareToken,
@@ -33,6 +39,15 @@ import { mapShareActiveTokenUniqueViolation } from "../services/unique-violation
 import { requireWritable } from "../services/writable.js";
 
 const documentIdHolder = z.object({ documentId: z.string() });
+
+const PAGE_TOKEN_TTL_DAYS = PAGE_TOKEN_TTL_MS / (24 * 60 * 60 * 1000);
+
+function shareNote(replacesActiveLink: boolean): string {
+  const lifetime = `воно діє ${String(PAGE_TOKEN_TTL_DAYS)} днів`;
+  return replacesActiveLink
+    ? `Чинне посилання буде відкликано — працюватиме лише нове, і ${lifetime}.`
+    : `Буде створено нове посилання, і ${lifetime}.`;
+}
 
 function shareAuditTarget(env: AuditTargetEnv): { type: string; id: string } {
   const parsed = documentIdHolder.safeParse(env.input);
@@ -121,6 +136,24 @@ export const shareDocument = implementAction(shareDocumentContract, {
       ...view,
       token: plaintextToken,
       url: documentShareUrl(plaintextToken, getDocumentShareOrigin()),
+    };
+  },
+  preview: async (input, env) => {
+    const companyId = previewCompanyScope(env.companyId, shareDocumentContract);
+    const facts = await loadDocumentPreviewFacts({
+      tx: env.tx,
+      companyId,
+      documentId: input.documentId,
+    });
+    const replacesActiveLink = await hasUnrevokedShareToken({
+      tx: env.tx,
+      companyId,
+      documentId: input.documentId,
+    });
+    return {
+      title: `Поділитися документом ${facts.documentNumber}`,
+      lines: documentPreviewLines(facts),
+      notes: [shareNote(replacesActiveLink)],
     };
   },
   auditTarget: shareAuditTarget,
