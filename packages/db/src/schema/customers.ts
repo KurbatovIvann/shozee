@@ -80,6 +80,8 @@ export const customerGroups = pgTable(
  * price-list assignment and group membership used at level 3. Deleting a
  * group or a price list unlinks (SET NULL) — resolution falls through.
  */
+export const COMPANY_CUSTOMER_DEFAULT_STATUS = "active";
+
 export const companyCustomers = pgTable(
   "company_customers",
   {
@@ -92,7 +94,7 @@ export const companyCustomers = pgTable(
       onDelete: "set null",
     }),
     notes: text("notes"),
-    status: text("status").notNull().default("active"),
+    status: text("status").notNull().default(COMPANY_CUSTOMER_DEFAULT_STATUS),
     groupId: uuid("group_id"),
     priceListId: uuid("price_list_id"),
     ...timestampColumns(),
