@@ -50,7 +50,10 @@ export function createConfirmationCardMachine(args: {
       pending?.(choice);
     },
     clearCard: () => {
-      emit({ open: state.open, card: null });
+      if (state.open) {
+        return;
+      }
+      emit({ open: false, card: null });
     },
   };
 }

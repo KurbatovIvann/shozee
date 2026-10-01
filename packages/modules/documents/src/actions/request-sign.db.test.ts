@@ -667,7 +667,7 @@ describe("documents.requestSign", () => {
     expect(unconfirmed.challenge.summary).toBe(
       requestSignPreviewTitle("KA-РХ-000928"),
     );
-    expect(unconfirmed.challenge.summary).not.toContain(
+    expect(unconfirmed.challenge.summary).toContain(
       REQUEST_SIGN_KEY_POSSESSION_NOTE,
     );
     expect(unconfirmed.challenge.preview).toEqual({
@@ -677,7 +677,6 @@ describe("documents.requestSign", () => {
         { label: "Тип", value: "Рахунок на оплату" },
         { label: "Статус", value: "Виданий" },
       ],
-      notes: [REQUEST_SIGN_KEY_POSSESSION_NOTE],
     });
 
     const before = await kit.db.runtime.db

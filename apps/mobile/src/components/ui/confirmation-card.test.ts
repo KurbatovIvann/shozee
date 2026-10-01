@@ -151,6 +151,18 @@ describe("createConfirmationCardMachine", () => {
     expect(states.at(-1)).toEqual(CLOSED_CONFIRMATION_CARD);
   });
 
+  it("ignores a late hide callback that arrives after the next card opened", async () => {
+    const { machine, states } = machineUnderTest();
+    const first = machine.present(cardNamed("Перший"));
+    machine.choose("cancel");
+    expect(await first).toBe("cancel");
+    const second = machine.present(cardNamed("Другий"));
+    machine.clearCard();
+    expect(states.at(-1)).toEqual({ open: true, card: cardNamed("Другий") });
+    machine.choose("confirm");
+    expect(await second).toBe("confirm");
+  });
+
   it("never confirms the write when the viewer declines the card", async () => {
     const { machine } = machineUnderTest();
     const confirm = vi.fn(() => Promise.resolve("confirmed"));

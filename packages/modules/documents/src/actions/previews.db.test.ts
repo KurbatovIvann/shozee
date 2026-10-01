@@ -389,11 +389,14 @@ describe("documents preview cards (core.md §7)", () => {
     const preview = await previewOf(requestSign, {
       documentId: fixtures.docA,
     });
-    expect(preview.title).toBe("Запросити підписання документа KA-РХ-000001");
-    expect(preview.notes).toEqual([REQUEST_SIGN_KEY_POSSESSION_NOTE]);
+    expect(preview.title).toContain(
+      "Запросити підписання документа KA-РХ-000001",
+    );
+    expect(preview.title).toContain(REQUEST_SIGN_KEY_POSSESSION_NOTE);
+    expect(preview.notes ?? []).toEqual([]);
   });
 
-  it("keeps the key-possession warning in the notes, not in the summary", async () => {
+  it("carries the key-possession warning in the summary the assistant reads", async () => {
     const error = await refusalOf(requestSign, { documentId: fixtures.docA });
     if (!(error instanceof ConfirmationRequiredError)) {
       throw error;
@@ -401,12 +404,7 @@ describe("documents preview cards (core.md §7)", () => {
     expect(error.challenge.summary).toBe(
       requestSignPreviewTitle("KA-РХ-000001"),
     );
-    expect(error.challenge.summary).not.toContain(
-      REQUEST_SIGN_KEY_POSSESSION_NOTE,
-    );
-    expect(error.challenge.preview?.notes).toEqual([
-      REQUEST_SIGN_KEY_POSSESSION_NOTE,
-    ]);
+    expect(error.challenge.summary).toContain(REQUEST_SIGN_KEY_POSSESSION_NOTE);
   });
 
   it("previews documents.createFromOrder through the nested order read", async () => {

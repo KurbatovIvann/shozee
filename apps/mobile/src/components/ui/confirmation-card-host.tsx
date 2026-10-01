@@ -8,8 +8,7 @@ import {
 } from "react";
 
 import type { PresentConfirmationChallenge } from "../../api/protocol-confirm";
-import { confirmationCardEn, confirmationCardUk } from "../../i18n/copy";
-import { detectLocale } from "../../i18n/locale";
+import type { ConfirmationCardCopy } from "../../i18n/copy";
 import type { ConfirmDialogChoice } from "./confirm-dialog";
 import { ConfirmationCard } from "./confirmation-card";
 import {
@@ -24,10 +23,10 @@ const ConfirmationCardContext =
   createContext<PresentConfirmationChallenge | null>(null);
 
 export function ConfirmationCardProvider(props: {
+  readonly copy: ConfirmationCardCopy;
   readonly children: ReactNode;
 }) {
-  const copy =
-    detectLocale() === "uk" ? confirmationCardUk : confirmationCardEn;
+  const copy = props.copy;
   const fallbackTitleRef = useRef(copy.fallbackTitle);
   fallbackTitleRef.current = copy.fallbackTitle;
   const [state, setState] = useState<ConfirmationCardState>(
