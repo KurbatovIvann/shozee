@@ -43,13 +43,6 @@ export {
   type AssistantOrdersAggregateGroupBy,
 } from "./orders-aggregate";
 export {
-  CUSTOMER_ENTITY_PROMPT_LINE,
-  CUSTOMER_ENTITY_SURFACE_TOOLS,
-  PRODUCT_ENTITY_PROMPT_LINE,
-  PRODUCT_ENTITY_SURFACE_TOOLS,
-  type AssistantEntityCardView,
-} from "./entity";
-export {
   ORDER_ENTITY_PROMPT_LINE,
   ORDER_ENTITY_SURFACE_TOOLS,
   type AssistantOrderEntityCardView,

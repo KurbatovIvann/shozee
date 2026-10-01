@@ -83,8 +83,6 @@ export type AssistantCardsCopy = {
   readonly listEmptyDescription: string;
   readonly openOrders: string;
   readonly openOrder: string;
-  readonly openCustomer: string;
-  readonly openProduct: string;
   readonly customerMatchTruncated: string;
   readonly clipped: string;
   readonly orderCount: CountForms;
@@ -297,8 +295,6 @@ const assistantEn: AssistantCopy = {
     listEmptyDescription: en.ordersList.listEmptyDescription,
     openOrders: en.ordersList.openList,
     openOrder: "Open order",
-    openCustomer: "Open customer",
-    openProduct: "Open product",
     customerMatchTruncated: en.ordersList.customerMatchTruncated,
     clipped: en.ordersList.clipped,
     orderCount: {
@@ -386,8 +382,6 @@ const assistantUk: AssistantCopy = {
     listEmptyDescription: uk.ordersList.listEmptyDescription,
     openOrders: uk.ordersList.openList,
     openOrder: "Відкрити замовлення",
-    openCustomer: "Відкрити клієнта",
-    openProduct: "Відкрити товар",
     customerMatchTruncated: uk.ordersList.customerMatchTruncated,
     clipped: uk.ordersList.clipped,
     orderCount: {

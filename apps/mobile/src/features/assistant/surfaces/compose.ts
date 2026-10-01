@@ -22,11 +22,6 @@ import {
   type AssistantCustomersListCardView,
 } from "./customers-list";
 import {
-  localizeCustomerEntityCard,
-  localizeProductEntityCard,
-  type AssistantEntityCardView,
-} from "./entity";
-import {
   localizeOrderEntityCard,
   type AssistantOrderEntityCardView,
 } from "./order-entity";
@@ -47,7 +42,6 @@ export type AssistantSurface =
   | AssistantOrdersListCardView
   | AssistantOrdersAggregateCardView
   | AssistantOrderEntityCardView
-  | AssistantEntityCardView
   | AssistantCustomersListCardView
   | AssistantSearchResultsCardView;
 
@@ -58,8 +52,6 @@ export function assistantSurfaceKey(surface: AssistantSurface): string {
     case "orders-aggregate":
       return "orders-aggregate";
     case "order-entity":
-    case "customer-entity":
-    case "product-entity":
       return surface.id;
     case "customers-list":
       return "customers-list";
@@ -90,10 +82,6 @@ function localizeSurface(
       return localizeOrdersAggregateCard(data, locale, undefined);
     case "order-entity":
       return localizeOrderEntityCard(data, ordersCopy(locale), locale);
-    case "customer-entity":
-      return localizeCustomerEntityCard(data, locale);
-    case "product-entity":
-      return localizeProductEntityCard(data, locale);
     case "customers-list":
       return localizeCustomersListCard(data, locale);
     case "search-results":

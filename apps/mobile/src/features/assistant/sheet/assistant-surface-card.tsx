@@ -10,7 +10,6 @@ import {
 } from "./assistant-result-chrome";
 import { AssistantResultFrame } from "./assistant-result-frame";
 import { AssistantSearchResultsBlock } from "./assistant-search-results-block";
-import { EntityCard } from "./entity-card";
 import { OrderEntityCard } from "./order-entity-card";
 import { OrdersAggregateResultCard } from "./orders-aggregate-result-card";
 
@@ -75,9 +74,6 @@ const AssistantSurfaceBlock = memo(function AssistantSurfaceBlock(props: {
       );
     case "order-entity":
       return <OrderEntityCard card={surface} onOpenHref={onOpenHref} />;
-    case "customer-entity":
-    case "product-entity":
-      return <EntityCard card={surface} onOpenHref={onOpenHref} />;
     case "search-results":
       return surface.emptyTitle !== null ? null : (
         <AssistantSearchResultsBlock card={surface} onOpenHref={onOpenHref} />
@@ -104,7 +100,7 @@ function surfaceEmpty(surface: AssistantSurface): {
   readonly title: string | null;
   readonly description: string | null;
 } {
-  if (isEntitySurface(surface)) {
+  if (surface.kind === "order-entity") {
     return { title: null, description: null };
   }
   return {
@@ -113,21 +109,8 @@ function surfaceEmpty(surface: AssistantSurface): {
   };
 }
 
-function isEntitySurface(
-  surface: AssistantSurface,
-): surface is Extract<
-  AssistantSurface,
-  { kind: "order-entity" | "customer-entity" | "product-entity" }
-> {
-  return (
-    surface.kind === "order-entity" ||
-    surface.kind === "customer-entity" ||
-    surface.kind === "product-entity"
-  );
-}
-
 function surfaceFootnotes(surface: AssistantSurface): readonly string[] {
-  if (isEntitySurface(surface) || surface.footnotes.length === 0) {
+  if (surface.kind === "order-entity" || surface.footnotes.length === 0) {
     return [];
   }
   return surface.footnotes;
@@ -137,7 +120,7 @@ function surfaceActions(
   surface: AssistantSurface,
   onOpenHref: (href: string) => void,
 ): readonly AssistantResultAction[] {
-  if (isEntitySurface(surface)) {
+  if (surface.kind === "order-entity") {
     return [];
   }
   return secondaryCta(

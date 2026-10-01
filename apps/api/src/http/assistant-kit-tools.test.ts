@@ -8,6 +8,7 @@
  * other domain refusal becomes `error`.
  */
 import {
+  CUSTOMERS_GET_CUSTOMER_TOOL_NAME,
   ORDERS_CREATE_ACTION_NAME,
   ORDERS_CREATE_TOOL_NAME,
   ORDERS_LIST_COUNTS_TOOL_NAME,
@@ -878,4 +879,44 @@ describe("a create option is offered but has no producer yet", () => {
       });
     },
   );
+});
+
+describe("«знайди X» with nothing matching", () => {
+  it("pauses on a create-only picker the answer then refuses", async () => {
+    const set = tools(() => Promise.reject(new NotFoundError()));
+
+    const outcome = await run(set, CUSTOMERS_GET_CUSTOMER_TOOL_NAME, {
+      customerQuery: "Галя",
+    });
+
+    expect(outcome.kind).toBe("pause");
+    if (outcome.kind !== "pause") return;
+    expect(outcome.prompt).toEqual({
+      subject: "Галя",
+      optionsTruncated: false,
+      nearest: true,
+      problem: "Nothing matches that exactly.",
+      options: [{ optionId: "create", label: 'Create "Галя"', kind: "create" }],
+    });
+    const secret = outcome.secret as ChoiceSecret;
+    expect(secret.target).toEqual({ kind: "customer", query: "Галя" });
+    expect(choice.resolve({ answer: { optionId: "create" }, secret })).toEqual({
+      kind: "unresolvable",
+      reason: "create option create has no producer",
+    });
+  });
+});
+
+describe("a chosen product settles a product lookup", () => {
+  it("replaces the product query the lookup was ambiguous about", () => {
+    const patched = withChosenId(
+      { productQuery: "Наполеон" },
+      { kind: "product", query: "Наполеон" },
+      ORDER_ID,
+    );
+
+    expect(patched.kind).toBe("patched");
+    if (patched.kind !== "patched") return;
+    expect(patched.input).toEqual({ productId: ORDER_ID });
+  });
 });

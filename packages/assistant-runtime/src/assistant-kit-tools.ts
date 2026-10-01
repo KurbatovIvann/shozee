@@ -138,17 +138,14 @@ function choiceOptions(
   readonly prompt: readonly ChoicePromptOption[];
   readonly byOption: Record<string, ChoiceOptionSecret>;
 } {
+  const entries: [string, ChoiceOptionSecret][] = picker.options.map(
+    (option) => [option.id, { kind: "record", entityId: option.id }],
+  );
   const prompt: ChoicePromptOption[] = picker.options.map((option) => ({
     optionId: option.id,
     label: option.label,
     kind: "record" as const,
   }));
-  const byOption: Record<string, ChoiceOptionSecret> = Object.fromEntries(
-    picker.options.map((option) => [
-      option.id,
-      { kind: "record", entityId: option.id } as const,
-    ]),
-  );
   const create = picker.create;
   if (create !== undefined) {
     prompt.push({
@@ -156,9 +153,9 @@ function choiceOptions(
       label: create.label,
       kind: "create",
     });
-    byOption[create.optionId] = { kind: "create", toolName, input };
+    entries.push([create.optionId, { kind: "create", toolName, input }]);
   }
-  return { prompt, byOption };
+  return { prompt, byOption: Object.fromEntries(entries) };
 }
 
 function problemFor(reason: ChoicePickerReason): string {

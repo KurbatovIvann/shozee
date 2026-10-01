@@ -61,9 +61,6 @@ const catalogConflictTargetSchema = z.union([
 /**
  * Duck-typed picker extras on a `CONFLICT`. The wire code stays `CONFLICT`:
  * this is a domain refusal that happens to be answerable, not a new error class.
- *
- * Empty options never parse. A picker with nothing to pick is a terminal, and
- * offering one would be a card the person cannot act on.
  */
 export const CHOICE_CREATE_OPTION_ID = "create";
 

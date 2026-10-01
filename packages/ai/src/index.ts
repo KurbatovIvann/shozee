@@ -101,10 +101,8 @@ export {
   type StaffAssistantLocale,
 } from "./locale.js";
 export {
-  CUSTOMER_ENTITY_PROMPT_LINE,
   CUSTOMERS_LIST_PROMPT_LINE,
   ORDER_ENTITY_PROMPT_LINE,
-  PRODUCT_ENTITY_PROMPT_LINE,
   ORDERS_AGGREGATE_PROMPT_LINE,
   ORDERS_LIST_PROMPT_LINE,
 } from "@showzy/validation/assistant-surfaces";

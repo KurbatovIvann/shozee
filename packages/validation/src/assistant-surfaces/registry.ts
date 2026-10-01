@@ -21,13 +21,6 @@
  */
 import type { AssistantSurfaceData, AssistantSurfaceKind } from "./compose.js";
 import {
-  CUSTOMER_ENTITY_ACTION_NAMES,
-  CUSTOMER_ENTITY_DESTINATION,
-  CUSTOMER_ENTITY_PROMPT_LINE,
-  CUSTOMER_ENTITY_SURFACE_TOOLS,
-  parseCustomerEntitySurfaces,
-} from "./customer-entity.js";
-import {
   CUSTOMERS_LIST_ACTION_NAME,
   CUSTOMERS_LIST_DESTINATION,
   CUSTOMERS_LIST_PROMPT_LINE,
@@ -56,13 +49,6 @@ import {
   ORDERS_LIST_SURFACE_TOOLS,
   parseOrdersListSurface,
 } from "./orders-list.js";
-import {
-  PRODUCT_ENTITY_ACTION_NAMES,
-  PRODUCT_ENTITY_DESTINATION,
-  PRODUCT_ENTITY_PROMPT_LINE,
-  PRODUCT_ENTITY_SURFACE_TOOLS,
-  parseProductEntitySurfaces,
-} from "./product-entity.js";
 import {
   SEARCH_QUERY_ACTION_NAME,
   SEARCH_RESULTS_DESTINATION,
@@ -113,24 +99,6 @@ export const ASSISTANT_SURFACE_REGISTRY: readonly AssistantSurfaceDescriptor[] =
       promptLine: ORDER_ENTITY_PROMPT_LINE,
       destination: ORDER_ENTITY_DESTINATION,
       parse: parseOrderEntitySurfaces,
-    },
-    {
-      kind: "customer-entity",
-      version: 1,
-      toolNames: CUSTOMER_ENTITY_SURFACE_TOOLS,
-      actionNames: CUSTOMER_ENTITY_ACTION_NAMES,
-      promptLine: CUSTOMER_ENTITY_PROMPT_LINE,
-      destination: CUSTOMER_ENTITY_DESTINATION,
-      parse: parseCustomerEntitySurfaces,
-    },
-    {
-      kind: "product-entity",
-      version: 1,
-      toolNames: PRODUCT_ENTITY_SURFACE_TOOLS,
-      actionNames: PRODUCT_ENTITY_ACTION_NAMES,
-      promptLine: PRODUCT_ENTITY_PROMPT_LINE,
-      destination: PRODUCT_ENTITY_DESTINATION,
-      parse: parseProductEntitySurfaces,
     },
     {
       kind: "customers-list",

@@ -6,10 +6,6 @@
  * `items[].orderId` or customer ids into entity cards.
  */
 import {
-  parseCustomerEntitySurfaces,
-  type AssistantCustomerEntityData,
-} from "./customer-entity.js";
-import {
   parseCustomersListSurface,
   type AssistantCustomersListData,
 } from "./customers-list.js";
@@ -27,10 +23,6 @@ import {
   type AssistantOrdersListData,
 } from "./orders-list.js";
 import {
-  parseProductEntitySurfaces,
-  type AssistantProductEntityData,
-} from "./product-entity.js";
-import {
   parseSearchResultsSurface,
   type AssistantSearchResultsData,
 } from "./search-results.js";
@@ -39,8 +31,6 @@ export type AssistantSurfaceData =
   | AssistantOrdersListData
   | AssistantOrdersAggregateData
   | AssistantOrderEntityData
-  | AssistantCustomerEntityData
-  | AssistantProductEntityData
   | AssistantCustomersListData
   | AssistantSearchResultsData;
 
@@ -72,8 +62,6 @@ export function assistantSurfacesFromToolResults(
     surfaces.push(searchResults);
   }
   surfaces.push(...entities);
-  surfaces.push(...parseCustomerEntitySurfaces(results));
-  surfaces.push(...parseProductEntitySurfaces(results));
   return surfaces;
 }
 
@@ -94,10 +82,6 @@ export function assistantSurfaceSlot(surface: AssistantSurfaceData): string {
       return "orders";
     case "order-entity":
       return `order-entity:${surface.orderId}`;
-    case "customer-entity":
-      return `customer-entity:${surface.customerId}`;
-    case "product-entity":
-      return `product-entity:${surface.productId}`;
     case "customers-list":
     case "search-results":
       return surface.kind;
