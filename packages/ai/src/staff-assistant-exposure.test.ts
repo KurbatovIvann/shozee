@@ -26,6 +26,7 @@ import {
   toProviderToolName,
 } from "./action-tool.js";
 import { filterStaffAiTools } from "./filter-staff-tools.js";
+import { testStaffProvider } from "./test.js";
 
 const owner: StaffMembership = { role: "owner", permissions: [] };
 
@@ -61,7 +62,11 @@ describe("SHO-509 staff assistant exposure", () => {
     );
 
     const names = Object.keys(
-      staffAssistantTools(filtered, () => Promise.resolve({})),
+      staffAssistantTools(
+        filtered,
+        () => Promise.resolve({}),
+        testStaffProvider,
+      ),
     );
     expect(names).not.toContain("catalog_setProductImages");
     expect(names).not.toContain(toProviderToolName("catalog.setProductImages"));

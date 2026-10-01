@@ -28,6 +28,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { AssistantKitRuntime } from "../http/assistant-kit-http.js";
 import { createAssistantKitRuntime } from "../http/assistant-kit-runtime.js";
+import { testStaffProvider } from "@showzy/ai/test";
 
 let kit: TestKit;
 const conversationId = randomUUID();
@@ -83,6 +84,7 @@ function runtime(): AssistantKitRuntime {
     registry: createActionRegistry(),
     pipeline: kit.pipeline,
     model: "mock",
+    provider: testStaffProvider,
     redis: memoryRedis(),
   });
 }

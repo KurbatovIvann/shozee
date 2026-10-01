@@ -72,6 +72,7 @@ import { Redis } from "ioredis";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { createActionRegistry } from "./registry.js";
+import { testStaffProvider } from "@showzy/ai/test";
 
 const COMPANY = kitIdentities.companies.a;
 const ANNA = kitIdentities.users.anna;
@@ -135,7 +136,13 @@ beforeEach(async () => {
 });
 
 function runtimeWith(model: LanguageModel): AssistantRuntime {
-  return createAssistantRuntime({ registry, pipeline, model, redis });
+  return createAssistantRuntime({
+    registry,
+    pipeline,
+    model,
+    provider: testStaffProvider,
+    redis,
+  });
 }
 
 /** For seeding and reading back; its model is never called. */

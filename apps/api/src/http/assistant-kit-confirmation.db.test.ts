@@ -37,6 +37,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createActionRegistry } from "../registry.js";
 import type { AssistantKitRuntime } from "./assistant-kit-http.js";
 import { createAssistantKitRuntime } from "./assistant-kit-runtime.js";
+import { testStaffProvider } from "@showzy/ai/test";
 
 const DELETE_TOOL = "customers_deleteCustomer";
 const DELETE_ACTION = "customers.deleteCustomer";
@@ -65,6 +66,7 @@ function runtimeWithChallenges(): AssistantKitRuntime {
     registry: createActionRegistry(),
     pipeline,
     model: "mock",
+    provider: testStaffProvider,
     // Tools and answers only: nothing here opens or claims a pause.
     redis: {} as never,
   });

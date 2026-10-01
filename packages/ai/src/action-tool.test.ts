@@ -36,6 +36,7 @@ import {
 import { CUSTOMERS_LIST_CUSTOMERS_ASSISTANT_LIMIT } from "./tool-facades/customers-list-customers.js";
 import { CUSTOMERS_LIST_GROUPS_ASSISTANT_LIMIT } from "./tool-facades/customers-list-groups.js";
 import { ORDERS_LIST_PAGE_ASSISTANT_DEFAULT_LIMIT } from "./tool-facades/orders-list.js";
+import { testStaffProvider } from "./test.js";
 
 const customerId = "11111111-1111-4111-8111-111111111111";
 
@@ -152,7 +153,9 @@ describe("actionContractToTool", () => {
       Promise.resolve({ actionName, input }),
     );
 
-    const aiTool = actionContractToTool(deleteCustomer, execute);
+    const aiTool = actionContractToTool(deleteCustomer, execute, {
+      provider: testStaffProvider,
+    });
     expect(aiTool.description).toBe(deleteCustomer.description);
     expect(aiTool.execute).toBeTypeOf("function");
 
@@ -200,8 +203,10 @@ describe("actionContractToTool", () => {
     });
     const raw = { ...z.toJSONSchema(unionList.input) };
     expect(raw["type"]).toBeUndefined();
-    const aiTool = actionContractToTool(unionList, () =>
-      Promise.resolve({ ok: true }),
+    const aiTool = actionContractToTool(
+      unionList,
+      () => Promise.resolve({ ok: true }),
+      { provider: testStaffProvider },
     );
     const json = await asSchema(aiTool.inputSchema).jsonSchema;
     expect(json["type"]).toBe("object");
@@ -210,7 +215,9 @@ describe("actionContractToTool", () => {
 
   it("exposes the contract input schema as the AI SDK tool schema", async () => {
     const execute = vi.fn(() => Promise.resolve({ ok: true }));
-    const aiTool = actionContractToTool(deleteCustomer, execute);
+    const aiTool = actionContractToTool(deleteCustomer, execute, {
+      provider: testStaffProvider,
+    });
     const schema = asSchema(aiTool.inputSchema);
 
     const rejected = await schema.validate?.({ id: "not-a-uuid" });
@@ -226,7 +233,9 @@ describe("actionContractToTool", () => {
 
   it("does not invoke execute when input fails the contract schema", async () => {
     const execute = vi.fn(() => Promise.resolve({ ok: true }));
-    const aiTool = actionContractToTool(deleteCustomer, execute);
+    const aiTool = actionContractToTool(deleteCustomer, execute, {
+      provider: testStaffProvider,
+    });
 
     await expect(
       aiTool.execute?.(
@@ -264,7 +273,11 @@ describe("staffAssistantTools", () => {
       .spyOn(globalThis, "fetch")
       .mockRejectedValue(new Error("network must not run"));
     const execute = vi.fn(() => Promise.resolve({ items: [] }));
-    const tools = staffAssistantTools([listOrders, deleteCustomer], execute);
+    const tools = staffAssistantTools(
+      [listOrders, deleteCustomer],
+      execute,
+      testStaffProvider,
+    );
     const names = Object.keys(tools);
     expect(names).toEqual([
       STAFF_ASSISTANT_TOOL_SEARCH_NAME,
@@ -292,8 +305,10 @@ describe("staffAssistantTools", () => {
   });
 
   it("keeps hot façades and search in context and defers the rest", () => {
-    const tools = staffAssistantTools([listOrders, deleteCustomer], () =>
-      Promise.resolve({ items: [] }),
+    const tools = staffAssistantTools(
+      [listOrders, deleteCustomer],
+      () => Promise.resolve({ items: [] }),
+      testStaffProvider,
     );
     expect(tools[STAFF_ASSISTANT_TOOL_SEARCH_NAME]).toBeDefined();
     expect(tools[ORDERS_LIST_COUNTS_TOOL_NAME]?.providerOptions).toEqual({
@@ -369,7 +384,11 @@ describe("staffAssistantTools", () => {
         queryNormalized: z.string(),
       }),
     });
-    const tools = staffAssistantTools([query], () => Promise.resolve({}));
+    const tools = staffAssistantTools(
+      [query],
+      () => Promise.resolve({}),
+      testStaffProvider,
+    );
     expect(tools["search_query"]?.description).toContain(
       SEARCH_RESULTS_PROMPT_LINE,
     );
@@ -399,15 +418,21 @@ describe("staffAssistantTools", () => {
       input: z.object({ orderId: z.uuid() }),
       output: z.object({ orderId: z.uuid() }),
     });
-    const tools = staffAssistantTools([getOrder], () => Promise.resolve({}));
+    const tools = staffAssistantTools(
+      [getOrder],
+      () => Promise.resolve({}),
+      testStaffProvider,
+    );
     expect(tools["orders_get"]?.description).toContain(
       ORDER_ENTITY_PROMPT_LINE,
     );
   });
 
   it("caches search when every domain tool is deferred", () => {
-    const tools = staffAssistantTools([deleteCustomer], () =>
-      Promise.resolve({}),
+    const tools = staffAssistantTools(
+      [deleteCustomer],
+      () => Promise.resolve({}),
+      testStaffProvider,
     );
     expect(tools[STAFF_ASSISTANT_TOOL_SEARCH_NAME]?.providerOptions).toEqual({
       anthropic: { cacheControl: STAFF_ASSISTANT_STATIC_CACHE_CONTROL },
@@ -418,7 +443,11 @@ describe("staffAssistantTools", () => {
   });
 
   it("attaches nothing when the contract list is empty", () => {
-    const tools = staffAssistantTools([], () => Promise.resolve({}));
+    const tools = staffAssistantTools(
+      [],
+      () => Promise.resolve({}),
+      testStaffProvider,
+    );
     expect(tools).toEqual({});
   });
 
@@ -463,7 +492,11 @@ describe("staffAssistantTools", () => {
         nextCursor: null,
       }),
     );
-    const tools = staffAssistantTools([listProducts], execute);
+    const tools = staffAssistantTools(
+      [listProducts],
+      execute,
+      testStaffProvider,
+    );
     const names = Object.keys(tools);
     expect(names).toContain(CATALOG_LIST_PRODUCTS_TOOL_NAME);
     expect(names).not.toContain("catalog_listProducts");
@@ -539,7 +572,11 @@ describe("staffAssistantTools", () => {
         nextCursor: null,
       }),
     );
-    const tools = staffAssistantTools([listPriceLists], execute);
+    const tools = staffAssistantTools(
+      [listPriceLists],
+      execute,
+      testStaffProvider,
+    );
     const names = Object.keys(tools);
     expect(names).toContain(PRICING_LIST_PRICE_LISTS_TOOL_NAME);
     expect(names).not.toContain("pricing_listPriceLists");
@@ -621,6 +658,7 @@ describe("staffAssistantTools", () => {
     const tools = staffAssistantTools(
       [createPriceList, setPriceListEntries],
       () => Promise.resolve({}),
+      testStaffProvider,
     );
     const createName = toProviderToolName("pricing.createPriceList");
     const setName = toProviderToolName("pricing.setPriceListEntries");
@@ -668,8 +706,10 @@ describe("staffAssistantTools", () => {
       }),
       output: z.object({ id: z.uuid() }),
     });
-    const tools = staffAssistantTools([createCustomer], () =>
-      Promise.resolve({ id: customerId }),
+    const tools = staffAssistantTools(
+      [createCustomer],
+      () => Promise.resolve({ id: customerId }),
+      testStaffProvider,
     );
     const name = toProviderToolName("customers.createCustomer");
     expect(tools[name]?.description).toContain("priceListId");
@@ -706,7 +746,11 @@ describe("staffAssistantTools", () => {
       output: z.object({ orderId: z.uuid() }),
     });
     const execute = vi.fn(() => Promise.resolve({ orderId: customerId }));
-    const tools = staffAssistantTools([createOrder], execute);
+    const tools = staffAssistantTools(
+      [createOrder],
+      execute,
+      testStaffProvider,
+    );
     const names = Object.keys(tools);
     expect(names).toContain(ORDERS_CREATE_TOOL_NAME);
     expect(names).toContain(toProviderToolName("orders.create"));
@@ -791,7 +835,11 @@ describe("staffAssistantTools", () => {
         nextCursor: null,
       }),
     );
-    const tools = staffAssistantTools([listCustomers], execute);
+    const tools = staffAssistantTools(
+      [listCustomers],
+      execute,
+      testStaffProvider,
+    );
     const names = Object.keys(tools);
     expect(names).toContain(CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME);
     expect(names).not.toContain("customers_listCustomers");
@@ -873,7 +921,7 @@ describe("staffAssistantTools", () => {
         nextCursor: null,
       }),
     );
-    const tools = staffAssistantTools([listGroups], execute);
+    const tools = staffAssistantTools([listGroups], execute, testStaffProvider);
     const names = Object.keys(tools);
     expect(names).toContain(CUSTOMERS_LIST_GROUPS_TOOL_NAME);
     expect(names).not.toContain("customers_listGroups");

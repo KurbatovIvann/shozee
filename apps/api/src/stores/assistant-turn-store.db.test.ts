@@ -33,6 +33,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createActionRegistry } from "../registry.js";
 import { createAssistantKitRuntime } from "../http/assistant-kit-runtime.js";
+import { testStaffProvider } from "@showzy/ai/test";
 
 let kit: TestKit;
 
@@ -72,6 +73,7 @@ function kitFor() {
     registry: createActionRegistry(),
     pipeline: kit.pipeline,
     model: "mock",
+    provider: testStaffProvider,
     redis: memoryRedis(),
   }).forCaller(anna).kit;
 }

@@ -235,11 +235,3 @@ export function createAnthropicStaffProviderAdapter(
     },
   };
 }
-
-const TEST_PROVIDER_MODEL = "unit-test-model";
-
-/** Default Anthropic adapter for unit tests that omit an explicit instance. */
-export const anthropicStaffProvider = createAnthropicStaffProviderAdapter({
-  replyModel: TEST_PROVIDER_MODEL,
-  gateModel: TEST_PROVIDER_MODEL,
-});

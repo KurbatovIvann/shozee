@@ -19,6 +19,7 @@ import {
   staffAssistantSystemPrompt,
 } from "./system-prompt.js";
 import { staffAssistantTurnContextAddendum } from "./turn-context.js";
+import { testStaffProvider } from "./test.js";
 
 describe("staffAssistantSystemPrompt", () => {
   it("identifies the staff-panel channel and bilingual replies", () => {
@@ -217,7 +218,7 @@ describe("staffAssistantSystemPrompt", () => {
   });
 
   it("marks the system message with a 1-hour ephemeral cache breakpoint", () => {
-    const message = staffAssistantSystemMessage();
+    const message = staffAssistantSystemMessage(testStaffProvider);
     expect(message.role).toBe("system");
     expect(message.content).toBe(staffAssistantSystemPrompt);
     expect(message.providerOptions).toEqual({
@@ -230,12 +231,15 @@ describe("staffAssistantSystemPrompt", () => {
   });
 
   it("leaves the cached prefix unchanged and does not cache the turn-context addendum", () => {
-    const cached = staffAssistantSystemMessage();
+    const cached = staffAssistantSystemMessage(testStaffProvider);
     const addendum = staffAssistantTurnContextAddendum({
       now: new Date("2026-09-02T12:00:00.000Z"),
       companyName: "Konditerska Anna",
     });
-    const withAddendum = staffAssistantSystemMessages(addendum);
+    const withAddendum = staffAssistantSystemMessages(
+      addendum,
+      testStaffProvider,
+    );
     expect(withAddendum).toHaveLength(2);
     expect(withAddendum[0]).toEqual(cached);
     expect(withAddendum[0]?.content).toBe(staffAssistantSystemPrompt);
