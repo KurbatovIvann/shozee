@@ -583,7 +583,8 @@ Two-step, single-use, channel-agnostic (same for UI and AI — ADR-0008):
 1. Invocation **without** a confirmation token completes authorization
    preflight and stops: core uses the action's `preview` callback, or
    `confirmationSummary` when it binds none,
-   issues `{ challengeId, actionName, inputHash, principalKey, companyId
+   issues `{ challengeId, actionName, inputHash, previewHash (null when the
+   action binds no `preview`), principalKey, companyId
    (null for account), idempotencyKey, expiresAt (5 min) }` (Redis), and
    returns
    `ConfirmationRequiredError` carrying only the redacted summary and, from
@@ -630,6 +631,24 @@ Two-step, single-use, channel-agnostic (same for UI and AI — ADR-0008):
    reservation; a completed result may replay and a stale execution may
    safely resume under that unexpired grant without reusing the raw token
    (§5).
+
+   **The card the user confirmed is what executes (ADR-0050).** A card built
+   by `preview` reads mutable state — a price, a name, a group — so the
+   challenge binds `previewHash`, the SHA-256 of the canonical card payload
+   (`title`, `lines[].label`, `lines[].value`, `notes[]`; nothing else, and
+   never a server clock value, which is why a card that reads the same facts
+   re-hashes identically). When such a challenge is consumed, core re-runs
+   `preview` in the same read-only preview environment **before** the
+   execution transaction. Equal hash → the handler runs. Different hash →
+   nothing executes and the invocation returns a **fresh**
+   `ConfirmationRequiredError` carrying the new card, which the client
+   presents and the person re-confirms; the consumed token stays burned. A
+   reference the re-run cannot resolve refuses exactly as step 1 refuses it
+   (same code, same `clientMessage`) and issues no challenge, so a
+   disappeared or foreign id never leaks existence through a second card. A
+   `confirmationSummary`-only action stores `previewHash: null` and is never
+   re-run. The crash-resume path of §5 carries its own persisted grant and
+   does not re-run the card.
 3. QES signing remains client-side regardless: `documents.sign`'s server
    part only records the client-produced signature; the confirmation
    protocol cannot substitute for key possession.
@@ -944,6 +963,7 @@ does not apply — fails the check.
 
 | Date | Change | Why | Reported by |
 | --- | --- | --- | --- |
+| 2026-10-01 | §7: the challenge binds `previewHash` beside `inputHash`; consuming it re-runs `preview` in the same read-only environment before the handler and, on a different card, executes nothing and returns a fresh challenge carrying the new card | Guardian on SHO-750: only `inputHash` was bound, so a price-list change inside the five-minute window persisted a total the person never approved | SHO-804 |
 | 2026-10-01 | §12: `createTestKit` composes a confirmation hook over an in-memory store, and `crossTenantSuite` drives the two-step gate — the §7 existence-leak rule is now an inherited test for every preview action | Guardian on SHO-785: no `requiresConfirmation`/preview action could run through the suite, so the rule had no inherited test | SHO-790 |
 | 2026-10-01 | §7: `preview` receives `ActionPreviewEnv` — a `ReadTx` over a read-only transaction under the §4 statement timeout and `ctx.call` of `risk: "read"` callees, with the `target` from the in-transaction resolver; the existence-leak rule makes a missing or foreign id refuse exactly as the handler would, and an audited callee's §8 row is the one row a preview leaves | ADR-0050: a card cannot show resolved names, amounts or «old → new» from validated input alone | SHO-785 |
 | 2026-09-30 | §2/§7: execution-time `requireConfirmation` request meta gates one attempt of an idempotent human-principal `write`/`high` action; `preview` callback returns the redacted structured card and may stand in for `confirmationSummary` | ADR-0050: every assistant write must pause on a card core verifies, without a second approval protocol | SHO-745 |

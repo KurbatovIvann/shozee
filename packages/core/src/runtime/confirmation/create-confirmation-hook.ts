@@ -23,6 +23,8 @@ import {
   ConfirmationRequiredError,
   CoreError,
   CoreInvariantError,
+  type ActionPreview,
+  type ActionPreviewLine,
 } from "../../errors/index.js";
 import { canonicalJsonSha256OfUnknown } from "../audit/canonical-json.js";
 import { principalKeyFor, requireIdempotencyKey } from "../idempotency/keys.js";
@@ -42,6 +44,7 @@ const storedChallengeSchema = z.object({
   challengeId: z.uuid(),
   actionName: z.string().min(1),
   inputHash: z.string().min(1),
+  previewHash: z.string().min(1).nullable(),
   principalKey: z.string().min(1),
   companyId: z.uuid().nullable(),
   idempotencyKey: z.string().min(1),
@@ -95,11 +98,25 @@ export function createConfirmationHook(
             ...bindings,
           })
         ) {
-          return {
+          const grant = {
             challengeId: stored.challengeId,
             confirmedAt: new Date(nowMs),
             expiresAt: new Date(stored.expiresAt),
           } satisfies ConfirmationGrant;
+          if (stored.previewHash === null) {
+            return grant;
+          }
+          const presented = await env.summarize();
+          if (previewHashOf(presented) === stored.previewHash) {
+            return grant;
+          }
+          return await issueChallenge(
+            deps.store,
+            now,
+            env,
+            bindings,
+            presented,
+          );
         }
       }
 
@@ -110,6 +127,33 @@ export function createConfirmationHook(
 
 function challengeKey(challengeId: string): string {
   return `confirm:${challengeId}`;
+}
+
+function previewHashOf(card: ConfirmationChallengeSummary): string | null {
+  return card.preview === undefined
+    ? null
+    : canonicalJsonSha256OfUnknown(canonicalPreview(card.preview));
+}
+
+type CanonicalPreview = Required<Omit<ActionPreview, "lines">> & {
+  readonly lines: readonly Required<ActionPreviewLine>[];
+};
+
+function canonicalPreview(preview: ActionPreview): CanonicalPreview {
+  return {
+    title: preview.title,
+    lines: preview.lines.map(canonicalPreviewLine),
+    notes: preview.notes ?? [],
+  };
+}
+
+function canonicalPreviewLine(
+  line: ActionPreviewLine,
+): Required<ActionPreviewLine> {
+  return {
+    label: line.label,
+    value: line.value,
+  };
 }
 
 function bindingsMatch(
@@ -157,19 +201,22 @@ async function issueChallenge(
     readonly companyId: string | null;
     readonly idempotencyKey: string;
   },
+  presented?: ConfirmationChallengeSummary,
 ): Promise<never> {
+  const card = presented ?? (await env.summarize());
+  const { summary, preview } = card;
   const challengeId = randomUUID();
   const expiresAt = new Date(now() + CONFIRMATION_TTL_MS);
   const record: StoredChallenge = {
     challengeId,
     actionName: env.contract.name,
     inputHash: bindings.inputHash,
+    previewHash: previewHashOf(card),
     principalKey: bindings.principalKey,
     companyId: bindings.companyId,
     idempotencyKey: bindings.idempotencyKey,
     expiresAt: expiresAt.toISOString(),
   };
-  const { summary, preview } = await env.summarize();
   await withStore(env.contract.name, () =>
     store.set(
       challengeKey(challengeId),

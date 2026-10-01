@@ -12,7 +12,9 @@ import { defineActionContract } from "../../contract/define-action-contract.js";
 import {
   ConfirmationRequiredError,
   CoreInvariantError,
+  NotFoundError,
   ValidationError,
+  type ActionPreview,
 } from "../../errors/index.js";
 import type {
   ConfirmationChallengeSummary,
@@ -405,6 +407,270 @@ describe("confirmation hook — single-use and expiry", () => {
     expect(retry.challenge.challengeId).not.toBe(
       required.challenge.challengeId,
     );
+  });
+});
+
+function cardEnv(
+  card: () => ActionPreview,
+  overrides: { readonly request?: Partial<PipelineHookRequestMeta> } = {},
+): PipelineHookEnv & {
+  readonly authorization: PreflightAuthorization;
+  readonly summarize: () => ConfirmationChallengeSummary;
+} {
+  return {
+    ...env(overrides),
+    summarize: () => {
+      const preview = card();
+      return { summary: preview.title, preview };
+    },
+  };
+}
+
+function priceCard(price: () => string): () => ActionPreview {
+  return () => ({
+    title: "Create order",
+    lines: [{ label: "Total", value: price() }],
+  });
+}
+
+describe("confirmation hook — card drift (core.md §7, ADR-0050)", () => {
+  it("consumes the challenge when the re-run card hashes the same", async () => {
+    const confirmation = hook();
+    const card = priceCard(() => "250.00");
+    const first = cardEnv(card);
+    const required = await issue(confirmation, first);
+
+    const grant = await confirmation.gate(
+      cardEnv(card, {
+        request: {
+          idempotencyKey: keyOf(first),
+          confirmationChallengeId: required.challenge.challengeId,
+        },
+      }),
+    );
+
+    expect(grant.challengeId).toBe(required.challenge.challengeId);
+  });
+
+  it("issues a fresh challenge carrying the new card when a fact changed", async () => {
+    const confirmation = hook();
+    let price = "250.00";
+    const card = priceCard(() => price);
+    const first = cardEnv(card);
+    const required = await issue(confirmation, first);
+    expect(required.challenge.preview?.lines[0]?.value).toBe("250.00");
+
+    price = "310.00";
+    const redo = await issue(
+      confirmation,
+      cardEnv(card, {
+        request: {
+          idempotencyKey: keyOf(first),
+          confirmationChallengeId: required.challenge.challengeId,
+        },
+      }),
+    );
+
+    expect(redo.challenge.challengeId).not.toBe(required.challenge.challengeId);
+    expect(redo.challenge.preview?.lines[0]?.value).toBe("310.00");
+  });
+
+  it("issues a fresh challenge when the re-run card gains a line", async () => {
+    const confirmation = hook();
+    let lines: ActionPreview["lines"] = [{ label: "Total", value: "250.00" }];
+    const card = (): ActionPreview => ({ title: "Create order", lines });
+    const first = cardEnv(card);
+    const required = await issue(confirmation, first);
+
+    lines = [
+      { label: "Total", value: "250.00" },
+      { label: "Delivery", value: "60.00" },
+    ];
+    const redo = await issue(
+      confirmation,
+      cardEnv(card, {
+        request: {
+          idempotencyKey: keyOf(first),
+          confirmationChallengeId: required.challenge.challengeId,
+        },
+      }),
+    );
+
+    expect(redo.challenge.challengeId).not.toBe(required.challenge.challengeId);
+    expect(redo.challenge.preview?.lines).toHaveLength(2);
+  });
+
+  it("issues a fresh challenge when the re-run card gains a note", async () => {
+    const confirmation = hook();
+    let notes: readonly string[] = [];
+    const card = (): ActionPreview => ({
+      title: "Create order",
+      lines: [{ label: "Total", value: "250.00" }],
+      notes,
+    });
+    const first = cardEnv(card);
+    const required = await issue(confirmation, first);
+
+    notes = ["Stock is low"];
+    const redo = await issue(
+      confirmation,
+      cardEnv(card, {
+        request: {
+          idempotencyKey: keyOf(first),
+          confirmationChallengeId: required.challenge.challengeId,
+        },
+      }),
+    );
+
+    expect(redo.challenge.challengeId).not.toBe(required.challenge.challengeId);
+    expect(redo.challenge.preview?.notes).toEqual(["Stock is low"]);
+  });
+
+  it("treats absent notes and an empty notes list as the same card", async () => {
+    const confirmation = hook();
+    let notes: readonly string[] | undefined = undefined;
+    const card = (): ActionPreview => ({
+      title: "Create order",
+      lines: [{ label: "Total", value: "250.00" }],
+      ...(notes === undefined ? {} : { notes }),
+    });
+    const first = cardEnv(card);
+    const required = await issue(confirmation, first);
+
+    notes = [];
+    const grant = await confirmation.gate(
+      cardEnv(card, {
+        request: {
+          idempotencyKey: keyOf(first),
+          confirmationChallengeId: required.challenge.challengeId,
+        },
+      }),
+    );
+
+    expect(grant.challengeId).toBe(required.challenge.challengeId);
+  });
+
+  it("burns the drifted challenge so the old token cannot be replayed", async () => {
+    const confirmation = hook();
+    let price = "250.00";
+    const card = priceCard(() => price);
+    const first = cardEnv(card);
+    const required = await issue(confirmation, first);
+
+    price = "310.00";
+    await issue(
+      confirmation,
+      cardEnv(card, {
+        request: {
+          idempotencyKey: keyOf(first),
+          confirmationChallengeId: required.challenge.challengeId,
+        },
+      }),
+    );
+    price = "250.00";
+    const replayed = await issue(
+      confirmation,
+      cardEnv(card, {
+        request: {
+          idempotencyKey: keyOf(first),
+          confirmationChallengeId: required.challenge.challengeId,
+        },
+      }),
+    );
+
+    expect(replayed.challenge.challengeId).not.toBe(
+      required.challenge.challengeId,
+    );
+  });
+
+  it("confirms the fresh challenge against the card it was issued with", async () => {
+    const confirmation = hook();
+    let price = "250.00";
+    const card = priceCard(() => price);
+    const first = cardEnv(card);
+    const required = await issue(confirmation, first);
+
+    price = "310.00";
+    const redo = await issue(
+      confirmation,
+      cardEnv(card, {
+        request: {
+          idempotencyKey: keyOf(first),
+          confirmationChallengeId: required.challenge.challengeId,
+        },
+      }),
+    );
+    const grant = await confirmation.gate(
+      cardEnv(card, {
+        request: {
+          idempotencyKey: keyOf(first),
+          confirmationChallengeId: redo.challenge.challengeId,
+        },
+      }),
+    );
+
+    expect(grant.challengeId).toBe(redo.challenge.challengeId);
+  });
+
+  it("refuses without a new challenge when the re-run throws", async () => {
+    const store = createInMemoryConfirmationStore();
+    const sets: string[] = [];
+    const recording: ConfirmationStore = {
+      async set(key, value, ttlMs) {
+        sets.push(key);
+        await store.set(key, value, ttlMs);
+      },
+      getAndDelete: (key) => store.getAndDelete(key),
+    };
+    const confirmation = hook(recording);
+    let resolvable = true;
+    const card = (): ActionPreview => {
+      if (!resolvable) {
+        throw new NotFoundError();
+      }
+      return { title: "Create order", lines: [] };
+    };
+    const first = cardEnv(card);
+    const required = await issue(confirmation, first);
+
+    resolvable = false;
+    await expect(
+      confirmation.gate(
+        cardEnv(card, {
+          request: {
+            idempotencyKey: keyOf(first),
+            confirmationChallengeId: required.challenge.challengeId,
+          },
+        }),
+      ),
+    ).rejects.toThrow(NotFoundError);
+    expect(sets).toHaveLength(1);
+  });
+
+  it("never re-runs a summary-only challenge", async () => {
+    const confirmation = hook();
+    let summaries = 0;
+    const counting = (
+      request: Partial<PipelineHookRequestMeta>,
+    ): ReturnType<typeof env> => ({
+      ...env({ request }),
+      summarize: () => {
+        summaries += 1;
+        return { summary: "Revoke access for one company." };
+      },
+    });
+    const first = counting({ idempotencyKey: randomUUID() });
+    const required = await issue(confirmation, first);
+
+    const grant = await confirmation.gate(
+      counting({
+        idempotencyKey: keyOf(first),
+        confirmationChallengeId: required.challenge.challengeId,
+      }),
+    );
+
+    expect(grant.challengeId).toBe(required.challenge.challengeId);
+    expect(summaries).toBe(1);
   });
 });
 
