@@ -33,6 +33,7 @@ const fixtures = {
   customerAEmpty: randomUUID(),
   customerArchived: randomUUID(),
   customerB: randomUUID(),
+  customerBNearAlpha: randomUUID(),
   customerTwinPhone: randomUUID(),
   customerTwinEmail: randomUUID(),
   groupA: randomUUID(),
@@ -102,6 +103,13 @@ beforeAll(async () => {
       name: "Bravo",
       phone: "+380509999999",
       email: "bravo@kit.test",
+    },
+    {
+      id: fixtures.customerBNearAlpha,
+      companyId: kitIdentities.companies.b,
+      name: "Alpha Bun",
+      phone: "+380508888888",
+      email: "alpha@other.test",
     },
   ]);
 
@@ -300,13 +308,24 @@ describe("customers.getCustomer by human reference", () => {
     expect(error.options).toEqual([]);
   });
 
-  it("refuses another company's name and phone as missing", async () => {
-    await expect(
-      kit.invoke(getCustomer, { query: "Bravo" }),
-    ).rejects.toBeInstanceOf(NotFoundError);
-    await expect(
-      kit.invoke(getCustomer, { query: "+380509999999" }),
-    ).rejects.toBeInstanceOf(NotFoundError);
+  it("refuses another company's name, phone, and email with no foreign options", async () => {
+    for (const query of ["Bravo", "+380509999999", "bravo@kit.test"]) {
+      const error = await refusalOf({ query });
+      expect(error).toBeInstanceOf(EntityLookupUnmatchedError);
+      if (!(error instanceof EntityLookupUnmatchedError)) {
+        return;
+      }
+      expect(error.options).toEqual([]);
+    }
+
+    const nearError = await refusalOf({ query: "Alpha" });
+    expect(nearError).toBeInstanceOf(EntityLookupUnmatchedError);
+    if (!(nearError instanceof EntityLookupUnmatchedError)) {
+      return;
+    }
+    expect(nearError.options.map((option) => option.id)).toEqual([
+      fixtures.customerA,
+    ]);
   });
 
   it("denies a query for staff without customers:view", async () => {
