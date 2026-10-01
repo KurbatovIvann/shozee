@@ -167,7 +167,7 @@ describe("Шо smoke", () => {
     expect(order?.ready).toBe(false);
   });
 
-  it("blocks a write's card while an order said with it is left unread", async () => {
+  it("blocks a write's card while a stocktake said with it is left unread", async () => {
     sho ??= await loadSho();
     const result = await sho.run(
       { raw: "Онови телефон Олені 0671234567 і зроби переоблік трьох еклерів" },
