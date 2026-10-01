@@ -1,0 +1,16 @@
+{
+ "format": "sho-calibration/1",
+ "action_temperature": 0.638,
+ "fitted_on": "data/voice2/v3/mix/v35.jsonl: the trainer's holdout (sho.data.split, 0.05), single-command rows",
+ "rows": 3802,
+ "action_accuracy": 0.9868,
+ "nll": [
+  0.2198,
+  0.0759
+ ],
+ "ece": [
+  0.1432,
+  0.0039
+ ],
+ "decision": "D87"
+}

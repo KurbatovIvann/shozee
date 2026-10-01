@@ -1,5 +1,5 @@
 import type { ActionName, IntentKind } from "./bundle.ts";
-import { BARE_COMMAND_VERBS, COMMAND_CONNECTORS, COMMAND_VERBS, CUE_CONNECTORS } from "./lexicon/segment.ts";
+import { BARE_COMMAND_VERBS, COMMAND_CONNECTORS, COMMAND_VERBS, CUE_CONNECTORS, WEAK_COMMAND_VERBS } from "./lexicon/segment.ts";
 import type { OrderLine } from "./lines.ts";
 import type { Params, ParamValue } from "./params.ts";
 import { FRAGMENT_ACTIONS } from "./references.ts";
@@ -12,6 +12,12 @@ import type { TaggedSpan } from "./spans.ts";
 // or, with none, when the model tagged a span of a record after it that the command does not hold; «і» inside a name or a line («торт з вишнею і
 // маком», «Ранок і Ко») is no cue, having no verb after it. Spans alone, with no verb, are not: a command holds a period or a sum as a value its words
 // do not show («за вересень» a range), and such spans would flag single commands.
+//
+// D95 (Q2 of the v3.5 served report): an order said after the first command with «і зроби / и сделай» («створи клієнта … і зроби для неї замовлення
+// два торти») was lost on a ready card: «зроби» is no D81 verb. It is a cue after a connector when the model tagged a product after it and the command
+// holds no product span at all (`WEAK_COMMAND_VERBS`). And a leftover that holds a product the command does not hold (`lines`: an order's lines) and
+// is not served as a command of its own makes the `unparsed` need of a write or a destructive command blocking (`pipeline.ts` `withUnparsed`): the
+// card is not ready while an order said with it is left out.
 
 // The reason of the need a leftover gets when it is not served as a command.
 export const UNPARSED = "unparsed";
@@ -24,12 +30,16 @@ export const LEFTOVER_KINDS: ReadonlySet<IntentKind> = new Set<IntentKind>(["rea
 const VALUE_KINDS: ReadonlySet<string> = new Set(["when", "period_span", "money", "percent", "quantity", "count", "measure", "attr", "expires", "basis", "comment", "description", "pick_text"]);
 // «а також», «а потім»: «а» joins only before these.
 const A_BEFORE: ReadonlySet<string> = new Set(["також", "также", "потім", "потом", "затем"]);
+// D95: the span of an order line's product.
+const PRODUCT = "product";
 
 export interface Leftover {
   // Where the head ends (before the connector words) and the leftover starts (the verb), in the segment's text.
   readonly headEnd: number;
   readonly start: number;
   readonly text: string;
+  // D95: the leftover holds a product the command does not hold (an order's lines): unserved, its `unparsed` need blocks.
+  readonly lines: boolean;
 }
 
 interface Word {
@@ -71,7 +81,9 @@ export function leftoverOf(text: string, action: ActionName, params: Params, spa
   const words = wordsOf(text);
   for (let index = 1; index < words.length; index++) {
     const verb = words[index];
-    if (verb === undefined || !COMMAND_VERBS.has(verb.text)) continue;
+    if (verb === undefined) continue;
+    const weak = WEAK_COMMAND_VERBS.has(verb.text);
+    if (!COMMAND_VERBS.has(verb.text) && !weak) continue;
     let first = index;
     while (first > 0 && CUE_CONNECTORS.has(words[first - 1]?.text ?? "")) first--;
     if (first < index && first > 0 && words[first - 1]?.text === "а" && A_BEFORE.has(words[first]?.text ?? "")) first--;
@@ -79,10 +91,13 @@ export function leftoverOf(text: string, action: ActionName, params: Params, spa
     if (head === undefined) continue;
     if (held.some((span) => span.end > verb.start)) continue;
     const joined = first < index;
+    const lines = spans.some((span) => span.start > verb.start && span.kind === PRODUCT && !held.includes(span));
+    // D95: «і зроби» before a product, when the command holds none.
+    if (weak && (!joined || !lines || held.some((span) => span.kind === PRODUCT))) continue;
     if (!joined && !spans.some((span) => span.start > verb.start && !held.includes(span) && !VALUE_KINDS.has(span.kind))) continue;
     // «… і додай ще» said last: nothing after the verb but joining words is a command only for a verb that is one alone.
     if (words.slice(index + 1).every((word) => COMMAND_CONNECTORS.has(word.text)) && !BARE_COMMAND_VERBS.has(verb.text)) continue;
-    return { headEnd: head.end, start: verb.start, text: text.slice(verb.start).trim() };
+    return { headEnd: head.end, start: verb.start, text: text.slice(verb.start).trim(), lines };
   }
   return null;
 }

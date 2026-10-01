@@ -20,7 +20,7 @@ describe("model integrity", () => {
 
   it("the committed runtime sources match manifest.json", async () => {
     expect(await checkRuntime()).toEqual([]);
-    expect(Object.keys(manifest.runtime)).toHaveLength(83);
+    expect(Object.keys(manifest.runtime)).toHaveLength(85);
     expect(Object.keys(manifest.runtime)).toContain("adapters/node.ts");
   });
 
@@ -36,9 +36,9 @@ describe("model integrity", () => {
     expect(manifest.catalogue).toBe("v3");
     expect(manifest.source).toEqual({
       repo: "system-one-uk",
-      commit: "c1e1d8547e7bae9ce0fb2ef55f1d655dfcdab932",
+      commit: "d85704f36f0853e55d5e89eeb577f3096a24fd70",
       runtimeVersion: "0.2.0",
-      bundle: "demo/model-v33",
+      bundle: "demo/model-v35",
       registry: "default",
     });
     expect(modelDir.replaceAll("\\", "/")).toMatch(
