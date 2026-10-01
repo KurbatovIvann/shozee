@@ -217,6 +217,23 @@ function orderItemInsertFromView(
   };
 }
 
+export function requireSingleCurrency(
+  prices: readonly ResolvedOrderPrice[],
+): string {
+  const first = prices[0];
+  if (first === undefined) {
+    throw new CoreInvariantError(
+      "create input passed Zod min(1) with no prices",
+    );
+  }
+  for (const price of prices) {
+    if (price.currency !== first.currency) {
+      throw new ConflictError("Order items must share a single currency.");
+    }
+  }
+  return first.currency;
+}
+
 function buildOrderLine(args: {
   readonly item: PersistedCreateLine;
   readonly price: ResolvedOrderPrice;
@@ -287,18 +304,7 @@ export async function createStaffOrder(env: {
     );
   }
 
-  const first = prices[0];
-  if (first === undefined) {
-    throw new CoreInvariantError(
-      "create input passed Zod min(1) with no prices",
-    );
-  }
-  const currency = first.currency;
-  for (const price of prices) {
-    if (price.currency !== currency) {
-      throw new ConflictError("Order items must share a single currency.");
-    }
-  }
+  const currency = requireSingleCurrency(prices);
 
   const orderId = randomUUID();
   const lines: PersistedLine[] = [];
