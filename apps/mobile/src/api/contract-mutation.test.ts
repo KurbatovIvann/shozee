@@ -98,7 +98,7 @@ describe("createContractMutationController", () => {
     );
   });
 
-  it("keeps the attempt key and sets challenge meta on confirmation re-invoke", async () => {
+  it("keeps one attempt key across consecutive confirms and sends each challenge", async () => {
     const requests: Request[] = [];
     const created = createShowzyClient<SampleRouter>({
       apiUrl: "http://api.test",
@@ -117,13 +117,18 @@ describe("createContractMutationController", () => {
     await ignoreRpcFailure(controller.submit({ note: "confirm" }));
     const key = controller.attemptKey();
     await ignoreRpcFailure(controller.confirm("challenge-9"));
+    await ignoreRpcFailure(controller.confirm("challenge-10"));
 
-    expect(requests).toHaveLength(2);
-    expect(requests[0]?.headers.get(IDEMPOTENCY_KEY_HEADER)).toBe(key);
-    expect(requests[1]?.headers.get(IDEMPOTENCY_KEY_HEADER)).toBe(key);
-    expect(requests[1]?.headers.get(CONFIRMATION_CHALLENGE_HEADER)).toBe(
-      "challenge-9",
-    );
+    expect(requests).toHaveLength(3);
+    expect(
+      requests.map((request) => request.headers.get(IDEMPOTENCY_KEY_HEADER)),
+    ).toEqual([key, key, key]);
+    expect(
+      requests.map((request) =>
+        request.headers.get(CONFIRMATION_CHALLENGE_HEADER),
+      ),
+    ).toEqual([null, "challenge-9", "challenge-10"]);
+    expect(controller.attemptKey()).toBe(key);
     expect(
       confirmationFromError(
         new ORPCError("CONFIRMATION_REQUIRED", {

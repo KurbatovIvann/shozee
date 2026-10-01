@@ -42,7 +42,7 @@ type ProtocolInvocation<T> =
       readonly challenge: ConfirmationChallengeView;
     };
 
-async function invokeUntilChallenged<T>(
+async function invokeCatchingChallenge<T>(
   invoke: () => Promise<T>,
 ): Promise<ProtocolInvocation<T>> {
   try {
@@ -61,14 +61,14 @@ export async function submitWithProtocolConfirmation<T>(args: {
   readonly present: PresentConfirmationChallenge;
   readonly confirm: (challengeId: string) => Promise<T>;
 }): Promise<ProtocolConfirmationResult<T>> {
-  let invocation = await invokeUntilChallenged(args.submit);
+  let invocation = await invokeCatchingChallenge(args.submit);
   while (invocation.outcome === "challenged") {
     const { challengeId } = invocation.challenge;
     const choice = await args.present(invocation.challenge);
     if (choice === "cancel") {
       return { outcome: "declined" };
     }
-    invocation = await invokeUntilChallenged(() => args.confirm(challengeId));
+    invocation = await invokeCatchingChallenge(() => args.confirm(challengeId));
   }
   return invocation;
 }

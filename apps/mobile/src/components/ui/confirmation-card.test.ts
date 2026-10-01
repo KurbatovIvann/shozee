@@ -137,11 +137,10 @@ describe("confirmationCardView", () => {
 describe("createConfirmationCardMachine", () => {
   it("opens on present and settles the choice the viewer made", async () => {
     const { machine, states } = machineUnderTest();
-    const choice = machine.present(cardNamed("Видалити групу?"));
-    expect(states.at(-1)).toEqual({
-      open: true,
-      card: cardNamed("Видалити групу?"),
-    });
+    const card = cardNamed("Видалити групу?");
+    const choice = machine.present(card);
+    expect(states.at(-1)).toEqual({ open: true, card });
+    machine.armConfirm(card);
     machine.choose("confirm");
     expect(await choice).toBe("confirm");
     expect(states.at(-1)?.open).toBe(false);
@@ -149,12 +148,56 @@ describe("createConfirmationCardMachine", () => {
 
   it("cancels the first challenge when a second one is presented", async () => {
     const { machine, states } = machineUnderTest();
+    const secondCard = cardNamed("Другий");
     const first = machine.present(cardNamed("Перший"));
-    const second = machine.present(cardNamed("Другий"));
+    const second = machine.present(secondCard);
     expect(await first).toBe("cancel");
-    expect(states.at(-1)).toEqual({ open: true, card: cardNamed("Другий") });
+    expect(states.at(-1)).toEqual({ open: true, card: secondCard });
+    machine.armConfirm(secondCard);
     machine.choose("confirm");
     expect(await second).toBe("confirm");
+  });
+
+  it("ignores a confirm press that lands before the re-presented card arms", async () => {
+    const { machine, states } = machineUnderTest();
+    const firstCard = cardNamed("Перший");
+    const driftedCard = cardNamed("Оновлений");
+    const first = machine.present(firstCard);
+    machine.armConfirm(firstCard);
+    machine.choose("confirm");
+    expect(await first).toBe("confirm");
+
+    const drifted = machine.present(driftedCard);
+    const settled = vi.fn();
+    void drifted.then(settled);
+    machine.choose("confirm");
+    await Promise.resolve();
+
+    expect(settled).not.toHaveBeenCalled();
+    expect(states.at(-1)).toEqual({ open: true, card: driftedCard });
+
+    machine.armConfirm(driftedCard);
+    machine.choose("confirm");
+    expect(await drifted).toBe("confirm");
+  });
+
+  it("does not arm a card the viewer is no longer looking at", async () => {
+    const { machine } = machineUnderTest();
+    const staleCard = cardNamed("Застарілий");
+    const freshCard = cardNamed("Новий");
+    const stale = machine.present(staleCard);
+    const fresh = machine.present(freshCard);
+    expect(await stale).toBe("cancel");
+
+    machine.armConfirm(staleCard);
+    const settled = vi.fn();
+    void fresh.then(settled);
+    machine.choose("confirm");
+    await Promise.resolve();
+
+    expect(settled).not.toHaveBeenCalled();
+    machine.choose("cancel");
+    expect(await fresh).toBe("cancel");
   });
 
   it("settles cancel when the card closes and clears the card after it hides", async () => {
@@ -172,12 +215,14 @@ describe("createConfirmationCardMachine", () => {
 
   it("ignores a late hide callback that arrives after the next card opened", async () => {
     const { machine, states } = machineUnderTest();
+    const secondCard = cardNamed("Другий");
     const first = machine.present(cardNamed("Перший"));
     machine.choose("cancel");
     expect(await first).toBe("cancel");
-    const second = machine.present(cardNamed("Другий"));
+    const second = machine.present(secondCard);
     machine.clearCard();
-    expect(states.at(-1)).toEqual({ open: true, card: cardNamed("Другий") });
+    expect(states.at(-1)).toEqual({ open: true, card: secondCard });
+    machine.armConfirm(secondCard);
     machine.choose("confirm");
     expect(await second).toBe("confirm");
   });

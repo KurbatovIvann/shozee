@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useRef,
   useState,
   type ReactNode,
@@ -18,6 +19,7 @@ import {
   type ConfirmationCardState,
 } from "./confirmation-card.machine";
 import { confirmationCardView } from "./confirmation-card.model";
+import { SHEET_MS } from "./sheet-dismiss";
 
 const ConfirmationCardContext =
   createContext<PresentConfirmationChallenge | null>(null);
@@ -56,6 +58,19 @@ export function ConfirmationCardProvider(props: {
   const clearCard = useCallback(() => {
     machine.clearCard();
   }, [machine]);
+
+  const shownCard = state.open ? state.card : null;
+  useEffect(() => {
+    if (shownCard === null) {
+      return;
+    }
+    const armTimer = setTimeout(() => {
+      machine.armConfirm(shownCard);
+    }, SHEET_MS);
+    return () => {
+      clearTimeout(armTimer);
+    };
+  }, [machine, shownCard]);
 
   return (
     <ConfirmationCardContext.Provider value={present}>
