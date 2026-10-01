@@ -12,6 +12,7 @@ import type { ActionContract } from "../contract/types.js";
 import type { ActionPreview } from "../errors/index.js";
 import type { ImplementedAction } from "./implement-action.js";
 import type {
+  ActionPreviewEnv,
   AuditTargetEnv,
   AuditTargetRef,
   ConfirmationSummaryEnv,
@@ -60,7 +61,7 @@ export interface RegisteredImplementation {
   ) => MaybePromise<string>;
   readonly preview?: (
     input: never,
-    env: ConfirmationSummaryEnv,
+    env: ActionPreviewEnv,
   ) => MaybePromise<ActionPreview>;
   readonly auditTarget?: (env: AuditTargetEnv) => MaybePromise<AuditTargetRef>;
   readonly auditSnapshot?: (input: never) => JsonValue;

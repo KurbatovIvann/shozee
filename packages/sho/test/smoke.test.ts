@@ -84,7 +84,7 @@ describe("Шо smoke", () => {
       Object(file),
       "action_temperature",
     );
-    expect(typeof temperature).toBe("number");
+    expect(temperature).toBe(0.638);
     expect(sho.calibration.actionTemperature).toBe(temperature);
     const result = await sho.run(
       { raw: PHRASE },
@@ -128,6 +128,62 @@ describe("Шо smoke", () => {
     expect(command?.confidence.action).toBe(0);
     expect(command?.needs).toEqual([
       { path: "text", reason: "language", blocking: false },
+    ]);
+  });
+
+  it("leaves a question about the app itself to the dialogue model", async () => {
+    sho ??= await loadSho();
+    const result = await sho.run(
+      { raw: "Підкажи, як мені додати знижку на торти в застосунку?" },
+      { context: CONTEXT },
+    );
+    expect(result.commands).toHaveLength(1);
+    const [command] = result.commands;
+    expect(command?.action).toBe("none");
+    expect(command?.ready).toBe(true);
+    expect(command?.needs).toEqual([
+      {
+        path: "text",
+        reason: "how_to",
+        blocking: false,
+        span: { text: "як мені" },
+      },
+    ]);
+  });
+
+  it("reads an order said after «и сделай» as a second command of the chain", async () => {
+    sho ??= await loadSho();
+    const result = await sho.run(
+      { raw: "Создай клиента Анна Левчук и сделай ей заказ пять эклеров" },
+      { context: CONTEXT },
+    );
+    expect(result.commands.map((command) => command.action)).toEqual([
+      "customers.createCustomer",
+      "orders.create",
+    ]);
+    const [created, order] = result.commands;
+    expect(created?.ready).toBe(true);
+    expect(order?.refPrevious).toEqual({ customer: 0 });
+    expect(order?.ready).toBe(false);
+  });
+
+  it("blocks a write's card while a stocktake said with it is left unread", async () => {
+    sho ??= await loadSho();
+    const result = await sho.run(
+      { raw: "Онови телефон Олені 0671234567 і зроби переоблік трьох еклерів" },
+      { context: CONTEXT },
+    );
+    expect(result.commands).toHaveLength(1);
+    const [command] = result.commands;
+    expect(command?.action).toBe("customers.updateCustomer");
+    expect(command?.ready).toBe(false);
+    expect(command?.needs).toEqual([
+      {
+        path: "text",
+        reason: "unparsed",
+        blocking: true,
+        span: { text: "зроби переоблік трьох еклерів" },
+      },
     ]);
   });
 });

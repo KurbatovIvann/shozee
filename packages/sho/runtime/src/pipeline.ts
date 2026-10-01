@@ -6,8 +6,9 @@ import type { Resolved } from "./customers.ts";
 import { resolveCustomer } from "./customers.ts";
 import { decode, type Decoded, type Heads } from "./decode.ts";
 import { InputError } from "./errors.ts";
+import { asHowTo, howToQuestion } from "./howTo.ts";
 import { answersCard, foreignLanguage, languageCommand, namesRecord } from "./language.ts";
-import { LEFTOVER_KINDS, LEFTOVER_SURE, UNPARSED, leftoverOf } from "./leftover.ts";
+import { LEFTOVER_KINDS, LEFTOVER_SURE, UNPARSED, leftoverOf, type Leftover } from "./leftover.ts";
 import { headsOf, type ModelRunner } from "./model.ts";
 import type { Params } from "./params.ts";
 import { nameAcross } from "./lists.ts";
@@ -107,6 +108,9 @@ interface Piece {
   readonly pass: Pass;
   readonly spans?: readonly TaggedSpan[];
 }
+
+// D95: the effects of a card a left-out order blocks.
+const WRITES: ReadonlySet<string> = new Set(["write", "destructive"]);
 
 interface Filled {
   readonly action: ActionName;
@@ -221,11 +225,11 @@ export function createRuntime(bundle: Bundle, runner: ModelRunner, options: Runt
   }
 
   // D81: each piece's text to the words its command holds nothing of, from a command verb on (`leftover.ts`).
-  function leftovers(pieces: readonly Piece[]): Map<string, string> {
-    const found = new Map<string, string>();
+  function leftovers(pieces: readonly Piece[]): Map<string, Leftover> {
+    const found = new Map<string, Leftover>();
     for (const piece of pieces) {
       const left = leftoverOf(piece.text, piece.pass.decoded.action, piece.pass.decoded.params, piece.spans ?? piece.pass.decoded.spans);
-      if (left !== null) found.set(piece.text, left.text);
+      if (left !== null) found.set(piece.text, left);
     }
     return found;
   }
@@ -241,18 +245,20 @@ export function createRuntime(bundle: Bundle, runner: ModelRunner, options: Runt
     return { ...command, text };
   }
 
-  function withUnparsed(command: CommandV2, unparsed: ReadonlyMap<string, string>): CommandV2 {
-    const words = unparsed.get(command.text);
-    if (words === undefined) return command;
-    const need: Need = { path: "text", reason: UNPARSED, blocking: false, span: { text: words } };
-    return { ...command, needs: [...command.needs, need] };
+  // D95: a leftover with an order's lines (a product the command does not hold) blocks a write's card: it is not ready while that order is left out.
+  function withUnparsed(command: CommandV2, unparsed: ReadonlyMap<string, Leftover>): CommandV2 {
+    const left = unparsed.get(command.text);
+    if (left === undefined) return command;
+    const blocking = left.lines && WRITES.has(command.effect);
+    const need: Need = { path: "text", reason: UNPARSED, blocking, span: { text: left.text } };
+    return { ...command, needs: [...command.needs, need], ...(blocking ? { ready: false } : {}) };
   }
 
   function assembled(raw: string | null, text: string, first: Pass, segments: readonly string[], passes: readonly Pass[], context: CompiledContext | null, debug: boolean, now: Now | null, previous: Previous | null = null, pinned = true, recovered: readonly Piece[] | null = null, focus: readonly FocusEntry[] | null = null): ResultV2 {
     const percents = [...percentMarks(raw)];
     const pieces = recovered ?? servedPieces(text, first, segments, passes, context);
     // A bundle with no segment head reads one command per utterance (v2c and before): nothing is a leftover.
-    const unparsed = first.inference.heads.segment === null ? new Map<string, string>() : leftovers(pieces);
+    const unparsed = first.inference.heads.segment === null ? new Map<string, Leftover>() : leftovers(pieces);
     // A recovered piece's spans are its own pass's (or, for a head that kept its first reading, those before the cut).
     const read: readonly Piece[] = recovered?.map((piece) => ({ ...piece, spans: piece.spans ?? piece.pass.decoded.spans })) ?? passes.map((pass) => ({ text: pass.inference.text, pass }));
     const parts: Part[] = read.map((piece) => ({ text: piece.text, action: piece.pass.decoded.action, params: piece.pass.decoded.params, resolved: piece.pass.decoded.resolved, pass: piece.pass, ...(piece.spans === undefined ? {} : { spans: piece.spans }) }));
@@ -269,13 +275,15 @@ export function createRuntime(bundle: Bundle, runner: ModelRunner, options: Runt
       return Object.keys(refs).length ? { ...decision, fromPrevious: refs } : decision;
     };
     const creating = (command: CommandV2): CommandV2 => (focus === null ? command : withCreates(command));
-    const build = (decision: Decision) => creating(withUnparsed(refined(bundle, commandV2(bundle, withPrevious(decision), context, requirements), previous, clock, refineWindow), unparsed));
+    // D97: a question about the app («як мені …», «що таке …», «де в застосунку …») is served as `none` with the `how_to` need (`howTo.ts`).
+    const build = (decision: Decision) => creating(asHowTo(bundle, withUnparsed(refined(bundle, commandV2(bundle, withPrevious(decision), context, requirements), previous, clock, refineWindow), unparsed)));
     // D82 (E11): a refinement said right after another command of the same utterance («відкрий форму нового прайсу | в chrome») refines that command,
-    // not the host's previous one: merged into it when it is a read, else its filters are `ignored` needs on it; it gets no card of its own.
+    // not the host's previous one: merged into it when it is a read, else its filters are `ignored` needs on it; it gets no card of its own. A
+    // question about the app (D97) is no refinement of it.
     const commands: CommandV2[] = [];
     for (const decision of decisions) {
       const before = commands.at(-1);
-      if (before === undefined || decision.action !== REFINE) {
+      if (before === undefined || decision.action !== REFINE || howToQuestion(decision.text) !== null) {
         commands.push(build(decision));
         continue;
       }
