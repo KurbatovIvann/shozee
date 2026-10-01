@@ -22,6 +22,11 @@ export {
   listGroupsContract,
 } from "./actions/list-groups.contract.js";
 export { listMatchingIdsContract } from "./actions/list-matching-ids.contract.js";
+export {
+  LIST_NAME_INDEX_CUSTOMERS_MAX,
+  LIST_NAME_INDEX_GROUPS_MAX,
+  listNameIndexContract,
+} from "./actions/list-name-index.contract.js";
 export { resolveCustomerReferenceContract } from "./actions/resolve-customer-reference.contract.js";
 export { restoreCustomerContract } from "./actions/restore-customer.contract.js";
 export { searchMatchesContract } from "./actions/search-matches.contract.js";

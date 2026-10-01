@@ -5,6 +5,7 @@ import { deletePriceList } from "./actions/delete-price-list.js";
 import { getPriceList } from "./actions/get-price-list.js";
 import { listPriceListEntries } from "./actions/list-price-list-entries.js";
 import { listPriceLists } from "./actions/list-price-lists.js";
+import { listNameIndex } from "./actions/list-name-index.js";
 import { removePriceListEntries } from "./actions/remove-price-list-entries.js";
 import { resolveProductPrices } from "./actions/resolve-product-prices.js";
 import { searchMatches } from "./actions/search-matches.js";
@@ -19,6 +20,7 @@ export { deletePriceList };
 export { getPriceList };
 export { listPriceListEntries };
 export { listPriceLists };
+export { listNameIndex };
 export { removePriceListEntries };
 export { resolveProductPrices };
 export { searchMatches };
@@ -32,6 +34,7 @@ export const pricingActions = [
   deactivatePriceList,
   deletePriceList,
   getPriceList,
+  listNameIndex,
   listPriceListEntries,
   listPriceLists,
   removePriceListEntries,

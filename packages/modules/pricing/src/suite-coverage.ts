@@ -7,6 +7,7 @@ export const pricingSuiteCoverage = {
     "pricing.deactivatePriceList",
     "pricing.deletePriceList",
     "pricing.getPriceList",
+    "pricing.listNameIndex",
     "pricing.listPriceListEntries",
     "pricing.listPriceLists",
     "pricing.removePriceListEntries",

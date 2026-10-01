@@ -11,6 +11,10 @@ export {
   LIST_PRICE_LISTS_QUERY_MAX,
   listPriceListsContract,
 } from "./actions/list-price-lists.contract.js";
+export {
+  LIST_NAME_INDEX_PRICE_LISTS_MAX,
+  listNameIndexContract,
+} from "./actions/list-name-index.contract.js";
 export { removePriceListEntriesContract } from "./actions/remove-price-list-entries.contract.js";
 export { resolveProductPricesContract } from "./actions/resolve-product-prices.contract.js";
 export { searchMatchesContract } from "./actions/search-matches.contract.js";

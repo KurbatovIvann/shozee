@@ -85,6 +85,10 @@ where it runs and what it is given.
   build it; the 30 s TTL stands in until it is ticketed, and a name created in
   that window costs a fall-through to the LLM, never a wrong write
   (ADR-0050).
+  - The context holds **ids and names only** (SHO-762: `customers`,
+    `catalog` and `pricing` `listNameIndex`): a phone or email a person says
+    is an `unchecked` customer reference Shozee resolves server-side, never a
+    contact field shipped to Шо (agreed with system-one-uk, D94).
   - Above a variants cap the list is sent `partial` and the parse is
     best-effort; the 8 MB limit is reached near ~13k products × 4 variants.
   - The fingerprint's two blind spots are accepted: a stale name costs a
