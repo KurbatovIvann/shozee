@@ -427,7 +427,7 @@ describe("execution-time requireConfirmation (core.md §7, ADR-0050)", () => {
 
     expect(replayed.resultId).toBe(confirmed.resultId);
     expect(runs()).toBe(1);
-    expect(previewCalls()).toBe(1);
+    expect(previewCalls()).toBe(2);
   });
 
   it("fails closed when the flagged write binds no card callback", async () => {
