@@ -393,7 +393,7 @@ describe("documents preview cards (core.md §7)", () => {
       "Запросити підписання документа KA-РХ-000001",
     );
     expect(preview.title).toContain(REQUEST_SIGN_KEY_POSSESSION_NOTE);
-    expect(preview.notes ?? []).toEqual([]);
+    expect(preview.notes ?? []).toEqual([REQUEST_SIGN_KEY_POSSESSION_NOTE]);
   });
 
   it("carries the key-possession warning in the summary the assistant reads", async () => {

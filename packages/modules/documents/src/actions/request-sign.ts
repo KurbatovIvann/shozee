@@ -127,6 +127,7 @@ export const requestSign = implementAction(requestSignContract, {
     return {
       title: requestSignPreviewTitle(facts.documentNumber),
       lines: documentPreviewLines(facts),
+      notes: [REQUEST_SIGN_KEY_POSSESSION_NOTE],
     };
   },
   auditTarget: requestSignAuditTarget,

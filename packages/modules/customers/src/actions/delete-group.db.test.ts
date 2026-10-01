@@ -318,6 +318,9 @@ describe("customers.deleteGroup", () => {
       throw new Error("expected ConfirmationRequiredError");
     }
     expect(unconfirmed.challenge.summary).toBe(deleteGroupConfirmationSummary);
+    expect(unconfirmed.challenge.summary).toContain(
+      "Клієнти залишаться і втратять призначення групи",
+    );
     expect(unconfirmed.challenge.summary).not.toContain("Confirm me");
     expect(Date.parse(unconfirmed.challenge.expiresAt)).toBeGreaterThan(
       Date.now(),

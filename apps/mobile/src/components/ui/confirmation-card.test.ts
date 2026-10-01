@@ -78,6 +78,25 @@ describe("confirmationCardView", () => {
     });
   });
 
+  it("keeps a warning the one-line title truncates in the note list", () => {
+    const warning =
+      "Підтвердження не замінює володіння ключем — документ підписують на вашому пристрої.";
+    expect(
+      confirmationCardView(
+        {
+          challengeId: "ch-5",
+          summary: `Запросити підписання документа KA-РХ-000001. ${warning}`,
+          preview: {
+            title: `Запросити підписання документа KA-РХ-000001. ${warning}`,
+            lines: [{ label: "Документ", value: "KA-РХ-000001" }],
+            notes: [warning],
+          },
+        },
+        confirmationCardUk.fallbackTitle,
+      ).notes,
+    ).toEqual([warning]);
+  });
+
   it("keeps a preview without notes as an empty note list", () => {
     expect(
       confirmationCardView(

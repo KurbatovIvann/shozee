@@ -372,6 +372,9 @@ describe("pricing.deletePriceList", () => {
     expect(unconfirmed.challenge.summary).toBe(
       deletePriceListConfirmationSummary,
     );
+    expect(unconfirmed.challenge.summary).toContain(
+      "Усі ціни в ньому буде видалено",
+    );
     expect(unconfirmed.challenge.summary).not.toContain("Confirm me");
     expect(Date.parse(unconfirmed.challenge.expiresAt)).toBeGreaterThan(
       Date.now(),

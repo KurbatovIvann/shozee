@@ -677,7 +677,14 @@ describe("documents.requestSign", () => {
         { label: "Тип", value: "Рахунок на оплату" },
         { label: "Статус", value: "Виданий" },
       ],
+      notes: [REQUEST_SIGN_KEY_POSSESSION_NOTE],
     });
+    expect(unconfirmed.challenge.preview?.title).toContain(
+      REQUEST_SIGN_KEY_POSSESSION_NOTE,
+    );
+    expect(unconfirmed.challenge.preview?.notes).toContain(
+      REQUEST_SIGN_KEY_POSSESSION_NOTE,
+    );
 
     const before = await kit.db.runtime.db
       .select({ signRequestedAt: documents.signRequestedAt })
