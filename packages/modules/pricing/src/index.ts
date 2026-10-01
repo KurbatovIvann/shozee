@@ -3,6 +3,7 @@ import { createPriceList } from "./actions/create-price-list.js";
 import { deactivatePriceList } from "./actions/deactivate-price-list.js";
 import { deletePriceList } from "./actions/delete-price-list.js";
 import { getPriceList } from "./actions/get-price-list.js";
+import { listNameIndex } from "./actions/list-name-index.js";
 import { listPriceListEntries } from "./actions/list-price-list-entries.js";
 import { listPriceLists } from "./actions/list-price-lists.js";
 import { removePriceListEntries } from "./actions/remove-price-list-entries.js";
@@ -17,6 +18,7 @@ export { createPriceList };
 export { deactivatePriceList };
 export { deletePriceList };
 export { getPriceList };
+export { listNameIndex };
 export { listPriceListEntries };
 export { listPriceLists };
 export { removePriceListEntries };
@@ -32,6 +34,7 @@ export const pricingActions = [
   deactivatePriceList,
   deletePriceList,
   getPriceList,
+  listNameIndex,
   listPriceListEntries,
   listPriceLists,
   removePriceListEntries,
