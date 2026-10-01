@@ -8,6 +8,7 @@ import {
   formatQuantityMilli,
 } from "@showzy/module-kit/money-format";
 import { parseDbEnum } from "@showzy/module-kit/parse-db-enum";
+import { previewCompanyScope } from "@showzy/module-kit/preview-scope";
 import { and, asc, eq } from "drizzle-orm";
 import type { z } from "zod";
 
@@ -19,8 +20,9 @@ import {
   resolveCreateOrderDraft,
   type CreateOrderInput,
 } from "./create-draft.js";
-import { priceOrderLines, requireSingleCurrency } from "./create-order.js";
+import { priceOrderLinesInSingleCurrency } from "./create-order.js";
 import { titleSnapshot } from "./line-money.js";
+import { normalizeOrderComment } from "./order-comment.js";
 import { parseStatus } from "./parse-status.js";
 
 type PriceSource = z.output<typeof orderPriceSourceSchema>;
@@ -74,11 +76,12 @@ export function orderPreviewTotalLine(
   };
 }
 
-export function orderPreviewCommentLine(comment: string): PreviewLine {
-  const trimmed = comment.trim();
+export function orderPreviewCommentLine(
+  comment: string | null | undefined,
+): PreviewLine {
   return {
     label: ORDER_PREVIEW_COMMENT_LABEL,
-    value: trimmed.length === 0 ? ORDER_PREVIEW_EMPTY_VALUE : trimmed,
+    value: normalizeOrderComment(comment) ?? ORDER_PREVIEW_EMPTY_VALUE,
   };
 }
 
@@ -98,25 +101,15 @@ export function orderPreviewCustomerTitle(
   return `${subject}: ${customerName}`;
 }
 
-function previewCompanyScope(
-  companyId: string | null,
-  contract: { readonly name: string },
-): string {
-  if (companyId === null) {
-    throw new CoreInvariantError(
-      `${contract.name} preview ran without a company scope`,
-    );
-  }
-  return companyId;
-}
-
 export async function createOrderPreview(
   input: CreateOrderInput,
   env: ActionPreviewEnv,
 ): Promise<ActionPreview> {
   const draft = await resolveCreateOrderDraft(env.call, input);
-  const priced = priceOrderLines(draft.items, draft.prices);
-  const currency = requireSingleCurrency(draft.prices);
+  const { currency, priced } = priceOrderLinesInSingleCurrency(
+    draft.items,
+    draft.prices,
+  );
 
   const lines: PreviewLine[] = [];
   const sources: PriceSource[] = [];

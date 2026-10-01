@@ -26,6 +26,7 @@ import {
   titleSnapshot,
   type ExemptNoneLineAmounts,
 } from "./line-money.js";
+import { normalizeOrderComment } from "./order-comment.js";
 import { formatStaffOrderNumber } from "./order-number-format.js";
 import { mapOrderNumberUniqueViolation } from "./order-number.js";
 import { requireWritable } from "./writable.js";
@@ -238,6 +239,19 @@ export function requireSingleCurrency(
   return first.currency;
 }
 
+export interface SingleCurrencyPricing {
+  readonly currency: string;
+  readonly priced: readonly PricedOrderLine[];
+}
+
+export function priceOrderLinesInSingleCurrency(
+  items: readonly PersistedCreateLine[],
+  prices: readonly ResolvedOrderPrice[],
+): SingleCurrencyPricing {
+  const currency = requireSingleCurrency(prices);
+  return { currency, priced: priceOrderLines(items, prices) };
+}
+
 export interface PricedOrderLine {
   readonly item: PersistedCreateLine;
   readonly price: ResolvedOrderPrice;
@@ -332,9 +346,7 @@ export async function createStaffOrder(env: {
     numberingPrefix,
     prices,
   } = env;
-  const priced = priceOrderLines(items, prices);
-
-  const currency = requireSingleCurrency(prices);
+  const { currency, priced } = priceOrderLinesInSingleCurrency(items, prices);
 
   const orderId = randomUUID();
   const lines: PersistedLine[] = [];
@@ -356,7 +368,7 @@ export async function createStaffOrder(env: {
     totalGrossMinor += moneyFromCanonical(line.view.grossAmountMinor);
   }
 
-  const persistedComment = comment ?? null;
+  const persistedComment = normalizeOrderComment(comment);
   const db = requireWritable(ctx.db);
   const header = await insertNumberedHeader(db, {
     id: orderId,

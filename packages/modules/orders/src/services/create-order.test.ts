@@ -1,8 +1,9 @@
-import { CoreInvariantError } from "@showzy/core/errors";
+import { ConflictError, CoreInvariantError } from "@showzy/core/errors";
 import { describe, expect, it } from "vitest";
 
 import {
   priceOrderLines,
+  priceOrderLinesInSingleCurrency,
   type PersistedCreateLine,
   type ResolvedOrderPrice,
 } from "./create-order.js";
@@ -56,5 +57,26 @@ describe("priceOrderLines", () => {
     expect(() => priceOrderLines([line(CAKE)], [price(BOX)])).toThrow(
       CoreInvariantError,
     );
+  });
+});
+
+describe("priceOrderLinesInSingleCurrency", () => {
+  it("returns the shared currency with the priced lines", () => {
+    const { currency, priced } = priceOrderLinesInSingleCurrency(
+      [line(CAKE), line(BOX)],
+      [price(CAKE), price(BOX)],
+    );
+
+    expect(currency).toBe("UAH");
+    expect(priced).toHaveLength(2);
+  });
+
+  it("reports the mixed currency before any line misalignment", () => {
+    expect(() =>
+      priceOrderLinesInSingleCurrency(
+        [line(CAKE), line(BOX)],
+        [price(CAKE), { ...price(CAKE), currency: "USD" }],
+      ),
+    ).toThrow(ConflictError);
   });
 });

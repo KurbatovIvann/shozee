@@ -342,6 +342,46 @@ describe("orders preview cards (SHO-750)", () => {
     expect(rows[0]?.status).toBe("new");
   });
 
+  it("shows and persists the same trimmed comment", async () => {
+    const padded = `   ${ORDER_COMMENT}   `;
+    const input = {
+      customer: { by: "id" as const, id: fixtures.customerA },
+      items: [
+        {
+          product: { by: "id" as const, id: fixtures.cake },
+          quantity: { milli: "1000" },
+        },
+      ],
+      comment: padded,
+    };
+
+    const preview = await previewCard(() =>
+      kit.invoke(createOrder, input, {}, previewOptions()),
+    );
+    expect(preview.lines.at(-1)).toEqual({
+      label: "Коментар",
+      value: ORDER_COMMENT,
+    });
+
+    const summary = await kit.invoke(createOrder, input, {});
+    const rows = await kit.db.runtime.db
+      .select({ comment: orders.comment })
+      .from(orders)
+      .where(eq(orders.id, summary.orderId));
+    expect(rows[0]?.comment).toBe(ORDER_COMMENT);
+
+    const blank = await kit.invoke(
+      createOrder,
+      { ...input, comment: "   " },
+      {},
+    );
+    const blankRows = await kit.db.runtime.db
+      .select({ comment: orders.comment })
+      .from(orders)
+      .where(eq(orders.id, blank.orderId));
+    expect(blankRows[0]?.comment).toBeNull();
+  });
+
   it("refuses a foreign order id exactly like a missing one", async () => {
     const probes = [
       (orderId: string) =>
