@@ -50,7 +50,7 @@ bound by `implementAction`. All fields are required unless noted:
 | `enqueues` | optional job names, **not on `risk: read`** | ADR-0041: `<module>.<name>` jobs of this action's own module, no duplicates; each must be a registered non-`periodic` job (§6 Jobs) |
 | `requiresConfirmation` | boolean | Required for human-invoked `risk: high` (staff, customer, account — not share); triggers the confirmation protocol (§7) |
 | `confirmationSummary` | server fn, conditional | Required when `requiresConfirmation: true` unless `preview` is bound; returns a redacted, human-readable summary from validated input + resolved target. Forbidden when `requiresConfirmation: false` |
-| `preview` | server fn, conditional | Allowed only where the §7 gate can run — `risk: write`/`high`, a human principal (`staff`, `customer`, `account`) and `idempotent: true`, rejected at implement time otherwise; returns the **redacted** structured card `{ title, lines: [{ label, value }], notes? }` from validated input, the resolved target, and the read-only company-scoped `ActionPreviewEnv` capability (`tx`, `call` — §7) (ADR-0050), under the same redaction obligation as `confirmationSummary` (§7). Satisfies `requiresConfirmation` in place of `confirmationSummary`; binding both is rejected |
+| `preview` | server fn, conditional | Allowed only where the §7 gate can run — `risk: write`/`high`, a human principal (`staff`, `customer`, `account`) and `idempotent: true`, rejected at implement time otherwise; returns the **redacted** structured card `{ title, lines: [{ label, value }], notes? }` from validated input, the resolved target, and the read-only company-scoped `ActionPreviewEnv` capability (`tx`, `call`, `caller` — §7) (ADR-0050), under the same redaction obligation as `confirmationSummary` (§7). Satisfies `requiresConfirmation` in place of `confirmationSummary`; binding both is rejected |
 | `idempotent` | boolean | Write actions with `true` participate in the idempotency protocol (§5) |
 | `emits` | `string[]` event names | Declared outbox events; `ctx.emit` of an undeclared event throws; CI checks declared events have a definition |
 | `errors` | `string[]` of `VALIDATION` \| `NOT_FOUND` \| `CONFLICT` | Domain codes this action may let escape `executeAction`. Empty is a real answer. `INTERNAL` and pipeline codes are not declarable. Enforced from observed `invokeAction` throws; a caller's set must include every code declared by its `ctx.call` / `ctx.callAtomic` callees |
@@ -597,7 +597,12 @@ Two-step, single-use, channel-agnostic (same for UI and AI — ADR-0008):
    surfaces this as a confirmation card; the classic UI as a dialog.
 
    `preview` receives `ActionPreviewEnv` — `companyId`, the resolved
-   `target` when a typed resolver ran, and the **read-only, company-scoped
+   `target` when a typed resolver ran, `caller` (the identity the card is
+   built for: `userId`, null for `public`, `share` and `system`, and
+   `can(permission)`, the resolved staff permission set of §3 — explicit
+   deny, then explicit grant, then role default, with owner-all — false
+   for every non-staff mode, never the raw membership row), and the
+   **read-only, company-scoped
    capability of a typed target resolver**: a `ReadTx` over a database
    read-only transaction, plus `ctx.call` of principal-compatible
    `risk: "read"` actions through the same declared §9 edges a handler
@@ -647,7 +652,10 @@ Two-step, single-use, channel-agnostic (same for UI and AI — ADR-0008):
    (same code, same `clientMessage`) and issues no challenge, so a
    disappeared or foreign id never leaks existence through a second card. A
    `confirmationSummary`-only action stores `previewHash: null` and is never
-   re-run. The crash-resume path of §5 carries its own persisted grant and
+   re-run. A card detail that depends on `env.caller` is safe under that
+   re-run: the challenge is bound to the principal, and the re-run builds
+   the card from the confirming caller's own context, so a caller who may
+   not see a name never receives it through someone else's challenge. The crash-resume path of §5 carries its own persisted grant and
    does not re-run the card.
 3. QES signing remains client-side regardless: `documents.sign`'s server
    part only records the client-produced signature; the confirmation
@@ -972,6 +980,7 @@ does not apply — fails the check.
 
 | Date | Change | Why | Reported by |
 | --- | --- | --- | --- |
+| 2026-10-02 | §7: `ActionPreviewEnv` carries `caller` — `userId` and `can(permission)` over the §3 resolved staff permission set; non-staff modes hold no company permission and `public`/`share`/`system` have no user id | Guardians on SHO-751/SHO-790: a card could only guess what the caller may see (role defaults), and an own-scope account preview had no caller to scope its reads by | SHO-814 |
 | 2026-10-01 | §7: the challenge binds `previewHash` beside `inputHash`; consuming it re-runs `preview` in the same read-only environment before the handler and, on a different card, executes nothing and returns a fresh challenge carrying the new card | Guardian on SHO-750: only `inputHash` was bound, so a price-list change inside the five-minute window persisted a total the person never approved | SHO-804 |
 | 2026-10-01 | §12: `createTestKit` composes a confirmation hook over an in-memory store, and `crossTenantSuite` drives the two-step gate — the §7 existence-leak rule is now an inherited test for every preview action | Guardian on SHO-785: no `requiresConfirmation`/preview action could run through the suite, so the rule had no inherited test | SHO-790 |
 | 2026-10-01 | §7: `preview` receives `ActionPreviewEnv` — a `ReadTx` over a read-only transaction under the §4 statement timeout and `ctx.call` of `risk: "read"` callees, with the `target` from the in-transaction resolver; the existence-leak rule makes a missing or foreign id refuse exactly as the handler would, and an audited callee's §8 row is the one row a preview leaves | ADR-0050: a card cannot show resolved names, amounts or «old → new» from validated input alone | SHO-785 |

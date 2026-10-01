@@ -133,9 +133,15 @@ export type ConfirmationSummaryFn<TInput extends z.ZodType> = (
   env: ConfirmationSummaryEnv,
 ) => MaybePromise<string>;
 
+export interface ActionPreviewCaller {
+  readonly userId: string | null;
+  readonly can: (permission: string) => boolean;
+}
+
 export interface ActionPreviewEnv extends ConfirmationSummaryEnv {
   readonly tx: ReadTx;
   readonly call: CtxCall;
+  readonly caller: ActionPreviewCaller;
 }
 
 export type ActionPreviewFn<TInput extends z.ZodType> = (

@@ -400,7 +400,12 @@ export function createCustomerPreview(
 ): (input: CreateCustomerFields, env: PreviewEnv) => Promise<ActionPreview> {
   return async (input, env) => {
     const companyId = previewCompanyScope(env.companyId, contract);
-    const notes = await duplicateContactNotes(env.tx, companyId, input);
+    const notes = await duplicateContactNotes(
+      env.tx,
+      companyId,
+      input,
+      env.caller.can("customers:view"),
+    );
     return {
       title: `Новий клієнт: ${input.name}`,
       lines: [
