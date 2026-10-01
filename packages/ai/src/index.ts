@@ -112,12 +112,19 @@ export {
 export { staffAssistantTurnContextAddendum } from "./turn-context.js";
 export {
   kyivCalendarDate,
+  kyivNamedPeriodRange,
+  KYIV_NAMED_PERIODS,
   mapOrdersListPeriod,
   secondsUntilKyivMidnight,
   staffAssistantClockLines,
   STAFF_ASSISTANT_TIME_ZONE,
   type OrdersListPeriod,
 } from "./kyiv-calendar.js";
+export {
+  mapOrdersCreateInput,
+  ordersCreateInputSchema,
+  type OrdersCreateFacadeInput,
+} from "./tool-facades/orders-create.js";
 export {
   CUSTOMER_NAME_MAX,
   LIST_ORDERS_CURSOR_MAX,

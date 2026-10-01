@@ -159,6 +159,53 @@ export function mapOrdersListPeriod(
   };
 }
 
+const KYIV_PERIOD_BOUNDS: Readonly<
+  Record<string, (today: KyivDate) => readonly [KyivDate, KyivDate]>
+> = {
+  today: (today) => [today, today],
+  yesterday: (today) => [
+    addCalendarDays(today, -1),
+    addCalendarDays(today, -1),
+  ],
+  this_week: (today) => [
+    mondayOfWeek(today),
+    addCalendarDays(mondayOfWeek(today), 6),
+  ],
+  last_week: (today) => [
+    addCalendarDays(mondayOfWeek(today), -7),
+    addCalendarDays(mondayOfWeek(today), -1),
+  ],
+  this_month: (today) => [
+    { year: today.year, month: today.month, day: 1 },
+    lastDayOfMonth(today),
+  ],
+  last_month: (today) => {
+    const last = addCalendarDays(
+      { year: today.year, month: today.month, day: 1 },
+      -1,
+    );
+    return [{ year: last.year, month: last.month, day: 1 }, last];
+  },
+};
+
+export const KYIV_NAMED_PERIODS: readonly string[] =
+  Object.keys(KYIV_PERIOD_BOUNDS);
+
+export function kyivNamedPeriodRange(
+  period: string,
+  now: Date,
+): { readonly createdFrom: string; readonly createdTo: string } | null {
+  const bounds = KYIV_PERIOD_BOUNDS[period];
+  if (bounds === undefined) {
+    return null;
+  }
+  const [first, last] = bounds(kyivDateParts(now));
+  return {
+    createdFrom: startOfKyivDayUtc(first).toISOString(),
+    createdTo: endOfKyivDayUtc(last).toISOString(),
+  };
+}
+
 /** Europe/Kyiv calendar date as `YYYY-MM-DD` (assistant budget keys). */
 export function kyivCalendarDate(now: Date): string {
   const date = kyivDateParts(now);

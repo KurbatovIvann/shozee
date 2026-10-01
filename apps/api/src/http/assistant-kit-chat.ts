@@ -36,9 +36,11 @@ import {
   requireBudgetTicket,
   requireCaller,
   takeCommand,
+  toolContext,
   type AssistantKitAppEnv,
   type AssistantKitRuntime,
 } from "./assistant-kit-http.js";
+import { shoChatTurn } from "./assistant-kit-sho.js";
 
 export const ASSISTANT_KIT_CHAT_PATH = "/assistant/kit/chat";
 export const ASSISTANT_KIT_MESSAGES_PATH = "/assistant/kit/messages";
@@ -99,7 +101,7 @@ export async function handleAssistantKitChat(
   }
   // Before the receipt, the idempotency key, the turn row and its message ids.
   const body = canonicalCommandIds(parsed.data);
-  const { kit, turns } = runtime.forCaller({
+  const { kit, turns, history } = runtime.forCaller({
     userId: caller.userId,
     companySelector: caller.companySelector,
     requestId,
@@ -142,6 +144,25 @@ export async function handleAssistantKitChat(
   };
   if (!(await takeCommand(runtime, command))) {
     return await accepted();
+  }
+
+  const answeredBySho = await shoChatTurn({
+    runtime,
+    caller,
+    kit,
+    turns,
+    history,
+    scope,
+    requestId,
+    text: body.text,
+    commandId: body.commandId,
+    context: toolContext(c, caller, {
+      conversationId: body.conversationId,
+      commandId: body.commandId,
+    }),
+  });
+  if (answeredBySho !== null) {
+    return answeredBySho;
   }
 
   const budget = requireBudgetTicket(c);
