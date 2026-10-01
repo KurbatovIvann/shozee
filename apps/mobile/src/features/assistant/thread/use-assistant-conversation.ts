@@ -109,7 +109,7 @@ export interface UseAssistantConversation {
    */
   readonly send: (text: string) => Promise<AssistantSendOutcome>;
   /** Answer the open question. The shape belongs to its kind. */
-  readonly answer: (answer: unknown) => void;
+  readonly answer: (answer: unknown) => Promise<void>;
   /** Drop the open question without answering it. */
   readonly dismiss: () => void;
   readonly continueTurn: () => void;
@@ -590,16 +590,16 @@ export function useAssistantConversation(args: {
    * an older one must be refused rather than applied to a changed draft.
    */
   const answer = useCallback(
-    (value: unknown) => {
+    (value: unknown): Promise<void> => {
       const open = stateRef.current.thread?.openPause ?? null;
       if (open === null) {
-        return;
+        return Promise.resolve();
       }
       // The chosen option is part of the key: tapping the same one again after
       // a lost reply is a retry, tapping a different one is a different answer.
       const key = `answer:${open.interactionId}:${String(open.revision)}:${JSON.stringify(value)}`;
       const commandId = commandIdFor(key);
-      void run((call, conversationId) =>
+      return run((call, conversationId) =>
         postAssistantKitAnswer({
           ...call,
           conversationId,

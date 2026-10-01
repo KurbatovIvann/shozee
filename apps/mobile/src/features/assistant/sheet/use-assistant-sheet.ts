@@ -179,17 +179,24 @@ export function useAssistantSheet(): AssistantSheetViewModel & {
   const [answeredHere, setAnsweredHere] = useState<{
     readonly questionKey: string;
     readonly optionId: string;
+    readonly request: object;
   } | null>(null);
 
   const answer = useCallback(
     (value: unknown) => {
       const optionId = assistantChoiceAnswerOptionId(value);
-      setAnsweredHere(
+      const marked =
         optionId === null || openQuestionKey === null
           ? null
-          : { questionKey: openQuestionKey, optionId },
-      );
-      conversation.answer(value);
+          : { questionKey: openQuestionKey, optionId, request: {} };
+      setAnsweredHere(marked);
+      void conversation.answer(value).then(() => {
+        setAnsweredHere((current) =>
+          marked !== null && current?.request === marked.request
+            ? null
+            : current,
+        );
+      });
     },
     [conversation, openQuestionKey],
   );

@@ -216,7 +216,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   markCreateText: {
     color: theme.colors.accentFg,
-    fontSize: theme.typography.sm.fontSize,
+    fontSize: theme.typography.xs.fontSize,
     lineHeight: theme.typography.xs.lineHeight,
     fontWeight: "700",
   },
