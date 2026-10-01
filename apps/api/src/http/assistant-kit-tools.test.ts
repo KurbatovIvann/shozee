@@ -955,3 +955,17 @@ describe("«знайди X» with nothing matching", () => {
     });
   });
 });
+
+describe("a chosen product settles a product lookup", () => {
+  it("replaces the product query the lookup was ambiguous about", () => {
+    const patched = withChosenId(
+      { productQuery: "Наполеон" },
+      { kind: "product", query: "Наполеон" },
+      ORDER_ID,
+    );
+
+    expect(patched.kind).toBe("patched");
+    if (patched.kind !== "patched") return;
+    expect(patched.input).toEqual({ productId: ORDER_ID });
+  });
+});

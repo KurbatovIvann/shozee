@@ -114,14 +114,7 @@ function logUnpickableConflict(
 
 /** What the person is choosing between, in their own words where possible. */
 function subjectFor(target: ChoicePickerTarget): string {
-  switch (target.kind) {
-    case "customer":
-      return target.query;
-    case "order_line_product":
-      return target.query;
-    default:
-      return target.productName;
-  }
+  return "query" in target ? target.query : target.productName;
 }
 
 type ChoicePromptOption = {

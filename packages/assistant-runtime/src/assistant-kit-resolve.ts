@@ -34,6 +34,8 @@ import type { AssistantToolContext, ResolveAnswer } from "./runtime-types.js";
 interface FacadeInput {
   customerId?: string;
   customerQuery?: string;
+  productId?: string;
+  productQuery?: string;
   items?: Array<{
     productId?: string;
     productQuery?: string;
@@ -59,9 +61,14 @@ export function withChosenId(
   }
   const next = structuredClone(input) as FacadeInput;
 
-  if (target.kind === "customer") {
-    next.customerId = entityId;
-    delete next.customerQuery;
+  if (!("lineIndex" in target)) {
+    if (target.kind === "customer") {
+      next.customerId = entityId;
+      delete next.customerQuery;
+    } else {
+      next.productId = entityId;
+      delete next.productQuery;
+    }
     return { kind: "patched", input: next };
   }
 
