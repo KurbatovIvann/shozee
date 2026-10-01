@@ -91,6 +91,8 @@ const mineOutput = z.object({
   companyIds: z.array(z.uuid()),
   followCompanyIds: z.array(z.uuid()),
 });
+const followInput = z.object({ companyId: z.uuid() });
+const followOutput = z.object({ following: z.boolean() });
 const shareInput = z.object({ token: z.string().min(1), documentId: z.uuid() });
 const shareOutput = z.object({
   documentId: z.uuid(),
@@ -182,13 +184,37 @@ async function resolveAnyProduct(
   return { companyId: product.companyId, resource: product };
 }
 
-function writableTx(db: Tx | ReadTx): Tx {
+function writableTx(db: Tx | ReadTx, actionName: string): Tx {
   if (!("update" in db)) {
     throw new CoreInvariantError(
-      "kitFixture.publishProduct expected the writable transaction",
+      `${actionName} expected the writable transaction`,
     );
   }
   return db;
+}
+
+async function previewOwnFollow(
+  input: { companyId: string },
+  env: ActionPreviewEnv,
+): Promise<ActionPreview> {
+  const rows = await env.tx
+    .select({ companyId: fixtureCompanyFollows.companyId })
+    .from(fixtureCompanyFollows)
+    .where(
+      and(
+        eq(fixtureCompanyFollows.userId, env.caller.userId),
+        eq(fixtureCompanyFollows.companyId, input.companyId),
+      ),
+    )
+    .limit(1);
+  const row = rows[0];
+  if (row === undefined) {
+    throw new NotFoundError();
+  }
+  return {
+    title: "Confirm follow",
+    lines: [{ label: "Company", value: row.companyId }],
+  };
 }
 
 function publishCard(name: string): ActionPreview {
@@ -336,7 +362,7 @@ export function createCorrectFixtureActions() {
           id: productInput.parse(env.input).productId,
         }),
         handler: async (input, ctx) => {
-          const rows = await writableTx(ctx.db)
+          const rows = await writableTx(ctx.db, "kitFixture.publishProduct")
             .update(fixtureProducts)
             .set({ published: true })
             .where(
@@ -600,6 +626,37 @@ export function createCorrectFixtureActions() {
             companyIds: owned.map((row) => row.companyId).sort(),
             followCompanyIds: follows.map((row) => row.companyId).sort(),
           };
+        },
+      },
+    ),
+    accountConfirmFollow: implementAction(
+      defineActionContract({
+        ...contractDefaults,
+        name: "kitFixture.confirmFollow",
+        errors: ["NOT_FOUND"],
+        description: "Re-affirm the caller's own follow, gated by a preview.",
+        principal: "account",
+        input: followInput,
+        output: followOutput,
+        permissions: [],
+        risk: "high",
+        requiresConfirmation: true,
+        idempotent: true,
+        audit: true,
+        timeout: 5_000,
+      }),
+      {
+        preview: previewOwnFollow,
+        auditTarget: (env) => ({
+          type: "follow",
+          id: followInput.parse(env.input).companyId,
+        }),
+        handler: async (input, ctx) => {
+          await writableTx(ctx.db, "kitFixture.confirmFollow")
+            .insert(fixtureCompanyFollows)
+            .values({ userId: ctx.userId, companyId: input.companyId })
+            .onConflictDoNothing();
+          return { following: true };
         },
       },
     ),

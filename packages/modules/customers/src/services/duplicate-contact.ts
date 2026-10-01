@@ -13,17 +13,21 @@ type ContactLookupDb = Pick<WritableStaffDb, "select">;
 export const DUPLICATE_PHONE_NOTE = "Клієнт з таким телефоном уже є";
 export const DUPLICATE_EMAIL_NOTE = "Клієнт з таким email уже є";
 
-async function contactTaken(
+async function takenBy(
   db: ContactLookupDb,
   companyId: string,
   match: SQL,
-): Promise<boolean> {
+): Promise<string | undefined> {
   const rows = await db
-    .select({ id: companyCustomers.id })
+    .select({ name: companyCustomers.name })
     .from(companyCustomers)
     .where(and(eq(companyCustomers.companyId, companyId), match))
     .limit(1);
-  return rows.length > 0;
+  return rows[0]?.name;
+}
+
+function note(base: string, name: string, namesVisible: boolean): string {
+  return namesVisible ? `${base}: ${name}` : base;
 }
 
 export async function duplicateContactNotes(
@@ -33,6 +37,7 @@ export async function duplicateContactNotes(
     readonly phone?: string | null | undefined;
     readonly email?: string | null | undefined;
   },
+  namesVisible: boolean,
 ): Promise<string[]> {
   const phone =
     contact.phone === null || contact.phone === undefined
@@ -43,25 +48,27 @@ export async function duplicateContactNotes(
       ? undefined
       : canonicalizeEmail(contact.email);
   const notes: string[] = [];
-  if (
-    phone !== undefined &&
-    (await contactTaken(
-      db,
-      companyId,
-      sql`${canonicalPhoneSql(companyCustomers.phone)} = ${phone}`,
-    ))
-  ) {
-    notes.push(DUPLICATE_PHONE_NOTE);
+  const phoneHolder =
+    phone === undefined
+      ? undefined
+      : await takenBy(
+          db,
+          companyId,
+          sql`${canonicalPhoneSql(companyCustomers.phone)} = ${phone}`,
+        );
+  if (phoneHolder !== undefined) {
+    notes.push(note(DUPLICATE_PHONE_NOTE, phoneHolder, namesVisible));
   }
-  if (
-    email !== undefined &&
-    (await contactTaken(
-      db,
-      companyId,
-      sql`lower(${companyCustomers.email}) = ${email}`,
-    ))
-  ) {
-    notes.push(DUPLICATE_EMAIL_NOTE);
+  const emailHolder =
+    email === undefined
+      ? undefined
+      : await takenBy(
+          db,
+          companyId,
+          sql`lower(${companyCustomers.email}) = ${email}`,
+        );
+  if (emailHolder !== undefined) {
+    notes.push(note(DUPLICATE_EMAIL_NOTE, emailHolder, namesVisible));
   }
   return notes;
 }

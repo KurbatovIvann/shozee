@@ -41,6 +41,7 @@ import {
 let database: TestDatabase;
 
 const annaId = "user_anna_preview_reads_db";
+const borysId = "user_borys_preview_reads_db";
 const companyA = randomUUID();
 const companyB = randomUUID();
 const companyAName = "Квіти Анни";
@@ -55,18 +56,31 @@ beforeAll(async () => {
     { id: companyA, name: companyAName, slug: "preview-reads-a", prefix: "RA" },
     { id: companyB, name: "Foreign", slug: "preview-reads-b", prefix: "RB" },
   ]);
+  await database.runtime.db
+    .insert(user)
+    .values([
+      { id: borysId, name: "Borys", email: "borys-preview@example.test" },
+    ]);
   await database.runtime.db.insert(rolePermissionDefaults).values([
     { role: "owner", permission: "previewReads:manage" },
     { role: "owner", permission: "previewPeer:read" },
+    { role: "manager", permission: "previewReads:manage" },
+    { role: "manager", permission: "previewPeer:read" },
   ]);
-  await database.runtime.db.insert(companyMembers).values(
-    [companyA, companyB].map((companyId) => ({
+  await database.runtime.db.insert(companyMembers).values([
+    ...[companyA, companyB].map((companyId) => ({
       companyId,
       userId: annaId,
       role: "owner" as const,
       permissions: { granted: [], denied: [] },
     })),
-  );
+    {
+      companyId: companyA,
+      userId: borysId,
+      role: "manager" as const,
+      permissions: { granted: [], denied: ["previewPeer:read"] },
+    },
+  ]);
 });
 
 afterAll(async () => {
@@ -365,6 +379,92 @@ const customerPreviewAction = implementAction(customerContract, {
   auditTarget: () => ({ type: "thing", id: "customer" }),
 });
 
+const callerPreview = renameAction((_input, env) =>
+  Promise.resolve({
+    title: "Caller",
+    lines: [
+      { label: "userId", value: env.caller.userId },
+      { label: "peerRead", value: String(env.caller.can("previewPeer:read")) },
+    ],
+  }),
+);
+
+const REDACTED_NAME = "—";
+
+const nameGatedPreview = renameAction(async (input, env) => {
+  const rows = await env.tx
+    .select({ name: companies.name })
+    .from(companies)
+    .where(
+      and(
+        eq(companies.id, input.companyRef),
+        eq(companies.id, env.companyId ?? ""),
+      ),
+    );
+  const row = rows[0];
+  if (row === undefined) {
+    throw new NotFoundError();
+  }
+  return {
+    title: "Rename",
+    lines: [
+      {
+        label: "Current name",
+        value: env.caller.can("previewPeer:read") ? row.name : REDACTED_NAME,
+      },
+    ],
+  };
+});
+
+async function setPeerReadDenied(
+  userId: string,
+  denied: boolean,
+): Promise<void> {
+  await database.runtime.db
+    .update(companyMembers)
+    .set({
+      permissions: { granted: [], denied: denied ? ["previewPeer:read"] : [] },
+    })
+    .where(
+      and(
+        eq(companyMembers.companyId, companyA),
+        eq(companyMembers.userId, userId),
+      ),
+    );
+}
+
+const accountContract = defineActionContract({
+  ...contractDefaults,
+  transport: "client",
+  errors: [],
+  name: "previewReads.accountThing",
+  description: "Account-principal card scoped by the caller's own user id.",
+  principal: "account",
+  input: z.object({}),
+  output: z.object({ userId: z.string() }),
+  permissions: [],
+  risk: "high",
+  requiresConfirmation: true,
+  idempotent: true,
+  audit: true,
+  timeout: 5_000,
+});
+
+const accountPreviewAction = implementAction(accountContract, {
+  handler: (_input, ctx) => Promise.resolve({ userId: ctx.userId }),
+  preview: (_input, env) => ({
+    title: "Account",
+    lines: [
+      { label: "userId", value: env.caller.userId },
+      {
+        label: "staffPermission",
+        value: String(env.caller.can("previewReads:manage")),
+      },
+    ],
+  }),
+  auditTarget: () => ({ type: "thing", id: "account" }),
+});
+
 const summaryOnlyAction = implementAction(renameContract, {
   handler: () => Promise.resolve({ resultId: randomUUID() }),
   confirmationSummary: (_input, env: ConfirmationSummaryEnv) =>
@@ -424,17 +524,31 @@ function requestMeta(): PipelineRequestMeta {
 
 async function card(
   action: RenameAction,
-  options: { readonly companyRef?: string; readonly store?: ConfirmationStore },
+  options: {
+    readonly companyRef?: string;
+    readonly store?: ConfirmationStore;
+    readonly userId?: string;
+    readonly idempotencyKey?: string;
+    readonly confirmationChallengeId?: string;
+  },
 ): Promise<unknown> {
   const error = await executeAction(
     deps(options.store ?? createInMemoryConfirmationStore()),
     {
       action,
       input: { companyRef: options.companyRef ?? companyA, note: "Нова назва" },
-      request: requestMeta(),
+      request: {
+        ...requestMeta(),
+        ...(options.idempotencyKey === undefined
+          ? {}
+          : { idempotencyKey: options.idempotencyKey }),
+        ...(options.confirmationChallengeId === undefined
+          ? {}
+          : { confirmationChallengeId: options.confirmationChallengeId }),
+      },
       principal: {
         mode: "staff",
-        session: { userId: annaId },
+        session: { userId: options.userId ?? annaId },
         companySelector: companyA,
       },
     },
@@ -443,6 +557,14 @@ async function card(
     (caught: unknown) => caught,
   );
   return error;
+}
+
+function cardLine(error: unknown, label: string): string | undefined {
+  if (!(error instanceof ConfirmationRequiredError)) {
+    throw error;
+  }
+  return error.challenge.preview?.lines.find((line) => line.label === label)
+    ?.value;
 }
 
 describe("preview reads (core.md §7, ADR-0050)", () => {
@@ -574,6 +696,81 @@ describe("preview reads (core.md §7, ADR-0050)", () => {
     expect((leaked as CoreInvariantError).message).toContain(
       "outside its handler execution",
     );
+  });
+
+  it("hands a staff preview the caller id and the owner-all permission set", async () => {
+    const error = await card(callerPreview, {});
+    expect(cardLine(error, "userId")).toBe(annaId);
+    expect(cardLine(error, "peerRead")).toBe("true");
+  });
+
+  it("lets an explicit deny beat the role default in the preview", async () => {
+    const error = await card(callerPreview, { userId: borysId });
+    expect(cardLine(error, "userId")).toBe(borysId);
+    expect(cardLine(error, "peerRead")).toBe("false");
+  });
+
+  it("refuses another caller's challenge and issues that caller a fresh one", async () => {
+    const store = createInMemoryConfirmationStore();
+    const idempotencyKey = randomUUID();
+    const presented = await card(callerPreview, { store, idempotencyKey });
+    expect(cardLine(presented, "userId")).toBe(annaId);
+    const challengeId = (presented as ConfirmationRequiredError).challenge
+      .challengeId;
+    const reused = await card(callerPreview, {
+      store,
+      idempotencyKey,
+      userId: borysId,
+      confirmationChallengeId: challengeId,
+    });
+    expect(reused).toBeInstanceOf(ConfirmationRequiredError);
+    expect(
+      (reused as ConfirmationRequiredError).challenge.challengeId,
+    ).not.toBe(challengeId);
+    expect(cardLine(reused, "userId")).toBe(borysId);
+  });
+
+  it("re-runs the caller-gated card on confirm and refuses a permission revoked inside the window", async () => {
+    const store = createInMemoryConfirmationStore();
+    const idempotencyKey = randomUUID();
+    await setPeerReadDenied(borysId, false);
+    try {
+      const presented = await card(nameGatedPreview, {
+        store,
+        idempotencyKey,
+        userId: borysId,
+      });
+      expect(cardLine(presented, "Current name")).toBe(companyAName);
+      const challengeId = (presented as ConfirmationRequiredError).challenge
+        .challengeId;
+      await setPeerReadDenied(borysId, true);
+      const confirmed = await card(nameGatedPreview, {
+        store,
+        idempotencyKey,
+        userId: borysId,
+        confirmationChallengeId: challengeId,
+      });
+      expect(confirmed).toBeInstanceOf(ConfirmationRequiredError);
+      const fresh = confirmed as ConfirmationRequiredError;
+      expect(fresh.challenge.challengeId).not.toBe(challengeId);
+      expect(cardLine(confirmed, "Current name")).toBe(REDACTED_NAME);
+    } finally {
+      await setPeerReadDenied(borysId, true);
+    }
+  });
+
+  it("hands an account preview the caller's own user id and no permissions", async () => {
+    const error = await executeAction(deps(createInMemoryConfirmationStore()), {
+      action: accountPreviewAction,
+      input: {},
+      request: { ...requestMeta(), clientIp: "203.0.113.7" },
+      principal: { mode: "account", session: { userId: annaId } },
+    }).then(
+      () => undefined,
+      (caught: unknown) => caught,
+    );
+    expect(cardLine(error, "userId")).toBe(annaId);
+    expect(cardLine(error, "staffPermission")).toBe("false");
   });
 
   it("leaves confirmationSummary on input and company scope alone", async () => {

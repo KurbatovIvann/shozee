@@ -62,7 +62,10 @@ import {
   effectiveCompanyId,
   type ContextRuntime,
 } from "../context/factories.js";
-import { assertDeclaredPermissions } from "../context/permissions.js";
+import {
+  assertDeclaredPermissions,
+  staffHasPermission,
+} from "../context/permissions.js";
 import type { ActionCtx } from "../context/types.js";
 import { createEmitBuffer, type EmitBuffer } from "../events/emit.js";
 import { uuidv7 } from "../events/uuidv7.js";
@@ -70,6 +73,7 @@ import { createEnqueueBuffer, type EnqueueBuffer } from "../jobs/enqueue.js";
 import { jobOriginFor } from "../jobs/job-identity.js";
 import type { ImplementedAction } from "../implement-action.js";
 import type {
+  ActionPreviewCaller,
   ActionPreviewFn,
   AuditTargetFn,
   ConfirmationSummaryEnv,
@@ -1015,6 +1019,7 @@ async function runActionPreview<
       try {
         return await preview(env.input, {
           ...previewScopeOf(previewCtx),
+          caller: previewCallerOf(env.contract, previewCtx),
           tx: createReadTx(tx),
           call,
         });
@@ -1044,6 +1049,30 @@ function previewScopeOf(
     case "consumer":
     case "account":
       return { companyId: null };
+  }
+}
+
+function previewCallerOf(
+  contract: AnyActionContract,
+  ctx: ActionCtx,
+): ActionPreviewCaller {
+  const holdsNoCompanyPermission = (): boolean => false;
+  switch (ctx.principal) {
+    case "staff":
+      return {
+        userId: ctx.userId,
+        can: (permission) => staffHasPermission(ctx.membership, permission),
+      };
+    case "customer":
+    case "account":
+      return { userId: ctx.userId, can: holdsNoCompanyPermission };
+    case "consumer":
+    case "public":
+    case "share":
+    case "system":
+      throw new CoreInvariantError(
+        `${contract.name}: preview bound to non-human principal "${ctx.principal}" (core.md §7)`,
+      );
   }
 }
 

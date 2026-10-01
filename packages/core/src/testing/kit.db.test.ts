@@ -49,6 +49,8 @@ const unpublishedProduct = {
   productId: kitIdentities.products.unpublished,
 };
 const crmInput = { customerId: kitIdentities.crmSentinel };
+const followedCompany = { companyId: kitIdentities.companies.a };
+const unfollowedCompany = { companyId: randomUUID() };
 const shareOwn = {
   token: kitShareTokens.a,
   documentId: kitShareDocuments.a.id,
@@ -120,6 +122,14 @@ function correctCrossTenantCases() {
       correct.accountListMine,
       { input: {}, userId: kitIdentities.users.anna },
       { input: {}, userId: kitIdentities.users.boris },
+    ),
+    isolationCase(
+      correct.accountConfirmFollow,
+      { input: followedCompany, userId: kitIdentities.users.anna },
+      { input: followedCompany, userId: kitIdentities.users.boris },
+      {
+        missing: { input: unfollowedCompany, userId: kitIdentities.users.anna },
+      },
     ),
     isolationCase(
       correct.shareGetDocument,

@@ -11,6 +11,8 @@ import {
   type IsolationActor,
   type TestKit,
 } from "@showzy/core/testing";
+import { user } from "@showzy/db/schema/auth";
+import { companyMembers } from "@showzy/db/schema/companies";
 import {
   companyCustomers,
   counterparties,
@@ -44,6 +46,7 @@ import { updateGroup } from "./update-group.js";
 
 const companyA = kitIdentities.companies.a;
 const companyB = kitIdentities.companies.b;
+const clerkWithoutView = randomUUID();
 
 const fixtures = {
   listA: randomUUID(),
@@ -94,6 +97,25 @@ async function previewOf<TInput extends z.ZodType, TOutput extends z.ZodType>(
 
 beforeAll(async () => {
   kit = await createTestKit();
+
+  await kit.db.runtime.db.insert(user).values([
+    {
+      id: clerkWithoutView,
+      name: "Клерк",
+      email: "clerk@previews.test",
+    },
+  ]);
+  await kit.db.runtime.db.insert(companyMembers).values([
+    {
+      companyId: companyA,
+      userId: clerkWithoutView,
+      role: "employee",
+      permissions: {
+        granted: ["customers:create"],
+        denied: ["customers:view"],
+      },
+    },
+  ]);
 
   await kit.db.runtime.db.insert(priceLists).values([
     { id: fixtures.listA, companyId: companyA, name: "Роздріб" },
@@ -199,24 +221,43 @@ describe("customers preview cards (ADR-0050, core.md §7)", () => {
     expect(preview.notes).toBeUndefined();
   });
 
-  it("warns about a taken phone or email without naming the existing customer", async () => {
+  it("names the existing customer when the caller holds customers:view", async () => {
     const byPhone = await previewOf(createCustomer, {
       name: "Інша Анна",
       phone: "0501112233",
     });
-    expect(byPhone.notes).toEqual([DUPLICATE_PHONE_NOTE]);
+    expect(byPhone.notes).toEqual([`${DUPLICATE_PHONE_NOTE}: Анна Коваль`]);
 
     const byEmail = await previewOf(createCustomer, {
       name: "Інший Богдан",
       email: "BOHDAN@previews.test",
     });
+    expect(byEmail.notes).toEqual([`${DUPLICATE_EMAIL_NOTE}: Богдан Мороз`]);
+
+    for (const note of [...(byPhone.notes ?? []), ...(byEmail.notes ?? [])]) {
+      expect(note).not.toContain("0501112233");
+      expect(note).not.toContain("bohdan@previews.test");
+    }
+  });
+
+  it("keeps the note nameless when customers:view is explicitly denied", async () => {
+    const byPhone = await previewOf(
+      createCustomer,
+      { name: "Інша Анна", phone: "0501112233" },
+      { userId: clerkWithoutView },
+    );
+    expect(byPhone.notes).toEqual([DUPLICATE_PHONE_NOTE]);
+
+    const byEmail = await previewOf(
+      createCustomer,
+      { name: "Інший Богдан", email: "BOHDAN@previews.test" },
+      { userId: clerkWithoutView },
+    );
     expect(byEmail.notes).toEqual([DUPLICATE_EMAIL_NOTE]);
 
     for (const note of [...(byPhone.notes ?? []), ...(byEmail.notes ?? [])]) {
       expect(note).not.toContain("Анна Коваль");
       expect(note).not.toContain("Богдан Мороз");
-      expect(note).not.toContain("0501112233");
-      expect(note).not.toContain("bohdan@previews.test");
     }
   });
 
