@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import { type ImplementedAction } from "@showzy/core";
 import {
   ConfirmationRequiredError,
-  NotFoundError,
   type ActionPreview,
 } from "@showzy/core/errors";
 import {
@@ -91,33 +90,6 @@ async function previewOf<TInput extends z.ZodType, TOutput extends z.ZodType>(
   }
   expect(error.challenge.summary).toBe(preview.title);
   return preview;
-}
-
-async function refusalOf<TInput extends z.ZodType, TOutput extends z.ZodType>(
-  action: ImplementedAction<TInput, TOutput>,
-  input: unknown,
-): Promise<unknown> {
-  return kit
-    .invoke(action, input, {}, { request: { requireConfirmation: true } })
-    .then(
-      () => {
-        throw new Error("expected the preview to refuse");
-      },
-      (thrown: unknown) => thrown,
-    );
-}
-
-function expectSameRefusal(foreign: unknown, missing: unknown): void {
-  expect(foreign).toBeInstanceOf(NotFoundError);
-  expect(missing).toBeInstanceOf(NotFoundError);
-  if (
-    !(foreign instanceof NotFoundError) ||
-    !(missing instanceof NotFoundError)
-  ) {
-    throw new Error("expected both references to be refused as not found");
-  }
-  expect(foreign.code).toBe(missing.code);
-  expect(foreign.clientMessage).toBe(missing.clientMessage);
 }
 
 beforeAll(async () => {
@@ -396,41 +368,6 @@ describe("customers preview cards (ADR-0050, core.md §7)", () => {
     expect(preview.title).toBe("Видалити контрагента: ТОВ Анна");
     expect(preview.lines).toEqual([{ label: "ЄДРПОУ", value: "12345678" }]);
     expect(preview.notes).toEqual([DELETE_COUNTERPARTY_NOTE]);
-  });
-
-  it("refuses a foreign group exactly as a missing one", async () => {
-    expectSameRefusal(
-      await refusalOf(createCustomer, {
-        name: "X",
-        phone: "+380500000001",
-        groupId: fixtures.groupB,
-      }),
-      await refusalOf(createCustomer, {
-        name: "X",
-        phone: "+380500000001",
-        groupId: randomUUID(),
-      }),
-    );
-  });
-
-  it("refuses a foreign price list exactly as a missing one", async () => {
-    expectSameRefusal(
-      await refusalOf(createGroup, { name: "X", priceListId: fixtures.listB }),
-      await refusalOf(createGroup, { name: "X", priceListId: randomUUID() }),
-    );
-  });
-
-  it("refuses a foreign linked customer exactly as a missing one", async () => {
-    expectSameRefusal(
-      await refusalOf(createCounterparty, {
-        name: "X",
-        customerId: fixtures.customerB,
-      }),
-      await refusalOf(createCounterparty, {
-        name: "X",
-        customerId: randomUUID(),
-      }),
-    );
   });
 
   it("never reads another company's names into a card", async () => {

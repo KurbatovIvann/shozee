@@ -813,11 +813,20 @@ Exported from `packages/core/testing`, used by every module (this is how
   on the suite's own `createConfirmationHook`, so a module that swaps the
   kit's hook cannot disable the check; when the action binds `preview`,
   the foreign reference must be refused at the preview step, never
-  answered with a confirmation card. A case that declares
-  `foreignReference: { missing }` — the own invocation with a reference
-  that exists nowhere — also proves the foreign refusal carries the same
-  code and `clientMessage` as that missing one; an `account` case runs
-  this preview branch only when it declares that probe, because its
+  answered with a confirmation card. Every preview-bound case declares
+  `foreignReference`, and a case declaring neither variant fails the
+  suite: `{ missing }` — an invocation with a reference that exists
+  nowhere — also proves the foreign refusal carries the same code and
+  `clientMessage` as that missing one, and is required whenever the input
+  carries a resolvable reference, including a case whose foreign
+  invocation varies the actor rather than the reference (the probe then
+  keeps the foreign actor and randomizes the reference);
+  `{ noReference: true }` is the exemption for an input that carries no
+  reference at all, such as `companies.create`, and it cannot be
+  self-certified: the kit walks the contract's input schema and rejects
+  the exemption when any field is uuid-formatted, in a `crossTenantSuite`
+  or an `accountIsolationSuite` case alike. An `account` case runs
+  this preview branch only when it declares `{ missing }`, because its
   foreign invocation is otherwise another user, not another reference.
   Where the action pauses only
   at execution time, the preview and the execution refuse with the same

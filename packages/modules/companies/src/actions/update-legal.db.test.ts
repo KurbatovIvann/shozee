@@ -130,6 +130,7 @@ crossTenantSuite(
       updateLegal,
       { input: updateIsolationInput },
       { input: updateIsolationInput, companyId: kitIdentities.companies.b },
+      { noReference: true },
     ),
   ],
 );

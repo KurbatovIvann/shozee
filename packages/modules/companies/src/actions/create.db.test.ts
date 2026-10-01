@@ -102,6 +102,7 @@ crossTenantSuite(
       createCompany,
       { input: annaOwnCreate, userId: kitIdentities.users.anna },
       { input: borisOwnCreate, userId: kitIdentities.users.boris },
+      { noReference: true },
     ),
   ],
 );
@@ -113,6 +114,7 @@ accountIsolationSuite(
       createCompany,
       { input: annaOwnCreate, userId: kitIdentities.users.anna },
       { input: borisOwnCreate, userId: kitIdentities.users.boris },
+      { noReference: true },
     ),
   ],
 );
