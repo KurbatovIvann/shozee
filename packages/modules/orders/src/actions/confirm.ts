@@ -9,6 +9,7 @@ import { holderAuditTarget } from "@showzy/module-kit/audit-target";
 import { and, eq } from "drizzle-orm";
 
 import { ordersConfirmed } from "../events/confirmed.js";
+import { orderTransitionPreview } from "../services/preview-card.js";
 import { requireWritable } from "../services/writable.js";
 import { confirmOrderContract } from "./confirm.contract.js";
 
@@ -76,5 +77,9 @@ export const confirmOrder = implementAction(confirmOrderContract, {
       confirmedAt: confirmedAtIso,
     };
   },
+  preview: orderTransitionPreview(
+    confirmOrderContract,
+    "Підтвердити замовлення",
+  ),
   auditTarget: confirmAuditTarget,
 });

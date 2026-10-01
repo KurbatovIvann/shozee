@@ -9,6 +9,7 @@ import { holderAuditTarget } from "@showzy/module-kit/audit-target";
 import { and, eq } from "drizzle-orm";
 
 import { ordersStarted } from "../events/started.js";
+import { orderTransitionPreview } from "../services/preview-card.js";
 import { requireWritable } from "../services/writable.js";
 import { startOrderContract } from "./start.contract.js";
 
@@ -69,5 +70,9 @@ export const startOrder = implementAction(startOrderContract, {
       status: "in_progress" as const,
     };
   },
+  preview: orderTransitionPreview(
+    startOrderContract,
+    "Взяти в роботу замовлення",
+  ),
   auditTarget: startAuditTarget,
 });

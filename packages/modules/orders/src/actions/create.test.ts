@@ -244,17 +244,22 @@ describe("orders.create contract", () => {
       new URL("./create.ts", import.meta.url),
       "utf8",
     );
+    const draft = readFileSync(
+      new URL("../services/create-draft.ts", import.meta.url),
+      "utf8",
+    );
     const persist = readFileSync(
       new URL("../services/create-order.ts", import.meta.url),
       "utf8",
     );
-    expect(handler).toContain("resolveCustomerReference");
-    expect(handler).toContain("resolveLineReferences");
-    expect(handler).toContain("toCatalogLineInput");
-    expect(handler).toContain('kind: "reference"');
-    expect(handler).not.toContain("getProductOrderFacts");
-    expect(handler).not.toMatch(/\bgetCustomer\b/);
-    expect(handler).not.toMatch(/kind:\s*"base"/);
+    expect(handler).toContain("resolveCreateOrderDraft");
+    expect(draft).toContain("resolveCustomerReference");
+    expect(draft).toContain("resolveLineReferences");
+    expect(draft).toContain("toCatalogLineInput");
+    expect(draft).toContain('kind: "reference"');
+    expect(draft).not.toContain("getProductOrderFacts");
+    expect(draft).not.toMatch(/\bgetCustomer\b/);
+    expect(draft).not.toMatch(/kind:\s*"base"/);
     expect(persist).not.toContain("EntityRef");
     expect(persist).not.toMatch(/by:\s*"query"/);
   });

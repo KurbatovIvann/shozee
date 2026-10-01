@@ -6,10 +6,15 @@ import {
 } from "@showzy/core/errors";
 import { documents } from "@showzy/db/schema/documents";
 import { getSigning } from "@showzy/doc-signing/get";
+import { previewCompanyScope } from "@showzy/module-kit/preview-scope";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { documentsCancelled } from "../events/cancelled.js";
+import {
+  documentPreviewLines,
+  loadDocumentPreviewFacts,
+} from "../services/preview-document.js";
 import { requireWritable } from "../services/writable.js";
 import { cancelDocumentContract } from "./cancel.contract.js";
 
@@ -95,6 +100,20 @@ export const cancelDocument = implementAction(cancelDocumentContract, {
       documentId: input.documentId,
       orderId: saved.orderId,
       status: "cancelled" as const,
+    };
+  },
+  preview: async (input, env) => {
+    const facts = await loadDocumentPreviewFacts({
+      tx: env.tx,
+      companyId: previewCompanyScope(env.companyId, cancelDocumentContract),
+      documentId: input.documentId,
+    });
+    return {
+      title: `Скасувати документ ${facts.documentNumber}`,
+      lines: documentPreviewLines(facts),
+      notes: [
+        "Номер документа залишиться використаним — його не повернуть у нумерацію.",
+      ],
     };
   },
   auditTarget: cancelAuditTarget,
