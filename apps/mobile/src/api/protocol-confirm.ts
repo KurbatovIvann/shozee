@@ -35,27 +35,40 @@ export function confirmationChallenge(
   };
 }
 
+type ProtocolInvocation<T> =
+  | { readonly outcome: "submitted"; readonly value: T }
+  | {
+      readonly outcome: "challenged";
+      readonly challenge: ConfirmationChallengeView;
+    };
+
+async function invokeUntilChallenged<T>(
+  invoke: () => Promise<T>,
+): Promise<ProtocolInvocation<T>> {
+  try {
+    return { outcome: "submitted", value: await invoke() };
+  } catch (error) {
+    const challenge = confirmationChallenge(error);
+    if (challenge === null) {
+      throw error;
+    }
+    return { outcome: "challenged", challenge };
+  }
+}
+
 export async function submitWithProtocolConfirmation<T>(args: {
   readonly submit: () => Promise<T>;
   readonly present: PresentConfirmationChallenge;
   readonly confirm: (challengeId: string) => Promise<T>;
 }): Promise<ProtocolConfirmationResult<T>> {
-  let challenge: ConfirmationChallengeView;
-  try {
-    return { outcome: "submitted", value: await args.submit() };
-  } catch (error) {
-    const pending = confirmationChallenge(error);
-    if (pending === null) {
-      throw error;
+  let invocation = await invokeUntilChallenged(args.submit);
+  while (invocation.outcome === "challenged") {
+    const { challengeId } = invocation.challenge;
+    const choice = await args.present(invocation.challenge);
+    if (choice === "cancel") {
+      return { outcome: "declined" };
     }
-    challenge = pending;
+    invocation = await invokeUntilChallenged(() => args.confirm(challengeId));
   }
-  const choice = await args.present(challenge);
-  if (choice === "cancel") {
-    return { outcome: "declined" };
-  }
-  return {
-    outcome: "submitted",
-    value: await args.confirm(challenge.challengeId),
-  };
+  return invocation;
 }

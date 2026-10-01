@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { WireActionPreview } from "@showzy/contract";
 
+import type { ConfirmDialogChoice } from "../components/ui/confirm-dialog";
 import {
   confirmationChallenge,
   submitWithProtocolConfirmation,
@@ -134,6 +135,98 @@ describe("submitWithProtocolConfirmation", () => {
         confirm: () => Promise.resolve("deleted"),
       }),
     ).rejects.toBeInstanceOf(TypeError);
+  });
+
+  it("presents the drifted card and executes once on the second approve", async () => {
+    const seen: ConfirmationChallengeView[] = [];
+    const sent: string[] = [];
+    const drifted: WireActionPreview = {
+      title: "Видалити клієнта?",
+      lines: [{ label: "Замовлень", value: "13" }],
+      notes: [],
+    };
+    const result = await submitWithProtocolConfirmation({
+      submit: () => Promise.reject(confirmationRequired("ch-1", PREVIEW)),
+      present: (challenge) => {
+        seen.push(challenge);
+        return Promise.resolve("confirm");
+      },
+      confirm: (challengeId) => {
+        sent.push(challengeId);
+        return challengeId === "ch-1"
+          ? Promise.reject(confirmationRequired("ch-2", drifted))
+          : Promise.resolve("deleted");
+      },
+    });
+
+    expect(seen).toEqual([
+      { challengeId: "ch-1", summary: "Delete?", preview: PREVIEW },
+      { challengeId: "ch-2", summary: "Delete?", preview: drifted },
+    ]);
+    expect(sent).toEqual(["ch-1", "ch-2"]);
+    expect(result).toEqual({ outcome: "submitted", value: "deleted" });
+  });
+
+  it("sends nothing more when the person declines the drifted card", async () => {
+    const sent: string[] = [];
+    const choices: ConfirmDialogChoice[] = ["confirm", "cancel"];
+    const result = await submitWithProtocolConfirmation({
+      submit: () => Promise.reject(confirmationRequired("ch-1", PREVIEW)),
+      present: () => Promise.resolve(choices.shift() ?? "cancel"),
+      confirm: (challengeId) => {
+        sent.push(challengeId);
+        return Promise.reject(confirmationRequired("ch-2", PREVIEW));
+      },
+    });
+
+    expect(result).toEqual({ outcome: "declined" });
+    expect(sent).toEqual(["ch-1"]);
+  });
+
+  it("keeps presenting repeated drift only while the person approves", async () => {
+    const seen: string[] = [];
+    const sent: string[] = [];
+    let issued = 1;
+    const result = await submitWithProtocolConfirmation({
+      submit: () => Promise.reject(confirmationRequired("ch-1", PREVIEW)),
+      present: (challenge) => {
+        seen.push(challenge.challengeId);
+        return Promise.resolve(seen.length < 4 ? "confirm" : "cancel");
+      },
+      confirm: (challengeId) => {
+        sent.push(challengeId);
+        issued += 1;
+        return Promise.reject(
+          confirmationRequired(`ch-${String(issued)}`, PREVIEW),
+        );
+      },
+    });
+
+    expect(seen).toEqual(["ch-1", "ch-2", "ch-3", "ch-4"]);
+    expect(sent).toEqual(["ch-1", "ch-2", "ch-3"]);
+    expect(result).toEqual({ outcome: "declined" });
+  });
+
+  it("rethrows a non-confirmation failure raised by the confirm step", async () => {
+    const seen: string[] = [];
+    await expect(
+      submitWithProtocolConfirmation({
+        submit: () => Promise.reject(confirmationRequired("ch-1", PREVIEW)),
+        present: (challenge) => {
+          seen.push(challenge.challengeId);
+          return Promise.resolve("confirm");
+        },
+        confirm: () =>
+          Promise.reject(
+            new ORPCError("PERMISSION_DENIED", {
+              defined: true,
+              status: 403,
+              message: "Denied.",
+            }),
+          ),
+      }),
+    ).rejects.toBeInstanceOf(ORPCError);
+    expect(seen).toEqual(["ch-1"]);
   });
 
   it("keeps the card retryable when the confirm step fails on the network", async () => {
