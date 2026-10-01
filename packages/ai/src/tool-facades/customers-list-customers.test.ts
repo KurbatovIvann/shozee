@@ -241,10 +241,10 @@ describe("customersListCustomersFacadeTools", () => {
       Promise.resolve({ items: [], nextCursor: null }),
     );
     expect(tools[CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME]?.description).toContain(
-      "Find a customer by name, phone, or email",
+      "is customers_get_customer, not this tool",
     );
     expect(tools[CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME]?.description).toContain(
-      "Do not call customers.getCustomer in a loop",
+      "Do not call customers_get_customer in a loop",
     );
     expect(tools[CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME]?.description).toContain(
       "Put people and product names in nominative",

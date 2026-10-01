@@ -7,6 +7,8 @@ export {
   toProviderToolName,
   CATALOG_LIST_PRODUCTS_ACTION_NAME,
   CATALOG_LIST_PRODUCTS_TOOL_NAME,
+  CUSTOMERS_GET_CUSTOMER_ACTION_NAME,
+  CUSTOMERS_GET_CUSTOMER_TOOL_NAME,
   CUSTOMERS_LIST_CUSTOMERS_ACTION_NAME,
   CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME,
   CUSTOMERS_LIST_GROUPS_ACTION_NAME,
@@ -75,13 +77,18 @@ export {
  * `@showzy/assistant-kit`.
  */
 export {
+  CHOICE_CREATE_OPTION_ID,
   CHOICE_PICKER_REASONS,
+  EntityLookupConflictError,
   catalogPickerConflictExtrasFromError,
   catalogPickerConflictExtrasSchema,
   choiceCardOptionSchema,
+  choiceCreateOptionSchema,
   type CatalogPickerConflictExtras,
   type ChoiceCardOption,
+  type ChoiceCreateOption,
   type ChoicePickerReason,
+  type EntityLookupTarget,
 } from "./choice.js";
 export {
   fillStaffAssistantCopy,

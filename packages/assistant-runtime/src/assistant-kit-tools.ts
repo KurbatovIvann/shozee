@@ -20,6 +20,7 @@
  */
 import {
   catalogPickerConflictExtrasFromError,
+  type CatalogPickerConflictExtras,
   type ChoicePickerReason,
 } from "@showzy/ai";
 import type { CardRef, ToolOutcome, ToolSet } from "@showzy/assistant-kit";
@@ -32,6 +33,7 @@ import {
 } from "@showzy/validation/assistant-surfaces";
 
 import type {
+  ChoiceOptionSecret,
   ChoicePickerTarget,
   ChoiceSecret,
 } from "./assistant-interactions.js";
@@ -122,6 +124,40 @@ function subjectFor(target: ChoicePickerTarget): string {
   }
 }
 
+type ChoicePromptOption = {
+  readonly optionId: string;
+  readonly label: string;
+  readonly kind: "record" | "create";
+};
+
+function choiceOptions(
+  picker: CatalogPickerConflictExtras,
+  toolName: string,
+  input: unknown,
+): {
+  readonly prompt: readonly ChoicePromptOption[];
+  readonly byOption: Record<string, ChoiceOptionSecret>;
+} {
+  const entries: [string, ChoiceOptionSecret][] = picker.options.map(
+    (option) => [option.id, { kind: "record", entityId: option.id }],
+  );
+  const prompt: ChoicePromptOption[] = picker.options.map((option) => ({
+    optionId: option.id,
+    label: option.label,
+    kind: "record" as const,
+  }));
+  const create = picker.create;
+  if (create !== undefined) {
+    prompt.push({
+      optionId: create.optionId,
+      label: subjectFor(picker.target),
+      kind: "create",
+    });
+    entries.push([create.optionId, { kind: "create", toolName, input }]);
+  }
+  return { prompt, byOption: Object.fromEntries(entries) };
+}
+
 function problemFor(reason: ChoicePickerReason): string {
   switch (reason) {
     case "unmatched_query":
@@ -171,13 +207,9 @@ export function assistantKitTurnTools(
         } catch (error) {
           const picker = catalogPickerConflictExtrasFromError(error);
           if (picker !== undefined) {
+            const options = choiceOptions(picker, name, input);
             const secret: ChoiceSecret = {
-              byOption: Object.fromEntries(
-                picker.options.map((option) => [
-                  option.id,
-                  { kind: "record", entityId: option.id } as const,
-                ]),
-              ),
+              byOption: options.byOption,
               toolName: name,
               input,
               target: picker.target,
@@ -187,11 +219,7 @@ export function assistantKitTurnTools(
               interaction: "choice",
               prompt: {
                 subject: subjectFor(picker.target),
-                options: picker.options.map((option) => ({
-                  optionId: option.id,
-                  label: option.label,
-                  kind: "record" as const,
-                })),
+                options: options.prompt,
                 optionsTruncated: picker.optionsTruncated,
                 nearest: picker.reason === "unmatched_query",
                 problem: problemFor(picker.reason),

@@ -111,6 +111,7 @@ export type AssistantCopy = {
   readonly choiceTitle: string;
   readonly choiceNearest: string;
   readonly choiceCompose: string;
+  readonly choiceCreate: string;
   readonly choiceChosen: string;
   readonly choiceTruncated: string;
   readonly choiceTruncatedMatch: string;
@@ -264,6 +265,7 @@ const assistantEn: AssistantCopy = {
   choiceTitle: "Select a variant",
   choiceNearest: "Nothing exact. Maybe…",
   choiceCompose: "Something else…",
+  choiceCreate: "Create “{{name}}”",
   choiceChosen: "Chosen",
   choiceTruncated: "More variants exist. Reply with the exact flavour name.",
   choiceTruncatedMatch: "More matches exist. Reply with the exact name.",
@@ -353,6 +355,7 @@ const assistantUk: AssistantCopy = {
   choiceTitle: "Обери варіант",
   choiceNearest: "Точного немає. Можливо…",
   choiceCompose: "Інше…",
+  choiceCreate: "Створити «{{name}}»",
   choiceChosen: "Обрано",
   choiceTruncated: "Є ще варіанти. Напиши точну назву смаку.",
   choiceTruncatedMatch: "Є ще збіги. Напиши точну назву.",
