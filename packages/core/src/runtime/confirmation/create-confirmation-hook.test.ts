@@ -475,6 +475,81 @@ describe("confirmation hook — card drift (core.md §7, ADR-0050)", () => {
     expect(redo.challenge.preview?.lines[0]?.value).toBe("310.00");
   });
 
+  it("issues a fresh challenge when the re-run card gains a line", async () => {
+    const confirmation = hook();
+    let lines: ActionPreview["lines"] = [{ label: "Total", value: "250.00" }];
+    const card = (): ActionPreview => ({ title: "Create order", lines });
+    const first = cardEnv(card);
+    const required = await issue(confirmation, first);
+
+    lines = [
+      { label: "Total", value: "250.00" },
+      { label: "Delivery", value: "60.00" },
+    ];
+    const redo = await issue(
+      confirmation,
+      cardEnv(card, {
+        request: {
+          idempotencyKey: keyOf(first),
+          confirmationChallengeId: required.challenge.challengeId,
+        },
+      }),
+    );
+
+    expect(redo.challenge.challengeId).not.toBe(required.challenge.challengeId);
+    expect(redo.challenge.preview?.lines).toHaveLength(2);
+  });
+
+  it("issues a fresh challenge when the re-run card gains a note", async () => {
+    const confirmation = hook();
+    let notes: readonly string[] = [];
+    const card = (): ActionPreview => ({
+      title: "Create order",
+      lines: [{ label: "Total", value: "250.00" }],
+      notes,
+    });
+    const first = cardEnv(card);
+    const required = await issue(confirmation, first);
+
+    notes = ["Stock is low"];
+    const redo = await issue(
+      confirmation,
+      cardEnv(card, {
+        request: {
+          idempotencyKey: keyOf(first),
+          confirmationChallengeId: required.challenge.challengeId,
+        },
+      }),
+    );
+
+    expect(redo.challenge.challengeId).not.toBe(required.challenge.challengeId);
+    expect(redo.challenge.preview?.notes).toEqual(["Stock is low"]);
+  });
+
+  it("treats absent notes and an empty notes list as the same card", async () => {
+    const confirmation = hook();
+    let notes: readonly string[] | undefined = undefined;
+    const card = (): ActionPreview => ({
+      title: "Create order",
+      lines: [{ label: "Total", value: "250.00" }],
+      ...(notes === undefined ? {} : { notes }),
+    });
+    const first = cardEnv(card);
+    const required = await issue(confirmation, first);
+
+    notes = [];
+    const grant = await confirmation.gate(
+      cardEnv(card, {
+        request: {
+          idempotencyKey: keyOf(first),
+          confirmationChallengeId: required.challenge.challengeId,
+        },
+      }),
+    );
+
+    expect(grant.challengeId).toBe(required.challenge.challengeId);
+  });
+
   it("burns the drifted challenge so the old token cannot be replayed", async () => {
     const confirmation = hook();
     let price = "250.00";

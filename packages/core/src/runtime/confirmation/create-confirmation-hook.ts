@@ -24,6 +24,7 @@ import {
   CoreError,
   CoreInvariantError,
   type ActionPreview,
+  type ActionPreviewLine,
 } from "../../errors/index.js";
 import { canonicalJsonSha256OfUnknown } from "../audit/canonical-json.js";
 import { principalKeyFor, requireIdempotencyKey } from "../idempotency/keys.js";
@@ -134,18 +135,24 @@ function previewHashOf(card: ConfirmationChallengeSummary): string | null {
     : canonicalJsonSha256OfUnknown(canonicalPreview(card.preview));
 }
 
-function canonicalPreview(preview: ActionPreview): {
-  readonly title: string;
-  readonly lines: readonly { readonly label: string; readonly value: string }[];
-  readonly notes: readonly string[];
-} {
+type CanonicalPreview = Required<Omit<ActionPreview, "lines">> & {
+  readonly lines: readonly Required<ActionPreviewLine>[];
+};
+
+function canonicalPreview(preview: ActionPreview): CanonicalPreview {
   return {
     title: preview.title,
-    lines: preview.lines.map((line) => ({
-      label: line.label,
-      value: line.value,
-    })),
+    lines: preview.lines.map(canonicalPreviewLine),
     notes: preview.notes ?? [],
+  };
+}
+
+function canonicalPreviewLine(
+  line: ActionPreviewLine,
+): Required<ActionPreviewLine> {
+  return {
+    label: line.label,
+    value: line.value,
   };
 }
 
