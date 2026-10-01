@@ -11,7 +11,7 @@ import { deleteCounterpartyContract } from "./delete-counterparty.contract.js";
  * from list/get when it shows the dialog.
  */
 export const deleteCounterpartyConfirmationSummary =
-  "Delete this company counterparty. The linked CRM customer stays.";
+  "Видалити цього контрагента компанії. Прив’язаний клієнт CRM залишиться. Цю дію не можна скасувати.";
 
 export const deleteCounterparty = implementAction(deleteCounterpartyContract, {
   handler: (input, ctx) => {

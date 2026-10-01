@@ -13,53 +13,57 @@ import { detectLocale } from "../../i18n/locale";
 import type { ConfirmDialogChoice } from "./confirm-dialog";
 import { ConfirmationCard } from "./confirmation-card";
 import {
-  confirmationCardView,
-  type ConfirmationCardView,
-} from "./confirmation-card.model";
+  CLOSED_CONFIRMATION_CARD,
+  createConfirmationCardMachine,
+  type ConfirmationCardMachine,
+  type ConfirmationCardState,
+} from "./confirmation-card.machine";
+import { confirmationCardView } from "./confirmation-card.model";
 
 const ConfirmationCardContext =
   createContext<PresentConfirmationChallenge | null>(null);
-
-type Settle = (choice: ConfirmDialogChoice) => void;
 
 export function ConfirmationCardProvider(props: {
   readonly children: ReactNode;
 }) {
   const copy =
     detectLocale() === "uk" ? confirmationCardUk : confirmationCardEn;
-  const settleRef = useRef<Settle | null>(null);
-  const [open, setOpen] = useState(false);
-  const [card, setCard] = useState<ConfirmationCardView | null>(null);
+  const fallbackTitleRef = useRef(copy.fallbackTitle);
+  fallbackTitleRef.current = copy.fallbackTitle;
+  const [state, setState] = useState<ConfirmationCardState>(
+    CLOSED_CONFIRMATION_CARD,
+  );
+  const machineRef = useRef<ConfirmationCardMachine | null>(null);
+  if (machineRef.current === null) {
+    machineRef.current = createConfirmationCardMachine({ onState: setState });
+  }
+  const machine = machineRef.current;
 
   const present = useCallback<PresentConfirmationChallenge>(
-    (challenge) => {
-      settleRef.current?.("cancel");
-      setCard(confirmationCardView(challenge, copy.fallbackTitle));
-      setOpen(true);
-      return new Promise<ConfirmDialogChoice>((resolve) => {
-        settleRef.current = resolve;
-      });
-    },
-    [copy.fallbackTitle],
+    (challenge) =>
+      machine.present(
+        confirmationCardView(challenge, fallbackTitleRef.current),
+      ),
+    [machine],
   );
 
-  const choose = useCallback((choice: ConfirmDialogChoice) => {
-    const settle = settleRef.current;
-    settleRef.current = null;
-    setOpen(false);
-    settle?.(choice);
-  }, []);
+  const choose = useCallback(
+    (choice: ConfirmDialogChoice) => {
+      machine.choose(choice);
+    },
+    [machine],
+  );
 
   const clearCard = useCallback(() => {
-    setCard(null);
-  }, []);
+    machine.clearCard();
+  }, [machine]);
 
   return (
     <ConfirmationCardContext.Provider value={present}>
       {props.children}
       <ConfirmationCard
-        visible={open}
-        view={card}
+        visible={state.open}
+        view={state.card}
         copy={copy}
         onChoice={choose}
         onHidden={clearCard}

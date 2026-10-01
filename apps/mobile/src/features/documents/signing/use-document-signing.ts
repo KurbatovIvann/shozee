@@ -104,7 +104,6 @@ export function useDocumentSigning(args: {
     }
     hitlBusyRef.current = true;
     setHitlBanner(null);
-    requestSignMutation.reset();
     try {
       const result = await submitWithProtocolConfirmation({
         submit: () => requestSignMutation.submit({ documentId: target.id }),
@@ -114,7 +113,6 @@ export function useDocumentSigning(args: {
       if (result.outcome === "declined") {
         return;
       }
-      requestSignMutation.reset();
       clearKey();
       dispatch({
         type: "open",
@@ -123,8 +121,12 @@ export function useDocumentSigning(args: {
       });
     } catch (error: unknown) {
       logSigningFailure("hitl", error);
-      setHitlBanner(args.copy.signing.banners[mapSigningFailure(error)]);
+      const failure = bannerFromQueryKind(describeQueryFailure(error).kind);
+      setHitlBanner(
+        failure === null ? null : args.copy.signing.banners[failure],
+      );
     } finally {
+      requestSignMutation.reset();
       hitlBusyRef.current = false;
     }
   }
@@ -160,18 +162,9 @@ export function useDocumentSigning(args: {
     };
   }
 
-  const hitlFailure = requestSignMutation.isError
-    ? describeQueryFailure(requestSignMutation.error).kind
-    : null;
-  const banner =
-    hitlBanner ??
-    (hitlFailure === null
-      ? null
-      : args.copy.signing.banners[bannerFromQueryKind(hitlFailure)]);
-
   return {
     session,
-    banner,
+    banner: hitlBanner,
     pending: requestSignMutation.isPending || signingSessionIsBusy(session),
     requestSignAndOpen,
     closeSheet: () => {

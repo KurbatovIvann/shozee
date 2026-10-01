@@ -667,7 +667,7 @@ describe("documents.requestSign", () => {
     expect(unconfirmed.challenge.summary).toBe(
       requestSignPreviewTitle("KA-РХ-000928"),
     );
-    expect(unconfirmed.challenge.summary).toContain(
+    expect(unconfirmed.challenge.summary).not.toContain(
       REQUEST_SIGN_KEY_POSSESSION_NOTE,
     );
     expect(unconfirmed.challenge.preview).toEqual({

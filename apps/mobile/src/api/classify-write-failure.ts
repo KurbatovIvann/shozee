@@ -7,10 +7,14 @@ import type { QueryFailureKind } from "./errors";
 
 export type WriteFailureBannerKey = "offline" | "permission" | "error";
 
+export function writeFailureIsSilent(kind: QueryFailureKind | null): boolean {
+  return kind === null || kind === "confirmation";
+}
+
 export function classifyWriteFailure(
   kind: QueryFailureKind | null,
 ): WriteFailureBannerKey | null {
-  if (kind === null) {
+  if (writeFailureIsSilent(kind)) {
     return null;
   }
   if (kind === "offline") {
@@ -18,9 +22,6 @@ export function classifyWriteFailure(
   }
   if (kind === "permission") {
     return "permission";
-  }
-  if (kind === "confirmation") {
-    return null;
   }
   return "error";
 }

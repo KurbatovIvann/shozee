@@ -17,7 +17,7 @@ export { ACTIVE_CUSTOMER_DELETE_MESSAGE };
  * fields without echoing their values.
  */
 export const deleteCustomerConfirmationSummary =
-  "Delete this archived customer. Confirm the name and primary contact (phone, email, or linked user). Orders stay and lose the customer link. Linked counterparties stay as standalone legal rows.";
+  "Видалити цього архівованого клієнта. Звірте ім’я та основний контакт (телефон, email або прив’язаного користувача). Замовлення залишаться і втратять зв’язок із клієнтом. Прив’язані контрагенти залишаться окремими юридичними особами.";
 
 export const deleteCustomer = implementAction(deleteCustomerContract, {
   handler: (input, ctx) => {

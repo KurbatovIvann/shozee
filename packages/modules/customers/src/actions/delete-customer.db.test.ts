@@ -420,9 +420,9 @@ describe("customers.deleteCustomer", () => {
     expect(unconfirmed.challenge.summary).toBe(
       deleteCustomerConfirmationSummary,
     );
-    expect(unconfirmed.challenge.summary).toContain("name");
+    expect(unconfirmed.challenge.summary).toContain("ім’я");
     expect(unconfirmed.challenge.summary).toContain(
-      "phone, email, or linked user",
+      "телефон, email або прив’язаного користувача",
     );
     expect(unconfirmed.challenge.summary).not.toContain("Confirm me");
     expect(unconfirmed.challenge.summary).not.toContain(

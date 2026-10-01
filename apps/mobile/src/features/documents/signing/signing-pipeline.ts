@@ -8,6 +8,7 @@
  */
 import type { MutationAttempt, MutationCallOptions } from "@showzy/contract";
 
+import { writeFailureIsSilent } from "../../../api/classify-write-failure";
 import {
   describeQueryFailure,
   type QueryFailureKind,
@@ -190,10 +191,15 @@ export function mapSigningFailure(error: unknown): SigningBannerKey {
   ) {
     return "validation";
   }
-  return bannerFromQueryKind(describeQueryFailure(error).kind);
+  return bannerFromQueryKind(describeQueryFailure(error).kind) ?? "unavailable";
 }
 
-export function bannerFromQueryKind(kind: QueryFailureKind): SigningBannerKey {
+export function bannerFromQueryKind(
+  kind: QueryFailureKind,
+): SigningBannerKey | null {
+  if (writeFailureIsSilent(kind)) {
+    return null;
+  }
   switch (kind) {
     case "offline":
       return "offline";
