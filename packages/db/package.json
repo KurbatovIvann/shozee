@@ -23,6 +23,7 @@
     "db:check-money": "node scripts/check-money-schema.mjs src/schema",
     "db:check-drift": "drizzle-kit generate && node scripts/assert-clean-path.mjs migrations",
     "db:check": "pnpm db:check-money && pnpm db:check-drift",
+    "seed:dev-sho": "node --import ./scripts/ts-resolve-register.mjs --env-file=../../.env seed/dev-sho-bakery-cli.ts",
     "backup:verify": "node scripts/backup-verify.mjs"
   },
   "dependencies": {
