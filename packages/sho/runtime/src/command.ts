@@ -41,7 +41,9 @@ import { withSuggestions } from "./suggest.ts";
 import { createAsUpdate, groupAsUpdate, updateAsCreate } from "./createAsUpdate.ts";
 import { GET_CUSTOMER, contactCustomer, createAsFind, saidContacts } from "./contacts.ts";
 import { contradictingObject } from "./objects.ts";
-import { RENAME_LEADS, RENAME_VERBS } from "./lexicon/customers.ts";
+import { NEW_WORDS, RENAME_LEADS, RENAME_VERBS } from "./lexicon/customers.ts";
+import { BARE_CUSTOMER_WORDS } from "./lexicon/contacts.ts";
+import { resolveCustomer } from "./customers.ts";
 
 // A command as the pipeline decided it (spans, the names the customer matcher found, references to earlier commands), built into a `CommandV2`: every
 // param typed and resolved against the context (`resolve.ts`), what the card still needs, the effect and the confirmation it takes (D65).
@@ -577,6 +579,54 @@ function renamedCustomer(bundle: Bundle, decision: Decision): Decision {
   return renamed ? { ...decision, params: { ...decision.params, [RENAME_TO]: other.text } } : decision;
 }
 
+const NEW_NAME = "new_name";
+// D95: the actions on the customer's own record, whose name the model may tag `new_name`.
+const CUSTOMER_RECORD_ACTIONS: ReadonlySet<string> = new Set(["customers.getCustomer", "customers.updateCustomer", "customers.archiveCustomer", "customers.restoreCustomer", "customers.deleteCustomer"]);
+
+// D95 (Q4 of the v3.5 served report): the bare «клієнту / клієнтці / клиенту / клиентке» (`BARE_CUSTOMER_WORDS`) is D70's pointer at the customer the
+// host shows (or, with a focus or a previous command, the one it binds to), but a name said with it is the customer. v3.5 reads «добав клиенту <surname>
+// комментарий …» as its own `customers.updateCustomer` and tags the surname `new_name`, which the update has no param for: the name was dropped and the
+// pointer made the card ready for whichever customer the host showed. In a v3 command on the customer's own record (`CUSTOMER_RECORD_ACTIONS`: get,
+// update, archive, restore, delete; an order or a counterparty edit whose `new_name` is some other name is left alone), the model's one `new_name` span
+// is the customer when all of these hold:
+//   1. no customer is said (no customer span) or taken from an earlier command of the utterance (`refPrevious`);
+//   2. the model tagged exactly one `new_name` text and no `customer` span;
+//   3. no rename verb is said (`RENAME_VERBS`: the new name is the rename's) and no word before the name says the customer is new (`NEW_WORDS`);
+//   4. the word said for the customer, if any, is the bare noun: a pronoun or «цьому клієнту» the host's record or the focus binds stands, and so
+//      does a record the focus or the previous command bound or asked about by another word.
+// The customer the focus or the previous command bound to the bare noun is let go (no ref, need or path of the focus on `customer`), as D94's contact.
+// The action is the model's; no need is added (the name is on the card).
+function namedCustomer(bundle: Bundle, decision: Decision, context: CompiledContext | null): Decision {
+  const takes = intentOfAction(bundle, decision.action).intent.params;
+  if (!isV3(bundle) || !CUSTOMER_RECORD_ACTIONS.has(decision.action) || takes[CUSTOMER] !== CUSTOMER || Object.hasOwn(takes, NEW_NAME)) return decision;
+  if (decision.params[CUSTOMER] !== undefined || Object.hasOwn(decision.refPrevious, CUSTOMER) || decision.params[NEW_NAME] !== undefined) return decision;
+  const names = decision.spans.filter((span) => span.kind === NEW_NAME);
+  const [span] = names;
+  if (span === undefined || new Set(names.map((one) => one.text)).size !== 1 || decision.spans.some((one) => one.kind === CUSTOMER)) return decision;
+  const at = ` ${decision.text} `.indexOf(` ${span.text} `);
+  if (at < 0 || wordsOf(decision.text).some((word) => RENAME_VERBS.has(word)) || wordsOf(decision.text.slice(0, at)).some((word) => NEW_WORDS.has(word))) return decision;
+  const bound = decision.fromPrevious ?? {};
+  const boundRef = bound[CUSTOMER];
+  const boundWord = boundRef !== undefined && !Array.isArray(boundRef) && "text" in boundRef ? boundRef.text : decision.focusNeeds?.find((need) => need.path === CUSTOMER)?.span?.text;
+  const claimed = Object.hasOwn(bound, CUSTOMER) || (decision.focusPaths ?? []).includes(CUSTOMER);
+  const word = claimed ? boundWord : deictics(bundle, decision).get(CUSTOMER);
+  if ((claimed && word === undefined) || (word !== undefined && !BARE_CUSTOMER_WORDS.has(word))) return decision;
+  const { [CUSTOMER]: _bound, ...others } = bound;
+  const unbound: Decision = !claimed
+    ? decision
+    : { ...decision, fromPrevious: others, focusNeeds: (decision.focusNeeds ?? []).filter((need) => need.path !== CUSTOMER), focusPaths: (decision.focusPaths ?? []).filter((path) => path !== CUSTOMER) };
+  const known = context === null ? null : (resolveCustomer(span.text, span.text, context.customers)?.name ?? null);
+  return { ...unbound, params: { [CUSTOMER]: span.text, ...unbound.params }, resolved: known === null ? unbound.resolved : { ...unbound.resolved, [CUSTOMER]: known } };
+}
+
+// D95 (Q4): the bare customer noun alone never makes a write ready. A write or a destructive command that holds nothing but that noun's D70 pointer
+// (no param said, none from an earlier command, the previous command or the focus, no other pointer, no span the card asks the role of) gets no
+// `context` ref for it: the card asks for the customer as the catalogue requires («як зробити, щоб підтвердження йшло клієнту?» is no ready confirm).
+function aloneNoun(kind: IntentKind, phrase: string, params: Readonly<Record<string, Param>>, pointed: ReadonlyMap<string, string>, decision: Decision): boolean {
+  if ((kind !== "write" && kind !== "high") || !BARE_CUSTOMER_WORDS.has(phrase)) return false;
+  return !Object.keys(params).length && pointed.size === 1 && !decision.asks?.length && !decision.focusPaths?.length && !decision.focusNeeds?.length;
+}
+
 // D70: a v3 command before its params are built. A waybill that says nothing but the carrier, points at no record and takes none from an earlier
 // command is the new-waybill form (`nav.deliveries_new`, spec §3 rule 2), when the bundle has it.
 function v3Decision(bundle: Bundle, given: Decision, pointed: ReadonlyMap<string, string>): Decision {
@@ -627,7 +677,8 @@ export function commandV2(bundle: Bundle, given: Decision, context: CompiledCont
   const named = renamedCustomer(bundle, asCustomer.decision);
   // D92: an order update that names no order and says none exists is the customer's new order (`createAsUpdate.ts` `updateAsCreate`).
   const asCreate = updateAsCreate(bundle, named);
-  const renamed = asCreate.decision;
+  // D95: a name said with the bare «клієнту» is the customer, not the host's record the noun points at.
+  const renamed = namedCustomer(bundle, asCreate.decision, context);
   const pointed = v3 ? deictics(bundle, renamed) : new Map<string, string>();
   // D94: the phone or the e-mail the model tagged for the customer of a command whose intent has no param for it.
   const contacts = saidContacts(bundle, v3 ? v3Decision(bundle, renamed, pointed) : renamed, pointed);
@@ -652,10 +703,15 @@ export function commandV2(bundle: Bundle, given: Decision, context: CompiledCont
     if (Object.hasOwn(params, name)) continue;
     params[name] = { text: v3 ? v3ReferenceText(decision.text, name, intent.params[name]) : referenceText(decision.text), status: "previous", command };
   }
+  let alone = false;
   if (v3) {
     for (const [name, ref] of Object.entries(decision.fromPrevious ?? {})) if (Object.hasOwn(intent.params, name) && !Object.hasOwn(params, name)) params[name] = ref;
     for (const [name, phrase] of pointed) {
       if (contacts.unpointed && name === CUSTOMER) continue;
+      if (name === CUSTOMER && aloneNoun(intent.kind, phrase, params, pointed, decision)) {
+        alone = true;
+        continue;
+      }
       if (Object.hasOwn(intent.params, name) && !Object.hasOwn(params, name) && !focused.has(name)) params[name] = { text: phrase, status: "context" };
     }
     for (const ask of decision.asks ?? []) {
@@ -674,6 +730,8 @@ export function commandV2(bundle: Bundle, given: Decision, context: CompiledCont
   const contact = contactCustomer(bundle, params, context, contacts.standing);
   const byContact = (need: Need) => contact === null || !need.path.split("|").includes(CUSTOMER);
   needs.unshift(...missing(requirements[decision.action], (name) => Object.hasOwn(params, name)).filter(unreferenced).filter(byContact));
+  // D95: the bare noun that was all the write held asks for the customer, whatever the catalogue requires.
+  if (alone && !needs.some((need) => need.blocking)) needs.push({ path: CUSTOMER, reason: "missing", blocking: true });
   if (contact !== null) {
     needs.push(...contact.needs);
     delete params[contact.taken];

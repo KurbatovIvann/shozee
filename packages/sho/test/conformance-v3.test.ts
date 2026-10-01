@@ -40,7 +40,7 @@ describe("Шо v3 conformance vectors", () => {
   });
 
   it("are all there and name only v3 actions", () => {
-    expect(vectors.length).toBe(514);
+    expect(vectors.length).toBe(521);
     expect(new Set(vectors.map((vector) => vector.id)).size).toBe(
       vectors.length,
     );
@@ -109,7 +109,28 @@ describe("Шо v3 conformance vectors", () => {
     expect(failures).toEqual([]);
   });
 
-  it("need only `customer` for d72-read-one under the shipped bundle's intent_labels_uk.json", async () => {
+  it("require of each action exactly what the served catalogue requires", async () => {
+    const [catalogue, shipped] = await Promise.all([
+      vectorRequirements(conformanceDir),
+      requirementsOf(),
+    ]);
+    const actions = [
+      ...new Set([...Object.keys(catalogue), ...Object.keys(shipped)]),
+    ].sort();
+    const divergent = actions.filter(
+      (action) =>
+        JSON.stringify(catalogue[action]) !== JSON.stringify(shipped[action]),
+    );
+    expect(divergent).toEqual([]);
+    expect(actions).toContain("customers.getCustomer");
+    expect(shipped["customers.getCustomer"]?.oneOf).toEqual([
+      "customer",
+      "phone",
+      "email",
+    ]);
+  });
+
+  it("need one of customer, phone or email for d72-read-one", async () => {
     const vector = vectors.find((candidate) => candidate.id === "d72-read-one");
     if (vector === undefined) throw new Error("d72-read-one vector is missing");
     const command = decodeVector(
@@ -120,7 +141,7 @@ describe("Шо v3 conformance vectors", () => {
       await requirementsOf(),
     )[0];
     expect(command?.needs).toEqual([
-      { path: "customer", reason: "missing", blocking: true },
+      { path: "customer|phone|email", reason: "missing", blocking: true },
     ]);
   });
 
@@ -151,7 +172,7 @@ describe("Шо v3 conformance vectors", () => {
     expect(failures).toEqual([]);
   });
 
-  it("decode the D94 contact vectors against the labels a v3.5 bundle will have", async () => {
+  it("decode the D94 contact vectors against the v3.5 contact labels", async () => {
     const contacts = await readContactVectors(conformanceDir);
     expect(contacts.length).toBe(13);
     const target = await vectorBundle(
