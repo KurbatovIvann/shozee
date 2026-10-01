@@ -19629,7 +19629,7 @@
     "/customers/getCustomer": {
       "post": {
         "operationId": "customers.getCustomer",
-        "summary": "Return one CRM customer in the staff member's active company as the shared customer view (id, name, contacts, notes, group and price-list assignments, status, linked counterparty count, timestamps). Missing customers and customers that belong to another company fail with the same not-found. Company id is never input. Does not return order counts.",
+        "summary": "Return one CRM customer in the staff member's active company as the shared customer view (id, name, contacts, notes, group and price-list assignments, status, linked counterparty count, timestamps). Takes exactly one of a canonical id or a human query (name, phone, or email); the query matches active and archived customers alike. A unique exact match (or a unique name in another Ukrainian case) returns that customer. Several exact matches fail with a conflict carrying the matching customers as options. No match fails with not-found carrying the nearest customers, which is empty when nothing is near. Missing customers and customers that belong to another company fail with the same not-found. Company id is never input. Does not return order counts.",
         "requestBody": {
           "required": true,
           "content": {
@@ -19640,11 +19640,13 @@
                   "id": {
                     "type": "string",
                     "format": "uuid"
+                  },
+                  "query": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
                   }
                 },
-                "required": [
-                  "id"
-                ],
                 "additionalProperties": false
               }
             }
@@ -20200,6 +20202,31 @@
                         "status",
                         "message",
                         "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "defined": {
+                          "const": true
+                        },
+                        "code": {
+                          "const": "CONFLICT"
+                        },
+                        "status": {
+                          "const": 409
+                        },
+                        "message": {
+                          "type": "string",
+                          "default": "Conflict"
+                        },
+                        "data": {}
+                      },
+                      "required": [
+                        "defined",
+                        "code",
+                        "status",
+                        "message"
                       ]
                     },
                     {

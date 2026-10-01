@@ -11,6 +11,7 @@ import { z } from "zod";
 import {
   actionContractToTool,
   CATALOG_LIST_PRODUCTS_TOOL_NAME,
+  CUSTOMERS_GET_CUSTOMER_TOOL_NAME,
   CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME,
   CUSTOMERS_LIST_GROUPS_TOOL_NAME,
   ensureAnthropicToolInputSchemaType,
@@ -313,6 +314,7 @@ describe("staffAssistantTools", () => {
       CATALOG_LIST_PRODUCTS_TOOL_NAME,
       PRICING_LIST_PRICE_LISTS_TOOL_NAME,
       CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME,
+      CUSTOMERS_GET_CUSTOMER_TOOL_NAME,
       "search_query",
     ]);
     expect(staffAssistantHotToolNames()).toContain("search_query");

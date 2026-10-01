@@ -8,6 +8,7 @@
  * other domain refusal becomes `error`.
  */
 import {
+  CUSTOMERS_GET_CUSTOMER_TOOL_NAME,
   ORDERS_CREATE_ACTION_NAME,
   ORDERS_CREATE_TOOL_NAME,
   ORDERS_LIST_COUNTS_TOOL_NAME,
@@ -878,4 +879,60 @@ describe("a create option is offered but has no producer yet", () => {
       });
     },
   );
+});
+
+const NEAREST_GALYA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+
+function unmatchedCustomer(
+  options: readonly { id: string; label: string }[],
+): NotFoundError {
+  return Object.assign(new NotFoundError('Nothing matches "Галя".'), {
+    reason: "unmatched_query",
+    target: { kind: "customer", query: "Галя" },
+    options,
+    optionsTruncated: false,
+  });
+}
+
+describe("«знайди X» with nothing matching", () => {
+  it("passes a plain not-found through as an error", async () => {
+    const set = tools(() => Promise.reject(new NotFoundError()));
+
+    const outcome = await run(set, CUSTOMERS_GET_CUSTOMER_TOOL_NAME, {
+      customerQuery: "Галя",
+    });
+
+    expect(outcome.kind).toBe("error");
+  });
+
+  it("pauses on the nearest customers plus create", async () => {
+    const set = tools(() =>
+      Promise.reject(
+        unmatchedCustomer([{ id: NEAREST_GALYA, label: "Галина" }]),
+      ),
+    );
+
+    const outcome = await run(set, CUSTOMERS_GET_CUSTOMER_TOOL_NAME, {
+      customerQuery: "Галя",
+    });
+
+    expect(outcome.kind).toBe("pause");
+    if (outcome.kind !== "pause") return;
+    expect(outcome.prompt).toEqual({
+      subject: "Галя",
+      optionsTruncated: false,
+      nearest: true,
+      problem: "Nothing matches that exactly.",
+      options: [
+        { optionId: NEAREST_GALYA, label: "Галина", kind: "record" },
+        { optionId: "create", label: "Галя", kind: "create" },
+      ],
+    });
+    const secret = outcome.secret as ChoiceSecret;
+    expect(secret.target).toEqual({ kind: "customer", query: "Галя" });
+    expect(choice.resolve({ answer: { optionId: "create" }, secret })).toEqual({
+      kind: "unresolvable",
+      reason: "create option create has no producer",
+    });
+  });
 });

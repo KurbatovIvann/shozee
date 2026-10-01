@@ -1,15 +1,17 @@
 import { implementAction } from "@showzy/core";
 import { CoreInvariantError, NotFoundError } from "@showzy/core/errors";
 import { companyCustomers } from "@showzy/db/schema/customers";
-import { pickListNameSearch } from "@showzy/module-kit/name-match";
-import {
-  normalizeReferenceQuery,
-  pickUniqueReferenceMatch,
-} from "@showzy/validation/entity-ref";
-import { sanitizeLikeLiteral } from "@showzy/validation/pagination";
-import { and, desc, eq, ilike, or, type SQL } from "drizzle-orm";
+import { pickUniqueReferenceMatch } from "@showzy/validation/entity-ref";
+import { and, eq } from "drizzle-orm";
 
-import { customerReferenceSearch } from "../services/customer-list-search.js";
+import {
+  customerCandidateColumns,
+  customerCandidateLabel,
+  customerCandidateName,
+  customerMatchFields,
+  loadCustomerReferenceCandidates,
+  type CustomerCandidate,
+} from "../services/customer-reference-candidates.js";
 import {
   CustomerReferenceConflictError,
   ambiguousCustomerQueryMessage,
@@ -18,48 +20,6 @@ import {
   CUSTOMER_REFERENCE_OPTIONS_MAX,
   resolveCustomerReferenceContract,
 } from "./resolve-customer-reference.contract.js";
-
-const RESOLVE_CUSTOMER_CANDIDATE_MAX = 100;
-
-type CustomerCandidate = {
-  readonly id: string;
-  readonly name: string;
-  readonly phone: string | null;
-  readonly email: string | null;
-};
-
-const candidateColumns = {
-  id: companyCustomers.id,
-  name: companyCustomers.name,
-  phone: companyCustomers.phone,
-  email: companyCustomers.email,
-};
-
-function customerMatchFields(
-  row: CustomerCandidate,
-): readonly (string | null)[] {
-  return [row.name, row.phone, row.email];
-}
-
-function phoneLastDigits(phone: string): string | undefined {
-  const digits = phone.replace(/\D/g, "");
-  if (digits.length === 0) {
-    return undefined;
-  }
-  return digits.slice(-4);
-}
-
-function customerConflictLabel(row: CustomerCandidate): string {
-  const lastDigits =
-    row.phone === null ? undefined : phoneLastDigits(row.phone);
-  if (lastDigits !== undefined) {
-    return `${row.name} (…${lastDigits})`;
-  }
-  if (row.email !== null && row.email.length > 0) {
-    return `${row.name} (${row.email})`;
-  }
-  return `${row.name} (${row.id})`;
-}
 
 function compareCustomerNameThenId(
   left: CustomerCandidate,
@@ -72,62 +32,20 @@ function compareCustomerNameThenId(
   return left.id.localeCompare(right.id);
 }
 
-function pickerFromCustomers(rows: readonly CustomerCandidate[]): {
-  readonly options: readonly {
-    readonly id: string;
-    readonly label: string;
-  }[];
-  readonly optionsTruncated: boolean;
-} {
-  const sorted = [...rows].toSorted(compareCustomerNameThenId);
-  return {
-    options: sorted.slice(0, CUSTOMER_REFERENCE_OPTIONS_MAX).map((row) => ({
-      id: row.id,
-      label: customerConflictLabel(row),
-    })),
-    optionsTruncated: sorted.length > CUSTOMER_REFERENCE_OPTIONS_MAX,
-  };
-}
-
 function throwCustomerSelectionConflict(
   query: string,
   rows: readonly CustomerCandidate[],
 ): never {
-  const picker = pickerFromCustomers(rows);
+  const sorted = [...rows].toSorted(compareCustomerNameThenId);
   throw new CustomerReferenceConflictError({
     target: { kind: "customer", query },
-    options: picker.options,
-    optionsTruncated: picker.optionsTruncated,
+    options: sorted.slice(0, CUSTOMER_REFERENCE_OPTIONS_MAX).map((row) => ({
+      id: row.id,
+      label: customerCandidateLabel(row),
+    })),
+    optionsTruncated: sorted.length > CUSTOMER_REFERENCE_OPTIONS_MAX,
     clientMessage: ambiguousCustomerQueryMessage(query),
   });
-}
-
-function fieldMatch(pattern: string): SQL {
-  const clause = or(
-    ilike(companyCustomers.name, pattern),
-    ilike(companyCustomers.phone, pattern),
-    ilike(companyCustomers.email, pattern),
-  );
-  if (clause === undefined) {
-    throw new CoreInvariantError(
-      "customers.resolveCustomerReference field match is empty",
-    );
-  }
-  return clause;
-}
-
-function mergeCustomerCandidates(
-  primary: readonly CustomerCandidate[],
-  extra: readonly CustomerCandidate[],
-): CustomerCandidate[] {
-  const byId = new Map<string, CustomerCandidate>();
-  for (const row of primary) {
-    byId.set(row.id, row);
-  }
-  for (const row of extra) {
-    byId.set(row.id, row);
-  }
-  return [...byId.values()];
 }
 
 export const resolveCustomerReference = implementAction(
@@ -137,7 +55,7 @@ export const resolveCustomerReference = implementAction(
       if (input.by === "id") {
         const row = (
           await ctx.db
-            .select(candidateColumns)
+            .select(customerCandidateColumns)
             .from(companyCustomers)
             .where(
               and(
@@ -159,43 +77,17 @@ export const resolveCustomerReference = implementAction(
         return { customerId: row.id, name };
       }
 
-      const normalized = normalizeReferenceQuery(input.value);
-      const exactPattern = sanitizeLikeLiteral(normalized);
-      const search = customerReferenceSearch(normalized);
-      if (exactPattern === undefined || search === undefined) {
-        throw new NotFoundError();
-      }
-
-      const activeInCompany = and(
-        eq(companyCustomers.companyId, ctx.companyId),
-        eq(companyCustomers.status, "active"),
-      );
-      const nameOrContact = await pickListNameSearch(search, async (strict) => {
-        const found = await ctx.db
-          .select({ id: companyCustomers.id })
-          .from(companyCustomers)
-          .where(and(activeInCompany, strict))
-          .limit(1);
-        return found.length > 0;
+      const candidates = await loadCustomerReferenceCandidates({
+        db: ctx.db,
+        companyId: ctx.companyId,
+        query: input.value,
+        activeOnly: true,
       });
-      const [exactRows, relaxedRows] = await Promise.all([
-        ctx.db
-          .select(candidateColumns)
-          .from(companyCustomers)
-          .where(and(activeInCompany, fieldMatch(exactPattern))),
-        ctx.db
-          .select(candidateColumns)
-          .from(companyCustomers)
-          .where(and(activeInCompany, nameOrContact))
-          .orderBy(desc(companyCustomers.updatedAt), desc(companyCustomers.id))
-          .limit(RESOLVE_CUSTOMER_CANDIDATE_MAX),
-      ]);
-      const candidates = mergeCustomerCandidates(exactRows, relaxedRows);
       const picked = pickUniqueReferenceMatch(
         input.value,
         candidates,
         customerMatchFields,
-        (row) => row.name,
+        customerCandidateName,
       );
       if (picked.kind === "none") {
         throw new NotFoundError();

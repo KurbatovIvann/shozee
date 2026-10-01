@@ -121,7 +121,7 @@ describe("assistantChoiceCardModel", () => {
     const card = model({
       options: [
         record("a", "Медовик"),
-        { optionId: "new", label: "Створити товар", kind: "create" },
+        { optionId: "new", label: "Галя", kind: "create" },
         record("b", "Наполеон"),
       ],
     });
@@ -135,12 +135,26 @@ describe("assistantChoiceCardModel", () => {
 
   it("renders a picker whose only option is create", () => {
     const card = model({
-      options: [{ optionId: "new", label: "Створити товар", kind: "create" }],
+      options: [{ optionId: "new", label: "Галя", kind: "create" }],
     });
     expect(card.rows).toHaveLength(1);
     expect(card.rows[0]?.create).toBe(true);
     expect(card.rows[0]?.mark).toBe(ASSISTANT_CHOICE_CREATE_MARK);
     expect(card.composeLabel).toBe(copy.choiceCompose);
+  });
+
+  it("writes the create row in Ukrainian around the name the server sent", () => {
+    const card = model({
+      options: [{ optionId: "new", label: "Галя", kind: "create" }],
+    });
+    expect(card.rows[0]?.label).toBe("Створити «Галя»");
+    expect(assistantCopy("en").choiceCreate).toContain("{{name}}");
+    expect(copy.choiceCreate).toContain("{{name}}");
+  });
+
+  it("leaves a record label exactly as the server sent it", () => {
+    const card = model({ options: [record("a", "Медовик")] });
+    expect(card.rows[0]?.label).toBe("Медовик");
   });
 
   it("shows the problem line above the options", () => {
