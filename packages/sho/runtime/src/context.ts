@@ -40,6 +40,13 @@ export interface RecordV2 {
   readonly aliases?: readonly string[];
 }
 
+// D94: a customer may carry its phones and e-mails, so a customer said by one («знайди клієнта з номером …») is resolved on the device. Optional: a
+// host that keeps contacts off the device sends none, and the contact goes back to it as said.
+export interface CustomerV2 extends RecordV2 {
+  readonly phones?: readonly string[];
+  readonly emails?: readonly string[];
+}
+
 export type RecordList = "customers" | "groups" | "priceLists" | "counterparties";
 export type ListName = "products" | RecordList;
 
@@ -56,7 +63,7 @@ export interface ContextV2 {
   readonly revision?: string;
   readonly capabilities?: Capabilities;
   readonly products?: readonly ProductV2[];
-  readonly customers?: readonly RecordV2[];
+  readonly customers?: readonly CustomerV2[];
   readonly groups?: readonly RecordV2[];
   readonly priceLists?: readonly RecordV2[];
   readonly counterparties?: readonly RecordV2[];
@@ -76,6 +83,8 @@ export const CONTEXT_LIMITS = {
   id: 64,
   name: 120,
   aliases: 10,
+  contacts: 10,
+  contact: 254,
   revision: 128,
   bytes: 8 * 1024 * 1024,
 } as const;
@@ -88,6 +97,7 @@ const CAPABILITY_KEYS: ReadonlySet<string> = new Set(["stock", "fiscal"]);
 const PRODUCT_KEYS: ReadonlySet<string> = new Set(["id", "name", "aliases", "brand", "unit", "variants"]);
 const VARIANT_KEYS: ReadonlySet<string> = new Set(["id", "name", "values", "aliases"]);
 const RECORD_KEYS: ReadonlySet<string> = new Set(["id", "name", "aliases"]);
+const CUSTOMER_KEYS: ReadonlySet<string> = new Set([...RECORD_KEYS, "phones", "emails"]);
 
 type Json = Readonly<Record<string, unknown>>;
 
@@ -146,11 +156,27 @@ function valuesOf(value: unknown, what: string): AttrValues | undefined {
   return Object.fromEntries(Object.entries(value).map(([axis, item]) => [axis, text(item, CONTEXT_LIMITS.name, `${what}.${axis}`)]));
 }
 
-function recordOf(value: unknown, what: string): RecordV2 {
+function contactsOf(value: unknown, what: string): string[] | undefined {
+  if (value === undefined) return undefined;
+  const found = names(value, what);
+  limit(found.length, CONTEXT_LIMITS.contacts, what);
+  return found.map((contact, index) => text(contact, CONTEXT_LIMITS.contact, `${what}[${index}]`));
+}
+
+// `contacts` (D94): a customer, which may carry `phones` and `emails`; any other record has only its id, name and aliases.
+function recordOf(value: unknown, what: string, contacts = false): CustomerV2 {
   if (!isJson(value)) fail(`${what} is not an object`);
-  onlyKeys(value, RECORD_KEYS, what);
+  onlyKeys(value, contacts ? CUSTOMER_KEYS : RECORD_KEYS, what);
   const aliases = aliasesOf(value["aliases"], what);
-  return { id: text(value["id"], CONTEXT_LIMITS.id, `${what}.id`), name: text(value["name"], CONTEXT_LIMITS.name, `${what}.name`), ...(aliases === undefined ? {} : { aliases }) };
+  const phones = contacts ? contactsOf(value["phones"], `${what}.phones`) : undefined;
+  const emails = contacts ? contactsOf(value["emails"], `${what}.emails`) : undefined;
+  return {
+    id: text(value["id"], CONTEXT_LIMITS.id, `${what}.id`),
+    name: text(value["name"], CONTEXT_LIMITS.name, `${what}.name`),
+    ...(aliases === undefined ? {} : { aliases }),
+    ...(phones === undefined ? {} : { phones }),
+    ...(emails === undefined ? {} : { emails }),
+  };
 }
 
 function variantOf(value: unknown, what: string): VariantV2 {
@@ -192,8 +218,8 @@ function productOf(value: unknown, what: string): ProductV2 {
   };
 }
 
-function records(value: unknown, name: RecordList): RecordV2[] {
-  const found = list(value, name).map((record, index) => recordOf(record, `${name}[${index}]`));
+function records(value: unknown, name: RecordList): CustomerV2[] {
+  const found = list(value, name).map((record, index) => recordOf(record, `${name}[${index}]`, name === "customers"));
   limit(found.length, CONTEXT_LIMITS[name], name);
   uniqueIds(found, name);
   return found;
@@ -277,6 +303,9 @@ export interface ShopRecord {
   readonly id: string | null;
   readonly name: string;
   readonly aliases: readonly string[];
+  // D94: a customer's phones and e-mails, when the context gave them.
+  readonly phones?: readonly string[];
+  readonly emails?: readonly string[];
 }
 
 export interface Shop {
@@ -337,8 +366,8 @@ function shopVariant(product: ProductV2, variant: VariantV2): ShopVariant {
   return { id: variant.id, name: variant.name, values, aliases: [...(variant.aliases ?? []), ...parts.filter((part) => !values.includes(part))], label };
 }
 
-function shopRecord(record: RecordV2): ShopRecord {
-  return { id: record.id, name: record.name, aliases: record.aliases ?? [] };
+function shopRecord(record: CustomerV2): ShopRecord {
+  return { id: record.id, name: record.name, aliases: record.aliases ?? [], ...(record.phones?.length ? { phones: record.phones } : {}), ...(record.emails?.length ? { emails: record.emails } : {}) };
 }
 
 function uniqueFolded(words: readonly string[]): string[] {

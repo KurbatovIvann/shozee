@@ -134,6 +134,7 @@ export {
   type ProductV2,
   type RecordList,
   type RecordV2,
+  type CustomerV2,
   type Shop,
   type ShopProduct,
   type ShopRecord,
@@ -191,6 +192,7 @@ export {
   type SpanValue,
 } from "./result.ts";
 export { commandV2, parseRequirements, type Decision, type Requirement, type Requirements } from "./command.ts";
+export { CONTACT_PARAMS, ContactIndex, GET_CUSTOMER, contactCustomer, contactValue, createAsFind, emailKey, phoneKey, saidContacts, type AsFind, type Contacted } from "./contacts.ts";
 export { commandV1, quantityText, toV1, type Command, type OrderLineV1, type ParamValueV1, type ParamsV1, type Result } from "./v1.ts";
 export { CALIBRATION_FORMAT, UNCALIBRATED, confidenceOf, parseCalibration, tempered, type Calibration, type Confidence } from "./confidence.ts";
 export { ADJECTIVE_ENDINGS, COLOUR_COUNTS, CONNECTORS, COUNTED_ENDINGS, LABEL_WORDS, LINE_WITH, LIST_LABELS, LIST_WORDS, PREPOSITIONS, WITH, WITHOUT } from "./lexicon/catalogue.ts";
