@@ -138,6 +138,15 @@ registry is injected into `createAssistantRuntime`; this package never imports
   A turn writes under the token the accept stored rather than deriving one
   again, and the placeholder must still be the conversation's latest message —
   only the latest message can be written to.
+- `sho-context.ts`, `sho-context-source.ts` — the Шо parse context (ADR-0051,
+  SHO-767): the three `listNameIndex` reads as the staff member, clipped to
+  `@showzy/sho-protocol`'s `CONTEXT_LIMITS` and the 8 MB upload budget so an
+  oversized company is `partial` rather than contextless; ids and names only
+  (brand, unit and variant values stay unsent until the catalog owns them);
+  the scope hash of the lists that staff member may see; one build cached 30 s
+  per company and caller, so a name created inside the window costs a
+  fall-through, never a wrong write; and `parseWithShoContext`, which on a 409
+  `context_required` PUTs that build and retries the parse once.
 - `events.ts` — the event channel contract (SHO-562): the per-conversation
   channel and presence key (company then conversation, lowercased), the stream
   slot key, the heartbeat, presence ttl, per-person stream limit and idle

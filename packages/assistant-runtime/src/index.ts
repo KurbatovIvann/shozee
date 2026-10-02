@@ -19,6 +19,8 @@ export * from "./assistant-turn-processor.js";
 export * from "./assistant-turn-recovery.js";
 export * from "./assistant-window.js";
 export * from "./events.js";
+export * from "./sho-context.js";
+export * from "./sho-context-source.js";
 export * from "./runtime-types.js";
 export * from "./stores/assistant-events-redis.js";
 export * from "./stores/assistant-kit-postgres-stores.js";

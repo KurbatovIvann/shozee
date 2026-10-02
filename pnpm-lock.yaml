@@ -758,12 +758,24 @@ importers:
       '@showzy/assistant-kit':
         specifier: workspace:*
         version: link:../assistant-kit
+      '@showzy/catalog':
+        specifier: workspace:*
+        version: link:../modules/catalog
       '@showzy/core':
         specifier: workspace:*
         version: link:../core
+      '@showzy/customers':
+        specifier: workspace:*
+        version: link:../modules/customers
       '@showzy/module-kit':
         specifier: workspace:*
         version: link:../module-kit
+      '@showzy/pricing':
+        specifier: workspace:*
+        version: link:../modules/pricing
+      '@showzy/sho-protocol':
+        specifier: workspace:*
+        version: link:../sho-protocol
       '@showzy/validation':
         specifier: workspace:*
         version: link:../validation
