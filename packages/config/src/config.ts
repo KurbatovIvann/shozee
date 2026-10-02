@@ -213,6 +213,8 @@ const envObjectSchema = z.object({
   SHO_SERVICE_TOKEN: z.string().min(32).optional(),
 
   SHO_PORT: z.coerce.number().int().min(1).max(65535).default(3100),
+
+  SHO_WORKERS: z.coerce.number().int().min(1).max(64).optional(),
 });
 
 const envSchema = envObjectSchema.superRefine((parsed, ctx) => {
@@ -365,6 +367,7 @@ export interface ShoServiceConfig {
   readonly nodeEnv: "development" | "test" | "production";
   readonly port: number;
   readonly serviceToken: string;
+  readonly workers: number | undefined;
 }
 
 /** One redacted, operator-facing validation problem. */
@@ -476,7 +479,7 @@ export function loadServerConfig(
 }
 
 const shoServiceEnvSchema = envObjectSchema
-  .pick({ NODE_ENV: true, SHO_PORT: true })
+  .pick({ NODE_ENV: true, SHO_PORT: true, SHO_WORKERS: true })
   .extend({ SHO_SERVICE_TOKEN: z.string().min(32) });
 
 export function loadShoServiceConfig(
@@ -487,6 +490,7 @@ export function loadShoServiceConfig(
     nodeEnv: parsed.NODE_ENV,
     port: parsed.SHO_PORT,
     serviceToken: parsed.SHO_SERVICE_TOKEN,
+    workers: parsed.SHO_WORKERS,
   };
 }
 

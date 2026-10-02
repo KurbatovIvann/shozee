@@ -1,54 +1,95 @@
-import {
-  compileContext,
-  loadSho,
-  manifest,
-  runtimeVersion,
-  type CompiledContext,
-  type Context,
-  type Now,
-  type Previous,
-  type ResultV2,
-  type Sho,
-} from "@showzy/sho";
-import type { ShoModelStamp } from "@showzy/sho-protocol";
+import type { Now, ResultV2 } from "@showzy/sho";
+import type { ShoModelStamp, ShoPrevious } from "@showzy/sho-protocol";
 
 export const SHO_LABELS_FILE = "labels.json";
 
-export interface ShoParseJob {
-  readonly text: string;
-  readonly context: CompiledContext;
-  readonly now: Now;
-  readonly previous: Previous | null;
-  readonly debug: boolean;
+export class ShoRunFailure extends Error {
+  override readonly name = "ShoRunFailure";
 }
+
+export interface ShoContextUpload {
+  readonly key: string;
+  readonly fingerprint: string;
+  readonly revision: string | null;
+  readonly context: unknown;
+  readonly phrases: readonly string[];
+  readonly uploadBytes: number;
+}
+
+export interface ShoParseJob {
+  readonly key: string;
+  readonly fingerprint: string;
+  readonly text: string;
+  readonly now: Now;
+  readonly previous: ShoPrevious | null;
+  readonly debug: boolean;
+  readonly deadlineMs: number;
+}
+
+export type ShoWorkerCommand =
+  | {
+      readonly id: number;
+      readonly kind: "store";
+      readonly upload: ShoContextUpload;
+    }
+  | { readonly id: number; readonly kind: "parse"; readonly job: ShoParseJob }
+  | { readonly id: number; readonly kind: "phrases"; readonly key: string };
+
+export type ShoWorkerReady = {
+  readonly kind: "ready";
+  readonly stamp: ShoModelStamp;
+  readonly actions: readonly string[];
+};
+
+export type ShoWorkerReply =
+  | { readonly id: number; readonly kind: "stored" }
+  | {
+      readonly id: number;
+      readonly kind: "parsed";
+      readonly result: ResultV2;
+      readonly contextRevision: string | null;
+      readonly ms: number;
+    }
+  | {
+      readonly id: number;
+      readonly kind: "phrases";
+      readonly phrases: readonly string[] | null;
+    }
+  | { readonly id: number; readonly kind: "context_required" }
+  | { readonly id: number; readonly kind: "input" }
+  | { readonly id: number; readonly kind: "failed"; readonly message: string };
+
+export type ShoSlotRefusal =
+  | { readonly id: number; readonly kind: "busy" }
+  | { readonly id: number; readonly kind: "deadline" };
+
+export type ShoSlotReply = ShoWorkerReply | ShoSlotRefusal;
+
+export type ShoStoreOutcome =
+  | { readonly kind: "stored" }
+  | { readonly kind: "busy" }
+  | { readonly kind: "input" }
+  | { readonly kind: "failed"; readonly message: string };
+
+export type ShoRunOutcome =
+  | {
+      readonly kind: "ok";
+      readonly result: ResultV2;
+      readonly contextRevision: string | null;
+      readonly ms: number;
+    }
+  | { readonly kind: "context_required" }
+  | { readonly kind: "busy" }
+  | { readonly kind: "deadline" }
+  | { readonly kind: "input" }
+  | { readonly kind: "failed"; readonly message: string };
 
 export interface ShoEngine {
   readonly stamp: ShoModelStamp;
   readonly actions: readonly string[];
   readonly workers: number;
-  compile(context: Context): CompiledContext;
-  run(job: ShoParseJob): Promise<ResultV2>;
+  store(upload: ShoContextUpload): Promise<ShoStoreOutcome>;
+  phrases(key: string): Promise<readonly string[] | null>;
+  run(job: ShoParseJob): Promise<ShoRunOutcome>;
   dispose(): Promise<void>;
-}
-
-export function shoEngineOf(sho: Sho): ShoEngine {
-  return {
-    stamp: {
-      id: sho.model.name,
-      md5: sho.model.md5,
-      catalogue: sho.bundle.catalogue ?? "",
-      labelsMd5: manifest.files[SHO_LABELS_FILE]?.md5 ?? "",
-      runtime: runtimeVersion,
-    },
-    actions: sho.bundle.actions,
-    workers: 1,
-    compile: compileContext,
-    run: ({ text, context, now, previous, debug }) =>
-      sho.run({ raw: text }, { context, now, previous, debug }),
-    dispose: () => sho.dispose(),
-  };
-}
-
-export async function loadShoEngine(): Promise<ShoEngine> {
-  return shoEngineOf(await loadSho());
 }

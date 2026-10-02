@@ -2,7 +2,8 @@ import { serve } from "@hono/node-server";
 import { createProcessLogger, loadShoServiceConfig } from "@showzy/config";
 
 import { createShoApp } from "./app.ts";
-import { loadShoEngine, type ShoEngine } from "./engine.ts";
+import type { ShoEngine } from "./engine.ts";
+import { createShoPool, shoDefaultWorkers } from "./pool.ts";
 
 const config = loadShoServiceConfig();
 const logger = createProcessLogger({ name: "sho-boot" });
@@ -25,15 +26,25 @@ const server = serve(
   },
 );
 
-engine = await loadShoEngine();
+const pool = await createShoPool({
+  size: config.workers ?? shoDefaultWorkers(),
+  onLoss: (slot, loss) => {
+    logger.warn({ slot, loss }, "sho worker replaced");
+  },
+});
+engine = pool;
 logger.info(
-  { model: engine.stamp.id, runtime: engine.stamp.runtime },
+  {
+    model: pool.stamp.id,
+    runtime: pool.stamp.runtime,
+    workers: pool.workers,
+  },
   "sho model loaded",
 );
 
 const stop = async (): Promise<void> => {
   server.close();
-  await engine.dispose();
+  await pool.dispose();
 };
 
 process.once("SIGTERM", () => void stop());

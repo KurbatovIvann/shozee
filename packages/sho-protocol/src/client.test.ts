@@ -8,7 +8,11 @@ import {
   type ShoParseOutcome,
 } from "./client.js";
 import { SHO_RESULT_SCHEMA } from "./result.js";
-import { SHO_PHRASES_LIMIT, shoContextKey } from "./endpoints.js";
+import {
+  SHO_MAX_PARSE_BYTES,
+  SHO_PHRASES_LIMIT,
+  shoContextKey,
+} from "./endpoints.js";
 
 const urls = ["http://sho-1:8080", "http://sho-2:8080", "http://sho-3:8080"];
 
@@ -104,6 +108,25 @@ describe("createShoClient.parse", () => {
       text: "додай 2 кави",
       contextKey: shoContextKey(parseRequest.companyId, parseRequest.scopeHash),
     });
+  });
+
+  it("refuses a parse body over the service cap without sending it", async () => {
+    let calls = 0;
+    const counting: ShoFetch = () => {
+      calls += 1;
+      return Promise.resolve(
+        new Response(JSON.stringify(parseBody), { status: 200 }),
+      );
+    };
+    const outcome = await client(counting).parse({
+      ...parseRequest,
+      previous: {
+        command,
+        at: "x".repeat(SHO_MAX_PARSE_BYTES),
+      } as ShoParseInput["previous"],
+    });
+    expect(outcome).toEqual(rejected);
+    expect(calls).toBe(0);
   });
 
   it("refuses to follow a redirect away from the replica", async () => {

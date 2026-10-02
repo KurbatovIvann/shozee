@@ -10,7 +10,8 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createShoApp } from "./app.ts";
-import { SHO_LABELS_FILE, loadShoEngine, type ShoEngine } from "./engine.ts";
+import { SHO_LABELS_FILE, type ShoEngine } from "./engine.ts";
+import { createShoPool } from "./pool.ts";
 
 const TOKEN = "service-token-of-at-least-32-characters";
 const KEY = shoContextKey("company1", "scope1");
@@ -34,12 +35,12 @@ const CONTEXT: ShoContext = {
   customers: [{ id: "olena", name: "Олена Коваль" }],
 };
 
-describe("apps/sho over the real Шо runtime", () => {
+describe("apps/sho over the real Шо runtime in a worker pool", () => {
   let engine: ShoEngine;
   let app: ReturnType<typeof createShoApp>;
 
   beforeAll(async () => {
-    engine = await loadShoEngine();
+    engine = await createShoPool({ size: 2 });
     app = createShoApp({ serviceToken: TOKEN, engine: () => engine });
   });
 
@@ -57,6 +58,7 @@ describe("apps/sho over the real Шо runtime", () => {
     expect(body.model.labelsMd5).toMatch(/^[0-9a-f]{32}$/);
     expect(body.model.catalogue).toBe(manifest.catalogue);
     expect(body.actions.length).toBeGreaterThan(0);
+    expect(body.workers).toBe(2);
   });
 
   it("parses a stored context and answers the protocol shape", async () => {

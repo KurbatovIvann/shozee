@@ -4,6 +4,7 @@ import { shoCommandSchema, shoResultSchema } from "./result.js";
 
 export const SHO_MAX_TEXT_LENGTH = 400;
 export const SHO_MAX_CONTEXT_BYTES = 8 * 1024 * 1024;
+export const SHO_MAX_PARSE_BYTES = 256 * 1024;
 
 export const SHO_CONTEXT_KEY_PATTERN =
   /^[0-9A-Za-z_-]{1,64}:[0-9A-Za-z]{1,64}$/;
