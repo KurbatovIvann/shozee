@@ -1,16 +1,16 @@
 import { documentShareTokens } from "@showzy/db/schema/documents";
-import { and, gt, isNull, type SQL } from "drizzle-orm";
+import { gt, isNull, type SQL } from "drizzle-orm";
 
 export interface ShareTokenLifetime {
   readonly revokedAt: Date | null;
   readonly expiresAt: Date;
 }
 
-export function liveShareToken(now: Date): SQL | undefined {
-  return and(
+export function liveShareTokenConditions(now: Date): readonly [SQL, SQL] {
+  return [
     isNull(documentShareTokens.revokedAt),
     gt(documentShareTokens.expiresAt, now),
-  );
+  ];
 }
 
 export function isLiveShareToken(

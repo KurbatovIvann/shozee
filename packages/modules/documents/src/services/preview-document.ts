@@ -10,7 +10,7 @@ import {
   documentStatusSchema,
   documentTypeSchema,
 } from "../actions/document-view.contract.js";
-import { liveShareToken } from "./share-token-liveness.js";
+import { liveShareTokenConditions } from "./share-token-liveness.js";
 
 type PreviewTx = ActionPreviewEnv["tx"];
 type DocumentType = z.output<typeof documentTypeSchema>;
@@ -90,7 +90,7 @@ export async function hasLiveShareToken(env: {
       and(
         eq(documentShareTokens.companyId, env.companyId),
         eq(documentShareTokens.documentId, env.documentId),
-        liveShareToken(new Date()),
+        ...liveShareTokenConditions(new Date()),
       ),
     )
     .limit(1);
