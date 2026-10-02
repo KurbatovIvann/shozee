@@ -87,8 +87,8 @@ a `staff` caller whose declared permissions — closed over
 `permissionPrerequisites`, which is the structural same-resource `:view`
 rule over `PERMISSION_CATALOG` plus `PERMISSION_CALL_PREREQUISITES`
 (ADR-0015, amended 2026-10-02) — do not cover a `ctx.call` or
-`ctx.callAtomic` callee's permissions, unless that edge declares
-`permissionGuarded` because the caller checks them itself,
+`ctx.callAtomic` callee's permissions (a `ctx.call` edge, never an atomic
+one, may declare `permissionGuarded` when the caller checks them itself),
 event scope inconsistent with action/system scope, `risk: write|high` with
 `audit: false`, `audit: true` without `auditTarget`, event subscriptions not
 bound to a compatible internal idempotent system action. The same CI phase
