@@ -24,13 +24,20 @@
  * cannot take a committed write down with the explanation (SHO-546). Only the
  * reply runs off the request.
  */
-import { interactionResponseSchema } from "@showzy/assistant-kit";
+import {
+  interactionResponseSchema,
+  type InteractionResponse,
+  type PauseScope,
+  type PublicPause,
+} from "@showzy/assistant-kit";
 import {
   acceptProvedRollback,
   assistantCloseTrace,
   assistantRejectedTrace,
   assistantTurnEarnedCard,
   readAssistantChatWindow,
+  type AssistantKitFor,
+  type AssistantTracePart,
 } from "@showzy/assistant-runtime";
 import type { Context } from "hono";
 import { randomUUID } from "node:crypto";
@@ -47,7 +54,58 @@ import {
   toolContext,
   type AssistantKitAppEnv,
   type AssistantKitRuntime,
+  type Caller,
 } from "./assistant-kit-http.js";
+
+export type PauseDropOutcome = "dropped" | "wrong_owner" | "failed";
+
+export async function dropOpenPause(
+  kit: AssistantKitFor,
+  scope: PauseScope,
+  interactionId: string,
+  trace: (pause: PublicPause) => AssistantTracePart,
+): Promise<PauseDropOutcome> {
+  const traced: {
+    outcome: Awaited<ReturnType<typeof kit.messages.write>> | null;
+  } = { outcome: null };
+  await kit.abandon({
+    ...scope,
+    interactionId,
+    whileHeld: async (pause) => {
+      traced.outcome = await kit.messages.write(scope, {
+        kind: "append",
+        messageId: randomUUID(),
+        role: "assistant",
+        parts: [trace(pause)],
+      });
+    },
+  });
+  const written = traced.outcome;
+  if (written === null) {
+    return "dropped";
+  }
+  if (written.kind === "wrong_owner") {
+    return "wrong_owner";
+  }
+  return written.kind === "written" ? "dropped" : "failed";
+}
+
+export interface PauseAnswerInput {
+  readonly body: InteractionResponse;
+  readonly route: "chat" | "answer";
+  readonly caller?: Extract<Caller, { readonly ok: true }>;
+}
+
+async function readPauseAnswerInput(
+  c: Context<AssistantKitAppEnv>,
+): Promise<PauseAnswerInput | null> {
+  const raw = await readJson(c);
+  if (!raw.ok) {
+    return null;
+  }
+  const parsed = interactionResponseSchema.safeParse(raw.body);
+  return parsed.success ? { body: parsed.data, route: "answer" } : null;
+}
 
 export const ASSISTANT_KIT_ANSWER_PATH = "/assistant/kit/answer";
 export const ASSISTANT_KIT_ABANDON_PATH = "/assistant/kit/abandon";
@@ -98,32 +156,18 @@ export async function handleAssistantKitAbandon(
     clientIp: c.get("clientIp"),
   });
   const scope = { conversationId, bind: caller.bind };
-  const traced: {
-    outcome: Awaited<ReturnType<typeof kit.messages.write>> | null;
-  } = { outcome: null };
-  const dropped = await kit.abandon({
-    ...scope,
-    interactionId: parsed.data.interactionId,
-    whileHeld: async (pause) => {
-      traced.outcome = await kit.messages.write(scope, {
-        kind: "append",
-        messageId: randomUUID(),
-        role: "assistant",
-        parts: [assistantRejectedTrace(pause)],
-      });
-    },
-  });
-
-  if (traced.outcome !== null && traced.outcome.kind === "wrong_owner") {
+  const dropped = await dropOpenPause(
+    kit,
+    scope,
+    parsed.data.interactionId,
+    assistantRejectedTrace,
+  );
+  if (dropped === "wrong_owner") {
     return goneResponse(requestId);
   }
-  if (traced.outcome !== null && traced.outcome.kind !== "written") {
+  if (dropped === "failed") {
     return json(500, { error: { code: "INTERNAL" } }, requestId);
   }
-
-  // Already gone answers the same as just cancelled: the caller wanted no open
-  // question, and there is none. A second tap is not an error.
-  void dropped;
 
   // With the window, like every other answer. Without it the card kept
   // rendering on a client that had just cancelled it, and the conversation
@@ -142,23 +186,20 @@ export async function handleAssistantKitAbandon(
 export async function handleAssistantKitAnswer(
   c: Context<AssistantKitAppEnv>,
   runtime: AssistantKitRuntime,
+  supplied?: PauseAnswerInput,
 ): Promise<Response> {
   const requestId = c.get("requestId");
-  const caller = await requireCaller(c, runtime);
+  const caller = supplied?.caller ?? (await requireCaller(c, runtime));
   if (!caller.ok) {
     return caller.response;
   }
 
-  const raw = await readJson(c);
-  if (!raw.ok) {
-    return json(400, { error: { code: "VALIDATION" } }, requestId);
-  }
-  const parsed = interactionResponseSchema.safeParse(raw.body);
-  if (!parsed.success) {
+  const given = supplied ?? (await readPauseAnswerInput(c));
+  if (given === null) {
     return json(400, { error: { code: "VALIDATION" } }, requestId);
   }
   // Before the receipt, the idempotency key, the turn row and its message ids.
-  const body = canonicalCommandIds(parsed.data);
+  const body = canonicalCommandIds(given.body);
   const { kit, turns } = runtime.forCaller({
     userId: caller.userId,
     companySelector: caller.companySelector,
@@ -172,7 +213,7 @@ export async function handleAssistantKitAnswer(
   // retry that reached it would be told `gone` — the answer *did* take, and the
   // person would be looking at a card that can never be answered (SHO-547).
   const command = {
-    route: "answer" as const,
+    route: given.route,
     bind: caller.bind,
     conversationId: body.conversationId,
     commandId: body.commandId,

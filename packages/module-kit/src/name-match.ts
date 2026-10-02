@@ -1,6 +1,7 @@
 import { stemNameToken } from "@showzy/validation/pagination";
 import {
   SEARCH_APOSTROPHE_CANON,
+  collapseSearchWhitespace,
   foldSearchNameToken,
   prepareSearchQuery,
 } from "@showzy/validation/search";
@@ -198,6 +199,104 @@ export function referenceNameSearch(
   alsoMatches?: (queryNormalized: string) => SQL | undefined,
 ): ListNameSearch | undefined {
   return tieredNameSearch(columns, query, "strictOrSubstring", alsoMatches);
+}
+
+const NAME_WORD_BREAK = /[^\p{L}\p{N}']+/u;
+
+export function foldNameWords(name: string): string[] {
+  return foldSearchNameToken(collapseSearchWhitespace(name))
+    .split(NAME_WORD_BREAK)
+    .filter((word) => word.length > 0);
+}
+
+export function exactNameText(name: string, query: string): boolean {
+  return (
+    foldSearchNameToken(collapseSearchWhitespace(name)) ===
+    foldSearchNameToken(collapseSearchWhitespace(query))
+  );
+}
+
+function trigrams(word: string): Set<string> {
+  const padded = `  ${word} `;
+  const grams = new Set<string>();
+  for (let at = 0; at + 3 <= padded.length; at += 1) {
+    grams.add(padded.slice(at, at + 3));
+  }
+  return grams;
+}
+
+function trigramSimilarity(left: string, right: string): number {
+  const from = trigrams(left);
+  const to = trigrams(right);
+  let shared = 0;
+  for (const gram of from) {
+    if (to.has(gram)) {
+      shared += 1;
+    }
+  }
+  const union = from.size + to.size - shared;
+  return union === 0 ? 0 : shared / union;
+}
+
+interface NameText {
+  readonly folded: string;
+  readonly words: readonly string[];
+}
+
+function wordStartHit(candidate: NameText, token: string): boolean {
+  const stem = stemNameToken(token);
+  return (
+    stem.length > 0 && candidate.words.some((word) => word.startsWith(stem))
+  );
+}
+
+function substringHit(candidate: NameText, token: string): boolean {
+  return isSubstringToken(token) && candidate.folded.includes(token);
+}
+
+function typoHit(candidate: NameText, token: string): boolean {
+  return (
+    isFuzzyToken(token) &&
+    candidate.words.some(
+      (word) =>
+        trigramSimilarity(token, word) >= NAME_MATCH_TYPO_SIMILARITY_MIN,
+    )
+  );
+}
+
+type NameTextTier = (candidate: NameText, token: string) => boolean;
+
+const NAME_TEXT_TIERS: readonly NameTextTier[] = [
+  wordStartHit,
+  (candidate, token) =>
+    wordStartHit(candidate, token) || substringHit(candidate, token),
+  (candidate, token) =>
+    wordStartHit(candidate, token) ||
+    substringHit(candidate, token) ||
+    typoHit(candidate, token),
+];
+
+export function matchNameTiers(
+  query: string,
+  names: readonly string[],
+): readonly number[] {
+  const prepared = prepareSearchQuery(query);
+  if (prepared.empty) {
+    return [];
+  }
+  const candidates = names.map((name): NameText => ({
+    folded: foldSearchNameToken(collapseSearchWhitespace(name)),
+    words: foldNameWords(name),
+  }));
+  for (const tier of NAME_TEXT_TIERS) {
+    const hits = candidates.flatMap((candidate, index) =>
+      prepared.tokens.every((token) => tier(candidate, token)) ? [index] : [],
+    );
+    if (hits.length > 0) {
+      return hits;
+    }
+  }
+  return [];
 }
 
 export async function pickListNameSearch(

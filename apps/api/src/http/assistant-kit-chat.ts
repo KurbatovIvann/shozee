@@ -22,12 +22,19 @@
  */
 import { chatCursorSchema } from "@showzy/assistant-kit";
 import {
+  assistantRejectedTrace,
+  assistantSupersededTrace,
+  matchAssistantPauseAnswer,
   readAssistantChatWindow,
   type AssistantChatWindowWithTurn,
 } from "@showzy/assistant-runtime";
 import type { Context } from "hono";
 import { z } from "zod";
 
+import {
+  dropOpenPause,
+  handleAssistantKitAnswer,
+} from "./assistant-kit-answer.js";
 import {
   canonicalCommandIds,
   goneResponse,
@@ -116,32 +123,90 @@ export async function handleAssistantKitChat(
       requestId,
     );
 
-  // An unanswered question blocks a new job rather than being superseded by it.
-  // A visible limitation is better than a draft that silently disappears.
-  const open = await kit.peek(scope);
-  if (open !== null) {
-    return json(
-      409,
-      {
-        status: "interaction_open",
-        window: await readAssistantChatWindow(kit, turns, scope),
-      },
-      requestId,
-    );
-  }
-
-  // Past every refusal, so a command is only spent by a request that is about
-  // to do something. A retry of a send whose reply was lost lands here and is
-  // answered with the conversation as it now stands — including the order the
-  // first attempt's turn created (SHO-547).
   const command = {
     route: "chat" as const,
     bind: caller.bind,
     conversationId: body.conversationId,
     commandId: body.commandId,
   };
+
+  const open = await kit.peek(scope);
+  if (open !== null) {
+    const matched = matchAssistantPauseAnswer(open, body.text);
+    if (matched.kind === "ambiguous") {
+      return json(
+        409,
+        {
+          status: "unresolvable",
+          reason: matched.hint,
+          window: await readAssistantChatWindow(kit, turns, scope),
+        },
+        requestId,
+      );
+    }
+    if (matched.kind === "answer") {
+      return await handleAssistantKitAnswer(c, runtime, {
+        caller,
+        route: "chat",
+        body: {
+          commandId: body.commandId,
+          conversationId: body.conversationId,
+          interactionId: open.interactionId,
+          revision: open.revision,
+          answer: matched.answer,
+        },
+      });
+    }
+    if (matched.kind === "decline") {
+      if (!(await takeCommand(runtime, command))) {
+        return json(
+          200,
+          {
+            status: "ok",
+            window: await readAssistantChatWindow(kit, turns, scope),
+          },
+          requestId,
+        );
+      }
+      const declined = await dropOpenPause(
+        kit,
+        scope,
+        open.interactionId,
+        assistantRejectedTrace,
+      );
+      if (declined !== "dropped") {
+        await runtime.commands.release(command);
+        return declined === "wrong_owner"
+          ? goneResponse(requestId)
+          : json(500, { error: { code: "INTERNAL" } }, requestId);
+      }
+      return json(
+        200,
+        {
+          status: "abandoned",
+          window: await readAssistantChatWindow(kit, turns, scope),
+        },
+        requestId,
+      );
+    }
+    const superseded = await dropOpenPause(
+      kit,
+      scope,
+      open.interactionId,
+      assistantSupersededTrace,
+    );
+    if (superseded !== "dropped") {
+      return superseded === "wrong_owner"
+        ? goneResponse(requestId)
+        : json(500, { error: { code: "INTERNAL" } }, requestId);
+    }
+  }
+
   if (!(await takeCommand(runtime, command))) {
-    return await accepted();
+    const replayed = await readAssistantChatWindow(kit, turns, scope);
+    return replayed.turn === null
+      ? json(200, { status: "ok", window: replayed }, requestId)
+      : json(202, { status: "accepted", window: replayed }, requestId);
   }
 
   const budget = requireBudgetTicket(c);

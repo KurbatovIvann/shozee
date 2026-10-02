@@ -13,6 +13,7 @@ export * from "./assistant-kit-resolve.js";
 export * from "./assistant-kit-tools.js";
 export * from "./assistant-model.js";
 export * from "./assistant-overdue-sweep.js";
+export * from "./assistant-pause-match.js";
 export * from "./assistant-runtime.js";
 export * from "./assistant-turn-processor.js";
 export * from "./assistant-turn-recovery.js";

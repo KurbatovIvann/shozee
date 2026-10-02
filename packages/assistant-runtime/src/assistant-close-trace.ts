@@ -183,15 +183,30 @@ export function assistantCloseTrace(
   return isTracedKind(args.kind) ? TRACERS[args.kind](args) : [];
 }
 
-export function assistantRejectedTrace(
-  pause: Pick<PublicPause, "interactionId" | "kind">,
+export type ClosedAssistantPause = Pick<PublicPause, "interactionId" | "kind">;
+
+function closedTrace(
+  pause: ClosedAssistantPause,
+  outcome: AssistantTracePart["outcome"],
 ): AssistantTracePart {
   return {
     kind: "trace",
     interactionId: pause.interactionId,
     interactionKind: pause.kind,
-    outcome: "rejected",
+    outcome,
     optionId: null,
     attempts: [],
   };
+}
+
+export function assistantRejectedTrace(
+  pause: ClosedAssistantPause,
+): AssistantTracePart {
+  return closedTrace(pause, "rejected");
+}
+
+export function assistantSupersededTrace(
+  pause: ClosedAssistantPause,
+): AssistantTracePart {
+  return closedTrace(pause, "superseded");
 }

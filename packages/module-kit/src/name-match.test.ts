@@ -4,7 +4,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   exactNameSql,
+  exactNameText,
+  foldNameWords,
   isFuzzyToken,
+  matchNameTiers,
   nameMatch,
   strictTsQuery,
 } from "./name-match.js";
@@ -78,5 +81,47 @@ describe("exactNameSql", () => {
   it("compares the folded name with the folded query", () => {
     const exact = render(exactNameSql(columns.name, "Кав’ярня"));
     expect(exact.params.at(-1)).toBe("кав'ярня");
+  });
+});
+
+describe("foldNameWords", () => {
+  it("folds case and apostrophes and splits on punctuation", () => {
+    expect(foldNameWords("Кав’ярня «Львів»")).toEqual(["кав'ярня", "львів"]);
+    expect(foldNameWords("  ")).toEqual([]);
+  });
+});
+
+describe("exactNameText", () => {
+  it("holds for the same name in another case, spacing or apostrophe", () => {
+    expect(exactNameText("Кав’ярня", "кав'ярня")).toBe(true);
+    expect(exactNameText(" Савчук  Іван ", "савчук іван")).toBe(true);
+    expect(exactNameText("Савчук Іван", "савчук")).toBe(false);
+  });
+});
+
+describe("matchNameTiers", () => {
+  const people = ["Савчук Іван", "Савчук Олена", "Петренко Марія"];
+
+  it("returns every name a word start matches", () => {
+    expect(matchNameTiers("Савчук", people)).toEqual([0, 1]);
+    expect(matchNameTiers("савчук олена", people)).toEqual([1]);
+    expect(matchNameTiers("Петренко", people)).toEqual([2]);
+  });
+
+  it("prefers a word start over a substring of another name", () => {
+    expect(matchNameTiers("чук", ["Ковальчук", "Чук"])).toEqual([1]);
+  });
+
+  it("falls to substrings only when no name starts with the token", () => {
+    expect(matchNameTiers("валь", ["Ковальчук", "Чук"])).toEqual([0]);
+  });
+
+  it("falls to a typo tier last, and only for a long enough token", () => {
+    expect(matchNameTiers("коволенко", ["Коваленко"])).toEqual([0]);
+    expect(matchNameTiers("лнко", ["Коваленко"])).toEqual([]);
+  });
+
+  it("matches nothing for a query with no letters or digits", () => {
+    expect(matchNameTiers("???", people)).toEqual([]);
   });
 });
