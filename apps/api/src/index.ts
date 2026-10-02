@@ -29,6 +29,8 @@ const server = serve(
   },
 );
 
+booted.voice?.injectWebSocket(server);
+
 function closeHttpServer(): Promise<void> {
   return new Promise((resolve, reject) => {
     server.close((error) => {

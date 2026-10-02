@@ -569,6 +569,33 @@ describe("Шо service configuration (ADR-0051)", () => {
   });
 });
 
+describe("voice recognition credentials", () => {
+  it("leaves the route unconfigured when no key file is named", () => {
+    const config = loadServerConfig(validEnv());
+
+    expect(config.voice).toEqual({
+      googleCredentialsFile: undefined,
+      googleProjectId: undefined,
+      googleLocation: "eu",
+    });
+  });
+
+  it("takes the key file, project and region from the environment", () => {
+    const config = loadServerConfig({
+      ...validEnv(),
+      VOICE_GOOGLE_CREDENTIALS_FILE: "/run/secrets/google-speech.json",
+      VOICE_GOOGLE_PROJECT_ID: "showzy-voice",
+      VOICE_GOOGLE_LOCATION: "us-central1",
+    });
+
+    expect(config.voice).toEqual({
+      googleCredentialsFile: "/run/secrets/google-speech.json",
+      googleProjectId: "showzy-voice",
+      googleLocation: "us-central1",
+    });
+  });
+});
+
 describe("ENV_SCHEMA_KEYS vs .env.example", () => {
   it("lists the same keys the Zod env schema accepts", () => {
     const source = readFileSync(

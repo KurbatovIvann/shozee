@@ -34,6 +34,11 @@ import { createAssistantKitEvents } from "./http/assistant-kit-events.js";
 import { createAssistantKitRuntime } from "./http/assistant-kit-runtime.js";
 import { createApp, type AuthInstance } from "./http/app.js";
 import { authInstanceFrom } from "./http/auth-instance.js";
+import { createChirpVoiceRecognizer } from "./http/assistant-voice-chirp.js";
+import {
+  createAssistantVoiceApp,
+  type AssistantVoiceApp,
+} from "./http/assistant-voice.js";
 import { createProcessObservability } from "./observability.js";
 import { createActionPipeline } from "./pipeline.js";
 import { createActionRegistry, registeredJobs } from "./registry.js";
@@ -47,6 +52,7 @@ import {
 
 export interface BootedApi {
   readonly app: ReturnType<typeof createApp>;
+  readonly voice: AssistantVoiceApp | undefined;
   /**
    * Ends every open event stream. Called before the HTTP server's close can
    * finish, which otherwise waits on those connections indefinitely.
@@ -168,6 +174,20 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
           slots: createRedisAssistantStreamSlots(redis),
         });
 
+  const voiceCredentialsFile = config.voice.googleCredentialsFile;
+  const voice =
+    voiceCredentialsFile === undefined
+      ? undefined
+      : createAssistantVoiceApp({
+          auth,
+          logger,
+          recognizer: await createChirpVoiceRecognizer({
+            credentialsFile: voiceCredentialsFile,
+            projectId: config.voice.googleProjectId,
+            location: config.voice.googleLocation,
+          }),
+        });
+
   const app = createApp({
     auth,
     registry,
@@ -208,10 +228,12 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
 
   return {
     app,
+    voice,
     async closeStreams() {
       await assistantKitEvents?.streams.closeAll();
     },
     async close() {
+      await voice?.close();
       closeFilesObjectStore();
       await assistantKitEvents?.hub.close();
       await redis.quit();
