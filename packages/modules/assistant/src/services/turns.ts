@@ -378,6 +378,12 @@ export async function acceptStaffTurn(env: {
     if (raced !== null) {
       return raced;
     }
+    const anotherTurnTookTheLog =
+      postgresError(error)?.constraint ===
+      "assistant_chat_messages_conversation_seq_uq";
+    if (anotherTurnTookTheLog) {
+      return { outcome: "busy", conversationId: identity.conversationId };
+    }
     throw new ConflictError(
       "This message is already stored, or another write took its place.",
     );

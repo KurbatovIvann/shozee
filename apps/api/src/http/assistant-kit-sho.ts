@@ -120,6 +120,10 @@ export async function shoChatTurn(
       }),
     });
     if (outcome.kind === "fallback") {
+      env.runtime.logger.info(
+        { request_id: env.requestId, sho_fallback: outcome.reason },
+        "Шо did not close this turn and the model answers it",
+      );
       return null;
     }
     if (outcome.kind === "settled") {

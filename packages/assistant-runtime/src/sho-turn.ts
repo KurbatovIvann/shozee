@@ -22,6 +22,7 @@ export const SHO_TOOL_CALL_PREFIX = "sho-";
 
 export type ShoTurnFallbackReason =
   | "engine_failed"
+  | "tools_unreadable"
   | "tool_unavailable"
   | "tool_failed"
   | "unsendable_tool_call_id"
@@ -151,7 +152,7 @@ export async function runShoTurn(input: ShoTurnInput): Promise<ShoTurnOutcome> {
   try {
     execute = (await input.tools())[plan.toolName]?.execute;
   } catch {
-    return failed("tool_unavailable");
+    return failed("tools_unreadable");
   }
   if (execute === undefined) {
     return failed("tool_unavailable");

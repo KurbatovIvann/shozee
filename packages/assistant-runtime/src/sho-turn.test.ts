@@ -180,12 +180,21 @@ describe("runShoTurn", () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it("falls back when the planned tool is not one this caller may use", async () => {
-    const outcome = await runShoTurn({
+  it("names the planned tool being absent and the tool set being unreadable apart", async () => {
+    const absent = await runShoTurn({
       ...turnWith(readPlan, () => Promise.resolve({ kind: "ok", result: {} })),
       tools: () => Promise.resolve({} as ToolSet),
     });
-    expect(outcome).toEqual({ kind: "fallback", reason: "tool_unavailable" });
+    expect(absent).toEqual({ kind: "fallback", reason: "tool_unavailable" });
+
+    const unreadable = await runShoTurn({
+      ...turnWith(readPlan, () => Promise.resolve({ kind: "ok", result: {} })),
+      tools: () => Promise.reject(new Error("the actor could not be read")),
+    });
+    expect(unreadable).toEqual({
+      kind: "fallback",
+      reason: "tools_unreadable",
+    });
   });
 
   it("falls back when the tool refuses or throws", async () => {
