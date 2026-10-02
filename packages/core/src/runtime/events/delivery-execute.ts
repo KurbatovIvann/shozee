@@ -25,6 +25,7 @@ import { randomUUID } from "node:crypto";
 import { domainEvents, eventDeliveries, type Tx } from "@showzy/db";
 import { and, asc, eq, isNull, lte, notExists, or, sql } from "drizzle-orm";
 
+import { ACTION_CHANNELS } from "../../contract/channels.js";
 import { CoreError, CoreInvariantError } from "../../errors/index.js";
 import type {
   ActionPipelineDeps,
@@ -582,13 +583,12 @@ function buildEnvelope(event: OutboxEventRow): EventEnvelope {
         "system",
       ] as const),
       id: event.actorId,
-      channel: narrowStored(event.id, "channel", event.channel, [
-        "ui",
-        "ai",
-        "system",
-        "webhook",
-        "sho-ai",
-      ] as const),
+      channel: narrowStored(
+        event.id,
+        "channel",
+        event.channel,
+        ACTION_CHANNELS,
+      ),
     },
     requestId: event.requestId,
     correlationId: event.correlationId,

@@ -13,7 +13,10 @@
  * files composition (ADR-0021); the parent card's "no ctx.callAtomic"
  * applied to `documents.createFromOrder`, not this edge.
  */
-import { defineActionContract } from "@showzy/core/contract";
+import {
+  actionChannelSchema,
+  defineActionContract,
+} from "@showzy/core/contract";
 import { z } from "zod";
 
 import {
@@ -44,7 +47,7 @@ export const renderPdfInputSchema = z.object({
   actor: z.object({
     type: z.enum(["user", "system"]),
     id: z.string().min(1),
-    channel: z.enum(["ui", "ai", "system", "webhook", "sho-ai"]),
+    channel: actionChannelSchema,
   }),
   requestId: z.string().min(1),
   correlationId: z.string().min(1),

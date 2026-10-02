@@ -3,7 +3,10 @@
  * derived entity table. Rule-matrix tests; the composition stage proves
  * the live registry after T1 (nine tables, zero violations).
  */
-import type { RecordCreatedVia } from "@showzy/db/schema/tenant-columns";
+import {
+  RECORD_CREATED_VIA_CHANNELS,
+  type RecordCreatedVia,
+} from "@showzy/db/schema/tenant-columns";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import { z } from "zod";
 
@@ -11,7 +14,11 @@ import type {
   ActionContract,
   ActionContractDefinition,
 } from "../contract/index.js";
-import { defineActionContract } from "../contract/index.js";
+import {
+  ACTION_CHANNELS,
+  actionChannelSchema,
+  defineActionContract,
+} from "../contract/index.js";
 import { ActionRegistry } from "../runtime/action-registry.js";
 import type { ActionChannel } from "../runtime/context/types.js";
 import { implementAction } from "../runtime/implement-action.js";
@@ -579,6 +586,14 @@ describe("SHO-491 channel type parity", () => {
   it("keeps ActionChannel mutually assignable with db RecordCreatedVia", () => {
     expectTypeOf<ActionChannel>().toEqualTypeOf<RecordCreatedVia>();
     expectTypeOf<ActionChannelEqualsDbRecordCreatedVia>().toEqualTypeOf<true>();
+  });
+
+  it("keeps the core channel list and the db CHECK list the same values", () => {
+    expect([...ACTION_CHANNELS].sort()).toEqual(
+      [...RECORD_CREATED_VIA_CHANNELS].sort(),
+    );
+    expect(actionChannelSchema.options).toEqual([...ACTION_CHANNELS]);
+    expect(ACTION_CHANNELS).toContain("sho-ai");
   });
 });
 

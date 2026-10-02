@@ -57,11 +57,6 @@ type MutuallyAssignable<Left, Right> = [Left] extends [Right]
 
 type ExpectTrue<Value extends true> = Value;
 
-/**
- * SHO-491: `ActionChannel` and db `RecordCreatedVia` must stay the same
- * four members. Diverging in either direction fails `tsc`. Validation's
- * copy is bound in `apps/api` (no `@showzy/validation` dependency here).
- */
 export type ActionChannelEqualsDbRecordCreatedVia = ExpectTrue<
   MutuallyAssignable<ActionChannel, RecordCreatedVia>
 >;

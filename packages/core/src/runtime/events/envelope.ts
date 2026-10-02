@@ -15,12 +15,17 @@
  */
 import { z } from "zod";
 
+import {
+  actionChannelSchema,
+  type ActionChannel,
+} from "../../contract/channels.js";
+
 /** The envelope's accountable emitter identity (core.md §6). */
 export interface EventEnvelopeActor {
   /** Events accept user/system actors only — never anonymous (core.md §2). */
   readonly type: "user" | "system";
   readonly id: string;
-  readonly channel: "ui" | "ai" | "system" | "webhook" | "sho-ai";
+  readonly channel: ActionChannel;
 }
 
 /** Aggregate reference with the monotonic per-aggregate sequence. */
@@ -75,7 +80,7 @@ export function eventEnvelopeSchema<TPayload extends z.ZodType>(
     actor: z.object({
       type: z.enum(["user", "system"]),
       id: z.string().min(1),
-      channel: z.enum(["ui", "ai", "system", "webhook", "sho-ai"]),
+      channel: actionChannelSchema,
     }),
     requestId: z.string().min(1),
     correlationId: z.string().min(1),

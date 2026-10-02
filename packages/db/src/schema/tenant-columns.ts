@@ -64,14 +64,6 @@ export function timestampColumns() {
   };
 }
 
-/**
- * Channel values stored on `created_via`. Same four strings as
- * `audit_log.channel` / `ActionChannel` — duplicated here so `@showzy/db`
- * does not import `@showzy/core`. Mutual assignability with `ActionChannel`
- * is enforced in `packages/core/src/contract-check/record-provenance.ts`
- * (SHO-491). The CHECK below interpolates this array; do not re-list the
- * literals there.
- */
 export const RECORD_CREATED_VIA_CHANNELS = [
   "ui",
   "ai",
@@ -82,10 +74,19 @@ export const RECORD_CREATED_VIA_CHANNELS = [
 
 export type RecordCreatedVia = (typeof RECORD_CREATED_VIA_CHANNELS)[number];
 
-/** `'ui', 'ai', 'system', 'webhook'` — spacing matches 0047 / snapshot. */
 const RECORD_CREATED_VIA_IN_LIST = RECORD_CREATED_VIA_CHANNELS.map(
   (channel) => `'${channel}'`,
 ).join(", ");
+
+export function channelCheck(
+  constraintName: string,
+  column: PgColumn,
+): ReturnType<typeof check> {
+  return check(
+    constraintName,
+    sql`${column} IN (${sql.raw(RECORD_CREATED_VIA_IN_LIST)})`,
+  );
+}
 
 type RecordProvenanceRow = {
   createdVia: PgColumn;
@@ -120,10 +121,7 @@ export function recordProvenanceChecks(
   table: RecordProvenanceRow,
 ): ReturnType<typeof check>[] {
   return [
-    check(
-      `${tableName}_created_via_check`,
-      sql`${table.createdVia} IN (${sql.raw(RECORD_CREATED_VIA_IN_LIST)})`,
-    ),
+    channelCheck(`${tableName}_created_via_check`, table.createdVia),
     check(
       `${tableName}_vouched_pair_check`,
       sql`(${table.vouchedBy} IS NULL) = (${table.vouchedAt} IS NULL)`,

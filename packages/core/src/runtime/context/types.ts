@@ -12,13 +12,13 @@ import type { ProjectionGrant, ProjectionReadTx, ReadTx, Tx } from "@showzy/db";
 import type { Logger } from "pino";
 import type { z } from "zod";
 
+import type { ActionChannel } from "../../contract/channels.js";
 import type { Job } from "../../jobs/define-job.js";
 import type { EventDefinition, EventEmission } from "../events/define-event.js";
 // Type-only and erased at compile time — no runtime import cycle exists.
 import type { ImplementedAction } from "../implement-action.js";
 
-/** How the action was invoked; audit and logs carry it (blueprint §2.1-4). */
-export type ActionChannel = "ui" | "ai" | "system" | "webhook" | "sho-ai";
+export type { ActionChannel };
 
 /**
  * The accountable identity of an invocation. `anonymous` exists only for
