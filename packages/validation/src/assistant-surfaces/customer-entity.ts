@@ -1,8 +1,4 @@
-import {
-  resolveAssistantSurfaceDestination,
-  type AssistantSurfaceDestination,
-  type AssistantSurfaceDestinationDeclaration,
-} from "./destination.js";
+import type { AssistantSurfaceDestinationDeclaration } from "./destination.js";
 import {
   isAssistantSurfaceResultOutput,
   isRecord,
@@ -30,7 +26,6 @@ export const CUSTOMER_ENTITY_DESTINATION = {
 
 export type AssistantCustomerEntityData = {
   readonly kind: "customer-entity";
-  readonly destination: AssistantSurfaceDestination;
   readonly customerId: string;
   readonly name: string | null;
   readonly phone: string | null;
@@ -52,10 +47,6 @@ function parseEntity(
   }
   const entity: AssistantCustomerEntityData = {
     kind: "customer-entity",
-    destination: resolveAssistantSurfaceDestination(
-      CUSTOMER_ENTITY_DESTINATION,
-      `/customers/clients/${customerId}/edit`,
-    ),
     customerId,
     name: textOrNull(payload["name"]),
     phone: textOrNull(payload["phone"]),

@@ -42,17 +42,16 @@ export {
   type AssistantOrdersAggregateCardView,
   type AssistantOrdersAggregateGroupBy,
 } from "./orders-aggregate";
+export type { AssistantEntityCardView } from "./entity-card-view";
 export {
   CUSTOMER_ENTITY_PROMPT_LINE,
   CUSTOMER_ENTITY_SURFACE_TOOLS,
   localizeCustomerEntityCard,
-  type AssistantCustomerEntityCardView,
 } from "./customer-entity";
 export {
   PRODUCT_ENTITY_PROMPT_LINE,
   PRODUCT_ENTITY_SURFACE_TOOLS,
   localizeProductEntityCard,
-  type AssistantProductEntityCardView,
 } from "./product-entity";
 export {
   ORDER_ENTITY_PROMPT_LINE,

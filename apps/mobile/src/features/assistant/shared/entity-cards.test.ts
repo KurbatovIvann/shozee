@@ -1,6 +1,6 @@
-import { readFileSync } from "node:fs";
-
 import {
+  ASSISTANT_TOOL_CLIPPED_STATUS,
+  assistantSurfaceHandoffHref,
   parseCustomerEntitySurfaces,
   parseProductEntitySurfaces,
   type AssistantCustomerEntityData,
@@ -52,11 +52,11 @@ function customerData(
 }
 
 function productData(
-  payload: Record<string, unknown>,
+  output: unknown,
   toolCallId?: string,
 ): AssistantProductEntityData {
   const [entity] = parseProductEntitySurfaces([
-    result("catalog_get_product", payload, toolCallId),
+    result("catalog_get_product", output, toolCallId),
   ]);
   if (entity === undefined) {
     throw new Error("product entity payload did not parse");
@@ -80,13 +80,28 @@ describe("customer entity card (SHO-756)", () => {
       "uk",
     );
 
-    expect(card.name).toBe("Катя Самбука");
+    expect(card.title).toBe("Катя Самбука");
     expect(card.detailRows).toEqual(["+380671112233", "katya@example.com"]);
+    expect(card.valueLabel).toBeNull();
     expect(card.statusLabel).toBeNull();
+    expect(card.footnotes).toEqual([]);
     expect(card.id).toBe("call-1");
     expect(card.href).toBe(customerEditorHref(CUSTOMER_ID));
     expect(card.href).toBe(assistantRecordHref("customer", CUSTOMER_ID));
     expect(card.handoffLabel).toBe(assistantCopy("uk").cards.openCustomer);
+  });
+
+  it("builds the handoff destination from the same record map as the body", () => {
+    const card = localizeCustomerEntityCard(
+      customerData({ id: CUSTOMER_ID, name: "Катя Самбука" }),
+      "uk",
+    );
+
+    expect(assistantSurfaceHandoffHref(card.destination)).toBe(card.href);
+    expect(card.destination).toEqual({
+      kind: "screen",
+      href: assistantRecordHref("customer", CUSTOMER_ID),
+    });
   });
 
   it("pills an archived customer and keeps the record reachable", () => {
@@ -108,16 +123,14 @@ describe("customer entity card (SHO-756)", () => {
     expect(card.handoffLabel).toBe(assistantCopy("uk").cards.openCustomer);
   });
 
-  it("renders a gone state with no handoff when the record has no name", () => {
+  it("falls back to the record id when the payload carries no name", () => {
     const card = localizeCustomerEntityCard(
-      customerData({ id: CUSTOMER_ID, phone: "+380671112233" }),
+      customerData({ id: CUSTOMER_ID }),
       "uk",
     );
 
-    expect(card.name).toBeNull();
-    expect(card.goneLabel).toBe(assistantCopy("uk").cards.recordGone);
-    expect(card.detailRows).toEqual([]);
-    expect(card.handoffLabel).toBeNull();
+    expect(card.title).toBe(CUSTOMER_ID);
+    expect(card.handoffLabel).toBe(assistantCopy("uk").cards.openCustomer);
   });
 });
 
@@ -138,15 +151,16 @@ describe("product entity card (SHO-756)", () => {
       "uk",
     );
 
-    expect(card.name).toBe("Наполеон");
+    expect(card.title).toBe("Наполеон");
     expect(card.detailRows).toEqual([
       variantCountLabel(2, "uk", productsCopy("uk").variants),
     ]);
-    expect(card.priceLabel).toBe(formatMoneyMinor("45000", "UAH"));
-    expect(card.statusLabel).toBeNull();
+    expect(card.valueLabel).toBe(formatMoneyMinor("45000", "UAH"));
+    expect(card.footnotes).toEqual([]);
     expect(card.id).toBe("call-2");
     expect(card.href).toBe(productPhotoHref(PRODUCT_ID));
     expect(card.href).toBe(assistantRecordHref("product", PRODUCT_ID));
+    expect(assistantSurfaceHandoffHref(card.destination)).toBe(card.href);
     expect(card.handoffLabel).toBe(assistantCopy("uk").cards.openProduct);
   });
 
@@ -164,26 +178,32 @@ describe("product entity card (SHO-756)", () => {
     expect(card.statusLabel).toBe(productsCopy("en").archivedBadge);
     expect(card.statusTone).toBe("attention");
     expect(card.detailRows).toEqual([productsCopy("en").variants.none]);
-    expect(card.priceLabel).toBeNull();
+    expect(card.valueLabel).toBeNull();
     expect(card.id).toBe(`product-entity:${PRODUCT_ID}`);
   });
 
-  it("renders a gone state with no handoff, rows, or price", () => {
+  it("drops the variant count and footnotes the clip when the array was cut", () => {
     const card = localizeProductEntityCard(
       productData({
-        id: PRODUCT_ID,
-        basePriceMinor: "45000",
-        currency: "UAH",
-        variants: [{ id: PRODUCT_ID }],
+        status: ASSISTANT_TOOL_CLIPPED_STATUS,
+        omitted: 23,
+        preview: {
+          id: PRODUCT_ID,
+          name: "Наполеон",
+          basePriceMinor: "45000",
+          currency: "UAH",
+          variants: Array.from({ length: 50 }, (_, index) => ({
+            id: String(index),
+          })),
+        },
       }),
       "uk",
     );
 
-    expect(card.name).toBeNull();
-    expect(card.goneLabel).toBe(assistantCopy("uk").cards.recordGone);
     expect(card.detailRows).toEqual([]);
-    expect(card.priceLabel).toBeNull();
-    expect(card.handoffLabel).toBeNull();
+    expect(card.footnotes).toEqual([assistantCopy("uk").cards.variantsClipped]);
+    expect(card.valueLabel).toBe(formatMoneyMinor("45000", "UAH"));
+    expect(card.title).toBe("Наполеон");
   });
 });
 
@@ -205,39 +225,5 @@ describe("stored entity card payloads (SHO-756)", () => {
     if (customer === null || product === null) return;
     expect(assistantSurfaceKey(customer)).toBe("call-1");
     expect(assistantSurfaceKey(product)).toBe("call-2");
-  });
-});
-
-describe("entity card components (SHO-756)", () => {
-  const customerCard = readFileSync(
-    new URL("../sheet/customer-entity-card.tsx", import.meta.url),
-    "utf8",
-  );
-  const productCard = readFileSync(
-    new URL("../sheet/product-entity-card.tsx", import.meta.url),
-    "utf8",
-  );
-  const surfaceCard = readFileSync(
-    new URL("../sheet/assistant-surface-card.tsx", import.meta.url),
-    "utf8",
-  );
-
-  it("renders a gone body before the pressable and pills through StatusPill", () => {
-    for (const source of [customerCard, productCard]) {
-      expect(source).toContain("card.name === null");
-      expect(source).toContain("card.goneLabel");
-      expect(source).toContain("StatusPill");
-      expect(source).toContain("card.detailRows.map");
-      expect(source).toContain("props.onOpenHref(card.href)");
-      expect(source.includes("hex")).toBe(false);
-    }
-  });
-
-  it("maps both entity kinds in the block switch", () => {
-    expect(surfaceCard).toContain("CustomerEntityCard");
-    expect(surfaceCard).toContain("ProductEntityCard");
-    expect(surfaceCard).toContain('case "customer-entity":');
-    expect(surfaceCard).toContain('case "product-entity":');
-    expect(surfaceCard).toContain("isEntitySurface(surface)");
   });
 });

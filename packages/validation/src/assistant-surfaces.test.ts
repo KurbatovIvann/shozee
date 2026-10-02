@@ -547,7 +547,7 @@ describe("parseOrderEntitySurfaces", () => {
 });
 
 describe("parseCustomerEntitySurfaces", () => {
-  it("maps the shared customer view onto a screen destination", () => {
+  it("maps the shared customer view without inventing a per-record route", () => {
     const entities = parseCustomerEntitySurfaces([
       result(CUSTOMERS_LIST_CUSTOMERS_TOOL, { items: [], nextCursor: null }),
       result(
@@ -572,11 +572,8 @@ describe("parseCustomerEntitySurfaces", () => {
       email: "katya@example.com",
       status: "active",
       toolCallId: "call-customer",
-      destination: {
-        kind: "screen",
-        href: `/customers/clients/${CUSTOMER_A}/edit`,
-      },
     });
+    expect(entities[0]).not.toHaveProperty("destination");
   });
 
   it("keeps the id when the payload carries no name, contacts, or status", () => {
@@ -604,7 +601,7 @@ describe("parseCustomerEntitySurfaces", () => {
 });
 
 describe("parseProductEntitySurfaces", () => {
-  it("maps base price, status and variant count onto a screen destination", () => {
+  it("maps base price, status and variant count without a per-record route", () => {
     const entities = parseProductEntitySurfaces([
       result(
         "catalog_get_product",
@@ -627,9 +624,10 @@ describe("parseProductEntitySurfaces", () => {
       status: "archived",
       basePrice: { amountMinor: "45000", currency: "UAH" },
       variantCount: 2,
+      clipped: false,
       toolCallId: "call-product",
-      destination: { kind: "screen", href: `/products/${PRODUCT_A}` },
     });
+    expect(entities[0]).not.toHaveProperty("destination");
   });
 
   it("counts no variants and no price when the payload omits them", () => {
@@ -640,6 +638,33 @@ describe("parseProductEntitySurfaces", () => {
       variantCount: 0,
       basePrice: null,
       status: null,
+      clipped: false,
+    });
+  });
+
+  it("reports no variant count when the clip truncated the variants array", () => {
+    const variants = Array.from({ length: 50 }, (_, index) => ({
+      id: `${index}`,
+    }));
+    const entities = parseProductEntitySurfaces([
+      result("catalog_get_product", {
+        status: ASSISTANT_TOOL_CLIPPED_STATUS,
+        omitted: 23,
+        preview: {
+          id: PRODUCT_A,
+          name: "Napoleon",
+          basePriceMinor: "45000",
+          currency: "UAH",
+          variants,
+        },
+      }),
+    ]);
+    expect(entities[0]).toMatchObject({
+      productId: PRODUCT_A,
+      name: "Napoleon",
+      variantCount: null,
+      clipped: true,
+      basePrice: { amountMinor: "45000", currency: "UAH" },
     });
   });
 
@@ -780,6 +805,28 @@ describe("staffAssistantPresentationEnvelope (SHO-458)", () => {
         ],
         kinds: ["order-entity"],
         toolCallIds: [["call-get"]],
+      },
+      {
+        results: [
+          result(
+            "customers_get_customer",
+            { id: CUSTOMER_A, name: "Katya" },
+            "call-customer",
+          ),
+        ],
+        kinds: ["customer-entity"],
+        toolCallIds: [["call-customer"]],
+      },
+      {
+        results: [
+          result(
+            "catalog_get_product",
+            { id: PRODUCT_A, name: "Napoleon" },
+            "call-product",
+          ),
+        ],
+        kinds: ["product-entity"],
+        toolCallIds: [["call-product"]],
       },
       {
         results: [

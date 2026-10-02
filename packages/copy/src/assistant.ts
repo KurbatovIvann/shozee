@@ -85,7 +85,7 @@ export type AssistantCardsCopy = {
   readonly openOrder: string;
   readonly openCustomer: string;
   readonly openProduct: string;
-  readonly recordGone: string;
+  readonly variantsClipped: string;
   readonly customerMatchTruncated: string;
   readonly clipped: string;
   readonly orderCount: CountForms;
@@ -345,7 +345,7 @@ const assistantEn: AssistantCopy = {
     openOrder: "Open order",
     openCustomer: "Open customer",
     openProduct: "Open product",
-    recordGone: "This record is no longer available",
+    variantsClipped: "The variant list was clipped — the count is not shown.",
     customerMatchTruncated: en.ordersList.customerMatchTruncated,
     clipped: en.ordersList.clipped,
     orderCount: {
@@ -456,7 +456,7 @@ const assistantUk: AssistantCopy = {
     openOrder: "Відкрити замовлення",
     openCustomer: "Відкрити клієнта",
     openProduct: "Відкрити товар",
-    recordGone: "Цей запис більше недоступний",
+    variantsClipped: "Список варіантів обрізано — кількість не показано.",
     customerMatchTruncated: uk.ordersList.customerMatchTruncated,
     clipped: uk.ordersList.clipped,
     orderCount: {

@@ -17,10 +17,8 @@ import {
 
 import type { Locale } from "../../../i18n/locale";
 import { ordersCopy } from "../../../i18n/orders";
-import {
-  localizeCustomerEntityCard,
-  type AssistantCustomerEntityCardView,
-} from "./customer-entity";
+import { localizeCustomerEntityCard } from "./customer-entity";
+import type { AssistantEntityCardView } from "./entity-card-view";
 import {
   localizeCustomersListCard,
   type AssistantCustomersListCardView,
@@ -37,10 +35,7 @@ import {
   localizeOrdersListCard,
   type AssistantOrdersListCardView,
 } from "./orders-list";
-import {
-  localizeProductEntityCard,
-  type AssistantProductEntityCardView,
-} from "./product-entity";
+import { localizeProductEntityCard } from "./product-entity";
 import {
   localizeSearchResultsCard,
   type AssistantSearchResultsCardView,
@@ -50,8 +45,7 @@ export type AssistantSurface =
   | AssistantOrdersListCardView
   | AssistantOrdersAggregateCardView
   | AssistantOrderEntityCardView
-  | AssistantCustomerEntityCardView
-  | AssistantProductEntityCardView
+  | AssistantEntityCardView
   | AssistantCustomersListCardView
   | AssistantSearchResultsCardView;
 

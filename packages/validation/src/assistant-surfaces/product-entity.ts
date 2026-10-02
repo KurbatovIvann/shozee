@@ -1,8 +1,4 @@
-import {
-  resolveAssistantSurfaceDestination,
-  type AssistantSurfaceDestination,
-  type AssistantSurfaceDestinationDeclaration,
-} from "./destination.js";
+import type { AssistantSurfaceDestinationDeclaration } from "./destination.js";
 import {
   isAssistantSurfaceResultOutput,
   isRecord,
@@ -32,23 +28,26 @@ export const PRODUCT_ENTITY_DESTINATION = {
 
 export type AssistantProductEntityData = {
   readonly kind: "product-entity";
-  readonly destination: AssistantSurfaceDestination;
   readonly productId: string;
   readonly name: string | null;
   readonly status: string | null;
   readonly basePrice: AssistantMoneyMinor | null;
-  readonly variantCount: number;
+  readonly variantCount: number | null;
+  readonly clipped: boolean;
   readonly toolCallId?: string;
 };
 
-function variantCount(value: unknown): number {
-  return Array.isArray(value) ? value.length : 0;
+function variantCount(value: unknown, clipped: boolean): number | null {
+  if (!Array.isArray(value)) {
+    return clipped ? null : 0;
+  }
+  return clipped ? null : value.length;
 }
 
 function parseEntity(
   result: AssistantSurfaceToolResult,
 ): AssistantProductEntityData | null {
-  const { payload } = unwrapToolOutput(result.output);
+  const { payload, clipped } = unwrapToolOutput(result.output);
   if (!isRecord(payload)) {
     return null;
   }
@@ -58,10 +57,6 @@ function parseEntity(
   }
   const entity: AssistantProductEntityData = {
     kind: "product-entity",
-    destination: resolveAssistantSurfaceDestination(
-      PRODUCT_ENTITY_DESTINATION,
-      `/products/${productId}`,
-    ),
     productId,
     name: textOrNull(payload["name"]),
     status: textOrNull(payload["status"]),
@@ -69,7 +64,8 @@ function parseEntity(
       payload["basePriceMinor"],
       payload["currency"],
     ),
-    variantCount: variantCount(payload["variants"]),
+    variantCount: variantCount(payload["variants"], clipped),
+    clipped,
   };
   const callId = result.toolCallId;
   if (typeof callId === "string" && callId.length > 0) {

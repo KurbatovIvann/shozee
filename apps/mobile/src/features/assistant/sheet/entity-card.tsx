@@ -3,21 +3,18 @@ import { Pressable, Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 
 import { StatusPill } from "../../../components/ui";
-import type { AssistantCustomerEntityCardView } from "../surfaces";
+import type { AssistantEntityCardView } from "../surfaces";
 
-export const CustomerEntityCard = memo(function CustomerEntityCard(props: {
-  readonly card: AssistantCustomerEntityCardView;
+export const EntityCard = memo(function EntityCard(props: {
+  readonly card: AssistantEntityCardView;
   readonly onOpenHref: (href: string) => void;
 }) {
   const { card } = props;
-  if (card.name === null) {
-    return <Text style={styles.gone}>{card.goneLabel}</Text>;
-  }
 
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={card.name}
+      accessibilityLabel={card.title}
       onPress={() => {
         props.onOpenHref(card.href);
       }}
@@ -25,7 +22,7 @@ export const CustomerEntityCard = memo(function CustomerEntityCard(props: {
     >
       <View style={styles.titleRow}>
         <Text numberOfLines={1} style={styles.title}>
-          {card.name}
+          {card.title}
         </Text>
         {card.statusLabel !== null ? (
           <StatusPill label={card.statusLabel} tone={card.statusTone} />
@@ -36,6 +33,11 @@ export const CustomerEntityCard = memo(function CustomerEntityCard(props: {
           {row}
         </Text>
       ))}
+      {card.valueLabel !== null ? (
+        <Text numberOfLines={1} style={styles.value}>
+          {card.valueLabel}
+        </Text>
+      ) : null}
     </Pressable>
   );
 });
@@ -46,11 +48,6 @@ const styles = StyleSheet.create((theme) => ({
   },
   pressed: {
     opacity: theme.pressedOpacity,
-  },
-  gone: {
-    color: theme.colors.mutedForeground,
-    fontSize: theme.typography.sm.fontSize,
-    lineHeight: theme.typography.sm.lineHeight,
   },
   titleRow: {
     flexDirection: "row",
@@ -69,5 +66,12 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.mutedForeground,
     fontSize: theme.typography.xs.fontSize,
     lineHeight: theme.typography.xs.lineHeight,
+  },
+  value: {
+    color: theme.colors.foreground,
+    fontSize: theme.typography.sm.fontSize,
+    lineHeight: theme.typography.sm.lineHeight,
+    fontWeight: "600",
+    fontVariant: ["tabular-nums"],
   },
 }));
