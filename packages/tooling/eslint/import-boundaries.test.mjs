@@ -304,8 +304,42 @@ test("showzy/import-boundaries", () => {
         filename: file("apps/worker/src/boot.cjs"),
         code: `const pg = require("pg"); const name = load("pg-boss");`,
       },
+      {
+        filename: file("apps/sho/src/engine.ts"),
+        code: `
+          import { loadSho } from "@showzy/sho";
+          import { manifest } from "@showzy/sho/manifest";
+          import { shoParseRequestSchema } from "@showzy/sho-protocol";
+          import { loadShoServiceConfig } from "@showzy/config";
+        `,
+      },
+      {
+        filename: file("packages/sho-protocol/src/client.ts"),
+        code: `import { z } from "zod";`,
+      },
     ],
     invalid: [
+      ...[
+        "apps/api/src/http/assistant-kit-chat.ts",
+        "apps/worker/src/jobs.ts",
+        "packages/sho-protocol/src/client.ts",
+        "packages/modules/orders/src/x.ts",
+        "packages/ai/src/x.ts",
+      ].map((importer) => ({
+        filename: file(importer),
+        code: `import { loadSho } from "@showzy/sho";`,
+        errors: [{ messageId: "shoRuntime" }],
+      })),
+      {
+        filename: file("packages/sho-protocol/src/client.ts"),
+        code: `import { createApiApp } from "@showzy/api";`,
+        errors: [{ messageId: "apiImport" }],
+      },
+      {
+        filename: file("apps/sho/src/app.ts"),
+        code: `import { createApiApp } from "@showzy/api";`,
+        errors: [{ messageId: "apiImport" }],
+      },
       ...[
         "packages/contract/src/index.ts",
         "packages/validation/src/assistant.ts",

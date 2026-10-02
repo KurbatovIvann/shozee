@@ -18,6 +18,7 @@ const SECRET_ENV_KEYS: ReadonlySet<string> = new Set([
   "RESEND_API_KEY",
   "SMS_FLY_API_KEY",
   "ANTHROPIC_API_KEY",
+  "SHO_SERVICE_TOKEN",
 ]);
 
 const DEFAULT_SMS_FLY_API_URL = "https://sms-fly.ua/api/v2/api.php";
@@ -190,6 +191,28 @@ const envObjectSchema = z.object({
     .positive()
     .max(AI_UNKNOWN_MODEL_TURN_USD_MAX)
     .default(0.1),
+
+  SHO_URLS: z
+    .string()
+    .default("")
+    .transform((value) =>
+      value
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0),
+    )
+    .pipe(
+      z.array(
+        z
+          .url({ protocol: /^https?$/ })
+          .transform((entry) => new URL(entry).origin),
+      ),
+    )
+    .transform((origins) => [...new Set(origins)]),
+
+  SHO_SERVICE_TOKEN: z.string().min(32).optional(),
+
+  SHO_PORT: z.coerce.number().int().min(1).max(65535).default(3100),
 });
 
 const envSchema = envObjectSchema.superRefine((parsed, ctx) => {
@@ -208,6 +231,14 @@ const envSchema = envObjectSchema.superRefine((parsed, ctx) => {
         message: "production requires sms-fly",
       });
     }
+  }
+
+  if (parsed.SHO_URLS.length > 0 && parsed.SHO_SERVICE_TOKEN === undefined) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["SHO_SERVICE_TOKEN"],
+      message: "missing required value",
+    });
   }
 
   if (parsed.OTP_EMAIL_TRANSPORT === "resend") {
@@ -324,6 +355,16 @@ export interface ServerConfig {
      */
     readonly unknownModelTurnUsd: number;
   };
+  readonly sho: {
+    readonly urls: readonly string[];
+    readonly serviceToken: string | undefined;
+  };
+}
+
+export interface ShoServiceConfig {
+  readonly nodeEnv: "development" | "test" | "production";
+  readonly port: number;
+  readonly serviceToken: string;
 }
 
 /** One redacted, operator-facing validation problem. */
@@ -427,6 +468,50 @@ export function loadServerConfig(
       dailyBudgetUsdGlobal: parsed.AI_DAILY_BUDGET_USD_GLOBAL,
       unknownModelTurnUsd: parsed.AI_UNKNOWN_MODEL_TURN_USD,
     },
+    sho: {
+      urls: parsed.SHO_URLS,
+      serviceToken: parsed.SHO_SERVICE_TOKEN,
+    },
+  };
+}
+
+const shoServiceEnvSchema = envObjectSchema
+  .pick({ NODE_ENV: true, SHO_PORT: true })
+  .extend({ SHO_SERVICE_TOKEN: z.string().min(32) });
+
+export function loadShoServiceConfig(
+  env: Record<string, string | undefined> = process.env,
+): ShoServiceConfig {
+  const present: Record<string, string> = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (value !== undefined && value !== "") {
+      present[key] = value;
+    }
+  }
+
+  const result = shoServiceEnvSchema.safeParse(present);
+  if (!result.success) {
+    throw new ConfigValidationError(
+      result.error.issues.map((issue) => {
+        const key = String(issue.path[0] ?? "(root)");
+        if (!(key in present)) {
+          return { key, message: "missing required value" };
+        }
+        if (SECRET_ENV_KEYS.has(key)) {
+          return {
+            key,
+            message: "invalid value (redacted — see .env.example)",
+          };
+        }
+        return { key, message: issue.message };
+      }),
+    );
+  }
+
+  return {
+    nodeEnv: result.data.NODE_ENV,
+    port: result.data.SHO_PORT,
+    serviceToken: result.data.SHO_SERVICE_TOKEN,
   };
 }
 

@@ -66,17 +66,63 @@ export const SHO_CONTEXT_LIST_NAMES = [
   "counterparties",
 ] as const;
 
-export const SHO_CONTEXT_UNIT_LENGTH = 32;
+export const SHO_SALE_UNITS = [
+  "pcs",
+  "pair",
+  "pack",
+  "box",
+  "set",
+  "roll",
+  "bag",
+  "bottle",
+  "can",
+  "bucket",
+  "sheet",
+  "portion",
+  "service",
+  "hour",
+  "kg",
+  "g",
+  "t",
+  "l",
+  "ml",
+  "m",
+  "m2",
+  "m3",
+] as const;
+
+export const SHO_CONTEXT_LIMITS = {
+  products: 20_000,
+  variantsPerProduct: 200,
+  variants: 100_000,
+  customers: 50_000,
+  counterparties: 50_000,
+  groups: 2_000,
+  priceLists: 2_000,
+  id: 64,
+  name: 120,
+  aliases: 10,
+  revision: 128,
+} as const;
+
+const NON_BLANK = /\S/;
+
+const filled = (most: number) => z.string().min(1).max(most).regex(NON_BLANK);
+
+const label = filled(SHO_CONTEXT_LIMITS.name);
+const flag = z.boolean().optional();
+
+const idsAreUnique = (items: readonly { readonly id: string }[]): boolean =>
+  new Set(items.map((item) => item.id)).size === items.length;
 
 export const shoContextRecordSchema = z.strictObject({
-  id: z.string().min(1).max(64),
-  name: z.string().min(1).max(120),
-  aliases: z.array(z.string().min(1).max(120)).max(10).optional(),
+  id: filled(SHO_CONTEXT_LIMITS.id),
+  name: label,
+  aliases: z.array(label).max(SHO_CONTEXT_LIMITS.aliases).optional(),
 });
 
-const records = z.array(shoContextRecordSchema).optional();
-const flag = z.boolean().optional();
-const label = z.string().min(1).max(120);
+const recordList = (most: number) =>
+  z.array(shoContextRecordSchema).max(most).refine(idsAreUnique).optional();
 
 export const shoContextVariantSchema = shoContextRecordSchema.extend({
   values: z.union([z.array(label), z.record(label, label)]).optional(),
@@ -84,19 +130,36 @@ export const shoContextVariantSchema = shoContextRecordSchema.extend({
 
 export const shoContextProductSchema = shoContextRecordSchema.extend({
   brand: label.optional(),
-  unit: z.string().min(1).max(SHO_CONTEXT_UNIT_LENGTH).optional(),
-  variants: z.array(shoContextVariantSchema).optional(),
+  unit: z.enum(SHO_SALE_UNITS).optional(),
+  variants: z
+    .array(shoContextVariantSchema)
+    .max(SHO_CONTEXT_LIMITS.variantsPerProduct)
+    .refine(idsAreUnique)
+    .optional(),
 });
+
+const variantCount = (
+  products: readonly { readonly variants?: readonly unknown[] | undefined }[],
+): number =>
+  products.reduce(
+    (count, product) => count + (product.variants?.length ?? 0),
+    0,
+  );
 
 export const shoContextSchema = z.strictObject({
   version: z.literal(2),
-  revision: z.string().min(1).max(128).optional(),
+  revision: filled(SHO_CONTEXT_LIMITS.revision).optional(),
   capabilities: z.strictObject({ stock: flag, fiscal: flag }).optional(),
-  products: z.array(shoContextProductSchema).optional(),
-  customers: records,
-  groups: records,
-  priceLists: records,
-  counterparties: records,
+  products: z
+    .array(shoContextProductSchema)
+    .max(SHO_CONTEXT_LIMITS.products)
+    .refine(idsAreUnique)
+    .refine((products) => variantCount(products) <= SHO_CONTEXT_LIMITS.variants)
+    .optional(),
+  customers: recordList(SHO_CONTEXT_LIMITS.customers),
+  groups: recordList(SHO_CONTEXT_LIMITS.groups),
+  priceLists: recordList(SHO_CONTEXT_LIMITS.priceLists),
+  counterparties: recordList(SHO_CONTEXT_LIMITS.counterparties),
   partial: z.array(z.enum(SHO_CONTEXT_LIST_NAMES)).optional(),
 });
 
@@ -138,6 +201,7 @@ export type ShoContext = z.infer<typeof shoContextSchema>;
 export type ShoContextProduct = z.infer<typeof shoContextProductSchema>;
 export type ShoContextVariant = z.infer<typeof shoContextVariantSchema>;
 export type ShoContextListName = (typeof SHO_CONTEXT_LIST_NAMES)[number];
+export type ShoSaleUnit = (typeof SHO_SALE_UNITS)[number];
 export type ShoContextUpload = z.infer<typeof shoContextUploadSchema>;
 export type ShoPhrasesResponse = z.infer<typeof shoPhrasesResponseSchema>;
 export type ShoErrorResponse = z.infer<typeof shoErrorResponseSchema>;

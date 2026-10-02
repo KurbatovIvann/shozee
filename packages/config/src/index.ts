@@ -5,10 +5,12 @@ export {
   S3_LOOPBACK_SIGNING_WARNING,
   classifyS3SigningHost,
   loadServerConfig,
+  loadShoServiceConfig,
   s3DeviceSigningWarning,
   type ConfigIssue,
   type S3SigningHostClass,
   type ServerConfig,
+  type ShoServiceConfig,
 } from "./config.js";
 export { createProcessLogger, type ProcessLoggerOptions } from "./logger.js";
 export {
