@@ -153,6 +153,9 @@ registry is injected into `createAssistantRuntime`; this package never imports
   - `parseWithShoContext` rethrows that denial and turns any other read
     failure into the `unreadable` fallback, so an outage falls through to the
     LLM and an unauthorized caller does not.
+  - A caller is served a shared build only while **its own** last verified
+    read is inside the window; another caller keeping that build warm does
+    not extend it, so a revoked or narrowed member re-reads within 30 s.
 - `events.ts` — the event channel contract (SHO-562): the per-conversation
   channel and presence key (company then conversation, lowercased), the stream
   slot key, the heartbeat, presence ttl, per-person stream limit and idle

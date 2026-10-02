@@ -118,18 +118,23 @@ export function createShoContextSource(
 ): ShoContextSource {
   const clock = deps.now ?? (() => Date.now());
   const builds = new Map<string, { builtAt: number; build: ShoContextBuild }>();
-  const scopeOfCaller = new Map<string, string>();
+  const scopeOfCaller = new Map<string, { key: string; verifiedAt: number }>();
   const callerKey = (caller: ShoContextCaller): string =>
     `${caller.companyId}\u0000${caller.userId}`;
   const buildKey = (companyId: string, scopeHash: string): string =>
     `${companyId}\u0000${scopeHash}`;
+  const within = (at: number, since: number): boolean =>
+    at - since < SHO_CONTEXT_TTL_MS;
 
   return {
     async current(caller) {
       const at = clock();
-      const known = scopeOfCaller.get(callerKey(caller));
-      const entry = known === undefined ? undefined : builds.get(known);
-      if (entry !== undefined && at - entry.builtAt < SHO_CONTEXT_TTL_MS) {
+      const verified = scopeOfCaller.get(callerKey(caller));
+      const entry =
+        verified === undefined || !within(at, verified.verifiedAt)
+          ? undefined
+          : builds.get(verified.key);
+      if (entry !== undefined && within(at, entry.builtAt)) {
         return entry.build;
       }
 
@@ -137,14 +142,16 @@ export function createShoContextSource(
         await readShoNameIndex(deps.pipeline, caller),
       );
       for (const [key, stale] of builds) {
-        if (at - stale.builtAt >= SHO_CONTEXT_TTL_MS) builds.delete(key);
+        if (!within(at, stale.builtAt)) builds.delete(key);
       }
       const key = buildKey(caller.companyId, built.scopeHash);
       const shared = builds.get(key) ?? { builtAt: at, build: built };
       builds.set(key, shared);
-      scopeOfCaller.set(callerKey(caller), key);
-      for (const [who, pointed] of scopeOfCaller) {
-        if (!builds.has(pointed)) scopeOfCaller.delete(who);
+      scopeOfCaller.set(callerKey(caller), { key, verifiedAt: at });
+      for (const [who, pointer] of scopeOfCaller) {
+        if (!builds.has(pointer.key) || !within(at, pointer.verifiedAt)) {
+          scopeOfCaller.delete(who);
+        }
       }
       return shared.build;
     },

@@ -16,9 +16,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
   createShoContextSource,
+  readShoNameIndex,
   SHO_CONTEXT_TTL_MS,
   type ShoContextCaller,
 } from "./sho-context-source.js";
+
+const revoked = ["products:view", "customers:view", "pricing:view"];
 
 const fixtures = {
   product: randomUUID(),
@@ -279,5 +282,39 @@ describe("createShoContextSource", () => {
     expect(theirs.scopeHash).toBe(mine.scopeHash);
     expect(theirs.fingerprint).toBe(mine.fingerprint);
     expect(JSON.stringify(theirs.context)).not.toContain(names.sharedProduct);
+  });
+
+  it("reads the same lists for every member of one company", async () => {
+    const mine = await readShoNameIndex(kit.pipeline, anna());
+    const theirs = await readShoNameIndex(kit.pipeline, deputy());
+
+    expect(theirs).toEqual(mine);
+  });
+
+  it("re-reads for a caller whose own verification aged out", async () => {
+    const source = sourceOf();
+    await source.current(anna());
+    const shared = await source.current(deputy());
+
+    await kit.db.runtime.db
+      .insert(companyMembers)
+      .values({
+        companyId: kitIdentities.companies.a,
+        userId: deputyUserId,
+        role: "employee",
+        permissions: { granted: [], denied: revoked },
+      })
+      .onConflictDoUpdate({
+        target: [companyMembers.companyId, companyMembers.userId],
+        set: { permissions: { granted: [], denied: revoked } },
+      });
+
+    clock += SHO_CONTEXT_TTL_MS;
+    const warm = await source.current(anna());
+    expect(warm.scopeHash).toBe(shared.scopeHash);
+
+    await expect(source.current(deputy())).rejects.toBeInstanceOf(
+      PermissionDeniedError,
+    );
   });
 });
