@@ -1210,7 +1210,7 @@ describe("orders.create / confirm / get", () => {
 
     const snapshot = await kit.invoke(getOrder, { orderId: created.orderId });
     expect(snapshot.comment).toBe("Staff note");
-    expect(snapshot.customerId).toBe(fixtures.customerA);
+    expect(snapshot.customer.linkedCustomerId).toBe(fixtures.customerA);
     expect(snapshot.items).toHaveLength(6);
 
     const [header] = await kit.db.runtime.db
@@ -1790,7 +1790,7 @@ describe("orders.create reference resolve (SHO-352)", () => {
 
     const snapshot = await kit.invoke(getOrder, { orderId: byQuery.orderId });
     expect(snapshot.items[0]?.quantityMilli).toBe("1000");
-    expect(snapshot.customerId).toBe(fixtures.customerA);
+    expect(snapshot.customer.linkedCustomerId).toBe(fixtures.customerA);
   });
 
   it("eval 3: unique customer and product names issue one orders.create", async () => {
@@ -1865,7 +1865,7 @@ describe("orders.create reference resolve (SHO-352)", () => {
       before + 1,
     );
     const snapshot = await kit.invoke(getOrder, { orderId: created.orderId });
-    expect(snapshot.customerId).toBe(customerId);
+    expect(snapshot.customer.linkedCustomerId).toBe(customerId);
     expect(snapshot.items[0]?.productId).toBe(productId);
   });
 

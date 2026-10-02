@@ -86,8 +86,10 @@ export async function loadStaffOrder(env: {
   return {
     orderId: header.id,
     orderNumber: header.orderNumber,
-    customerId: header.customerId,
-    customerNameSnapshot: header.customerNameSnapshot,
+    customer: {
+      nameSnapshot: header.customerNameSnapshot,
+      linkedCustomerId: header.customerId,
+    },
     status: parseStatus(header.status),
     comment: header.comment,
     totalNetMinor: moneyToCanonical(header.totalNetMinor),

@@ -172,7 +172,7 @@ export function orderTransitionPreview(
     return {
       title: orderPreviewCustomerTitle(
         `${subject} ${order.orderNumber}`,
-        order.customerNameSnapshot,
+        order.customer.nameSnapshot,
       ),
       lines,
       notes: [

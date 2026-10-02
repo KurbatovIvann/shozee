@@ -126,8 +126,10 @@ export const ANNA_CUSTOMER = {
 export const ANNA_ORDER_DETAIL = {
   orderId: ANNA_ORDER_ID,
   orderNumber: "KL-K7K3K4",
-  customerId: ANNA_CUSTOMER_ID,
-  customerNameSnapshot: "Анна Мельник",
+  customer: {
+    nameSnapshot: "Анна Мельник",
+    linkedCustomerId: ANNA_CUSTOMER_ID,
+  },
   status: "new",
   comment: "  Packed separately  ",
   totalNetMinor: "150000",
@@ -142,8 +144,7 @@ export const ANNA_ORDER_DETAIL = {
 export const CONFIRMED_ORDER_DETAIL = {
   orderId: CONFIRMED_ORDER_ID,
   orderNumber: "KL-CONF",
-  customerId: null,
-  customerNameSnapshot: "Анна Мельник",
+  customer: { nameSnapshot: "Анна Мельник", linkedCustomerId: null },
   status: "confirmed",
   comment: null,
   totalNetMinor: "150000",
@@ -158,8 +159,7 @@ export const CONFIRMED_ORDER_DETAIL = {
 export const IN_PROGRESS_ORDER_DETAIL = {
   orderId: IN_PROGRESS_ORDER_ID,
   orderNumber: "KL-WORK",
-  customerId: null,
-  customerNameSnapshot: "Анна Мельник",
+  customer: { nameSnapshot: "Анна Мельник", linkedCustomerId: null },
   status: "in_progress",
   comment: null,
   totalNetMinor: "150000",
@@ -174,8 +174,7 @@ export const IN_PROGRESS_ORDER_DETAIL = {
 export const DONE_ORDER_DETAIL = {
   orderId: DONE_ORDER_ID,
   orderNumber: "KL-CLOSED",
-  customerId: null,
-  customerNameSnapshot: "Анна Мельник",
+  customer: { nameSnapshot: "Анна Мельник", linkedCustomerId: null },
   status: "done",
   comment: null,
   totalNetMinor: "50000",

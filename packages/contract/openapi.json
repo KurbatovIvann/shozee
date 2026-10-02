@@ -49786,20 +49786,29 @@
                       "type": "string",
                       "minLength": 1
                     },
-                    "customerId": {
-                      "anyOf": [
-                        {
+                    "customer": {
+                      "type": "object",
+                      "properties": {
+                        "nameSnapshot": {
                           "type": "string",
-                          "format": "uuid"
+                          "minLength": 1
                         },
-                        {
-                          "type": "null"
+                        "linkedCustomerId": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
+                      },
+                      "required": [
+                        "nameSnapshot",
+                        "linkedCustomerId"
                       ]
-                    },
-                    "customerNameSnapshot": {
-                      "type": "string",
-                      "minLength": 1
                     },
                     "status": {
                       "enum": [
@@ -50020,8 +50029,7 @@
                   "required": [
                     "orderId",
                     "orderNumber",
-                    "customerId",
-                    "customerNameSnapshot",
+                    "customer",
                     "status",
                     "comment",
                     "totalNetMinor",

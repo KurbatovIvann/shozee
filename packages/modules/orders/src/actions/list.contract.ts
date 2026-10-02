@@ -29,7 +29,10 @@ import {
 import { z } from "zod";
 
 import { moneyWireSchema, quantityMilliWireSchema } from "../wire.contract.js";
-import { orderStatusSchema } from "./order-view.contract.js";
+import {
+  orderCustomerSchema,
+  orderStatusSchema,
+} from "./order-view.contract.js";
 
 export const UNLINKED_CUSTOMER_NAME_SNAPSHOT = "unlinked";
 
@@ -129,15 +132,10 @@ export const listOrdersInputSchema = z.discriminatedUnion("kind", [
   listOrdersAggregateInputSchema,
 ]);
 
-export const listOrderCustomerSchema = z.object({
-  nameSnapshot: z.string().min(1),
-  linkedCustomerId: z.uuid().nullable(),
-});
-
 export const listOrderSummaryRowSchema = z.object({
   orderId: z.uuid(),
   orderNumber: z.string().min(1),
-  customer: listOrderCustomerSchema,
+  customer: orderCustomerSchema,
   status: orderStatusSchema,
   itemCount: z.number().int().nonnegative(),
   totalGrossMinor: moneyWireSchema,

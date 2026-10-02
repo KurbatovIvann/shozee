@@ -22,8 +22,10 @@ import {
 const ORDER: GetOrderOutput = {
   orderId: "11111111-1111-4111-8111-111111111111",
   orderNumber: "KL-K7K3K4",
-  customerId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-  customerNameSnapshot: "Анна Мельник",
+  customer: {
+    nameSnapshot: "Анна Мельник",
+    linkedCustomerId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  },
   status: "new",
   comment: "  Packed separately  ",
   totalNetMinor: "150000",
