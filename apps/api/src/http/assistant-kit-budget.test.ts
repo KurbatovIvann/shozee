@@ -517,7 +517,7 @@ describe("the spend ceiling on the kit routes", () => {
     const { app, kit, bind } = harness({
       limits: { chatTurnsPerMinutePerUser: 1 },
     });
-    await openOneOptionCard(kit, bind);
+    const card = await openOneOptionCard(kit, bind);
 
     await post(app, ASSISTANT_KIT_CHAT_PATH, {
       commandId: randomUUID(),
@@ -529,6 +529,10 @@ describe("the spend ceiling on the kit routes", () => {
       commandId: randomUUID(),
       conversationId: CONVERSATION,
       text: "Олена",
+      answering: {
+        interactionId: card.interactionId,
+        revision: card.revision,
+      },
     });
 
     expect(answering.status).not.toBe(429);
@@ -538,7 +542,7 @@ describe("the spend ceiling on the kit routes", () => {
     const { app, kit, bind } = harness({
       limits: { chatTurnsPerMinutePerUser: 1 },
     });
-    await openOneOptionCard(kit, bind);
+    const card = await openOneOptionCard(kit, bind);
 
     await post(app, ASSISTANT_KIT_CHAT_PATH, {
       commandId: randomUUID(),
@@ -550,6 +554,10 @@ describe("the spend ceiling on the kit routes", () => {
       commandId: randomUUID(),
       conversationId: CONVERSATION,
       text: "покажи замовлення за тиждень",
+      answering: {
+        interactionId: card.interactionId,
+        revision: card.revision,
+      },
     });
 
     expect(superseding.status).toBe(429);
@@ -559,7 +567,7 @@ describe("the spend ceiling on the kit routes", () => {
     const { app, kit, bind } = harness({
       limits: { chatTurnsPerMinutePerUser: 1 },
     });
-    await openOneOptionCard(kit, bind);
+    const card = await openOneOptionCard(kit, bind);
 
     await post(app, ASSISTANT_KIT_CHAT_PATH, {
       commandId: randomUUID(),
@@ -571,6 +579,10 @@ describe("the spend ceiling on the kit routes", () => {
       commandId: randomUUID(),
       conversationId: CONVERSATION,
       text: "7",
+      answering: {
+        interactionId: card.interactionId,
+        revision: card.revision,
+      },
     });
 
     expect(hinted.status).toBe(429);

@@ -241,7 +241,7 @@ function harness(options?: {
    * still go through the real kit.
    */
   readonly writeRefusal?: "conflict" | "unchanged";
-  readonly firstWriteRefusal?: "conflict";
+  readonly writeRefusalAt?: number;
 }): Harness {
   // The window the routes really run with, so a page here is a page on a phone.
   const deps = testDeps(assistantInteractions, {
@@ -249,8 +249,8 @@ function harness(options?: {
   });
   const kit = createAssistantKit(deps);
   const refusal = options?.writeRefusal;
-  const firstRefusal = options?.firstWriteRefusal;
-  let refusalsLeft = firstRefusal === undefined ? 0 : 1;
+  const refusalAt = options?.writeRefusalAt;
+  let writesSeen = 0;
   const served: Kit =
     refusal !== undefined
       ? {
@@ -260,7 +260,7 @@ function harness(options?: {
             write: () => Promise.resolve({ kind: refusal }),
           },
         }
-      : firstRefusal === undefined
+      : refusalAt === undefined
         ? kit
         : {
             ...kit,
@@ -270,11 +270,10 @@ function harness(options?: {
                 scope: Parameters<Kit["messages"]["write"]>[0],
                 write: Parameters<Kit["messages"]["write"]>[1],
               ) => {
-                if (refusalsLeft > 0) {
-                  refusalsLeft -= 1;
-                  return Promise.resolve({ kind: firstRefusal });
-                }
-                return kit.messages.write(scope, write);
+                writesSeen += 1;
+                return writesSeen === refusalAt + 1
+                  ? Promise.resolve({ kind: "conflict" as const })
+                  : kit.messages.write(scope, write);
               },
             },
           };
@@ -518,6 +517,20 @@ async function get(
 
 function chatBody(text = "покажи замовлення", commandId = COMMAND) {
   return { commandId, conversationId: CONVERSATION, text };
+}
+
+function answeringBody(
+  card: { readonly interactionId: string; readonly revision: number },
+  text: string,
+  commandId = COMMAND,
+) {
+  return {
+    ...chatBody(text, commandId),
+    answering: {
+      interactionId: card.interactionId,
+      revision: card.revision,
+    },
+  };
 }
 
 function answerBody(
@@ -2170,7 +2183,11 @@ describe("a send while a card is open answers it", () => {
     const { app, kit, queue, bind } = harness();
     const pause = await openConfirmation(kit, bind);
 
-    const response = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("так"));
+    const response = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "так"),
+    );
 
     expect(response.status).toBe(202);
     const body = (await response.json()) as KitBody;
@@ -2189,7 +2206,11 @@ describe("a send while a card is open answers it", () => {
     const { app, kit, queue, bind } = harness();
     const pause = await openConfirmation(kit, bind);
 
-    const response = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("ні"));
+    const response = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "ні"),
+    );
 
     expect(response.status).toBe(200);
     const body = (await response.json()) as KitBody;
@@ -2207,12 +2228,12 @@ describe("a send while a card is open answers it", () => {
     const { app, kit, bind } = harness({
       resolveAnswer: chosen.resolveAnswer,
     });
-    await openNamedPause(kit, bind);
+    const pause = await openNamedPause(kit, bind);
 
     const response = await post(
       app,
       ASSISTANT_KIT_CHAT_PATH,
-      chatBody("другий"),
+      answeringBody(pause, "другий"),
     );
 
     expect(response.status).toBe(202);
@@ -2224,12 +2245,12 @@ describe("a send while a card is open answers it", () => {
     const { app, kit, bind } = harness({
       resolveAnswer: chosen.resolveAnswer,
     });
-    await openNamedPause(kit, bind);
+    const pause = await openNamedPause(kit, bind);
 
     const response = await post(
       app,
       ASSISTANT_KIT_CHAT_PATH,
-      chatBody("Савчук"),
+      answeringBody(pause, "Савчук"),
     );
 
     expect(response.status).toBe(202);
@@ -2246,7 +2267,7 @@ describe("a send while a card is open answers it", () => {
     const response = await post(
       app,
       ASSISTANT_KIT_CHAT_PATH,
-      chatBody("Савчук"),
+      answeringBody(pause, "Савчук"),
     );
 
     expect(response.status).toBe(200);
@@ -2268,9 +2289,13 @@ describe("a send while a card is open answers it", () => {
 
   it("keeps the card and says the range for a number outside it", async () => {
     const { app, kit, bind } = harness();
-    await openNamedPause(kit, bind);
+    const pause = await openNamedPause(kit, bind);
 
-    const response = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("5"));
+    const response = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "5"),
+    );
 
     expect(response.status).toBe(200);
     expect(
@@ -2282,9 +2307,13 @@ describe("a send while a card is open answers it", () => {
 
   it("never approves a strong preview, and still declines one", async () => {
     const { app, kit, queue, bind } = harness();
-    await openConfirmation(kit, bind, [], "strong");
+    const pause = await openConfirmation(kit, bind, [], "strong");
 
-    const typed = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("так"));
+    const typed = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "так"),
+    );
     expect(typed.status).toBe(200);
     expect(
       (await kit.peek({ conversationId: CONVERSATION, bind }))?.status,
@@ -2297,7 +2326,7 @@ describe("a send while a card is open answers it", () => {
     const declined = await post(
       app,
       ASSISTANT_KIT_CHAT_PATH,
-      chatBody("ні", OTHER_COMMAND),
+      answeringBody(pause, "ні", OTHER_COMMAND),
     );
     expect(((await declined.json()) as KitBody).status).toBe("abandoned");
     expect(await kit.peek({ conversationId: CONVERSATION, bind })).toBeNull();
@@ -2305,8 +2334,8 @@ describe("a send while a card is open answers it", () => {
 
   it("stores the person's words before the trace, for a reload", async () => {
     const { app, kit, bind } = harness();
-    await openConfirmation(kit, bind);
-    await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("так"));
+    const pause = await openConfirmation(kit, bind);
+    await post(app, ASSISTANT_KIT_CHAT_PATH, answeringBody(pause, "так"));
 
     const reload = await get(app, messagesPath());
     const body = (await reload.json()) as KitBody;
@@ -2320,8 +2349,8 @@ describe("a send while a card is open answers it", () => {
 
   it("stores the person's words for a name that answered a choice", async () => {
     const { app, kit, bind } = harness();
-    await openNamedPause(kit, bind);
-    await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("Савчук"));
+    const pause = await openNamedPause(kit, bind);
+    await post(app, ASSISTANT_KIT_CHAT_PATH, answeringBody(pause, "Савчук"));
 
     const reload = await get(app, messagesPath());
     const body = (await reload.json()) as KitBody;
@@ -2377,21 +2406,100 @@ describe("a send while a card is open answers it", () => {
     expect(queue.added).toHaveLength(1);
   });
 
-  it("gives the command back when the answering send cannot store the words", async () => {
-    const { app, kit, bind } = harness({ firstWriteRefusal: "conflict" });
-    await openConfirmation(kit, bind);
+  it("gives the command back when the hint cannot be stored, and stores the words once", async () => {
+    const { app, kit, bind } = harness({ writeRefusalAt: 1 });
+    const pause = await openNamedPause(kit, bind, [
+      "Савчук Іван",
+      "Савчук Олена",
+    ]);
 
-    const failed = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("ні"));
+    const failed = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "Савчук"),
+    );
     expect(failed.status).toBe(500);
 
-    const retry = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("ні"));
-    expect(((await retry.json()) as KitBody).status).toBe("abandoned");
-    expect(await kit.peek({ conversationId: CONVERSATION, bind })).toBeNull();
+    const retry = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "Савчук"),
+    );
+    expect(retry.status).toBe(200);
     const stored = await kit.messages.read({
       conversationId: CONVERSATION,
       bind,
     });
-    expect(JSON.stringify(stored.messages)).toContain("ні");
+    const said = stored.messages.flatMap((message) =>
+      message.parts.filter(
+        (part) => part.kind === "text" && part.text === "Савчук",
+      ),
+    );
+    expect(said).toHaveLength(1);
+    expect(
+      (await kit.peek({ conversationId: CONVERSATION, bind }))?.status,
+    ).toBe("open");
+  });
+
+  it("never answers a card the send did not name", async () => {
+    let resolved = 0;
+    const counted: ResolveAnswer = (args) => {
+      resolved += 1;
+      return OK_RESOLVE(args);
+    };
+    const { app, kit, queue, bind } = harness({
+      acceptThrows: "internal-after-commit",
+      resolveAnswer: counted,
+    });
+
+    await expect(
+      post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("так")),
+    ).resolves.toMatchObject({ status: 500 });
+    await openConfirmation(kit, bind);
+
+    await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("так"));
+
+    expect(resolved).toBe(0);
+    expect(JSON.stringify(queue.added)).not.toContain("answer");
+  });
+
+  it("never answers a card the send named at an older revision", async () => {
+    const { app, kit, queue, bind } = harness();
+    const first = await openNamedPause(kit, bind);
+    const revised = await kit.revise({
+      conversationId: CONVERSATION,
+      bind,
+      interactionId: first.interactionId,
+      next: {
+        kind: "choice",
+        prompt: {
+          subject: "уточнено",
+          options: [{ optionId: "opt-only", label: "Шевченко Тарас" }],
+          optionsTruncated: false,
+        },
+        secret: {
+          byOption: { "opt-only": { kind: "record", entityId: "entity-only" } },
+          toolName: "orders_create",
+          input: { customerQuery: "шевченко", items: [] },
+          target: { kind: "customer", query: "шевченко" },
+        },
+        continuation: CONTINUATION,
+      },
+    });
+    expect(revised.kind).toBe("opened");
+
+    const response = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(first, "1"),
+    );
+
+    expect(response.status).toBe(409);
+    expect(((await response.json()) as KitBody).status).toBe("stale");
+    expect(
+      (await kit.peek({ conversationId: CONVERSATION, bind }))?.status,
+    ).toBe("open");
+    expect(queue.added).toEqual([]);
   });
 
   it("keeps the card when the accept the send would supersede it for fails", async () => {
@@ -2407,7 +2515,7 @@ describe("a send while a card is open answers it", () => {
     ).toBe(pause.interactionId);
   });
 
-  it("answers the question the server holds, never ids the send carried", async () => {
+  it("resolves the option from the stored prompt, never from the send", async () => {
     const chosen = chosenEntity();
     const { app, kit, bind } = harness({
       resolveAnswer: chosen.resolveAnswer,
@@ -2433,9 +2541,15 @@ describe("a send while a card is open answers it", () => {
         continuation: CONTINUATION,
       },
     });
-    expect(revised.kind).toBe("opened");
+    if (revised.kind !== "opened") {
+      throw new Error(`expected opened: ${revised.kind}`);
+    }
 
-    const response = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("1"));
+    const response = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(revised.pause, "1"),
+    );
 
     expect(response.status).toBe(202);
     expect(entityIdOf(chosen.seen.value)).toBe("entity-only");
@@ -2443,10 +2557,11 @@ describe("a send while a card is open answers it", () => {
 
   it("answers a repeated answering send with the window, and once", async () => {
     const { app, kit, queue, bind } = harness();
-    await openConfirmation(kit, bind);
+    const pause = await openConfirmation(kit, bind);
+    const send = answeringBody(pause, "так");
 
-    const first = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("так"));
-    const retry = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("так"));
+    const first = await post(app, ASSISTANT_KIT_CHAT_PATH, send);
+    const retry = await post(app, ASSISTANT_KIT_CHAT_PATH, send);
 
     expect([first.status, retry.status]).toEqual([202, 200]);
     expect(((await retry.json()) as KitBody).status).toBe("ok");
@@ -2455,10 +2570,11 @@ describe("a send while a card is open answers it", () => {
 
   it("answers a repeated decline with the window, and accepts no turn", async () => {
     const { app, kit, queue, bind } = harness();
-    await openConfirmation(kit, bind);
+    const pause = await openConfirmation(kit, bind);
+    const send = answeringBody(pause, "ні");
 
-    const first = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("ні"));
-    const retry = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("ні"));
+    const first = await post(app, ASSISTANT_KIT_CHAT_PATH, send);
+    const retry = await post(app, ASSISTANT_KIT_CHAT_PATH, send);
 
     expect([first.status, retry.status]).toEqual([200, 200]);
     expect(((await retry.json()) as KitBody).status).toBe("ok");

@@ -20,7 +20,7 @@
  * read back as stored, not recomposed from prompt state, so there is no second
  * derivation that can disagree with the live one.
  */
-import { chatCursorSchema } from "@showzy/assistant-kit";
+import { chatCursorSchema, type PublicPause } from "@showzy/assistant-kit";
 import {
   assistantRejectedTrace,
   assistantSupersededTrace,
@@ -49,6 +49,7 @@ import {
   requireOpenCardRead,
   takeCommand,
   type AssistantKitAppEnv,
+  type AssistantKitCardVerdict,
   type AssistantKitRuntime,
   type Caller,
 } from "./assistant-kit-http.js";
@@ -78,12 +79,27 @@ export async function readChatOpenCard(
   const card =
     pause === null
       ? null
-      : { pause, match: matchAssistantPauseAnswer(pause, body.text) };
+      : { pause, verdict: verdictFor(pause, body.answering, body.text) };
   c.set("assistantOpenCard", card);
   return (
     card !== null &&
-    (card.match.kind === "answer" || card.match.kind === "decline")
+    (card.verdict.kind === "answer" || card.verdict.kind === "decline")
   );
+}
+
+function verdictFor(
+  pause: PublicPause,
+  answering:
+    { readonly interactionId: string; readonly revision: number } | undefined,
+  text: string,
+): AssistantKitCardVerdict {
+  if (answering === undefined) {
+    return { kind: "supersede" };
+  }
+  return answering.interactionId.toLowerCase() !== pause.interactionId ||
+    answering.revision !== pause.revision
+    ? { kind: "stale" }
+    : matchAssistantPauseAnswer(pause, text);
 }
 
 export const ASSISTANT_KIT_CHAT_PATH = "/assistant/kit/chat";
@@ -94,6 +110,12 @@ export const assistantKitChatBodySchema = z.strictObject({
   commandId: z.uuid(),
   conversationId: z.uuid(),
   text: z.string().min(1).max(4000),
+  answering: z
+    .strictObject({
+      interactionId: z.uuid(),
+      revision: z.number().int().positive(),
+    })
+    .optional(),
 });
 
 /**
@@ -192,7 +214,17 @@ export async function handleAssistantKitChat(
 
   const card = requireOpenCardRead(c);
   const open = card === null ? null : card.pause;
-  const matched = card === null ? null : card.match;
+  const matched = card === null ? null : card.verdict;
+  if (matched !== null && matched.kind === "stale") {
+    return json(
+      409,
+      {
+        status: "stale",
+        window: await readAssistantChatWindow(kit, turns, scope),
+      },
+      requestId,
+    );
+  }
   if (open !== null && matched !== null && matched.kind !== "supersede") {
     if (matched.kind === "answer") {
       return await handleAssistantKitAnswer(c, runtime, {

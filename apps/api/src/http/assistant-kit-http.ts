@@ -45,9 +45,12 @@ export type AssistantKitAppEnv = {
   };
 };
 
+export type AssistantKitCardVerdict =
+  AssistantPauseMatch | { readonly kind: "stale" };
+
 export interface AssistantKitOpenCard {
   readonly pause: PublicPause;
-  readonly match: AssistantPauseMatch;
+  readonly verdict: AssistantKitCardVerdict;
 }
 
 export function requireOpenCardRead(
