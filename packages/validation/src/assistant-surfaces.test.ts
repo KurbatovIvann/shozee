@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   ASSISTANT_AGGREGATE_LAYOUTS,
+  ASSISTANT_CLIP_ARRAY_MAX,
   ASSISTANT_CUSTOMERS_LIST_ROW_MAX,
   ASSISTANT_CUSTOMERS_LIST_SCREEN_HREF,
   ASSISTANT_ORDERS_LIST_ROW_MAX,
@@ -25,8 +26,10 @@ import {
   assistantSurfaceSlot,
   assistantSurfacesFromToolResults,
   isAssistantSurfaceResultOutput,
+  parseCustomerEntitySurfaces,
   parseCustomersListSurface,
   parseOrderEntitySurfaces,
+  parseProductEntitySurfaces,
   parseOrdersAggregateSurface,
   parseOrdersListSurface,
   parseSearchResultsSurface,
@@ -49,6 +52,7 @@ import {
 
 const ORDER_A = "0f0e2d5c-4a1b-4c3d-9e8f-102938475601";
 const ORDER_B = "1a2b3c4d-5e6f-4789-8abc-def012345678";
+const PRODUCT_A = "3c4d5e6f-7081-49a2-8cde-f01234567890";
 
 function result(
   toolName: string,
@@ -188,6 +192,8 @@ describe("ASSISTANT_SURFACE_REGISTRY integrity", () => {
       "orders-list",
       "orders-aggregate",
       "order-entity",
+      "customer-entity",
+      "product-entity",
       "customers-list",
       "search-results",
     ]);
@@ -213,6 +219,8 @@ describe("ASSISTANT_SURFACE_REGISTRY integrity", () => {
     expect(
       ASSISTANT_SURFACE_REGISTRY.map((entry) => entry.destination),
     ).toEqual([
+      { kind: "screen" },
+      { kind: "screen" },
       { kind: "screen" },
       { kind: "screen" },
       { kind: "screen" },
@@ -539,6 +547,170 @@ describe("parseOrderEntitySurfaces", () => {
   });
 });
 
+describe("parseCustomerEntitySurfaces", () => {
+  it("maps the shared customer view without inventing a per-record route", () => {
+    const entities = parseCustomerEntitySurfaces([
+      result(CUSTOMERS_LIST_CUSTOMERS_TOOL, { items: [], nextCursor: null }),
+      result(
+        "customers_get_customer",
+        {
+          id: CUSTOMER_A,
+          name: "Katya Sambuka",
+          phone: "+380671112233",
+          email: "katya@example.com",
+          status: "active",
+          linkedCounterpartyCount: 0,
+        },
+        "call-customer",
+      ),
+    ]);
+    expect(entities).toHaveLength(1);
+    expect(entities[0]).toMatchObject({
+      kind: "customer-entity",
+      customerId: CUSTOMER_A,
+      name: "Katya Sambuka",
+      phone: "+380671112233",
+      email: "katya@example.com",
+      status: "active",
+      toolCallId: "call-customer",
+    });
+    expect(entities[0]).not.toHaveProperty("destination");
+  });
+
+  it("keeps the id when the payload carries no name, contacts, or status", () => {
+    const entities = parseCustomerEntitySurfaces([
+      result("customers.getCustomer", { id: CUSTOMER_A }),
+    ]);
+    expect(entities[0]).toMatchObject({
+      customerId: CUSTOMER_A,
+      name: null,
+      phone: null,
+      email: null,
+      status: null,
+    });
+  });
+
+  it("omits payloads without an id and non-result outputs", () => {
+    expect(
+      parseCustomerEntitySurfaces([
+        result("customers.getCustomer", { name: "Katya" }),
+        result("customers.getCustomer", { status: "needs_choice" }),
+        result("customers.getCustomer", { status: "error" }),
+      ]),
+    ).toEqual([]);
+  });
+});
+
+function clippedProduct(
+  preview: Record<string, unknown>,
+): AssistantSurfaceToolResult {
+  return result("catalog_get_product", {
+    status: ASSISTANT_TOOL_CLIPPED_STATUS,
+    omitted: 23,
+    preview: {
+      id: PRODUCT_A,
+      name: "Napoleon",
+      basePriceMinor: "45000",
+      currency: "UAH",
+      ...preview,
+    },
+  });
+}
+
+describe("parseProductEntitySurfaces", () => {
+  it("maps base price, status and variant count without a per-record route", () => {
+    const entities = parseProductEntitySurfaces([
+      result(
+        "catalog_get_product",
+        {
+          id: PRODUCT_A,
+          name: "Napoleon",
+          basePriceMinor: "45000",
+          currency: "UAH",
+          status: "archived",
+          variants: [{ id: PRODUCT_A }, { id: CUSTOMER_A }],
+          imageFileIds: [],
+        },
+        "call-product",
+      ),
+    ]);
+    expect(entities[0]).toMatchObject({
+      kind: "product-entity",
+      productId: PRODUCT_A,
+      name: "Napoleon",
+      status: "archived",
+      basePrice: { amountMinor: "45000", currency: "UAH" },
+      variantCount: 2,
+      variantsClipped: false,
+      toolCallId: "call-product",
+    });
+    expect(entities[0]).not.toHaveProperty("destination");
+  });
+
+  it("counts no variants and no price when the payload omits them", () => {
+    const entities = parseProductEntitySurfaces([
+      result("catalog.getProduct", { id: PRODUCT_A, name: "Napoleon" }),
+    ]);
+    expect(entities[0]).toMatchObject({
+      variantCount: 0,
+      basePrice: null,
+      status: null,
+      variantsClipped: false,
+    });
+  });
+
+  it("reports no variant count when the clip truncated the variants array", () => {
+    const variants = Array.from(
+      { length: ASSISTANT_CLIP_ARRAY_MAX },
+      (_, i) => ({
+        id: String(i),
+      }),
+    );
+    const entities = parseProductEntitySurfaces([clippedProduct({ variants })]);
+    expect(entities[0]).toMatchObject({
+      productId: PRODUCT_A,
+      name: "Napoleon",
+      variantCount: null,
+      variantsClipped: true,
+      basePrice: { amountMinor: "45000", currency: "UAH" },
+    });
+  });
+
+  it("keeps the variant count when the clip cut some other array", () => {
+    const entities = parseProductEntitySurfaces([
+      clippedProduct({
+        variants: [{ id: "a" }, { id: "b" }],
+        imageFileIds: Array.from({ length: ASSISTANT_CLIP_ARRAY_MAX }, (_, i) =>
+          String(i),
+        ),
+      }),
+    ]);
+    expect(entities[0]).toMatchObject({
+      variantCount: 2,
+      variantsClipped: false,
+    });
+  });
+
+  it("reports no variant count when the shrink dropped the variants key", () => {
+    const entities = parseProductEntitySurfaces([
+      clippedProduct({ imageFileIds: [] }),
+    ]);
+    expect(entities[0]).toMatchObject({
+      variantCount: null,
+      variantsClipped: true,
+    });
+  });
+
+  it("omits payloads without an id and non-result outputs", () => {
+    expect(
+      parseProductEntitySurfaces([
+        result("catalog.getProduct", { name: "Napoleon" }),
+        result("catalog.getProduct", { status: "error" }),
+      ]),
+    ).toEqual([]);
+  });
+});
+
 describe("assistantSurfacesFromToolResults compose", () => {
   it("keeps list only when page and counts share a turn", () => {
     const surfaces = assistantSurfacesFromToolResults([
@@ -666,6 +838,28 @@ describe("staffAssistantPresentationEnvelope (SHO-458)", () => {
         ],
         kinds: ["order-entity"],
         toolCallIds: [["call-get"]],
+      },
+      {
+        results: [
+          result(
+            "customers_get_customer",
+            { id: CUSTOMER_A, name: "Katya" },
+            "call-customer",
+          ),
+        ],
+        kinds: ["customer-entity"],
+        toolCallIds: [["call-customer"]],
+      },
+      {
+        results: [
+          result(
+            "catalog_get_product",
+            { id: PRODUCT_A, name: "Napoleon" },
+            "call-product",
+          ),
+        ],
+        kinds: ["product-entity"],
+        toolCallIds: [["call-product"]],
       },
       {
         results: [
@@ -1102,6 +1296,27 @@ describe("assistantSurfaceSlot", () => {
     const slots = surfaces.map((surface) => assistantSurfaceSlot(surface));
 
     expect(slots).toEqual(["orders"]);
+  });
+
+  it("gives every entity kind its own per-record slot in one composition", () => {
+    const surfaces = assistantSurfacesFromToolResults([
+      result("orders.get", { orderId: ORDER_A, orderNumber: "1049" }),
+      result("customers_get_customer", { id: CUSTOMER_A, name: "Katya" }),
+      result("catalog_get_product", { id: PRODUCT_A, name: "Napoleon" }),
+    ]);
+    const slots = surfaces.map((surface) => assistantSurfaceSlot(surface));
+
+    expect(surfaces.map((surface) => surface.kind)).toEqual([
+      "order-entity",
+      "customer-entity",
+      "product-entity",
+    ]);
+    expect(slots).toEqual([
+      `order-entity:${ORDER_A}`,
+      `customer-entity:${CUSTOMER_A}`,
+      `product-entity:${PRODUCT_A}`,
+    ]);
+    expect(new Set(slots).size).toBe(slots.length);
   });
 });
 

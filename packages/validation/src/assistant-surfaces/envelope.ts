@@ -69,45 +69,54 @@ function toolCallIdsForSurface(
   results: readonly AssistantSurfaceToolResult[],
 ): string[] {
   const ids: string[] = [];
-  if (surface.kind === "order-entity") {
-    pushUniqueId(ids, surface.toolCallId);
-    return ids;
+  switch (surface.kind) {
+    case "order-entity":
+    case "customer-entity":
+    case "product-entity": {
+      pushUniqueId(ids, surface.toolCallId);
+      return ids;
+    }
+    case "orders-list": {
+      const page = lastSuccessfulResult(
+        results,
+        (name) => name === ORDERS_LIST_PAGE_TOOL,
+      );
+      const counts = lastSuccessfulResult(
+        results,
+        (name) => name === ORDERS_LIST_COUNTS_TOOL,
+      );
+      pushUniqueId(ids, page?.toolCallId);
+      pushUniqueId(ids, counts?.toolCallId);
+      return ids;
+    }
+    case "customers-list": {
+      const page = lastSuccessfulResult(
+        results,
+        (name) => name === CUSTOMERS_LIST_CUSTOMERS_TOOL,
+      );
+      pushUniqueId(ids, page?.toolCallId);
+      return ids;
+    }
+    case "search-results": {
+      const search = lastSuccessfulResult(
+        results,
+        (name) =>
+          name === SEARCH_QUERY_TOOL || name === SEARCH_QUERY_ACTION_NAME,
+      );
+      pushUniqueId(ids, search?.toolCallId);
+      return ids;
+    }
+    case "orders-aggregate": {
+      const counts = lastSuccessfulResult(
+        results,
+        (name) => name === ORDERS_LIST_COUNTS_TOOL,
+      );
+      pushUniqueId(ids, counts?.toolCallId);
+      return ids;
+    }
   }
-  if (surface.kind === "orders-list") {
-    const page = lastSuccessfulResult(
-      results,
-      (name) => name === ORDERS_LIST_PAGE_TOOL,
-    );
-    const counts = lastSuccessfulResult(
-      results,
-      (name) => name === ORDERS_LIST_COUNTS_TOOL,
-    );
-    pushUniqueId(ids, page?.toolCallId);
-    pushUniqueId(ids, counts?.toolCallId);
-    return ids;
-  }
-  if (surface.kind === "customers-list") {
-    const page = lastSuccessfulResult(
-      results,
-      (name) => name === CUSTOMERS_LIST_CUSTOMERS_TOOL,
-    );
-    pushUniqueId(ids, page?.toolCallId);
-    return ids;
-  }
-  if (surface.kind === "search-results") {
-    const search = lastSuccessfulResult(
-      results,
-      (name) => name === SEARCH_QUERY_TOOL || name === SEARCH_QUERY_ACTION_NAME,
-    );
-    pushUniqueId(ids, search?.toolCallId);
-    return ids;
-  }
-  const counts = lastSuccessfulResult(
-    results,
-    (name) => name === ORDERS_LIST_COUNTS_TOOL,
-  );
-  pushUniqueId(ids, counts?.toolCallId);
-  return ids;
+  const unhandledSurfaceKind: never = surface;
+  return unhandledSurfaceKind;
 }
 
 /**

@@ -8,6 +8,7 @@ import { sharedAssistantCopy } from "@showzy/copy/assistant";
 import {
   assistantSurfaceHandoffHref,
   ASSISTANT_CUSTOMERS_LIST_ROW_MAX,
+  ASSISTANT_ENTITY_ARCHIVED_STATUS,
   ASSISTANT_CUSTOMERS_LIST_SCREEN_HREF,
   CUSTOMERS_LIST_PROMPT_LINE,
   CUSTOMERS_LIST_SURFACE_TOOLS,
@@ -66,7 +67,7 @@ function localizeCustomerRow(
   row: AssistantCustomersListRowData,
   archivedLabel: string,
 ): AssistantCustomersListRowView {
-  const archived = row.status === "archived";
+  const archived = row.status === ASSISTANT_ENTITY_ARCHIVED_STATUS;
   return {
     customerId: row.customerId,
     href: customerEditorHref(row.customerId),

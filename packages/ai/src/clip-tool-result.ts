@@ -6,6 +6,8 @@
  * keep identity fields, never `{ truncated: true }` alone.
  */
 import {
+  ASSISTANT_CLIP_ARRAY_MAX,
+  ASSISTANT_CLIP_SHRINK_ARRAY_MAX,
   ASSISTANT_TOOL_CLIPPED_STATUS,
   type AssistantClippedToolEnvelope,
 } from "@showzy/validation/assistant-surfaces";
@@ -17,7 +19,7 @@ import { staffAssistantPostgresJsonbTextChars } from "./json-chars.js";
  * `LIST_ORDERS_SUMMARY_MAX_LIMIT` / `orders_list_page` max (SHO-403) so a
  * completed 50-row page is not sliced while `nextCursor` stays null.
  */
-export const STAFF_ASSISTANT_CLIP_ARRAY_MAX = 50;
+export const STAFF_ASSISTANT_CLIP_ARRAY_MAX = ASSISTANT_CLIP_ARRAY_MAX;
 /**
  * JSON backstop after façade compact maps. SHO-403: a max-name
  * `orders_list_page` completed view of 50 compact rows plus an 80-char
@@ -28,7 +30,8 @@ export const STAFF_ASSISTANT_CLIP_ARRAY_MAX = 50;
  */
 export const STAFF_ASSISTANT_CLIP_JSON_MAX = 22_000;
 export const STAFF_ASSISTANT_CLIPPED_STATUS = ASSISTANT_TOOL_CLIPPED_STATUS;
-export const STAFF_ASSISTANT_CLIP_SHRINK_ARRAY_MAX = 3;
+export const STAFF_ASSISTANT_CLIP_SHRINK_ARRAY_MAX =
+  ASSISTANT_CLIP_SHRINK_ARRAY_MAX;
 
 /**
  * Identifier / name / status keys kept when shrinking a clipped preview.

@@ -23,6 +23,14 @@ export {
   type AssistantCollectionSurface,
 } from "./collection.js";
 export {
+  CUSTOMER_ENTITY_ACTION_NAMES,
+  CUSTOMER_ENTITY_DESTINATION,
+  CUSTOMER_ENTITY_PROMPT_LINE,
+  CUSTOMER_ENTITY_SURFACE_TOOLS,
+  parseCustomerEntitySurfaces,
+  type AssistantCustomerEntityData,
+} from "./customer-entity.js";
+export {
   ASSISTANT_CUSTOMERS_LIST_ROW_MAX,
   CUSTOMERS_LIST_ACTION_NAME,
   CUSTOMERS_LIST_COLLECTION_COLUMNS,
@@ -50,10 +58,14 @@ export {
   type StaffAssistantPresentationEnvelope,
 } from "./envelope.js";
 export {
+  ASSISTANT_CLIP_ARRAY_MAX,
+  ASSISTANT_CLIP_SHRINK_ARRAY_MAX,
+  ASSISTANT_ENTITY_ARCHIVED_STATUS,
   ASSISTANT_TOOL_CLIPPED_STATUS,
   ASSISTANT_TOOL_NON_RESULT_STATUSES,
   UNLINKED_CUSTOMER_NAME_SNAPSHOT,
   customerNameSnapshotFromPayload,
+  clipMayHaveCutArray,
   grossAmounts,
   isAssistantClippedToolEnvelope,
   isAssistantSurfaceResultOutput,
@@ -61,6 +73,7 @@ export {
   lastSuccessfulResult,
   moneyMinorFromFields,
   quantityMilliWire,
+  textOrNull,
   unwrapToolOutput,
   type AssistantClippedToolEnvelope,
   type AssistantMoneyMinor,
@@ -104,6 +117,14 @@ export {
   type AssistantOrdersListData,
   type AssistantOrdersListRowData,
 } from "./orders-list.js";
+export {
+  PRODUCT_ENTITY_ACTION_NAMES,
+  PRODUCT_ENTITY_DESTINATION,
+  PRODUCT_ENTITY_PROMPT_LINE,
+  PRODUCT_ENTITY_SURFACE_TOOLS,
+  parseProductEntitySurfaces,
+  type AssistantProductEntityData,
+} from "./product-entity.js";
 export {
   ASSISTANT_SEARCH_RESULTS_GROUP_HIT_MAX,
   ASSISTANT_SEARCH_RESULTS_HIT_MAX,
