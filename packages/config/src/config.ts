@@ -192,6 +192,15 @@ const envObjectSchema = z.object({
     .max(AI_UNKNOWN_MODEL_TURN_USD_MAX)
     .default(0.1),
 
+  VOICE_GOOGLE_CREDENTIALS_FILE: z.string().min(1).optional(),
+
+  VOICE_GOOGLE_PROJECT_ID: z.string().min(1).optional(),
+
+  VOICE_GOOGLE_LOCATION: z
+    .string()
+    .regex(/^[a-z]+(?:-[a-z]+[0-9]*)*$/)
+    .default("eu"),
+
   SHO_URLS: z
     .string()
     .default("")
@@ -357,6 +366,11 @@ export interface ServerConfig {
      */
     readonly unknownModelTurnUsd: number;
   };
+  readonly voice: {
+    readonly googleCredentialsFile: string | undefined;
+    readonly googleProjectId: string | undefined;
+    readonly googleLocation: string;
+  };
   readonly sho: {
     readonly urls: readonly string[];
     readonly serviceToken: string | undefined;
@@ -470,6 +484,11 @@ export function loadServerConfig(
       dailyBudgetUsdPerCompany: parsed.AI_DAILY_BUDGET_USD_PER_COMPANY,
       dailyBudgetUsdGlobal: parsed.AI_DAILY_BUDGET_USD_GLOBAL,
       unknownModelTurnUsd: parsed.AI_UNKNOWN_MODEL_TURN_USD,
+    },
+    voice: {
+      googleCredentialsFile: parsed.VOICE_GOOGLE_CREDENTIALS_FILE,
+      googleProjectId: parsed.VOICE_GOOGLE_PROJECT_ID,
+      googleLocation: parsed.VOICE_GOOGLE_LOCATION,
     },
     sho: {
       urls: parsed.SHO_URLS,
