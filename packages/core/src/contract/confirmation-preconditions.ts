@@ -6,7 +6,17 @@ const HUMAN_PRINCIPALS: ReadonlySet<ActionPrincipal> = new Set([
   "account",
 ]);
 
-export const CONFIRMABLE_RISKS: readonly ActionRisk[] = ["write", "high"];
+export const CONFIRMABLE_RISKS = [
+  "write",
+  "high",
+] as const satisfies readonly ActionRisk[];
+
+export type ConfirmableRisk = (typeof CONFIRMABLE_RISKS)[number];
+
+export function isConfirmableRisk(risk: ActionRisk): risk is ConfirmableRisk {
+  const confirmable: readonly ActionRisk[] = CONFIRMABLE_RISKS;
+  return confirmable.includes(risk);
+}
 
 export interface ConfirmationSubject {
   readonly principal: ActionPrincipal;

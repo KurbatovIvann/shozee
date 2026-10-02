@@ -11,6 +11,11 @@ export {
   deriveAiToolSources,
 } from "./ai-exposure.js";
 export {
+  CONFIRMABLE_RISKS,
+  isConfirmableRisk,
+} from "./confirmation-preconditions.js";
+export type { ConfirmableRisk } from "./confirmation-preconditions.js";
+export {
   DECLARED_ERROR_CODES,
   isDeclaredErrorCode,
   undeclarableErrorReason,

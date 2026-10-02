@@ -1,6 +1,6 @@
 import { deriveAiToolSources } from "../../contract/ai-exposure.js";
 import {
-  CONFIRMABLE_RISKS,
+  isConfirmableRisk,
   isHumanPrincipal,
 } from "../../contract/confirmation-preconditions.js";
 import type { ActionContract } from "../../contract/index.js";
@@ -8,7 +8,7 @@ import type { ActionContract } from "../../contract/index.js";
 export function previewIsRequired(contract: ActionContract): boolean {
   return (
     deriveAiToolSources([contract]).length === 1 &&
-    CONFIRMABLE_RISKS.includes(contract.risk) &&
+    isConfirmableRisk(contract.risk) &&
     contract.idempotent &&
     isHumanPrincipal(contract.principal)
   );
