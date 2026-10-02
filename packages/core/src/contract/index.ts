@@ -28,6 +28,7 @@ export {
   ActionContractDefinitionError,
   defineActionContract,
 } from "./define-action-contract.js";
+export { ACTION_RISKS } from "./types.js";
 export type {
   ActionAiExposure,
   ActionContract,

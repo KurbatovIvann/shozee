@@ -1,16 +1,12 @@
-import { CONFIRMABLE_RISKS, isConfirmableRisk } from "@showzy/core/contract";
-import type { ActionRisk } from "@showzy/core/contract";
+import {
+  ACTION_RISKS,
+  CONFIRMABLE_RISKS,
+  isConfirmableRisk,
+} from "@showzy/core/contract";
 import { ASSISTANT_PREVIEW_LEVELS } from "@showzy/validation/assistant-chat";
 import { describe, expect, it } from "vitest";
 
 import { assistantPreviewLevel } from "./assistant-kit-confirmation.js";
-
-const EVERY_RISK = [
-  "read",
-  "draft",
-  "write",
-  "high",
-] as const satisfies readonly ActionRisk[];
 
 describe("assistantPreviewLevel", () => {
   it("gives every confirmable risk a level, so the write pauses", () => {
@@ -23,7 +19,9 @@ describe("assistantPreviewLevel", () => {
   });
 
   it("gives no level to a risk core never confirms", () => {
-    const unconfirmable = EVERY_RISK.filter((risk) => !isConfirmableRisk(risk));
+    const unconfirmable = ACTION_RISKS.filter(
+      (risk) => !isConfirmableRisk(risk),
+    );
     expect(unconfirmable).not.toHaveLength(0);
     for (const risk of unconfirmable) {
       expect(assistantPreviewLevel(risk)).toBeUndefined();

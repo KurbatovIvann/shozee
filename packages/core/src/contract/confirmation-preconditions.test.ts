@@ -4,6 +4,7 @@ import {
   CONFIRMABLE_RISKS,
   isConfirmableRisk,
 } from "./confirmation-preconditions.js";
+import { ACTION_RISKS } from "./types.js";
 import type { ActionRisk } from "./types.js";
 
 const RISK_IS_CONFIRMABLE: Record<ActionRisk, boolean> = {
@@ -13,28 +14,21 @@ const RISK_IS_CONFIRMABLE: Record<ActionRisk, boolean> = {
   high: true,
 };
 
-const EVERY_RISK = [
-  "read",
-  "draft",
-  "write",
-  "high",
-] as const satisfies readonly ActionRisk[];
-
 describe("confirmable risks", () => {
   it("classifies every risk the contract can declare", () => {
-    expect([...EVERY_RISK].sort()).toEqual(
+    expect([...ACTION_RISKS].sort()).toEqual(
       Object.keys(RISK_IS_CONFIRMABLE).sort(),
     );
   });
 
   it("holds exactly the risks a person can be asked to confirm", () => {
     expect([...CONFIRMABLE_RISKS].sort()).toEqual(
-      EVERY_RISK.filter((risk) => RISK_IS_CONFIRMABLE[risk]).sort(),
+      ACTION_RISKS.filter((risk) => RISK_IS_CONFIRMABLE[risk]).sort(),
     );
   });
 
   it("guards each risk the same way the set lists it", () => {
-    for (const risk of EVERY_RISK) {
+    for (const risk of ACTION_RISKS) {
       expect(isConfirmableRisk(risk)).toBe(RISK_IS_CONFIRMABLE[risk]);
     }
   });

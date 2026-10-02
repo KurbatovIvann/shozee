@@ -20,8 +20,10 @@ export type ActionTransport = "client" | "internal";
 /** `exposed` actions become AI tools; requires `transport: client`. */
 export type ActionAiExposure = "exposed" | "internal";
 
+export const ACTION_RISKS = ["read", "draft", "write", "high"] as const;
+
 /** `read` actions run in a read-only transaction with a `ReadTx` facade. */
-export type ActionRisk = "read" | "draft" | "write" | "high";
+export type ActionRisk = (typeof ACTION_RISKS)[number];
 
 /**
  * Public-only scope: `target` resolves one published company/resource via a
