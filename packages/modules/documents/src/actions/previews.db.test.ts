@@ -40,12 +40,15 @@ const fixtures = {
   orderA: randomUUID(),
   orderShared: randomUUID(),
   orderRevoked: randomUUID(),
+  orderExpired: randomUUID(),
   itemA: randomUUID(),
   itemShared: randomUUID(),
   itemRevoked: randomUUID(),
+  itemExpired: randomUUID(),
   docA: randomUUID(),
   docShared: randomUUID(),
   docRevoked: randomUUID(),
+  docExpired: randomUUID(),
   counterpartyA: randomUUID(),
   counterpartyB: randomUUID(),
   missingId: randomUUID(),
@@ -270,6 +273,14 @@ beforeAll(async () => {
     productId: fixtures.productA,
     orderNumber: "KA-3",
   });
+  await insertSeedOrder({
+    id: fixtures.orderExpired,
+    itemId: fixtures.itemExpired,
+    companyId: companyA,
+    customerId: fixtures.customerA,
+    productId: fixtures.productA,
+    orderNumber: "KA-4",
+  });
   await insertSeedDocument({
     id: fixtures.docShared,
     companyId: companyA,
@@ -282,20 +293,32 @@ beforeAll(async () => {
     orderId: fixtures.orderRevoked,
     documentNumber: "KA-РХ-000003",
   });
+  await insertSeedDocument({
+    id: fixtures.docExpired,
+    companyId: companyA,
+    orderId: fixtures.orderExpired,
+    documentNumber: "KA-РХ-000004",
+  });
 
   await kit.db.runtime.db.insert(documentShareTokens).values([
     {
       companyId: companyA,
       documentId: fixtures.docShared,
       tokenHash: "a".repeat(64),
-      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      expiresAt: new Date(Date.now() + 60_000),
     },
     {
       companyId: companyA,
       documentId: fixtures.docRevoked,
       tokenHash: "b".repeat(64),
-      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      expiresAt: new Date(Date.now() + 60_000),
       revokedAt: new Date("2026-03-16T00:00:00Z"),
+    },
+    {
+      companyId: companyA,
+      documentId: fixtures.docExpired,
+      tokenHash: "c".repeat(64),
+      expiresAt: new Date(Date.now() - 60_000),
     },
   ]);
 });
@@ -331,7 +354,7 @@ describe("documents preview cards (core.md §7)", () => {
     ]);
   });
 
-  it("warns about the revoked link only when one is still unrevoked", async () => {
+  it("warns about the revoked link only when one is still live", async () => {
     const preview = await previewOf(shareDocument, {
       documentId: fixtures.docShared,
     });
@@ -345,6 +368,15 @@ describe("documents preview cards (core.md §7)", () => {
       documentId: fixtures.docRevoked,
     });
     expect(preview.notes?.[0]).not.toContain("відкликано");
+  });
+
+  it("treats an expired unrevoked link as no link at all", async () => {
+    const preview = await previewOf(shareDocument, {
+      documentId: fixtures.docExpired,
+    });
+    expect(preview.notes).toEqual([
+      "Буде створено нове посилання, і воно діє 90 днів.",
+    ]);
   });
 
   it("previews documents.requestSign with the key-possession note", async () => {

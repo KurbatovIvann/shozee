@@ -27,7 +27,7 @@ import {
 } from "../services/mint-share-pdf.js";
 import {
   documentPreviewLines,
-  hasUnrevokedShareToken,
+  hasLiveShareToken,
   loadDocumentPreviewFacts,
 } from "../services/preview-document.js";
 import { getDocumentShareOrigin } from "../services/share-origin.js";
@@ -145,7 +145,7 @@ export const shareDocument = implementAction(shareDocumentContract, {
       companyId,
       documentId: input.documentId,
     });
-    const replacesActiveLink = await hasUnrevokedShareToken({
+    const replacesActiveLink = await hasLiveShareToken({
       tx: env.tx,
       companyId,
       documentId: input.documentId,

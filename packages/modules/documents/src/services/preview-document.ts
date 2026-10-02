@@ -3,13 +3,14 @@ import type { ActionPreviewLine } from "@showzy/core/errors";
 import { NotFoundError } from "@showzy/core/errors";
 import { documents, documentShareTokens } from "@showzy/db/schema/documents";
 import { parseDbEnum } from "@showzy/module-kit/parse-db-enum";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { z } from "zod";
 
 import {
   documentStatusSchema,
   documentTypeSchema,
 } from "../actions/document-view.contract.js";
+import { liveShareTokenConditions } from "./share-token-liveness.js";
 
 type PreviewTx = ActionPreviewEnv["tx"];
 type DocumentType = z.output<typeof documentTypeSchema>;
@@ -77,7 +78,7 @@ export async function loadDocumentPreviewFacts(env: {
   };
 }
 
-export async function hasUnrevokedShareToken(env: {
+export async function hasLiveShareToken(env: {
   readonly tx: PreviewTx;
   readonly companyId: string;
   readonly documentId: string;
@@ -89,7 +90,7 @@ export async function hasUnrevokedShareToken(env: {
       and(
         eq(documentShareTokens.companyId, env.companyId),
         eq(documentShareTokens.documentId, env.documentId),
-        isNull(documentShareTokens.revokedAt),
+        ...liveShareTokenConditions(new Date()),
       ),
     )
     .limit(1);
