@@ -38,6 +38,19 @@ export const textPartStatusSchema = z.enum([
  * caller may offer to continue it. What the turn stored before it stopped
  * stands.
  */
+export const traceOutcomeSchema = z.enum([
+  "done",
+  "rejected",
+  "failed",
+  "chosen",
+]);
+
+export const traceAttemptSchema = z.strictObject({
+  action: z.string().min(1).max(128),
+  outcome: z.enum(["done", "failed"]),
+  recordId: z.string().min(1).max(128).nullable(),
+});
+
 export const chatPartSchema = z.discriminatedUnion("kind", [
   z.strictObject({
     kind: z.literal("text"),
@@ -57,6 +70,14 @@ export const chatPartSchema = z.discriminatedUnion("kind", [
     interactionId: interactionIdSchema,
     revision: revisionSchema,
     pause: publicPauseSchema,
+  }),
+  z.strictObject({
+    kind: z.literal("trace"),
+    interactionId: interactionIdSchema,
+    interactionKind: z.string().min(1).max(64),
+    outcome: traceOutcomeSchema,
+    optionId: z.string().min(1).max(128).nullable(),
+    attempts: z.array(traceAttemptSchema),
   }),
 ]);
 

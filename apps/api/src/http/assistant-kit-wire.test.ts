@@ -315,6 +315,43 @@ describe("the window a server writes and the window a client reads", () => {
     expect(assistantChatWindowSchema.safeParse(window).success).toBe(true);
   });
 
+  it("agrees on the trace a closed card left, and keeps it on a read", async () => {
+    const instance = kit();
+    const scope = { conversationId: CONVERSATION, bind: BIND };
+    await instance.messages.write(scope, {
+      kind: "append",
+      messageId: "88888888-8888-4888-8888-888888888888",
+      role: "assistant",
+      parts: [
+        {
+          kind: "trace",
+          interactionId: "99999999-9999-4999-8999-999999999999",
+          interactionKind: "confirmation",
+          outcome: "done",
+          optionId: null,
+          attempts: [
+            {
+              action: "customers.updateCustomer",
+              outcome: "done",
+              recordId: "77777777-7777-4777-8777-777777777777",
+            },
+          ],
+        },
+        { kind: "text", text: "", status: "complete" },
+      ],
+    });
+
+    const window = await instance.messages.read(scope);
+
+    expect(window.messages).toHaveLength(1);
+    expect(chatWindowSchema.safeParse(window).success).toBe(true);
+    const client = assistantChatWindowSchema.safeParse(withTurn(window));
+    expect(client.success).toBe(true);
+    expect(
+      client.success && client.data.messages[0]?.parts.map((part) => part.kind),
+    ).toEqual(["trace", "text"]);
+  });
+
   it("refuses a field one side would add without the other", () => {
     const window = {
       conversationId: CONVERSATION,

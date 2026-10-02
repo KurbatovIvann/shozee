@@ -67,6 +67,29 @@ export type AssistantChatTextStatus = z.output<
  * result, not an input shape — so the reader localizes defensively and drops a
  * payload it cannot render. Named as a gap rather than papered over.
  */
+export const ASSISTANT_TRACE_OUTCOMES = [
+  "done",
+  "rejected",
+  "failed",
+  "chosen",
+] as const;
+
+export const assistantTraceOutcomeSchema = z.enum(ASSISTANT_TRACE_OUTCOMES);
+
+export type AssistantTraceOutcome = z.output<
+  typeof assistantTraceOutcomeSchema
+>;
+
+export const assistantTraceAttemptSchema = z.strictObject({
+  action: z.string().min(1).max(128),
+  outcome: z.enum(["done", "failed"]),
+  recordId: z.string().min(1).max(128).nullable(),
+});
+
+export type AssistantTraceAttempt = z.output<
+  typeof assistantTraceAttemptSchema
+>;
+
 export const assistantChatPartSchema = z.discriminatedUnion("kind", [
   z.strictObject({
     kind: z.literal("text"),
@@ -86,9 +109,22 @@ export const assistantChatPartSchema = z.discriminatedUnion("kind", [
     revision: z.number().int().positive(),
     pause: assistantPauseSchema,
   }),
+  z.strictObject({
+    kind: z.literal("trace"),
+    interactionId: z.uuid(),
+    interactionKind: z.string().min(1).max(64),
+    outcome: assistantTraceOutcomeSchema,
+    optionId: z.string().min(1).max(128).nullable(),
+    attempts: z.array(assistantTraceAttemptSchema),
+  }),
 ]);
 
 export type AssistantChatPart = z.output<typeof assistantChatPartSchema>;
+
+export type AssistantChatTracePart = Extract<
+  AssistantChatPart,
+  { readonly kind: "trace" }
+>;
 
 /**
  * `revision` is the server's count of writes to this message: 1 when stored,

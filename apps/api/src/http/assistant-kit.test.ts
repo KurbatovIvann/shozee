@@ -40,6 +40,8 @@ import {
   type AssistantInteractionTypes,
   type AssistantTurnStore,
   type ChoiceResolution,
+  type ConfirmationAlsoSecret,
+  type ConfirmationSecret,
   type ResolveAnswer,
 } from "@showzy/assistant-runtime";
 import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
@@ -312,6 +314,35 @@ function harness(options?: {
   return { kit, app, history, queue, turns, bind: `${USER}:${COMPANY}` };
 }
 
+const CONTINUATION = {
+  messages: [
+    { role: "user" as const, content: "create one" },
+    {
+      role: "assistant" as const,
+      content: [
+        {
+          type: "tool-call" as const,
+          toolCallId: "toolu_create",
+          toolName: "orders_create",
+          input: { label: "two matches" },
+        },
+      ],
+    },
+    {
+      role: "tool" as const,
+      content: [
+        {
+          type: "tool-result" as const,
+          toolCallId: "toolu_create",
+          toolName: "orders_create",
+          output: { type: "json" as const, value: { status: "paused" } },
+        },
+      ],
+    },
+  ],
+  pausedToolCall: { id: "toolu_create" as never, name: "orders_create" },
+};
+
 async function openPause(kit: Kit, bind: string, withCreate = false) {
   const opened = await kit.open({
     conversationId: CONVERSATION,
@@ -346,38 +377,66 @@ async function openPause(kit: Kit, bind: string, withCreate = false) {
       input: { customerQuery: "two matches", items: [] },
       target: { kind: "customer", query: "two matches" },
     },
-    continuation: {
-      messages: [
-        { role: "user", content: "create one" },
-        {
-          role: "assistant",
-          content: [
-            {
-              type: "tool-call",
-              toolCallId: "toolu_create",
-              toolName: "orders_create",
-              input: { label: "two matches" },
-            },
-          ],
-        },
-        {
-          role: "tool",
-          content: [
-            {
-              type: "tool-result",
-              toolCallId: "toolu_create",
-              toolName: "orders_create",
-              output: { type: "json", value: { status: "paused" } },
-            },
-          ],
-        },
-      ],
-      pausedToolCall: { id: "toolu_create" as never, name: "orders_create" },
-    },
+    continuation: CONTINUATION,
   });
   if (opened.kind !== "opened")
     throw new Error(`expected opened: ${opened.kind}`);
   return opened.pause;
+}
+
+const UPDATE_ACTION = "customers.updateCustomer";
+const CONFIRM_ACTION = "orders.confirm";
+const RECORD = "99999999-9999-4999-8999-999999999999";
+
+function preview(title: string) {
+  return { title, lines: [], notes: [] };
+}
+
+async function openConfirmation(
+  kit: Kit,
+  bind: string,
+  also: readonly ConfirmationAlsoSecret[] = [],
+) {
+  const opened = await kit.open({
+    conversationId: CONVERSATION,
+    bind,
+    kind: "confirmation",
+    prompt: {
+      summary: "Оновити клієнта?",
+      preview: preview("Оновити клієнта"),
+      also: also.map((one) => one.preview),
+      level: "card",
+    },
+    secret: {
+      actionName: UPDATE_ACTION,
+      canonicalInput: { customerId: RECORD },
+      idempotencyKey: "key-1",
+      challengeId: "challenge-1",
+      also,
+    } satisfies ConfirmationSecret,
+    continuation: CONTINUATION,
+  });
+  if (opened.kind !== "opened")
+    throw new Error(`expected opened: ${opened.kind}`);
+  return opened.pause;
+}
+
+function approvalBody(interactionId: string, revision: number) {
+  return {
+    commandId: COMMAND,
+    conversationId: CONVERSATION,
+    interactionId,
+    revision,
+    answer: { approved: true },
+  };
+}
+
+type KitPart = NonNullable<
+  KitBody["window"]
+>["messages"][number]["parts"][number];
+
+function traceOf(parts: readonly KitPart[]) {
+  return parts.find((part) => part.kind === "trace");
 }
 
 function headersFor(company: string): Headers {
@@ -454,6 +513,14 @@ type KitBody = {
         readonly status?: string;
         readonly cardId?: string;
         readonly interactionId?: string;
+        readonly interactionKind?: string;
+        readonly outcome?: string;
+        readonly optionId?: string | null;
+        readonly attempts?: readonly {
+          readonly action: string;
+          readonly outcome: string;
+          readonly recordId: string | null;
+        }[];
       }[];
     }[];
     readonly olderCursor: string | null;
@@ -1692,5 +1759,200 @@ describe("the full round trip through HTTP", () => {
     );
     expect(kinds.filter((kind) => kind === "card")).toHaveLength(1);
     expect(await kit.peek({ conversationId: CONVERSATION, bind })).toBeNull();
+  });
+});
+
+describe("the trace a closed card leaves in the stored log", () => {
+  it("names the record an approved preview wrote, on the placeholder", async () => {
+    const written: ResolveAnswer = () =>
+      Promise.resolve({
+        kind: "ok",
+        result: { customerId: RECORD, name: "Оксана" },
+      } satisfies ToolOutcome);
+    const { app, kit, bind } = harness({ resolveAnswer: written });
+    const pause = await openConfirmation(kit, bind);
+
+    const response = await post(
+      app,
+      ASSISTANT_KIT_ANSWER_PATH,
+      approvalBody(pause.interactionId, pause.revision),
+    );
+    expect(response.status).toBe(202);
+
+    const body = (await response.json()) as KitBody;
+    const trace = traceOf(body.window?.messages.at(-1)?.parts ?? []);
+    expect(trace).toEqual({
+      kind: "trace",
+      interactionId: pause.interactionId,
+      interactionKind: "confirmation",
+      outcome: "done",
+      optionId: null,
+      attempts: [{ action: UPDATE_ACTION, outcome: "done", recordId: RECORD }],
+    });
+  });
+
+  it("stores no card body and no domain field beside the ids", async () => {
+    const written: ResolveAnswer = () =>
+      Promise.resolve({
+        kind: "ok",
+        result: { customerId: RECORD, name: "Оксана", phone: "+380" },
+      } satisfies ToolOutcome);
+    const { app, kit, bind } = harness({ resolveAnswer: written });
+    const pause = await openConfirmation(kit, bind);
+
+    const response = await post(
+      app,
+      ASSISTANT_KIT_ANSWER_PATH,
+      approvalBody(pause.interactionId, pause.revision),
+    );
+    const body = (await response.json()) as KitBody;
+    const trace = traceOf(body.window?.messages.at(-1)?.parts ?? []);
+
+    expect(Object.keys(trace ?? {}).sort()).toEqual([
+      "attempts",
+      "interactionId",
+      "interactionKind",
+      "kind",
+      "optionId",
+      "outcome",
+    ]);
+    expect(Object.keys(trace?.attempts?.[0] ?? {}).sort()).toEqual([
+      "action",
+      "outcome",
+      "recordId",
+    ]);
+    expect(JSON.stringify(trace)).not.toContain("Оксана");
+  });
+
+  it("reports one outcome per attempt when the second write of a bundle failed", async () => {
+    const halted: ResolveAnswer = () =>
+      Promise.resolve({
+        kind: "ok",
+        result: {
+          done: [{ action: UPDATE_ACTION, result: { customerId: RECORD } }],
+          failed: {
+            action: CONFIRM_ACTION,
+            code: "CONFLICT",
+            message: "вже підтверджено",
+          },
+        },
+      } satisfies ToolOutcome);
+    const { app, kit, bind } = harness({ resolveAnswer: halted });
+    const pause = await openConfirmation(kit, bind, [
+      {
+        actionName: CONFIRM_ACTION,
+        canonicalInput: { orderId: RECORD },
+        idempotencyKey: "key-2",
+        challengeId: "challenge-2",
+        preview: preview("Підтвердити замовлення"),
+        level: "card",
+      },
+    ]);
+
+    const response = await post(
+      app,
+      ASSISTANT_KIT_ANSWER_PATH,
+      approvalBody(pause.interactionId, pause.revision),
+    );
+    const body = (await response.json()) as KitBody;
+    const trace = traceOf(body.window?.messages.at(-1)?.parts ?? []);
+
+    expect(trace?.outcome).toBe("failed");
+    expect(trace?.attempts).toEqual([
+      { action: UPDATE_ACTION, outcome: "done", recordId: RECORD },
+      { action: CONFIRM_ACTION, outcome: "failed", recordId: null },
+    ]);
+  });
+
+  it("names the option a settled choice resolved to", async () => {
+    const { app, kit, bind } = harness();
+    const pause = await openPause(kit, bind);
+
+    const response = await post(
+      app,
+      ASSISTANT_KIT_ANSWER_PATH,
+      answerBody(pause.interactionId, pause.revision),
+    );
+    const body = (await response.json()) as KitBody;
+    const trace = traceOf(body.window?.messages.at(-1)?.parts ?? []);
+
+    expect(trace).toMatchObject({
+      interactionId: pause.interactionId,
+      interactionKind: "choice",
+      outcome: "chosen",
+      optionId: "entity-b",
+      attempts: [],
+    });
+  });
+
+  it("records a dropped question as rejected, once", async () => {
+    const { app, kit, bind } = harness();
+    const pause = await openConfirmation(kit, bind);
+    const dropping = {
+      conversationId: CONVERSATION,
+      interactionId: pause.interactionId,
+    };
+
+    await post(app, ASSISTANT_KIT_ABANDON_PATH, dropping);
+    const second = await post(app, ASSISTANT_KIT_ABANDON_PATH, dropping);
+    const body = (await second.json()) as KitBody;
+    const traces = (body.window?.messages ?? []).flatMap((message) =>
+      message.parts.filter((part) => part.kind === "trace"),
+    );
+
+    expect(traces).toEqual([
+      {
+        kind: "trace",
+        interactionId: pause.interactionId,
+        interactionKind: "confirmation",
+        outcome: "rejected",
+        optionId: null,
+        attempts: [],
+      },
+    ]);
+  });
+
+  it("leaves no trace while the card is still answerable after a refused action", async () => {
+    const { app, kit, bind } = harness({ resolveAnswer: FAILING_RESOLVE });
+    const pause = await openConfirmation(kit, bind);
+
+    const response = await post(
+      app,
+      ASSISTANT_KIT_ANSWER_PATH,
+      approvalBody(pause.interactionId, pause.revision),
+    );
+    expect(response.status).toBe(409);
+
+    const body = (await response.json()) as KitBody;
+    const traces = (body.window?.messages ?? []).flatMap((message) =>
+      message.parts.filter((part) => part.kind === "trace"),
+    );
+    expect(traces).toEqual([]);
+    expect(body.window?.openPause?.interactionId).toBe(pause.interactionId);
+  });
+
+  it("is still there after a reload, with the question it closed", async () => {
+    const written: ResolveAnswer = () =>
+      Promise.resolve({
+        kind: "ok",
+        result: { customerId: RECORD },
+      } satisfies ToolOutcome);
+    const { app, kit, bind } = harness({ resolveAnswer: written });
+    const pause = await openConfirmation(kit, bind);
+    await post(
+      app,
+      ASSISTANT_KIT_ANSWER_PATH,
+      approvalBody(pause.interactionId, pause.revision),
+    );
+
+    const reload = await get(app, messagesPath());
+    const body = (await reload.json()) as KitBody;
+    const traces = (body.window?.messages ?? []).flatMap((message) =>
+      message.parts.filter((part) => part.kind === "trace"),
+    );
+
+    expect(traces).toHaveLength(1);
+    expect(traces[0]?.interactionId).toBe(pause.interactionId);
+    expect(traces[0]?.outcome).toBe("done");
   });
 });

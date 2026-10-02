@@ -27,6 +27,8 @@
 import { interactionResponseSchema } from "@showzy/assistant-kit";
 import {
   acceptProvedRollback,
+  assistantCloseTrace,
+  assistantRejectedTrace,
   assistantTurnEarnedCard,
   readAssistantChatWindow,
 } from "@showzy/assistant-runtime";
@@ -95,11 +97,24 @@ export async function handleAssistantKitAbandon(
     requestId,
     clientIp: c.get("clientIp"),
   });
+  const scope = { conversationId, bind: caller.bind };
+  const open = await kit.peek(scope);
   const dropped = await kit.abandon({
-    conversationId,
-    bind: caller.bind,
+    ...scope,
     interactionId: parsed.data.interactionId,
   });
+
+  if (
+    dropped.kind === "cancelled" &&
+    open?.interactionId === parsed.data.interactionId
+  ) {
+    await kit.messages.write(scope, {
+      kind: "append",
+      messageId: randomUUID(),
+      role: "assistant",
+      parts: [assistantRejectedTrace(open)],
+    });
+  }
 
   // Already gone answers the same as just cancelled: the caller wanted no open
   // question, and there is none. A second tap is not an error.
@@ -113,10 +128,7 @@ export async function handleAssistantKitAbandon(
     200,
     {
       status: "abandoned",
-      window: await readAssistantChatWindow(kit, turns, {
-        conversationId,
-        bind: caller.bind,
-      }),
+      window: await readAssistantChatWindow(kit, turns, scope),
     },
     requestId,
   );
@@ -241,6 +253,13 @@ export async function handleAssistantKitAnswer(
     context,
   });
 
+  const trace = assistantCloseTrace({
+    interactionId: body.interactionId,
+    kind: claimed.record.kind,
+    value: claimed.value,
+    outcome: resolvedOutcome,
+  });
+
   if (resolvedOutcome.kind === "pause") {
     // The answer settled one ambiguity and uncovered the next — a picker for
     // the customer, then one for the product. A new question, not a failure:
@@ -289,7 +308,7 @@ export async function handleAssistantKitAnswer(
       kind: "append",
       messageId: randomUUID(),
       role: "assistant",
-      parts: [asked],
+      parts: [...trace, asked],
     });
     if (stored.kind === "wrong_owner") {
       return goneResponse(requestId);
@@ -330,7 +349,7 @@ export async function handleAssistantKitAnswer(
       kind: "answer",
       conversationId: body.conversationId,
       commandId: body.commandId,
-      earned: assistantTurnEarnedCard(resolvedOutcome.card),
+      earned: [...assistantTurnEarnedCard(resolvedOutcome.card), ...trace],
       history: kit.resume(claimed, resolvedOutcome.result).messages,
       bind: caller.bind,
       sessionId: caller.sessionId,

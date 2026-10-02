@@ -3,6 +3,7 @@
  * (ADR-0039). Imported by `apps/api` and `apps/worker` only.
  */
 export * from "./assistant-budget-guard.js";
+export * from "./assistant-close-trace.js";
 export * from "./assistant-interactions.js";
 export * from "./assistant-jobs.js";
 export * from "./assistant-invocation.js";
