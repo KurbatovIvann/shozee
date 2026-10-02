@@ -9,6 +9,8 @@ import {
 } from "@showzy/assistant-kit";
 import type { ShoFallbackReason } from "@showzy/sho-protocol";
 
+import type { ShoPlanFallbackReason } from "./sho-plan.js";
+
 import {
   emptyStaffAssistantBudgetHold,
   type StaffAssistantBudgetHold,
@@ -26,7 +28,8 @@ export type ShoTurnFallbackReason =
   | "tool_unavailable"
   | "tool_failed"
   | "unsendable_tool_call_id"
-  | ShoFallbackReason;
+  | ShoFallbackReason
+  | ShoPlanFallbackReason;
 
 export interface ShoToolCall {
   readonly toolName: string;

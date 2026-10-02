@@ -11,6 +11,7 @@ import {
   createRedisAssistantPresence,
   createRedisAssistantStreamSlots,
   logStaffAssistantMount,
+  mountShoEngine,
   staffAssistantMount,
 } from "@showzy/assistant-runtime";
 import type { ServerConfig } from "@showzy/config";
@@ -168,6 +169,8 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
           slots: createRedisAssistantStreamSlots(redis),
         });
 
+  const shoEngine = mountShoEngine({ sho: config.sho, pipeline });
+
   const app = createApp({
     auth,
     registry,
@@ -189,6 +192,7 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
             model: assistantKitModel,
             provider: staffProvider,
             redis,
+            ...(shoEngine === undefined ? {} : { sho: shoEngine }),
           }),
         }),
     ...(assistantKitEvents === undefined ? {} : { assistantKitEvents }),

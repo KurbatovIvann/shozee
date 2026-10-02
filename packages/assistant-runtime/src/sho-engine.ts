@@ -1,6 +1,8 @@
 import { STAFF_ASSISTANT_TIME_ZONE } from "@showzy/ai";
+import type { ActionPipelineDeps } from "@showzy/core";
 import { PermissionDeniedError } from "@showzy/core/errors";
 import {
+  createShoClient,
   SHO_DEFAULT_TIMEOUT_MS,
   type ShoClient,
   type ShoNow,
@@ -9,9 +11,11 @@ import {
 } from "@showzy/sho-protocol";
 
 import {
+  createShoContextSource,
   parseWithShoContext,
   type ShoContextSource,
 } from "./sho-context-source.js";
+import { createShoPlanner } from "./sho-plan.js";
 import type { ShoEngine, ShoPlan } from "./sho-turn.js";
 
 export interface ShoVerifiedMember {
@@ -93,5 +97,28 @@ export function createShoEngine(deps: ShoEngineDeps): ShoEngineFor {
       }
       return deps.plan(parsed.value.result, request.now);
     },
+  });
+}
+
+export interface ShoMountConfig {
+  readonly urls: readonly string[];
+  readonly serviceToken: string | undefined;
+  readonly actions: readonly string[];
+}
+
+export interface ShoMountDeps {
+  readonly sho: ShoMountConfig;
+  readonly pipeline: ActionPipelineDeps;
+}
+
+export function mountShoEngine(deps: ShoMountDeps): ShoEngineFor | undefined {
+  const { urls, serviceToken, actions } = deps.sho;
+  if (urls.length === 0 || serviceToken === undefined) {
+    return undefined;
+  }
+  return createShoEngine({
+    client: createShoClient({ urls: [...urls], token: serviceToken }),
+    source: createShoContextSource({ pipeline: deps.pipeline }),
+    plan: createShoPlanner({ actions }),
   });
 }
