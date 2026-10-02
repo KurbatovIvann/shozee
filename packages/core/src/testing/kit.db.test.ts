@@ -366,6 +366,22 @@ describe("suites fail on seeded violations", () => {
     );
   });
 
+  it("detects a preview that refuses a foreign id differently from execution", async () => {
+    await expect(
+      runCrossTenantCase(
+        kit,
+        isolationCase(
+          leaky.staffPublishProductDenyingAtPreview,
+          { input: ownProduct },
+          { input: foreignProduct },
+          { missing: { input: missingProduct } },
+        ),
+      ),
+    ).rejects.toThrow(
+      /preview refused a foreign reference with PERMISSION_DENIED .* but execution refuses it with NOT_FOUND/,
+    );
+  });
+
   it("detects a preview that names the owner of a foreign id", async () => {
     await expect(
       runCrossTenantCase(
