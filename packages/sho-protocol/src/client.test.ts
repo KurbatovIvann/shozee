@@ -273,13 +273,21 @@ describe("createShoClient.putContext", () => {
         ...contextRequest,
         contextKey: "not a context key",
       }),
-    ).toEqual({ outcome: "fallback", reason: "input_rejected", httpStatus: null });
+    ).toEqual({
+      outcome: "fallback",
+      reason: "input_rejected",
+      httpStatus: null,
+    });
     expect(
       await client(counting).phrases({
         companyId: contextRequest.companyId,
         contextKey: "not a context key",
       }),
-    ).toEqual({ outcome: "fallback", reason: "input_rejected", httpStatus: null });
+    ).toEqual({
+      outcome: "fallback",
+      reason: "input_rejected",
+      httpStatus: null,
+    });
     expect(called).toBe(false);
   });
 
@@ -355,9 +363,9 @@ describe("createShoClient model, phrases and ready", () => {
   });
 
   it("reports health only for a replica that answers ok", async () => {
-    expect(await client(json({ status: "ok" }, 200)).health(urls[0] ?? "")).toBe(
-      true,
-    );
+    expect(
+      await client(json({ status: "ok" }, 200)).health(urls[0] ?? ""),
+    ).toBe(true);
     expect(await client(json({}, 503)).health(urls[0] ?? "")).toBe(false);
   });
 

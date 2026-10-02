@@ -190,7 +190,10 @@ export function createShoClient(
         signal: controller.signal,
         headers,
       });
-      return { status: response.status, body: parseJson(await response.text()) };
+      return {
+        status: response.status,
+        body: parseJson(await response.text()),
+      };
     } catch {
       return controller.signal.aborted ? "timeout" : "unreachable";
     } finally {
