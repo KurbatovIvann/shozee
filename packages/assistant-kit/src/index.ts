@@ -81,6 +81,7 @@ export type {
 } from "./ports.js";
 
 export {
+  ABANDON_HOLD_MS,
   TURN_LEASE_MS,
   createAssistantKit,
   type AssistantKit,

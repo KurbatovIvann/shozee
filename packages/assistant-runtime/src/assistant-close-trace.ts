@@ -31,6 +31,7 @@ function storableId(value: string): string | null {
 
 const CHOICE_ENTITY_ID: keyof ChoiceResolution = "entityId";
 const CONFIRMATION_ACTION: keyof ConfirmationResolution = "actionName";
+const CONFIRMATION_ALSO: keyof ConfirmationResolution = "also";
 const ATTEMPT_ACTION: keyof ConfirmedCardAction = "action";
 const FAILURE_FIELDS: readonly (keyof ConfirmedCardFailure)[] = [
   "action",
@@ -94,25 +95,46 @@ function choiceTrace(args: CloseArgs): readonly AssistantTracePart[] {
   ];
 }
 
-function confirmedAttempts(
+function isBundleResolution(value: unknown): boolean {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const also: unknown = (value as Record<string, unknown>)[CONFIRMATION_ALSO];
+  return Array.isArray(also) && also.length > 0;
+}
+
+function bundleAttempts(result: unknown): AssistantTraceAttempt[] {
+  if (!isConfirmedCardResult(result)) {
+    return [];
+  }
+  const done = result.done.map((one): AssistantTraceAttempt => ({
+    action: one.action,
+    outcome: "done",
+    recordId: assistantTraceRecordId(one.result),
+  }));
+  const failed = result.failed;
+  return failed === undefined
+    ? done
+    : [...done, { action: failed.action, outcome: "failed", recordId: null }];
+}
+
+function singleAttempt(
   value: unknown,
   result: unknown,
 ): AssistantTraceAttempt[] {
-  if (isConfirmedCardResult(result)) {
-    const done = result.done.map((one): AssistantTraceAttempt => ({
-      action: one.action,
-      outcome: "done",
-      recordId: assistantTraceRecordId(one.result),
-    }));
-    const failed = result.failed;
-    return failed === undefined
-      ? done
-      : [...done, { action: failed.action, outcome: "failed", recordId: null }];
-  }
   const action = readText(value, CONFIRMATION_ACTION);
   return action === null
     ? []
     : [{ action, outcome: "done", recordId: assistantTraceRecordId(result) }];
+}
+
+function confirmedAttempts(
+  value: unknown,
+  result: unknown,
+): AssistantTraceAttempt[] {
+  return isBundleResolution(value)
+    ? bundleAttempts(result)
+    : singleAttempt(value, result);
 }
 
 function confirmationTrace(args: CloseArgs): readonly AssistantTracePart[] {

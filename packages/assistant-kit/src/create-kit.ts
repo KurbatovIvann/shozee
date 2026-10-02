@@ -34,7 +34,7 @@ import type {
   OpenPauseResult,
   RevisePauseResult,
 } from "./kit.js";
-import { TURN_LEASE_MS } from "./kit.js";
+import { ABANDON_HOLD_MS, TURN_LEASE_MS } from "./kit.js";
 import type {
   ClaimResult,
   PauseRecord,
@@ -378,13 +378,19 @@ export function createAssistantKit<T extends AnyTypes>(
       if (
         existing === null ||
         existing.record.interactionId !== input.interactionId ||
-        existing.record.status === "cancelled"
+        existing.record.status !== "open"
       ) {
         return { kind: "gone" };
       }
       const cancelled: PauseRecord = {
         ...existing.record,
         status: "cancelled",
+        expiresAt: new Date(
+          Math.min(
+            Date.parse(existing.record.expiresAt),
+            deps.clock.now().getTime() + ABANDON_HOLD_MS,
+          ),
+        ).toISOString(),
       };
       if (!(await put(cancelled, existing.raw))) {
         return { kind: "gone" };

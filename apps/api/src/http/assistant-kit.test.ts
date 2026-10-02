@@ -1986,6 +1986,48 @@ describe("the trace a closed card leaves in the stored log", () => {
     expect(body.window?.openPause).toBeNull();
   });
 
+  it("records only the approve when a dismiss races the answer that claimed the card", async () => {
+    let reachAction = (): void => undefined;
+    const actionReached = new Promise<void>((resolve) => {
+      reachAction = resolve;
+    });
+    let finishAction = (): void => undefined;
+    const actionHeld = new Promise<void>((resolve) => {
+      finishAction = resolve;
+    });
+    const slow: ResolveAnswer = async () => {
+      reachAction();
+      await actionHeld;
+      return { kind: "ok", result: { id: RECORD } } satisfies ToolOutcome;
+    };
+    const { app, kit, bind } = harness({ resolveAnswer: slow });
+    const pause = await openConfirmation(kit, bind);
+
+    const approving = post(
+      app,
+      ASSISTANT_KIT_ANSWER_PATH,
+      approvalBody(pause.interactionId, pause.revision),
+    );
+    await actionReached;
+    const dismissed = await post(app, ASSISTANT_KIT_ABANDON_PATH, {
+      conversationId: CONVERSATION,
+      interactionId: pause.interactionId,
+    });
+    finishAction();
+    await approving;
+
+    expect(dismissed.status).toBe(200);
+    const reload = await get(app, messagesPath());
+    const body = (await reload.json()) as KitBody;
+    const traces = (body.window?.messages ?? []).flatMap((message) =>
+      message.parts.filter((part) => part.kind === "trace"),
+    );
+
+    expect(traces).toHaveLength(1);
+    expect(traces[0]?.outcome).toBe("done");
+    expect(traces[0]?.interactionId).toBe(pause.interactionId);
+  });
+
   it("leaves no trace while the card is still answerable after a refused action", async () => {
     const { app, kit, bind } = harness({ resolveAnswer: FAILING_RESOLVE });
     const pause = await openConfirmation(kit, bind);

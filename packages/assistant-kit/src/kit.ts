@@ -55,6 +55,8 @@ export type RevisePauseResult = OpenPauseResult | { readonly kind: "gone" };
  */
 export const TURN_LEASE_MS = 120_000;
 
+export const ABANDON_HOLD_MS = 10_000;
+
 export type BeginTurnResult =
   | {
       readonly kind: "began";
