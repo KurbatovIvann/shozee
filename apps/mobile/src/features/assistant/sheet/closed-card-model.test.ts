@@ -276,27 +276,31 @@ describe("assistantClosedCardModel", () => {
 describe("assistantClosedCardModels", () => {
   it("keeps only the traces that have a closed card", () => {
     const models = assistantClosedCardModels({
-      traces: [
-        trace({ interactionKind: "choice", outcome: "superseded" }),
-        trace({ outcome: "rejected" }),
+      closures: [
+        {
+          trace: trace({ interactionKind: "choice", outcome: "superseded" }),
+          question: CHOICE,
+        },
+        { trace: trace({ outcome: "rejected" }), question: null },
       ],
-      questions: [CHOICE],
       copy: COPY,
     });
 
     expect(models.map((model) => model.outcome)).toEqual(["rejected"]);
   });
 
-  it("matches each trace to the question it closed", () => {
+  it("reads the question the thread paired with each trace", () => {
     const models = assistantClosedCardModels({
-      traces: [
-        trace({
-          interactionKind: "choice",
-          outcome: "chosen",
-          optionId: "opt-a",
-        }),
+      closures: [
+        {
+          trace: trace({
+            interactionKind: "choice",
+            outcome: "chosen",
+            optionId: "opt-a",
+          }),
+          question: CHOICE,
+        },
       ],
-      questions: [{ ...CHOICE, interactionId: ORDER_ID }, CHOICE],
       copy: COPY,
     });
 

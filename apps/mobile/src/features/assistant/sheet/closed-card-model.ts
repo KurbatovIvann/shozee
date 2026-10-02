@@ -9,6 +9,7 @@ import {
   assistantWrittenRecordKind,
   type AssistantRecordKind,
 } from "../shared/assistant-record-hrefs";
+import type { AssistantThreadClosure } from "../thread/thread-rows";
 
 export type AssistantClosedCardCopy = {
   readonly closed: {
@@ -154,20 +155,12 @@ export function assistantClosedCardModel(input: {
 }
 
 export function assistantClosedCardModels(input: {
-  readonly traces: readonly AssistantChatTracePart[];
-  readonly questions: readonly AssistantInteraction[];
+  readonly closures: readonly AssistantThreadClosure[];
   readonly copy: AssistantClosedCardCopy;
 }): readonly AssistantClosedCardModel[] {
   const models: AssistantClosedCardModel[] = [];
-  for (const trace of input.traces) {
-    const model = assistantClosedCardModel({
-      trace,
-      question:
-        input.questions.find(
-          (question) => question.interactionId === trace.interactionId,
-        ) ?? null,
-      copy: input.copy,
-    });
+  for (const closure of input.closures) {
+    const model = assistantClosedCardModel({ ...closure, copy: input.copy });
     if (model !== null) {
       models.push(model);
     }

@@ -6,10 +6,9 @@ import {
   assistantTurnColumnLayout,
   assistantTurnResultStretch,
 } from "../shared/assistant-turn-layout";
-import type {
-  AssistantChatTracePart,
-  AssistantInteraction,
-} from "@showzy/validation/assistant-chat";
+import type { AssistantInteraction } from "@showzy/validation/assistant-chat";
+
+import type { AssistantThreadClosure } from "../thread/thread-rows";
 
 import { assistantSurfaceKey, type AssistantSurface } from "../surfaces";
 import {
@@ -34,8 +33,7 @@ export const AssistantMessageRow = memo(function AssistantMessageRow(props: {
   readonly waitIntervalMs: number;
   readonly waitLabel: string;
   readonly surfaces: readonly AssistantSurface[];
-  readonly traces: readonly AssistantChatTracePart[];
-  readonly questions: readonly AssistantInteraction[];
+  readonly closures: readonly AssistantThreadClosure[];
   readonly closedCopy: AssistantClosedCardCopy;
   /**
    * The turn ended before the assistant answered. Rendered under whatever it
@@ -61,8 +59,7 @@ export const AssistantMessageRow = memo(function AssistantMessageRow(props: {
   const isUser = props.role === "user";
   const interaction = props.interaction;
   const closedCards = assistantClosedCardModels({
-    traces: props.traces,
-    questions: props.questions,
+    closures: props.closures,
     copy: props.closedCopy,
   });
   const tone = assistantReplyTone({

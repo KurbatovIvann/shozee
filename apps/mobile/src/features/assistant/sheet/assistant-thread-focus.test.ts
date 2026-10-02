@@ -20,8 +20,7 @@ function row(options?: {
     role: "assistant",
     text: "Яку Катю?",
     surfaces: [],
-    traces: [],
-    questions: [],
+    closures: [],
     interaction:
       interactionId === null
         ? null

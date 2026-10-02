@@ -122,7 +122,9 @@ describe("assistantThreadRows", () => {
     );
 
     expect(result).toHaveLength(1);
-    expect(result[0]?.traces).toEqual([CLOSE_TRACE]);
+    expect(result[0]?.closures).toEqual([
+      { trace: CLOSE_TRACE, question: null },
+    ]);
     expect(result[0]?.text).toBe("");
   });
 
@@ -237,10 +239,9 @@ describe("assistantThreadRows", () => {
       ),
     );
 
-    expect(result[0]?.questions).toEqual([]);
-    expect(
-      result[1]?.questions.map((question) => question.interactionId),
-    ).toEqual([INTERACTION]);
+    expect(result[0]?.closures).toEqual([]);
+    expect(result[1]?.closures).toHaveLength(1);
+    expect(result[1]?.closures[0]?.question?.interactionId).toBe(INTERACTION);
   });
 
   it("carries no question for a trace whose snapshot is out of the window", () => {
@@ -262,7 +263,8 @@ describe("assistantThreadRows", () => {
       ),
     );
 
-    expect(result[0]?.questions).toEqual([]);
+    expect(result[0]?.closures).toHaveLength(1);
+    expect(result[0]?.closures[0]?.question).toBeNull();
   });
 
   it("gives an open question its own row when its message is gone", () => {
