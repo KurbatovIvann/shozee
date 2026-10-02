@@ -1,10 +1,14 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-import type { AssistantPreview } from "@showzy/validation/assistant-chat";
+import type {
+  AssistantPreview,
+  AssistantPreviewLevel,
+} from "@showzy/validation/assistant-chat";
 
 import {
   assistantPreviewCardModel,
+  assistantPreviewPresentationKey,
   type AssistantPreviewCardCopy,
 } from "./preview-card-model";
 
@@ -37,19 +41,48 @@ const preview: AssistantPreview = {
   notes: ["Ціну взято з прайсу «Опт»."],
 };
 
+const INTERACTION_ID = "6f1a3c2e-1f3b-4c5d-8e9f-0a1b2c3d4e5f";
+const OTHER_INTERACTION_ID = "7a2b4d3f-2a4c-4d6e-9f0a-1b2c3d4e5f60";
+
 function model(
   input: Partial<Parameters<typeof assistantPreviewCardModel>[0]> = {},
 ) {
   return assistantPreviewCardModel({
+    interactionId: INTERACTION_ID,
+    revision: 1,
     summary: "Створю замовлення",
     preview,
     also: [],
     level: "card",
     applying: false,
-    armed: false,
+    armedKey: null,
     copy,
     ...input,
   });
+}
+
+function armedKeyFor(interactionId: string, revision: number): string {
+  return assistantPreviewPresentationKey({ interactionId, revision });
+}
+
+function tapUntilAnswered(args: {
+  readonly level: AssistantPreviewLevel;
+  readonly taps: number;
+}): { readonly answers: number; readonly armedKey: string | null } {
+  let armedKey: string | null = null;
+  let answers = 0;
+  for (let tap = 0; tap < args.taps; tap += 1) {
+    const view = model({ level: args.level, armedKey });
+    if (view.primary === null) {
+      continue;
+    }
+    if (view.primary.arms) {
+      armedKey = view.presentationKey;
+      continue;
+    }
+    answers += 1;
+  }
+  return { answers, armedKey };
 }
 
 describe("assistantPreviewCardModel", () => {
@@ -111,7 +144,10 @@ describe("assistantPreviewCardModel", () => {
       arms: true,
     });
 
-    const armed = model({ level: "strong", armed: true });
+    const armed = model({
+      level: "strong",
+      armedKey: armedKeyFor(INTERACTION_ID, 1),
+    });
 
     expect(armed.primary).toEqual({
       label: copy.previewStrongConfirm,
@@ -122,16 +158,54 @@ describe("assistantPreviewCardModel", () => {
 
   it("confirms a card-level preview on the first tap", () => {
     expect(model().primary?.arms).toBe(false);
-    expect(model({ armed: true }).primary?.label).toBe(copy.confirmLabel);
+    expect(
+      model({ armedKey: armedKeyFor(INTERACTION_ID, 1) }).primary?.label,
+    ).toBe(copy.confirmLabel);
+  });
+
+  it("drops the arm when the same pause comes back revised", () => {
+    const revised = model({
+      level: "strong",
+      revision: 2,
+      armedKey: armedKeyFor(INTERACTION_ID, 1),
+    });
+
+    expect(revised.primary?.arms).toBe(true);
+    expect(revised.primary?.danger).toBe(false);
+    expect(revised.primary?.label).toBe(copy.confirmLabel);
+  });
+
+  it("starts a next pause unarmed when it lands on the same row", () => {
+    const next = model({
+      level: "strong",
+      interactionId: OTHER_INTERACTION_ID,
+      armedKey: armedKeyFor(INTERACTION_ID, 1),
+    });
+
+    expect(next.presentationKey).not.toBe(armedKeyFor(INTERACTION_ID, 1));
+    expect(next.primary?.arms).toBe(true);
   });
 
   it("takes both buttons away while the answer is in flight", () => {
-    const view = model({ applying: true, level: "strong", armed: true });
+    const view = model({
+      applying: true,
+      level: "strong",
+      armedKey: armedKeyFor(INTERACTION_ID, 1),
+    });
 
     expect(view.primary).toBeNull();
     expect(view.dismissLabel).toBeNull();
     expect(view.applyingLabel).toBe(copy.confirmingLabel);
     expect(view.blocks[0]?.lines).toEqual(preview.lines);
+  });
+
+  it("spends the first tap on a strong preview arming, never answering", () => {
+    expect(tapUntilAnswered({ level: "strong", taps: 1 })).toEqual({
+      answers: 0,
+      armedKey: armedKeyFor(INTERACTION_ID, 1),
+    });
+    expect(tapUntilAnswered({ level: "strong", taps: 2 }).answers).toBe(1);
+    expect(tapUntilAnswered({ level: "card", taps: 1 }).answers).toBe(1);
   });
 });
 
@@ -141,13 +215,5 @@ describe("preview chrome", () => {
     expect(SERVER_CARD).toContain("<PreviewDetails");
     expect(PREVIEW_CARD).not.toContain("lineLabel");
     expect(SERVER_CARD).not.toContain("lineLabel");
-  });
-
-  it("sends the answer only from the primary press, never from arming", () => {
-    expect(PREVIEW_CARD).toContain("setArmed(true)");
-    expect(PREVIEW_CARD).toContain("props.onConfirm()");
-    expect(PREVIEW_CARD.indexOf("setArmed(true)")).toBeLessThan(
-      PREVIEW_CARD.indexOf("props.onConfirm()"),
-    );
   });
 });

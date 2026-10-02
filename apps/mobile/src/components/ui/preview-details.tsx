@@ -17,16 +17,19 @@ export function PreviewDetails(props: {
     <View style={styles.details}>
       {props.lines.length > 0 ? (
         <View style={styles.lines}>
-          {props.lines.map((line) => (
-            <View key={`${line.label}:${line.value}`} style={styles.line}>
+          {props.lines.map((line, index) => (
+            <View
+              key={`${String(index)}:${line.label}:${line.value}`}
+              style={styles.line}
+            >
               <Text style={styles.lineLabel}>{line.label}</Text>
               <Text style={styles.lineValue}>{line.value}</Text>
             </View>
           ))}
         </View>
       ) : null}
-      {props.notes.map((note) => (
-        <View key={note} style={styles.note}>
+      {props.notes.map((note, index) => (
+        <View key={`${String(index)}:${note}`} style={styles.note}>
           <Text style={styles.noteText}>{note}</Text>
         </View>
       ))}

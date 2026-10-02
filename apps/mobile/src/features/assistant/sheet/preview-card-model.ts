@@ -30,6 +30,7 @@ export type AssistantPreviewPrimary = {
 };
 
 export type AssistantPreviewCardModel = {
+  readonly presentationKey: string;
   readonly eyebrow: string;
   readonly strong: boolean;
   readonly warning: string | null;
@@ -41,16 +42,27 @@ export type AssistantPreviewCardModel = {
   readonly dismissLabel: string | null;
 };
 
+export function assistantPreviewPresentationKey(input: {
+  readonly interactionId: string;
+  readonly revision: number;
+}): string {
+  return `${input.interactionId}:${String(input.revision)}`;
+}
+
 export function assistantPreviewCardModel(input: {
+  readonly interactionId: string;
+  readonly revision: number;
   readonly summary: string;
   readonly preview: AssistantPreview;
   readonly also: readonly AssistantPreview[];
   readonly level: AssistantPreviewLevel;
   readonly applying: boolean;
-  readonly armed: boolean;
+  readonly armedKey: string | null;
   readonly copy: AssistantPreviewCardCopy;
 }): AssistantPreviewCardModel {
   const { copy } = input;
+  const presentationKey = assistantPreviewPresentationKey(input);
+  const armed = input.armedKey === presentationKey;
   const strong = input.level === "strong";
   const title = input.preview.title;
   const blocks: readonly AssistantPreviewBlock[] = [
@@ -70,6 +82,7 @@ export function assistantPreviewCardModel(input: {
     })),
   ];
   return {
+    presentationKey,
     eyebrow: strong ? copy.previewStrongLabel : copy.confirmationTitle,
     strong,
     warning: strong ? copy.previewStrongWarning : null,
@@ -84,11 +97,9 @@ export function assistantPreviewCardModel(input: {
       ? null
       : {
           label:
-            strong && input.armed
-              ? copy.previewStrongConfirm
-              : copy.confirmLabel,
-          danger: strong && input.armed,
-          arms: strong && !input.armed,
+            strong && armed ? copy.previewStrongConfirm : copy.confirmLabel,
+          danger: strong && armed,
+          arms: strong && !armed,
         },
     dismissLabel: input.applying ? null : copy.dismissLabel,
   };

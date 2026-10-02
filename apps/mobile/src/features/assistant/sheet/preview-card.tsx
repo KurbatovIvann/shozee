@@ -15,6 +15,8 @@ import {
 } from "./preview-card-model";
 
 export function PreviewCard(props: {
+  readonly interactionId: string;
+  readonly revision: number;
   readonly summary: string;
   readonly preview: AssistantPreview;
   readonly also: readonly AssistantPreview[];
@@ -24,14 +26,16 @@ export function PreviewCard(props: {
   readonly onConfirm: () => void;
   readonly onDismiss: () => void;
 }) {
-  const [armed, setArmed] = useState(false);
+  const [armedKey, setArmedKey] = useState<string | null>(null);
   const model = assistantPreviewCardModel({
+    interactionId: props.interactionId,
+    revision: props.revision,
     summary: props.summary,
     preview: props.preview,
     also: props.also,
     level: props.level,
     applying: props.applying,
-    armed,
+    armedKey,
     copy: props.copy,
   });
   const primary = model.primary;
@@ -60,7 +64,7 @@ export function PreviewCard(props: {
                 variant: primary.danger ? "danger" : "primary",
                 onPress: () => {
                   if (primary.arms) {
-                    setArmed(true);
+                    setArmedKey(model.presentationKey);
                     return;
                   }
                   props.onConfirm();

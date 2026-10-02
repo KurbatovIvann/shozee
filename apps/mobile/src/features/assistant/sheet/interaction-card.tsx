@@ -19,7 +19,10 @@ import { assistantChoiceAnswer } from "../shared/choice-answer";
 import { ChoiceCard } from "./choice-card";
 import type { AssistantChoiceCardCopy } from "./choice-card-model";
 import { PreviewCard } from "./preview-card";
-import type { AssistantPreviewCardCopy } from "./preview-card-model";
+import {
+  assistantPreviewPresentationKey,
+  type AssistantPreviewCardCopy,
+} from "./preview-card-model";
 
 export type InteractionCardCopy = AssistantChoiceCardCopy &
   AssistantPreviewCardCopy;
@@ -40,6 +43,9 @@ export function InteractionCard(props: {
   if (interaction.kind === "confirmation") {
     return (
       <PreviewCard
+        key={assistantPreviewPresentationKey(interaction)}
+        interactionId={interaction.interactionId}
+        revision={interaction.revision}
         summary={interaction.summary}
         preview={interaction.preview}
         also={interaction.also}
