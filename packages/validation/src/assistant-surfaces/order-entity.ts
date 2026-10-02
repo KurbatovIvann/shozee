@@ -2,11 +2,7 @@
  * Unlocalized order-entity surface parse (SHO-456). Binds live
  * `orders.get` / `orders.create` only. Do not walk list `items[].orderId`.
  */
-import {
-  resolveAssistantSurfaceDestination,
-  type AssistantSurfaceDestination,
-  type AssistantSurfaceDestinationDeclaration,
-} from "./destination.js";
+import type { AssistantSurfaceDestinationDeclaration } from "./destination.js";
 import {
   customerNameSnapshotFromPayload,
   isAssistantSurfaceResultOutput,
@@ -48,7 +44,6 @@ export const ORDER_ENTITY_DESTINATION = {
 
 export type AssistantOrderEntityData = {
   readonly kind: "order-entity";
-  readonly destination: AssistantSurfaceDestination;
   readonly orderId: string;
   readonly orderNumber: string;
   readonly customerNameSnapshot: string | null;
@@ -74,11 +69,6 @@ function parseEntity(
     typeof payload["status"] === "string" ? payload["status"] : null;
   const entity: AssistantOrderEntityData = {
     kind: "order-entity",
-    destination: resolveAssistantSurfaceDestination(
-      ORDER_ENTITY_DESTINATION,
-      // Same path as mobile `orderDetailHref`. The app owns the route.
-      `/orders/${orderId}`,
-    ),
     orderId,
     orderNumber,
     customerNameSnapshot: customerNameSnapshotFromPayload(payload),

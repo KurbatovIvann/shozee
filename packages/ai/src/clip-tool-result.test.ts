@@ -19,9 +19,12 @@ function itemId(index: number): string {
   return `55555555-5555-4555-8555-${index.toString(16).padStart(12, "0")}`;
 }
 
-function isClipped(
-  value: unknown,
-): value is { status: string; preview: unknown; omitted: number } {
+function isClipped(value: unknown): value is {
+  status: string;
+  preview: unknown;
+  omitted: number;
+  cutPaths: readonly string[];
+} {
   return (
     typeof value === "object" &&
     value !== null &&
@@ -92,7 +95,44 @@ describe("clipStaffAssistantToolResult", () => {
         nextCursor: null,
       },
       omitted: 30,
+      cutPaths: ["items"],
     });
+  });
+
+  it("names the array it cut and stays silent about a full array it kept", () => {
+    const variants = Array.from(
+      { length: STAFF_ASSISTANT_CLIP_ARRAY_MAX },
+      (_, index) => ({ id: rowId(index) }),
+    );
+    expect(
+      clipStaffAssistantToolResult({
+        id: rowId(0),
+        variants,
+        imageFileIds: Array.from(
+          { length: STAFF_ASSISTANT_CLIP_ARRAY_MAX + 4 },
+          (_, index) => String(index),
+        ),
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        status: STAFF_ASSISTANT_CLIPPED_STATUS,
+        cutPaths: ["imageFileIds"],
+      }),
+    );
+  });
+
+  it("names a key the shrink dropped", () => {
+    const clipped = clipStaffAssistantToolResult({
+      id: rowId(0),
+      comment: "c".repeat(STAFF_ASSISTANT_CLIP_JSON_MAX),
+      variants: [{ id: rowId(1) }, { id: rowId(2) }, { id: rowId(3) }],
+    });
+    expect(isClipped(clipped)).toBe(true);
+    if (!isClipped(clipped)) {
+      return;
+    }
+    expect(clipped.cutPaths).toContain("comment");
+    expect(clipped.cutPaths).not.toContain("variants");
   });
 
   it("keeps order identity and a titleSnapshot on an oversized get", () => {

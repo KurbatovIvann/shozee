@@ -15,11 +15,17 @@ import {
   PRODUCT_ENTITY_PROMPT_LINE,
   SEARCH_RESULTS_PROMPT_LINE,
   assistantSurfacesFromToolResults,
+  parseProductEntitySurfaces,
   type AssistantSurfaceData,
   type AssistantSurfaceToolResult,
 } from "@showzy/validation/assistant-surfaces";
 import { describe, expect, it } from "vitest";
 
+import {
+  clipStaffAssistantToolResult,
+  STAFF_ASSISTANT_CLIP_ARRAY_MAX,
+  STAFF_ASSISTANT_CLIP_SHRINK_ARRAY_MAX,
+} from "./clip-tool-result.js";
 import { staffAssistantSystemPrompt } from "./system-prompt.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -313,5 +319,66 @@ describe("packages/ai owns localized copy (SHO-457)", () => {
     ]) {
       expect(existsSync(join(aiSrc, gone)), gone).toBe(false);
     }
+  });
+});
+
+describe("clip reports the cut the surface parser reads (SHO-834)", () => {
+  const PRODUCT_A = "33333333-3333-4333-8333-333333333333";
+
+  function parseClipped(payload: Record<string, unknown>) {
+    const [entity] = parseProductEntitySurfaces([
+      {
+        toolName: "catalog_get_product",
+        output: clipStaffAssistantToolResult(payload),
+      },
+    ]);
+    if (entity === undefined) {
+      throw new Error("product entity payload did not parse");
+    }
+    return entity;
+  }
+
+  function variantRows(count: number): readonly Record<string, unknown>[] {
+    return Array.from({ length: count }, (_, index) => ({
+      id: `${PRODUCT_A}-${String(index)}`,
+    }));
+  }
+
+  function longImageFileIds(): readonly string[] {
+    return Array.from({ length: STAFF_ASSISTANT_CLIP_ARRAY_MAX + 7 }, (_, i) =>
+      String(i),
+    );
+  }
+
+  it("counts three surviving variants when the clip cut another array", () => {
+    const entity = parseClipped({
+      id: PRODUCT_A,
+      name: "Napoleon",
+      variants: variantRows(STAFF_ASSISTANT_CLIP_SHRINK_ARRAY_MAX),
+      imageFileIds: longImageFileIds(),
+    });
+    expect(entity.variantsClipped).toBe(false);
+    expect(entity.variantCount).toBe(STAFF_ASSISTANT_CLIP_SHRINK_ARRAY_MAX);
+  });
+
+  it("counts a full array cap the clip left whole", () => {
+    const entity = parseClipped({
+      id: PRODUCT_A,
+      name: "Napoleon",
+      variants: variantRows(STAFF_ASSISTANT_CLIP_ARRAY_MAX),
+      imageFileIds: longImageFileIds(),
+    });
+    expect(entity.variantsClipped).toBe(false);
+    expect(entity.variantCount).toBe(STAFF_ASSISTANT_CLIP_ARRAY_MAX);
+  });
+
+  it("drops the count when the clip cut the variants array itself", () => {
+    const entity = parseClipped({
+      id: PRODUCT_A,
+      name: "Napoleon",
+      variants: variantRows(STAFF_ASSISTANT_CLIP_ARRAY_MAX + 7),
+    });
+    expect(entity.variantsClipped).toBe(true);
+    expect(entity.variantCount).toBeNull();
   });
 });
