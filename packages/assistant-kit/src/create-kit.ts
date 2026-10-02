@@ -208,15 +208,50 @@ export function createAssistantKit<T extends AnyTypes>(
     return record === null ? null : { raw, record };
   }
 
-  async function abandonRefusal(
-    input: PauseScope & { readonly interactionId: string },
-  ): Promise<{ readonly kind: "claimed" | "gone" }> {
-    const current = await readRecord(input);
-    return current !== null &&
-      current.record.interactionId === input.interactionId &&
-      current.record.status === "claimed"
-      ? { kind: "claimed" }
-      : { kind: "gone" };
+  async function dropOpenPause(
+    input: PauseScope & {
+      readonly interactionId: string;
+      readonly whileHeld?: (pause: PublicPause) => Promise<void>;
+    },
+    retriesLeft: number,
+  ): Promise<{ readonly kind: "cancelled" | "claimed" | "gone" }> {
+    const existing = await readRecord(input);
+    if (
+      existing === null ||
+      existing.record.interactionId !== input.interactionId
+    ) {
+      return { kind: "gone" };
+    }
+    if (existing.record.status === "claimed") {
+      return { kind: "claimed" };
+    }
+    if (existing.record.status !== "open") {
+      return { kind: "gone" };
+    }
+    const cancelled: PauseRecord = {
+      ...existing.record,
+      status: "cancelled",
+      expiresAt: new Date(
+        Math.min(
+          Date.parse(existing.record.expiresAt),
+          deps.clock.now().getTime() + ABANDON_HOLD_MS,
+        ),
+      ).toISOString(),
+    };
+    if (!(await put(cancelled, existing.raw))) {
+      return retriesLeft > 0
+        ? await dropOpenPause(input, retriesLeft - 1)
+        : { kind: "claimed" };
+    }
+    try {
+      await input.whileHeld?.(publicPauseOf(cancelled));
+    } finally {
+      await deps.pauses.deleteIfEquals(
+        pauseKey(input.conversationId),
+        JSON.stringify(cancelled),
+      );
+    }
+    return { kind: "cancelled" };
   }
 
   async function put(
@@ -402,37 +437,8 @@ export function createAssistantKit<T extends AnyTypes>(
         : { kind: "already_open", current: publicPauseOf(existing.record) };
     },
 
-    async abandon(input) {
-      const existing = await readRecord(input);
-      if (
-        existing === null ||
-        existing.record.interactionId !== input.interactionId ||
-        existing.record.status !== "open"
-      ) {
-        return await abandonRefusal(input);
-      }
-      const cancelled: PauseRecord = {
-        ...existing.record,
-        status: "cancelled",
-        expiresAt: new Date(
-          Math.min(
-            Date.parse(existing.record.expiresAt),
-            deps.clock.now().getTime() + ABANDON_HOLD_MS,
-          ),
-        ).toISOString(),
-      };
-      if (!(await put(cancelled, existing.raw))) {
-        return await abandonRefusal(input);
-      }
-      try {
-        await input.whileHeld?.(publicPauseOf(cancelled));
-      } finally {
-        await deps.pauses.deleteIfEquals(
-          pauseKey(input.conversationId),
-          JSON.stringify(cancelled),
-        );
-      }
-      return { kind: "cancelled" };
+    abandon(input) {
+      return dropOpenPause(input, 1);
     },
 
     async release(input) {

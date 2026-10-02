@@ -379,6 +379,22 @@ describe("the assistant kit client", () => {
     });
   });
 
+  it("reports a dismiss the answer claimed first, with the card still open", async () => {
+    respond(409, {
+      status: "answer_in_flight",
+      window: conversationWindow(OPEN_PAUSE),
+    });
+
+    const outcome = await postAssistantKitAbandon({
+      ...call,
+      conversationId: CONVERSATION,
+      interactionId: INTERACTION,
+    });
+
+    expect(outcome.failure?.kind).toBe("answer_in_flight");
+    expect(outcome.window?.openPause?.interactionId).toBe(INTERACTION);
+  });
+
   it("asks for the page before a cursor by the same query", async () => {
     respond(200, { status: "ok", window: conversationWindow() });
 

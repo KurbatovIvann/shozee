@@ -60,7 +60,8 @@ export type AssistantKitFailureKind =
   | "turn_open"
   | "stale"
   | "unresolvable"
-  | "action_failed";
+  | "action_failed"
+  | "answer_in_flight";
 
 export type AssistantKitFailure = {
   readonly kind: AssistantKitFailureKind;
@@ -120,6 +121,9 @@ function failureFromStatus(
   }
   if (status === "action_failed") {
     return "action_failed";
+  }
+  if (status === "answer_in_flight") {
+    return "answer_in_flight";
   }
   if (httpStatus === 401 || httpStatus === 403) {
     return "unauthorized";
