@@ -66,7 +66,7 @@ set of a membership is therefore:
 1. an explicit deny removes the denied permission **and, transitively,
    every permission that requires it** — deny stays the strongest rule;
 2. role defaults plus explicit grants that survived (1);
-3. the closure of (2) over `PERMISSION_PREREQUISITES`.
+3. the closure of (2) over `permissionPrerequisites` — both sources.
 
 A module ticket that adds a permission key or a `ctx.call` edge amends
 `PERMISSION_CATALOG` / `PERMISSION_CALL_PREREQUISITES` in the same PR —

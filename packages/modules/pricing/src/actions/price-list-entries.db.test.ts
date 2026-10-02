@@ -305,10 +305,7 @@ beforeAll(async () => {
       companyId: companyA,
       userId: clerks.manageOnly,
       role: "employee",
-      permissions: {
-        granted: ["pricing:manage"],
-        denied: ["orders:create", "orders:view", "documents:view"],
-      },
+      permissions: { granted: ["pricing:manage"], denied: [] },
     },
   ]);
 });

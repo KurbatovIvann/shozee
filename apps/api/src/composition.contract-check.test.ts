@@ -11,9 +11,11 @@
 import {
   deriveRecordProvenanceRequirements,
   PERMISSION_CALL_PREREQUISITES,
+  PERMISSION_CATALOG,
   runContractCheck,
   type ActionChannel,
 } from "@showzy/core";
+import { rolePermissionDefaultRows } from "@showzy/db/seed";
 import type { ActionContract } from "@showzy/core/contract";
 import type { RecordCreatedVia as DbRecordCreatedVia } from "@showzy/db/schema/tenant-columns";
 import {
@@ -542,32 +544,60 @@ describe("CI contract-check stage", () => {
     expect(byName.get("companies.get")?.aiExposure).toBe("exposed");
   });
 
+  it("SHO-830: PERMISSION_CATALOG holds exactly the keys the registry and the seed use", () => {
+    const declared = buildContractCheckInput()
+      .registry.contracts()
+      .filter((contract) => contract.principal === "staff")
+      .flatMap((contract) => contract.permissions);
+    const inUse = [
+      ...new Set([
+        ...declared,
+        ...rolePermissionDefaultRows.map((row) => row.permission),
+      ]),
+    ].sort();
+    expect([...PERMISSION_CATALOG].sort()).toEqual(inUse);
+  });
+
   it("SHO-830: the edge prerequisites are exactly what the declared edges derive", () => {
     const input = buildContractCheckInput();
     const byName = new Map(
       input.registry.contracts().map((contract) => [contract.name, contract]),
     );
     const derived = new Map<string, Set<string>>();
-    for (const edge of input.callEdges) {
-      const caller = byName.get(edge.caller);
-      const callee = byName.get(edge.callee);
+    const addPair = (held: string, needed: string): void => {
+      if (held === needed) {
+        return;
+      }
+      const existing = derived.get(held) ?? new Set<string>();
+      existing.add(needed);
+      derived.set(held, existing);
+    };
+    const addEdge = (
+      caller: ActionContract | undefined,
+      callee: ActionContract | undefined,
+    ): void => {
       if (
         caller === undefined ||
         callee === undefined ||
-        caller.principal !== "staff" ||
-        edge.permissionGuarded === true
+        caller.principal !== "staff"
       ) {
-        continue;
+        return;
       }
       for (const held of caller.permissions) {
         for (const needed of callee.permissions) {
-          if (held === needed) {
-            continue;
-          }
-          const existing = derived.get(held) ?? new Set<string>();
-          existing.add(needed);
-          derived.set(held, existing);
+          addPair(held, needed);
         }
+      }
+    };
+    for (const edge of input.callEdges) {
+      if (edge.permissionGuarded === true) {
+        continue;
+      }
+      addEdge(byName.get(edge.caller), byName.get(edge.callee));
+    }
+    for (const caller of byName.values()) {
+      for (const calleeName of caller.atomicCalls) {
+        addEdge(caller, byName.get(calleeName));
       }
     }
     const asRows = (map: Map<string, Set<string>>): [string, string[]][] =>

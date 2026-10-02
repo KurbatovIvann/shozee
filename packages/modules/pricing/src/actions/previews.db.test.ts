@@ -106,10 +106,7 @@ beforeAll(async () => {
     companyId: companyA,
     userId: managerOnlyPricing,
     role: "employee",
-    permissions: {
-      granted: ["pricing:manage"],
-      denied: ["orders:create", "orders:view", "documents:view"],
-    },
+    permissions: { granted: ["pricing:manage"], denied: [] },
   });
 
   await kit.db.runtime.db.insert(priceLists).values([

@@ -8,7 +8,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   expandPermissionPrerequisites,
+  PERMISSION_CALL_PREREQUISITES,
   PERMISSION_CATALOG,
+  permissionPrerequisites,
 } from "./permission-prerequisites.js";
 import {
   isCompanyRole,
@@ -30,6 +32,20 @@ describe("the same-resource rule over the permission catalog", () => {
           !isView(permission) && !catalog.includes(viewOf(permission)),
       ),
     ).toEqual(["assistant:use", "settings:payments"]);
+  });
+
+  it("every prerequisite, from either source, is a :view key of the catalog", () => {
+    const required = [
+      ...catalog.flatMap((permission) => [
+        ...permissionPrerequisites(permission),
+      ]),
+      ...Object.values(PERMISSION_CALL_PREREQUISITES).flat(),
+    ];
+    expect(required.length).toBeGreaterThan(0);
+    for (const permission of required) {
+      expect(isView(permission)).toBe(true);
+      expect(catalog).toContain(permission);
+    }
   });
 
   it("every other non-view permission implies its own resource's view", () => {

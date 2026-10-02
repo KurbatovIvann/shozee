@@ -84,8 +84,10 @@ that are not `risk: read` or do not accept the caller's principal, undeclared
 or invalid `ctx.callAtomic` edges (ADR-0021), a caller's `errors` that does
 not include every code declared by its `ctx.call` / `ctx.callAtomic` callees,
 a `staff` caller whose declared permissions — closed over
-`PERMISSION_PREREQUISITES` (ADR-0015, amended 2026-10-02) — do not cover a
-`ctx.call` callee's permissions, unless that edge declares
+`permissionPrerequisites`, which is the structural same-resource `:view`
+rule over `PERMISSION_CATALOG` plus `PERMISSION_CALL_PREREQUISITES`
+(ADR-0015, amended 2026-10-02) — do not cover a `ctx.call` or
+`ctx.callAtomic` callee's permissions, unless that edge declares
 `permissionGuarded` because the caller checks them itself,
 event scope inconsistent with action/system scope, `risk: write|high` with
 `audit: false`, `audit: true` without `auditTarget`, event subscriptions not
