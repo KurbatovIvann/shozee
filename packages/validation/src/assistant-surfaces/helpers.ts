@@ -39,8 +39,14 @@ const QUANTITY_WIRE = /^(0|[1-9][0-9]*)$/;
 
 const NON_RESULT_STATUS = new Set<string>(ASSISTANT_TOOL_NON_RESULT_STATUSES);
 
+export const ASSISTANT_ENTITY_ARCHIVED_STATUS = "archived";
+
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function textOrNull(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 export function isAssistantClippedToolEnvelope(

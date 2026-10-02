@@ -10,8 +10,10 @@ import {
 } from "./assistant-result-chrome";
 import { AssistantResultFrame } from "./assistant-result-frame";
 import { AssistantSearchResultsBlock } from "./assistant-search-results-block";
+import { CustomerEntityCard } from "./customer-entity-card";
 import { OrderEntityCard } from "./order-entity-card";
 import { OrdersAggregateResultCard } from "./orders-aggregate-result-card";
+import { ProductEntityCard } from "./product-entity-card";
 
 /**
  * SHO-469 / SHO-472 / SHO-473: one frame plus a block switch for
@@ -74,6 +76,10 @@ const AssistantSurfaceBlock = memo(function AssistantSurfaceBlock(props: {
       );
     case "order-entity":
       return <OrderEntityCard card={surface} onOpenHref={onOpenHref} />;
+    case "customer-entity":
+      return <CustomerEntityCard card={surface} onOpenHref={onOpenHref} />;
+    case "product-entity":
+      return <ProductEntityCard card={surface} onOpenHref={onOpenHref} />;
     case "search-results":
       return surface.emptyTitle !== null ? null : (
         <AssistantSearchResultsBlock card={surface} onOpenHref={onOpenHref} />
@@ -96,11 +102,26 @@ function surfaceChips(
   }));
 }
 
+type AssistantEntitySurface = Extract<
+  AssistantSurface,
+  { readonly kind: "order-entity" | "customer-entity" | "product-entity" }
+>;
+
+function isEntitySurface(
+  surface: AssistantSurface,
+): surface is AssistantEntitySurface {
+  return (
+    surface.kind === "order-entity" ||
+    surface.kind === "customer-entity" ||
+    surface.kind === "product-entity"
+  );
+}
+
 function surfaceEmpty(surface: AssistantSurface): {
   readonly title: string | null;
   readonly description: string | null;
 } {
-  if (surface.kind === "order-entity") {
+  if (isEntitySurface(surface)) {
     return { title: null, description: null };
   }
   return {
@@ -110,7 +131,7 @@ function surfaceEmpty(surface: AssistantSurface): {
 }
 
 function surfaceFootnotes(surface: AssistantSurface): readonly string[] {
-  if (surface.kind === "order-entity" || surface.footnotes.length === 0) {
+  if (isEntitySurface(surface) || surface.footnotes.length === 0) {
     return [];
   }
   return surface.footnotes;
@@ -120,7 +141,7 @@ function surfaceActions(
   surface: AssistantSurface,
   onOpenHref: (href: string) => void,
 ): readonly AssistantResultAction[] {
-  if (surface.kind === "order-entity") {
+  if (isEntitySurface(surface)) {
     return [];
   }
   return secondaryCta(

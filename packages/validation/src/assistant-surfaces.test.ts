@@ -25,8 +25,10 @@ import {
   assistantSurfaceSlot,
   assistantSurfacesFromToolResults,
   isAssistantSurfaceResultOutput,
+  parseCustomerEntitySurfaces,
   parseCustomersListSurface,
   parseOrderEntitySurfaces,
+  parseProductEntitySurfaces,
   parseOrdersAggregateSurface,
   parseOrdersListSurface,
   parseSearchResultsSurface,
@@ -49,6 +51,7 @@ import {
 
 const ORDER_A = "0f0e2d5c-4a1b-4c3d-9e8f-102938475601";
 const ORDER_B = "1a2b3c4d-5e6f-4789-8abc-def012345678";
+const PRODUCT_A = "3c4d5e6f-7081-49a2-8cde-f01234567890";
 
 function result(
   toolName: string,
@@ -188,6 +191,8 @@ describe("ASSISTANT_SURFACE_REGISTRY integrity", () => {
       "orders-list",
       "orders-aggregate",
       "order-entity",
+      "customer-entity",
+      "product-entity",
       "customers-list",
       "search-results",
     ]);
@@ -213,6 +218,8 @@ describe("ASSISTANT_SURFACE_REGISTRY integrity", () => {
     expect(
       ASSISTANT_SURFACE_REGISTRY.map((entry) => entry.destination),
     ).toEqual([
+      { kind: "screen" },
+      { kind: "screen" },
       { kind: "screen" },
       { kind: "screen" },
       { kind: "screen" },
@@ -534,6 +541,113 @@ describe("parseOrderEntitySurfaces", () => {
       parseOrderEntitySurfaces([
         result("orders.create", { status: "needs_choice" }, "call-choice"),
         result("orders.get", { status: "error" }, "call-err"),
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe("parseCustomerEntitySurfaces", () => {
+  it("maps the shared customer view onto a screen destination", () => {
+    const entities = parseCustomerEntitySurfaces([
+      result(CUSTOMERS_LIST_CUSTOMERS_TOOL, { items: [], nextCursor: null }),
+      result(
+        "customers_get_customer",
+        {
+          id: CUSTOMER_A,
+          name: "Katya Sambuka",
+          phone: "+380671112233",
+          email: "katya@example.com",
+          status: "active",
+          linkedCounterpartyCount: 0,
+        },
+        "call-customer",
+      ),
+    ]);
+    expect(entities).toHaveLength(1);
+    expect(entities[0]).toMatchObject({
+      kind: "customer-entity",
+      customerId: CUSTOMER_A,
+      name: "Katya Sambuka",
+      phone: "+380671112233",
+      email: "katya@example.com",
+      status: "active",
+      toolCallId: "call-customer",
+      destination: {
+        kind: "screen",
+        href: `/customers/clients/${CUSTOMER_A}/edit`,
+      },
+    });
+  });
+
+  it("keeps the id when the payload carries no name, contacts, or status", () => {
+    const entities = parseCustomerEntitySurfaces([
+      result("customers.getCustomer", { id: CUSTOMER_A }),
+    ]);
+    expect(entities[0]).toMatchObject({
+      customerId: CUSTOMER_A,
+      name: null,
+      phone: null,
+      email: null,
+      status: null,
+    });
+  });
+
+  it("omits payloads without an id and non-result outputs", () => {
+    expect(
+      parseCustomerEntitySurfaces([
+        result("customers.getCustomer", { name: "Katya" }),
+        result("customers.getCustomer", { status: "needs_choice" }),
+        result("customers.getCustomer", { status: "error" }),
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe("parseProductEntitySurfaces", () => {
+  it("maps base price, status and variant count onto a screen destination", () => {
+    const entities = parseProductEntitySurfaces([
+      result(
+        "catalog_get_product",
+        {
+          id: PRODUCT_A,
+          name: "Napoleon",
+          basePriceMinor: "45000",
+          currency: "UAH",
+          status: "archived",
+          variants: [{ id: PRODUCT_A }, { id: CUSTOMER_A }],
+          imageFileIds: [],
+        },
+        "call-product",
+      ),
+    ]);
+    expect(entities[0]).toMatchObject({
+      kind: "product-entity",
+      productId: PRODUCT_A,
+      name: "Napoleon",
+      status: "archived",
+      basePrice: { amountMinor: "45000", currency: "UAH" },
+      variantCount: 2,
+      toolCallId: "call-product",
+      destination: { kind: "screen", href: `/products/${PRODUCT_A}` },
+    });
+  });
+
+  it("counts no variants and no price when the payload omits them", () => {
+    const entities = parseProductEntitySurfaces([
+      result("catalog.getProduct", { id: PRODUCT_A, name: "Napoleon" }),
+    ]);
+    expect(entities[0]).toMatchObject({
+      variantCount: 0,
+      basePrice: null,
+      status: null,
+    });
+  });
+
+  it("omits payloads without an id and non-result outputs", () => {
+    expect(
+      parseProductEntitySurfaces([
+        result("catalog.getProduct", { name: "Napoleon" }),
+        result("catalog.getProduct", { status: "error" }),
       ]),
     ).toEqual([]);
   });
@@ -1102,6 +1216,27 @@ describe("assistantSurfaceSlot", () => {
     const slots = surfaces.map((surface) => assistantSurfaceSlot(surface));
 
     expect(slots).toEqual(["orders"]);
+  });
+
+  it("gives every entity kind its own per-record slot in one composition", () => {
+    const surfaces = assistantSurfacesFromToolResults([
+      result("orders.get", { orderId: ORDER_A, orderNumber: "1049" }),
+      result("customers_get_customer", { id: CUSTOMER_A, name: "Katya" }),
+      result("catalog_get_product", { id: PRODUCT_A, name: "Napoleon" }),
+    ]);
+    const slots = surfaces.map((surface) => assistantSurfaceSlot(surface));
+
+    expect(surfaces.map((surface) => surface.kind)).toEqual([
+      "order-entity",
+      "customer-entity",
+      "product-entity",
+    ]);
+    expect(slots).toEqual([
+      `order-entity:${ORDER_A}`,
+      `customer-entity:${CUSTOMER_A}`,
+      `product-entity:${PRODUCT_A}`,
+    ]);
+    expect(new Set(slots).size).toBe(slots.length);
   });
 });
 
