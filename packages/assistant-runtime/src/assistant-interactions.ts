@@ -167,7 +167,7 @@ export const confirmation = defineInteraction<ConfirmationSecret>()({
       canonicalInput: secret.canonicalInput,
       idempotencyKey: secret.idempotencyKey,
       challengeId: secret.challengeId,
-      also: Object.hasOwn(secret, "also") ? secret.also : [],
+      also: secret.also,
     } satisfies ConfirmationResolution),
 });
 

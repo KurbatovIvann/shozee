@@ -731,16 +731,6 @@ describe("an action that needs a person's authorisation", () => {
     level: "card",
   };
 
-  function storedBeforeAlso(): ConfirmationSecret {
-    const stored: Omit<ConfirmationSecret, "also"> = {
-      actionName: ATTEMPT.actionName,
-      canonicalInput: ATTEMPT.input,
-      idempotencyKey: ATTEMPT.idempotencyKey,
-      challengeId: CHALLENGE.challengeId,
-    };
-    return stored as ConfirmationSecret;
-  }
-
   /** What a claim hands the resolver, produced by the kind's own `resolve`. */
   function approvedFrom(secret: ConfirmationSecret): unknown {
     const resolution = confirmation.resolve({
@@ -936,41 +926,79 @@ describe("an action that needs a person's authorisation", () => {
     });
   });
 
+  const DRIFTED_CHALLENGE = {
+    ...CHALLENGE,
+    challengeId: "cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd",
+  };
+
   it("asks again with the fresh card when the first action of one card drifts", async () => {
-    const fresh = {
-      ...CHALLENGE,
-      challengeId: "cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd",
+    const freshSecond = {
+      ...SECOND_CHALLENGE,
+      challengeId: "bcbcbcbc-bcbc-4cbc-8cbc-bcbcbcbcbcbc",
     };
-    const seen: string[] = [];
+    const seen: { action: string; challengeId: string | undefined }[] = [];
 
     const outcome = await answerWith(
       {
         runConfirmed: (args) => {
-          seen.push(args.actionName);
+          seen.push({ action: args.actionName, challengeId: args.challengeId });
           return Promise.reject(
-            new AssistantConfirmationRequired(
-              ATTEMPT,
-              new ConfirmationRequiredError(fresh),
-            ),
+            args.actionName === ATTEMPT.actionName
+              ? new AssistantConfirmationRequired(
+                  ATTEMPT,
+                  new ConfirmationRequiredError(DRIFTED_CHALLENGE),
+                )
+              : new AssistantConfirmationRequired(
+                  SECOND_ATTEMPT,
+                  new ConfirmationRequiredError(freshSecond),
+                ),
           );
         },
       },
       [SECOND_ALSO],
     );
 
-    expect(seen).toEqual([ATTEMPT.actionName]);
+    expect(seen).toEqual([
+      { action: ATTEMPT.actionName, challengeId: CHALLENGE.challengeId },
+      { action: SECOND_ATTEMPT.actionName, challengeId: undefined },
+    ]);
     expect(outcome).toMatchObject({
       kind: "pause",
       interaction: "confirmation",
       prompt: {
         preview: CARD,
-        also: [SECOND_CHALLENGE.preview],
+        also: [freshSecond.preview],
       },
       secret: {
-        challengeId: fresh.challengeId,
+        challengeId: DRIFTED_CHALLENGE.challengeId,
         idempotencyKey: ATTEMPT.idempotencyKey,
-        also: [SECOND_ALSO],
+        also: [{ ...SECOND_ALSO, challengeId: freshSecond.challengeId }],
       },
+    });
+  });
+
+  it("refuses the re-pause when a carried action can no longer be summarized", async () => {
+    const gone = new NotFoundError();
+
+    const outcome = await answerWith(
+      {
+        runConfirmed: (args) =>
+          Promise.reject(
+            args.actionName === ATTEMPT.actionName
+              ? new AssistantConfirmationRequired(
+                  ATTEMPT,
+                  new ConfirmationRequiredError(DRIFTED_CHALLENGE),
+                )
+              : gone,
+          ),
+      },
+      [SECOND_ALSO],
+    );
+
+    expect(outcome).toEqual({
+      kind: "error",
+      code: gone.code,
+      message: gone.message,
     });
   });
 
@@ -997,26 +1025,6 @@ describe("an action that needs a person's authorisation", () => {
 
     expect(ran).toEqual([ATTEMPT.actionName, SECOND_ATTEMPT.actionName]);
     expect(outcome).toMatchObject({ kind: "ok" });
-  });
-
-  it("runs a pause opened before one card could carry several actions", async () => {
-    const seen: string[] = [];
-
-    const outcome = await createResolveAnswer({
-      runConfirmed: (args) => {
-        seen.push(args.actionName);
-        return Promise.resolve({ id: CUSTOMER_A });
-      },
-    })({
-      toolName: "customers_deleteCustomer",
-      kind: "confirmation",
-      value: approvedFrom(storedBeforeAlso()),
-      tools: {},
-      context: ANSWER_CONTEXT,
-    });
-
-    expect(seen).toEqual([ATTEMPT.actionName]);
-    expect(outcome).toEqual({ kind: "ok", result: { id: CUSTOMER_A } });
   });
 
   it("has no answer that declines and still runs", () => {

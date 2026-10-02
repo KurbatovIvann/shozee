@@ -23,11 +23,13 @@ import type {
   AssistantInteractionTypes,
   ChoicePickerTarget,
   ChoiceResolution,
+  ConfirmationAlsoSecret,
   ConfirmationAttemptSecret,
   ConfirmationResolution,
 } from "./assistant-interactions.js";
 import {
   AssistantConfirmationRequired,
+  confirmationAlso,
   confirmationPause,
 } from "./assistant-kit-confirmation.js";
 import type { AssistantToolContext, ResolveAnswer } from "./runtime-types.js";
@@ -111,7 +113,7 @@ export type RunConfirmedAction = (args: {
   readonly actionName: string;
   readonly input: unknown;
   readonly idempotencyKey: string;
-  readonly challengeId: string;
+  readonly challengeId?: string;
 }) => Promise<unknown>;
 
 export interface ResolveAnswerDeps {
@@ -210,7 +212,7 @@ async function resolveConfirmation(
     } catch (error) {
       if (error instanceof AssistantConfirmationRequired) {
         if (done.length === 0) {
-          return confirmationPause(error, resolution.also);
+          return await repausedCard(args, deps, error, resolution.also);
         }
         return halted(done, {
           action: attempt.actionName,
@@ -242,6 +244,61 @@ function halted(
   failed: ConfirmedCardFailure,
 ): ToolOutcome {
   return { kind: "ok", result: { done, failed } satisfies ConfirmedCardResult };
+}
+
+type ReSummarized =
+  | { readonly kind: "also"; readonly also: ConfirmationAlsoSecret }
+  | { readonly kind: "unsummarizable"; readonly outcome: ToolOutcome };
+
+async function reSummarizeWithoutRunning(
+  args: ResolveArgs,
+  deps: ResolveAnswerDeps,
+  carried: ConfirmationAlsoSecret,
+): Promise<ReSummarized> {
+  try {
+    await deps.runConfirmed({
+      context: args.context,
+      actionName: carried.actionName,
+      input: carried.canonicalInput,
+      idempotencyKey: carried.idempotencyKey,
+    });
+  } catch (error) {
+    if (error instanceof AssistantConfirmationRequired) {
+      return { kind: "also", also: confirmationAlso(error) };
+    }
+    if (error instanceof CoreError) {
+      return {
+        kind: "unsummarizable",
+        outcome: { kind: "error", code: error.code, message: error.message },
+      };
+    }
+    throw error;
+  }
+  return {
+    kind: "unsummarizable",
+    outcome: {
+      kind: "error",
+      code: "CONFLICT",
+      message: `"${carried.actionName}" no longer asks for confirmation`,
+    },
+  };
+}
+
+async function repausedCard(
+  args: ResolveArgs,
+  deps: ResolveAnswerDeps,
+  required: AssistantConfirmationRequired,
+  carried: readonly ConfirmationAlsoSecret[],
+): Promise<ToolOutcome> {
+  const also: ConfirmationAlsoSecret[] = [];
+  for (const one of carried) {
+    const resummarized = await reSummarizeWithoutRunning(args, deps, one);
+    if (resummarized.kind === "unsummarizable") {
+      return resummarized.outcome;
+    }
+    also.push(resummarized.also);
+  }
+  return confirmationPause(required, also);
 }
 
 /**

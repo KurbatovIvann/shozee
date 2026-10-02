@@ -232,7 +232,7 @@ export function createAssistantRuntime(
     readonly refusedBefore?: number;
     readonly confirmed?: {
       readonly idempotencyKey: string;
-      readonly challengeId: string;
+      readonly challengeId?: string;
     };
   }): Promise<unknown> {
     const idempotencyKey =
@@ -254,7 +254,7 @@ export function createAssistantRuntime(
           ...(level === undefined
             ? {}
             : { requireConfirmation: true as const }),
-          ...(args.confirmed === undefined
+          ...(args.confirmed?.challengeId === undefined
             ? {}
             : { confirmationChallengeId: args.confirmed.challengeId }),
         },
@@ -283,7 +283,10 @@ export function createAssistantRuntime(
       context,
       actionName,
       input,
-      confirmed: { idempotencyKey, challengeId },
+      confirmed: {
+        idempotencyKey,
+        ...(challengeId === undefined ? {} : { challengeId }),
+      },
     });
 
   return {

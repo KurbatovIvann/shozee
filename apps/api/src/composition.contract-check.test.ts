@@ -23,6 +23,7 @@ import {
   ASSISTANT_PREVIEW_TEXT_MAX,
 } from "@showzy/validation/assistant-chat";
 import { ASSISTANT_SURFACE_REGISTRY } from "@showzy/validation/assistant-surfaces";
+import { CREATE_ORDER_MAX_ITEMS } from "@showzy/validation/orders";
 import type { RecordCreatedVia as ValidationRecordCreatedVia } from "@showzy/validation/record-verification";
 import { readFileSync } from "node:fs";
 import { describe, expect, expectTypeOf, it } from "vitest";
@@ -181,6 +182,20 @@ const PREVIEW_FORMAT_TEXT_MAX: Readonly<Record<string, number>> = {
 
 const PREVIEW_CARD_FIXED_LINES = 8;
 
+const PREVIEW_DB_ROW_FANOUT_LINES: Readonly<Record<string, number>> = {
+  "orders.cancel": CREATE_ORDER_MAX_ITEMS + 1,
+  "orders.complete": CREATE_ORDER_MAX_ITEMS + 1,
+  "orders.confirm": CREATE_ORDER_MAX_ITEMS + 1,
+  "orders.start": CREATE_ORDER_MAX_ITEMS + 1,
+};
+
+const PREVIEW_CARD_LINES_PER_INPUT_ITEM: Readonly<Record<string, number>> = {
+  "catalog.createProduct": 1,
+  "orders.create": 1,
+  "pricing.removePriceListEntries": 1,
+  "pricing.setPriceListEntries": 1,
+};
+
 const PREVIEW_CHANGE_LINE_OVERHEAD = " → ".length;
 
 interface PreviewBound {
@@ -218,6 +233,7 @@ function schemaPreviewBound(
   root: unknown,
   path: string,
   unbounded: string[],
+  cardLinesPerItem?: number,
 ): PreviewBound {
   if (!isRecord(schema)) {
     unbounded.push(`${path}: no schema to derive a bound from`);
@@ -230,9 +246,10 @@ function schemaPreviewBound(
       root,
       path,
       unbounded,
+      cardLinesPerItem,
     );
   }
-  for (const key of ["oneOf", "anyOf", "allOf"] as const) {
+  for (const key of ["oneOf", "anyOf"] as const) {
     const variants = schema[key];
     if (!Array.isArray(variants) || variants.length === 0) {
       continue;
@@ -243,10 +260,27 @@ function schemaPreviewBound(
         root,
         `${path}/${key}[${String(index)}]`,
         unbounded,
+        cardLinesPerItem,
       ),
     );
     return {
       lines: Math.max(...bounds.map((bound) => bound.lines)),
+      text: Math.max(...bounds.map((bound) => bound.text)),
+    };
+  }
+  const allOf = schema["allOf"];
+  if (Array.isArray(allOf) && allOf.length > 0) {
+    const bounds = allOf.map((member, index) =>
+      schemaPreviewBound(
+        member,
+        root,
+        `${path}/allOf[${String(index)}]`,
+        unbounded,
+        cardLinesPerItem,
+      ),
+    );
+    return {
+      lines: bounds.reduce((total, bound) => total + bound.lines, 0),
       text: Math.max(...bounds.map((bound) => bound.text)),
     };
   }
@@ -258,16 +292,22 @@ function schemaPreviewBound(
       root,
       `${path}[]`,
       unbounded,
+      cardLinesPerItem,
     );
+    const perItem = cardLinesPerItem ?? item.lines;
+    if (cardLinesPerItem === undefined) {
+      unbounded.push(`${path}: array with no declared card lines per item`);
+    }
     if (typeof maxItems !== "number") {
       unbounded.push(`${path}: array without a max`);
-      return { lines: 1, text: item.text };
+      return { lines: perItem, text: item.text };
     }
-    return { lines: maxItems, text: item.text };
+    return { lines: maxItems * perItem, text: item.text };
   }
   if (type === "object") {
     const properties = schema["properties"];
-    if (!isRecord(properties)) {
+    if (!isRecord(properties) || Object.keys(properties).length === 0) {
+      unbounded.push(`${path}: object without named properties`);
       return { lines: 1, text: 0 };
     }
     let lines = 0;
@@ -278,6 +318,7 @@ function schemaPreviewBound(
         root,
         `${path}.${name}`,
         unbounded,
+        cardLinesPerItem,
       );
       lines += bound.lines;
       text = Math.max(text, bound.text);
@@ -634,12 +675,28 @@ describe("CI contract-check stage", () => {
     const contracts = previewBoundExposedContracts();
     expect(contracts.length).toBeGreaterThan(0);
 
+    const names = contracts.map((contract) => contract.name);
+    const declaredElsewhere = [
+      ...Object.keys(PREVIEW_DB_ROW_FANOUT_LINES),
+      ...Object.keys(PREVIEW_CARD_LINES_PER_INPUT_ITEM),
+    ].filter((name) => !names.includes(name));
+    expect(declaredElsewhere).toEqual([]);
+
     const unbounded: string[] = [];
     const over: string[] = [];
     for (const contract of contracts) {
       const json = z.toJSONSchema(contract.input);
-      const bound = schemaPreviewBound(json, json, contract.name, unbounded);
-      const lines = bound.lines + PREVIEW_CARD_FIXED_LINES;
+      const bound = schemaPreviewBound(
+        json,
+        json,
+        contract.name,
+        unbounded,
+        PREVIEW_CARD_LINES_PER_INPUT_ITEM[contract.name],
+      );
+      const lines =
+        bound.lines +
+        (PREVIEW_DB_ROW_FANOUT_LINES[contract.name] ?? 0) +
+        PREVIEW_CARD_FIXED_LINES;
       const text = bound.text * 2 + PREVIEW_CHANGE_LINE_OVERHEAD;
       if (lines > ASSISTANT_PREVIEW_LIST_MAX) {
         over.push(`${contract.name}: ${String(lines)} lines`);
@@ -651,5 +708,48 @@ describe("CI contract-check stage", () => {
 
     expect(unbounded).toEqual([]);
     expect(over).toEqual([]);
+  });
+
+  it("SHO-824: the walk counts every line an item can add, and names what it cannot bound", () => {
+    const sample = {
+      type: "object",
+      properties: {
+        rows: {
+          type: "array",
+          maxItems: 3,
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string", maxLength: 10 },
+              note: { type: "string", maxLength: 40 },
+            },
+          },
+        },
+        merged: {
+          allOf: [
+            { type: "object", properties: { a: { type: "number" } } },
+            { type: "object", properties: { b: { type: "number" } } },
+          ],
+        },
+        tags: { type: "object", additionalProperties: { type: "string" } },
+      },
+    };
+
+    const undeclared: string[] = [];
+    expect(schemaPreviewBound(sample, {}, "sample", undeclared)).toEqual({
+      lines: 3 * 2 + 2 + 1,
+      text: 40,
+    });
+    expect(undeclared).toEqual([
+      "sample.rows: array with no declared card lines per item",
+      "sample.tags: object without named properties",
+    ]);
+
+    const declared: string[] = [];
+    expect(schemaPreviewBound(sample, {}, "sample", declared, 1)).toEqual({
+      lines: 3 * 1 + 2 + 1,
+      text: 40,
+    });
+    expect(declared).toEqual(["sample.tags: object without named properties"]);
   });
 });
