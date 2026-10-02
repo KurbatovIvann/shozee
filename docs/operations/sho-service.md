@@ -89,8 +89,10 @@ the wire carry only the error's class name as `code`, the response is a bare
   acceptable, plus token rotation.
 - The context cache budget (`SHO_CONTEXT_CACHE_UPLOAD_BYTES`, 256 MB) is a
   **process total**: each worker gets `total / SHO_WORKERS` but never less than
-  one maximum upload (`SHO_MAX_CONTEXT_BYTES`, 8 MB), so a large pool size does
-  not multiply the cache and cannot starve a worker below one context. There is
+  one maximum upload (`SHO_MAX_CONTEXT_BYTES`, 8 MB), so no worker is starved
+  below one context. Above 32 workers the floor wins and the real total grows
+  to `SHO_WORKERS × 8 MB` (about 504 MB at 63 workers); size such a replica
+  accordingly. There is
   deliberately no env knob for the total; change the constant if a replica needs
   a different one. It counts **uploaded JSON bytes**, not the
   compiled index's heap
