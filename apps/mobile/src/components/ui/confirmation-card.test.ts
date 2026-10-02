@@ -307,8 +307,8 @@ describe("createConfirmationCardMachine", () => {
 describe("confirmation card presenter wiring", () => {
   it("renders title, lines and notes from the view, not from local copy", () => {
     expect(CARD_SOURCE).toContain("view.title");
-    expect(CARD_SOURCE).toContain("view.lines.map");
-    expect(CARD_SOURCE).toContain("view.notes.map");
+    expect(CARD_SOURCE).toContain("lines={view.lines}");
+    expect(CARD_SOURCE).toContain("notes={view.notes}");
     expect(CARD_SOURCE).toContain("view.summary");
   });
 

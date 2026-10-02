@@ -33,6 +33,7 @@ export {
 } from "./option-select";
 export { OptionSelectSheet } from "./option-select-sheet";
 export { presentConfirmDialog } from "./present-confirm-dialog";
+export { PreviewDetails, type PreviewDetailLine } from "./preview-details";
 export { SearchField } from "./search-field";
 export { SegmentedTabs } from "./segmented-tabs";
 export { SelectorRow } from "./selector-row";
