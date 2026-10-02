@@ -6,7 +6,7 @@ import { describeWireError } from "./errors";
 export type ConfirmationChallengeView = {
   readonly challengeId: string;
   readonly summary: string;
-  readonly risk?: WireActionRisk;
+  readonly risk: WireActionRisk;
   readonly preview?: WireActionPreview;
 };
 
@@ -32,7 +32,7 @@ export function confirmationChallenge(
   return {
     challengeId: view.challengeId,
     summary: view.summary ?? "",
-    ...(view.risk === undefined ? {} : { risk: view.risk }),
+    risk: view.risk ?? "high",
     ...(view.preview === undefined ? {} : { preview: view.preview }),
   };
 }

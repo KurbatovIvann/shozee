@@ -17,7 +17,11 @@ import {
   ORPCError,
   ValidationError as OrpcValidationError,
 } from "@orpc/server";
-import type { ActionRisk } from "@showzy/core/contract";
+import {
+  isConfirmableRisk,
+  type ActionRisk,
+  type ConfirmableRisk,
+} from "@showzy/core/contract";
 import {
   ConcurrentRetryError,
   ConfirmationRequiredError,
@@ -28,6 +32,10 @@ import {
 } from "@showzy/core/errors";
 
 import { wireErrorStatus } from "../client/wire-errors.js";
+
+function confirmableRiskOf(risk: ActionRisk): ConfirmableRisk {
+  return isConfirmableRisk(risk) ? risk : "high";
+}
 
 /**
  * Typed extras keyed by wire code. Remaining `CoreError` classes carry
@@ -40,7 +48,7 @@ type WireExtras =
   | { readonly retryAfterSec: number }
   | {
       readonly challenge: ConfirmationRequiredError["challenge"] & {
-        readonly risk: ActionRisk;
+        readonly risk: ConfirmableRisk;
       };
     };
 
@@ -58,7 +66,7 @@ const WIRE_EXTRAS: {
       : undefined,
   CONFIRMATION_REQUIRED: (error, risk) =>
     error instanceof ConfirmationRequiredError
-      ? { challenge: { ...error.challenge, risk } }
+      ? { challenge: { ...error.challenge, risk: confirmableRiskOf(risk) } }
       : undefined,
   RATE_LIMITED: (error) =>
     error instanceof RateLimitError

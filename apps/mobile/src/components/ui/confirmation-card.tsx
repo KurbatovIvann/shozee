@@ -4,7 +4,10 @@ import { StyleSheet } from "react-native-unistyles";
 import type { ConfirmationCardCopy } from "../../i18n/copy";
 import { Button } from "./button";
 import type { ConfirmDialogChoice } from "./confirm-dialog";
-import type { ConfirmationCardView } from "./confirmation-card.model";
+import {
+  confirmationConfirmVariant,
+  type ConfirmationCardView,
+} from "./confirmation-card.model";
 import { PreviewDetails } from "./preview-details";
 import { Sheet } from "./sheet";
 
@@ -45,7 +48,7 @@ export function ConfirmationCard(props: {
           <View style={styles.footerSlot}>
             <Button
               label={props.copy.confirm}
-              variant={view.tone === "danger" ? "danger" : "primary"}
+              variant={confirmationConfirmVariant(view.tone)}
               fullWidth
               disabled={props.confirmDisabled}
               onPress={() => {

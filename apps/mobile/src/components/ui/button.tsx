@@ -2,12 +2,14 @@ import type { ReactNode } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 
+export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
+
 export function Button(props: {
   readonly label: string;
   readonly onPress: () => void;
   readonly loading?: boolean;
   readonly disabled?: boolean;
-  readonly variant?: "primary" | "secondary" | "ghost" | "danger";
+  readonly variant?: ButtonVariant;
   readonly size?: "default" | "lg";
   readonly fullWidth?: boolean;
   readonly icon?: ReactNode;
@@ -160,10 +162,7 @@ const SIZE_CHROME = {
   lg: styles.buttonLg,
 } as const;
 
-function buttonLabelStyle(
-  variant: "primary" | "secondary" | "ghost" | "danger",
-  dangerPressed: boolean,
-) {
+function buttonLabelStyle(variant: ButtonVariant, dangerPressed: boolean) {
   if (variant === "danger" && dangerPressed) {
     return styles.dangerPressedLabel;
   }

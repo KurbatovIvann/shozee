@@ -400,8 +400,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -1106,8 +1104,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -1855,8 +1851,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -2615,8 +2609,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -3425,8 +3417,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -4195,8 +4185,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -4982,8 +4970,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -5761,8 +5747,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -6477,8 +6461,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -7193,8 +7175,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -7909,8 +7889,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -8625,8 +8603,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -9357,8 +9333,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -10091,8 +10065,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -10794,8 +10766,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -11612,8 +11582,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -12309,8 +12277,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -13208,8 +13174,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -14017,8 +13981,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -14955,8 +14917,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -15856,8 +15816,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -16659,8 +16617,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -17373,8 +17329,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -18087,8 +18041,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -18801,8 +18753,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -19639,8 +19589,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -20450,8 +20398,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -21237,8 +21183,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -22050,8 +21994,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -22843,8 +22785,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -23576,8 +23516,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -24385,8 +24323,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -25328,8 +25264,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -26234,8 +26168,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -27049,8 +26981,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -27771,8 +27701,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -28984,8 +28912,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -30254,8 +30180,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -31445,8 +31369,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -32207,8 +32129,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -32921,8 +32841,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -34123,8 +34041,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -34814,8 +34730,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -35570,8 +35484,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -36260,8 +36172,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -37003,8 +36913,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -37699,8 +37607,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -38320,8 +38226,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -39060,8 +38964,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -39690,8 +39592,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -40437,8 +40337,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -41103,8 +41001,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -41724,8 +41620,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -42447,8 +42341,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -43376,8 +43268,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -44098,8 +43988,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -44786,8 +44674,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -45508,8 +45394,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -46543,8 +46427,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -47301,8 +47183,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -48054,8 +47934,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -48807,8 +48685,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -49560,8 +49436,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -50437,8 +50311,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -51852,8 +51724,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -52494,8 +52364,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -53186,8 +53054,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -53929,8 +53795,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -54643,8 +54507,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -55385,8 +55247,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -56167,8 +56027,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -56880,8 +56738,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -57617,8 +57473,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -58374,8 +58228,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -59164,8 +59016,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -59913,8 +59763,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],
@@ -61148,8 +60996,6 @@
                                 },
                                 "risk": {
                                   "enum": [
-                                    "read",
-                                    "draft",
                                     "write",
                                     "high"
                                   ],

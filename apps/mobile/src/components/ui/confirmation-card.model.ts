@@ -1,4 +1,5 @@
 import type { ConfirmationChallengeView } from "../../api/protocol-confirm";
+import type { ButtonVariant } from "./button";
 import type { ConfirmDialogTone } from "./confirm-dialog";
 
 export type ConfirmationCardLine = {
@@ -18,6 +19,12 @@ function confirmationCardTone(
   challenge: ConfirmationChallengeView,
 ): ConfirmDialogTone {
   return challenge.risk === "high" ? "danger" : "default";
+}
+
+export function confirmationConfirmVariant(
+  tone: ConfirmDialogTone,
+): ButtonVariant {
+  return tone === "danger" ? "danger" : "primary";
 }
 
 export function confirmationCardView(

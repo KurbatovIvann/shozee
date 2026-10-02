@@ -12,6 +12,7 @@ import {
 } from "./confirmation-card.machine";
 import {
   confirmationCardView,
+  confirmationConfirmVariant,
   type ConfirmationCardView,
 } from "./confirmation-card.model";
 import { SHEET_MS } from "./sheet-dismiss";
@@ -100,6 +101,7 @@ describe("confirmationCardView", () => {
       confirmationCardView(
         {
           challengeId: "ch-1",
+          risk: "write",
           summary: "Delete?",
           preview: {
             title: "Видалити клієнта?",
@@ -125,6 +127,7 @@ describe("confirmationCardView", () => {
       confirmationCardView(
         {
           challengeId: "ch-5",
+          risk: "write",
           summary: "Запросити підписання документа KA-РХ-000001",
           preview: {
             title: "Запросити підписання документа KA-РХ-000001",
@@ -150,6 +153,7 @@ describe("confirmationCardView", () => {
       confirmationCardView(
         {
           challengeId: "ch-6",
+          risk: "write",
           summary: longTitle,
           preview: {
             title: longTitle,
@@ -173,6 +177,7 @@ describe("confirmationCardView", () => {
       confirmationCardView(
         {
           challengeId: "ch-2",
+          risk: "write",
           summary: "Delete?",
           preview: { title: "Видалити групу?", lines: [] },
         },
@@ -184,7 +189,11 @@ describe("confirmationCardView", () => {
   it("falls back to the legacy summary when no preview is bound", () => {
     expect(
       confirmationCardView(
-        { challengeId: "ch-3", summary: "Delete this counterparty?" },
+        {
+          challengeId: "ch-3",
+          summary: "Delete this counterparty?",
+          risk: "write",
+        },
         confirmationCardUk.fallbackTitle,
       ),
     ).toEqual({
@@ -219,7 +228,7 @@ describe("confirmationCardView", () => {
   it("shows no body when the challenge carries neither preview nor summary", () => {
     expect(
       confirmationCardView(
-        { challengeId: "ch-4", summary: "" },
+        { challengeId: "ch-4", summary: "", risk: "write" },
         confirmationCardUk.fallbackTitle,
       ).summary,
     ).toBeNull();
@@ -366,9 +375,11 @@ describe("confirmation card presenter wiring", () => {
     expect(CARD_SOURCE).toContain("view.summary");
   });
 
-  it("drives the primary button tone from the view, not a hardcoded variant", () => {
+  it("drives the primary button variant from the view tone", () => {
+    expect(confirmationConfirmVariant("danger")).toBe("danger");
+    expect(confirmationConfirmVariant("default")).toBe("primary");
     expect(CARD_SOURCE).toContain(
-      'variant={view.tone === "danger" ? "danger" : "primary"}',
+      "variant={confirmationConfirmVariant(view.tone)}",
     );
   });
 
