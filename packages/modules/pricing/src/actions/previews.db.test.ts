@@ -13,7 +13,9 @@ import {
   type IsolationActor,
   type TestKit,
 } from "@showzy/core/testing";
+import { user } from "@showzy/db/schema/auth";
 import { products, productVariants } from "@showzy/db/schema/catalog";
+import { companyMembers } from "@showzy/db/schema/companies";
 import { priceListEntries, priceLists } from "@showzy/db/schema/pricing";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -41,6 +43,8 @@ const fixtures = {
   productB: randomUUID(),
   missingId: randomUUID(),
 };
+
+const managerOnlyPricing = randomUUID();
 
 let kit: TestKit;
 
@@ -92,6 +96,18 @@ function expectSameRefusal(foreign: unknown, missing: unknown): void {
 
 beforeAll(async () => {
   kit = await createTestKit();
+
+  await kit.db.runtime.db.insert(user).values({
+    id: managerOnlyPricing,
+    name: "Pricer",
+    email: "pricer@pricing-previews.test",
+  });
+  await kit.db.runtime.db.insert(companyMembers).values({
+    companyId: companyA,
+    userId: managerOnlyPricing,
+    role: "employee",
+    permissions: { granted: ["pricing:manage"], denied: [] },
+  });
 
   await kit.db.runtime.db.insert(priceLists).values([
     {
@@ -309,6 +325,20 @@ describe("pricing preview cards", () => {
       ],
     });
     expect(preview.title).toBe("Видалити ціни з прайс-листа: Основний прайс");
+    expect(preview.lines).toEqual([
+      { label: "Кава Арабіка", value: "120,00 грн" },
+    ]);
+  });
+
+  it("names the products for a pricing:manage-only member", async () => {
+    const preview = await previewOf(
+      removePriceListEntries,
+      {
+        priceListId: fixtures.listDefault,
+        entries: [{ productId: fixtures.productA }],
+      },
+      { userId: managerOnlyPricing, companyId: companyA },
+    );
     expect(preview.lines).toEqual([
       { label: "Кава Арабіка", value: "120,00 грн" },
     ]);

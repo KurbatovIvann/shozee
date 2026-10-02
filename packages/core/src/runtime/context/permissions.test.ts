@@ -7,10 +7,58 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  expandPermissionPrerequisites,
+  PERMISSION_CALL_PREREQUISITES,
+  PERMISSION_CATALOG,
+  permissionPrerequisites,
+} from "./permission-prerequisites.js";
+import {
   isCompanyRole,
   resolveEffectivePermissions,
   staffHasPermission,
 } from "./permissions.js";
+
+describe("the same-resource rule over the permission catalog", () => {
+  const catalog: readonly string[] = PERMISSION_CATALOG;
+  const viewOf = (permission: string): string =>
+    `${permission.split(":")[0] ?? ""}:view`;
+  const isView = (permission: string): boolean =>
+    permission.split(":")[1] === "view";
+
+  it("names the only permissions with no :view sibling", () => {
+    expect(
+      catalog.filter(
+        (permission) =>
+          !isView(permission) && !catalog.includes(viewOf(permission)),
+      ),
+    ).toEqual(["assistant:use", "settings:payments"]);
+  });
+
+  it("every prerequisite, from either source, is a :view key of the catalog", () => {
+    const required = [
+      ...catalog.flatMap((permission) => [
+        ...permissionPrerequisites(permission),
+      ]),
+      ...Object.values(PERMISSION_CALL_PREREQUISITES).flat(),
+    ];
+    expect(required.length).toBeGreaterThan(0);
+    for (const permission of required) {
+      expect(isView(permission)).toBe(true);
+      expect(catalog).toContain(permission);
+    }
+  });
+
+  it("every other non-view permission implies its own resource's view", () => {
+    for (const permission of catalog) {
+      if (isView(permission) || !catalog.includes(viewOf(permission))) {
+        continue;
+      }
+      expect(expandPermissionPrerequisites([permission])).toContain(
+        viewOf(permission),
+      );
+    }
+  });
+});
 
 describe("resolveEffectivePermissions", () => {
   it("unions role defaults with explicit grants", () => {
@@ -19,10 +67,51 @@ describe("resolveEffectivePermissions", () => {
       ["orders:view", "orders:create"],
     );
     expect([...effective].sort()).toEqual([
+      "companies:view",
+      "customers:view",
       "orders:create",
       "orders:view",
       "pricing:manage",
+      "pricing:view",
+      "products:view",
     ]);
+  });
+
+  it("a grant carries the prerequisites of the job it authorizes", () => {
+    const effective = resolveEffectivePermissions(
+      { granted: ["pricing:manage"], denied: [] },
+      [],
+    );
+    expect([...effective].sort()).toEqual([
+      "customers:view",
+      "pricing:manage",
+      "pricing:view",
+      "products:view",
+    ]);
+  });
+
+  it("a deny of a resource's view removes that resource's writes", () => {
+    const effective = resolveEffectivePermissions(
+      { granted: ["pricing:manage"], denied: ["pricing:view"] },
+      ["chat:view"],
+    );
+    expect(effective).toEqual(["chat:view"]);
+  });
+
+  it("an explicit deny of a prerequisite removes every permission that requires it", () => {
+    const effective = resolveEffectivePermissions(
+      { granted: ["pricing:manage"], denied: ["products:view"] },
+      ["pricing:view"],
+    );
+    expect(effective).toEqual([]);
+  });
+
+  it("a deny propagates through a transitive prerequisite", () => {
+    const effective = resolveEffectivePermissions(
+      { granted: [], denied: ["customers:view"] },
+      ["orders:create", "orders:view", "companies:view"],
+    );
+    expect(effective).toEqual(["companies:view"]);
   });
 
   it("explicit deny wins over both the role default and an explicit grant", () => {
@@ -40,7 +129,19 @@ describe("resolveEffectivePermissions", () => {
       { granted: ["orders:view"], denied: [] },
       ["orders:view"],
     );
-    expect(effective).toEqual(["orders:view"]);
+    expect([...effective].sort()).toEqual([
+      "companies:view",
+      "customers:view",
+      "orders:view",
+    ]);
+  });
+
+  it("leaves a permission with no declared prerequisites alone", () => {
+    const effective = resolveEffectivePermissions({ granted: [], denied: [] }, [
+      "chat:view",
+      "assistant:use",
+    ]);
+    expect(effective).toEqual(["chat:view", "assistant:use"]);
   });
 });
 
@@ -49,6 +150,16 @@ describe("staffHasPermission", () => {
     const membership = { role: "owner" as const, permissions: [] };
     expect(staffHasPermission(membership, "orders:create")).toBe(true);
     expect(staffHasPermission(membership, "anything:atAll")).toBe(true);
+  });
+
+  it("owner keeps every permission even when a prerequisite is denied", () => {
+    const permissions = resolveEffectivePermissions(
+      { granted: ["pricing:manage"], denied: ["products:view"] },
+      [],
+    );
+    const membership = { role: "owner" as const, permissions };
+    expect(staffHasPermission(membership, "products:view")).toBe(true);
+    expect(staffHasPermission(membership, "pricing:manage")).toBe(true);
   });
 
   it("non-owner roles consult only the resolved effective set", () => {

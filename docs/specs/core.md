@@ -83,6 +83,12 @@ satisfying the share subset below (`transport: client`, `aiExposure: internal`,
 that are not `risk: read` or do not accept the caller's principal, undeclared
 or invalid `ctx.callAtomic` edges (ADR-0021), a caller's `errors` that does
 not include every code declared by its `ctx.call` / `ctx.callAtomic` callees,
+a `staff` caller whose declared permissions — closed over
+`permissionPrerequisites`, which is the structural same-resource `:view`
+rule over `PERMISSION_CATALOG` plus `PERMISSION_CALL_PREREQUISITES`
+(ADR-0015, amended 2026-10-02) — do not cover a `ctx.call` or
+`ctx.callAtomic` callee's permissions (a `ctx.call` edge, never an atomic
+one, may declare `permissionGuarded` when the caller checks them itself),
 event scope inconsistent with action/system scope, `risk: write|high` with
 `audit: false`, `audit: true` without `auditTarget`, event subscriptions not
 bound to a compatible internal idempotent system action. The same CI phase

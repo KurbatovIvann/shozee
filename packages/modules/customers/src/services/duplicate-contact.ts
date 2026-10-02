@@ -26,10 +26,6 @@ async function takenBy(
   return rows[0]?.name;
 }
 
-function note(base: string, name: string, namesVisible: boolean): string {
-  return namesVisible ? `${base}: ${name}` : base;
-}
-
 export async function duplicateContactNotes(
   db: ContactLookupDb,
   companyId: string,
@@ -37,7 +33,6 @@ export async function duplicateContactNotes(
     readonly phone?: string | null | undefined;
     readonly email?: string | null | undefined;
   },
-  namesVisible: boolean,
 ): Promise<string[]> {
   const phone =
     contact.phone === null || contact.phone === undefined
@@ -57,7 +52,7 @@ export async function duplicateContactNotes(
           sql`${canonicalPhoneSql(companyCustomers.phone)} = ${phone}`,
         );
   if (phoneHolder !== undefined) {
-    notes.push(note(DUPLICATE_PHONE_NOTE, phoneHolder, namesVisible));
+    notes.push(`${DUPLICATE_PHONE_NOTE}: ${phoneHolder}`);
   }
   const emailHolder =
     email === undefined
@@ -68,7 +63,7 @@ export async function duplicateContactNotes(
           sql`lower(${companyCustomers.email}) = ${email}`,
         );
   if (emailHolder !== undefined) {
-    notes.push(note(DUPLICATE_EMAIL_NOTE, emailHolder, namesVisible));
+    notes.push(`${DUPLICATE_EMAIL_NOTE}: ${emailHolder}`);
   }
   return notes;
 }

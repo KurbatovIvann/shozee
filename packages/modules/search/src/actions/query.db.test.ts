@@ -279,12 +279,7 @@ beforeAll(async () => {
       role: "employee",
       permissions: {
         granted: ["orders:view", "companies:view"],
-        denied: [
-          "customers:view",
-          "documents:view",
-          "products:view",
-          "pricing:view",
-        ],
+        denied: ["documents:view", "products:view", "pricing:view"],
       },
     },
   ]);
@@ -363,7 +358,7 @@ describe("search.query", () => {
     ).rejects.toBeInstanceOf(PermissionDeniedError);
   });
 
-  it("searches order numbers without customers:view or documents:view", async () => {
+  it("searches order numbers and the customers orders:view implies, never documents", async () => {
     const listed = await kit.invoke(
       query,
       {
@@ -381,11 +376,13 @@ describe("search.query", () => {
         companyId: kitIdentities.companies.a,
       },
     );
-    expect(listed.searchedTypes).toEqual(["order"]);
+    expect(listed.searchedTypes).toEqual([
+      "order",
+      "customer",
+      "customerGroup",
+      "counterparty",
+    ]);
     expect(hitIds(groupOf(listed, "order"))).toContain(fixtures.numberOrder);
-    expect(groupOf(listed, "customer")).toBeUndefined();
-    expect(groupOf(listed, "customerGroup")).toBeUndefined();
-    expect(groupOf(listed, "counterparty")).toBeUndefined();
     expect(groupOf(listed, "document")).toBeUndefined();
   });
 
@@ -422,7 +419,7 @@ describe("search.query", () => {
     );
     expect(ordersOnly).toEqual({
       groups: [],
-      searchedTypes: ["order"],
+      searchedTypes: ["order", "customer"],
       queryNormalized: "",
     });
   });

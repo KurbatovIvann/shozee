@@ -45,6 +45,16 @@ const EMPLOYEE_DEFAULT_PERMISSIONS = [
   "orders:view",
 ] as const;
 
+const EMPLOYEE_DEFAULT_CLOSURE = [
+  "companies:view",
+  "customers:view",
+  "orders:create",
+  "orders:edit",
+  "orders:view",
+  "pricing:view",
+  "products:view",
+] as const;
+
 let kit: TestKit;
 
 beforeAll(async () => {
@@ -257,7 +267,7 @@ describe("companies.listMine", () => {
         {
           membershipId: fixtures.membershipSecond,
           role: "manager",
-          permissions: [...EMPLOYEE_DEFAULT_PERMISSIONS],
+          permissions: [...EMPLOYEE_DEFAULT_CLOSURE],
           company: {
             id: fixtures.companySecond,
             name: "Atelier Amaltea",
@@ -294,8 +304,14 @@ describe("companies.listMine", () => {
     expect(granted.memberships[0]?.membershipId).toBe(fixtures.membershipGrant);
     expect(granted.memberships[0]?.role).toBe("employee");
     expect(granted.memberships[0]?.permissions).toEqual([
+      "companies:view",
+      "customers:view",
       "files:view",
-      ...EMPLOYEE_DEFAULT_PERMISSIONS,
+      "orders:create",
+      "orders:edit",
+      "orders:view",
+      "pricing:view",
+      "products:view",
     ]);
 
     const denied = await kit.invoke(
@@ -306,6 +322,8 @@ describe("companies.listMine", () => {
     expect(denied.memberships).toHaveLength(1);
     expect(denied.memberships[0]?.membershipId).toBe(fixtures.membershipDeny);
     expect(denied.memberships[0]?.permissions).toEqual([
+      "companies:view",
+      "customers:view",
       "orders:edit",
       "orders:view",
     ]);

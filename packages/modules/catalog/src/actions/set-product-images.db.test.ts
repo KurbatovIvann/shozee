@@ -361,21 +361,16 @@ describe("catalog.setProductImages", () => {
     ).rejects.toBeInstanceOf(PermissionDeniedError);
   });
 
-  it("denies attach without nested files:view and still allows a clear", async () => {
-    await expect(
-      kit.invoke(
-        setProductImages,
-        { productId: fixtures.productHappy, fileIds: [fixtures.fileJpeg] },
-        { userId: clerks.noFiles, companyId: kitIdentities.companies.a },
-      ),
-    ).rejects.toBeInstanceOf(PermissionDeniedError);
-
-    const cleared = await kit.invoke(
-      setProductImages,
-      { productId: fixtures.productHappy, fileIds: [] },
-      { userId: clerks.noFiles, companyId: kitIdentities.companies.a },
-    );
-    expect(cleared.fileIds).toEqual([]);
+  it("denies attach and clear alike when files:view is denied, because products:edit requires it", async () => {
+    for (const fileIds of [[fixtures.fileJpeg], []]) {
+      await expect(
+        kit.invoke(
+          setProductImages,
+          { productId: fixtures.productHappy, fileIds },
+          { userId: clerks.noFiles, companyId: kitIdentities.companies.a },
+        ),
+      ).rejects.toBeInstanceOf(PermissionDeniedError);
+    }
   });
 
   it("rejects an oversized batch, duplicates, and extra identifiers", async () => {

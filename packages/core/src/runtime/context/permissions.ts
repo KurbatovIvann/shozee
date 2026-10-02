@@ -8,6 +8,10 @@
 import type { CompanyMemberPermissions } from "@showzy/db";
 
 import { PermissionDeniedError } from "../../errors/index.js";
+import {
+  expandPermissionPrerequisites,
+  permissionRequiresDenied,
+} from "./permission-prerequisites.js";
 import type { CompanyRole, StaffMembership } from "./types.js";
 
 export const COMPANY_ROLES = ["owner", "admin", "manager", "employee"] as const;
@@ -16,25 +20,15 @@ export function isCompanyRole(value: string): value is CompanyRole {
   return (COMPANY_ROLES as readonly string[]).includes(value);
 }
 
-/**
- * Resolves the effective permission set of one membership: role defaults
- * plus explicit grants, minus explicit denies. The owner-has-all rule is
- * deliberately NOT baked into the array (it cannot be enumerated — "all
- * known permissions" grows with every module); `staffHasPermission`
- * short-circuits it.
- */
 export function resolveEffectivePermissions(
   overrides: CompanyMemberPermissions,
   roleDefaults: readonly string[],
 ): readonly string[] {
   const denied = new Set(overrides.denied);
-  const effective = new Set<string>();
-  for (const permission of [...roleDefaults, ...overrides.granted]) {
-    if (!denied.has(permission)) {
-      effective.add(permission);
-    }
-  }
-  return [...effective];
+  const held = [...roleDefaults, ...overrides.granted].filter(
+    (permission) => !permissionRequiresDenied(permission, denied),
+  );
+  return expandPermissionPrerequisites(held);
 }
 
 /**

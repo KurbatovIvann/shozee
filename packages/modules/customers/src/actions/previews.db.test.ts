@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { type ImplementedAction } from "@showzy/core";
 import {
   ConfirmationRequiredError,
+  PermissionDeniedError,
   type ActionPreview,
 } from "@showzy/core/errors";
 import {
@@ -240,25 +241,15 @@ describe("customers preview cards (ADR-0050, core.md §7)", () => {
     }
   });
 
-  it("keeps the note nameless when customers:view is explicitly denied", async () => {
-    const byPhone = await previewOf(
-      createCustomer,
-      { name: "Інша Анна", phone: "0501112233" },
-      { userId: clerkWithoutView },
-    );
-    expect(byPhone.notes).toEqual([DUPLICATE_PHONE_NOTE]);
-
-    const byEmail = await previewOf(
-      createCustomer,
-      { name: "Інший Богдан", email: "BOHDAN@previews.test" },
-      { userId: clerkWithoutView },
-    );
-    expect(byEmail.notes).toEqual([DUPLICATE_EMAIL_NOTE]);
-
-    for (const note of [...(byPhone.notes ?? []), ...(byEmail.notes ?? [])]) {
-      expect(note).not.toContain("Анна Коваль");
-      expect(note).not.toContain("Богдан Мороз");
-    }
+  it("refuses the whole create when customers:view is explicitly denied, prerequisite of customers:create", async () => {
+    await expect(
+      kit.invoke(
+        createCustomer,
+        { name: "Інша Анна", phone: "0501112233" },
+        { userId: clerkWithoutView },
+        { request: { requireConfirmation: true } },
+      ),
+    ).rejects.toBeInstanceOf(PermissionDeniedError);
   });
 
   it("never warns about another company's customer", async () => {

@@ -44,6 +44,41 @@ deny wins, then explicit grant, then role default. Unknown permission keys
 fail the action contract/catalog check. Admin is seeded `settings:payments`
 (SHO-223); manager and employee are not.
 
+Precedence, amended 2026-10-02 (SHO-830, ADR-0015): a permission has
+**prerequisites** — the reads its job needs — from two sources, both in
+`packages/core/src/runtime/context/permission-prerequisites.ts` and read
+through `permissionPrerequisites`:
+
+- **its own resource's view**, structurally: every non-view
+  `<resource>:<verb>` in `PERMISSION_CATALOG` implies `<resource>:view`
+  when that key exists, so `pricing:manage` implies `pricing:view` and
+  `files:upload` implies `files:view`. `assistant:use` and
+  `settings:payments` have no `:view` sibling and are excluded;
+- **the cross-module reads it performs**, one pair per declared `ctx.call`
+  edge (`PERMISSION_CALL_PREREQUISITES`): `pricing:manage` also requires
+  `products:view`, because a price list cannot be changed without seeing
+  the products.
+
+The stored rows (`role_permission_defaults`,
+`company_members.permissions`) keep only what was granted. The effective
+set of a membership is therefore:
+
+1. an explicit deny removes the denied permission **and, transitively,
+   every permission that requires it** — deny stays the strongest rule;
+2. role defaults plus explicit grants that survived (1);
+3. the closure of (2) over `permissionPrerequisites` — both sources.
+
+A module ticket that adds a permission key or a `ctx.call` edge amends
+`PERMISSION_CATALOG` / `PERMISSION_CALL_PREREQUISITES` in the same PR —
+that ticket is the core-change approval, and the contract check fails
+until the table matches the edges.
+
+`resolveEffectivePermissions` is the only place this is computed, and
+`staffHasPermission` is the only read API; the owner short-circuit is
+unchanged, so no deny row binds an owner. A resolved set never holds a job
+without the reads that job performs, which is what `ctx.call` re-checks
+inside the caller's transaction.
+
 The invariant “a company has at least one owner” is enforced by later
 companies actions/transactions, not a hidden DB trigger. Test factories may
 insert fixtures directly only under the test harness.
@@ -84,6 +119,7 @@ insert fixtures directly only under the test harness.
 
 | Date | Change | Why | Reported by |
 | --- | --- | --- | --- |
+| 2026-10-02 | Permission prerequisites: the effective set is the closure of defaults + grants, and a deny removes dependents | A permission to do a job implies the reads that job needs (SHO-822/SHO-829 were the same hidden requirement twice) | Human owner (SHO-830) |
 | 2026-08-29 | Named `company_legal_info` in this file; admin `settings:payments` seed | SHO-222 / SHO-223 seller legal face; table the card named | companies-T3 (SHO-223) |
 | 2026-08-20 | `company_members` unique `(company_id, id)` | Match ADR-0025 tenant FK-target convention | Human owner |
 | 2026-08-17 | Initial foundation slice | Unblock staff principal integration without giving core domain ownership | GPT-5.6 Sol |

@@ -1008,23 +1008,13 @@ describe("orders.list", () => {
     ]);
   });
 
-  it("fails closed when any query needs customers.listMatchingIds without customers:view", async () => {
-    const listed = asSummary(
-      await kit.invoke(listOrders, pageSummary, {
+  it("refuses orders.list outright when customers:view is denied, prerequisite of orders:view", async () => {
+    await expect(
+      kit.invoke(listOrders, pageSummary, {
         userId: noCustomersUserId,
         companyId: kitIdentities.companies.a,
       }),
-    );
-    expect(listed.items.map((row) => row.orderId)).toEqual([
-      fixtures.done,
-      fixtures.inProgress,
-      fixtures.confirmed,
-      fixtures.eurNew,
-      fixtures.newestNew,
-      fixtures.sameProductOldTitle,
-      fixtures.canceled,
-      fixtures.orphaned,
-    ]);
+    ).rejects.toBeInstanceOf(PermissionDeniedError);
 
     await expect(
       kit.invoke(
