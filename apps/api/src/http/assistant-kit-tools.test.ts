@@ -731,6 +731,16 @@ describe("an action that needs a person's authorisation", () => {
     level: "card",
   };
 
+  function storedBeforeAlso(): ConfirmationSecret {
+    const stored: Omit<ConfirmationSecret, "also"> = {
+      actionName: ATTEMPT.actionName,
+      canonicalInput: ATTEMPT.input,
+      idempotencyKey: ATTEMPT.idempotencyKey,
+      challengeId: CHALLENGE.challengeId,
+    };
+    return stored as ConfirmationSecret;
+  }
+
   /** What a claim hands the resolver, produced by the kind's own `resolve`. */
   function approvedFrom(secret: ConfirmationSecret): unknown {
     const resolution = confirmation.resolve({
@@ -926,32 +936,27 @@ describe("an action that needs a person's authorisation", () => {
     });
   });
 
-  const DRIFTED_CHALLENGE = {
-    ...CHALLENGE,
-    challengeId: "cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd",
-  };
-
   it("asks again with the fresh card when the first action of one card drifts", async () => {
-    const freshSecond = {
-      ...SECOND_CHALLENGE,
-      challengeId: "bcbcbcbc-bcbc-4cbc-8cbc-bcbcbcbcbcbc",
+    const fresh = {
+      ...CHALLENGE,
+      challengeId: "cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd",
     };
-    const seen: { action: string; challengeId: string | undefined }[] = [];
+    const seen: unknown[] = [];
 
     const outcome = await answerWith(
       {
         runConfirmed: (args) => {
-          seen.push({ action: args.actionName, challengeId: args.challengeId });
+          seen.push({
+            actionName: args.actionName,
+            input: args.input,
+            idempotencyKey: args.idempotencyKey,
+            challengeId: args.challengeId,
+          });
           return Promise.reject(
-            args.actionName === ATTEMPT.actionName
-              ? new AssistantConfirmationRequired(
-                  ATTEMPT,
-                  new ConfirmationRequiredError(DRIFTED_CHALLENGE),
-                )
-              : new AssistantConfirmationRequired(
-                  SECOND_ATTEMPT,
-                  new ConfirmationRequiredError(freshSecond),
-                ),
+            new AssistantConfirmationRequired(
+              ATTEMPT,
+              new ConfirmationRequiredError(fresh),
+            ),
           );
         },
       },
@@ -959,46 +964,51 @@ describe("an action that needs a person's authorisation", () => {
     );
 
     expect(seen).toEqual([
-      { action: ATTEMPT.actionName, challengeId: CHALLENGE.challengeId },
-      { action: SECOND_ATTEMPT.actionName, challengeId: undefined },
+      {
+        actionName: ATTEMPT.actionName,
+        input: ATTEMPT.input,
+        idempotencyKey: ATTEMPT.idempotencyKey,
+        challengeId: CHALLENGE.challengeId,
+      },
     ]);
     expect(outcome).toMatchObject({
       kind: "pause",
       interaction: "confirmation",
       prompt: {
         preview: CARD,
-        also: [freshSecond.preview],
+        also: [SECOND_CHALLENGE.preview],
       },
       secret: {
-        challengeId: DRIFTED_CHALLENGE.challengeId,
+        challengeId: fresh.challengeId,
         idempotencyKey: ATTEMPT.idempotencyKey,
-        also: [{ ...SECOND_ALSO, challengeId: freshSecond.challengeId }],
+        also: [SECOND_ALSO],
       },
     });
   });
 
-  it("refuses the re-pause when a carried action can no longer be summarized", async () => {
-    const gone = new NotFoundError();
+  it("re-presents a carried action unchanged, so core answers the same attempt", async () => {
+    const seen: unknown[] = [];
 
-    const outcome = await answerWith(
+    await answerWith(
       {
-        runConfirmed: (args) =>
-          Promise.reject(
-            args.actionName === ATTEMPT.actionName
-              ? new AssistantConfirmationRequired(
-                  ATTEMPT,
-                  new ConfirmationRequiredError(DRIFTED_CHALLENGE),
-                )
-              : gone,
-          ),
+        runConfirmed: (args) => {
+          seen.push({
+            actionName: args.actionName,
+            input: args.input,
+            idempotencyKey: args.idempotencyKey,
+            challengeId: args.challengeId,
+          });
+          return Promise.resolve({ ran: args.actionName });
+        },
       },
       [SECOND_ALSO],
     );
 
-    expect(outcome).toEqual({
-      kind: "error",
-      code: gone.code,
-      message: gone.message,
+    expect(seen[1]).toEqual({
+      actionName: SECOND_ALSO.actionName,
+      input: SECOND_ALSO.canonicalInput,
+      idempotencyKey: SECOND_ALSO.idempotencyKey,
+      challengeId: SECOND_ALSO.challengeId,
     });
   });
 
@@ -1025,6 +1035,26 @@ describe("an action that needs a person's authorisation", () => {
 
     expect(ran).toEqual([ATTEMPT.actionName, SECOND_ATTEMPT.actionName]);
     expect(outcome).toMatchObject({ kind: "ok" });
+  });
+
+  it("runs a pause whose stored secret carries no also list", async () => {
+    const seen: string[] = [];
+
+    const outcome = await createResolveAnswer({
+      runConfirmed: (args) => {
+        seen.push(args.actionName);
+        return Promise.resolve({ id: CUSTOMER_A });
+      },
+    })({
+      toolName: "customers_deleteCustomer",
+      kind: "confirmation",
+      value: approvedFrom(storedBeforeAlso()),
+      tools: {},
+      context: ANSWER_CONTEXT,
+    });
+
+    expect(seen).toEqual([ATTEMPT.actionName]);
+    expect(outcome).toEqual({ kind: "ok", result: { id: CUSTOMER_A } });
   });
 
   it("has no answer that declines and still runs", () => {

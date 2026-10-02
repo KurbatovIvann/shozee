@@ -23,7 +23,7 @@ import {
   ASSISTANT_PREVIEW_TEXT_MAX,
 } from "@showzy/validation/assistant-chat";
 import { ASSISTANT_SURFACE_REGISTRY } from "@showzy/validation/assistant-surfaces";
-import { CREATE_ORDER_MAX_ITEMS } from "@showzy/validation/orders";
+import { CREATE_ORDER_MAX_ITEMS } from "@showzy/orders/contract";
 import type { RecordCreatedVia as ValidationRecordCreatedVia } from "@showzy/validation/record-verification";
 import { readFileSync } from "node:fs";
 import { describe, expect, expectTypeOf, it } from "vitest";
@@ -182,11 +182,49 @@ const PREVIEW_FORMAT_TEXT_MAX: Readonly<Record<string, number>> = {
 
 const PREVIEW_CARD_FIXED_LINES = 8;
 
+const ORDER_ITEM_PREVIEW_LINES = CREATE_ORDER_MAX_ITEMS + 1;
+
 const PREVIEW_DB_ROW_FANOUT_LINES: Readonly<Record<string, number>> = {
-  "orders.cancel": CREATE_ORDER_MAX_ITEMS + 1,
-  "orders.complete": CREATE_ORDER_MAX_ITEMS + 1,
-  "orders.confirm": CREATE_ORDER_MAX_ITEMS + 1,
-  "orders.start": CREATE_ORDER_MAX_ITEMS + 1,
+  "catalog.archiveProduct": 0,
+  "catalog.archiveVariant": 0,
+  "catalog.createProduct": 0,
+  "catalog.createVariant": 0,
+  "catalog.restoreProduct": 0,
+  "catalog.restoreVariant": 0,
+  "catalog.updateProduct": 0,
+  "catalog.updateVariant": 0,
+  "companies.create": 0,
+  "companies.updateLegal": 0,
+  "customers.archiveCustomer": 0,
+  "customers.createCounterparty": 0,
+  "customers.createCustomer": 0,
+  "customers.createGroup": 0,
+  "customers.deleteCounterparty": 0,
+  "customers.deleteCustomer": 0,
+  "customers.deleteGroup": 0,
+  "customers.restoreCustomer": 0,
+  "customers.updateCounterparty": 0,
+  "customers.updateCustomer": 0,
+  "customers.updateGroup": 0,
+  "documents.cancel": 0,
+  "documents.createFromOrder": 0,
+  "documents.requestSign": 0,
+  "documents.share": 0,
+  "invites.create": 0,
+  "invites.revoke": 0,
+  "orders.cancel": ORDER_ITEM_PREVIEW_LINES,
+  "orders.complete": ORDER_ITEM_PREVIEW_LINES,
+  "orders.confirm": ORDER_ITEM_PREVIEW_LINES,
+  "orders.create": 0,
+  "orders.start": ORDER_ITEM_PREVIEW_LINES,
+  "pricing.activatePriceList": 0,
+  "pricing.createPriceList": 0,
+  "pricing.deactivatePriceList": 0,
+  "pricing.deletePriceList": 0,
+  "pricing.removePriceListEntries": 0,
+  "pricing.setDefaultPriceList": 0,
+  "pricing.setPriceListEntries": 0,
+  "pricing.updatePriceList": 0,
 };
 
 const PREVIEW_CARD_LINES_PER_INPUT_ITEM: Readonly<Record<string, number>> = {
@@ -676,11 +714,12 @@ describe("CI contract-check stage", () => {
     expect(contracts.length).toBeGreaterThan(0);
 
     const names = contracts.map((contract) => contract.name);
-    const declaredElsewhere = [
-      ...Object.keys(PREVIEW_DB_ROW_FANOUT_LINES),
-      ...Object.keys(PREVIEW_CARD_LINES_PER_INPUT_ITEM),
-    ].filter((name) => !names.includes(name));
-    expect(declaredElsewhere).toEqual([]);
+    expect(Object.keys(PREVIEW_DB_ROW_FANOUT_LINES).toSorted()).toEqual(names);
+    expect(
+      Object.keys(PREVIEW_CARD_LINES_PER_INPUT_ITEM).filter(
+        (name) => !names.includes(name),
+      ),
+    ).toEqual([]);
 
     const unbounded: string[] = [];
     const over: string[] = [];
