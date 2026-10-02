@@ -175,4 +175,5 @@ export const createOrderContract = defineActionContract({
   errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
   audit: true,
   timeout: 20_000,
+  writtenRecordIdField: "orderId",
 });

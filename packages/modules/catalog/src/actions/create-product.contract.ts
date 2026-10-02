@@ -76,4 +76,5 @@ export const createProductContract = defineActionContract({
   errors: ["VALIDATION"],
   audit: true,
   timeout: 5_000,
+  writtenRecordIdField: "productId",
 });

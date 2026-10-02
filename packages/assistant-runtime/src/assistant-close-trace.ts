@@ -17,12 +17,22 @@ type AssistantTraceAttempt = AssistantTracePart["attempts"][number];
 
 const RECORD_ID_MAX = 128;
 
-export function assistantTraceRecordId(result: unknown): string | null {
-  if (typeof result !== "object" || result === null || Array.isArray(result)) {
+export type AssistantWrittenRecordIdField = (action: string) => string | null;
+
+export function assistantTraceRecordId(
+  result: unknown,
+  field: string | null,
+): string | null {
+  if (
+    field === null ||
+    typeof result !== "object" ||
+    result === null ||
+    Array.isArray(result)
+  ) {
     return null;
   }
-  const direct = (result as Record<string, unknown>)["id"];
-  return typeof direct === "string" ? storableId(direct) : null;
+  const declared = (result as Record<string, unknown>)[field];
+  return typeof declared === "string" ? storableId(declared) : null;
 }
 
 function storableId(value: string): string | null {
@@ -74,6 +84,7 @@ interface CloseArgs {
   readonly interactionId: string;
   readonly value: unknown;
   readonly outcome: ToolOutcome;
+  readonly writtenRecordIdField: AssistantWrittenRecordIdField;
 }
 
 type Tracer = (args: CloseArgs) => readonly AssistantTracePart[];
@@ -103,14 +114,20 @@ function isBundleResolution(value: unknown): boolean {
   return Array.isArray(also) && also.length > 0;
 }
 
-function bundleAttempts(result: unknown): AssistantTraceAttempt[] {
+function bundleAttempts(
+  result: unknown,
+  writtenRecordIdField: AssistantWrittenRecordIdField,
+): AssistantTraceAttempt[] {
   if (!isConfirmedCardResult(result)) {
     return [];
   }
   const done = result.done.map((one): AssistantTraceAttempt => ({
     action: one.action,
     outcome: "done",
-    recordId: assistantTraceRecordId(one.result),
+    recordId: assistantTraceRecordId(
+      one.result,
+      writtenRecordIdField(one.action),
+    ),
   }));
   const failed = result.failed;
   return failed === undefined
@@ -121,20 +138,31 @@ function bundleAttempts(result: unknown): AssistantTraceAttempt[] {
 function singleAttempt(
   value: unknown,
   result: unknown,
+  writtenRecordIdField: AssistantWrittenRecordIdField,
 ): AssistantTraceAttempt[] {
   const action = readText(value, CONFIRMATION_ACTION);
   return action === null
     ? []
-    : [{ action, outcome: "done", recordId: assistantTraceRecordId(result) }];
+    : [
+        {
+          action,
+          outcome: "done",
+          recordId: assistantTraceRecordId(
+            result,
+            writtenRecordIdField(action),
+          ),
+        },
+      ];
 }
 
 function confirmedAttempts(
   value: unknown,
   result: unknown,
+  writtenRecordIdField: AssistantWrittenRecordIdField,
 ): AssistantTraceAttempt[] {
   return isBundleResolution(value)
-    ? bundleAttempts(result)
-    : singleAttempt(value, result);
+    ? bundleAttempts(result, writtenRecordIdField)
+    : singleAttempt(value, result, writtenRecordIdField);
 }
 
 function confirmationTrace(args: CloseArgs): readonly AssistantTracePart[] {
@@ -153,7 +181,11 @@ function confirmationTrace(args: CloseArgs): readonly AssistantTracePart[] {
   if (args.outcome.kind !== "ok") {
     return [];
   }
-  const attempts = confirmedAttempts(args.value, args.outcome.result);
+  const attempts = confirmedAttempts(
+    args.value,
+    args.outcome.result,
+    args.writtenRecordIdField,
+  );
   return [
     {
       kind: "trace",

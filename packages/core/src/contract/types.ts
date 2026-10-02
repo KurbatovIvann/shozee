@@ -127,6 +127,7 @@ export interface ActionContractDefinition<
   readonly rateLimit?: ActionRateLimit;
   readonly consistency?: "snapshot";
   readonly enqueues?: readonly string[];
+  readonly writtenRecordIdField?: string;
 }
 
 declare const actionContractBrand: unique symbol;

@@ -263,6 +263,7 @@ export async function handleAssistantKitAnswer(
     kind: claimed.record.kind,
     value: claimed.value,
     outcome: resolvedOutcome,
+    writtenRecordIdField: runtime.writtenRecordIdField,
   });
 
   if (resolvedOutcome.kind === "pause") {

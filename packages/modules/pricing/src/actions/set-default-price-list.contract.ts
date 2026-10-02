@@ -48,4 +48,5 @@ export const setDefaultPriceListContract = defineActionContract({
   errors: ["VALIDATION", "NOT_FOUND"],
   audit: true,
   timeout: 5_000,
+  writtenRecordIdField: "id",
 });

@@ -328,6 +328,8 @@ function harness(options?: {
       return options?.tools ?? {};
     },
     resolveAnswer: options?.resolveAnswer ?? OK_RESOLVE,
+    writtenRecordIdField: (action) =>
+      WRITTEN_RECORD_ID_FIELDS.get(action) ?? null,
     prompt: () => ({ system: "you are a test" }),
   });
   return { kit, app, history, queue, turns, bind: `${USER}:${COMPANY}` };
@@ -405,6 +407,10 @@ async function openPause(kit: Kit, bind: string, withCreate = false) {
 
 const UPDATE_ACTION = "customers.updateCustomer";
 const CONFIRM_ACTION = "orders.confirm";
+const WRITTEN_RECORD_ID_FIELDS = new Map<string, string>([
+  [UPDATE_ACTION, "id"],
+  [CONFIRM_ACTION, "orderId"],
+]);
 const RECORD = "99999999-9999-4999-8999-999999999999";
 
 function preview(title: string) {

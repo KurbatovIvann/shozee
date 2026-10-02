@@ -86,4 +86,5 @@ export const createCounterpartyContract = defineActionContract({
   errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
   audit: true,
   timeout: 5_000,
+  writtenRecordIdField: "id",
 });
