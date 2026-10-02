@@ -1,0 +1,104 @@
+import type { VoiceUtteranceEnd } from "./voice-protocol";
+
+export type VoiceCaptureStatus =
+  | "idle"
+  | "requesting"
+  | "denied"
+  | "starting"
+  | "listening"
+  | "recognizing"
+  | "error";
+
+export type VoiceCaptureFailure =
+  "audio" | "busy" | "protocol" | "recognizer" | "network";
+
+export interface VoiceCaptureState {
+  readonly status: VoiceCaptureStatus;
+  readonly partial: string;
+  readonly transcript: string | null;
+  readonly endedBy: VoiceUtteranceEnd | null;
+  readonly failure: VoiceCaptureFailure | null;
+}
+
+export type VoiceCaptureEvent =
+  | { readonly type: "requested" }
+  | { readonly type: "permissionDenied" }
+  | { readonly type: "permissionGranted" }
+  | { readonly type: "ready" }
+  | { readonly type: "partial"; readonly text: string }
+  | {
+      readonly type: "final";
+      readonly text: string;
+      readonly endedBy: VoiceUtteranceEnd;
+    }
+  | { readonly type: "failed"; readonly failure: VoiceCaptureFailure }
+  | { readonly type: "reset" };
+
+export const initialVoiceCaptureState: VoiceCaptureState = {
+  status: "idle",
+  partial: "",
+  transcript: null,
+  endedBy: null,
+  failure: null,
+};
+
+const ACTIVE_STATUSES: readonly VoiceCaptureStatus[] = [
+  "requesting",
+  "starting",
+  "listening",
+  "recognizing",
+];
+
+export function voiceCaptureActive(status: VoiceCaptureStatus): boolean {
+  return ACTIVE_STATUSES.includes(status);
+}
+
+export function voiceCaptureReducer(
+  state: VoiceCaptureState,
+  event: VoiceCaptureEvent,
+): VoiceCaptureState {
+  switch (event.type) {
+    case "requested":
+      return voiceCaptureActive(state.status)
+        ? state
+        : { ...initialVoiceCaptureState, status: "requesting" };
+    case "permissionDenied":
+      return state.status === "requesting"
+        ? { ...initialVoiceCaptureState, status: "denied" }
+        : state;
+    case "permissionGranted":
+      return state.status === "requesting"
+        ? { ...state, status: "starting" }
+        : state;
+    case "ready":
+      return state.status === "starting"
+        ? { ...state, status: "listening" }
+        : state;
+    case "partial":
+      return state.status === "listening" || state.status === "recognizing"
+        ? { ...state, status: "recognizing", partial: event.text }
+        : state;
+    case "final":
+      return voiceCaptureActive(state.status)
+        ? {
+            status: "idle",
+            partial: "",
+            transcript: event.text,
+            endedBy: event.endedBy,
+            failure: null,
+          }
+        : state;
+    case "failed":
+      return voiceCaptureActive(state.status)
+        ? {
+            status: "error",
+            partial: "",
+            transcript: null,
+            endedBy: null,
+            failure: event.failure,
+          }
+        : state;
+    case "reset":
+      return initialVoiceCaptureState;
+  }
+}
