@@ -19,7 +19,7 @@ export type AssistantClippedToolEnvelope = {
   readonly status: typeof ASSISTANT_TOOL_CLIPPED_STATUS;
   readonly preview: unknown;
   readonly omitted: number;
-  readonly cutPaths: readonly string[];
+  readonly cutPaths?: readonly string[];
 };
 
 export type AssistantSurfaceToolResult = {

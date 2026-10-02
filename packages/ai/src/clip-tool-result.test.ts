@@ -121,6 +121,35 @@ describe("clipStaffAssistantToolResult", () => {
     );
   });
 
+  it("names a dropped row key by its array path", () => {
+    const items = Array.from({ length: 40 }, (_, index) => ({
+      itemId: itemId(index),
+      qty: index,
+      notes: "n".repeat(800),
+    }));
+    const clipped = clipStaffAssistantToolResult({ items });
+    expect(isClipped(clipped)).toBe(true);
+    if (!isClipped(clipped)) {
+      return;
+    }
+    expect(clipped.cutPaths).toContain("items.qty");
+    expect(clipped.cutPaths).toContain("items.notes");
+    expect(clipped.cutPaths).not.toContain("items.itemId");
+  });
+
+  it("names a cut of the root array as the empty path", () => {
+    const clipped = clipStaffAssistantToolResult(
+      Array.from({ length: STAFF_ASSISTANT_CLIP_ARRAY_MAX + 1 }, (_, index) =>
+        rowId(index),
+      ),
+    );
+    expect(isClipped(clipped)).toBe(true);
+    if (!isClipped(clipped)) {
+      return;
+    }
+    expect(clipped.cutPaths).toEqual([""]);
+  });
+
   it("names a key the shrink dropped", () => {
     const clipped = clipStaffAssistantToolResult({
       id: rowId(0),

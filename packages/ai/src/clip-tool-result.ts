@@ -183,16 +183,16 @@ function shrinkRow(value: unknown, path: string, cuts: Set<string>): unknown {
   return identity;
 }
 
-export function shrinkStaffAssistantTracePreview(
+function shrinkStaffAssistantTracePreview(
   value: unknown,
-  cuts: Set<string> = new Set<string>(),
+  cuts: Set<string>,
 ): unknown {
   return shrinkPreview(value, ASSISTANT_CLIP_ROOT_PATH, cuts);
 }
 
-export function compactStaffAssistantTraceIdentity(
+function compactStaffAssistantTraceIdentity(
   value: unknown,
-  cuts: Set<string> = new Set<string>(),
+  cuts: Set<string>,
 ): unknown {
   return compactIdentity(value, ASSISTANT_CLIP_ROOT_PATH, cuts);
 }
