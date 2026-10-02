@@ -234,11 +234,40 @@ function resolveLazyOnce(
   return fresh;
 }
 
+function templateLiteralChildren(
+  def: Extract<SchemaDefinition, { type: "template_literal" }>,
+): readonly z.core.$ZodType[] {
+  const children: z.core.$ZodType[] = [];
+  for (const part of def.parts) {
+    if (typeof part === "object" && part !== null) {
+      children.push(part);
+    }
+  }
+  return children;
+}
+
 function schemaChildren(
   def: SchemaDefinition,
   walk: SchemaWalk,
 ): readonly z.core.$ZodType[] {
   switch (def.type) {
+    case "string":
+    case "number":
+    case "bigint":
+    case "boolean":
+    case "date":
+    case "symbol":
+    case "undefined":
+    case "null":
+    case "void":
+    case "never":
+    case "any":
+    case "unknown":
+    case "nan":
+    case "file":
+    case "literal":
+    case "enum":
+      return [];
     case "object":
       return Object.values(def.shape);
     case "array":
@@ -267,8 +296,14 @@ function schemaChildren(
     case "readonly":
     case "promise":
       return [def.innerType];
+    case "success":
+      return [def.innerType];
+    case "template_literal":
+      return templateLiteralChildren(def);
     default:
-      return [];
+      throw new Error(
+        `A uuid walk met a schema node of unrecognised type "${def.type}", so it cannot prove that the schema carries no uuid field. Teach schemaChildren that node type, or declare isolationCase(action, own, foreign, { missing }) instead of { noReference: true }.`,
+      );
   }
 }
 

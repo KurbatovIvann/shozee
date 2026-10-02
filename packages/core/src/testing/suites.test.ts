@@ -83,6 +83,31 @@ describe("schemaCarriesUuidField", () => {
     );
   });
 
+  it("throws instead of reporting no uuid for an unrecognised wrapper type", () => {
+    expect(() =>
+      schemaCarriesUuidField(z.object({ wrapped: z.custom<string>() })),
+    ).toThrow(/unrecognised type "custom"/);
+    expect(() =>
+      schemaCarriesUuidField(z.object({ mapped: z.transform(String) })),
+    ).toThrow(/unrecognised type "transform"/);
+  });
+
+  it("walks success and template literal wrappers to their uuid", () => {
+    expect(schemaCarriesUuidField(z.object({ ok: z.success(z.uuid()) }))).toBe(
+      true,
+    );
+    expect(
+      schemaCarriesUuidField(
+        z.object({ tag: z.templateLiteral(["row-", z.uuid()]) }),
+      ),
+    ).toBe(true);
+    expect(
+      schemaCarriesUuidField(
+        z.object({ tag: z.templateLiteral(["row-", z.string()]) }),
+      ),
+    ).toBe(false);
+  });
+
   it("detects a uuid in a shared node whichever branch reaches it first", () => {
     const shared = nestedChain(z.object({ id: z.uuid() }), 12);
     const deep = nestedChain(shared, 58);
