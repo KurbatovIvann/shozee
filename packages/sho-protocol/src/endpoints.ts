@@ -58,8 +58,15 @@ export const shoParseResponseSchema = z.object({
   ms: z.number(),
 });
 
-export const SHO_CONTEXT_LIST_PATTERN =
-  /^(?:products|customers|groups|priceLists|counterparties)$/;
+export const SHO_CONTEXT_LIST_NAMES = [
+  "products",
+  "customers",
+  "groups",
+  "priceLists",
+  "counterparties",
+] as const;
+
+export const SHO_CONTEXT_UNIT_LENGTH = 32;
 
 export const shoContextRecordSchema = z.strictObject({
   id: z.string().min(1).max(64),
@@ -69,19 +76,28 @@ export const shoContextRecordSchema = z.strictObject({
 
 const records = z.array(shoContextRecordSchema).optional();
 const flag = z.boolean().optional();
+const label = z.string().min(1).max(120);
+
+export const shoContextVariantSchema = shoContextRecordSchema.extend({
+  values: z.union([z.array(label), z.record(label, label)]).optional(),
+});
+
+export const shoContextProductSchema = shoContextRecordSchema.extend({
+  brand: label.optional(),
+  unit: z.string().min(1).max(SHO_CONTEXT_UNIT_LENGTH).optional(),
+  variants: z.array(shoContextVariantSchema).optional(),
+});
 
 export const shoContextSchema = z.strictObject({
   version: z.literal(2),
   revision: z.string().min(1).max(128).optional(),
   capabilities: z.strictObject({ stock: flag, fiscal: flag }).optional(),
-  products: z
-    .array(shoContextRecordSchema.extend({ variants: records }))
-    .optional(),
+  products: z.array(shoContextProductSchema).optional(),
   customers: records,
   groups: records,
   priceLists: records,
   counterparties: records,
-  partial: z.array(z.string().regex(SHO_CONTEXT_LIST_PATTERN)).optional(),
+  partial: z.array(z.enum(SHO_CONTEXT_LIST_NAMES)).optional(),
 });
 
 export const shoContextUploadSchema = z.object({
@@ -119,6 +135,9 @@ export type ShoPrevious = z.infer<typeof shoPreviousSchema>;
 export type ShoParseRequest = z.infer<typeof shoParseRequestSchema>;
 export type ShoParseResponse = z.infer<typeof shoParseResponseSchema>;
 export type ShoContext = z.infer<typeof shoContextSchema>;
+export type ShoContextProduct = z.infer<typeof shoContextProductSchema>;
+export type ShoContextVariant = z.infer<typeof shoContextVariantSchema>;
+export type ShoContextListName = (typeof SHO_CONTEXT_LIST_NAMES)[number];
 export type ShoContextUpload = z.infer<typeof shoContextUploadSchema>;
 export type ShoPhrasesResponse = z.infer<typeof shoPhrasesResponseSchema>;
 export type ShoErrorResponse = z.infer<typeof shoErrorResponseSchema>;
