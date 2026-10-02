@@ -144,9 +144,15 @@ registry is injected into `createAssistantRuntime`; this package never imports
   oversized company is `partial` rather than contextless; ids and names only
   (brand, unit and variant values stay unsent until the catalog owns them);
   the scope hash of the lists that staff member may see; one build cached 30 s
-  per company and caller, so a name created inside the window costs a
+  per company and scope, so a name created inside the window costs a
   fall-through, never a wrong write; and `parseWithShoContext`, which on a 409
   `context_required` PUTs that build and retries the parse once.
+  - A denial of one list is an absent scope; a caller denied **all three**
+    never gets a build, a PUT or a parse, which is how a company the caller
+    is not a member of is refused (core gives both the same denial).
+  - `parseWithShoContext` rethrows that denial and turns any other read
+    failure into the `unreadable` fallback, so an outage falls through to the
+    LLM and an unauthorized caller does not.
 - `events.ts` — the event channel contract (SHO-562): the per-conversation
   channel and presence key (company then conversation, lowercased), the stream
   slot key, the heartbeat, presence ttl, per-person stream limit and idle

@@ -56,7 +56,10 @@ export interface ShoContextBuild {
   readonly context: ShoContext;
 }
 
-export const SHO_CONTEXT_CAPABILITIES = { stock: false, fiscal: false };
+export const SHO_CONTEXT_CAPABILITIES = {
+  stock: false,
+  fiscal: false,
+} as const;
 
 const REVISION_WIDTH = 64;
 const SCOPE_HASH_WIDTH = 32;

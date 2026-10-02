@@ -5,6 +5,7 @@ import { listNameIndex as listCustomersNameIndex } from "@showzy/customers";
 import { listNameIndex as listPricingNameIndex } from "@showzy/pricing";
 import type {
   ShoClient,
+  ShoFallback,
   ShoNow,
   ShoParseOutcome,
   ShoPrevious,
@@ -18,6 +19,12 @@ import {
 import { callFor } from "./stores/caller.js";
 
 export const SHO_CONTEXT_TTL_MS = 30_000;
+
+export const SHO_CONTEXT_UNREADABLE: ShoFallback = {
+  outcome: "fallback",
+  reason: "unreadable",
+  httpStatus: null,
+};
 
 export interface ShoContextCaller {
   readonly companyId: string;
@@ -33,7 +40,6 @@ export interface ShoContextSourceDeps {
 
 export interface ShoContextSource {
   readonly current: (caller: ShoContextCaller) => Promise<ShoContextBuild>;
-  readonly rebuild: (caller: ShoContextCaller) => Promise<ShoContextBuild>;
 }
 
 export interface ShoParseText {
@@ -44,16 +50,20 @@ export interface ShoParseText {
   readonly debug: boolean;
 }
 
-async function whenVisible<Read>(
-  read: () => Promise<Read>,
-): Promise<Read | null> {
+type Scope<Read> =
+  { readonly read: Read } | { readonly denied: PermissionDeniedError };
+
+async function asScope<Read>(read: () => Promise<Read>): Promise<Scope<Read>> {
   try {
-    return await read();
+    return { read: await read() };
   } catch (error) {
-    if (error instanceof PermissionDeniedError) return null;
+    if (error instanceof PermissionDeniedError) return { denied: error };
     throw error;
   }
 }
+
+const visible = <Read>(scope: Scope<Read>): Read | null =>
+  "read" in scope ? scope.read : null;
 
 export async function readShoNameIndex(
   pipeline: ActionPipelineDeps,
@@ -65,22 +75,22 @@ export async function readShoNameIndex(
     requestId: caller.requestId,
     ...(caller.clientIp === undefined ? {} : { clientIp: caller.clientIp }),
   });
-  const [catalog, customers, pricing] = await Promise.all([
-    whenVisible(() =>
+  const scopes = await Promise.all([
+    asScope(() =>
       executeAction(pipeline, {
         action: listCatalogNameIndex,
         input: {},
         ...call,
       }),
     ),
-    whenVisible(() =>
+    asScope(() =>
       executeAction(pipeline, {
         action: listCustomersNameIndex,
         input: {},
         ...call,
       }),
     ),
-    whenVisible(() =>
+    asScope(() =>
       executeAction(pipeline, {
         action: listPricingNameIndex,
         input: {},
@@ -88,37 +98,55 @@ export async function readShoNameIndex(
       }),
     ),
   ]);
-  return { catalog, customers, pricing };
+  const denials = scopes.flatMap((scope) =>
+    "denied" in scope ? [scope.denied] : [],
+  );
+  const refusedEverything = denials[0];
+  if (denials.length === scopes.length && refusedEverything !== undefined) {
+    throw refusedEverything;
+  }
+  const [catalog, customers, pricing] = scopes;
+  return {
+    catalog: visible(catalog),
+    customers: visible(customers),
+    pricing: visible(pricing),
+  };
 }
 
 export function createShoContextSource(
   deps: ShoContextSourceDeps,
 ): ShoContextSource {
   const clock = deps.now ?? (() => Date.now());
-  const cached = new Map<string, { builtAt: number; build: ShoContextBuild }>();
-  const keyOf = (caller: ShoContextCaller): string =>
+  const builds = new Map<string, { builtAt: number; build: ShoContextBuild }>();
+  const scopeOfCaller = new Map<string, string>();
+  const callerKey = (caller: ShoContextCaller): string =>
     `${caller.companyId}\u0000${caller.userId}`;
-
-  async function build(caller: ShoContextCaller): Promise<ShoContextBuild> {
-    const builtAt = clock();
-    const built = buildShoContext(
-      await readShoNameIndex(deps.pipeline, caller),
-    );
-    for (const [key, entry] of cached) {
-      if (builtAt - entry.builtAt >= SHO_CONTEXT_TTL_MS) cached.delete(key);
-    }
-    cached.set(keyOf(caller), { builtAt, build: built });
-    return built;
-  }
+  const buildKey = (companyId: string, scopeHash: string): string =>
+    `${companyId}\u0000${scopeHash}`;
 
   return {
-    rebuild: build,
     async current(caller) {
-      const entry = cached.get(keyOf(caller));
-      if (entry !== undefined && clock() - entry.builtAt < SHO_CONTEXT_TTL_MS) {
+      const at = clock();
+      const known = scopeOfCaller.get(callerKey(caller));
+      const entry = known === undefined ? undefined : builds.get(known);
+      if (entry !== undefined && at - entry.builtAt < SHO_CONTEXT_TTL_MS) {
         return entry.build;
       }
-      return build(caller);
+
+      const built = buildShoContext(
+        await readShoNameIndex(deps.pipeline, caller),
+      );
+      for (const [key, stale] of builds) {
+        if (at - stale.builtAt >= SHO_CONTEXT_TTL_MS) builds.delete(key);
+      }
+      const key = buildKey(caller.companyId, built.scopeHash);
+      const shared = builds.get(key) ?? { builtAt: at, build: built };
+      builds.set(key, shared);
+      scopeOfCaller.set(callerKey(caller), key);
+      for (const [who, pointed] of scopeOfCaller) {
+        if (!builds.has(pointed)) scopeOfCaller.delete(who);
+      }
+      return shared.build;
     },
   };
 }
@@ -129,7 +157,14 @@ export async function parseWithShoContext(
   caller: ShoContextCaller,
   request: ShoParseText,
 ): Promise<ShoParseOutcome> {
-  const built = await source.current(caller);
+  let built: ShoContextBuild;
+  try {
+    built = await source.current(caller);
+  } catch (error) {
+    if (error instanceof PermissionDeniedError) throw error;
+    return SHO_CONTEXT_UNREADABLE;
+  }
+
   const send = (): Promise<ShoParseOutcome> =>
     client.parse({
       requestId: caller.requestId,

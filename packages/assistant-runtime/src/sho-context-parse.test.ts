@@ -10,8 +10,11 @@ import {
 } from "@showzy/sho-protocol";
 import { describe, expect, it, vi } from "vitest";
 
+import { PermissionDeniedError, TimeoutError } from "@showzy/core/errors";
+
 import {
   parseWithShoContext,
+  SHO_CONTEXT_UNREADABLE,
   type ShoContextCaller,
   type ShoContextSource,
 } from "./sho-context-source.js";
@@ -64,8 +67,11 @@ const answer: ShoParseResponse = {
 
 const source: ShoContextSource = {
   current: () => Promise.resolve(built),
-  rebuild: () => Promise.resolve(built),
 };
+
+const refusing = (error: Error): ShoContextSource => ({
+  current: () => Promise.reject(error),
+});
 
 const request = {
   text: "додай Олю",
@@ -150,6 +156,36 @@ describe("parseWithShoContext", () => {
     expect(outcome).toEqual({ outcome: "context_required" });
     expect(client.parse).toHaveBeenCalledTimes(2);
     expect(client.putContext).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls through to the LLM when the context cannot be read", async () => {
+    const client = stubClient([]);
+
+    const outcome = await parseWithShoContext(
+      client,
+      refusing(new TimeoutError()),
+      caller,
+      request,
+    );
+
+    expect(outcome).toEqual(SHO_CONTEXT_UNREADABLE);
+    expect(client.parse).not.toHaveBeenCalled();
+    expect(client.putContext).not.toHaveBeenCalled();
+  });
+
+  it("refuses a caller the staff context denied", async () => {
+    const client = stubClient([]);
+
+    await expect(
+      parseWithShoContext(
+        client,
+        refusing(new PermissionDeniedError()),
+        caller,
+        request,
+      ),
+    ).rejects.toBeInstanceOf(PermissionDeniedError);
+    expect(client.parse).not.toHaveBeenCalled();
+    expect(client.putContext).not.toHaveBeenCalled();
   });
 
   it("gives back the upload's fallback and never parses again", async () => {

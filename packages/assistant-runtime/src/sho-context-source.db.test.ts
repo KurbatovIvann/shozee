@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { PermissionDeniedError } from "@showzy/core/errors";
 import {
   createTestKit,
   kitIdentities,
@@ -23,6 +24,7 @@ const fixtures = {
   product: randomUUID(),
   variant: randomUUID(),
   laterProduct: randomUUID(),
+  sharedProduct: randomUUID(),
   foreignProduct: randomUUID(),
   customer: randomUUID(),
   foreignCustomer: randomUUID(),
@@ -34,6 +36,7 @@ const names = {
   product: "Шо Кава",
   variant: "Шо Кава / 1 кг",
   laterProduct: "Шо Какао",
+  sharedProduct: "Шо Чай",
   foreignProduct: "Шо Чужа Кава",
   customer: "Шо Оля",
   foreignCustomer: "Шо Чужа Оля",
@@ -47,6 +50,8 @@ const contact = {
 };
 
 const clerkUserId = randomUUID();
+const deputyUserId = randomUUID();
+const outsiderUserId = randomUUID();
 
 let kit: TestKit;
 let clock = 1_000_000;
@@ -62,6 +67,8 @@ const anna = () =>
 const boris = () =>
   callerOf(kitIdentities.companies.b, kitIdentities.users.boris);
 const clerk = () => callerOf(kitIdentities.companies.a, clerkUserId);
+const deputy = () => callerOf(kitIdentities.companies.a, deputyUserId);
+const outsider = () => callerOf(kitIdentities.companies.a, outsiderUserId);
 
 const sourceOf = () =>
   createShoContextSource({ pipeline: kit.pipeline, now: () => clock });
@@ -127,20 +134,43 @@ beforeAll(async () => {
     },
   ]);
 
-  await kit.db.runtime.db.insert(user).values({
-    id: clerkUserId,
-    name: "Clerk",
-    email: "clerk@sho-context-source.test",
-  });
-  await kit.db.runtime.db.insert(companyMembers).values({
-    companyId: kitIdentities.companies.a,
-    userId: clerkUserId,
-    role: "employee",
-    permissions: {
-      granted: ["products:view", "customers:view"],
-      denied: ["pricing:view"],
+  await kit.db.runtime.db.insert(user).values([
+    {
+      id: clerkUserId,
+      name: "Clerk",
+      email: "clerk@sho-context-source.test",
     },
-  });
+    {
+      id: deputyUserId,
+      name: "Deputy",
+      email: "deputy@sho-context-source.test",
+    },
+    {
+      id: outsiderUserId,
+      name: "Outsider",
+      email: "outsider@sho-context-source.test",
+    },
+  ]);
+  await kit.db.runtime.db.insert(companyMembers).values([
+    {
+      companyId: kitIdentities.companies.a,
+      userId: clerkUserId,
+      role: "employee",
+      permissions: {
+        granted: ["products:view", "customers:view"],
+        denied: ["pricing:view"],
+      },
+    },
+    {
+      companyId: kitIdentities.companies.a,
+      userId: deputyUserId,
+      role: "employee",
+      permissions: {
+        granted: ["products:view", "customers:view", "pricing:view"],
+        denied: [],
+      },
+    },
+  ]);
 });
 
 afterAll(async () => {
@@ -221,5 +251,33 @@ describe("createShoContextSource", () => {
     expect(narrow.context.priceLists).toBeUndefined();
     expect(narrow.context.customers).not.toHaveLength(0);
     expect(narrow.scopeHash).not.toBe(full.scopeHash);
+  });
+
+  it("refuses a caller the company has no membership row for", async () => {
+    const source = sourceOf();
+
+    await expect(source.current(outsider())).rejects.toBeInstanceOf(
+      PermissionDeniedError,
+    );
+    await expect(
+      source.current(callerOf(kitIdentities.companies.b, clerkUserId)),
+    ).rejects.toBeInstanceOf(PermissionDeniedError);
+  });
+
+  it("shares one build between callers of the same company and scope", async () => {
+    const source = sourceOf();
+    const mine = await source.current(anna());
+
+    await kit.db.runtime.db.insert(products).values({
+      id: fixtures.sharedProduct,
+      companyId: kitIdentities.companies.a,
+      name: names.sharedProduct,
+      basePriceMinor: 1300n,
+    });
+    const theirs = await source.current(deputy());
+
+    expect(theirs.scopeHash).toBe(mine.scopeHash);
+    expect(theirs.fingerprint).toBe(mine.fingerprint);
+    expect(JSON.stringify(theirs.context)).not.toContain(names.sharedProduct);
   });
 });
