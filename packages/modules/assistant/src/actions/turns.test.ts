@@ -302,6 +302,35 @@ describe("the turn contracts", () => {
     ).toBe(false);
   });
 
+  it("let a settled chat accept replace the history, and settle nothing else", () => {
+    const settled = (over: Record<string, unknown> = {}) =>
+      acceptTurnInputSchema.safeParse(
+        chatAccept({
+          settled: true,
+          history: { kind: "replace", history: [] },
+          ...over,
+        }),
+      ).success;
+
+    expect(settled()).toBe(true);
+    expect(settled({ history: { kind: "append", message: {} } })).toBe(false);
+    expect(settled({ history: undefined })).toBe(false);
+    expect(
+      settled({ continuesCommandId: "44444444-4444-4444-8444-444444444444" }),
+    ).toBe(false);
+    expect(settled({ settled: false })).toBe(false);
+    expect(
+      acceptTurnInputSchema.safeParse(
+        chatAccept({
+          kind: "answer",
+          userMessage: undefined,
+          settled: true,
+          history: { kind: "replace", history: [] },
+        }),
+      ).success,
+    ).toBe(false);
+  });
+
   it("refuse a placeholder sharing the person's message id in any casing, and a turn continuing itself", () => {
     expect(
       acceptTurnInputSchema.safeParse(

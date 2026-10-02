@@ -340,13 +340,15 @@ export async function acceptStaffTurn(env: {
         bind: input.placeholder.bind,
         message: input.placeholder.message,
       });
+      const settled = input.settled === true;
       const inserted = await tx
         .insert(assistantTurns)
         .values({
           ...identity,
-          status: "queued",
+          status: settled ? "done" : "queued",
+          finishedAt: settled ? sql`now()` : null,
           userId: ctx.userId,
-          sessionId: input.sessionId,
+          sessionId: settled ? null : input.sessionId,
           requestId: ctx.requestId,
           userMessageId,
           placeholderMessageId,

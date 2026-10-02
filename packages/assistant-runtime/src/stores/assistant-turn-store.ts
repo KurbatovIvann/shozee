@@ -212,6 +212,12 @@ interface AcceptCommon {
   readonly sessionId: string;
   readonly budgetHold: StaffAssistantBudgetHold;
   readonly releaseUnusedHold: () => Promise<void>;
+  readonly settled?: AssistantSettledTurn;
+}
+
+export interface AssistantSettledTurn {
+  readonly parts: readonly ChatPart[];
+  readonly history: readonly ModelMessage[];
 }
 
 export type AssistantTurnAcceptInput =
@@ -240,6 +246,9 @@ type AcceptedHistoryInstruction =
 function acceptedHistoryInstruction(
   input: AssistantTurnAcceptInput,
 ): AcceptedHistoryInstruction | undefined {
+  if (input.settled !== undefined) {
+    return { kind: "replace", history: asJson(input.settled.history) };
+  }
   if (input.kind === "chat") {
     return {
       kind: "append",
@@ -428,17 +437,25 @@ export function createPostgresAssistantTurnStore(
                   messageId: placeholderId,
                   bind: input.bind,
                   message: asJsonObject(
-                    assistantTurnPlaceholder({
-                      messageId: placeholderId,
-                      createdAt,
-                      ...(input.kind === "continue"
-                        ? { earned: [] }
-                        : input.earned === undefined
-                          ? {}
-                          : { earned: input.earned }),
-                    }),
+                    input.settled === undefined
+                      ? assistantTurnPlaceholder({
+                          messageId: placeholderId,
+                          createdAt,
+                          ...(input.kind === "continue"
+                            ? { earned: [] }
+                            : input.earned === undefined
+                              ? {}
+                              : { earned: input.earned }),
+                        })
+                      : {
+                          messageId: placeholderId,
+                          role: "assistant",
+                          createdAt,
+                          parts: [...input.settled.parts],
+                        },
                   ),
                 },
+                ...(input.settled === undefined ? {} : { settled: true }),
                 budgetHold: assistantBudgetHoldToStored(input.budgetHold),
                 ...(history === undefined ? {} : { history }),
                 ...(continuesCommandId === undefined

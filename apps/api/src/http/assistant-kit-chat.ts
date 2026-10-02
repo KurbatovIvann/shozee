@@ -55,6 +55,7 @@ import {
   type AssistantKitRuntime,
   type Caller,
 } from "./assistant-kit-http.js";
+import { shoChatTurn } from "./assistant-kit-sho.js";
 
 export async function readChatOpenCard(
   c: Context<AssistantKitAppEnv>,
@@ -171,7 +172,7 @@ export async function handleAssistantKitChat(
   }
   // Before the receipt, the idempotency key, the turn row and its message ids.
   const body = canonicalCommandIds(parsed.data);
-  const { kit, turns } = runtime.forCaller({
+  const { kit, turns, history } = runtime.forCaller({
     userId: caller.userId,
     companySelector: caller.companySelector,
     requestId,
@@ -296,6 +297,25 @@ export async function handleAssistantKitChat(
   }
   if (!(await takeCommand(runtime, command))) {
     return await accepted();
+  }
+
+  const answeredBySho =
+    open === null
+      ? await shoChatTurn({
+          runtime,
+          caller,
+          kit,
+          turns,
+          history,
+          scope,
+          requestId,
+          clientIp: c.get("clientIp"),
+          text: body.text,
+          commandId: body.commandId,
+        })
+      : null;
+  if (answeredBySho !== null) {
+    return answeredBySho;
   }
 
   const budget = requireBudgetTicket(c);
