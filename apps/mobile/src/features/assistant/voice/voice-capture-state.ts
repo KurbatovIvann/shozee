@@ -1,4 +1,4 @@
-import type { VoiceUtteranceEnd } from "./voice-protocol";
+import type { VoiceUtteranceEnd } from "@showzy/validation/assistant-voice";
 
 export type VoiceCaptureStatus =
   | "idle"
@@ -10,7 +10,7 @@ export type VoiceCaptureStatus =
   | "error";
 
 export type VoiceCaptureFailure =
-  "audio" | "busy" | "protocol" | "recognizer" | "network";
+  "audio" | "format" | "busy" | "protocol" | "recognizer" | "network";
 
 export interface VoiceCaptureState {
   readonly status: VoiceCaptureStatus;

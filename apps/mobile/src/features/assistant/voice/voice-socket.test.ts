@@ -1,12 +1,4 @@
 import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-import {
-  openVoiceSocket,
-  voiceFailureFromCloseCode,
-  type VoiceSocketFailure,
-  type VoiceWebSocketListener,
-} from "./voice-socket";
 import {
   VOICE_CLOSE_CODE,
   VOICE_FINALIZE_TIMEOUT_MS,
@@ -15,7 +7,15 @@ import {
   VOICE_SAMPLE_RATE_HZ,
   VOICE_STOP_FRAME,
   type VoiceUtteranceEnd,
-} from "./voice-protocol";
+} from "@showzy/validation/assistant-voice";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import {
+  openVoiceSocket,
+  voiceFailureFromCloseCode,
+  type VoiceSocketFailure,
+  type VoiceWebSocketListener,
+} from "./voice-socket";
 
 const READY = JSON.stringify({
   type: "ready",
@@ -228,13 +228,33 @@ describe("openVoiceSocket", () => {
     expect(run.finals).toHaveLength(0);
   });
 
-  it("treats a clean close with no transcript as an empty utterance", () => {
+  it("treats a close with no transcript as a lost session, however clean", () => {
     const run = harness();
     run.wire.listener.onText(READY);
     run.socket.stop();
     run.wire.listener.onClose(VOICE_CLOSE_CODE.done);
 
-    expect(run.finals).toEqual([{ text: "", endedBy: "client" }]);
+    expect(run.finals).toHaveLength(0);
+    expect(run.failures).toEqual(["network"]);
+  });
+
+  it("follows the budget and frame size the server announced", () => {
+    const run = harness();
+
+    run.wire.listener.onText(
+      JSON.stringify({
+        type: "ready",
+        sampleRateHz: VOICE_SAMPLE_RATE_HZ,
+        maxFrameBytes: 1_000,
+        maxTotalBytes: 2_000,
+        maxSessionMs: 5_000,
+      }),
+    );
+    run.socket.send(pcm(3_000));
+
+    expect(run.binary().map((frame) => frame.byteLength)).toEqual([
+      1_000, 1_000,
+    ]);
   });
 
   it("reports nothing twice", () => {

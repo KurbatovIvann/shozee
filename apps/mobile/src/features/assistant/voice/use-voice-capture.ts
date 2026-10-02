@@ -4,6 +4,13 @@ import {
   setAudioModeAsync,
   useAudioStream,
 } from "expo-audio";
+import {
+  VOICE_CHANNELS,
+  VOICE_ENCODING,
+  VOICE_MAX_SESSION_MS,
+  VOICE_SAMPLE_RATE_HZ,
+  type VoiceUtteranceEnd,
+} from "@showzy/validation/assistant-voice";
 
 import {
   initialVoiceCaptureState,
@@ -11,14 +18,7 @@ import {
   type VoiceCaptureFailure,
   type VoiceCaptureStatus,
 } from "./voice-capture-state";
-import {
-  voiceFrameBytes,
-  VOICE_CHANNELS,
-  VOICE_ENCODING,
-  VOICE_MAX_SESSION_MS,
-  VOICE_SAMPLE_RATE_HZ,
-  type VoiceUtteranceEnd,
-} from "./voice-protocol";
+import { voiceFrameBytes } from "./voice-protocol";
 import {
   openVoiceSocket,
   type VoiceSocket,
@@ -61,6 +61,7 @@ export function useVoiceCapture(request: UseVoiceCaptureRequest): VoiceCapture {
   requestRef.current = request;
   const socketRef = useRef<VoiceSocket | null>(null);
   const capturingRef = useRef(false);
+  const sessionRef = useRef(0);
   const deadlineRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const releaseRef = useRef<() => void>(() => {});
   const stopRef = useRef<() => void>(() => {});
@@ -77,23 +78,38 @@ export function useVoiceCapture(request: UseVoiceCaptureRequest): VoiceCapture {
       const frame = voiceFrameBytes(buffer);
       if (frame === null) {
         releaseRef.current();
-        dispatch({ type: "failed", failure: "audio" });
+        dispatch({ type: "failed", failure: "format" });
         return;
       }
       socket.send(frame);
     },
   });
 
-  const silence = useCallback(() => {
+  const clearDeadline = useCallback(() => {
     if (deadlineRef.current !== null) {
       clearTimeout(deadlineRef.current);
       deadlineRef.current = null;
     }
+  }, []);
+
+  const armDeadline = useCallback(
+    (sessionMs: number) => {
+      clearDeadline();
+      deadlineRef.current = setTimeout(() => {
+        stopRef.current();
+      }, sessionMs);
+    },
+    [clearDeadline],
+  );
+
+  const silence = useCallback(() => {
+    clearDeadline();
     stream.stop();
     void setAudioModeAsync({ allowsRecording: false });
-  }, [stream]);
+  }, [clearDeadline, stream]);
 
   const release = useCallback(() => {
+    sessionRef.current += 1;
     silence();
     capturingRef.current = false;
     const socket = socketRef.current;
@@ -106,9 +122,16 @@ export function useVoiceCapture(request: UseVoiceCaptureRequest): VoiceCapture {
     if (!capturingRef.current) {
       return;
     }
+    sessionRef.current += 1;
+    const socket = socketRef.current;
+    if (socket === null) {
+      release();
+      dispatch({ type: "reset" });
+      return;
+    }
     silence();
-    socketRef.current?.stop();
-  }, [silence]);
+    socket.stop();
+  }, [release, silence]);
   stopRef.current = stop;
 
   const start = useCallback(() => {
@@ -116,9 +139,16 @@ export function useVoiceCapture(request: UseVoiceCaptureRequest): VoiceCapture {
       return;
     }
     capturingRef.current = true;
+    sessionRef.current += 1;
+    const session = sessionRef.current;
+    const abandoned = (): boolean => sessionRef.current !== session;
     dispatch({ type: "requested" });
     void (async () => {
-      if (!(await microphoneGranted())) {
+      const granted = await microphoneGranted();
+      if (abandoned()) {
+        return;
+      }
+      if (!granted) {
         capturingRef.current = false;
         dispatch({ type: "permissionDenied" });
         return;
@@ -129,13 +159,18 @@ export function useVoiceCapture(request: UseVoiceCaptureRequest): VoiceCapture {
           allowsRecording: true,
           playsInSilentMode: true,
         });
+        if (abandoned()) {
+          releaseRef.current();
+          return;
+        }
         socketRef.current = openVoiceSocket({
           apiUrl: requestRef.current.apiUrl,
           getCookie: requestRef.current.getCookie,
           getCompanyId: requestRef.current.getCompanyId,
           createSocket: requestRef.current.createSocket,
           handlers: {
-            onReady: () => {
+            onReady: (limits) => {
+              armDeadline(limits.maxSessionMs);
               dispatch({ type: "ready" });
             },
             onPartial: (text) => {
@@ -151,16 +186,20 @@ export function useVoiceCapture(request: UseVoiceCaptureRequest): VoiceCapture {
             },
           },
         });
-        deadlineRef.current = setTimeout(() => {
-          stopRef.current();
-        }, VOICE_MAX_SESSION_MS);
+        armDeadline(VOICE_MAX_SESSION_MS);
         await stream.start();
+        if (abandoned()) {
+          stream.stop();
+        }
       } catch {
+        if (abandoned()) {
+          return;
+        }
         releaseRef.current();
         dispatch({ type: "failed", failure: "audio" });
       }
     })();
-  }, [stream]);
+  }, [armDeadline, stream]);
 
   const reset = useCallback(() => {
     releaseRef.current();

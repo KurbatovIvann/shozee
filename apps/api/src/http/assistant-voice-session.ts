@@ -1,47 +1,22 @@
+import {
+  VOICE_CLOSE_CODE,
+  VOICE_FINALIZE_TIMEOUT_MS,
+  VOICE_MAX_FRAME_BYTES,
+  VOICE_MAX_SESSION_MS,
+  VOICE_MAX_TOTAL_BYTES,
+  VOICE_SAMPLE_RATE_HZ,
+  VOICE_STOP_FRAME,
+  type VoiceServerMessage,
+  type VoiceUtteranceEnd,
+} from "@showzy/validation/assistant-voice";
 import type { Logger } from "pino";
 
-import {
-  VOICE_SAMPLE_RATE_HZ,
-  type VoiceRecognitionStream,
-  type VoiceRecognizer,
+import type {
+  VoiceRecognitionStream,
+  VoiceRecognizer,
 } from "./assistant-voice-chirp.js";
 
-export const VOICE_STOP_FRAME = "stop";
-
-export const VOICE_MAX_SESSION_MS = 15_000;
-
-export const VOICE_MAX_FRAME_BYTES = 32_000;
-
-export const VOICE_MAX_TOTAL_BYTES =
-  (VOICE_MAX_SESSION_MS / 1000) * VOICE_SAMPLE_RATE_HZ * 2;
-
-export const VOICE_FINALIZE_TIMEOUT_MS = 5_000;
-
 export const VOICE_MAX_UNACKED_BYTES = 64_000;
-
-export const VOICE_CLOSE_CODE = {
-  done: 1000,
-  badFrame: 4400,
-  overloaded: 4429,
-  recognizerFailed: 4500,
-} as const;
-
-export type VoiceUtteranceEnd = "client" | "limit";
-
-export type VoiceServerMessage =
-  | {
-      readonly type: "ready";
-      readonly sampleRateHz: number;
-      readonly maxFrameBytes: number;
-      readonly maxTotalBytes: number;
-      readonly maxSessionMs: number;
-    }
-  | { readonly type: "partial"; readonly text: string }
-  | {
-      readonly type: "final";
-      readonly text: string;
-      readonly endedBy: VoiceUtteranceEnd;
-    };
 
 export interface VoiceSocket {
   send(payload: string): void;

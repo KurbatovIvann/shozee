@@ -1,6 +1,5 @@
 import type { protos } from "@google-cloud/speech";
-
-export const VOICE_SAMPLE_RATE_HZ = 16_000;
+import { VOICE_SAMPLE_RATE_HZ } from "@showzy/validation/assistant-voice";
 
 export const VOICE_LANGUAGE_CODES: readonly string[] = ["uk-UA", "ru-RU"];
 

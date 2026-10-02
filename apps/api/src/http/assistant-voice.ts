@@ -6,6 +6,10 @@ import type {
   AssistantStreamSlots,
 } from "@showzy/assistant-runtime";
 import { NotFoundError, PermissionDeniedError } from "@showzy/core/errors";
+import {
+  ASSISTANT_VOICE_PATH,
+  VOICE_CLOSE_CODE,
+} from "@showzy/validation/assistant-voice";
 import { Hono } from "hono";
 import type { WSEvents } from "hono/ws";
 import type { Logger } from "pino";
@@ -20,12 +24,9 @@ import { REQUEST_ID_HEADER, resolveRequestId } from "./request-id.js";
 import type { VoiceRecognizer } from "./assistant-voice-chirp.js";
 import {
   startVoiceSession,
-  VOICE_CLOSE_CODE,
   type VoiceSession,
   type VoiceSessionCaller,
 } from "./assistant-voice-session.js";
-
-export const ASSISTANT_VOICE_PATH = "/assistant/kit/voice";
 
 export type VoiceStreamSlots = Pick<
   AssistantStreamSlots,

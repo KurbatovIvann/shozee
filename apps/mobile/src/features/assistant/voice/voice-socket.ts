@@ -1,19 +1,28 @@
-import { staffAssistantChatHeaders } from "../api/assistant-chat-headers";
-
-import type { VoiceCaptureFailure } from "./voice-capture-state";
 import {
   parseVoiceServerMessage,
-  sliceVoiceFrames,
-  voiceSocketUrl,
   VOICE_CLOSE_CODE,
   VOICE_FINALIZE_TIMEOUT_MS,
+  VOICE_MAX_FRAME_BYTES,
+  VOICE_MAX_SESSION_MS,
   VOICE_MAX_TOTAL_BYTES,
   VOICE_SAMPLE_RATE_HZ,
   VOICE_STOP_FRAME,
   type VoiceUtteranceEnd,
+} from "@showzy/validation/assistant-voice";
+
+import { staffAssistantChatHeaders } from "../api/assistant-chat-headers";
+
+import type { VoiceCaptureFailure } from "./voice-capture-state";
+import {
+  sliceVoiceFrames,
+  voiceSocketUrl,
+  type VoiceSessionLimits,
 } from "./voice-protocol";
 
-export type VoiceSocketFailure = Exclude<VoiceCaptureFailure, "audio">;
+export type VoiceSocketFailure = Exclude<
+  VoiceCaptureFailure,
+  "audio" | "format"
+>;
 
 export interface VoiceWebSocketListener {
   onText(text: string): void;
@@ -86,7 +95,7 @@ export function voiceFailureFromCloseCode(
 }
 
 export interface VoiceSocketHandlers {
-  readonly onReady: () => void;
+  readonly onReady: (limits: VoiceSessionLimits) => void;
   readonly onPartial: (text: string) => void;
   readonly onFinal: (text: string, endedBy: VoiceUtteranceEnd) => void;
   readonly onFailed: (failure: VoiceSocketFailure) => void;
@@ -114,6 +123,11 @@ export function openVoiceSocket(request: VoiceSocketRequest): VoiceSocket {
   let sentBytes = 0;
   let queued: ArrayBuffer[] = [];
   let finalizeTimer: ReturnType<typeof setTimeout> | null = null;
+  let limits: VoiceSessionLimits = {
+    maxFrameBytes: VOICE_MAX_FRAME_BYTES,
+    maxTotalBytes: VOICE_MAX_TOTAL_BYTES,
+    maxSessionMs: VOICE_MAX_SESSION_MS,
+  };
 
   const clearFinalize = (): void => {
     if (finalizeTimer !== null) {
@@ -147,6 +161,9 @@ export function openVoiceSocket(request: VoiceSocketRequest): VoiceSocket {
 
   const control = (): void => {
     handle?.send(VOICE_STOP_FRAME);
+    finalizeTimer = setTimeout(() => {
+      fail("network");
+    }, VOICE_FINALIZE_TIMEOUT_MS);
   };
 
   const write = (frame: ArrayBuffer): void => {
@@ -169,6 +186,11 @@ export function openVoiceSocket(request: VoiceSocketRequest): VoiceSocket {
         return;
       }
       ready = true;
+      limits = {
+        maxFrameBytes: message.maxFrameBytes,
+        maxTotalBytes: message.maxTotalBytes,
+        maxSessionMs: message.maxSessionMs,
+      };
       const pending = queued;
       queued = [];
       for (const frame of pending) {
@@ -177,7 +199,7 @@ export function openVoiceSocket(request: VoiceSocketRequest): VoiceSocket {
       if (stopped) {
         control();
       }
-      request.handlers.onReady();
+      request.handlers.onReady(limits);
       return;
     }
     if (message.type === "partial") {
@@ -197,12 +219,7 @@ export function openVoiceSocket(request: VoiceSocketRequest): VoiceSocket {
       if (settled) {
         return;
       }
-      const failure = voiceFailureFromCloseCode(code);
-      if (failure === null) {
-        succeed("", "client");
-        return;
-      }
-      fail(failure);
+      fail(voiceFailureFromCloseCode(code) ?? "network");
     },
     onError: () => {
       fail("network");
@@ -224,8 +241,8 @@ export function openVoiceSocket(request: VoiceSocketRequest): VoiceSocket {
       if (settled || stopped) {
         return;
       }
-      for (const frame of sliceVoiceFrames(buffer)) {
-        if (sentBytes + frame.byteLength > VOICE_MAX_TOTAL_BYTES) {
+      for (const frame of sliceVoiceFrames(buffer, limits.maxFrameBytes)) {
+        if (sentBytes + frame.byteLength > limits.maxTotalBytes) {
           return;
         }
         sentBytes += frame.byteLength;
@@ -240,9 +257,6 @@ export function openVoiceSocket(request: VoiceSocketRequest): VoiceSocket {
       if (ready) {
         control();
       }
-      finalizeTimer = setTimeout(() => {
-        fail("network");
-      }, VOICE_FINALIZE_TIMEOUT_MS);
     },
     close: () => {
       settle(VOICE_CLOSE_CODE.done, () => {});

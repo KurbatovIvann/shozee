@@ -13,14 +13,23 @@ interface Captured {
 
 const audio = {
   granted: true,
+  holdPermission: false,
   startFails: false,
+  starts: 0,
   stops: 0,
   onBuffer: null as ((buffer: Captured) => void) | null,
+  answerPermission: null as ((granted: boolean) => void) | null,
 };
 
 vi.mock("expo-audio", () => ({
   requestRecordingPermissionsAsync: () =>
-    Promise.resolve({ granted: audio.granted }),
+    audio.holdPermission
+      ? new Promise<{ granted: boolean }>((resolve) => {
+          audio.answerPermission = (granted) => {
+            resolve({ granted });
+          };
+        })
+      : Promise.resolve({ granted: audio.granted }),
   setAudioModeAsync: () => Promise.resolve(),
   useAudioStream: (options: {
     readonly onBuffer?: (buffer: Captured) => void;
@@ -29,10 +38,12 @@ vi.mock("expo-audio", () => ({
     return {
       isStreaming: false,
       stream: {
-        start: () =>
-          audio.startFails
+        start: () => {
+          audio.starts += 1;
+          return audio.startFails
             ? Promise.reject(new Error("start failed"))
-            : Promise.resolve(),
+            : Promise.resolve();
+        },
         stop: () => {
           audio.stops += 1;
         },
@@ -46,19 +57,21 @@ import {
   VOICE_MAX_SESSION_MS,
   VOICE_SAMPLE_RATE_HZ,
   VOICE_STOP_FRAME,
-} from "./voice-protocol";
+} from "@showzy/validation/assistant-voice";
 import type {
   VoiceWebSocketFactory,
   VoiceWebSocketListener,
 } from "./voice-socket";
 
-const READY = JSON.stringify({
-  type: "ready",
-  sampleRateHz: VOICE_SAMPLE_RATE_HZ,
-  maxFrameBytes: 32_000,
-  maxTotalBytes: 480_000,
-  maxSessionMs: VOICE_MAX_SESSION_MS,
-});
+function ready(maxSessionMs: number = VOICE_MAX_SESSION_MS): string {
+  return JSON.stringify({
+    type: "ready",
+    sampleRateHz: VOICE_SAMPLE_RATE_HZ,
+    maxFrameBytes: 32_000,
+    maxTotalBytes: 480_000,
+    maxSessionMs,
+  });
+}
 
 function frame(sampleRate = VOICE_SAMPLE_RATE_HZ, channels = 1): Captured {
   return { data: new ArrayBuffer(3_200), sampleRate, channels, timestamp: 0 };
@@ -69,9 +82,12 @@ let roots: Root[] = [];
 beforeEach(() => {
   vi.useFakeTimers();
   audio.granted = true;
+  audio.holdPermission = false;
   audio.startFails = false;
+  audio.starts = 0;
   audio.stops = 0;
   audio.onBuffer = null;
+  audio.answerPermission = null;
 });
 
 afterEach(() => {
@@ -140,18 +156,24 @@ function mount() {
   };
   const binary = (): ArrayBuffer[] =>
     sent.filter((item): item is ArrayBuffer => item !== VOICE_STOP_FRAME);
+  const unmount = (): void => {
+    roots = roots.filter((item) => item !== root);
+    act(() => {
+      root.unmount();
+    });
+  };
 
-  return { capture, wire, sent, binary };
+  return { capture, wire, sent, binary, unmount };
 }
 
-async function listening() {
+async function listening(maxSessionMs?: number) {
   const view = mount();
   act(() => {
     view.capture().start();
   });
   await flush();
   act(() => {
-    view.wire().onText(READY);
+    view.wire().onText(ready(maxSessionMs));
   });
   return view;
 }
@@ -168,6 +190,7 @@ describe("useVoiceCapture", () => {
 
     expect(view.capture().status).toBe("denied");
     expect(() => view.wire()).toThrow();
+    expect(audio.starts).toBe(0);
   });
 
   it("streams captured PCM to the socket once the server is ready", async () => {
@@ -223,24 +246,69 @@ describe("useVoiceCapture", () => {
     expect(view.sent).toContain(VOICE_STOP_FRAME);
   });
 
-  it("stops itself at the session cap", async () => {
-    const view = await listening();
+  it("stops itself at the session cap the server announced", async () => {
+    const view = await listening(5_000);
 
     act(() => {
-      vi.advanceTimersByTime(VOICE_MAX_SESSION_MS);
+      vi.advanceTimersByTime(5_000);
     });
 
     expect(view.sent).toContain(VOICE_STOP_FRAME);
   });
 
-  it("fails when the hardware ignores the requested format", async () => {
+  it("never opens the microphone when stop came while permission was pending", async () => {
+    audio.holdPermission = true;
+    const view = mount();
+
+    act(() => {
+      view.capture().start();
+    });
+    expect(view.capture().status).toBe("requesting");
+
+    act(() => {
+      view.capture().stop();
+    });
+    expect(view.capture().status).toBe("idle");
+
+    act(() => {
+      audio.answerPermission?.(true);
+    });
+    await flush();
+
+    expect(audio.starts).toBe(0);
+    expect(() => view.wire()).toThrow();
+    expect(view.capture().status).toBe("idle");
+  });
+
+  it("never opens the microphone when the screen left while permission was pending", async () => {
+    audio.holdPermission = true;
+    const view = mount();
+
+    act(() => {
+      view.capture().start();
+    });
+    view.unmount();
+
+    act(() => {
+      audio.answerPermission?.(true);
+    });
+    await flush();
+
+    expect(audio.starts).toBe(0);
+    expect(() => view.wire()).toThrow();
+  });
+
+  it("names a device that cannot deliver the requested format", async () => {
     const view = await listening();
 
     act(() => {
       audio.onBuffer?.(frame(48_000));
     });
 
-    expect(view.capture()).toMatchObject({ status: "error", failure: "audio" });
+    expect(view.capture()).toMatchObject({
+      status: "error",
+      failure: "format",
+    });
     expect(view.binary()).toHaveLength(0);
   });
 
