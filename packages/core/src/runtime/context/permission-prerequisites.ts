@@ -1,4 +1,32 @@
-export const PERMISSION_PREREQUISITES: Readonly<
+export const PERMISSION_CATALOG = [
+  "assistant:use",
+  "chat:view",
+  "companies:view",
+  "customers:create",
+  "customers:delete",
+  "customers:edit",
+  "customers:invite",
+  "customers:view",
+  "documents:create",
+  "documents:edit",
+  "documents:view",
+  "files:upload",
+  "files:view",
+  "orders:create",
+  "orders:edit",
+  "orders:view",
+  "pricing:manage",
+  "pricing:view",
+  "products:create",
+  "products:delete",
+  "products:edit",
+  "products:view",
+  "settings:payments",
+] as const;
+
+const knownPermissions = new Set<string>(PERMISSION_CATALOG);
+
+export const PERMISSION_CALL_PREREQUISITES: Readonly<
   Record<string, readonly string[]>
 > = {
   "customers:create": ["pricing:view"],
@@ -24,8 +52,24 @@ export const PERMISSION_PREREQUISITES: Readonly<
   "products:edit": ["files:view"],
 };
 
+export function sameResourceViewPermission(
+  permission: string,
+): string | undefined {
+  const [resource, verb] = permission.split(":");
+  if (resource === undefined || verb === undefined || verb === "view") {
+    return undefined;
+  }
+  const view = `${resource}:view`;
+  return knownPermissions.has(view) ? view : undefined;
+}
+
 export function permissionPrerequisites(permission: string): readonly string[] {
-  return PERMISSION_PREREQUISITES[permission] ?? [];
+  const fromCallEdges = PERMISSION_CALL_PREREQUISITES[permission] ?? [];
+  const view = sameResourceViewPermission(permission);
+  if (view === undefined || fromCallEdges.includes(view)) {
+    return fromCallEdges;
+  }
+  return [view, ...fromCallEdges];
 }
 
 export function expandPermissionPrerequisites(

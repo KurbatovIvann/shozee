@@ -734,6 +734,34 @@ describe("contract check — ctx.call edges (core.md §9, ADR-0015)", () => {
     expect(problems).toEqual([]);
   });
 
+  it("rejects an atomic edge whose callee permission the caller's closure does not cover", () => {
+    const registry = buildRegistry(
+      fixtureContract({
+        name: "orders.create",
+        risk: "write",
+        idempotent: true,
+        audit: true,
+        permissions: ["orders:create"],
+        atomicCalls: ["files.reserveQuota"],
+      }),
+      fixtureContract({
+        name: "files.reserveQuota",
+        transport: "internal",
+        risk: "write",
+        idempotent: true,
+        audit: true,
+        permissions: ["settings:payments"],
+        atomicCallers: ["orders.create"],
+      }),
+    );
+    const problems = problemsOf(checkInput(registry, {}));
+    expect(problems).toEqual([
+      expect.stringContaining(
+        'callee requires "settings:payments", which the prerequisite closure of the caller\'s declared permissions [orders:create] does not cover',
+      ),
+    ]);
+  });
+
   it("accepts an uncovered edge the caller guards with its own permission check", () => {
     const registry = buildRegistry(
       fixtureContract({ name: "search.query", permissions: ["chat:view"] }),

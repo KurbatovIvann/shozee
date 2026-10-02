@@ -454,31 +454,26 @@ function collectCallEdgeProblems(
     for (const problem of callTargetProblems(caller, callee)) {
       problems.push(`${label}: ${problem}`);
     }
-    collectCallPermissionCoverageProblems(
-      edge,
-      caller,
-      callee,
-      label,
-      problems,
-    );
+    if (edge.permissionGuarded !== true) {
+      collectCallPermissionCoverageProblems(caller, callee, label, problems);
+    }
   }
 }
 
 function collectCallPermissionCoverageProblems(
-  edge: DeclaredCallEdge,
   caller: ActionContract,
   callee: ActionContract,
   label: string,
   problems: string[],
 ): void {
-  if (caller.principal !== "staff" || edge.permissionGuarded === true) {
+  if (caller.principal !== "staff") {
     return;
   }
   const covered = new Set(expandPermissionPrerequisites(caller.permissions));
   for (const permission of callee.permissions) {
     if (!covered.has(permission)) {
       problems.push(
-        `${label}: callee requires "${permission}", which the prerequisite closure of the caller's declared permissions [${caller.permissions.join(", ")}] does not cover — declare it a prerequisite in PERMISSION_PREREQUISITES or mark the edge permissionGuarded (ADR-0015)`,
+        `${label}: callee requires "${permission}", which the prerequisite closure of the caller's declared permissions [${caller.permissions.join(", ")}] does not cover — declare it a prerequisite in permissionPrerequisites or mark the edge permissionGuarded (ADR-0015)`,
       );
     }
   }
@@ -507,6 +502,7 @@ function collectAtomicEdgeProblems(
       for (const problem of atomicCallTargetProblems(contract, callee)) {
         problems.push(`${label}: ${problem}`);
       }
+      collectCallPermissionCoverageProblems(contract, callee, label, problems);
     }
     for (const callerName of contract.atomicCallers) {
       const label = `atomic edge "${callerName}" → "${contract.name}"`;

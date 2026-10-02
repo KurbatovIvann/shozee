@@ -44,18 +44,34 @@ deny wins, then explicit grant, then role default. Unknown permission keys
 fail the action contract/catalog check. Admin is seeded `settings:payments`
 (SHO-223); manager and employee are not.
 
-Precedence, amended 2026-10-02 (SHO-830, ADR-0015): a permission declares
-the **prerequisites** its job needs — `pricing:manage` requires
-`products:view`, because a price list cannot be changed without seeing the
-products. The declaration is `PERMISSION_PREREQUISITES` in
-`packages/core/src/runtime/context/permission-prerequisites.ts`; the stored
-rows (`role_permission_defaults`, `company_members.permissions`) keep only
-what was granted. The effective set of a membership is therefore:
+Precedence, amended 2026-10-02 (SHO-830, ADR-0015): a permission has
+**prerequisites** — the reads its job needs — from two sources, both in
+`packages/core/src/runtime/context/permission-prerequisites.ts` and read
+through `permissionPrerequisites`:
+
+- **its own resource's view**, structurally: every non-view
+  `<resource>:<verb>` in `PERMISSION_CATALOG` implies `<resource>:view`
+  when that key exists, so `pricing:manage` implies `pricing:view` and
+  `files:upload` implies `files:view`. `assistant:use` and
+  `settings:payments` have no `:view` sibling and are excluded;
+- **the cross-module reads it performs**, one pair per declared `ctx.call`
+  edge (`PERMISSION_CALL_PREREQUISITES`): `pricing:manage` also requires
+  `products:view`, because a price list cannot be changed without seeing
+  the products.
+
+The stored rows (`role_permission_defaults`,
+`company_members.permissions`) keep only what was granted. The effective
+set of a membership is therefore:
 
 1. an explicit deny removes the denied permission **and, transitively,
    every permission that requires it** — deny stays the strongest rule;
 2. role defaults plus explicit grants that survived (1);
 3. the closure of (2) over `PERMISSION_PREREQUISITES`.
+
+A module ticket that adds a permission key or a `ctx.call` edge amends
+`PERMISSION_CATALOG` / `PERMISSION_CALL_PREREQUISITES` in the same PR —
+that ticket is the core-change approval, and the contract check fails
+until the table matches the edges.
 
 `resolveEffectivePermissions` is the only place this is computed, and
 `staffHasPermission` is the only read API; the owner short-circuit is

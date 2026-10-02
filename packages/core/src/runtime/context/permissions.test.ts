@@ -7,10 +7,42 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  expandPermissionPrerequisites,
+  PERMISSION_CATALOG,
+} from "./permission-prerequisites.js";
+import {
   isCompanyRole,
   resolveEffectivePermissions,
   staffHasPermission,
 } from "./permissions.js";
+
+describe("the same-resource rule over the permission catalog", () => {
+  const catalog: readonly string[] = PERMISSION_CATALOG;
+  const viewOf = (permission: string): string =>
+    `${permission.split(":")[0] ?? ""}:view`;
+  const isView = (permission: string): boolean =>
+    permission.split(":")[1] === "view";
+
+  it("names the only permissions with no :view sibling", () => {
+    expect(
+      catalog.filter(
+        (permission) =>
+          !isView(permission) && !catalog.includes(viewOf(permission)),
+      ),
+    ).toEqual(["assistant:use", "settings:payments"]);
+  });
+
+  it("every other non-view permission implies its own resource's view", () => {
+    for (const permission of catalog) {
+      if (isView(permission) || !catalog.includes(viewOf(permission))) {
+        continue;
+      }
+      expect(expandPermissionPrerequisites([permission])).toContain(
+        viewOf(permission),
+      );
+    }
+  });
+});
 
 describe("resolveEffectivePermissions", () => {
   it("unions role defaults with explicit grants", () => {
@@ -34,7 +66,20 @@ describe("resolveEffectivePermissions", () => {
       { granted: ["pricing:manage"], denied: [] },
       [],
     );
-    expect([...effective].sort()).toEqual(["pricing:manage", "products:view"]);
+    expect([...effective].sort()).toEqual([
+      "customers:view",
+      "pricing:manage",
+      "pricing:view",
+      "products:view",
+    ]);
+  });
+
+  it("a deny of a resource's view removes that resource's writes", () => {
+    const effective = resolveEffectivePermissions(
+      { granted: ["pricing:manage"], denied: ["pricing:view"] },
+      ["chat:view"],
+    );
+    expect(effective).toEqual(["chat:view"]);
   });
 
   it("an explicit deny of a prerequisite removes every permission that requires it", () => {

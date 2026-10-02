@@ -213,12 +213,7 @@ export type {
   SessionPrincipal,
   SystemScopeInput,
 } from "./runtime/context/factories.js";
-export {
-  expandPermissionPrerequisites,
-  PERMISSION_PREREQUISITES,
-  permissionPrerequisites,
-  permissionRequiresDenied,
-} from "./runtime/context/permission-prerequisites.js";
+export { PERMISSION_CALL_PREREQUISITES } from "./runtime/context/permission-prerequisites.js";
 export {
   resolveEffectivePermissions,
   staffHasPermission,

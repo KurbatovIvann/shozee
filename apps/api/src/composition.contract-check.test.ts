@@ -10,6 +10,7 @@
  */
 import {
   deriveRecordProvenanceRequirements,
+  PERMISSION_CALL_PREREQUISITES,
   runContractCheck,
   type ActionChannel,
 } from "@showzy/core";
@@ -539,6 +540,64 @@ describe("CI contract-check stage", () => {
     });
     expect(byName.get("companies.get")?.transport).toBe("client");
     expect(byName.get("companies.get")?.aiExposure).toBe("exposed");
+  });
+
+  it("SHO-830: the edge prerequisites are exactly what the declared edges derive", () => {
+    const input = buildContractCheckInput();
+    const byName = new Map(
+      input.registry.contracts().map((contract) => [contract.name, contract]),
+    );
+    const derived = new Map<string, Set<string>>();
+    for (const edge of input.callEdges) {
+      const caller = byName.get(edge.caller);
+      const callee = byName.get(edge.callee);
+      if (
+        caller === undefined ||
+        callee === undefined ||
+        caller.principal !== "staff" ||
+        edge.permissionGuarded === true
+      ) {
+        continue;
+      }
+      for (const held of caller.permissions) {
+        for (const needed of callee.permissions) {
+          if (held === needed) {
+            continue;
+          }
+          const existing = derived.get(held) ?? new Set<string>();
+          existing.add(needed);
+          derived.set(held, existing);
+        }
+      }
+    }
+    const asRows = (map: Map<string, Set<string>>): [string, string[]][] =>
+      [...map.entries()]
+        .map(([key, values]): [string, string[]] => [key, [...values].sort()])
+        .sort(([a], [b]) => a.localeCompare(b));
+    expect(asRows(derived)).toEqual(
+      asRows(
+        new Map(
+          Object.entries(PERMISSION_CALL_PREREQUISITES).map(([key, values]) => [
+            key,
+            new Set(values),
+          ]),
+        ),
+      ),
+    );
+  });
+
+  it("SHO-830: search.query holds the whole permissionGuarded allowlist", () => {
+    const input = buildContractCheckInput();
+    const guarded = input.callEdges.filter(
+      (edge) => edge.permissionGuarded === true,
+    );
+    expect(guarded.map((edge) => `${edge.caller} -> ${edge.callee}`)).toEqual([
+      "search.query -> customers.searchMatches",
+      "search.query -> catalog.searchMatches",
+      "search.query -> orders.searchMatches",
+      "search.query -> pricing.searchMatches",
+      "search.query -> documents.searchMatches",
+    ]);
   });
 
   it("SHO-749: the largest card every preview-bound AI tool can build fits the wire", () => {

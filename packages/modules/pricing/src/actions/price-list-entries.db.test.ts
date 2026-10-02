@@ -305,7 +305,10 @@ beforeAll(async () => {
       companyId: companyA,
       userId: clerks.manageOnly,
       role: "employee",
-      permissions: { granted: ["pricing:manage"], denied: [] },
+      permissions: {
+        granted: ["pricing:manage"],
+        denied: ["orders:create", "orders:view", "documents:view"],
+      },
     },
   ]);
 });
@@ -1023,6 +1026,15 @@ describe("pricing:manage implies the catalog read it needs", () => {
   const actor = () => ({
     userId: clerks.manageOnly,
     companyId: kitIdentities.companies.a,
+  });
+
+  it("lets a pricing:manage-only member read the price list", async () => {
+    const result = await kit.invoke(
+      listPriceListEntries,
+      { priceListId: fixtures.listA },
+      actor(),
+    );
+    expect(result.items.map((row) => row.id)).toContain(fixtures.entryAProduct);
   });
 
   it("lets a pricing:manage-only member set entries", async () => {
