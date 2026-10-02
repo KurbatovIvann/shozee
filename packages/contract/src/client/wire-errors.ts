@@ -9,7 +9,10 @@
  * The table test enforces the exact §4 rows; `satisfies Record<CoreErrorCode, …>`
  * keeps the core subset complete when core gains an error class.
  */
-import type { DeclaredErrorCode } from "@showzy/core/contract";
+import {
+  CONFIRMABLE_RISKS,
+  type DeclaredErrorCode,
+} from "@showzy/core/contract";
 import type { CoreErrorCode } from "@showzy/core/errors";
 import { z } from "zod";
 
@@ -74,8 +77,15 @@ export const wireConfirmationChallengeSchema = z.object({
   summary: z.string(),
   /** ISO-8601 expiry — five minutes from issuance (core.md §7). */
   expiresAt: z.string(),
+  risk: z.enum(CONFIRMABLE_RISKS),
   preview: wireActionPreviewSchema.optional(),
 });
+
+export type WireConfirmationChallenge = z.infer<
+  typeof wireConfirmationChallengeSchema
+>;
+
+export type WireActionRisk = WireConfirmationChallenge["risk"];
 
 /**
  * The full §4 oRPC error map. Procedures attach a subset: pipeline-universal

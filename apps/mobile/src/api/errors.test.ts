@@ -51,6 +51,7 @@ describe("describeWireError (contract.md §4)", () => {
           challengeId: "c-1",
           summary: "Delete?",
           expiresAt: "2026-08-19T00:00:00.000Z",
+          risk: "high",
         },
       },
     });
@@ -87,6 +88,7 @@ describe("describeQueryFailure", () => {
           challengeId: "c-1",
           summary: "Delete?",
           expiresAt: "2026-08-19T00:00:00.000Z",
+          risk: "high",
         },
       },
     });
@@ -95,6 +97,7 @@ describe("describeQueryFailure", () => {
       message: "Confirmation required.",
       challengeId: "c-1",
       summary: "Delete?",
+      risk: "high",
     });
   });
 

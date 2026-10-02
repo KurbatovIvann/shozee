@@ -97,6 +97,7 @@ describe("contract.md §4 wire table", () => {
       challengeId: "c-1",
       summary: "Delete order #42?",
       expiresAt: new Date().toISOString(),
+      risk: "high",
     };
     expect(wireConfirmationChallengeSchema.parse(challenge)).toEqual(challenge);
     expect(
@@ -112,6 +113,7 @@ describe("contract.md §4 wire table", () => {
       challengeId: "c-2",
       summary: "Rename to Oksana",
       expiresAt: new Date().toISOString(),
+      risk: "write",
       preview: {
         title: "Rename to Oksana",
         lines: [{ label: "Note", value: "Oksana" }],
@@ -119,6 +121,27 @@ describe("contract.md §4 wire table", () => {
       },
     };
     expect(wireConfirmationChallengeSchema.parse(challenge)).toEqual(challenge);
+  });
+
+  it("requires the challenged action's risk from the core vocabulary", () => {
+    const challenge = {
+      challengeId: "c-3",
+      summary: "Delete price list «Opt»?",
+      expiresAt: new Date().toISOString(),
+    };
+    expect(wireConfirmationChallengeSchema.safeParse(challenge).success).toBe(
+      false,
+    );
+    expect(
+      wireConfirmationChallengeSchema.safeParse({
+        ...challenge,
+        risk: "destructive",
+      }).success,
+    ).toBe(false);
+    expect(
+      wireConfirmationChallengeSchema.parse({ ...challenge, risk: "high" })
+        .risk,
+    ).toBe("high");
   });
 });
 

@@ -104,6 +104,7 @@ function confirmationRequired(): ORPCError<
       challengeId: string;
       summary: string;
       expiresAt: string;
+      risk: string;
     };
   }
 > {
@@ -116,6 +117,7 @@ function confirmationRequired(): ORPCError<
         challengeId: "c-1",
         summary: "Delete?",
         expiresAt: "2026-08-21T00:00:00.000Z",
+        risk: "high",
       },
     },
   });

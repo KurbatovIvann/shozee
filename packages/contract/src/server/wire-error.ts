@@ -18,6 +18,11 @@ import {
   ValidationError as OrpcValidationError,
 } from "@orpc/server";
 import {
+  isConfirmableRisk,
+  type ActionRisk,
+  type ConfirmableRisk,
+} from "@showzy/core/contract";
+import {
   ConcurrentRetryError,
   ConfirmationRequiredError,
   CoreError,
@@ -28,6 +33,10 @@ import {
 
 import { wireErrorStatus } from "../client/wire-errors.js";
 
+function confirmableRiskOf(risk: ActionRisk): ConfirmableRisk {
+  return isConfirmableRisk(risk) ? risk : "high";
+}
+
 /**
  * Typed extras keyed by wire code. Remaining `CoreError` classes carry
  * none — `clientMessage` is the only serializable text (core.md §11);
@@ -37,11 +46,16 @@ import { wireErrorStatus } from "../client/wire-errors.js";
 type WireExtras =
   | { readonly issues: ValidationError["issues"] }
   | { readonly retryAfterSec: number }
-  | { readonly challenge: ConfirmationRequiredError["challenge"] };
+  | {
+      readonly challenge: ConfirmationRequiredError["challenge"] & {
+        readonly risk: ConfirmableRisk;
+      };
+    };
 
 const WIRE_EXTRAS: {
   readonly [Code in CoreErrorCode]?: (
     error: CoreError,
+    risk: ActionRisk,
   ) => WireExtras | undefined;
 } = {
   VALIDATION: (error) =>
@@ -50,9 +64,9 @@ const WIRE_EXTRAS: {
     error instanceof ConcurrentRetryError
       ? { retryAfterSec: error.retryAfterSec }
       : undefined,
-  CONFIRMATION_REQUIRED: (error) =>
+  CONFIRMATION_REQUIRED: (error, risk) =>
     error instanceof ConfirmationRequiredError
-      ? { challenge: error.challenge }
+      ? { challenge: { ...error.challenge, risk: confirmableRiskOf(risk) } }
       : undefined,
   RATE_LIMITED: (error) =>
     error instanceof RateLimitError
@@ -60,9 +74,12 @@ const WIRE_EXTRAS: {
       : undefined,
 };
 
-export function toWireError(error: unknown): ORPCError<CoreErrorCode, unknown> {
+export function toWireError(
+  error: unknown,
+  risk: ActionRisk,
+): ORPCError<CoreErrorCode, unknown> {
   if (error instanceof CoreError) {
-    const extras = WIRE_EXTRAS[error.code]?.(error);
+    const extras = WIRE_EXTRAS[error.code]?.(error, risk);
     if (extras !== undefined) {
       return new ORPCError(error.code, {
         status: wireErrorStatus[error.code],
