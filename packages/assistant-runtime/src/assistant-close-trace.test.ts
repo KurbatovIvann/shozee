@@ -255,7 +255,9 @@ describe("the record id an action result names", () => {
 
   it("guesses nothing from a field that merely ends in Id", () => {
     expect(assistantTraceRecordId({ customerId: CUSTOMER })).toBeNull();
-    expect(assistantTraceRecordId({ orderId: ORDER, number: "CO-1" })).toBeNull();
+    expect(
+      assistantTraceRecordId({ orderId: ORDER, number: "CO-1" }),
+    ).toBeNull();
     expect(
       assistantTraceRecordId({ orderId: ORDER, customerId: CUSTOMER }),
     ).toBeNull();

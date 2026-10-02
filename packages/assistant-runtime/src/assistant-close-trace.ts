@@ -5,7 +5,11 @@ import type {
   ChoiceResolution,
   ConfirmationResolution,
 } from "./assistant-interactions.js";
-import type { ConfirmedCardResult } from "./assistant-kit-resolve.js";
+import type {
+  ConfirmedCardAction,
+  ConfirmedCardFailure,
+  ConfirmedCardResult,
+} from "./assistant-kit-resolve.js";
 
 export type AssistantTracePart = Extract<ChatPart, { readonly kind: "trace" }>;
 
@@ -25,6 +29,46 @@ function storableId(value: string): string | null {
   return value.length > 0 && value.length <= RECORD_ID_MAX ? value : null;
 }
 
+const CHOICE_ENTITY_ID: keyof ChoiceResolution = "entityId";
+const CONFIRMATION_ACTION: keyof ConfirmationResolution = "actionName";
+const ATTEMPT_ACTION: keyof ConfirmedCardAction = "action";
+const FAILURE_FIELDS: readonly (keyof ConfirmedCardFailure)[] = [
+  "action",
+  "code",
+  "message",
+];
+const BUNDLE_DONE: keyof ConfirmedCardResult = "done";
+const BUNDLE_FAILED: keyof ConfirmedCardResult = "failed";
+
+function readText(value: unknown, field: string): string | null {
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+  const read: unknown = (value as Record<string, unknown>)[field];
+  return typeof read === "string" && read.length > 0 ? read : null;
+}
+
+function isConfirmedAction(value: unknown): value is ConfirmedCardAction {
+  return readText(value, ATTEMPT_ACTION) !== null;
+}
+
+function isConfirmedFailure(value: unknown): value is ConfirmedCardFailure {
+  return FAILURE_FIELDS.every((field) => readText(value, field) !== null);
+}
+
+function isConfirmedCardResult(result: unknown): result is ConfirmedCardResult {
+  if (typeof result !== "object" || result === null) {
+    return false;
+  }
+  const fields = result as Record<string, unknown>;
+  const done = fields[BUNDLE_DONE];
+  if (!Array.isArray(done) || !done.every(isConfirmedAction)) {
+    return false;
+  }
+  const failed = fields[BUNDLE_FAILED];
+  return failed === undefined || isConfirmedFailure(failed);
+}
+
 interface CloseArgs {
   readonly interactionId: string;
   readonly value: unknown;
@@ -37,42 +81,38 @@ function choiceTrace(args: CloseArgs): readonly AssistantTracePart[] {
   if (args.outcome.kind === "error") {
     return [];
   }
-  const resolution = args.value as ChoiceResolution;
+  const entityId = readText(args.value, CHOICE_ENTITY_ID);
   return [
     {
       kind: "trace",
       interactionId: args.interactionId,
       interactionKind: "choice",
       outcome: "chosen",
-      optionId: storableId(resolution.entityId),
+      optionId: entityId === null ? null : storableId(entityId),
       attempts: [],
     },
   ];
 }
 
 function confirmedAttempts(
-  resolution: ConfirmationResolution,
+  value: unknown,
   result: unknown,
 ): AssistantTraceAttempt[] {
-  if (resolution.also.length === 0) {
-    return [
-      {
-        action: resolution.actionName,
-        outcome: "done",
-        recordId: assistantTraceRecordId(result),
-      },
-    ];
+  if (isConfirmedCardResult(result)) {
+    const done = result.done.map((one): AssistantTraceAttempt => ({
+      action: one.action,
+      outcome: "done",
+      recordId: assistantTraceRecordId(one.result),
+    }));
+    const failed = result.failed;
+    return failed === undefined
+      ? done
+      : [...done, { action: failed.action, outcome: "failed", recordId: null }];
   }
-  const bundle = result as ConfirmedCardResult;
-  const done = bundle.done.map((one): AssistantTraceAttempt => ({
-    action: one.action,
-    outcome: "done",
-    recordId: assistantTraceRecordId(one.result),
-  }));
-  const failed = bundle.failed;
-  return failed === undefined
-    ? done
-    : [...done, { action: failed.action, outcome: "failed", recordId: null }];
+  const action = readText(value, CONFIRMATION_ACTION);
+  return action === null
+    ? []
+    : [{ action, outcome: "done", recordId: assistantTraceRecordId(result) }];
 }
 
 function confirmationTrace(args: CloseArgs): readonly AssistantTracePart[] {
@@ -91,10 +131,7 @@ function confirmationTrace(args: CloseArgs): readonly AssistantTracePart[] {
   if (args.outcome.kind !== "ok") {
     return [];
   }
-  const attempts = confirmedAttempts(
-    args.value as ConfirmationResolution,
-    args.outcome.result,
-  );
+  const attempts = confirmedAttempts(args.value, args.outcome.result);
   return [
     {
       kind: "trace",

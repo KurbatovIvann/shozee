@@ -1931,9 +1931,7 @@ describe("the trace a closed card leaves in the stored log", () => {
         attempts: [],
       },
     ]);
-    expect(body.window?.openPause?.interactionId).not.toBe(
-      pause.interactionId,
-    );
+    expect(body.window?.openPause?.interactionId).not.toBe(pause.interactionId);
   });
 
   it("records a dropped question as rejected, once", async () => {

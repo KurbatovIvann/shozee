@@ -125,6 +125,10 @@ function holdsTheSlot(record: PauseRecord, now: Date): boolean {
   );
 }
 
+function isAnswerable(record: PauseRecord, now: Date): boolean {
+  return record.status === "open" && !isExpired(record, now);
+}
+
 /**
  * The registry erases each kind's type parameters, so calling `resolve`
  * through it needs this one cast. The pairing of answer and secret was
@@ -282,7 +286,7 @@ export function createAssistantKit<T extends AnyTypes>(
     async peek(scope) {
       const existing = await readRecord(scope);
       return existing !== null &&
-        holdsTheSlot(existing.record, deps.clock.now())
+        isAnswerable(existing.record, deps.clock.now())
         ? publicPauseOf(existing.record)
         : null;
     },
@@ -388,7 +392,10 @@ export function createAssistantKit<T extends AnyTypes>(
       try {
         await input.whileHeld?.(publicPauseOf(cancelled));
       } finally {
-        await deps.pauses.delete(pauseKey(input.conversationId));
+        await deps.pauses.deleteIfEquals(
+          pauseKey(input.conversationId),
+          JSON.stringify(cancelled),
+        );
       }
       return { kind: "cancelled" };
     },
@@ -433,7 +440,7 @@ export function createAssistantKit<T extends AnyTypes>(
         });
         const existing = await readRecord(scope);
         const openPause =
-          existing !== null && holdsTheSlot(existing.record, deps.clock.now())
+          existing !== null && isAnswerable(existing.record, deps.clock.now())
             ? publicPauseOf(existing.record)
             : null;
 
