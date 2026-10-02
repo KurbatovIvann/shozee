@@ -48,6 +48,13 @@ allowBuilds:
 # overrides re-resolves the whole Expo peer tree (@types/react 19.2.18 ->
 # 19.1.17), the SHO-563 hazard. Ignored until SHO-784 bumps them with a
 # reviewed lockfile. No production exists.
+#
+# SHO-828: node-forge <=1.4.0 (RSA PKCS#1 v1.5 signature verification),
+# no patched release. Reachable only through expo > @expo/cli (and
+# @expo/code-signing-certificates) — the Expo dev/build CLI, pulled in by
+# apps/mobile and transitively by the @better-auth/expo peer tree in
+# apps/api. No server or client runtime path imports it, and no production
+# exists. Drop when Expo bumps node-forge.
 audit:
   ignore:
     - GHSA-w3rx-r6r6-pgpr
@@ -58,3 +65,4 @@ audit:
     - GHSA-qhr7-859c-m2p7
     - GHSA-6j4f-fj2g-mc7p
     - GHSA-m9gg-hp2v-232j
+    - GHSA-86w9-cpqp-85rv
