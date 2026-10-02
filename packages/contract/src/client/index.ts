@@ -61,7 +61,6 @@ export {
 export type {
   WireActionPreview,
   WireActionRisk,
-  WireConfirmationChallenge,
   WireError,
   WireErrorCode,
 } from "./wire-errors.js";

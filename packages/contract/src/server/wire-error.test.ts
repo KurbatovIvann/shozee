@@ -104,6 +104,20 @@ describe("toWireError (contract.md §4)", () => {
     ).toBe("high");
   });
 
+  it("narrows a non-confirmable risk to the most cautious confirmable one", () => {
+    const challenge = {
+      challengeId: "c-3",
+      summary: "Delete price list «Opt»?",
+      expiresAt: "2026-08-18T10:05:00.000Z",
+    };
+    const error = toWireError(new ConfirmationRequiredError(challenge), "read");
+    expect(
+      wireConfirmationChallengeSchema.parse(
+        (error.data as { readonly challenge: unknown }).challenge,
+      ).risk,
+    ).toBe("high");
+  });
+
   it("maps RateLimitError to RATE_LIMITED 429 with retryAfterSec", () => {
     const error = toWireError(new RateLimitError(30), "write");
     expect(error.code).toBe("RATE_LIMITED");
