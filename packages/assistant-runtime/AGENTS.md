@@ -56,7 +56,8 @@ registry is injected into `createAssistantRuntime`; this package never imports
     fallback here (a member holding none of those permissions) and not a
     refusal. The `ShoPlanner` that turns a `ShoResult` into a plan is injected
     (SHO-769), and `mountShoEngine` is the one place that reads `config.sho`
-    and decides whether `apps/api` runs Шо first at all.
+    and decides whether `apps/api` runs Шо first at all: no replica, no token
+    or an empty whitelist mounts nothing, so a turn costs no parse.
 - `sho-plan.ts` — that planner (SHO-769). One gate over the parse result, then
   one registered action planner. The gate sends a turn to the dialogue model
   when Шо read more than one command, `none`, a `ui` answer, a `how_to` or

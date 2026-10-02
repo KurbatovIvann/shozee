@@ -213,6 +213,12 @@ describe("createShoPlanner routes to the dialogue model", () => {
       expected: "blocking_need",
     },
     {
+      text: "знайди Катю",
+      action: "orders.list",
+      needs: [{ path: "action", reason: "read_as_find" }],
+      expected: "blocking_need",
+    },
+    {
       text: "покажи замовлення Каті",
       action: "orders.list",
       kind: "mystery",
@@ -272,6 +278,13 @@ describe("the SHO-740 wrong-write recordings never become a write", () => {
       confirm: "card",
       confidence: 0.967_752_702_323_826_4,
       needs: [{ path: "customer", reason: "missing" }],
+    },
+    {
+      text: "Кафе на углу треба виставити онлайн оплату на 2 800.",
+      action: "orders.list",
+      kind: "write",
+      effect: "read",
+      confidence: 0.995_999_219_067_958_9,
     },
     {
       text: "Надішли Каті Самбуці посилання на оплату. Сума 1350.",
@@ -421,6 +434,32 @@ describe("the whitelist and the effect agreement", () => {
     expect(reasonOf(plan)).toBe("effect_mismatch");
   });
 
+  it("refuses a read planner for a parse whose kind says write", () => {
+    const plan = listed(
+      {
+        text: "Кафе на углу треба виставити онлайн оплату на 2 800.",
+        action: "orders.list",
+        kind: "write",
+        effect: "read",
+      },
+      READS,
+    );
+    expect(reasonOf(plan)).toBe("effect_mismatch");
+  });
+
+  it("treats a high-stakes parse as a write however its effect reads", () => {
+    expect(
+      shoWrites(
+        resultOf({
+          text: "видали замовлення 174",
+          action: "orders.cancel",
+          kind: "high",
+          effect: "read",
+        }).first,
+      ),
+    ).toBe(true);
+  });
+
   it("treats a confirmation Шо asks for as a write", () => {
     expect(
       shoWrites(
@@ -461,7 +500,7 @@ describe("shoNeedRoute", () => {
   const needs: readonly (RecordedNeed & { readonly route: string })[] = [
     { path: "customer", reason: "ambiguous", route: "card" },
     { path: "product", reason: "unknown", route: "card" },
-    { path: "action", reason: "read_as_find", route: "resolver" },
+    { path: "action", reason: "read_as_find", route: "dialogue" },
     { path: "action", reason: "language", route: "dialogue" },
     { path: "items.0.quantity", reason: "missing", route: "dialogue" },
     { path: "action", reason: "read_as_update", route: "dialogue" },
@@ -516,6 +555,18 @@ describe("shoLocatorFor", () => {
         }),
       ),
     ).toEqual({ kind: "locator", locator: { by: "query", value: "Катерина" } });
+  });
+
+  it("refuses a reference whose only offer is another action", () => {
+    expect(
+      shoLocatorFor(
+        ref({
+          text: "Катя",
+          status: "unknown",
+          suggest: { action: "customers.create", params: {} },
+        }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "unresolved_reference" });
   });
 
   it("refuses an unknown name with nothing to offer", () => {

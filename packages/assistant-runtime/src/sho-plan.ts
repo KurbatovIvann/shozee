@@ -31,7 +31,7 @@ export const SHO_PLAN_FALLBACK_REASONS = [
 
 export type ShoPlanFallbackReason = (typeof SHO_PLAN_FALLBACK_REASONS)[number];
 
-export type ShoNeedRoute = "card" | "resolver" | "dialogue";
+export type ShoNeedRoute = "card" | "dialogue";
 
 export type ShoLocator =
   | { readonly by: "id"; readonly id: string }
@@ -66,14 +66,15 @@ const refused = (reason: ShoPlanFallbackReason): ShoLocatorOutcome => ({
 });
 
 export function shoNeedRoute(need: ShoNeed): ShoNeedRoute {
-  if (need.reason === "ambiguous" || need.reason === "unknown") {
-    return "card";
-  }
-  return need.reason === "read_as_find" ? "resolver" : "dialogue";
+  return need.reason === "ambiguous" || need.reason === "unknown"
+    ? "card"
+    : "dialogue";
 }
 
 export function shoWrites(command: ShoCommand): boolean {
   return (
+    command.kind === "write" ||
+    command.kind === "high" ||
     command.effect === "write" ||
     command.effect === "destructive" ||
     command.confirm !== "none"
@@ -81,9 +82,7 @@ export function shoWrites(command: ShoCommand): boolean {
 }
 
 const offersChoice = (ref: ShoRef): boolean =>
-  (ref.candidates ?? []).length > 0 ||
-  (ref.nearest ?? []).length > 0 ||
-  ref.suggest !== undefined;
+  (ref.candidates ?? []).length > 0 || (ref.nearest ?? []).length > 0;
 
 const byQuery = (value: string): ShoLocatorOutcome =>
   value.trim().length === 0

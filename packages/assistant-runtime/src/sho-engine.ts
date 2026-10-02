@@ -113,7 +113,7 @@ export interface ShoMountDeps {
 
 export function mountShoEngine(deps: ShoMountDeps): ShoEngineFor | undefined {
   const { urls, serviceToken, actions } = deps.sho;
-  if (urls.length === 0 || serviceToken === undefined) {
+  if (urls.length === 0 || serviceToken === undefined || actions.length === 0) {
     return undefined;
   }
   return createShoEngine({
