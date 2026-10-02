@@ -1,15 +1,19 @@
 import {
   kyivNamedPeriodRange,
-  toProviderToolName,
   CATALOG_GET_PRODUCT_TOOL_NAME,
   CATALOG_LIST_PRODUCTS_TOOL_NAME,
   CUSTOMERS_GET_CUSTOMER_TOOL_NAME,
   CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME,
+  LIST_ORDERS_QUERY_MAX,
   ORDERS_LIST_COUNTS_TOOL_NAME,
   ORDERS_LIST_PAGE_TOOL_NAME,
   PRICING_LIST_PRICE_LISTS_TOOL_NAME,
 } from "@showzy/ai";
+import { LIST_PRODUCTS_QUERY_MAX } from "@showzy/catalog/contract";
+import { LIST_CUSTOMERS_SEARCH_MAX } from "@showzy/customers/contract";
+import { LIST_PRICE_LISTS_QUERY_MAX } from "@showzy/pricing/contract";
 import type { ShoCommand, ShoParam, ShoRef } from "@showzy/sho-protocol";
+import { ENTITY_REF_QUERY_MAX } from "@showzy/validation/entity-ref";
 
 import type { ShoPlan } from "../sho-turn.js";
 
@@ -19,11 +23,8 @@ import {
   type ShoActionPlanner,
   type ShoActionPlanners,
   type ShoLocator,
+  type ShoPlanFallbackReason,
 } from "./kit.js";
-
-const ORDERS_GET_ACTION = "orders.get";
-
-export const ORDERS_GET_TOOL_NAME = toProviderToolName(ORDERS_GET_ACTION);
 
 export const SHO_ORDER_STATUSES = [
   "new",
@@ -33,46 +34,35 @@ export const SHO_ORDER_STATUSES = [
   "canceled",
 ] as const;
 
-export const SHO_ORDER_STATUSES_MAX = 5;
+export const SHO_ACTIVE_ORDER_STATUSES = [
+  "new",
+  "confirmed",
+  "in_progress",
+] as const;
 
-const SHO_READ_REPLIES = {
-  "orders.list": "Ось замовлення.",
-  "orders.count": "Ось підсумок.",
-  "orders.get": "Ось замовлення.",
-  "customers.getCustomer": "Ось клієнт.",
-  "customers.listCustomers": "Ось клієнти.",
-  "catalog.getProduct": "Ось товар.",
-  "catalog.listProducts": "Ось товари.",
-  "pricing.listPriceLists": "Ось прайс-листи.",
-} as const;
+const RECORD_STATUSES = ["active", "archived", "all"];
 
-type ShoReadAction = keyof typeof SHO_READ_REPLIES;
-
-export const SHO_READ_ACTIONS: readonly string[] = Object.freeze(
-  Object.keys(SHO_READ_REPLIES),
-);
+const COUNT_GROUPS = ["status", "product", "customer"];
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-type ReadInput = Record<string, unknown>;
+type Fields = Record<string, unknown>;
 
-type Mapped = { readonly input: ReadInput } | { readonly fallback: ShoPlan };
+type Mapped = Fields | ShoPlanFallbackReason;
 
-const unsupportedParam = (): Mapped => ({
-  fallback: shoPlanFallback("unsupported_param"),
-});
+type ParamMapper = (param: ShoParam, now: Date) => Mapped;
 
-function isRef(param: ShoParam | undefined): param is ShoRef {
-  return (
-    param !== undefined &&
-    !Array.isArray(param) &&
-    "status" in param &&
-    !("attrs" in param)
-  );
+type ParamMappers = Readonly<Record<string, ParamMapper>>;
+
+const refused = (mapped: Mapped): mapped is ShoPlanFallbackReason =>
+  typeof mapped === "string";
+
+function isRef(param: ShoParam): param is ShoRef {
+  return !Array.isArray(param) && "status" in param && !("attrs" in param);
 }
 
-function enumValue(param: ShoParam | undefined): string | null {
-  if (param === undefined || Array.isArray(param)) {
+function enumValue(param: ShoParam): string | null {
+  if (Array.isArray(param)) {
     return null;
   }
   if ("value" in param && typeof param.value === "string") {
@@ -81,254 +71,239 @@ function enumValue(param: ShoParam | undefined): string | null {
   return "text" in param && param.text.length > 0 ? param.text : null;
 }
 
-function spanText(param: ShoParam | undefined): string | null {
-  if (param === undefined || Array.isArray(param) || !("text" in param)) {
+function clipped(param: ShoParam, max: number): string | null {
+  if (Array.isArray(param) || !("text" in param)) {
     return null;
   }
   const text = param.text.trim();
-  return text.length > 0 ? text : null;
+  return text.length === 0 ? null : text.slice(0, max);
 }
 
-function statusList(param: ShoParam | undefined): readonly string[] | null {
-  const said = Array.isArray(param)
-    ? param.map((entry) => (typeof entry === "string" ? entry : null))
-    : [enumValue(param)];
-  const statuses = said.filter((value): value is string => value !== null);
-  if (statuses.length !== said.length || statuses.length === 0) {
-    return null;
-  }
-  const known = (SHO_ORDER_STATUSES as readonly string[]).filter((status) =>
-    statuses.includes(status),
-  );
-  return known.length === new Set(statuses).size &&
-    known.length <= SHO_ORDER_STATUSES_MAX
-    ? known
-    : null;
-}
-
-function onlyKnownParams(
-  command: ShoCommand,
-  supported: readonly string[],
-): boolean {
-  return Object.keys(command.params).every((name) => supported.includes(name));
-}
-
-function locatorOf(param: ShoParam | undefined): ShoLocator | ShoPlan {
+function locatorOf(param: ShoParam): ShoLocator | ShoPlanFallbackReason {
   if (!isRef(param)) {
-    return shoPlanFallback("unsupported_param");
+    return "unsupported_param";
   }
   const outcome = shoLocatorFor(param);
-  return outcome.kind === "locator"
-    ? outcome.locator
-    : shoPlanFallback(outcome.reason);
+  if (outcome.kind === "fallback") {
+    return outcome.reason;
+  }
+  const locator = outcome.locator;
+  return locator.by === "id" && !UUID.test(locator.id)
+    ? "unsupported_param"
+    : locator;
 }
 
-const isPlan = (value: ShoLocator | ShoPlan): value is ShoPlan =>
-  "kind" in value;
-
-function withPeriod(command: ShoCommand, now: Date, input: ReadInput): Mapped {
-  const said = command.params["period"];
-  if (said === undefined) {
-    return { input };
-  }
-  const period = enumValue(said);
-  const range = period === null ? null : kyivNamedPeriodRange(period, now);
+const period: ParamMapper = (param, now) => {
+  const token = enumValue(param);
+  const range = token === null ? null : kyivNamedPeriodRange(token, now);
   return range === null
-    ? unsupportedParam()
-    : {
-        input: {
-          ...input,
-          createdFrom: range.createdFrom,
-          createdTo: range.createdTo,
-        },
-      };
-}
+    ? "unsupported_param"
+    : { createdFrom: range.createdFrom, createdTo: range.createdTo };
+};
 
-function withStatuses(command: ShoCommand, input: ReadInput): Mapped {
-  const said = command.params["status"];
-  if (said === undefined) {
-    return { input };
+const orderStatus: ParamMapper = (param) => {
+  const value = enumValue(param);
+  if (value === "active") {
+    return { statuses: [...SHO_ACTIVE_ORDER_STATUSES] };
   }
-  const statuses = statusList(said);
-  return statuses === null
-    ? unsupportedParam()
-    : { input: { ...input, statuses } };
-}
+  return value !== null &&
+    (SHO_ORDER_STATUSES as readonly string[]).includes(value)
+    ? { statuses: [value] }
+    : "unsupported_param";
+};
 
-function withCustomer(command: ShoCommand, input: ReadInput): Mapped {
-  const said = command.params["customer"];
-  if (said === undefined) {
-    return { input };
-  }
-  const locator = locatorOf(said);
-  if (isPlan(locator)) {
-    return { fallback: locator };
-  }
-  return {
-    input:
-      locator.by === "id"
-        ? { ...input, customerIds: [locator.id] }
-        : { ...input, query: locator.value },
-  };
-}
+const recordStatus: ParamMapper = (param) => {
+  const value = enumValue(param);
+  return value !== null && RECORD_STATUSES.includes(value)
+    ? { status: value }
+    : "unsupported_param";
+};
 
-function ordersFilter(command: ShoCommand, now: Date, base: ReadInput): Mapped {
-  const period = withPeriod(command, now, base);
-  if ("fallback" in period) {
-    return period;
-  }
-  const statuses = withStatuses(command, period.input);
-  if ("fallback" in statuses) {
-    return statuses;
-  }
-  return withCustomer(command, statuses.input);
-}
+const countGroup: ParamMapper = (param) => {
+  const value = enumValue(param);
+  return value !== null && COUNT_GROUPS.includes(value)
+    ? { groupBy: value }
+    : "unsupported_param";
+};
 
-function call(action: ShoReadAction, toolName: string, input: ReadInput) {
-  return {
-    kind: "call" as const,
-    toolName,
-    input,
-    reply: SHO_READ_REPLIES[action],
-  };
-}
-
-function settled(
-  action: ShoReadAction,
-  toolName: string,
-  mapped: Mapped,
-): ShoPlan {
-  return "fallback" in mapped
-    ? mapped.fallback
-    : call(action, toolName, mapped.input);
-}
-
-const ORDERS_FILTER_PARAMS = ["period", "status", "customer"];
-
-function planOrdersList(command: ShoCommand, now: Date): ShoPlan {
-  return onlyKnownParams(command, ORDERS_FILTER_PARAMS)
-    ? settled(
-        "orders.list",
-        ORDERS_LIST_PAGE_TOOL_NAME,
-        ordersFilter(command, now, {}),
-      )
-    : shoPlanFallback("unsupported_param");
-}
-
-function planOrdersCount(command: ShoCommand, now: Date): ShoPlan {
-  return onlyKnownParams(command, ORDERS_FILTER_PARAMS)
-    ? settled(
-        "orders.count",
-        ORDERS_LIST_COUNTS_TOOL_NAME,
-        ordersFilter(command, now, { groupBy: "status" }),
-      )
-    : shoPlanFallback("unsupported_param");
-}
-
-function planOrdersGet(command: ShoCommand): ShoPlan {
-  if (!onlyKnownParams(command, ["order"])) {
-    return shoPlanFallback("unsupported_param");
-  }
-  const locator = locatorOf(command.params["order"]);
-  if (isPlan(locator)) {
+const orderCustomer: ParamMapper = (param) => {
+  const locator = locatorOf(param);
+  if (refused(locator)) {
     return locator;
   }
-  return locator.by === "id" && UUID.test(locator.id)
-    ? call("orders.get", ORDERS_GET_TOOL_NAME, { orderId: locator.id })
-    : shoPlanFallback("unsupported_param");
-}
+  return locator.by === "id"
+    ? { customerIds: [locator.id] }
+    : { query: locator.value.slice(0, LIST_ORDERS_QUERY_MAX) };
+};
 
-function planEntityCard(
-  action: ShoReadAction,
-  toolName: string,
-  paramName: string,
-  idField: string,
-  queryField: string,
-): (command: ShoCommand) => ShoPlan {
-  return (command) => {
-    if (!onlyKnownParams(command, [paramName])) {
-      return shoPlanFallback("unsupported_param");
-    }
-    const locator = locatorOf(command.params[paramName]);
-    if (isPlan(locator)) {
+const orderNumber: ParamMapper = (param) => {
+  const text = clipped(param, LIST_ORDERS_QUERY_MAX);
+  return text === null ? "unsupported_param" : { query: text };
+};
+
+const customerGroup: ParamMapper = (param) => {
+  const locator = locatorOf(param);
+  if (refused(locator)) {
+    return locator;
+  }
+  return locator.by === "id" ? { groupId: locator.id } : "unsupported_param";
+};
+
+const searchText =
+  (field: string, max: number): ParamMapper =>
+  (param) => {
+    const text = clipped(param, max);
+    return text === null ? "unsupported_param" : { [field]: text };
+  };
+
+const entityRef =
+  (idField: string, queryField: string): ParamMapper =>
+  (param) => {
+    const locator = locatorOf(param);
+    if (refused(locator)) {
       return locator;
     }
     return locator.by === "id"
-      ? call(action, toolName, { [idField]: locator.id })
-      : call(action, toolName, { [queryField]: locator.value });
+      ? { [idField]: locator.id }
+      : { [queryField]: locator.value.slice(0, ENTITY_REF_QUERY_MAX) };
   };
+
+interface ReadPlan {
+  readonly toolName: string;
+  readonly reply: string;
+  readonly params: ParamMappers;
+  readonly defaults?: Fields;
+  readonly single?: true;
 }
 
-function planNamedList(
-  action: ShoReadAction,
-  toolName: string,
-  queryField: string,
-  refParam: string,
-): (command: ShoCommand) => ShoPlan {
-  return (command) => {
-    if (!onlyKnownParams(command, ["query", refParam])) {
-      return shoPlanFallback("unsupported_param");
-    }
-    const said = command.params["query"] ?? command.params[refParam];
-    if (said === undefined) {
-      return call(action, toolName, {});
-    }
-    const query = isRef(said) ? said.text.trim() : spanText(said);
-    return query === null || query.length === 0
-      ? shoPlanFallback("unsupported_param")
-      : call(action, toolName, { [queryField]: query });
-  };
-}
-
-const read = (plan: ShoActionPlanner["plan"]): ShoActionPlanner => ({
-  writes: false,
-  plan,
-});
-
-export const SHO_READ_PLANNERS: ShoActionPlanners = {
-  "orders.list": read(planOrdersList),
-  "orders.count": read(planOrdersCount),
-  "orders.get": read(planOrdersGet),
-  "customers.getCustomer": read(
-    planEntityCard(
-      "customers.getCustomer",
-      CUSTOMERS_GET_CUSTOMER_TOOL_NAME,
-      "customer",
-      "customerId",
-      "customerQuery",
-    ),
-  ),
-  "customers.listCustomers": read(
-    planNamedList(
-      "customers.listCustomers",
-      CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME,
-      "search",
-      "customer",
-    ),
-  ),
-  "catalog.getProduct": read(
-    planEntityCard(
-      "catalog.getProduct",
-      CATALOG_GET_PRODUCT_TOOL_NAME,
-      "product",
-      "productId",
-      "productQuery",
-    ),
-  ),
-  "catalog.listProducts": read(
-    planNamedList(
-      "catalog.listProducts",
-      CATALOG_LIST_PRODUCTS_TOOL_NAME,
-      "query",
-      "product",
-    ),
-  ),
-  "pricing.listPriceLists": read(
-    planNamedList(
-      "pricing.listPriceLists",
-      PRICING_LIST_PRICE_LISTS_TOOL_NAME,
-      "query",
-      "price_list",
-    ),
-  ),
+const SHO_READS: Readonly<Record<string, ReadPlan>> = {
+  "orders.list": {
+    toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+    reply: "Ось замовлення.",
+    params: { customer: orderCustomer, status: orderStatus, period },
+  },
+  "orders.count": {
+    toolName: ORDERS_LIST_COUNTS_TOOL_NAME,
+    reply: "Ось підсумок.",
+    params: {
+      customer: orderCustomer,
+      status: orderStatus,
+      period,
+      group_by: countGroup,
+    },
+    defaults: { groupBy: "status" },
+  },
+  "orders.get": {
+    toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+    reply: "Ось замовлення.",
+    params: {
+      order_number: orderNumber,
+      customer: orderCustomer,
+      status: orderStatus,
+      period,
+    },
+  },
+  "customers.getCustomer": {
+    toolName: CUSTOMERS_GET_CUSTOMER_TOOL_NAME,
+    reply: "Ось клієнт.",
+    params: {
+      customer: entityRef("customerId", "customerQuery"),
+      phone: searchText("customerQuery", ENTITY_REF_QUERY_MAX),
+      email: searchText("customerQuery", ENTITY_REF_QUERY_MAX),
+    },
+    single: true,
+  },
+  "customers.listCustomers": {
+    toolName: CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME,
+    reply: "Ось клієнти.",
+    params: {
+      search_text: searchText("search", LIST_CUSTOMERS_SEARCH_MAX),
+      status: recordStatus,
+      group: customerGroup,
+    },
+  },
+  "catalog.getProduct": {
+    toolName: CATALOG_GET_PRODUCT_TOOL_NAME,
+    reply: "Ось товар.",
+    params: { product: entityRef("productId", "productQuery") },
+    single: true,
+  },
+  "catalog.listProducts": {
+    toolName: CATALOG_LIST_PRODUCTS_TOOL_NAME,
+    reply: "Ось товари.",
+    params: {
+      search_text: searchText("query", LIST_PRODUCTS_QUERY_MAX),
+      status: recordStatus,
+    },
+  },
+  "pricing.listPriceLists": {
+    toolName: PRICING_LIST_PRICE_LISTS_TOOL_NAME,
+    reply: "Ось прайс-листи.",
+    params: { search_text: searchText("query", LIST_PRICE_LISTS_QUERY_MAX) },
+  },
 };
+
+export const SHO_READ_ACTIONS: readonly string[] = Object.freeze(
+  Object.keys(SHO_READS),
+);
+
+export const SHO_READ_PLANNER_PARAMS: Readonly<
+  Record<string, readonly string[]>
+> = Object.freeze(
+  Object.fromEntries(
+    Object.entries(SHO_READS).map(([action, read]) => [
+      action,
+      Object.freeze(Object.keys(read.params)),
+    ]),
+  ),
+);
+
+function inputFor(
+  read: ReadPlan,
+  command: ShoCommand,
+  now: Date,
+): Fields | ShoPlanFallbackReason {
+  const said = Object.entries(command.params);
+  if (read.single === true && said.length > 1) {
+    return "unsupported_param";
+  }
+  const input: Record<string, unknown> = {};
+  for (const [name, param] of said) {
+    const mapper = read.params[name];
+    if (mapper === undefined) {
+      return "unsupported_param";
+    }
+    const mapped = mapper(param, now);
+    if (refused(mapped)) {
+      return mapped;
+    }
+    for (const [field, value] of Object.entries(mapped)) {
+      if (field in input) {
+        return "unsupported_param";
+      }
+      input[field] = value;
+    }
+  }
+  return { ...read.defaults, ...input };
+}
+
+function plannerFor(read: ReadPlan): ShoActionPlanner {
+  return {
+    writes: false,
+    plan: (command, now): ShoPlan => {
+      const input = inputFor(read, command, now);
+      return refused(input)
+        ? shoPlanFallback(input)
+        : { kind: "call", toolName: read.toolName, input, reply: read.reply };
+    },
+  };
+}
+
+export const SHO_READ_PLANNERS: ShoActionPlanners = Object.freeze(
+  Object.fromEntries(
+    Object.entries(SHO_READS).map(([action, read]) => [
+      action,
+      plannerFor(read),
+    ]),
+  ),
+);

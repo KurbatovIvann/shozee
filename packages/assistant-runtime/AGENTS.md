@@ -80,11 +80,22 @@ registry is injected into `createAssistantRuntime`; this package never imports
   `SHO_ACTION_PLANNERS` is (SHO-771): `orders.list`, `orders.count`,
   `orders.get`, `customers.getCustomer`, `customers.listCustomers`,
   `catalog.getProduct`, `catalog.listProducts`, `pricing.listPriceLists`,
-  each onto the existing staff façade input. A planner maps only the params
-  it names; any other param, an unreadable period and an unreadable status
-  are `unsupported_param`, which is the LLM. Periods go through
-  `kyivNamedPeriodRange` (named, `last_<n>_days`, and spelled
-  `YYYY[-MM[-DD]]` with an optional `from..to`), never a second date map.
+  each onto the existing staff façade input. Every param name is one the Шо
+  catalogue gives that intent (`customer`, `status`, `period`, `group_by`,
+  `order_number`, `search_text`, `group`, `product`, `phone`, `email`); a
+  param the planner does not name — `due`, `payment_status`, `amount`,
+  `availability` — an unreadable period, an unreadable status, a second
+  value for one façade field, and a non-uuid resolved id are all
+  `unsupported_param`, which is the LLM. `orders.get` plans
+  `orders_list_page` with the order number as `query`, because that façade
+  already matches an order number. Periods go through `kyivNamedPeriodRange`,
+  which reads the tokens Шо emits (`today` … `last_quarter`, `last_days:N`,
+  `range:MM-DD..MM-DD`, `range:YYYY-MM-DD..YYYY-MM-DD`) with the runtime's
+  own semantics — a «this» period ends today — and never a second date map.
+  `apps/sho/src/sho-planners.parity.test.ts` is what keeps the two in one
+  piece: it is the only place allowed to import both `@showzy/sho` and the
+  rest (ADR-0051), and it checks `SHO_READ_PLANNER_PARAMS` against the model
+  bundle's intents and every bundle period token against the parser.
   `SHO_READ_ACTIONS` is the list to paste into `SHO_ACTIONS` for dev; the
   config default stays empty.
 - `assistant-budget-guard.ts`, `stores/budget.ts`, `stores/budget-redis.ts` —

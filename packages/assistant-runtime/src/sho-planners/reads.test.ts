@@ -10,12 +10,16 @@ import { describe, expect, it } from "vitest";
 import { createShoPlanner } from "../sho-plan.js";
 import type { ShoPlan } from "../sho-turn.js";
 
-import { SHO_READ_ACTIONS, SHO_READ_PLANNERS } from "./reads.js";
+import {
+  SHO_READ_ACTIONS,
+  SHO_READ_PLANNER_PARAMS,
+  SHO_READ_PLANNERS,
+} from "./reads.js";
 
 const NOW = new Date("2026-09-02T12:00:00.000Z");
 
 const CUSTOMER_ID = "0f6c8ef2-6b4c-4b2a-9f3e-5b1a6c2d7e81";
-const ORDER_ID = "2a9d4c11-7f3b-4d54-8c21-9e7f0b3a5d64";
+const GROUP_ID = "2a9d4c11-7f3b-4d54-8c21-9e7f0b3a5d64";
 const PRODUCT_ID = "7c1b5d90-2e44-4a1f-8b6d-3f0c9a2e4b57";
 
 interface Said {
@@ -114,7 +118,7 @@ describe("SHO_READ_PLANNERS maps the SHO-734 read phrases", () => {
             status: "ambiguous",
             candidates: [
               { id: CUSTOMER_ID, name: "Шерлок Холмс" },
-              { id: ORDER_ID, name: "Шерлок Пекарня" },
+              { id: GROUP_ID, name: "Шерлок Пекарня" },
             ],
           },
         },
@@ -140,20 +144,21 @@ describe("SHO_READ_PLANNERS maps the SHO-734 read phrases", () => {
     });
   });
 
-  it("plans a counted period and customer together", () => {
+  it("plans «скільки замовлень від Coffee Time за вчора по продуктах»", () => {
     expect(
       planOf({
-        text: "скільки замовлень від Coffee Time за вчора",
+        text: "скільки замовлень від Coffee Time за вчора по продуктах",
         action: "orders.count",
         params: {
           period: { value: "yesterday" },
           customer: resolved(CUSTOMER_ID, "Coffee Time"),
+          group_by: { value: "product" },
         },
       }),
     ).toMatchObject({
       toolName: "orders_list_counts",
       input: {
-        groupBy: "status",
+        groupBy: "product",
         createdFrom: "2026-08-31T21:00:00.000Z",
         createdTo: "2026-09-01T20:59:59.999Z",
         customerIds: [CUSTOMER_ID],
@@ -161,29 +166,31 @@ describe("SHO_READ_PLANNERS maps the SHO-734 read phrases", () => {
     });
   });
 
-  it("plans a resolved order as the order card", () => {
+  it("plans «скільки у нас активних замовлень» as the active set", () => {
     expect(
       planOf({
-        text: "покажи замовлення 24",
-        action: "orders.get",
-        params: { order: resolved(ORDER_ID, "24") },
+        text: "скільки у нас активних замовлень",
+        action: "orders.count",
+        params: { status: { value: "active" } },
       }),
-    ).toEqual({
-      kind: "call",
-      toolName: "orders_get",
-      input: { orderId: ORDER_ID },
-      reply: "Ось замовлення.",
+    ).toMatchObject({
+      input: { statuses: ["new", "confirmed", "in_progress"] },
     });
   });
 
-  it("sends «Відкрий замовлення номер 133» to the model: no order id", () => {
+  it("plans «Відкрий замовлення номер 133» as the order-number query", () => {
     expect(
       planOf({
         text: "Відкрий замовлення номер 133",
         action: "orders.get",
-        params: { order: { text: "133", status: "unchecked" } },
+        params: { order_number: { text: "SP-0133" } },
       }),
-    ).toEqual({ kind: "fallback", reason: "unresolved_reference" });
+    ).toEqual({
+      kind: "call",
+      toolName: "orders_list_page",
+      input: { query: "SP-0133" },
+      reply: "Ось замовлення.",
+    });
   });
 
   it("plans «покажи клієнта Альбіна» by id", () => {
@@ -220,14 +227,47 @@ describe("SHO_READ_PLANNERS maps the SHO-734 read phrases", () => {
     });
   });
 
-  it("plans the customer list with no filter", () => {
+  it("plans «знайди клієнта з номером 067 123 45 67» by the phone span", () => {
     expect(
-      planOf({ text: "покажи клієнтів", action: "customers.listCustomers" }),
+      planOf({
+        text: "знайди клієнта з номером 067 123 45 67",
+        action: "customers.getCustomer",
+        params: { phone: { text: "067 123 45 67" } },
+      }),
+    ).toMatchObject({
+      toolName: "customers_get_customer",
+      input: { customerQuery: "067 123 45 67" },
+    });
+  });
+
+  it("plans «покажи клієнтів групи VIP» by resolved group id", () => {
+    expect(
+      planOf({
+        text: "покажи клієнтів групи VIP",
+        action: "customers.listCustomers",
+        params: { group: resolved(GROUP_ID, "VIP") },
+      }),
     ).toEqual({
       kind: "call",
       toolName: "customers_list_customers",
-      input: {},
+      input: { groupId: GROUP_ID },
       reply: "Ось клієнти.",
+    });
+  });
+
+  it("plans «покажи архівних клієнтів Київ» as search plus status", () => {
+    expect(
+      planOf({
+        text: "покажи архівних клієнтів Київ",
+        action: "customers.listCustomers",
+        params: {
+          search_text: { text: " Київ " },
+          status: { value: "archived" },
+        },
+      }),
+    ).toMatchObject({
+      toolName: "customers_list_customers",
+      input: { search: "Київ", status: "archived" },
     });
   });
 
@@ -246,12 +286,12 @@ describe("SHO_READ_PLANNERS maps the SHO-734 read phrases", () => {
     });
   });
 
-  it("plans the product list with a spoken query", () => {
+  it("plans the product list with a spoken search", () => {
     expect(
       planOf({
         text: "покажи товари торти",
         action: "catalog.listProducts",
-        params: { query: { text: " торти " } },
+        params: { search_text: { text: "торти" } },
       }),
     ).toEqual({
       kind: "call",
@@ -271,14 +311,32 @@ describe("SHO_READ_PLANNERS maps the SHO-734 read phrases", () => {
       reply: "Ось прайс-листи.",
     });
   });
+
+  it("clips a long search to the façade maximum", () => {
+    const plan = planOf({
+      text: "покажи товари",
+      action: "catalog.listProducts",
+      params: { search_text: { text: "я".repeat(500) } },
+    });
+    const query = plan.kind === "call" ? plan.input["query"] : null;
+    expect(typeof query === "string" ? query.length : 0).toBeLessThanOrEqual(
+      200,
+    );
+  });
 });
 
 describe("SHO_READ_PLANNERS falls back to the model", () => {
   const cases: readonly (Said & { readonly reason: string })[] = [
     {
-      text: "покажи останні 5 замовлень",
+      text: "покажи замовлення які треба віддати завтра",
       action: "orders.list",
-      params: { limit: { text: "5", value: 5 } },
+      params: { due: { text: "завтра" } },
+      reason: "unsupported_param",
+    },
+    {
+      text: "покажи неоплачені замовлення",
+      action: "orders.list",
+      params: { payment_status: { value: "unpaid" } },
       reason: "unsupported_param",
     },
     {
@@ -294,21 +352,64 @@ describe("SHO_READ_PLANNERS falls back to the model", () => {
       reason: "unsupported_param",
     },
     {
+      text: "скільки замовлень по днях",
+      action: "orders.count",
+      params: { group_by: { value: "day" } },
+      reason: "unsupported_param",
+    },
+    {
       text: "покажи замовлення для тієї ж",
       action: "orders.list",
       params: { customer: { text: "тієї ж", status: "previous" } },
       reason: "conversation_dependent",
     },
     {
-      text: "покажи клієнта",
-      action: "customers.getCustomer",
-      params: { customer: { text: "", status: "resolved", id: "" } },
-      reason: "unresolved_reference",
+      text: "покажи замовлення 133 для Шерлока",
+      action: "orders.get",
+      params: {
+        order_number: { text: "SP-0133" },
+        customer: {
+          text: "Шерлок",
+          status: "ambiguous",
+          candidates: [
+            { id: CUSTOMER_ID, name: "Шерлок Холмс" },
+            { id: GROUP_ID, name: "Шерлок Пекарня" },
+          ],
+        },
+      },
+      reason: "unsupported_param",
     },
     {
-      text: "покажи товари за групою",
-      action: "catalog.listProducts",
-      params: { group: { text: "торти" } },
+      text: "покажи клієнта Альбіна з номером 067 123 45 67",
+      action: "customers.getCustomer",
+      params: {
+        customer: resolved(CUSTOMER_ID, "Альбіна"),
+        phone: { text: "067 123 45 67" },
+      },
+      reason: "unsupported_param",
+    },
+    {
+      text: "покажи клієнта",
+      action: "customers.getCustomer",
+      params: { customer: { text: "Оксана", status: "resolved", id: "c-17" } },
+      reason: "unsupported_param",
+    },
+    {
+      text: "покажи клієнтів групи",
+      action: "customers.listCustomers",
+      params: {
+        group: {
+          text: "VIP",
+          status: "unknown",
+          nearest: [{ id: GROUP_ID, name: "VIP клієнти", score: 0.7 }],
+        },
+      },
+      reason: "unsupported_param",
+    },
+    {
+      text: "покажи активні прайс-листи",
+      action: "pricing.listPriceLists",
+      params: { availability: { value: "active" } },
       reason: "unsupported_param",
     },
   ];
@@ -325,6 +426,13 @@ describe("read planners never take a write", () => {
     }
   });
 
+  it("names the params it reads for every registered read", () => {
+    expect(Object.keys(SHO_READ_PLANNER_PARAMS)).toEqual([...SHO_READ_ACTIONS]);
+    for (const names of Object.values(SHO_READ_PLANNER_PARAMS)) {
+      expect(names.length).toBeGreaterThan(0);
+    }
+  });
+
   it("refuses a write-kind parse of a read action", () => {
     const planner = createShoPlanner({ actions: [...SHO_READ_ACTIONS] });
     expect(
@@ -335,7 +443,7 @@ describe("read planners never take a write", () => {
           kind: "write",
           effect: "destructive",
           confirm: "strong",
-          params: { order: resolved(ORDER_ID, "24") },
+          params: { order_number: { text: "SP-0024" } },
         }),
         NOW,
       ),

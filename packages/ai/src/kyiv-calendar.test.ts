@@ -113,24 +113,30 @@ describe("kyivNamedPeriodRange", () => {
   const cases: readonly (readonly [string, string, string])[] = [
     ["today", "2026-09-01T21:00:00.000Z", "2026-09-02T20:59:59.999Z"],
     ["yesterday", "2026-08-31T21:00:00.000Z", "2026-09-01T20:59:59.999Z"],
-    ["tomorrow", "2026-09-02T21:00:00.000Z", "2026-09-03T20:59:59.999Z"],
-    ["this_week", "2026-08-30T21:00:00.000Z", "2026-09-06T20:59:59.999Z"],
+    ["this_week", "2026-08-30T21:00:00.000Z", "2026-09-02T20:59:59.999Z"],
     ["last_week", "2026-08-23T21:00:00.000Z", "2026-08-30T20:59:59.999Z"],
-    ["next_week", "2026-09-06T21:00:00.000Z", "2026-09-13T20:59:59.999Z"],
-    ["this_month", "2026-08-31T21:00:00.000Z", "2026-09-30T20:59:59.999Z"],
+    ["this_month", "2026-08-31T21:00:00.000Z", "2026-09-02T20:59:59.999Z"],
     ["last_month", "2026-07-31T21:00:00.000Z", "2026-08-31T20:59:59.999Z"],
-    ["next_month", "2026-09-30T21:00:00.000Z", "2026-10-31T21:59:59.999Z"],
-    ["this_year", "2025-12-31T22:00:00.000Z", "2026-12-31T21:59:59.999Z"],
+    ["this_quarter", "2026-06-30T21:00:00.000Z", "2026-09-02T20:59:59.999Z"],
+    ["last_quarter", "2026-03-31T21:00:00.000Z", "2026-06-30T20:59:59.999Z"],
+    ["this_year", "2025-12-31T22:00:00.000Z", "2026-09-02T20:59:59.999Z"],
     ["last_year", "2024-12-31T22:00:00.000Z", "2025-12-31T21:59:59.999Z"],
-    ["last_7_days", "2026-08-26T21:00:00.000Z", "2026-09-02T20:59:59.999Z"],
-    ["last_1_days", "2026-09-01T21:00:00.000Z", "2026-09-02T20:59:59.999Z"],
-    ["2026-07-04", "2026-07-03T21:00:00.000Z", "2026-07-04T20:59:59.999Z"],
-    ["2026-02", "2026-01-31T22:00:00.000Z", "2026-02-28T21:59:59.999Z"],
-    ["2025", "2024-12-31T22:00:00.000Z", "2025-12-31T21:59:59.999Z"],
+    ["last_days:1", "2026-09-01T21:00:00.000Z", "2026-09-02T20:59:59.999Z"],
+    ["last_days:7", "2026-08-26T21:00:00.000Z", "2026-09-02T20:59:59.999Z"],
     [
-      "2026-03-01..2026-03-31",
+      "range:03-01..03-31",
       "2026-02-28T22:00:00.000Z",
       "2026-03-31T20:59:59.999Z",
+    ],
+    [
+      "range:12-20..01-10",
+      "2025-12-19T22:00:00.000Z",
+      "2026-01-10T21:59:59.999Z",
+    ],
+    [
+      "range:2025-02-01..2025-02-28",
+      "2025-01-31T22:00:00.000Z",
+      "2025-02-28T21:59:59.999Z",
     ],
   ];
 
@@ -142,30 +148,35 @@ describe("kyivNamedPeriodRange", () => {
   });
 
   it.each([
-    "last_year_but_one",
-    "last_0_days",
-    "last_400_days",
-    "2026-13",
-    "2026-02-30",
-    "2026-03-31..2026-03-01",
-    "2026-01..2026-02..2026-03",
-    "минулий тиждень",
     "",
+    "range",
+    "last_days",
+    "previous",
+    "tomorrow",
+    "next_week",
+    "last_7_days",
+    "last_days:0",
+    "range:13-01..13-31",
+    "range:2026-02-30..2026-03-01",
+    "range:2026-03-31..2026-03-01",
+    "2026-03-01",
+    "минулий тиждень",
   ])("refuses %s", (period) => {
     expect(kyivNamedPeriodRange(period, WEDNESDAY_SEP_2)).toBeNull();
-  });
-
-  it("agrees with mapOrdersListPeriod on the shared names", () => {
-    for (const period of ["today", "this_week", "this_month"] as const) {
-      expect(kyivNamedPeriodRange(period, WEDNESDAY_SEP_2)).toEqual(
-        mapOrdersListPeriod(period, WEDNESDAY_SEP_2),
-      );
-    }
   });
 
   it("reads every named period it advertises", () => {
     for (const period of KYIV_NAMED_PERIODS) {
       expect(kyivNamedPeriodRange(period, WEDNESDAY_SEP_2)).not.toBeNull();
     }
+  });
+
+  it("ends a «this» period today, unlike the façade enum", () => {
+    expect(kyivNamedPeriodRange("this_week", WEDNESDAY_SEP_2)?.createdTo).toBe(
+      kyivNamedPeriodRange("today", WEDNESDAY_SEP_2)?.createdTo,
+    );
+    expect(mapOrdersListPeriod("this_week", WEDNESDAY_SEP_2).createdTo).toBe(
+      "2026-09-06T20:59:59.999Z",
+    );
   });
 });

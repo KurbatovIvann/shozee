@@ -499,6 +499,12 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      '@showzy/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
+      '@showzy/assistant-runtime':
+        specifier: workspace:*
+        version: link:../../packages/assistant-runtime
       '@showzy/tooling':
         specifier: workspace:*
         version: link:../../packages/tooling

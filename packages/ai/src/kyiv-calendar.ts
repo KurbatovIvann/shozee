@@ -167,6 +167,22 @@ const firstOfMonth = (date: KyivDate): KyivDate => ({
   day: 1,
 });
 
+export const KYIV_LAST_DAYS_MAX = 3650;
+
+const QUARTER_MONTHS = 3;
+
+const quarterStart = (month: number): number =>
+  Math.floor((month - 1) / QUARTER_MONTHS) * QUARTER_MONTHS + 1;
+
+const monthDay = (year: number, month: number, day: number): KyivDate => {
+  const utc = new Date(Date.UTC(year, month - 1, day));
+  return {
+    year: utc.getUTCFullYear(),
+    month: utc.getUTCMonth() + 1,
+    day: utc.getUTCDate(),
+  };
+};
+
 const KYIV_PERIOD_BOUNDS: Readonly<
   Record<string, (today: KyivDate) => KyivRange>
 > = {
@@ -175,32 +191,28 @@ const KYIV_PERIOD_BOUNDS: Readonly<
     addCalendarDays(today, -1),
     addCalendarDays(today, -1),
   ],
-  tomorrow: (today) => [addCalendarDays(today, 1), addCalendarDays(today, 1)],
-  this_week: (today) => [
-    mondayOfWeek(today),
-    addCalendarDays(mondayOfWeek(today), 6),
-  ],
+  this_week: (today) => [mondayOfWeek(today), today],
   last_week: (today) => [
     addCalendarDays(mondayOfWeek(today), -7),
     addCalendarDays(mondayOfWeek(today), -1),
   ],
-  next_week: (today) => [
-    addCalendarDays(mondayOfWeek(today), 7),
-    addCalendarDays(mondayOfWeek(today), 13),
-  ],
-  this_month: (today) => [firstOfMonth(today), lastDayOfMonth(today)],
+  this_month: (today) => [firstOfMonth(today), today],
   last_month: (today) => {
     const last = addCalendarDays(firstOfMonth(today), -1);
     return [firstOfMonth(last), last];
   },
-  next_month: (today) => {
-    const first = addCalendarDays(lastDayOfMonth(today), 1);
-    return [first, lastDayOfMonth(first)];
-  },
-  this_year: (today) => [
-    { year: today.year, month: 1, day: 1 },
-    { year: today.year, month: 12, day: 31 },
+  this_quarter: (today) => [
+    monthDay(today.year, quarterStart(today.month), 1),
+    today,
   ],
+  last_quarter: (today) => {
+    const start = quarterStart(today.month) - QUARTER_MONTHS;
+    return [
+      monthDay(today.year, start, 1),
+      monthDay(today.year, start + QUARTER_MONTHS, 0),
+    ];
+  },
+  this_year: (today) => [{ year: today.year, month: 1, day: 1 }, today],
   last_year: (today) => [
     { year: today.year - 1, month: 1, day: 1 },
     { year: today.year - 1, month: 12, day: 31 },
@@ -211,45 +223,53 @@ export const KYIV_NAMED_PERIODS: readonly string[] = Object.freeze(
   Object.keys(KYIV_PERIOD_BOUNDS),
 );
 
-export const KYIV_LAST_DAYS_MAX = 366;
-
-const LAST_DAYS_PERIOD = /^last_(\d{1,3})_days$/;
-const SPELLED_DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
-const SPELLED_MONTH = /^(\d{4})-(\d{2})$/;
-const SPELLED_YEAR = /^(\d{4})$/;
-const RANGE_SEPARATOR = "..";
+const LAST_DAYS_PERIOD = /^last_days:(\d+)$/;
+const DAY_RANGE_PERIOD = /^range:(\d{2})-(\d{2})\.\.(\d{2})-(\d{2})$/;
+const DATED_RANGE_PERIOD =
+  /^range:(\d{4})-(\d{2})-(\d{2})\.\.(\d{4})-(\d{2})-(\d{2})$/;
 
 function isRealDate(date: KyivDate): boolean {
   const utc = new Date(Date.UTC(date.year, date.month - 1, date.day));
   return (
+    date.month >= 1 &&
+    date.month <= 12 &&
     utc.getUTCFullYear() === date.year &&
     utc.getUTCMonth() + 1 === date.month &&
     utc.getUTCDate() === date.day
   );
 }
 
-function spelledBounds(period: string): KyivRange | null {
-  const day = SPELLED_DAY.exec(period);
-  if (day !== null) {
-    const date = {
-      year: Number(day[1]),
-      month: Number(day[2]),
-      day: Number(day[3]),
-    };
-    return isRealDate(date) ? [date, date] : null;
-  }
-  const month = SPELLED_MONTH.exec(period);
-  if (month !== null) {
-    const first = { year: Number(month[1]), month: Number(month[2]), day: 1 };
-    return isRealDate(first) ? [first, lastDayOfMonth(first)] : null;
-  }
-  const year = SPELLED_YEAR.exec(period);
-  return year === null
-    ? null
-    : [
-        { year: Number(year[1]), month: 1, day: 1 },
-        { year: Number(year[1]), month: 12, day: 31 },
-      ];
+const dayOrdinal = (date: KyivDate): number =>
+  Date.UTC(date.year, date.month - 1, date.day);
+
+function spokenRangeBounds(
+  match: RegExpExecArray,
+  today: KyivDate,
+): KyivRange | null {
+  const [startMonth, startDay, endMonth, endDay] = match
+    .slice(1, 5)
+    .map(Number) as [number, number, number, number];
+  const startYear =
+    Date.UTC(today.year, startMonth - 1, startDay) > dayOrdinal(today)
+      ? today.year - 1
+      : today.year;
+  const endYear =
+    Date.UTC(startYear, endMonth - 1, endDay) <
+    Date.UTC(startYear, startMonth - 1, startDay)
+      ? startYear + 1
+      : startYear;
+  const first = { year: startYear, month: startMonth, day: startDay };
+  const last = { year: endYear, month: endMonth, day: endDay };
+  return isRealDate(first) && isRealDate(last) ? [first, last] : null;
+}
+
+function datedRangeBounds(match: RegExpExecArray): KyivRange | null {
+  const [startYear, startMonth, startDay, endYear, endMonth, endDay] = match
+    .slice(1, 7)
+    .map(Number) as [number, number, number, number, number, number];
+  const first = { year: startYear, month: startMonth, day: startDay };
+  const last = { year: endYear, month: endMonth, day: endDay };
+  return isRealDate(first) && isRealDate(last) ? [first, last] : null;
 }
 
 function periodBounds(period: string, today: KyivDate): KyivRange | null {
@@ -264,30 +284,30 @@ function periodBounds(period: string, today: KyivDate): KyivRange | null {
       ? [addCalendarDays(today, -(days - 1)), today]
       : null;
   }
-  if (period.includes(RANGE_SEPARATOR)) {
-    const [from, to, ...rest] = period.split(RANGE_SEPARATOR);
-    if (rest.length > 0 || from === undefined || to === undefined) {
-      return null;
-    }
-    const start = spelledBounds(from);
-    const end = spelledBounds(to);
-    return start === null || end === null ? null : [start[0], end[1]];
+  const spoken = DAY_RANGE_PERIOD.exec(period);
+  if (spoken !== null) {
+    return spokenRangeBounds(spoken, today);
   }
-  return spelledBounds(period);
+  const dated = DATED_RANGE_PERIOD.exec(period);
+  return dated === null ? null : datedRangeBounds(dated);
 }
 
 export function kyivNamedPeriodRange(
   period: string,
   now: Date,
 ): { readonly createdFrom: string; readonly createdTo: string } | null {
-  const bounds = periodBounds(period.trim(), kyivDateParts(now));
+  const today = kyivDateParts(now);
+  const bounds = isRealDate(today) ? periodBounds(period, today) : null;
   if (bounds === null) {
     return null;
   }
   const [first, last] = bounds;
-  const createdFrom = startOfKyivDayUtc(first).toISOString();
-  const createdTo = endOfKyivDayUtc(last).toISOString();
-  return createdFrom <= createdTo ? { createdFrom, createdTo } : null;
+  return dayOrdinal(first) > dayOrdinal(last)
+    ? null
+    : {
+        createdFrom: startOfKyivDayUtc(first).toISOString(),
+        createdTo: endOfKyivDayUtc(last).toISOString(),
+      };
 }
 
 /** Europe/Kyiv calendar date as `YYYY-MM-DD` (assistant budget keys). */
