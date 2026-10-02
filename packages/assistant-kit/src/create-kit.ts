@@ -208,6 +208,17 @@ export function createAssistantKit<T extends AnyTypes>(
     return record === null ? null : { raw, record };
   }
 
+  async function abandonRefusal(
+    input: PauseScope & { readonly interactionId: string },
+  ): Promise<{ readonly kind: "claimed" | "gone" }> {
+    const current = await readRecord(input);
+    return current !== null &&
+      current.record.interactionId === input.interactionId &&
+      current.record.status === "claimed"
+      ? { kind: "claimed" }
+      : { kind: "gone" };
+  }
+
   async function put(
     record: PauseRecord,
     expected: string | null,
@@ -398,7 +409,7 @@ export function createAssistantKit<T extends AnyTypes>(
         existing.record.interactionId !== input.interactionId ||
         existing.record.status !== "open"
       ) {
-        return { kind: "gone" };
+        return await abandonRefusal(input);
       }
       const cancelled: PauseRecord = {
         ...existing.record,
@@ -411,7 +422,7 @@ export function createAssistantKit<T extends AnyTypes>(
         ).toISOString(),
       };
       if (!(await put(cancelled, existing.raw))) {
-        return { kind: "gone" };
+        return await abandonRefusal(input);
       }
       try {
         await input.whileHeld?.(publicPauseOf(cancelled));

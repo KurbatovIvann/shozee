@@ -267,6 +267,9 @@ export async function handleAssistantKitChat(
         open.interactionId,
         assistantRejectedTrace,
       );
+      if (declined === "answer_in_flight") {
+        return await settled();
+      }
       if (declined !== "ok") {
         return await writeFailed(declined);
       }

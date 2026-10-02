@@ -1819,6 +1819,48 @@ describe("POST /assistant/kit/abandon", () => {
 
     expect(response.status).toBe(400);
   });
+
+  it("refuses a drop the answer already claimed, so a failed action reopens nothing", async () => {
+    let open = (): void => undefined;
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const { kit, app, bind } = harness({
+      toolsGate: gate,
+      resolveAnswer: FAILING_RESOLVE,
+    });
+    const pause = await openPause(kit, bind);
+
+    const answering = post(
+      app,
+      ASSISTANT_KIT_ANSWER_PATH,
+      answerBody(pause.interactionId, pause.revision),
+    );
+    for (let tick = 0; tick < 50; tick += 1) {
+      if ((await kit.peek({ conversationId: CONVERSATION, bind })) === null) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+    const dismissed = await post(app, ASSISTANT_KIT_ABANDON_PATH, {
+      conversationId: CONVERSATION,
+      interactionId: pause.interactionId,
+    });
+    open();
+
+    expect(dismissed.status).toBe(409);
+    const body = (await dismissed.json()) as KitBody;
+    expect(body.status).toBe("answer_in_flight");
+    expect(body.window).toBeDefined();
+    expect((await answering).status).toBe(409);
+    expect(
+      (await kit.peek({ conversationId: CONVERSATION, bind }))?.status,
+    ).toBe("open");
+    const parts = (
+      await kit.messages.read({ conversationId: CONVERSATION, bind })
+    ).messages.flatMap((message) => message.parts);
+    expect(parts.filter((part) => part.kind === "trace")).toEqual([]);
+  });
 });
 
 describe("the full round trip through HTTP", () => {
@@ -2088,7 +2130,10 @@ describe("the trace a closed card leaves in the stored log", () => {
     finishAction();
     await approving;
 
-    expect(dismissed.status).toBe(200);
+    expect(dismissed.status).toBe(409);
+    expect(((await dismissed.json()) as KitBody).status).toBe(
+      "answer_in_flight",
+    );
     const reload = await get(app, messagesPath());
     const body = (await reload.json()) as KitBody;
     const traces = (body.window?.messages ?? []).flatMap((message) =>

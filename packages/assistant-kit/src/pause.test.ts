@@ -506,7 +506,7 @@ describe("a dropped question keeps its slot until the drop is finished", () => {
     expect((await kit.open(openInput())).kind).toBe("opened");
   });
 
-  it("is gone for a question an answer already claimed", async () => {
+  it("tells the owner a question an answer already claimed is claimed, not gone", async () => {
     const { kit } = newKit();
     const pause = await openPick(kit);
     const claimed = await kit.claim({
@@ -528,8 +528,60 @@ describe("a dropped question keeps its slot until the drop is finished", () => {
     });
 
     expect(claimed.kind).toBe("claimed");
-    expect(dropped.kind).toBe("gone");
+    expect(dropped.kind).toBe("claimed");
     expect(whileHeld).toEqual([]);
+  });
+
+  it("tells another owner nothing: a claimed question is gone to them", async () => {
+    const { kit } = newKit();
+    const pause = await openPick(kit);
+    await kit.claim({
+      ...scope,
+      interactionId: pause.interactionId,
+      revision: pause.revision,
+      answer: CHOSE_A,
+    });
+
+    const dropped = await kit.abandon({
+      conversationId: CONVERSATION,
+      bind: OTHER,
+      interactionId: pause.interactionId,
+    });
+
+    expect(dropped.kind).toBe("gone");
+  });
+
+  it("reports a claim that lands while the drop is being written", async () => {
+    const deps = testDeps(fixtureInteractions);
+    const store = deps.pauses;
+    let racing: (() => Promise<unknown>) | null = null;
+    const kit = createAssistantKit({
+      ...deps,
+      pauses: {
+        ...store,
+        compareAndSet: async (key, expected, next) => {
+          const interleaved = racing;
+          racing = null;
+          await interleaved?.();
+          return await store.compareAndSet(key, expected, next);
+        },
+      },
+    });
+    const pause = await openPick(kit);
+    racing = () =>
+      kit.claim({
+        ...scope,
+        interactionId: pause.interactionId,
+        revision: pause.revision,
+        answer: CHOSE_A,
+      });
+
+    const dropped = await kit.abandon({
+      ...scope,
+      interactionId: pause.interactionId,
+    });
+
+    expect(dropped.kind).toBe("claimed");
   });
 
   it("holds the slot for the drop, not for the question's whole ttl", async () => {

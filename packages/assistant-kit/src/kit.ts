@@ -126,7 +126,7 @@ export interface AssistantKit<T extends AnyTypes> {
       readonly interactionId: string;
       readonly whileHeld?: (pause: PublicPause) => Promise<void>;
     },
-  ): Promise<{ readonly kind: "cancelled" | "gone" }>;
+  ): Promise<{ readonly kind: "cancelled" | "claimed" | "gone" }>;
 
   /**
    * Make a claimed pause answerable again, at the same revision.
