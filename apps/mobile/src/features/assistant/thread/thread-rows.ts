@@ -47,12 +47,17 @@ export const ASSISTANT_ORPHAN_INTERACTION_ROW_ID = "assistant-open-question";
 /** Stable list id for a message that has been sent but not yet acknowledged. */
 export const ASSISTANT_PENDING_USER_ROW_ID = "assistant-pending-user";
 
+export type AssistantThreadClosure = {
+  readonly trace: AssistantChatTracePart;
+  readonly question: AssistantInteraction | null;
+};
+
 export type AssistantThreadRow = {
   readonly id: string;
   readonly role: "user" | "assistant";
   readonly text: string;
   readonly surfaces: readonly AssistantSurface[];
-  readonly traces: readonly AssistantChatTracePart[];
+  readonly closures: readonly AssistantThreadClosure[];
   readonly interaction: AssistantInteraction | null;
   readonly failed: boolean;
   readonly interrupted: boolean;
@@ -62,18 +67,40 @@ export type AssistantThreadRow = {
 
 const NO_SURFACES: readonly AssistantSurface[] = [];
 
-const NO_TRACES: readonly AssistantChatTracePart[] = [];
+const NO_CLOSURES: readonly AssistantThreadClosure[] = [];
 
-function tracesOf(
-  message: AssistantChatMessage,
-): readonly AssistantChatTracePart[] {
-  const traces: AssistantChatTracePart[] = [];
-  for (const part of message.parts) {
-    if (part.kind === "trace") {
-      traces.push(part);
+function askedQuestions(
+  messages: readonly AssistantChatMessage[],
+): ReadonlyMap<string, AssistantInteraction> {
+  const asked = new Map<string, AssistantInteraction>();
+  for (const message of messages) {
+    for (const part of message.parts) {
+      if (part.kind !== "interaction") {
+        continue;
+      }
+      const question = assistantInteractionFromPause(part.pause);
+      if (question !== null) {
+        asked.set(part.interactionId, question);
+      }
     }
   }
-  return traces.length === 0 ? NO_TRACES : traces;
+  return asked;
+}
+
+function closuresOf(
+  message: AssistantChatMessage,
+  asked: ReadonlyMap<string, AssistantInteraction>,
+): readonly AssistantThreadClosure[] {
+  const closures: AssistantThreadClosure[] = [];
+  for (const part of message.parts) {
+    if (part.kind === "trace") {
+      closures.push({
+        trace: part,
+        question: asked.get(part.interactionId) ?? null,
+      });
+    }
+  }
+  return closures.length === 0 ? NO_CLOSURES : closures;
 }
 
 function textOf(message: AssistantChatMessage): string {
@@ -138,7 +165,7 @@ function isEmpty(row: AssistantThreadRow): boolean {
   return (
     row.text.length === 0 &&
     row.surfaces.length === 0 &&
-    row.traces.length === 0 &&
+    row.closures.length === 0 &&
     row.interaction === null &&
     !row.failed &&
     !row.interrupted
@@ -198,6 +225,8 @@ export function assistantThreadRows(input: {
   const endReason = interruptedTurn?.endReason ?? null;
   const interruptedMessageId = interruptedTurn?.messageId ?? null;
 
+  const asked = askedQuestions(messages);
+
   const rows: AssistantThreadRow[] = [];
   for (const message of messages) {
     const row: AssistantThreadRow = {
@@ -208,7 +237,8 @@ export function assistantThreadRows(input: {
         message.role === "assistant"
           ? surfacesOf(message, input.locale)
           : NO_SURFACES,
-      traces: message.role === "assistant" ? tracesOf(message) : NO_TRACES,
+      closures:
+        message.role === "assistant" ? closuresOf(message, asked) : NO_CLOSURES,
       interaction: message.messageId === hostId ? interaction : null,
       failed: failedIn(message),
       interrupted: interruptedIn(message, turn),
@@ -228,7 +258,7 @@ export function assistantThreadRows(input: {
       role: "assistant",
       text: "",
       surfaces: NO_SURFACES,
-      traces: NO_TRACES,
+      closures: NO_CLOSURES,
       interaction,
       failed: false,
       interrupted: false,
@@ -244,7 +274,7 @@ export function assistantThreadRows(input: {
       role: "user",
       text: pending,
       surfaces: NO_SURFACES,
-      traces: NO_TRACES,
+      closures: NO_CLOSURES,
       interaction: null,
       failed: false,
       interrupted: false,
@@ -259,7 +289,7 @@ export function assistantThreadRows(input: {
       role: "assistant",
       text: "",
       surfaces: NO_SURFACES,
-      traces: NO_TRACES,
+      closures: NO_CLOSURES,
       interaction: null,
       failed: false,
       interrupted: false,

@@ -49,9 +49,6 @@ export function bannerKindFor(
     case "stale":
     case "unresolvable":
       return null;
-    // A refusal of a send. Nothing on screen changes, since the card was
-    // already there, and the draft goes back into the field — so without a
-    // line saying why, the tap looks as though it did nothing at all.
     case "interaction_open":
       return "questionOpen";
     // Nothing went out: a tap while another command was in flight, or blank

@@ -1,5 +1,6 @@
 import type {
   AssistantChatTracePart,
+  AssistantInteraction,
   AssistantTraceAttempt,
 } from "@showzy/validation/assistant-chat";
 import { describe, expect, it } from "vitest";
@@ -29,6 +30,22 @@ const COPY: AssistantClosedCardCopy = {
       priceList: "Прайс-лист",
     },
   },
+  choiceTitle: "Який варіант?",
+  choiceChosen: "Обрано",
+};
+
+const CHOICE: AssistantInteraction = {
+  kind: "choice",
+  interactionId: INTERACTION,
+  revision: 2,
+  subject: "Катя",
+  options: [
+    { optionId: "opt-a", label: "Катя Самбука", kind: "record" },
+    { optionId: "opt-b", label: "Катя Іванова", kind: "record" },
+  ],
+  optionsTruncated: false,
+  nearest: false,
+  problem: undefined,
 };
 
 function trace(
@@ -57,6 +74,7 @@ describe("assistantClosedCardModel", () => {
   it("maps a done preview to the success pill and one «Відкрити»", () => {
     const model = assistantClosedCardModel({
       trace: trace({ attempts: [attempt("orders.create", ORDER_ID)] }),
+      question: null,
       copy: COPY,
     });
 
@@ -65,6 +83,8 @@ describe("assistantClosedCardModel", () => {
       outcome: "done",
       label: "Виконано",
       tone: "success",
+      question: null,
+      answer: null,
       opens: [
         {
           key: `${INTERACTION}:0`,
@@ -78,6 +98,7 @@ describe("assistantClosedCardModel", () => {
   it("maps a rejected preview with nothing to open", () => {
     const model = assistantClosedCardModel({
       trace: trace({ outcome: "rejected" }),
+      question: null,
       copy: COPY,
     });
 
@@ -95,6 +116,7 @@ describe("assistantClosedCardModel", () => {
           attempt("customers.createCustomer", null, "failed"),
         ],
       }),
+      question: null,
       copy: COPY,
     });
 
@@ -117,6 +139,7 @@ describe("assistantClosedCardModel", () => {
           attempt("orders.create", ORDER_ID),
         ],
       }),
+      question: null,
       copy: COPY,
     });
 
@@ -137,6 +160,7 @@ describe("assistantClosedCardModel", () => {
   it("offers no «Відкрити» when the attempt stored no record id", () => {
     const model = assistantClosedCardModel({
       trace: trace({ attempts: [attempt("orders.create", null)] }),
+      question: null,
       copy: COPY,
     });
 
@@ -149,6 +173,7 @@ describe("assistantClosedCardModel", () => {
       trace: trace({
         attempts: [attempt("documents.createFromOrder", ORDER_ID)],
       }),
+      question: null,
       copy: COPY,
     });
 
@@ -158,13 +183,14 @@ describe("assistantClosedCardModel", () => {
   it("offers no «Відкрити» for an action named after an inherited key", () => {
     const model = assistantClosedCardModel({
       trace: trace({ attempts: [attempt("constructor", ORDER_ID)] }),
+      question: null,
       copy: COPY,
     });
 
     expect(model?.opens).toEqual([]);
   });
 
-  it("renders no card for a choice or a superseded preview", () => {
+  it("renders no card for a choice out of the window or a superseded preview", () => {
     expect(
       assistantClosedCardModel({
         trace: trace({
@@ -172,12 +198,75 @@ describe("assistantClosedCardModel", () => {
           outcome: "chosen",
           optionId: "opt-a",
         }),
+        question: null,
         copy: COPY,
       }),
     ).toBeNull();
     expect(
       assistantClosedCardModel({
         trace: trace({ outcome: "superseded" }),
+        question: null,
+        copy: COPY,
+      }),
+    ).toBeNull();
+  });
+
+  it("keeps an answered choice as the question and the option picked", () => {
+    const model = assistantClosedCardModel({
+      trace: trace({
+        interactionKind: "choice",
+        outcome: "chosen",
+        optionId: "opt-b",
+      }),
+      question: CHOICE,
+      copy: COPY,
+    });
+
+    expect(model).toEqual({
+      key: INTERACTION,
+      outcome: "chosen",
+      label: "Обрано",
+      tone: "neutral",
+      question: "Катя",
+      answer: "Катя Іванова",
+      opens: [],
+    });
+  });
+
+  it("names the question when the option picked is not in the snapshot", () => {
+    const model = assistantClosedCardModel({
+      trace: trace({
+        interactionKind: "choice",
+        outcome: "chosen",
+        optionId: "opt-gone",
+      }),
+      question: CHOICE,
+      copy: COPY,
+    });
+
+    expect(model?.question).toBe("Катя");
+    expect(model?.answer).toBeNull();
+  });
+
+  it("falls back to the generic title when the question has no subject", () => {
+    const model = assistantClosedCardModel({
+      trace: trace({
+        interactionKind: "choice",
+        outcome: "chosen",
+        optionId: "opt-a",
+      }),
+      question: { ...CHOICE, subject: "" },
+      copy: COPY,
+    });
+
+    expect(model?.question).toBe("Який варіант?");
+  });
+
+  it("renders no card for an abandoned choice", () => {
+    expect(
+      assistantClosedCardModel({
+        trace: trace({ interactionKind: "choice", outcome: "rejected" }),
+        question: CHOICE,
         copy: COPY,
       }),
     ).toBeNull();
@@ -186,14 +275,35 @@ describe("assistantClosedCardModel", () => {
 
 describe("assistantClosedCardModels", () => {
   it("keeps only the traces that have a closed card", () => {
-    const models = assistantClosedCardModels(
-      [
-        trace({ interactionKind: "choice", outcome: "chosen" }),
-        trace({ outcome: "rejected" }),
+    const models = assistantClosedCardModels({
+      closures: [
+        {
+          trace: trace({ interactionKind: "choice", outcome: "superseded" }),
+          question: CHOICE,
+        },
+        { trace: trace({ outcome: "rejected" }), question: null },
       ],
-      COPY,
-    );
+      copy: COPY,
+    });
 
     expect(models.map((model) => model.outcome)).toEqual(["rejected"]);
+  });
+
+  it("reads the question the thread paired with each trace", () => {
+    const models = assistantClosedCardModels({
+      closures: [
+        {
+          trace: trace({
+            interactionKind: "choice",
+            outcome: "chosen",
+            optionId: "opt-a",
+          }),
+          question: CHOICE,
+        },
+      ],
+      copy: COPY,
+    });
+
+    expect(models.map((model) => model.answer)).toEqual(["Катя Самбука"]);
   });
 });

@@ -1,4 +1,7 @@
-import type { AssistantChatTracePart } from "@showzy/validation/assistant-chat";
+import type {
+  AssistantChatTracePart,
+  AssistantInteraction,
+} from "@showzy/validation/assistant-chat";
 
 import type { StatusPillTone } from "../../../components/ui/status-pill";
 import {
@@ -6,6 +9,7 @@ import {
   assistantWrittenRecordKind,
   type AssistantRecordKind,
 } from "../shared/assistant-record-hrefs";
+import type { AssistantThreadClosure } from "../thread/thread-rows";
 
 export type AssistantClosedCardCopy = {
   readonly closed: {
@@ -15,9 +19,12 @@ export type AssistantClosedCardCopy = {
     readonly open: string;
     readonly records: Readonly<Record<AssistantRecordKind, string>>;
   };
+  readonly choiceTitle: string;
+  readonly choiceChosen: string;
 };
 
-export type AssistantClosedCardOutcome = "done" | "rejected" | "failed";
+export type AssistantClosedCardOutcome =
+  "done" | "rejected" | "failed" | "chosen";
 
 export type AssistantClosedCardOpen = {
   readonly key: string;
@@ -30,6 +37,8 @@ export type AssistantClosedCardModel = {
   readonly outcome: AssistantClosedCardOutcome;
   readonly label: string;
   readonly tone: StatusPillTone;
+  readonly question: string | null;
+  readonly answer: string | null;
   readonly opens: readonly AssistantClosedCardOpen[];
 };
 
@@ -37,11 +46,12 @@ const TONES: Readonly<Record<AssistantClosedCardOutcome, StatusPillTone>> = {
   done: "success",
   rejected: "neutral",
   failed: "danger",
+  chosen: "neutral",
 };
 
 function closedOutcome(
   trace: AssistantChatTracePart,
-): AssistantClosedCardOutcome | null {
+): Exclude<AssistantClosedCardOutcome, "chosen"> | null {
   switch (trace.outcome) {
     case "done":
     case "rejected":
@@ -52,6 +62,35 @@ function closedOutcome(
       return null;
   }
 }
+
+function chosenCard(input: {
+  readonly trace: AssistantChatTracePart;
+  readonly question: AssistantInteraction | null;
+  readonly copy: AssistantClosedCardCopy;
+}): AssistantClosedCardModel | null {
+  const { trace, question, copy } = input;
+  if (
+    trace.outcome !== "chosen" ||
+    question === null ||
+    question.kind !== "choice"
+  ) {
+    return null;
+  }
+  const picked = question.options.find(
+    (option) => option.optionId === trace.optionId,
+  );
+  return {
+    key: trace.interactionId,
+    outcome: "chosen",
+    label: copy.choiceChosen,
+    tone: TONES.chosen,
+    question: question.subject.length > 0 ? question.subject : copy.choiceTitle,
+    answer: picked?.label ?? null,
+    opens: NO_OPENS,
+  };
+}
+
+const NO_OPENS: readonly AssistantClosedCardOpen[] = [];
 
 type OpenTarget = {
   readonly key: string;
@@ -81,10 +120,14 @@ function openTargets(trace: AssistantChatTracePart): readonly OpenTarget[] {
 
 export function assistantClosedCardModel(input: {
   readonly trace: AssistantChatTracePart;
+  readonly question: AssistantInteraction | null;
   readonly copy: AssistantClosedCardCopy;
 }): AssistantClosedCardModel | null {
   const { trace } = input;
   const { closed } = input.copy;
+  if (trace.interactionKind === "choice") {
+    return chosenCard(input);
+  }
   if (trace.interactionKind !== "confirmation") {
     return null;
   }
@@ -98,6 +141,8 @@ export function assistantClosedCardModel(input: {
     outcome,
     label: closed[outcome],
     tone: TONES[outcome],
+    question: null,
+    answer: null,
     opens: targets.map((target) => ({
       key: target.key,
       label:
@@ -109,13 +154,13 @@ export function assistantClosedCardModel(input: {
   };
 }
 
-export function assistantClosedCardModels(
-  traces: readonly AssistantChatTracePart[],
-  copy: AssistantClosedCardCopy,
-): readonly AssistantClosedCardModel[] {
+export function assistantClosedCardModels(input: {
+  readonly closures: readonly AssistantThreadClosure[];
+  readonly copy: AssistantClosedCardCopy;
+}): readonly AssistantClosedCardModel[] {
   const models: AssistantClosedCardModel[] = [];
-  for (const trace of traces) {
-    const model = assistantClosedCardModel({ trace, copy });
+  for (const closure of input.closures) {
+    const model = assistantClosedCardModel({ ...closure, copy: input.copy });
     if (model !== null) {
       models.push(model);
     }
