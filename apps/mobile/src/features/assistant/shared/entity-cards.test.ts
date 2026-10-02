@@ -3,8 +3,10 @@ import {
   ASSISTANT_TOOL_CLIPPED_STATUS,
   assistantSurfaceHandoffHref,
   parseCustomerEntitySurfaces,
+  parseOrderEntitySurfaces,
   parseProductEntitySurfaces,
   type AssistantCustomerEntityData,
+  type AssistantOrderEntityData,
   type AssistantProductEntityData,
   type AssistantSurfaceToolResult,
 } from "@showzy/validation/assistant-surfaces";
@@ -13,20 +15,24 @@ import { describe, expect, it } from "vitest";
 import { formatMoneyMinor } from "../../../format/money";
 import { assistantCopy } from "../../../i18n/assistant";
 import { customersCopy } from "../../../i18n/customers";
+import { ordersCopy } from "../../../i18n/orders";
 import { productsCopy } from "../../../i18n/products";
 import { productPhotoHref } from "../../catalog/products/shared/product-hrefs";
 import { variantCountLabel } from "../../catalog/products/shared/variant-count";
 import { customerEditorHref } from "../../customers/shared/customer-hrefs";
+import { orderDetailHref } from "../../orders/shared/order-hrefs";
 import {
   assistantSurfaceKey,
   localizeAssistantCardPayload,
   localizeCustomerEntityCard,
   localizeProductEntityCard,
 } from "../surfaces";
+import { localizeOrderEntityCard } from "../surfaces/order-entity";
 import { assistantRecordHref } from "./assistant-record-hrefs";
 
 const CUSTOMER_ID = "2b3c4d5e-6f70-4891-9bcd-ef0123456789";
 const PRODUCT_ID = "3c4d5e6f-7081-49a2-8cde-f01234567890";
+const ORDER_ID = "4d5e6f70-8192-4ab3-9def-012345678901";
 
 function result(
   toolName: string,
@@ -52,10 +58,14 @@ function customerData(
   return entity;
 }
 
-function clippedProduct(preview: Record<string, unknown>): unknown {
+function clippedProduct(
+  preview: Record<string, unknown>,
+  cutPaths: readonly string[],
+): unknown {
   return {
     status: ASSISTANT_TOOL_CLIPPED_STATUS,
     omitted: 23,
+    cutPaths,
     preview: {
       id: PRODUCT_ID,
       name: "Наполеон",
@@ -149,6 +159,54 @@ describe("customer entity card (SHO-756)", () => {
   });
 });
 
+function orderData(
+  payload: Record<string, unknown>,
+  toolCallId?: string,
+): AssistantOrderEntityData {
+  const [entity] = parseOrderEntitySurfaces([
+    result("orders_get", payload, toolCallId),
+  ]);
+  if (entity === undefined) {
+    throw new Error("order entity payload did not parse");
+  }
+  return entity;
+}
+
+describe("order entity card (SHO-834)", () => {
+  it("builds the handoff destination from the same record map as the body", () => {
+    const card = localizeOrderEntityCard(
+      orderData({ orderId: ORDER_ID, orderNumber: "1049" }, "call-order"),
+      ordersCopy("uk"),
+      "uk",
+    );
+
+    expect(card.href).toBe(orderDetailHref(ORDER_ID));
+    expect(card.href).toBe(assistantRecordHref("order", ORDER_ID));
+    expect(assistantSurfaceHandoffHref(card.destination)).toBe(card.href);
+    expect(card.destination).toEqual({
+      kind: "screen",
+      href: assistantRecordHref("order", ORDER_ID),
+    });
+    expect(card.id).toBe("call-order");
+    expect(card.orderNumberLabel).toBe("#1049");
+    expect(card.handoffLabel).toBe(assistantCopy("uk").cards.openOrder);
+  });
+
+  it("keeps the record reachable when the payload carries no tool call id", () => {
+    const card = localizeOrderEntityCard(
+      orderData({ orderId: ORDER_ID, orderNumber: "" }),
+      ordersCopy("uk"),
+      "uk",
+    );
+
+    expect(card.id).toBe("order-entity");
+    expect(card.orderNumberLabel).toBe("");
+    expect(assistantSurfaceHandoffHref(card.destination)).toBe(
+      orderDetailHref(ORDER_ID),
+    );
+  });
+});
+
 describe("product entity card (SHO-756)", () => {
   it("shows the variant count and base price and opens the product record", () => {
     const card = localizeProductEntityCard(
@@ -200,12 +258,15 @@ describe("product entity card (SHO-756)", () => {
   it("drops the variant count and footnotes the clip when the array was cut", () => {
     const card = localizeProductEntityCard(
       productData(
-        clippedProduct({
-          variants: Array.from(
-            { length: ASSISTANT_CLIP_ARRAY_MAX },
-            (_, index) => ({ id: String(index) }),
-          ),
-        }),
+        clippedProduct(
+          {
+            variants: Array.from(
+              { length: ASSISTANT_CLIP_ARRAY_MAX },
+              (_, index) => ({ id: String(index) }),
+            ),
+          },
+          ["variants"],
+        ),
       ),
       "uk",
     );
@@ -219,13 +280,16 @@ describe("product entity card (SHO-756)", () => {
   it("keeps the variant count and shows no footnote when the clip cut elsewhere", () => {
     const card = localizeProductEntityCard(
       productData(
-        clippedProduct({
-          variants: [{ id: "a" }, { id: "b" }],
-          imageFileIds: Array.from(
-            { length: ASSISTANT_CLIP_ARRAY_MAX },
-            (_, index) => String(index),
-          ),
-        }),
+        clippedProduct(
+          {
+            variants: [{ id: "a" }, { id: "b" }],
+            imageFileIds: Array.from(
+              { length: ASSISTANT_CLIP_ARRAY_MAX },
+              (_, index) => String(index),
+            ),
+          },
+          ["imageFileIds"],
+        ),
       ),
       "uk",
     );

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   ASSISTANT_AGGREGATE_LAYOUTS,
   ASSISTANT_CLIP_ARRAY_MAX,
+  ASSISTANT_CLIP_SHRINK_ARRAY_MAX,
   ASSISTANT_CUSTOMERS_LIST_ROW_MAX,
   ASSISTANT_CUSTOMERS_LIST_SCREEN_HREF,
   ASSISTANT_ORDERS_LIST_ROW_MAX,
@@ -308,10 +309,7 @@ describe("assistant surface destination (SHO-470)", () => {
       kind: "screen",
       href: ASSISTANT_ORDERS_LIST_SCREEN_HREF,
     });
-    expect(entities[0]?.destination).toEqual({
-      kind: "screen",
-      href: `/orders/${ORDER_A}`,
-    });
+    expect(entities[0]).not.toHaveProperty("destination");
     expect(ASSISTANT_ORDERS_LIST_SCREEN_HREF).toBe("/orders");
     expect(ASSISTANT_CUSTOMERS_LIST_SCREEN_HREF).toBe("/customers");
   });
@@ -351,11 +349,28 @@ describe("isAssistantSurfaceResultOutput", () => {
       status: ASSISTANT_TOOL_CLIPPED_STATUS,
       preview: pageOutput([pageRow(ORDER_A)]),
       omitted: 12,
+      cutPaths: ["items"],
     };
     expect(isAssistantSurfaceResultOutput(clipped)).toBe(true);
     expect(unwrapToolOutput(clipped)).toEqual({
       payload: pageOutput([pageRow(ORDER_A)]),
       clipped: true,
+      cutPaths: ["items"],
+    });
+  });
+
+  it("reports no cut paths for an envelope that carries none", () => {
+    expect(
+      unwrapToolOutput({
+        status: ASSISTANT_TOOL_CLIPPED_STATUS,
+        preview: { orderId: ORDER_A },
+        omitted: 1,
+      }),
+    ).toEqual({ payload: { orderId: ORDER_A }, clipped: true, cutPaths: [] });
+    expect(unwrapToolOutput({ orderId: ORDER_A })).toEqual({
+      payload: { orderId: ORDER_A },
+      clipped: false,
+      cutPaths: [],
     });
   });
 
@@ -525,16 +540,11 @@ describe("parseOrderEntitySurfaces", () => {
     ]);
     expect(entities).toHaveLength(2);
     expect(entities[0]?.orderId).toBe(ORDER_A);
-    expect(entities[0]?.destination).toEqual({
-      kind: "screen",
-      href: `/orders/${ORDER_A}`,
-    });
     expect(entities[0]?.toolCallId).toBe("call-get");
     expect(entities[1]?.customerNameSnapshot).toBe("Olya");
-    expect(entities[1]?.destination).toEqual({
-      kind: "screen",
-      href: `/orders/${ORDER_B}`,
-    });
+    expect(entities[1]?.orderId).toBe(ORDER_B);
+    expect(entities[0]).not.toHaveProperty("destination");
+    expect(entities[1]).not.toHaveProperty("destination");
   });
 
   it("omits needs_choice and error entity outputs", () => {
@@ -603,10 +613,12 @@ describe("parseCustomerEntitySurfaces", () => {
 
 function clippedProduct(
   preview: Record<string, unknown>,
+  cutPaths: readonly string[] = [],
 ): AssistantSurfaceToolResult {
   return result("catalog_get_product", {
     status: ASSISTANT_TOOL_CLIPPED_STATUS,
     omitted: 23,
+    cutPaths,
     preview: {
       id: PRODUCT_A,
       name: "Napoleon",
@@ -659,14 +671,16 @@ describe("parseProductEntitySurfaces", () => {
     });
   });
 
-  it("reports no variant count when the clip truncated the variants array", () => {
+  it("reports no variant count when the envelope names variants as cut", () => {
     const variants = Array.from(
       { length: ASSISTANT_CLIP_ARRAY_MAX },
       (_, i) => ({
         id: String(i),
       }),
     );
-    const entities = parseProductEntitySurfaces([clippedProduct({ variants })]);
+    const entities = parseProductEntitySurfaces([
+      clippedProduct({ variants }, ["variants"]),
+    ]);
     expect(entities[0]).toMatchObject({
       productId: PRODUCT_A,
       name: "Napoleon",
@@ -676,14 +690,48 @@ describe("parseProductEntitySurfaces", () => {
     });
   });
 
+  it("counts a full array cap the envelope did not name as cut", () => {
+    const variants = Array.from(
+      { length: ASSISTANT_CLIP_ARRAY_MAX },
+      (_, i) => ({
+        id: String(i),
+      }),
+    );
+    const entities = parseProductEntitySurfaces([
+      clippedProduct({ variants }, ["imageFileIds"]),
+    ]);
+    expect(entities[0]).toMatchObject({
+      variantCount: ASSISTANT_CLIP_ARRAY_MAX,
+      variantsClipped: false,
+    });
+  });
+
+  it("counts a shrink-cap array the envelope did not name as cut", () => {
+    const variants = Array.from(
+      { length: ASSISTANT_CLIP_SHRINK_ARRAY_MAX },
+      (_, i) => ({ id: String(i) }),
+    );
+    const entities = parseProductEntitySurfaces([
+      clippedProduct({ variants }, ["notes"]),
+    ]);
+    expect(entities[0]).toMatchObject({
+      variantCount: ASSISTANT_CLIP_SHRINK_ARRAY_MAX,
+      variantsClipped: false,
+    });
+  });
+
   it("keeps the variant count when the clip cut some other array", () => {
     const entities = parseProductEntitySurfaces([
-      clippedProduct({
-        variants: [{ id: "a" }, { id: "b" }],
-        imageFileIds: Array.from({ length: ASSISTANT_CLIP_ARRAY_MAX }, (_, i) =>
-          String(i),
-        ),
-      }),
+      clippedProduct(
+        {
+          variants: [{ id: "a" }, { id: "b" }],
+          imageFileIds: Array.from(
+            { length: ASSISTANT_CLIP_ARRAY_MAX },
+            (_, i) => String(i),
+          ),
+        },
+        ["imageFileIds"],
+      ),
     ]);
     expect(entities[0]).toMatchObject({
       variantCount: 2,
@@ -693,7 +741,7 @@ describe("parseProductEntitySurfaces", () => {
 
   it("reports no variant count when the shrink dropped the variants key", () => {
     const entities = parseProductEntitySurfaces([
-      clippedProduct({ imageFileIds: [] }),
+      clippedProduct({ imageFileIds: [] }, ["variants"]),
     ]);
     expect(entities[0]).toMatchObject({
       variantCount: null,

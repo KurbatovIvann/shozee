@@ -19,6 +19,7 @@ export type AssistantClippedToolEnvelope = {
   readonly status: typeof ASSISTANT_TOOL_CLIPPED_STATUS;
   readonly preview: unknown;
   readonly omitted: number;
+  readonly cutPaths?: readonly string[];
 };
 
 export type AssistantSurfaceToolResult = {
@@ -45,17 +46,20 @@ export const ASSISTANT_CLIP_ARRAY_MAX = 50;
 
 export const ASSISTANT_CLIP_SHRINK_ARRAY_MAX = 3;
 
-export function clipMayHaveCutArray(value: unknown, clipped: boolean): boolean {
-  if (!clipped) {
-    return false;
-  }
+export const ASSISTANT_CLIP_ROOT_PATH = "";
+
+export function assistantClipPathCut(
+  cutPaths: readonly string[],
+  path: string,
+): boolean {
+  return cutPaths.includes(path);
+}
+
+function cutPathsFromEnvelope(value: unknown): readonly string[] {
   if (!Array.isArray(value)) {
-    return true;
+    return [];
   }
-  return (
-    value.length === ASSISTANT_CLIP_ARRAY_MAX ||
-    value.length === ASSISTANT_CLIP_SHRINK_ARRAY_MAX
-  );
+  return value.filter((entry): entry is string => typeof entry === "string");
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -95,11 +99,16 @@ export function isAssistantSurfaceResultOutput(output: unknown): boolean {
 export function unwrapToolOutput(output: unknown): {
   readonly payload: unknown;
   readonly clipped: boolean;
+  readonly cutPaths: readonly string[];
 } {
   if (isAssistantClippedToolEnvelope(output)) {
-    return { payload: output.preview, clipped: true };
+    return {
+      payload: output.preview,
+      clipped: true,
+      cutPaths: cutPathsFromEnvelope(output.cutPaths),
+    };
   }
-  return { payload: output, clipped: false };
+  return { payload: output, clipped: false, cutPaths: [] };
 }
 
 export function lastSuccessfulResult(

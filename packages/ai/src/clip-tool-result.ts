@@ -7,6 +7,7 @@
  */
 import {
   ASSISTANT_CLIP_ARRAY_MAX,
+  ASSISTANT_CLIP_ROOT_PATH,
   ASSISTANT_CLIP_SHRINK_ARRAY_MAX,
   ASSISTANT_TOOL_CLIPPED_STATUS,
   type AssistantClippedToolEnvelope,
@@ -98,11 +99,22 @@ function pickIdentityFields(
   return picked;
 }
 
-function compactIdentity(value: unknown): unknown {
+function childPath(path: string, key: string): string {
+  return path === ASSISTANT_CLIP_ROOT_PATH ? key : `${path}.${key}`;
+}
+
+function compactIdentity(
+  value: unknown,
+  path: string,
+  cuts: Set<string>,
+): unknown {
   if (Array.isArray(value)) {
+    if (value.length > STAFF_ASSISTANT_CLIP_SHRINK_ARRAY_MAX) {
+      cuts.add(path);
+    }
     return value
       .slice(0, STAFF_ASSISTANT_CLIP_SHRINK_ARRAY_MAX)
-      .map((entry) => compactIdentity(entry));
+      .map((entry) => compactIdentity(entry, path, cuts));
   }
   if (!isRecord(value)) {
     return value;
@@ -113,21 +125,30 @@ function compactIdentity(value: unknown): unknown {
       continue;
     }
     if (Array.isArray(entry) && entry.some((row) => isRecord(row))) {
-      picked[key] = compactIdentity(entry);
+      picked[key] = compactIdentity(entry, childPath(path, key), cuts);
+      continue;
     }
+    cuts.add(childPath(path, key));
   }
   return picked;
 }
 
-function clipUnknown(value: unknown): { preview: unknown; omitted: number } {
+function clipUnknown(
+  value: unknown,
+  path: string,
+  cuts: Set<string>,
+): { preview: unknown; omitted: number } {
   if (Array.isArray(value)) {
     const extra = Math.max(0, value.length - STAFF_ASSISTANT_CLIP_ARRAY_MAX);
+    if (extra > 0) {
+      cuts.add(path);
+    }
     const kept =
       extra > 0 ? value.slice(0, STAFF_ASSISTANT_CLIP_ARRAY_MAX) : value;
     let omitted = extra;
     const preview: unknown[] = [];
     for (const entry of kept) {
-      const clipped = clipUnknown(entry);
+      const clipped = clipUnknown(entry, path, cuts);
       preview.push(clipped.preview);
       omitted += clipped.omitted;
     }
@@ -137,7 +158,7 @@ function clipUnknown(value: unknown): { preview: unknown; omitted: number } {
     const preview: Record<string, unknown> = {};
     let omitted = 0;
     for (const [key, entry] of Object.entries(value)) {
-      const clipped = clipUnknown(entry);
+      const clipped = clipUnknown(entry, childPath(path, key), cuts);
       preview[key] = clipped.preview;
       omitted += clipped.omitted;
     }
@@ -146,48 +167,70 @@ function clipUnknown(value: unknown): { preview: unknown; omitted: number } {
   return { preview: value, omitted: 0 };
 }
 
-function shrinkRow(value: unknown): unknown {
+function shrinkRow(value: unknown, path: string, cuts: Set<string>): unknown {
   if (!isRecord(value)) {
     return value;
   }
   const identity = pickIdentityFields(value);
-  if (Object.keys(identity).length > 0) {
-    return identity;
+  if (Object.keys(identity).length === 0) {
+    return value;
   }
-  return value;
+  for (const key of Object.keys(value)) {
+    if (!(key in identity)) {
+      cuts.add(childPath(path, key));
+    }
+  }
+  return identity;
 }
 
-export function shrinkStaffAssistantTracePreview(value: unknown): unknown {
-  return shrinkPreview(value);
+function shrinkStaffAssistantTracePreview(
+  value: unknown,
+  cuts: Set<string>,
+): unknown {
+  return shrinkPreview(value, ASSISTANT_CLIP_ROOT_PATH, cuts);
 }
 
-export function compactStaffAssistantTraceIdentity(value: unknown): unknown {
-  return compactIdentity(value);
+function compactStaffAssistantTraceIdentity(
+  value: unknown,
+  cuts: Set<string>,
+): unknown {
+  return compactIdentity(value, ASSISTANT_CLIP_ROOT_PATH, cuts);
 }
 
-function shrinkPreview(value: unknown): unknown {
+function shrinkPreview(
+  value: unknown,
+  path: string,
+  cuts: Set<string>,
+): unknown {
   if (Array.isArray(value)) {
+    if (value.length > STAFF_ASSISTANT_CLIP_SHRINK_ARRAY_MAX) {
+      cuts.add(path);
+    }
     return value
       .slice(0, STAFF_ASSISTANT_CLIP_SHRINK_ARRAY_MAX)
-      .map((entry) => shrinkRow(entry));
+      .map((entry) => shrinkRow(entry, path, cuts));
   }
   if (!isRecord(value)) {
     return value;
   }
   const shrunk: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(value)) {
+    const entryPath = childPath(path, key);
     if (IDENTITY_KEY_SET.has(key)) {
       shrunk[key] = entry;
       continue;
     }
     if (Array.isArray(entry)) {
+      if (entry.length > STAFF_ASSISTANT_CLIP_SHRINK_ARRAY_MAX) {
+        cuts.add(entryPath);
+      }
       shrunk[key] = entry
         .slice(0, STAFF_ASSISTANT_CLIP_SHRINK_ARRAY_MAX)
-        .map((row) => shrinkRow(row));
+        .map((row) => shrinkRow(row, entryPath, cuts));
       continue;
     }
     if (isRecord(entry)) {
-      shrunk[key] = shrinkRow(entry);
+      shrunk[key] = shrinkRow(entry, entryPath, cuts);
       continue;
     }
     if (
@@ -196,7 +239,9 @@ function shrinkPreview(value: unknown): unknown {
       entry === null
     ) {
       shrunk[key] = entry;
+      continue;
     }
+    cuts.add(entryPath);
   }
   return shrunk;
 }
@@ -208,16 +253,17 @@ export function clipStaffAssistantToolResult(output: unknown): unknown {
     return output;
   }
 
-  const clipped = clipUnknown(output);
+  const cuts = new Set<string>();
+  const clipped = clipUnknown(output, ASSISTANT_CLIP_ROOT_PATH, cuts);
   let preview = clipped.preview;
   let omitted = clipped.omitted;
 
   if (jsonLength(preview) > STAFF_ASSISTANT_CLIP_JSON_MAX) {
-    preview = shrinkStaffAssistantTracePreview(preview);
+    preview = shrinkStaffAssistantTracePreview(preview, cuts);
     omitted = Math.max(omitted, 1);
   }
   if (jsonLength(preview) > STAFF_ASSISTANT_CLIP_JSON_MAX) {
-    preview = compactStaffAssistantTraceIdentity(preview);
+    preview = compactStaffAssistantTraceIdentity(preview, cuts);
     omitted = Math.max(omitted, 1);
   }
 
@@ -229,5 +275,6 @@ export function clipStaffAssistantToolResult(output: unknown): unknown {
     status: STAFF_ASSISTANT_CLIPPED_STATUS,
     preview,
     omitted,
+    cutPaths: [...cuts].sort(),
   };
 }

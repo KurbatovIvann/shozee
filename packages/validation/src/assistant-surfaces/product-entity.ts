@@ -1,6 +1,6 @@
 import type { AssistantSurfaceDestinationDeclaration } from "./destination.js";
 import {
-  clipMayHaveCutArray,
+  assistantClipPathCut,
   isAssistantSurfaceResultOutput,
   isRecord,
   moneyMinorFromFields,
@@ -48,7 +48,7 @@ function variantCount(value: unknown, variantsClipped: boolean): number | null {
 function parseEntity(
   result: AssistantSurfaceToolResult,
 ): AssistantProductEntityData | null {
-  const { payload, clipped } = unwrapToolOutput(result.output);
+  const { payload, cutPaths } = unwrapToolOutput(result.output);
   if (!isRecord(payload)) {
     return null;
   }
@@ -56,7 +56,7 @@ function parseEntity(
   if (productId === null) {
     return null;
   }
-  const variantsClipped = clipMayHaveCutArray(payload["variants"], clipped);
+  const variantsClipped = assistantClipPathCut(cutPaths, "variants");
   const entity: AssistantProductEntityData = {
     kind: "product-entity",
     productId,
