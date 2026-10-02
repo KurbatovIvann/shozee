@@ -19,7 +19,12 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { createShoApp, type ShoParseLogEntry } from "./app.ts";
 import { createShoContextCache } from "./contexts.ts";
-import type { ShoEngine, ShoParseJob, ShoReply } from "./engine.ts";
+import type {
+  ShoEngine,
+  ShoParseJob,
+  ShoPhrasesReply,
+  ShoRunReply,
+} from "./engine.ts";
 
 const TOKEN = "service-token-of-at-least-32-characters";
 const COMPANY = "company1";
@@ -78,7 +83,9 @@ interface Recorded {
   readonly engine: ShoEngine;
 }
 
-function fakeEngine(run?: (job: ShoParseJob) => Promise<ShoReply>): Recorded {
+function fakeEngine(
+  run?: (job: ShoParseJob) => Promise<ShoRunReply>,
+): Recorded {
   const jobs: ShoParseJob[] = [];
   const cache = createShoContextCache();
   return {
@@ -515,7 +522,7 @@ describe("apps/sho /v1", () => {
   });
 
   it("maps every phrases outcome to its status", async () => {
-    const answers: [ShoReply, number][] = [
+    const answers: [ShoPhrasesReply, number][] = [
       [{ kind: "busy" }, 503],
       [{ kind: "deadline" }, 504],
       [{ kind: "phrases", phrases: null }, 409],

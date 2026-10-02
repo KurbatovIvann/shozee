@@ -20,6 +20,7 @@ import {
 import {
   SHO_LABELS_FILE,
   type ShoAnswer,
+  type ShoFailureDetail,
   type ShoReply,
   type ShoWorkerCommand,
   type ShoWorkerReady,
@@ -84,16 +85,21 @@ async function serveShoWorker(
   const sho = await loadSho();
   const cache = createShoContextCache(shoCacheBudgetOf(workerData));
   port.on("message", (command: ShoWorkerCommand) => {
+    let detail: ShoFailureDetail | undefined;
     void answer(sho, cache, command)
       .catch((cause: unknown): ShoReply => {
         if (cause instanceof InputError) return { kind: "input" };
+        detail = {
+          message: cause instanceof Error ? cause.message : String(cause),
+          stack: cause instanceof Error ? (cause.stack ?? null) : null,
+        };
         return {
           kind: "failed",
           code: cause instanceof Error ? cause.name : "unknown",
         };
       })
       .then((reply) => {
-        const sent: ShoAnswer = { id: command.id, reply };
+        const sent: ShoAnswer = { id: command.id, reply, detail };
         port.postMessage(sent);
       });
   });

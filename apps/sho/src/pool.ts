@@ -1,12 +1,18 @@
 import { availableParallelism } from "node:os";
 import { Worker } from "node:worker_threads";
 
+import { SHO_MAX_CONTEXT_BYTES } from "@showzy/sho-protocol";
+
 import { SHO_CONTEXT_CACHE_UPLOAD_BYTES } from "./contexts.ts";
 import {
   ShoRunFailure,
   type ShoAnswer,
   type ShoEngine,
+  type ShoFailureDetail,
+  type ShoPhrasesReply,
   type ShoReply,
+  type ShoRunReply,
+  type ShoStoreReply,
   type ShoWorkerCommand,
   type ShoWorkerReady,
   type ShoWorkerSetup,
@@ -20,8 +26,36 @@ export const SHO_RESPAWN_LIMIT = 5;
 export const shoDefaultWorkers = (): number =>
   Math.max(availableParallelism() - 1, 1);
 
+export const SHO_WORKER_CACHE_FLOOR_BYTES = SHO_MAX_CONTEXT_BYTES;
+
 export const shoWorkerCacheBytes = (size: number): number =>
-  Math.floor(SHO_CONTEXT_CACHE_UPLOAD_BYTES / Math.max(size, 1));
+  Math.max(
+    Math.floor(SHO_CONTEXT_CACHE_UPLOAD_BYTES / Math.max(size, 1)),
+    SHO_WORKER_CACHE_FLOOR_BYTES,
+  );
+
+const WRONG_KIND = { kind: "failed", code: "unexpected_reply" } as const;
+
+const refusal = (
+  reply: ShoReply,
+): reply is Extract<ShoReply, { kind: "busy" | "deadline" | "failed" }> =>
+  reply.kind === "busy" || reply.kind === "deadline" || reply.kind === "failed";
+
+const storeReplyOf = (reply: ShoReply): ShoStoreReply =>
+  refusal(reply) || reply.kind === "stored" || reply.kind === "input"
+    ? reply
+    : WRONG_KIND;
+
+const phrasesReplyOf = (reply: ShoReply): ShoPhrasesReply =>
+  refusal(reply) || reply.kind === "phrases" ? reply : WRONG_KIND;
+
+const runReplyOf = (reply: ShoReply): ShoRunReply =>
+  refusal(reply) ||
+  reply.kind === "parsed" ||
+  reply.kind === "context_required" ||
+  reply.kind === "input"
+    ? reply
+    : WRONG_KIND;
 
 export function shoSlotOf(contextKey: string, size: number): number {
   const colon = contextKey.indexOf(":");
@@ -44,6 +78,7 @@ export interface ShoPoolOptions {
   readonly respawnLimit?: number;
   readonly workerUrl?: URL;
   readonly onLoss?: (slot: number, loss: ShoWorkerLoss) => void;
+  readonly onFailure?: (code: string, detail: ShoFailureDetail | null) => void;
 }
 
 type Timer = ReturnType<typeof setTimeout>;
@@ -55,7 +90,7 @@ interface Boot {
 
 interface Pending {
   readonly command: ShoWorkerCommand;
-  readonly deadlineMs: number;
+  readonly expiresAt: number;
   settle: ((reply: ShoReply) => void) | null;
   timer: Timer | null;
   hangTimer: Timer | null;
@@ -83,6 +118,7 @@ export async function createShoPool(
   const workerUrl =
     options.workerUrl ?? new URL("./worker.ts", import.meta.url);
   const onLoss = options.onLoss ?? ((): void => undefined);
+  const onFailure = options.onFailure ?? ((): void => undefined);
   const setup: ShoWorkerSetup = { maxUploadBytes: shoWorkerCacheBytes(size) };
 
   const slots: Slot[] = [];
@@ -103,21 +139,29 @@ export async function createShoPool(
   function pump(slot: Slot): void {
     const worker = slot.worker;
     if (worker === null || !slot.ready || slot.running !== null) return;
-    const next = slot.queue.shift();
-    if (next === undefined) return;
-    if (next.timer !== null) clearTimeout(next.timer);
-    next.timer = setTimeout(() => {
-      next.timer = null;
-      const once = next.settle;
-      next.settle = null;
-      once?.({ kind: "deadline" });
-    }, next.deadlineMs);
-    next.hangTimer = setTimeout(() => {
-      next.hangTimer = null;
-      lose(slot, "hung");
-    }, hangMs);
-    slot.running = next;
-    worker.postMessage(next.command);
+    for (;;) {
+      const next = slot.queue.shift();
+      if (next === undefined) return;
+      const left = next.expiresAt - performance.now();
+      if (left <= 0) {
+        settle(next, { kind: "deadline" });
+        continue;
+      }
+      if (next.timer !== null) clearTimeout(next.timer);
+      next.timer = setTimeout(() => {
+        next.timer = null;
+        const once = next.settle;
+        next.settle = null;
+        once?.({ kind: "deadline" });
+      }, left);
+      next.hangTimer = setTimeout(() => {
+        next.hangTimer = null;
+        lose(slot, "hung");
+      }, hangMs);
+      slot.running = next;
+      worker.postMessage(next.command);
+      return;
+    }
   }
 
   function drain(slot: Slot, running: ShoReply): void {
@@ -160,6 +204,9 @@ export async function createShoPool(
       const running = slot.running;
       if (running === null || running.command.id !== answer.id) return;
       slot.running = null;
+      if (answer.reply.kind === "failed") {
+        onFailure(answer.reply.code, answer.detail ?? null);
+      }
       settle(running, answer.reply);
       pump(slot);
     });
@@ -190,9 +237,10 @@ export async function createShoPool(
     const id = nextId;
     nextId += 1;
     return new Promise<ShoReply>((resolve) => {
+      const budget = Math.max(deadlineMs, 0);
       const pending: Pending = {
         command: make(id),
-        deadlineMs: Math.max(deadlineMs, 0),
+        expiresAt: performance.now() + budget,
         settle: resolve,
         timer: null,
         hangTimer: null,
@@ -204,7 +252,7 @@ export async function createShoPool(
         const once = pending.settle;
         pending.settle = null;
         once?.({ kind: "deadline" });
-      }, pending.deadlineMs);
+      }, budget);
       slot.queue.push(pending);
       pump(slot);
     });
@@ -250,14 +298,28 @@ export async function createShoPool(
       return !stopped && slots.every((slot) => slot.ready);
     },
 
-    store: (upload) =>
-      send(upload.key, (id) => ({ id, kind: "store", upload }), callTimeoutMs),
+    store: async (upload) =>
+      storeReplyOf(
+        await send(
+          upload.key,
+          (id) => ({ id, kind: "store", upload }),
+          callTimeoutMs,
+        ),
+      ),
 
-    phrases: (key) =>
-      send(key, (id) => ({ id, kind: "phrases", key }), callTimeoutMs),
+    phrases: async (key) =>
+      phrasesReplyOf(
+        await send(key, (id) => ({ id, kind: "phrases", key }), callTimeoutMs),
+      ),
 
-    run: (job) =>
-      send(job.key, (id) => ({ id, kind: "parse", job }), job.deadlineMs),
+    run: async (job) =>
+      runReplyOf(
+        await send(
+          job.key,
+          (id) => ({ id, kind: "parse", job }),
+          job.deadlineMs,
+        ),
+      ),
 
     async dispose() {
       stopped = true;

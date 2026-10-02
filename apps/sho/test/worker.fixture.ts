@@ -91,7 +91,14 @@ if (parentPort !== null) {
   port.on("message", (command: ShoWorkerCommand) => {
     const reply = answer(command);
     if (reply === null) return;
-    const sent: ShoAnswer = { id: command.id, reply };
+    const sent: ShoAnswer = {
+      id: command.id,
+      reply,
+      detail:
+        reply.kind === "failed"
+          ? { message: "boom cause", stack: "at fixture" }
+          : undefined,
+    };
     if (command.kind === "parse" && command.job.text === "slow") {
       setTimeout(() => {
         port.postMessage(sent);

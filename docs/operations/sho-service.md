@@ -51,12 +51,13 @@ model, a slot past its respawn cap, and a lost worker's waiting jobs all
 answer `503 busy`.
 
 A job carries two clocks. The deadline (the request's `deadlineMs` for a
-parse, `SHO_CALL_TIMEOUT_MS` 30 s for a context upload or a phrases read) runs
-while the job waits and is restarted when the job is dispatched; on expiry the
-job answers `504 deadline` and the worker is left alone — a queued job is only
-dropped from the queue. The hang threshold (`SHO_CALL_TIMEOUT_MS`, from
-dispatch) is what terminates and replaces a worker, so only a genuinely wedged
-run costs the worker. A replaced worker starts with an empty cache, so the
+parse, `SHO_CALL_TIMEOUT_MS` 30 s for a context upload or a phrases read) is an
+absolute instant fixed when the job is accepted, so waiting in the queue spends
+the same budget the run does and a job never outlives its `deadlineMs` in
+total; on expiry the job answers `504 deadline` and the worker is left alone —
+a queued job is only dropped from the queue. The hang threshold
+(`SHO_CALL_TIMEOUT_MS`, from dispatch) is what terminates and replaces a
+worker, so only a genuinely wedged run costs the worker. A replaced worker starts with an empty cache, so the
 next parse for its company is `409 context_required` and the API re-uploads.
 A worker that keeps dying is respawned with a linear backoff
 (`SHO_RESPAWN_BACKOFF_MS`, 250 ms × consecutive failures) and after
@@ -66,8 +67,10 @@ A worker that keeps dying is respawned with a linear backoff
 Each `POST /parse` logs one line: `requestId`, `outcome`
 (`ok` | `input` | `context_required` | `busy` | `deadline` | `failed`), `ms`
 and `code`. Never the command text and never the worker's error message.
-`failed` is a worker-side throw that is not an `InputError`: the log carries
-the error's class name as `code` and the response is a bare 500.
+`failed` is a worker-side throw that is not an `InputError`: the parse log and
+the wire carry only the error's class name as `code`, the response is a bare
+500, and the cause's message and stack go to the host process logger alone
+(`sho worker failed`), never to a reply and never beside the command text.
 
 ## Diagnosing a turn that fell through to the LLM
 
@@ -85,8 +88,11 @@ the error's class name as `code` and the response is a bare 500.
   TLS between `apps/api` and `apps/sho`, or a network where plaintext is
   acceptable, plus token rotation.
 - The context cache budget (`SHO_CONTEXT_CACHE_UPLOAD_BYTES`, 256 MB) is a
-  **process total**: each worker gets `total / SHO_WORKERS`, so the pool size
-  does not multiply the cache. It counts **uploaded JSON bytes**, not the
+  **process total**: each worker gets `total / SHO_WORKERS` but never less than
+  one maximum upload (`SHO_MAX_CONTEXT_BYTES`, 8 MB), so a large pool size does
+  not multiply the cache and cannot starve a worker below one context. There is
+  deliberately no env knob for the total; change the constant if a replica needs
+  a different one. It counts **uploaded JSON bytes**, not the
   compiled index's heap
   footprint — the runtime exposes no size for a `CompiledContext`, and the two
   are not proportional. Sizing the cache against real memory needs that number

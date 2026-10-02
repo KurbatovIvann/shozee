@@ -51,9 +51,32 @@ export type ShoReply =
   | { readonly kind: "input" }
   | { readonly kind: "failed"; readonly code: string };
 
+type ShoRefusalKind = "busy" | "deadline" | "failed";
+
+export type ShoStoreReply = Extract<
+  ShoReply,
+  { kind: "stored" | "input" | ShoRefusalKind }
+>;
+
+export type ShoPhrasesReply = Extract<
+  ShoReply,
+  { kind: "phrases" | ShoRefusalKind }
+>;
+
+export type ShoRunReply = Extract<
+  ShoReply,
+  { kind: "parsed" | "context_required" | "input" | ShoRefusalKind }
+>;
+
+export interface ShoFailureDetail {
+  readonly message: string;
+  readonly stack: string | null;
+}
+
 export interface ShoAnswer {
   readonly id: number;
   readonly reply: ShoReply;
+  readonly detail?: ShoFailureDetail | undefined;
 }
 
 export type ShoWorkerCommand =
@@ -76,8 +99,8 @@ export interface ShoEngine {
   readonly actions: readonly string[];
   readonly workers: number;
   readonly ready: boolean;
-  store(upload: ShoContextUpload): Promise<ShoReply>;
-  phrases(key: string): Promise<ShoReply>;
-  run(job: ShoParseJob): Promise<ShoReply>;
+  store(upload: ShoContextUpload): Promise<ShoStoreReply>;
+  phrases(key: string): Promise<ShoPhrasesReply>;
+  run(job: ShoParseJob): Promise<ShoRunReply>;
   dispose(): Promise<void>;
 }

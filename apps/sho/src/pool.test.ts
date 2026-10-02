@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { SHO_CONTEXT_CACHE_UPLOAD_BYTES } from "./contexts.ts";
 import type { ShoContextUpload, ShoEngine, ShoParseJob } from "./engine.ts";
 import {
+  SHO_WORKER_CACHE_FLOOR_BYTES,
   createShoPool,
   shoSlotOf,
   shoWorkerCacheBytes,
@@ -166,6 +167,21 @@ describe("apps/sho worker pool", () => {
     expect(after.kind).toBe("parsed");
   });
 
+  it("spends one deadline across the wait and the run", async () => {
+    const pool = await open(1, { queueLimit: 4 });
+    const key = keyForSlot(0, 1);
+    await pool.store(uploadOf(key));
+
+    const held = pool.run(jobOf(key, "slow"));
+    const started = performance.now();
+    const queued = await pool.run(jobOf(key, "slow", { deadlineMs: 260 }));
+    const spent = performance.now() - started;
+    expect(queued).toEqual({ kind: "deadline" });
+    expect(spent).toBeLessThan(400);
+    expect(losses).toEqual([]);
+    expect((await held).kind).toBe("parsed");
+  });
+
   it("answers 504 for a run past its deadline and keeps that worker", async () => {
     const pool = await open(1);
     const key = keyForSlot(0, 1);
@@ -252,23 +268,30 @@ describe("apps/sho worker pool", () => {
   });
 
   it("reports a worker failure and an input refusal apart", async () => {
-    const pool = await open(1);
+    const failures: [string, unknown][] = [];
+    const pool = await open(1, {
+      onFailure: (code, detail) => failures.push([code, detail]),
+    });
     const key = keyForSlot(0, 1);
     await pool.store(uploadOf(key));
     await expect(pool.run(jobOf(key, "boom"))).resolves.toEqual({
       kind: "failed",
       code: "boom",
     });
+    expect(failures).toEqual([
+      ["boom", { message: "boom cause", stack: "at fixture" }],
+    ]);
     await expect(pool.run(jobOf(key, "bad"))).resolves.toEqual({
       kind: "input",
     });
   });
 
-  it("splits the total context cache budget between its workers", async () => {
+  it("splits the total context cache budget and never goes under one upload", async () => {
     const pool = await open(4);
     expect(shoWorkerCacheBytes(4)).toBe(
       Math.floor(SHO_CONTEXT_CACHE_UPLOAD_BYTES / 4),
     );
+    expect(shoWorkerCacheBytes(4096)).toBe(SHO_WORKER_CACHE_FLOOR_BYTES);
     const ran = await pool.run(jobOf(keyForSlot(0, 4), "budget"));
     expect(ran.kind).toBe("parsed");
     if (ran.kind !== "parsed") return;
