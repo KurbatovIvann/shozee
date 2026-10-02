@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 
-import { type ImplementedAction } from "@showzy/core";
+import {
+  createConfirmationHook,
+  createInMemoryConfirmationStore,
+  type ActionPipelineDeps,
+  type ImplementedAction,
+} from "@showzy/core";
 import {
   ConfirmationRequiredError,
   NotFoundError,
@@ -13,11 +18,15 @@ import {
   type IsolationActor,
   type TestKit,
 } from "@showzy/core/testing";
+import { user } from "@showzy/db/schema/auth";
 import { products, productVariants } from "@showzy/db/schema/catalog";
+import { companyMembers } from "@showzy/db/schema/companies";
 import { priceListEntries, priceLists } from "@showzy/db/schema/pricing";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { z } from "zod";
+
+import { PRICE_LIST_UNNAMED_ENTRIES_NOTE } from "../services/preview-card.js";
 
 import { activatePriceList } from "./activate-price-list.js";
 import { createPriceList } from "./create-price-list.js";
@@ -35,6 +44,8 @@ const fixtures = {
   listDefault: randomUUID(),
   listIdle: randomUUID(),
   listDelete: randomUUID(),
+  listRestricted: randomUUID(),
+  listConfirm: randomUUID(),
   listB: randomUUID(),
   productA: randomUUID(),
   variantA: randomUUID(),
@@ -42,7 +53,24 @@ const fixtures = {
   missingId: randomUUID(),
 };
 
+const clerks = {
+  pricingOnly: randomUUID(),
+  pricingAndCatalog: randomUUID(),
+};
+
 let kit: TestKit;
+
+function confirmationPipeline(target: TestKit): ActionPipelineDeps {
+  return {
+    ...target.pipeline,
+    hooks: {
+      ...target.pipeline.hooks,
+      confirmation: createConfirmationHook({
+        store: createInMemoryConfirmationStore(),
+      }),
+    },
+  };
+}
 
 async function invokeForCard<
   TInput extends z.ZodType,
@@ -115,6 +143,20 @@ beforeAll(async () => {
       isDefault: false,
       isActive: true,
     },
+    {
+      id: fixtures.listRestricted,
+      companyId: companyA,
+      name: "Прайс без каталогу",
+      isDefault: false,
+      isActive: true,
+    },
+    {
+      id: fixtures.listConfirm,
+      companyId: companyA,
+      name: "Прайс на підтвердження",
+      isDefault: false,
+      isActive: true,
+    },
     { id: fixtures.listB, companyId: companyB, name: "Чужий прайс" },
   ]);
 
@@ -153,6 +195,55 @@ beforeAll(async () => {
       productId: fixtures.productA,
       priceMinor: 11000n,
       currency: "UAH",
+    },
+    {
+      companyId: companyA,
+      priceListId: fixtures.listRestricted,
+      productId: fixtures.productA,
+      priceMinor: 12000n,
+      currency: "UAH",
+    },
+    {
+      companyId: companyA,
+      priceListId: fixtures.listRestricted,
+      productId: fixtures.productA,
+      variantId: fixtures.variantA,
+      priceMinor: 45000n,
+      currency: "UAH",
+    },
+    {
+      companyId: companyA,
+      priceListId: fixtures.listConfirm,
+      productId: fixtures.productA,
+      priceMinor: 9900n,
+      currency: "UAH",
+    },
+  ]);
+
+  await kit.db.runtime.db.insert(user).values([
+    {
+      id: clerks.pricingOnly,
+      name: "Pricing clerk",
+      email: "pricing-only@pricing-previews.test",
+    },
+    {
+      id: clerks.pricingAndCatalog,
+      name: "Pricing and catalog clerk",
+      email: "pricing-catalog@pricing-previews.test",
+    },
+  ]);
+  await kit.db.runtime.db.insert(companyMembers).values([
+    {
+      companyId: companyA,
+      userId: clerks.pricingOnly,
+      role: "employee",
+      permissions: { granted: ["pricing:manage"], denied: [] },
+    },
+    {
+      companyId: companyA,
+      userId: clerks.pricingAndCatalog,
+      role: "employee",
+      permissions: { granted: ["pricing:manage", "products:view"], denied: [] },
     },
   ]);
 });
@@ -312,6 +403,117 @@ describe("pricing preview cards", () => {
     expect(preview.lines).toEqual([
       { label: "Кава Арабіка", value: "120,00 грн" },
     ]);
+  });
+
+  it("cards every removed price for a pricing-only caller without catalog names", async () => {
+    const preview = await previewOf(
+      removePriceListEntries,
+      {
+        priceListId: fixtures.listRestricted,
+        entries: [
+          { productId: fixtures.productA },
+          { productId: fixtures.productA, variantId: fixtures.variantA },
+        ],
+      },
+      { userId: clerks.pricingOnly },
+    );
+    expect(preview.lines).toEqual([
+      { label: "Ціна 1", value: "120,00 грн" },
+      { label: "Ціна 2", value: "450,00 грн" },
+    ]);
+    expect(preview.notes).toEqual([PRICE_LIST_UNNAMED_ENTRIES_NOTE]);
+    expect(JSON.stringify(preview)).not.toContain("Кава Арабіка");
+  });
+
+  it("names the same removal for a caller who also holds products:view", async () => {
+    const preview = await previewOf(
+      removePriceListEntries,
+      {
+        priceListId: fixtures.listRestricted,
+        entries: [
+          { productId: fixtures.productA },
+          { productId: fixtures.productA, variantId: fixtures.variantA },
+        ],
+      },
+      { userId: clerks.pricingAndCatalog },
+    );
+    expect(preview.lines).toEqual([
+      { label: "Кава Арабіка", value: "120,00 грн" },
+      { label: "Кава Арабіка / 1 кг", value: "450,00 грн" },
+    ]);
+    expect(preview.notes).toBeUndefined();
+  });
+
+  it("lets the pricing-only caller confirm the card and remove the rows", async () => {
+    const deps = confirmationPipeline(kit);
+    const idempotencyKey = randomUUID();
+    const input = {
+      priceListId: fixtures.listConfirm,
+      entries: [{ productId: fixtures.productA }],
+    };
+    const unconfirmed = await kit
+      .invoke(
+        removePriceListEntries,
+        input,
+        { userId: clerks.pricingOnly },
+        { deps, request: { idempotencyKey, requireConfirmation: true } },
+      )
+      .then(
+        () => {
+          throw new Error("expected ConfirmationRequiredError");
+        },
+        (error: unknown) => error,
+      );
+    if (!(unconfirmed instanceof ConfirmationRequiredError)) {
+      throw unconfirmed;
+    }
+    expect(unconfirmed.challenge.preview?.lines).toEqual([
+      { label: "Ціна 1", value: "99,00 грн" },
+    ]);
+
+    const confirmed = await kit.invoke(
+      removePriceListEntries,
+      input,
+      { userId: clerks.pricingOnly },
+      {
+        deps,
+        request: {
+          idempotencyKey,
+          requireConfirmation: true,
+          confirmationChallengeId: unconfirmed.challenge.challengeId,
+        },
+      },
+    );
+    expect(confirmed).toEqual({ priceListId: fixtures.listConfirm });
+
+    const left = await kit.db.runtime.db
+      .select({ id: priceListEntries.id })
+      .from(priceListEntries)
+      .where(eq(priceListEntries.priceListId, fixtures.listConfirm));
+    expect(left).toEqual([]);
+  });
+
+  it("refuses a foreign price list for the pricing-only caller like a missing one", async () => {
+    const foreign = await invokeForCard(
+      removePriceListEntries,
+      {
+        priceListId: fixtures.listB,
+        entries: [{ productId: fixtures.productA }],
+      },
+      { userId: clerks.pricingOnly },
+    );
+    expectSameRefusal(
+      foreign,
+      await invokeForCard(
+        removePriceListEntries,
+        {
+          priceListId: fixtures.missingId,
+          entries: [{ productId: fixtures.productA }],
+        },
+        { userId: clerks.pricingOnly },
+      ),
+    );
+    expect(JSON.stringify(foreign)).not.toContain("Чужий прайс");
   });
 
   it("says so when nothing on the list matches the removal", async () => {

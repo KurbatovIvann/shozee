@@ -35,6 +35,9 @@ export const PRICE_LIST_YES = "так";
 export const PRICE_LIST_NO = "ні";
 export const PRICE_LIST_ENTRIES_EMPTY = "нічого не знайдено";
 export const PRICE_LIST_ENTRIES_LABEL = "Ціни";
+export const PRICE_LIST_UNNAMED_ENTRY_LABEL = "Ціна";
+export const PRICE_LIST_UNNAMED_ENTRIES_NOTE =
+  "Назви товарів приховано: ви не маєте доступу до каталогу. Кожен рядок — одна ціна, яку буде видалено.";
 
 export const DELETE_PRICE_LIST_NOTE =
   "Усі ціни в цьому прайс-листі буде видалено. Клієнти й групи, яким його призначено, залишаться і перейдуть на наступний рівень цін.";
@@ -162,6 +165,16 @@ async function loadCatalogNames(
     }
   }
   return names;
+}
+
+function callerMayReadCatalogNames(env: PreviewEnv): boolean {
+  return getProductPricingFacts.contract.permissions.every((permission) =>
+    env.caller.can(permission),
+  );
+}
+
+function unnamedEntryLabel(index: number): string {
+  return `${PRICE_LIST_UNNAMED_ENTRY_LABEL} ${String(index + 1)}`;
 }
 
 function nameOf(names: Map<string, string>, id: string): string {
@@ -354,24 +367,35 @@ export function removePriceListEntriesPreview(
     const matched = requested.filter((entry) =>
       stored.has(entryKey(entry.productId, entry.variantId)),
     );
-    const names = await loadCatalogNames(env, matched);
-    const lines: ActionPreviewLine[] = matched.flatMap((entry) => {
+    const named = callerMayReadCatalogNames(env);
+    const names = named
+      ? await loadCatalogNames(env, matched)
+      : new Map<string, string>();
+    const lines: ActionPreviewLine[] = matched.flatMap((entry, index) => {
       const row = stored.get(entryKey(entry.productId, entry.variantId));
       return row === undefined
         ? []
-        : [{ label: entryLabel(names, entry), value: storedPriceText(row) }];
+        : [
+            {
+              label: named
+                ? entryLabel(names, entry)
+                : unnamedEntryLabel(index),
+              value: storedPriceText(row),
+            },
+          ];
     });
+    if (lines.length === 0) {
+      return {
+        title: `Видалити ціни з прайс-листа: ${list.name}`,
+        lines: [
+          { label: PRICE_LIST_ENTRIES_LABEL, value: PRICE_LIST_ENTRIES_EMPTY },
+        ],
+      };
+    }
     return {
       title: `Видалити ціни з прайс-листа: ${list.name}`,
-      lines:
-        lines.length === 0
-          ? [
-              {
-                label: PRICE_LIST_ENTRIES_LABEL,
-                value: PRICE_LIST_ENTRIES_EMPTY,
-              },
-            ]
-          : lines,
+      lines,
+      ...(named ? {} : { notes: [PRICE_LIST_UNNAMED_ENTRIES_NOTE] }),
     };
   };
 }
