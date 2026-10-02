@@ -212,7 +212,7 @@ function schemaDefinition(schema: z.core.$ZodType): SchemaDefinition {
   return node._zod.def;
 }
 
-const maxSchemaWalkDepth = 64;
+const maxSchemaWalkNodes = 512;
 
 type LazyDefinition = Extract<SchemaDefinition, { type: "lazy" }>;
 
@@ -288,30 +288,35 @@ function stringDeclaresUuid(
   });
 }
 
-function carriesUuidField(
-  schema: z.core.$ZodType,
-  walk: SchemaWalk,
-  depth: number,
-): boolean {
-  if (depth > maxSchemaWalkDepth || walk.seen.has(schema)) {
-    return false;
+function carriesUuidField(schema: z.core.$ZodType, walk: SchemaWalk): boolean {
+  const pending: z.core.$ZodType[] = [schema];
+  let walked = 0;
+  while (pending.length > 0) {
+    const node = pending.pop();
+    if (node === undefined || walk.seen.has(node)) {
+      continue;
+    }
+    walk.seen.add(node);
+    walked += 1;
+    if (walked > maxSchemaWalkNodes) {
+      throw new Error(
+        `A uuid walk exhausted its budget of ${String(maxSchemaWalkNodes)} schema nodes, so it cannot prove that the schema carries no uuid field. Simplify the input schema, or declare isolationCase(action, own, foreign, { missing }) instead of { noReference: true }.`,
+      );
+    }
+    const def = schemaDefinition(node);
+    if (def.type === "string" && stringDeclaresUuid(def)) {
+      return true;
+    }
+    pending.push(...schemaChildren(def, walk));
   }
-  walk.seen.add(schema);
-  const def = schemaDefinition(schema);
-  if (def.type === "string" && stringDeclaresUuid(def)) {
-    return true;
-  }
-  return schemaChildren(def, walk).some((child) =>
-    carriesUuidField(child, walk, depth + 1),
-  );
+  return false;
 }
 
 export function schemaCarriesUuidField(schema: z.core.$ZodType): boolean {
-  return carriesUuidField(
-    schema,
-    { seen: new Set(), lazyResolutions: new Map() },
-    0,
-  );
+  return carriesUuidField(schema, {
+    seen: new Set(),
+    lazyResolutions: new Map(),
+  });
 }
 
 function inputCarriesUuidField(action: SuiteAction): boolean {

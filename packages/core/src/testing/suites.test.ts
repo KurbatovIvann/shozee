@@ -7,6 +7,14 @@ function endlessLazy(): z.ZodType {
   return z.lazy(() => z.object({ name: z.string(), child: endlessLazy() }));
 }
 
+function nestedChain(leaf: z.ZodType, levels: number): z.ZodType {
+  let node: z.ZodType = leaf;
+  for (let level = 0; level < levels; level += 1) {
+    node = z.object({ child: node });
+  }
+  return node;
+}
+
 describe("schemaCarriesUuidField", () => {
   it("finds a uuid under optional, union, array, pipe and record", () => {
     const schema = z.object({
@@ -63,7 +71,22 @@ describe("schemaCarriesUuidField", () => {
     expect(schemaCarriesUuidField(node)).toBe(true);
   });
 
-  it("terminates on a lazy getter that returns a fresh schema each call", () => {
-    expect(schemaCarriesUuidField(endlessLazy())).toBe(false);
+  it("throws on a lazy getter that returns a fresh schema each call", () => {
+    expect(() => schemaCarriesUuidField(endlessLazy())).toThrow(
+      /exhausted its budget/,
+    );
+  });
+
+  it("throws instead of reporting no uuid when the schema outgrows the budget", () => {
+    expect(() => schemaCarriesUuidField(nestedChain(z.string(), 600))).toThrow(
+      /exhausted its budget/,
+    );
+  });
+
+  it("detects a uuid in a shared node whichever branch reaches it first", () => {
+    const shared = nestedChain(z.object({ id: z.uuid() }), 12);
+    const deep = nestedChain(shared, 58);
+    expect(schemaCarriesUuidField(z.object({ deep, shared }))).toBe(true);
+    expect(schemaCarriesUuidField(z.object({ shared, deep }))).toBe(true);
   });
 });
