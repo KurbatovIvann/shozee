@@ -4,10 +4,11 @@ import { describe, expect, it } from "vitest";
 import {
   createShoClient,
   type ShoFetch,
+  type ShoParseInput,
   type ShoParseOutcome,
 } from "./client.js";
 import { SHO_RESULT_SCHEMA } from "./result.js";
-import type { ShoParseRequest } from "./endpoints.js";
+import { SHO_PHRASES_LIMIT, shoContextKey } from "./endpoints.js";
 
 const urls = ["http://sho-1:8080", "http://sho-2:8080", "http://sho-3:8080"];
 
@@ -43,10 +44,12 @@ const parseBody = {
   ms: 9.4,
 };
 
-const parseRequest: ShoParseRequest = {
+const companyB = "c0ffee00-0000-4000-8000-000000000002";
+
+const parseRequest: ShoParseInput = {
   requestId: "req-1",
   companyId: "c0ffee00-0000-4000-8000-000000000001",
-  contextKey: "c0ffee00-0000-4000-8000-000000000001:9f8c1a2b",
+  scopeHash: "9f8c1a2b",
   fingerprint: "fp-1",
   text: "додай 2 кави",
   now: { year: 2026, month: 10, day: 2, hour: 11, minute: 5 },
@@ -63,6 +66,12 @@ const json = (body: unknown, status: number): ShoFetch =>
 
 const client = (fetchImpl: ShoFetch, timeoutMs = 1000) =>
   createShoClient({ urls, token, timeoutMs }, { fetch: fetchImpl });
+
+const rejected = {
+  outcome: "fallback",
+  reason: "input_rejected",
+  httpStatus: null,
+};
 
 describe("createShoClient.parse", () => {
   it("returns the decoded response on 200", async () => {
@@ -93,7 +102,47 @@ describe("createShoClient.parse", () => {
     expect(JSON.parse(seen.init?.body as string)).toMatchObject({
       requestId: "req-1",
       text: "додай 2 кави",
+      contextKey: shoContextKey(parseRequest.companyId, parseRequest.scopeHash),
     });
+  });
+
+  it("builds the context key from the company it routes to", async () => {
+    const seen: { url?: string; body?: unknown } = {};
+    const recording: ShoFetch = (url, init) => {
+      seen.url = url;
+      seen.body = JSON.parse(init.body as string);
+      return Promise.resolve(
+        new Response(JSON.stringify(parseBody), { status: 200 }),
+      );
+    };
+
+    const sho = client(recording);
+    await sho.parse({ ...parseRequest, companyId: companyB });
+
+    expect(seen.url).toBe(`${sho.replicaFor(companyB)}/v1/parse`);
+    expect(seen.body).toMatchObject({
+      companyId: companyB,
+      contextKey: shoContextKey(companyB, parseRequest.scopeHash),
+    });
+  });
+
+  it("refuses a request the service would reject", async () => {
+    let called = false;
+    const counting: ShoFetch = () => {
+      called = true;
+      return Promise.resolve(new Response(null, { status: 200 }));
+    };
+
+    expect(
+      await client(counting).parse({
+        ...parseRequest,
+        scopeHash: "not a hash",
+      }),
+    ).toEqual(rejected);
+    expect(await client(counting).parse({ ...parseRequest, text: "" })).toEqual(
+      rejected,
+    );
+    expect(called).toBe(false);
   });
 
   const fallbacks: readonly (readonly [number, string])[] = [
@@ -219,10 +268,16 @@ describe("createShoClient.parse", () => {
 describe("createShoClient.putContext", () => {
   const contextRequest = {
     companyId: parseRequest.companyId,
-    contextKey: parseRequest.contextKey,
+    scopeHash: parseRequest.scopeHash,
     fingerprint: "fp-1",
-    context: { customers: [{ id: "cus_1", name: "Софія" }] },
+    context: {
+      version: 2 as const,
+      customers: [{ id: "cus_1", name: "Софія" }],
+    },
   };
+
+  const keyOf = (companyId: string) =>
+    encodeURIComponent(shoContextKey(companyId, parseRequest.scopeHash));
 
   it("gzips the body and reports 204 as stored", async () => {
     const seen: { url?: string; init?: RequestInit } = {};
@@ -235,8 +290,8 @@ describe("createShoClient.putContext", () => {
     const outcome = await client(recording).putContext(contextRequest);
 
     expect(outcome).toEqual({ outcome: "stored" });
-    expect(seen.url).toContain(
-      `/v1/contexts/${encodeURIComponent(contextRequest.contextKey)}`,
+    expect(seen.url).toBe(
+      `${client(recording).replicaFor(contextRequest.companyId)}/v1/contexts/${keyOf(contextRequest.companyId)}`,
     );
     expect(new Headers(seen.init?.headers).get("content-encoding")).toBe(
       "gzip",
@@ -261,7 +316,7 @@ describe("createShoClient.putContext", () => {
     ).toEqual({ outcome: "fallback", reason: "busy", httpStatus: 503 });
   });
 
-  it("refuses a malformed context key before it reaches the service", async () => {
+  it("refuses a scope that cannot form a context key", async () => {
     let called = false;
     const counting: ShoFetch = () => {
       called = true;
@@ -271,23 +326,60 @@ describe("createShoClient.putContext", () => {
     expect(
       await client(counting).putContext({
         ...contextRequest,
-        contextKey: "not a context key",
+        scopeHash: "not a scope hash",
       }),
-    ).toEqual({
-      outcome: "fallback",
-      reason: "input_rejected",
-      httpStatus: null,
-    });
+    ).toEqual(rejected);
     expect(
       await client(counting).phrases({
         companyId: contextRequest.companyId,
-        contextKey: "not a context key",
+        scopeHash: "not a scope hash",
       }),
-    ).toEqual({
-      outcome: "fallback",
-      reason: "input_rejected",
-      httpStatus: null,
+    ).toEqual(rejected);
+    expect(called).toBe(false);
+  });
+
+  it("keys and routes every context call by the company it is given", async () => {
+    const seen: string[] = [];
+    const recording: ShoFetch = (url) => {
+      seen.push(url);
+      return Promise.resolve(new Response(null, { status: 204 }));
+    };
+
+    const sho = client(recording);
+    await sho.putContext({ ...contextRequest, companyId: companyB });
+    await sho.phrases({
+      companyId: companyB,
+      scopeHash: contextRequest.scopeHash,
     });
+
+    expect(seen[0]).toBe(
+      `${sho.replicaFor(companyB)}/v1/contexts/${keyOf(companyB)}`,
+    );
+    expect(seen[1]).toContain(`/v1/contexts/${keyOf(companyB)}/phrases`);
+    expect(seen.join(" ")).not.toContain(contextRequest.companyId);
+  });
+
+  it("refuses a context that carries phones or emails", async () => {
+    let called = false;
+    const counting: ShoFetch = () => {
+      called = true;
+      return Promise.resolve(new Response(null, { status: 204 }));
+    };
+
+    const withContacts = {
+      version: 2 as const,
+      customers: [
+        { id: "cus_1", name: "Софія", phones: ["+380501112233"] },
+        { id: "cus_2", name: "Олег", emails: ["oleh@example.com"] },
+      ],
+    };
+
+    expect(
+      await client(counting).putContext({
+        ...contextRequest,
+        context: withContacts,
+      }),
+    ).toEqual(rejected);
     expect(called).toBe(false);
   });
 
@@ -301,7 +393,14 @@ describe("createShoClient.putContext", () => {
     expect(
       await client(counting).putContext({
         ...contextRequest,
-        context: { names: ["x".repeat(9 * 1024 * 1024)] },
+        context: {
+          version: 2 as const,
+          customers: Array.from({ length: 7000 }, (_, index) => ({
+            id: `cus_${String(index)}`,
+            name: "Софія",
+            aliases: Array.from({ length: 10 }, () => "x".repeat(120)),
+          })),
+        },
       }),
     ).toEqual({
       outcome: "fallback",
@@ -338,7 +437,7 @@ describe("createShoClient model, phrases and ready", () => {
   it("returns the speech phrases and falls back when the service is busy", async () => {
     const query = {
       companyId: parseRequest.companyId,
-      contextKey: parseRequest.contextKey,
+      scopeHash: parseRequest.scopeHash,
     };
     expect(
       await client(json({ phrases: ["Софія Мельник", "Кава"] }, 200)).phrases(
@@ -350,6 +449,30 @@ describe("createShoClient model, phrases and ready", () => {
       reason: "busy",
       httpStatus: 503,
     });
+  });
+
+  it("asks for the declared phrases limit and refuses a larger one", async () => {
+    const seen: string[] = [];
+    const recording: ShoFetch = (url) => {
+      seen.push(url);
+      return Promise.resolve(
+        new Response(JSON.stringify({ phrases: [] }), { status: 200 }),
+      );
+    };
+
+    const query = {
+      companyId: parseRequest.companyId,
+      scopeHash: parseRequest.scopeHash,
+    };
+    await client(recording).phrases(query);
+    expect(seen[0]).toContain(`phrases?limit=${String(SHO_PHRASES_LIMIT)}`);
+    expect(
+      await client(recording).phrases({
+        ...query,
+        limit: SHO_PHRASES_LIMIT + 1,
+      }),
+    ).toEqual(rejected);
+    expect(seen).toHaveLength(1);
   });
 
   it("is ready only when the service says so", async () => {

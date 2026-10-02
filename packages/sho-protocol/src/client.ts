@@ -1,23 +1,31 @@
-import { gzipSync } from "node:zlib";
+import { promisify } from "node:util";
+import { gzip } from "node:zlib";
 import { z } from "zod";
 
 import {
   SHO_ERROR_CODES,
   SHO_MAX_CONTEXT_BYTES,
+  SHO_PHRASES_LIMIT,
+  shoContextKey,
   shoContextKeySchema,
   shoContextUploadSchema,
   shoErrorResponseSchema,
   shoHealthResponseSchema,
   shoModelResponseSchema,
+  shoParseRequestSchema,
   shoParseResponseSchema,
+  shoPhrasesLimitSchema,
   shoPhrasesResponseSchema,
   shoReadyResponseSchema,
+  type ShoContext,
   type ShoErrorCode,
   type ShoModelResponse,
   type ShoParseRequest,
   type ShoParseResponse,
 } from "./endpoints.js";
 import { shoReplicaFor } from "./routing.js";
+
+const gzipAsync = promisify(gzip);
 
 export const SHO_DEFAULT_TIMEOUT_MS = 1500;
 
@@ -40,26 +48,15 @@ export interface ShoFallback {
   readonly httpStatus: number | null;
 }
 
-export interface ShoOk<Value> {
-  readonly outcome: "ok";
-  readonly value: Value;
-}
-
-export interface ShoContextRequired {
-  readonly outcome: "context_required";
-}
-
-export interface ShoStored {
-  readonly outcome: "stored";
-}
+export type ShoOk<Value> = { readonly outcome: "ok"; readonly value: Value };
+export type ShoContextRequired = { readonly outcome: "context_required" };
+export type ShoStored = { readonly outcome: "stored" };
 
 export type ShoParseOutcome =
   ShoOk<ShoParseResponse> | ShoContextRequired | ShoFallback;
 
 export type ShoContextOutcome = ShoStored | ShoFallback;
-
 export type ShoPhrasesOutcome = ShoOk<readonly string[]> | ShoFallback;
-
 export type ShoModelOutcome = ShoOk<ShoModelResponse> | ShoFallback;
 
 export const shoClientConfigSchema = z.object({
@@ -72,27 +69,29 @@ export type ShoClientConfig = z.input<typeof shoClientConfigSchema>;
 
 export type ShoFetch = (input: string, init: RequestInit) => Promise<Response>;
 
-export interface ShoClientOptions {
-  readonly fetch?: ShoFetch;
+export type ShoClientOptions = { readonly fetch?: ShoFetch };
+
+export interface ShoParseInput extends Omit<ShoParseRequest, "contextKey"> {
+  readonly scopeHash: string;
 }
 
 export interface ShoContextRequest {
   readonly companyId: string;
-  readonly contextKey: string;
+  readonly scopeHash: string;
   readonly fingerprint: string;
-  readonly context: unknown;
+  readonly context: ShoContext;
 }
 
 export interface ShoPhrasesRequest {
   readonly companyId: string;
-  readonly contextKey: string;
+  readonly scopeHash: string;
   readonly limit?: number;
 }
 
 export interface ShoClient {
   readonly replicas: readonly string[];
   readonly replicaFor: (companyId: string) => string;
-  readonly parse: (request: ShoParseRequest) => Promise<ShoParseOutcome>;
+  readonly parse: (request: ShoParseInput) => Promise<ShoParseOutcome>;
   readonly putContext: (
     request: ShoContextRequest,
   ) => Promise<ShoContextOutcome>;
@@ -103,12 +102,7 @@ export interface ShoClient {
 }
 
 type TransportFailure = Extract<ShoFallbackReason, "timeout" | "unreachable">;
-
-interface Received {
-  readonly status: number;
-  readonly body: unknown;
-}
-
+type Received = { readonly status: number; readonly body: unknown };
 type Sent = Received | TransportFailure;
 
 const fallback = (
@@ -144,6 +138,11 @@ function statusOrBodyFallback({ status, body }: Received): ShoFallback {
     statusFallbacks[status] ?? byCode ?? "unexpected_status",
     status,
   );
+}
+
+function keyFor(companyId: string, scopeHash: string): string | null {
+  const key = shoContextKey(companyId, scopeHash);
+  return shoContextKeySchema.safeParse(key).success ? key : null;
 }
 
 function parseJson(text: string): unknown {
@@ -187,6 +186,7 @@ export function createShoClient(
     try {
       const response = await send(`${replicaUrl}${path}`, {
         ...init,
+        redirect: "error",
         signal: controller.signal,
         headers,
       });
@@ -201,23 +201,32 @@ export function createShoClient(
     }
   }
 
-  const replicaFor = (companyId: string): string =>
-    shoReplicaFor(urls, companyId);
+  async function read<Schema extends z.ZodType>(
+    replicaUrl: string,
+    path: string,
+    schema: Schema,
+  ): Promise<ShoOk<z.infer<Schema>> | ShoFallback> {
+    if (!urls.includes(replicaUrl)) return fallback("input_rejected", null);
+    return decode(await request(replicaUrl, path, { method: "GET" }), schema);
+  }
+
+  const replicaFor = (companyId: string) => shoReplicaFor(urls, companyId);
 
   return {
     replicas: urls,
     replicaFor,
 
-    async parse(parseRequest) {
-      const sent = await request(
-        replicaFor(parseRequest.companyId),
-        "/v1/parse",
-        {
-          method: "POST",
-          body: JSON.stringify(parseRequest),
-          headers: { "content-type": "application/json" },
-        },
-      );
+    async parse({ scopeHash, ...rest }) {
+      const wire = shoParseRequestSchema.safeParse({
+        ...rest,
+        contextKey: shoContextKey(rest.companyId, scopeHash),
+      });
+      if (!wire.success) return fallback("input_rejected", null);
+      const sent = await request(replicaFor(rest.companyId), "/v1/parse", {
+        method: "POST",
+        body: JSON.stringify(wire.data),
+        headers: { "content-type": "application/json" },
+      });
       if (typeof sent !== "string" && sent.status === 409) {
         return { outcome: "context_required" };
       }
@@ -229,18 +238,18 @@ export function createShoClient(
         fingerprint: contextRequest.fingerprint,
         context: contextRequest.context,
       });
-      const key = shoContextKeySchema.safeParse(contextRequest.contextKey);
-      if (!upload.success || !key.success) {
+      const key = keyFor(contextRequest.companyId, contextRequest.scopeHash);
+      if (!upload.success || key === null) {
         return fallback("input_rejected", null);
       }
       const payload = Buffer.from(JSON.stringify(upload.data), "utf8");
       if (payload.byteLength > SHO_MAX_CONTEXT_BYTES) {
         return fallback("context_limit", null);
       }
-      const body = gzipSync(payload);
+      const body = await gzipAsync(payload);
       const sent = await request(
         replicaFor(contextRequest.companyId),
-        `/v1/contexts/${encodeURIComponent(contextRequest.contextKey)}`,
+        `/v1/contexts/${encodeURIComponent(key)}`,
         {
           method: "PUT",
           body: new Uint8Array(body),
@@ -256,13 +265,14 @@ export function createShoClient(
     },
 
     async phrases(phrasesRequest) {
-      if (!shoContextKeySchema.safeParse(phrasesRequest.contextKey).success) {
+      const key = keyFor(phrasesRequest.companyId, phrasesRequest.scopeHash);
+      const limit = phrasesRequest.limit ?? SHO_PHRASES_LIMIT;
+      if (key === null || !shoPhrasesLimitSchema.safeParse(limit).success) {
         return fallback("input_rejected", null);
       }
-      const limit = phrasesRequest.limit ?? 1000;
       const sent = await request(
         replicaFor(phrasesRequest.companyId),
-        `/v1/contexts/${encodeURIComponent(phrasesRequest.contextKey)}/phrases?limit=${String(limit)}`,
+        `/v1/contexts/${encodeURIComponent(key)}/phrases?limit=${String(limit)}`,
         { method: "GET" },
       );
       const outcome = decode(sent, shoPhrasesResponseSchema);
@@ -272,29 +282,17 @@ export function createShoClient(
     },
 
     async model(replicaUrl) {
-      if (!urls.includes(replicaUrl)) return fallback("input_rejected", null);
-      return decode(
-        await request(replicaUrl, "/v1/model", { method: "GET" }),
-        shoModelResponseSchema,
-      );
+      return read(replicaUrl, "/v1/model", shoModelResponseSchema);
     },
 
     async ready(replicaUrl) {
-      if (!urls.includes(replicaUrl)) return false;
-      const outcome = decode(
-        await request(replicaUrl, "/v1/ready", { method: "GET" }),
-        shoReadyResponseSchema,
-      );
-      return outcome.outcome === "ok" && outcome.value.ready;
+      const got = await read(replicaUrl, "/v1/ready", shoReadyResponseSchema);
+      return got.outcome === "ok" && got.value.ready;
     },
 
     async health(replicaUrl) {
-      if (!urls.includes(replicaUrl)) return false;
-      const outcome = decode(
-        await request(replicaUrl, "/v1/health", { method: "GET" }),
-        shoHealthResponseSchema,
-      );
-      return outcome.outcome === "ok";
+      const got = await read(replicaUrl, "/v1/health", shoHealthResponseSchema);
+      return got.outcome === "ok";
     },
   };
 }
