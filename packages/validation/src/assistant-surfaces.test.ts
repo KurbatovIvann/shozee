@@ -644,7 +644,7 @@ describe("parseProductEntitySurfaces", () => {
 
   it("reports no variant count when the clip truncated the variants array", () => {
     const variants = Array.from({ length: 50 }, (_, index) => ({
-      id: `${index}`,
+      id: String(index),
     }));
     const entities = parseProductEntitySurfaces([
       result("catalog_get_product", {
