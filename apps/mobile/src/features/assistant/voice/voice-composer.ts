@@ -1,5 +1,3 @@
-import { VOICE_MAX_SESSION_MS } from "@showzy/validation/assistant-voice";
-
 import type { VoiceCaptureStatus } from "./voice-capture-state";
 
 export type VoiceMicMode =
@@ -8,8 +6,6 @@ export type VoiceMicMode =
 export type VoiceAnnouncementKey = "listening" | "done" | null;
 
 export const VOICE_SPOKEN_MEMORY = 20;
-
-export const VOICE_MAX_SESSION_SECONDS = Math.ceil(VOICE_MAX_SESSION_MS / 1000);
 
 export function voiceMicMode(status: VoiceCaptureStatus): VoiceMicMode {
   switch (status) {
@@ -31,17 +27,6 @@ export function voiceMicMode(status: VoiceCaptureStatus): VoiceMicMode {
 
 export function voiceMicActive(mode: VoiceMicMode): boolean {
   return mode === "pending" || mode === "listening" || mode === "recognizing";
-}
-
-export function voiceMicPressable(input: {
-  readonly mode: VoiceMicMode;
-  readonly available: boolean;
-  readonly blocked: boolean;
-}): boolean {
-  if (voiceMicActive(input.mode)) {
-    return input.mode !== "recognizing";
-  }
-  return input.available && !input.blocked;
 }
 
 export function voiceComposerValue(input: {
@@ -70,9 +55,12 @@ export function voiceCountdownVisible(mode: VoiceMicMode): boolean {
   return mode === "listening" || mode === "recognizing";
 }
 
-export function voiceRemainingSeconds(elapsedMs: number): number {
-  const left = Math.ceil((VOICE_MAX_SESSION_MS - elapsedMs) / 1000);
-  return Math.max(0, Math.min(VOICE_MAX_SESSION_SECONDS, left));
+export function voiceRemainingSeconds(
+  elapsedMs: number,
+  sessionMs: number,
+): number {
+  const limit = Math.ceil(sessionMs / 1000);
+  return Math.max(0, Math.min(limit, Math.ceil((sessionMs - elapsedMs) / 1000)));
 }
 
 export function voiceCountdownText(seconds: number): string {

@@ -10,7 +10,6 @@ import {
   voiceComposerPlaceholder,
   voiceComposerValue,
   voiceMicActive,
-  voiceMicPressable,
   type VoiceMicMode,
 } from "../voice/voice-composer";
 import {
@@ -25,7 +24,7 @@ export type AssistantComposerVoice = {
   readonly partial: string;
   readonly countdown: string | null;
   readonly countdownLabel: string | null;
-  readonly blocked: boolean;
+  readonly canPress: boolean;
   readonly copy: AssistantVoiceCopy;
   readonly onToggle: () => void;
   readonly onRetry: () => void;
@@ -132,13 +131,7 @@ export function AssistantComposer(props: {
           <AssistantMicButton
             mode={mode}
             label={dictating ? voice.copy.stop : voice.copy.start}
-            disabled={
-              !voiceMicPressable({
-                mode,
-                available: true,
-                blocked: voice.blocked,
-              })
-            }
+            disabled={!voice.canPress}
             onPress={voice.onToggle}
             onLevel={voice.onLevel}
           />

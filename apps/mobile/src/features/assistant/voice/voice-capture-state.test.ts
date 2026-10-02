@@ -18,7 +18,7 @@ function run(
 const GRANTED: readonly VoiceCaptureEvent[] = [
   { type: "requested" },
   { type: "permissionGranted" },
-  { type: "ready" },
+  { type: "ready", sessionMs: 9_000 },
 ];
 
 describe("voiceCaptureReducer", () => {
@@ -105,6 +105,11 @@ describe("voiceCaptureReducer", () => {
     expect(run([{ type: "reset" }], finished)).toEqual(
       initialVoiceCaptureState,
     );
+  });
+
+  it("takes the session limit from the server's ready message", () => {
+    expect(initialVoiceCaptureState.sessionMs).toBe(15_000);
+    expect(run(GRANTED).sessionMs).toBe(9_000);
   });
 
   it("drops a session that was still running when the app went to the background", () => {

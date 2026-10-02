@@ -1,9 +1,3 @@
-/**
- * Conversation chrome predicates (SHO-392). Sit when idle; dig when the
- * turn is thinking or a tool is in flight. Composer send is hidden until
- * there is text (canvas v35). Talk / dictation poses stay out of scope.
- */
-
 export type AssistantShozikPose = "sit" | "listen" | "dig";
 
 /** Canvas `ShozikAvatar` header size. Optical, not a hit target. */

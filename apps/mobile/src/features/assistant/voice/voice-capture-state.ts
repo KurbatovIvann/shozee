@@ -1,4 +1,7 @@
-import type { VoiceUtteranceEnd } from "@showzy/validation/assistant-voice";
+import {
+  VOICE_MAX_SESSION_MS,
+  type VoiceUtteranceEnd,
+} from "@showzy/validation/assistant-voice";
 
 export type VoiceCaptureStatus =
   | "idle"
@@ -18,13 +21,14 @@ export interface VoiceCaptureState {
   readonly transcript: string | null;
   readonly endedBy: VoiceUtteranceEnd | null;
   readonly failure: VoiceCaptureFailure | null;
+  readonly sessionMs: number;
 }
 
 export type VoiceCaptureEvent =
   | { readonly type: "requested" }
   | { readonly type: "permissionDenied" }
   | { readonly type: "permissionGranted" }
-  | { readonly type: "ready" }
+  | { readonly type: "ready"; readonly sessionMs: number }
   | { readonly type: "partial"; readonly text: string }
   | {
       readonly type: "final";
@@ -41,6 +45,7 @@ export const initialVoiceCaptureState: VoiceCaptureState = {
   transcript: null,
   endedBy: null,
   failure: null,
+  sessionMs: VOICE_MAX_SESSION_MS,
 };
 
 const ACTIVE_STATUSES: readonly VoiceCaptureStatus[] = [
@@ -73,7 +78,7 @@ export function voiceCaptureReducer(
         : state;
     case "ready":
       return state.status === "starting"
-        ? { ...state, status: "listening" }
+        ? { ...state, status: "listening", sessionMs: event.sessionMs }
         : state;
     case "partial":
       return state.status === "listening" || state.status === "recognizing"

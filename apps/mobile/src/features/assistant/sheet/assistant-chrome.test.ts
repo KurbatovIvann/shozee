@@ -250,8 +250,9 @@ describe("assistant example chips and reply tones (SHO-748)", () => {
       hook.indexOf("const openHref = useCallback("),
     );
     expect(composerSend).toContain('setInput("")');
-    expect(chipSend).toContain("void conversation.send(text)");
-    expect(chipSend).not.toContain("setInput");
+    expect(chipSend).toContain("conversation.send(text)");
+    expect(chipSend).not.toContain('setInput("")');
+    expect(chipSend).toContain("current.length === 0 ? text : current");
   });
 
   it("groups the chips without a label no reader would announce", () => {
@@ -284,6 +285,14 @@ describe("assistant mic composer (SHO-779)", () => {
     new URL("./mic-button.tsx", import.meta.url),
     "utf8",
   );
+  const voiceModel = readFileSync(
+    new URL("../voice/voice-composer.ts", import.meta.url),
+    "utf8",
+  );
+  const voiceFacade = readFileSync(
+    new URL("../voice/use-voice-composer.ts", import.meta.url),
+    "utf8",
+  );
   const hook = readFileSync(
     new URL("./use-assistant-sheet.ts", import.meta.url),
     "utf8",
@@ -301,10 +310,16 @@ describe("assistant mic composer (SHO-779)", () => {
     expect(composer).toContain("props.editable && !dictating");
   });
 
-  it("counts the session down beside the field", () => {
+  it("counts the session down beside the field, from the server's limit", () => {
     expect(composer).toContain("voice.countdown");
     expect(composer).toContain("voice.countdownLabel");
     expect(hook).toContain("copy.voice.remaining");
+    expect(voiceModel).not.toContain("VOICE_MAX_SESSION_MS");
+    expect(voiceFacade).toContain("sessionMs: capture.sessionMs");
+  });
+
+  it("keeps the facade hook under the composer-hook limit", () => {
+    expect(voiceFacade.split("\n").length).toBeLessThanOrEqual(150);
   });
 
   it("renders the settings action when the microphone is denied and retry after an error", () => {

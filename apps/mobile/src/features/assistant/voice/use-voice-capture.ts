@@ -180,7 +180,7 @@ export function useVoiceCapture(request: UseVoiceCaptureRequest): VoiceCapture {
           handlers: {
             onReady: (limits) => {
               armDeadline(limits.maxSessionMs);
-              dispatch({ type: "ready" });
+              dispatch({ type: "ready", sessionMs: limits.maxSessionMs });
             },
             onPartial: (text) => {
               dispatch({ type: "partial", text });

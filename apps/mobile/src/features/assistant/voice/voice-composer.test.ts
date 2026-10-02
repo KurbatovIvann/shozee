@@ -10,7 +10,6 @@ import {
   voiceCountdownVisible,
   voiceMicActive,
   voiceMicMode,
-  voiceMicPressable,
   voiceRemainingSeconds,
   voiceRowSpoken,
   VOICE_SPOKEN_MEMORY,
@@ -40,38 +39,6 @@ describe("voice mic mode", () => {
     expect(voiceMicActive("idle")).toBe(false);
     expect(voiceMicActive("denied")).toBe(false);
     expect(voiceMicActive("error")).toBe(false);
-  });
-});
-
-describe("voice mic press", () => {
-  it("is pressable from idle, denied and error when the thread is free", () => {
-    for (const mode of ["idle", "denied", "error"] as const) {
-      expect(voiceMicPressable({ mode, available: true, blocked: false })).toBe(
-        true,
-      );
-    }
-  });
-
-  it("is not pressable without a call or while a turn runs", () => {
-    expect(
-      voiceMicPressable({ mode: "idle", available: false, blocked: false }),
-    ).toBe(false);
-    expect(
-      voiceMicPressable({ mode: "idle", available: true, blocked: true }),
-    ).toBe(false);
-  });
-
-  it("stays pressable while listening so the person can stop, but not while recognizing", () => {
-    expect(
-      voiceMicPressable({ mode: "listening", available: true, blocked: true }),
-    ).toBe(true);
-    expect(
-      voiceMicPressable({
-        mode: "recognizing",
-        available: true,
-        blocked: false,
-      }),
-    ).toBe(false);
   });
 });
 
@@ -122,13 +89,16 @@ describe("voice countdown", () => {
     expect(voiceCountdownVisible("idle")).toBe(false);
   });
 
-  it("counts the session limit down to zero and no further", () => {
-    expect(voiceRemainingSeconds(0)).toBe(15);
-    expect(voiceRemainingSeconds(1_000)).toBe(14);
-    expect(voiceRemainingSeconds(14_400)).toBe(1);
-    expect(voiceRemainingSeconds(VOICE_MAX_SESSION_MS)).toBe(0);
-    expect(voiceRemainingSeconds(VOICE_MAX_SESSION_MS + 9_000)).toBe(0);
-    expect(voiceRemainingSeconds(-1_000)).toBe(15);
+  it("counts the server's own session limit down to zero and no further", () => {
+    const limit = VOICE_MAX_SESSION_MS;
+    expect(voiceRemainingSeconds(0, limit)).toBe(15);
+    expect(voiceRemainingSeconds(1_000, limit)).toBe(14);
+    expect(voiceRemainingSeconds(14_400, limit)).toBe(1);
+    expect(voiceRemainingSeconds(limit, limit)).toBe(0);
+    expect(voiceRemainingSeconds(limit + 9_000, limit)).toBe(0);
+    expect(voiceRemainingSeconds(-1_000, limit)).toBe(15);
+    expect(voiceRemainingSeconds(0, 8_000)).toBe(8);
+    expect(voiceRemainingSeconds(3_000, 8_000)).toBe(5);
   });
 
   it("pads the clock", () => {

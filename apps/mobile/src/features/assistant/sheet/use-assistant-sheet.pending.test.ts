@@ -6,7 +6,10 @@ import type { AssistantInteraction } from "@showzy/validation/assistant-chat";
 
 import "../../../auth/react-test-dom";
 import { assistantChoiceAnswer } from "../shared/choice-answer";
-import type { UseAssistantConversation } from "../thread/use-assistant-conversation";
+import type {
+  AssistantSendOutcome,
+  UseAssistantConversation,
+} from "../thread/use-assistant-conversation";
 
 const CONVERSATION = "11111111-1111-4111-8111-111111111111";
 const INTERACTION = "33333333-3333-4333-8333-333333333333";
@@ -28,6 +31,8 @@ function openChoice(revision: number): AssistantInteraction {
 }
 
 const answered: unknown[] = [];
+const sentTexts: string[] = [];
+let sendOutcome: AssistantSendOutcome = { kind: "sent" };
 let settleAnswer: (() => void) | null = null;
 let interaction: AssistantInteraction | null = openChoice(2);
 
@@ -39,7 +44,10 @@ const conversation: UseAssistantConversation = {
   busy: false,
   sending: false,
   failure: null,
-  send: () => Promise.resolve({ kind: "sent" }),
+  send: (text: string) => {
+    sentTexts.push(text);
+    return Promise.resolve(sendOutcome);
+  },
   answer: (value: unknown) => {
     answered.push(value);
     return new Promise<void>((resolve) => {
@@ -167,6 +175,8 @@ async function settleInFlight(): Promise<void> {
 
 beforeEach(() => {
   answered.length = 0;
+  sentTexts.length = 0;
+  sendOutcome = { kind: "sent" };
   settleAnswer = null;
   interaction = openChoice(2);
 });
@@ -225,5 +235,33 @@ describe("the chosen option the sheet marks", () => {
     await flush();
 
     expect(view.latest().pendingOptionId).toBe("opt-b");
+  });
+
+  it("puts a refused dictation back in the composer", async () => {
+    sendOutcome = { kind: "refused", failure: { kind: "not_sent" } };
+    const view = mount();
+
+    act(() => {
+      view.latest().sendExample("дві пачки");
+    });
+    await flush();
+
+    expect(sentTexts).toEqual(["дві пачки"]);
+    expect(view.latest().input).toBe("дві пачки");
+  });
+
+  it("leaves a draft the person started alone when a send is refused", async () => {
+    sendOutcome = { kind: "refused", failure: { kind: "not_sent" } };
+    const view = mount();
+
+    act(() => {
+      view.latest().sendExample("дві пачки");
+    });
+    act(() => {
+      view.latest().changeInput("три пачки");
+    });
+    await flush();
+
+    expect(view.latest().input).toBe("три пачки");
   });
 });

@@ -4,20 +4,18 @@ import { useVoiceCapture, type VoiceLevelListener } from "./use-voice-capture";
 import type { VoiceCaptureFailure } from "./voice-capture-state";
 import {
   rememberSpoken,
-  voiceAnnouncementKey,
-  voiceCountdownText,
-  voiceCountdownVisible,
   voiceMicActive,
   voiceMicMode,
-  voiceRemainingSeconds,
   voiceSpokenKey,
-  type VoiceAnnouncementKey,
   type VoiceMicMode,
 } from "./voice-composer";
-import { announceVoice, openVoiceSettings } from "./voice-platform";
+import { openVoiceSettings } from "./voice-platform";
+import {
+  useVoiceAnnouncements,
+  useVoiceCountdown,
+  type VoiceComposerAnnouncements,
+} from "./voice-session-chrome";
 import type { VoiceWebSocketFactory } from "./voice-socket";
-
-const VOICE_TICK_MS = 250;
 
 export interface VoiceComposerCall {
   readonly apiUrl: string;
@@ -25,14 +23,9 @@ export interface VoiceComposerCall {
   readonly getCompanyId: () => string | null;
 }
 
-export interface VoiceComposerAnnouncements {
-  readonly listening: string;
-  readonly done: string;
-}
-
 export interface VoiceComposerRequest {
   readonly call: VoiceComposerCall | null;
-  readonly send: (text: string) => void;
+  readonly send: (text: string) => Promise<boolean>;
   readonly blocked: boolean;
   readonly announcements: VoiceComposerAnnouncements;
   readonly createSocket?: VoiceWebSocketFactory | undefined;
@@ -40,6 +33,7 @@ export interface VoiceComposerRequest {
 
 export interface VoiceComposerModel {
   readonly available: boolean;
+  readonly canPress: boolean;
   readonly mode: VoiceMicMode;
   readonly partial: string;
   readonly countdown: string | null;
@@ -48,7 +42,6 @@ export interface VoiceComposerModel {
   readonly spoken: ReadonlySet<string>;
   readonly toggle: () => void;
   readonly retry: () => void;
-  readonly dismiss: () => void;
   readonly openSettings: () => void;
   readonly onLevel: (listener: VoiceLevelListener) => () => void;
 }
@@ -75,8 +68,6 @@ export function useVoiceComposer(
   sendRef.current = request.send;
   const resetRef = useRef(capture.reset);
   resetRef.current = capture.reset;
-  const announcementsRef = useRef(request.announcements);
-  announcementsRef.current = request.announcements;
 
   const transcript = capture.transcript;
   useEffect(() => {
@@ -89,51 +80,33 @@ export function useVoiceComposer(
       setSpokeLast(false);
       return;
     }
-    setSpoken((current) => rememberSpoken(current, text));
-    setSpokeLast(true);
-    sendRef.current(text);
+    void sendRef.current(text).then((delivered) => {
+      setSpokeLast(delivered);
+      if (delivered) {
+        setSpoken((current) => rememberSpoken(current, text));
+      }
+    });
   }, [transcript]);
 
-  const counting = voiceCountdownVisible(mode);
-  const [elapsedMs, setElapsedMs] = useState(0);
-  useEffect(() => {
-    if (!counting) {
-      setElapsedMs(0);
-      return;
-    }
-    const startedAt = Date.now();
-    const timer = setInterval(() => {
-      setElapsedMs(Date.now() - startedAt);
-    }, VOICE_TICK_MS);
-    return () => {
-      clearInterval(timer);
-    };
-  }, [counting]);
-
-  const announcement = voiceAnnouncementKey({ mode, spokeLast });
-  const announcedRef = useRef<VoiceAnnouncementKey>(null);
-  useEffect(() => {
-    if (announcedRef.current === announcement) {
-      return;
-    }
-    announcedRef.current = announcement;
-    if (announcement === null) {
-      return;
-    }
-    announceVoice(
-      announcement === "listening"
-        ? announcementsRef.current.listening
-        : announcementsRef.current.done,
-    );
-  }, [announcement]);
+  const { countdown, remaining } = useVoiceCountdown({
+    mode,
+    sessionMs: capture.sessionMs,
+  });
+  useVoiceAnnouncements({
+    mode,
+    spokeLast,
+    announcements: request.announcements,
+  });
 
   const blocked = request.blocked;
   const start = capture.start;
   const stop = capture.stop;
   const reset = capture.reset;
+  const dictating = voiceMicActive(mode);
+  const canPress = dictating ? mode !== "recognizing" : available && !blocked;
 
   const toggle = useCallback(() => {
-    if (voiceMicActive(mode)) {
+    if (dictating) {
       stop();
       return;
     }
@@ -142,7 +115,7 @@ export function useVoiceComposer(
     }
     setSpokeLast(false);
     start();
-  }, [available, blocked, mode, start, stop]);
+  }, [available, blocked, dictating, start, stop]);
 
   const retry = useCallback(() => {
     reset();
@@ -153,27 +126,21 @@ export function useVoiceComposer(
     start();
   }, [available, blocked, reset, start]);
 
-  const dismiss = useCallback(() => {
-    reset();
-  }, [reset]);
-
   const openSettings = useCallback(() => {
     openVoiceSettings();
   }, []);
 
-  const remaining = voiceRemainingSeconds(elapsedMs);
-
   return {
     available,
+    canPress,
     mode,
     partial: capture.partial,
-    countdown: counting ? voiceCountdownText(remaining) : null,
+    countdown,
     remaining,
     failure: capture.failure,
     spoken,
     toggle,
     retry,
-    dismiss,
     openSettings,
     onLevel: capture.onLevel,
   };

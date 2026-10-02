@@ -156,12 +156,18 @@ export function useAssistantSheet(): AssistantSheetViewModel & {
   }, [conversation, input]);
 
   const sendText = useCallback(
-    (raw: string) => {
+    (raw: string): Promise<boolean> => {
       const text = clipAssistantKitText(raw);
       if (text.length === 0) {
-        return;
+        return Promise.resolve(false);
       }
-      void conversation.send(text);
+      return conversation.send(text).then((outcome) => {
+        if (outcome.kind !== "refused") {
+          return true;
+        }
+        setInput((current) => (current.length === 0 ? text : current));
+        return false;
+      });
     },
     [conversation],
   );
@@ -237,7 +243,7 @@ export function useAssistantSheet(): AssistantSheetViewModel & {
             : interpolate(copy.voice.remaining, {
                 seconds: String(dictation.remaining),
               }),
-        blocked: busy,
+        canPress: dictation.canPress,
         copy: copy.voice,
         onToggle: dictation.toggle,
         onRetry: dictation.retry,
