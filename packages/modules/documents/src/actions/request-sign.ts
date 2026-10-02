@@ -39,7 +39,7 @@ export const REQUEST_SIGN_KEY_POSSESSION_NOTE =
   "Підтвердження не замінює володіння ключем — документ підписують на вашому пристрої.";
 
 export function requestSignPreviewTitle(documentNumber: string): string {
-  return `Запросити підписання документа ${documentNumber}. ${REQUEST_SIGN_KEY_POSSESSION_NOTE}`;
+  return `Запросити підписання документа ${documentNumber}`;
 }
 
 const documentIdHolder = z.object({ documentId: z.string() });

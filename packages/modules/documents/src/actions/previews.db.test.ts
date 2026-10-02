@@ -117,6 +117,16 @@ async function refusalOf<TInput extends z.ZodType, TOutput extends z.ZodType>(
     );
 }
 
+async function shareTokenRowsOf(
+  documentId: string,
+): Promise<readonly (typeof documentShareTokens.$inferSelect)[]> {
+  return await kit.db.runtime.db
+    .select()
+    .from(documentShareTokens)
+    .where(eq(documentShareTokens.documentId, documentId))
+    .orderBy(documentShareTokens.tokenHash);
+}
+
 function expectSameRefusal(foreign: unknown, missing: unknown): void {
   if (
     !(foreign instanceof NotFoundError) ||
@@ -344,6 +354,7 @@ describe("documents preview cards (core.md §7)", () => {
   });
 
   it("previews documents.share without rotating the token", async () => {
+    const tokensBefore = await shareTokenRowsOf(fixtures.docA);
     const preview = await previewOf(shareDocument, {
       documentId: fixtures.docA,
     });
@@ -352,15 +363,21 @@ describe("documents preview cards (core.md §7)", () => {
     expect(preview.notes).toEqual([
       "Буде створено нове посилання, і воно діє 90 днів.",
     ]);
+    expect(tokensBefore).toEqual([]);
+    expect(await shareTokenRowsOf(fixtures.docA)).toEqual([]);
   });
 
   it("warns about the revoked link only when one is still live", async () => {
+    const tokensBefore = await shareTokenRowsOf(fixtures.docShared);
     const preview = await previewOf(shareDocument, {
       documentId: fixtures.docShared,
     });
     expect(preview.notes).toEqual([
       "Чинне посилання буде відкликано — працюватиме лише нове, і воно діє 90 днів.",
     ]);
+    expect(tokensBefore).toHaveLength(1);
+    expect(tokensBefore[0]?.revokedAt).toBeNull();
+    expect(await shareTokenRowsOf(fixtures.docShared)).toEqual(tokensBefore);
   });
 
   it("treats a revoked link as no link at all", async () => {
@@ -383,14 +400,11 @@ describe("documents preview cards (core.md §7)", () => {
     const preview = await previewOf(requestSign, {
       documentId: fixtures.docA,
     });
-    expect(preview.title).toContain(
-      "Запросити підписання документа KA-РХ-000001",
-    );
-    expect(preview.title).toContain(REQUEST_SIGN_KEY_POSSESSION_NOTE);
+    expect(preview.title).toBe("Запросити підписання документа KA-РХ-000001");
     expect(preview.notes ?? []).toEqual([REQUEST_SIGN_KEY_POSSESSION_NOTE]);
   });
 
-  it("carries the key-possession warning in the summary the assistant reads", async () => {
+  it("keeps the key-possession warning out of the summary the assistant reads", async () => {
     const error = await refusalOf(requestSign, { documentId: fixtures.docA });
     if (!(error instanceof ConfirmationRequiredError)) {
       throw error;
@@ -398,7 +412,12 @@ describe("documents preview cards (core.md §7)", () => {
     expect(error.challenge.summary).toBe(
       requestSignPreviewTitle("KA-РХ-000001"),
     );
-    expect(error.challenge.summary).toContain(REQUEST_SIGN_KEY_POSSESSION_NOTE);
+    expect(error.challenge.summary).not.toContain(
+      REQUEST_SIGN_KEY_POSSESSION_NOTE,
+    );
+    expect(error.challenge.preview?.notes).toEqual([
+      REQUEST_SIGN_KEY_POSSESSION_NOTE,
+    ]);
   });
 
   it("previews documents.createFromOrder through the nested order read", async () => {
