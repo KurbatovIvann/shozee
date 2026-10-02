@@ -38,8 +38,8 @@ const SEARCH = readFileSync(
   new URL("../sheet/assistant-search-results-block.tsx", import.meta.url),
   "utf8",
 );
-const CONFIRMATION = readFileSync(
-  new URL("../sheet/confirmation-card.tsx", import.meta.url),
+const PREVIEW = readFileSync(
+  new URL("../sheet/preview-card.tsx", import.meta.url),
   "utf8",
 );
 const MARKS = readFileSync(
@@ -67,15 +67,15 @@ describe("AssistantResultFrame notice card (SHO-469)", () => {
     expect(FRAME).toContain("readonly body");
     expect(FRAME).toContain("readonly actions");
     expect(FRAME).toContain("readonly children");
-    expect(CONFIRMATION).toContain("AssistantResultFrame");
-    expect(CONFIRMATION).toContain("title={props.title}");
-    expect(CONFIRMATION).toContain("body={props.summary}");
-    expect(CONFIRMATION).toContain('id: "dismiss"');
-    expect(CONFIRMATION).toContain('id: "confirm"');
-    expect(CONFIRMATION).not.toContain("OrdersListResultCard");
-    expect(CONFIRMATION).not.toContain("OrdersAggregateResultCard");
-    expect(CONFIRMATION).not.toContain("OrderEntityCard");
-    expect(importsNamed(CONFIRMATION, "Card")).toBe(false);
+    expect(PREVIEW).toContain("AssistantResultFrame");
+    expect(PREVIEW).toContain("title={model.title}");
+    expect(PREVIEW).toContain("body: model.summary");
+    expect(PREVIEW).toContain('id: "dismiss"');
+    expect(PREVIEW).toContain('id: "confirm"');
+    expect(PREVIEW).not.toContain("OrdersListResultCard");
+    expect(PREVIEW).not.toContain("OrdersAggregateResultCard");
+    expect(PREVIEW).not.toContain("OrderEntityCard");
+    expect(importsNamed(PREVIEW, "Card")).toBe(false);
     expect(SURFACE).toContain("AssistantResultFrame");
     expect(SURFACE).toContain("AssistantSurfaceBlock");
     expect(SURFACE).toContain("AssistantCollectionBlock");
@@ -120,7 +120,7 @@ describe("AssistantResultFrame notice card (SHO-469)", () => {
     expect(AGGREGATE).not.toContain("StatusPill");
     expect(AGGREGATE).toContain("AssistantAggregateBlock");
     expect(importsNamed(ENTITY, "Card")).toBe(false);
-    expect(importsNamed(CONFIRMATION, "Card")).toBe(false);
+    expect(importsNamed(PREVIEW, "Card")).toBe(false);
     expect(importsNamed(SEARCH, "Card")).toBe(false);
     expect(importsNamed(FRAME, "Card")).toBe(true);
     expect(COLLECTION).not.toContain("<Button");
@@ -238,8 +238,8 @@ describe("assistant result destination handoff (SHO-470)", () => {
     expect(assistantResultHandoff(null)).toBeNull();
     expect(FRAME).not.toContain('destination = { kind: "terminal" }');
     expect(FRAME).not.toContain('kind: "terminal"');
-    expect(CONFIRMATION).not.toContain("destination=");
-    expect(CONFIRMATION).not.toContain("handoffLabel");
+    expect(PREVIEW).not.toContain("destination=");
+    expect(PREVIEW).not.toContain("handoffLabel");
   });
 
   it("omits the T1 CTA when ctaHref equals the screen destination", () => {

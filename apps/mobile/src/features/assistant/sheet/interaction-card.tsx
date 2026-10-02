@@ -18,13 +18,14 @@ import type { AssistantInteraction } from "@showzy/validation/assistant-chat";
 import { assistantChoiceAnswer } from "../shared/choice-answer";
 import { ChoiceCard } from "./choice-card";
 import type { AssistantChoiceCardCopy } from "./choice-card-model";
-import { ConfirmationCard } from "./confirmation-card";
+import { PreviewCard } from "./preview-card";
+import {
+  assistantPreviewPresentationKey,
+  type AssistantPreviewCardCopy,
+} from "./preview-card-model";
 
-export type InteractionCardCopy = AssistantChoiceCardCopy & {
-  readonly confirmationTitle: string;
-  readonly confirmLabel: string;
-  readonly confirmingLabel: string;
-};
+export type InteractionCardCopy = AssistantChoiceCardCopy &
+  AssistantPreviewCardCopy;
 
 export function InteractionCard(props: {
   readonly interaction: AssistantInteraction;
@@ -41,12 +42,15 @@ export function InteractionCard(props: {
 
   if (interaction.kind === "confirmation") {
     return (
-      <ConfirmationCard
-        title={copy.confirmationTitle}
+      <PreviewCard
+        key={assistantPreviewPresentationKey(interaction)}
+        interactionId={interaction.interactionId}
+        revision={interaction.revision}
         summary={interaction.summary}
-        confirmLabel={copy.confirmLabel}
-        dismissLabel={copy.dismissLabel}
-        confirmingLabel={copy.confirmingLabel}
+        preview={interaction.preview}
+        also={interaction.also}
+        level={interaction.level}
+        copy={copy}
         applying={props.applying}
         onConfirm={() => {
           // The only answer this kind has. Saying no is dropping the question.

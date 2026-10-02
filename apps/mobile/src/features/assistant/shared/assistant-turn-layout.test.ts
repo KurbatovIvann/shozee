@@ -28,8 +28,8 @@ const AGGREGATE_BLOCK = readFileSync(
   new URL("../sheet/assistant-aggregate-block.tsx", import.meta.url),
   "utf8",
 );
-const CONFIRMATION = readFileSync(
-  new URL("../sheet/confirmation-card.tsx", import.meta.url),
+const PREVIEW = readFileSync(
+  new URL("../sheet/preview-card.tsx", import.meta.url),
   "utf8",
 );
 const FRAME = readFileSync(
@@ -99,6 +99,6 @@ describe("assistant turn layout composition", () => {
     expect(AGGREGATE).toContain("AssistantAggregateBlock");
     expect(AGGREGATE_BLOCK).toContain("AssistantCollectionResultRow");
     expect(FRAME).toContain("flex: 1");
-    expect(CONFIRMATION).toContain("AssistantResultFrame");
+    expect(PREVIEW).toContain("AssistantResultFrame");
   });
 });
