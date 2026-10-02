@@ -35,33 +35,33 @@ export function assistantRecordHref(
   }
 }
 
-const WRITTEN_RECORD_KINDS: Readonly<Record<string, AssistantRecordKind>> = {
-  "orders.create": "order",
-  "orders.confirm": "order",
-  "orders.start": "order",
-  "orders.complete": "order",
-  "orders.cancel": "order",
-  "customers.createCustomer": "customer",
-  "customers.updateCustomer": "customer",
-  "customers.archiveCustomer": "customer",
-  "customers.restoreCustomer": "customer",
-  "customers.createGroup": "customerGroup",
-  "customers.updateGroup": "customerGroup",
-  "customers.createCounterparty": "counterparty",
-  "customers.updateCounterparty": "counterparty",
-  "catalog.createProduct": "product",
-  "catalog.updateProduct": "product",
-  "catalog.archiveProduct": "product",
-  "catalog.restoreProduct": "product",
-  "pricing.createPriceList": "priceList",
-  "pricing.updatePriceList": "priceList",
-  "pricing.activatePriceList": "priceList",
-  "pricing.deactivatePriceList": "priceList",
-  "pricing.setDefaultPriceList": "priceList",
-};
+const WRITTEN_RECORD_KINDS = new Map<string, AssistantRecordKind>([
+  ["orders.create", "order"],
+  ["orders.confirm", "order"],
+  ["orders.start", "order"],
+  ["orders.complete", "order"],
+  ["orders.cancel", "order"],
+  ["customers.createCustomer", "customer"],
+  ["customers.updateCustomer", "customer"],
+  ["customers.archiveCustomer", "customer"],
+  ["customers.restoreCustomer", "customer"],
+  ["customers.createGroup", "customerGroup"],
+  ["customers.updateGroup", "customerGroup"],
+  ["customers.createCounterparty", "counterparty"],
+  ["customers.updateCounterparty", "counterparty"],
+  ["catalog.createProduct", "product"],
+  ["catalog.updateProduct", "product"],
+  ["catalog.archiveProduct", "product"],
+  ["catalog.restoreProduct", "product"],
+  ["pricing.createPriceList", "priceList"],
+  ["pricing.updatePriceList", "priceList"],
+  ["pricing.activatePriceList", "priceList"],
+  ["pricing.deactivatePriceList", "priceList"],
+  ["pricing.setDefaultPriceList", "priceList"],
+]);
 
 export function assistantWrittenRecordKind(
   action: string,
 ): AssistantRecordKind | null {
-  return WRITTEN_RECORD_KINDS[action] ?? null;
+  return WRITTEN_RECORD_KINDS.get(action) ?? null;
 }

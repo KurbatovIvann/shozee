@@ -155,6 +155,15 @@ describe("assistantClosedCardModel", () => {
     expect(model?.opens).toEqual([]);
   });
 
+  it("offers no «Відкрити» for an action named after an inherited key", () => {
+    const model = assistantClosedCardModel({
+      trace: trace({ attempts: [attempt("constructor", ORDER_ID)] }),
+      copy: COPY,
+    });
+
+    expect(model?.opens).toEqual([]);
+  });
+
   it("renders no card for a choice or a superseded preview", () => {
     expect(
       assistantClosedCardModel({
