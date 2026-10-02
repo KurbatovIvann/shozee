@@ -159,6 +159,20 @@ function aiRequest(
   };
 }
 
+export function createStaffCompanyReader(
+  pipeline: ActionPipelineDeps,
+): (caller: AssistantCaller) => Promise<string> {
+  return async (caller) => {
+    const actor = await executeAction(pipeline, {
+      action: getStaffActor,
+      input: {},
+      request: aiRequest(caller),
+      principal: staffPrincipal(caller),
+    });
+    return actor.companyId;
+  };
+}
+
 function staffPrincipal(
   context: Pick<AssistantToolContext, "userId" | "companySelector">,
 ) {
@@ -302,15 +316,7 @@ export function createAssistantRuntime(
      * Read through the staff context as the caller, so the answer is the
      * company core verified membership in — never the selector as sent.
      */
-    async staffCompany(caller) {
-      const actor = await executeAction(options.pipeline, {
-        action: getStaffActor,
-        input: {},
-        request: aiRequest(caller),
-        principal: staffPrincipal(caller),
-      });
-      return actor.companyId;
-    },
+    staffCompany: createStaffCompanyReader(options.pipeline),
 
     /**
      * The system prompt is not optional decoration: it is the half of the

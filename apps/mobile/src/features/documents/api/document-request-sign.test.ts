@@ -57,6 +57,7 @@ describe("bindDocumentRequestSignMutate", () => {
                         summary:
                           "Request a qualified electronic signature for this issued document.",
                         expiresAt: "2026-08-30T00:00:00.000Z",
+                        risk: "high",
                       },
                     },
                   }),

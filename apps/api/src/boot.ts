@@ -4,16 +4,17 @@
  * composed from validated `otpDelivery` config (stub or live Resend / SMS Fly).
  * Codes never reach logs (security-operations §2).
  */
-import { getConnInfo } from "@hono/node-server/conninfo";
 import {
   createRedisAiBudgetStore,
   createRedisAssistantEventHub,
   createRedisAssistantPresence,
   createRedisAssistantStreamSlots,
+  createStaffCompanyReader,
   logStaffAssistantMount,
   mountShoEngine,
   staffAssistantMount,
 } from "@showzy/assistant-runtime";
+import { getConnInfo } from "@hono/node-server/conninfo";
 import type { ServerConfig } from "@showzy/config";
 import { contractModules } from "@showzy/contract";
 import { createDbClient } from "@showzy/db";
@@ -29,12 +30,17 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import type { Context } from "hono";
 import { Redis } from "ioredis";
 
-import { buildAuthOptions } from "./auth/options.js";
+import { authTrustedOrigins, buildAuthOptions } from "./auth/options.js";
 import { otpSendersFromConfig } from "./auth/otp-delivery.js";
 import { createAssistantKitEvents } from "./http/assistant-kit-events.js";
 import { createAssistantKitRuntime } from "./http/assistant-kit-runtime.js";
 import { createApp, type AuthInstance } from "./http/app.js";
 import { authInstanceFrom } from "./http/auth-instance.js";
+import { createChirpVoiceRecognizer } from "./http/assistant-voice-chirp.js";
+import {
+  createAssistantVoiceApp,
+  type AssistantVoiceApp,
+} from "./http/assistant-voice.js";
 import { createProcessObservability } from "./observability.js";
 import { createActionPipeline } from "./pipeline.js";
 import { createActionRegistry, registeredJobs } from "./registry.js";
@@ -48,6 +54,7 @@ import {
 
 export interface BootedApi {
   readonly app: ReturnType<typeof createApp>;
+  readonly voice: AssistantVoiceApp | undefined;
   /**
    * Ends every open event stream. Called before the HTTP server's close can
    * finish, which otherwise waits on those connections indefinitely.
@@ -160,13 +167,35 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
   // Pub/sub and presence on the shared, non-persistent Redis: neither needs to
   // survive a restart. The hub subscribes on its own connection, because a
   // Redis connection in subscribe mode can run nothing else.
+  const streamSlots = createRedisAssistantStreamSlots(redis);
+
   const assistantKitEvents =
     assistantKitModel === undefined
       ? undefined
       : createAssistantKitEvents({
           hub: createRedisAssistantEventHub(redis, { logger }),
           presence: createRedisAssistantPresence(redis),
-          slots: createRedisAssistantStreamSlots(redis),
+          slots: streamSlots,
+        });
+
+  const voiceCredentialsFile = config.voice.googleCredentialsFile;
+  const voice =
+    voiceCredentialsFile === undefined
+      ? undefined
+      : createAssistantVoiceApp({
+          auth,
+          logger,
+          staffCompany: createStaffCompanyReader(pipeline),
+          slots: streamSlots,
+          trustedOrigins: authTrustedOrigins({
+            baseUrl: config.auth.url,
+            webOrigins: config.auth.webOrigins,
+          }),
+          recognizer: await createChirpVoiceRecognizer({
+            credentialsFile: voiceCredentialsFile,
+            projectId: config.voice.googleProjectId,
+            location: config.voice.googleLocation,
+          }),
         });
 
   const shoEngine = mountShoEngine({ sho: config.sho, pipeline });
@@ -212,10 +241,12 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
 
   return {
     app,
+    voice,
     async closeStreams() {
       await assistantKitEvents?.streams.closeAll();
     },
     async close() {
+      await voice?.close();
       closeFilesObjectStore();
       await assistantKitEvents?.hub.close();
       await redis.quit();

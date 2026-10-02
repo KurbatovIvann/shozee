@@ -12,6 +12,7 @@ import {
 } from "./confirmation-card.machine";
 import {
   confirmationCardView,
+  confirmationConfirmVariant,
   type ConfirmationCardView,
 } from "./confirmation-card.model";
 import { SHEET_MS } from "./sheet-dismiss";
@@ -27,7 +28,7 @@ const HOST_SOURCE = readFileSync(
 );
 
 function cardNamed(title: string): ConfirmationCardView {
-  return { title, lines: [], notes: [], summary: null };
+  return { title, lines: [], notes: [], summary: null, tone: "default" };
 }
 
 function confirmationRequired(challengeId: string) {
@@ -40,6 +41,7 @@ function confirmationRequired(challengeId: string) {
         challengeId,
         summary: "Delete?",
         expiresAt: "2026-08-28T00:00:00.000Z",
+        risk: "high",
       },
     },
   });
@@ -99,6 +101,7 @@ describe("confirmationCardView", () => {
       confirmationCardView(
         {
           challengeId: "ch-1",
+          risk: "write",
           summary: "Delete?",
           preview: {
             title: "Видалити клієнта?",
@@ -113,6 +116,7 @@ describe("confirmationCardView", () => {
       lines: [{ label: "Клієнт", value: "ТОВ «Ромашка»" }],
       notes: ["Цю дію не можна скасувати."],
       summary: null,
+      tone: "default",
     });
   });
 
@@ -123,6 +127,7 @@ describe("confirmationCardView", () => {
       confirmationCardView(
         {
           challengeId: "ch-5",
+          risk: "write",
           summary: "Запросити підписання документа KA-РХ-000001",
           preview: {
             title: "Запросити підписання документа KA-РХ-000001",
@@ -137,6 +142,7 @@ describe("confirmationCardView", () => {
       lines: [{ label: "Документ", value: "KA-РХ-000001" }],
       notes: [warning],
       summary: null,
+      tone: "default",
     });
   });
 
@@ -147,6 +153,7 @@ describe("confirmationCardView", () => {
       confirmationCardView(
         {
           challengeId: "ch-6",
+          risk: "write",
           summary: longTitle,
           preview: {
             title: longTitle,
@@ -161,6 +168,7 @@ describe("confirmationCardView", () => {
       lines: [{ label: "Документ", value: "KA-РХ-000001" }],
       notes: ["Буде створено нове посилання, і воно діє 90 днів."],
       summary: null,
+      tone: "default",
     });
   });
 
@@ -169,6 +177,7 @@ describe("confirmationCardView", () => {
       confirmationCardView(
         {
           challengeId: "ch-2",
+          risk: "write",
           summary: "Delete?",
           preview: { title: "Видалити групу?", lines: [] },
         },
@@ -180,7 +189,11 @@ describe("confirmationCardView", () => {
   it("falls back to the legacy summary when no preview is bound", () => {
     expect(
       confirmationCardView(
-        { challengeId: "ch-3", summary: "Delete this counterparty?" },
+        {
+          challengeId: "ch-3",
+          summary: "Delete this counterparty?",
+          risk: "write",
+        },
         confirmationCardUk.fallbackTitle,
       ),
     ).toEqual({
@@ -188,13 +201,34 @@ describe("confirmationCardView", () => {
       lines: [],
       notes: [],
       summary: "Delete this counterparty?",
+      tone: "default",
     });
+  });
+
+  it("takes the danger tone from a high-risk challenge, not a local action list", () => {
+    expect(
+      confirmationCardView(
+        {
+          challengeId: "ch-7",
+          summary: "Видалити клієнта?",
+          risk: "high",
+          preview: { title: "Видалити клієнта?", lines: [] },
+        },
+        confirmationCardUk.fallbackTitle,
+      ).tone,
+    ).toBe("danger");
+    expect(
+      confirmationCardView(
+        { challengeId: "ch-8", summary: "Зберегти зміни?", risk: "write" },
+        confirmationCardUk.fallbackTitle,
+      ).tone,
+    ).toBe("default");
   });
 
   it("shows no body when the challenge carries neither preview nor summary", () => {
     expect(
       confirmationCardView(
-        { challengeId: "ch-4", summary: "" },
+        { challengeId: "ch-4", summary: "", risk: "write" },
         confirmationCardUk.fallbackTitle,
       ).summary,
     ).toBeNull();
@@ -339,6 +373,14 @@ describe("confirmation card presenter wiring", () => {
     expect(CARD_SOURCE).toContain("lines={view.lines}");
     expect(CARD_SOURCE).toContain("notes={view.notes}");
     expect(CARD_SOURCE).toContain("view.summary");
+  });
+
+  it("drives the primary button variant from the view tone", () => {
+    expect(confirmationConfirmVariant("danger")).toBe("danger");
+    expect(confirmationConfirmVariant("default")).toBe("primary");
+    expect(CARD_SOURCE).toContain(
+      "variant={confirmationConfirmVariant(view.tone)}",
+    );
   });
 
   it("disables the confirm button until the presentation arms", () => {

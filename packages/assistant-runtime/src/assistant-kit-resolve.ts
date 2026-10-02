@@ -215,17 +215,21 @@ async function resolveConfirmation(
         return halted(done, {
           action: attempt.actionName,
           code: error.code,
-          message: error.message,
+          message: error.clientMessage,
         });
       }
       if (error instanceof CoreError) {
         if (oneAction) {
-          return { kind: "error", code: error.code, message: error.message };
+          return {
+            kind: "error",
+            code: error.code,
+            message: error.clientMessage,
+          };
         }
         return halted(done, {
           action: attempt.actionName,
           code: error.code,
-          message: error.message,
+          message: error.clientMessage,
         });
       }
       throw error;

@@ -1,7 +1,7 @@
 import { ORPCError } from "@orpc/client";
 import { describe, expect, it, vi } from "vitest";
 
-import type { WireActionPreview } from "@showzy/contract";
+import type { WireActionPreview, WireActionRisk } from "@showzy/contract";
 
 import type { ConfirmDialogChoice } from "../components/ui/confirm-dialog";
 import {
@@ -22,6 +22,7 @@ const PREVIEW: WireActionPreview = {
 function confirmationRequired(
   challengeId: string,
   preview?: WireActionPreview,
+  risk: WireActionRisk = "write",
 ): ORPCError<
   "CONFIRMATION_REQUIRED",
   {
@@ -29,6 +30,7 @@ function confirmationRequired(
       challengeId: string;
       summary: string;
       expiresAt: string;
+      risk: WireActionRisk;
       preview?: WireActionPreview;
     };
   }
@@ -42,6 +44,7 @@ function confirmationRequired(
         challengeId,
         summary: "Delete?",
         expiresAt: "2026-08-28T00:00:00.000Z",
+        risk,
         ...(preview === undefined ? {} : { preview }),
       },
     },
@@ -55,6 +58,7 @@ describe("confirmationChallenge", () => {
     ).toEqual({
       challengeId: "challenge-9",
       summary: "Delete?",
+      risk: "write",
       preview: PREVIEW,
     });
   });
@@ -63,7 +67,16 @@ describe("confirmationChallenge", () => {
     expect(confirmationChallenge(confirmationRequired("challenge-9"))).toEqual({
       challengeId: "challenge-9",
       summary: "Delete?",
+      risk: "write",
     });
+  });
+
+  it("carries the challenged action's risk for the card tone", () => {
+    expect(
+      confirmationChallenge(
+        confirmationRequired("challenge-9", PREVIEW, "high"),
+      )?.risk,
+    ).toBe("high");
   });
 
   it("returns null when the error is not CONFIRMATION_REQUIRED", () => {
@@ -109,7 +122,12 @@ describe("submitWithProtocolConfirmation", () => {
     });
 
     expect(seen).toEqual([
-      { challengeId: "ch-1", summary: "Delete?", preview: PREVIEW },
+      {
+        challengeId: "ch-1",
+        summary: "Delete?",
+        risk: "write",
+        preview: PREVIEW,
+      },
     ]);
     expect(sent).toEqual(["ch-1"]);
     expect(result).toEqual({ outcome: "submitted", value: "deleted" });
@@ -160,8 +178,18 @@ describe("submitWithProtocolConfirmation", () => {
     });
 
     expect(seen).toEqual([
-      { challengeId: "ch-1", summary: "Delete?", preview: PREVIEW },
-      { challengeId: "ch-2", summary: "Delete?", preview: drifted },
+      {
+        challengeId: "ch-1",
+        summary: "Delete?",
+        risk: "write",
+        preview: PREVIEW,
+      },
+      {
+        challengeId: "ch-2",
+        summary: "Delete?",
+        risk: "write",
+        preview: drifted,
+      },
     ]);
     expect(sent).toEqual(["ch-1", "ch-2"]);
     expect(result).toEqual({ outcome: "submitted", value: "deleted" });

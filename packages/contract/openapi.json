@@ -398,6 +398,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -438,7 +445,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -1094,6 +1102,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -1134,7 +1149,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -1833,6 +1849,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -1873,7 +1896,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -2583,6 +2607,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -2623,7 +2654,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -3383,6 +3415,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -3423,7 +3462,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -4143,6 +4183,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -4183,7 +4230,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -4920,6 +4968,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -4960,7 +5015,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -5689,6 +5745,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -5729,7 +5792,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -6395,6 +6459,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -6435,7 +6506,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -7101,6 +7173,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -7141,7 +7220,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -7807,6 +7887,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -7847,7 +7934,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -8513,6 +8601,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -8553,7 +8648,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -9235,6 +9331,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -9275,7 +9378,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -9959,6 +10063,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -9999,7 +10110,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -10652,6 +10764,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -10692,7 +10811,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -11460,6 +11580,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -11500,7 +11627,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -12147,6 +12275,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -12187,7 +12322,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -13036,6 +13172,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -13076,7 +13219,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -13835,6 +13979,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -13875,7 +14026,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -14763,6 +14915,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -14803,7 +14962,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -15654,6 +15814,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -15694,7 +15861,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -16447,6 +16615,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -16487,7 +16662,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -17151,6 +17327,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -17191,7 +17374,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -17855,6 +18039,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -17895,7 +18086,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -18559,6 +18751,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -18599,7 +18798,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -19387,6 +19587,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -19427,7 +19634,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -20188,6 +20396,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -20228,7 +20443,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -20965,6 +21181,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -21005,7 +21228,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -21768,6 +21992,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -21808,7 +22039,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -22551,6 +22783,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -22591,7 +22830,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -23274,6 +23514,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -23314,7 +23561,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -24073,6 +24321,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -24113,7 +24368,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -25006,6 +25262,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -25046,7 +25309,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -25902,6 +26166,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -25942,7 +26213,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -26707,6 +26979,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -26747,7 +27026,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -27419,6 +27699,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -27459,7 +27746,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -28622,6 +28910,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -28662,7 +28957,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -29882,6 +30178,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -29922,7 +30225,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -31063,6 +31367,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -31103,7 +31414,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -31815,6 +32127,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -31855,7 +32174,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -32519,6 +32839,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -32559,7 +32886,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -33711,6 +34039,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -33751,7 +34086,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -34392,6 +34728,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -34432,7 +34775,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -35138,6 +35482,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -35178,7 +35529,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -35818,6 +36170,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -35858,7 +36217,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -36551,6 +36911,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -36591,7 +36958,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -37237,6 +37605,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -37277,7 +37652,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -37848,6 +38224,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -37888,7 +38271,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -38578,6 +38962,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -38618,7 +39009,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -39198,6 +39590,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -39238,7 +39637,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -39935,6 +40335,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -39975,7 +40382,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -40591,6 +40999,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -40631,7 +41046,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -41202,6 +41618,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -41242,7 +41665,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -41915,6 +42339,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -41955,7 +42386,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -42834,6 +43266,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -42874,7 +43313,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -43546,6 +43986,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -43586,7 +44033,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -44224,6 +44672,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -44264,7 +44719,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -44936,6 +45392,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -44976,7 +45439,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -45961,6 +46425,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -46001,7 +46472,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -46709,6 +47181,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -46749,7 +47228,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -47452,6 +47932,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -47492,7 +47979,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -48195,6 +48683,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -48235,7 +48730,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -48938,6 +49434,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -48978,7 +49481,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -49805,6 +50309,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -49845,7 +50356,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -51210,6 +51722,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -51250,7 +51769,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -51842,6 +52362,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -51882,7 +52409,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -52524,6 +53052,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -52564,7 +53099,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -53257,6 +53793,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -53297,7 +53840,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -53961,6 +54505,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -54001,7 +54552,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -54693,6 +55245,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -54733,7 +55292,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -55465,6 +56025,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -55505,7 +56072,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -56168,6 +56736,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -56208,7 +56783,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -56895,6 +57471,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -56935,7 +57518,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -57642,6 +58226,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -57682,7 +58273,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -58422,6 +59014,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -58462,7 +59061,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -59161,6 +59761,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -59201,7 +59808,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },
@@ -60386,6 +60994,13 @@
                                 "expiresAt": {
                                   "type": "string"
                                 },
+                                "risk": {
+                                  "enum": [
+                                    "write",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
                                 "preview": {
                                   "type": "object",
                                   "properties": {
@@ -60426,7 +61041,8 @@
                               "required": [
                                 "challengeId",
                                 "summary",
-                                "expiresAt"
+                                "expiresAt",
+                                "risk"
                               ]
                             }
                           },

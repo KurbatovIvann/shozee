@@ -79,6 +79,12 @@ const ORDER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const CUSTOMER_A = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const CUSTOMER_B = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 
+const ANOTHER_COMPANY = "b12eb0de-b12e-4b12-8b12-b12eb0deb12e";
+
+const LEAKY_REFUSAL = new NotFoundError("Клієнта не знайдено.", {
+  internalMessage: `customer ${CUSTOMER_B} belongs to company ${ANOTHER_COMPANY}`,
+});
+
 /** No `status` of its own: the façade envelope owns that key. */
 const CREATED_ORDER = {
   orderId: ORDER_ID,
@@ -911,7 +917,7 @@ describe("an action that needs a person's authorisation", () => {
   });
 
   it("reports the first as done when the second of one card fails", async () => {
-    const refusal = new NotFoundError();
+    const refusal = LEAKY_REFUSAL;
 
     const outcome = await answerWith(
       {
@@ -930,10 +936,44 @@ describe("an action that needs a person's authorisation", () => {
         failed: {
           action: SECOND_ATTEMPT.actionName,
           code: refusal.code,
-          message: refusal.message,
+          message: refusal.clientMessage,
         },
       },
     });
+    expect(JSON.stringify(outcome)).not.toContain(ANOTHER_COMPANY);
+  });
+
+  it("tells the model the client text when a carried action asks again", async () => {
+    const refusedAgain = new ConfirmationRequiredError(
+      SECOND_CHALLENGE,
+      "Підтвердіть цю дію ще раз.",
+      { internalMessage: `challenge issued for ${ANOTHER_COMPANY}` },
+    );
+
+    const outcome = await answerWith(
+      {
+        runConfirmed: (args) =>
+          args.actionName === ATTEMPT.actionName
+            ? Promise.resolve({ id: CUSTOMER_A })
+            : Promise.reject(
+                new AssistantConfirmationRequired(SECOND_ATTEMPT, refusedAgain),
+              ),
+      },
+      [SECOND_ALSO],
+    );
+
+    expect(outcome).toEqual({
+      kind: "ok",
+      result: {
+        done: [{ action: ATTEMPT.actionName, result: { id: CUSTOMER_A } }],
+        failed: {
+          action: SECOND_ATTEMPT.actionName,
+          code: refusedAgain.code,
+          message: refusedAgain.clientMessage,
+        },
+      },
+    });
+    expect(JSON.stringify(outcome)).not.toContain(ANOTHER_COMPANY);
   });
 
   it("asks again with the fresh card when the first action of one card drifts", async () => {
@@ -941,12 +981,17 @@ describe("an action that needs a person's authorisation", () => {
       ...CHALLENGE,
       challengeId: "cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd",
     };
-    const seen: string[] = [];
+    const seen: unknown[] = [];
 
     const outcome = await answerWith(
       {
         runConfirmed: (args) => {
-          seen.push(args.actionName);
+          seen.push({
+            actionName: args.actionName,
+            input: args.input,
+            idempotencyKey: args.idempotencyKey,
+            challengeId: args.challengeId,
+          });
           return Promise.reject(
             new AssistantConfirmationRequired(
               ATTEMPT,
@@ -958,7 +1003,14 @@ describe("an action that needs a person's authorisation", () => {
       [SECOND_ALSO],
     );
 
-    expect(seen).toEqual([ATTEMPT.actionName]);
+    expect(seen).toEqual([
+      {
+        actionName: ATTEMPT.actionName,
+        input: ATTEMPT.input,
+        idempotencyKey: ATTEMPT.idempotencyKey,
+        challengeId: CHALLENGE.challengeId,
+      },
+    ]);
     expect(outcome).toMatchObject({
       kind: "pause",
       interaction: "confirmation",
@@ -971,6 +1023,32 @@ describe("an action that needs a person's authorisation", () => {
         idempotencyKey: ATTEMPT.idempotencyKey,
         also: [SECOND_ALSO],
       },
+    });
+  });
+
+  it("re-presents a carried action unchanged, so core answers the same attempt", async () => {
+    const seen: unknown[] = [];
+
+    await answerWith(
+      {
+        runConfirmed: (args) => {
+          seen.push({
+            actionName: args.actionName,
+            input: args.input,
+            idempotencyKey: args.idempotencyKey,
+            challengeId: args.challengeId,
+          });
+          return Promise.resolve({ ran: args.actionName });
+        },
+      },
+      [SECOND_ALSO],
+    );
+
+    expect(seen[1]).toEqual({
+      actionName: SECOND_ALSO.actionName,
+      input: SECOND_ALSO.canonicalInput,
+      idempotencyKey: SECOND_ALSO.idempotencyKey,
+      challengeId: SECOND_ALSO.challengeId,
     });
   });
 
@@ -999,7 +1077,7 @@ describe("an action that needs a person's authorisation", () => {
     expect(outcome).toMatchObject({ kind: "ok" });
   });
 
-  it("runs a pause opened before one card could carry several actions", async () => {
+  it("runs a pause whose stored secret carries no also list", async () => {
     const seen: string[] = [];
 
     const outcome = await createResolveAnswer({
@@ -1082,13 +1160,19 @@ describe("an action that needs a person's authorisation", () => {
   });
 
   it("reports a domain refusal after the approval as an error", async () => {
-    const refusal = new NotFoundError();
+    const refusal = LEAKY_REFUSAL;
 
     const outcome = await answerWith({
       runConfirmed: () => Promise.reject(refusal),
     });
 
-    expect(outcome).toMatchObject({ kind: "error", code: refusal.code });
+    expect(outcome).toEqual({
+      kind: "error",
+      code: refusal.code,
+      message: refusal.clientMessage,
+    });
+    expect(refusal.message).toContain(ANOTHER_COMPANY);
+    expect(JSON.stringify(outcome)).not.toContain(ANOTHER_COMPANY);
   });
 
   it("refuses a kind it has no resolver for instead of guessing one", async () => {
