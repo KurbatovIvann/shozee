@@ -106,6 +106,20 @@ describe("createShoClient.parse", () => {
     });
   });
 
+  it("refuses to follow a redirect away from the replica", async () => {
+    const seen: { init?: RequestInit } = {};
+    const recording: ShoFetch = (_url, init) => {
+      seen.init = init;
+      return Promise.resolve(
+        new Response(JSON.stringify(parseBody), { status: 200 }),
+      );
+    };
+
+    await client(recording).parse(parseRequest);
+
+    expect(seen.init?.redirect).toBe("error");
+  });
+
   it("builds the context key from the company it routes to", async () => {
     const seen: { url?: string; body?: unknown } = {};
     const recording: ShoFetch = (url, init) => {
