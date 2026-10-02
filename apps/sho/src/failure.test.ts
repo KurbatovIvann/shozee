@@ -24,30 +24,41 @@ describe("the failure answer a Шо worker sends back", () => {
     ).toEqual({ reply: { kind: "input" }, detail: undefined });
   });
 
-  it("builds a runtime detail out of the thrown cause alone", () => {
-    const cause = new TypeError("cannot read properties of null");
+  it("keeps only the stack frames of a runtime failure, never its message", () => {
+    const cause = new TypeError(`cannot read «${REQUEST}» of null`);
     const answer = shoFailureOf(cause);
     expect(answer.reply).toEqual({ kind: "failed", code: "TypeError" });
-    expect(answer.detail).toEqual({
-      message: "cannot read properties of null",
-      stack: cause.stack,
-    });
     expect(JSON.stringify(answer)).not.toContain("кави");
+    const frames = answer.detail?.frames ?? "";
+    expect(frames).toContain("failure.test.ts");
+    for (const line of frames.split("\n")) {
+      expect(line.startsWith("at ")).toBe(true);
+    }
   });
 
-  it("caps the message and the stack it hands to the log", () => {
-    const answer = shoFailureOf(
-      new Error("x".repeat(SHO_FAILURE_DETAIL_LIMIT * 3)),
-    );
-    expect(answer.detail?.message).toHaveLength(SHO_FAILURE_DETAIL_LIMIT + 1);
-    expect(answer.detail?.message.endsWith("…")).toBe(true);
-    expect(answer.detail?.stack).toHaveLength(SHO_FAILURE_DETAIL_LIMIT + 1);
+  it("drops a header-shaped message line that is not a stack frame", () => {
+    const cause = new Error(`at ${REQUEST}`);
+    expect(shoFailureOf(cause).detail?.frames).not.toContain("кави");
   });
 
-  it("names an unknown code for a throw that is not an Error", () => {
-    expect(shoFailureOf("plain throw")).toEqual({
+  it("caps the frames it hands to the log at the limit", () => {
+    const cause = new Error("deep");
+    cause.stack = [
+      "Error: deep",
+      ...Array.from(
+        { length: 400 },
+        (_, at) => `    at frame${String(at)} (pipeline.ts:${String(at)}:1)`,
+      ),
+    ].join("\n");
+    const frames = shoFailureOf(cause).detail?.frames ?? "";
+    expect(frames.length).toBe(SHO_FAILURE_DETAIL_LIMIT);
+    expect(frames.endsWith("…")).toBe(true);
+  });
+
+  it("names an unknown code and no frames for a throw that is not an Error", () => {
+    expect(shoFailureOf(REQUEST)).toEqual({
       reply: { kind: "failed", code: "unknown" },
-      detail: { message: "plain throw", stack: null },
+      detail: { frames: null },
     });
   });
 });
