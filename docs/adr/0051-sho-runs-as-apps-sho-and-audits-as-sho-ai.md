@@ -89,6 +89,11 @@ where it runs and what it is given.
     `catalog` and `pricing` `listNameIndex`): a phone or email a person says
     is an `unchecked` customer reference Shozee resolves server-side, never a
     contact field shipped to Шо (agreed with system-one-uk, D94).
+  - **Amended (owner, 2026-10-02, SHO-827):** "ids and names only" also
+    admits optional `products[].brand`, `products[].unit` (a `SALE_UNITS`
+    value, never stored text) and `variants[].values`. The catalog owns no
+    such columns, so the SHO-767 builder leaves all three unsent until a
+    catalog ticket adds them.
   - Above a variants cap the list is sent `partial` and the parse is
     best-effort; the 8 MB limit is reached near ~13k products × 4 variants.
   - The fingerprint's two blind spots are accepted: a stale name costs a

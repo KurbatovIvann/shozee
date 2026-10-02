@@ -31,7 +31,7 @@ export const listNameIndexOutputSchema = z.strictObject({
 export const listNameIndexContract = defineActionContract({
   name: "catalog.listNameIndex",
   description:
-    "Return every active product and every active product variant in the staff member's active company as ids and names only, for the Шо parse context (ADR-0051). Variant entries carry productId. Archived products and variants are excluded, and so is a variant whose parent product is archived. Each list is capped (20000 products, 100000 variants) and sets truncated when more rows exist. The byte budget of the Шо context and its partial flag belong to the context builder (ADR-0051), not to this read. Company id is never input. Internal — not mounted on HTTP.",
+    "Return every active product and every active product variant in the staff member's active company as ids and names only, for the Шо parse context (ADR-0051). Variant entries carry productId. Archived products and variants are excluded, and so is a variant whose parent product is archived. Each list is capped (20000 products, 100000 variants) and sets truncated when more rows exist. Variants are bounded to the listed products (an ascending-id window over them), so every variant.productId is in products.items and variants.truncated is also true whenever products truncate. The byte budget of the Шо context and its partial flag belong to the context builder (ADR-0051), not to this read. Company id is never input. Internal — not mounted on HTTP.",
   principal: "staff",
   transport: "internal",
   input: listNameIndexInputSchema,

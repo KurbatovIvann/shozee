@@ -203,6 +203,7 @@ export type ShoPrevious = z.infer<typeof shoPreviousSchema>;
 export type ShoParseRequest = z.infer<typeof shoParseRequestSchema>;
 export type ShoParseResponse = z.infer<typeof shoParseResponseSchema>;
 export type ShoContext = z.infer<typeof shoContextSchema>;
+export type ShoContextRecord = z.infer<typeof shoContextRecordSchema>;
 export type ShoContextProduct = z.infer<typeof shoContextProductSchema>;
 export type ShoContextVariant = z.infer<typeof shoContextVariantSchema>;
 export type ShoContextListName = (typeof SHO_CONTEXT_LIST_NAMES)[number];
