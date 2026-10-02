@@ -20,6 +20,8 @@ import type { Logger } from "pino";
 
 import type { AssistantWrittenRecordIdField } from "./assistant-close-trace.js";
 import type { AssistantInteractionTypes } from "./assistant-interactions.js";
+import type { AssistantInvocationChannel } from "./assistant-invocation.js";
+import type { ShoEngineFor } from "./sho-engine.js";
 import type { AssistantTurnStore } from "./stores/assistant-turn-store.js";
 
 /**
@@ -43,6 +45,7 @@ export interface AssistantToolContext {
    * and carries none (SHO-569); every HTTP path passes it.
    */
   readonly clientIp?: string;
+  readonly channel?: AssistantInvocationChannel;
 }
 
 export type AssistantKitFor = AssistantKit<AssistantInteractionTypes>;
@@ -164,6 +167,7 @@ export interface AssistantRuntime {
    */
   readonly tools: (context: AssistantToolContext) => Promise<ToolSet>;
   readonly resolveAnswer: ResolveAnswer;
+  readonly sho?: ShoEngineFor;
   readonly writtenRecordIdField: AssistantWrittenRecordIdField;
   /** Built per turn: the turn context carries the current time. */
   readonly prompt: () => AssistantTurnPrompt;

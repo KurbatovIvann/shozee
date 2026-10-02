@@ -75,7 +75,12 @@ and is left untouched. Proof: `src/pgboss-schema.db.test.ts`.
   `assistant.acceptTurn` writes the initial history and the placeholder in
   its own transaction while the turn is `queued`; the active-turn index
   serialises it (SHO-575). The worker writes everything after that under the
-  turn's claim.
+  turn's claim. A settled accept (Шо answered in the request, SHO-768) ends
+  `done` and so takes no active-turn slot: nothing serialises two of them, and
+  its history write is safe only because an accept appends rather than
+  replaces, and a concatenation of two appends is the same history either way;
+  the loser of the chat log's `seq` race is answered `busy`, as the lease
+  answers a turn the model runs.
 - The claim is the turn row itself: `running`, this conversation, kind and
   command id. A turn starts at most once, so the identity is never reused.
 - Every worker write carries the claim: `assistant.writeChatState`,

@@ -76,6 +76,7 @@ import {
   type AssistantToolContext,
   type AssistantTurnClaim,
 } from "./runtime-types.js";
+import type { ShoEngineFor } from "./sho-engine.js";
 import {
   createPostgresAssistantKitHistoryStore,
   createPostgresAssistantKitMessageLog,
@@ -92,6 +93,7 @@ export interface CreateAssistantRuntimeOptions {
   /** Same adapter the live assistant uses: it owns the caching options. */
   readonly provider: StaffProviderAdapter;
   readonly redis: RedisLike;
+  readonly sho?: ShoEngineFor;
 }
 
 function requireImplementation(
@@ -145,12 +147,12 @@ export function handlerRefusedTheWrite(error: unknown): boolean {
 }
 
 function aiRequest(
-  context: Pick<AssistantToolContext, "requestId" | "clientIp">,
+  context: Pick<AssistantToolContext, "requestId" | "clientIp" | "channel">,
 ) {
   return {
     requestId: context.requestId,
     correlationId: context.requestId,
-    channel: ASSISTANT_INVOCATION_CHANNEL,
+    channel: context.channel ?? ASSISTANT_INVOCATION_CHANNEL,
     // A worker-run turn has no request and so no address; nothing stands in.
     ...(context.clientIp === undefined ? {} : { clientIp: context.clientIp }),
     aiTraceId: context.requestId,
@@ -292,6 +294,7 @@ export function createAssistantRuntime(
 
     model: options.model,
     resolveAnswer: createResolveAnswer({ runConfirmed }),
+    ...(options.sho === undefined ? {} : { sho: options.sho }),
     writtenRecordIdField: (action) =>
       options.registry.getContract(action)?.writtenRecordIdField ?? null,
 
