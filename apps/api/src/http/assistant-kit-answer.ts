@@ -60,6 +60,8 @@ import {
 
 export type PauseWriteOutcome = "ok" | "wrong_owner" | "failed";
 
+export type PauseDropOutcome = PauseWriteOutcome | "answer_in_flight";
+
 function writeOutcome(stored: { readonly kind: string }): PauseWriteOutcome {
   if (stored.kind === "wrong_owner") {
     return "wrong_owner";
@@ -93,11 +95,11 @@ export async function dropOpenPause(
   scope: PauseScope,
   interactionId: string,
   trace: (pause: PublicPause) => AssistantTracePart,
-): Promise<PauseWriteOutcome> {
+): Promise<PauseDropOutcome> {
   const traced: {
     outcome: Awaited<ReturnType<typeof kit.messages.write>> | null;
   } = { outcome: null };
-  await kit.abandon({
+  const dropped = await kit.abandon({
     ...scope,
     interactionId,
     whileHeld: async (pause) => {
@@ -109,6 +111,9 @@ export async function dropOpenPause(
       });
     },
   });
+  if (dropped.kind === "claimed") {
+    return "answer_in_flight";
+  }
   const written = traced.outcome;
   return written === null ? "ok" : writeOutcome(written);
 }
@@ -185,6 +190,16 @@ export async function handleAssistantKitAbandon(
     canonicalAssistantId(parsed.data.interactionId),
     assistantRejectedTrace,
   );
+  if (dropped === "answer_in_flight") {
+    return json(
+      409,
+      {
+        status: "answer_in_flight",
+        window: await readAssistantChatWindow(kit, turns, scope),
+      },
+      requestId,
+    );
+  }
   if (dropped !== "ok") {
     return dropped === "wrong_owner"
       ? goneResponse(requestId)

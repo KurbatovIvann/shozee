@@ -379,6 +379,20 @@ describe("the assistant kit client", () => {
     });
   });
 
+  it("reports a dismiss the answer claimed first, and is not told it was dropped", async () => {
+    respond(409, { status: "answer_in_flight", window: conversationWindow() });
+
+    const outcome = await postAssistantKitAbandon({
+      ...call,
+      conversationId: CONVERSATION,
+      interactionId: INTERACTION,
+    });
+
+    expect(outcome.failure?.kind).toBe("answer_in_flight");
+    expect(outcome.window?.conversationId).toBe(CONVERSATION);
+    expect(outcome.window?.openPause).toBeNull();
+  });
+
   it("asks for the page before a cursor by the same query", async () => {
     respond(200, { status: "ok", window: conversationWindow() });
 
