@@ -630,10 +630,13 @@ const ANSWER_CONTEXT = {
 const NEVER_RESUMMARIZED: ReSummarizeAction = () =>
   Promise.reject(new Error("no re-summarize was expected here"));
 
+const SILENT_LOGGER: AssistantToolLogger = { warn: () => {} };
+
 const NEVER_CONFIRMED: ResolveAnswerDeps = {
   runConfirmed: () =>
     Promise.reject(new Error("no confirmation was expected here")),
   reSummarize: NEVER_RESUMMARIZED,
+  logger: SILENT_LOGGER,
 };
 
 describe("resolveAnswer calls the same tool again", () => {
@@ -781,6 +784,7 @@ describe("an action that needs a person's authorisation", () => {
   ): Promise<ToolOutcome> {
     return createResolveAnswer({
       reSummarize: NEVER_RESUMMARIZED,
+      logger: SILENT_LOGGER,
       ...deps,
     })({
       toolName: "customers_deleteCustomer",
@@ -1076,11 +1080,14 @@ describe("an action that needs a person's authorisation", () => {
     });
   });
 
-  it("stops asking about a carried action whose key already replayed", async () => {
+  it("drops a carried action whose key already committed, and says so", async () => {
+    const warned: Record<string, unknown>[] = [];
+
     const outcome = await answerWith(
       {
         runConfirmed: driftsOnFirst,
         reSummarize: () => Promise.resolve({ id: CUSTOMER_A }),
+        logger: { warn: (fields) => warned.push(fields) },
       },
       [SECOND_ALSO],
     );
@@ -1088,18 +1095,25 @@ describe("an action that needs a person's authorisation", () => {
     expect(outcome).toMatchObject({
       kind: "pause",
       prompt: { also: [] },
-      secret: {
-        challengeId: DRIFTED_CHALLENGE.challengeId,
-        also: [SECOND_ALSO],
-      },
+      secret: { challengeId: DRIFTED_CHALLENGE.challengeId, also: [] },
     });
+    expect(warned).toEqual([
+      {
+        action: SECOND_ATTEMPT.actionName,
+        idempotencyKey: SECOND_ATTEMPT.idempotencyKey,
+        outcome: "done",
+      },
+    ]);
   });
 
-  it("carries an action it cannot re-summarize rather than dropping it", async () => {
+  it("drops a carried action it cannot re-ask, so the tap never runs it", async () => {
+    const warned: Record<string, unknown>[] = [];
+
     const outcome = await answerWith(
       {
         runConfirmed: driftsOnFirst,
         reSummarize: () => Promise.reject(LEAKY_REFUSAL),
+        logger: { warn: (fields) => warned.push(fields) },
       },
       [SECOND_ALSO],
     );
@@ -1107,9 +1121,62 @@ describe("an action that needs a person's authorisation", () => {
     expect(outcome).toMatchObject({
       kind: "pause",
       prompt: { also: [] },
-      secret: { also: [SECOND_ALSO] },
+      secret: { also: [] },
     });
+    expect(warned).toEqual([
+      {
+        action: SECOND_ATTEMPT.actionName,
+        idempotencyKey: SECOND_ATTEMPT.idempotencyKey,
+        outcome: "failed",
+        code: LEAKY_REFUSAL.code,
+      },
+    ]);
     expect(JSON.stringify(outcome)).not.toContain(ANOTHER_COMPANY);
+  });
+
+  it("re-asks a carried high-risk action and the whole card turns strong", async () => {
+    const outcome = await answerWith(
+      {
+        runConfirmed: driftsOnFirst,
+        reSummarize: () =>
+          Promise.reject(
+            new AssistantConfirmationRequired(
+              SECOND_ATTEMPT,
+              new ConfirmationRequiredError(SECOND_RESUMMARIZED),
+              "strong",
+            ),
+          ),
+      },
+      [SECOND_ALSO],
+    );
+
+    expect(outcome).toMatchObject({
+      kind: "pause",
+      prompt: { also: [SECOND_RESUMMARIZED.preview], level: "strong" },
+      secret: {
+        also: [
+          {
+            ...SECOND_ALSO,
+            challengeId: SECOND_RESUMMARIZED.challengeId,
+            preview: SECOND_RESUMMARIZED.preview,
+            level: "strong",
+          },
+        ],
+      },
+    });
+  });
+
+  it("fails the turn rather than re-asking when core reports an invariant", async () => {
+    await expect(
+      answerWith(
+        {
+          runConfirmed: driftsOnFirst,
+          reSummarize: () =>
+            Promise.reject(new CoreInvariantError("gate returned a grant")),
+        },
+        [SECOND_ALSO],
+      ),
+    ).rejects.toBeInstanceOf(CoreInvariantError);
   });
 
   it("re-presents a carried action unchanged, so core answers the same attempt", async () => {
@@ -1146,6 +1213,7 @@ describe("an action that needs a person's authorisation", () => {
         return Promise.resolve({ ran: args.actionName });
       },
       reSummarize: NEVER_RESUMMARIZED,
+      logger: SILENT_LOGGER,
     })({
       toolName: "customers_deleteCustomer",
       kind: "confirmation",
@@ -1173,6 +1241,7 @@ describe("an action that needs a person's authorisation", () => {
         return Promise.resolve({ id: CUSTOMER_A });
       },
       reSummarize: NEVER_RESUMMARIZED,
+      logger: SILENT_LOGGER,
     })({
       toolName: "customers_deleteCustomer",
       kind: "confirmation",

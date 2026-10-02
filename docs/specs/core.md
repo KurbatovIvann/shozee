@@ -405,7 +405,11 @@ Applies to actions declaring `idempotent: true` with `risk` ≠ `read`
   raw challenge token reusable. A **confirmation-only** request (§7) keeps
   the replay arm of that probe and drops the resume arm: a completed key
   still replays its stored response, a stale attempt's persisted grant is
-  ignored, and nothing is reserved.
+  ignored, and nothing is reserved. Ignored, not revoked — the grant stays
+  on the row, so the **next ordinary** invocation of that stale attempt
+  resumes under it and the fresh challenge the confirmation-only request
+  issued is never consumed. A caller that must not execute under the older
+  approval invokes under a new idempotency key, which is a new attempt.
 - **Retention**: keys expire after 48h (`expires_at`, cleaned by a worker
   job); replay after expiry re-executes — callers must not rely on replay
   beyond the retry window.
@@ -686,7 +690,9 @@ the §5 replay arm — a completed idempotency key returns its stored
 response, because asking again for a card about work already done would be
 a lie — and then always issues a **fresh** challenge. Any
 `confirmationChallengeId` in the same request is ignored rather than
-consumed, a persisted grant never resumes, and the handler is unreachable:
+consumed, a persisted grant never resumes — though it is not revoked
+either, so the next ordinary invocation of that same attempt still resumes
+under it (§5) — and the handler is unreachable:
 a gate that returns a grant for such a request is a composition bug
 (`CoreInvariantError`, nothing executed). This is how a caller holding an
 attempt it cannot yet run — the AI loop re-presenting a carried action

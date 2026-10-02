@@ -326,7 +326,11 @@ export function createAssistantRuntime(
     forTurn: (caller, claim) => scopedKit(caller, claim),
 
     model: options.model,
-    resolveAnswer: createResolveAnswer({ runConfirmed, reSummarize }),
+    resolveAnswer: createResolveAnswer({
+      runConfirmed,
+      reSummarize,
+      logger: options.pipeline.logger,
+    }),
     ...(options.sho === undefined ? {} : { sho: options.sho }),
     writtenRecordIdField: (action) =>
       options.registry.getContract(action)?.writtenRecordIdField ?? null,

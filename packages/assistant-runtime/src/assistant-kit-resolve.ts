@@ -17,7 +17,7 @@
  * been answered `no tool named undefined` (SHO-553).
  */
 import type { ToolOutcome } from "@showzy/assistant-kit";
-import { CoreError } from "@showzy/core/errors";
+import { CoreError, CoreInvariantError } from "@showzy/core/errors";
 
 import type {
   AssistantInteractionTypes,
@@ -32,6 +32,7 @@ import {
   confirmationAlso,
   confirmationPause,
 } from "./assistant-kit-confirmation.js";
+import type { AssistantToolLogger } from "./assistant-kit-tools.js";
 import type { AssistantToolContext, ResolveAnswer } from "./runtime-types.js";
 
 interface FacadeInput {
@@ -126,6 +127,7 @@ export type ReSummarizeAction = (args: {
 export interface ResolveAnswerDeps {
   readonly runConfirmed: RunConfirmedAction;
   readonly reSummarize: ReSummarizeAction;
+  readonly logger: AssistantToolLogger;
 }
 
 type ResolveArgs = Parameters<ResolveAnswer>[0];
@@ -198,18 +200,27 @@ function confirmedAttempts(
   ];
 }
 
-interface RecarriedAlso {
-  readonly asked: readonly ConfirmationAlsoSecret[];
-  readonly unasked: readonly ConfirmationAlsoSecret[];
+function dropCarried(
+  deps: ResolveAnswerDeps,
+  one: ConfirmationAlsoSecret,
+  fields: Record<string, unknown>,
+): void {
+  deps.logger.warn(
+    {
+      action: one.actionName,
+      idempotencyKey: one.idempotencyKey,
+      ...fields,
+    },
+    "carried confirmation left off the re-asked card",
+  );
 }
 
 async function recarryAlso(
   args: ResolveArgs,
   deps: ResolveAnswerDeps,
   also: readonly ConfirmationAlsoSecret[],
-): Promise<RecarriedAlso> {
+): Promise<readonly ConfirmationAlsoSecret[]> {
   const asked: ConfirmationAlsoSecret[] = [];
-  const unasked: ConfirmationAlsoSecret[] = [];
   for (const one of also) {
     try {
       await deps.reSummarize({
@@ -218,18 +229,23 @@ async function recarryAlso(
         input: one.canonicalInput,
         idempotencyKey: one.idempotencyKey,
       });
-      unasked.push(one);
+      dropCarried(deps, one, { outcome: "done" });
     } catch (error) {
       if (error instanceof AssistantConfirmationRequired) {
         asked.push(confirmationAlso(error));
-      } else if (error instanceof CoreError) {
-        unasked.push(one);
-      } else {
+        continue;
+      }
+      if (error instanceof CoreInvariantError) {
         throw error;
       }
+      if (error instanceof CoreError) {
+        dropCarried(deps, one, { outcome: "failed", code: error.code });
+        continue;
+      }
+      throw error;
     }
   }
-  return { asked, unasked };
+  return asked;
 }
 
 async function resolveConfirmation(
@@ -254,8 +270,10 @@ async function resolveConfirmation(
     } catch (error) {
       if (error instanceof AssistantConfirmationRequired) {
         if (done.length === 0) {
-          const recarried = await recarryAlso(args, deps, resolution.also);
-          return confirmationPause(error, recarried.asked, recarried.unasked);
+          return confirmationPause(
+            error,
+            await recarryAlso(args, deps, resolution.also),
+          );
         }
         return halted(done, {
           action: attempt.actionName,

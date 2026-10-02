@@ -523,7 +523,95 @@ describe("execution-time requireConfirmation (core.md §7, ADR-0050)", () => {
   });
 });
 
-describe("execution-time confirmationOnly preconditions (core.md §7)", () => {
+describe("execution-time confirmationOnly (core.md §5/§7)", () => {
+  it("binds the challenge to the card it just re-summarized", async () => {
+    let price = "100";
+    let runs = 0;
+    const action = implementAction(writeContract, {
+      handler: () => {
+        runs += 1;
+        return Promise.resolve({ resultId: randomUUID() });
+      },
+      preview: (input: { note: string }) => ({
+        title: `Rename to ${input.note}`,
+        lines: [{ label: "Price", value: price }],
+        notes: [],
+      }),
+      auditTarget: () => ({ type: "thing", id: "fixture" }),
+    });
+    const flow = session();
+    const key = randomUUID();
+    await flow.requireChallenge(action, { key, requireConfirmation: true });
+    price = "120";
+
+    const reasked = await flow.requireChallenge(action, {
+      key,
+      confirmationOnly: true,
+    });
+    expect(reasked.challenge.preview?.lines).toEqual([
+      { label: "Price", value: "120" },
+    ]);
+
+    price = "140";
+    const drifted = await flow.requireChallenge(action, {
+      key,
+      requireConfirmation: true,
+      challengeId: reasked.challenge.challengeId,
+    });
+
+    expect(drifted.challenge.challengeId).not.toBe(
+      reasked.challenge.challengeId,
+    );
+    expect(drifted.challenge.preview?.lines).toEqual([
+      { label: "Price", value: "140" },
+    ]);
+    expect(runs).toBe(0);
+
+    const result = await flow.run(action, {
+      key,
+      requireConfirmation: true,
+      challengeId: drifted.challenge.challengeId,
+    });
+    expect(result.resultId).toHaveLength(36);
+    expect(runs).toBe(1);
+  });
+
+  it("refuses the flag on an action that is not a write", async () => {
+    const action = implementAction(draftContract, {
+      handler: () => Promise.resolve({ resultId: randomUUID() }),
+    });
+    const flow = session();
+
+    await expect(
+      flow.run(action, { confirmationOnly: true }),
+    ).rejects.toBeInstanceOf(CoreInvariantError);
+  });
+
+  it("refuses the flag on a write no human invoked", async () => {
+    let runs = 0;
+    const action = implementAction(systemContract, {
+      handler: () => {
+        runs += 1;
+        return Promise.resolve({ resultId: randomUUID() });
+      },
+      auditTarget: () => ({ type: "thing", id: "fixture" }),
+    });
+
+    await expect(
+      executeAction(deps(createInMemoryConfirmationStore()), {
+        action,
+        input: { note: "Oksana" },
+        request: requestMeta({ confirmationOnly: true }),
+        principal: {
+          mode: "system",
+          serviceName: "require-confirm-fixture",
+          scope: { scope: "tenant", companyId: companyA },
+        },
+      }),
+    ).rejects.toBeInstanceOf(CoreInvariantError);
+    expect(runs).toBe(0);
+  });
+
   it("refuses the flag on a write that cannot replay", async () => {
     let runs = 0;
     const action = implementAction(nonIdempotentContract, {
