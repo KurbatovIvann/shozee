@@ -6,7 +6,10 @@ import {
   assistantTurnColumnLayout,
   assistantTurnResultStretch,
 } from "../shared/assistant-turn-layout";
-import type { AssistantInteraction } from "@showzy/validation/assistant-chat";
+import type {
+  AssistantChatTracePart,
+  AssistantInteraction,
+} from "@showzy/validation/assistant-chat";
 
 import { assistantSurfaceKey, type AssistantSurface } from "../surfaces";
 import {
@@ -16,6 +19,11 @@ import {
 import { AssistantMarkdownView } from "./assistant-markdown-view";
 import { AssistantSurfaceCard } from "./assistant-surface-card";
 import { AssistantWaitLine } from "./assistant-wait-line";
+import { ClosedCard } from "./closed-card";
+import {
+  assistantClosedCardModels,
+  type AssistantClosedCardCopy,
+} from "./closed-card-model";
 import { InteractionCard, type InteractionCardCopy } from "./interaction-card";
 
 export const AssistantMessageRow = memo(function AssistantMessageRow(props: {
@@ -26,6 +34,8 @@ export const AssistantMessageRow = memo(function AssistantMessageRow(props: {
   readonly waitIntervalMs: number;
   readonly waitLabel: string;
   readonly surfaces: readonly AssistantSurface[];
+  readonly traces: readonly AssistantChatTracePart[];
+  readonly closedCopy: AssistantClosedCardCopy;
   /**
    * The turn ended before the assistant answered. Rendered under whatever it
    * did produce, because the cards above are real: a card with no reply and no
@@ -49,6 +59,7 @@ export const AssistantMessageRow = memo(function AssistantMessageRow(props: {
 }) {
   const isUser = props.role === "user";
   const interaction = props.interaction;
+  const closedCards = assistantClosedCardModels(props.traces, props.closedCopy);
   const tone = assistantReplyTone({
     failed: props.failed,
     hasOpenQuestion: interaction !== null,
@@ -82,6 +93,13 @@ export const AssistantMessageRow = memo(function AssistantMessageRow(props: {
                 surface={surface}
                 onOpenHref={props.onOpenHref}
               />
+            </AssistantTurnResult>
+          ))
+        : null}
+      {!props.waiting
+        ? closedCards.map((model) => (
+            <AssistantTurnResult key={model.key}>
+              <ClosedCard model={model} onOpenHref={props.onOpenHref} />
             </AssistantTurnResult>
           ))
         : null}

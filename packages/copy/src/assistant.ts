@@ -96,6 +96,21 @@ export type AssistantCardsCopy = {
   readonly periodThisMonth: string;
 };
 
+export type AssistantClosedCopy = {
+  readonly done: string;
+  readonly rejected: string;
+  readonly failed: string;
+  readonly open: string;
+  readonly records: {
+    readonly order: string;
+    readonly customer: string;
+    readonly customerGroup: string;
+    readonly counterparty: string;
+    readonly product: string;
+    readonly priceList: string;
+  };
+};
+
 export type AssistantCopy = {
   readonly sheetTitle: string;
   readonly emptyTitle: string;
@@ -112,6 +127,7 @@ export type AssistantCopy = {
   readonly previewStrongLabel: string;
   readonly previewStrongWarning: string;
   readonly previewStrongConfirm: string;
+  readonly closed: AssistantClosedCopy;
   readonly choiceTitle: string;
   readonly choiceNearest: string;
   readonly choiceCompose: string;
@@ -271,6 +287,20 @@ const assistantEn: AssistantCopy = {
   previewStrongWarning:
     "Check the details. Once confirmed, this cannot be undone.",
   previewStrongConfirm: "Yes, do it",
+  closed: {
+    done: "Done",
+    rejected: "Cancelled",
+    failed: "Failed",
+    open: "Open",
+    records: {
+      order: "Order",
+      customer: "Customer",
+      customerGroup: "Group",
+      counterparty: "Legal entity",
+      product: "Product",
+      priceList: "Price list",
+    },
+  },
   choiceTitle: "Select a variant",
   choiceNearest: "Nothing exact. Maybe…",
   choiceCompose: "Something else…",
@@ -365,6 +395,20 @@ const assistantUk: AssistantCopy = {
   previewStrongLabel: "Незворотна дія",
   previewStrongWarning: "Перевір дані. Після підтвердження скасувати не вийде.",
   previewStrongConfirm: "Так, виконати",
+  closed: {
+    done: "Виконано",
+    rejected: "Скасовано",
+    failed: "Не вдалося",
+    open: "Відкрити",
+    records: {
+      order: "Замовлення",
+      customer: "Клієнт",
+      customerGroup: "Група",
+      counterparty: "Юрособа",
+      product: "Товар",
+      priceList: "Прайс-лист",
+    },
+  },
   choiceTitle: "Обери варіант",
   choiceNearest: "Точного немає. Можливо…",
   choiceCompose: "Інше…",

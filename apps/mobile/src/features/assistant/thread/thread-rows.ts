@@ -23,6 +23,7 @@ import {
   assistantInteractionFromPause,
   type AssistantChatThread,
   type AssistantChatMessage,
+  type AssistantChatTracePart,
   type AssistantChatTurn,
   type AssistantInteraction,
   type AssistantPause,
@@ -51,6 +52,7 @@ export type AssistantThreadRow = {
   readonly role: "user" | "assistant";
   readonly text: string;
   readonly surfaces: readonly AssistantSurface[];
+  readonly traces: readonly AssistantChatTracePart[];
   readonly interaction: AssistantInteraction | null;
   readonly failed: boolean;
   readonly interrupted: boolean;
@@ -59,6 +61,20 @@ export type AssistantThreadRow = {
 };
 
 const NO_SURFACES: readonly AssistantSurface[] = [];
+
+const NO_TRACES: readonly AssistantChatTracePart[] = [];
+
+function tracesOf(
+  message: AssistantChatMessage,
+): readonly AssistantChatTracePart[] {
+  const traces: AssistantChatTracePart[] = [];
+  for (const part of message.parts) {
+    if (part.kind === "trace") {
+      traces.push(part);
+    }
+  }
+  return traces.length === 0 ? NO_TRACES : traces;
+}
 
 function textOf(message: AssistantChatMessage): string {
   const chunks: string[] = [];
@@ -122,6 +138,7 @@ function isEmpty(row: AssistantThreadRow): boolean {
   return (
     row.text.length === 0 &&
     row.surfaces.length === 0 &&
+    row.traces.length === 0 &&
     row.interaction === null &&
     !row.failed &&
     !row.interrupted
@@ -191,6 +208,7 @@ export function assistantThreadRows(input: {
         message.role === "assistant"
           ? surfacesOf(message, input.locale)
           : NO_SURFACES,
+      traces: message.role === "assistant" ? tracesOf(message) : NO_TRACES,
       interaction: message.messageId === hostId ? interaction : null,
       failed: failedIn(message),
       interrupted: interruptedIn(message, turn),
@@ -210,6 +228,7 @@ export function assistantThreadRows(input: {
       role: "assistant",
       text: "",
       surfaces: NO_SURFACES,
+      traces: NO_TRACES,
       interaction,
       failed: false,
       interrupted: false,
@@ -225,6 +244,7 @@ export function assistantThreadRows(input: {
       role: "user",
       text: pending,
       surfaces: NO_SURFACES,
+      traces: NO_TRACES,
       interaction: null,
       failed: false,
       interrupted: false,
@@ -239,6 +259,7 @@ export function assistantThreadRows(input: {
       role: "assistant",
       text: "",
       surfaces: NO_SURFACES,
+      traces: NO_TRACES,
       interaction: null,
       failed: false,
       interrupted: false,

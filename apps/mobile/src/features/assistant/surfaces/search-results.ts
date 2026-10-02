@@ -17,15 +17,8 @@ import {
 
 import type { StatusPillTone } from "../../../components/ui/status-pill";
 import type { Locale } from "../../../i18n/locale";
-import { productPhotoHref } from "../../catalog/products/shared/product-hrefs";
-import {
-  counterpartyEditorHref,
-  customerEditorHref,
-  groupEditorHref,
-} from "../../customers/shared/customer-hrefs";
 import { documentsHref } from "../../documents/shared/document-hrefs";
-import { orderDetailHref } from "../../orders/shared/order-hrefs";
-import { priceListEditorHref } from "../../pricing/shared/price-list-hrefs";
+import { assistantRecordHref } from "../shared/assistant-record-hrefs";
 import {
   localizeAssistantCollection,
   type AssistantCollectionView,
@@ -71,19 +64,16 @@ function searchHitHref(
 ): string | null {
   switch (type) {
     case "order":
-      return orderDetailHref(hit.id);
     case "customer":
-      return customerEditorHref(hit.id);
     case "customerGroup":
-      return groupEditorHref(hit.id);
     case "counterparty":
-      return counterpartyEditorHref(hit.id);
     case "product":
-      return productPhotoHref(hit.id);
-    case "variant":
-      return hit.productId === null ? null : productPhotoHref(hit.productId);
     case "priceList":
-      return priceListEditorHref(hit.id);
+      return assistantRecordHref(type, hit.id);
+    case "variant":
+      return hit.productId === null
+        ? null
+        : assistantRecordHref("product", hit.productId);
     case "document":
       return documentsHref();
   }

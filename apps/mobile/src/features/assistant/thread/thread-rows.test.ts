@@ -106,7 +106,26 @@ const ORDER_CARD: AssistantChatPart = {
   },
 };
 
+const CLOSE_TRACE: AssistantChatPart = {
+  kind: "trace",
+  interactionId: INTERACTION,
+  interactionKind: "confirmation",
+  outcome: "done",
+  optionId: null,
+  attempts: [{ action: "orders.create", outcome: "done", recordId: "order-1" }],
+};
+
 describe("assistantThreadRows", () => {
+  it("carries a closed question's trace on the message that holds it", () => {
+    const result = rows(
+      threadOf([message(REPLY_MESSAGE, "assistant", [CLOSE_TRACE])]),
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.traces).toEqual([CLOSE_TRACE]);
+    expect(result[0]?.text).toBe("");
+  });
+
   it("renders the person's words and the reply in order", () => {
     const result = rows(
       threadOf([
