@@ -5,28 +5,35 @@ import type {
   VoiceRecognitionEvents,
   VoiceRecognitionStream,
   VoiceRecognizer,
-} from "./assistant-voice-recognizer.js";
+} from "./assistant-voice-chirp.js";
 import {
   startVoiceSession,
+  VOICE_BACKPRESSURE_REFUSALS,
   VOICE_CLOSE_CODE,
+  VOICE_FINALIZE_TIMEOUT_MS,
   VOICE_MAX_FRAME_BYTES,
   VOICE_MAX_SESSION_MS,
+  VOICE_MAX_TOTAL_BYTES,
+  VOICE_STOP_FRAME,
   type VoiceSession,
 } from "./assistant-voice-session.js";
 
 interface FakeRecognizer extends VoiceRecognizer {
   readonly written: Buffer[];
   readonly calls: { finished: number; aborted: number };
+  readonly accept: { writes: boolean };
   emit: VoiceRecognitionEvents;
 }
 
 function fakeRecognizer(): FakeRecognizer {
   const written: Buffer[] = [];
   const calls = { finished: 0, aborted: 0 };
+  const accept = { writes: true };
   let events: VoiceRecognitionEvents | undefined;
   return {
     written,
     calls,
+    accept,
     emit: {
       partial: (text) => events?.partial(text),
       final: (text) => events?.final(text),
@@ -37,6 +44,7 @@ function fakeRecognizer(): FakeRecognizer {
       return {
         write: (pcm) => {
           written.push(pcm);
+          return accept.writes;
         },
         finish: () => {
           calls.finished += 1;
@@ -71,7 +79,7 @@ function startSession(
     maxSessionMs,
     caller: {
       userId: "user-1",
-      companySelector: "11111111-1111-4111-8111-1111111111aa",
+      companyId: "11111111-1111-4111-8111-1111111111aa",
       requestId: "req-1",
     },
     socket: {
@@ -106,6 +114,7 @@ describe("voice session", () => {
       type: "ready",
       sampleRateHz: 16_000,
       maxFrameBytes: VOICE_MAX_FRAME_BYTES,
+      maxTotalBytes: VOICE_MAX_TOTAL_BYTES,
       maxSessionMs: VOICE_MAX_SESSION_MS,
     });
 
@@ -113,7 +122,7 @@ describe("voice session", () => {
     recognizer.emit.partial("дві");
     session.audio(pcm(640));
     recognizer.emit.partial("дві пачки");
-    session.control(JSON.stringify({ type: "stop" }));
+    session.control(VOICE_STOP_FRAME);
 
     expect(recognizer.written).toHaveLength(2);
     expect(recognizer.calls.finished).toBe(1);
@@ -154,6 +163,24 @@ describe("voice session", () => {
     ]);
   });
 
+  it("gives up when the recognizer never finalises the utterance", () => {
+    const recognizer = fakeRecognizer();
+    const { session, socket } = startSession(recognizer);
+
+    session.control(VOICE_STOP_FRAME);
+    expect(socket.closed).toHaveLength(0);
+
+    vi.advanceTimersByTime(VOICE_FINALIZE_TIMEOUT_MS);
+
+    expect(recognizer.calls.aborted).toBe(1);
+    expect(socket.closed).toEqual([
+      {
+        code: VOICE_CLOSE_CODE.recognizerFailed,
+        reason: "finalize-timeout",
+      },
+    ]);
+  });
+
   it("refuses a frame over the cap without forwarding it", () => {
     const recognizer = fakeRecognizer();
     const { session, socket } = startSession(recognizer);
@@ -165,6 +192,53 @@ describe("voice session", () => {
     expect(socket.closed).toEqual([
       { code: VOICE_CLOSE_CODE.badFrame, reason: "frame-too-large" },
     ]);
+  });
+
+  it("refuses audio past the 15 s PCM16 budget", () => {
+    const recognizer = fakeRecognizer();
+    const { session, socket } = startSession(recognizer);
+
+    const frames = VOICE_MAX_TOTAL_BYTES / VOICE_MAX_FRAME_BYTES;
+    for (let sent = 0; sent < frames; sent += 1) {
+      session.audio(pcm(VOICE_MAX_FRAME_BYTES));
+    }
+    expect(socket.closed).toHaveLength(0);
+
+    session.audio(pcm(2));
+
+    expect(recognizer.written).toHaveLength(frames);
+    expect(socket.closed).toEqual([
+      { code: VOICE_CLOSE_CODE.badFrame, reason: "audio-budget" },
+    ]);
+  });
+
+  it("stops pushing at a recognizer that keeps refusing writes", () => {
+    const recognizer = fakeRecognizer();
+    const { session, socket } = startSession(recognizer);
+    recognizer.accept.writes = false;
+
+    for (let sent = 0; sent < VOICE_BACKPRESSURE_REFUSALS; sent += 1) {
+      session.audio(pcm(640));
+    }
+
+    expect(recognizer.written).toHaveLength(VOICE_BACKPRESSURE_REFUSALS);
+    expect(socket.closed).toEqual([
+      { code: VOICE_CLOSE_CODE.overloaded, reason: "upstream-behind" },
+    ]);
+  });
+
+  it("keeps going when a refused write is followed by an accepted one", () => {
+    const recognizer = fakeRecognizer();
+    const { session, socket } = startSession(recognizer);
+
+    recognizer.accept.writes = false;
+    session.audio(pcm(640));
+    recognizer.accept.writes = true;
+    session.audio(pcm(640));
+    recognizer.accept.writes = false;
+    session.audio(pcm(640));
+
+    expect(socket.closed).toHaveLength(0);
   });
 
   it("refuses audio that is not whole 16-bit samples", () => {
@@ -183,7 +257,7 @@ describe("voice session", () => {
     const recognizer = fakeRecognizer();
     const { session, socket } = startSession(recognizer);
 
-    session.control(JSON.stringify({ type: "configure", model: "other" }));
+    session.control("configure");
 
     expect(recognizer.calls.finished).toBe(0);
     expect(socket.closed).toEqual([

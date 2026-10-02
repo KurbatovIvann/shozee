@@ -196,7 +196,10 @@ const envObjectSchema = z.object({
 
   VOICE_GOOGLE_PROJECT_ID: z.string().min(1).optional(),
 
-  VOICE_GOOGLE_LOCATION: z.string().min(1).default("eu"),
+  VOICE_GOOGLE_LOCATION: z
+    .string()
+    .regex(/^[a-z]+(?:-[a-z]+[0-9]*)*$/)
+    .default("eu"),
 
   SHO_URLS: z
     .string()

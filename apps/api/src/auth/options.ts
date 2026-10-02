@@ -111,6 +111,17 @@ const otpSendPaths: Readonly<
  * concrete plugin tuple is what lets `betterAuth()` infer the plugin
  * endpoints (`auth.api.sendPhoneNumberOTP`, …) for callers.
  */
+export function authTrustedOrigins(composition: {
+  readonly baseUrl: string;
+  readonly webOrigins: readonly string[];
+}): readonly string[] {
+  return [
+    composition.baseUrl,
+    expoClientPolicy.origin,
+    ...composition.webOrigins,
+  ];
+}
+
 export function buildAuthOptions(composition: AuthComposition) {
   const guard = createOtpSendGuard({
     store: composition.otpSendStore,
@@ -122,11 +133,7 @@ export function buildAuthOptions(composition: AuthComposition) {
     baseURL: composition.baseUrl,
     secret: composition.secret,
     database: composition.database,
-    trustedOrigins: [
-      composition.baseUrl,
-      expoClientPolicy.origin,
-      ...composition.webOrigins,
-    ],
+    trustedOrigins: [...authTrustedOrigins(composition)],
     // OTP codes live here (TTL'd), never in Postgres.
     secondaryStorage: composition.secondaryStorage,
     session: {

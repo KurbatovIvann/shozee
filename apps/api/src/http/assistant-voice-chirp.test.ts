@@ -7,7 +7,7 @@ import {
   type ChirpCall,
   type ChirpClient,
 } from "./assistant-voice-chirp.js";
-import type { VoiceRecognitionEvents } from "./assistant-voice-recognizer.js";
+import type { VoiceRecognitionEvents } from "./assistant-voice-chirp.js";
 
 type StreamingRequest =
   protos.google.cloud.speech.v2.IStreamingRecognizeRequest;
@@ -17,6 +17,7 @@ type StreamingResponse =
 interface FakeCall extends ChirpCall {
   readonly requests: StreamingRequest[];
   readonly state: { ended: boolean; cancelled: boolean };
+  readonly accepts: { write: boolean };
   respond(response: StreamingResponse): void;
   fail(error: unknown): void;
   finish(): void;
@@ -25,6 +26,7 @@ interface FakeCall extends ChirpCall {
 function fakeClient(): { client: ChirpClient; call: FakeCall } {
   const requests: StreamingRequest[] = [];
   const state = { ended: false, cancelled: false };
+  const accepts = { write: true };
   const listeners: {
     response: ((response: StreamingResponse) => void)[];
     error: ((error: unknown) => void)[];
@@ -33,8 +35,10 @@ function fakeClient(): { client: ChirpClient; call: FakeCall } {
   const call: FakeCall = {
     requests,
     state,
+    accepts,
     write: (request) => {
       requests.push(request);
+      return accepts.write;
     },
     end: () => {
       state.ended = true;
@@ -131,7 +135,8 @@ describe("chirp voice recognizer", () => {
     const sink = recorder();
 
     const stream = recognizer.start(sink.events);
-    stream.write(Buffer.from([1, 2, 3, 4]));
+
+    expect(stream.write(Buffer.from([1, 2, 3, 4]))).toBe(true);
     call.respond(interim("дві пачки", false));
     call.respond(interim("дві пачки кави", true));
     stream.finish();
@@ -142,6 +147,14 @@ describe("chirp voice recognizer", () => {
     expect(sink.partials).toEqual(["дві пачки", "дві пачки кави"]);
     expect(sink.finals).toEqual(["дві пачки кави"]);
     expect(sink.failures).toEqual([]);
+  });
+
+  it("reports a recognizer that is not draining", () => {
+    const { recognizer, call } = chirp();
+    const stream = recognizer.start(recorder().events);
+    call.accepts.write = false;
+
+    expect(stream.write(Buffer.from([1, 2]))).toBe(false);
   });
 
   it("keeps a trailing guess that never became final", () => {
@@ -174,7 +187,8 @@ describe("chirp voice recognizer", () => {
 
     const stream = recognizer.start(sink.events);
     stream.abort();
-    stream.write(Buffer.from([1, 2]));
+
+    expect(stream.write(Buffer.from([1, 2]))).toBe(false);
     call.finish();
 
     expect(call.state.cancelled).toBe(true);

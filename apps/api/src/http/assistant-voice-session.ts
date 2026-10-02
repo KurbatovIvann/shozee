@@ -4,15 +4,25 @@ import {
   VOICE_SAMPLE_RATE_HZ,
   type VoiceRecognitionStream,
   type VoiceRecognizer,
-} from "./assistant-voice-recognizer.js";
+} from "./assistant-voice-chirp.js";
+
+export const VOICE_STOP_FRAME = "stop";
 
 export const VOICE_MAX_SESSION_MS = 15_000;
 
 export const VOICE_MAX_FRAME_BYTES = 32_000;
 
+export const VOICE_MAX_TOTAL_BYTES =
+  (VOICE_MAX_SESSION_MS / 1000) * VOICE_SAMPLE_RATE_HZ * 2;
+
+export const VOICE_FINALIZE_TIMEOUT_MS = 5_000;
+
+export const VOICE_BACKPRESSURE_REFUSALS = 3;
+
 export const VOICE_CLOSE_CODE = {
   done: 1000,
   badFrame: 4400,
+  overloaded: 4429,
   recognizerFailed: 4500,
 } as const;
 
@@ -23,6 +33,7 @@ export type VoiceServerMessage =
       readonly type: "ready";
       readonly sampleRateHz: number;
       readonly maxFrameBytes: number;
+      readonly maxTotalBytes: number;
       readonly maxSessionMs: number;
     }
   | { readonly type: "partial"; readonly text: string }
@@ -39,7 +50,7 @@ export interface VoiceSocket {
 
 export interface VoiceSessionCaller {
   readonly userId: string;
-  readonly companySelector: string;
+  readonly companyId: string;
   readonly requestId: string;
 }
 
@@ -49,7 +60,9 @@ export interface VoiceSessionOptions {
   readonly logger: Logger;
   readonly caller: VoiceSessionCaller;
   readonly maxFrameBytes?: number;
+  readonly maxTotalBytes?: number;
   readonly maxSessionMs?: number;
+  readonly finalizeTimeoutMs?: number;
 }
 
 export interface VoiceSession {
@@ -60,18 +73,23 @@ export interface VoiceSession {
 
 export function startVoiceSession(options: VoiceSessionOptions): VoiceSession {
   const maxFrameBytes = options.maxFrameBytes ?? VOICE_MAX_FRAME_BYTES;
+  const maxTotalBytes = options.maxTotalBytes ?? VOICE_MAX_TOTAL_BYTES;
   const maxSessionMs = options.maxSessionMs ?? VOICE_MAX_SESSION_MS;
+  const finalizeTimeoutMs =
+    options.finalizeTimeoutMs ?? VOICE_FINALIZE_TIMEOUT_MS;
   const { socket, logger, caller } = options;
 
   let endedBy: VoiceUtteranceEnd = "client";
   let listening = true;
   let closed = false;
+  let totalBytes = 0;
+  let refusedWrites = 0;
   let timer: NodeJS.Timeout | undefined;
 
   const logContext = {
     request_id: caller.requestId,
     user_id: caller.userId,
-    company_selector: caller.companySelector,
+    company_id: caller.companyId,
   };
 
   const send = (message: VoiceServerMessage): void => {
@@ -80,7 +98,7 @@ export function startVoiceSession(options: VoiceSessionOptions): VoiceSession {
     }
   };
 
-  const stopTimer = (): void => {
+  const stopTimers = (): void => {
     if (timer !== undefined) {
       clearTimeout(timer);
       timer = undefined;
@@ -93,7 +111,7 @@ export function startVoiceSession(options: VoiceSessionOptions): VoiceSession {
     }
     closed = true;
     listening = false;
-    stopTimer();
+    stopTimers();
     socket.close(code, reason);
   };
 
@@ -105,10 +123,15 @@ export function startVoiceSession(options: VoiceSessionOptions): VoiceSession {
     },
     final(text) {
       listening = false;
-      stopTimer();
+      stopTimers();
       send({ type: "final", text, endedBy });
       logger.info(
-        { ...logContext, ended_by: endedBy, transcript_chars: text.length },
+        {
+          ...logContext,
+          ended_by: endedBy,
+          transcript_chars: text.length,
+          audio_bytes: totalBytes,
+        },
         "assistant voice utterance recognised",
       );
       close(VOICE_CLOSE_CODE.done, "final");
@@ -128,14 +151,20 @@ export function startVoiceSession(options: VoiceSessionOptions): VoiceSession {
     }
     listening = false;
     endedBy = reason;
-    stopTimer();
+    stopTimers();
     stream.finish();
+    timer = setTimeout(() => {
+      logger.warn(logContext, "assistant voice recognizer never finalised");
+      stream.abort();
+      close(VOICE_CLOSE_CODE.recognizerFailed, "finalize-timeout");
+    }, finalizeTimeoutMs);
   };
 
   send({
     type: "ready",
     sampleRateHz: VOICE_SAMPLE_RATE_HZ,
     maxFrameBytes,
+    maxTotalBytes,
     maxSessionMs,
   });
 
@@ -143,15 +172,13 @@ export function startVoiceSession(options: VoiceSessionOptions): VoiceSession {
     stopListening("limit");
   }, maxSessionMs);
 
-  const reject = (reason: string): void => {
+  const reject = (code: number, reason: string): void => {
     logger.warn(
       { ...logContext, voice_reject: reason },
       "assistant voice frame rejected",
     );
-    listening = false;
-    stopTimer();
     stream.abort();
-    close(VOICE_CLOSE_CODE.badFrame, reason);
+    close(code, reason);
   };
 
   return {
@@ -160,25 +187,37 @@ export function startVoiceSession(options: VoiceSessionOptions): VoiceSession {
         return;
       }
       if (frame.byteLength > maxFrameBytes) {
-        reject("frame-too-large");
+        reject(VOICE_CLOSE_CODE.badFrame, "frame-too-large");
         return;
       }
       if (frame.byteLength === 0 || frame.byteLength % 2 !== 0) {
-        reject("not-pcm16");
+        reject(VOICE_CLOSE_CODE.badFrame, "not-pcm16");
         return;
       }
-      stream.write(frame);
+      if (totalBytes + frame.byteLength > maxTotalBytes) {
+        reject(VOICE_CLOSE_CODE.badFrame, "audio-budget");
+        return;
+      }
+      totalBytes += frame.byteLength;
+      if (stream.write(frame)) {
+        refusedWrites = 0;
+        return;
+      }
+      refusedWrites += 1;
+      if (refusedWrites >= VOICE_BACKPRESSURE_REFUSALS) {
+        reject(VOICE_CLOSE_CODE.overloaded, "upstream-behind");
+      }
     },
     control(frame) {
       if (!listening) {
         return;
       }
       if (frame.length > maxFrameBytes) {
-        reject("frame-too-large");
+        reject(VOICE_CLOSE_CODE.badFrame, "frame-too-large");
         return;
       }
-      if (!isStopCommand(frame)) {
-        reject("unknown-command");
+      if (frame !== VOICE_STOP_FRAME) {
+        reject(VOICE_CLOSE_CODE.badFrame, "unknown-command");
         return;
       }
       stopListening("client");
@@ -186,23 +225,8 @@ export function startVoiceSession(options: VoiceSessionOptions): VoiceSession {
     abandon() {
       closed = true;
       listening = false;
-      stopTimer();
+      stopTimers();
       stream.abort();
     },
   };
-}
-
-function isStopCommand(frame: string): boolean {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(frame);
-  } catch {
-    return false;
-  }
-  return (
-    typeof parsed === "object" &&
-    parsed !== null &&
-    "type" in parsed &&
-    parsed.type === "stop"
-  );
 }

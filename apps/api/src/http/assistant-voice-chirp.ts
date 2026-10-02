@@ -1,13 +1,25 @@
 import type { protos } from "@google-cloud/speech";
 
-import {
-  joinTranscript,
-  VOICE_LANGUAGE_CODES,
-  VOICE_SAMPLE_RATE_HZ,
-  type VoiceRecognitionEvents,
-  type VoiceRecognitionStream,
-  type VoiceRecognizer,
-} from "./assistant-voice-recognizer.js";
+export const VOICE_SAMPLE_RATE_HZ = 16_000;
+
+export const VOICE_LANGUAGE_CODES: readonly string[] = ["uk-UA", "ru-RU"];
+
+export interface VoiceRecognitionEvents {
+  partial(text: string): void;
+  final(text: string): void;
+  failed(code: string): void;
+}
+
+export interface VoiceRecognitionStream {
+  write(pcm: Buffer): boolean;
+  finish(): void;
+  abort(): void;
+}
+
+export interface VoiceRecognizer {
+  start(events: VoiceRecognitionEvents): VoiceRecognitionStream;
+  close(): Promise<void>;
+}
 
 type StreamingRequest =
   protos.google.cloud.speech.v2.IStreamingRecognizeRequest;
@@ -15,7 +27,7 @@ type StreamingResponse =
   protos.google.cloud.speech.v2.IStreamingRecognizeResponse;
 
 export interface ChirpCall {
-  write(request: StreamingRequest): void;
+  write(request: StreamingRequest): boolean;
   end(): void;
   cancel(): void;
   onResponse(listener: (response: StreamingResponse) => void): void;
@@ -139,9 +151,10 @@ export class ChirpVoiceRecognizer implements VoiceRecognizer {
 
     return {
       write(pcm) {
-        if (open) {
-          call.write({ audio: pcm });
+        if (!open) {
+          return false;
         }
+        return call.write({ audio: pcm });
       },
       finish() {
         if (!open) {
@@ -185,9 +198,7 @@ export async function createChirpVoiceRecognizer(
       streamingRecognize() {
         const stream = client._streamingRecognize();
         return {
-          write: (request) => {
-            stream.write(request);
-          },
+          write: (request) => stream.write(request),
           end: () => {
             stream.end();
           },
@@ -208,4 +219,14 @@ export async function createChirpVoiceRecognizer(
       close: () => client.close(),
     },
   });
+}
+
+function joinTranscript(left: string, right: string): string {
+  if (left === "") {
+    return right;
+  }
+  if (right === "") {
+    return left;
+  }
+  return `${left} ${right}`;
 }

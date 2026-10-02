@@ -4,15 +4,16 @@
  * composed from validated `otpDelivery` config (stub or live Resend / SMS Fly).
  * Codes never reach logs (security-operations §2).
  */
-import { getConnInfo } from "@hono/node-server/conninfo";
 import {
   createRedisAiBudgetStore,
   createRedisAssistantEventHub,
   createRedisAssistantPresence,
   createRedisAssistantStreamSlots,
+  createStaffCompanyReader,
   logStaffAssistantMount,
   staffAssistantMount,
 } from "@showzy/assistant-runtime";
+import { getConnInfo } from "@hono/node-server/conninfo";
 import type { ServerConfig } from "@showzy/config";
 import { contractModules } from "@showzy/contract";
 import { createDbClient } from "@showzy/db";
@@ -28,7 +29,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import type { Context } from "hono";
 import { Redis } from "ioredis";
 
-import { buildAuthOptions } from "./auth/options.js";
+import { authTrustedOrigins, buildAuthOptions } from "./auth/options.js";
 import { otpSendersFromConfig } from "./auth/otp-delivery.js";
 import { createAssistantKitEvents } from "./http/assistant-kit-events.js";
 import { createAssistantKitRuntime } from "./http/assistant-kit-runtime.js";
@@ -165,13 +166,15 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
   // Pub/sub and presence on the shared, non-persistent Redis: neither needs to
   // survive a restart. The hub subscribes on its own connection, because a
   // Redis connection in subscribe mode can run nothing else.
+  const streamSlots = createRedisAssistantStreamSlots(redis);
+
   const assistantKitEvents =
     assistantKitModel === undefined
       ? undefined
       : createAssistantKitEvents({
           hub: createRedisAssistantEventHub(redis, { logger }),
           presence: createRedisAssistantPresence(redis),
-          slots: createRedisAssistantStreamSlots(redis),
+          slots: streamSlots,
         });
 
   const voiceCredentialsFile = config.voice.googleCredentialsFile;
@@ -181,6 +184,12 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
       : createAssistantVoiceApp({
           auth,
           logger,
+          staffCompany: createStaffCompanyReader(pipeline),
+          slots: streamSlots,
+          trustedOrigins: authTrustedOrigins({
+            baseUrl: config.auth.url,
+            webOrigins: config.auth.webOrigins,
+          }),
           recognizer: await createChirpVoiceRecognizer({
             credentialsFile: voiceCredentialsFile,
             projectId: config.voice.googleProjectId,

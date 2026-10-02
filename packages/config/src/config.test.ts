@@ -580,6 +580,15 @@ describe("voice recognition credentials", () => {
     });
   });
 
+  it("refuses a region that is not a Google Cloud location", () => {
+    expect(() =>
+      loadServerConfig({
+        ...validEnv(),
+        VOICE_GOOGLE_LOCATION: "EU/../secrets",
+      }),
+    ).toThrow(ConfigValidationError);
+  });
+
   it("takes the key file, project and region from the environment", () => {
     const config = loadServerConfig({
       ...validEnv(),
