@@ -1,5 +1,9 @@
 import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
 import { NotFoundError, PermissionDeniedError } from "@showzy/core/errors";
+import {
+  ASSISTANT_VOICE_PATH,
+  VOICE_CLOSE_CODE,
+} from "@showzy/validation/assistant-voice";
 import { WSContext } from "hono/ws";
 import { pino, type Logger } from "pino";
 import { describe, expect, it } from "vitest";
@@ -8,9 +12,7 @@ import type {
   VoiceRecognitionStream,
   VoiceRecognizer,
 } from "./assistant-voice-chirp.js";
-import { VOICE_CLOSE_CODE } from "./assistant-voice-session.js";
 import {
-  ASSISTANT_VOICE_PATH,
   createAssistantVoiceApp,
   voiceSocketEvents,
   type AssistantVoiceRuntime,

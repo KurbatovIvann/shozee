@@ -1,3 +1,11 @@
+import {
+  VOICE_CLOSE_CODE,
+  VOICE_FINALIZE_TIMEOUT_MS,
+  VOICE_MAX_FRAME_BYTES,
+  VOICE_MAX_SESSION_MS,
+  VOICE_MAX_TOTAL_BYTES,
+  VOICE_STOP_FRAME,
+} from "@showzy/validation/assistant-voice";
 import { pino, type Logger } from "pino";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -8,13 +16,7 @@ import type {
 } from "./assistant-voice-chirp.js";
 import {
   startVoiceSession,
-  VOICE_CLOSE_CODE,
-  VOICE_FINALIZE_TIMEOUT_MS,
-  VOICE_MAX_FRAME_BYTES,
-  VOICE_MAX_SESSION_MS,
-  VOICE_MAX_TOTAL_BYTES,
   VOICE_MAX_UNACKED_BYTES,
-  VOICE_STOP_FRAME,
   type VoiceSession,
 } from "./assistant-voice-session.js";
 
