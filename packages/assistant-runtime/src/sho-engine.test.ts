@@ -1,3 +1,4 @@
+import type { ActionPipelineDeps } from "@showzy/core";
 import { PermissionDeniedError } from "@showzy/core/errors";
 import type {
   ShoClient,
@@ -6,7 +7,14 @@ import type {
 } from "@showzy/sho-protocol";
 import { describe, expect, it, vi } from "vitest";
 
-import { createShoEngine, shoNowAt, type ShoPlanner } from "./sho-engine.js";
+import {
+  createShoEngine,
+  mountShoEngine,
+  shoNowAt,
+  type ShoEngineFor,
+  type ShoMountConfig,
+  type ShoPlanner,
+} from "./sho-engine.js";
 import type { ShoContextBuild } from "./sho-context.js";
 import type { ShoContextSource } from "./sho-context-source.js";
 import type { ShoPlan } from "./sho-turn.js";
@@ -146,5 +154,43 @@ describe("createShoEngine", () => {
     await expect(
       engine(MEMBER).plan({ text: "привіт", now: new Date() }),
     ).rejects.toThrow("socket");
+  });
+});
+
+describe("mountShoEngine", () => {
+  const PIPELINE = {} as ActionPipelineDeps;
+  const TOKEN = "sho-service-token-at-least-32-chars";
+  const URLS = ["http://sho-a:3100"];
+  const ACTIONS = ["orders.list"];
+
+  const mounted = (sho: ShoMountConfig): ShoEngineFor | undefined =>
+    mountShoEngine({ sho, pipeline: PIPELINE });
+
+  it("mounts nothing without a replica", () => {
+    expect(
+      mounted({ urls: [], serviceToken: TOKEN, actions: ACTIONS }),
+    ).toBeUndefined();
+  });
+
+  it("mounts nothing without a service token", () => {
+    expect(
+      mounted({ urls: URLS, serviceToken: undefined, actions: ACTIONS }),
+    ).toBeUndefined();
+  });
+
+  it("mounts nothing while no action is whitelisted", () => {
+    expect(
+      mounted({ urls: URLS, serviceToken: TOKEN, actions: [] }),
+    ).toBeUndefined();
+  });
+
+  it("mounts an engine for a configured replica, token and action", () => {
+    const engine = mounted({
+      urls: URLS,
+      serviceToken: TOKEN,
+      actions: ACTIONS,
+    });
+    expect(engine).toBeTypeOf("function");
+    expect(engine?.(MEMBER).plan).toBeTypeOf("function");
   });
 });

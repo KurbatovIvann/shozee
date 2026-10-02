@@ -11,6 +11,7 @@ import {
   createRedisAssistantStreamSlots,
   createStaffCompanyReader,
   logStaffAssistantMount,
+  mountShoEngine,
   staffAssistantMount,
 } from "@showzy/assistant-runtime";
 import { getConnInfo } from "@hono/node-server/conninfo";
@@ -197,6 +198,8 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
           }),
         });
 
+  const shoEngine = mountShoEngine({ sho: config.sho, pipeline });
+
   const app = createApp({
     auth,
     registry,
@@ -218,6 +221,7 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
             model: assistantKitModel,
             provider: staffProvider,
             redis,
+            ...(shoEngine === undefined ? {} : { sho: shoEngine }),
           }),
         }),
     ...(assistantKitEvents === undefined ? {} : { assistantKitEvents }),

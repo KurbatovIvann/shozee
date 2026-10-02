@@ -55,7 +55,26 @@ registry is injected into `createAssistantRuntime`; this package never imports
     `PERMISSION_DENIED` from the three name-index reads is the `unreadable`
     fallback here (a member holding none of those permissions) and not a
     refusal. The `ShoPlanner` that turns a `ShoResult` into a plan is injected
-    (SHO-769).
+    (SHO-769), and `mountShoEngine` is the one place that reads `config.sho`
+    and decides whether `apps/api` runs Шо first at all: no replica, no token
+    or an empty whitelist mounts nothing, so a turn costs no parse.
+- `sho-plan.ts` — that planner (SHO-769). One gate over the parse result, then
+  one registered action planner. The gate sends a turn to the dialogue model
+  when Шо read more than one command, `none`, a `ui` answer, a `how_to` or
+  `language` need, a `reference` / `check_reference` need (until SHO-770),
+  `unsupported` on the action, a refinement or a reference to an earlier
+  command, action confidence below the calibrated `0.95`, or a blocking need
+  no card can settle. `shoLocatorFor` is the other half of that rule: an
+  ambiguous or unknown name with candidates, and an unchecked phone or email,
+  become a `by: "query"` locator, so the domain resolver raises the picker and
+  the person taps a card (the SHO-747 rule) instead of the model guessing.
+  Action planners are registered per action in `SHO_ACTION_PLANNERS` and
+  enabled per deployment by `SHO_ACTIONS`, empty by default — an empty list
+  means every turn goes to the LLM, as it did before. A planner declares
+  `writes`, and a command Шо parsed as a write (or that it wants confirmed)
+  reaches only a planner that declares it, so a mis-parse cannot be planned
+  through a read tool; every AI write still pauses on the preview card
+  (SHO-749), which is what the SHO-740 wrong-write recordings pin.
 - `assistant-budget-guard.ts`, `stores/budget.ts`, `stores/budget-redis.ts` —
   the pure spend guard, the budget store port with its in-memory reference
   store, and the Redis store both processes mount (SHO-561). A counter never

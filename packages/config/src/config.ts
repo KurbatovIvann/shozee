@@ -221,6 +221,18 @@ const envObjectSchema = z.object({
 
   SHO_SERVICE_TOKEN: z.string().min(32).optional(),
 
+  SHO_ACTIONS: z
+    .string()
+    .default("")
+    .transform((value) =>
+      value
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0),
+    )
+    .pipe(z.array(z.string().regex(/^[a-z][a-zA-Z]*\.[a-z][a-zA-Z]*$/)))
+    .transform((actions) => [...new Set(actions)]),
+
   SHO_PORT: z.coerce.number().int().min(1).max(65535).default(3100),
 
   SHO_WORKERS: z.coerce.number().int().min(1).max(64).optional(),
@@ -374,6 +386,7 @@ export interface ServerConfig {
   readonly sho: {
     readonly urls: readonly string[];
     readonly serviceToken: string | undefined;
+    readonly actions: readonly string[];
   };
 }
 
@@ -493,6 +506,7 @@ export function loadServerConfig(
     sho: {
       urls: parsed.SHO_URLS,
       serviceToken: parsed.SHO_SERVICE_TOKEN,
+      actions: parsed.SHO_ACTIONS,
     },
   };
 }

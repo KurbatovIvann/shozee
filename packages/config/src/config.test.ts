@@ -498,10 +498,25 @@ describe("loadServerConfig", () => {
 describe("Шо service configuration (ADR-0051)", () => {
   const TOKEN = "sho-service-token-at-least-32-chars";
 
-  it("defaults to no Шо replicas and no token", () => {
+  it("defaults to no Шо replicas, no token and no planned actions", () => {
     const config = loadServerConfig(validEnv());
     expect(config.sho.urls).toEqual([]);
     expect(config.sho.serviceToken).toBeUndefined();
+    expect(config.sho.actions).toEqual([]);
+  });
+
+  it("reads the planned action whitelist and de-duplicates it", () => {
+    const config = loadServerConfig({
+      ...validEnv(),
+      SHO_ACTIONS: "orders.list, orders.create ,orders.list",
+    });
+    expect(config.sho.actions).toEqual(["orders.list", "orders.create"]);
+  });
+
+  it("refuses an action that is not <module>.<verb>", () => {
+    expect(() =>
+      loadServerConfig({ ...validEnv(), SHO_ACTIONS: "orders_list" }),
+    ).toThrow(ConfigValidationError);
   });
 
   it("normalizes, de-duplicates and keeps the replica order", () => {
