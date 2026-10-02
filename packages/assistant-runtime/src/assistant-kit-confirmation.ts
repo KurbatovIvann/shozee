@@ -54,6 +54,7 @@ export class AssistantConfirmationRequired extends Error {
   readonly attempt: ConfirmationAttempt;
   readonly challenge: ConfirmationChallenge;
   readonly code: CoreErrorCode;
+  readonly clientMessage: string;
   readonly level: AssistantPreviewLevel;
 
   constructor(
@@ -66,6 +67,7 @@ export class AssistantConfirmationRequired extends Error {
     this.attempt = attempt;
     this.challenge = refused.challenge;
     this.code = refused.code;
+    this.clientMessage = refused.clientMessage;
     this.level = level;
   }
 }
