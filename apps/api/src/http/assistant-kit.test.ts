@@ -2443,7 +2443,7 @@ describe("a send while a card is open answers it", () => {
     expect(await kit.peek({ conversationId: CONVERSATION, bind })).toBeNull();
   });
 
-  it("answers ok, and keeps the card, when a decline reaches a claim in flight", async () => {
+  it("answers ok when a decline reaches a claim in flight, and takes on the retry", async () => {
     let writeReached = (): void => undefined;
     const writeEntered = new Promise<void>((resolve) => {
       writeReached = resolve;
@@ -2508,6 +2508,27 @@ describe("a send while a card is open answers it", () => {
       ),
     ).toEqual([]);
     expect(body.window?.openPause?.interactionId).toBe(pause.interactionId);
+
+    const retried = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "ні"),
+    );
+    const after = (await retried.json()) as KitBody;
+
+    expect(after.status).toBe("abandoned");
+    expect(await kit.peek({ conversationId: CONVERSATION, bind })).toBeNull();
+    const said = (after.window?.messages ?? []).flatMap((message) =>
+      message.parts.flatMap((part) =>
+        part.kind === "text" && part.text !== undefined ? [part.text] : [],
+      ),
+    );
+    expect(said).toEqual(["ні"]);
+    expect(
+      (after.window?.messages ?? []).flatMap((message) =>
+        message.parts.filter((part) => part.kind === "trace"),
+      ),
+    ).toHaveLength(1);
   });
 
   it("stores the person's words before the trace, for a reload", async () => {

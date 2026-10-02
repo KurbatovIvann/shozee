@@ -239,8 +239,12 @@ export function createAssistantKit<T extends AnyTypes>(
       ).toISOString(),
     };
     if (!(await put(cancelled, existing.raw))) {
-      return retriesLeft > 0
-        ? await dropOpenPause(input, retriesLeft - 1)
+      if (retriesLeft > 0) {
+        return await dropOpenPause(input, retriesLeft - 1);
+      }
+      const last = await readRecord(input);
+      return last === null || last.record.interactionId !== input.interactionId
+        ? { kind: "gone" }
         : { kind: "claimed" };
     }
     try {

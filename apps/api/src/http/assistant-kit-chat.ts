@@ -268,6 +268,7 @@ export async function handleAssistantKitChat(
         assistantRejectedTrace,
       );
       if (declined === "answer_in_flight") {
+        await runtime.commands.release(finishing);
         return await settled();
       }
       if (declined !== "ok") {

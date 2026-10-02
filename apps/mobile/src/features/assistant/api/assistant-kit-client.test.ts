@@ -379,11 +379,8 @@ describe("the assistant kit client", () => {
     });
   });
 
-  it("reports a dismiss the answer claimed first, with the card still open", async () => {
-    respond(409, {
-      status: "answer_in_flight",
-      window: conversationWindow(OPEN_PAUSE),
-    });
+  it("reports a dismiss the answer claimed first, and is not told it was dropped", async () => {
+    respond(409, { status: "answer_in_flight", window: conversationWindow() });
 
     const outcome = await postAssistantKitAbandon({
       ...call,
@@ -392,7 +389,8 @@ describe("the assistant kit client", () => {
     });
 
     expect(outcome.failure?.kind).toBe("answer_in_flight");
-    expect(outcome.window?.openPause?.interactionId).toBe(INTERACTION);
+    expect(outcome.window?.conversationId).toBe(CONVERSATION);
+    expect(outcome.window?.openPause).toBeNull();
   });
 
   it("asks for the page before a cursor by the same query", async () => {
