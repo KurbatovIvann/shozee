@@ -402,7 +402,10 @@ Applies to actions declaring `idempotent: true` with `risk` ≠ `read`
   the reservation. A failed/stale attempt may reuse that persisted grant only
   while it is unexpired and all request bindings match; otherwise it needs a
   new challenge. This survives a crash after reservation without making the
-  raw challenge token reusable.
+  raw challenge token reusable. A **confirmation-only** request (§7) keeps
+  the replay arm of that probe and drops the resume arm: a completed key
+  still replays its stored response, a stale attempt's persisted grant is
+  ignored, and nothing is reserved.
 - **Retention**: keys expire after 48h (`expires_at`, cleaned by a worker
   job); replay after expiry re-executes — callers must not rely on replay
   beyond the retry window.
@@ -674,6 +677,21 @@ Two-step, single-use, channel-agnostic (same for UI and AI — ADR-0008):
 3. QES signing remains client-side regardless: `documents.sign`'s server
    part only records the client-produced signature; the confirmation
    protocol cannot substitute for key possession.
+
+**Confirmation-only requests.** Request meta may also carry
+`confirmationOnly: true`, which asks core for the card and nothing else:
+it gates like `requireConfirmation` (same preconditions, checked under its
+own name when the contract does not already declare confirmation), keeps
+the §5 replay arm — a completed idempotency key returns its stored
+response, because asking again for a card about work already done would be
+a lie — and then always issues a **fresh** challenge. Any
+`confirmationChallengeId` in the same request is ignored rather than
+consumed, a persisted grant never resumes, and the handler is unreachable:
+a gate that returns a grant for such a request is a composition bug
+(`CoreInvariantError`, nothing executed). This is how a caller holding an
+attempt it cannot yet run — the AI loop re-presenting a carried action
+after another one on the same card drifted — re-summarizes it against
+current state without the risk that omitting a token means "run it".
 
 Redis unavailability fails closed for confirmation: high-risk execution does
 not proceed, even if ordinary authenticated read rate limits are fail-open.
@@ -994,6 +1012,7 @@ does not apply — fails the check.
 
 | Date | Change | Why | Reported by |
 | --- | --- | --- | --- |
+| 2026-10-03 | §5/§7: `confirmationOnly: true` request meta — replay stays, resume is dropped, the gate always issues a fresh challenge and the handler is unreachable | Reviewer on SHO-824: omitting `confirmationChallengeId` means "no token", not "do not run", so re-summarizing a carried attempt could execute it | SHO-839 |
 | 2026-10-02 | §7: `ActionPreviewEnv` carries `caller` — `userId` and `can(permission)` over the §3 resolved staff permission set; non-staff human modes hold no company permission | Guardians on SHO-751/SHO-790: a card could only guess what the caller may see (role defaults), and an own-scope account preview had no caller to scope its reads by | SHO-814 |
 | 2026-10-02 | §2: the contract check fails an AI-exposed `risk: write`/`high` action that binds no `preview`; the `preview` row records that the callback is now required, not merely allowed | ADR-0050: the assistant must show the server's card before every write, so the binding belongs to the registry rather than each module's taste | SHO-754 |
 | 2026-10-01 | §7: the challenge binds `previewHash` beside `inputHash`; consuming it re-runs `preview` in the same read-only environment before the handler and, on a different card, executes nothing and returns a fresh challenge carrying the new card | Guardian on SHO-750: only `inputHash` was bound, so a price-list change inside the five-minute window persisted a total the person never approved | SHO-804 |

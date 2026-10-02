@@ -220,6 +220,7 @@ interface RunOptions {
   readonly challengeId?: string;
   readonly companyId?: string;
   readonly requireConfirmation?: true;
+  readonly confirmationOnly?: true;
 }
 
 function requestMeta(options: RunOptions): PipelineRequestMeta {
@@ -233,6 +234,9 @@ function requestMeta(options: RunOptions): PipelineRequestMeta {
       : {}),
     ...(options.requireConfirmation === true
       ? { requireConfirmation: true as const }
+      : {}),
+    ...(options.confirmationOnly === true
+      ? { confirmationOnly: true as const }
       : {}),
   };
 }
@@ -516,5 +520,24 @@ describe("execution-time requireConfirmation (core.md §7, ADR-0050)", () => {
     expect(required.challenge.preview).toBeUndefined();
     expect(result.resultId).toHaveLength(36);
     expect(runs).toBe(1);
+  });
+});
+
+describe("execution-time confirmationOnly preconditions (core.md §7)", () => {
+  it("refuses the flag on a write that cannot replay", async () => {
+    let runs = 0;
+    const action = implementAction(nonIdempotentContract, {
+      handler: () => {
+        runs += 1;
+        return Promise.resolve({ resultId: randomUUID() });
+      },
+      auditTarget: () => ({ type: "thing", id: "fixture" }),
+    });
+    const flow = session();
+
+    await expect(
+      flow.run(action, { confirmationOnly: true }),
+    ).rejects.toBeInstanceOf(CoreInvariantError);
+    expect(runs).toBe(0);
   });
 });

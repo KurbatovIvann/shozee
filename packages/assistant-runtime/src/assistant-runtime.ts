@@ -65,6 +65,7 @@ import {
 } from "./assistant-kit-confirmation.js";
 import {
   createResolveAnswer,
+  type ReSummarizeAction,
   type RunConfirmedAction,
 } from "./assistant-kit-resolve.js";
 import { assistantKitTurnTools } from "./assistant-kit-tools.js";
@@ -248,9 +249,11 @@ export function createAssistantRuntime(
       readonly idempotencyKey: string;
       readonly challengeId: string;
     };
+    readonly cardOnly?: { readonly idempotencyKey: string };
   }): Promise<unknown> {
     const idempotencyKey =
       args.confirmed?.idempotencyKey ??
+      args.cardOnly?.idempotencyKey ??
       assistantKitIdempotencyKey(
         args.context,
         args.actionName,
@@ -271,6 +274,9 @@ export function createAssistantRuntime(
           ...(args.confirmed === undefined
             ? {}
             : { confirmationChallengeId: args.confirmed.challengeId }),
+          ...(args.cardOnly === undefined
+            ? {}
+            : { confirmationOnly: true as const }),
         },
         principal: staffPrincipal(args.context),
       });
@@ -300,6 +306,19 @@ export function createAssistantRuntime(
       confirmed: { idempotencyKey, challengeId },
     });
 
+  const reSummarize: ReSummarizeAction = ({
+    context,
+    actionName,
+    input,
+    idempotencyKey,
+  }) =>
+    runAction({
+      context,
+      actionName,
+      input,
+      cardOnly: { idempotencyKey },
+    });
+
   return {
     logger: options.pipeline.logger,
 
@@ -307,7 +326,7 @@ export function createAssistantRuntime(
     forTurn: (caller, claim) => scopedKit(caller, claim),
 
     model: options.model,
-    resolveAnswer: createResolveAnswer({ runConfirmed }),
+    resolveAnswer: createResolveAnswer({ runConfirmed, reSummarize }),
     ...(options.sho === undefined ? {} : { sho: options.sho }),
     writtenRecordIdField: (action) =>
       options.registry.getContract(action)?.writtenRecordIdField ?? null,

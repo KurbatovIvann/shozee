@@ -23,11 +23,13 @@ import type {
   AssistantInteractionTypes,
   ChoicePickerTarget,
   ChoiceResolution,
+  ConfirmationAlsoSecret,
   ConfirmationAttemptSecret,
   ConfirmationResolution,
 } from "./assistant-interactions.js";
 import {
   AssistantConfirmationRequired,
+  confirmationAlso,
   confirmationPause,
 } from "./assistant-kit-confirmation.js";
 import type { AssistantToolContext, ResolveAnswer } from "./runtime-types.js";
@@ -114,8 +116,16 @@ export type RunConfirmedAction = (args: {
   readonly challengeId: string;
 }) => Promise<unknown>;
 
+export type ReSummarizeAction = (args: {
+  readonly context: AssistantToolContext;
+  readonly actionName: string;
+  readonly input: unknown;
+  readonly idempotencyKey: string;
+}) => Promise<unknown>;
+
 export interface ResolveAnswerDeps {
   readonly runConfirmed: RunConfirmedAction;
+  readonly reSummarize: ReSummarizeAction;
 }
 
 type ResolveArgs = Parameters<ResolveAnswer>[0];
@@ -188,6 +198,40 @@ function confirmedAttempts(
   ];
 }
 
+interface RecarriedAlso {
+  readonly asked: readonly ConfirmationAlsoSecret[];
+  readonly unasked: readonly ConfirmationAlsoSecret[];
+}
+
+async function recarryAlso(
+  args: ResolveArgs,
+  deps: ResolveAnswerDeps,
+  also: readonly ConfirmationAlsoSecret[],
+): Promise<RecarriedAlso> {
+  const asked: ConfirmationAlsoSecret[] = [];
+  const unasked: ConfirmationAlsoSecret[] = [];
+  for (const one of also) {
+    try {
+      await deps.reSummarize({
+        context: args.context,
+        actionName: one.actionName,
+        input: one.canonicalInput,
+        idempotencyKey: one.idempotencyKey,
+      });
+      unasked.push(one);
+    } catch (error) {
+      if (error instanceof AssistantConfirmationRequired) {
+        asked.push(confirmationAlso(error));
+      } else if (error instanceof CoreError) {
+        unasked.push(one);
+      } else {
+        throw error;
+      }
+    }
+  }
+  return { asked, unasked };
+}
+
 async function resolveConfirmation(
   args: ResolveArgs,
   deps: ResolveAnswerDeps,
@@ -210,7 +254,8 @@ async function resolveConfirmation(
     } catch (error) {
       if (error instanceof AssistantConfirmationRequired) {
         if (done.length === 0) {
-          return confirmationPause(error, resolution.also);
+          const recarried = await recarryAlso(args, deps, resolution.also);
+          return confirmationPause(error, recarried.asked, recarried.unasked);
         }
         return halted(done, {
           action: attempt.actionName,

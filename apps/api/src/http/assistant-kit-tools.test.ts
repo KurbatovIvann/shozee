@@ -46,7 +46,9 @@ import {
   type ChoiceSecret,
   type ConfirmationAlsoSecret,
   type ConfirmationSecret,
+  type ReSummarizeAction,
   type ResolveAnswerDeps,
+  type RunConfirmedAction,
 } from "@showzy/assistant-runtime";
 import {
   ConfirmationRequiredError,
@@ -625,9 +627,13 @@ const ANSWER_CONTEXT = {
 };
 
 /** For a resolver that must never reach a confirmed action. */
+const NEVER_RESUMMARIZED: ReSummarizeAction = () =>
+  Promise.reject(new Error("no re-summarize was expected here"));
+
 const NEVER_CONFIRMED: ResolveAnswerDeps = {
   runConfirmed: () =>
     Promise.reject(new Error("no confirmation was expected here")),
+  reSummarize: NEVER_RESUMMARIZED,
 };
 
 describe("resolveAnswer calls the same tool again", () => {
@@ -770,10 +776,13 @@ describe("an action that needs a person's authorisation", () => {
   }
 
   function answerWith(
-    deps: ResolveAnswerDeps,
+    deps: Partial<ResolveAnswerDeps> & Pick<ResolveAnswerDeps, "runConfirmed">,
     also: readonly ConfirmationAlsoSecret[] = [],
   ): Promise<ToolOutcome> {
-    return createResolveAnswer(deps)({
+    return createResolveAnswer({
+      reSummarize: NEVER_RESUMMARIZED,
+      ...deps,
+    })({
       toolName: "customers_deleteCustomer",
       kind: "confirmation",
       value: approved(also),
@@ -976,12 +985,32 @@ describe("an action that needs a person's authorisation", () => {
     expect(JSON.stringify(outcome)).not.toContain(ANOTHER_COMPANY);
   });
 
+  const DRIFTED_CHALLENGE = {
+    ...CHALLENGE,
+    challengeId: "cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd",
+  };
+  const SECOND_RESUMMARIZED = {
+    challengeId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    summary: "Змінити клієнта: Галина Петрівна",
+    expiresAt: SECOND_CHALLENGE.expiresAt,
+    preview: {
+      title: "Змінити клієнта: Галина Петрівна",
+      lines: [],
+      notes: [],
+    },
+  };
+
+  const driftsOnFirst: RunConfirmedAction = () =>
+    Promise.reject(
+      new AssistantConfirmationRequired(
+        ATTEMPT,
+        new ConfirmationRequiredError(DRIFTED_CHALLENGE),
+      ),
+    );
+
   it("asks again with the fresh card when the first action of one card drifts", async () => {
-    const fresh = {
-      ...CHALLENGE,
-      challengeId: "cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd",
-    };
     const seen: unknown[] = [];
+    const reSummarized: unknown[] = [];
 
     const outcome = await answerWith(
       {
@@ -992,10 +1021,18 @@ describe("an action that needs a person's authorisation", () => {
             idempotencyKey: args.idempotencyKey,
             challengeId: args.challengeId,
           });
+          return driftsOnFirst(args);
+        },
+        reSummarize: (args) => {
+          reSummarized.push({
+            actionName: args.actionName,
+            input: args.input,
+            idempotencyKey: args.idempotencyKey,
+          });
           return Promise.reject(
             new AssistantConfirmationRequired(
-              ATTEMPT,
-              new ConfirmationRequiredError(fresh),
+              SECOND_ATTEMPT,
+              new ConfirmationRequiredError(SECOND_RESUMMARIZED),
             ),
           );
         },
@@ -1011,19 +1048,68 @@ describe("an action that needs a person's authorisation", () => {
         challengeId: CHALLENGE.challengeId,
       },
     ]);
+    expect(reSummarized).toEqual([
+      {
+        actionName: SECOND_ATTEMPT.actionName,
+        input: SECOND_ATTEMPT.input,
+        idempotencyKey: SECOND_ATTEMPT.idempotencyKey,
+      },
+    ]);
     expect(outcome).toMatchObject({
       kind: "pause",
       interaction: "confirmation",
       prompt: {
         preview: CARD,
-        also: [SECOND_CHALLENGE.preview],
+        also: [SECOND_RESUMMARIZED.preview],
       },
       secret: {
-        challengeId: fresh.challengeId,
+        challengeId: DRIFTED_CHALLENGE.challengeId,
         idempotencyKey: ATTEMPT.idempotencyKey,
+        also: [
+          {
+            ...SECOND_ALSO,
+            challengeId: SECOND_RESUMMARIZED.challengeId,
+            preview: SECOND_RESUMMARIZED.preview,
+          },
+        ],
+      },
+    });
+  });
+
+  it("stops asking about a carried action whose key already replayed", async () => {
+    const outcome = await answerWith(
+      {
+        runConfirmed: driftsOnFirst,
+        reSummarize: () => Promise.resolve({ id: CUSTOMER_A }),
+      },
+      [SECOND_ALSO],
+    );
+
+    expect(outcome).toMatchObject({
+      kind: "pause",
+      prompt: { also: [] },
+      secret: {
+        challengeId: DRIFTED_CHALLENGE.challengeId,
         also: [SECOND_ALSO],
       },
     });
+  });
+
+  it("carries an action it cannot re-summarize rather than dropping it", async () => {
+    const outcome = await answerWith(
+      {
+        runConfirmed: driftsOnFirst,
+        reSummarize: () => Promise.reject(LEAKY_REFUSAL),
+      },
+      [SECOND_ALSO],
+    );
+
+    expect(outcome).toMatchObject({
+      kind: "pause",
+      prompt: { also: [] },
+      secret: { also: [SECOND_ALSO] },
+    });
+    expect(JSON.stringify(outcome)).not.toContain(ANOTHER_COMPANY);
   });
 
   it("re-presents a carried action unchanged, so core answers the same attempt", async () => {
@@ -1059,6 +1145,7 @@ describe("an action that needs a person's authorisation", () => {
         ran.push(args.actionName);
         return Promise.resolve({ ran: args.actionName });
       },
+      reSummarize: NEVER_RESUMMARIZED,
     })({
       toolName: "customers_deleteCustomer",
       kind: "confirmation",
@@ -1085,6 +1172,7 @@ describe("an action that needs a person's authorisation", () => {
         seen.push(args.actionName);
         return Promise.resolve({ id: CUSTOMER_A });
       },
+      reSummarize: NEVER_RESUMMARIZED,
     })({
       toolName: "customers_deleteCustomer",
       kind: "confirmation",

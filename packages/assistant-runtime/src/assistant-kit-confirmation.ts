@@ -125,8 +125,12 @@ export function confirmationAlso(
 export function confirmationPause(
   required: AssistantConfirmationRequired,
   also: readonly ConfirmationAlsoSecret[] = [],
+  carriedUnasked: readonly ConfirmationAlsoSecret[] = [],
 ): Extract<ToolOutcome, { kind: "pause" }> {
-  const secret: ConfirmationSecret = { ...attemptSecretOf(required), also };
+  const secret: ConfirmationSecret = {
+    ...attemptSecretOf(required),
+    also: [...also, ...carriedUnasked],
+  };
   const strong =
     required.level === "strong" || also.some((one) => one.level === "strong");
   return {
