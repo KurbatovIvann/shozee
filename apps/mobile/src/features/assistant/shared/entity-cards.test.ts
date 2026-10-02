@@ -1,4 +1,5 @@
 import {
+  ASSISTANT_CLIP_ARRAY_MAX,
   ASSISTANT_TOOL_CLIPPED_STATUS,
   assistantSurfaceHandoffHref,
   parseCustomerEntitySurfaces,
@@ -49,6 +50,20 @@ function customerData(
     throw new Error("customer entity payload did not parse");
   }
   return entity;
+}
+
+function clippedProduct(preview: Record<string, unknown>): unknown {
+  return {
+    status: ASSISTANT_TOOL_CLIPPED_STATUS,
+    omitted: 23,
+    preview: {
+      id: PRODUCT_ID,
+      name: "Наполеон",
+      basePriceMinor: "45000",
+      currency: "UAH",
+      ...preview,
+    },
+  };
 }
 
 function productData(
@@ -184,19 +199,14 @@ describe("product entity card (SHO-756)", () => {
 
   it("drops the variant count and footnotes the clip when the array was cut", () => {
     const card = localizeProductEntityCard(
-      productData({
-        status: ASSISTANT_TOOL_CLIPPED_STATUS,
-        omitted: 23,
-        preview: {
-          id: PRODUCT_ID,
-          name: "Наполеон",
-          basePriceMinor: "45000",
-          currency: "UAH",
-          variants: Array.from({ length: 50 }, (_, index) => ({
-            id: String(index),
-          })),
-        },
-      }),
+      productData(
+        clippedProduct({
+          variants: Array.from(
+            { length: ASSISTANT_CLIP_ARRAY_MAX },
+            (_, index) => ({ id: String(index) }),
+          ),
+        }),
+      ),
       "uk",
     );
 
@@ -204,6 +214,26 @@ describe("product entity card (SHO-756)", () => {
     expect(card.footnotes).toEqual([assistantCopy("uk").cards.variantsClipped]);
     expect(card.valueLabel).toBe(formatMoneyMinor("45000", "UAH"));
     expect(card.title).toBe("Наполеон");
+  });
+
+  it("keeps the variant count and shows no footnote when the clip cut elsewhere", () => {
+    const card = localizeProductEntityCard(
+      productData(
+        clippedProduct({
+          variants: [{ id: "a" }, { id: "b" }],
+          imageFileIds: Array.from(
+            { length: ASSISTANT_CLIP_ARRAY_MAX },
+            (_, index) => String(index),
+          ),
+        }),
+      ),
+      "uk",
+    );
+
+    expect(card.detailRows).toEqual([
+      variantCountLabel(2, "uk", productsCopy("uk").variants),
+    ]);
+    expect(card.footnotes).toEqual([]);
   });
 });
 

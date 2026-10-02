@@ -1,5 +1,6 @@
 import type { AssistantSurfaceDestinationDeclaration } from "./destination.js";
 import {
+  clipMayHaveCutArray,
   isAssistantSurfaceResultOutput,
   isRecord,
   moneyMinorFromFields,
@@ -33,15 +34,15 @@ export type AssistantProductEntityData = {
   readonly status: string | null;
   readonly basePrice: AssistantMoneyMinor | null;
   readonly variantCount: number | null;
-  readonly clipped: boolean;
+  readonly variantsClipped: boolean;
   readonly toolCallId?: string;
 };
 
-function variantCount(value: unknown, clipped: boolean): number | null {
-  if (!Array.isArray(value)) {
-    return clipped ? null : 0;
+function variantCount(value: unknown, variantsClipped: boolean): number | null {
+  if (variantsClipped) {
+    return null;
   }
-  return clipped ? null : value.length;
+  return Array.isArray(value) ? value.length : 0;
 }
 
 function parseEntity(
@@ -55,6 +56,7 @@ function parseEntity(
   if (productId === null) {
     return null;
   }
+  const variantsClipped = clipMayHaveCutArray(payload["variants"], clipped);
   const entity: AssistantProductEntityData = {
     kind: "product-entity",
     productId,
@@ -64,8 +66,8 @@ function parseEntity(
       payload["basePriceMinor"],
       payload["currency"],
     ),
-    variantCount: variantCount(payload["variants"], clipped),
-    clipped,
+    variantCount: variantCount(payload["variants"], variantsClipped),
+    variantsClipped,
   };
   const callId = result.toolCallId;
   if (typeof callId === "string" && callId.length > 0) {

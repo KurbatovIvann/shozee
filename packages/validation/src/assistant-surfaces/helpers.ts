@@ -41,6 +41,26 @@ const NON_RESULT_STATUS = new Set<string>(ASSISTANT_TOOL_NON_RESULT_STATUSES);
 
 export const ASSISTANT_ENTITY_ARCHIVED_STATUS = "archived";
 
+export const ASSISTANT_CLIP_ARRAY_MAX = 50;
+
+export const ASSISTANT_CLIP_SHRINK_ARRAY_MAX = 3;
+
+export function clipMayHaveCutArray(
+  value: unknown,
+  clipped: boolean,
+): boolean {
+  if (!clipped) {
+    return false;
+  }
+  if (!Array.isArray(value)) {
+    return true;
+  }
+  return (
+    value.length === ASSISTANT_CLIP_ARRAY_MAX ||
+    value.length === ASSISTANT_CLIP_SHRINK_ARRAY_MAX
+  );
+}
+
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

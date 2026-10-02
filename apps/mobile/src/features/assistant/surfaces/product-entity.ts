@@ -46,6 +46,6 @@ export function localizeProductEntityCard(
     valueLabel: formatMoneyAmount(data.basePrice),
     statusLabel: archived ? products.archivedBadge : null,
     statusTone: archived ? "attention" : "neutral",
-    footnotes: data.clipped ? [cards.variantsClipped] : [],
+    footnotes: data.variantsClipped ? [cards.variantsClipped] : [],
   };
 }

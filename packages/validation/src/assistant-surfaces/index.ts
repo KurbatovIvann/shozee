@@ -58,11 +58,14 @@ export {
   type StaffAssistantPresentationEnvelope,
 } from "./envelope.js";
 export {
+  ASSISTANT_CLIP_ARRAY_MAX,
+  ASSISTANT_CLIP_SHRINK_ARRAY_MAX,
   ASSISTANT_ENTITY_ARCHIVED_STATUS,
   ASSISTANT_TOOL_CLIPPED_STATUS,
   ASSISTANT_TOOL_NON_RESULT_STATUSES,
   UNLINKED_CUSTOMER_NAME_SNAPSHOT,
   customerNameSnapshotFromPayload,
+  clipMayHaveCutArray,
   grossAmounts,
   isAssistantClippedToolEnvelope,
   isAssistantSurfaceResultOutput,

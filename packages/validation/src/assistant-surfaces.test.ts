@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   ASSISTANT_AGGREGATE_LAYOUTS,
+  ASSISTANT_CLIP_ARRAY_MAX,
   ASSISTANT_CUSTOMERS_LIST_ROW_MAX,
   ASSISTANT_CUSTOMERS_LIST_SCREEN_HREF,
   ASSISTANT_ORDERS_LIST_ROW_MAX,
@@ -600,6 +601,22 @@ describe("parseCustomerEntitySurfaces", () => {
   });
 });
 
+function clippedProduct(
+  preview: Record<string, unknown>,
+): AssistantSurfaceToolResult {
+  return result("catalog_get_product", {
+    status: ASSISTANT_TOOL_CLIPPED_STATUS,
+    omitted: 23,
+    preview: {
+      id: PRODUCT_A,
+      name: "Napoleon",
+      basePriceMinor: "45000",
+      currency: "UAH",
+      ...preview,
+    },
+  });
+}
+
 describe("parseProductEntitySurfaces", () => {
   it("maps base price, status and variant count without a per-record route", () => {
     const entities = parseProductEntitySurfaces([
@@ -624,7 +641,7 @@ describe("parseProductEntitySurfaces", () => {
       status: "archived",
       basePrice: { amountMinor: "45000", currency: "UAH" },
       variantCount: 2,
-      clipped: false,
+      variantsClipped: false,
       toolCallId: "call-product",
     });
     expect(entities[0]).not.toHaveProperty("destination");
@@ -638,33 +655,49 @@ describe("parseProductEntitySurfaces", () => {
       variantCount: 0,
       basePrice: null,
       status: null,
-      clipped: false,
+      variantsClipped: false,
     });
   });
 
   it("reports no variant count when the clip truncated the variants array", () => {
-    const variants = Array.from({ length: 50 }, (_, index) => ({
-      id: String(index),
+    const variants = Array.from({ length: ASSISTANT_CLIP_ARRAY_MAX }, (_, i) => ({
+      id: String(i),
     }));
     const entities = parseProductEntitySurfaces([
-      result("catalog_get_product", {
-        status: ASSISTANT_TOOL_CLIPPED_STATUS,
-        omitted: 23,
-        preview: {
-          id: PRODUCT_A,
-          name: "Napoleon",
-          basePriceMinor: "45000",
-          currency: "UAH",
-          variants,
-        },
-      }),
+      clippedProduct({ variants }),
     ]);
     expect(entities[0]).toMatchObject({
       productId: PRODUCT_A,
       name: "Napoleon",
       variantCount: null,
-      clipped: true,
+      variantsClipped: true,
       basePrice: { amountMinor: "45000", currency: "UAH" },
+    });
+  });
+
+  it("keeps the variant count when the clip cut some other array", () => {
+    const entities = parseProductEntitySurfaces([
+      clippedProduct({
+        variants: [{ id: "a" }, { id: "b" }],
+        imageFileIds: Array.from(
+          { length: ASSISTANT_CLIP_ARRAY_MAX },
+          (_, i) => String(i),
+        ),
+      }),
+    ]);
+    expect(entities[0]).toMatchObject({
+      variantCount: 2,
+      variantsClipped: false,
+    });
+  });
+
+  it("reports no variant count when the shrink dropped the variants key", () => {
+    const entities = parseProductEntitySurfaces([
+      clippedProduct({ imageFileIds: [] }),
+    ]);
+    expect(entities[0]).toMatchObject({
+      variantCount: null,
+      variantsClipped: true,
     });
   });
 
