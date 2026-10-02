@@ -660,12 +660,13 @@ describe("parseProductEntitySurfaces", () => {
   });
 
   it("reports no variant count when the clip truncated the variants array", () => {
-    const variants = Array.from({ length: ASSISTANT_CLIP_ARRAY_MAX }, (_, i) => ({
-      id: String(i),
-    }));
-    const entities = parseProductEntitySurfaces([
-      clippedProduct({ variants }),
-    ]);
+    const variants = Array.from(
+      { length: ASSISTANT_CLIP_ARRAY_MAX },
+      (_, i) => ({
+        id: String(i),
+      }),
+    );
+    const entities = parseProductEntitySurfaces([clippedProduct({ variants })]);
     expect(entities[0]).toMatchObject({
       productId: PRODUCT_A,
       name: "Napoleon",
@@ -679,9 +680,8 @@ describe("parseProductEntitySurfaces", () => {
     const entities = parseProductEntitySurfaces([
       clippedProduct({
         variants: [{ id: "a" }, { id: "b" }],
-        imageFileIds: Array.from(
-          { length: ASSISTANT_CLIP_ARRAY_MAX },
-          (_, i) => String(i),
+        imageFileIds: Array.from({ length: ASSISTANT_CLIP_ARRAY_MAX }, (_, i) =>
+          String(i),
         ),
       }),
     ]);

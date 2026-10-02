@@ -45,10 +45,7 @@ export const ASSISTANT_CLIP_ARRAY_MAX = 50;
 
 export const ASSISTANT_CLIP_SHRINK_ARRAY_MAX = 3;
 
-export function clipMayHaveCutArray(
-  value: unknown,
-  clipped: boolean,
-): boolean {
+export function clipMayHaveCutArray(value: unknown, clipped: boolean): boolean {
   if (!clipped) {
     return false;
   }
