@@ -307,9 +307,7 @@ async function runLoop<T extends AnyTypes>(
         parts,
       },
     );
-    // A refusal is not a write. Counting it as one would report a card that
-    // no reload will ever show.
-    if (written.kind !== "written") {
+    if (written.kind !== "written" && written.kind !== "unchanged") {
       throw new MessageWriteRefusedError(written.kind);
     }
   }

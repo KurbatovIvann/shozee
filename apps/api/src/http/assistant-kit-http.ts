@@ -49,7 +49,7 @@ export type AssistantKitCardVerdict =
   AssistantPauseMatch | { readonly kind: "stale" };
 
 export interface AssistantKitOpenCard {
-  readonly pause: PublicPause;
+  readonly pause: PublicPause | null;
   readonly verdict: AssistantKitCardVerdict;
 }
 
@@ -133,13 +133,34 @@ export function requireBudgetTicket(
  * reopens. One normalisation, at the edge, rather than a `toLowerCase()` at
  * each of the places that would have to remember.
  */
-export function canonicalCommandIds<
-  T extends { readonly commandId: string; readonly conversationId: string },
->(body: T): T {
+export function canonicalAssistantId(id: string): string {
+  return id.toLowerCase();
+}
+
+type CanonicalIdFields = {
+  readonly commandId: string;
+  readonly conversationId: string;
+  readonly interactionId?: string | undefined;
+  readonly answering?:
+    { readonly interactionId: string; readonly revision: number } | undefined;
+};
+
+export function canonicalCommandIds<T extends CanonicalIdFields>(body: T): T {
   return {
     ...body,
-    commandId: body.commandId.toLowerCase(),
-    conversationId: body.conversationId.toLowerCase(),
+    commandId: canonicalAssistantId(body.commandId),
+    conversationId: canonicalAssistantId(body.conversationId),
+    ...(body.interactionId === undefined
+      ? {}
+      : { interactionId: canonicalAssistantId(body.interactionId) }),
+    ...(body.answering === undefined
+      ? {}
+      : {
+          answering: {
+            ...body.answering,
+            interactionId: canonicalAssistantId(body.answering.interactionId),
+          },
+        }),
   };
 }
 

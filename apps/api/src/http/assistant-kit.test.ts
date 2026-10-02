@@ -25,6 +25,7 @@
 import {
   createAssistantKit,
   type AssistantKit,
+  type Ids,
   type ModelMessage,
   type ToolOutcome,
   type ToolSet,
@@ -242,12 +243,15 @@ function harness(options?: {
    */
   readonly writeRefusal?: "conflict" | "unchanged";
   readonly writeRefusalAt?: number;
+  readonly ids?: Ids;
 }): Harness {
   // The window the routes really run with, so a page here is a page on a phone.
   const deps = testDeps(assistantInteractions, {
     windowMessages: ASSISTANT_CHAT_WINDOW_MESSAGES,
   });
-  const kit = createAssistantKit(deps);
+  const kit = createAssistantKit(
+    options?.ids === undefined ? deps : { ...deps, ids: options.ids },
+  );
   const refusal = options?.writeRefusal;
   const refusalAt = options?.writeRefusalAt;
   let writesSeen = 0;
@@ -1223,6 +1227,21 @@ describe("POST /assistant/kit/answer", () => {
     expect(history.saved[0]?.at(-1)).toMatchObject({ role: "tool" });
   });
 
+  it("claims the pause an answer names in upper case, like any other ref", async () => {
+    const { kit, app, bind } = harness({ ids: letteredIds() });
+    const pause = await openPause(kit, bind);
+    expect(pause.interactionId.toUpperCase()).not.toBe(pause.interactionId);
+
+    const response = await post(
+      app,
+      ASSISTANT_KIT_ANSWER_PATH,
+      answerBody(pause.interactionId.toUpperCase(), pause.revision),
+    );
+
+    expect(response.status).toBe(202);
+    expect(await kit.peek({ conversationId: CONVERSATION, bind })).toBeNull();
+  });
+
   it("resolves the option on the server; the client only sent an id", async () => {
     let seen: unknown;
     const capture: ResolveAnswer = (args) => {
@@ -2178,6 +2197,16 @@ function chosenEntity(): {
   };
 }
 
+function letteredIds(): Ids {
+  let n = 0;
+  return {
+    uuid() {
+      n += 1;
+      return `aaaaaaaa-aaaa-4aaa-8aaa-${n.toString(16).padStart(12, "0")}`;
+    },
+  };
+}
+
 function entityIdOf(value: unknown): unknown {
   return typeof value === "object" && value !== null
     ? (value as Record<string, unknown>)["entityId"]
@@ -2506,6 +2535,46 @@ describe("a send while a card is open answers it", () => {
       (await kit.peek({ conversationId: CONVERSATION, bind }))?.status,
     ).toBe("open");
     expect(queue.added).toEqual([]);
+  });
+
+  it("never runs a fresh turn for a send whose card is already closed", async () => {
+    const { app, kit, queue, bind } = harness();
+    const pause = await openConfirmation(kit, bind);
+    await kit.abandon({
+      conversationId: CONVERSATION,
+      bind,
+      interactionId: pause.interactionId,
+    });
+
+    const response = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "так"),
+    );
+
+    expect(response.status).toBe(409);
+    expect(((await response.json()) as KitBody).status).toBe("stale");
+    expect(queue.added).toEqual([]);
+  });
+
+  it("answers the card a send names in upper case, like any other ref", async () => {
+    const { app, kit, queue, bind } = harness({ ids: letteredIds() });
+    const pause = await openConfirmation(kit, bind);
+    expect(pause.interactionId.toUpperCase()).not.toBe(pause.interactionId);
+
+    const response = await post(app, ASSISTANT_KIT_CHAT_PATH, {
+      ...answeringBody(pause, "так"),
+      answering: {
+        interactionId: pause.interactionId.toUpperCase(),
+        revision: pause.revision,
+      },
+    });
+
+    expect(response.status).toBe(202);
+    expect(await kit.peek({ conversationId: CONVERSATION, bind })).toBeNull();
+    expect(queue.added).toEqual([
+      { kind: "answer", conversationId: CONVERSATION, commandId: COMMAND },
+    ]);
   });
 
   it("keeps the card when the accept the send would supersede it for fails", async () => {

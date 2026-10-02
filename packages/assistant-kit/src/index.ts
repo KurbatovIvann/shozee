@@ -86,6 +86,7 @@ export {
   createAssistantKit,
   type AssistantKit,
   type BeginTurnResult,
+  type MessageWriteResult,
   type OpenPauseInput,
   type OpenPauseResult,
   type RevisePauseResult,

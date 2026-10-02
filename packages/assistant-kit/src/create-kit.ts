@@ -61,15 +61,29 @@ function pauseKey(conversationId: string): string {
  */
 const MESSAGE_WRITE_ATTEMPTS = 4;
 
-function partsAlreadyHeld(
+function fieldwise(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(fieldwise).join(",")}]`;
+  }
+  if (typeof value === "object" && value !== null) {
+    return `{${Object.entries(value)
+      .filter(([, held]) => held !== undefined)
+      .sort(([left], [right]) => (left < right ? -1 : 1))
+      .map(([key, held]) => `${JSON.stringify(key)}:${fieldwise(held)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value ?? null);
+}
+
+function appendPartsNotHeld(
   current: readonly ChatPart[],
   incoming: readonly ChatPart[],
-): boolean {
-  if (incoming.length === 0 || incoming.some((part) => part.kind === "card")) {
-    return false;
-  }
-  const held = new Set(current.map((part) => JSON.stringify(part)));
-  return incoming.every((part) => held.has(JSON.stringify(part)));
+): ChatPart[] | null {
+  const held = new Set(current.map(fieldwise));
+  const fresh = incoming.filter(
+    (part) => part.kind === "card" || !held.has(fieldwise(part)),
+  );
+  return fresh.length === 0 ? null : appendParts(current, fresh);
 }
 
 /** One running turn per conversation, by the same means. */
@@ -525,15 +539,9 @@ export function createAssistantKit<T extends AnyTypes>(
                 `message ${String(latest.seq)} of ${scope.conversationId} cannot be read, so it is not overwritten`,
               );
             }
-            if (
-              write.kind === "append" &&
-              partsAlreadyHeld(current.data.parts, write.parts)
-            ) {
-              return { kind: "unchanged" };
-            }
             const parts =
               write.kind === "append"
-                ? appendParts(current.data.parts, write.parts)
+                ? appendPartsNotHeld(current.data.parts, write.parts)
                 : endStreamingText(current.data.parts, write.status);
             if (parts === null) {
               return { kind: "unchanged" };
