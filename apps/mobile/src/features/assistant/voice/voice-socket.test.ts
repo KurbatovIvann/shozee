@@ -207,8 +207,18 @@ describe("openVoiceSocket", () => {
     expect(run.failures).toEqual(["protocol"]);
   });
 
+  it("settles when the server never answered the stop it never acknowledged", () => {
+    const run = harness();
+
+    run.socket.stop();
+    vi.advanceTimersByTime(VOICE_FINALIZE_TIMEOUT_MS);
+
+    expect(run.failures).toEqual(["network"]);
+    expect(run.wire.closed).toEqual([VOICE_CLOSE_CODE.done]);
+  });
+
   it("maps the typed close codes to causes", () => {
-    expect(voiceFailureFromCloseCode(VOICE_CLOSE_CODE.done)).toBeNull();
+    expect(voiceFailureFromCloseCode(VOICE_CLOSE_CODE.done)).toBe("network");
     expect(voiceFailureFromCloseCode(VOICE_CLOSE_CODE.overloaded)).toBe("busy");
     expect(voiceFailureFromCloseCode(VOICE_CLOSE_CODE.badFrame)).toBe(
       "protocol",

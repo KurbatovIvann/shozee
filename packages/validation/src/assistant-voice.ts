@@ -48,6 +48,11 @@ export const voiceServerMessageSchema = z.discriminatedUnion("type", [
 
 export type VoiceServerMessage = z.infer<typeof voiceServerMessageSchema>;
 
+export type VoiceSessionLimits = Omit<
+  Extract<VoiceServerMessage, { type: "ready" }>,
+  "type" | "sampleRateHz"
+>;
+
 export function parseVoiceServerMessage(
   raw: string,
 ): VoiceServerMessage | null {

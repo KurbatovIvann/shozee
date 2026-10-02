@@ -81,20 +81,16 @@ export function voiceCaptureReducer(
     case "final":
       return voiceCaptureActive(state.status)
         ? {
-            status: "idle",
-            partial: "",
+            ...initialVoiceCaptureState,
             transcript: event.text,
             endedBy: event.endedBy,
-            failure: null,
           }
         : state;
     case "failed":
       return voiceCaptureActive(state.status)
         ? {
+            ...initialVoiceCaptureState,
             status: "error",
-            partial: "",
-            transcript: null,
-            endedBy: null,
             failure: event.failure,
           }
         : state;

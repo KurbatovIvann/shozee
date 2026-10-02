@@ -7,17 +7,14 @@ import {
   VOICE_MAX_TOTAL_BYTES,
   VOICE_SAMPLE_RATE_HZ,
   VOICE_STOP_FRAME,
+  type VoiceSessionLimits,
   type VoiceUtteranceEnd,
 } from "@showzy/validation/assistant-voice";
 
 import { staffAssistantChatHeaders } from "../api/assistant-chat-headers";
 
 import type { VoiceCaptureFailure } from "./voice-capture-state";
-import {
-  sliceVoiceFrames,
-  voiceSocketUrl,
-  type VoiceSessionLimits,
-} from "./voice-protocol";
+import { sliceVoiceFrames, voiceSocketUrl } from "./voice-protocol";
 
 export type VoiceSocketFailure = Exclude<
   VoiceCaptureFailure,
@@ -77,21 +74,14 @@ export function nativeVoiceWebSocket(
   };
 }
 
-export function voiceFailureFromCloseCode(
-  code: number,
-): VoiceSocketFailure | null {
-  switch (code) {
-    case VOICE_CLOSE_CODE.done:
-      return null;
-    case VOICE_CLOSE_CODE.overloaded:
-      return "busy";
-    case VOICE_CLOSE_CODE.badFrame:
-      return "protocol";
-    case VOICE_CLOSE_CODE.recognizerFailed:
-      return "recognizer";
-    default:
-      return "network";
-  }
+const CLOSE_FAILURE: Readonly<Record<number, VoiceSocketFailure>> = {
+  [VOICE_CLOSE_CODE.overloaded]: "busy",
+  [VOICE_CLOSE_CODE.badFrame]: "protocol",
+  [VOICE_CLOSE_CODE.recognizerFailed]: "recognizer",
+};
+
+export function voiceFailureFromCloseCode(code: number): VoiceSocketFailure {
+  return CLOSE_FAILURE[code] ?? "network";
 }
 
 export interface VoiceSocketHandlers {
@@ -159,19 +149,16 @@ export function openVoiceSocket(request: VoiceSocketRequest): VoiceSocket {
     });
   };
 
-  const control = (): void => {
-    handle?.send(VOICE_STOP_FRAME);
+  const armFinalize = (): void => {
+    clearFinalize();
     finalizeTimer = setTimeout(() => {
       fail("network");
     }, VOICE_FINALIZE_TIMEOUT_MS);
   };
 
-  const write = (frame: ArrayBuffer): void => {
-    if (ready) {
-      handle?.send(frame);
-      return;
-    }
-    queued.push(frame);
+  const control = (): void => {
+    handle?.send(VOICE_STOP_FRAME);
+    armFinalize();
   };
 
   const receive = (raw: string): void => {
@@ -219,7 +206,7 @@ export function openVoiceSocket(request: VoiceSocketRequest): VoiceSocket {
       if (settled) {
         return;
       }
-      fail(voiceFailureFromCloseCode(code) ?? "network");
+      fail(voiceFailureFromCloseCode(code));
     },
     onError: () => {
       fail("network");
@@ -246,7 +233,11 @@ export function openVoiceSocket(request: VoiceSocketRequest): VoiceSocket {
           return;
         }
         sentBytes += frame.byteLength;
-        write(frame);
+        if (ready) {
+          handle.send(frame);
+        } else {
+          queued.push(frame);
+        }
       }
     },
     stop: () => {
@@ -254,6 +245,7 @@ export function openVoiceSocket(request: VoiceSocketRequest): VoiceSocket {
         return;
       }
       stopped = true;
+      armFinalize();
       if (ready) {
         control();
       }

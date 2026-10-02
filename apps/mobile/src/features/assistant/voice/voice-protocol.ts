@@ -6,12 +6,6 @@ import {
   VOICE_SAMPLE_RATE_HZ,
 } from "@showzy/validation/assistant-voice";
 
-export interface VoiceSessionLimits {
-  readonly maxFrameBytes: number;
-  readonly maxTotalBytes: number;
-  readonly maxSessionMs: number;
-}
-
 export function voiceSocketUrl(apiUrl: string): string {
   const base = apiUrl.replace(/\/+$/, "").replace(/^http/, "ws");
   return `${base}${ASSISTANT_VOICE_PATH}`;

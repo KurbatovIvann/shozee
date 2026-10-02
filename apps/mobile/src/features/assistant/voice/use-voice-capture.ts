@@ -9,15 +9,14 @@ import {
   VOICE_ENCODING,
   VOICE_MAX_SESSION_MS,
   VOICE_SAMPLE_RATE_HZ,
-  type VoiceUtteranceEnd,
 } from "@showzy/validation/assistant-voice";
 
 import {
   initialVoiceCaptureState,
   voiceCaptureReducer,
-  type VoiceCaptureFailure,
-  type VoiceCaptureStatus,
+  type VoiceCaptureState,
 } from "./voice-capture-state";
+import { subscribeVoiceBackground } from "./voice-app-state";
 import { voiceFrameBytes } from "./voice-protocol";
 import {
   openVoiceSocket,
@@ -32,24 +31,10 @@ export interface UseVoiceCaptureRequest {
   readonly createSocket?: VoiceWebSocketFactory | undefined;
 }
 
-export interface VoiceCapture {
-  readonly status: VoiceCaptureStatus;
-  readonly partial: string;
-  readonly transcript: string | null;
-  readonly endedBy: VoiceUtteranceEnd | null;
-  readonly failure: VoiceCaptureFailure | null;
+export interface VoiceCapture extends VoiceCaptureState {
   readonly start: () => void;
   readonly stop: () => void;
   readonly reset: () => void;
-}
-
-async function microphoneGranted(): Promise<boolean> {
-  try {
-    const permission = await requestRecordingPermissionsAsync();
-    return permission.granted;
-  } catch {
-    return false;
-  }
 }
 
 export function useVoiceCapture(request: UseVoiceCaptureRequest): VoiceCapture {
@@ -105,7 +90,9 @@ export function useVoiceCapture(request: UseVoiceCaptureRequest): VoiceCapture {
   const silence = useCallback(() => {
     clearDeadline();
     stream.stop();
-    void setAudioModeAsync({ allowsRecording: false });
+    setAudioModeAsync({ allowsRecording: false }).catch(() => {
+      dispatch({ type: "failed", failure: "audio" });
+    });
   }, [clearDeadline, stream]);
 
   const release = useCallback(() => {
@@ -144,11 +131,13 @@ export function useVoiceCapture(request: UseVoiceCaptureRequest): VoiceCapture {
     const abandoned = (): boolean => sessionRef.current !== session;
     dispatch({ type: "requested" });
     void (async () => {
-      const granted = await microphoneGranted();
+      const permission = await requestRecordingPermissionsAsync().catch(() => ({
+        granted: false,
+      }));
       if (abandoned()) {
         return;
       }
-      if (!granted) {
+      if (!permission.granted) {
         capturingRef.current = false;
         dispatch({ type: "permissionDenied" });
         return;
@@ -206,21 +195,16 @@ export function useVoiceCapture(request: UseVoiceCaptureRequest): VoiceCapture {
     dispatch({ type: "reset" });
   }, []);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    const unsubscribe = subscribeVoiceBackground(() => {
       releaseRef.current();
-    },
-    [],
-  );
+      dispatch({ type: "reset" });
+    });
+    return () => {
+      unsubscribe();
+      releaseRef.current();
+    };
+  }, []);
 
-  return {
-    status: state.status,
-    partial: state.partial,
-    transcript: state.transcript,
-    endedBy: state.endedBy,
-    failure: state.failure,
-    start,
-    stop,
-    reset,
-  };
+  return { ...state, start, stop, reset };
 }

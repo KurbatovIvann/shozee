@@ -11,9 +11,24 @@ interface Captured {
   readonly timestamp: number;
 }
 
+const appState = {
+  background: null as (() => void) | null,
+  unsubscribes: 0,
+};
+
+vi.mock("./voice-app-state", () => ({
+  subscribeVoiceBackground: (listener: () => void) => {
+    appState.background = listener;
+    return () => {
+      appState.unsubscribes += 1;
+    };
+  },
+}));
+
 const audio = {
   granted: true,
   holdPermission: false,
+  audioModeFails: false,
   startFails: false,
   starts: 0,
   stops: 0,
@@ -30,7 +45,10 @@ vi.mock("expo-audio", () => ({
           };
         })
       : Promise.resolve({ granted: audio.granted }),
-  setAudioModeAsync: () => Promise.resolve(),
+  setAudioModeAsync: (mode: { readonly allowsRecording: boolean }) =>
+    audio.audioModeFails && !mode.allowsRecording
+      ? Promise.reject(new Error("audio mode failed"))
+      : Promise.resolve(),
   useAudioStream: (options: {
     readonly onBuffer?: (buffer: Captured) => void;
   }) => {
@@ -54,6 +72,7 @@ vi.mock("expo-audio", () => ({
 
 import { useVoiceCapture, type VoiceCapture } from "./use-voice-capture";
 import {
+  VOICE_FINALIZE_TIMEOUT_MS,
   VOICE_MAX_SESSION_MS,
   VOICE_SAMPLE_RATE_HZ,
   VOICE_STOP_FRAME,
@@ -83,11 +102,14 @@ beforeEach(() => {
   vi.useFakeTimers();
   audio.granted = true;
   audio.holdPermission = false;
+  audio.audioModeFails = false;
   audio.startFails = false;
   audio.starts = 0;
   audio.stops = 0;
   audio.onBuffer = null;
   audio.answerPermission = null;
+  appState.background = null;
+  appState.unsubscribes = 0;
 });
 
 afterEach(() => {
@@ -236,14 +258,69 @@ describe("useVoiceCapture", () => {
     expect(audio.stops).toBeGreaterThan(0);
   });
 
-  it("asks the server to finish when the speaker stops", async () => {
+  it("asks the server to finish and closes the microphone when the speaker stops", async () => {
     const view = await listening();
+    const stops = audio.stops;
 
     act(() => {
       view.capture().stop();
     });
 
     expect(view.sent).toContain(VOICE_STOP_FRAME);
+    expect(audio.stops).toBeGreaterThan(stops);
+  });
+
+  it("gives up on a server that never says it is ready", async () => {
+    const view = mount();
+    act(() => {
+      view.capture().start();
+    });
+    await flush();
+    expect(view.capture().status).toBe("starting");
+
+    act(() => {
+      vi.advanceTimersByTime(VOICE_MAX_SESSION_MS + VOICE_FINALIZE_TIMEOUT_MS);
+    });
+
+    expect(view.capture()).toMatchObject({
+      status: "error",
+      failure: "network",
+    });
+
+    act(() => {
+      view.capture().start();
+    });
+    await flush();
+    expect(view.capture().status).toBe("starting");
+  });
+
+  it("closes the microphone when the app goes to the background", async () => {
+    const view = await listening();
+    const stops = audio.stops;
+
+    act(() => {
+      appState.background?.();
+    });
+
+    expect(view.capture()).toMatchObject({ status: "idle", transcript: null });
+    expect(audio.stops).toBeGreaterThan(stops);
+
+    act(() => {
+      audio.onBuffer?.(frame());
+    });
+    expect(view.binary()).toHaveLength(0);
+  });
+
+  it("reports an audio session that will not close", async () => {
+    const view = await listening();
+    audio.audioModeFails = true;
+
+    act(() => {
+      view.capture().stop();
+    });
+    await flush();
+
+    expect(view.capture()).toMatchObject({ status: "error", failure: "audio" });
   });
 
   it("stops itself at the session cap the server announced", async () => {
@@ -278,6 +355,16 @@ describe("useVoiceCapture", () => {
     expect(audio.starts).toBe(0);
     expect(() => view.wire()).toThrow();
     expect(view.capture().status).toBe("idle");
+  });
+
+  it("closes the microphone when the screen leaves while listening", async () => {
+    const view = await listening();
+    const stops = audio.stops;
+
+    view.unmount();
+
+    expect(audio.stops).toBeGreaterThan(stops);
+    expect(appState.unsubscribes).toBe(1);
   });
 
   it("never opens the microphone when the screen left while permission was pending", async () => {
@@ -344,10 +431,12 @@ describe("useVoiceCapture", () => {
           JSON.stringify({ type: "final", text: "дві", endedBy: "client" }),
         );
     });
+    const stops = audio.stops;
     act(() => {
       view.capture().reset();
     });
     expect(view.capture()).toMatchObject({ status: "idle", transcript: null });
+    expect(audio.stops).toBeGreaterThan(stops);
 
     act(() => {
       view.capture().start();
