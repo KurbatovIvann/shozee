@@ -666,9 +666,9 @@ describe("documents.requestSign", () => {
       throw new Error("expected ConfirmationRequiredError");
     }
     expect(unconfirmed.challenge.summary).toBe(
-      requestSignPreviewTitle("KA-РХ-000928"),
+      "Запросити підписання документа KA-РХ-000928",
     );
-    expect(unconfirmed.challenge.summary).toContain(
+    expect(unconfirmed.challenge.summary).not.toContain(
       REQUEST_SIGN_KEY_POSSESSION_NOTE,
     );
     expect(unconfirmed.challenge.preview).toEqual({
@@ -680,7 +680,7 @@ describe("documents.requestSign", () => {
       ],
       notes: [REQUEST_SIGN_KEY_POSSESSION_NOTE],
     });
-    expect(unconfirmed.challenge.preview?.title).toContain(
+    expect(unconfirmed.challenge.preview?.title).not.toContain(
       REQUEST_SIGN_KEY_POSSESSION_NOTE,
     );
     expect(unconfirmed.challenge.preview?.notes).toContain(

@@ -8,7 +8,7 @@ import { acceptTurnContract } from "./accept-turn.contract.js";
 export const acceptTurn = implementAction(acceptTurnContract, {
   handler: async (input, ctx) => {
     const accepted = await acceptStaffTurn({ ctx, input });
-    if (accepted.outcome === "accepted") {
+    if (accepted.outcome === "accepted" && input.settled !== true) {
       ctx.enqueue(assistantTurnJob, {
         kind: accepted.turn.kind,
         conversationId: accepted.conversationId,

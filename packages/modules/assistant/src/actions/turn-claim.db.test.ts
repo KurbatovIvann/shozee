@@ -91,7 +91,7 @@ function chatAccept(
       message: textMessage(placeholderId, "assistant"),
     },
     budgetHold: HOLD,
-    history: { kind: "append" as const, message },
+    history: { kind: "append" as const, messages: [message] },
   };
 }
 

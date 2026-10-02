@@ -96,7 +96,7 @@ if (parentPort !== null) {
       reply,
       detail:
         reply.kind === "failed"
-          ? { message: "boom cause", stack: "at fixture" }
+          ? { frames: "at fixture (worker.fixture.ts:1:1)" }
           : undefined,
     };
     if (command.kind === "parse" && command.job.text === "slow") {

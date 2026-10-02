@@ -116,23 +116,52 @@ describe("confirmationCardView", () => {
     });
   });
 
-  it("keeps a warning the one-line title truncates in the note list", () => {
+  it("shows the requestSign warning the short title omits", () => {
     const warning =
       "Підтвердження не замінює володіння ключем — документ підписують на вашому пристрої.";
     expect(
       confirmationCardView(
         {
           challengeId: "ch-5",
-          summary: `Запросити підписання документа KA-РХ-000001. ${warning}`,
+          summary: "Запросити підписання документа KA-РХ-000001",
           preview: {
-            title: `Запросити підписання документа KA-РХ-000001. ${warning}`,
+            title: "Запросити підписання документа KA-РХ-000001",
             lines: [{ label: "Документ", value: "KA-РХ-000001" }],
             notes: [warning],
           },
         },
         confirmationCardUk.fallbackTitle,
-      ).notes,
-    ).toEqual([warning]);
+      ),
+    ).toEqual({
+      title: "Запросити підписання документа KA-РХ-000001",
+      lines: [{ label: "Документ", value: "KA-РХ-000001" }],
+      notes: [warning],
+      summary: null,
+    });
+  });
+
+  it("keeps the notes of a title the one-line header truncates", () => {
+    const longTitle =
+      "Поділитися документом KA-РХ-000001 з контрагентом «Науково-виробниче об'єднання Промислові Технології та Сервіс»";
+    expect(
+      confirmationCardView(
+        {
+          challengeId: "ch-6",
+          summary: longTitle,
+          preview: {
+            title: longTitle,
+            lines: [{ label: "Документ", value: "KA-РХ-000001" }],
+            notes: ["Буде створено нове посилання, і воно діє 90 днів."],
+          },
+        },
+        confirmationCardUk.fallbackTitle,
+      ),
+    ).toEqual({
+      title: longTitle,
+      lines: [{ label: "Документ", value: "KA-РХ-000001" }],
+      notes: ["Буде створено нове посилання, і воно діє 90 днів."],
+      summary: null,
+    });
   });
 
   it("keeps a preview without notes as an empty note list", () => {

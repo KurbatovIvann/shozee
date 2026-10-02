@@ -212,6 +212,12 @@ interface AcceptCommon {
   readonly sessionId: string;
   readonly budgetHold: StaffAssistantBudgetHold;
   readonly releaseUnusedHold: () => Promise<void>;
+  readonly settled?: AssistantSettledTurn;
+}
+
+export interface AssistantSettledTurn {
+  readonly parts: readonly ChatPart[];
+  readonly appended: readonly ModelMessage[];
 }
 
 export type AssistantTurnAcceptInput =
@@ -234,7 +240,7 @@ export function assistantAskedMessage(text: string): ModelMessage {
 }
 
 type AcceptedHistoryInstruction =
-  | { readonly kind: "append"; readonly message: unknown }
+  | { readonly kind: "append"; readonly messages: unknown[] }
   | { readonly kind: "replace"; readonly history: unknown };
 
 function acceptedHistoryInstruction(
@@ -243,7 +249,10 @@ function acceptedHistoryInstruction(
   if (input.kind === "chat") {
     return {
       kind: "append",
-      message: asJson(assistantAskedMessage(input.text)),
+      messages: (input.settled === undefined
+        ? [assistantAskedMessage(input.text)]
+        : input.settled.appended
+      ).map((message) => asJson(message)),
     };
   }
   if (input.kind === "answer") {
@@ -428,17 +437,25 @@ export function createPostgresAssistantTurnStore(
                   messageId: placeholderId,
                   bind: input.bind,
                   message: asJsonObject(
-                    assistantTurnPlaceholder({
-                      messageId: placeholderId,
-                      createdAt,
-                      ...(input.kind === "continue"
-                        ? { earned: [] }
-                        : input.earned === undefined
-                          ? {}
-                          : { earned: input.earned }),
-                    }),
+                    input.settled === undefined
+                      ? assistantTurnPlaceholder({
+                          messageId: placeholderId,
+                          createdAt,
+                          ...(input.kind === "continue"
+                            ? { earned: [] }
+                            : input.earned === undefined
+                              ? {}
+                              : { earned: input.earned }),
+                        })
+                      : {
+                          messageId: placeholderId,
+                          role: "assistant",
+                          createdAt,
+                          parts: [...input.settled.parts],
+                        },
                   ),
                 },
+                ...(input.settled === undefined ? {} : { settled: true }),
                 budgetHold: assistantBudgetHoldToStored(input.budgetHold),
                 ...(history === undefined ? {} : { history }),
                 ...(continuesCommandId === undefined

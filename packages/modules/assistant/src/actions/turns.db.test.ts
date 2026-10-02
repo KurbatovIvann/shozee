@@ -179,7 +179,7 @@ function chatAccept(
       message: textMessage(placeholderId, "assistant", "", "streaming"),
     },
     budgetHold: HOLD,
-    history: { kind: "append" as const, message: ASKED },
+    history: { kind: "append" as const, messages: [ASKED] },
   };
 }
 
@@ -1006,6 +1006,26 @@ describe("two accepts at once", () => {
     );
   });
 
+  it("of two settled commands: busy, never a conflict, and no exchange lost", async () => {
+    const races = await everyCommitPoint(async (point) => {
+      const conversationId = await newConversation();
+      const settled = (): RacedAccept => ({
+        ...chatAccept(conversationId),
+        settled: true,
+      });
+      const race = await raceAccepts(settled(), settled(), point);
+      const turns = (await turnRows(conversationId)).length;
+      expect(await messageIds(conversationId)).toHaveLength(turns * 2);
+      expect(await historyOf(conversationId)).toHaveLength(turns);
+      return race;
+    });
+
+    for (const race of races) {
+      expect(race.winner).toBe("accepted");
+      expect(["accepted", "busy"]).toContain(race.loser);
+    }
+  });
+
   it("of two commands: the other is busy wherever the winner's commit lands", async () => {
     const races = await everyCommitPoint(async (point) => {
       const conversationId = await newConversation();
@@ -1117,9 +1137,13 @@ async function waitForLockWait(): Promise<void> {
  * Accepts `winnerInput` and holds it at commit, then accepts `loserInput` and
  * commits the winner at `point` of the loser's claim.
  */
+type RacedAccept = ReturnType<typeof chatAccept> & {
+  readonly settled?: true;
+};
+
 async function raceAccepts(
-  winnerInput: ReturnType<typeof chatAccept>,
-  loserInput: ReturnType<typeof chatAccept>,
+  winnerInput: RacedAccept,
+  loserInput: RacedAccept,
   point: CommitPoint,
 ): Promise<RaceResult> {
   const held = deferred();

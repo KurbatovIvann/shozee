@@ -68,7 +68,7 @@ async function runningTurn() {
       },
       history: {
         kind: "append",
-        message: { role: "user", content: "привіт" },
+        messages: [{ role: "user", content: "привіт" }],
       },
     },
     {},

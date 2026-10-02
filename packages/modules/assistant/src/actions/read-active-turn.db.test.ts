@@ -64,7 +64,7 @@ function chatAccept(conversationId: string, commandId: string = randomUUID()) {
     budgetHold: HOLD,
     history: {
       kind: "append" as const,
-      message: { role: "user", content: "привіт" },
+      messages: [{ role: "user", content: "привіт" }],
     },
   };
 }

@@ -69,8 +69,7 @@ export type ShoRunReply = Extract<
 >;
 
 export interface ShoFailureDetail {
-  readonly message: string;
-  readonly stack: string | null;
+  readonly frames: string | null;
 }
 
 export interface ShoAnswer {

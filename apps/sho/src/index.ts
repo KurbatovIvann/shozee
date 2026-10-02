@@ -32,7 +32,7 @@ const pool = await createShoPool({
     logger.warn({ slot, loss }, "sho worker replaced");
   },
   onFailure: (code, detail) => {
-    logger.error({ code, err: detail }, "sho worker failed");
+    logger.error({ code, frames: detail?.frames ?? null }, "sho worker failed");
   },
 });
 engine = pool;
