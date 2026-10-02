@@ -279,7 +279,7 @@ describe("apps/sho worker pool", () => {
       code: "boom",
     });
     expect(failures).toEqual([
-      ["boom", { message: "boom cause", stack: "at fixture" }],
+      ["boom", { frames: "at fixture (worker.fixture.ts:1:1)" }],
     ]);
     await expect(pool.run(jobOf(key, "bad"))).resolves.toEqual({
       kind: "input",

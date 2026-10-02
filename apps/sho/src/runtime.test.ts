@@ -10,7 +10,11 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createShoApp } from "./app.ts";
-import { SHO_LABELS_FILE, type ShoEngine } from "./engine.ts";
+import {
+  SHO_LABELS_FILE,
+  type ShoEngine,
+  type ShoFailureDetail,
+} from "./engine.ts";
 import { createShoPool } from "./pool.ts";
 
 const TOKEN = "service-token-of-at-least-32-characters";
@@ -38,9 +42,13 @@ const CONTEXT: ShoContext = {
 describe("apps/sho over the real Шо runtime in a worker pool", () => {
   let engine: ShoEngine;
   let app: ReturnType<typeof createShoApp>;
+  const failures: [string, ShoFailureDetail | null][] = [];
 
   beforeAll(async () => {
-    engine = await createShoPool({ size: 2 });
+    engine = await createShoPool({
+      size: 2,
+      onFailure: (code, detail) => failures.push([code, detail]),
+    });
     app = createShoApp({ serviceToken: TOKEN, engine: () => engine });
   });
 
@@ -111,5 +119,27 @@ describe("apps/sho over the real Шо runtime in a worker pool", () => {
     const hints = shoPhrasesResponseSchema.parse(await phrases.json());
     expect(hints.phrases).toContain("Олена Коваль");
     expect(hints.phrases).toContain("Кава 250 г");
+  });
+
+  it("refuses a text the runtime cannot read without logging any detail", async () => {
+    await engine.store({
+      key: KEY,
+      fingerprint: "fp-2",
+      revision: "rev-1",
+      context: CONTEXT,
+      phrases: [],
+      uploadBytes: 64,
+    });
+    const refused = await engine.run({
+      key: KEY,
+      fingerprint: "fp-2",
+      text: "!!! ??? ...",
+      now: { year: 2026, month: 10, day: 2, hour: 11, minute: 0 },
+      previous: null,
+      debug: false,
+      deadlineMs: 30_000,
+    });
+    expect(refused).toEqual({ kind: "input" });
+    expect(failures).toEqual([]);
   });
 });

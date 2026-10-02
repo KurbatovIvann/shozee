@@ -1,6 +1,5 @@
 import { parentPort, workerData } from "node:worker_threads";
 import {
-  InputError,
   compileContext,
   loadSho,
   manifest,
@@ -25,6 +24,7 @@ import {
   type ShoWorkerCommand,
   type ShoWorkerReady,
 } from "./engine.ts";
+import { shoFailureOf } from "./failure.ts";
 
 function stampOf(sho: Sho): ShoModelStamp {
   return {
@@ -88,15 +88,9 @@ async function serveShoWorker(
     let detail: ShoFailureDetail | undefined;
     void answer(sho, cache, command)
       .catch((cause: unknown): ShoReply => {
-        if (cause instanceof InputError) return { kind: "input" };
-        detail = {
-          message: cause instanceof Error ? cause.message : String(cause),
-          stack: cause instanceof Error ? (cause.stack ?? null) : null,
-        };
-        return {
-          kind: "failed",
-          code: cause instanceof Error ? cause.name : "unknown",
-        };
+        const failure = shoFailureOf(cause);
+        detail = failure.detail;
+        return failure.reply;
       })
       .then((reply) => {
         const sent: ShoAnswer = { id: command.id, reply, detail };
