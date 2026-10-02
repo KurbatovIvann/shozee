@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   kyivCalendarDate,
+  kyivNamedPeriodRange,
+  KYIV_NAMED_PERIODS,
   mapOrdersListPeriod,
   secondsUntilKyivMidnight,
   staffAssistantClockLines,
@@ -104,5 +106,66 @@ describe("staffAssistantClockLines", () => {
     expect(line).toContain("Europe/Kyiv");
     expect(line).toMatch(/UTC[+-]\d+/);
     expect(line).toContain("week starts on Monday");
+  });
+});
+
+describe("kyivNamedPeriodRange", () => {
+  const cases: readonly (readonly [string, string, string])[] = [
+    ["today", "2026-09-01T21:00:00.000Z", "2026-09-02T20:59:59.999Z"],
+    ["yesterday", "2026-08-31T21:00:00.000Z", "2026-09-01T20:59:59.999Z"],
+    ["tomorrow", "2026-09-02T21:00:00.000Z", "2026-09-03T20:59:59.999Z"],
+    ["this_week", "2026-08-30T21:00:00.000Z", "2026-09-06T20:59:59.999Z"],
+    ["last_week", "2026-08-23T21:00:00.000Z", "2026-08-30T20:59:59.999Z"],
+    ["next_week", "2026-09-06T21:00:00.000Z", "2026-09-13T20:59:59.999Z"],
+    ["this_month", "2026-08-31T21:00:00.000Z", "2026-09-30T20:59:59.999Z"],
+    ["last_month", "2026-07-31T21:00:00.000Z", "2026-08-31T20:59:59.999Z"],
+    ["next_month", "2026-09-30T21:00:00.000Z", "2026-10-31T21:59:59.999Z"],
+    ["this_year", "2025-12-31T22:00:00.000Z", "2026-12-31T21:59:59.999Z"],
+    ["last_year", "2024-12-31T22:00:00.000Z", "2025-12-31T21:59:59.999Z"],
+    ["last_7_days", "2026-08-26T21:00:00.000Z", "2026-09-02T20:59:59.999Z"],
+    ["last_1_days", "2026-09-01T21:00:00.000Z", "2026-09-02T20:59:59.999Z"],
+    ["2026-07-04", "2026-07-03T21:00:00.000Z", "2026-07-04T20:59:59.999Z"],
+    ["2026-02", "2026-01-31T22:00:00.000Z", "2026-02-28T21:59:59.999Z"],
+    ["2025", "2024-12-31T22:00:00.000Z", "2025-12-31T21:59:59.999Z"],
+    [
+      "2026-03-01..2026-03-31",
+      "2026-02-28T22:00:00.000Z",
+      "2026-03-31T20:59:59.999Z",
+    ],
+  ];
+
+  it.each(cases)("maps %s to inclusive Kyiv day bounds", (period, from, to) => {
+    expect(kyivNamedPeriodRange(period, WEDNESDAY_SEP_2)).toEqual({
+      createdFrom: from,
+      createdTo: to,
+    });
+  });
+
+  it.each([
+    "last_year_but_one",
+    "last_0_days",
+    "last_400_days",
+    "2026-13",
+    "2026-02-30",
+    "2026-03-31..2026-03-01",
+    "2026-01..2026-02..2026-03",
+    "минулий тиждень",
+    "",
+  ])("refuses %s", (period) => {
+    expect(kyivNamedPeriodRange(period, WEDNESDAY_SEP_2)).toBeNull();
+  });
+
+  it("agrees with mapOrdersListPeriod on the shared names", () => {
+    for (const period of ["today", "this_week", "this_month"] as const) {
+      expect(kyivNamedPeriodRange(period, WEDNESDAY_SEP_2)).toEqual(
+        mapOrdersListPeriod(period, WEDNESDAY_SEP_2),
+      );
+    }
+  });
+
+  it("reads every named period it advertises", () => {
+    for (const period of KYIV_NAMED_PERIODS) {
+      expect(kyivNamedPeriodRange(period, WEDNESDAY_SEP_2)).not.toBeNull();
+    }
   });
 });

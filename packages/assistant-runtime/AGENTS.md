@@ -75,6 +75,18 @@ registry is injected into `createAssistantRuntime`; this package never imports
   reaches only a planner that declares it, so a mis-parse cannot be planned
   through a read tool; every AI write still pauses on the preview card
   (SHO-749), which is what the SHO-740 wrong-write recordings pin.
+- `sho-planners/kit.ts`, `sho-planners/reads.ts` — the planner kit (fallback
+  reasons, the planner shape, `shoLocatorFor`) and the read planners that
+  `SHO_ACTION_PLANNERS` is (SHO-771): `orders.list`, `orders.count`,
+  `orders.get`, `customers.getCustomer`, `customers.listCustomers`,
+  `catalog.getProduct`, `catalog.listProducts`, `pricing.listPriceLists`,
+  each onto the existing staff façade input. A planner maps only the params
+  it names; any other param, an unreadable period and an unreadable status
+  are `unsupported_param`, which is the LLM. Periods go through
+  `kyivNamedPeriodRange` (named, `last_<n>_days`, and spelled
+  `YYYY[-MM[-DD]]` with an optional `from..to`), never a second date map.
+  `SHO_READ_ACTIONS` is the list to paste into `SHO_ACTIONS` for dev; the
+  config default stays empty.
 - `assistant-budget-guard.ts`, `stores/budget.ts`, `stores/budget-redis.ts` —
   the pure spend guard, the budget store port with its in-memory reference
   store, and the Redis store both processes mount (SHO-561). A counter never
