@@ -67,7 +67,10 @@ const dates = {
 const clerks = {
   noView: randomUUID(),
   viewOnly: randomUUID(),
+  manageOnly: randomUUID(),
 };
+
+const listManage = randomUUID();
 
 let kit: TestKit;
 
@@ -136,6 +139,7 @@ beforeAll(async () => {
     { id: fixtures.listA, companyId: companyA, name: "List A" },
     { id: fixtures.listB, companyId: companyB, name: "List B" },
     { id: fixtures.listWrite, companyId: companyA, name: "List Write" },
+    { id: listManage, companyId: companyA, name: "List Manage" },
     { id: fixtures.listIso, companyId: companyA, name: "List Iso" },
     { id: fixtures.listIdemSet, companyId: companyA, name: "List Idem Set" },
     {
@@ -278,6 +282,11 @@ beforeAll(async () => {
       name: "Viewer",
       email: "viewer@pricing-entries.test",
     },
+    {
+      id: clerks.manageOnly,
+      name: "Pricer",
+      email: "pricer@pricing-entries.test",
+    },
   ]);
   await kit.db.runtime.db.insert(companyMembers).values([
     {
@@ -291,6 +300,12 @@ beforeAll(async () => {
       userId: clerks.viewOnly,
       role: "employee",
       permissions: { granted: ["pricing:view"], denied: [] },
+    },
+    {
+      companyId: companyA,
+      userId: clerks.manageOnly,
+      role: "employee",
+      permissions: { granted: ["pricing:manage"], denied: [] },
     },
   ]);
 });
@@ -1001,6 +1016,37 @@ describe("pricing set/remove at the 200-entry cap", () => {
     });
     expect(removed).toEqual({ priceListId: listBatch });
     expect(await countEntries(listBatch)).toBe(0);
+  });
+});
+
+describe("pricing:manage implies the catalog read it needs", () => {
+  const actor = () => ({
+    userId: clerks.manageOnly,
+    companyId: kitIdentities.companies.a,
+  });
+
+  it("lets a pricing:manage-only member set entries", async () => {
+    await kit.invoke(
+      setPriceListEntries,
+      {
+        priceListId: listManage,
+        entries: [{ productId: fixtures.productA, priceMinor: "999" }],
+      },
+      actor(),
+    );
+    expect(await countEntries(listManage)).toBe(1);
+  });
+
+  it("lets a pricing:manage-only member remove entries", async () => {
+    await kit.invoke(
+      removePriceListEntries,
+      {
+        priceListId: listManage,
+        entries: [{ productId: fixtures.productA }],
+      },
+      actor(),
+    );
+    expect(await countEntries(listManage)).toBe(0);
   });
 });
 

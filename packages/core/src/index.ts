@@ -214,6 +214,12 @@ export type {
   SystemScopeInput,
 } from "./runtime/context/factories.js";
 export {
+  expandPermissionPrerequisites,
+  PERMISSION_PREREQUISITES,
+  permissionPrerequisites,
+  permissionRequiresDenied,
+} from "./runtime/context/permission-prerequisites.js";
+export {
   resolveEffectivePermissions,
   staffHasPermission,
 } from "./runtime/context/permissions.js";

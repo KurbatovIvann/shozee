@@ -511,22 +511,27 @@ describe("CI contract-check stage", () => {
     expect(input.callEdges).toContainEqual({
       caller: "search.query",
       callee: "customers.searchMatches",
+      permissionGuarded: true,
     });
     expect(input.callEdges).toContainEqual({
       caller: "search.query",
       callee: "catalog.searchMatches",
+      permissionGuarded: true,
     });
     expect(input.callEdges).toContainEqual({
       caller: "search.query",
       callee: "orders.searchMatches",
+      permissionGuarded: true,
     });
     expect(input.callEdges).toContainEqual({
       caller: "search.query",
       callee: "pricing.searchMatches",
+      permissionGuarded: true,
     });
     expect(input.callEdges).toContainEqual({
       caller: "search.query",
       callee: "documents.searchMatches",
+      permissionGuarded: true,
     });
     expect(input.callEdges).not.toContainEqual({
       caller: "search.query",

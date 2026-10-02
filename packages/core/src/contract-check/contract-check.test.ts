@@ -682,6 +682,80 @@ describe("contract check — ctx.call edges (core.md §9, ADR-0015)", () => {
     ]);
   });
 
+  it("rejects an edge whose callee permission the caller's closure does not cover", () => {
+    const registry = buildRegistry(
+      fixtureContract({
+        name: "orders.create",
+        risk: "write",
+        idempotent: true,
+        audit: true,
+        permissions: ["chat:view"],
+      }),
+      fixtureContract({
+        name: "pricing.resolvePrices",
+        permissions: ["pricing:view"],
+      }),
+    );
+    const problems = problemsOf(
+      checkInput(registry, {
+        callEdges: [
+          { caller: "orders.create", callee: "pricing.resolvePrices" },
+        ],
+      }),
+    );
+    expect(problems).toEqual([
+      expect.stringContaining(
+        'callee requires "pricing:view", which the prerequisite closure of the caller\'s declared permissions [chat:view] does not cover',
+      ),
+    ]);
+  });
+
+  it("accepts the same edge when a prerequisite covers it", () => {
+    const registry = buildRegistry(
+      fixtureContract({
+        name: "orders.create",
+        risk: "write",
+        idempotent: true,
+        audit: true,
+        permissions: ["orders:create"],
+      }),
+      fixtureContract({
+        name: "pricing.resolvePrices",
+        permissions: ["products:view"],
+      }),
+    );
+    const problems = problemsOf(
+      checkInput(registry, {
+        callEdges: [
+          { caller: "orders.create", callee: "pricing.resolvePrices" },
+        ],
+      }),
+    );
+    expect(problems).toEqual([]);
+  });
+
+  it("accepts an uncovered edge the caller guards with its own permission check", () => {
+    const registry = buildRegistry(
+      fixtureContract({ name: "search.query", permissions: ["chat:view"] }),
+      fixtureContract({
+        name: "pricing.searchMatches",
+        permissions: ["pricing:view"],
+      }),
+    );
+    const problems = problemsOf(
+      checkInput(registry, {
+        callEdges: [
+          {
+            caller: "search.query",
+            callee: "pricing.searchMatches",
+            permissionGuarded: true,
+          },
+        ],
+      }),
+    );
+    expect(problems).toEqual([]);
+  });
+
   it("rejects a snapshot callee reached from a caller without a snapshot", () => {
     const registry = buildRegistry(
       fixtureContract({ name: "chat.listThreads" }),

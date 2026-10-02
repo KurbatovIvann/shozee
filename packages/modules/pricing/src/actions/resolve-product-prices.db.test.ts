@@ -732,12 +732,13 @@ describe("pricing.resolveProductPrices", () => {
       ),
     ).rejects.toBeInstanceOf(PermissionDeniedError);
 
-    const withoutCustomer = await kit.invoke(
-      resolveProductPrices,
-      { items: [{ productId: fixtures.pBase }] },
-      { userId: clerks.noCustomers, companyId: kitIdentities.companies.a },
-    );
-    expect(withoutCustomer.prices[0]?.source).toBe("base");
+    await expect(
+      kit.invoke(
+        resolveProductPrices,
+        { items: [{ productId: fixtures.pBase }] },
+        { userId: clerks.noCustomers, companyId: kitIdentities.companies.a },
+      ),
+    ).rejects.toBeInstanceOf(PermissionDeniedError);
   });
 
   it("rejects an empty batch, oversized batch, and malformed ids", async () => {

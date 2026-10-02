@@ -291,9 +291,10 @@ describe("createStaffContext", () => {
     // Role default without overrides.
     expect(staffHasPermission(manager.membership, "orders:view")).toBe(true);
     // Nothing grants this one.
-    expect(staffHasPermission(manager.membership, "customers:view")).toBe(
+    expect(staffHasPermission(manager.membership, "settings:payments")).toBe(
       false,
     );
+    expect(staffHasPermission(manager.membership, "products:view")).toBe(true);
   });
 });
 

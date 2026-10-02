@@ -27,6 +27,7 @@ import {
   ActionRegistry,
   ActionRegistryError,
 } from "../runtime/action-registry.js";
+import { expandPermissionPrerequisites } from "../runtime/context/permission-prerequisites.js";
 import { atomicCallTargetProblems, callTargetProblems } from "./call-rules.js";
 import {
   collectAssistantSurfaceBindingProblems,
@@ -92,6 +93,7 @@ export interface EventSubscriptionRef {
 export interface DeclaredCallEdge {
   readonly caller: string;
   readonly callee: string;
+  readonly permissionGuarded?: boolean;
 }
 
 /**
@@ -451,6 +453,33 @@ function collectCallEdgeProblems(
     // (call-rules.ts) so this CI layer and `ctx.call` cannot drift.
     for (const problem of callTargetProblems(caller, callee)) {
       problems.push(`${label}: ${problem}`);
+    }
+    collectCallPermissionCoverageProblems(
+      edge,
+      caller,
+      callee,
+      label,
+      problems,
+    );
+  }
+}
+
+function collectCallPermissionCoverageProblems(
+  edge: DeclaredCallEdge,
+  caller: ActionContract,
+  callee: ActionContract,
+  label: string,
+  problems: string[],
+): void {
+  if (caller.principal !== "staff" || edge.permissionGuarded === true) {
+    return;
+  }
+  const covered = new Set(expandPermissionPrerequisites(caller.permissions));
+  for (const permission of callee.permissions) {
+    if (!covered.has(permission)) {
+      problems.push(
+        `${label}: callee requires "${permission}", which the prerequisite closure of the caller's declared permissions [${caller.permissions.join(", ")}] does not cover — declare it a prerequisite in PERMISSION_PREREQUISITES or mark the edge permissionGuarded (ADR-0015)`,
+      );
     }
   }
 }

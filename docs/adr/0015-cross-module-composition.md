@@ -4,6 +4,8 @@
 - **Date**: 2026-08-17
 - **Deciders**: owner (+ Claude Fable 5, foundation review)
 - **Amended by**: ADR-0021
+- **Amended**: 2026-10-02 — a permission implies the reads its job needs
+  (SHO-830, see Amendment below)
 - **See also**: ADR-0033 (task-complete lists/writes; missing match/resolve is an owner-module internal read, not a join)
 
 ## Context
@@ -51,6 +53,45 @@ Three sanctioned composition channels, and no others:
    the owner.
 
 Same-module composition stays free: actions of one module share `services/`.
+
+## Amendment, 2026-10-02 — a permission implies the reads its job needs
+
+Because the callee's `permissions` are re-evaluated inside the call, a
+caller carried a hidden permission requirement its own contract never
+declared: `pricing.setPriceListEntries` declares `pricing:manage` but
+failed for a member without `products:view` (SHO-822, SHO-829). The owner's
+decision: *if a member may change a price list, they may see the products —
+without products they cannot change it.* The access model, not the call,
+was wrong.
+
+- Permissions declare **prerequisites**. `PERMISSION_PREREQUISITES`
+  (`packages/core/src/runtime/context/permission-prerequisites.ts`) is the
+  one declaration; role defaults (`role_permission_defaults`) and explicit
+  grants stay as they are.
+- The **effective set is the closure** of role defaults + grants over those
+  prerequisites, computed once in `resolveEffectivePermissions`. Nothing
+  is written back to the membership row or the defaults table — one
+  derivation, at resolution.
+- An explicit **deny of a prerequisite also removes every permission that
+  requires it**, transitively. Deny stays the strongest rule and the
+  resolved set stays consistent: it never holds a job without the reads
+  that job performs. Owner-all is unchanged — an owner holds every
+  permission and no deny row binds them.
+- `ctx.call` keeps re-evaluating the callee's declared permissions. It now
+  passes because the caller's effective set contains the prerequisite.
+- The contract check gains: for every declared `ctx.call` edge with a
+  `staff` caller, each callee permission must be covered by the closure of
+  the caller's declared permissions. CI names the action, the edge and the
+  missing permission.
+- One exception, declared per edge as `permissionGuarded: true` in
+  composition: the caller checks the callee's permission itself with
+  `staffHasPermission` and skips the edge when the member lacks it
+  (`search.query`'s per-type reads). Such an edge grants nothing, so its
+  permissions are not prerequisites.
+
+Prerequisites are derived from the declared composition edges, including
+the ones a write's confirmation preview takes: a job's preview reads what
+the job reads.
 
 ## Alternatives considered
 
