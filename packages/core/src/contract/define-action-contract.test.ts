@@ -395,6 +395,17 @@ describe("defineActionContract — writtenRecordIdField", () => {
     );
   });
 
+  it("rejects a field that is not a string the trace could store", () => {
+    expectProblem(
+      {
+        ...staffWriteDefinition(),
+        output: z.object({ orderId: z.number().int() }),
+        writtenRecordIdField: "orderId",
+      },
+      'writtenRecordIdField "orderId" must name a string field',
+    );
+  });
+
   it("rejects an output whose fields cannot be named", () => {
     expectProblem(
       {

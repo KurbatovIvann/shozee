@@ -394,6 +394,12 @@ function validateWrittenRecordIdField(
     problems.push(
       `writtenRecordIdField "${field}" is not a field of this action's output`,
     );
+    return;
+  }
+  if (!isStringField(output.shape[field])) {
+    problems.push(
+      `writtenRecordIdField "${field}" must name a string field — a record id the trace can store`,
+    );
   }
 }
 
@@ -405,6 +411,13 @@ function objectOutput(output: unknown): z.ZodObject | null {
     return objectOutput(output.unwrap());
   }
   return null;
+}
+
+function isStringField(field: unknown): boolean {
+  if (field instanceof z.ZodNullable || field instanceof z.ZodOptional) {
+    return isStringField(field.unwrap());
+  }
+  return field instanceof z.ZodType && field.def.type === "string";
 }
 
 /**

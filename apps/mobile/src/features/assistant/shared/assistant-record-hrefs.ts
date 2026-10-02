@@ -35,7 +35,10 @@ export function assistantRecordHref(
   }
 }
 
-const WRITTEN_RECORD_KINDS = new Map<string, AssistantRecordKind>([
+export const ASSISTANT_WRITTEN_RECORD_KINDS = new Map<
+  string,
+  AssistantRecordKind
+>([
   ["orders.create", "order"],
   ["orders.confirm", "order"],
   ["orders.start", "order"],
@@ -63,5 +66,5 @@ const WRITTEN_RECORD_KINDS = new Map<string, AssistantRecordKind>([
 export function assistantWrittenRecordKind(
   action: string,
 ): AssistantRecordKind | null {
-  return WRITTEN_RECORD_KINDS.get(action) ?? null;
+  return ASSISTANT_WRITTEN_RECORD_KINDS.get(action) ?? null;
 }
