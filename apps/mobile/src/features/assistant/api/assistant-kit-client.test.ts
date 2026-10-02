@@ -143,6 +143,39 @@ describe("the assistant kit client", () => {
     });
   });
 
+  it("names the open card the words answer", async () => {
+    respond(202, { status: "accepted", window: conversationWindow() });
+
+    await postAssistantKitChat({
+      ...call,
+      conversationId: CONVERSATION,
+      commandId: COMMAND,
+      text: "перша",
+      answering: { interactionId: INTERACTION, revision: 2 },
+    });
+
+    expect(sentBody(0)).toEqual({
+      commandId: COMMAND,
+      conversationId: CONVERSATION,
+      text: "перша",
+      answering: { interactionId: INTERACTION, revision: 2 },
+    });
+  });
+
+  it("names no card when none is open", async () => {
+    respond(202, { status: "accepted", window: conversationWindow() });
+
+    await postAssistantKitChat({
+      ...call,
+      conversationId: CONVERSATION,
+      commandId: COMMAND,
+      text: "перша",
+      answering: null,
+    });
+
+    expect(sentBody(0)).not.toHaveProperty("answering");
+  });
+
   /**
    * The switch (ADR-0039): the turn is stored and queued, and this is the
    * window as the accept left it — the person's message and the placeholder the

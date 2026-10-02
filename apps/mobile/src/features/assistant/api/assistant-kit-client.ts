@@ -243,6 +243,11 @@ export function getAssistantKitWindow(
   );
 }
 
+export type AssistantKitAnswerRef = {
+  readonly interactionId: string;
+  readonly revision: number;
+};
+
 export function postAssistantKitChat(
   request: AssistantKitCall & {
     readonly conversationId: string;
@@ -253,14 +258,17 @@ export function postAssistantKitChat(
      */
     readonly commandId: string;
     readonly text: string;
+    readonly answering?: AssistantKitAnswerRef | null;
   },
 ): Promise<AssistantKitOutcome> {
+  const answering = request.answering ?? null;
   return call(request, ASSISTANT_KIT_CHAT_PATH, {
     method: "POST",
     body: {
       commandId: request.commandId,
       conversationId: request.conversationId,
       text: request.text,
+      ...(answering === null ? {} : { answering }),
     },
   });
 }

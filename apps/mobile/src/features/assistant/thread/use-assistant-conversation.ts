@@ -58,6 +58,7 @@ import {
   initialAssistantThreadState,
   type AssistantThreadState,
 } from "./assistant-thread-merge";
+import { assistantSendCommand } from "./assistant-send-command";
 import { useAssistantStream } from "./use-assistant-stream";
 import { assistantThreadRows, type AssistantThreadRow } from "./thread-rows";
 
@@ -543,7 +544,11 @@ export function useAssistantConversation(args: {
       }
       // Keyed by the words, so retrying the same draft is the same attempt and
       // editing it before retrying is a new one.
-      const key = `send:${clipped}`;
+      const command = assistantSendCommand({
+        text: clipped,
+        openPause: stateRef.current.thread?.openPause ?? null,
+      });
+      const key = command.key;
       const commandId = commandIdFor(key);
       const echo = {};
       echoRef.current = echo;
@@ -553,7 +558,8 @@ export function useAssistantConversation(args: {
           ...call,
           conversationId,
           commandId,
-          text: clipped,
+          text: command.text,
+          answering: command.answering,
         }),
       ).then(({ failure, current }): AssistantSendOutcome => {
         // Settled whether or not anyone is still looking: the token is about

@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Text, TextInput, View } from "react-native";
 import {
   FlashList,
@@ -29,6 +29,10 @@ import {
   ASSISTANT_THREAD_START,
   assistantThreadFollow,
 } from "./assistant-thread-follow";
+import {
+  ASSISTANT_THREAD_FOCUS_START,
+  assistantThreadFocus,
+} from "./assistant-thread-focus";
 import { ShozikPoseMark } from "./shozik-pose-mark";
 
 /**
@@ -95,6 +99,22 @@ export function AssistantSheetView(model: AssistantSheetViewModel) {
   const focusComposer = useCallback(() => {
     composerRef.current?.focus();
   }, []);
+
+  const focusRef = useRef(ASSISTANT_THREAD_FOCUS_START);
+  useEffect(() => {
+    const next = assistantThreadFocus(focusRef.current, rows);
+    focusRef.current = next.focus;
+    if (next.move.kind === "card") {
+      void listRef.current?.scrollToIndex({
+        index: next.move.index,
+        animated: true,
+      });
+      return;
+    }
+    if (next.move.kind === "composer") {
+      focusComposer();
+    }
+  }, [focusComposer, rows]);
 
   // FlashList keeps an older page from moving what is on screen on its own;
   // this only decides when to bring the thread back down to its end.

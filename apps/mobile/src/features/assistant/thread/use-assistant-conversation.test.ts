@@ -389,34 +389,39 @@ describe("useAssistantConversation", () => {
     expect(view.latest().interaction?.revision).toBe(9);
   });
 
-  /**
-   * SHO-550. A send refused because a question is still open — possibly one
-   * asked on another device, which this screen had not seen. The refusal's
-   * window brings the question in, and the failure is what the sheet uses
-   * both to put the draft back and to say why.
-   */
-  it("reports a send refused by an open question, and shows that question", async () => {
+  it("answers the open card the composer showed, and reports no refusal", async () => {
+    respond(200, {
+      status: "ok",
+      window: conversationWindow({ openPause: OPEN_PAUSE, asked: true }),
+    });
+    const view = mount();
+    await flush();
+
+    respond(202, { status: "accepted", window: conversationWindow() });
+    let outcome: unknown = null;
+    await act(async () => {
+      outcome = await view.latest().send("перша");
+    });
+
+    expect(sentBody(1).answering).toEqual({
+      interactionId: INTERACTION,
+      revision: 2,
+    });
+    expect(outcome).toEqual({ kind: "sent" });
+    expect(view.latest().failure).toBeNull();
+  });
+
+  it("names no card when the thread has none open", async () => {
     respond(200, { status: "ok", window: conversationWindow() });
     const view = mount();
     await flush();
 
-    respond(409, {
-      status: "interaction_open",
-      window: conversationWindow({ openPause: OPEN_PAUSE, asked: true }),
-    });
-    let refused: unknown = null;
+    respond(202, { status: "accepted", window: conversationWindow() });
     await act(async () => {
-      refused = await view.latest().send("створи ще одне");
+      await view.latest().send("створи ще одне");
     });
 
-    expect(refused).toEqual({
-      kind: "refused",
-      failure: { kind: "interaction_open" },
-    });
-    expect(view.latest().failure?.kind).toBe("interaction_open");
-    expect(view.latest().interaction?.interactionId).toBe(INTERACTION);
-    // Nothing was stored, so the echo of the words does not stay behind.
-    expect(view.latest().rows.some((row) => row.role === "user")).toBe(false);
+    expect(sentBody(1)).not.toHaveProperty("answering");
   });
 
   /**
@@ -458,24 +463,29 @@ describe("useAssistantConversation", () => {
    * The other side of the same rule: the server decided this attempt and
    * accepted nothing, so the words belong back in the composer.
    */
-  it("offers the words back when the server refused the send", async () => {
-    respond(200, { status: "ok", window: conversationWindow() });
+  it("offers the words back when the card moved under the send", async () => {
+    respond(200, {
+      status: "ok",
+      window: conversationWindow({ openPause: OPEN_PAUSE, asked: true }),
+    });
     const view = mount();
     await flush();
 
     respond(409, {
-      status: "interaction_open",
-      window: conversationWindow({ openPause: OPEN_PAUSE, asked: true }),
+      status: "stale",
+      window: conversationWindow({
+        openPause: { ...OPEN_PAUSE, revision: 3 },
+        asked: true,
+      }),
     });
     let outcome: unknown = null;
     await act(async () => {
-      outcome = await view.latest().send("створи ще одне");
+      outcome = await view.latest().send("перша");
     });
 
-    expect(outcome).toEqual({
-      kind: "refused",
-      failure: { kind: "interaction_open" },
-    });
+    expect(outcome).toEqual({ kind: "refused", failure: { kind: "stale" } });
+    expect(view.latest().interaction?.revision).toBe(3);
+    expect(view.latest().rows.some((row) => row.role === "user")).toBe(false);
   });
 
   it("drops a reply that arrives after the tenant changed", async () => {
