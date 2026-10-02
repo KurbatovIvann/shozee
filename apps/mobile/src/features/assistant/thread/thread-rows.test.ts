@@ -203,7 +203,16 @@ describe("assistantThreadRows", () => {
       interactionId: INTERACTION,
       revision: 2,
       status: "open",
-      prompt: { summary: "Створити замовлення на 500 ₴?" },
+      prompt: {
+        summary: "Створити замовлення на 500 ₴?",
+        preview: {
+          title: "Створити замовлення на 500 ₴?",
+          lines: [{ label: "Клієнт", value: "Катя" }],
+          notes: ["Ціни зафіксуються зараз."],
+        },
+        also: [],
+        level: "card",
+      },
       expiresAt: "2026-09-09T10:05:00.000Z",
     };
     const result = rows(threadOf([], pause));
@@ -213,6 +222,13 @@ describe("assistantThreadRows", () => {
       interactionId: INTERACTION,
       revision: 2,
       summary: "Створити замовлення на 500 ₴?",
+      preview: {
+        title: "Створити замовлення на 500 ₴?",
+        lines: [{ label: "Клієнт", value: "Катя" }],
+        notes: ["Ціни зафіксуються зараз."],
+      },
+      also: [],
+      level: "card",
     });
   });
 

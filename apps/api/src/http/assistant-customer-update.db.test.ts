@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 
 import type { ToolOutcome } from "@showzy/assistant-kit";
-import type { AssistantToolContext } from "@showzy/assistant-runtime";
+import {
+  confirmation,
+  type AssistantToolContext,
+  type ConfirmationSecret,
+} from "@showzy/assistant-runtime";
 import {
   createTestKit,
   kitIdentities,
@@ -102,10 +106,36 @@ async function callTool(
     toolCallId: `toolu_${randomUUID()}`,
     messages: [],
   } as never)) as ToolOutcome;
-  if (outcome.kind !== "ok") {
-    throw new Error(`${toolName} ended ${outcome.kind}`);
+  const settled =
+    outcome.kind === "pause" && outcome.interaction === "confirmation"
+      ? await approve(context, toolName, outcome)
+      : outcome;
+  if (settled.kind !== "ok") {
+    throw new Error(`${toolName} ended ${settled.kind}`);
   }
-  return outcome.result;
+  return settled.result;
+}
+
+async function approve(
+  context: AssistantToolContext,
+  toolName: string,
+  pause: Extract<ToolOutcome, { kind: "pause" }>,
+): Promise<ToolOutcome> {
+  const secret = JSON.parse(JSON.stringify(pause.secret)) as ConfirmationSecret;
+  const resolution = confirmation.resolve({
+    answer: { approved: true },
+    secret,
+  });
+  if (resolution.kind !== "resolved") {
+    throw new Error("a confirmation always resolves");
+  }
+  return await runtime().resolveAnswer({
+    toolName,
+    kind: "confirmation",
+    value: resolution.value,
+    tools: {},
+    context,
+  });
 }
 
 async function listedRow(

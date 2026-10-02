@@ -9,8 +9,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ASSISTANT_PREVIEW_TEXT_MAX,
   assistantChoicePromptSchema,
   assistantInteractionFromPause,
+  assistantPreviewSchema,
   mergeAssistantChatWindow,
   orderAssistantChatWindow,
   parseAssistantChatWindow,
@@ -511,5 +513,40 @@ describe("a choice prompt", () => {
     const interaction = assistantInteractionFromPause(pause(CHOICE_V1));
 
     expect(interaction).toMatchObject({ nearest: false, problem: undefined });
+  });
+});
+
+describe("the preview a pause puts on the wire", () => {
+  it("bounds every text of a card by the same ceiling", () => {
+    const tooLong = "я".repeat(ASSISTANT_PREVIEW_TEXT_MAX + 1);
+
+    expect(
+      assistantPreviewSchema.safeParse({
+        title: tooLong,
+        lines: [],
+        notes: [],
+      }).success,
+    ).toBe(false);
+    expect(
+      assistantPreviewSchema.safeParse({
+        title: "Нове замовлення",
+        lines: [{ label: tooLong, value: "1" }],
+        notes: [],
+      }).success,
+    ).toBe(false);
+    expect(
+      assistantPreviewSchema.safeParse({
+        title: "Нове замовлення",
+        lines: [{ label: "Коментар", value: tooLong }],
+        notes: [],
+      }).success,
+    ).toBe(false);
+    expect(
+      assistantPreviewSchema.safeParse({
+        title: "Нове замовлення",
+        lines: [],
+        notes: [tooLong],
+      }).success,
+    ).toBe(false);
   });
 });

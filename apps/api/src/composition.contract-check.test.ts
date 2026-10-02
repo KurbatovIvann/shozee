@@ -15,6 +15,10 @@ import {
 } from "@showzy/core";
 import type { ActionContract } from "@showzy/core/contract";
 import type { RecordCreatedVia as DbRecordCreatedVia } from "@showzy/db/schema/tenant-columns";
+import {
+  ASSISTANT_PREVIEW_LIST_MAX,
+  ASSISTANT_PREVIEW_TEXT_MAX,
+} from "@showzy/validation/assistant-chat";
 import { ASSISTANT_SURFACE_REGISTRY } from "@showzy/validation/assistant-surfaces";
 import type { RecordCreatedVia as ValidationRecordCreatedVia } from "@showzy/validation/record-verification";
 import { readFileSync } from "node:fs";
@@ -162,6 +166,137 @@ function staffExposedActionNames(
     )
     .map((contract) => contract.name)
     .toSorted();
+}
+
+const PREVIEW_FORMAT_TEXT_MAX: Readonly<Record<string, number>> = {
+  date: 10,
+  "date-time": 40,
+  duration: 40,
+  time: 18,
+  uuid: 36,
+};
+
+const PREVIEW_CARD_FIXED_LINES = 8;
+
+const PREVIEW_CHANGE_LINE_OVERHEAD = " → ".length;
+
+interface PreviewBound {
+  readonly lines: number;
+  readonly text: number;
+}
+
+function stringTextBound(
+  schema: Record<string, unknown>,
+  path: string,
+  unbounded: string[],
+): number {
+  const maxLength = schema["maxLength"];
+  if (typeof maxLength === "number") {
+    return maxLength;
+  }
+  const values = schema["enum"];
+  if (Array.isArray(values) && values.length > 0) {
+    return Math.max(...values.map((value) => String(value).length));
+  }
+  const constant = schema["const"];
+  if (typeof constant === "string" || typeof constant === "number") {
+    return String(constant).length;
+  }
+  const format = schema["format"];
+  if (typeof format === "string" && format in PREVIEW_FORMAT_TEXT_MAX) {
+    return PREVIEW_FORMAT_TEXT_MAX[format] ?? 0;
+  }
+  unbounded.push(`${path}: string without a max`);
+  return 0;
+}
+
+function schemaPreviewBound(
+  schema: unknown,
+  root: unknown,
+  path: string,
+  unbounded: string[],
+): PreviewBound {
+  if (!isRecord(schema)) {
+    unbounded.push(`${path}: no schema to derive a bound from`);
+    return { lines: 1, text: 0 };
+  }
+  const ref = schema["$ref"];
+  if (typeof ref === "string") {
+    return schemaPreviewBound(
+      resolveJsonPointer(root, ref),
+      root,
+      path,
+      unbounded,
+    );
+  }
+  for (const key of ["oneOf", "anyOf", "allOf"] as const) {
+    const variants = schema[key];
+    if (!Array.isArray(variants) || variants.length === 0) {
+      continue;
+    }
+    const bounds = variants.map((variant, index) =>
+      schemaPreviewBound(
+        variant,
+        root,
+        `${path}/${key}[${String(index)}]`,
+        unbounded,
+      ),
+    );
+    return {
+      lines: Math.max(...bounds.map((bound) => bound.lines)),
+      text: Math.max(...bounds.map((bound) => bound.text)),
+    };
+  }
+  const type = schema["type"];
+  if (type === "array") {
+    const maxItems = schema["maxItems"];
+    const item = schemaPreviewBound(
+      schema["items"],
+      root,
+      `${path}[]`,
+      unbounded,
+    );
+    if (typeof maxItems !== "number") {
+      unbounded.push(`${path}: array without a max`);
+      return { lines: 1, text: item.text };
+    }
+    return { lines: maxItems, text: item.text };
+  }
+  if (type === "object") {
+    const properties = schema["properties"];
+    if (!isRecord(properties)) {
+      return { lines: 1, text: 0 };
+    }
+    let lines = 0;
+    let text = 0;
+    for (const [name, property] of Object.entries(properties)) {
+      const bound = schemaPreviewBound(
+        property,
+        root,
+        `${path}.${name}`,
+        unbounded,
+      );
+      lines += bound.lines;
+      text = Math.max(text, bound.text);
+    }
+    return { lines, text };
+  }
+  if (type === "string") {
+    return { lines: 1, text: stringTextBound(schema, path, unbounded) };
+  }
+  return { lines: 1, text: 0 };
+}
+
+function previewBoundExposedContracts(): readonly ActionContract[] {
+  return buildContractCheckInput()
+    .registry.implementations()
+    .filter(
+      (implementation) =>
+        implementation.preview !== undefined &&
+        implementation.contract.aiExposure === "exposed",
+    )
+    .map((implementation) => implementation.contract)
+    .toSorted((left, right) => left.name.localeCompare(right.name));
 }
 
 describe("CI contract-check stage", () => {
@@ -399,5 +534,28 @@ describe("CI contract-check stage", () => {
     });
     expect(byName.get("companies.get")?.transport).toBe("client");
     expect(byName.get("companies.get")?.aiExposure).toBe("exposed");
+  });
+
+  it("SHO-749: the largest card every preview-bound AI tool can build fits the wire", () => {
+    const contracts = previewBoundExposedContracts();
+    expect(contracts.length).toBeGreaterThan(0);
+
+    const unbounded: string[] = [];
+    const over: string[] = [];
+    for (const contract of contracts) {
+      const json = z.toJSONSchema(contract.input);
+      const bound = schemaPreviewBound(json, json, contract.name, unbounded);
+      const lines = bound.lines + PREVIEW_CARD_FIXED_LINES;
+      const text = bound.text * 2 + PREVIEW_CHANGE_LINE_OVERHEAD;
+      if (lines > ASSISTANT_PREVIEW_LIST_MAX) {
+        over.push(`${contract.name}: ${String(lines)} lines`);
+      }
+      if (text > ASSISTANT_PREVIEW_TEXT_MAX) {
+        over.push(`${contract.name}: ${String(text)} characters`);
+      }
+    }
+
+    expect(unbounded).toEqual([]);
+    expect(over).toEqual([]);
   });
 });

@@ -5,6 +5,7 @@ import { createVariant } from "./actions/create-variant.js";
 import { getProduct } from "./actions/get-product.js";
 import { getProductOrderFacts } from "./actions/get-product-order-facts.js";
 import { getProductPricingFacts } from "./actions/get-product-pricing-facts.js";
+import { listNameIndex } from "./actions/list-name-index.js";
 import { listProducts } from "./actions/list-products.js";
 import { resolveLineReferences } from "./actions/resolve-line-references.js";
 import { restoreProduct } from "./actions/restore-product.js";
@@ -22,6 +23,7 @@ export { createVariant };
 export { getProduct };
 export { getProductOrderFacts };
 export { getProductPricingFacts };
+export { listNameIndex };
 export { listProducts };
 export { resolveLineReferences };
 export { ReferenceResolutionConflictError };
@@ -38,6 +40,7 @@ export const catalogActions = [
   getProduct,
   getProductOrderFacts,
   getProductPricingFacts,
+  listNameIndex,
   listProducts,
   resolveLineReferences,
   updateProduct,

@@ -3,6 +3,10 @@ export { createPriceListContract } from "./actions/create-price-list.contract.js
 export { deactivatePriceListContract } from "./actions/deactivate-price-list.contract.js";
 export { deletePriceListContract } from "./actions/delete-price-list.contract.js";
 export { getPriceListContract } from "./actions/get-price-list.contract.js";
+export {
+  LIST_NAME_INDEX_PRICE_LISTS_MAX,
+  listNameIndexContract,
+} from "./actions/list-name-index.contract.js";
 export { listPriceListEntriesContract } from "./actions/list-price-list-entries.contract.js";
 export {
   LIST_PRICE_LISTS_CURSOR_MAX,

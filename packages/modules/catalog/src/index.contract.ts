@@ -6,6 +6,11 @@ export { getProductContract } from "./actions/get-product.contract.js";
 export { getProductOrderFactsContract } from "./actions/get-product-order-facts.contract.js";
 export { getProductPricingFactsContract } from "./actions/get-product-pricing-facts.contract.js";
 export {
+  LIST_NAME_INDEX_PRODUCTS_MAX,
+  LIST_NAME_INDEX_VARIANTS_MAX,
+  listNameIndexContract,
+} from "./actions/list-name-index.contract.js";
+export {
   LIST_PRODUCTS_CURSOR_MAX,
   LIST_PRODUCTS_DEFAULT_LIMIT,
   LIST_PRODUCTS_MAX_LIMIT,

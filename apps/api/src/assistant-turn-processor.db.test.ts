@@ -27,6 +27,7 @@ import {
 import {
   aiCompanyBudgetKey,
   aiGlobalBudgetKey,
+  confirmation,
   createAssistantRuntime,
   createAssistantTurnProcessor,
   createMemoryAiBudgetStore,
@@ -38,6 +39,7 @@ import {
   type AssistantTurnClaim,
   type AssistantTurnRef,
   type AssistantTurnJobOutcome,
+  type ConfirmationSecret,
   type StaffAssistantBudgetHold,
 } from "@showzy/assistant-runtime";
 import { assistantTurnJob, interruptTurn } from "@showzy/assistant";
@@ -426,7 +428,7 @@ async function historyOf(turn: Accepted): Promise<string> {
 function afterTool(
   runtime: AssistantRuntime,
   toolName: string,
-  after: () => void | Promise<void>,
+  after: (outcome: ToolOutcome) => void | Promise<void>,
 ): AssistantRuntime {
   return {
     ...runtime,
@@ -442,13 +444,43 @@ function afterTool(
         ...definition,
         execute: async (input, options) => {
           const outcome = (await execute(input, options)) as ToolOutcome;
-          await after();
+          await after(outcome);
           return outcome;
         },
       };
       return wrapped;
     },
   };
+}
+
+type Pause = Extract<ToolOutcome, { kind: "pause" }>;
+
+async function approveCard(
+  runtime: AssistantRuntime,
+  card: Pause,
+  conversationId: string,
+): Promise<ToolOutcome> {
+  const secret = JSON.parse(JSON.stringify(card.secret)) as ConfirmationSecret;
+  const resolution = confirmation.resolve({
+    answer: { approved: true },
+    secret,
+  });
+  if (resolution.kind !== "resolved") {
+    throw new Error("a confirmation always resolves");
+  }
+  return await runtime.resolveAnswer({
+    toolName: CREATE_TOOL,
+    kind: "confirmation",
+    value: resolution.value,
+    tools: {},
+    context: {
+      userId: ANNA,
+      companySelector: COMPANY,
+      conversationId,
+      commandId: randomUUID(),
+      requestId: randomUUID(),
+    },
+  });
 }
 
 /** A model that counts every call and fails each one. */
@@ -634,13 +666,17 @@ describe("a turn the worker runs", () => {
     });
   });
 
-  it("replays a write the interrupted turn committed when its continuation repeats it: one customer, not two", async () => {
+  it("gives a continuation the dead turn's key, so the two cards make one customer, not two", async () => {
     const email = `katya-${randomUUID()}@example.com`;
     const create = { name: "Катя Продовжити", email };
     const first = await accepted({ history: USER_ASKS });
     const late: { harness?: Harness } = {};
-    // The deadline lands inside the write: it commits, the step never finishes,
-    // and the model's memory of it is gone.
+    const cards: Pause[] = [];
+    const keep = (outcome: ToolOutcome) => {
+      if (outcome.kind === "pause") {
+        cards.push(outcome);
+      }
+    };
     const h1 = await harness(
       afterTool(
         runtimeWith(
@@ -650,7 +686,8 @@ describe("a turn the worker runs", () => {
           ]),
         ),
         CREATE_TOOL,
-        () => {
+        (outcome) => {
+          keep(outcome);
           late.harness?.fireDeadline();
         },
       ),
@@ -670,30 +707,37 @@ describe("a turn the worker runs", () => {
             eq(companyCustomers.email, email),
           ),
         );
-    const afterFirst = await customersWithEmail();
-    expect(afterFirst).toHaveLength(1);
+    expect(await customersWithEmail()).toHaveLength(0);
     expect(await historyOf(first)).not.toContain("toolu_create");
 
-    // Продовжити: a command of its own, continuing the interrupted one.
     const continuation = await accepted({
       history: USER_ASKS,
       conversationId: first.conversationId,
       continues: true,
     });
-    const h2 = await harness(
-      runtimeWith(
-        stubModel([
-          stubToolCallStep("toolu_create_again", CREATE_TOOL, create),
-          stubTextStep("Готово."),
-        ]),
-      ),
+    const answering = runtimeWith(
+      stubModel([
+        stubToolCallStep("toolu_create_again", CREATE_TOOL, create),
+        stubTextStep("Готово."),
+      ]),
     );
-    expect(await h2.process(continuation.job)).toMatchObject({
-      kind: "finished",
-      status: "done",
-    });
+    const h2 = await harness(afterTool(answering, CREATE_TOOL, keep));
+    await h2.process(continuation.job);
 
-    expect(await customersWithEmail()).toEqual(afterFirst);
+    expect(cards).toHaveLength(2);
+    const keys = cards.map(
+      (card) => (card.secret as ConfirmationSecret).idempotencyKey,
+    );
+    expect(keys[0]).toBe(keys[1]);
+    expect(await customersWithEmail()).toHaveLength(0);
+
+    const tapped: ToolOutcome[] = [];
+    for (const card of cards) {
+      tapped.push(await approveCard(answering, card, first.conversationId));
+    }
+
+    expect(tapped.map((outcome) => outcome.kind)).toEqual(["ok", "ok"]);
+    expect(await customersWithEmail()).toHaveLength(1);
   });
 
   it("stops at a step whose history cannot be stored, keeps the card before it, and ends interrupted", async () => {

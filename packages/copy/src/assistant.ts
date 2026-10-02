@@ -108,6 +108,10 @@ export type AssistantCopy = {
   readonly dismissLabel: string;
   readonly confirmingLabel: string;
   readonly confirmationTitle: string;
+  readonly previewAlso: string;
+  readonly previewStrongLabel: string;
+  readonly previewStrongWarning: string;
+  readonly previewStrongConfirm: string;
   readonly choiceTitle: string;
   readonly choiceNearest: string;
   readonly choiceCompose: string;
@@ -262,6 +266,11 @@ const assistantEn: AssistantCopy = {
   dismissLabel: "Cancel",
   confirmingLabel: "Confirming…",
   confirmationTitle: "Confirmation required",
+  previewAlso: "Also",
+  previewStrongLabel: "Cannot be undone",
+  previewStrongWarning:
+    "Check the details. Once confirmed, this cannot be undone.",
+  previewStrongConfirm: "Yes, do it",
   choiceTitle: "Select a variant",
   choiceNearest: "Nothing exact. Maybe…",
   choiceCompose: "Something else…",
@@ -352,6 +361,10 @@ const assistantUk: AssistantCopy = {
   dismissLabel: "Скасувати",
   confirmingLabel: "Підтверджую…",
   confirmationTitle: "Потрібне підтвердження",
+  previewAlso: "Також",
+  previewStrongLabel: "Незворотна дія",
+  previewStrongWarning: "Перевір дані. Після підтвердження скасувати не вийде.",
+  previewStrongConfirm: "Так, виконати",
   choiceTitle: "Обери варіант",
   choiceNearest: "Точного немає. Можливо…",
   choiceCompose: "Інше…",

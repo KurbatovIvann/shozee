@@ -11,6 +11,11 @@ export {
   deriveAiToolSources,
 } from "./ai-exposure.js";
 export {
+  CONFIRMABLE_RISKS,
+  isConfirmableRisk,
+} from "./confirmation-preconditions.js";
+export type { ConfirmableRisk } from "./confirmation-preconditions.js";
+export {
   DECLARED_ERROR_CODES,
   isDeclaredErrorCode,
   undeclarableErrorReason,
@@ -23,6 +28,7 @@ export {
   ActionContractDefinitionError,
   defineActionContract,
 } from "./define-action-contract.js";
+export { ACTION_RISKS } from "./types.js";
 export type {
   ActionAiExposure,
   ActionContract,

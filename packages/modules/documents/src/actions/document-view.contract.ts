@@ -31,6 +31,8 @@ export const documentCompanyTypeSchema = z.enum(["fop", "tov"]);
 
 export const DOCUMENT_BASIS_MAX = 500;
 
+export const DOCUMENT_LAYOUT_KEY_MAX = 120;
+
 export const documentTemplateSourceSchema = z.literal("system");
 
 export const supplierDetailsSchema = z.object({

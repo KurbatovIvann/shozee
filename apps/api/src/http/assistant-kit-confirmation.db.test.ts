@@ -31,6 +31,7 @@ import {
   type TestKit,
 } from "@showzy/core/testing";
 import { companyCustomers } from "@showzy/db/schema/customers";
+import { assistantConfirmationPromptSchema } from "@showzy/validation/assistant-chat";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -41,6 +42,8 @@ import { testStaffProvider } from "@showzy/ai/test";
 
 const DELETE_TOOL = "customers_deleteCustomer";
 const DELETE_ACTION = "customers.deleteCustomer";
+const UPDATE_TOOL = "customers_updateCustomer";
+const UPDATE_ACTION = "customers.updateCustomer";
 
 type Pause = Extract<ToolOutcome, { kind: "pause" }>;
 
@@ -84,16 +87,39 @@ function request(conversationId: string): AssistantToolContext {
   };
 }
 
-async function archivedCustomer(): Promise<string> {
+function boris(conversationId: string): AssistantToolContext {
+  return {
+    ...request(conversationId),
+    userId: kitIdentities.users.boris,
+    companySelector: kitIdentities.companies.b,
+  };
+}
+
+async function seedCustomer(
+  status: "archived" | "active",
+  name = "Катя Самбука",
+): Promise<string> {
   const id = randomUUID();
   await kit.db.runtime.db.insert(companyCustomers).values({
     id,
     companyId: kitIdentities.companies.a,
-    name: "Катя Самбука",
-    email: `katya-${id}@example.com`,
-    status: "archived",
+    name,
+    email: `katya-${randomUUID()}@example.com`,
+    status,
   });
   return id;
+}
+
+async function archivedCustomer(): Promise<string> {
+  return await seedCustomer("archived");
+}
+
+async function storedName(id: string): Promise<string | undefined> {
+  const found = await kit.db.runtime.db
+    .select({ name: companyCustomers.name })
+    .from(companyCustomers)
+    .where(eq(companyCustomers.id, id));
+  return found[0]?.name;
 }
 
 async function customerExists(id: string): Promise<boolean> {
@@ -105,24 +131,42 @@ async function customerExists(id: string): Promise<boolean> {
 }
 
 /** The model's tool call, run the way the host runs it. */
+async function call(
+  runtime: AssistantKitRuntime,
+  context: AssistantToolContext,
+  toolName: string,
+  input: unknown,
+): Promise<ToolOutcome> {
+  const tools = await runtime.tools(context);
+  const execute = tools[toolName]?.execute;
+  if (execute === undefined) {
+    throw new Error(`${toolName} is not offered to an owner`);
+  }
+  return (await execute(input, {
+    toolCallId: `toolu_${toolName}`,
+    messages: [],
+  } as never)) as ToolOutcome;
+}
+
+async function ask(
+  runtime: AssistantKitRuntime,
+  context: AssistantToolContext,
+  toolName: string,
+  input: unknown,
+): Promise<Pause> {
+  const outcome = await call(runtime, context, toolName, input);
+  if (outcome.kind !== "pause") {
+    throw new Error(`expected a pause, got ${outcome.kind}`);
+  }
+  return outcome;
+}
+
 async function askToDelete(
   runtime: AssistantKitRuntime,
   context: AssistantToolContext,
   customerId: string,
 ): Promise<Pause> {
-  const tools = await runtime.tools(context);
-  const execute = tools[DELETE_TOOL]?.execute;
-  if (execute === undefined) {
-    throw new Error(`${DELETE_TOOL} is not offered to an owner`);
-  }
-  const outcome = (await execute({ id: customerId }, {
-    toolCallId: "toolu_delete",
-    messages: [],
-  } as never)) as ToolOutcome;
-  if (outcome.kind !== "pause") {
-    throw new Error(`expected a pause, got ${outcome.kind}`);
-  }
-  return outcome;
+  return await ask(runtime, context, DELETE_TOOL, { id: customerId });
 }
 
 /**
@@ -178,8 +222,13 @@ describe("a delete the assistant asks for", () => {
 
     expect(pause.interaction).toBe("confirmation");
     expect(await customerExists(customerId)).toBe(true);
-    expect(pause.prompt).toEqual({ summary: expect.any(String) as unknown });
-    expect(JSON.stringify(pause.prompt)).toContain("Катя Самбука");
+    const prompt = assistantConfirmationPromptSchema.parse(pause.prompt);
+    expect(prompt.summary).toBe(prompt.preview.title);
+    expect(prompt.preview.title).toContain("Катя Самбука");
+    expect(prompt.preview.lines.length).toBeGreaterThan(0);
+    expect(prompt.preview.notes.length).toBeGreaterThan(0);
+    expect(prompt.level).toBe("strong");
+    expect(prompt.also).toEqual([]);
     expect(JSON.stringify(pause.prompt)).not.toContain(customerId);
 
     // A separate request with its own command, as a real answer is.
@@ -251,49 +300,113 @@ describe("a delete the assistant asks for", () => {
 
 describe("a write the handler refused can be corrected in the same turn", () => {
   it("gives the corrected call its own key, and keeps one key for an untouched retry", async () => {
-    const id = randomUUID();
-    await kit.db.runtime.db.insert(companyCustomers).values({
-      id,
-      companyId: kitIdentities.companies.a,
-      name: "Катя Самбука",
-      email: `katya-${id}@example.com`,
-      status: "active",
-    });
+    const id = await seedCustomer("active");
     const runtime = runtimeWithChallenges();
     const context = request(randomUUID());
-    const tools = await runtime.tools(context);
-    const update = tools["customers_updateCustomer"]?.execute;
-    if (update === undefined) {
-      throw new Error("customers_updateCustomer is not offered to an owner");
-    }
-    const call = (input: unknown) =>
-      update(input, {
-        toolCallId: "toolu_update",
-        messages: [],
-      } as never) as Promise<ToolOutcome>;
-    const fields = {
-      name: "Катерина Самбука",
-      email: `katya-${id}@example.com`,
-    };
+    const update = (input: unknown) =>
+      call(runtime, context, UPDATE_TOOL, input);
+    const fields = { name: "Катерина Самбука" };
 
-    const missing = await call({ id: randomUUID(), ...fields });
+    const missing = await update({ id: randomUUID(), ...fields });
     expect(missing).toMatchObject({ kind: "error", code: "NOT_FOUND" });
 
-    const corrected = await call({ id, ...fields });
-    expect(corrected).toMatchObject({ kind: "ok" });
-    const again = await call({ id, ...fields });
-    expect(again).toMatchObject({ kind: "ok" });
+    const corrected = await update({ id, ...fields });
+    expect(corrected).toMatchObject({ kind: "pause" });
+    const again = await update({ id, ...fields });
+    expect(again).toMatchObject({ kind: "pause" });
+    expect(await storedName(id)).toBe("Катя Самбука");
 
-    const stored = await kit.db.runtime.db
-      .select({ name: companyCustomers.name })
-      .from(companyCustomers)
-      .where(eq(companyCustomers.id, id));
-    expect(stored[0]?.name).toBe("Катерина Самбука");
-
-    expect(
-      assistantKitIdempotencyKey(context, "customers.updateCustomer"),
-    ).not.toBe(
-      assistantKitIdempotencyKey(context, "customers.updateCustomer", 1),
+    const confirmed = await answer(
+      runtime,
+      request(randomUUID()),
+      approve(corrected as Pause),
     );
+    expect(confirmed).toMatchObject({ kind: "ok" });
+    expect(await storedName(id)).toBe("Катерина Самбука");
+
+    expect(assistantKitIdempotencyKey(context, UPDATE_ACTION)).not.toBe(
+      assistantKitIdempotencyKey(context, UPDATE_ACTION, 1),
+    );
+  });
+});
+
+describe("an ordinary write the assistant makes", () => {
+  it("pauses on its card, writes nothing while it is open, and runs once approved", async () => {
+    const runtime = runtimeWithChallenges();
+    const id = await seedCustomer("active");
+
+    const pause = await ask(runtime, request(randomUUID()), UPDATE_TOOL, {
+      id,
+      name: "Катерина Самбука",
+    });
+
+    const prompt = assistantConfirmationPromptSchema.parse(pause.prompt);
+    expect(prompt.level).toBe("card");
+    expect(prompt.preview.title).toContain("Катя Самбука");
+    expect(prompt.preview.lines.length).toBeGreaterThan(0);
+    expect(await storedName(id)).toBe("Катя Самбука");
+
+    const outcome = await answer(
+      runtime,
+      request(randomUUID()),
+      approve(pause),
+    );
+
+    expect(outcome).toMatchObject({ kind: "ok" });
+    expect(await storedName(id)).toBe("Катерина Самбука");
+  });
+
+  it("refuses a challenge presented from another company, and writes nothing", async () => {
+    const runtime = runtimeWithChallenges();
+    const id = await seedCustomer("active");
+    const pause = await ask(runtime, request(randomUUID()), UPDATE_TOOL, {
+      id,
+      name: "Катерина Самбука",
+    });
+
+    const outcome = await answer(runtime, boris(randomUUID()), approve(pause));
+
+    expect(outcome).not.toMatchObject({ kind: "ok" });
+    expect(await storedName(id)).toBe("Катя Самбука");
+  });
+
+  it("asks again with the new card when the record moved under it, then runs once", async () => {
+    const runtime = runtimeWithChallenges();
+    const id = await seedCustomer("active");
+    const pause = await ask(runtime, request(randomUUID()), UPDATE_TOOL, {
+      id,
+      name: "Катерина Самбука",
+    });
+
+    await kit.db.runtime.db
+      .update(companyCustomers)
+      .set({ name: "Катя С." })
+      .where(eq(companyCustomers.id, id));
+
+    const drifted = await answer(
+      runtime,
+      request(randomUUID()),
+      approve(pause),
+    );
+
+    expect(drifted).toMatchObject({ kind: "pause" });
+    const again = drifted as Pause;
+    const secret = again.secret as ConfirmationSecret;
+    const first = pause.secret as ConfirmationSecret;
+    expect(secret.challengeId).not.toBe(first.challengeId);
+    expect(secret.idempotencyKey).toBe(first.idempotencyKey);
+    expect(
+      assistantConfirmationPromptSchema.parse(again.prompt).preview.title,
+    ).toContain("Катя С.");
+    expect(await storedName(id)).toBe("Катя С.");
+
+    const outcome = await answer(
+      runtime,
+      request(randomUUID()),
+      approve(again),
+    );
+
+    expect(outcome).toMatchObject({ kind: "ok" });
+    expect(await storedName(id)).toBe("Катерина Самбука");
   });
 });

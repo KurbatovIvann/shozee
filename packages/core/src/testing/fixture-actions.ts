@@ -12,8 +12,6 @@ import {
   companyMembers,
   domainEvents,
   type Database,
-  type ReadTx,
-  type Tx,
 } from "@showzy/db";
 import {
   fixtureCompanies,
@@ -44,6 +42,7 @@ import {
   resolveKitShareTarget,
   resolveLeakyKitShareTarget,
 } from "./share-fixture.js";
+import { requireWritable } from "./writable-tx.js";
 
 const contractDefaults = {
   transport: "client" as const,
@@ -184,15 +183,6 @@ async function resolveAnyProduct(
   return { companyId: product.companyId, resource: product };
 }
 
-function writableTx(db: Tx | ReadTx, actionName: string): Tx {
-  if (!("update" in db)) {
-    throw new CoreInvariantError(
-      `${actionName} expected the writable transaction`,
-    );
-  }
-  return db;
-}
-
 async function previewOwnFollow(
   input: { companyId: string },
   env: ActionPreviewEnv,
@@ -262,6 +252,30 @@ async function previewLeakingForeignExistence(
     throw new NotFoundError();
   }
   if (row.companyId !== env.companyId) {
+    throw new PermissionDeniedError();
+  }
+  return publishCard(row.name);
+}
+
+async function previewDenyingWhatExecutionCallsMissing(
+  input: { productId: string },
+  env: ActionPreviewEnv,
+): Promise<ActionPreview> {
+  if (env.companyId === null) {
+    throw new PermissionDeniedError();
+  }
+  const rows = await env.tx
+    .select()
+    .from(fixtureProducts)
+    .where(
+      and(
+        eq(fixtureProducts.id, input.productId),
+        eq(fixtureProducts.companyId, env.companyId),
+      ),
+    )
+    .limit(1);
+  const row = rows[0];
+  if (row === undefined) {
     throw new PermissionDeniedError();
   }
   return publishCard(row.name);
@@ -362,7 +376,10 @@ export function createCorrectFixtureActions() {
           id: productInput.parse(env.input).productId,
         }),
         handler: async (input, ctx) => {
-          const rows = await writableTx(ctx.db, "kitFixture.publishProduct")
+          const rows = await requireWritable(
+            ctx.db,
+            "kitFixture.publishProduct",
+          )
             .update(fixtureProducts)
             .set({ published: true })
             .where(
@@ -652,7 +669,7 @@ export function createCorrectFixtureActions() {
           id: followInput.parse(env.input).companyId,
         }),
         handler: async (input, ctx) => {
-          await writableTx(ctx.db, "kitFixture.confirmFollow")
+          await requireWritable(ctx.db, "kitFixture.confirmFollow")
             .insert(fixtureCompanyFollows)
             .values({ userId: ctx.userId, companyId: input.companyId })
             .onConflictDoNothing();
@@ -879,6 +896,17 @@ export function createLeakyFixtureActions(db: Database) {
       }),
       handler: correct.staffPublishProduct.handler,
     }),
+    staffPublishProductDenyingAtPreview: implementAction(
+      correct.staffPublishProduct.contract,
+      {
+        preview: previewDenyingWhatExecutionCallsMissing,
+        auditTarget: (env) => ({
+          type: "product",
+          id: productInput.parse(env.input).productId,
+        }),
+        handler: correct.staffPublishProduct.handler,
+      },
+    ),
     staffPublishProductCardingAnyProduct: implementAction(
       correct.staffPublishProduct.contract,
       {

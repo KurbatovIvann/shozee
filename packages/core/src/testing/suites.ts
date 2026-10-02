@@ -212,8 +212,62 @@ function schemaDefinition(schema: z.core.$ZodType): SchemaDefinition {
   return node._zod.def;
 }
 
-function schemaChildren(def: SchemaDefinition): readonly z.core.$ZodType[] {
+const maxSchemaWalkNodes = 512;
+
+type LazyDefinition = Extract<SchemaDefinition, { type: "lazy" }>;
+
+type SchemaWalk = {
+  readonly seen: Set<z.core.$ZodType>;
+  readonly lazyResolutions: Map<LazyDefinition, z.core.$ZodType>;
+};
+
+function resolveLazyOnce(
+  def: LazyDefinition,
+  walk: SchemaWalk,
+): z.core.$ZodType {
+  const resolved = walk.lazyResolutions.get(def);
+  if (resolved !== undefined) {
+    return resolved;
+  }
+  const fresh: z.core.$ZodType = def.getter();
+  walk.lazyResolutions.set(def, fresh);
+  return fresh;
+}
+
+function templateLiteralChildren(
+  def: Extract<SchemaDefinition, { type: "template_literal" }>,
+): readonly z.core.$ZodType[] {
+  const children: z.core.$ZodType[] = [];
+  for (const part of def.parts) {
+    if (typeof part === "object" && part !== null) {
+      children.push(part);
+    }
+  }
+  return children;
+}
+
+function schemaChildren(
+  def: SchemaDefinition,
+  walk: SchemaWalk,
+): readonly z.core.$ZodType[] {
   switch (def.type) {
+    case "string":
+    case "number":
+    case "bigint":
+    case "boolean":
+    case "date":
+    case "symbol":
+    case "undefined":
+    case "null":
+    case "void":
+    case "never":
+    case "any":
+    case "unknown":
+    case "nan":
+    case "file":
+    case "literal":
+    case "enum":
+      return [];
     case "object":
       return Object.values(def.shape);
     case "array":
@@ -230,7 +284,7 @@ function schemaChildren(def: SchemaDefinition): readonly z.core.$ZodType[] {
     case "set":
       return [def.valueType];
     case "lazy":
-      return [def.getter()];
+      return [resolveLazyOnce(def, walk)];
     case "pipe":
       return [def.in, def.out];
     case "optional":
@@ -242,28 +296,66 @@ function schemaChildren(def: SchemaDefinition): readonly z.core.$ZodType[] {
     case "readonly":
     case "promise":
       return [def.innerType];
+    case "success":
+      return [def.innerType];
+    case "template_literal":
+      return templateLiteralChildren(def);
     default:
-      return [];
+      throw new Error(
+        `A uuid walk met a schema node of unrecognised type "${def.type}", so it cannot prove that the schema carries no uuid field. Teach schemaChildren that node type, or declare isolationCase(action, own, foreign, { missing }) instead of { noReference: true }.`,
+      );
   }
 }
 
-function carriesUuidField(
-  schema: z.core.$ZodType,
-  seen: Set<z.core.$ZodType>,
+function isUuidFormat(format: unknown): boolean {
+  return format === "uuid" || format === "guid";
+}
+
+function stringDeclaresUuid(
+  def: Extract<SchemaDefinition, { type: "string" }>,
 ): boolean {
-  if (seen.has(schema)) {
-    return false;
-  }
-  seen.add(schema);
-  const def = schemaDefinition(schema);
-  if (def.type === "string" && "format" in def && def.format === "uuid") {
+  if ("format" in def && isUuidFormat(def.format)) {
     return true;
   }
-  return schemaChildren(def).some((child) => carriesUuidField(child, seen));
+  return (def.checks ?? []).some((check) => {
+    const checkDefinition: object = check._zod.def;
+    return "format" in checkDefinition && isUuidFormat(checkDefinition.format);
+  });
+}
+
+function carriesUuidField(schema: z.core.$ZodType, walk: SchemaWalk): boolean {
+  const pending: z.core.$ZodType[] = [schema];
+  let walked = 0;
+  while (pending.length > 0) {
+    const node = pending.pop();
+    if (node === undefined || walk.seen.has(node)) {
+      continue;
+    }
+    walk.seen.add(node);
+    walked += 1;
+    if (walked > maxSchemaWalkNodes) {
+      throw new Error(
+        `A uuid walk exhausted its budget of ${String(maxSchemaWalkNodes)} schema nodes, so it cannot prove that the schema carries no uuid field. Simplify the input schema, or declare isolationCase(action, own, foreign, { missing }) instead of { noReference: true }.`,
+      );
+    }
+    const def = schemaDefinition(node);
+    if (def.type === "string" && stringDeclaresUuid(def)) {
+      return true;
+    }
+    pending.push(...schemaChildren(def, walk));
+  }
+  return false;
+}
+
+export function schemaCarriesUuidField(schema: z.core.$ZodType): boolean {
+  return carriesUuidField(schema, {
+    seen: new Set(),
+    lazyResolutions: new Map(),
+  });
 }
 
 function inputCarriesUuidField(action: SuiteAction): boolean {
-  return carriesUuidField(action.contract.input, new Set());
+  return schemaCarriesUuidField(action.contract.input);
 }
 
 function assertForeignReferenceProbeDeclared(c: CrossTenantCase): void {
