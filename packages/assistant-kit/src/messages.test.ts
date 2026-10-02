@@ -311,6 +311,24 @@ describe("a write that repeats parts the message already holds", () => {
     expect(message?.parts).toEqual([TEXT, MORE]);
   });
 
+  it("never reads a card's payload to decide, so a payload it cannot serialise is fine", async () => {
+    const kit = newKit();
+    const cyclic: Record<string, unknown> = { rows: 1 };
+    cyclic["self"] = cyclic;
+    const looping: ChatPart = {
+      kind: "card",
+      cardId: "card-cyclic",
+      revision: 1,
+      type: "collection",
+      payload: cyclic,
+    };
+    await held(kit, [TEXT]);
+
+    const written = await held(kit, [looping]);
+
+    expect(written).toEqual({ kind: "written" });
+  });
+
   it("writes a card again, so a card is never dropped as a repeat", async () => {
     const kit = newKit();
     await held(kit, [TEXT, card(1, 3)]);

@@ -61,27 +61,19 @@ function pauseKey(conversationId: string): string {
  */
 const MESSAGE_WRITE_ATTEMPTS = 4;
 
-function fieldwise(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map(fieldwise).join(",")}]`;
-  }
-  if (typeof value === "object" && value !== null) {
-    return `{${Object.entries(value)
-      .filter(([, held]) => held !== undefined)
-      .sort(([left], [right]) => (left < right ? -1 : 1))
-      .map(([key, held]) => `${JSON.stringify(key)}:${fieldwise(held)}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value ?? null);
+function textPartKey(part: Extract<ChatPart, { kind: "text" }>): string {
+  return `${part.status}\u0000${part.text}`;
 }
 
 function appendPartsNotHeld(
   current: readonly ChatPart[],
   incoming: readonly ChatPart[],
 ): ChatPart[] | null {
-  const held = new Set(current.map(fieldwise));
+  const held = new Set(
+    current.filter((part) => part.kind === "text").map(textPartKey),
+  );
   const fresh = incoming.filter(
-    (part) => part.kind === "card" || !held.has(fieldwise(part)),
+    (part) => part.kind !== "text" || !held.has(textPartKey(part)),
   );
   return fresh.length === 0 ? null : appendParts(current, fresh);
 }

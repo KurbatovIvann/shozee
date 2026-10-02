@@ -133,10 +133,6 @@ export function requireBudgetTicket(
  * reopens. One normalisation, at the edge, rather than a `toLowerCase()` at
  * each of the places that would have to remember.
  */
-export function canonicalAssistantId(id: string): string {
-  return id.toLowerCase();
-}
-
 type CanonicalIdFields = {
   readonly commandId: string;
   readonly conversationId: string;
@@ -162,6 +158,10 @@ export function canonicalCommandIds<T extends CanonicalIdFields>(body: T): T {
           },
         }),
   };
+}
+
+export function canonicalAssistantId(id: string): string {
+  return id.toLowerCase();
 }
 
 /**

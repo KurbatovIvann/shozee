@@ -40,6 +40,7 @@ import {
   type PauseWriteOutcome,
 } from "./assistant-kit-answer.js";
 import {
+  canonicalAssistantId,
   canonicalCommandIds,
   goneResponse,
   json,
@@ -417,7 +418,7 @@ export async function handleAssistantKitMessages(
     kit,
     turns,
     {
-      conversationId: conversationId.data.toLowerCase(),
+      conversationId: canonicalAssistantId(conversationId.data),
       bind: caller.bind,
     },
     before === undefined ? {} : { before },

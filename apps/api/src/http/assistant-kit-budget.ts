@@ -48,6 +48,7 @@ import type { Logger } from "pino";
 import { randomUUID } from "node:crypto";
 
 import {
+  canonicalAssistantId,
   json,
   readJson,
   requireCaller,
@@ -149,8 +150,8 @@ async function budgetTurnIdentity(
   }
   return {
     kind,
-    conversationId: parsed.data.conversationId.toLowerCase(),
-    commandId: parsed.data.commandId.toLowerCase(),
+    conversationId: canonicalAssistantId(parsed.data.conversationId),
+    commandId: canonicalAssistantId(parsed.data.commandId),
   };
 }
 
