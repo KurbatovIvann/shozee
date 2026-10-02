@@ -8,7 +8,7 @@
  */
 import { randomUUID } from "node:crypto";
 
-import { domainEvents, type Database, type ReadTx, type Tx } from "@showzy/db";
+import { domainEvents, type Database } from "@showzy/db";
 import {
   fixtureCompanyFollows,
   fixtureDiscoveryCompanies,
@@ -25,6 +25,7 @@ import { defineEventHandler } from "../runtime/events/define-event-handler.js";
 import { eventEnvelopeSchema } from "../runtime/events/envelope.js";
 import { implementAction } from "../runtime/implement-action.js";
 import { kitIdentities } from "./identities.js";
+import { requireWritable } from "./writable-tx.js";
 
 const contractDefaults = {
   aiExposure: "internal" as const,
@@ -33,15 +34,6 @@ const contractDefaults = {
   atomicCallers: [] as const,
   errors: [],
 };
-
-function requireWritable(capability: ReadTx | Tx): Tx {
-  if (!("insert" in capability)) {
-    throw new CoreInvariantError(
-      "protocol fixture expected the writable capability",
-    );
-  }
-  return capability;
-}
 
 export const noted = defineEvent({
   name: "kitFixture.noted",

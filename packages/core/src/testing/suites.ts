@@ -212,7 +212,32 @@ function schemaDefinition(schema: z.core.$ZodType): SchemaDefinition {
   return node._zod.def;
 }
 
-function schemaChildren(def: SchemaDefinition): readonly z.core.$ZodType[] {
+const maxSchemaWalkDepth = 64;
+
+type LazyDefinition = Extract<SchemaDefinition, { type: "lazy" }>;
+
+type SchemaWalk = {
+  readonly seen: Set<z.core.$ZodType>;
+  readonly lazyResolutions: Map<LazyDefinition, z.core.$ZodType>;
+};
+
+function resolveLazyOnce(
+  def: LazyDefinition,
+  walk: SchemaWalk,
+): z.core.$ZodType {
+  const resolved = walk.lazyResolutions.get(def);
+  if (resolved !== undefined) {
+    return resolved;
+  }
+  const fresh: z.core.$ZodType = def.getter();
+  walk.lazyResolutions.set(def, fresh);
+  return fresh;
+}
+
+function schemaChildren(
+  def: SchemaDefinition,
+  walk: SchemaWalk,
+): readonly z.core.$ZodType[] {
   switch (def.type) {
     case "object":
       return Object.values(def.shape);
@@ -230,7 +255,7 @@ function schemaChildren(def: SchemaDefinition): readonly z.core.$ZodType[] {
     case "set":
       return [def.valueType];
     case "lazy":
-      return [def.getter()];
+      return [resolveLazyOnce(def, walk)];
     case "pipe":
       return [def.in, def.out];
     case "optional":
@@ -247,23 +272,50 @@ function schemaChildren(def: SchemaDefinition): readonly z.core.$ZodType[] {
   }
 }
 
-function carriesUuidField(
-  schema: z.core.$ZodType,
-  seen: Set<z.core.$ZodType>,
+function isUuidFormat(format: unknown): boolean {
+  return format === "uuid" || format === "guid";
+}
+
+function stringDeclaresUuid(
+  def: Extract<SchemaDefinition, { type: "string" }>,
 ): boolean {
-  if (seen.has(schema)) {
-    return false;
-  }
-  seen.add(schema);
-  const def = schemaDefinition(schema);
-  if (def.type === "string" && "format" in def && def.format === "uuid") {
+  if ("format" in def && isUuidFormat(def.format)) {
     return true;
   }
-  return schemaChildren(def).some((child) => carriesUuidField(child, seen));
+  return (def.checks ?? []).some((check) => {
+    const checkDefinition: object = check._zod.def;
+    return "format" in checkDefinition && isUuidFormat(checkDefinition.format);
+  });
+}
+
+function carriesUuidField(
+  schema: z.core.$ZodType,
+  walk: SchemaWalk,
+  depth: number,
+): boolean {
+  if (depth > maxSchemaWalkDepth || walk.seen.has(schema)) {
+    return false;
+  }
+  walk.seen.add(schema);
+  const def = schemaDefinition(schema);
+  if (def.type === "string" && stringDeclaresUuid(def)) {
+    return true;
+  }
+  return schemaChildren(def, walk).some((child) =>
+    carriesUuidField(child, walk, depth + 1),
+  );
+}
+
+export function schemaCarriesUuidField(schema: z.core.$ZodType): boolean {
+  return carriesUuidField(
+    schema,
+    { seen: new Set(), lazyResolutions: new Map() },
+    0,
+  );
 }
 
 function inputCarriesUuidField(action: SuiteAction): boolean {
-  return carriesUuidField(action.contract.input, new Set());
+  return schemaCarriesUuidField(action.contract.input);
 }
 
 function assertForeignReferenceProbeDeclared(c: CrossTenantCase): void {
