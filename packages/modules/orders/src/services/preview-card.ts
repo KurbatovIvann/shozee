@@ -1,20 +1,16 @@
 import type { ActionPreviewEnv } from "@showzy/core";
 import type { ActionPreview } from "@showzy/core/errors";
-import { CoreInvariantError, NotFoundError } from "@showzy/core/errors";
-import { orderItems, orders } from "@showzy/db/schema/orders";
 import { moneyToCanonical } from "@showzy/module-kit/canonical";
 import {
   formatMoneyMinor,
   formatQuantityMilli,
 } from "@showzy/module-kit/money-format";
-import { parseDbEnum } from "@showzy/module-kit/parse-db-enum";
 import { previewCompanyScope } from "@showzy/module-kit/preview-scope";
-import { and, asc, eq } from "drizzle-orm";
 import type { z } from "zod";
 
-import {
+import type {
   orderPriceSourceSchema,
-  type orderStatusSchema,
+  orderStatusSchema,
 } from "../actions/order-view.contract.js";
 import {
   resolveCreateOrderDraft,
@@ -22,8 +18,8 @@ import {
 } from "./create-draft.js";
 import { priceOrderLinesInSingleCurrency } from "./create-order.js";
 import { titleSnapshot } from "./line-money.js";
+import { loadStaffOrder } from "./load-order.js";
 import { normalizeOrderComment } from "./order-comment.js";
-import { parseStatus } from "./parse-status.js";
 
 type PriceSource = z.output<typeof orderPriceSourceSchema>;
 type OrderStatus = z.output<typeof orderStatusSchema>;
@@ -145,89 +141,6 @@ export async function createOrderPreview(
   };
 }
 
-async function loadOrderPreviewFacts(
-  env: ActionPreviewEnv,
-  contract: { readonly name: string },
-  orderId: string,
-): Promise<{
-  readonly orderNumber: string;
-  readonly customerNameSnapshot: string;
-  readonly lines: readonly PreviewLine[];
-  readonly sources: readonly PriceSource[];
-}> {
-  const companyId = previewCompanyScope(env.companyId, contract);
-  const headerRows = await env.tx
-    .select({
-      orderNumber: orders.orderNumber,
-      customerNameSnapshot: orders.customerNameSnapshot,
-      status: orders.status,
-      totalGrossMinor: orders.totalGrossMinor,
-      currency: orders.currency,
-    })
-    .from(orders)
-    .where(and(eq(orders.companyId, companyId), eq(orders.id, orderId)))
-    .limit(1);
-  const header = headerRows[0];
-  if (header === undefined) {
-    throw new NotFoundError();
-  }
-
-  const itemRows = await env.tx
-    .select({
-      titleSnapshot: orderItems.titleSnapshot,
-      quantityMilli: orderItems.quantityMilli,
-      unitPriceMinor: orderItems.unitPriceMinor,
-      grossAmountMinor: orderItems.grossAmountMinor,
-      currency: orderItems.currency,
-      priceSource: orderItems.priceSource,
-      createdAt: orderItems.createdAt,
-      id: orderItems.id,
-    })
-    .from(orderItems)
-    .where(
-      and(eq(orderItems.companyId, companyId), eq(orderItems.orderId, orderId)),
-    )
-    .orderBy(asc(orderItems.createdAt), asc(orderItems.id));
-  if (itemRows.length === 0) {
-    throw new CoreInvariantError(`order ${orderId} has no line snapshots`);
-  }
-
-  const lines = itemRows.map((row) =>
-    orderPreviewLine({
-      title: row.titleSnapshot,
-      quantityMilli: moneyToCanonical(row.quantityMilli),
-      unitPriceMinor: moneyToCanonical(row.unitPriceMinor),
-      grossAmountMinor: moneyToCanonical(row.grossAmountMinor),
-      currency: row.currency,
-    }),
-  );
-  lines.push(
-    orderPreviewTotalLine(
-      moneyToCanonical(header.totalGrossMinor),
-      header.currency,
-    ),
-  );
-  const status = parseStatus(header.status);
-  lines.push({
-    label: ORDER_PREVIEW_STATUS_LABEL,
-    value: STATUS_LABELS[status],
-  });
-
-  return {
-    orderNumber: header.orderNumber,
-    customerNameSnapshot: header.customerNameSnapshot,
-    lines,
-    sources: itemRows.map((row) => {
-      const source = row.priceSource ?? "";
-      return parseDbEnum(
-        orderPriceSourceSchema,
-        source,
-        `order_items row has illegal price_source "${source}"`,
-      );
-    }),
-  };
-}
-
 export function orderTransitionPreview(
   contract: { readonly name: string },
   subject: string,
@@ -236,14 +149,35 @@ export function orderTransitionPreview(
   env: ActionPreviewEnv,
 ) => Promise<ActionPreview> {
   return async (input, env) => {
-    const facts = await loadOrderPreviewFacts(env, contract, input.orderId);
+    const order = await loadStaffOrder({
+      db: env.tx,
+      companyId: previewCompanyScope(env.companyId, contract),
+      orderId: input.orderId,
+    });
+
+    const lines: PreviewLine[] = order.items.map((item) =>
+      orderPreviewLine({
+        title: item.titleSnapshot,
+        quantityMilli: item.quantityMilli,
+        unitPriceMinor: item.unitPriceMinor,
+        grossAmountMinor: item.grossAmountMinor,
+        currency: item.currency,
+      }),
+    );
+    lines.push(orderPreviewTotalLine(order.totalGrossMinor, order.currency), {
+      label: ORDER_PREVIEW_STATUS_LABEL,
+      value: STATUS_LABELS[order.status],
+    });
+
     return {
       title: orderPreviewCustomerTitle(
-        `${subject} ${facts.orderNumber}`,
-        facts.customerNameSnapshot,
+        `${subject} ${order.orderNumber}`,
+        order.customerNameSnapshot,
       ),
-      lines: facts.lines,
-      notes: [orderPreviewPricesNote(facts.sources)],
+      lines,
+      notes: [
+        orderPreviewPricesNote(order.items.map((item) => item.priceSource)),
+      ],
     };
   };
 }

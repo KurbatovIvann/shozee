@@ -60,6 +60,7 @@ function order(overrides: Partial<GetOrderOutput> = {}): GetOrderOutput {
     orderId: ORDER_ID,
     orderNumber: "KA-K7X2",
     customerId: CUSTOMER_ID,
+    customerNameSnapshot: "Олена Коваль",
     status: "new",
     comment: "Без горіхів",
     totalNetMinor: "250000",

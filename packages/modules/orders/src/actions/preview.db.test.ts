@@ -16,6 +16,7 @@ import { cancelOrder } from "./cancel.js";
 import { completeOrder } from "./complete.js";
 import { confirmOrder } from "./confirm.js";
 import { createOrder } from "./create.js";
+import { getOrder } from "./get.js";
 import { startOrder } from "./start.js";
 
 const FOREIGN_CUSTOMER_NAME = "Богдан Фореіньчук";
@@ -364,6 +365,38 @@ describe("orders preview cards (SHO-750)", () => {
       .from(orders)
       .where(eq(orders.id, blank.orderId));
     expect(blankRows[0]?.comment).toBeNull();
+  });
+
+  it("builds the transition card from the orders.get snapshot (SHO-797)", async () => {
+    const snapshot = await kit.invoke(getOrder, { orderId: fixtures.orderA });
+
+    expect(snapshot.customerNameSnapshot).toBe(CUSTOMER_NAME);
+
+    const preview = await previewCard(() =>
+      kit.invoke(
+        confirmOrder,
+        { orderId: fixtures.orderA },
+        {},
+        previewOptions(),
+      ),
+    );
+
+    expect(preview.title).toBe(
+      `Підтвердити замовлення ${snapshot.orderNumber}: ${snapshot.customerNameSnapshot}`,
+    );
+    expect(preview.lines.map((line) => line.label)).toEqual([
+      ...snapshot.items.map((item) => item.titleSnapshot),
+      "Разом",
+      "Поточний статус",
+    ]);
+    expect(preview.lines.at(-2)?.value).toBe("518,75 грн");
+    const cardCopy = [
+      preview.title,
+      ...preview.lines.map((line) => line.value),
+      ...(preview.notes ?? []),
+    ].join(" ");
+    expect(cardCopy).not.toContain(snapshot.createdAt);
+    expect(cardCopy).not.toContain("2026");
   });
 
   it("keeps the foreign customer name out of a transition card refusal", async () => {

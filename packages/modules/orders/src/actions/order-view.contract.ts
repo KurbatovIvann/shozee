@@ -53,6 +53,7 @@ export const orderViewSchema = z.object({
   orderId: z.uuid(),
   orderNumber: z.string().min(1),
   customerId: z.uuid().nullable(),
+  customerNameSnapshot: z.string().min(1),
   status: orderStatusSchema,
   comment: z.string().max(2000).nullable(),
   totalNetMinor: moneyWireSchema,

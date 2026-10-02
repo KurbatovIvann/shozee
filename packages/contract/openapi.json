@@ -49797,6 +49797,10 @@
                         }
                       ]
                     },
+                    "customerNameSnapshot": {
+                      "type": "string",
+                      "minLength": 1
+                    },
                     "status": {
                       "enum": [
                         "new",
@@ -50017,6 +50021,7 @@
                     "orderId",
                     "orderNumber",
                     "customerId",
+                    "customerNameSnapshot",
                     "status",
                     "comment",
                     "totalNetMinor",
