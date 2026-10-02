@@ -174,7 +174,7 @@ describe("record provenance schema (SHO-465)", () => {
     }
   });
 
-  it("types createdVia as the four channels or null", () => {
+  it("types createdVia as the declared channels or null", () => {
     expectTypeOf<
       (typeof orders.$inferSelect)["createdVia"]
     >().toEqualTypeOf<RecordCreatedVia | null>();
@@ -186,7 +186,7 @@ describe("record provenance schema (SHO-465)", () => {
     >().toEqualTypeOf<Date | null>();
   });
 
-  it("rejects a created_via outside the four channels and requires the vouched pair together", async () => {
+  it("rejects a created_via outside the declared channels and requires the vouched pair together", async () => {
     const company = await insertCompany();
     sequence += 1;
     const userId = `prov_user_${String(sequence)}`;
