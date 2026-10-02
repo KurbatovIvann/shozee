@@ -66,6 +66,7 @@ export interface PipelineRequestMeta {
    */
   readonly confirmationChallengeId?: string;
   readonly requireConfirmation?: true;
+  readonly confirmationOnly?: true;
 }
 
 /**
@@ -135,6 +136,7 @@ export interface PipelineHookRequestMeta extends ActionRequestMeta {
   readonly idempotencyKey?: string;
   readonly confirmationChallengeId?: string;
   readonly requireConfirmation?: true;
+  readonly confirmationOnly?: true;
 }
 
 /** Fields every protocol hook receives about the current invocation. */

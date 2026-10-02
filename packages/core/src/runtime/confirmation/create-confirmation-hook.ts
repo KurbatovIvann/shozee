@@ -84,6 +84,10 @@ export function createConfirmationHook(
         idempotencyKey,
       };
 
+      if (env.request.confirmationOnly === true) {
+        return await issueChallenge(deps.store, now, env, bindings);
+      }
+
       if (challengeId !== undefined && challengeId !== "") {
         const raw = await withStore(env.contract.name, () =>
           deps.store.getAndDelete(challengeKey(challengeId)),
