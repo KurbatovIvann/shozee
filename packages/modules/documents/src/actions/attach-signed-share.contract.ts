@@ -10,7 +10,10 @@
  * from input as a grant. Idempotency is the delivery row, not
  * `idempotency_keys`.
  */
-import { defineActionContract } from "@showzy/core/contract";
+import {
+  actionChannelSchema,
+  defineActionContract,
+} from "@showzy/core/contract";
 import { z } from "zod";
 
 export const ATTACH_SIGNED_SHARE_EVENT_NAME = "docSigning.recorded" as const;
@@ -35,7 +38,7 @@ export const attachSignedShareInputSchema = z.object({
   actor: z.object({
     type: z.enum(["user", "system"]),
     id: z.string().min(1),
-    channel: z.enum(["ui", "ai", "system", "webhook"]),
+    channel: actionChannelSchema,
   }),
   requestId: z.string().min(1),
   correlationId: z.string().min(1),

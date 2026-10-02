@@ -10,6 +10,8 @@ export {
   aiToolSourcesForPrincipal,
   deriveAiToolSources,
 } from "./ai-exposure.js";
+export { ACTION_CHANNELS, actionChannelSchema } from "./channels.js";
+export type { ActionChannel } from "./channels.js";
 export {
   CONFIRMABLE_RISKS,
   isConfirmableRisk,

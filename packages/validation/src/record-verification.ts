@@ -75,7 +75,7 @@
  * Call `vouchAfterWrite` when a later ticket writes `vouched_by`. Do
  * not copy these branches into handlers.
  */
-export type RecordCreatedVia = "ui" | "ai" | "system" | "webhook";
+export type RecordCreatedVia = "ui" | "ai" | "system" | "webhook" | "sho-ai";
 
 export type RecordVerificationMode = "narrow" | "strict";
 
@@ -155,6 +155,10 @@ export type VouchAfterWrite = "keep" | "clear";
  */
 export const RECORD_VOUCH_ON_WRITE = {
   ai: {
+    content: "clear",
+    state_transition: "keep",
+  },
+  "sho-ai": {
     content: "clear",
     state_transition: "keep",
   },

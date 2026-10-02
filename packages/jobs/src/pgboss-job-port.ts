@@ -1,17 +1,11 @@
-import type { ActionChannel, JobEnvelope, JobPort } from "@showzy/core";
+import type { JobEnvelope, JobPort } from "@showzy/core";
+import { actionChannelSchema } from "@showzy/core/contract";
 import { CoreInvariantError } from "@showzy/core/errors";
 import { sql } from "drizzle-orm";
 import { fromDrizzle, type PgBoss } from "pg-boss";
 import { z } from "zod";
 
 export type StoredJobData = Omit<JobEnvelope, "id" | "name">;
-
-const actionChannels = {
-  ui: "ui",
-  ai: "ai",
-  system: "system",
-  webhook: "webhook",
-} as const satisfies { readonly [K in ActionChannel]: K };
 
 const jobActorTypes = {
   user: "user",
@@ -24,7 +18,7 @@ export const storedJobDataSchema = z.strictObject({
     type: z.enum(jobActorTypes),
     id: z.string().min(1),
   }),
-  channel: z.enum(actionChannels),
+  channel: actionChannelSchema,
   requestId: z.string().min(1),
   correlationId: z.string().min(1),
   executionId: z.string().min(1),

@@ -8,7 +8,10 @@
  * (5000) plus the pending-request delete. Tenant scope comes from the
  * system delivery context, never from input as a grant.
  */
-import { defineActionContract } from "@showzy/core/contract";
+import {
+  actionChannelSchema,
+  defineActionContract,
+} from "@showzy/core/contract";
 import { z } from "zod";
 
 export const ABANDON_REQUEST_EVENT_NAME = "documents.cancelled" as const;
@@ -32,7 +35,7 @@ export const abandonRequestInputSchema = z.object({
   actor: z.object({
     type: z.enum(["user", "system"]),
     id: z.string().min(1),
-    channel: z.enum(["ui", "ai", "system", "webhook"]),
+    channel: actionChannelSchema,
   }),
   requestId: z.string().min(1),
   correlationId: z.string().min(1),

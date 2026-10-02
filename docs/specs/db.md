@@ -194,7 +194,7 @@ timestamptz` · `company_id uuid NULL` (null only for declared global system
 events) · `aggregate_type text` · `aggregate_id uuid` ·
 `aggregate_sequence bigint` · `actor_type text CHECK (user|system)` ·
 `actor_id text` ·
-`channel text CHECK (ui|ai|system|webhook)` · `request_id text` ·
+`channel text CHECK (ui|ai|system|webhook|sho-ai)` · `request_id text` ·
 `correlation_id text` · `causation_id text` · `payload jsonb` ·
 `claimed_at / claimed_by` (SKIP LOCKED claim columns) · `dispatched_at`.
 Indexes: `(dispatched_at) WHERE dispatched_at IS NULL`,
@@ -236,7 +236,7 @@ effects.
 cleanup, and operations.
 
 **`audit_log`** (core.md §8): columns exactly as core.md §8 (`actor_type`
-is `user|system`; AI is represented by `channel = ai`); `input_snapshot
+is `user|system`; AI is represented by `channel = ai|sho-ai`); `input_snapshot
 jsonb NULL` — populated only by the action's explicit `auditSnapshot`
 callback, null when hash-only (core.md §8 resolved decision 1); indexes
 `(company_id, created_at)`, `(actor_type, actor_id, created_at)`,

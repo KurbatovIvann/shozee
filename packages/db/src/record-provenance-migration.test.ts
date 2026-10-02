@@ -100,7 +100,7 @@ async function insertAudit(
   values: {
     targetType: string;
     targetId: string;
-    channel: "ui" | "ai" | "system" | "webhook";
+    channel: "ui" | "ai" | "system" | "webhook" | "sho-ai";
     createdAt: string;
     action: string;
     outcome: string;

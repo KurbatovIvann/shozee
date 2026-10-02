@@ -12,7 +12,10 @@
  *   (ADR-0011).
  * - `name` is the two consumed events so a random envelope fails validation.
  */
-import { defineActionContract } from "@showzy/core/contract";
+import {
+  actionChannelSchema,
+  defineActionContract,
+} from "@showzy/core/contract";
 import { z } from "zod";
 
 export const ORDER_CARD_EVENT_NAMES = [
@@ -38,7 +41,7 @@ export const upsertOrderCardInputSchema = z.object({
   actor: z.object({
     type: z.enum(["user", "system"]),
     id: z.string().min(1),
-    channel: z.enum(["ui", "ai", "system", "webhook"]),
+    channel: actionChannelSchema,
   }),
   requestId: z.string().min(1),
   correlationId: z.string().min(1),

@@ -20,6 +20,7 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  auditLog,
   companies,
   companyMembers,
   domainEvents,
@@ -290,6 +291,37 @@ describe("ctx.emit — envelope (core.md §6)", () => {
     // Fresh outbox rows are unclaimed and undispatched (fnd-T17's job).
     expect(row?.claimedAt).toBeNull();
     expect(row?.dispatchedAt).toBeNull();
+  });
+
+  it("stores the sho-ai channel on both the outbox row and the audit row (ADR-0051)", async () => {
+    const noteId = randomUUID();
+    const request = requestMeta({ channel: "sho-ai" });
+
+    await executeAction(deps(), {
+      action: staffAction((_input, ctx) => {
+        ctx.emit(noteCreated, {
+          aggregate: { type: "note", id: noteId },
+          payload: { noteId, title: "Шо closed it" },
+        });
+        return Promise.resolve({ resultId: randomUUID() });
+      }),
+      input: {},
+      request,
+      principal: staffPrincipal,
+    });
+
+    const [eventRow] = await eventRowsFor(noteId);
+    expect(eventRow?.channel).toBe("sho-ai");
+    expect(eventRow?.actorType).toBe("user");
+    expect(eventRow?.actorId).toBe(anna);
+
+    const auditRows = await database.runtime.db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.requestId, request.requestId));
+    expect(auditRows).toHaveLength(1);
+    expect(auditRows[0]?.channel).toBe("sho-ai");
+    expect(auditRows[0]?.outcome).toBe("ok");
   });
 
   it("carries a transport-supplied causationId (delivery entrypoint seam)", async () => {

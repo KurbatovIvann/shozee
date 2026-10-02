@@ -23,6 +23,8 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
+import { channelCheck } from "./tenant-columns.js";
+
 /**
  * Transactional outbox (ADR-0012, carried over from v1). Events are written
  * by `ctx.emit` in the emitting action's transaction and claimed by the
@@ -77,10 +79,7 @@ export const domainEvents = pgTable(
       "domain_events_actor_type_check",
       sql`${table.actorType} IN ('user', 'system')`,
     ),
-    check(
-      "domain_events_channel_check",
-      sql`${table.channel} IN ('ui', 'ai', 'system', 'webhook')`,
-    ),
+    channelCheck("domain_events_channel_check", table.channel),
   ],
 );
 
@@ -259,9 +258,6 @@ export const auditLog = pgTable(
       "audit_log_actor_type_check",
       sql`${table.actorType} IN ('user', 'system')`,
     ),
-    check(
-      "audit_log_channel_check",
-      sql`${table.channel} IN ('ui', 'ai', 'system', 'webhook')`,
-    ),
+    channelCheck("audit_log_channel_check", table.channel),
   ],
 );

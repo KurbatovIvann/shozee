@@ -168,7 +168,7 @@ type BaseCtx<TDb extends ReadTx = Tx> = {
     | { type: "user"; id: string }
     | { type: "system"; id: string }
     | { type: "anonymous"; id: "anonymous" };
-  channel: "ui" | "ai" | "system" | "webhook";
+  channel: "ui" | "ai" | "system" | "webhook" | "sho-ai";
   clientIp?: string;       // trusted-proxy normalized; rate-limit use only
   aiTraceId?: string;
   toolCallId?: string;
@@ -418,7 +418,7 @@ Envelope (stored in `domain_events`, spec'd in db.md):
   occurredAt, companyId,     // UUID; null for declared global system events and account-principal events; share events carry the resolved target company
   aggregate: { type: "order", id, sequence }, // monotonic per aggregate
   actor: { type: "user" | "system", id,
-           channel: "ui" | "ai" | "system" | "webhook" },
+           channel: "ui" | "ai" | "system" | "webhook" | "sho-ai" },
   requestId, correlationId,
   causationId,              // eventId or requestId that caused this event
   payload }                 // Zod-validated against the event definition
@@ -686,7 +686,7 @@ separate transaction after the read-only handler transaction commits
 (`risk: read`):
 
 `{ id, requestId, correlationId, action, actorType: user|system,
-actorId, channel: ui|ai|system|webhook, aiTraceId?, toolCallId?, companyId, targetType,
+actorId, channel: ui|ai|system|webhook|sho-ai, aiTraceId?, toolCallId?, companyId, targetType,
 targetId, inputHash, inputSnapshot?, outcome: ok|<errorCode>, durationMs, createdAt }`
 
 AI trace/tool-call IDs provide attribution without storing prompts or model

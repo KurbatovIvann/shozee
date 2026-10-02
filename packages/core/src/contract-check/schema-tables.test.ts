@@ -51,6 +51,7 @@ describe("schemaTablesFromModules — provenance inspector (SHO-467)", () => {
       expect(check?.sql).toContain("'ai'");
       expect(check?.sql).toContain("'system'");
       expect(check?.sql).toContain("'webhook'");
+      expect(check?.sql).toContain("'sho-ai'");
     }
   });
 
