@@ -32,6 +32,7 @@ export type VoiceCaptureEvent =
       readonly endedBy: VoiceUtteranceEnd;
     }
   | { readonly type: "failed"; readonly failure: VoiceCaptureFailure }
+  | { readonly type: "backgrounded" }
   | { readonly type: "reset" };
 
 export const initialVoiceCaptureState: VoiceCaptureState = {
@@ -93,6 +94,10 @@ export function voiceCaptureReducer(
             status: "error",
             failure: event.failure,
           }
+        : state;
+    case "backgrounded":
+      return voiceCaptureActive(state.status)
+        ? initialVoiceCaptureState
         : state;
     case "reset":
       return initialVoiceCaptureState;

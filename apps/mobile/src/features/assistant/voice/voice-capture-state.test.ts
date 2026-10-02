@@ -106,4 +106,27 @@ describe("voiceCaptureReducer", () => {
       initialVoiceCaptureState,
     );
   });
+
+  it("drops a session that was still running when the app went to the background", () => {
+    expect(run([...GRANTED, { type: "backgrounded" }])).toEqual(
+      initialVoiceCaptureState,
+    );
+    expect(run([{ type: "requested" }, { type: "backgrounded" }])).toEqual(
+      initialVoiceCaptureState,
+    );
+  });
+
+  it("keeps a settled result when the app goes to the background", () => {
+    const finished = run([
+      ...GRANTED,
+      { type: "final", text: "дві пачки", endedBy: "client" },
+    ]);
+    expect(run([{ type: "backgrounded" }], finished)).toBe(finished);
+
+    const denied = run([{ type: "requested" }, { type: "permissionDenied" }]);
+    expect(run([{ type: "backgrounded" }], denied)).toBe(denied);
+
+    const failed = run([...GRANTED, { type: "failed", failure: "network" }]);
+    expect(run([{ type: "backgrounded" }], failed)).toBe(failed);
+  });
 });

@@ -1,6 +1,7 @@
 import { memo, type ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
-import { StyleSheet } from "react-native-unistyles";
+import { MicIcon } from "lucide-react-native";
+import { StyleSheet, useUnistyles } from "react-native-unistyles";
 
 import {
   assistantTurnColumnLayout,
@@ -55,7 +56,10 @@ export const AssistantMessageRow = memo(function AssistantMessageRow(props: {
   readonly onAnswer: (answer: unknown) => void;
   readonly onCompose: () => void;
   readonly onDismiss: () => void;
+  readonly spoken: boolean;
+  readonly spokenLabel: string;
 }) {
+  const { theme } = useUnistyles();
   const isUser = props.role === "user";
   const interaction = props.interaction;
   const closedCards = assistantClosedCardModels({
@@ -78,7 +82,16 @@ export const AssistantMessageRow = memo(function AssistantMessageRow(props: {
       ) : null}
       {!props.waiting && props.text.length > 0 ? (
         isUser ? (
-          <Text style={styles.userBubble}>{props.text}</Text>
+          <View style={styles.userLine}>
+            {props.spoken ? (
+              <MicIcon
+                size={SPOKEN_MARK_SIZE}
+                color={theme.colors.icon.muted}
+                accessibilityLabel={props.spokenLabel}
+              />
+            ) : null}
+            <Text style={styles.userBubble}>{props.text}</Text>
+          </View>
         ) : (
           <View style={[styles.assistantBubble, styles.bubbleTone(tone)]}>
             <AssistantMarkdownView
@@ -133,7 +146,16 @@ export const AssistantMessageRow = memo(function AssistantMessageRow(props: {
   );
 });
 
+const SPOKEN_MARK_SIZE = 14;
+
 const styles = StyleSheet.create((theme) => ({
+  userLine: {
+    maxWidth: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: theme.spacing.xs,
+  },
   userWrap: {
     alignItems: "flex-end",
     gap: theme.spacing.sm,

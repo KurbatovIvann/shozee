@@ -114,6 +114,21 @@ export type AssistantClosedCopy = {
   };
 };
 
+export type AssistantVoiceCopy = {
+  readonly start: string;
+  readonly stop: string;
+  readonly listening: string;
+  readonly recognizing: string;
+  readonly remaining: string;
+  readonly deniedMessage: string;
+  readonly deniedAction: string;
+  readonly errorMessage: string;
+  readonly retry: string;
+  readonly spoken: string;
+  readonly announceListening: string;
+  readonly announceDone: string;
+};
+
 export type AssistantCopy = {
   readonly sheetTitle: string;
   readonly emptyTitle: string;
@@ -121,6 +136,7 @@ export type AssistantCopy = {
   readonly inputPlaceholder: string;
   readonly inputLabel: string;
   readonly sendLabel: string;
+  readonly voice: AssistantVoiceCopy;
   readonly examples: readonly [string, string, string, string];
   readonly confirmLabel: string;
   readonly dismissLabel: string;
@@ -275,6 +291,20 @@ const assistantEn: AssistantCopy = {
   inputPlaceholder: "Write a request…",
   inputLabel: "Message to the assistant",
   sendLabel: "Send",
+  voice: {
+    start: "Dictate",
+    stop: "Stop dictation",
+    listening: "Listening…",
+    recognizing: "Recognising…",
+    remaining: "{{seconds}} s left",
+    deniedMessage: "Microphone access is off.",
+    deniedAction: "Open settings",
+    errorMessage: "Dictation did not work.",
+    retry: "Try again",
+    spoken: "Spoken",
+    announceListening: "Listening",
+    announceDone: "Recognised",
+  },
   examples: [
     "Today's orders",
     "Revenue this week",
@@ -387,6 +417,20 @@ const assistantUk: AssistantCopy = {
   inputPlaceholder: "Напиши запит…",
   inputLabel: "Повідомлення асистенту",
   sendLabel: "Надіслати",
+  voice: {
+    start: "Диктувати",
+    stop: "Зупинити диктування",
+    listening: "Слухаю…",
+    recognizing: "Розпізнаю…",
+    remaining: "Залишилось {{seconds}} с",
+    deniedMessage: "Доступ до мікрофона вимкнено.",
+    deniedAction: "Відкрити налаштування",
+    errorMessage: "Не вдалося розпізнати.",
+    retry: "Спробувати ще",
+    spoken: "Сказано голосом",
+    announceListening: "Слухаю",
+    announceDone: "Розпізнано",
+  },
   examples: [
     "Замовлення за сьогодні",
     "Виторг за цей тиждень",

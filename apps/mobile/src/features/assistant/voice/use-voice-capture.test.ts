@@ -311,6 +311,58 @@ describe("useVoiceCapture", () => {
     expect(view.binary()).toHaveLength(0);
   });
 
+  it("keeps a transcript the composer has not consumed when the app goes to the background", async () => {
+    const view = await listening();
+
+    act(() => {
+      view.wire().onText(
+        JSON.stringify({
+          type: "final",
+          text: "дві пачки",
+          endedBy: "limit",
+        }),
+      );
+      appState.background?.();
+    });
+
+    expect(view.capture()).toMatchObject({
+      status: "idle",
+      transcript: "дві пачки",
+      endedBy: "limit",
+    });
+  });
+
+  it("reports the input level while the microphone is open and drops it on release", async () => {
+    const view = await listening();
+    const levels: number[] = [];
+    let unsubscribe = (): void => {};
+    act(() => {
+      unsubscribe = view.capture().onLevel((level) => {
+        levels.push(level);
+      });
+    });
+
+    act(() => {
+      const loud = new Int16Array(1_600).fill(6_000);
+      audio.onBuffer?.({
+        data: loud.buffer,
+        sampleRate: VOICE_SAMPLE_RATE_HZ,
+        channels: 1,
+        timestamp: 0,
+      });
+    });
+    expect(levels.at(-1)).toBeGreaterThan(0);
+
+    act(() => {
+      view.capture().reset();
+    });
+    expect(levels.at(-1)).toBe(0);
+
+    act(() => {
+      unsubscribe();
+    });
+  });
+
   it("reports an audio session that will not close", async () => {
     const view = await listening();
     audio.audioModeFails = true;

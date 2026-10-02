@@ -8,4 +8,5 @@ export {
   type AssistantCopy,
   type AssistantCardsCopy,
   type AssistantJobsCopy,
+  type AssistantVoiceCopy,
 } from "@showzy/copy/assistant";

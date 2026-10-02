@@ -4,7 +4,7 @@
  * there is text (canvas v35). Talk / dictation poses stay out of scope.
  */
 
-export type AssistantShozikPose = "sit" | "dig";
+export type AssistantShozikPose = "sit" | "listen" | "dig";
 
 /** Canvas `ShozikAvatar` header size. Optical, not a hit target. */
 export const SHOZIK_HEADER_POSE_SIZE = 40;
@@ -23,7 +23,11 @@ export const SHOZIK_WAIT_POSE_SIZE = 32;
  */
 export function assistantShozikPose(input: {
   readonly thinking: boolean;
+  readonly listening?: boolean;
 }): AssistantShozikPose {
+  if (input.listening === true) {
+    return "listen";
+  }
   return input.thinking ? "dig" : "sit";
 }
 

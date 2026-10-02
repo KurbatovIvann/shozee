@@ -52,6 +52,15 @@ const conversation: UseAssistantConversation = {
   loadOlder: () => undefined,
 };
 
+vi.mock("expo-audio", () => ({
+  requestRecordingPermissionsAsync: () => Promise.resolve({ granted: false }),
+  setAudioModeAsync: () => Promise.resolve(),
+  useAudioStream: () => ({
+    isStreaming: false,
+    stream: { start: () => Promise.resolve(), stop: () => undefined },
+  }),
+}));
+
 vi.mock("expo/fetch", () => ({
   fetch: () => Promise.reject(new Error("no request belongs to this test")),
 }));

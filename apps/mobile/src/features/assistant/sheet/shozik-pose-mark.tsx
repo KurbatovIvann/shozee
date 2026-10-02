@@ -3,11 +3,13 @@ import { Image } from "expo-image";
 import { StyleSheet } from "react-native-unistyles";
 
 import sitMark from "../../../../assets/sit.svg";
+import listenMark from "../../../../assets/listen.svg";
 import digMark from "../../../../assets/dig.svg";
 import type { AssistantShozikPose } from "./assistant-chrome";
 
 const poseSource = {
   sit: sitMark,
+  listen: listenMark,
   dig: digMark,
 } as const;
 
