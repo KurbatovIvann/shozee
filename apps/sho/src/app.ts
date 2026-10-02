@@ -19,7 +19,7 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { z } from "zod";
 
 import { shoContextPhrases } from "./contexts.ts";
-import { ShoRunFailure, type ShoEngine } from "./engine.ts";
+import { ShoRunFailure, type ShoEngine, type ShoReply } from "./engine.ts";
 
 export const SHO_HEALTH_PATH = "/v1/health";
 
@@ -30,6 +30,7 @@ export interface ShoParseLogEntry {
   readonly requestId: string | null;
   readonly outcome: ShoParseOutcome;
   readonly ms: number | null;
+  readonly code: string | null;
 }
 
 export interface ShoAppOptions {
@@ -76,15 +77,24 @@ function inflate(raw: Buffer, encoding: string | undefined): Inflated {
   }
 }
 
-const PARSE_REFUSAL_STATUS: Record<
+const REFUSAL_STATUS: Record<
   "context_required" | "busy" | "deadline" | "input",
   ContentfulStatusCode
-> = {
-  context_required: 409,
-  busy: 503,
-  deadline: 504,
-  input: 400,
-};
+> = { context_required: 409, busy: 503, deadline: 504, input: 400 };
+
+function refused(c: HonoContext, reply: ShoReply): Response {
+  if (reply.kind === "failed") throw new ShoRunFailure(reply.code);
+  if (reply.kind in REFUSAL_STATUS) {
+    const code = reply.kind as keyof typeof REFUSAL_STATUS;
+    return problem(c, REFUSAL_STATUS[code], code);
+  }
+  throw new ShoRunFailure("unexpected_reply");
+}
+
+const parseOutcomeOf = (reply: ShoReply): ShoParseOutcome =>
+  reply.kind in REFUSAL_STATUS
+    ? (reply.kind as Exclude<ShoParseOutcome, "ok" | "failed">)
+    : "failed";
 
 const uploadEnvelopeSchema = z.object({
   fingerprint: shoContextUploadSchema.shape.fingerprint,
@@ -106,7 +116,9 @@ export function createShoApp(options: ShoAppOptions): Hono {
 
   app.get(SHO_HEALTH_PATH, (c) => c.json({ status: "ok" }));
 
-  app.get("/v1/ready", (c) => c.json({ ready: options.engine() !== null }));
+  app.get("/v1/ready", (c) =>
+    c.json({ ready: options.engine()?.ready === true }),
+  );
 
   app.get("/v1/model", (c) => {
     const engine = options.engine();
@@ -164,9 +176,7 @@ export function createShoApp(options: ShoAppOptions): Hono {
         uploadBytes: inflated.body.byteLength,
       });
       if (stored.kind === "stored") return c.body(null, 204);
-      if (stored.kind === "input") return problem(c, 400, "input");
-      if (stored.kind === "busy") return problem(c, 503, "busy");
-      throw new ShoRunFailure(stored.message);
+      return refused(c, stored);
     },
   );
 
@@ -184,9 +194,10 @@ export function createShoApp(options: ShoAppOptions): Hono {
     }
     const engine = options.engine();
     if (engine === null) return problem(c, 503, "busy");
-    const phrases = await engine.phrases(key);
-    if (phrases === null) return problem(c, 409, "context_required");
-    return c.json({ phrases: phrases.slice(0, query.data.limit) });
+    const found = await engine.phrases(key);
+    if (found.kind !== "phrases") return refused(c, found);
+    if (found.phrases === null) return problem(c, 409, "context_required");
+    return c.json({ phrases: found.phrases.slice(0, query.data.limit) });
   });
 
   app.post(
@@ -198,20 +209,20 @@ export function createShoApp(options: ShoAppOptions): Hono {
     async (c) => {
       const engine = options.engine();
       if (engine === null) {
-        log({ requestId: null, outcome: "busy", ms: null });
+        log({ requestId: null, outcome: "busy", ms: null, code: null });
         return problem(c, 503, "busy");
       }
       const request = shoParseRequestSchema.safeParse(
         parseJson(await c.req.text()),
       );
       if (!request.success) {
-        log({ requestId: null, outcome: "input", ms: null });
+        log({ requestId: null, outcome: "input", ms: null, code: null });
         return problem(c, 400, "input");
       }
       const asked = request.data;
       const requestId = asked.requestId;
       if (!asked.contextKey.startsWith(`${asked.companyId}:`)) {
-        log({ requestId, outcome: "input", ms: null });
+        log({ requestId, outcome: "input", ms: null, code: null });
         return problem(c, 400, "input");
       }
       const ran = await engine.run({
@@ -223,8 +234,8 @@ export function createShoApp(options: ShoAppOptions): Hono {
         debug: asked.debug,
         deadlineMs: asked.deadlineMs,
       });
-      if (ran.kind === "ok") {
-        log({ requestId, outcome: "ok", ms: ran.ms });
+      if (ran.kind === "parsed") {
+        log({ requestId, outcome: "ok", ms: ran.ms, code: null });
         return c.json({
           model: { id: engine.stamp.id, md5: engine.stamp.md5 },
           contextRevision: ran.contextRevision,
@@ -232,12 +243,13 @@ export function createShoApp(options: ShoAppOptions): Hono {
           ms: ran.ms,
         });
       }
-      if (ran.kind === "failed") {
-        log({ requestId, outcome: "failed", ms: null });
-        throw new ShoRunFailure(ran.message);
-      }
-      log({ requestId, outcome: ran.kind, ms: null });
-      return problem(c, PARSE_REFUSAL_STATUS[ran.kind], ran.kind);
+      log({
+        requestId,
+        outcome: parseOutcomeOf(ran),
+        ms: null,
+        code: ran.kind === "failed" ? ran.code : null,
+      });
+      return refused(c, ran);
     },
   );
 

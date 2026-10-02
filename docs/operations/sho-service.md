@@ -16,7 +16,7 @@ Environment (`packages/config`, `.env.example`):
 | key | who reads it | notes |
 | --- | --- | --- |
 | `SHO_PORT` | `apps/sho` | listen port, default 3100, internal only |
-| `SHO_WORKERS` | `apps/sho` | parse pool size; unset means CPU count − 1. Each worker holds its own runtime and compiled-context cache (~140 MB) |
+| `SHO_WORKERS` | `apps/sho` | parse pool size; unset means CPU count − 1. Each worker holds its own runtime (~140 MB) and its share of the context cache |
 | `SHO_SERVICE_TOKEN` | both | shared bearer, ≥ 32 chars, secret |
 | `SHO_URLS` | `apps/api` | comma-separated replica base URLs; empty means no Шо and every staff turn goes to the LLM |
 
@@ -41,22 +41,33 @@ that does not match the stored one, and never parses against a stale context.
 names for speech hints; the key must belong to the asking company.
 
 T7 runs `SHO_WORKERS` parse workers (`worker_threads`), each with its own
-runtime and compiled-context cache. A context key always goes to the same
-worker (FNV-1a of the key modulo the pool size), so a context is compiled and
-held once, on one worker. Each worker runs one job at a time behind a bounded
-queue (`SHO_QUEUE_LIMIT`, 8 per worker): a full queue, a worker that is still
-loading its model, and a crashed worker's waiting jobs all answer `503 busy`.
-A job that outlives its deadline (the request's `deadlineMs` for a parse,
-`SHO_CALL_TIMEOUT_MS` 30 s for a context upload or a phrases read) answers
-`504 deadline`; when that job had already started, the worker is terminated and
-replaced, so a hung run no longer wedges the pool. A replaced worker starts
-with an empty cache, so the next parse for its keys is `409 context_required`
-and the API re-uploads.
+runtime and compiled-context cache. The pool picks the worker by
+`FNV-1a(companyId) mod N` over the `companyId` prefix of the context key
+(ADR-0051 §Process), so every scope of one company lands on one worker: the
+tenant bulkhead the replica hash already draws, drawn again inside the
+service. Each worker runs one job at a time behind a bounded queue
+(`SHO_QUEUE_LIMIT`, 8 per worker): a full queue, a worker still loading its
+model, a slot past its respawn cap, and a lost worker's waiting jobs all
+answer `503 busy`.
+
+A job carries two clocks. The deadline (the request's `deadlineMs` for a
+parse, `SHO_CALL_TIMEOUT_MS` 30 s for a context upload or a phrases read) runs
+while the job waits and is restarted when the job is dispatched; on expiry the
+job answers `504 deadline` and the worker is left alone — a queued job is only
+dropped from the queue. The hang threshold (`SHO_CALL_TIMEOUT_MS`, from
+dispatch) is what terminates and replaces a worker, so only a genuinely wedged
+run costs the worker. A replaced worker starts with an empty cache, so the
+next parse for its company is `409 context_required` and the API re-uploads.
+A worker that keeps dying is respawned with a linear backoff
+(`SHO_RESPAWN_BACKOFF_MS`, 250 ms × consecutive failures) and after
+`SHO_RESPAWN_LIMIT` (5) consecutive failures the slot is left dead;
+`GET /v1/ready` is `true` only while every slot is warm.
 
 Each `POST /parse` logs one line: `requestId`, `outcome`
-(`ok` | `input` | `context_required` | `busy` | `deadline` | `failed`) and
-`ms`. Never the command text. `failed` is a worker-side throw that is not an
-`InputError`; it answers 500.
+(`ok` | `input` | `context_required` | `busy` | `deadline` | `failed`), `ms`
+and `code`. Never the command text and never the worker's error message.
+`failed` is a worker-side throw that is not an `InputError`: the log carries
+the error's class name as `code` and the response is a bare 500.
 
 ## Diagnosing a turn that fell through to the LLM
 
@@ -73,8 +84,10 @@ Each `POST /parse` logs one line: `requestId`, `outcome`
   the context travel in plaintext on an untrusted network. Production requires
   TLS between `apps/api` and `apps/sho`, or a network where plaintext is
   acceptable, plus token rotation.
-- The context cache budget (`SHO_CONTEXT_CACHE_UPLOAD_BYTES`, 256 MB per
-  worker) counts **uploaded JSON bytes**, not the compiled index's heap
+- The context cache budget (`SHO_CONTEXT_CACHE_UPLOAD_BYTES`, 256 MB) is a
+  **process total**: each worker gets `total / SHO_WORKERS`, so the pool size
+  does not multiply the cache. It counts **uploaded JSON bytes**, not the
+  compiled index's heap
   footprint — the runtime exposes no size for a `CompiledContext`, and the two
   are not proportional. Sizing the cache against real memory needs that number
   first. Replica count and capacity are unsized.

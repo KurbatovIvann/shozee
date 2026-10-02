@@ -1,4 +1,4 @@
-import { parentPort } from "node:worker_threads";
+import { parentPort, workerData } from "node:worker_threads";
 import {
   InputError,
   compileContext,
@@ -12,12 +12,17 @@ import {
 } from "@showzy/sho";
 import type { ShoModelStamp } from "@showzy/sho-protocol";
 
-import { createShoContextCache, type ShoContextCache } from "./contexts.ts";
+import {
+  createShoContextCache,
+  shoCacheBudgetOf,
+  type ShoContextCache,
+} from "./contexts.ts";
 import {
   SHO_LABELS_FILE,
+  type ShoAnswer,
+  type ShoReply,
   type ShoWorkerCommand,
   type ShoWorkerReady,
-  type ShoWorkerReply,
 } from "./engine.ts";
 
 function stampOf(sho: Sho): ShoModelStamp {
@@ -34,11 +39,10 @@ async function answer(
   sho: Sho,
   cache: ShoContextCache,
   command: ShoWorkerCommand,
-): Promise<ShoWorkerReply> {
-  const id = command.id;
+): Promise<ShoReply> {
   if (command.kind === "phrases") {
     const entry = cache.read(command.key);
-    return { id, kind: "phrases", phrases: entry?.phrases ?? null };
+    return { kind: "phrases", phrases: entry?.phrases ?? null };
   }
   if (command.kind === "store") {
     const upload = command.upload;
@@ -49,11 +53,11 @@ async function answer(
       phrases: upload.phrases,
       uploadBytes: upload.uploadBytes,
     });
-    return { id, kind: "stored" };
+    return { kind: "stored" };
   }
   const job = command.job;
   const entry = cache.fresh(job.key, job.fingerprint);
-  if (entry === null) return { id, kind: "context_required" };
+  if (entry === null) return { kind: "context_required" };
   const previous: Previous | null =
     job.previous === null ? null : parsePrevious(job.previous);
   const started = performance.now();
@@ -67,7 +71,6 @@ async function answer(
     },
   );
   return {
-    id,
     kind: "parsed",
     result,
     contextRevision: entry.revision,
@@ -79,21 +82,19 @@ async function serveShoWorker(
   port: NonNullable<typeof parentPort>,
 ): Promise<void> {
   const sho = await loadSho();
-  const cache = createShoContextCache();
+  const cache = createShoContextCache(shoCacheBudgetOf(workerData));
   port.on("message", (command: ShoWorkerCommand) => {
     void answer(sho, cache, command)
-      .catch((cause: unknown): ShoWorkerReply => {
-        if (cause instanceof InputError) {
-          return { id: command.id, kind: "input" };
-        }
+      .catch((cause: unknown): ShoReply => {
+        if (cause instanceof InputError) return { kind: "input" };
         return {
-          id: command.id,
           kind: "failed",
-          message: cause instanceof Error ? cause.message : String(cause),
+          code: cause instanceof Error ? cause.name : "unknown",
         };
       })
       .then((reply) => {
-        port.postMessage(reply);
+        const sent: ShoAnswer = { id: command.id, reply };
+        port.postMessage(sent);
       });
   });
   const ready: ShoWorkerReady = {

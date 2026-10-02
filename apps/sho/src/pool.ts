@@ -1,25 +1,34 @@
 import { availableParallelism } from "node:os";
 import { Worker } from "node:worker_threads";
 
+import { SHO_CONTEXT_CACHE_UPLOAD_BYTES } from "./contexts.ts";
 import {
   ShoRunFailure,
+  type ShoAnswer,
   type ShoEngine,
-  type ShoSlotReply,
+  type ShoReply,
   type ShoWorkerCommand,
   type ShoWorkerReady,
-  type ShoWorkerReply,
+  type ShoWorkerSetup,
 } from "./engine.ts";
 
 export const SHO_QUEUE_LIMIT = 8;
 export const SHO_CALL_TIMEOUT_MS = 30_000;
+export const SHO_RESPAWN_BACKOFF_MS = 250;
+export const SHO_RESPAWN_LIMIT = 5;
 
 export const shoDefaultWorkers = (): number =>
   Math.max(availableParallelism() - 1, 1);
 
-export function shoSlotOf(key: string, size: number): number {
+export const shoWorkerCacheBytes = (size: number): number =>
+  Math.floor(SHO_CONTEXT_CACHE_UPLOAD_BYTES / Math.max(size, 1));
+
+export function shoSlotOf(contextKey: string, size: number): number {
+  const colon = contextKey.indexOf(":");
+  const companyId = colon < 0 ? contextKey : contextKey.slice(0, colon);
   let hash = 2166136261;
-  for (let at = 0; at < key.length; at += 1) {
-    hash = Math.imul(hash ^ key.charCodeAt(at), 16777619);
+  for (let at = 0; at < companyId.length; at += 1) {
+    hash = Math.imul(hash ^ companyId.charCodeAt(at), 16777619);
   }
   return (hash >>> 0) % size;
 }
@@ -30,20 +39,34 @@ export interface ShoPoolOptions {
   readonly size?: number;
   readonly queueLimit?: number;
   readonly callTimeoutMs?: number;
+  readonly hangMs?: number;
+  readonly respawnBackoffMs?: number;
+  readonly respawnLimit?: number;
   readonly workerUrl?: URL;
   readonly onLoss?: (slot: number, loss: ShoWorkerLoss) => void;
 }
 
+type Timer = ReturnType<typeof setTimeout>;
+
+interface Boot {
+  readonly resolve: (ready: ShoWorkerReady) => void;
+  readonly reject: (cause: Error) => void;
+}
+
 interface Pending {
   readonly command: ShoWorkerCommand;
-  readonly settle: (reply: ShoSlotReply) => void;
-  timer: ReturnType<typeof setTimeout> | null;
+  readonly deadlineMs: number;
+  settle: ((reply: ShoReply) => void) | null;
+  timer: Timer | null;
+  hangTimer: Timer | null;
 }
 
 interface Slot {
   readonly index: number;
   worker: Worker | null;
   ready: boolean;
+  failures: number;
+  respawnTimer: Timer | null;
   running: Pending | null;
   readonly queue: Pending[];
 }
@@ -54,21 +77,27 @@ export async function createShoPool(
   const size = Math.max(options.size ?? shoDefaultWorkers(), 1);
   const queueLimit = options.queueLimit ?? SHO_QUEUE_LIMIT;
   const callTimeoutMs = options.callTimeoutMs ?? SHO_CALL_TIMEOUT_MS;
+  const hangMs = options.hangMs ?? callTimeoutMs;
+  const respawnBackoffMs = options.respawnBackoffMs ?? SHO_RESPAWN_BACKOFF_MS;
+  const respawnLimit = options.respawnLimit ?? SHO_RESPAWN_LIMIT;
   const workerUrl =
     options.workerUrl ?? new URL("./worker.ts", import.meta.url);
   const onLoss = options.onLoss ?? ((): void => undefined);
+  const setup: ShoWorkerSetup = { maxUploadBytes: shoWorkerCacheBytes(size) };
 
   const slots: Slot[] = [];
   let stopped = false;
   let booting = true;
   let nextId = 1;
 
-  function finish(pending: Pending, reply: ShoSlotReply): void {
-    if (pending.timer !== null) {
-      clearTimeout(pending.timer);
-      pending.timer = null;
-    }
-    pending.settle(reply);
+  function settle(pending: Pending, reply: ShoReply): void {
+    if (pending.timer !== null) clearTimeout(pending.timer);
+    if (pending.hangTimer !== null) clearTimeout(pending.hangTimer);
+    pending.timer = null;
+    pending.hangTimer = null;
+    const once = pending.settle;
+    pending.settle = null;
+    once?.(reply);
   }
 
   function pump(slot: Slot): void {
@@ -76,53 +105,62 @@ export async function createShoPool(
     if (worker === null || !slot.ready || slot.running !== null) return;
     const next = slot.queue.shift();
     if (next === undefined) return;
+    if (next.timer !== null) clearTimeout(next.timer);
+    next.timer = setTimeout(() => {
+      next.timer = null;
+      const once = next.settle;
+      next.settle = null;
+      once?.({ kind: "deadline" });
+    }, next.deadlineMs);
+    next.hangTimer = setTimeout(() => {
+      next.hangTimer = null;
+      lose(slot, "hung");
+    }, hangMs);
     slot.running = next;
     worker.postMessage(next.command);
   }
 
-  function lose(slot: Slot, loss: ShoWorkerLoss): void {
-    const victim = slot.worker;
-    const running = slot.running;
+  function drain(slot: Slot, running: ShoReply): void {
     const waiting = slot.queue.splice(0, slot.queue.length);
+    const inFlight = slot.running;
     slot.worker = null;
     slot.ready = false;
     slot.running = null;
-    if (running !== null) {
-      finish(running, {
-        id: running.command.id,
-        kind: loss === "hung" ? "deadline" : "busy",
-      });
-    }
-    for (const pending of waiting) {
-      finish(pending, { id: pending.command.id, kind: "busy" });
-    }
-    if (victim !== null) void victim.terminate();
-    onLoss(slot.index, loss);
-    if (!stopped && !booting) spawn(slot, null);
+    if (inFlight !== null) settle(inFlight, running);
+    for (const pending of waiting) settle(pending, { kind: "busy" });
   }
 
-  function spawn(
-    slot: Slot,
-    boot: {
-      resolve: (ready: ShoWorkerReady) => void;
-      reject: (cause: Error) => void;
-    } | null,
-  ): void {
-    const worker = new Worker(workerUrl);
+  function lose(slot: Slot, loss: ShoWorkerLoss): void {
+    const victim = slot.worker;
+    drain(slot, { kind: loss === "hung" ? "deadline" : "busy" });
+    if (victim !== null) void victim.terminate();
+    onLoss(slot.index, loss);
+    if (stopped || booting) return;
+    slot.failures += 1;
+    if (slot.failures > respawnLimit) return;
+    slot.respawnTimer = setTimeout(() => {
+      slot.respawnTimer = null;
+      if (!stopped) spawn(slot, null);
+    }, respawnBackoffMs * slot.failures);
+  }
+
+  function spawn(slot: Slot, boot: Boot | null): void {
+    const worker = new Worker(workerUrl, { workerData: setup });
     slot.worker = worker;
     slot.ready = false;
-    worker.on("message", (reply: ShoWorkerReady | ShoWorkerReply) => {
+    worker.on("message", (answer: ShoWorkerReady | ShoAnswer) => {
       if (slot.worker !== worker) return;
-      if (reply.kind === "ready") {
+      if ("stamp" in answer) {
         slot.ready = true;
-        boot?.resolve(reply);
+        slot.failures = 0;
+        boot?.resolve(answer);
         pump(slot);
         return;
       }
       const running = slot.running;
-      if (running === null || running.command.id !== reply.id) return;
+      if (running === null || running.command.id !== answer.id) return;
       slot.running = null;
-      finish(running, reply);
+      settle(running, answer.reply);
       pump(slot);
     });
     worker.on("error", (cause: Error) => {
@@ -132,6 +170,7 @@ export async function createShoPool(
     });
     worker.on("exit", () => {
       if (slot.worker !== worker) return;
+      boot?.reject(new ShoRunFailure("worker_exited_at_boot"));
       lose(slot, "crashed");
     });
   }
@@ -139,36 +178,33 @@ export async function createShoPool(
   function send(
     key: string,
     make: (id: number) => ShoWorkerCommand,
-    timeoutMs: number,
-  ): Promise<ShoSlotReply> {
-    const id = nextId;
-    nextId += 1;
+    deadlineMs: number,
+  ): Promise<ShoReply> {
     const slot = slots[shoSlotOf(key, size)];
     if (slot === undefined || stopped || !slot.ready) {
-      return Promise.resolve({ id, kind: "busy" });
+      return Promise.resolve({ kind: "busy" });
     }
     if (slot.queue.length + (slot.running === null ? 0 : 1) >= queueLimit) {
-      return Promise.resolve({ id, kind: "busy" });
+      return Promise.resolve({ kind: "busy" });
     }
-    return new Promise<ShoSlotReply>((resolve) => {
+    const id = nextId;
+    nextId += 1;
+    return new Promise<ShoReply>((resolve) => {
       const pending: Pending = {
         command: make(id),
+        deadlineMs: Math.max(deadlineMs, 0),
         settle: resolve,
         timer: null,
+        hangTimer: null,
       };
-      pending.timer = setTimeout(
-        () => {
-          pending.timer = null;
-          if (slot.running === pending) {
-            lose(slot, "hung");
-            return;
-          }
-          const at = slot.queue.indexOf(pending);
-          if (at >= 0) slot.queue.splice(at, 1);
-          resolve({ id, kind: "deadline" });
-        },
-        Math.max(timeoutMs, 0),
-      );
+      pending.timer = setTimeout(() => {
+        pending.timer = null;
+        const at = slot.queue.indexOf(pending);
+        if (at >= 0) slot.queue.splice(at, 1);
+        const once = pending.settle;
+        pending.settle = null;
+        once?.({ kind: "deadline" });
+      }, pending.deadlineMs);
       slot.queue.push(pending);
       pump(slot);
     });
@@ -180,6 +216,8 @@ export async function createShoPool(
       index,
       worker: null,
       ready: false,
+      failures: 0,
+      respawnTimer: null,
       running: null,
       queue: [],
     };
@@ -201,78 +239,33 @@ export async function createShoPool(
   }
   booting = false;
   const first = readied[0];
-  if (first === undefined) throw new ShoRunFailure("sho pool has no workers");
+  if (first === undefined) throw new ShoRunFailure("no_workers");
 
   return {
     stamp: first.stamp,
     actions: first.actions,
     workers: size,
 
-    async store(upload) {
-      const reply = await send(
-        upload.key,
-        (id) => ({ id, kind: "store", upload }),
-        callTimeoutMs,
-      );
-      if (reply.kind === "stored") return { kind: "stored" };
-      if (reply.kind === "input") return { kind: "input" };
-      if (reply.kind === "failed") {
-        return { kind: "failed", message: reply.message };
-      }
-      return { kind: "busy" };
+    get ready() {
+      return !stopped && slots.every((slot) => slot.ready);
     },
 
-    async phrases(key) {
-      const reply = await send(
-        key,
-        (id) => ({ id, kind: "phrases", key }),
-        callTimeoutMs,
-      );
-      return reply.kind === "phrases" ? reply.phrases : null;
-    },
+    store: (upload) =>
+      send(upload.key, (id) => ({ id, kind: "store", upload }), callTimeoutMs),
 
-    async run(job) {
-      const reply = await send(
-        job.key,
-        (id) => ({ id, kind: "parse", job }),
-        job.deadlineMs,
-      );
-      switch (reply.kind) {
-        case "parsed":
-          return {
-            kind: "ok",
-            result: reply.result,
-            contextRevision: reply.contextRevision,
-            ms: reply.ms,
-          };
-        case "context_required":
-          return { kind: "context_required" };
-        case "deadline":
-          return { kind: "deadline" };
-        case "input":
-          return { kind: "input" };
-        case "failed":
-          return { kind: "failed", message: reply.message };
-        default:
-          return { kind: "busy" };
-      }
-    },
+    phrases: (key) =>
+      send(key, (id) => ({ id, kind: "phrases", key }), callTimeoutMs),
+
+    run: (job) =>
+      send(job.key, (id) => ({ id, kind: "parse", job }), job.deadlineMs),
 
     async dispose() {
       stopped = true;
       for (const slot of slots) {
         const worker = slot.worker;
-        const running = slot.running;
-        const waiting = slot.queue.splice(0, slot.queue.length);
-        slot.worker = null;
-        slot.ready = false;
-        slot.running = null;
-        if (running !== null) {
-          finish(running, { id: running.command.id, kind: "busy" });
-        }
-        for (const pending of waiting) {
-          finish(pending, { id: pending.command.id, kind: "busy" });
-        }
+        if (slot.respawnTimer !== null) clearTimeout(slot.respawnTimer);
+        slot.respawnTimer = null;
+        drain(slot, { kind: "busy" });
         if (worker !== null) await worker.terminate();
       }
     },

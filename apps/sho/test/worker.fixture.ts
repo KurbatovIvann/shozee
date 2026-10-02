@@ -1,10 +1,12 @@
-import { parentPort, threadId } from "node:worker_threads";
+import { parentPort, threadId, workerData } from "node:worker_threads";
 import type { ActionName, CommandV2, ResultV2 } from "@showzy/sho";
 
+import { shoCacheBudgetOf } from "../src/contexts.ts";
 import type {
+  ShoAnswer,
+  ShoReply,
   ShoWorkerCommand,
   ShoWorkerReady,
-  ShoWorkerReply,
 } from "../src/engine.ts";
 
 interface Held {
@@ -40,34 +42,39 @@ const resultOf = (text: string): ResultV2 => ({
   context: null,
 });
 
-function answer(command: ShoWorkerCommand): ShoWorkerReply | null {
-  const id = command.id;
+function answer(command: ShoWorkerCommand): ShoReply | null {
   if (command.kind === "store") {
     held.set(command.upload.key, {
       fingerprint: command.upload.fingerprint,
       revision: command.upload.revision,
       phrases: command.upload.phrases,
     });
-    return { id, kind: "stored" };
+    return { kind: "stored" };
   }
   if (command.kind === "phrases") {
     return {
-      id,
       kind: "phrases",
       phrases: held.get(command.key)?.phrases ?? null,
     };
   }
   const job = command.job;
+  if (job.text === "budget") {
+    return {
+      kind: "parsed",
+      result: resultOf(String(shoCacheBudgetOf(workerData))),
+      contextRevision: null,
+      ms: 1,
+    };
+  }
   if (job.text === "hang") return null;
   if (job.text === "crash") process.exit(1);
-  if (job.text === "boom") return { id, kind: "failed", message: "boom" };
-  if (job.text === "bad") return { id, kind: "input" };
+  if (job.text === "boom") return { kind: "failed", code: "boom" };
+  if (job.text === "bad") return { kind: "input" };
   const entry = held.get(job.key);
   if (entry === undefined || entry.fingerprint !== job.fingerprint) {
-    return { id, kind: "context_required" };
+    return { kind: "context_required" };
   }
   return {
-    id,
     kind: "parsed",
     result: resultOf(job.text),
     contextRevision: entry.revision,
@@ -75,11 +82,23 @@ function answer(command: ShoWorkerCommand): ShoWorkerReply | null {
   };
 }
 
+if (parentPort !== null && process.env.SHO_FIXTURE_EXIT === "1") {
+  process.exit(3);
+}
+
 if (parentPort !== null) {
   const port = parentPort;
   port.on("message", (command: ShoWorkerCommand) => {
     const reply = answer(command);
-    if (reply !== null) port.postMessage(reply);
+    if (reply === null) return;
+    const sent: ShoAnswer = { id: command.id, reply };
+    if (command.kind === "parse" && command.job.text === "slow") {
+      setTimeout(() => {
+        port.postMessage(sent);
+      }, 200);
+      return;
+    }
+    port.postMessage(sent);
   });
   const ready: ShoWorkerReady = {
     kind: "ready",

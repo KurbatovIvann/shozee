@@ -19,7 +19,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { createShoApp, type ShoParseLogEntry } from "./app.ts";
 import { createShoContextCache } from "./contexts.ts";
-import type { ShoEngine, ShoParseJob, ShoRunOutcome } from "./engine.ts";
+import type { ShoEngine, ShoParseJob, ShoReply } from "./engine.ts";
 
 const TOKEN = "service-token-of-at-least-32-characters";
 const COMPANY = "company1";
@@ -78,9 +78,7 @@ interface Recorded {
   readonly engine: ShoEngine;
 }
 
-function fakeEngine(
-  run?: (job: ShoParseJob) => Promise<ShoRunOutcome>,
-): Recorded {
+function fakeEngine(run?: (job: ShoParseJob) => Promise<ShoReply>): Recorded {
   const jobs: ShoParseJob[] = [];
   const cache = createShoContextCache();
   return {
@@ -89,6 +87,7 @@ function fakeEngine(
       stamp: STAMP,
       actions: ["orders.create", "customers.create"],
       workers: 1,
+      ready: true,
       store: (upload) => {
         cache.put(upload.key, {
           fingerprint: upload.fingerprint,
@@ -99,14 +98,18 @@ function fakeEngine(
         });
         return Promise.resolve({ kind: "stored" });
       },
-      phrases: (key) => Promise.resolve(cache.read(key)?.phrases ?? null),
+      phrases: (key) =>
+        Promise.resolve({
+          kind: "phrases",
+          phrases: cache.read(key)?.phrases ?? null,
+        }),
       run: async (job) => {
         const entry = cache.fresh(job.key, job.fingerprint);
         if (entry === null) return { kind: "context_required" };
         jobs.push(job);
         return run === undefined
           ? {
-              kind: "ok",
+              kind: "parsed",
               result: RESULT,
               contextRevision: entry.revision,
               ms: 1,
@@ -328,8 +331,8 @@ describe("apps/sho /v1", () => {
     );
     expect(phrases.status).toBe(409);
     expect(logged).toEqual([
-      { requestId: "req-1", outcome: "context_required", ms: null },
-      { requestId: "req-1", outcome: "context_required", ms: null },
+      { requestId: "req-1", outcome: "context_required", ms: null, code: null },
+      { requestId: "req-1", outcome: "context_required", ms: null, code: null },
     ]);
   });
 
@@ -475,14 +478,14 @@ describe("apps/sho /v1", () => {
       );
       await expect(response.json()).resolves.toEqual({ error: kind });
       expect(entries).toEqual([
-        { requestId: "req-1", outcome: kind, ms: null },
+        { requestId: "req-1", outcome: kind, ms: null, code: null },
       ]);
     }
   });
 
   it("logs a failed run apart from an input refusal before it rethrows", async () => {
     const broken = fakeEngine(() =>
-      Promise.resolve({ kind: "failed", message: "worker gone" }),
+      Promise.resolve({ kind: "failed", code: "ShoRunFailure" }),
     );
     const entries: ShoParseLogEntry[] = [];
     const brokenApp = createShoApp({
@@ -502,8 +505,51 @@ describe("apps/sho /v1", () => {
     );
     expect(response.status).toBe(500);
     expect(entries).toEqual([
-      { requestId: "req-1", outcome: "failed", ms: null },
+      {
+        requestId: "req-1",
+        outcome: "failed",
+        ms: null,
+        code: "ShoRunFailure",
+      },
     ]);
+  });
+
+  it("maps every phrases outcome to its status", async () => {
+    const answers: [ShoReply, number][] = [
+      [{ kind: "busy" }, 503],
+      [{ kind: "deadline" }, 504],
+      [{ kind: "phrases", phrases: null }, 409],
+      [{ kind: "failed", code: "ShoRunFailure" }, 500],
+    ];
+    for (const [reply, status] of answers) {
+      const refusing = fakeEngine();
+      const refusingApp = createShoApp({
+        serviceToken: TOKEN,
+        engine: () => ({
+          ...refusing.engine,
+          phrases: () => Promise.resolve(reply),
+        }),
+      });
+      const response = await refusingApp.fetch(phrasesRequest());
+      expect(response.status).toBe(status);
+    }
+  });
+
+  it("reports ready only while the engine says every worker is warm", async () => {
+    const cold = fakeEngine();
+    const coldApp = createShoApp({
+      serviceToken: TOKEN,
+      engine: () => ({ ...cold.engine, ready: false }),
+    });
+    const response = await coldApp.fetch(
+      new Request("http://sho.test/v1/ready", { headers: authorized }),
+    );
+    await expect(response.json()).resolves.toEqual({ ready: false });
+
+    const warm = await app.fetch(
+      new Request("http://sho.test/v1/ready", { headers: authorized }),
+    );
+    await expect(warm.json()).resolves.toEqual({ ready: true });
   });
 
   it("logs a request id and outcome, never the command text", async () => {
