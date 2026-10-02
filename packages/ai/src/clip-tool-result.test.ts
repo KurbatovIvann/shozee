@@ -9,6 +9,7 @@ import {
 } from "./clip-tool-result.js";
 
 const customerId = "11111111-1111-4111-8111-111111111111";
+const CUSTOMER_NAME = "Олена Коваль";
 const orderId = "44444444-4444-4444-8444-444444444444";
 
 function rowId(index: number): string {
@@ -180,7 +181,7 @@ describe("clipStaffAssistantToolResult", () => {
     const get = {
       orderId,
       orderNumber: "A-99",
-      customerId,
+      customer: { nameSnapshot: CUSTOMER_NAME, linkedCustomerId: customerId },
       status: "confirmed",
       comment: "c".repeat(STAFF_ASSISTANT_CLIP_JSON_MAX),
       notes: "n".repeat(800),
@@ -196,7 +197,7 @@ describe("clipStaffAssistantToolResult", () => {
       expect.objectContaining({
         orderId,
         orderNumber: "A-99",
-        customerId,
+        customer: { nameSnapshot: CUSTOMER_NAME, linkedCustomerId: customerId },
         status: "confirmed",
       }),
     );
@@ -233,6 +234,47 @@ describe("clipStaffAssistantToolResult", () => {
         clipped.preview !== null &&
         "body" in clipped.preview,
     ).toBe(false);
+  });
+
+  it("keeps the nested order customer on identity-key shrink", () => {
+    expect(STAFF_ASSISTANT_CLIP_IDENTITY_KEYS).toEqual(
+      expect.arrayContaining(["customer"]),
+    );
+    const items = Array.from({ length: 40 }, (_, index) => ({
+      orderId: rowId(index),
+      orderNumber: `A-${String(index)}`,
+      customer: {
+        nameSnapshot: CUSTOMER_NAME,
+        linkedCustomerId: customerId,
+      },
+      status: "new",
+      itemCount: 1,
+      totalGrossMinor: "1000",
+      currency: "UAH",
+      createdAt: "2026-02-01T09:00:00.000Z",
+      notes: "n".repeat(800),
+    }));
+    const clipped = clipStaffAssistantToolResult({ items, nextCursor: null });
+    expect(isClipped(clipped)).toBe(true);
+    if (!isClipped(clipped)) {
+      return;
+    }
+    const previewItems =
+      typeof clipped.preview === "object" &&
+      clipped.preview !== null &&
+      "items" in clipped.preview &&
+      Array.isArray(clipped.preview.items)
+        ? clipped.preview.items
+        : [];
+    expect(previewItems[0]).toEqual(
+      expect.objectContaining({
+        customer: {
+          nameSnapshot: CUSTOMER_NAME,
+          linkedCustomerId: customerId,
+        },
+      }),
+    );
+    expect(clipped.cutPaths).not.toContain("items.customer");
   });
 
   it("keeps catalog money snapshots on identity-key shrink", () => {

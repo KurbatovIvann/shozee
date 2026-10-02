@@ -49,6 +49,7 @@ export const STAFF_ASSISTANT_CLIP_IDENTITY_KEYS = [
   "orderId",
   "orderNumber",
   "customerId",
+  "customer",
   "documentId",
   "name",
   "titleSnapshot",
