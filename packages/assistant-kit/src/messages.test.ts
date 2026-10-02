@@ -21,9 +21,18 @@ function newKit() {
   return createAssistantKit(testDeps(fixtureInteractions));
 }
 
+const TEXT_WORDS = "here it is";
+const MORE_WORDS = "and that is all";
+
 const TEXT: ChatPart = {
   kind: "text",
-  text: "here it is",
+  text: TEXT_WORDS,
+  status: "complete",
+};
+
+const MORE: ChatPart = {
+  kind: "text",
+  text: MORE_WORDS,
   status: "complete",
 };
 
@@ -229,7 +238,7 @@ describe("partial text is never presented as the answer", () => {
       kind: "append",
       messageId: MESSAGE,
       role: "assistant",
-      parts: [card(1, 3), TEXT],
+      parts: [card(1, 3), MORE],
     });
 
     const message = (await kit.messages.read(SCOPE)).messages.find(
@@ -260,6 +269,98 @@ describe("partial text is never presented as the answer", () => {
     expect(parts.filter((part) => part.kind === "text").at(-1)?.status).toBe(
       "error",
     );
+  });
+});
+
+describe("a write that repeats parts the message already holds", () => {
+  async function held(kit: ReturnType<typeof newKit>, parts: ChatPart[]) {
+    return await kit.messages.write(SCOPE, {
+      kind: "append",
+      messageId: MESSAGE,
+      role: "assistant",
+      parts,
+    });
+  }
+
+  it("stores only the parts it adds, not the ones already stored", async () => {
+    const kit = newKit();
+    await held(kit, [TEXT]);
+
+    const second = await held(kit, [TEXT, MORE]);
+
+    expect(second).toEqual({ kind: "written" });
+    const message = (await kit.messages.read(SCOPE)).messages.find(
+      (candidate) => candidate.messageId === MESSAGE,
+    );
+    expect(message?.parts).toEqual([TEXT, MORE]);
+  });
+
+  it("is unchanged when every part is already held, whatever the key order", async () => {
+    const kit = newKit();
+    await held(kit, [TEXT, MORE]);
+
+    const repeat = await held(kit, [
+      { status: "complete", text: MORE_WORDS, kind: "text" },
+      { text: TEXT_WORDS, kind: "text", status: "complete" },
+    ]);
+
+    expect(repeat).toEqual({ kind: "unchanged" });
+    const message = (await kit.messages.read(SCOPE)).messages.find(
+      (candidate) => candidate.messageId === MESSAGE,
+    );
+    expect(message?.parts).toEqual([TEXT, MORE]);
+  });
+
+  it("never reads a card's payload to decide, so a payload it cannot serialise is fine", async () => {
+    const kit = newKit();
+    const cyclic: Record<string, unknown> = { rows: 1 };
+    cyclic["self"] = cyclic;
+    const looping: ChatPart = {
+      kind: "card",
+      cardId: "card-cyclic",
+      revision: 1,
+      type: "collection",
+      payload: cyclic,
+    };
+    await held(kit, [TEXT]);
+
+    const written = await held(kit, [looping]);
+
+    expect(written).toEqual({ kind: "written" });
+  });
+
+  it("stores a repeated trace twice, because only text repeats are the write's to collapse", async () => {
+    const kit = newKit();
+    const trace: ChatPart = {
+      kind: "trace",
+      interactionId: "22222222-2222-4222-8222-222222222222",
+      interactionKind: "confirm",
+      outcome: "rejected",
+      optionId: null,
+      attempts: [],
+    };
+
+    await held(kit, [trace]);
+    const again = await held(kit, [trace]);
+
+    expect(again).toEqual({ kind: "written" });
+    const message = (await kit.messages.read(SCOPE)).messages.find(
+      (candidate) => candidate.messageId === MESSAGE,
+    );
+    expect(message?.parts).toEqual([trace, trace]);
+  });
+
+  it("writes a card again, so a card is never dropped as a repeat", async () => {
+    const kit = newKit();
+    await held(kit, [TEXT, card(1, 3)]);
+
+    const again = await held(kit, [TEXT, card(1, 3)]);
+
+    expect(again).toEqual({ kind: "written" });
+    const message = (await kit.messages.read(SCOPE)).messages.find(
+      (candidate) => candidate.messageId === MESSAGE,
+    );
+    expect(message?.parts).toEqual([TEXT, card(2, 3)]);
   });
 });
 

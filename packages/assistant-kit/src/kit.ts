@@ -10,6 +10,7 @@
 import type { z } from "zod";
 
 import type { ChatWindow, MessageWrite } from "./messages.js";
+
 import type { InteractionRegistry, InteractionType } from "./interaction.js";
 import type { Continuation } from "./pause.js";
 import type { KitDeps } from "./ports.js";
@@ -21,6 +22,10 @@ import type {
 } from "./pause.js";
 
 type AnyTypes = Record<string, InteractionType<z.ZodType, z.ZodType, never>>;
+
+export type MessageWriteResult = {
+  readonly kind: "written" | "unchanged" | "wrong_owner" | "conflict";
+};
 
 export interface OpenPauseInput<T extends AnyTypes> {
   readonly conversationId: string;
@@ -178,17 +183,8 @@ export interface AssistantKit<T extends AnyTypes> {
      * Only the latest message can change. A write naming it merges into it;
      * any other message id starts a new one, and an id the log already holds
      * further back is refused by the store.
-     *
-     * `unchanged`: an `end_text` found nothing to end. `conflict`: other writes
-     * kept changing the message for every attempt this write made, and nothing
-     * was stored.
      */
-    write(
-      scope: PauseScope,
-      write: MessageWrite,
-    ): Promise<{
-      readonly kind: "written" | "unchanged" | "wrong_owner" | "conflict";
-    }>;
+    write(scope: PauseScope, write: MessageWrite): Promise<MessageWriteResult>;
   };
 }
 

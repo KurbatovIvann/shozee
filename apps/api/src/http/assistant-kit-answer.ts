@@ -44,6 +44,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import {
+  canonicalAssistantId,
   canonicalCommandIds,
   goneResponse,
   json,
@@ -169,7 +170,7 @@ export async function handleAssistantKitAbandon(
   if (!parsed.success) {
     return json(400, { error: { code: "VALIDATION" } }, requestId);
   }
-  const conversationId = parsed.data.conversationId.toLowerCase();
+  const conversationId = canonicalAssistantId(parsed.data.conversationId);
 
   const { kit, turns } = runtime.forCaller({
     userId: caller.userId,
@@ -181,7 +182,7 @@ export async function handleAssistantKitAbandon(
   const dropped = await dropOpenPause(
     kit,
     scope,
-    parsed.data.interactionId,
+    canonicalAssistantId(parsed.data.interactionId),
     assistantRejectedTrace,
   );
   if (dropped !== "ok") {

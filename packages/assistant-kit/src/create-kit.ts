@@ -61,15 +61,21 @@ function pauseKey(conversationId: string): string {
  */
 const MESSAGE_WRITE_ATTEMPTS = 4;
 
-function partsAlreadyHeld(
+function textPartKey(part: Extract<ChatPart, { kind: "text" }>): string {
+  return `${part.status}\u0000${part.text}`;
+}
+
+function appendPartsNotHeld(
   current: readonly ChatPart[],
   incoming: readonly ChatPart[],
-): boolean {
-  if (incoming.length === 0 || incoming.some((part) => part.kind === "card")) {
-    return false;
-  }
-  const held = new Set(current.map((part) => JSON.stringify(part)));
-  return incoming.every((part) => held.has(JSON.stringify(part)));
+): ChatPart[] | null {
+  const held = new Set(
+    current.filter((part) => part.kind === "text").map(textPartKey),
+  );
+  const fresh = incoming.filter(
+    (part) => part.kind !== "text" || !held.has(textPartKey(part)),
+  );
+  return fresh.length === 0 ? null : appendParts(current, fresh);
 }
 
 /** One running turn per conversation, by the same means. */
@@ -525,15 +531,9 @@ export function createAssistantKit<T extends AnyTypes>(
                 `message ${String(latest.seq)} of ${scope.conversationId} cannot be read, so it is not overwritten`,
               );
             }
-            if (
-              write.kind === "append" &&
-              partsAlreadyHeld(current.data.parts, write.parts)
-            ) {
-              return { kind: "unchanged" };
-            }
             const parts =
               write.kind === "append"
-                ? appendParts(current.data.parts, write.parts)
+                ? appendPartsNotHeld(current.data.parts, write.parts)
                 : endStreamingText(current.data.parts, write.status);
             if (parts === null) {
               return { kind: "unchanged" };

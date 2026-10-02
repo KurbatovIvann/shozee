@@ -40,6 +40,7 @@ import {
   type PauseWriteOutcome,
 } from "./assistant-kit-answer.js";
 import {
+  canonicalAssistantId,
   canonicalCommandIds,
   goneResponse,
   json,
@@ -50,6 +51,7 @@ import {
   takeCommand,
   type AssistantKitAppEnv,
   type AssistantKitCardVerdict,
+  type AssistantKitOpenCard,
   type AssistantKitRuntime,
   type Caller,
 } from "./assistant-kit-http.js";
@@ -76,9 +78,11 @@ export async function readChatOpenCard(
     conversationId: body.conversationId,
     bind: caller.bind,
   });
-  const card =
+  const card: AssistantKitOpenCard | null =
     pause === null
-      ? null
+      ? body.answering === undefined
+        ? null
+        : { pause: null, verdict: { kind: "stale" } }
       : { pause, verdict: verdictFor(pause, body.answering, body.text) };
   c.set("assistantOpenCard", card);
   return (
@@ -96,7 +100,7 @@ function verdictFor(
   if (answering === undefined) {
     return { kind: "supersede" };
   }
-  return answering.interactionId.toLowerCase() !== pause.interactionId ||
+  return answering.interactionId !== pause.interactionId ||
     answering.revision !== pause.revision
     ? { kind: "stale" }
     : matchAssistantPauseAnswer(pause, text);
@@ -216,6 +220,9 @@ export async function handleAssistantKitChat(
   const open = card === null ? null : card.pause;
   const matched = card === null ? null : card.verdict;
   if (matched !== null && matched.kind === "stale") {
+    if (await runtime.commands.spent(finishing)) {
+      return await settled();
+    }
     return json(
       409,
       {
@@ -411,7 +418,7 @@ export async function handleAssistantKitMessages(
     kit,
     turns,
     {
-      conversationId: conversationId.data.toLowerCase(),
+      conversationId: canonicalAssistantId(conversationId.data),
       bind: caller.bind,
     },
     before === undefined ? {} : { before },

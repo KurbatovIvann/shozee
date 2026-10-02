@@ -1012,6 +1012,34 @@ describe("a turn whose writes cannot be stored", () => {
       }),
     ).rejects.toBeInstanceOf(MessageWriteRefusedError);
   });
+
+  it("finishes when the log already holds the text the turn ends with", async () => {
+    const s = slice();
+    await s.kit.messages.write(SCOPE, {
+      kind: "append",
+      messageId: FIRST_MESSAGE,
+      role: "assistant",
+      parts: [{ kind: "text", text: "Готово.", status: "complete" }],
+    });
+
+    const turn = await runHostTurn({
+      kit: s.kit,
+      conversationId: CONVERSATION,
+      bind: BIND,
+      messageId: FIRST_MESSAGE,
+      model: stubModel([stubTextStep("Готово.")]),
+      messages: [{ role: "user", content: "hello" }],
+      tools: s.tools,
+    });
+
+    expect(turn.kind).toBe("settled");
+    const message = (await s.kit.messages.read(SCOPE)).messages.find(
+      (candidate) => candidate.messageId === FIRST_MESSAGE,
+    );
+    expect(message?.parts).toEqual([
+      { kind: "text", text: "Готово.", status: "complete" },
+    ]);
+  });
 });
 
 /**
