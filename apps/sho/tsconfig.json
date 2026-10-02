@@ -1,0 +1,8 @@
+{
+  "extends": "@showzy/tooling/tsconfig/base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "allowImportingTsExtensions": true
+  },
+  "include": ["src", "vitest.config.ts"]
+}

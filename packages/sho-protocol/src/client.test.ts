@@ -479,7 +479,9 @@ describe("createShoClient model, phrases and ready", () => {
       scopeHash: parseRequest.scopeHash,
     };
     await client(recording).phrases(query);
-    expect(seen[0]).toContain(`phrases?limit=${String(SHO_PHRASES_LIMIT)}`);
+    expect(seen[0]).toContain(
+      `phrases?companyId=${query.companyId}&limit=${String(SHO_PHRASES_LIMIT)}`,
+    );
     expect(
       await client(recording).phrases({
         ...query,

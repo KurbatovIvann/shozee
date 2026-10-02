@@ -98,7 +98,7 @@ const WORKER_API_SUBPATHS = new Set(["subscriptions", "registry"]);
 
 /** Platform packages whose own source is checked for `@showzy/api` imports. */
 const PLATFORM_SOURCE_RE =
-  /\/packages\/(assistant-kit|assistant-runtime|config|core|db|jobs|module-kit|money)\//;
+  /\/packages\/(assistant-kit|assistant-runtime|config|core|db|jobs|module-kit|money|sho-protocol)\//;
 
 const JOBS_PACKAGE_RE = /\/packages\/jobs\//;
 
@@ -255,6 +255,12 @@ function classify(filename) {
   if (appMatch !== null && CLIENT_APPS.has(appMatch[1] ?? "")) {
     return { kind: "client-app", dir };
   }
+  if (/\/apps\/sho\/src\//.test(path)) {
+    return { kind: "sho-app", dir };
+  }
+  if (/\/apps\/api\/src\//.test(path)) {
+    return { kind: "api-app", dir };
+  }
   const workerMatch = /^(.*\/apps\/worker\/)src\//.exec(path);
   if (workerMatch !== null && workerMatch[1] !== undefined) {
     return { kind: "worker", root: workerMatch[1], dir };
@@ -337,6 +343,10 @@ function violation(from, spec, typeOnly) {
 
   const pkg = showzyPackage(spec);
 
+  if (pkg !== null && pkg.name === "sho" && from.kind !== "sho-app") {
+    return { messageId: "shoRuntime" };
+  }
+
   if (from.kind === "worker") {
     if (isRelative(spec)) {
       // A relative path out of apps/worker reaches another app's internals
@@ -360,7 +370,11 @@ function violation(from, spec, typeOnly) {
     return { messageId: "apiImport" };
   }
 
-  if (from.kind === "platform") {
+  if (
+    from.kind === "platform" ||
+    from.kind === "sho-app" ||
+    from.kind === "api-app"
+  ) {
     return null;
   }
 
@@ -653,6 +667,8 @@ export const importBoundariesRule = {
         "apps/worker may import from the API only @showzy/api/subscriptions and @showzy/api/registry, and no relative path outside apps/worker — never the API's HTTP, auth, stores, boot, config or provider (SHO-279, SHO-569).",
       apiImport:
         "Only apps/worker may import @showzy/api, and only its /subscriptions and /registry subpaths. A package takes the registry by injection; importing the API would also make a package depend on an app (SHO-279, SHO-569).",
+      shoRuntime:
+        "Only apps/sho may import @showzy/sho: the vendored runtime and its model stay out of every other import graph (ADR-0051). Share wire types through @showzy/sho-protocol.",
     },
   },
   create(context) {

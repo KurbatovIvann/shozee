@@ -8,6 +8,7 @@ import {
   S3_LOOPBACK_SIGNING_WARNING,
   classifyS3SigningHost,
   loadServerConfig,
+  loadShoServiceConfig,
   s3DeviceSigningWarning,
 } from "./config.js";
 import { createProcessLogger } from "./logger.js";
@@ -491,6 +492,63 @@ describe("loadServerConfig", () => {
     expect(everything).not.toContain("SENTINEL");
     expect(everything).not.toContain("ANTHROPIC_API_KEY_SENTINEL");
     expect(everything).not.toContain("sk-ant-");
+  });
+});
+
+describe("Шо service configuration (ADR-0051)", () => {
+  const TOKEN = "sho-service-token-at-least-32-chars";
+
+  it("defaults to no Шо replicas and no token", () => {
+    const config = loadServerConfig(validEnv());
+    expect(config.sho.urls).toEqual([]);
+    expect(config.sho.serviceToken).toBeUndefined();
+  });
+
+  it("normalizes, de-duplicates and keeps the replica order", () => {
+    const config = loadServerConfig({
+      ...validEnv(),
+      SHO_URLS: "http://sho-a:3100, http://sho-b:3100/, http://sho-a:3100",
+      SHO_SERVICE_TOKEN: TOKEN,
+    });
+    expect(config.sho.urls).toEqual(["http://sho-a:3100", "http://sho-b:3100"]);
+    expect(config.sho.serviceToken).toBe(TOKEN);
+  });
+
+  it("refuses replicas without a token", () => {
+    expect(() =>
+      loadServerConfig({ ...validEnv(), SHO_URLS: "http://sho-a:3100" }),
+    ).toThrow(ConfigValidationError);
+  });
+
+  it("redacts an invalid service token", () => {
+    try {
+      loadShoServiceConfig({ NODE_ENV: "test", SHO_SERVICE_TOKEN: "short" });
+      expect.unreachable("expected ConfigValidationError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ConfigValidationError);
+      const message = String(error);
+      expect(message).toContain("SHO_SERVICE_TOKEN");
+      expect(message).toContain("redacted");
+      expect(message).not.toContain("short");
+    }
+  });
+
+  it("boots the service on a token alone and defaults the port", () => {
+    const config = loadShoServiceConfig({
+      NODE_ENV: "production",
+      SHO_SERVICE_TOKEN: TOKEN,
+    });
+    expect(config).toEqual({
+      nodeEnv: "production",
+      port: 3100,
+      serviceToken: TOKEN,
+    });
+  });
+
+  it("refuses to boot the service without a token", () => {
+    expect(() => loadShoServiceConfig({ NODE_ENV: "test" })).toThrow(
+      /SHO_SERVICE_TOKEN: missing required value/,
+    );
   });
 });
 
