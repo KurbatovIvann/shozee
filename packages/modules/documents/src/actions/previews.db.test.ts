@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 
-import { type ImplementedAction } from "@showzy/core";
+import {
+  createConfirmationHook,
+  createInMemoryConfirmationStore,
+  type ActionPipelineDeps,
+  type ImplementedAction,
+} from "@showzy/core";
 import {
   ConfirmationRequiredError,
   NotFoundError,
@@ -14,7 +19,11 @@ import {
 import { products } from "@showzy/db/schema/catalog";
 import { companyLegalInfo } from "@showzy/db/schema/companies";
 import { companyCustomers, counterparties } from "@showzy/db/schema/customers";
-import { documents, documentShareTokens } from "@showzy/db/schema/documents";
+import {
+  documentItems,
+  documents,
+  documentShareTokens,
+} from "@showzy/db/schema/documents";
 import { orderItems, orders } from "@showzy/db/schema/orders";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -28,6 +37,8 @@ import {
   requestSignPreviewTitle,
 } from "./request-sign.js";
 import { shareDocument } from "./share.js";
+import { configureDocumentShareOrigin } from "../services/share-origin.js";
+import { hashDocumentShareToken } from "../services/token-hash.js";
 
 const companyA = kitIdentities.companies.a;
 const companyB = kitIdentities.companies.b;
@@ -45,7 +56,10 @@ const fixtures = {
   itemShared: randomUUID(),
   itemRevoked: randomUUID(),
   itemExpired: randomUUID(),
+  orderConfirmShare: randomUUID(),
+  itemConfirmShare: randomUUID(),
   docA: randomUUID(),
+  docConfirmShare: randomUUID(),
   docShared: randomUUID(),
   docRevoked: randomUUID(),
   docExpired: randomUUID(),
@@ -55,8 +69,19 @@ const fixtures = {
 };
 
 const sellerSnapshot = {
+  kind: "seller" as const,
+  name: "Konditerska Anna",
+  prefix: "KA",
   companyType: "tov" as const,
   legalName: "ТОВ Альфа",
+  edrpou: "12345678",
+  legalAddress: "вул. Хрещатик, 1",
+  iban: "UA123456789012345678901234567",
+  bankName: "ПриватБанк",
+  bankMfo: "300001",
+  bankEdrpou: "12345678",
+  phone: "+380501111111",
+  email: "legal@alpha.test",
 };
 
 const buyerSnapshot = {
@@ -64,7 +89,21 @@ const buyerSnapshot = {
   displayName: "Customer A",
 };
 
+const TEST_ORIGIN = "https://documents.test";
+
 let kit: TestKit;
+
+function confirmationPipeline(target: TestKit): ActionPipelineDeps {
+  return {
+    ...target.pipeline,
+    hooks: {
+      ...target.pipeline.hooks,
+      confirmation: createConfirmationHook({
+        store: createInMemoryConfirmationStore(),
+      }),
+    },
+  };
+}
 
 async function previewOf<TInput extends z.ZodType, TOutput extends z.ZodType>(
   action: ImplementedAction<TInput, TOutput>,
@@ -115,6 +154,16 @@ async function refusalOf<TInput extends z.ZodType, TOutput extends z.ZodType>(
       },
       (thrown: unknown) => thrown,
     );
+}
+
+async function shareTokenRowsOf(
+  documentId: string,
+): Promise<readonly (typeof documentShareTokens.$inferSelect)[]> {
+  return await kit.db.runtime.db
+    .select()
+    .from(documentShareTokens)
+    .where(eq(documentShareTokens.documentId, documentId))
+    .orderBy(documentShareTokens.tokenHash);
 }
 
 function expectSameRefusal(foreign: unknown, missing: unknown): void {
@@ -191,6 +240,7 @@ async function insertSeedDocument(values: {
 }
 
 beforeAll(async () => {
+  configureDocumentShareOrigin(TEST_ORIGIN);
   kit = await createTestKit();
 
   await kit.db.runtime.db.insert(companyLegalInfo).values([
@@ -299,12 +349,45 @@ beforeAll(async () => {
     orderId: fixtures.orderExpired,
     documentNumber: "KA-РХ-000004",
   });
+  await insertSeedOrder({
+    id: fixtures.orderConfirmShare,
+    itemId: fixtures.itemConfirmShare,
+    companyId: companyA,
+    customerId: fixtures.customerA,
+    productId: fixtures.productA,
+    orderNumber: "KA-5",
+  });
+  await insertSeedDocument({
+    id: fixtures.docConfirmShare,
+    companyId: companyA,
+    orderId: fixtures.orderConfirmShare,
+    documentNumber: "KA-РХ-000005",
+  });
+  await kit.db.runtime.db.insert(documentItems).values({
+    id: randomUUID(),
+    companyId: companyA,
+    documentId: fixtures.docConfirmShare,
+    productId: fixtures.productA,
+    titleSnapshot: "Seed line",
+    quantityMilli: 1000n,
+    unitPriceMinor: 250n,
+    taxTreatment: "exempt",
+    netAmountMinor: 250n,
+    grossAmountMinor: 250n,
+    currency: "UAH",
+  });
 
   await kit.db.runtime.db.insert(documentShareTokens).values([
     {
       companyId: companyA,
       documentId: fixtures.docShared,
       tokenHash: "a".repeat(64),
+      expiresAt: new Date(Date.now() + 60_000),
+    },
+    {
+      companyId: companyA,
+      documentId: fixtures.docConfirmShare,
+      tokenHash: "d".repeat(64),
       expiresAt: new Date(Date.now() + 60_000),
     },
     {
@@ -343,7 +426,7 @@ describe("documents preview cards (core.md §7)", () => {
     expect(preview.notes?.[0]).toContain("нумерацію");
   });
 
-  it("previews documents.share without rotating the token", async () => {
+  it("previews documents.share as a card about a link not yet minted", async () => {
     const preview = await previewOf(shareDocument, {
       documentId: fixtures.docA,
     });
@@ -351,6 +434,55 @@ describe("documents preview cards (core.md §7)", () => {
     expect(preview.lines).toEqual(documentCardLines);
     expect(preview.notes).toEqual([
       "Буде створено нове посилання, і воно діє 90 днів.",
+    ]);
+  });
+
+  it("rotates the token only once the previewed documents.share is confirmed", async () => {
+    const deps = confirmationPipeline(kit);
+    const idempotencyKey = randomUUID();
+    const unconfirmed = await kit
+      .invoke(
+        shareDocument,
+        { documentId: fixtures.docConfirmShare },
+        {},
+        { deps, request: { idempotencyKey, requireConfirmation: true } },
+      )
+      .then(
+        () => {
+          throw new Error("expected ConfirmationRequiredError");
+        },
+        (thrown: unknown) => thrown,
+      );
+    if (!(unconfirmed instanceof ConfirmationRequiredError)) {
+      throw unconfirmed;
+    }
+    expect(unconfirmed.challenge.preview?.notes).toEqual([
+      "Чинне посилання буде відкликано — працюватиме лише нове, і воно діє 90 днів.",
+    ]);
+    expect(await shareTokenRowsOf(fixtures.docConfirmShare)).toMatchObject([
+      { tokenHash: "d".repeat(64), revokedAt: null },
+    ]);
+
+    const confirmed = await kit.invoke(
+      shareDocument,
+      { documentId: fixtures.docConfirmShare },
+      {},
+      {
+        deps,
+        request: {
+          idempotencyKey,
+          requireConfirmation: true,
+          confirmationChallengeId: unconfirmed.challenge.challengeId,
+        },
+      },
+    );
+    const rows = await shareTokenRowsOf(fixtures.docConfirmShare);
+    expect(rows).toHaveLength(2);
+    const revoked = rows.filter((row) => row.revokedAt !== null);
+    const active = rows.filter((row) => row.revokedAt === null);
+    expect(revoked.map((row) => row.tokenHash)).toEqual(["d".repeat(64)]);
+    expect(active.map((row) => row.tokenHash)).toEqual([
+      hashDocumentShareToken(confirmed.token),
     ]);
   });
 
@@ -383,14 +515,11 @@ describe("documents preview cards (core.md §7)", () => {
     const preview = await previewOf(requestSign, {
       documentId: fixtures.docA,
     });
-    expect(preview.title).toContain(
-      "Запросити підписання документа KA-РХ-000001",
-    );
-    expect(preview.title).toContain(REQUEST_SIGN_KEY_POSSESSION_NOTE);
+    expect(preview.title).toBe("Запросити підписання документа KA-РХ-000001");
     expect(preview.notes ?? []).toEqual([REQUEST_SIGN_KEY_POSSESSION_NOTE]);
   });
 
-  it("carries the key-possession warning in the summary the assistant reads", async () => {
+  it("keeps the key-possession warning out of the summary the assistant reads", async () => {
     const error = await refusalOf(requestSign, { documentId: fixtures.docA });
     if (!(error instanceof ConfirmationRequiredError)) {
       throw error;
@@ -398,7 +527,12 @@ describe("documents preview cards (core.md §7)", () => {
     expect(error.challenge.summary).toBe(
       requestSignPreviewTitle("KA-РХ-000001"),
     );
-    expect(error.challenge.summary).toContain(REQUEST_SIGN_KEY_POSSESSION_NOTE);
+    expect(error.challenge.summary).not.toContain(
+      REQUEST_SIGN_KEY_POSSESSION_NOTE,
+    );
+    expect(error.challenge.preview?.notes).toEqual([
+      REQUEST_SIGN_KEY_POSSESSION_NOTE,
+    ]);
   });
 
   it("previews documents.createFromOrder through the nested order read", async () => {
