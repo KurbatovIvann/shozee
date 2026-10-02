@@ -17,7 +17,8 @@
  * would ask again rather than run.
  */
 import type { ToolOutcome } from "@showzy/assistant-kit";
-import type { ActionRisk } from "@showzy/core/contract";
+import type { ActionRisk, ConfirmableRisk } from "@showzy/core/contract";
+import { isConfirmableRisk } from "@showzy/core/contract";
 import type {
   ConfirmationChallenge,
   ConfirmationRequiredError,
@@ -69,17 +70,16 @@ export class AssistantConfirmationRequired extends Error {
   }
 }
 
+const CONFIRMABLE_RISK_LEVELS: Record<ConfirmableRisk, AssistantPreviewLevel> =
+  {
+    high: "strong",
+    write: "card",
+  };
+
 export function assistantPreviewLevel(
   risk: ActionRisk,
 ): AssistantPreviewLevel | undefined {
-  switch (risk) {
-    case "high":
-      return "strong";
-    case "write":
-      return "card";
-    default:
-      return undefined;
-  }
+  return isConfirmableRisk(risk) ? CONFIRMABLE_RISK_LEVELS[risk] : undefined;
 }
 
 function previewOf(required: AssistantConfirmationRequired): AssistantPreview {

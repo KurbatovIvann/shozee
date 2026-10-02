@@ -1,5 +1,5 @@
 import { deriveAiToolSources } from "../contract/ai-exposure.js";
-import { CONFIRMABLE_RISKS } from "../contract/confirmation-preconditions.js";
+import { isConfirmableRisk } from "../contract/confirmation-preconditions.js";
 import type { RegisteredImplementation } from "../runtime/action-registry.js";
 
 export function collectWritePreviewProblems(
@@ -15,7 +15,7 @@ export function collectWritePreviewProblems(
     const { contract } = implementation;
     if (
       !exposed.has(contract.name) ||
-      !CONFIRMABLE_RISKS.includes(contract.risk) ||
+      !isConfirmableRisk(contract.risk) ||
       implementation.preview !== undefined
     ) {
       continue;
