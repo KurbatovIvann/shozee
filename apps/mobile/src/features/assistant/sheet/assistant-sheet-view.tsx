@@ -137,6 +137,7 @@ export function AssistantSheetView(model: AssistantSheetViewModel) {
         waitLabel={copy.waitLabel}
         surfaces={item.surfaces}
         traces={item.traces}
+        questions={item.questions}
         closedCopy={copy}
         failed={item.failed}
         failedLabel={copy.turnInterrupted}

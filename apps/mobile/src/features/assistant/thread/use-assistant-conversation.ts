@@ -542,8 +542,6 @@ export function useAssistantConversation(args: {
           failure: { kind: "not_sent" },
         });
       }
-      // Keyed by the words, so retrying the same draft is the same attempt and
-      // editing it before retrying is a new one.
       const command = assistantSendCommand({
         text: clipped,
         openPause: stateRef.current.thread?.openPause ?? null,

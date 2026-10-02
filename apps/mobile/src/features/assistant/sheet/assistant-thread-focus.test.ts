@@ -21,6 +21,7 @@ function row(options?: {
     text: "Яку Катю?",
     surfaces: [],
     traces: [],
+    questions: [],
     interaction:
       interactionId === null
         ? null
@@ -95,6 +96,21 @@ describe("assistantThreadFocus", () => {
     expect(assistantThreadFocus(first.focus, [row({ id: "m1" })]).move).toEqual(
       { kind: "composer" },
     );
+  });
+
+  it("leaves the keyboard alone when the thread is cleared", () => {
+    const first = assistantThreadFocus(ASSISTANT_THREAD_FOCUS_START, [
+      row({ id: "m1", interactionId: INTERACTION }),
+    ]);
+
+    const cleared = assistantThreadFocus(first.focus, []);
+
+    expect(cleared.move).toEqual({ kind: "none" });
+    expect(
+      assistantThreadFocus(cleared.focus, [
+        row({ id: "m1", interactionId: INTERACTION }),
+      ]).move,
+    ).toEqual({ kind: "card", index: 0 });
   });
 
   it("leaves the keyboard alone on a thread that never had a card", () => {

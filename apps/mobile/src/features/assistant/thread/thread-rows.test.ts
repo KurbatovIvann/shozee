@@ -207,6 +207,64 @@ describe("assistantThreadRows", () => {
     expect(result[1]?.surfaces).toHaveLength(1);
   });
 
+  it("carries the question snapshot to the later message that closed it", () => {
+    const asked = choicePause();
+    const result = rows(
+      threadOf(
+        [
+          message(REPLY_MESSAGE, "assistant", [
+            textPart("Яку Катю?"),
+            {
+              kind: "interaction",
+              interactionId: INTERACTION,
+              revision: 1,
+              pause: asked,
+            },
+          ]),
+          message(SECOND_REPLY_MESSAGE, "assistant", [
+            textPart("Готово."),
+            {
+              kind: "trace",
+              interactionId: INTERACTION,
+              interactionKind: "choice",
+              outcome: "chosen",
+              optionId: "opt-a",
+              attempts: [],
+            },
+          ]),
+        ],
+        null,
+      ),
+    );
+
+    expect(result[0]?.questions).toEqual([]);
+    expect(
+      result[1]?.questions.map((question) => question.interactionId),
+    ).toEqual([INTERACTION]);
+  });
+
+  it("carries no question for a trace whose snapshot is out of the window", () => {
+    const result = rows(
+      threadOf(
+        [
+          message(SECOND_REPLY_MESSAGE, "assistant", [
+            {
+              kind: "trace",
+              interactionId: INTERACTION,
+              interactionKind: "choice",
+              outcome: "chosen",
+              optionId: "opt-a",
+              attempts: [],
+            },
+          ]),
+        ],
+        null,
+      ),
+    );
+
+    expect(result[0]?.questions).toEqual([]);
+  });
+
   it("gives an open question its own row when its message is gone", () => {
     const pause = choicePause();
     const result = rows(threadOf([], pause));

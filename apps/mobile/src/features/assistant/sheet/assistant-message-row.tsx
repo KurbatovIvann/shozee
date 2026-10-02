@@ -35,6 +35,7 @@ export const AssistantMessageRow = memo(function AssistantMessageRow(props: {
   readonly waitLabel: string;
   readonly surfaces: readonly AssistantSurface[];
   readonly traces: readonly AssistantChatTracePart[];
+  readonly questions: readonly AssistantInteraction[];
   readonly closedCopy: AssistantClosedCardCopy;
   /**
    * The turn ended before the assistant answered. Rendered under whatever it
@@ -59,7 +60,11 @@ export const AssistantMessageRow = memo(function AssistantMessageRow(props: {
 }) {
   const isUser = props.role === "user";
   const interaction = props.interaction;
-  const closedCards = assistantClosedCardModels(props.traces, props.closedCopy);
+  const closedCards = assistantClosedCardModels({
+    traces: props.traces,
+    questions: props.questions,
+    copy: props.closedCopy,
+  });
   const tone = assistantReplyTone({
     failed: props.failed,
     hasOpenQuestion: interaction !== null,

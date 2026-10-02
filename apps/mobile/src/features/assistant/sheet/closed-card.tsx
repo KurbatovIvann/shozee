@@ -10,6 +10,8 @@ export function ClosedCard(props: {
   return (
     <AssistantResultFrame
       pill={{ label: model.label, tone: model.tone }}
+      {...(model.question === null ? {} : { title: model.question })}
+      {...(model.answer === null ? {} : { subtitle: model.answer })}
       actions={model.opens.map((open) => ({
         id: open.key,
         label: open.label,

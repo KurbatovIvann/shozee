@@ -53,6 +53,7 @@ export type AssistantThreadRow = {
   readonly text: string;
   readonly surfaces: readonly AssistantSurface[];
   readonly traces: readonly AssistantChatTracePart[];
+  readonly questions: readonly AssistantInteraction[];
   readonly interaction: AssistantInteraction | null;
   readonly failed: boolean;
   readonly interrupted: boolean;
@@ -63,6 +64,40 @@ export type AssistantThreadRow = {
 const NO_SURFACES: readonly AssistantSurface[] = [];
 
 const NO_TRACES: readonly AssistantChatTracePart[] = [];
+
+const NO_QUESTIONS: readonly AssistantInteraction[] = [];
+
+function askedQuestions(
+  messages: readonly AssistantChatMessage[],
+): ReadonlyMap<string, AssistantInteraction> {
+  const asked = new Map<string, AssistantInteraction>();
+  for (const message of messages) {
+    for (const part of message.parts) {
+      if (part.kind !== "interaction") {
+        continue;
+      }
+      const question = assistantInteractionFromPause(part.pause);
+      if (question !== null) {
+        asked.set(part.interactionId, question);
+      }
+    }
+  }
+  return asked;
+}
+
+function questionsOf(
+  traces: readonly AssistantChatTracePart[],
+  asked: ReadonlyMap<string, AssistantInteraction>,
+): readonly AssistantInteraction[] {
+  const questions: AssistantInteraction[] = [];
+  for (const trace of traces) {
+    const question = asked.get(trace.interactionId);
+    if (question !== undefined) {
+      questions.push(question);
+    }
+  }
+  return questions.length === 0 ? NO_QUESTIONS : questions;
+}
 
 function tracesOf(
   message: AssistantChatMessage,
@@ -198,8 +233,11 @@ export function assistantThreadRows(input: {
   const endReason = interruptedTurn?.endReason ?? null;
   const interruptedMessageId = interruptedTurn?.messageId ?? null;
 
+  const asked = askedQuestions(messages);
+
   const rows: AssistantThreadRow[] = [];
   for (const message of messages) {
+    const traces = message.role === "assistant" ? tracesOf(message) : NO_TRACES;
     const row: AssistantThreadRow = {
       id: message.messageId,
       role: message.role,
@@ -208,7 +246,8 @@ export function assistantThreadRows(input: {
         message.role === "assistant"
           ? surfacesOf(message, input.locale)
           : NO_SURFACES,
-      traces: message.role === "assistant" ? tracesOf(message) : NO_TRACES,
+      traces,
+      questions: questionsOf(traces, asked),
       interaction: message.messageId === hostId ? interaction : null,
       failed: failedIn(message),
       interrupted: interruptedIn(message, turn),
@@ -229,6 +268,7 @@ export function assistantThreadRows(input: {
       text: "",
       surfaces: NO_SURFACES,
       traces: NO_TRACES,
+      questions: NO_QUESTIONS,
       interaction,
       failed: false,
       interrupted: false,
@@ -245,6 +285,7 @@ export function assistantThreadRows(input: {
       text: pending,
       surfaces: NO_SURFACES,
       traces: NO_TRACES,
+      questions: NO_QUESTIONS,
       interaction: null,
       failed: false,
       interrupted: false,
@@ -260,6 +301,7 @@ export function assistantThreadRows(input: {
       text: "",
       surfaces: NO_SURFACES,
       traces: NO_TRACES,
+      questions: NO_QUESTIONS,
       interaction: null,
       failed: false,
       interrupted: false,

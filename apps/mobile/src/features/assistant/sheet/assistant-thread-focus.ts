@@ -34,6 +34,9 @@ export function assistantThreadFocus(
 ): { readonly focus: AssistantThreadFocus; readonly move: AssistantFocusMove } {
   const card = openCard(rows);
   const focus = { openCardKey: card?.key ?? null };
+  if (rows.length === 0) {
+    return { focus, move: { kind: "none" } };
+  }
   if (card !== null) {
     return {
       focus,
